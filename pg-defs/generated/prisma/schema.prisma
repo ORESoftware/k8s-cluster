@@ -1017,6 +1017,137 @@ model DesSoccerLearningMergeEvents {
   @@map("des_soccer_learning_merge_events")
 }
 
+model DesSoccerTournaments {
+  id BigInt @id @default(autoincrement()) @db.BigInt
+  experimentId String @map("experiment_id") @db.Uuid
+  tournamentDate String @map("tournament_date") @db.Text
+  seed BigInt @db.BigInt
+  learningMode String @map("learning_mode") @db.Text
+  format Json
+  teamCount Int @map("team_count")
+  matchCount Int @map("match_count") @default(0)
+  matchesPlayed Int @map("matches_played") @default(0)
+  championTeamId Int? @map("champion_team_id")
+  runnerUpTeamId Int? @map("runner_up_team_id")
+  thirdPlaceTeamId Int? @map("third_place_team_id")
+  wallTimeSeconds String? @map("wall_time_seconds")
+  status String @default("running") @db.Text
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  finishedAt DateTime? @map("finished_at") @db.Timestamptz(6)
+  @@index([experimentId, createdAt], map: "des_soccer_tournaments_experiment_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("des_soccer_tournaments")
+}
+
+model DesSoccerTournamentMatches {
+  id BigInt @id @default(autoincrement()) @db.BigInt
+  matchIndex Int @map("match_index")
+  stage String @db.Text
+  homeTeamId Int @map("home_team_id")
+  awayTeamId Int @map("away_team_id")
+  homeGoals Int @map("home_goals")
+  awayGoals Int @map("away_goals")
+  shootoutWinnerTeamId Int? @map("shootout_winner_team_id")
+  homeTrainingSteps BigInt @map("home_training_steps") @db.BigInt
+  awayTrainingSteps BigInt @map("away_training_steps") @db.BigInt
+  recordedAt DateTime @map("recorded_at") @default(now()) @db.Timestamptz(6)
+  @@map("des_soccer_tournament_matches")
+}
+
+model DesSoccerTournamentTeamBrains {
+  id BigInt @id @default(autoincrement()) @db.BigInt
+  teamId Int @map("team_id")
+  teamName String @map("team_name") @db.Text
+  seed BigInt @db.BigInt
+  matchesLearned Int @map("matches_learned")
+  trainingSteps BigInt @map("training_steps") @db.BigInt
+  played Int
+  wins Int
+  draws Int
+  losses Int
+  goalsFor Int @map("goals_for")
+  goalsAgainst Int @map("goals_against")
+  neuralSnapshot Json? @map("neural_snapshot")
+  genome Json?
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@map("des_soccer_tournament_team_brains")
+}
+
+model DesSoccerLearningSetPlayRuns {
+  runId String @map("run_id") @id @db.Uuid
+  policyVersionId String @map("policy_version_id") @db.Uuid
+  primaryRestart String @map("primary_restart") @db.VarChar(40)
+  team String @db.VarChar(8)
+  spotXMicros BigInt @map("spot_x_micros") @db.BigInt
+  spotYMicros BigInt @map("spot_y_micros") @db.BigInt
+  durationSecondsMicros BigInt @map("duration_seconds_micros") @db.BigInt
+  episodeCount Int @map("episode_count")
+  goals Int
+  goalRateMicros BigInt @map("goal_rate_micros") @db.BigInt
+  firstWindowGoalRateMicros BigInt @map("first_window_goal_rate_micros") @db.BigInt
+  lastWindowGoalRateMicros BigInt @map("last_window_goal_rate_micros") @db.BigInt
+  goalRateDeltaMicros BigInt @map("goal_rate_delta_micros") @db.BigInt
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("des_soccer_learning_set_play_runs")
+}
+
+model DesSoccerLearningSetPlayRestartMix {
+  runId String @map("run_id") @db.Uuid
+  ordinal Int
+  restart String @db.VarChar(40)
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("des_soccer_learning_set_play_restart_mix")
+}
+
+model DesSoccerLearningSetPlayEpisodeMetrics {
+  runId String @map("run_id") @db.Uuid
+  episodeIndex Int @map("episode_index")
+  seed BigInt @db.BigInt
+  restart String @db.VarChar(40)
+  routine String? @db.VarChar(80)
+  scored Boolean
+  scoreDeltaForTeam Int @map("score_delta_for_team")
+  ticks BigInt @db.BigInt
+  simulatedSecondsMicros BigInt @map("simulated_seconds_micros") @db.BigInt
+  policyUpdates BigInt @map("policy_updates") @db.BigInt
+  homePolicyEntries Int @map("home_policy_entries")
+  homePolicyTargetEntries Int @map("home_policy_target_entries")
+  awayPolicyEntries Int @map("away_policy_entries")
+  awayPolicyTargetEntries Int @map("away_policy_target_entries")
+  neuralTrainingSteps Int @map("neural_training_steps")
+  neuralSamples BigInt @map("neural_samples") @db.BigInt
+  neuralReplaySamples Int @map("neural_replay_samples")
+  neuralLastLossMicros BigInt? @map("neural_last_loss_micros") @db.BigInt
+  cumulativeGoals Int @map("cumulative_goals")
+  goalRateSoFarMicros BigInt @map("goal_rate_so_far_micros") @db.BigInt
+  @@index([restart, scored, episodeIndex], map: "des_soccer_learning_set_play_episode_restart_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("des_soccer_learning_set_play_episode_metrics")
+}
+
+model DesSoccerLearningNeuralRunMetrics {
+  runId String @map("run_id") @id @db.Uuid
+  policyVersionId String @map("policy_version_id") @db.Uuid
+  enabled Boolean
+  backend String @db.VarChar(32)
+  trainingSteps Int @map("training_steps")
+  samples BigInt @db.BigInt
+  pendingBatches Int @map("pending_batches")
+  droppedBatches Int @map("dropped_batches")
+  replaySamples Int @map("replay_samples")
+  replayCapacity Int @map("replay_capacity")
+  parameterCount Int @map("parameter_count")
+  targetClipMicros BigInt @map("target_clip_micros") @db.BigInt
+  lastLossMicros BigInt? @map("last_loss_micros") @db.BigInt
+  averageLossMicros BigInt? @map("average_loss_micros") @db.BigInt
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  @@index([trainingSteps, samples], map: "des_soccer_learning_neural_run_steps_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("des_soccer_learning_neural_run_metrics")
+}
+
 model DesFelElevatorLearningRuns {
   id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   runLabel String @map("run_label") @db.VarChar(200)

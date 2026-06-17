@@ -1353,6 +1353,205 @@ class DesSoccerLearningMergeEvents extends Model
     }
 }
 
+class DesSoccerTournaments extends Model
+{
+    protected $table = 'des_soccer_tournaments';
+    protected $primaryKey = 'id';
+    public $timestamps = true;
+    protected $fillable = ['experiment_id', 'tournament_date', 'seed', 'learning_mode', 'format', 'team_count', 'match_count', 'matches_played', 'champion_team_id', 'runner_up_team_id', 'third_place_team_id', 'wall_time_seconds', 'status', 'created_at', 'updated_at', 'finished_at'];
+    protected $casts = ['id' => 'integer', 'seed' => 'integer', 'format' => 'array', 'team_count' => 'integer', 'match_count' => 'integer', 'matches_played' => 'integer', 'champion_team_id' => 'integer', 'runner_up_team_id' => 'integer', 'third_place_team_id' => 'integer', 'created_at' => 'datetime', 'updated_at' => 'datetime', 'finished_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'experiment_id' => ['required', 'uuid'],
+            'tournament_date' => ['required', 'string'],
+            'seed' => ['required', 'integer'],
+            'learning_mode' => ['required', 'string'],
+            'format' => ['required', 'array'],
+            'team_count' => ['required', 'integer'],
+            'match_count' => ['nullable', 'integer'],
+            'matches_played' => ['nullable', 'integer'],
+            'champion_team_id' => ['nullable', 'integer'],
+            'runner_up_team_id' => ['nullable', 'integer'],
+            'third_place_team_id' => ['nullable', 'integer'],
+            'wall_time_seconds' => ['nullable', 'string'],
+            'status' => ['nullable', 'string', 'in:running,completed,failed,aborted'],
+            'finished_at' => ['nullable', 'date'],
+        ];
+    }
+}
+
+class DesSoccerTournamentMatches extends Model
+{
+    protected $table = 'des_soccer_tournament_matches';
+    protected $primaryKey = 'id';
+    public $timestamps = false;
+    protected $fillable = ['match_index', 'stage', 'home_team_id', 'away_team_id', 'home_goals', 'away_goals', 'shootout_winner_team_id', 'home_training_steps', 'away_training_steps', 'recorded_at'];
+    protected $casts = ['id' => 'integer', 'match_index' => 'integer', 'home_team_id' => 'integer', 'away_team_id' => 'integer', 'home_goals' => 'integer', 'away_goals' => 'integer', 'shootout_winner_team_id' => 'integer', 'home_training_steps' => 'integer', 'away_training_steps' => 'integer', 'recorded_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'match_index' => ['required', 'integer'],
+            'stage' => ['required', 'string'],
+            'home_team_id' => ['required', 'integer'],
+            'away_team_id' => ['required', 'integer'],
+            'home_goals' => ['required', 'integer'],
+            'away_goals' => ['required', 'integer'],
+            'shootout_winner_team_id' => ['nullable', 'integer'],
+            'home_training_steps' => ['required', 'integer'],
+            'away_training_steps' => ['required', 'integer'],
+            'recorded_at' => ['nullable', 'date'],
+        ];
+    }
+}
+
+class DesSoccerTournamentTeamBrains extends Model
+{
+    protected $table = 'des_soccer_tournament_team_brains';
+    protected $primaryKey = 'id';
+    public $timestamps = false;
+    protected $fillable = ['team_id', 'team_name', 'seed', 'matches_learned', 'training_steps', 'played', 'wins', 'draws', 'losses', 'goals_for', 'goals_against', 'neural_snapshot', 'genome', 'updated_at'];
+    protected $casts = ['id' => 'integer', 'team_id' => 'integer', 'seed' => 'integer', 'matches_learned' => 'integer', 'training_steps' => 'integer', 'played' => 'integer', 'wins' => 'integer', 'draws' => 'integer', 'losses' => 'integer', 'goals_for' => 'integer', 'goals_against' => 'integer', 'neural_snapshot' => 'array', 'genome' => 'array', 'updated_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'team_id' => ['required', 'integer'],
+            'team_name' => ['required', 'string'],
+            'seed' => ['required', 'integer'],
+            'matches_learned' => ['required', 'integer'],
+            'training_steps' => ['required', 'integer'],
+            'played' => ['required', 'integer'],
+            'wins' => ['required', 'integer'],
+            'draws' => ['required', 'integer'],
+            'losses' => ['required', 'integer'],
+            'goals_for' => ['required', 'integer'],
+            'goals_against' => ['required', 'integer'],
+            'neural_snapshot' => ['nullable', 'array'],
+            'genome' => ['nullable', 'array'],
+        ];
+    }
+}
+
+class DesSoccerLearningSetPlayRuns extends Model
+{
+    protected $table = 'des_soccer_learning_set_play_runs';
+    protected $primaryKey = 'run_id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+    protected $fillable = ['policy_version_id', 'primary_restart', 'team', 'spot_x_micros', 'spot_y_micros', 'duration_seconds_micros', 'episode_count', 'goals', 'goal_rate_micros', 'first_window_goal_rate_micros', 'last_window_goal_rate_micros', 'goal_rate_delta_micros', 'created_at'];
+    protected $casts = ['spot_x_micros' => 'integer', 'spot_y_micros' => 'integer', 'duration_seconds_micros' => 'integer', 'episode_count' => 'integer', 'goals' => 'integer', 'goal_rate_micros' => 'integer', 'first_window_goal_rate_micros' => 'integer', 'last_window_goal_rate_micros' => 'integer', 'goal_rate_delta_micros' => 'integer', 'created_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'policy_version_id' => ['required', 'uuid'],
+            'primary_restart' => ['required', 'string', 'in:direct-free-kick,indirect-free-kick'],
+            'team' => ['required', 'string', 'in:home,away'],
+            'spot_x_micros' => ['required', 'integer'],
+            'spot_y_micros' => ['required', 'integer'],
+            'duration_seconds_micros' => ['required', 'integer', 'min:0'],
+            'episode_count' => ['required', 'integer', 'min:0'],
+            'goals' => ['required', 'integer', 'min:0'],
+            'goal_rate_micros' => ['required', 'integer', 'min:0', 'max:1000000'],
+            'first_window_goal_rate_micros' => ['required', 'integer'],
+            'last_window_goal_rate_micros' => ['required', 'integer'],
+            'goal_rate_delta_micros' => ['required', 'integer'],
+        ];
+    }
+}
+
+class DesSoccerLearningSetPlayRestartMix extends Model
+{
+    protected $table = 'des_soccer_learning_set_play_restart_mix';
+    public $timestamps = false;
+    protected $fillable = ['run_id', 'ordinal', 'restart'];
+    protected $casts = ['ordinal' => 'integer'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'run_id' => ['required', 'uuid'],
+            'ordinal' => ['required', 'integer', 'min:0'],
+            'restart' => ['required', 'string', 'in:direct-free-kick,indirect-free-kick'],
+        ];
+    }
+}
+
+class DesSoccerLearningSetPlayEpisodeMetrics extends Model
+{
+    protected $table = 'des_soccer_learning_set_play_episode_metrics';
+    public $timestamps = false;
+    protected $fillable = ['run_id', 'episode_index', 'seed', 'restart', 'routine', 'scored', 'score_delta_for_team', 'ticks', 'simulated_seconds_micros', 'policy_updates', 'home_policy_entries', 'home_policy_target_entries', 'away_policy_entries', 'away_policy_target_entries', 'neural_training_steps', 'neural_samples', 'neural_replay_samples', 'neural_last_loss_micros', 'cumulative_goals', 'goal_rate_so_far_micros'];
+    protected $casts = ['episode_index' => 'integer', 'seed' => 'integer', 'scored' => 'boolean', 'score_delta_for_team' => 'integer', 'ticks' => 'integer', 'simulated_seconds_micros' => 'integer', 'policy_updates' => 'integer', 'home_policy_entries' => 'integer', 'home_policy_target_entries' => 'integer', 'away_policy_entries' => 'integer', 'away_policy_target_entries' => 'integer', 'neural_training_steps' => 'integer', 'neural_samples' => 'integer', 'neural_replay_samples' => 'integer', 'neural_last_loss_micros' => 'integer', 'cumulative_goals' => 'integer', 'goal_rate_so_far_micros' => 'integer'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'run_id' => ['required', 'uuid'],
+            'episode_index' => ['required', 'integer', 'min:0'],
+            'seed' => ['required', 'integer', 'min:0'],
+            'restart' => ['required', 'string', 'in:direct-free-kick,indirect-free-kick'],
+            'routine' => ['nullable', 'string', 'max:80'],
+            'scored' => ['required', 'boolean'],
+            'score_delta_for_team' => ['required', 'integer'],
+            'ticks' => ['required', 'integer', 'min:0'],
+            'simulated_seconds_micros' => ['required', 'integer', 'min:0'],
+            'policy_updates' => ['required', 'integer', 'min:0'],
+            'home_policy_entries' => ['required', 'integer', 'min:0'],
+            'home_policy_target_entries' => ['required', 'integer', 'min:0'],
+            'away_policy_entries' => ['required', 'integer', 'min:0'],
+            'away_policy_target_entries' => ['required', 'integer', 'min:0'],
+            'neural_training_steps' => ['required', 'integer', 'min:0'],
+            'neural_samples' => ['required', 'integer', 'min:0'],
+            'neural_replay_samples' => ['required', 'integer', 'min:0'],
+            'neural_last_loss_micros' => ['nullable', 'integer'],
+            'cumulative_goals' => ['required', 'integer', 'min:0'],
+            'goal_rate_so_far_micros' => ['required', 'integer', 'min:0', 'max:1000000'],
+        ];
+    }
+}
+
+class DesSoccerLearningNeuralRunMetrics extends Model
+{
+    protected $table = 'des_soccer_learning_neural_run_metrics';
+    protected $primaryKey = 'run_id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+    protected $fillable = ['policy_version_id', 'enabled', 'backend', 'training_steps', 'samples', 'pending_batches', 'dropped_batches', 'replay_samples', 'replay_capacity', 'parameter_count', 'target_clip_micros', 'last_loss_micros', 'average_loss_micros', 'created_at'];
+    protected $casts = ['enabled' => 'boolean', 'training_steps' => 'integer', 'samples' => 'integer', 'pending_batches' => 'integer', 'dropped_batches' => 'integer', 'replay_samples' => 'integer', 'replay_capacity' => 'integer', 'parameter_count' => 'integer', 'target_clip_micros' => 'integer', 'last_loss_micros' => 'integer', 'average_loss_micros' => 'integer', 'created_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'policy_version_id' => ['required', 'uuid'],
+            'enabled' => ['required', 'boolean'],
+            'backend' => ['required', 'string', 'in:inline,threaded'],
+            'training_steps' => ['required', 'integer', 'min:0'],
+            'samples' => ['required', 'integer', 'min:0'],
+            'pending_batches' => ['required', 'integer', 'min:0'],
+            'dropped_batches' => ['required', 'integer', 'min:0'],
+            'replay_samples' => ['required', 'integer', 'min:0'],
+            'replay_capacity' => ['required', 'integer', 'min:0'],
+            'parameter_count' => ['required', 'integer', 'min:0'],
+            'target_clip_micros' => ['required', 'integer'],
+            'last_loss_micros' => ['nullable', 'integer'],
+            'average_loss_micros' => ['nullable', 'integer'],
+        ];
+    }
+}
+
 class DesFelElevatorLearningRuns extends Model
 {
     protected $table = 'des_fel_elevator_learning_runs';

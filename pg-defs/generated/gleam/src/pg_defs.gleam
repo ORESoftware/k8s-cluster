@@ -3372,6 +3372,381 @@ pub fn validate_des_soccer_learning_merge_events_strategy(value: String) -> Resu
   }
 }
 
+pub const des_soccer_tournaments_table = "des_soccer_tournaments"
+pub const des_soccer_tournaments_select_sql = "select\n      id,\n      experiment_id::text as experiment_id,\n      tournament_date,\n      seed,\n      learning_mode,\n      format::text as format_json,\n      team_count,\n      match_count,\n      matches_played,\n      champion_team_id,\n      runner_up_team_id,\n      third_place_team_id,\n      wall_time_seconds,\n      status,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at\n    from des_soccer_tournaments"
+
+pub type DesSoccerTournamentsStatus {
+  DesSoccerTournamentsStatusRunning
+  DesSoccerTournamentsStatusCompleted
+  DesSoccerTournamentsStatusFailed
+  DesSoccerTournamentsStatusAborted
+}
+
+pub fn des_soccer_tournaments_status_to_string(value: DesSoccerTournamentsStatus) -> String {
+  case value {
+    DesSoccerTournamentsStatusRunning -> "running"
+    DesSoccerTournamentsStatusCompleted -> "completed"
+    DesSoccerTournamentsStatusFailed -> "failed"
+    DesSoccerTournamentsStatusAborted -> "aborted"
+  }
+}
+
+pub fn parse_des_soccer_tournaments_status(value: String) -> Result(DesSoccerTournamentsStatus, String) {
+  case value {
+    "running" -> Ok(DesSoccerTournamentsStatusRunning)
+    "completed" -> Ok(DesSoccerTournamentsStatusCompleted)
+    "failed" -> Ok(DesSoccerTournamentsStatusFailed)
+    "aborted" -> Ok(DesSoccerTournamentsStatusAborted)
+    _ -> Error("unsupported des_soccer_tournaments.status: " <> value)
+  }
+}
+
+pub type DesSoccerTournamentsRow {
+  DesSoccerTournamentsRow(
+    id: Int,
+    experiment_id: String,
+    tournament_date: String,
+    seed: Int,
+    learning_mode: String,
+    format_json: String,
+    team_count: Int,
+    match_count: Int,
+    matches_played: Int,
+    champion_team_id: Option(Int),
+    runner_up_team_id: Option(Int),
+    third_place_team_id: Option(Int),
+    wall_time_seconds: Option(String),
+    status: String,
+    created_at: String,
+    updated_at: String,
+    finished_at: Option(String),
+  )
+}
+
+pub fn validate_des_soccer_tournaments_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("des_soccer_tournaments.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_des_soccer_tournaments_status(value: String) -> Result(String, String) {
+  case list.contains(["running", "completed", "failed", "aborted"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported des_soccer_tournaments.status: " <> value)
+  }
+}
+
+pub const des_soccer_tournament_matches_table = "des_soccer_tournament_matches"
+pub const des_soccer_tournament_matches_select_sql = "select\n      id,\n      match_index,\n      stage,\n      home_team_id,\n      away_team_id,\n      home_goals,\n      away_goals,\n      shootout_winner_team_id,\n      home_training_steps,\n      away_training_steps,\n      to_char(recorded_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as recorded_at\n    from des_soccer_tournament_matches"
+
+pub type DesSoccerTournamentMatchesRow {
+  DesSoccerTournamentMatchesRow(
+    id: Int,
+    match_index: Int,
+    stage: String,
+    home_team_id: Int,
+    away_team_id: Int,
+    home_goals: Int,
+    away_goals: Int,
+    shootout_winner_team_id: Option(Int),
+    home_training_steps: Int,
+    away_training_steps: Int,
+    recorded_at: String,
+  )
+}
+
+pub fn validate_des_soccer_tournament_matches_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("des_soccer_tournament_matches.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const des_soccer_tournament_team_brains_table = "des_soccer_tournament_team_brains"
+pub const des_soccer_tournament_team_brains_select_sql = "select\n      id,\n      team_id,\n      team_name,\n      seed,\n      matches_learned,\n      training_steps,\n      played,\n      wins,\n      draws,\n      losses,\n      goals_for,\n      goals_against,\n      neural_snapshot::text as neural_snapshot_json,\n      genome::text as genome_json,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_soccer_tournament_team_brains"
+
+pub type DesSoccerTournamentTeamBrainsRow {
+  DesSoccerTournamentTeamBrainsRow(
+    id: Int,
+    team_id: Int,
+    team_name: String,
+    seed: Int,
+    matches_learned: Int,
+    training_steps: Int,
+    played: Int,
+    wins: Int,
+    draws: Int,
+    losses: Int,
+    goals_for: Int,
+    goals_against: Int,
+    neural_snapshot_json: Option(String),
+    genome_json: Option(String),
+    updated_at: String,
+  )
+}
+
+pub fn validate_des_soccer_tournament_team_brains_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("des_soccer_tournament_team_brains.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const des_soccer_learning_set_play_runs_table = "des_soccer_learning_set_play_runs"
+pub const des_soccer_learning_set_play_runs_select_sql = "select\n      run_id::text as run_id,\n      policy_version_id::text as policy_version_id,\n      primary_restart,\n      team,\n      spot_x_micros,\n      spot_y_micros,\n      duration_seconds_micros,\n      episode_count,\n      goals,\n      goal_rate_micros,\n      first_window_goal_rate_micros,\n      last_window_goal_rate_micros,\n      goal_rate_delta_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_set_play_runs"
+
+pub type DesSoccerLearningSetPlayRunsPrimaryRestart {
+  DesSoccerLearningSetPlayRunsPrimaryRestartDirectFreeKick
+  DesSoccerLearningSetPlayRunsPrimaryRestartIndirectFreeKick
+}
+
+pub fn des_soccer_learning_set_play_runs_primary_restart_to_string(value: DesSoccerLearningSetPlayRunsPrimaryRestart) -> String {
+  case value {
+    DesSoccerLearningSetPlayRunsPrimaryRestartDirectFreeKick -> "direct-free-kick"
+    DesSoccerLearningSetPlayRunsPrimaryRestartIndirectFreeKick -> "indirect-free-kick"
+  }
+}
+
+pub fn parse_des_soccer_learning_set_play_runs_primary_restart(value: String) -> Result(DesSoccerLearningSetPlayRunsPrimaryRestart, String) {
+  case value {
+    "direct-free-kick" -> Ok(DesSoccerLearningSetPlayRunsPrimaryRestartDirectFreeKick)
+    "indirect-free-kick" -> Ok(DesSoccerLearningSetPlayRunsPrimaryRestartIndirectFreeKick)
+    _ -> Error("unsupported des_soccer_learning_set_play_runs.primary_restart: " <> value)
+  }
+}
+
+pub type DesSoccerLearningSetPlayRunsTeam {
+  DesSoccerLearningSetPlayRunsTeamHome
+  DesSoccerLearningSetPlayRunsTeamAway
+}
+
+pub fn des_soccer_learning_set_play_runs_team_to_string(value: DesSoccerLearningSetPlayRunsTeam) -> String {
+  case value {
+    DesSoccerLearningSetPlayRunsTeamHome -> "home"
+    DesSoccerLearningSetPlayRunsTeamAway -> "away"
+  }
+}
+
+pub fn parse_des_soccer_learning_set_play_runs_team(value: String) -> Result(DesSoccerLearningSetPlayRunsTeam, String) {
+  case value {
+    "home" -> Ok(DesSoccerLearningSetPlayRunsTeamHome)
+    "away" -> Ok(DesSoccerLearningSetPlayRunsTeamAway)
+    _ -> Error("unsupported des_soccer_learning_set_play_runs.team: " <> value)
+  }
+}
+
+pub type DesSoccerLearningSetPlayRunsRow {
+  DesSoccerLearningSetPlayRunsRow(
+    run_id: String,
+    policy_version_id: String,
+    primary_restart: String,
+    team: String,
+    spot_x_micros: Int,
+    spot_y_micros: Int,
+    duration_seconds_micros: Int,
+    episode_count: Int,
+    goals: Int,
+    goal_rate_micros: Int,
+    first_window_goal_rate_micros: Int,
+    last_window_goal_rate_micros: Int,
+    goal_rate_delta_micros: Int,
+    created_at: String,
+  )
+}
+
+pub fn validate_des_soccer_learning_set_play_runs_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("des_soccer_learning_set_play_runs.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_des_soccer_learning_set_play_runs_primary_restart(value: String) -> Result(String, String) {
+  case list.contains(["direct-free-kick", "indirect-free-kick"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported des_soccer_learning_set_play_runs.primary_restart: " <> value)
+  }
+}
+
+pub fn validate_des_soccer_learning_set_play_runs_team(value: String) -> Result(String, String) {
+  case list.contains(["home", "away"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported des_soccer_learning_set_play_runs.team: " <> value)
+  }
+}
+
+pub const des_soccer_learning_set_play_restart_mix_table = "des_soccer_learning_set_play_restart_mix"
+pub const des_soccer_learning_set_play_restart_mix_select_sql = "select\n      run_id::text as run_id,\n      ordinal,\n      restart\n    from des_soccer_learning_set_play_restart_mix"
+
+pub type DesSoccerLearningSetPlayRestartMixRestart {
+  DesSoccerLearningSetPlayRestartMixRestartDirectFreeKick
+  DesSoccerLearningSetPlayRestartMixRestartIndirectFreeKick
+}
+
+pub fn des_soccer_learning_set_play_restart_mix_restart_to_string(value: DesSoccerLearningSetPlayRestartMixRestart) -> String {
+  case value {
+    DesSoccerLearningSetPlayRestartMixRestartDirectFreeKick -> "direct-free-kick"
+    DesSoccerLearningSetPlayRestartMixRestartIndirectFreeKick -> "indirect-free-kick"
+  }
+}
+
+pub fn parse_des_soccer_learning_set_play_restart_mix_restart(value: String) -> Result(DesSoccerLearningSetPlayRestartMixRestart, String) {
+  case value {
+    "direct-free-kick" -> Ok(DesSoccerLearningSetPlayRestartMixRestartDirectFreeKick)
+    "indirect-free-kick" -> Ok(DesSoccerLearningSetPlayRestartMixRestartIndirectFreeKick)
+    _ -> Error("unsupported des_soccer_learning_set_play_restart_mix.restart: " <> value)
+  }
+}
+
+pub type DesSoccerLearningSetPlayRestartMixRow {
+  DesSoccerLearningSetPlayRestartMixRow(
+    run_id: String,
+    ordinal: Int,
+    restart: String,
+  )
+}
+
+pub fn validate_des_soccer_learning_set_play_restart_mix_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("des_soccer_learning_set_play_restart_mix.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_des_soccer_learning_set_play_restart_mix_restart(value: String) -> Result(String, String) {
+  case list.contains(["direct-free-kick", "indirect-free-kick"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported des_soccer_learning_set_play_restart_mix.restart: " <> value)
+  }
+}
+
+pub const des_soccer_learning_set_play_episode_metrics_table = "des_soccer_learning_set_play_episode_metrics"
+pub const des_soccer_learning_set_play_episode_metrics_select_sql = "select\n      run_id::text as run_id,\n      episode_index,\n      seed,\n      restart,\n      routine,\n      scored,\n      score_delta_for_team,\n      ticks,\n      simulated_seconds_micros,\n      policy_updates,\n      home_policy_entries,\n      home_policy_target_entries,\n      away_policy_entries,\n      away_policy_target_entries,\n      neural_training_steps,\n      neural_samples,\n      neural_replay_samples,\n      neural_last_loss_micros,\n      cumulative_goals,\n      goal_rate_so_far_micros\n    from des_soccer_learning_set_play_episode_metrics"
+
+pub type DesSoccerLearningSetPlayEpisodeMetricsRestart {
+  DesSoccerLearningSetPlayEpisodeMetricsRestartDirectFreeKick
+  DesSoccerLearningSetPlayEpisodeMetricsRestartIndirectFreeKick
+}
+
+pub fn des_soccer_learning_set_play_episode_metrics_restart_to_string(value: DesSoccerLearningSetPlayEpisodeMetricsRestart) -> String {
+  case value {
+    DesSoccerLearningSetPlayEpisodeMetricsRestartDirectFreeKick -> "direct-free-kick"
+    DesSoccerLearningSetPlayEpisodeMetricsRestartIndirectFreeKick -> "indirect-free-kick"
+  }
+}
+
+pub fn parse_des_soccer_learning_set_play_episode_metrics_restart(value: String) -> Result(DesSoccerLearningSetPlayEpisodeMetricsRestart, String) {
+  case value {
+    "direct-free-kick" -> Ok(DesSoccerLearningSetPlayEpisodeMetricsRestartDirectFreeKick)
+    "indirect-free-kick" -> Ok(DesSoccerLearningSetPlayEpisodeMetricsRestartIndirectFreeKick)
+    _ -> Error("unsupported des_soccer_learning_set_play_episode_metrics.restart: " <> value)
+  }
+}
+
+pub type DesSoccerLearningSetPlayEpisodeMetricsRow {
+  DesSoccerLearningSetPlayEpisodeMetricsRow(
+    run_id: String,
+    episode_index: Int,
+    seed: Int,
+    restart: String,
+    routine: Option(String),
+    scored: Bool,
+    score_delta_for_team: Int,
+    ticks: Int,
+    simulated_seconds_micros: Int,
+    policy_updates: Int,
+    home_policy_entries: Int,
+    home_policy_target_entries: Int,
+    away_policy_entries: Int,
+    away_policy_target_entries: Int,
+    neural_training_steps: Int,
+    neural_samples: Int,
+    neural_replay_samples: Int,
+    neural_last_loss_micros: Option(Int),
+    cumulative_goals: Int,
+    goal_rate_so_far_micros: Int,
+  )
+}
+
+pub fn validate_des_soccer_learning_set_play_episode_metrics_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("des_soccer_learning_set_play_episode_metrics.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_des_soccer_learning_set_play_episode_metrics_restart(value: String) -> Result(String, String) {
+  case list.contains(["direct-free-kick", "indirect-free-kick"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported des_soccer_learning_set_play_episode_metrics.restart: " <> value)
+  }
+}
+
+pub const des_soccer_learning_neural_run_metrics_table = "des_soccer_learning_neural_run_metrics"
+pub const des_soccer_learning_neural_run_metrics_select_sql = "select\n      run_id::text as run_id,\n      policy_version_id::text as policy_version_id,\n      enabled,\n      backend,\n      training_steps,\n      samples,\n      pending_batches,\n      dropped_batches,\n      replay_samples,\n      replay_capacity,\n      parameter_count,\n      target_clip_micros,\n      last_loss_micros,\n      average_loss_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_neural_run_metrics"
+
+pub type DesSoccerLearningNeuralRunMetricsBackend {
+  DesSoccerLearningNeuralRunMetricsBackendInline
+  DesSoccerLearningNeuralRunMetricsBackendThreaded
+}
+
+pub fn des_soccer_learning_neural_run_metrics_backend_to_string(value: DesSoccerLearningNeuralRunMetricsBackend) -> String {
+  case value {
+    DesSoccerLearningNeuralRunMetricsBackendInline -> "inline"
+    DesSoccerLearningNeuralRunMetricsBackendThreaded -> "threaded"
+  }
+}
+
+pub fn parse_des_soccer_learning_neural_run_metrics_backend(value: String) -> Result(DesSoccerLearningNeuralRunMetricsBackend, String) {
+  case value {
+    "inline" -> Ok(DesSoccerLearningNeuralRunMetricsBackendInline)
+    "threaded" -> Ok(DesSoccerLearningNeuralRunMetricsBackendThreaded)
+    _ -> Error("unsupported des_soccer_learning_neural_run_metrics.backend: " <> value)
+  }
+}
+
+pub type DesSoccerLearningNeuralRunMetricsRow {
+  DesSoccerLearningNeuralRunMetricsRow(
+    run_id: String,
+    policy_version_id: String,
+    enabled: Bool,
+    backend: String,
+    training_steps: Int,
+    samples: Int,
+    pending_batches: Int,
+    dropped_batches: Int,
+    replay_samples: Int,
+    replay_capacity: Int,
+    parameter_count: Int,
+    target_clip_micros: Int,
+    last_loss_micros: Option(Int),
+    average_loss_micros: Option(Int),
+    created_at: String,
+  )
+}
+
+pub fn validate_des_soccer_learning_neural_run_metrics_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("des_soccer_learning_neural_run_metrics.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_des_soccer_learning_neural_run_metrics_backend(value: String) -> Result(String, String) {
+  case list.contains(["inline", "threaded"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported des_soccer_learning_neural_run_metrics.backend: " <> value)
+  }
+}
+
 pub const des_fel_elevator_learning_runs_table = "des_fel_elevator_learning_runs"
 pub const des_fel_elevator_learning_runs_select_sql = "select\n      id::text as id,\n      run_label,\n      scenario_slug,\n      status,\n      dispatch_policy,\n      seed,\n      floors,\n      shafts,\n      capacity,\n      travel_seconds_micros,\n      dwell_seconds_micros,\n      arrival_rate_micros,\n      horizon_seconds_micros,\n      events,\n      arrivals,\n      boarded,\n      served,\n      mean_wait_micros,\n      dispatch_decisions,\n      pomdp_belief_updates,\n      online_learning_updates,\n      online_learning_loss_last_micros,\n      config::text as config_json,\n      metrics::text as metrics_json,\n      artifact::text as artifact_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_fel_elevator_learning_runs"
 

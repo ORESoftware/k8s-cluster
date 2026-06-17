@@ -4567,6 +4567,587 @@ inline std::optional<std::string> validate_des_soccer_learning_merge_events_deca
     return std::nullopt;
 }
 
+inline const char* des_soccer_tournaments_table = "des_soccer_tournaments";
+inline const std::vector<std::string> des_soccer_tournaments_columns = { "id", "experiment_id", "tournament_date", "seed", "learning_mode", "format", "team_count", "match_count", "matches_played", "champion_team_id", "runner_up_team_id", "third_place_team_id", "wall_time_seconds", "status", "created_at", "updated_at", "finished_at" };
+inline const char* des_soccer_tournaments_select_sql = R"SQL(select
+      id,
+      experiment_id::text as experiment_id,
+      tournament_date,
+      seed,
+      learning_mode,
+      format::text as format_json,
+      team_count,
+      match_count,
+      matches_played,
+      champion_team_id,
+      runner_up_team_id,
+      third_place_team_id,
+      wall_time_seconds,
+      status,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at
+    from des_soccer_tournaments)SQL";
+
+enum class DesSoccerTournamentsStatus { Running, Completed, Failed, Aborted };
+inline std::string des_soccer_tournaments_status_to_string(DesSoccerTournamentsStatus value) {
+    switch (value) {
+        case DesSoccerTournamentsStatus::Running: return "running";
+        case DesSoccerTournamentsStatus::Completed: return "completed";
+        case DesSoccerTournamentsStatus::Failed: return "failed";
+        case DesSoccerTournamentsStatus::Aborted: return "aborted";
+    }
+    return "";
+}
+inline std::optional<DesSoccerTournamentsStatus> parse_des_soccer_tournaments_status(const std::string& value) {
+    if (value == "running") return DesSoccerTournamentsStatus::Running;
+    if (value == "completed") return DesSoccerTournamentsStatus::Completed;
+    if (value == "failed") return DesSoccerTournamentsStatus::Failed;
+    if (value == "aborted") return DesSoccerTournamentsStatus::Aborted;
+    return std::nullopt;
+}
+
+struct DesSoccerTournamentsRow {
+    int64_t id;
+    std::string experiment_id;
+    std::string tournament_date;
+    int64_t seed;
+    std::string learning_mode;
+    std::string format;
+    int32_t team_count;
+    int32_t match_count;
+    int32_t matches_played;
+    std::optional<int32_t> champion_team_id;
+    std::optional<int32_t> runner_up_team_id;
+    std::optional<int32_t> third_place_team_id;
+    std::optional<std::string> wall_time_seconds;
+    std::string status;
+    std::string created_at;
+    std::string updated_at;
+    std::optional<std::string> finished_at;
+};
+
+inline DesSoccerTournamentsRow des_soccer_tournaments_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    DesSoccerTournamentsRow row;
+    (void)is_null;
+    row.id = std::stoll(get(0));
+    row.experiment_id = get(1);
+    row.tournament_date = get(2);
+    row.seed = std::stoll(get(3));
+    row.learning_mode = get(4);
+    row.format = get(5);
+    row.team_count = std::stoi(get(6));
+    row.match_count = std::stoi(get(7));
+    row.matches_played = std::stoi(get(8));
+    row.champion_team_id = is_null(9) ? std::nullopt : std::optional<int32_t>(std::stoi(get(9)));
+    row.runner_up_team_id = is_null(10) ? std::nullopt : std::optional<int32_t>(std::stoi(get(10)));
+    row.third_place_team_id = is_null(11) ? std::nullopt : std::optional<int32_t>(std::stoi(get(11)));
+    row.wall_time_seconds = is_null(12) ? std::nullopt : std::optional<std::string>(get(12));
+    row.status = get(13);
+    row.created_at = get(14);
+    row.updated_at = get(15);
+    row.finished_at = is_null(16) ? std::nullopt : std::optional<std::string>(get(16));
+    return row;
+}
+
+inline const char* des_soccer_tournament_matches_table = "des_soccer_tournament_matches";
+inline const std::vector<std::string> des_soccer_tournament_matches_columns = { "id", "match_index", "stage", "home_team_id", "away_team_id", "home_goals", "away_goals", "shootout_winner_team_id", "home_training_steps", "away_training_steps", "recorded_at" };
+inline const char* des_soccer_tournament_matches_select_sql = R"SQL(select
+      id,
+      match_index,
+      stage,
+      home_team_id,
+      away_team_id,
+      home_goals,
+      away_goals,
+      shootout_winner_team_id,
+      home_training_steps,
+      away_training_steps,
+      to_char(recorded_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as recorded_at
+    from des_soccer_tournament_matches)SQL";
+
+struct DesSoccerTournamentMatchesRow {
+    int64_t id;
+    int32_t match_index;
+    std::string stage;
+    int32_t home_team_id;
+    int32_t away_team_id;
+    int32_t home_goals;
+    int32_t away_goals;
+    std::optional<int32_t> shootout_winner_team_id;
+    int64_t home_training_steps;
+    int64_t away_training_steps;
+    std::string recorded_at;
+};
+
+inline DesSoccerTournamentMatchesRow des_soccer_tournament_matches_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    DesSoccerTournamentMatchesRow row;
+    (void)is_null;
+    row.id = std::stoll(get(0));
+    row.match_index = std::stoi(get(1));
+    row.stage = get(2);
+    row.home_team_id = std::stoi(get(3));
+    row.away_team_id = std::stoi(get(4));
+    row.home_goals = std::stoi(get(5));
+    row.away_goals = std::stoi(get(6));
+    row.shootout_winner_team_id = is_null(7) ? std::nullopt : std::optional<int32_t>(std::stoi(get(7)));
+    row.home_training_steps = std::stoll(get(8));
+    row.away_training_steps = std::stoll(get(9));
+    row.recorded_at = get(10);
+    return row;
+}
+
+inline const char* des_soccer_tournament_team_brains_table = "des_soccer_tournament_team_brains";
+inline const std::vector<std::string> des_soccer_tournament_team_brains_columns = { "id", "team_id", "team_name", "seed", "matches_learned", "training_steps", "played", "wins", "draws", "losses", "goals_for", "goals_against", "neural_snapshot", "genome", "updated_at" };
+inline const char* des_soccer_tournament_team_brains_select_sql = R"SQL(select
+      id,
+      team_id,
+      team_name,
+      seed,
+      matches_learned,
+      training_steps,
+      played,
+      wins,
+      draws,
+      losses,
+      goals_for,
+      goals_against,
+      neural_snapshot::text as neural_snapshot_json,
+      genome::text as genome_json,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from des_soccer_tournament_team_brains)SQL";
+
+struct DesSoccerTournamentTeamBrainsRow {
+    int64_t id;
+    int32_t team_id;
+    std::string team_name;
+    int64_t seed;
+    int32_t matches_learned;
+    int64_t training_steps;
+    int32_t played;
+    int32_t wins;
+    int32_t draws;
+    int32_t losses;
+    int32_t goals_for;
+    int32_t goals_against;
+    std::optional<std::string> neural_snapshot;
+    std::optional<std::string> genome;
+    std::string updated_at;
+};
+
+inline DesSoccerTournamentTeamBrainsRow des_soccer_tournament_team_brains_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    DesSoccerTournamentTeamBrainsRow row;
+    (void)is_null;
+    row.id = std::stoll(get(0));
+    row.team_id = std::stoi(get(1));
+    row.team_name = get(2);
+    row.seed = std::stoll(get(3));
+    row.matches_learned = std::stoi(get(4));
+    row.training_steps = std::stoll(get(5));
+    row.played = std::stoi(get(6));
+    row.wins = std::stoi(get(7));
+    row.draws = std::stoi(get(8));
+    row.losses = std::stoi(get(9));
+    row.goals_for = std::stoi(get(10));
+    row.goals_against = std::stoi(get(11));
+    row.neural_snapshot = is_null(12) ? std::nullopt : std::optional<std::string>(get(12));
+    row.genome = is_null(13) ? std::nullopt : std::optional<std::string>(get(13));
+    row.updated_at = get(14);
+    return row;
+}
+
+inline const char* des_soccer_learning_set_play_runs_table = "des_soccer_learning_set_play_runs";
+inline const std::vector<std::string> des_soccer_learning_set_play_runs_columns = { "run_id", "policy_version_id", "primary_restart", "team", "spot_x_micros", "spot_y_micros", "duration_seconds_micros", "episode_count", "goals", "goal_rate_micros", "first_window_goal_rate_micros", "last_window_goal_rate_micros", "goal_rate_delta_micros", "created_at" };
+inline const char* des_soccer_learning_set_play_runs_select_sql = R"SQL(select
+      run_id::text as run_id,
+      policy_version_id::text as policy_version_id,
+      primary_restart,
+      team,
+      spot_x_micros,
+      spot_y_micros,
+      duration_seconds_micros,
+      episode_count,
+      goals,
+      goal_rate_micros,
+      first_window_goal_rate_micros,
+      last_window_goal_rate_micros,
+      goal_rate_delta_micros,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from des_soccer_learning_set_play_runs)SQL";
+
+enum class DesSoccerLearningSetPlayRunsPrimaryRestart { DirectFreeKick, IndirectFreeKick };
+inline std::string des_soccer_learning_set_play_runs_primary_restart_to_string(DesSoccerLearningSetPlayRunsPrimaryRestart value) {
+    switch (value) {
+        case DesSoccerLearningSetPlayRunsPrimaryRestart::DirectFreeKick: return "direct-free-kick";
+        case DesSoccerLearningSetPlayRunsPrimaryRestart::IndirectFreeKick: return "indirect-free-kick";
+    }
+    return "";
+}
+inline std::optional<DesSoccerLearningSetPlayRunsPrimaryRestart> parse_des_soccer_learning_set_play_runs_primary_restart(const std::string& value) {
+    if (value == "direct-free-kick") return DesSoccerLearningSetPlayRunsPrimaryRestart::DirectFreeKick;
+    if (value == "indirect-free-kick") return DesSoccerLearningSetPlayRunsPrimaryRestart::IndirectFreeKick;
+    return std::nullopt;
+}
+
+enum class DesSoccerLearningSetPlayRunsTeam { Home, Away };
+inline std::string des_soccer_learning_set_play_runs_team_to_string(DesSoccerLearningSetPlayRunsTeam value) {
+    switch (value) {
+        case DesSoccerLearningSetPlayRunsTeam::Home: return "home";
+        case DesSoccerLearningSetPlayRunsTeam::Away: return "away";
+    }
+    return "";
+}
+inline std::optional<DesSoccerLearningSetPlayRunsTeam> parse_des_soccer_learning_set_play_runs_team(const std::string& value) {
+    if (value == "home") return DesSoccerLearningSetPlayRunsTeam::Home;
+    if (value == "away") return DesSoccerLearningSetPlayRunsTeam::Away;
+    return std::nullopt;
+}
+
+struct DesSoccerLearningSetPlayRunsRow {
+    std::string run_id;
+    std::string policy_version_id;
+    std::string primary_restart;
+    std::string team;
+    int64_t spot_x_micros;
+    int64_t spot_y_micros;
+    int64_t duration_seconds_micros;
+    int32_t episode_count;
+    int32_t goals;
+    int64_t goal_rate_micros;
+    int64_t first_window_goal_rate_micros;
+    int64_t last_window_goal_rate_micros;
+    int64_t goal_rate_delta_micros;
+    std::string created_at;
+};
+
+inline DesSoccerLearningSetPlayRunsRow des_soccer_learning_set_play_runs_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    DesSoccerLearningSetPlayRunsRow row;
+    (void)is_null;
+    row.run_id = get(0);
+    row.policy_version_id = get(1);
+    row.primary_restart = get(2);
+    row.team = get(3);
+    row.spot_x_micros = std::stoll(get(4));
+    row.spot_y_micros = std::stoll(get(5));
+    row.duration_seconds_micros = std::stoll(get(6));
+    row.episode_count = std::stoi(get(7));
+    row.goals = std::stoi(get(8));
+    row.goal_rate_micros = std::stoll(get(9));
+    row.first_window_goal_rate_micros = std::stoll(get(10));
+    row.last_window_goal_rate_micros = std::stoll(get(11));
+    row.goal_rate_delta_micros = std::stoll(get(12));
+    row.created_at = get(13);
+    return row;
+}
+inline std::optional<std::string> validate_des_soccer_learning_set_play_runs_duration_seconds_micros(int64_t value) {
+    if (value < 0) return std::string("des_soccer_learning_set_play_runs.duration_seconds_micros is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_set_play_runs_episode_count(int32_t value) {
+    if (value < 0) return std::string("des_soccer_learning_set_play_runs.episode_count is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_set_play_runs_goals(int32_t value) {
+    if (value < 0) return std::string("des_soccer_learning_set_play_runs.goals is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_set_play_runs_goal_rate_micros(int64_t value) {
+    if (value < 0) return std::string("des_soccer_learning_set_play_runs.goal_rate_micros is below the minimum");
+    if (value > 1000000) return std::string("des_soccer_learning_set_play_runs.goal_rate_micros is above the maximum");
+    return std::nullopt;
+}
+
+inline const char* des_soccer_learning_set_play_restart_mix_table = "des_soccer_learning_set_play_restart_mix";
+inline const std::vector<std::string> des_soccer_learning_set_play_restart_mix_columns = { "run_id", "ordinal", "restart" };
+inline const char* des_soccer_learning_set_play_restart_mix_select_sql = R"SQL(select
+      run_id::text as run_id,
+      ordinal,
+      restart
+    from des_soccer_learning_set_play_restart_mix)SQL";
+
+enum class DesSoccerLearningSetPlayRestartMixRestart { DirectFreeKick, IndirectFreeKick };
+inline std::string des_soccer_learning_set_play_restart_mix_restart_to_string(DesSoccerLearningSetPlayRestartMixRestart value) {
+    switch (value) {
+        case DesSoccerLearningSetPlayRestartMixRestart::DirectFreeKick: return "direct-free-kick";
+        case DesSoccerLearningSetPlayRestartMixRestart::IndirectFreeKick: return "indirect-free-kick";
+    }
+    return "";
+}
+inline std::optional<DesSoccerLearningSetPlayRestartMixRestart> parse_des_soccer_learning_set_play_restart_mix_restart(const std::string& value) {
+    if (value == "direct-free-kick") return DesSoccerLearningSetPlayRestartMixRestart::DirectFreeKick;
+    if (value == "indirect-free-kick") return DesSoccerLearningSetPlayRestartMixRestart::IndirectFreeKick;
+    return std::nullopt;
+}
+
+struct DesSoccerLearningSetPlayRestartMixRow {
+    std::string run_id;
+    int32_t ordinal;
+    std::string restart;
+};
+
+inline DesSoccerLearningSetPlayRestartMixRow des_soccer_learning_set_play_restart_mix_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    DesSoccerLearningSetPlayRestartMixRow row;
+    (void)is_null;
+    row.run_id = get(0);
+    row.ordinal = std::stoi(get(1));
+    row.restart = get(2);
+    return row;
+}
+inline std::optional<std::string> validate_des_soccer_learning_set_play_restart_mix_ordinal(int32_t value) {
+    if (value < 0) return std::string("des_soccer_learning_set_play_restart_mix.ordinal is below the minimum");
+    return std::nullopt;
+}
+
+inline const char* des_soccer_learning_set_play_episode_metrics_table = "des_soccer_learning_set_play_episode_metrics";
+inline const std::vector<std::string> des_soccer_learning_set_play_episode_metrics_columns = { "run_id", "episode_index", "seed", "restart", "routine", "scored", "score_delta_for_team", "ticks", "simulated_seconds_micros", "policy_updates", "home_policy_entries", "home_policy_target_entries", "away_policy_entries", "away_policy_target_entries", "neural_training_steps", "neural_samples", "neural_replay_samples", "neural_last_loss_micros", "cumulative_goals", "goal_rate_so_far_micros" };
+inline const char* des_soccer_learning_set_play_episode_metrics_select_sql = R"SQL(select
+      run_id::text as run_id,
+      episode_index,
+      seed,
+      restart,
+      routine,
+      scored,
+      score_delta_for_team,
+      ticks,
+      simulated_seconds_micros,
+      policy_updates,
+      home_policy_entries,
+      home_policy_target_entries,
+      away_policy_entries,
+      away_policy_target_entries,
+      neural_training_steps,
+      neural_samples,
+      neural_replay_samples,
+      neural_last_loss_micros,
+      cumulative_goals,
+      goal_rate_so_far_micros
+    from des_soccer_learning_set_play_episode_metrics)SQL";
+
+enum class DesSoccerLearningSetPlayEpisodeMetricsRestart { DirectFreeKick, IndirectFreeKick };
+inline std::string des_soccer_learning_set_play_episode_metrics_restart_to_string(DesSoccerLearningSetPlayEpisodeMetricsRestart value) {
+    switch (value) {
+        case DesSoccerLearningSetPlayEpisodeMetricsRestart::DirectFreeKick: return "direct-free-kick";
+        case DesSoccerLearningSetPlayEpisodeMetricsRestart::IndirectFreeKick: return "indirect-free-kick";
+    }
+    return "";
+}
+inline std::optional<DesSoccerLearningSetPlayEpisodeMetricsRestart> parse_des_soccer_learning_set_play_episode_metrics_restart(const std::string& value) {
+    if (value == "direct-free-kick") return DesSoccerLearningSetPlayEpisodeMetricsRestart::DirectFreeKick;
+    if (value == "indirect-free-kick") return DesSoccerLearningSetPlayEpisodeMetricsRestart::IndirectFreeKick;
+    return std::nullopt;
+}
+
+struct DesSoccerLearningSetPlayEpisodeMetricsRow {
+    std::string run_id;
+    int32_t episode_index;
+    int64_t seed;
+    std::string restart;
+    std::optional<std::string> routine;
+    bool scored;
+    int32_t score_delta_for_team;
+    int64_t ticks;
+    int64_t simulated_seconds_micros;
+    int64_t policy_updates;
+    int32_t home_policy_entries;
+    int32_t home_policy_target_entries;
+    int32_t away_policy_entries;
+    int32_t away_policy_target_entries;
+    int32_t neural_training_steps;
+    int64_t neural_samples;
+    int32_t neural_replay_samples;
+    std::optional<int64_t> neural_last_loss_micros;
+    int32_t cumulative_goals;
+    int64_t goal_rate_so_far_micros;
+};
+
+inline DesSoccerLearningSetPlayEpisodeMetricsRow des_soccer_learning_set_play_episode_metrics_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    DesSoccerLearningSetPlayEpisodeMetricsRow row;
+    (void)is_null;
+    row.run_id = get(0);
+    row.episode_index = std::stoi(get(1));
+    row.seed = std::stoll(get(2));
+    row.restart = get(3);
+    row.routine = is_null(4) ? std::nullopt : std::optional<std::string>(get(4));
+    row.scored = (get(5) == "t");
+    row.score_delta_for_team = std::stoi(get(6));
+    row.ticks = std::stoll(get(7));
+    row.simulated_seconds_micros = std::stoll(get(8));
+    row.policy_updates = std::stoll(get(9));
+    row.home_policy_entries = std::stoi(get(10));
+    row.home_policy_target_entries = std::stoi(get(11));
+    row.away_policy_entries = std::stoi(get(12));
+    row.away_policy_target_entries = std::stoi(get(13));
+    row.neural_training_steps = std::stoi(get(14));
+    row.neural_samples = std::stoll(get(15));
+    row.neural_replay_samples = std::stoi(get(16));
+    row.neural_last_loss_micros = is_null(17) ? std::nullopt : std::optional<int64_t>(std::stoll(get(17)));
+    row.cumulative_goals = std::stoi(get(18));
+    row.goal_rate_so_far_micros = std::stoll(get(19));
+    return row;
+}
+inline std::optional<std::string> validate_des_soccer_learning_set_play_episode_metrics_episode_index(int32_t value) {
+    if (value < 0) return std::string("des_soccer_learning_set_play_episode_metrics.episode_index is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_set_play_episode_metrics_seed(int64_t value) {
+    if (value < 0) return std::string("des_soccer_learning_set_play_episode_metrics.seed is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_set_play_episode_metrics_routine(const std::string& value) {
+    if (value.size() > 80) return std::string("des_soccer_learning_set_play_episode_metrics.routine must be at most 80 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_set_play_episode_metrics_ticks(int64_t value) {
+    if (value < 0) return std::string("des_soccer_learning_set_play_episode_metrics.ticks is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_set_play_episode_metrics_simulated_seconds_micros(int64_t value) {
+    if (value < 0) return std::string("des_soccer_learning_set_play_episode_metrics.simulated_seconds_micros is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_set_play_episode_metrics_policy_updates(int64_t value) {
+    if (value < 0) return std::string("des_soccer_learning_set_play_episode_metrics.policy_updates is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_set_play_episode_metrics_home_policy_entries(int32_t value) {
+    if (value < 0) return std::string("des_soccer_learning_set_play_episode_metrics.home_policy_entries is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_set_play_episode_metrics_home_policy_target_entries(int32_t value) {
+    if (value < 0) return std::string("des_soccer_learning_set_play_episode_metrics.home_policy_target_entries is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_set_play_episode_metrics_away_policy_entries(int32_t value) {
+    if (value < 0) return std::string("des_soccer_learning_set_play_episode_metrics.away_policy_entries is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_set_play_episode_metrics_away_policy_target_entries(int32_t value) {
+    if (value < 0) return std::string("des_soccer_learning_set_play_episode_metrics.away_policy_target_entries is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_set_play_episode_metrics_neural_training_steps(int32_t value) {
+    if (value < 0) return std::string("des_soccer_learning_set_play_episode_metrics.neural_training_steps is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_set_play_episode_metrics_neural_samples(int64_t value) {
+    if (value < 0) return std::string("des_soccer_learning_set_play_episode_metrics.neural_samples is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_set_play_episode_metrics_neural_replay_samples(int32_t value) {
+    if (value < 0) return std::string("des_soccer_learning_set_play_episode_metrics.neural_replay_samples is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_set_play_episode_metrics_cumulative_goals(int32_t value) {
+    if (value < 0) return std::string("des_soccer_learning_set_play_episode_metrics.cumulative_goals is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_set_play_episode_metrics_goal_rate_so_far_micros(int64_t value) {
+    if (value < 0) return std::string("des_soccer_learning_set_play_episode_metrics.goal_rate_so_far_micros is below the minimum");
+    if (value > 1000000) return std::string("des_soccer_learning_set_play_episode_metrics.goal_rate_so_far_micros is above the maximum");
+    return std::nullopt;
+}
+
+inline const char* des_soccer_learning_neural_run_metrics_table = "des_soccer_learning_neural_run_metrics";
+inline const std::vector<std::string> des_soccer_learning_neural_run_metrics_columns = { "run_id", "policy_version_id", "enabled", "backend", "training_steps", "samples", "pending_batches", "dropped_batches", "replay_samples", "replay_capacity", "parameter_count", "target_clip_micros", "last_loss_micros", "average_loss_micros", "created_at" };
+inline const char* des_soccer_learning_neural_run_metrics_select_sql = R"SQL(select
+      run_id::text as run_id,
+      policy_version_id::text as policy_version_id,
+      enabled,
+      backend,
+      training_steps,
+      samples,
+      pending_batches,
+      dropped_batches,
+      replay_samples,
+      replay_capacity,
+      parameter_count,
+      target_clip_micros,
+      last_loss_micros,
+      average_loss_micros,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from des_soccer_learning_neural_run_metrics)SQL";
+
+enum class DesSoccerLearningNeuralRunMetricsBackend { Inline, Threaded };
+inline std::string des_soccer_learning_neural_run_metrics_backend_to_string(DesSoccerLearningNeuralRunMetricsBackend value) {
+    switch (value) {
+        case DesSoccerLearningNeuralRunMetricsBackend::Inline: return "inline";
+        case DesSoccerLearningNeuralRunMetricsBackend::Threaded: return "threaded";
+    }
+    return "";
+}
+inline std::optional<DesSoccerLearningNeuralRunMetricsBackend> parse_des_soccer_learning_neural_run_metrics_backend(const std::string& value) {
+    if (value == "inline") return DesSoccerLearningNeuralRunMetricsBackend::Inline;
+    if (value == "threaded") return DesSoccerLearningNeuralRunMetricsBackend::Threaded;
+    return std::nullopt;
+}
+
+struct DesSoccerLearningNeuralRunMetricsRow {
+    std::string run_id;
+    std::string policy_version_id;
+    bool enabled;
+    std::string backend;
+    int32_t training_steps;
+    int64_t samples;
+    int32_t pending_batches;
+    int32_t dropped_batches;
+    int32_t replay_samples;
+    int32_t replay_capacity;
+    int32_t parameter_count;
+    int64_t target_clip_micros;
+    std::optional<int64_t> last_loss_micros;
+    std::optional<int64_t> average_loss_micros;
+    std::string created_at;
+};
+
+inline DesSoccerLearningNeuralRunMetricsRow des_soccer_learning_neural_run_metrics_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    DesSoccerLearningNeuralRunMetricsRow row;
+    (void)is_null;
+    row.run_id = get(0);
+    row.policy_version_id = get(1);
+    row.enabled = (get(2) == "t");
+    row.backend = get(3);
+    row.training_steps = std::stoi(get(4));
+    row.samples = std::stoll(get(5));
+    row.pending_batches = std::stoi(get(6));
+    row.dropped_batches = std::stoi(get(7));
+    row.replay_samples = std::stoi(get(8));
+    row.replay_capacity = std::stoi(get(9));
+    row.parameter_count = std::stoi(get(10));
+    row.target_clip_micros = std::stoll(get(11));
+    row.last_loss_micros = is_null(12) ? std::nullopt : std::optional<int64_t>(std::stoll(get(12)));
+    row.average_loss_micros = is_null(13) ? std::nullopt : std::optional<int64_t>(std::stoll(get(13)));
+    row.created_at = get(14);
+    return row;
+}
+inline std::optional<std::string> validate_des_soccer_learning_neural_run_metrics_training_steps(int32_t value) {
+    if (value < 0) return std::string("des_soccer_learning_neural_run_metrics.training_steps is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_neural_run_metrics_samples(int64_t value) {
+    if (value < 0) return std::string("des_soccer_learning_neural_run_metrics.samples is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_neural_run_metrics_pending_batches(int32_t value) {
+    if (value < 0) return std::string("des_soccer_learning_neural_run_metrics.pending_batches is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_neural_run_metrics_dropped_batches(int32_t value) {
+    if (value < 0) return std::string("des_soccer_learning_neural_run_metrics.dropped_batches is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_neural_run_metrics_replay_samples(int32_t value) {
+    if (value < 0) return std::string("des_soccer_learning_neural_run_metrics.replay_samples is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_neural_run_metrics_replay_capacity(int32_t value) {
+    if (value < 0) return std::string("des_soccer_learning_neural_run_metrics.replay_capacity is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_neural_run_metrics_parameter_count(int32_t value) {
+    if (value < 0) return std::string("des_soccer_learning_neural_run_metrics.parameter_count is below the minimum");
+    return std::nullopt;
+}
+
 inline const char* des_fel_elevator_learning_runs_table = "des_fel_elevator_learning_runs";
 inline const std::vector<std::string> des_fel_elevator_learning_runs_columns = { "id", "run_label", "scenario_slug", "status", "dispatch_policy", "seed", "floors", "shafts", "capacity", "travel_seconds_micros", "dwell_seconds_micros", "arrival_rate_micros", "horizon_seconds_micros", "events", "arrivals", "boarded", "served", "mean_wait_micros", "dispatch_decisions", "pomdp_belief_updates", "online_learning_updates", "online_learning_loss_last_micros", "config", "metrics", "artifact", "created_at", "updated_at" };
 inline const char* des_fel_elevator_learning_runs_select_sql = R"SQL(select

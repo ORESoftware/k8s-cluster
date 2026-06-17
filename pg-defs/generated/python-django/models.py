@@ -1032,6 +1032,157 @@ class DesSoccerLearningMergeEvents(models.Model):
         db_table = "des_soccer_learning_merge_events"
 
 
+class DesSoccerTournaments(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    experiment_id = models.UUIDField()
+    tournament_date = models.TextField()
+    seed = models.BigIntegerField()
+    learning_mode = models.TextField()
+    format = models.JSONField()
+    team_count = models.IntegerField()
+    match_count = models.IntegerField(default=0)
+    matches_played = models.IntegerField(default=0)
+    champion_team_id = models.IntegerField(null=True, blank=True)
+    runner_up_team_id = models.IntegerField(null=True, blank=True)
+    third_place_team_id = models.IntegerField(null=True, blank=True)
+    wall_time_seconds = models.CharField(null=True, blank=True)
+    status = models.TextField(choices=[("running", "running"), ("completed", "completed"), ("failed", "failed"), ("aborted", "aborted")], default="running")
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "des_soccer_tournaments"
+
+
+class DesSoccerTournamentMatches(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    match_index = models.IntegerField()
+    stage = models.TextField()
+    home_team_id = models.IntegerField()
+    away_team_id = models.IntegerField()
+    home_goals = models.IntegerField()
+    away_goals = models.IntegerField()
+    shootout_winner_team_id = models.IntegerField(null=True, blank=True)
+    home_training_steps = models.BigIntegerField()
+    away_training_steps = models.BigIntegerField()
+    recorded_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "des_soccer_tournament_matches"
+
+
+class DesSoccerTournamentTeamBrains(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    team_id = models.IntegerField()
+    team_name = models.TextField()
+    seed = models.BigIntegerField()
+    matches_learned = models.IntegerField()
+    training_steps = models.BigIntegerField()
+    played = models.IntegerField()
+    wins = models.IntegerField()
+    draws = models.IntegerField()
+    losses = models.IntegerField()
+    goals_for = models.IntegerField()
+    goals_against = models.IntegerField()
+    neural_snapshot = models.JSONField(null=True, blank=True)
+    genome = models.JSONField(null=True, blank=True)
+    updated_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "des_soccer_tournament_team_brains"
+
+
+class DesSoccerLearningSetPlayRuns(models.Model):
+    run_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    policy_version_id = models.UUIDField()
+    primary_restart = models.CharField(max_length=40, choices=[("direct-free-kick", "direct-free-kick"), ("indirect-free-kick", "indirect-free-kick")])
+    team = models.CharField(max_length=8, choices=[("home", "home"), ("away", "away")])
+    spot_x_micros = models.BigIntegerField()
+    spot_y_micros = models.BigIntegerField()
+    duration_seconds_micros = models.BigIntegerField(validators=[MinValueValidator(0)])
+    episode_count = models.IntegerField(validators=[MinValueValidator(0)])
+    goals = models.IntegerField(validators=[MinValueValidator(0)])
+    goal_rate_micros = models.BigIntegerField(validators=[MinValueValidator(0), MaxValueValidator(1000000)])
+    first_window_goal_rate_micros = models.BigIntegerField()
+    last_window_goal_rate_micros = models.BigIntegerField()
+    goal_rate_delta_micros = models.BigIntegerField()
+    created_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "des_soccer_learning_set_play_runs"
+
+
+class DesSoccerLearningSetPlayRestartMix(models.Model):
+    run_id = models.UUIDField()
+    ordinal = models.IntegerField(validators=[MinValueValidator(0)])
+    restart = models.CharField(max_length=40, choices=[("direct-free-kick", "direct-free-kick"), ("indirect-free-kick", "indirect-free-kick")])
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "des_soccer_learning_set_play_restart_mix"
+
+
+class DesSoccerLearningSetPlayEpisodeMetrics(models.Model):
+    run_id = models.UUIDField()
+    episode_index = models.IntegerField(validators=[MinValueValidator(0)])
+    seed = models.BigIntegerField(validators=[MinValueValidator(0)])
+    restart = models.CharField(max_length=40, choices=[("direct-free-kick", "direct-free-kick"), ("indirect-free-kick", "indirect-free-kick")])
+    routine = models.CharField(max_length=80, null=True, blank=True)
+    scored = models.BooleanField()
+    score_delta_for_team = models.IntegerField()
+    ticks = models.BigIntegerField(validators=[MinValueValidator(0)])
+    simulated_seconds_micros = models.BigIntegerField(validators=[MinValueValidator(0)])
+    policy_updates = models.BigIntegerField(validators=[MinValueValidator(0)])
+    home_policy_entries = models.IntegerField(validators=[MinValueValidator(0)])
+    home_policy_target_entries = models.IntegerField(validators=[MinValueValidator(0)])
+    away_policy_entries = models.IntegerField(validators=[MinValueValidator(0)])
+    away_policy_target_entries = models.IntegerField(validators=[MinValueValidator(0)])
+    neural_training_steps = models.IntegerField(validators=[MinValueValidator(0)])
+    neural_samples = models.BigIntegerField(validators=[MinValueValidator(0)])
+    neural_replay_samples = models.IntegerField(validators=[MinValueValidator(0)])
+    neural_last_loss_micros = models.BigIntegerField(null=True, blank=True)
+    cumulative_goals = models.IntegerField(validators=[MinValueValidator(0)])
+    goal_rate_so_far_micros = models.BigIntegerField(validators=[MinValueValidator(0), MaxValueValidator(1000000)])
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "des_soccer_learning_set_play_episode_metrics"
+
+
+class DesSoccerLearningNeuralRunMetrics(models.Model):
+    run_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    policy_version_id = models.UUIDField()
+    enabled = models.BooleanField()
+    backend = models.CharField(max_length=32, choices=[("inline", "inline"), ("threaded", "threaded")])
+    training_steps = models.IntegerField(validators=[MinValueValidator(0)])
+    samples = models.BigIntegerField(validators=[MinValueValidator(0)])
+    pending_batches = models.IntegerField(validators=[MinValueValidator(0)])
+    dropped_batches = models.IntegerField(validators=[MinValueValidator(0)])
+    replay_samples = models.IntegerField(validators=[MinValueValidator(0)])
+    replay_capacity = models.IntegerField(validators=[MinValueValidator(0)])
+    parameter_count = models.IntegerField(validators=[MinValueValidator(0)])
+    target_clip_micros = models.BigIntegerField()
+    last_loss_micros = models.BigIntegerField(null=True, blank=True)
+    average_loss_micros = models.BigIntegerField(null=True, blank=True)
+    created_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "des_soccer_learning_neural_run_metrics"
+
+
 class DesFelElevatorLearningRuns(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     run_label = models.CharField(max_length=200)

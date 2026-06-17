@@ -4685,6 +4685,620 @@ class DesSoccerLearningMergeEventsRow {
   }
 }
 
+const desSoccerTournamentsTable = "des_soccer_tournaments";
+const desSoccerTournamentsSelectSql = "select\n      id,\n      experiment_id::text as experiment_id,\n      tournament_date,\n      seed,\n      learning_mode,\n      format::text as format_json,\n      team_count,\n      match_count,\n      matches_played,\n      champion_team_id,\n      runner_up_team_id,\n      third_place_team_id,\n      wall_time_seconds,\n      status,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at\n    from des_soccer_tournaments";
+
+const desSoccerTournamentsStatusValues = <String>["running", "completed", "failed", "aborted"];
+
+class DesSoccerTournamentsRow {
+  const DesSoccerTournamentsRow({
+    required this.id,
+    required this.experimentId,
+    required this.tournamentDate,
+    required this.seed,
+    required this.learningMode,
+    required this.format,
+    required this.teamCount,
+    required this.matchCount,
+    required this.matchesPlayed,
+    this.championTeamId,
+    this.runnerUpTeamId,
+    this.thirdPlaceTeamId,
+    this.wallTimeSeconds,
+    required this.status,
+    required this.createdAt,
+    required this.updatedAt,
+    this.finishedAt,
+  });
+
+  final int id;
+  final String experimentId;
+  final String tournamentDate;
+  final int seed;
+  final String learningMode;
+  final Map<String, Object?> format;
+  final int teamCount;
+  final int matchCount;
+  final int matchesPlayed;
+  final int? championTeamId;
+  final int? runnerUpTeamId;
+  final int? thirdPlaceTeamId;
+  final String? wallTimeSeconds;
+  final String status;
+  final String createdAt;
+  final String updatedAt;
+  final String? finishedAt;
+
+  factory DesSoccerTournamentsRow.fromJson(Map<String, Object?> json) {
+    return DesSoccerTournamentsRow(
+      id: _readRequiredInt(json, "id"),
+      experimentId: _readRequiredString(json, "experimentId"),
+      tournamentDate: _readRequiredString(json, "tournamentDate"),
+      seed: _readRequiredInt(json, "seed"),
+      learningMode: _readRequiredString(json, "learningMode"),
+      format: _readRequiredObject(json, "format"),
+      teamCount: _readRequiredInt(json, "teamCount"),
+      matchCount: _readRequiredInt(json, "matchCount"),
+      matchesPlayed: _readRequiredInt(json, "matchesPlayed"),
+      championTeamId: _readOptionalInt(json, "championTeamId"),
+      runnerUpTeamId: _readOptionalInt(json, "runnerUpTeamId"),
+      thirdPlaceTeamId: _readOptionalInt(json, "thirdPlaceTeamId"),
+      wallTimeSeconds: _readOptionalString(json, "wallTimeSeconds"),
+      status: _readRequiredString(json, "status"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      finishedAt: _readOptionalString(json, "finishedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "experimentId": experimentId,
+    "tournamentDate": tournamentDate,
+    "seed": seed,
+    "learningMode": learningMode,
+    "format": format,
+    "teamCount": teamCount,
+    "matchCount": matchCount,
+    "matchesPlayed": matchesPlayed,
+    "championTeamId": championTeamId,
+    "runnerUpTeamId": runnerUpTeamId,
+    "thirdPlaceTeamId": thirdPlaceTeamId,
+    "wallTimeSeconds": wallTimeSeconds,
+    "status": status,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "finishedAt": finishedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!desSoccerTournamentsStatusValues.contains(status)) {
+      errors.add("unsupported des_soccer_tournaments.status");
+    }
+    return errors;
+  }
+}
+
+const desSoccerTournamentMatchesTable = "des_soccer_tournament_matches";
+const desSoccerTournamentMatchesSelectSql = "select\n      id,\n      match_index,\n      stage,\n      home_team_id,\n      away_team_id,\n      home_goals,\n      away_goals,\n      shootout_winner_team_id,\n      home_training_steps,\n      away_training_steps,\n      to_char(recorded_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as recorded_at\n    from des_soccer_tournament_matches";
+
+class DesSoccerTournamentMatchesRow {
+  const DesSoccerTournamentMatchesRow({
+    required this.id,
+    required this.matchIndex,
+    required this.stage,
+    required this.homeTeamId,
+    required this.awayTeamId,
+    required this.homeGoals,
+    required this.awayGoals,
+    this.shootoutWinnerTeamId,
+    required this.homeTrainingSteps,
+    required this.awayTrainingSteps,
+    required this.recordedAt,
+  });
+
+  final int id;
+  final int matchIndex;
+  final String stage;
+  final int homeTeamId;
+  final int awayTeamId;
+  final int homeGoals;
+  final int awayGoals;
+  final int? shootoutWinnerTeamId;
+  final int homeTrainingSteps;
+  final int awayTrainingSteps;
+  final String recordedAt;
+
+  factory DesSoccerTournamentMatchesRow.fromJson(Map<String, Object?> json) {
+    return DesSoccerTournamentMatchesRow(
+      id: _readRequiredInt(json, "id"),
+      matchIndex: _readRequiredInt(json, "matchIndex"),
+      stage: _readRequiredString(json, "stage"),
+      homeTeamId: _readRequiredInt(json, "homeTeamId"),
+      awayTeamId: _readRequiredInt(json, "awayTeamId"),
+      homeGoals: _readRequiredInt(json, "homeGoals"),
+      awayGoals: _readRequiredInt(json, "awayGoals"),
+      shootoutWinnerTeamId: _readOptionalInt(json, "shootoutWinnerTeamId"),
+      homeTrainingSteps: _readRequiredInt(json, "homeTrainingSteps"),
+      awayTrainingSteps: _readRequiredInt(json, "awayTrainingSteps"),
+      recordedAt: _readRequiredString(json, "recordedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "matchIndex": matchIndex,
+    "stage": stage,
+    "homeTeamId": homeTeamId,
+    "awayTeamId": awayTeamId,
+    "homeGoals": homeGoals,
+    "awayGoals": awayGoals,
+    "shootoutWinnerTeamId": shootoutWinnerTeamId,
+    "homeTrainingSteps": homeTrainingSteps,
+    "awayTrainingSteps": awayTrainingSteps,
+    "recordedAt": recordedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+}
+
+const desSoccerTournamentTeamBrainsTable = "des_soccer_tournament_team_brains";
+const desSoccerTournamentTeamBrainsSelectSql = "select\n      id,\n      team_id,\n      team_name,\n      seed,\n      matches_learned,\n      training_steps,\n      played,\n      wins,\n      draws,\n      losses,\n      goals_for,\n      goals_against,\n      neural_snapshot::text as neural_snapshot_json,\n      genome::text as genome_json,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_soccer_tournament_team_brains";
+
+class DesSoccerTournamentTeamBrainsRow {
+  const DesSoccerTournamentTeamBrainsRow({
+    required this.id,
+    required this.teamId,
+    required this.teamName,
+    required this.seed,
+    required this.matchesLearned,
+    required this.trainingSteps,
+    required this.played,
+    required this.wins,
+    required this.draws,
+    required this.losses,
+    required this.goalsFor,
+    required this.goalsAgainst,
+    this.neuralSnapshot,
+    this.genome,
+    required this.updatedAt,
+  });
+
+  final int id;
+  final int teamId;
+  final String teamName;
+  final int seed;
+  final int matchesLearned;
+  final int trainingSteps;
+  final int played;
+  final int wins;
+  final int draws;
+  final int losses;
+  final int goalsFor;
+  final int goalsAgainst;
+  final Map<String, Object?>? neuralSnapshot;
+  final Map<String, Object?>? genome;
+  final String updatedAt;
+
+  factory DesSoccerTournamentTeamBrainsRow.fromJson(Map<String, Object?> json) {
+    return DesSoccerTournamentTeamBrainsRow(
+      id: _readRequiredInt(json, "id"),
+      teamId: _readRequiredInt(json, "teamId"),
+      teamName: _readRequiredString(json, "teamName"),
+      seed: _readRequiredInt(json, "seed"),
+      matchesLearned: _readRequiredInt(json, "matchesLearned"),
+      trainingSteps: _readRequiredInt(json, "trainingSteps"),
+      played: _readRequiredInt(json, "played"),
+      wins: _readRequiredInt(json, "wins"),
+      draws: _readRequiredInt(json, "draws"),
+      losses: _readRequiredInt(json, "losses"),
+      goalsFor: _readRequiredInt(json, "goalsFor"),
+      goalsAgainst: _readRequiredInt(json, "goalsAgainst"),
+      neuralSnapshot: _readRequiredObject(json, "neuralSnapshot"),
+      genome: _readRequiredObject(json, "genome"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "teamId": teamId,
+    "teamName": teamName,
+    "seed": seed,
+    "matchesLearned": matchesLearned,
+    "trainingSteps": trainingSteps,
+    "played": played,
+    "wins": wins,
+    "draws": draws,
+    "losses": losses,
+    "goalsFor": goalsFor,
+    "goalsAgainst": goalsAgainst,
+    "neuralSnapshot": neuralSnapshot,
+    "genome": genome,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+}
+
+const desSoccerLearningSetPlayRunsTable = "des_soccer_learning_set_play_runs";
+const desSoccerLearningSetPlayRunsSelectSql = "select\n      run_id::text as run_id,\n      policy_version_id::text as policy_version_id,\n      primary_restart,\n      team,\n      spot_x_micros,\n      spot_y_micros,\n      duration_seconds_micros,\n      episode_count,\n      goals,\n      goal_rate_micros,\n      first_window_goal_rate_micros,\n      last_window_goal_rate_micros,\n      goal_rate_delta_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_set_play_runs";
+
+const desSoccerLearningSetPlayRunsPrimaryRestartValues = <String>["direct-free-kick", "indirect-free-kick"];
+const desSoccerLearningSetPlayRunsTeamValues = <String>["home", "away"];
+
+class DesSoccerLearningSetPlayRunsRow {
+  const DesSoccerLearningSetPlayRunsRow({
+    required this.runId,
+    required this.policyVersionId,
+    required this.primaryRestart,
+    required this.team,
+    required this.spotXMicros,
+    required this.spotYMicros,
+    required this.durationSecondsMicros,
+    required this.episodeCount,
+    required this.goals,
+    required this.goalRateMicros,
+    required this.firstWindowGoalRateMicros,
+    required this.lastWindowGoalRateMicros,
+    required this.goalRateDeltaMicros,
+    required this.createdAt,
+  });
+
+  final String runId;
+  final String policyVersionId;
+  final String primaryRestart;
+  final String team;
+  final int spotXMicros;
+  final int spotYMicros;
+  final int durationSecondsMicros;
+  final int episodeCount;
+  final int goals;
+  final int goalRateMicros;
+  final int firstWindowGoalRateMicros;
+  final int lastWindowGoalRateMicros;
+  final int goalRateDeltaMicros;
+  final String createdAt;
+
+  factory DesSoccerLearningSetPlayRunsRow.fromJson(Map<String, Object?> json) {
+    return DesSoccerLearningSetPlayRunsRow(
+      runId: _readRequiredString(json, "runId"),
+      policyVersionId: _readRequiredString(json, "policyVersionId"),
+      primaryRestart: _readRequiredString(json, "primaryRestart"),
+      team: _readRequiredString(json, "team"),
+      spotXMicros: _readRequiredInt(json, "spotXMicros"),
+      spotYMicros: _readRequiredInt(json, "spotYMicros"),
+      durationSecondsMicros: _readRequiredInt(json, "durationSecondsMicros"),
+      episodeCount: _readRequiredInt(json, "episodeCount"),
+      goals: _readRequiredInt(json, "goals"),
+      goalRateMicros: _readRequiredInt(json, "goalRateMicros"),
+      firstWindowGoalRateMicros: _readRequiredInt(json, "firstWindowGoalRateMicros"),
+      lastWindowGoalRateMicros: _readRequiredInt(json, "lastWindowGoalRateMicros"),
+      goalRateDeltaMicros: _readRequiredInt(json, "goalRateDeltaMicros"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "runId": runId,
+    "policyVersionId": policyVersionId,
+    "primaryRestart": primaryRestart,
+    "team": team,
+    "spotXMicros": spotXMicros,
+    "spotYMicros": spotYMicros,
+    "durationSecondsMicros": durationSecondsMicros,
+    "episodeCount": episodeCount,
+    "goals": goals,
+    "goalRateMicros": goalRateMicros,
+    "firstWindowGoalRateMicros": firstWindowGoalRateMicros,
+    "lastWindowGoalRateMicros": lastWindowGoalRateMicros,
+    "goalRateDeltaMicros": goalRateDeltaMicros,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!desSoccerLearningSetPlayRunsPrimaryRestartValues.contains(primaryRestart)) {
+      errors.add("unsupported des_soccer_learning_set_play_runs.primary_restart");
+    }
+    if (!desSoccerLearningSetPlayRunsTeamValues.contains(team)) {
+      errors.add("unsupported des_soccer_learning_set_play_runs.team");
+    }
+    if (episodeCount < 0) {
+      errors.add("des_soccer_learning_set_play_runs.episode_count is below the minimum");
+    }
+    if (goals < 0) {
+      errors.add("des_soccer_learning_set_play_runs.goals is below the minimum");
+    }
+    return errors;
+  }
+}
+
+const desSoccerLearningSetPlayRestartMixTable = "des_soccer_learning_set_play_restart_mix";
+const desSoccerLearningSetPlayRestartMixSelectSql = "select\n      run_id::text as run_id,\n      ordinal,\n      restart\n    from des_soccer_learning_set_play_restart_mix";
+
+const desSoccerLearningSetPlayRestartMixRestartValues = <String>["direct-free-kick", "indirect-free-kick"];
+
+class DesSoccerLearningSetPlayRestartMixRow {
+  const DesSoccerLearningSetPlayRestartMixRow({
+    required this.runId,
+    required this.ordinal,
+    required this.restart,
+  });
+
+  final String runId;
+  final int ordinal;
+  final String restart;
+
+  factory DesSoccerLearningSetPlayRestartMixRow.fromJson(Map<String, Object?> json) {
+    return DesSoccerLearningSetPlayRestartMixRow(
+      runId: _readRequiredString(json, "runId"),
+      ordinal: _readRequiredInt(json, "ordinal"),
+      restart: _readRequiredString(json, "restart"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "runId": runId,
+    "ordinal": ordinal,
+    "restart": restart,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (ordinal < 0) {
+      errors.add("des_soccer_learning_set_play_restart_mix.ordinal is below the minimum");
+    }
+    if (!desSoccerLearningSetPlayRestartMixRestartValues.contains(restart)) {
+      errors.add("unsupported des_soccer_learning_set_play_restart_mix.restart");
+    }
+    return errors;
+  }
+}
+
+const desSoccerLearningSetPlayEpisodeMetricsTable = "des_soccer_learning_set_play_episode_metrics";
+const desSoccerLearningSetPlayEpisodeMetricsSelectSql = "select\n      run_id::text as run_id,\n      episode_index,\n      seed,\n      restart,\n      routine,\n      scored,\n      score_delta_for_team,\n      ticks,\n      simulated_seconds_micros,\n      policy_updates,\n      home_policy_entries,\n      home_policy_target_entries,\n      away_policy_entries,\n      away_policy_target_entries,\n      neural_training_steps,\n      neural_samples,\n      neural_replay_samples,\n      neural_last_loss_micros,\n      cumulative_goals,\n      goal_rate_so_far_micros\n    from des_soccer_learning_set_play_episode_metrics";
+
+const desSoccerLearningSetPlayEpisodeMetricsRestartValues = <String>["direct-free-kick", "indirect-free-kick"];
+
+class DesSoccerLearningSetPlayEpisodeMetricsRow {
+  const DesSoccerLearningSetPlayEpisodeMetricsRow({
+    required this.runId,
+    required this.episodeIndex,
+    required this.seed,
+    required this.restart,
+    this.routine,
+    required this.scored,
+    required this.scoreDeltaForTeam,
+    required this.ticks,
+    required this.simulatedSecondsMicros,
+    required this.policyUpdates,
+    required this.homePolicyEntries,
+    required this.homePolicyTargetEntries,
+    required this.awayPolicyEntries,
+    required this.awayPolicyTargetEntries,
+    required this.neuralTrainingSteps,
+    required this.neuralSamples,
+    required this.neuralReplaySamples,
+    this.neuralLastLossMicros,
+    required this.cumulativeGoals,
+    required this.goalRateSoFarMicros,
+  });
+
+  final String runId;
+  final int episodeIndex;
+  final int seed;
+  final String restart;
+  final String? routine;
+  final bool scored;
+  final int scoreDeltaForTeam;
+  final int ticks;
+  final int simulatedSecondsMicros;
+  final int policyUpdates;
+  final int homePolicyEntries;
+  final int homePolicyTargetEntries;
+  final int awayPolicyEntries;
+  final int awayPolicyTargetEntries;
+  final int neuralTrainingSteps;
+  final int neuralSamples;
+  final int neuralReplaySamples;
+  final int? neuralLastLossMicros;
+  final int cumulativeGoals;
+  final int goalRateSoFarMicros;
+
+  factory DesSoccerLearningSetPlayEpisodeMetricsRow.fromJson(Map<String, Object?> json) {
+    return DesSoccerLearningSetPlayEpisodeMetricsRow(
+      runId: _readRequiredString(json, "runId"),
+      episodeIndex: _readRequiredInt(json, "episodeIndex"),
+      seed: _readRequiredInt(json, "seed"),
+      restart: _readRequiredString(json, "restart"),
+      routine: _readOptionalString(json, "routine"),
+      scored: _readRequiredBool(json, "scored"),
+      scoreDeltaForTeam: _readRequiredInt(json, "scoreDeltaForTeam"),
+      ticks: _readRequiredInt(json, "ticks"),
+      simulatedSecondsMicros: _readRequiredInt(json, "simulatedSecondsMicros"),
+      policyUpdates: _readRequiredInt(json, "policyUpdates"),
+      homePolicyEntries: _readRequiredInt(json, "homePolicyEntries"),
+      homePolicyTargetEntries: _readRequiredInt(json, "homePolicyTargetEntries"),
+      awayPolicyEntries: _readRequiredInt(json, "awayPolicyEntries"),
+      awayPolicyTargetEntries: _readRequiredInt(json, "awayPolicyTargetEntries"),
+      neuralTrainingSteps: _readRequiredInt(json, "neuralTrainingSteps"),
+      neuralSamples: _readRequiredInt(json, "neuralSamples"),
+      neuralReplaySamples: _readRequiredInt(json, "neuralReplaySamples"),
+      neuralLastLossMicros: _readOptionalInt(json, "neuralLastLossMicros"),
+      cumulativeGoals: _readRequiredInt(json, "cumulativeGoals"),
+      goalRateSoFarMicros: _readRequiredInt(json, "goalRateSoFarMicros"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "runId": runId,
+    "episodeIndex": episodeIndex,
+    "seed": seed,
+    "restart": restart,
+    "routine": routine,
+    "scored": scored,
+    "scoreDeltaForTeam": scoreDeltaForTeam,
+    "ticks": ticks,
+    "simulatedSecondsMicros": simulatedSecondsMicros,
+    "policyUpdates": policyUpdates,
+    "homePolicyEntries": homePolicyEntries,
+    "homePolicyTargetEntries": homePolicyTargetEntries,
+    "awayPolicyEntries": awayPolicyEntries,
+    "awayPolicyTargetEntries": awayPolicyTargetEntries,
+    "neuralTrainingSteps": neuralTrainingSteps,
+    "neuralSamples": neuralSamples,
+    "neuralReplaySamples": neuralReplaySamples,
+    "neuralLastLossMicros": neuralLastLossMicros,
+    "cumulativeGoals": cumulativeGoals,
+    "goalRateSoFarMicros": goalRateSoFarMicros,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (episodeIndex < 0) {
+      errors.add("des_soccer_learning_set_play_episode_metrics.episode_index is below the minimum");
+    }
+    if (!desSoccerLearningSetPlayEpisodeMetricsRestartValues.contains(restart)) {
+      errors.add("unsupported des_soccer_learning_set_play_episode_metrics.restart");
+    }
+    if (homePolicyEntries < 0) {
+      errors.add("des_soccer_learning_set_play_episode_metrics.home_policy_entries is below the minimum");
+    }
+    if (homePolicyTargetEntries < 0) {
+      errors.add("des_soccer_learning_set_play_episode_metrics.home_policy_target_entries is below the minimum");
+    }
+    if (awayPolicyEntries < 0) {
+      errors.add("des_soccer_learning_set_play_episode_metrics.away_policy_entries is below the minimum");
+    }
+    if (awayPolicyTargetEntries < 0) {
+      errors.add("des_soccer_learning_set_play_episode_metrics.away_policy_target_entries is below the minimum");
+    }
+    if (neuralTrainingSteps < 0) {
+      errors.add("des_soccer_learning_set_play_episode_metrics.neural_training_steps is below the minimum");
+    }
+    if (neuralReplaySamples < 0) {
+      errors.add("des_soccer_learning_set_play_episode_metrics.neural_replay_samples is below the minimum");
+    }
+    if (cumulativeGoals < 0) {
+      errors.add("des_soccer_learning_set_play_episode_metrics.cumulative_goals is below the minimum");
+    }
+    return errors;
+  }
+}
+
+const desSoccerLearningNeuralRunMetricsTable = "des_soccer_learning_neural_run_metrics";
+const desSoccerLearningNeuralRunMetricsSelectSql = "select\n      run_id::text as run_id,\n      policy_version_id::text as policy_version_id,\n      enabled,\n      backend,\n      training_steps,\n      samples,\n      pending_batches,\n      dropped_batches,\n      replay_samples,\n      replay_capacity,\n      parameter_count,\n      target_clip_micros,\n      last_loss_micros,\n      average_loss_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_neural_run_metrics";
+
+const desSoccerLearningNeuralRunMetricsBackendValues = <String>["inline", "threaded"];
+
+class DesSoccerLearningNeuralRunMetricsRow {
+  const DesSoccerLearningNeuralRunMetricsRow({
+    required this.runId,
+    required this.policyVersionId,
+    required this.enabled,
+    required this.backend,
+    required this.trainingSteps,
+    required this.samples,
+    required this.pendingBatches,
+    required this.droppedBatches,
+    required this.replaySamples,
+    required this.replayCapacity,
+    required this.parameterCount,
+    required this.targetClipMicros,
+    this.lastLossMicros,
+    this.averageLossMicros,
+    required this.createdAt,
+  });
+
+  final String runId;
+  final String policyVersionId;
+  final bool enabled;
+  final String backend;
+  final int trainingSteps;
+  final int samples;
+  final int pendingBatches;
+  final int droppedBatches;
+  final int replaySamples;
+  final int replayCapacity;
+  final int parameterCount;
+  final int targetClipMicros;
+  final int? lastLossMicros;
+  final int? averageLossMicros;
+  final String createdAt;
+
+  factory DesSoccerLearningNeuralRunMetricsRow.fromJson(Map<String, Object?> json) {
+    return DesSoccerLearningNeuralRunMetricsRow(
+      runId: _readRequiredString(json, "runId"),
+      policyVersionId: _readRequiredString(json, "policyVersionId"),
+      enabled: _readRequiredBool(json, "enabled"),
+      backend: _readRequiredString(json, "backend"),
+      trainingSteps: _readRequiredInt(json, "trainingSteps"),
+      samples: _readRequiredInt(json, "samples"),
+      pendingBatches: _readRequiredInt(json, "pendingBatches"),
+      droppedBatches: _readRequiredInt(json, "droppedBatches"),
+      replaySamples: _readRequiredInt(json, "replaySamples"),
+      replayCapacity: _readRequiredInt(json, "replayCapacity"),
+      parameterCount: _readRequiredInt(json, "parameterCount"),
+      targetClipMicros: _readRequiredInt(json, "targetClipMicros"),
+      lastLossMicros: _readOptionalInt(json, "lastLossMicros"),
+      averageLossMicros: _readOptionalInt(json, "averageLossMicros"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "runId": runId,
+    "policyVersionId": policyVersionId,
+    "enabled": enabled,
+    "backend": backend,
+    "trainingSteps": trainingSteps,
+    "samples": samples,
+    "pendingBatches": pendingBatches,
+    "droppedBatches": droppedBatches,
+    "replaySamples": replaySamples,
+    "replayCapacity": replayCapacity,
+    "parameterCount": parameterCount,
+    "targetClipMicros": targetClipMicros,
+    "lastLossMicros": lastLossMicros,
+    "averageLossMicros": averageLossMicros,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!desSoccerLearningNeuralRunMetricsBackendValues.contains(backend)) {
+      errors.add("unsupported des_soccer_learning_neural_run_metrics.backend");
+    }
+    if (trainingSteps < 0) {
+      errors.add("des_soccer_learning_neural_run_metrics.training_steps is below the minimum");
+    }
+    if (pendingBatches < 0) {
+      errors.add("des_soccer_learning_neural_run_metrics.pending_batches is below the minimum");
+    }
+    if (droppedBatches < 0) {
+      errors.add("des_soccer_learning_neural_run_metrics.dropped_batches is below the minimum");
+    }
+    if (replaySamples < 0) {
+      errors.add("des_soccer_learning_neural_run_metrics.replay_samples is below the minimum");
+    }
+    if (replayCapacity < 0) {
+      errors.add("des_soccer_learning_neural_run_metrics.replay_capacity is below the minimum");
+    }
+    if (parameterCount < 0) {
+      errors.add("des_soccer_learning_neural_run_metrics.parameter_count is below the minimum");
+    }
+    return errors;
+  }
+}
+
 const desFelElevatorLearningRunsTable = "des_fel_elevator_learning_runs";
 const desFelElevatorLearningRunsSelectSql = "select\n      id::text as id,\n      run_label,\n      scenario_slug,\n      status,\n      dispatch_policy,\n      seed,\n      floors,\n      shafts,\n      capacity,\n      travel_seconds_micros,\n      dwell_seconds_micros,\n      arrival_rate_micros,\n      horizon_seconds_micros,\n      events,\n      arrivals,\n      boarded,\n      served,\n      mean_wait_micros,\n      dispatch_decisions,\n      pomdp_belief_updates,\n      online_learning_updates,\n      online_learning_loss_last_micros,\n      config::text as config_json,\n      metrics::text as metrics_json,\n      artifact::text as artifact_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_fel_elevator_learning_runs";
 

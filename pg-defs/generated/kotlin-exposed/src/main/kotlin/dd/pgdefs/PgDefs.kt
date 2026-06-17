@@ -898,6 +898,132 @@ object DesSoccerLearningMergeEvents : Table("des_soccer_learning_merge_events") 
     override val primaryKey = PrimaryKey(id)
 }
 
+object DesSoccerTournaments : Table("des_soccer_tournaments") {
+    val id = long("id")
+    val experimentId = uuid("experiment_id")
+    val tournamentDate = text("tournament_date")
+    val seed = long("seed")
+    val learningMode = text("learning_mode")
+    val format = jsonb<String>("format", { it }, { it })
+    val teamCount = integer("team_count")
+    val matchCount = integer("match_count")
+    val matchesPlayed = integer("matches_played")
+    val championTeamId = integer("champion_team_id").nullable()
+    val runnerUpTeamId = integer("runner_up_team_id").nullable()
+    val thirdPlaceTeamId = integer("third_place_team_id").nullable()
+    val wallTimeSeconds = text("wall_time_seconds").nullable()
+    val status = text("status")
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+    val finishedAt = timestampWithTimeZone("finished_at").nullable()
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object DesSoccerTournamentMatches : Table("des_soccer_tournament_matches") {
+    val id = long("id")
+    val matchIndex = integer("match_index")
+    val stage = text("stage")
+    val homeTeamId = integer("home_team_id")
+    val awayTeamId = integer("away_team_id")
+    val homeGoals = integer("home_goals")
+    val awayGoals = integer("away_goals")
+    val shootoutWinnerTeamId = integer("shootout_winner_team_id").nullable()
+    val homeTrainingSteps = long("home_training_steps")
+    val awayTrainingSteps = long("away_training_steps")
+    val recordedAt = timestampWithTimeZone("recorded_at")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object DesSoccerTournamentTeamBrains : Table("des_soccer_tournament_team_brains") {
+    val id = long("id")
+    val teamId = integer("team_id")
+    val teamName = text("team_name")
+    val seed = long("seed")
+    val matchesLearned = integer("matches_learned")
+    val trainingSteps = long("training_steps")
+    val played = integer("played")
+    val wins = integer("wins")
+    val draws = integer("draws")
+    val losses = integer("losses")
+    val goalsFor = integer("goals_for")
+    val goalsAgainst = integer("goals_against")
+    val neuralSnapshot = jsonb<String>("neural_snapshot", { it }, { it }).nullable()
+    val genome = jsonb<String>("genome", { it }, { it }).nullable()
+    val updatedAt = timestampWithTimeZone("updated_at")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object DesSoccerLearningSetPlayRuns : Table("des_soccer_learning_set_play_runs") {
+    val runId = uuid("run_id")
+    val policyVersionId = uuid("policy_version_id")
+    val primaryRestart = varchar("primary_restart", 40)
+    val team = varchar("team", 8)
+    val spotXMicros = long("spot_x_micros")
+    val spotYMicros = long("spot_y_micros")
+    val durationSecondsMicros = long("duration_seconds_micros")
+    val episodeCount = integer("episode_count")
+    val goals = integer("goals")
+    val goalRateMicros = long("goal_rate_micros")
+    val firstWindowGoalRateMicros = long("first_window_goal_rate_micros")
+    val lastWindowGoalRateMicros = long("last_window_goal_rate_micros")
+    val goalRateDeltaMicros = long("goal_rate_delta_micros")
+    val createdAt = timestampWithTimeZone("created_at")
+
+    override val primaryKey = PrimaryKey(runId)
+}
+
+object DesSoccerLearningSetPlayRestartMix : Table("des_soccer_learning_set_play_restart_mix") {
+    val runId = uuid("run_id")
+    val ordinal = integer("ordinal")
+    val restart = varchar("restart", 40)
+}
+
+object DesSoccerLearningSetPlayEpisodeMetrics : Table("des_soccer_learning_set_play_episode_metrics") {
+    val runId = uuid("run_id")
+    val episodeIndex = integer("episode_index")
+    val seed = long("seed")
+    val restart = varchar("restart", 40)
+    val routine = varchar("routine", 80).nullable()
+    val scored = bool("scored")
+    val scoreDeltaForTeam = integer("score_delta_for_team")
+    val ticks = long("ticks")
+    val simulatedSecondsMicros = long("simulated_seconds_micros")
+    val policyUpdates = long("policy_updates")
+    val homePolicyEntries = integer("home_policy_entries")
+    val homePolicyTargetEntries = integer("home_policy_target_entries")
+    val awayPolicyEntries = integer("away_policy_entries")
+    val awayPolicyTargetEntries = integer("away_policy_target_entries")
+    val neuralTrainingSteps = integer("neural_training_steps")
+    val neuralSamples = long("neural_samples")
+    val neuralReplaySamples = integer("neural_replay_samples")
+    val neuralLastLossMicros = long("neural_last_loss_micros").nullable()
+    val cumulativeGoals = integer("cumulative_goals")
+    val goalRateSoFarMicros = long("goal_rate_so_far_micros")
+}
+
+object DesSoccerLearningNeuralRunMetrics : Table("des_soccer_learning_neural_run_metrics") {
+    val runId = uuid("run_id")
+    val policyVersionId = uuid("policy_version_id")
+    val enabled = bool("enabled")
+    val backend = varchar("backend", 32)
+    val trainingSteps = integer("training_steps")
+    val samples = long("samples")
+    val pendingBatches = integer("pending_batches")
+    val droppedBatches = integer("dropped_batches")
+    val replaySamples = integer("replay_samples")
+    val replayCapacity = integer("replay_capacity")
+    val parameterCount = integer("parameter_count")
+    val targetClipMicros = long("target_clip_micros")
+    val lastLossMicros = long("last_loss_micros").nullable()
+    val averageLossMicros = long("average_loss_micros").nullable()
+    val createdAt = timestampWithTimeZone("created_at")
+
+    override val primaryKey = PrimaryKey(runId)
+}
+
 object DesFelElevatorLearningRuns : Table("des_fel_elevator_learning_runs") {
     val id = uuid("id")
     val runLabel = varchar("run_label", 200)
@@ -3764,6 +3890,238 @@ fun toDesSoccerLearningMergeEventsRow(row: ResultRow): DesSoccerLearningMergeEve
     row[DesSoccerLearningMergeEvents.decayMicros],
     row[DesSoccerLearningMergeEvents.metrics],
     row[DesSoccerLearningMergeEvents.createdAt],
+)
+
+data class DesSoccerTournamentsRow(
+    val id: Long,
+    val experimentId: UUID,
+    val tournamentDate: String,
+    val seed: Long,
+    val learningMode: String,
+    val format: String,
+    val teamCount: Int,
+    val matchCount: Int,
+    val matchesPlayed: Int,
+    val championTeamId: Int?,
+    val runnerUpTeamId: Int?,
+    val thirdPlaceTeamId: Int?,
+    val wallTimeSeconds: String?,
+    val status: String,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+    val finishedAt: OffsetDateTime?,
+)
+
+fun toDesSoccerTournamentsRow(row: ResultRow): DesSoccerTournamentsRow = DesSoccerTournamentsRow(
+    row[DesSoccerTournaments.id],
+    row[DesSoccerTournaments.experimentId],
+    row[DesSoccerTournaments.tournamentDate],
+    row[DesSoccerTournaments.seed],
+    row[DesSoccerTournaments.learningMode],
+    row[DesSoccerTournaments.format],
+    row[DesSoccerTournaments.teamCount],
+    row[DesSoccerTournaments.matchCount],
+    row[DesSoccerTournaments.matchesPlayed],
+    row[DesSoccerTournaments.championTeamId],
+    row[DesSoccerTournaments.runnerUpTeamId],
+    row[DesSoccerTournaments.thirdPlaceTeamId],
+    row[DesSoccerTournaments.wallTimeSeconds],
+    row[DesSoccerTournaments.status],
+    row[DesSoccerTournaments.createdAt],
+    row[DesSoccerTournaments.updatedAt],
+    row[DesSoccerTournaments.finishedAt],
+)
+
+data class DesSoccerTournamentMatchesRow(
+    val id: Long,
+    val matchIndex: Int,
+    val stage: String,
+    val homeTeamId: Int,
+    val awayTeamId: Int,
+    val homeGoals: Int,
+    val awayGoals: Int,
+    val shootoutWinnerTeamId: Int?,
+    val homeTrainingSteps: Long,
+    val awayTrainingSteps: Long,
+    val recordedAt: OffsetDateTime,
+)
+
+fun toDesSoccerTournamentMatchesRow(row: ResultRow): DesSoccerTournamentMatchesRow = DesSoccerTournamentMatchesRow(
+    row[DesSoccerTournamentMatches.id],
+    row[DesSoccerTournamentMatches.matchIndex],
+    row[DesSoccerTournamentMatches.stage],
+    row[DesSoccerTournamentMatches.homeTeamId],
+    row[DesSoccerTournamentMatches.awayTeamId],
+    row[DesSoccerTournamentMatches.homeGoals],
+    row[DesSoccerTournamentMatches.awayGoals],
+    row[DesSoccerTournamentMatches.shootoutWinnerTeamId],
+    row[DesSoccerTournamentMatches.homeTrainingSteps],
+    row[DesSoccerTournamentMatches.awayTrainingSteps],
+    row[DesSoccerTournamentMatches.recordedAt],
+)
+
+data class DesSoccerTournamentTeamBrainsRow(
+    val id: Long,
+    val teamId: Int,
+    val teamName: String,
+    val seed: Long,
+    val matchesLearned: Int,
+    val trainingSteps: Long,
+    val played: Int,
+    val wins: Int,
+    val draws: Int,
+    val losses: Int,
+    val goalsFor: Int,
+    val goalsAgainst: Int,
+    val neuralSnapshot: String?,
+    val genome: String?,
+    val updatedAt: OffsetDateTime,
+)
+
+fun toDesSoccerTournamentTeamBrainsRow(row: ResultRow): DesSoccerTournamentTeamBrainsRow = DesSoccerTournamentTeamBrainsRow(
+    row[DesSoccerTournamentTeamBrains.id],
+    row[DesSoccerTournamentTeamBrains.teamId],
+    row[DesSoccerTournamentTeamBrains.teamName],
+    row[DesSoccerTournamentTeamBrains.seed],
+    row[DesSoccerTournamentTeamBrains.matchesLearned],
+    row[DesSoccerTournamentTeamBrains.trainingSteps],
+    row[DesSoccerTournamentTeamBrains.played],
+    row[DesSoccerTournamentTeamBrains.wins],
+    row[DesSoccerTournamentTeamBrains.draws],
+    row[DesSoccerTournamentTeamBrains.losses],
+    row[DesSoccerTournamentTeamBrains.goalsFor],
+    row[DesSoccerTournamentTeamBrains.goalsAgainst],
+    row[DesSoccerTournamentTeamBrains.neuralSnapshot],
+    row[DesSoccerTournamentTeamBrains.genome],
+    row[DesSoccerTournamentTeamBrains.updatedAt],
+)
+
+data class DesSoccerLearningSetPlayRunsRow(
+    val runId: UUID,
+    val policyVersionId: UUID,
+    val primaryRestart: String,
+    val team: String,
+    val spotXMicros: Long,
+    val spotYMicros: Long,
+    val durationSecondsMicros: Long,
+    val episodeCount: Int,
+    val goals: Int,
+    val goalRateMicros: Long,
+    val firstWindowGoalRateMicros: Long,
+    val lastWindowGoalRateMicros: Long,
+    val goalRateDeltaMicros: Long,
+    val createdAt: OffsetDateTime,
+)
+
+fun toDesSoccerLearningSetPlayRunsRow(row: ResultRow): DesSoccerLearningSetPlayRunsRow = DesSoccerLearningSetPlayRunsRow(
+    row[DesSoccerLearningSetPlayRuns.runId],
+    row[DesSoccerLearningSetPlayRuns.policyVersionId],
+    row[DesSoccerLearningSetPlayRuns.primaryRestart],
+    row[DesSoccerLearningSetPlayRuns.team],
+    row[DesSoccerLearningSetPlayRuns.spotXMicros],
+    row[DesSoccerLearningSetPlayRuns.spotYMicros],
+    row[DesSoccerLearningSetPlayRuns.durationSecondsMicros],
+    row[DesSoccerLearningSetPlayRuns.episodeCount],
+    row[DesSoccerLearningSetPlayRuns.goals],
+    row[DesSoccerLearningSetPlayRuns.goalRateMicros],
+    row[DesSoccerLearningSetPlayRuns.firstWindowGoalRateMicros],
+    row[DesSoccerLearningSetPlayRuns.lastWindowGoalRateMicros],
+    row[DesSoccerLearningSetPlayRuns.goalRateDeltaMicros],
+    row[DesSoccerLearningSetPlayRuns.createdAt],
+)
+
+data class DesSoccerLearningSetPlayRestartMixRow(
+    val runId: UUID,
+    val ordinal: Int,
+    val restart: String,
+)
+
+fun toDesSoccerLearningSetPlayRestartMixRow(row: ResultRow): DesSoccerLearningSetPlayRestartMixRow = DesSoccerLearningSetPlayRestartMixRow(
+    row[DesSoccerLearningSetPlayRestartMix.runId],
+    row[DesSoccerLearningSetPlayRestartMix.ordinal],
+    row[DesSoccerLearningSetPlayRestartMix.restart],
+)
+
+data class DesSoccerLearningSetPlayEpisodeMetricsRow(
+    val runId: UUID,
+    val episodeIndex: Int,
+    val seed: Long,
+    val restart: String,
+    val routine: String?,
+    val scored: Boolean,
+    val scoreDeltaForTeam: Int,
+    val ticks: Long,
+    val simulatedSecondsMicros: Long,
+    val policyUpdates: Long,
+    val homePolicyEntries: Int,
+    val homePolicyTargetEntries: Int,
+    val awayPolicyEntries: Int,
+    val awayPolicyTargetEntries: Int,
+    val neuralTrainingSteps: Int,
+    val neuralSamples: Long,
+    val neuralReplaySamples: Int,
+    val neuralLastLossMicros: Long?,
+    val cumulativeGoals: Int,
+    val goalRateSoFarMicros: Long,
+)
+
+fun toDesSoccerLearningSetPlayEpisodeMetricsRow(row: ResultRow): DesSoccerLearningSetPlayEpisodeMetricsRow = DesSoccerLearningSetPlayEpisodeMetricsRow(
+    row[DesSoccerLearningSetPlayEpisodeMetrics.runId],
+    row[DesSoccerLearningSetPlayEpisodeMetrics.episodeIndex],
+    row[DesSoccerLearningSetPlayEpisodeMetrics.seed],
+    row[DesSoccerLearningSetPlayEpisodeMetrics.restart],
+    row[DesSoccerLearningSetPlayEpisodeMetrics.routine],
+    row[DesSoccerLearningSetPlayEpisodeMetrics.scored],
+    row[DesSoccerLearningSetPlayEpisodeMetrics.scoreDeltaForTeam],
+    row[DesSoccerLearningSetPlayEpisodeMetrics.ticks],
+    row[DesSoccerLearningSetPlayEpisodeMetrics.simulatedSecondsMicros],
+    row[DesSoccerLearningSetPlayEpisodeMetrics.policyUpdates],
+    row[DesSoccerLearningSetPlayEpisodeMetrics.homePolicyEntries],
+    row[DesSoccerLearningSetPlayEpisodeMetrics.homePolicyTargetEntries],
+    row[DesSoccerLearningSetPlayEpisodeMetrics.awayPolicyEntries],
+    row[DesSoccerLearningSetPlayEpisodeMetrics.awayPolicyTargetEntries],
+    row[DesSoccerLearningSetPlayEpisodeMetrics.neuralTrainingSteps],
+    row[DesSoccerLearningSetPlayEpisodeMetrics.neuralSamples],
+    row[DesSoccerLearningSetPlayEpisodeMetrics.neuralReplaySamples],
+    row[DesSoccerLearningSetPlayEpisodeMetrics.neuralLastLossMicros],
+    row[DesSoccerLearningSetPlayEpisodeMetrics.cumulativeGoals],
+    row[DesSoccerLearningSetPlayEpisodeMetrics.goalRateSoFarMicros],
+)
+
+data class DesSoccerLearningNeuralRunMetricsRow(
+    val runId: UUID,
+    val policyVersionId: UUID,
+    val enabled: Boolean,
+    val backend: String,
+    val trainingSteps: Int,
+    val samples: Long,
+    val pendingBatches: Int,
+    val droppedBatches: Int,
+    val replaySamples: Int,
+    val replayCapacity: Int,
+    val parameterCount: Int,
+    val targetClipMicros: Long,
+    val lastLossMicros: Long?,
+    val averageLossMicros: Long?,
+    val createdAt: OffsetDateTime,
+)
+
+fun toDesSoccerLearningNeuralRunMetricsRow(row: ResultRow): DesSoccerLearningNeuralRunMetricsRow = DesSoccerLearningNeuralRunMetricsRow(
+    row[DesSoccerLearningNeuralRunMetrics.runId],
+    row[DesSoccerLearningNeuralRunMetrics.policyVersionId],
+    row[DesSoccerLearningNeuralRunMetrics.enabled],
+    row[DesSoccerLearningNeuralRunMetrics.backend],
+    row[DesSoccerLearningNeuralRunMetrics.trainingSteps],
+    row[DesSoccerLearningNeuralRunMetrics.samples],
+    row[DesSoccerLearningNeuralRunMetrics.pendingBatches],
+    row[DesSoccerLearningNeuralRunMetrics.droppedBatches],
+    row[DesSoccerLearningNeuralRunMetrics.replaySamples],
+    row[DesSoccerLearningNeuralRunMetrics.replayCapacity],
+    row[DesSoccerLearningNeuralRunMetrics.parameterCount],
+    row[DesSoccerLearningNeuralRunMetrics.targetClipMicros],
+    row[DesSoccerLearningNeuralRunMetrics.lastLossMicros],
+    row[DesSoccerLearningNeuralRunMetrics.averageLossMicros],
+    row[DesSoccerLearningNeuralRunMetrics.createdAt],
 )
 
 data class DesFelElevatorLearningRunsRow(

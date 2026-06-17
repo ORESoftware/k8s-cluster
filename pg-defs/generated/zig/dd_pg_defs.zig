@@ -4339,6 +4339,531 @@ pub fn validateDesSoccerLearningMergeEventsDecayMicros(value: i64) ?[]const u8 {
     return null;
 }
 
+pub const des_soccer_tournaments_table: []const u8 = "des_soccer_tournaments";
+pub const des_soccer_tournaments_columns = [_][]const u8{ "id", "experiment_id", "tournament_date", "seed", "learning_mode", "format", "team_count", "match_count", "matches_played", "champion_team_id", "runner_up_team_id", "third_place_team_id", "wall_time_seconds", "status", "created_at", "updated_at", "finished_at" };
+pub const des_soccer_tournaments_select_sql: []const u8 = "select\n      id,\n      experiment_id::text as experiment_id,\n      tournament_date,\n      seed,\n      learning_mode,\n      format::text as format_json,\n      team_count,\n      match_count,\n      matches_played,\n      champion_team_id,\n      runner_up_team_id,\n      third_place_team_id,\n      wall_time_seconds,\n      status,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at\n    from des_soccer_tournaments";
+
+pub const DesSoccerTournamentsStatus = enum {
+    running,
+    completed,
+    failed,
+    aborted,
+
+    pub fn toString(self: DesSoccerTournamentsStatus) []const u8 {
+        return switch (self) {
+            .running => "running",
+            .completed => "completed",
+            .failed => "failed",
+            .aborted => "aborted",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?DesSoccerTournamentsStatus {
+        if (std.mem.eql(u8, value, "running")) return .running;
+        if (std.mem.eql(u8, value, "completed")) return .completed;
+        if (std.mem.eql(u8, value, "failed")) return .failed;
+        if (std.mem.eql(u8, value, "aborted")) return .aborted;
+        return null;
+    }
+};
+
+pub const DesSoccerTournamentsRow = struct {
+    id: i64,
+    experiment_id: []const u8,
+    tournament_date: []const u8,
+    seed: i64,
+    learning_mode: []const u8,
+    format: []const u8,
+    team_count: i32,
+    match_count: i32,
+    matches_played: i32,
+    champion_team_id: ?i32,
+    runner_up_team_id: ?i32,
+    third_place_team_id: ?i32,
+    wall_time_seconds: ?[]const u8,
+    status: []const u8,
+    created_at: []const u8,
+    updated_at: []const u8,
+    finished_at: ?[]const u8,
+
+    pub fn fromRow(reader: RowReader) DesSoccerTournamentsRow {
+        return DesSoccerTournamentsRow{
+            .id = reader.int(0),
+            .experiment_id = reader.text(1),
+            .tournament_date = reader.text(2),
+            .seed = reader.int(3),
+            .learning_mode = reader.text(4),
+            .format = reader.text(5),
+            .team_count = @as(i32, @intCast(reader.int(6))),
+            .match_count = @as(i32, @intCast(reader.int(7))),
+            .matches_played = @as(i32, @intCast(reader.int(8))),
+            .champion_team_id = if (reader.is_null(9)) null else @as(i32, @intCast(reader.int(9))),
+            .runner_up_team_id = if (reader.is_null(10)) null else @as(i32, @intCast(reader.int(10))),
+            .third_place_team_id = if (reader.is_null(11)) null else @as(i32, @intCast(reader.int(11))),
+            .wall_time_seconds = if (reader.is_null(12)) null else reader.text(12),
+            .status = reader.text(13),
+            .created_at = reader.text(14),
+            .updated_at = reader.text(15),
+            .finished_at = if (reader.is_null(16)) null else reader.text(16),
+        };
+    }
+};
+
+pub const des_soccer_tournament_matches_table: []const u8 = "des_soccer_tournament_matches";
+pub const des_soccer_tournament_matches_columns = [_][]const u8{ "id", "match_index", "stage", "home_team_id", "away_team_id", "home_goals", "away_goals", "shootout_winner_team_id", "home_training_steps", "away_training_steps", "recorded_at" };
+pub const des_soccer_tournament_matches_select_sql: []const u8 = "select\n      id,\n      match_index,\n      stage,\n      home_team_id,\n      away_team_id,\n      home_goals,\n      away_goals,\n      shootout_winner_team_id,\n      home_training_steps,\n      away_training_steps,\n      to_char(recorded_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as recorded_at\n    from des_soccer_tournament_matches";
+
+pub const DesSoccerTournamentMatchesRow = struct {
+    id: i64,
+    match_index: i32,
+    stage: []const u8,
+    home_team_id: i32,
+    away_team_id: i32,
+    home_goals: i32,
+    away_goals: i32,
+    shootout_winner_team_id: ?i32,
+    home_training_steps: i64,
+    away_training_steps: i64,
+    recorded_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) DesSoccerTournamentMatchesRow {
+        return DesSoccerTournamentMatchesRow{
+            .id = reader.int(0),
+            .match_index = @as(i32, @intCast(reader.int(1))),
+            .stage = reader.text(2),
+            .home_team_id = @as(i32, @intCast(reader.int(3))),
+            .away_team_id = @as(i32, @intCast(reader.int(4))),
+            .home_goals = @as(i32, @intCast(reader.int(5))),
+            .away_goals = @as(i32, @intCast(reader.int(6))),
+            .shootout_winner_team_id = if (reader.is_null(7)) null else @as(i32, @intCast(reader.int(7))),
+            .home_training_steps = reader.int(8),
+            .away_training_steps = reader.int(9),
+            .recorded_at = reader.text(10),
+        };
+    }
+};
+
+pub const des_soccer_tournament_team_brains_table: []const u8 = "des_soccer_tournament_team_brains";
+pub const des_soccer_tournament_team_brains_columns = [_][]const u8{ "id", "team_id", "team_name", "seed", "matches_learned", "training_steps", "played", "wins", "draws", "losses", "goals_for", "goals_against", "neural_snapshot", "genome", "updated_at" };
+pub const des_soccer_tournament_team_brains_select_sql: []const u8 = "select\n      id,\n      team_id,\n      team_name,\n      seed,\n      matches_learned,\n      training_steps,\n      played,\n      wins,\n      draws,\n      losses,\n      goals_for,\n      goals_against,\n      neural_snapshot::text as neural_snapshot_json,\n      genome::text as genome_json,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_soccer_tournament_team_brains";
+
+pub const DesSoccerTournamentTeamBrainsRow = struct {
+    id: i64,
+    team_id: i32,
+    team_name: []const u8,
+    seed: i64,
+    matches_learned: i32,
+    training_steps: i64,
+    played: i32,
+    wins: i32,
+    draws: i32,
+    losses: i32,
+    goals_for: i32,
+    goals_against: i32,
+    neural_snapshot: ?[]const u8,
+    genome: ?[]const u8,
+    updated_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) DesSoccerTournamentTeamBrainsRow {
+        return DesSoccerTournamentTeamBrainsRow{
+            .id = reader.int(0),
+            .team_id = @as(i32, @intCast(reader.int(1))),
+            .team_name = reader.text(2),
+            .seed = reader.int(3),
+            .matches_learned = @as(i32, @intCast(reader.int(4))),
+            .training_steps = reader.int(5),
+            .played = @as(i32, @intCast(reader.int(6))),
+            .wins = @as(i32, @intCast(reader.int(7))),
+            .draws = @as(i32, @intCast(reader.int(8))),
+            .losses = @as(i32, @intCast(reader.int(9))),
+            .goals_for = @as(i32, @intCast(reader.int(10))),
+            .goals_against = @as(i32, @intCast(reader.int(11))),
+            .neural_snapshot = if (reader.is_null(12)) null else reader.text(12),
+            .genome = if (reader.is_null(13)) null else reader.text(13),
+            .updated_at = reader.text(14),
+        };
+    }
+};
+
+pub const des_soccer_learning_set_play_runs_table: []const u8 = "des_soccer_learning_set_play_runs";
+pub const des_soccer_learning_set_play_runs_columns = [_][]const u8{ "run_id", "policy_version_id", "primary_restart", "team", "spot_x_micros", "spot_y_micros", "duration_seconds_micros", "episode_count", "goals", "goal_rate_micros", "first_window_goal_rate_micros", "last_window_goal_rate_micros", "goal_rate_delta_micros", "created_at" };
+pub const des_soccer_learning_set_play_runs_select_sql: []const u8 = "select\n      run_id::text as run_id,\n      policy_version_id::text as policy_version_id,\n      primary_restart,\n      team,\n      spot_x_micros,\n      spot_y_micros,\n      duration_seconds_micros,\n      episode_count,\n      goals,\n      goal_rate_micros,\n      first_window_goal_rate_micros,\n      last_window_goal_rate_micros,\n      goal_rate_delta_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_set_play_runs";
+
+pub const DesSoccerLearningSetPlayRunsPrimaryRestart = enum {
+    @"direct-free-kick",
+    @"indirect-free-kick",
+
+    pub fn toString(self: DesSoccerLearningSetPlayRunsPrimaryRestart) []const u8 {
+        return switch (self) {
+            .@"direct-free-kick" => "direct-free-kick",
+            .@"indirect-free-kick" => "indirect-free-kick",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?DesSoccerLearningSetPlayRunsPrimaryRestart {
+        if (std.mem.eql(u8, value, "direct-free-kick")) return .@"direct-free-kick";
+        if (std.mem.eql(u8, value, "indirect-free-kick")) return .@"indirect-free-kick";
+        return null;
+    }
+};
+
+pub const DesSoccerLearningSetPlayRunsTeam = enum {
+    home,
+    away,
+
+    pub fn toString(self: DesSoccerLearningSetPlayRunsTeam) []const u8 {
+        return switch (self) {
+            .home => "home",
+            .away => "away",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?DesSoccerLearningSetPlayRunsTeam {
+        if (std.mem.eql(u8, value, "home")) return .home;
+        if (std.mem.eql(u8, value, "away")) return .away;
+        return null;
+    }
+};
+
+pub const DesSoccerLearningSetPlayRunsRow = struct {
+    run_id: []const u8,
+    policy_version_id: []const u8,
+    primary_restart: []const u8,
+    team: []const u8,
+    spot_x_micros: i64,
+    spot_y_micros: i64,
+    duration_seconds_micros: i64,
+    episode_count: i32,
+    goals: i32,
+    goal_rate_micros: i64,
+    first_window_goal_rate_micros: i64,
+    last_window_goal_rate_micros: i64,
+    goal_rate_delta_micros: i64,
+    created_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) DesSoccerLearningSetPlayRunsRow {
+        return DesSoccerLearningSetPlayRunsRow{
+            .run_id = reader.text(0),
+            .policy_version_id = reader.text(1),
+            .primary_restart = reader.text(2),
+            .team = reader.text(3),
+            .spot_x_micros = reader.int(4),
+            .spot_y_micros = reader.int(5),
+            .duration_seconds_micros = reader.int(6),
+            .episode_count = @as(i32, @intCast(reader.int(7))),
+            .goals = @as(i32, @intCast(reader.int(8))),
+            .goal_rate_micros = reader.int(9),
+            .first_window_goal_rate_micros = reader.int(10),
+            .last_window_goal_rate_micros = reader.int(11),
+            .goal_rate_delta_micros = reader.int(12),
+            .created_at = reader.text(13),
+        };
+    }
+};
+
+pub fn validateDesSoccerLearningSetPlayRunsDurationSecondsMicros(value: i64) ?[]const u8 {
+    if (value < 0) return "des_soccer_learning_set_play_runs.duration_seconds_micros is below the minimum";
+    return null;
+}
+
+pub fn validateDesSoccerLearningSetPlayRunsEpisodeCount(value: i32) ?[]const u8 {
+    if (value < 0) return "des_soccer_learning_set_play_runs.episode_count is below the minimum";
+    return null;
+}
+
+pub fn validateDesSoccerLearningSetPlayRunsGoals(value: i32) ?[]const u8 {
+    if (value < 0) return "des_soccer_learning_set_play_runs.goals is below the minimum";
+    return null;
+}
+
+pub fn validateDesSoccerLearningSetPlayRunsGoalRateMicros(value: i64) ?[]const u8 {
+    if (value < 0) return "des_soccer_learning_set_play_runs.goal_rate_micros is below the minimum";
+    if (value > 1000000) return "des_soccer_learning_set_play_runs.goal_rate_micros is above the maximum";
+    return null;
+}
+
+pub const des_soccer_learning_set_play_restart_mix_table: []const u8 = "des_soccer_learning_set_play_restart_mix";
+pub const des_soccer_learning_set_play_restart_mix_columns = [_][]const u8{ "run_id", "ordinal", "restart" };
+pub const des_soccer_learning_set_play_restart_mix_select_sql: []const u8 = "select\n      run_id::text as run_id,\n      ordinal,\n      restart\n    from des_soccer_learning_set_play_restart_mix";
+
+pub const DesSoccerLearningSetPlayRestartMixRestart = enum {
+    @"direct-free-kick",
+    @"indirect-free-kick",
+
+    pub fn toString(self: DesSoccerLearningSetPlayRestartMixRestart) []const u8 {
+        return switch (self) {
+            .@"direct-free-kick" => "direct-free-kick",
+            .@"indirect-free-kick" => "indirect-free-kick",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?DesSoccerLearningSetPlayRestartMixRestart {
+        if (std.mem.eql(u8, value, "direct-free-kick")) return .@"direct-free-kick";
+        if (std.mem.eql(u8, value, "indirect-free-kick")) return .@"indirect-free-kick";
+        return null;
+    }
+};
+
+pub const DesSoccerLearningSetPlayRestartMixRow = struct {
+    run_id: []const u8,
+    ordinal: i32,
+    restart: []const u8,
+
+    pub fn fromRow(reader: RowReader) DesSoccerLearningSetPlayRestartMixRow {
+        return DesSoccerLearningSetPlayRestartMixRow{
+            .run_id = reader.text(0),
+            .ordinal = @as(i32, @intCast(reader.int(1))),
+            .restart = reader.text(2),
+        };
+    }
+};
+
+pub fn validateDesSoccerLearningSetPlayRestartMixOrdinal(value: i32) ?[]const u8 {
+    if (value < 0) return "des_soccer_learning_set_play_restart_mix.ordinal is below the minimum";
+    return null;
+}
+
+pub const des_soccer_learning_set_play_episode_metrics_table: []const u8 = "des_soccer_learning_set_play_episode_metrics";
+pub const des_soccer_learning_set_play_episode_metrics_columns = [_][]const u8{ "run_id", "episode_index", "seed", "restart", "routine", "scored", "score_delta_for_team", "ticks", "simulated_seconds_micros", "policy_updates", "home_policy_entries", "home_policy_target_entries", "away_policy_entries", "away_policy_target_entries", "neural_training_steps", "neural_samples", "neural_replay_samples", "neural_last_loss_micros", "cumulative_goals", "goal_rate_so_far_micros" };
+pub const des_soccer_learning_set_play_episode_metrics_select_sql: []const u8 = "select\n      run_id::text as run_id,\n      episode_index,\n      seed,\n      restart,\n      routine,\n      scored,\n      score_delta_for_team,\n      ticks,\n      simulated_seconds_micros,\n      policy_updates,\n      home_policy_entries,\n      home_policy_target_entries,\n      away_policy_entries,\n      away_policy_target_entries,\n      neural_training_steps,\n      neural_samples,\n      neural_replay_samples,\n      neural_last_loss_micros,\n      cumulative_goals,\n      goal_rate_so_far_micros\n    from des_soccer_learning_set_play_episode_metrics";
+
+pub const DesSoccerLearningSetPlayEpisodeMetricsRestart = enum {
+    @"direct-free-kick",
+    @"indirect-free-kick",
+
+    pub fn toString(self: DesSoccerLearningSetPlayEpisodeMetricsRestart) []const u8 {
+        return switch (self) {
+            .@"direct-free-kick" => "direct-free-kick",
+            .@"indirect-free-kick" => "indirect-free-kick",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?DesSoccerLearningSetPlayEpisodeMetricsRestart {
+        if (std.mem.eql(u8, value, "direct-free-kick")) return .@"direct-free-kick";
+        if (std.mem.eql(u8, value, "indirect-free-kick")) return .@"indirect-free-kick";
+        return null;
+    }
+};
+
+pub const DesSoccerLearningSetPlayEpisodeMetricsRow = struct {
+    run_id: []const u8,
+    episode_index: i32,
+    seed: i64,
+    restart: []const u8,
+    routine: ?[]const u8,
+    scored: bool,
+    score_delta_for_team: i32,
+    ticks: i64,
+    simulated_seconds_micros: i64,
+    policy_updates: i64,
+    home_policy_entries: i32,
+    home_policy_target_entries: i32,
+    away_policy_entries: i32,
+    away_policy_target_entries: i32,
+    neural_training_steps: i32,
+    neural_samples: i64,
+    neural_replay_samples: i32,
+    neural_last_loss_micros: ?i64,
+    cumulative_goals: i32,
+    goal_rate_so_far_micros: i64,
+
+    pub fn fromRow(reader: RowReader) DesSoccerLearningSetPlayEpisodeMetricsRow {
+        return DesSoccerLearningSetPlayEpisodeMetricsRow{
+            .run_id = reader.text(0),
+            .episode_index = @as(i32, @intCast(reader.int(1))),
+            .seed = reader.int(2),
+            .restart = reader.text(3),
+            .routine = if (reader.is_null(4)) null else reader.text(4),
+            .scored = reader.boolean(5),
+            .score_delta_for_team = @as(i32, @intCast(reader.int(6))),
+            .ticks = reader.int(7),
+            .simulated_seconds_micros = reader.int(8),
+            .policy_updates = reader.int(9),
+            .home_policy_entries = @as(i32, @intCast(reader.int(10))),
+            .home_policy_target_entries = @as(i32, @intCast(reader.int(11))),
+            .away_policy_entries = @as(i32, @intCast(reader.int(12))),
+            .away_policy_target_entries = @as(i32, @intCast(reader.int(13))),
+            .neural_training_steps = @as(i32, @intCast(reader.int(14))),
+            .neural_samples = reader.int(15),
+            .neural_replay_samples = @as(i32, @intCast(reader.int(16))),
+            .neural_last_loss_micros = if (reader.is_null(17)) null else reader.int(17),
+            .cumulative_goals = @as(i32, @intCast(reader.int(18))),
+            .goal_rate_so_far_micros = reader.int(19),
+        };
+    }
+};
+
+pub fn validateDesSoccerLearningSetPlayEpisodeMetricsEpisodeIndex(value: i32) ?[]const u8 {
+    if (value < 0) return "des_soccer_learning_set_play_episode_metrics.episode_index is below the minimum";
+    return null;
+}
+
+pub fn validateDesSoccerLearningSetPlayEpisodeMetricsSeed(value: i64) ?[]const u8 {
+    if (value < 0) return "des_soccer_learning_set_play_episode_metrics.seed is below the minimum";
+    return null;
+}
+
+pub fn validateDesSoccerLearningSetPlayEpisodeMetricsRoutine(value: []const u8) ?[]const u8 {
+    if (value.len > 80) return "des_soccer_learning_set_play_episode_metrics.routine must be at most 80 characters";
+    return null;
+}
+
+pub fn validateDesSoccerLearningSetPlayEpisodeMetricsTicks(value: i64) ?[]const u8 {
+    if (value < 0) return "des_soccer_learning_set_play_episode_metrics.ticks is below the minimum";
+    return null;
+}
+
+pub fn validateDesSoccerLearningSetPlayEpisodeMetricsSimulatedSecondsMicros(value: i64) ?[]const u8 {
+    if (value < 0) return "des_soccer_learning_set_play_episode_metrics.simulated_seconds_micros is below the minimum";
+    return null;
+}
+
+pub fn validateDesSoccerLearningSetPlayEpisodeMetricsPolicyUpdates(value: i64) ?[]const u8 {
+    if (value < 0) return "des_soccer_learning_set_play_episode_metrics.policy_updates is below the minimum";
+    return null;
+}
+
+pub fn validateDesSoccerLearningSetPlayEpisodeMetricsHomePolicyEntries(value: i32) ?[]const u8 {
+    if (value < 0) return "des_soccer_learning_set_play_episode_metrics.home_policy_entries is below the minimum";
+    return null;
+}
+
+pub fn validateDesSoccerLearningSetPlayEpisodeMetricsHomePolicyTargetEntries(value: i32) ?[]const u8 {
+    if (value < 0) return "des_soccer_learning_set_play_episode_metrics.home_policy_target_entries is below the minimum";
+    return null;
+}
+
+pub fn validateDesSoccerLearningSetPlayEpisodeMetricsAwayPolicyEntries(value: i32) ?[]const u8 {
+    if (value < 0) return "des_soccer_learning_set_play_episode_metrics.away_policy_entries is below the minimum";
+    return null;
+}
+
+pub fn validateDesSoccerLearningSetPlayEpisodeMetricsAwayPolicyTargetEntries(value: i32) ?[]const u8 {
+    if (value < 0) return "des_soccer_learning_set_play_episode_metrics.away_policy_target_entries is below the minimum";
+    return null;
+}
+
+pub fn validateDesSoccerLearningSetPlayEpisodeMetricsNeuralTrainingSteps(value: i32) ?[]const u8 {
+    if (value < 0) return "des_soccer_learning_set_play_episode_metrics.neural_training_steps is below the minimum";
+    return null;
+}
+
+pub fn validateDesSoccerLearningSetPlayEpisodeMetricsNeuralSamples(value: i64) ?[]const u8 {
+    if (value < 0) return "des_soccer_learning_set_play_episode_metrics.neural_samples is below the minimum";
+    return null;
+}
+
+pub fn validateDesSoccerLearningSetPlayEpisodeMetricsNeuralReplaySamples(value: i32) ?[]const u8 {
+    if (value < 0) return "des_soccer_learning_set_play_episode_metrics.neural_replay_samples is below the minimum";
+    return null;
+}
+
+pub fn validateDesSoccerLearningSetPlayEpisodeMetricsCumulativeGoals(value: i32) ?[]const u8 {
+    if (value < 0) return "des_soccer_learning_set_play_episode_metrics.cumulative_goals is below the minimum";
+    return null;
+}
+
+pub fn validateDesSoccerLearningSetPlayEpisodeMetricsGoalRateSoFarMicros(value: i64) ?[]const u8 {
+    if (value < 0) return "des_soccer_learning_set_play_episode_metrics.goal_rate_so_far_micros is below the minimum";
+    if (value > 1000000) return "des_soccer_learning_set_play_episode_metrics.goal_rate_so_far_micros is above the maximum";
+    return null;
+}
+
+pub const des_soccer_learning_neural_run_metrics_table: []const u8 = "des_soccer_learning_neural_run_metrics";
+pub const des_soccer_learning_neural_run_metrics_columns = [_][]const u8{ "run_id", "policy_version_id", "enabled", "backend", "training_steps", "samples", "pending_batches", "dropped_batches", "replay_samples", "replay_capacity", "parameter_count", "target_clip_micros", "last_loss_micros", "average_loss_micros", "created_at" };
+pub const des_soccer_learning_neural_run_metrics_select_sql: []const u8 = "select\n      run_id::text as run_id,\n      policy_version_id::text as policy_version_id,\n      enabled,\n      backend,\n      training_steps,\n      samples,\n      pending_batches,\n      dropped_batches,\n      replay_samples,\n      replay_capacity,\n      parameter_count,\n      target_clip_micros,\n      last_loss_micros,\n      average_loss_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_neural_run_metrics";
+
+pub const DesSoccerLearningNeuralRunMetricsBackend = enum {
+    @"inline",
+    threaded,
+
+    pub fn toString(self: DesSoccerLearningNeuralRunMetricsBackend) []const u8 {
+        return switch (self) {
+            .@"inline" => "inline",
+            .threaded => "threaded",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?DesSoccerLearningNeuralRunMetricsBackend {
+        if (std.mem.eql(u8, value, "inline")) return .@"inline";
+        if (std.mem.eql(u8, value, "threaded")) return .threaded;
+        return null;
+    }
+};
+
+pub const DesSoccerLearningNeuralRunMetricsRow = struct {
+    run_id: []const u8,
+    policy_version_id: []const u8,
+    enabled: bool,
+    backend: []const u8,
+    training_steps: i32,
+    samples: i64,
+    pending_batches: i32,
+    dropped_batches: i32,
+    replay_samples: i32,
+    replay_capacity: i32,
+    parameter_count: i32,
+    target_clip_micros: i64,
+    last_loss_micros: ?i64,
+    average_loss_micros: ?i64,
+    created_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) DesSoccerLearningNeuralRunMetricsRow {
+        return DesSoccerLearningNeuralRunMetricsRow{
+            .run_id = reader.text(0),
+            .policy_version_id = reader.text(1),
+            .enabled = reader.boolean(2),
+            .backend = reader.text(3),
+            .training_steps = @as(i32, @intCast(reader.int(4))),
+            .samples = reader.int(5),
+            .pending_batches = @as(i32, @intCast(reader.int(6))),
+            .dropped_batches = @as(i32, @intCast(reader.int(7))),
+            .replay_samples = @as(i32, @intCast(reader.int(8))),
+            .replay_capacity = @as(i32, @intCast(reader.int(9))),
+            .parameter_count = @as(i32, @intCast(reader.int(10))),
+            .target_clip_micros = reader.int(11),
+            .last_loss_micros = if (reader.is_null(12)) null else reader.int(12),
+            .average_loss_micros = if (reader.is_null(13)) null else reader.int(13),
+            .created_at = reader.text(14),
+        };
+    }
+};
+
+pub fn validateDesSoccerLearningNeuralRunMetricsTrainingSteps(value: i32) ?[]const u8 {
+    if (value < 0) return "des_soccer_learning_neural_run_metrics.training_steps is below the minimum";
+    return null;
+}
+
+pub fn validateDesSoccerLearningNeuralRunMetricsSamples(value: i64) ?[]const u8 {
+    if (value < 0) return "des_soccer_learning_neural_run_metrics.samples is below the minimum";
+    return null;
+}
+
+pub fn validateDesSoccerLearningNeuralRunMetricsPendingBatches(value: i32) ?[]const u8 {
+    if (value < 0) return "des_soccer_learning_neural_run_metrics.pending_batches is below the minimum";
+    return null;
+}
+
+pub fn validateDesSoccerLearningNeuralRunMetricsDroppedBatches(value: i32) ?[]const u8 {
+    if (value < 0) return "des_soccer_learning_neural_run_metrics.dropped_batches is below the minimum";
+    return null;
+}
+
+pub fn validateDesSoccerLearningNeuralRunMetricsReplaySamples(value: i32) ?[]const u8 {
+    if (value < 0) return "des_soccer_learning_neural_run_metrics.replay_samples is below the minimum";
+    return null;
+}
+
+pub fn validateDesSoccerLearningNeuralRunMetricsReplayCapacity(value: i32) ?[]const u8 {
+    if (value < 0) return "des_soccer_learning_neural_run_metrics.replay_capacity is below the minimum";
+    return null;
+}
+
+pub fn validateDesSoccerLearningNeuralRunMetricsParameterCount(value: i32) ?[]const u8 {
+    if (value < 0) return "des_soccer_learning_neural_run_metrics.parameter_count is below the minimum";
+    return null;
+}
+
 pub const des_fel_elevator_learning_runs_table: []const u8 = "des_fel_elevator_learning_runs";
 pub const des_fel_elevator_learning_runs_columns = [_][]const u8{ "id", "run_label", "scenario_slug", "status", "dispatch_policy", "seed", "floors", "shafts", "capacity", "travel_seconds_micros", "dwell_seconds_micros", "arrival_rate_micros", "horizon_seconds_micros", "events", "arrivals", "boarded", "served", "mean_wait_micros", "dispatch_decisions", "pomdp_belief_updates", "online_learning_updates", "online_learning_loss_last_micros", "config", "metrics", "artifact", "created_at", "updated_at" };
 pub const des_fel_elevator_learning_runs_select_sql: []const u8 = "select\n      id::text as id,\n      run_label,\n      scenario_slug,\n      status,\n      dispatch_policy,\n      seed,\n      floors,\n      shafts,\n      capacity,\n      travel_seconds_micros,\n      dwell_seconds_micros,\n      arrival_rate_micros,\n      horizon_seconds_micros,\n      events,\n      arrivals,\n      boarded,\n      served,\n      mean_wait_micros,\n      dispatch_decisions,\n      pomdp_belief_updates,\n      online_learning_updates,\n      online_learning_loss_last_micros,\n      config::text as config_json,\n      metrics::text as metrics_json,\n      artifact::text as artifact_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_fel_elevator_learning_runs";

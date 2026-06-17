@@ -676,6 +676,111 @@ update des_soccer_learning_merge_events set experiment_id = $2, base_policy_vers
 -- name: DeleteDesSoccerLearningMergeEvents :exec
 delete from des_soccer_learning_merge_events where id = $1;
 
+-- name: ListDesSoccerTournaments :many
+select id, experiment_id, tournament_date, seed, learning_mode, format, team_count, match_count, matches_played, champion_team_id, runner_up_team_id, third_place_team_id, wall_time_seconds, status, created_at, updated_at, finished_at from des_soccer_tournaments;
+
+-- name: GetDesSoccerTournaments :one
+select id, experiment_id, tournament_date, seed, learning_mode, format, team_count, match_count, matches_played, champion_team_id, runner_up_team_id, third_place_team_id, wall_time_seconds, status, created_at, updated_at, finished_at from des_soccer_tournaments where id = $1 limit 1;
+
+-- name: CreateDesSoccerTournaments :one
+insert into des_soccer_tournaments (id, experiment_id, tournament_date, seed, learning_mode, format, team_count, match_count, matches_played, champion_team_id, runner_up_team_id, third_place_team_id, wall_time_seconds, status, created_at, updated_at, finished_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) returning id, experiment_id, tournament_date, seed, learning_mode, format, team_count, match_count, matches_played, champion_team_id, runner_up_team_id, third_place_team_id, wall_time_seconds, status, created_at, updated_at, finished_at;
+
+-- name: UpdateDesSoccerTournaments :one
+update des_soccer_tournaments set experiment_id = $2, tournament_date = $3, seed = $4, learning_mode = $5, format = $6, team_count = $7, match_count = $8, matches_played = $9, champion_team_id = $10, runner_up_team_id = $11, third_place_team_id = $12, wall_time_seconds = $13, status = $14, updated_at = $15, finished_at = $16 where id = $1 returning id, experiment_id, tournament_date, seed, learning_mode, format, team_count, match_count, matches_played, champion_team_id, runner_up_team_id, third_place_team_id, wall_time_seconds, status, created_at, updated_at, finished_at;
+
+-- name: DeleteDesSoccerTournaments :exec
+delete from des_soccer_tournaments where id = $1;
+
+-- name: ListDesSoccerTournamentMatches :many
+select id, match_index, stage, home_team_id, away_team_id, home_goals, away_goals, shootout_winner_team_id, home_training_steps, away_training_steps, recorded_at from des_soccer_tournament_matches;
+
+-- name: GetDesSoccerTournamentMatches :one
+select id, match_index, stage, home_team_id, away_team_id, home_goals, away_goals, shootout_winner_team_id, home_training_steps, away_training_steps, recorded_at from des_soccer_tournament_matches where id = $1 limit 1;
+
+-- name: CreateDesSoccerTournamentMatches :one
+insert into des_soccer_tournament_matches (id, match_index, stage, home_team_id, away_team_id, home_goals, away_goals, shootout_winner_team_id, home_training_steps, away_training_steps, recorded_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning id, match_index, stage, home_team_id, away_team_id, home_goals, away_goals, shootout_winner_team_id, home_training_steps, away_training_steps, recorded_at;
+
+-- name: UpdateDesSoccerTournamentMatches :one
+update des_soccer_tournament_matches set match_index = $2, stage = $3, home_team_id = $4, away_team_id = $5, home_goals = $6, away_goals = $7, shootout_winner_team_id = $8, home_training_steps = $9, away_training_steps = $10, recorded_at = $11 where id = $1 returning id, match_index, stage, home_team_id, away_team_id, home_goals, away_goals, shootout_winner_team_id, home_training_steps, away_training_steps, recorded_at;
+
+-- name: DeleteDesSoccerTournamentMatches :exec
+delete from des_soccer_tournament_matches where id = $1;
+
+-- name: ListDesSoccerTournamentTeamBrains :many
+select id, team_id, team_name, seed, matches_learned, training_steps, played, wins, draws, losses, goals_for, goals_against, neural_snapshot, genome, updated_at from des_soccer_tournament_team_brains;
+
+-- name: GetDesSoccerTournamentTeamBrains :one
+select id, team_id, team_name, seed, matches_learned, training_steps, played, wins, draws, losses, goals_for, goals_against, neural_snapshot, genome, updated_at from des_soccer_tournament_team_brains where id = $1 limit 1;
+
+-- name: CreateDesSoccerTournamentTeamBrains :one
+insert into des_soccer_tournament_team_brains (id, team_id, team_name, seed, matches_learned, training_steps, played, wins, draws, losses, goals_for, goals_against, neural_snapshot, genome, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) returning id, team_id, team_name, seed, matches_learned, training_steps, played, wins, draws, losses, goals_for, goals_against, neural_snapshot, genome, updated_at;
+
+-- name: UpdateDesSoccerTournamentTeamBrains :one
+update des_soccer_tournament_team_brains set team_id = $2, team_name = $3, seed = $4, matches_learned = $5, training_steps = $6, played = $7, wins = $8, draws = $9, losses = $10, goals_for = $11, goals_against = $12, neural_snapshot = $13, genome = $14, updated_at = $15 where id = $1 returning id, team_id, team_name, seed, matches_learned, training_steps, played, wins, draws, losses, goals_for, goals_against, neural_snapshot, genome, updated_at;
+
+-- name: DeleteDesSoccerTournamentTeamBrains :exec
+delete from des_soccer_tournament_team_brains where id = $1;
+
+-- name: ListDesSoccerLearningSetPlayRuns :many
+select run_id, policy_version_id, primary_restart, team, spot_x_micros, spot_y_micros, duration_seconds_micros, episode_count, goals, goal_rate_micros, first_window_goal_rate_micros, last_window_goal_rate_micros, goal_rate_delta_micros, created_at from des_soccer_learning_set_play_runs;
+
+-- name: GetDesSoccerLearningSetPlayRuns :one
+select run_id, policy_version_id, primary_restart, team, spot_x_micros, spot_y_micros, duration_seconds_micros, episode_count, goals, goal_rate_micros, first_window_goal_rate_micros, last_window_goal_rate_micros, goal_rate_delta_micros, created_at from des_soccer_learning_set_play_runs where run_id = $1 limit 1;
+
+-- name: CreateDesSoccerLearningSetPlayRuns :one
+insert into des_soccer_learning_set_play_runs (run_id, policy_version_id, primary_restart, team, spot_x_micros, spot_y_micros, duration_seconds_micros, episode_count, goals, goal_rate_micros, first_window_goal_rate_micros, last_window_goal_rate_micros, goal_rate_delta_micros, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) returning run_id, policy_version_id, primary_restart, team, spot_x_micros, spot_y_micros, duration_seconds_micros, episode_count, goals, goal_rate_micros, first_window_goal_rate_micros, last_window_goal_rate_micros, goal_rate_delta_micros, created_at;
+
+-- name: UpdateDesSoccerLearningSetPlayRuns :one
+update des_soccer_learning_set_play_runs set policy_version_id = $2, primary_restart = $3, team = $4, spot_x_micros = $5, spot_y_micros = $6, duration_seconds_micros = $7, episode_count = $8, goals = $9, goal_rate_micros = $10, first_window_goal_rate_micros = $11, last_window_goal_rate_micros = $12, goal_rate_delta_micros = $13 where run_id = $1 returning run_id, policy_version_id, primary_restart, team, spot_x_micros, spot_y_micros, duration_seconds_micros, episode_count, goals, goal_rate_micros, first_window_goal_rate_micros, last_window_goal_rate_micros, goal_rate_delta_micros, created_at;
+
+-- name: DeleteDesSoccerLearningSetPlayRuns :exec
+delete from des_soccer_learning_set_play_runs where run_id = $1;
+
+-- name: ListDesSoccerLearningSetPlayRestartMix :many
+select run_id, ordinal, restart from des_soccer_learning_set_play_restart_mix;
+
+-- name: GetDesSoccerLearningSetPlayRestartMix :one
+select run_id, ordinal, restart from des_soccer_learning_set_play_restart_mix where id = $1 limit 1;
+
+-- name: CreateDesSoccerLearningSetPlayRestartMix :one
+insert into des_soccer_learning_set_play_restart_mix (run_id, ordinal, restart) values ($1, $2, $3) returning run_id, ordinal, restart;
+
+-- name: UpdateDesSoccerLearningSetPlayRestartMix :one
+update des_soccer_learning_set_play_restart_mix set run_id = $2, ordinal = $3, restart = $4 where id = $1 returning run_id, ordinal, restart;
+
+-- name: DeleteDesSoccerLearningSetPlayRestartMix :exec
+delete from des_soccer_learning_set_play_restart_mix where id = $1;
+
+-- name: ListDesSoccerLearningSetPlayEpisodeMetrics :many
+select run_id, episode_index, seed, restart, routine, scored, score_delta_for_team, ticks, simulated_seconds_micros, policy_updates, home_policy_entries, home_policy_target_entries, away_policy_entries, away_policy_target_entries, neural_training_steps, neural_samples, neural_replay_samples, neural_last_loss_micros, cumulative_goals, goal_rate_so_far_micros from des_soccer_learning_set_play_episode_metrics;
+
+-- name: GetDesSoccerLearningSetPlayEpisodeMetrics :one
+select run_id, episode_index, seed, restart, routine, scored, score_delta_for_team, ticks, simulated_seconds_micros, policy_updates, home_policy_entries, home_policy_target_entries, away_policy_entries, away_policy_target_entries, neural_training_steps, neural_samples, neural_replay_samples, neural_last_loss_micros, cumulative_goals, goal_rate_so_far_micros from des_soccer_learning_set_play_episode_metrics where id = $1 limit 1;
+
+-- name: CreateDesSoccerLearningSetPlayEpisodeMetrics :one
+insert into des_soccer_learning_set_play_episode_metrics (run_id, episode_index, seed, restart, routine, scored, score_delta_for_team, ticks, simulated_seconds_micros, policy_updates, home_policy_entries, home_policy_target_entries, away_policy_entries, away_policy_target_entries, neural_training_steps, neural_samples, neural_replay_samples, neural_last_loss_micros, cumulative_goals, goal_rate_so_far_micros) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) returning run_id, episode_index, seed, restart, routine, scored, score_delta_for_team, ticks, simulated_seconds_micros, policy_updates, home_policy_entries, home_policy_target_entries, away_policy_entries, away_policy_target_entries, neural_training_steps, neural_samples, neural_replay_samples, neural_last_loss_micros, cumulative_goals, goal_rate_so_far_micros;
+
+-- name: UpdateDesSoccerLearningSetPlayEpisodeMetrics :one
+update des_soccer_learning_set_play_episode_metrics set run_id = $2, episode_index = $3, seed = $4, restart = $5, routine = $6, scored = $7, score_delta_for_team = $8, ticks = $9, simulated_seconds_micros = $10, policy_updates = $11, home_policy_entries = $12, home_policy_target_entries = $13, away_policy_entries = $14, away_policy_target_entries = $15, neural_training_steps = $16, neural_samples = $17, neural_replay_samples = $18, neural_last_loss_micros = $19, cumulative_goals = $20, goal_rate_so_far_micros = $21 where id = $1 returning run_id, episode_index, seed, restart, routine, scored, score_delta_for_team, ticks, simulated_seconds_micros, policy_updates, home_policy_entries, home_policy_target_entries, away_policy_entries, away_policy_target_entries, neural_training_steps, neural_samples, neural_replay_samples, neural_last_loss_micros, cumulative_goals, goal_rate_so_far_micros;
+
+-- name: DeleteDesSoccerLearningSetPlayEpisodeMetrics :exec
+delete from des_soccer_learning_set_play_episode_metrics where id = $1;
+
+-- name: ListDesSoccerLearningNeuralRunMetrics :many
+select run_id, policy_version_id, enabled, backend, training_steps, samples, pending_batches, dropped_batches, replay_samples, replay_capacity, parameter_count, target_clip_micros, last_loss_micros, average_loss_micros, created_at from des_soccer_learning_neural_run_metrics;
+
+-- name: GetDesSoccerLearningNeuralRunMetrics :one
+select run_id, policy_version_id, enabled, backend, training_steps, samples, pending_batches, dropped_batches, replay_samples, replay_capacity, parameter_count, target_clip_micros, last_loss_micros, average_loss_micros, created_at from des_soccer_learning_neural_run_metrics where run_id = $1 limit 1;
+
+-- name: CreateDesSoccerLearningNeuralRunMetrics :one
+insert into des_soccer_learning_neural_run_metrics (run_id, policy_version_id, enabled, backend, training_steps, samples, pending_batches, dropped_batches, replay_samples, replay_capacity, parameter_count, target_clip_micros, last_loss_micros, average_loss_micros, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) returning run_id, policy_version_id, enabled, backend, training_steps, samples, pending_batches, dropped_batches, replay_samples, replay_capacity, parameter_count, target_clip_micros, last_loss_micros, average_loss_micros, created_at;
+
+-- name: UpdateDesSoccerLearningNeuralRunMetrics :one
+update des_soccer_learning_neural_run_metrics set policy_version_id = $2, enabled = $3, backend = $4, training_steps = $5, samples = $6, pending_batches = $7, dropped_batches = $8, replay_samples = $9, replay_capacity = $10, parameter_count = $11, target_clip_micros = $12, last_loss_micros = $13, average_loss_micros = $14 where run_id = $1 returning run_id, policy_version_id, enabled, backend, training_steps, samples, pending_batches, dropped_batches, replay_samples, replay_capacity, parameter_count, target_clip_micros, last_loss_micros, average_loss_micros, created_at;
+
+-- name: DeleteDesSoccerLearningNeuralRunMetrics :exec
+delete from des_soccer_learning_neural_run_metrics where run_id = $1;
+
 -- name: ListDesFelElevatorLearningRuns :many
 select id, run_label, scenario_slug, status, dispatch_policy, seed, floors, shafts, capacity, travel_seconds_micros, dwell_seconds_micros, arrival_rate_micros, horizon_seconds_micros, events, arrivals, boarded, served, mean_wait_micros, dispatch_decisions, pomdp_belief_updates, online_learning_updates, online_learning_loss_last_micros, config, metrics, artifact, created_at, updated_at from des_fel_elevator_learning_runs;
 

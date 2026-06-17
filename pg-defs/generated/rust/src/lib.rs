@@ -6905,6 +6905,799 @@ pub fn validate_des_soccer_learning_merge_events_insert(value: &DesSoccerLearnin
     Ok(())
 }
 
+pub const DES_SOCCER_TOURNAMENTS_TABLE: &str = "des_soccer_tournaments";
+pub const DES_SOCCER_TOURNAMENTS_COLUMNS: &[&str] = &["id", "experiment_id", "tournament_date", "seed", "learning_mode", "format", "team_count", "match_count", "matches_played", "champion_team_id", "runner_up_team_id", "third_place_team_id", "wall_time_seconds", "status", "created_at", "updated_at", "finished_at"];
+pub const DES_SOCCER_TOURNAMENTS_SELECT_SQL: &str = r###"select
+      id,
+      experiment_id::text as experiment_id,
+      tournament_date,
+      seed,
+      learning_mode,
+      format,
+      team_count,
+      match_count,
+      matches_played,
+      champion_team_id,
+      runner_up_team_id,
+      third_place_team_id,
+      wall_time_seconds,
+      status,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at
+    from des_soccer_tournaments"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DesSoccerTournamentsStatus {
+    Running,
+    Completed,
+    Failed,
+    Aborted,
+}
+
+impl DesSoccerTournamentsStatus {
+    pub const VALUES: &'static [&'static str] = &["running", "completed", "failed", "aborted"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Running => "running",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Aborted => "aborted",
+        }
+    }
+}
+
+impl TryFrom<&str> for DesSoccerTournamentsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "running" => Ok(Self::Running),
+            "completed" => Ok(Self::Completed),
+            "failed" => Ok(Self::Failed),
+            "aborted" => Ok(Self::Aborted),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct DesSoccerTournamentsRow {
+    pub id: i64,
+    pub experiment_id: String,
+    pub tournament_date: String,
+    pub seed: i64,
+    pub learning_mode: String,
+    pub format: Value,
+    pub team_count: i32,
+    pub match_count: i32,
+    pub matches_played: i32,
+    pub champion_team_id: Option<i32>,
+    pub runner_up_team_id: Option<i32>,
+    pub third_place_team_id: Option<i32>,
+    pub wall_time_seconds: Option<String>,
+    pub status: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub finished_at: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesSoccerTournamentsInsert {
+    pub id: Option<i64>,
+    pub experiment_id: Option<String>,
+    pub tournament_date: Option<String>,
+    pub seed: Option<i64>,
+    pub learning_mode: Option<String>,
+    pub format: Option<Value>,
+    pub team_count: Option<i32>,
+    pub match_count: Option<i32>,
+    pub matches_played: Option<i32>,
+    pub champion_team_id: Option<i32>,
+    pub runner_up_team_id: Option<i32>,
+    pub third_place_team_id: Option<i32>,
+    pub wall_time_seconds: Option<String>,
+    pub status: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub finished_at: Option<String>,
+}
+
+pub fn validate_des_soccer_tournaments_row(value: &DesSoccerTournamentsRow) -> Result<(), String> {
+    if !(&value.format).is_object() { return Err("des_soccer_tournaments.format must be a JSON object".to_string()); }
+    if !["running", "completed", "failed", "aborted"].contains(&(&value.status).as_str()) { return Err(format!("unsupported des_soccer_tournaments.status: {}", &value.status)); }
+    Ok(())
+}
+
+pub fn validate_des_soccer_tournaments_insert(value: &DesSoccerTournamentsInsert) -> Result<(), String> {
+    if let Some(value) = &value.format {
+        if !(value).is_object() { return Err("des_soccer_tournaments.format must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.status {
+        if !["running", "completed", "failed", "aborted"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_tournaments.status: {}", value)); }
+    }
+    Ok(())
+}
+
+pub const DES_SOCCER_TOURNAMENT_MATCHES_TABLE: &str = "des_soccer_tournament_matches";
+pub const DES_SOCCER_TOURNAMENT_MATCHES_COLUMNS: &[&str] = &["id", "match_index", "stage", "home_team_id", "away_team_id", "home_goals", "away_goals", "shootout_winner_team_id", "home_training_steps", "away_training_steps", "recorded_at"];
+pub const DES_SOCCER_TOURNAMENT_MATCHES_SELECT_SQL: &str = r###"select
+      id,
+      match_index,
+      stage,
+      home_team_id,
+      away_team_id,
+      home_goals,
+      away_goals,
+      shootout_winner_team_id,
+      home_training_steps,
+      away_training_steps,
+      to_char(recorded_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as recorded_at
+    from des_soccer_tournament_matches"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct DesSoccerTournamentMatchesRow {
+    pub id: i64,
+    pub match_index: i32,
+    pub stage: String,
+    pub home_team_id: i32,
+    pub away_team_id: i32,
+    pub home_goals: i32,
+    pub away_goals: i32,
+    pub shootout_winner_team_id: Option<i32>,
+    pub home_training_steps: i64,
+    pub away_training_steps: i64,
+    pub recorded_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesSoccerTournamentMatchesInsert {
+    pub id: Option<i64>,
+    pub match_index: Option<i32>,
+    pub stage: Option<String>,
+    pub home_team_id: Option<i32>,
+    pub away_team_id: Option<i32>,
+    pub home_goals: Option<i32>,
+    pub away_goals: Option<i32>,
+    pub shootout_winner_team_id: Option<i32>,
+    pub home_training_steps: Option<i64>,
+    pub away_training_steps: Option<i64>,
+    pub recorded_at: Option<String>,
+}
+
+pub fn validate_des_soccer_tournament_matches_row(_value: &DesSoccerTournamentMatchesRow) -> Result<(), String> {
+    Ok(())
+}
+
+pub fn validate_des_soccer_tournament_matches_insert(_value: &DesSoccerTournamentMatchesInsert) -> Result<(), String> {
+    Ok(())
+}
+
+pub const DES_SOCCER_TOURNAMENT_TEAM_BRAINS_TABLE: &str = "des_soccer_tournament_team_brains";
+pub const DES_SOCCER_TOURNAMENT_TEAM_BRAINS_COLUMNS: &[&str] = &["id", "team_id", "team_name", "seed", "matches_learned", "training_steps", "played", "wins", "draws", "losses", "goals_for", "goals_against", "neural_snapshot", "genome", "updated_at"];
+pub const DES_SOCCER_TOURNAMENT_TEAM_BRAINS_SELECT_SQL: &str = r###"select
+      id,
+      team_id,
+      team_name,
+      seed,
+      matches_learned,
+      training_steps,
+      played,
+      wins,
+      draws,
+      losses,
+      goals_for,
+      goals_against,
+      neural_snapshot,
+      genome,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from des_soccer_tournament_team_brains"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct DesSoccerTournamentTeamBrainsRow {
+    pub id: i64,
+    pub team_id: i32,
+    pub team_name: String,
+    pub seed: i64,
+    pub matches_learned: i32,
+    pub training_steps: i64,
+    pub played: i32,
+    pub wins: i32,
+    pub draws: i32,
+    pub losses: i32,
+    pub goals_for: i32,
+    pub goals_against: i32,
+    pub neural_snapshot: Option<Value>,
+    pub genome: Option<Value>,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesSoccerTournamentTeamBrainsInsert {
+    pub id: Option<i64>,
+    pub team_id: Option<i32>,
+    pub team_name: Option<String>,
+    pub seed: Option<i64>,
+    pub matches_learned: Option<i32>,
+    pub training_steps: Option<i64>,
+    pub played: Option<i32>,
+    pub wins: Option<i32>,
+    pub draws: Option<i32>,
+    pub losses: Option<i32>,
+    pub goals_for: Option<i32>,
+    pub goals_against: Option<i32>,
+    pub neural_snapshot: Option<Value>,
+    pub genome: Option<Value>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_des_soccer_tournament_team_brains_row(value: &DesSoccerTournamentTeamBrainsRow) -> Result<(), String> {
+    if let Some(value) = &value.neural_snapshot {
+        if !(value).is_object() { return Err("des_soccer_tournament_team_brains.neural_snapshot must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.genome {
+        if !(value).is_object() { return Err("des_soccer_tournament_team_brains.genome must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub fn validate_des_soccer_tournament_team_brains_insert(value: &DesSoccerTournamentTeamBrainsInsert) -> Result<(), String> {
+    if let Some(value) = &value.neural_snapshot {
+        if !(value).is_object() { return Err("des_soccer_tournament_team_brains.neural_snapshot must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.genome {
+        if !(value).is_object() { return Err("des_soccer_tournament_team_brains.genome must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const DES_SOCCER_LEARNING_SET_PLAY_RUNS_TABLE: &str = "des_soccer_learning_set_play_runs";
+pub const DES_SOCCER_LEARNING_SET_PLAY_RUNS_COLUMNS: &[&str] = &["run_id", "policy_version_id", "primary_restart", "team", "spot_x_micros", "spot_y_micros", "duration_seconds_micros", "episode_count", "goals", "goal_rate_micros", "first_window_goal_rate_micros", "last_window_goal_rate_micros", "goal_rate_delta_micros", "created_at"];
+pub const DES_SOCCER_LEARNING_SET_PLAY_RUNS_SELECT_SQL: &str = r###"select
+      run_id::text as run_id,
+      policy_version_id::text as policy_version_id,
+      primary_restart,
+      team,
+      spot_x_micros,
+      spot_y_micros,
+      duration_seconds_micros,
+      episode_count,
+      goals,
+      goal_rate_micros,
+      first_window_goal_rate_micros,
+      last_window_goal_rate_micros,
+      goal_rate_delta_micros,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from des_soccer_learning_set_play_runs"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DesSoccerLearningSetPlayRunsPrimaryRestart {
+    DirectFreeKick,
+    IndirectFreeKick,
+}
+
+impl DesSoccerLearningSetPlayRunsPrimaryRestart {
+    pub const VALUES: &'static [&'static str] = &["direct-free-kick", "indirect-free-kick"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::DirectFreeKick => "direct-free-kick",
+            Self::IndirectFreeKick => "indirect-free-kick",
+        }
+    }
+}
+
+impl TryFrom<&str> for DesSoccerLearningSetPlayRunsPrimaryRestart {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "direct-free-kick" => Ok(Self::DirectFreeKick),
+            "indirect-free-kick" => Ok(Self::IndirectFreeKick),
+            _ => Err(format!("unsupported primary_restart: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DesSoccerLearningSetPlayRunsTeam {
+    Home,
+    Away,
+}
+
+impl DesSoccerLearningSetPlayRunsTeam {
+    pub const VALUES: &'static [&'static str] = &["home", "away"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Home => "home",
+            Self::Away => "away",
+        }
+    }
+}
+
+impl TryFrom<&str> for DesSoccerLearningSetPlayRunsTeam {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "home" => Ok(Self::Home),
+            "away" => Ok(Self::Away),
+            _ => Err(format!("unsupported team: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct DesSoccerLearningSetPlayRunsRow {
+    pub run_id: String,
+    pub policy_version_id: String,
+    pub primary_restart: String,
+    pub team: String,
+    pub spot_x_micros: i64,
+    pub spot_y_micros: i64,
+    pub duration_seconds_micros: i64,
+    pub episode_count: i32,
+    pub goals: i32,
+    pub goal_rate_micros: i64,
+    pub first_window_goal_rate_micros: i64,
+    pub last_window_goal_rate_micros: i64,
+    pub goal_rate_delta_micros: i64,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesSoccerLearningSetPlayRunsInsert {
+    pub run_id: Option<String>,
+    pub policy_version_id: Option<String>,
+    pub primary_restart: Option<String>,
+    pub team: Option<String>,
+    pub spot_x_micros: Option<i64>,
+    pub spot_y_micros: Option<i64>,
+    pub duration_seconds_micros: Option<i64>,
+    pub episode_count: Option<i32>,
+    pub goals: Option<i32>,
+    pub goal_rate_micros: Option<i64>,
+    pub first_window_goal_rate_micros: Option<i64>,
+    pub last_window_goal_rate_micros: Option<i64>,
+    pub goal_rate_delta_micros: Option<i64>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_des_soccer_learning_set_play_runs_row(value: &DesSoccerLearningSetPlayRunsRow) -> Result<(), String> {
+    if !["direct-free-kick", "indirect-free-kick"].contains(&(&value.primary_restart).as_str()) { return Err(format!("unsupported des_soccer_learning_set_play_runs.primary_restart: {}", &value.primary_restart)); }
+    if !["home", "away"].contains(&(&value.team).as_str()) { return Err(format!("unsupported des_soccer_learning_set_play_runs.team: {}", &value.team)); }
+    if *(&value.duration_seconds_micros) < 0 { return Err("des_soccer_learning_set_play_runs.duration_seconds_micros is below the minimum".to_string()); }
+    if *(&value.episode_count) < 0 { return Err("des_soccer_learning_set_play_runs.episode_count is below the minimum".to_string()); }
+    if *(&value.goals) < 0 { return Err("des_soccer_learning_set_play_runs.goals is below the minimum".to_string()); }
+    if *(&value.goal_rate_micros) < 0 { return Err("des_soccer_learning_set_play_runs.goal_rate_micros is below the minimum".to_string()); }
+    if *(&value.goal_rate_micros) > 1000000 { return Err("des_soccer_learning_set_play_runs.goal_rate_micros is above the maximum".to_string()); }
+    Ok(())
+}
+
+pub fn validate_des_soccer_learning_set_play_runs_insert(value: &DesSoccerLearningSetPlayRunsInsert) -> Result<(), String> {
+    if let Some(value) = &value.primary_restart {
+        if !["direct-free-kick", "indirect-free-kick"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_set_play_runs.primary_restart: {}", value)); }
+    }
+    if let Some(value) = &value.team {
+        if !["home", "away"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_set_play_runs.team: {}", value)); }
+    }
+    if let Some(value) = &value.duration_seconds_micros {
+        if *(value) < 0 { return Err("des_soccer_learning_set_play_runs.duration_seconds_micros is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.episode_count {
+        if *(value) < 0 { return Err("des_soccer_learning_set_play_runs.episode_count is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.goals {
+        if *(value) < 0 { return Err("des_soccer_learning_set_play_runs.goals is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.goal_rate_micros {
+        if *(value) < 0 { return Err("des_soccer_learning_set_play_runs.goal_rate_micros is below the minimum".to_string()); }
+        if *(value) > 1000000 { return Err("des_soccer_learning_set_play_runs.goal_rate_micros is above the maximum".to_string()); }
+    }
+    Ok(())
+}
+
+pub const DES_SOCCER_LEARNING_SET_PLAY_RESTART_MIX_TABLE: &str = "des_soccer_learning_set_play_restart_mix";
+pub const DES_SOCCER_LEARNING_SET_PLAY_RESTART_MIX_COLUMNS: &[&str] = &["run_id", "ordinal", "restart"];
+pub const DES_SOCCER_LEARNING_SET_PLAY_RESTART_MIX_SELECT_SQL: &str = r###"select
+      run_id::text as run_id,
+      ordinal,
+      restart
+    from des_soccer_learning_set_play_restart_mix"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DesSoccerLearningSetPlayRestartMixRestart {
+    DirectFreeKick,
+    IndirectFreeKick,
+}
+
+impl DesSoccerLearningSetPlayRestartMixRestart {
+    pub const VALUES: &'static [&'static str] = &["direct-free-kick", "indirect-free-kick"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::DirectFreeKick => "direct-free-kick",
+            Self::IndirectFreeKick => "indirect-free-kick",
+        }
+    }
+}
+
+impl TryFrom<&str> for DesSoccerLearningSetPlayRestartMixRestart {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "direct-free-kick" => Ok(Self::DirectFreeKick),
+            "indirect-free-kick" => Ok(Self::IndirectFreeKick),
+            _ => Err(format!("unsupported restart: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct DesSoccerLearningSetPlayRestartMixRow {
+    pub run_id: String,
+    pub ordinal: i32,
+    pub restart: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesSoccerLearningSetPlayRestartMixInsert {
+    pub run_id: Option<String>,
+    pub ordinal: Option<i32>,
+    pub restart: Option<String>,
+}
+
+pub fn validate_des_soccer_learning_set_play_restart_mix_row(value: &DesSoccerLearningSetPlayRestartMixRow) -> Result<(), String> {
+    if *(&value.ordinal) < 0 { return Err("des_soccer_learning_set_play_restart_mix.ordinal is below the minimum".to_string()); }
+    if !["direct-free-kick", "indirect-free-kick"].contains(&(&value.restart).as_str()) { return Err(format!("unsupported des_soccer_learning_set_play_restart_mix.restart: {}", &value.restart)); }
+    Ok(())
+}
+
+pub fn validate_des_soccer_learning_set_play_restart_mix_insert(value: &DesSoccerLearningSetPlayRestartMixInsert) -> Result<(), String> {
+    if let Some(value) = &value.ordinal {
+        if *(value) < 0 { return Err("des_soccer_learning_set_play_restart_mix.ordinal is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.restart {
+        if !["direct-free-kick", "indirect-free-kick"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_set_play_restart_mix.restart: {}", value)); }
+    }
+    Ok(())
+}
+
+pub const DES_SOCCER_LEARNING_SET_PLAY_EPISODE_METRICS_TABLE: &str = "des_soccer_learning_set_play_episode_metrics";
+pub const DES_SOCCER_LEARNING_SET_PLAY_EPISODE_METRICS_COLUMNS: &[&str] = &["run_id", "episode_index", "seed", "restart", "routine", "scored", "score_delta_for_team", "ticks", "simulated_seconds_micros", "policy_updates", "home_policy_entries", "home_policy_target_entries", "away_policy_entries", "away_policy_target_entries", "neural_training_steps", "neural_samples", "neural_replay_samples", "neural_last_loss_micros", "cumulative_goals", "goal_rate_so_far_micros"];
+pub const DES_SOCCER_LEARNING_SET_PLAY_EPISODE_METRICS_SELECT_SQL: &str = r###"select
+      run_id::text as run_id,
+      episode_index,
+      seed,
+      restart,
+      routine,
+      scored,
+      score_delta_for_team,
+      ticks,
+      simulated_seconds_micros,
+      policy_updates,
+      home_policy_entries,
+      home_policy_target_entries,
+      away_policy_entries,
+      away_policy_target_entries,
+      neural_training_steps,
+      neural_samples,
+      neural_replay_samples,
+      neural_last_loss_micros,
+      cumulative_goals,
+      goal_rate_so_far_micros
+    from des_soccer_learning_set_play_episode_metrics"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DesSoccerLearningSetPlayEpisodeMetricsRestart {
+    DirectFreeKick,
+    IndirectFreeKick,
+}
+
+impl DesSoccerLearningSetPlayEpisodeMetricsRestart {
+    pub const VALUES: &'static [&'static str] = &["direct-free-kick", "indirect-free-kick"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::DirectFreeKick => "direct-free-kick",
+            Self::IndirectFreeKick => "indirect-free-kick",
+        }
+    }
+}
+
+impl TryFrom<&str> for DesSoccerLearningSetPlayEpisodeMetricsRestart {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "direct-free-kick" => Ok(Self::DirectFreeKick),
+            "indirect-free-kick" => Ok(Self::IndirectFreeKick),
+            _ => Err(format!("unsupported restart: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct DesSoccerLearningSetPlayEpisodeMetricsRow {
+    pub run_id: String,
+    pub episode_index: i32,
+    pub seed: i64,
+    pub restart: String,
+    pub routine: Option<String>,
+    pub scored: bool,
+    pub score_delta_for_team: i32,
+    pub ticks: i64,
+    pub simulated_seconds_micros: i64,
+    pub policy_updates: i64,
+    pub home_policy_entries: i32,
+    pub home_policy_target_entries: i32,
+    pub away_policy_entries: i32,
+    pub away_policy_target_entries: i32,
+    pub neural_training_steps: i32,
+    pub neural_samples: i64,
+    pub neural_replay_samples: i32,
+    pub neural_last_loss_micros: Option<i64>,
+    pub cumulative_goals: i32,
+    pub goal_rate_so_far_micros: i64,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesSoccerLearningSetPlayEpisodeMetricsInsert {
+    pub run_id: Option<String>,
+    pub episode_index: Option<i32>,
+    pub seed: Option<i64>,
+    pub restart: Option<String>,
+    pub routine: Option<String>,
+    pub scored: Option<bool>,
+    pub score_delta_for_team: Option<i32>,
+    pub ticks: Option<i64>,
+    pub simulated_seconds_micros: Option<i64>,
+    pub policy_updates: Option<i64>,
+    pub home_policy_entries: Option<i32>,
+    pub home_policy_target_entries: Option<i32>,
+    pub away_policy_entries: Option<i32>,
+    pub away_policy_target_entries: Option<i32>,
+    pub neural_training_steps: Option<i32>,
+    pub neural_samples: Option<i64>,
+    pub neural_replay_samples: Option<i32>,
+    pub neural_last_loss_micros: Option<i64>,
+    pub cumulative_goals: Option<i32>,
+    pub goal_rate_so_far_micros: Option<i64>,
+}
+
+pub fn validate_des_soccer_learning_set_play_episode_metrics_row(value: &DesSoccerLearningSetPlayEpisodeMetricsRow) -> Result<(), String> {
+    if *(&value.episode_index) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.episode_index is below the minimum".to_string()); }
+    if *(&value.seed) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.seed is below the minimum".to_string()); }
+    if !["direct-free-kick", "indirect-free-kick"].contains(&(&value.restart).as_str()) { return Err(format!("unsupported des_soccer_learning_set_play_episode_metrics.restart: {}", &value.restart)); }
+    if let Some(value) = &value.routine {
+        validate_string_length("des_soccer_learning_set_play_episode_metrics.routine", value, None, Some(80))?;
+    }
+    if *(&value.ticks) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.ticks is below the minimum".to_string()); }
+    if *(&value.simulated_seconds_micros) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.simulated_seconds_micros is below the minimum".to_string()); }
+    if *(&value.policy_updates) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.policy_updates is below the minimum".to_string()); }
+    if *(&value.home_policy_entries) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.home_policy_entries is below the minimum".to_string()); }
+    if *(&value.home_policy_target_entries) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.home_policy_target_entries is below the minimum".to_string()); }
+    if *(&value.away_policy_entries) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.away_policy_entries is below the minimum".to_string()); }
+    if *(&value.away_policy_target_entries) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.away_policy_target_entries is below the minimum".to_string()); }
+    if *(&value.neural_training_steps) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.neural_training_steps is below the minimum".to_string()); }
+    if *(&value.neural_samples) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.neural_samples is below the minimum".to_string()); }
+    if *(&value.neural_replay_samples) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.neural_replay_samples is below the minimum".to_string()); }
+    if *(&value.cumulative_goals) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.cumulative_goals is below the minimum".to_string()); }
+    if *(&value.goal_rate_so_far_micros) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.goal_rate_so_far_micros is below the minimum".to_string()); }
+    if *(&value.goal_rate_so_far_micros) > 1000000 { return Err("des_soccer_learning_set_play_episode_metrics.goal_rate_so_far_micros is above the maximum".to_string()); }
+    Ok(())
+}
+
+pub fn validate_des_soccer_learning_set_play_episode_metrics_insert(value: &DesSoccerLearningSetPlayEpisodeMetricsInsert) -> Result<(), String> {
+    if let Some(value) = &value.episode_index {
+        if *(value) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.episode_index is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.seed {
+        if *(value) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.seed is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.restart {
+        if !["direct-free-kick", "indirect-free-kick"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_set_play_episode_metrics.restart: {}", value)); }
+    }
+    if let Some(value) = &value.routine {
+        validate_string_length("des_soccer_learning_set_play_episode_metrics.routine", value, None, Some(80))?;
+    }
+    if let Some(value) = &value.ticks {
+        if *(value) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.ticks is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.simulated_seconds_micros {
+        if *(value) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.simulated_seconds_micros is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.policy_updates {
+        if *(value) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.policy_updates is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.home_policy_entries {
+        if *(value) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.home_policy_entries is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.home_policy_target_entries {
+        if *(value) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.home_policy_target_entries is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.away_policy_entries {
+        if *(value) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.away_policy_entries is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.away_policy_target_entries {
+        if *(value) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.away_policy_target_entries is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.neural_training_steps {
+        if *(value) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.neural_training_steps is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.neural_samples {
+        if *(value) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.neural_samples is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.neural_replay_samples {
+        if *(value) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.neural_replay_samples is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.cumulative_goals {
+        if *(value) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.cumulative_goals is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.goal_rate_so_far_micros {
+        if *(value) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.goal_rate_so_far_micros is below the minimum".to_string()); }
+        if *(value) > 1000000 { return Err("des_soccer_learning_set_play_episode_metrics.goal_rate_so_far_micros is above the maximum".to_string()); }
+    }
+    Ok(())
+}
+
+pub const DES_SOCCER_LEARNING_NEURAL_RUN_METRICS_TABLE: &str = "des_soccer_learning_neural_run_metrics";
+pub const DES_SOCCER_LEARNING_NEURAL_RUN_METRICS_COLUMNS: &[&str] = &["run_id", "policy_version_id", "enabled", "backend", "training_steps", "samples", "pending_batches", "dropped_batches", "replay_samples", "replay_capacity", "parameter_count", "target_clip_micros", "last_loss_micros", "average_loss_micros", "created_at"];
+pub const DES_SOCCER_LEARNING_NEURAL_RUN_METRICS_SELECT_SQL: &str = r###"select
+      run_id::text as run_id,
+      policy_version_id::text as policy_version_id,
+      enabled,
+      backend,
+      training_steps,
+      samples,
+      pending_batches,
+      dropped_batches,
+      replay_samples,
+      replay_capacity,
+      parameter_count,
+      target_clip_micros,
+      last_loss_micros,
+      average_loss_micros,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from des_soccer_learning_neural_run_metrics"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DesSoccerLearningNeuralRunMetricsBackend {
+    Inline,
+    Threaded,
+}
+
+impl DesSoccerLearningNeuralRunMetricsBackend {
+    pub const VALUES: &'static [&'static str] = &["inline", "threaded"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Inline => "inline",
+            Self::Threaded => "threaded",
+        }
+    }
+}
+
+impl TryFrom<&str> for DesSoccerLearningNeuralRunMetricsBackend {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "inline" => Ok(Self::Inline),
+            "threaded" => Ok(Self::Threaded),
+            _ => Err(format!("unsupported backend: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct DesSoccerLearningNeuralRunMetricsRow {
+    pub run_id: String,
+    pub policy_version_id: String,
+    pub enabled: bool,
+    pub backend: String,
+    pub training_steps: i32,
+    pub samples: i64,
+    pub pending_batches: i32,
+    pub dropped_batches: i32,
+    pub replay_samples: i32,
+    pub replay_capacity: i32,
+    pub parameter_count: i32,
+    pub target_clip_micros: i64,
+    pub last_loss_micros: Option<i64>,
+    pub average_loss_micros: Option<i64>,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesSoccerLearningNeuralRunMetricsInsert {
+    pub run_id: Option<String>,
+    pub policy_version_id: Option<String>,
+    pub enabled: Option<bool>,
+    pub backend: Option<String>,
+    pub training_steps: Option<i32>,
+    pub samples: Option<i64>,
+    pub pending_batches: Option<i32>,
+    pub dropped_batches: Option<i32>,
+    pub replay_samples: Option<i32>,
+    pub replay_capacity: Option<i32>,
+    pub parameter_count: Option<i32>,
+    pub target_clip_micros: Option<i64>,
+    pub last_loss_micros: Option<i64>,
+    pub average_loss_micros: Option<i64>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_des_soccer_learning_neural_run_metrics_row(value: &DesSoccerLearningNeuralRunMetricsRow) -> Result<(), String> {
+    if !["inline", "threaded"].contains(&(&value.backend).as_str()) { return Err(format!("unsupported des_soccer_learning_neural_run_metrics.backend: {}", &value.backend)); }
+    if *(&value.training_steps) < 0 { return Err("des_soccer_learning_neural_run_metrics.training_steps is below the minimum".to_string()); }
+    if *(&value.samples) < 0 { return Err("des_soccer_learning_neural_run_metrics.samples is below the minimum".to_string()); }
+    if *(&value.pending_batches) < 0 { return Err("des_soccer_learning_neural_run_metrics.pending_batches is below the minimum".to_string()); }
+    if *(&value.dropped_batches) < 0 { return Err("des_soccer_learning_neural_run_metrics.dropped_batches is below the minimum".to_string()); }
+    if *(&value.replay_samples) < 0 { return Err("des_soccer_learning_neural_run_metrics.replay_samples is below the minimum".to_string()); }
+    if *(&value.replay_capacity) < 0 { return Err("des_soccer_learning_neural_run_metrics.replay_capacity is below the minimum".to_string()); }
+    if *(&value.parameter_count) < 0 { return Err("des_soccer_learning_neural_run_metrics.parameter_count is below the minimum".to_string()); }
+    Ok(())
+}
+
+pub fn validate_des_soccer_learning_neural_run_metrics_insert(value: &DesSoccerLearningNeuralRunMetricsInsert) -> Result<(), String> {
+    if let Some(value) = &value.backend {
+        if !["inline", "threaded"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_neural_run_metrics.backend: {}", value)); }
+    }
+    if let Some(value) = &value.training_steps {
+        if *(value) < 0 { return Err("des_soccer_learning_neural_run_metrics.training_steps is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.samples {
+        if *(value) < 0 { return Err("des_soccer_learning_neural_run_metrics.samples is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.pending_batches {
+        if *(value) < 0 { return Err("des_soccer_learning_neural_run_metrics.pending_batches is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.dropped_batches {
+        if *(value) < 0 { return Err("des_soccer_learning_neural_run_metrics.dropped_batches is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.replay_samples {
+        if *(value) < 0 { return Err("des_soccer_learning_neural_run_metrics.replay_samples is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.replay_capacity {
+        if *(value) < 0 { return Err("des_soccer_learning_neural_run_metrics.replay_capacity is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.parameter_count {
+        if *(value) < 0 { return Err("des_soccer_learning_neural_run_metrics.parameter_count is below the minimum".to_string()); }
+    }
+    Ok(())
+}
+
 pub const DES_FEL_ELEVATOR_LEARNING_RUNS_TABLE: &str = "des_fel_elevator_learning_runs";
 pub const DES_FEL_ELEVATOR_LEARNING_RUNS_COLUMNS: &[&str] = &["id", "run_label", "scenario_slug", "status", "dispatch_policy", "seed", "floors", "shafts", "capacity", "travel_seconds_micros", "dwell_seconds_micros", "arrival_rate_micros", "horizon_seconds_micros", "events", "arrivals", "boarded", "served", "mean_wait_micros", "dispatch_decisions", "pomdp_belief_updates", "online_learning_updates", "online_learning_loss_last_micros", "config", "metrics", "artifact", "created_at", "updated_at"];
 pub const DES_FEL_ELEVATOR_LEARNING_RUNS_SELECT_SQL: &str = r###"select

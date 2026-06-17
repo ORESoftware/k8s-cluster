@@ -3962,6 +3962,478 @@ let validateDesSoccerLearningMergeEventsDecayMicros (value: int64) : Result<int6
     elif value > 1000000L then Error "des_soccer_learning_merge_events.decay_micros is above the maximum"
     else Ok value
 
+let desSoccerTournamentsTable = "des_soccer_tournaments"
+let desSoccerTournamentsColumns = [ "id"; "experiment_id"; "tournament_date"; "seed"; "learning_mode"; "format"; "team_count"; "match_count"; "matches_played"; "champion_team_id"; "runner_up_team_id"; "third_place_team_id"; "wall_time_seconds"; "status"; "created_at"; "updated_at"; "finished_at" ]
+let desSoccerTournamentsSelectSql = "select\n      id,\n      experiment_id::text as experiment_id,\n      tournament_date,\n      seed,\n      learning_mode,\n      format::text as format_json,\n      team_count,\n      match_count,\n      matches_played,\n      champion_team_id,\n      runner_up_team_id,\n      third_place_team_id,\n      wall_time_seconds,\n      status,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at\n    from des_soccer_tournaments"
+
+[<RequireQualifiedAccess>]
+type DesSoccerTournamentsStatus =
+    | Running
+    | Completed
+    | Failed
+    | Aborted
+
+let desSoccerTournamentsStatusToString (value: DesSoccerTournamentsStatus) : string =
+    match value with
+    | DesSoccerTournamentsStatus.Running -> "running"
+    | DesSoccerTournamentsStatus.Completed -> "completed"
+    | DesSoccerTournamentsStatus.Failed -> "failed"
+    | DesSoccerTournamentsStatus.Aborted -> "aborted"
+
+let parseDesSoccerTournamentsStatus (value: string) : Result<DesSoccerTournamentsStatus, string> =
+    match value with
+    | "running" -> Ok DesSoccerTournamentsStatus.Running
+    | "completed" -> Ok DesSoccerTournamentsStatus.Completed
+    | "failed" -> Ok DesSoccerTournamentsStatus.Failed
+    | "aborted" -> Ok DesSoccerTournamentsStatus.Aborted
+    | _ -> Error ("unsupported des_soccer_tournaments.status: " + value)
+
+type DesSoccerTournamentsRow =
+    { DesSoccerTournamentsId: int64
+      DesSoccerTournamentsExperimentId: string
+      DesSoccerTournamentsTournamentDate: string
+      DesSoccerTournamentsSeed: int64
+      DesSoccerTournamentsLearningMode: string
+      DesSoccerTournamentsFormat: string
+      DesSoccerTournamentsTeamCount: int
+      DesSoccerTournamentsMatchCount: int
+      DesSoccerTournamentsMatchesPlayed: int
+      DesSoccerTournamentsChampionTeamId: int option
+      DesSoccerTournamentsRunnerUpTeamId: int option
+      DesSoccerTournamentsThirdPlaceTeamId: int option
+      DesSoccerTournamentsWallTimeSeconds: string option
+      DesSoccerTournamentsStatus: string
+      DesSoccerTournamentsCreatedAt: string
+      DesSoccerTournamentsUpdatedAt: string
+      DesSoccerTournamentsFinishedAt: string option
+    }
+
+let desSoccerTournamentsRowOfRow (get: int -> string) (isNullAt: int -> bool) : DesSoccerTournamentsRow =
+    { DesSoccerTournamentsId = int64 (get 0)
+      DesSoccerTournamentsExperimentId = get 1
+      DesSoccerTournamentsTournamentDate = get 2
+      DesSoccerTournamentsSeed = int64 (get 3)
+      DesSoccerTournamentsLearningMode = get 4
+      DesSoccerTournamentsFormat = get 5
+      DesSoccerTournamentsTeamCount = int (get 6)
+      DesSoccerTournamentsMatchCount = int (get 7)
+      DesSoccerTournamentsMatchesPlayed = int (get 8)
+      DesSoccerTournamentsChampionTeamId = (if isNullAt 9 then None else Some (int (get 9)))
+      DesSoccerTournamentsRunnerUpTeamId = (if isNullAt 10 then None else Some (int (get 10)))
+      DesSoccerTournamentsThirdPlaceTeamId = (if isNullAt 11 then None else Some (int (get 11)))
+      DesSoccerTournamentsWallTimeSeconds = (if isNullAt 12 then None else Some (get 12))
+      DesSoccerTournamentsStatus = get 13
+      DesSoccerTournamentsCreatedAt = get 14
+      DesSoccerTournamentsUpdatedAt = get 15
+      DesSoccerTournamentsFinishedAt = (if isNullAt 16 then None else Some (get 16))
+    }
+
+let desSoccerTournamentMatchesTable = "des_soccer_tournament_matches"
+let desSoccerTournamentMatchesColumns = [ "id"; "match_index"; "stage"; "home_team_id"; "away_team_id"; "home_goals"; "away_goals"; "shootout_winner_team_id"; "home_training_steps"; "away_training_steps"; "recorded_at" ]
+let desSoccerTournamentMatchesSelectSql = "select\n      id,\n      match_index,\n      stage,\n      home_team_id,\n      away_team_id,\n      home_goals,\n      away_goals,\n      shootout_winner_team_id,\n      home_training_steps,\n      away_training_steps,\n      to_char(recorded_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as recorded_at\n    from des_soccer_tournament_matches"
+
+type DesSoccerTournamentMatchesRow =
+    { DesSoccerTournamentMatchesId: int64
+      DesSoccerTournamentMatchesMatchIndex: int
+      DesSoccerTournamentMatchesStage: string
+      DesSoccerTournamentMatchesHomeTeamId: int
+      DesSoccerTournamentMatchesAwayTeamId: int
+      DesSoccerTournamentMatchesHomeGoals: int
+      DesSoccerTournamentMatchesAwayGoals: int
+      DesSoccerTournamentMatchesShootoutWinnerTeamId: int option
+      DesSoccerTournamentMatchesHomeTrainingSteps: int64
+      DesSoccerTournamentMatchesAwayTrainingSteps: int64
+      DesSoccerTournamentMatchesRecordedAt: string
+    }
+
+let desSoccerTournamentMatchesRowOfRow (get: int -> string) (isNullAt: int -> bool) : DesSoccerTournamentMatchesRow =
+    { DesSoccerTournamentMatchesId = int64 (get 0)
+      DesSoccerTournamentMatchesMatchIndex = int (get 1)
+      DesSoccerTournamentMatchesStage = get 2
+      DesSoccerTournamentMatchesHomeTeamId = int (get 3)
+      DesSoccerTournamentMatchesAwayTeamId = int (get 4)
+      DesSoccerTournamentMatchesHomeGoals = int (get 5)
+      DesSoccerTournamentMatchesAwayGoals = int (get 6)
+      DesSoccerTournamentMatchesShootoutWinnerTeamId = (if isNullAt 7 then None else Some (int (get 7)))
+      DesSoccerTournamentMatchesHomeTrainingSteps = int64 (get 8)
+      DesSoccerTournamentMatchesAwayTrainingSteps = int64 (get 9)
+      DesSoccerTournamentMatchesRecordedAt = get 10
+    }
+
+let desSoccerTournamentTeamBrainsTable = "des_soccer_tournament_team_brains"
+let desSoccerTournamentTeamBrainsColumns = [ "id"; "team_id"; "team_name"; "seed"; "matches_learned"; "training_steps"; "played"; "wins"; "draws"; "losses"; "goals_for"; "goals_against"; "neural_snapshot"; "genome"; "updated_at" ]
+let desSoccerTournamentTeamBrainsSelectSql = "select\n      id,\n      team_id,\n      team_name,\n      seed,\n      matches_learned,\n      training_steps,\n      played,\n      wins,\n      draws,\n      losses,\n      goals_for,\n      goals_against,\n      neural_snapshot::text as neural_snapshot_json,\n      genome::text as genome_json,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_soccer_tournament_team_brains"
+
+type DesSoccerTournamentTeamBrainsRow =
+    { DesSoccerTournamentTeamBrainsId: int64
+      DesSoccerTournamentTeamBrainsTeamId: int
+      DesSoccerTournamentTeamBrainsTeamName: string
+      DesSoccerTournamentTeamBrainsSeed: int64
+      DesSoccerTournamentTeamBrainsMatchesLearned: int
+      DesSoccerTournamentTeamBrainsTrainingSteps: int64
+      DesSoccerTournamentTeamBrainsPlayed: int
+      DesSoccerTournamentTeamBrainsWins: int
+      DesSoccerTournamentTeamBrainsDraws: int
+      DesSoccerTournamentTeamBrainsLosses: int
+      DesSoccerTournamentTeamBrainsGoalsFor: int
+      DesSoccerTournamentTeamBrainsGoalsAgainst: int
+      DesSoccerTournamentTeamBrainsNeuralSnapshot: string option
+      DesSoccerTournamentTeamBrainsGenome: string option
+      DesSoccerTournamentTeamBrainsUpdatedAt: string
+    }
+
+let desSoccerTournamentTeamBrainsRowOfRow (get: int -> string) (isNullAt: int -> bool) : DesSoccerTournamentTeamBrainsRow =
+    { DesSoccerTournamentTeamBrainsId = int64 (get 0)
+      DesSoccerTournamentTeamBrainsTeamId = int (get 1)
+      DesSoccerTournamentTeamBrainsTeamName = get 2
+      DesSoccerTournamentTeamBrainsSeed = int64 (get 3)
+      DesSoccerTournamentTeamBrainsMatchesLearned = int (get 4)
+      DesSoccerTournamentTeamBrainsTrainingSteps = int64 (get 5)
+      DesSoccerTournamentTeamBrainsPlayed = int (get 6)
+      DesSoccerTournamentTeamBrainsWins = int (get 7)
+      DesSoccerTournamentTeamBrainsDraws = int (get 8)
+      DesSoccerTournamentTeamBrainsLosses = int (get 9)
+      DesSoccerTournamentTeamBrainsGoalsFor = int (get 10)
+      DesSoccerTournamentTeamBrainsGoalsAgainst = int (get 11)
+      DesSoccerTournamentTeamBrainsNeuralSnapshot = (if isNullAt 12 then None else Some (get 12))
+      DesSoccerTournamentTeamBrainsGenome = (if isNullAt 13 then None else Some (get 13))
+      DesSoccerTournamentTeamBrainsUpdatedAt = get 14
+    }
+
+let desSoccerLearningSetPlayRunsTable = "des_soccer_learning_set_play_runs"
+let desSoccerLearningSetPlayRunsColumns = [ "run_id"; "policy_version_id"; "primary_restart"; "team"; "spot_x_micros"; "spot_y_micros"; "duration_seconds_micros"; "episode_count"; "goals"; "goal_rate_micros"; "first_window_goal_rate_micros"; "last_window_goal_rate_micros"; "goal_rate_delta_micros"; "created_at" ]
+let desSoccerLearningSetPlayRunsSelectSql = "select\n      run_id::text as run_id,\n      policy_version_id::text as policy_version_id,\n      primary_restart,\n      team,\n      spot_x_micros,\n      spot_y_micros,\n      duration_seconds_micros,\n      episode_count,\n      goals,\n      goal_rate_micros,\n      first_window_goal_rate_micros,\n      last_window_goal_rate_micros,\n      goal_rate_delta_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_set_play_runs"
+
+[<RequireQualifiedAccess>]
+type DesSoccerLearningSetPlayRunsPrimaryRestart =
+    | DirectFreeKick
+    | IndirectFreeKick
+
+let desSoccerLearningSetPlayRunsPrimaryRestartToString (value: DesSoccerLearningSetPlayRunsPrimaryRestart) : string =
+    match value with
+    | DesSoccerLearningSetPlayRunsPrimaryRestart.DirectFreeKick -> "direct-free-kick"
+    | DesSoccerLearningSetPlayRunsPrimaryRestart.IndirectFreeKick -> "indirect-free-kick"
+
+let parseDesSoccerLearningSetPlayRunsPrimaryRestart (value: string) : Result<DesSoccerLearningSetPlayRunsPrimaryRestart, string> =
+    match value with
+    | "direct-free-kick" -> Ok DesSoccerLearningSetPlayRunsPrimaryRestart.DirectFreeKick
+    | "indirect-free-kick" -> Ok DesSoccerLearningSetPlayRunsPrimaryRestart.IndirectFreeKick
+    | _ -> Error ("unsupported des_soccer_learning_set_play_runs.primary_restart: " + value)
+
+[<RequireQualifiedAccess>]
+type DesSoccerLearningSetPlayRunsTeam =
+    | Home
+    | Away
+
+let desSoccerLearningSetPlayRunsTeamToString (value: DesSoccerLearningSetPlayRunsTeam) : string =
+    match value with
+    | DesSoccerLearningSetPlayRunsTeam.Home -> "home"
+    | DesSoccerLearningSetPlayRunsTeam.Away -> "away"
+
+let parseDesSoccerLearningSetPlayRunsTeam (value: string) : Result<DesSoccerLearningSetPlayRunsTeam, string> =
+    match value with
+    | "home" -> Ok DesSoccerLearningSetPlayRunsTeam.Home
+    | "away" -> Ok DesSoccerLearningSetPlayRunsTeam.Away
+    | _ -> Error ("unsupported des_soccer_learning_set_play_runs.team: " + value)
+
+type DesSoccerLearningSetPlayRunsRow =
+    { DesSoccerLearningSetPlayRunsRunId: string
+      DesSoccerLearningSetPlayRunsPolicyVersionId: string
+      DesSoccerLearningSetPlayRunsPrimaryRestart: string
+      DesSoccerLearningSetPlayRunsTeam: string
+      DesSoccerLearningSetPlayRunsSpotXMicros: int64
+      DesSoccerLearningSetPlayRunsSpotYMicros: int64
+      DesSoccerLearningSetPlayRunsDurationSecondsMicros: int64
+      DesSoccerLearningSetPlayRunsEpisodeCount: int
+      DesSoccerLearningSetPlayRunsGoals: int
+      DesSoccerLearningSetPlayRunsGoalRateMicros: int64
+      DesSoccerLearningSetPlayRunsFirstWindowGoalRateMicros: int64
+      DesSoccerLearningSetPlayRunsLastWindowGoalRateMicros: int64
+      DesSoccerLearningSetPlayRunsGoalRateDeltaMicros: int64
+      DesSoccerLearningSetPlayRunsCreatedAt: string
+    }
+
+let desSoccerLearningSetPlayRunsRowOfRow (get: int -> string) (isNullAt: int -> bool) : DesSoccerLearningSetPlayRunsRow =
+    { DesSoccerLearningSetPlayRunsRunId = get 0
+      DesSoccerLearningSetPlayRunsPolicyVersionId = get 1
+      DesSoccerLearningSetPlayRunsPrimaryRestart = get 2
+      DesSoccerLearningSetPlayRunsTeam = get 3
+      DesSoccerLearningSetPlayRunsSpotXMicros = int64 (get 4)
+      DesSoccerLearningSetPlayRunsSpotYMicros = int64 (get 5)
+      DesSoccerLearningSetPlayRunsDurationSecondsMicros = int64 (get 6)
+      DesSoccerLearningSetPlayRunsEpisodeCount = int (get 7)
+      DesSoccerLearningSetPlayRunsGoals = int (get 8)
+      DesSoccerLearningSetPlayRunsGoalRateMicros = int64 (get 9)
+      DesSoccerLearningSetPlayRunsFirstWindowGoalRateMicros = int64 (get 10)
+      DesSoccerLearningSetPlayRunsLastWindowGoalRateMicros = int64 (get 11)
+      DesSoccerLearningSetPlayRunsGoalRateDeltaMicros = int64 (get 12)
+      DesSoccerLearningSetPlayRunsCreatedAt = get 13
+    }
+
+let validateDesSoccerLearningSetPlayRunsDurationSecondsMicros (value: int64) : Result<int64, string> =
+    if value < 0L then Error "des_soccer_learning_set_play_runs.duration_seconds_micros is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningSetPlayRunsEpisodeCount (value: int) : Result<int, string> =
+    if value < 0 then Error "des_soccer_learning_set_play_runs.episode_count is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningSetPlayRunsGoals (value: int) : Result<int, string> =
+    if value < 0 then Error "des_soccer_learning_set_play_runs.goals is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningSetPlayRunsGoalRateMicros (value: int64) : Result<int64, string> =
+    if value < 0L then Error "des_soccer_learning_set_play_runs.goal_rate_micros is below the minimum"
+    elif value > 1000000L then Error "des_soccer_learning_set_play_runs.goal_rate_micros is above the maximum"
+    else Ok value
+
+let desSoccerLearningSetPlayRestartMixTable = "des_soccer_learning_set_play_restart_mix"
+let desSoccerLearningSetPlayRestartMixColumns = [ "run_id"; "ordinal"; "restart" ]
+let desSoccerLearningSetPlayRestartMixSelectSql = "select\n      run_id::text as run_id,\n      ordinal,\n      restart\n    from des_soccer_learning_set_play_restart_mix"
+
+[<RequireQualifiedAccess>]
+type DesSoccerLearningSetPlayRestartMixRestart =
+    | DirectFreeKick
+    | IndirectFreeKick
+
+let desSoccerLearningSetPlayRestartMixRestartToString (value: DesSoccerLearningSetPlayRestartMixRestart) : string =
+    match value with
+    | DesSoccerLearningSetPlayRestartMixRestart.DirectFreeKick -> "direct-free-kick"
+    | DesSoccerLearningSetPlayRestartMixRestart.IndirectFreeKick -> "indirect-free-kick"
+
+let parseDesSoccerLearningSetPlayRestartMixRestart (value: string) : Result<DesSoccerLearningSetPlayRestartMixRestart, string> =
+    match value with
+    | "direct-free-kick" -> Ok DesSoccerLearningSetPlayRestartMixRestart.DirectFreeKick
+    | "indirect-free-kick" -> Ok DesSoccerLearningSetPlayRestartMixRestart.IndirectFreeKick
+    | _ -> Error ("unsupported des_soccer_learning_set_play_restart_mix.restart: " + value)
+
+type DesSoccerLearningSetPlayRestartMixRow =
+    { DesSoccerLearningSetPlayRestartMixRunId: string
+      DesSoccerLearningSetPlayRestartMixOrdinal: int
+      DesSoccerLearningSetPlayRestartMixRestart: string
+    }
+
+let desSoccerLearningSetPlayRestartMixRowOfRow (get: int -> string) (isNullAt: int -> bool) : DesSoccerLearningSetPlayRestartMixRow =
+    { DesSoccerLearningSetPlayRestartMixRunId = get 0
+      DesSoccerLearningSetPlayRestartMixOrdinal = int (get 1)
+      DesSoccerLearningSetPlayRestartMixRestart = get 2
+    }
+
+let validateDesSoccerLearningSetPlayRestartMixOrdinal (value: int) : Result<int, string> =
+    if value < 0 then Error "des_soccer_learning_set_play_restart_mix.ordinal is below the minimum"
+    else Ok value
+
+let desSoccerLearningSetPlayEpisodeMetricsTable = "des_soccer_learning_set_play_episode_metrics"
+let desSoccerLearningSetPlayEpisodeMetricsColumns = [ "run_id"; "episode_index"; "seed"; "restart"; "routine"; "scored"; "score_delta_for_team"; "ticks"; "simulated_seconds_micros"; "policy_updates"; "home_policy_entries"; "home_policy_target_entries"; "away_policy_entries"; "away_policy_target_entries"; "neural_training_steps"; "neural_samples"; "neural_replay_samples"; "neural_last_loss_micros"; "cumulative_goals"; "goal_rate_so_far_micros" ]
+let desSoccerLearningSetPlayEpisodeMetricsSelectSql = "select\n      run_id::text as run_id,\n      episode_index,\n      seed,\n      restart,\n      routine,\n      scored,\n      score_delta_for_team,\n      ticks,\n      simulated_seconds_micros,\n      policy_updates,\n      home_policy_entries,\n      home_policy_target_entries,\n      away_policy_entries,\n      away_policy_target_entries,\n      neural_training_steps,\n      neural_samples,\n      neural_replay_samples,\n      neural_last_loss_micros,\n      cumulative_goals,\n      goal_rate_so_far_micros\n    from des_soccer_learning_set_play_episode_metrics"
+
+[<RequireQualifiedAccess>]
+type DesSoccerLearningSetPlayEpisodeMetricsRestart =
+    | DirectFreeKick
+    | IndirectFreeKick
+
+let desSoccerLearningSetPlayEpisodeMetricsRestartToString (value: DesSoccerLearningSetPlayEpisodeMetricsRestart) : string =
+    match value with
+    | DesSoccerLearningSetPlayEpisodeMetricsRestart.DirectFreeKick -> "direct-free-kick"
+    | DesSoccerLearningSetPlayEpisodeMetricsRestart.IndirectFreeKick -> "indirect-free-kick"
+
+let parseDesSoccerLearningSetPlayEpisodeMetricsRestart (value: string) : Result<DesSoccerLearningSetPlayEpisodeMetricsRestart, string> =
+    match value with
+    | "direct-free-kick" -> Ok DesSoccerLearningSetPlayEpisodeMetricsRestart.DirectFreeKick
+    | "indirect-free-kick" -> Ok DesSoccerLearningSetPlayEpisodeMetricsRestart.IndirectFreeKick
+    | _ -> Error ("unsupported des_soccer_learning_set_play_episode_metrics.restart: " + value)
+
+type DesSoccerLearningSetPlayEpisodeMetricsRow =
+    { DesSoccerLearningSetPlayEpisodeMetricsRunId: string
+      DesSoccerLearningSetPlayEpisodeMetricsEpisodeIndex: int
+      DesSoccerLearningSetPlayEpisodeMetricsSeed: int64
+      DesSoccerLearningSetPlayEpisodeMetricsRestart: string
+      DesSoccerLearningSetPlayEpisodeMetricsRoutine: string option
+      DesSoccerLearningSetPlayEpisodeMetricsScored: bool
+      DesSoccerLearningSetPlayEpisodeMetricsScoreDeltaForTeam: int
+      DesSoccerLearningSetPlayEpisodeMetricsTicks: int64
+      DesSoccerLearningSetPlayEpisodeMetricsSimulatedSecondsMicros: int64
+      DesSoccerLearningSetPlayEpisodeMetricsPolicyUpdates: int64
+      DesSoccerLearningSetPlayEpisodeMetricsHomePolicyEntries: int
+      DesSoccerLearningSetPlayEpisodeMetricsHomePolicyTargetEntries: int
+      DesSoccerLearningSetPlayEpisodeMetricsAwayPolicyEntries: int
+      DesSoccerLearningSetPlayEpisodeMetricsAwayPolicyTargetEntries: int
+      DesSoccerLearningSetPlayEpisodeMetricsNeuralTrainingSteps: int
+      DesSoccerLearningSetPlayEpisodeMetricsNeuralSamples: int64
+      DesSoccerLearningSetPlayEpisodeMetricsNeuralReplaySamples: int
+      DesSoccerLearningSetPlayEpisodeMetricsNeuralLastLossMicros: int64 option
+      DesSoccerLearningSetPlayEpisodeMetricsCumulativeGoals: int
+      DesSoccerLearningSetPlayEpisodeMetricsGoalRateSoFarMicros: int64
+    }
+
+let desSoccerLearningSetPlayEpisodeMetricsRowOfRow (get: int -> string) (isNullAt: int -> bool) : DesSoccerLearningSetPlayEpisodeMetricsRow =
+    { DesSoccerLearningSetPlayEpisodeMetricsRunId = get 0
+      DesSoccerLearningSetPlayEpisodeMetricsEpisodeIndex = int (get 1)
+      DesSoccerLearningSetPlayEpisodeMetricsSeed = int64 (get 2)
+      DesSoccerLearningSetPlayEpisodeMetricsRestart = get 3
+      DesSoccerLearningSetPlayEpisodeMetricsRoutine = (if isNullAt 4 then None else Some (get 4))
+      DesSoccerLearningSetPlayEpisodeMetricsScored = (get 5 = "t")
+      DesSoccerLearningSetPlayEpisodeMetricsScoreDeltaForTeam = int (get 6)
+      DesSoccerLearningSetPlayEpisodeMetricsTicks = int64 (get 7)
+      DesSoccerLearningSetPlayEpisodeMetricsSimulatedSecondsMicros = int64 (get 8)
+      DesSoccerLearningSetPlayEpisodeMetricsPolicyUpdates = int64 (get 9)
+      DesSoccerLearningSetPlayEpisodeMetricsHomePolicyEntries = int (get 10)
+      DesSoccerLearningSetPlayEpisodeMetricsHomePolicyTargetEntries = int (get 11)
+      DesSoccerLearningSetPlayEpisodeMetricsAwayPolicyEntries = int (get 12)
+      DesSoccerLearningSetPlayEpisodeMetricsAwayPolicyTargetEntries = int (get 13)
+      DesSoccerLearningSetPlayEpisodeMetricsNeuralTrainingSteps = int (get 14)
+      DesSoccerLearningSetPlayEpisodeMetricsNeuralSamples = int64 (get 15)
+      DesSoccerLearningSetPlayEpisodeMetricsNeuralReplaySamples = int (get 16)
+      DesSoccerLearningSetPlayEpisodeMetricsNeuralLastLossMicros = (if isNullAt 17 then None else Some (int64 (get 17)))
+      DesSoccerLearningSetPlayEpisodeMetricsCumulativeGoals = int (get 18)
+      DesSoccerLearningSetPlayEpisodeMetricsGoalRateSoFarMicros = int64 (get 19)
+    }
+
+let validateDesSoccerLearningSetPlayEpisodeMetricsEpisodeIndex (value: int) : Result<int, string> =
+    if value < 0 then Error "des_soccer_learning_set_play_episode_metrics.episode_index is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningSetPlayEpisodeMetricsSeed (value: int64) : Result<int64, string> =
+    if value < 0L then Error "des_soccer_learning_set_play_episode_metrics.seed is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningSetPlayEpisodeMetricsRoutine (value: string) : Result<string, string> =
+    if value.Length > 80 then Error "des_soccer_learning_set_play_episode_metrics.routine must be at most 80 characters"
+    else Ok value
+
+let validateDesSoccerLearningSetPlayEpisodeMetricsTicks (value: int64) : Result<int64, string> =
+    if value < 0L then Error "des_soccer_learning_set_play_episode_metrics.ticks is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningSetPlayEpisodeMetricsSimulatedSecondsMicros (value: int64) : Result<int64, string> =
+    if value < 0L then Error "des_soccer_learning_set_play_episode_metrics.simulated_seconds_micros is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningSetPlayEpisodeMetricsPolicyUpdates (value: int64) : Result<int64, string> =
+    if value < 0L then Error "des_soccer_learning_set_play_episode_metrics.policy_updates is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningSetPlayEpisodeMetricsHomePolicyEntries (value: int) : Result<int, string> =
+    if value < 0 then Error "des_soccer_learning_set_play_episode_metrics.home_policy_entries is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningSetPlayEpisodeMetricsHomePolicyTargetEntries (value: int) : Result<int, string> =
+    if value < 0 then Error "des_soccer_learning_set_play_episode_metrics.home_policy_target_entries is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningSetPlayEpisodeMetricsAwayPolicyEntries (value: int) : Result<int, string> =
+    if value < 0 then Error "des_soccer_learning_set_play_episode_metrics.away_policy_entries is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningSetPlayEpisodeMetricsAwayPolicyTargetEntries (value: int) : Result<int, string> =
+    if value < 0 then Error "des_soccer_learning_set_play_episode_metrics.away_policy_target_entries is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningSetPlayEpisodeMetricsNeuralTrainingSteps (value: int) : Result<int, string> =
+    if value < 0 then Error "des_soccer_learning_set_play_episode_metrics.neural_training_steps is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningSetPlayEpisodeMetricsNeuralSamples (value: int64) : Result<int64, string> =
+    if value < 0L then Error "des_soccer_learning_set_play_episode_metrics.neural_samples is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningSetPlayEpisodeMetricsNeuralReplaySamples (value: int) : Result<int, string> =
+    if value < 0 then Error "des_soccer_learning_set_play_episode_metrics.neural_replay_samples is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningSetPlayEpisodeMetricsCumulativeGoals (value: int) : Result<int, string> =
+    if value < 0 then Error "des_soccer_learning_set_play_episode_metrics.cumulative_goals is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningSetPlayEpisodeMetricsGoalRateSoFarMicros (value: int64) : Result<int64, string> =
+    if value < 0L then Error "des_soccer_learning_set_play_episode_metrics.goal_rate_so_far_micros is below the minimum"
+    elif value > 1000000L then Error "des_soccer_learning_set_play_episode_metrics.goal_rate_so_far_micros is above the maximum"
+    else Ok value
+
+let desSoccerLearningNeuralRunMetricsTable = "des_soccer_learning_neural_run_metrics"
+let desSoccerLearningNeuralRunMetricsColumns = [ "run_id"; "policy_version_id"; "enabled"; "backend"; "training_steps"; "samples"; "pending_batches"; "dropped_batches"; "replay_samples"; "replay_capacity"; "parameter_count"; "target_clip_micros"; "last_loss_micros"; "average_loss_micros"; "created_at" ]
+let desSoccerLearningNeuralRunMetricsSelectSql = "select\n      run_id::text as run_id,\n      policy_version_id::text as policy_version_id,\n      enabled,\n      backend,\n      training_steps,\n      samples,\n      pending_batches,\n      dropped_batches,\n      replay_samples,\n      replay_capacity,\n      parameter_count,\n      target_clip_micros,\n      last_loss_micros,\n      average_loss_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_neural_run_metrics"
+
+[<RequireQualifiedAccess>]
+type DesSoccerLearningNeuralRunMetricsBackend =
+    | Inline
+    | Threaded
+
+let desSoccerLearningNeuralRunMetricsBackendToString (value: DesSoccerLearningNeuralRunMetricsBackend) : string =
+    match value with
+    | DesSoccerLearningNeuralRunMetricsBackend.Inline -> "inline"
+    | DesSoccerLearningNeuralRunMetricsBackend.Threaded -> "threaded"
+
+let parseDesSoccerLearningNeuralRunMetricsBackend (value: string) : Result<DesSoccerLearningNeuralRunMetricsBackend, string> =
+    match value with
+    | "inline" -> Ok DesSoccerLearningNeuralRunMetricsBackend.Inline
+    | "threaded" -> Ok DesSoccerLearningNeuralRunMetricsBackend.Threaded
+    | _ -> Error ("unsupported des_soccer_learning_neural_run_metrics.backend: " + value)
+
+type DesSoccerLearningNeuralRunMetricsRow =
+    { DesSoccerLearningNeuralRunMetricsRunId: string
+      DesSoccerLearningNeuralRunMetricsPolicyVersionId: string
+      DesSoccerLearningNeuralRunMetricsEnabled: bool
+      DesSoccerLearningNeuralRunMetricsBackend: string
+      DesSoccerLearningNeuralRunMetricsTrainingSteps: int
+      DesSoccerLearningNeuralRunMetricsSamples: int64
+      DesSoccerLearningNeuralRunMetricsPendingBatches: int
+      DesSoccerLearningNeuralRunMetricsDroppedBatches: int
+      DesSoccerLearningNeuralRunMetricsReplaySamples: int
+      DesSoccerLearningNeuralRunMetricsReplayCapacity: int
+      DesSoccerLearningNeuralRunMetricsParameterCount: int
+      DesSoccerLearningNeuralRunMetricsTargetClipMicros: int64
+      DesSoccerLearningNeuralRunMetricsLastLossMicros: int64 option
+      DesSoccerLearningNeuralRunMetricsAverageLossMicros: int64 option
+      DesSoccerLearningNeuralRunMetricsCreatedAt: string
+    }
+
+let desSoccerLearningNeuralRunMetricsRowOfRow (get: int -> string) (isNullAt: int -> bool) : DesSoccerLearningNeuralRunMetricsRow =
+    { DesSoccerLearningNeuralRunMetricsRunId = get 0
+      DesSoccerLearningNeuralRunMetricsPolicyVersionId = get 1
+      DesSoccerLearningNeuralRunMetricsEnabled = (get 2 = "t")
+      DesSoccerLearningNeuralRunMetricsBackend = get 3
+      DesSoccerLearningNeuralRunMetricsTrainingSteps = int (get 4)
+      DesSoccerLearningNeuralRunMetricsSamples = int64 (get 5)
+      DesSoccerLearningNeuralRunMetricsPendingBatches = int (get 6)
+      DesSoccerLearningNeuralRunMetricsDroppedBatches = int (get 7)
+      DesSoccerLearningNeuralRunMetricsReplaySamples = int (get 8)
+      DesSoccerLearningNeuralRunMetricsReplayCapacity = int (get 9)
+      DesSoccerLearningNeuralRunMetricsParameterCount = int (get 10)
+      DesSoccerLearningNeuralRunMetricsTargetClipMicros = int64 (get 11)
+      DesSoccerLearningNeuralRunMetricsLastLossMicros = (if isNullAt 12 then None else Some (int64 (get 12)))
+      DesSoccerLearningNeuralRunMetricsAverageLossMicros = (if isNullAt 13 then None else Some (int64 (get 13)))
+      DesSoccerLearningNeuralRunMetricsCreatedAt = get 14
+    }
+
+let validateDesSoccerLearningNeuralRunMetricsTrainingSteps (value: int) : Result<int, string> =
+    if value < 0 then Error "des_soccer_learning_neural_run_metrics.training_steps is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningNeuralRunMetricsSamples (value: int64) : Result<int64, string> =
+    if value < 0L then Error "des_soccer_learning_neural_run_metrics.samples is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningNeuralRunMetricsPendingBatches (value: int) : Result<int, string> =
+    if value < 0 then Error "des_soccer_learning_neural_run_metrics.pending_batches is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningNeuralRunMetricsDroppedBatches (value: int) : Result<int, string> =
+    if value < 0 then Error "des_soccer_learning_neural_run_metrics.dropped_batches is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningNeuralRunMetricsReplaySamples (value: int) : Result<int, string> =
+    if value < 0 then Error "des_soccer_learning_neural_run_metrics.replay_samples is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningNeuralRunMetricsReplayCapacity (value: int) : Result<int, string> =
+    if value < 0 then Error "des_soccer_learning_neural_run_metrics.replay_capacity is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningNeuralRunMetricsParameterCount (value: int) : Result<int, string> =
+    if value < 0 then Error "des_soccer_learning_neural_run_metrics.parameter_count is below the minimum"
+    else Ok value
+
 let desFelElevatorLearningRunsTable = "des_fel_elevator_learning_runs"
 let desFelElevatorLearningRunsColumns = [ "id"; "run_label"; "scenario_slug"; "status"; "dispatch_policy"; "seed"; "floors"; "shafts"; "capacity"; "travel_seconds_micros"; "dwell_seconds_micros"; "arrival_rate_micros"; "horizon_seconds_micros"; "events"; "arrivals"; "boarded"; "served"; "mean_wait_micros"; "dispatch_decisions"; "pomdp_belief_updates"; "online_learning_updates"; "online_learning_loss_last_micros"; "config"; "metrics"; "artifact"; "created_at"; "updated_at" ]
 let desFelElevatorLearningRunsSelectSql = "select\n      id::text as id,\n      run_label,\n      scenario_slug,\n      status,\n      dispatch_policy,\n      seed,\n      floors,\n      shafts,\n      capacity,\n      travel_seconds_micros,\n      dwell_seconds_micros,\n      arrival_rate_micros,\n      horizon_seconds_micros,\n      events,\n      arrivals,\n      boarded,\n      served,\n      mean_wait_micros,\n      dispatch_decisions,\n      pomdp_belief_updates,\n      online_learning_updates,\n      online_learning_loss_last_micros,\n      config::text as config_json,\n      metrics::text as metrics_json,\n      artifact::text as artifact_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_fel_elevator_learning_runs"

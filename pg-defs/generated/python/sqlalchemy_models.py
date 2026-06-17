@@ -4308,6 +4308,424 @@ class DesSoccerLearningMergeEventsInsert(BaseModel):
     metrics: dict[str, Any] | None = Field(default_factory=dict)
     createdAt: datetime | None = None
 
+DesSoccerTournamentsStatus = Literal["running", "completed", "failed", "aborted"]
+
+class DesSoccerTournaments(Base):
+    __tablename__ = "des_soccer_tournaments"
+    __table_args__ = (
+        CheckConstraint("status in ('running', 'completed', 'failed', 'aborted')", name="des_soccer_tournaments_status_chk"),
+        Index("des_soccer_tournaments_experiment_idx", "experiment_id", text("created_at desc")),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger(), primary_key=True)
+    experiment_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    tournament_date: Mapped[str] = mapped_column(Text(), nullable=False)
+    seed: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    learning_mode: Mapped[str] = mapped_column(Text(), nullable=False)
+    format: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False)
+    team_count: Mapped[int] = mapped_column(Integer(), nullable=False)
+    match_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    matches_played: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    champion_team_id: Mapped[int | None] = mapped_column(Integer(), nullable=True)
+    runner_up_team_id: Mapped[int | None] = mapped_column(Integer(), nullable=True)
+    third_place_team_id: Mapped[int | None] = mapped_column(Integer(), nullable=True)
+    wall_time_seconds: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    status: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("'running'"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+class DesSoccerTournamentsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    experimentId: UUID
+    tournamentDate: str
+    seed: int
+    learningMode: str
+    format: dict[str, Any]
+    teamCount: int
+    matchCount: int
+    matchesPlayed: int
+    championTeamId: int | None = None
+    runnerUpTeamId: int | None = None
+    thirdPlaceTeamId: int | None = None
+    wallTimeSeconds: str | None = None
+    status: DesSoccerTournamentsStatus
+    createdAt: datetime
+    updatedAt: datetime
+    finishedAt: datetime | None = None
+
+class DesSoccerTournamentsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    experimentId: UUID
+    tournamentDate: str
+    seed: int
+    learningMode: str
+    format: dict[str, Any]
+    teamCount: int
+    matchCount: int | None = 0
+    matchesPlayed: int | None = 0
+    championTeamId: int | None = None
+    runnerUpTeamId: int | None = None
+    thirdPlaceTeamId: int | None = None
+    wallTimeSeconds: str | None = None
+    status: DesSoccerTournamentsStatus | None = "running"
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    finishedAt: datetime | None = None
+
+class DesSoccerTournamentMatches(Base):
+    __tablename__ = "des_soccer_tournament_matches"
+    __table_args__ = (
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger(), primary_key=True)
+    match_index: Mapped[int] = mapped_column(Integer(), nullable=False)
+    stage: Mapped[str] = mapped_column(Text(), nullable=False)
+    home_team_id: Mapped[int] = mapped_column(Integer(), nullable=False)
+    away_team_id: Mapped[int] = mapped_column(Integer(), nullable=False)
+    home_goals: Mapped[int] = mapped_column(Integer(), nullable=False)
+    away_goals: Mapped[int] = mapped_column(Integer(), nullable=False)
+    shootout_winner_team_id: Mapped[int | None] = mapped_column(Integer(), nullable=True)
+    home_training_steps: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    away_training_steps: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class DesSoccerTournamentMatchesRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    matchIndex: int
+    stage: str
+    homeTeamId: int
+    awayTeamId: int
+    homeGoals: int
+    awayGoals: int
+    shootoutWinnerTeamId: int | None = None
+    homeTrainingSteps: int
+    awayTrainingSteps: int
+    recordedAt: datetime
+
+class DesSoccerTournamentMatchesInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    matchIndex: int
+    stage: str
+    homeTeamId: int
+    awayTeamId: int
+    homeGoals: int
+    awayGoals: int
+    shootoutWinnerTeamId: int | None = None
+    homeTrainingSteps: int
+    awayTrainingSteps: int
+    recordedAt: datetime | None = None
+
+class DesSoccerTournamentTeamBrains(Base):
+    __tablename__ = "des_soccer_tournament_team_brains"
+    __table_args__ = (
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger(), primary_key=True)
+    team_id: Mapped[int] = mapped_column(Integer(), nullable=False)
+    team_name: Mapped[str] = mapped_column(Text(), nullable=False)
+    seed: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    matches_learned: Mapped[int] = mapped_column(Integer(), nullable=False)
+    training_steps: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    played: Mapped[int] = mapped_column(Integer(), nullable=False)
+    wins: Mapped[int] = mapped_column(Integer(), nullable=False)
+    draws: Mapped[int] = mapped_column(Integer(), nullable=False)
+    losses: Mapped[int] = mapped_column(Integer(), nullable=False)
+    goals_for: Mapped[int] = mapped_column(Integer(), nullable=False)
+    goals_against: Mapped[int] = mapped_column(Integer(), nullable=False)
+    neural_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB(), nullable=True)
+    genome: Mapped[dict[str, Any] | None] = mapped_column(JSONB(), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class DesSoccerTournamentTeamBrainsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    teamId: int
+    teamName: str
+    seed: int
+    matchesLearned: int
+    trainingSteps: int
+    played: int
+    wins: int
+    draws: int
+    losses: int
+    goalsFor: int
+    goalsAgainst: int
+    neuralSnapshot: dict[str, Any] | None = None
+    genome: dict[str, Any] | None = None
+    updatedAt: datetime
+
+class DesSoccerTournamentTeamBrainsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    teamId: int
+    teamName: str
+    seed: int
+    matchesLearned: int
+    trainingSteps: int
+    played: int
+    wins: int
+    draws: int
+    losses: int
+    goalsFor: int
+    goalsAgainst: int
+    neuralSnapshot: dict[str, Any] | None = None
+    genome: dict[str, Any] | None = None
+    updatedAt: datetime | None = None
+
+DesSoccerLearningSetPlayRunsPrimaryRestart = Literal["direct-free-kick", "indirect-free-kick"]
+DesSoccerLearningSetPlayRunsTeam = Literal["home", "away"]
+
+class DesSoccerLearningSetPlayRuns(Base):
+    __tablename__ = "des_soccer_learning_set_play_runs"
+    __table_args__ = (
+        CheckConstraint("primary_restart in ('direct-free-kick', 'indirect-free-kick')", name="des_soccer_learning_set_play_runs_restart_chk"),
+        CheckConstraint("team in ('home', 'away')", name="des_soccer_learning_set_play_runs_team_chk"),
+        CheckConstraint("duration_seconds_micros >= 0", name="des_soccer_learning_set_play_runs_duration_chk"),
+        CheckConstraint("episode_count >= 0", name="des_soccer_learning_set_play_runs_episode_chk"),
+        CheckConstraint("goals >= 0", name="des_soccer_learning_set_play_runs_goals_chk"),
+        CheckConstraint("goal_rate_micros between 0 and 1000000", name="des_soccer_learning_set_play_runs_goal_rate_chk"),
+    )
+
+    run_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
+    policy_version_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    primary_restart: Mapped[str] = mapped_column(String(40), nullable=False)
+    team: Mapped[str] = mapped_column(String(8), nullable=False)
+    spot_x_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    spot_y_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    duration_seconds_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    episode_count: Mapped[int] = mapped_column(Integer(), nullable=False)
+    goals: Mapped[int] = mapped_column(Integer(), nullable=False)
+    goal_rate_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    first_window_goal_rate_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    last_window_goal_rate_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    goal_rate_delta_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class DesSoccerLearningSetPlayRunsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    runId: UUID
+    policyVersionId: UUID
+    primaryRestart: DesSoccerLearningSetPlayRunsPrimaryRestart
+    team: DesSoccerLearningSetPlayRunsTeam
+    spotXMicros: int
+    spotYMicros: int
+    durationSecondsMicros: int
+    episodeCount: int = Field(..., ge=0)
+    goals: int = Field(..., ge=0)
+    goalRateMicros: int
+    firstWindowGoalRateMicros: int
+    lastWindowGoalRateMicros: int
+    goalRateDeltaMicros: int
+    createdAt: datetime
+
+class DesSoccerLearningSetPlayRunsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    runId: UUID
+    policyVersionId: UUID
+    primaryRestart: DesSoccerLearningSetPlayRunsPrimaryRestart
+    team: DesSoccerLearningSetPlayRunsTeam
+    spotXMicros: int
+    spotYMicros: int
+    durationSecondsMicros: int
+    episodeCount: int = Field(..., ge=0)
+    goals: int = Field(..., ge=0)
+    goalRateMicros: int
+    firstWindowGoalRateMicros: int
+    lastWindowGoalRateMicros: int
+    goalRateDeltaMicros: int
+    createdAt: datetime | None = None
+
+DesSoccerLearningSetPlayRestartMixRestart = Literal["direct-free-kick", "indirect-free-kick"]
+
+class DesSoccerLearningSetPlayRestartMix(Base):
+    __tablename__ = "des_soccer_learning_set_play_restart_mix"
+    __table_args__ = (
+        CheckConstraint("ordinal >= 0", name="des_soccer_learning_set_play_restart_mix_ordinal_chk"),
+        CheckConstraint("restart in ('direct-free-kick', 'indirect-free-kick')", name="des_soccer_learning_set_play_restart_mix_restart_chk"),
+    )
+
+    run_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    ordinal: Mapped[int] = mapped_column(Integer(), nullable=False)
+    restart: Mapped[str] = mapped_column(String(40), nullable=False)
+
+class DesSoccerLearningSetPlayRestartMixRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    runId: UUID
+    ordinal: int = Field(..., ge=0)
+    restart: DesSoccerLearningSetPlayRestartMixRestart
+
+class DesSoccerLearningSetPlayRestartMixInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    runId: UUID
+    ordinal: int = Field(..., ge=0)
+    restart: DesSoccerLearningSetPlayRestartMixRestart
+
+DesSoccerLearningSetPlayEpisodeMetricsRestart = Literal["direct-free-kick", "indirect-free-kick"]
+
+class DesSoccerLearningSetPlayEpisodeMetrics(Base):
+    __tablename__ = "des_soccer_learning_set_play_episode_metrics"
+    __table_args__ = (
+        CheckConstraint("episode_index >= 0", name="des_soccer_learning_set_play_episode_idx_chk"),
+        CheckConstraint("seed >= 0", name="des_soccer_learning_set_play_episode_seed_chk"),
+        CheckConstraint("restart in ('direct-free-kick', 'indirect-free-kick')", name="des_soccer_learning_set_play_episode_restart_chk"),
+        CheckConstraint("ticks >= 0", name="des_soccer_learning_set_play_episode_ticks_chk"),
+        CheckConstraint("simulated_seconds_micros >= 0", name="des_soccer_learning_set_play_episode_seconds_chk"),
+        CheckConstraint("policy_updates >= 0", name="des_soccer_learning_set_play_episode_policy_updates_chk"),
+        CheckConstraint("home_policy_entries >= 0\n      and home_policy_target_entries >= 0\n      and away_policy_entries >= 0\n      and away_policy_target_entries >= 0", name="des_soccer_learning_set_play_episode_entries_chk"),
+        CheckConstraint("neural_training_steps >= 0\n      and neural_samples >= 0\n      and neural_replay_samples >= 0", name="des_soccer_learning_set_play_episode_neural_chk"),
+        CheckConstraint("cumulative_goals >= 0", name="des_soccer_learning_set_play_episode_goals_chk"),
+        CheckConstraint("goal_rate_so_far_micros between 0 and 1000000", name="des_soccer_learning_set_play_episode_goal_rate_chk"),
+        Index("des_soccer_learning_set_play_episode_restart_idx", "restart", "scored", "episode_index"),
+    )
+
+    run_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    episode_index: Mapped[int] = mapped_column(Integer(), nullable=False)
+    seed: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    restart: Mapped[str] = mapped_column(String(40), nullable=False)
+    routine: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    scored: Mapped[bool] = mapped_column(Boolean(), nullable=False)
+    score_delta_for_team: Mapped[int] = mapped_column(Integer(), nullable=False)
+    ticks: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    simulated_seconds_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    policy_updates: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    home_policy_entries: Mapped[int] = mapped_column(Integer(), nullable=False)
+    home_policy_target_entries: Mapped[int] = mapped_column(Integer(), nullable=False)
+    away_policy_entries: Mapped[int] = mapped_column(Integer(), nullable=False)
+    away_policy_target_entries: Mapped[int] = mapped_column(Integer(), nullable=False)
+    neural_training_steps: Mapped[int] = mapped_column(Integer(), nullable=False)
+    neural_samples: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    neural_replay_samples: Mapped[int] = mapped_column(Integer(), nullable=False)
+    neural_last_loss_micros: Mapped[int | None] = mapped_column(BigInteger(), nullable=True)
+    cumulative_goals: Mapped[int] = mapped_column(Integer(), nullable=False)
+    goal_rate_so_far_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+
+class DesSoccerLearningSetPlayEpisodeMetricsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    runId: UUID
+    episodeIndex: int = Field(..., ge=0)
+    seed: int
+    restart: DesSoccerLearningSetPlayEpisodeMetricsRestart
+    routine: str | None = Field(None, max_length=80)
+    scored: bool
+    scoreDeltaForTeam: int
+    ticks: int
+    simulatedSecondsMicros: int
+    policyUpdates: int
+    homePolicyEntries: int = Field(..., ge=0)
+    homePolicyTargetEntries: int = Field(..., ge=0)
+    awayPolicyEntries: int = Field(..., ge=0)
+    awayPolicyTargetEntries: int = Field(..., ge=0)
+    neuralTrainingSteps: int = Field(..., ge=0)
+    neuralSamples: int
+    neuralReplaySamples: int = Field(..., ge=0)
+    neuralLastLossMicros: int | None = None
+    cumulativeGoals: int = Field(..., ge=0)
+    goalRateSoFarMicros: int
+
+class DesSoccerLearningSetPlayEpisodeMetricsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    runId: UUID
+    episodeIndex: int = Field(..., ge=0)
+    seed: int
+    restart: DesSoccerLearningSetPlayEpisodeMetricsRestart
+    routine: str | None = Field(None, max_length=80)
+    scored: bool
+    scoreDeltaForTeam: int
+    ticks: int
+    simulatedSecondsMicros: int
+    policyUpdates: int
+    homePolicyEntries: int = Field(..., ge=0)
+    homePolicyTargetEntries: int = Field(..., ge=0)
+    awayPolicyEntries: int = Field(..., ge=0)
+    awayPolicyTargetEntries: int = Field(..., ge=0)
+    neuralTrainingSteps: int = Field(..., ge=0)
+    neuralSamples: int
+    neuralReplaySamples: int = Field(..., ge=0)
+    neuralLastLossMicros: int | None = None
+    cumulativeGoals: int = Field(..., ge=0)
+    goalRateSoFarMicros: int
+
+DesSoccerLearningNeuralRunMetricsBackend = Literal["inline", "threaded"]
+
+class DesSoccerLearningNeuralRunMetrics(Base):
+    __tablename__ = "des_soccer_learning_neural_run_metrics"
+    __table_args__ = (
+        CheckConstraint("backend in ('inline', 'threaded')", name="des_soccer_learning_neural_run_backend_chk"),
+        CheckConstraint("training_steps >= 0\n      and samples >= 0\n      and pending_batches >= 0\n      and dropped_batches >= 0\n      and replay_samples >= 0\n      and replay_capacity >= 0\n      and parameter_count >= 0", name="des_soccer_learning_neural_run_counts_chk"),
+        Index("des_soccer_learning_neural_run_steps_idx", text("training_steps desc"), text("samples desc")),
+    )
+
+    run_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
+    policy_version_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean(), nullable=False)
+    backend: Mapped[str] = mapped_column(String(32), nullable=False)
+    training_steps: Mapped[int] = mapped_column(Integer(), nullable=False)
+    samples: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    pending_batches: Mapped[int] = mapped_column(Integer(), nullable=False)
+    dropped_batches: Mapped[int] = mapped_column(Integer(), nullable=False)
+    replay_samples: Mapped[int] = mapped_column(Integer(), nullable=False)
+    replay_capacity: Mapped[int] = mapped_column(Integer(), nullable=False)
+    parameter_count: Mapped[int] = mapped_column(Integer(), nullable=False)
+    target_clip_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    last_loss_micros: Mapped[int | None] = mapped_column(BigInteger(), nullable=True)
+    average_loss_micros: Mapped[int | None] = mapped_column(BigInteger(), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class DesSoccerLearningNeuralRunMetricsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    runId: UUID
+    policyVersionId: UUID
+    enabled: bool
+    backend: DesSoccerLearningNeuralRunMetricsBackend
+    trainingSteps: int = Field(..., ge=0)
+    samples: int
+    pendingBatches: int = Field(..., ge=0)
+    droppedBatches: int = Field(..., ge=0)
+    replaySamples: int = Field(..., ge=0)
+    replayCapacity: int = Field(..., ge=0)
+    parameterCount: int = Field(..., ge=0)
+    targetClipMicros: int
+    lastLossMicros: int | None = None
+    averageLossMicros: int | None = None
+    createdAt: datetime
+
+class DesSoccerLearningNeuralRunMetricsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    runId: UUID
+    policyVersionId: UUID
+    enabled: bool
+    backend: DesSoccerLearningNeuralRunMetricsBackend
+    trainingSteps: int = Field(..., ge=0)
+    samples: int
+    pendingBatches: int = Field(..., ge=0)
+    droppedBatches: int = Field(..., ge=0)
+    replaySamples: int = Field(..., ge=0)
+    replayCapacity: int = Field(..., ge=0)
+    parameterCount: int = Field(..., ge=0)
+    targetClipMicros: int
+    lastLossMicros: int | None = None
+    averageLossMicros: int | None = None
+    createdAt: datetime | None = None
+
 DesFelElevatorLearningRunsStatus = Literal["completed", "failed", "imported"]
 DesFelElevatorLearningRunsDispatchPolicy = Literal["look", "mdp-table", "neural-scorer", "pomdp-belief", "neural-td"]
 

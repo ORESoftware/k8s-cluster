@@ -3,7 +3,7 @@
 // Generated ORM/client code is an adapter only; do not infer migrations from it.
 // MIGRATION SAFETY: never run or apply migrations automatically. Require explicit human review and approval before any database write.
 import { sql } from "drizzle-orm";
-import { bigint, bigserial, boolean, check, index, integer, jsonb, pgSchema, pgTable, smallint, text, timestamp, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";
+import { bigint, bigserial, boolean, check, index, integer, jsonb, pgSchema, pgTable, smallint, text, timestamp, uniqueIndex, uuid, varchar, doublePrecision } from "drizzle-orm/pg-core";
 import { z } from "zod";
 
 const textEncoder = new TextEncoder();
@@ -3513,6 +3513,472 @@ export const desSoccerLearningMergeEventsUpdateSchema = desSoccerLearningMergeEv
 export type DesSoccerLearningMergeEventsRow = z.infer<typeof desSoccerLearningMergeEventsRowSchema>;
 export type DesSoccerLearningMergeEventsInsert = z.infer<typeof desSoccerLearningMergeEventsInsertSchema>;
 export type DesSoccerLearningMergeEventsUpdate = z.infer<typeof desSoccerLearningMergeEventsUpdateSchema>;
+
+export const desSoccerTournamentsStatusValues = ["running","completed","failed","aborted"] as const;
+export const desSoccerTournamentsStatusSchema = z.enum(desSoccerTournamentsStatusValues);
+export type DesSoccerTournamentsStatus = z.infer<typeof desSoccerTournamentsStatusSchema>;
+
+export const desSoccerTournaments = pgTable(
+  "des_soccer_tournaments",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    experimentId: uuid("experiment_id").notNull(),
+    tournamentDate: text("tournament_date").notNull(),
+    seed: bigint("seed", { mode: "number" }).notNull(),
+    learningMode: text("learning_mode").notNull(),
+    format: jsonb("format").notNull(),
+    teamCount: integer("team_count").notNull(),
+    matchCount: integer("match_count").default(sql`0`).notNull(),
+    matchesPlayed: integer("matches_played").default(sql`0`).notNull(),
+    championTeamId: integer("champion_team_id"),
+    runnerUpTeamId: integer("runner_up_team_id"),
+    thirdPlaceTeamId: integer("third_place_team_id"),
+    wallTimeSeconds: doublePrecision("wall_time_seconds"),
+    status: text("status").default(sql`'running'`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    finishedAt: timestamp("finished_at", { withTimezone: true, mode: "string" }),
+  },
+  (table) => ({
+    desSoccerTournamentsStatusChk: check("des_soccer_tournaments_status_chk", sql.raw("status in ('running', 'completed', 'failed', 'aborted')")),
+    desSoccerTournamentsExperimentIdx: index("des_soccer_tournaments_experiment_idx").on(table.experimentId, table.createdAt.desc()),
+  }),
+);
+
+export const desSoccerTournamentsRowSchema = z.object({
+  id: z.number().int(),
+  experimentId: z.string().uuid(),
+  tournamentDate: z.string(),
+  seed: z.number().int(),
+  learningMode: z.string(),
+  format: jsonObjectSchema,
+  teamCount: z.number().int(),
+  matchCount: z.number().int(),
+  matchesPlayed: z.number().int(),
+  championTeamId: z.number().int().nullable(),
+  runnerUpTeamId: z.number().int().nullable(),
+  thirdPlaceTeamId: z.number().int().nullable(),
+  wallTimeSeconds: z.number().nullable(),
+  status: desSoccerTournamentsStatusSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  finishedAt: z.string().datetime().nullable(),
+});
+
+export const desSoccerTournamentsInsertSchema = z.object({
+  id: z.number().int(),
+  experimentId: z.string().uuid(),
+  tournamentDate: z.string(),
+  seed: z.number().int(),
+  learningMode: z.string(),
+  format: jsonObjectSchema,
+  teamCount: z.number().int(),
+  matchCount: z.number().int().optional().default(0),
+  matchesPlayed: z.number().int().optional().default(0),
+  championTeamId: z.number().int().nullable().optional(),
+  runnerUpTeamId: z.number().int().nullable().optional(),
+  thirdPlaceTeamId: z.number().int().nullable().optional(),
+  wallTimeSeconds: z.number().nullable().optional(),
+  status: desSoccerTournamentsStatusSchema.optional().default("running"),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  finishedAt: z.string().datetime().nullable().optional(),
+});
+
+export const desSoccerTournamentsUpdateSchema = desSoccerTournamentsInsertSchema.partial();
+export type DesSoccerTournamentsRow = z.infer<typeof desSoccerTournamentsRowSchema>;
+export type DesSoccerTournamentsInsert = z.infer<typeof desSoccerTournamentsInsertSchema>;
+export type DesSoccerTournamentsUpdate = z.infer<typeof desSoccerTournamentsUpdateSchema>;
+
+export const desSoccerTournamentMatches = pgTable(
+  "des_soccer_tournament_matches",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    matchIndex: integer("match_index").notNull(),
+    stage: text("stage").notNull(),
+    homeTeamId: integer("home_team_id").notNull(),
+    awayTeamId: integer("away_team_id").notNull(),
+    homeGoals: integer("home_goals").notNull(),
+    awayGoals: integer("away_goals").notNull(),
+    shootoutWinnerTeamId: integer("shootout_winner_team_id"),
+    homeTrainingSteps: bigint("home_training_steps", { mode: "number" }).notNull(),
+    awayTrainingSteps: bigint("away_training_steps", { mode: "number" }).notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+  }),
+);
+
+export const desSoccerTournamentMatchesRowSchema = z.object({
+  id: z.number().int(),
+  matchIndex: z.number().int(),
+  stage: z.string(),
+  homeTeamId: z.number().int(),
+  awayTeamId: z.number().int(),
+  homeGoals: z.number().int(),
+  awayGoals: z.number().int(),
+  shootoutWinnerTeamId: z.number().int().nullable(),
+  homeTrainingSteps: z.number().int(),
+  awayTrainingSteps: z.number().int(),
+  recordedAt: z.string().datetime(),
+});
+
+export const desSoccerTournamentMatchesInsertSchema = z.object({
+  id: z.number().int(),
+  matchIndex: z.number().int(),
+  stage: z.string(),
+  homeTeamId: z.number().int(),
+  awayTeamId: z.number().int(),
+  homeGoals: z.number().int(),
+  awayGoals: z.number().int(),
+  shootoutWinnerTeamId: z.number().int().nullable().optional(),
+  homeTrainingSteps: z.number().int(),
+  awayTrainingSteps: z.number().int(),
+  recordedAt: z.string().datetime().optional(),
+});
+
+export const desSoccerTournamentMatchesUpdateSchema = desSoccerTournamentMatchesInsertSchema.partial();
+export type DesSoccerTournamentMatchesRow = z.infer<typeof desSoccerTournamentMatchesRowSchema>;
+export type DesSoccerTournamentMatchesInsert = z.infer<typeof desSoccerTournamentMatchesInsertSchema>;
+export type DesSoccerTournamentMatchesUpdate = z.infer<typeof desSoccerTournamentMatchesUpdateSchema>;
+
+export const desSoccerTournamentTeamBrains = pgTable(
+  "des_soccer_tournament_team_brains",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    teamId: integer("team_id").notNull(),
+    teamName: text("team_name").notNull(),
+    seed: bigint("seed", { mode: "number" }).notNull(),
+    matchesLearned: integer("matches_learned").notNull(),
+    trainingSteps: bigint("training_steps", { mode: "number" }).notNull(),
+    played: integer("played").notNull(),
+    wins: integer("wins").notNull(),
+    draws: integer("draws").notNull(),
+    losses: integer("losses").notNull(),
+    goalsFor: integer("goals_for").notNull(),
+    goalsAgainst: integer("goals_against").notNull(),
+    neuralSnapshot: jsonb("neural_snapshot"),
+    genome: jsonb("genome"),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+  }),
+);
+
+export const desSoccerTournamentTeamBrainsRowSchema = z.object({
+  id: z.number().int(),
+  teamId: z.number().int(),
+  teamName: z.string(),
+  seed: z.number().int(),
+  matchesLearned: z.number().int(),
+  trainingSteps: z.number().int(),
+  played: z.number().int(),
+  wins: z.number().int(),
+  draws: z.number().int(),
+  losses: z.number().int(),
+  goalsFor: z.number().int(),
+  goalsAgainst: z.number().int(),
+  neuralSnapshot: jsonObjectSchema.nullable(),
+  genome: jsonObjectSchema.nullable(),
+  updatedAt: z.string().datetime(),
+});
+
+export const desSoccerTournamentTeamBrainsInsertSchema = z.object({
+  id: z.number().int(),
+  teamId: z.number().int(),
+  teamName: z.string(),
+  seed: z.number().int(),
+  matchesLearned: z.number().int(),
+  trainingSteps: z.number().int(),
+  played: z.number().int(),
+  wins: z.number().int(),
+  draws: z.number().int(),
+  losses: z.number().int(),
+  goalsFor: z.number().int(),
+  goalsAgainst: z.number().int(),
+  neuralSnapshot: jsonObjectSchema.nullable().optional(),
+  genome: jsonObjectSchema.nullable().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const desSoccerTournamentTeamBrainsUpdateSchema = desSoccerTournamentTeamBrainsInsertSchema.partial();
+export type DesSoccerTournamentTeamBrainsRow = z.infer<typeof desSoccerTournamentTeamBrainsRowSchema>;
+export type DesSoccerTournamentTeamBrainsInsert = z.infer<typeof desSoccerTournamentTeamBrainsInsertSchema>;
+export type DesSoccerTournamentTeamBrainsUpdate = z.infer<typeof desSoccerTournamentTeamBrainsUpdateSchema>;
+
+export const desSoccerLearningSetPlayRunsPrimaryRestartValues = ["direct-free-kick","indirect-free-kick"] as const;
+export const desSoccerLearningSetPlayRunsPrimaryRestartSchema = z.enum(desSoccerLearningSetPlayRunsPrimaryRestartValues);
+export type DesSoccerLearningSetPlayRunsPrimaryRestart = z.infer<typeof desSoccerLearningSetPlayRunsPrimaryRestartSchema>;
+
+export const desSoccerLearningSetPlayRunsTeamValues = ["home","away"] as const;
+export const desSoccerLearningSetPlayRunsTeamSchema = z.enum(desSoccerLearningSetPlayRunsTeamValues);
+export type DesSoccerLearningSetPlayRunsTeam = z.infer<typeof desSoccerLearningSetPlayRunsTeamSchema>;
+
+export const desSoccerLearningSetPlayRuns = pgTable(
+  "des_soccer_learning_set_play_runs",
+  {
+    runId: uuid("run_id").primaryKey(),
+    policyVersionId: uuid("policy_version_id").notNull(),
+    primaryRestart: varchar("primary_restart", { length: 40 }).notNull(),
+    team: varchar("team", { length: 8 }).notNull(),
+    spotXMicros: bigint("spot_x_micros", { mode: "number" }).notNull(),
+    spotYMicros: bigint("spot_y_micros", { mode: "number" }).notNull(),
+    durationSecondsMicros: bigint("duration_seconds_micros", { mode: "number" }).notNull(),
+    episodeCount: integer("episode_count").notNull(),
+    goals: integer("goals").notNull(),
+    goalRateMicros: bigint("goal_rate_micros", { mode: "number" }).notNull(),
+    firstWindowGoalRateMicros: bigint("first_window_goal_rate_micros", { mode: "number" }).notNull(),
+    lastWindowGoalRateMicros: bigint("last_window_goal_rate_micros", { mode: "number" }).notNull(),
+    goalRateDeltaMicros: bigint("goal_rate_delta_micros", { mode: "number" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    desSoccerLearningSetPlayRunsRestartChk: check("des_soccer_learning_set_play_runs_restart_chk", sql.raw("primary_restart in ('direct-free-kick', 'indirect-free-kick')")),
+    desSoccerLearningSetPlayRunsTeamChk: check("des_soccer_learning_set_play_runs_team_chk", sql.raw("team in ('home', 'away')")),
+    desSoccerLearningSetPlayRunsDurationChk: check("des_soccer_learning_set_play_runs_duration_chk", sql.raw("duration_seconds_micros >= 0")),
+    desSoccerLearningSetPlayRunsEpisodeChk: check("des_soccer_learning_set_play_runs_episode_chk", sql.raw("episode_count >= 0")),
+    desSoccerLearningSetPlayRunsGoalsChk: check("des_soccer_learning_set_play_runs_goals_chk", sql.raw("goals >= 0")),
+    desSoccerLearningSetPlayRunsGoalRateChk: check("des_soccer_learning_set_play_runs_goal_rate_chk", sql.raw("goal_rate_micros between 0 and 1000000")),
+  }),
+);
+
+export const desSoccerLearningSetPlayRunsRowSchema = z.object({
+  runId: z.string().uuid(),
+  policyVersionId: z.string().uuid(),
+  primaryRestart: desSoccerLearningSetPlayRunsPrimaryRestartSchema,
+  team: desSoccerLearningSetPlayRunsTeamSchema,
+  spotXMicros: z.number().int(),
+  spotYMicros: z.number().int(),
+  durationSecondsMicros: z.number().int().min(0),
+  episodeCount: z.number().int().min(0),
+  goals: z.number().int().min(0),
+  goalRateMicros: z.number().int().min(0).max(1000000),
+  firstWindowGoalRateMicros: z.number().int(),
+  lastWindowGoalRateMicros: z.number().int(),
+  goalRateDeltaMicros: z.number().int(),
+  createdAt: z.string().datetime(),
+});
+
+export const desSoccerLearningSetPlayRunsInsertSchema = z.object({
+  runId: z.string().uuid(),
+  policyVersionId: z.string().uuid(),
+  primaryRestart: desSoccerLearningSetPlayRunsPrimaryRestartSchema,
+  team: desSoccerLearningSetPlayRunsTeamSchema,
+  spotXMicros: z.number().int(),
+  spotYMicros: z.number().int(),
+  durationSecondsMicros: z.number().int().min(0),
+  episodeCount: z.number().int().min(0),
+  goals: z.number().int().min(0),
+  goalRateMicros: z.number().int().min(0).max(1000000),
+  firstWindowGoalRateMicros: z.number().int(),
+  lastWindowGoalRateMicros: z.number().int(),
+  goalRateDeltaMicros: z.number().int(),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const desSoccerLearningSetPlayRunsUpdateSchema = desSoccerLearningSetPlayRunsInsertSchema.partial();
+export type DesSoccerLearningSetPlayRunsRow = z.infer<typeof desSoccerLearningSetPlayRunsRowSchema>;
+export type DesSoccerLearningSetPlayRunsInsert = z.infer<typeof desSoccerLearningSetPlayRunsInsertSchema>;
+export type DesSoccerLearningSetPlayRunsUpdate = z.infer<typeof desSoccerLearningSetPlayRunsUpdateSchema>;
+
+export const desSoccerLearningSetPlayRestartMixRestartValues = ["direct-free-kick","indirect-free-kick"] as const;
+export const desSoccerLearningSetPlayRestartMixRestartSchema = z.enum(desSoccerLearningSetPlayRestartMixRestartValues);
+export type DesSoccerLearningSetPlayRestartMixRestart = z.infer<typeof desSoccerLearningSetPlayRestartMixRestartSchema>;
+
+export const desSoccerLearningSetPlayRestartMix = pgTable(
+  "des_soccer_learning_set_play_restart_mix",
+  {
+    runId: uuid("run_id").notNull(),
+    ordinal: integer("ordinal").notNull(),
+    restart: varchar("restart", { length: 40 }).notNull(),
+  },
+  (table) => ({
+    desSoccerLearningSetPlayRestartMixOrdinalChk: check("des_soccer_learning_set_play_restart_mix_ordinal_chk", sql.raw("ordinal >= 0")),
+    desSoccerLearningSetPlayRestartMixRestartChk: check("des_soccer_learning_set_play_restart_mix_restart_chk", sql.raw("restart in ('direct-free-kick', 'indirect-free-kick')")),
+  }),
+);
+
+export const desSoccerLearningSetPlayRestartMixRowSchema = z.object({
+  runId: z.string().uuid(),
+  ordinal: z.number().int().min(0),
+  restart: desSoccerLearningSetPlayRestartMixRestartSchema,
+});
+
+export const desSoccerLearningSetPlayRestartMixInsertSchema = z.object({
+  runId: z.string().uuid(),
+  ordinal: z.number().int().min(0),
+  restart: desSoccerLearningSetPlayRestartMixRestartSchema,
+});
+
+export const desSoccerLearningSetPlayRestartMixUpdateSchema = desSoccerLearningSetPlayRestartMixInsertSchema.partial();
+export type DesSoccerLearningSetPlayRestartMixRow = z.infer<typeof desSoccerLearningSetPlayRestartMixRowSchema>;
+export type DesSoccerLearningSetPlayRestartMixInsert = z.infer<typeof desSoccerLearningSetPlayRestartMixInsertSchema>;
+export type DesSoccerLearningSetPlayRestartMixUpdate = z.infer<typeof desSoccerLearningSetPlayRestartMixUpdateSchema>;
+
+export const desSoccerLearningSetPlayEpisodeMetricsRestartValues = ["direct-free-kick","indirect-free-kick"] as const;
+export const desSoccerLearningSetPlayEpisodeMetricsRestartSchema = z.enum(desSoccerLearningSetPlayEpisodeMetricsRestartValues);
+export type DesSoccerLearningSetPlayEpisodeMetricsRestart = z.infer<typeof desSoccerLearningSetPlayEpisodeMetricsRestartSchema>;
+
+export const desSoccerLearningSetPlayEpisodeMetrics = pgTable(
+  "des_soccer_learning_set_play_episode_metrics",
+  {
+    runId: uuid("run_id").notNull(),
+    episodeIndex: integer("episode_index").notNull(),
+    seed: bigint("seed", { mode: "number" }).notNull(),
+    restart: varchar("restart", { length: 40 }).notNull(),
+    routine: varchar("routine", { length: 80 }),
+    scored: boolean("scored").notNull(),
+    scoreDeltaForTeam: integer("score_delta_for_team").notNull(),
+    ticks: bigint("ticks", { mode: "number" }).notNull(),
+    simulatedSecondsMicros: bigint("simulated_seconds_micros", { mode: "number" }).notNull(),
+    policyUpdates: bigint("policy_updates", { mode: "number" }).notNull(),
+    homePolicyEntries: integer("home_policy_entries").notNull(),
+    homePolicyTargetEntries: integer("home_policy_target_entries").notNull(),
+    awayPolicyEntries: integer("away_policy_entries").notNull(),
+    awayPolicyTargetEntries: integer("away_policy_target_entries").notNull(),
+    neuralTrainingSteps: integer("neural_training_steps").notNull(),
+    neuralSamples: bigint("neural_samples", { mode: "number" }).notNull(),
+    neuralReplaySamples: integer("neural_replay_samples").notNull(),
+    neuralLastLossMicros: bigint("neural_last_loss_micros", { mode: "number" }),
+    cumulativeGoals: integer("cumulative_goals").notNull(),
+    goalRateSoFarMicros: bigint("goal_rate_so_far_micros", { mode: "number" }).notNull(),
+  },
+  (table) => ({
+    desSoccerLearningSetPlayEpisodeIdxChk: check("des_soccer_learning_set_play_episode_idx_chk", sql.raw("episode_index >= 0")),
+    desSoccerLearningSetPlayEpisodeSeedChk: check("des_soccer_learning_set_play_episode_seed_chk", sql.raw("seed >= 0")),
+    desSoccerLearningSetPlayEpisodeRestartChk: check("des_soccer_learning_set_play_episode_restart_chk", sql.raw("restart in ('direct-free-kick', 'indirect-free-kick')")),
+    desSoccerLearningSetPlayEpisodeTicksChk: check("des_soccer_learning_set_play_episode_ticks_chk", sql.raw("ticks >= 0")),
+    desSoccerLearningSetPlayEpisodeSecondsChk: check("des_soccer_learning_set_play_episode_seconds_chk", sql.raw("simulated_seconds_micros >= 0")),
+    desSoccerLearningSetPlayEpisodePolicyUpdatesChk: check("des_soccer_learning_set_play_episode_policy_updates_chk", sql.raw("policy_updates >= 0")),
+    desSoccerLearningSetPlayEpisodeEntriesChk: check("des_soccer_learning_set_play_episode_entries_chk", sql.raw("home_policy_entries >= 0\n      and home_policy_target_entries >= 0\n      and away_policy_entries >= 0\n      and away_policy_target_entries >= 0")),
+    desSoccerLearningSetPlayEpisodeNeuralChk: check("des_soccer_learning_set_play_episode_neural_chk", sql.raw("neural_training_steps >= 0\n      and neural_samples >= 0\n      and neural_replay_samples >= 0")),
+    desSoccerLearningSetPlayEpisodeGoalsChk: check("des_soccer_learning_set_play_episode_goals_chk", sql.raw("cumulative_goals >= 0")),
+    desSoccerLearningSetPlayEpisodeGoalRateChk: check("des_soccer_learning_set_play_episode_goal_rate_chk", sql.raw("goal_rate_so_far_micros between 0 and 1000000")),
+    desSoccerLearningSetPlayEpisodeRestartIdx: index("des_soccer_learning_set_play_episode_restart_idx").on(table.restart, table.scored, table.episodeIndex),
+  }),
+);
+
+export const desSoccerLearningSetPlayEpisodeMetricsRowSchema = z.object({
+  runId: z.string().uuid(),
+  episodeIndex: z.number().int().min(0),
+  seed: z.number().int().min(0),
+  restart: desSoccerLearningSetPlayEpisodeMetricsRestartSchema,
+  routine: z.string().max(80).nullable(),
+  scored: z.boolean(),
+  scoreDeltaForTeam: z.number().int(),
+  ticks: z.number().int().min(0),
+  simulatedSecondsMicros: z.number().int().min(0),
+  policyUpdates: z.number().int().min(0),
+  homePolicyEntries: z.number().int().min(0),
+  homePolicyTargetEntries: z.number().int().min(0),
+  awayPolicyEntries: z.number().int().min(0),
+  awayPolicyTargetEntries: z.number().int().min(0),
+  neuralTrainingSteps: z.number().int().min(0),
+  neuralSamples: z.number().int().min(0),
+  neuralReplaySamples: z.number().int().min(0),
+  neuralLastLossMicros: z.number().int().nullable(),
+  cumulativeGoals: z.number().int().min(0),
+  goalRateSoFarMicros: z.number().int().min(0).max(1000000),
+});
+
+export const desSoccerLearningSetPlayEpisodeMetricsInsertSchema = z.object({
+  runId: z.string().uuid(),
+  episodeIndex: z.number().int().min(0),
+  seed: z.number().int().min(0),
+  restart: desSoccerLearningSetPlayEpisodeMetricsRestartSchema,
+  routine: z.string().max(80).nullable().optional(),
+  scored: z.boolean(),
+  scoreDeltaForTeam: z.number().int(),
+  ticks: z.number().int().min(0),
+  simulatedSecondsMicros: z.number().int().min(0),
+  policyUpdates: z.number().int().min(0),
+  homePolicyEntries: z.number().int().min(0),
+  homePolicyTargetEntries: z.number().int().min(0),
+  awayPolicyEntries: z.number().int().min(0),
+  awayPolicyTargetEntries: z.number().int().min(0),
+  neuralTrainingSteps: z.number().int().min(0),
+  neuralSamples: z.number().int().min(0),
+  neuralReplaySamples: z.number().int().min(0),
+  neuralLastLossMicros: z.number().int().nullable().optional(),
+  cumulativeGoals: z.number().int().min(0),
+  goalRateSoFarMicros: z.number().int().min(0).max(1000000),
+});
+
+export const desSoccerLearningSetPlayEpisodeMetricsUpdateSchema = desSoccerLearningSetPlayEpisodeMetricsInsertSchema.partial();
+export type DesSoccerLearningSetPlayEpisodeMetricsRow = z.infer<typeof desSoccerLearningSetPlayEpisodeMetricsRowSchema>;
+export type DesSoccerLearningSetPlayEpisodeMetricsInsert = z.infer<typeof desSoccerLearningSetPlayEpisodeMetricsInsertSchema>;
+export type DesSoccerLearningSetPlayEpisodeMetricsUpdate = z.infer<typeof desSoccerLearningSetPlayEpisodeMetricsUpdateSchema>;
+
+export const desSoccerLearningNeuralRunMetricsBackendValues = ["inline","threaded"] as const;
+export const desSoccerLearningNeuralRunMetricsBackendSchema = z.enum(desSoccerLearningNeuralRunMetricsBackendValues);
+export type DesSoccerLearningNeuralRunMetricsBackend = z.infer<typeof desSoccerLearningNeuralRunMetricsBackendSchema>;
+
+export const desSoccerLearningNeuralRunMetrics = pgTable(
+  "des_soccer_learning_neural_run_metrics",
+  {
+    runId: uuid("run_id").primaryKey(),
+    policyVersionId: uuid("policy_version_id").notNull(),
+    enabled: boolean("enabled").notNull(),
+    backend: varchar("backend", { length: 32 }).notNull(),
+    trainingSteps: integer("training_steps").notNull(),
+    samples: bigint("samples", { mode: "number" }).notNull(),
+    pendingBatches: integer("pending_batches").notNull(),
+    droppedBatches: integer("dropped_batches").notNull(),
+    replaySamples: integer("replay_samples").notNull(),
+    replayCapacity: integer("replay_capacity").notNull(),
+    parameterCount: integer("parameter_count").notNull(),
+    targetClipMicros: bigint("target_clip_micros", { mode: "number" }).notNull(),
+    lastLossMicros: bigint("last_loss_micros", { mode: "number" }),
+    averageLossMicros: bigint("average_loss_micros", { mode: "number" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    desSoccerLearningNeuralRunBackendChk: check("des_soccer_learning_neural_run_backend_chk", sql.raw("backend in ('inline', 'threaded')")),
+    desSoccerLearningNeuralRunCountsChk: check("des_soccer_learning_neural_run_counts_chk", sql.raw("training_steps >= 0\n      and samples >= 0\n      and pending_batches >= 0\n      and dropped_batches >= 0\n      and replay_samples >= 0\n      and replay_capacity >= 0\n      and parameter_count >= 0")),
+    desSoccerLearningNeuralRunStepsIdx: index("des_soccer_learning_neural_run_steps_idx").on(table.trainingSteps.desc(), table.samples.desc()),
+  }),
+);
+
+export const desSoccerLearningNeuralRunMetricsRowSchema = z.object({
+  runId: z.string().uuid(),
+  policyVersionId: z.string().uuid(),
+  enabled: z.boolean(),
+  backend: desSoccerLearningNeuralRunMetricsBackendSchema,
+  trainingSteps: z.number().int().min(0),
+  samples: z.number().int().min(0),
+  pendingBatches: z.number().int().min(0),
+  droppedBatches: z.number().int().min(0),
+  replaySamples: z.number().int().min(0),
+  replayCapacity: z.number().int().min(0),
+  parameterCount: z.number().int().min(0),
+  targetClipMicros: z.number().int(),
+  lastLossMicros: z.number().int().nullable(),
+  averageLossMicros: z.number().int().nullable(),
+  createdAt: z.string().datetime(),
+});
+
+export const desSoccerLearningNeuralRunMetricsInsertSchema = z.object({
+  runId: z.string().uuid(),
+  policyVersionId: z.string().uuid(),
+  enabled: z.boolean(),
+  backend: desSoccerLearningNeuralRunMetricsBackendSchema,
+  trainingSteps: z.number().int().min(0),
+  samples: z.number().int().min(0),
+  pendingBatches: z.number().int().min(0),
+  droppedBatches: z.number().int().min(0),
+  replaySamples: z.number().int().min(0),
+  replayCapacity: z.number().int().min(0),
+  parameterCount: z.number().int().min(0),
+  targetClipMicros: z.number().int(),
+  lastLossMicros: z.number().int().nullable().optional(),
+  averageLossMicros: z.number().int().nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const desSoccerLearningNeuralRunMetricsUpdateSchema = desSoccerLearningNeuralRunMetricsInsertSchema.partial();
+export type DesSoccerLearningNeuralRunMetricsRow = z.infer<typeof desSoccerLearningNeuralRunMetricsRowSchema>;
+export type DesSoccerLearningNeuralRunMetricsInsert = z.infer<typeof desSoccerLearningNeuralRunMetricsInsertSchema>;
+export type DesSoccerLearningNeuralRunMetricsUpdate = z.infer<typeof desSoccerLearningNeuralRunMetricsUpdateSchema>;
 
 export const desFelElevatorLearningRunsStatusValues = ["completed","failed","imported"] as const;
 export const desFelElevatorLearningRunsStatusSchema = z.enum(desFelElevatorLearningRunsStatusValues);

@@ -3445,6 +3445,431 @@ validateDesSoccerLearningMergeEventsDecayMicros value
   | value > 1000000 = Left "des_soccer_learning_merge_events.decay_micros is above the maximum"
   | otherwise = Right value
 
+desSoccerTournamentsTable :: Text
+desSoccerTournamentsTable = "des_soccer_tournaments"
+
+desSoccerTournamentsColumns :: [Text]
+desSoccerTournamentsColumns = ["id", "experiment_id", "tournament_date", "seed", "learning_mode", "format", "team_count", "match_count", "matches_played", "champion_team_id", "runner_up_team_id", "third_place_team_id", "wall_time_seconds", "status", "created_at", "updated_at", "finished_at"]
+
+desSoccerTournamentsSelectSql :: Text
+desSoccerTournamentsSelectSql = "select\n      id,\n      experiment_id::text as experiment_id,\n      tournament_date,\n      seed,\n      learning_mode,\n      format::text as format_json,\n      team_count,\n      match_count,\n      matches_played,\n      champion_team_id,\n      runner_up_team_id,\n      third_place_team_id,\n      wall_time_seconds,\n      status,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at\n    from des_soccer_tournaments"
+
+data DesSoccerTournamentsStatus = DesSoccerTournamentsStatusRunning | DesSoccerTournamentsStatusCompleted | DesSoccerTournamentsStatusFailed | DesSoccerTournamentsStatusAborted
+  deriving (Eq, Show)
+
+desSoccerTournamentsStatusToText :: DesSoccerTournamentsStatus -> Text
+desSoccerTournamentsStatusToText value = case value of
+  DesSoccerTournamentsStatusRunning -> "running"
+  DesSoccerTournamentsStatusCompleted -> "completed"
+  DesSoccerTournamentsStatusFailed -> "failed"
+  DesSoccerTournamentsStatusAborted -> "aborted"
+
+parseDesSoccerTournamentsStatus :: Text -> Either Text DesSoccerTournamentsStatus
+parseDesSoccerTournamentsStatus value = case value of
+  "running" -> Right DesSoccerTournamentsStatusRunning
+  "completed" -> Right DesSoccerTournamentsStatusCompleted
+  "failed" -> Right DesSoccerTournamentsStatusFailed
+  "aborted" -> Right DesSoccerTournamentsStatusAborted
+  _ -> Left (T.append "unsupported des_soccer_tournaments.status: " value)
+
+data DesSoccerTournamentsRow = DesSoccerTournamentsRow
+  { desSoccerTournamentsId :: Int
+  , desSoccerTournamentsExperimentId :: Text
+  , desSoccerTournamentsTournamentDate :: Text
+  , desSoccerTournamentsSeed :: Int
+  , desSoccerTournamentsLearningMode :: Text
+  , desSoccerTournamentsFormat :: Text
+  , desSoccerTournamentsTeamCount :: Int
+  , desSoccerTournamentsMatchCount :: Int
+  , desSoccerTournamentsMatchesPlayed :: Int
+  , desSoccerTournamentsChampionTeamId :: (Maybe Int)
+  , desSoccerTournamentsRunnerUpTeamId :: (Maybe Int)
+  , desSoccerTournamentsThirdPlaceTeamId :: (Maybe Int)
+  , desSoccerTournamentsWallTimeSeconds :: (Maybe Text)
+  , desSoccerTournamentsStatus :: Text
+  , desSoccerTournamentsCreatedAt :: Text
+  , desSoccerTournamentsUpdatedAt :: Text
+  , desSoccerTournamentsFinishedAt :: (Maybe Text)
+  } deriving (Eq, Show)
+
+instance FromRow DesSoccerTournamentsRow where
+  fromRow = DesSoccerTournamentsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+desSoccerTournamentMatchesTable :: Text
+desSoccerTournamentMatchesTable = "des_soccer_tournament_matches"
+
+desSoccerTournamentMatchesColumns :: [Text]
+desSoccerTournamentMatchesColumns = ["id", "match_index", "stage", "home_team_id", "away_team_id", "home_goals", "away_goals", "shootout_winner_team_id", "home_training_steps", "away_training_steps", "recorded_at"]
+
+desSoccerTournamentMatchesSelectSql :: Text
+desSoccerTournamentMatchesSelectSql = "select\n      id,\n      match_index,\n      stage,\n      home_team_id,\n      away_team_id,\n      home_goals,\n      away_goals,\n      shootout_winner_team_id,\n      home_training_steps,\n      away_training_steps,\n      to_char(recorded_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as recorded_at\n    from des_soccer_tournament_matches"
+
+data DesSoccerTournamentMatchesRow = DesSoccerTournamentMatchesRow
+  { desSoccerTournamentMatchesId :: Int
+  , desSoccerTournamentMatchesMatchIndex :: Int
+  , desSoccerTournamentMatchesStage :: Text
+  , desSoccerTournamentMatchesHomeTeamId :: Int
+  , desSoccerTournamentMatchesAwayTeamId :: Int
+  , desSoccerTournamentMatchesHomeGoals :: Int
+  , desSoccerTournamentMatchesAwayGoals :: Int
+  , desSoccerTournamentMatchesShootoutWinnerTeamId :: (Maybe Int)
+  , desSoccerTournamentMatchesHomeTrainingSteps :: Int
+  , desSoccerTournamentMatchesAwayTrainingSteps :: Int
+  , desSoccerTournamentMatchesRecordedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow DesSoccerTournamentMatchesRow where
+  fromRow = DesSoccerTournamentMatchesRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+desSoccerTournamentTeamBrainsTable :: Text
+desSoccerTournamentTeamBrainsTable = "des_soccer_tournament_team_brains"
+
+desSoccerTournamentTeamBrainsColumns :: [Text]
+desSoccerTournamentTeamBrainsColumns = ["id", "team_id", "team_name", "seed", "matches_learned", "training_steps", "played", "wins", "draws", "losses", "goals_for", "goals_against", "neural_snapshot", "genome", "updated_at"]
+
+desSoccerTournamentTeamBrainsSelectSql :: Text
+desSoccerTournamentTeamBrainsSelectSql = "select\n      id,\n      team_id,\n      team_name,\n      seed,\n      matches_learned,\n      training_steps,\n      played,\n      wins,\n      draws,\n      losses,\n      goals_for,\n      goals_against,\n      neural_snapshot::text as neural_snapshot_json,\n      genome::text as genome_json,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_soccer_tournament_team_brains"
+
+data DesSoccerTournamentTeamBrainsRow = DesSoccerTournamentTeamBrainsRow
+  { desSoccerTournamentTeamBrainsId :: Int
+  , desSoccerTournamentTeamBrainsTeamId :: Int
+  , desSoccerTournamentTeamBrainsTeamName :: Text
+  , desSoccerTournamentTeamBrainsSeed :: Int
+  , desSoccerTournamentTeamBrainsMatchesLearned :: Int
+  , desSoccerTournamentTeamBrainsTrainingSteps :: Int
+  , desSoccerTournamentTeamBrainsPlayed :: Int
+  , desSoccerTournamentTeamBrainsWins :: Int
+  , desSoccerTournamentTeamBrainsDraws :: Int
+  , desSoccerTournamentTeamBrainsLosses :: Int
+  , desSoccerTournamentTeamBrainsGoalsFor :: Int
+  , desSoccerTournamentTeamBrainsGoalsAgainst :: Int
+  , desSoccerTournamentTeamBrainsNeuralSnapshot :: (Maybe Text)
+  , desSoccerTournamentTeamBrainsGenome :: (Maybe Text)
+  , desSoccerTournamentTeamBrainsUpdatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow DesSoccerTournamentTeamBrainsRow where
+  fromRow = DesSoccerTournamentTeamBrainsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+desSoccerLearningSetPlayRunsTable :: Text
+desSoccerLearningSetPlayRunsTable = "des_soccer_learning_set_play_runs"
+
+desSoccerLearningSetPlayRunsColumns :: [Text]
+desSoccerLearningSetPlayRunsColumns = ["run_id", "policy_version_id", "primary_restart", "team", "spot_x_micros", "spot_y_micros", "duration_seconds_micros", "episode_count", "goals", "goal_rate_micros", "first_window_goal_rate_micros", "last_window_goal_rate_micros", "goal_rate_delta_micros", "created_at"]
+
+desSoccerLearningSetPlayRunsSelectSql :: Text
+desSoccerLearningSetPlayRunsSelectSql = "select\n      run_id::text as run_id,\n      policy_version_id::text as policy_version_id,\n      primary_restart,\n      team,\n      spot_x_micros,\n      spot_y_micros,\n      duration_seconds_micros,\n      episode_count,\n      goals,\n      goal_rate_micros,\n      first_window_goal_rate_micros,\n      last_window_goal_rate_micros,\n      goal_rate_delta_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_set_play_runs"
+
+data DesSoccerLearningSetPlayRunsPrimaryRestart = DesSoccerLearningSetPlayRunsPrimaryRestartDirectFreeKick | DesSoccerLearningSetPlayRunsPrimaryRestartIndirectFreeKick
+  deriving (Eq, Show)
+
+desSoccerLearningSetPlayRunsPrimaryRestartToText :: DesSoccerLearningSetPlayRunsPrimaryRestart -> Text
+desSoccerLearningSetPlayRunsPrimaryRestartToText value = case value of
+  DesSoccerLearningSetPlayRunsPrimaryRestartDirectFreeKick -> "direct-free-kick"
+  DesSoccerLearningSetPlayRunsPrimaryRestartIndirectFreeKick -> "indirect-free-kick"
+
+parseDesSoccerLearningSetPlayRunsPrimaryRestart :: Text -> Either Text DesSoccerLearningSetPlayRunsPrimaryRestart
+parseDesSoccerLearningSetPlayRunsPrimaryRestart value = case value of
+  "direct-free-kick" -> Right DesSoccerLearningSetPlayRunsPrimaryRestartDirectFreeKick
+  "indirect-free-kick" -> Right DesSoccerLearningSetPlayRunsPrimaryRestartIndirectFreeKick
+  _ -> Left (T.append "unsupported des_soccer_learning_set_play_runs.primary_restart: " value)
+
+data DesSoccerLearningSetPlayRunsTeam = DesSoccerLearningSetPlayRunsTeamHome | DesSoccerLearningSetPlayRunsTeamAway
+  deriving (Eq, Show)
+
+desSoccerLearningSetPlayRunsTeamToText :: DesSoccerLearningSetPlayRunsTeam -> Text
+desSoccerLearningSetPlayRunsTeamToText value = case value of
+  DesSoccerLearningSetPlayRunsTeamHome -> "home"
+  DesSoccerLearningSetPlayRunsTeamAway -> "away"
+
+parseDesSoccerLearningSetPlayRunsTeam :: Text -> Either Text DesSoccerLearningSetPlayRunsTeam
+parseDesSoccerLearningSetPlayRunsTeam value = case value of
+  "home" -> Right DesSoccerLearningSetPlayRunsTeamHome
+  "away" -> Right DesSoccerLearningSetPlayRunsTeamAway
+  _ -> Left (T.append "unsupported des_soccer_learning_set_play_runs.team: " value)
+
+data DesSoccerLearningSetPlayRunsRow = DesSoccerLearningSetPlayRunsRow
+  { desSoccerLearningSetPlayRunsRunId :: Text
+  , desSoccerLearningSetPlayRunsPolicyVersionId :: Text
+  , desSoccerLearningSetPlayRunsPrimaryRestart :: Text
+  , desSoccerLearningSetPlayRunsTeam :: Text
+  , desSoccerLearningSetPlayRunsSpotXMicros :: Int
+  , desSoccerLearningSetPlayRunsSpotYMicros :: Int
+  , desSoccerLearningSetPlayRunsDurationSecondsMicros :: Int
+  , desSoccerLearningSetPlayRunsEpisodeCount :: Int
+  , desSoccerLearningSetPlayRunsGoals :: Int
+  , desSoccerLearningSetPlayRunsGoalRateMicros :: Int
+  , desSoccerLearningSetPlayRunsFirstWindowGoalRateMicros :: Int
+  , desSoccerLearningSetPlayRunsLastWindowGoalRateMicros :: Int
+  , desSoccerLearningSetPlayRunsGoalRateDeltaMicros :: Int
+  , desSoccerLearningSetPlayRunsCreatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow DesSoccerLearningSetPlayRunsRow where
+  fromRow = DesSoccerLearningSetPlayRunsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateDesSoccerLearningSetPlayRunsDurationSecondsMicros :: Int -> Either Text Int
+validateDesSoccerLearningSetPlayRunsDurationSecondsMicros value
+  | value < 0 = Left "des_soccer_learning_set_play_runs.duration_seconds_micros is below the minimum"
+  | otherwise = Right value
+
+validateDesSoccerLearningSetPlayRunsEpisodeCount :: Int -> Either Text Int
+validateDesSoccerLearningSetPlayRunsEpisodeCount value
+  | value < 0 = Left "des_soccer_learning_set_play_runs.episode_count is below the minimum"
+  | otherwise = Right value
+
+validateDesSoccerLearningSetPlayRunsGoals :: Int -> Either Text Int
+validateDesSoccerLearningSetPlayRunsGoals value
+  | value < 0 = Left "des_soccer_learning_set_play_runs.goals is below the minimum"
+  | otherwise = Right value
+
+validateDesSoccerLearningSetPlayRunsGoalRateMicros :: Int -> Either Text Int
+validateDesSoccerLearningSetPlayRunsGoalRateMicros value
+  | value < 0 = Left "des_soccer_learning_set_play_runs.goal_rate_micros is below the minimum"
+  | value > 1000000 = Left "des_soccer_learning_set_play_runs.goal_rate_micros is above the maximum"
+  | otherwise = Right value
+
+desSoccerLearningSetPlayRestartMixTable :: Text
+desSoccerLearningSetPlayRestartMixTable = "des_soccer_learning_set_play_restart_mix"
+
+desSoccerLearningSetPlayRestartMixColumns :: [Text]
+desSoccerLearningSetPlayRestartMixColumns = ["run_id", "ordinal", "restart"]
+
+desSoccerLearningSetPlayRestartMixSelectSql :: Text
+desSoccerLearningSetPlayRestartMixSelectSql = "select\n      run_id::text as run_id,\n      ordinal,\n      restart\n    from des_soccer_learning_set_play_restart_mix"
+
+data DesSoccerLearningSetPlayRestartMixRestart = DesSoccerLearningSetPlayRestartMixRestartDirectFreeKick | DesSoccerLearningSetPlayRestartMixRestartIndirectFreeKick
+  deriving (Eq, Show)
+
+desSoccerLearningSetPlayRestartMixRestartToText :: DesSoccerLearningSetPlayRestartMixRestart -> Text
+desSoccerLearningSetPlayRestartMixRestartToText value = case value of
+  DesSoccerLearningSetPlayRestartMixRestartDirectFreeKick -> "direct-free-kick"
+  DesSoccerLearningSetPlayRestartMixRestartIndirectFreeKick -> "indirect-free-kick"
+
+parseDesSoccerLearningSetPlayRestartMixRestart :: Text -> Either Text DesSoccerLearningSetPlayRestartMixRestart
+parseDesSoccerLearningSetPlayRestartMixRestart value = case value of
+  "direct-free-kick" -> Right DesSoccerLearningSetPlayRestartMixRestartDirectFreeKick
+  "indirect-free-kick" -> Right DesSoccerLearningSetPlayRestartMixRestartIndirectFreeKick
+  _ -> Left (T.append "unsupported des_soccer_learning_set_play_restart_mix.restart: " value)
+
+data DesSoccerLearningSetPlayRestartMixRow = DesSoccerLearningSetPlayRestartMixRow
+  { desSoccerLearningSetPlayRestartMixRunId :: Text
+  , desSoccerLearningSetPlayRestartMixOrdinal :: Int
+  , desSoccerLearningSetPlayRestartMixRestart :: Text
+  } deriving (Eq, Show)
+
+instance FromRow DesSoccerLearningSetPlayRestartMixRow where
+  fromRow = DesSoccerLearningSetPlayRestartMixRow <$> field <*> field <*> field
+
+validateDesSoccerLearningSetPlayRestartMixOrdinal :: Int -> Either Text Int
+validateDesSoccerLearningSetPlayRestartMixOrdinal value
+  | value < 0 = Left "des_soccer_learning_set_play_restart_mix.ordinal is below the minimum"
+  | otherwise = Right value
+
+desSoccerLearningSetPlayEpisodeMetricsTable :: Text
+desSoccerLearningSetPlayEpisodeMetricsTable = "des_soccer_learning_set_play_episode_metrics"
+
+desSoccerLearningSetPlayEpisodeMetricsColumns :: [Text]
+desSoccerLearningSetPlayEpisodeMetricsColumns = ["run_id", "episode_index", "seed", "restart", "routine", "scored", "score_delta_for_team", "ticks", "simulated_seconds_micros", "policy_updates", "home_policy_entries", "home_policy_target_entries", "away_policy_entries", "away_policy_target_entries", "neural_training_steps", "neural_samples", "neural_replay_samples", "neural_last_loss_micros", "cumulative_goals", "goal_rate_so_far_micros"]
+
+desSoccerLearningSetPlayEpisodeMetricsSelectSql :: Text
+desSoccerLearningSetPlayEpisodeMetricsSelectSql = "select\n      run_id::text as run_id,\n      episode_index,\n      seed,\n      restart,\n      routine,\n      scored,\n      score_delta_for_team,\n      ticks,\n      simulated_seconds_micros,\n      policy_updates,\n      home_policy_entries,\n      home_policy_target_entries,\n      away_policy_entries,\n      away_policy_target_entries,\n      neural_training_steps,\n      neural_samples,\n      neural_replay_samples,\n      neural_last_loss_micros,\n      cumulative_goals,\n      goal_rate_so_far_micros\n    from des_soccer_learning_set_play_episode_metrics"
+
+data DesSoccerLearningSetPlayEpisodeMetricsRestart = DesSoccerLearningSetPlayEpisodeMetricsRestartDirectFreeKick | DesSoccerLearningSetPlayEpisodeMetricsRestartIndirectFreeKick
+  deriving (Eq, Show)
+
+desSoccerLearningSetPlayEpisodeMetricsRestartToText :: DesSoccerLearningSetPlayEpisodeMetricsRestart -> Text
+desSoccerLearningSetPlayEpisodeMetricsRestartToText value = case value of
+  DesSoccerLearningSetPlayEpisodeMetricsRestartDirectFreeKick -> "direct-free-kick"
+  DesSoccerLearningSetPlayEpisodeMetricsRestartIndirectFreeKick -> "indirect-free-kick"
+
+parseDesSoccerLearningSetPlayEpisodeMetricsRestart :: Text -> Either Text DesSoccerLearningSetPlayEpisodeMetricsRestart
+parseDesSoccerLearningSetPlayEpisodeMetricsRestart value = case value of
+  "direct-free-kick" -> Right DesSoccerLearningSetPlayEpisodeMetricsRestartDirectFreeKick
+  "indirect-free-kick" -> Right DesSoccerLearningSetPlayEpisodeMetricsRestartIndirectFreeKick
+  _ -> Left (T.append "unsupported des_soccer_learning_set_play_episode_metrics.restart: " value)
+
+data DesSoccerLearningSetPlayEpisodeMetricsRow = DesSoccerLearningSetPlayEpisodeMetricsRow
+  { desSoccerLearningSetPlayEpisodeMetricsRunId :: Text
+  , desSoccerLearningSetPlayEpisodeMetricsEpisodeIndex :: Int
+  , desSoccerLearningSetPlayEpisodeMetricsSeed :: Int
+  , desSoccerLearningSetPlayEpisodeMetricsRestart :: Text
+  , desSoccerLearningSetPlayEpisodeMetricsRoutine :: (Maybe Text)
+  , desSoccerLearningSetPlayEpisodeMetricsScored :: Bool
+  , desSoccerLearningSetPlayEpisodeMetricsScoreDeltaForTeam :: Int
+  , desSoccerLearningSetPlayEpisodeMetricsTicks :: Int
+  , desSoccerLearningSetPlayEpisodeMetricsSimulatedSecondsMicros :: Int
+  , desSoccerLearningSetPlayEpisodeMetricsPolicyUpdates :: Int
+  , desSoccerLearningSetPlayEpisodeMetricsHomePolicyEntries :: Int
+  , desSoccerLearningSetPlayEpisodeMetricsHomePolicyTargetEntries :: Int
+  , desSoccerLearningSetPlayEpisodeMetricsAwayPolicyEntries :: Int
+  , desSoccerLearningSetPlayEpisodeMetricsAwayPolicyTargetEntries :: Int
+  , desSoccerLearningSetPlayEpisodeMetricsNeuralTrainingSteps :: Int
+  , desSoccerLearningSetPlayEpisodeMetricsNeuralSamples :: Int
+  , desSoccerLearningSetPlayEpisodeMetricsNeuralReplaySamples :: Int
+  , desSoccerLearningSetPlayEpisodeMetricsNeuralLastLossMicros :: (Maybe Int)
+  , desSoccerLearningSetPlayEpisodeMetricsCumulativeGoals :: Int
+  , desSoccerLearningSetPlayEpisodeMetricsGoalRateSoFarMicros :: Int
+  } deriving (Eq, Show)
+
+instance FromRow DesSoccerLearningSetPlayEpisodeMetricsRow where
+  fromRow = DesSoccerLearningSetPlayEpisodeMetricsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateDesSoccerLearningSetPlayEpisodeMetricsEpisodeIndex :: Int -> Either Text Int
+validateDesSoccerLearningSetPlayEpisodeMetricsEpisodeIndex value
+  | value < 0 = Left "des_soccer_learning_set_play_episode_metrics.episode_index is below the minimum"
+  | otherwise = Right value
+
+validateDesSoccerLearningSetPlayEpisodeMetricsSeed :: Int -> Either Text Int
+validateDesSoccerLearningSetPlayEpisodeMetricsSeed value
+  | value < 0 = Left "des_soccer_learning_set_play_episode_metrics.seed is below the minimum"
+  | otherwise = Right value
+
+validateDesSoccerLearningSetPlayEpisodeMetricsRoutine :: Text -> Either Text Text
+validateDesSoccerLearningSetPlayEpisodeMetricsRoutine value
+  | T.length value > 80 = Left "des_soccer_learning_set_play_episode_metrics.routine must be at most 80 characters"
+  | otherwise = Right value
+
+validateDesSoccerLearningSetPlayEpisodeMetricsTicks :: Int -> Either Text Int
+validateDesSoccerLearningSetPlayEpisodeMetricsTicks value
+  | value < 0 = Left "des_soccer_learning_set_play_episode_metrics.ticks is below the minimum"
+  | otherwise = Right value
+
+validateDesSoccerLearningSetPlayEpisodeMetricsSimulatedSecondsMicros :: Int -> Either Text Int
+validateDesSoccerLearningSetPlayEpisodeMetricsSimulatedSecondsMicros value
+  | value < 0 = Left "des_soccer_learning_set_play_episode_metrics.simulated_seconds_micros is below the minimum"
+  | otherwise = Right value
+
+validateDesSoccerLearningSetPlayEpisodeMetricsPolicyUpdates :: Int -> Either Text Int
+validateDesSoccerLearningSetPlayEpisodeMetricsPolicyUpdates value
+  | value < 0 = Left "des_soccer_learning_set_play_episode_metrics.policy_updates is below the minimum"
+  | otherwise = Right value
+
+validateDesSoccerLearningSetPlayEpisodeMetricsHomePolicyEntries :: Int -> Either Text Int
+validateDesSoccerLearningSetPlayEpisodeMetricsHomePolicyEntries value
+  | value < 0 = Left "des_soccer_learning_set_play_episode_metrics.home_policy_entries is below the minimum"
+  | otherwise = Right value
+
+validateDesSoccerLearningSetPlayEpisodeMetricsHomePolicyTargetEntries :: Int -> Either Text Int
+validateDesSoccerLearningSetPlayEpisodeMetricsHomePolicyTargetEntries value
+  | value < 0 = Left "des_soccer_learning_set_play_episode_metrics.home_policy_target_entries is below the minimum"
+  | otherwise = Right value
+
+validateDesSoccerLearningSetPlayEpisodeMetricsAwayPolicyEntries :: Int -> Either Text Int
+validateDesSoccerLearningSetPlayEpisodeMetricsAwayPolicyEntries value
+  | value < 0 = Left "des_soccer_learning_set_play_episode_metrics.away_policy_entries is below the minimum"
+  | otherwise = Right value
+
+validateDesSoccerLearningSetPlayEpisodeMetricsAwayPolicyTargetEntries :: Int -> Either Text Int
+validateDesSoccerLearningSetPlayEpisodeMetricsAwayPolicyTargetEntries value
+  | value < 0 = Left "des_soccer_learning_set_play_episode_metrics.away_policy_target_entries is below the minimum"
+  | otherwise = Right value
+
+validateDesSoccerLearningSetPlayEpisodeMetricsNeuralTrainingSteps :: Int -> Either Text Int
+validateDesSoccerLearningSetPlayEpisodeMetricsNeuralTrainingSteps value
+  | value < 0 = Left "des_soccer_learning_set_play_episode_metrics.neural_training_steps is below the minimum"
+  | otherwise = Right value
+
+validateDesSoccerLearningSetPlayEpisodeMetricsNeuralSamples :: Int -> Either Text Int
+validateDesSoccerLearningSetPlayEpisodeMetricsNeuralSamples value
+  | value < 0 = Left "des_soccer_learning_set_play_episode_metrics.neural_samples is below the minimum"
+  | otherwise = Right value
+
+validateDesSoccerLearningSetPlayEpisodeMetricsNeuralReplaySamples :: Int -> Either Text Int
+validateDesSoccerLearningSetPlayEpisodeMetricsNeuralReplaySamples value
+  | value < 0 = Left "des_soccer_learning_set_play_episode_metrics.neural_replay_samples is below the minimum"
+  | otherwise = Right value
+
+validateDesSoccerLearningSetPlayEpisodeMetricsCumulativeGoals :: Int -> Either Text Int
+validateDesSoccerLearningSetPlayEpisodeMetricsCumulativeGoals value
+  | value < 0 = Left "des_soccer_learning_set_play_episode_metrics.cumulative_goals is below the minimum"
+  | otherwise = Right value
+
+validateDesSoccerLearningSetPlayEpisodeMetricsGoalRateSoFarMicros :: Int -> Either Text Int
+validateDesSoccerLearningSetPlayEpisodeMetricsGoalRateSoFarMicros value
+  | value < 0 = Left "des_soccer_learning_set_play_episode_metrics.goal_rate_so_far_micros is below the minimum"
+  | value > 1000000 = Left "des_soccer_learning_set_play_episode_metrics.goal_rate_so_far_micros is above the maximum"
+  | otherwise = Right value
+
+desSoccerLearningNeuralRunMetricsTable :: Text
+desSoccerLearningNeuralRunMetricsTable = "des_soccer_learning_neural_run_metrics"
+
+desSoccerLearningNeuralRunMetricsColumns :: [Text]
+desSoccerLearningNeuralRunMetricsColumns = ["run_id", "policy_version_id", "enabled", "backend", "training_steps", "samples", "pending_batches", "dropped_batches", "replay_samples", "replay_capacity", "parameter_count", "target_clip_micros", "last_loss_micros", "average_loss_micros", "created_at"]
+
+desSoccerLearningNeuralRunMetricsSelectSql :: Text
+desSoccerLearningNeuralRunMetricsSelectSql = "select\n      run_id::text as run_id,\n      policy_version_id::text as policy_version_id,\n      enabled,\n      backend,\n      training_steps,\n      samples,\n      pending_batches,\n      dropped_batches,\n      replay_samples,\n      replay_capacity,\n      parameter_count,\n      target_clip_micros,\n      last_loss_micros,\n      average_loss_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_neural_run_metrics"
+
+data DesSoccerLearningNeuralRunMetricsBackend = DesSoccerLearningNeuralRunMetricsBackendInline | DesSoccerLearningNeuralRunMetricsBackendThreaded
+  deriving (Eq, Show)
+
+desSoccerLearningNeuralRunMetricsBackendToText :: DesSoccerLearningNeuralRunMetricsBackend -> Text
+desSoccerLearningNeuralRunMetricsBackendToText value = case value of
+  DesSoccerLearningNeuralRunMetricsBackendInline -> "inline"
+  DesSoccerLearningNeuralRunMetricsBackendThreaded -> "threaded"
+
+parseDesSoccerLearningNeuralRunMetricsBackend :: Text -> Either Text DesSoccerLearningNeuralRunMetricsBackend
+parseDesSoccerLearningNeuralRunMetricsBackend value = case value of
+  "inline" -> Right DesSoccerLearningNeuralRunMetricsBackendInline
+  "threaded" -> Right DesSoccerLearningNeuralRunMetricsBackendThreaded
+  _ -> Left (T.append "unsupported des_soccer_learning_neural_run_metrics.backend: " value)
+
+data DesSoccerLearningNeuralRunMetricsRow = DesSoccerLearningNeuralRunMetricsRow
+  { desSoccerLearningNeuralRunMetricsRunId :: Text
+  , desSoccerLearningNeuralRunMetricsPolicyVersionId :: Text
+  , desSoccerLearningNeuralRunMetricsEnabled :: Bool
+  , desSoccerLearningNeuralRunMetricsBackend :: Text
+  , desSoccerLearningNeuralRunMetricsTrainingSteps :: Int
+  , desSoccerLearningNeuralRunMetricsSamples :: Int
+  , desSoccerLearningNeuralRunMetricsPendingBatches :: Int
+  , desSoccerLearningNeuralRunMetricsDroppedBatches :: Int
+  , desSoccerLearningNeuralRunMetricsReplaySamples :: Int
+  , desSoccerLearningNeuralRunMetricsReplayCapacity :: Int
+  , desSoccerLearningNeuralRunMetricsParameterCount :: Int
+  , desSoccerLearningNeuralRunMetricsTargetClipMicros :: Int
+  , desSoccerLearningNeuralRunMetricsLastLossMicros :: (Maybe Int)
+  , desSoccerLearningNeuralRunMetricsAverageLossMicros :: (Maybe Int)
+  , desSoccerLearningNeuralRunMetricsCreatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow DesSoccerLearningNeuralRunMetricsRow where
+  fromRow = DesSoccerLearningNeuralRunMetricsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateDesSoccerLearningNeuralRunMetricsTrainingSteps :: Int -> Either Text Int
+validateDesSoccerLearningNeuralRunMetricsTrainingSteps value
+  | value < 0 = Left "des_soccer_learning_neural_run_metrics.training_steps is below the minimum"
+  | otherwise = Right value
+
+validateDesSoccerLearningNeuralRunMetricsSamples :: Int -> Either Text Int
+validateDesSoccerLearningNeuralRunMetricsSamples value
+  | value < 0 = Left "des_soccer_learning_neural_run_metrics.samples is below the minimum"
+  | otherwise = Right value
+
+validateDesSoccerLearningNeuralRunMetricsPendingBatches :: Int -> Either Text Int
+validateDesSoccerLearningNeuralRunMetricsPendingBatches value
+  | value < 0 = Left "des_soccer_learning_neural_run_metrics.pending_batches is below the minimum"
+  | otherwise = Right value
+
+validateDesSoccerLearningNeuralRunMetricsDroppedBatches :: Int -> Either Text Int
+validateDesSoccerLearningNeuralRunMetricsDroppedBatches value
+  | value < 0 = Left "des_soccer_learning_neural_run_metrics.dropped_batches is below the minimum"
+  | otherwise = Right value
+
+validateDesSoccerLearningNeuralRunMetricsReplaySamples :: Int -> Either Text Int
+validateDesSoccerLearningNeuralRunMetricsReplaySamples value
+  | value < 0 = Left "des_soccer_learning_neural_run_metrics.replay_samples is below the minimum"
+  | otherwise = Right value
+
+validateDesSoccerLearningNeuralRunMetricsReplayCapacity :: Int -> Either Text Int
+validateDesSoccerLearningNeuralRunMetricsReplayCapacity value
+  | value < 0 = Left "des_soccer_learning_neural_run_metrics.replay_capacity is below the minimum"
+  | otherwise = Right value
+
+validateDesSoccerLearningNeuralRunMetricsParameterCount :: Int -> Either Text Int
+validateDesSoccerLearningNeuralRunMetricsParameterCount value
+  | value < 0 = Left "des_soccer_learning_neural_run_metrics.parameter_count is below the minimum"
+  | otherwise = Right value
+
 desFelElevatorLearningRunsTable :: Text
 desFelElevatorLearningRunsTable = "des_fel_elevator_learning_runs"
 

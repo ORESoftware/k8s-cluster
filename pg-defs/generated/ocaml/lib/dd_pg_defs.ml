@@ -3745,6 +3745,479 @@ let validate_des_soccer_learning_merge_events_decay_micros (value : int64) : (in
   else if Int64.compare value 1000000L > 0 then Error "des_soccer_learning_merge_events.decay_micros is above the maximum"
   else Ok value
 
+let des_soccer_tournaments_table = "des_soccer_tournaments"
+
+let des_soccer_tournaments_columns = ["id"; "experiment_id"; "tournament_date"; "seed"; "learning_mode"; "format"; "team_count"; "match_count"; "matches_played"; "champion_team_id"; "runner_up_team_id"; "third_place_team_id"; "wall_time_seconds"; "status"; "created_at"; "updated_at"; "finished_at"]
+
+let des_soccer_tournaments_select_sql = "select\n      id,\n      experiment_id::text as experiment_id,\n      tournament_date,\n      seed,\n      learning_mode,\n      format::text as format_json,\n      team_count,\n      match_count,\n      matches_played,\n      champion_team_id,\n      runner_up_team_id,\n      third_place_team_id,\n      wall_time_seconds,\n      status,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at\n    from des_soccer_tournaments"
+
+type des_soccer_tournaments_status = [ `Running | `Completed | `Failed | `Aborted ]
+
+let des_soccer_tournaments_status_to_string (value : des_soccer_tournaments_status) : string =
+  match value with
+  | `Running -> "running"
+  | `Completed -> "completed"
+  | `Failed -> "failed"
+  | `Aborted -> "aborted"
+
+let parse_des_soccer_tournaments_status (value : string) : (des_soccer_tournaments_status, string) result =
+  match value with
+  | "running" -> Ok `Running
+  | "completed" -> Ok `Completed
+  | "failed" -> Ok `Failed
+  | "aborted" -> Ok `Aborted
+  | _ -> Error ("unsupported des_soccer_tournaments.status: " ^ value)
+
+type des_soccer_tournaments_row = {
+  des_soccer_tournaments_id : int64;
+  des_soccer_tournaments_experiment_id : string;
+  des_soccer_tournaments_tournament_date : string;
+  des_soccer_tournaments_seed : int64;
+  des_soccer_tournaments_learning_mode : string;
+  des_soccer_tournaments_format : string;
+  des_soccer_tournaments_team_count : int;
+  des_soccer_tournaments_match_count : int;
+  des_soccer_tournaments_matches_played : int;
+  des_soccer_tournaments_champion_team_id : int option;
+  des_soccer_tournaments_runner_up_team_id : int option;
+  des_soccer_tournaments_third_place_team_id : int option;
+  des_soccer_tournaments_wall_time_seconds : string option;
+  des_soccer_tournaments_status : string;
+  des_soccer_tournaments_created_at : string;
+  des_soccer_tournaments_updated_at : string;
+  des_soccer_tournaments_finished_at : string option;
+}
+
+let des_soccer_tournaments_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : des_soccer_tournaments_row =
+  {
+    des_soccer_tournaments_id = Int64.of_string (get 0);
+    des_soccer_tournaments_experiment_id = get 1;
+    des_soccer_tournaments_tournament_date = get 2;
+    des_soccer_tournaments_seed = Int64.of_string (get 3);
+    des_soccer_tournaments_learning_mode = get 4;
+    des_soccer_tournaments_format = get 5;
+    des_soccer_tournaments_team_count = int_of_string (get 6);
+    des_soccer_tournaments_match_count = int_of_string (get 7);
+    des_soccer_tournaments_matches_played = int_of_string (get 8);
+    des_soccer_tournaments_champion_team_id = (if is_null 9 then None else Some (int_of_string (get 9)));
+    des_soccer_tournaments_runner_up_team_id = (if is_null 10 then None else Some (int_of_string (get 10)));
+    des_soccer_tournaments_third_place_team_id = (if is_null 11 then None else Some (int_of_string (get 11)));
+    des_soccer_tournaments_wall_time_seconds = (if is_null 12 then None else Some (get 12));
+    des_soccer_tournaments_status = get 13;
+    des_soccer_tournaments_created_at = get 14;
+    des_soccer_tournaments_updated_at = get 15;
+    des_soccer_tournaments_finished_at = (if is_null 16 then None else Some (get 16));
+  }
+
+let des_soccer_tournament_matches_table = "des_soccer_tournament_matches"
+
+let des_soccer_tournament_matches_columns = ["id"; "match_index"; "stage"; "home_team_id"; "away_team_id"; "home_goals"; "away_goals"; "shootout_winner_team_id"; "home_training_steps"; "away_training_steps"; "recorded_at"]
+
+let des_soccer_tournament_matches_select_sql = "select\n      id,\n      match_index,\n      stage,\n      home_team_id,\n      away_team_id,\n      home_goals,\n      away_goals,\n      shootout_winner_team_id,\n      home_training_steps,\n      away_training_steps,\n      to_char(recorded_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as recorded_at\n    from des_soccer_tournament_matches"
+
+type des_soccer_tournament_matches_row = {
+  des_soccer_tournament_matches_id : int64;
+  des_soccer_tournament_matches_match_index : int;
+  des_soccer_tournament_matches_stage : string;
+  des_soccer_tournament_matches_home_team_id : int;
+  des_soccer_tournament_matches_away_team_id : int;
+  des_soccer_tournament_matches_home_goals : int;
+  des_soccer_tournament_matches_away_goals : int;
+  des_soccer_tournament_matches_shootout_winner_team_id : int option;
+  des_soccer_tournament_matches_home_training_steps : int64;
+  des_soccer_tournament_matches_away_training_steps : int64;
+  des_soccer_tournament_matches_recorded_at : string;
+}
+
+let des_soccer_tournament_matches_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : des_soccer_tournament_matches_row =
+  {
+    des_soccer_tournament_matches_id = Int64.of_string (get 0);
+    des_soccer_tournament_matches_match_index = int_of_string (get 1);
+    des_soccer_tournament_matches_stage = get 2;
+    des_soccer_tournament_matches_home_team_id = int_of_string (get 3);
+    des_soccer_tournament_matches_away_team_id = int_of_string (get 4);
+    des_soccer_tournament_matches_home_goals = int_of_string (get 5);
+    des_soccer_tournament_matches_away_goals = int_of_string (get 6);
+    des_soccer_tournament_matches_shootout_winner_team_id = (if is_null 7 then None else Some (int_of_string (get 7)));
+    des_soccer_tournament_matches_home_training_steps = Int64.of_string (get 8);
+    des_soccer_tournament_matches_away_training_steps = Int64.of_string (get 9);
+    des_soccer_tournament_matches_recorded_at = get 10;
+  }
+
+let des_soccer_tournament_team_brains_table = "des_soccer_tournament_team_brains"
+
+let des_soccer_tournament_team_brains_columns = ["id"; "team_id"; "team_name"; "seed"; "matches_learned"; "training_steps"; "played"; "wins"; "draws"; "losses"; "goals_for"; "goals_against"; "neural_snapshot"; "genome"; "updated_at"]
+
+let des_soccer_tournament_team_brains_select_sql = "select\n      id,\n      team_id,\n      team_name,\n      seed,\n      matches_learned,\n      training_steps,\n      played,\n      wins,\n      draws,\n      losses,\n      goals_for,\n      goals_against,\n      neural_snapshot::text as neural_snapshot_json,\n      genome::text as genome_json,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_soccer_tournament_team_brains"
+
+type des_soccer_tournament_team_brains_row = {
+  des_soccer_tournament_team_brains_id : int64;
+  des_soccer_tournament_team_brains_team_id : int;
+  des_soccer_tournament_team_brains_team_name : string;
+  des_soccer_tournament_team_brains_seed : int64;
+  des_soccer_tournament_team_brains_matches_learned : int;
+  des_soccer_tournament_team_brains_training_steps : int64;
+  des_soccer_tournament_team_brains_played : int;
+  des_soccer_tournament_team_brains_wins : int;
+  des_soccer_tournament_team_brains_draws : int;
+  des_soccer_tournament_team_brains_losses : int;
+  des_soccer_tournament_team_brains_goals_for : int;
+  des_soccer_tournament_team_brains_goals_against : int;
+  des_soccer_tournament_team_brains_neural_snapshot : string option;
+  des_soccer_tournament_team_brains_genome : string option;
+  des_soccer_tournament_team_brains_updated_at : string;
+}
+
+let des_soccer_tournament_team_brains_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : des_soccer_tournament_team_brains_row =
+  {
+    des_soccer_tournament_team_brains_id = Int64.of_string (get 0);
+    des_soccer_tournament_team_brains_team_id = int_of_string (get 1);
+    des_soccer_tournament_team_brains_team_name = get 2;
+    des_soccer_tournament_team_brains_seed = Int64.of_string (get 3);
+    des_soccer_tournament_team_brains_matches_learned = int_of_string (get 4);
+    des_soccer_tournament_team_brains_training_steps = Int64.of_string (get 5);
+    des_soccer_tournament_team_brains_played = int_of_string (get 6);
+    des_soccer_tournament_team_brains_wins = int_of_string (get 7);
+    des_soccer_tournament_team_brains_draws = int_of_string (get 8);
+    des_soccer_tournament_team_brains_losses = int_of_string (get 9);
+    des_soccer_tournament_team_brains_goals_for = int_of_string (get 10);
+    des_soccer_tournament_team_brains_goals_against = int_of_string (get 11);
+    des_soccer_tournament_team_brains_neural_snapshot = (if is_null 12 then None else Some (get 12));
+    des_soccer_tournament_team_brains_genome = (if is_null 13 then None else Some (get 13));
+    des_soccer_tournament_team_brains_updated_at = get 14;
+  }
+
+let des_soccer_learning_set_play_runs_table = "des_soccer_learning_set_play_runs"
+
+let des_soccer_learning_set_play_runs_columns = ["run_id"; "policy_version_id"; "primary_restart"; "team"; "spot_x_micros"; "spot_y_micros"; "duration_seconds_micros"; "episode_count"; "goals"; "goal_rate_micros"; "first_window_goal_rate_micros"; "last_window_goal_rate_micros"; "goal_rate_delta_micros"; "created_at"]
+
+let des_soccer_learning_set_play_runs_select_sql = "select\n      run_id::text as run_id,\n      policy_version_id::text as policy_version_id,\n      primary_restart,\n      team,\n      spot_x_micros,\n      spot_y_micros,\n      duration_seconds_micros,\n      episode_count,\n      goals,\n      goal_rate_micros,\n      first_window_goal_rate_micros,\n      last_window_goal_rate_micros,\n      goal_rate_delta_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_set_play_runs"
+
+type des_soccer_learning_set_play_runs_primary_restart = [ `DirectFreeKick | `IndirectFreeKick ]
+
+let des_soccer_learning_set_play_runs_primary_restart_to_string (value : des_soccer_learning_set_play_runs_primary_restart) : string =
+  match value with
+  | `DirectFreeKick -> "direct-free-kick"
+  | `IndirectFreeKick -> "indirect-free-kick"
+
+let parse_des_soccer_learning_set_play_runs_primary_restart (value : string) : (des_soccer_learning_set_play_runs_primary_restart, string) result =
+  match value with
+  | "direct-free-kick" -> Ok `DirectFreeKick
+  | "indirect-free-kick" -> Ok `IndirectFreeKick
+  | _ -> Error ("unsupported des_soccer_learning_set_play_runs.primary_restart: " ^ value)
+
+type des_soccer_learning_set_play_runs_team = [ `Home | `Away ]
+
+let des_soccer_learning_set_play_runs_team_to_string (value : des_soccer_learning_set_play_runs_team) : string =
+  match value with
+  | `Home -> "home"
+  | `Away -> "away"
+
+let parse_des_soccer_learning_set_play_runs_team (value : string) : (des_soccer_learning_set_play_runs_team, string) result =
+  match value with
+  | "home" -> Ok `Home
+  | "away" -> Ok `Away
+  | _ -> Error ("unsupported des_soccer_learning_set_play_runs.team: " ^ value)
+
+type des_soccer_learning_set_play_runs_row = {
+  des_soccer_learning_set_play_runs_run_id : string;
+  des_soccer_learning_set_play_runs_policy_version_id : string;
+  des_soccer_learning_set_play_runs_primary_restart : string;
+  des_soccer_learning_set_play_runs_team : string;
+  des_soccer_learning_set_play_runs_spot_x_micros : int64;
+  des_soccer_learning_set_play_runs_spot_y_micros : int64;
+  des_soccer_learning_set_play_runs_duration_seconds_micros : int64;
+  des_soccer_learning_set_play_runs_episode_count : int;
+  des_soccer_learning_set_play_runs_goals : int;
+  des_soccer_learning_set_play_runs_goal_rate_micros : int64;
+  des_soccer_learning_set_play_runs_first_window_goal_rate_micros : int64;
+  des_soccer_learning_set_play_runs_last_window_goal_rate_micros : int64;
+  des_soccer_learning_set_play_runs_goal_rate_delta_micros : int64;
+  des_soccer_learning_set_play_runs_created_at : string;
+}
+
+let des_soccer_learning_set_play_runs_row_of_row ~(get : int -> string) ~is_null:(_ : int -> bool) : des_soccer_learning_set_play_runs_row =
+  {
+    des_soccer_learning_set_play_runs_run_id = get 0;
+    des_soccer_learning_set_play_runs_policy_version_id = get 1;
+    des_soccer_learning_set_play_runs_primary_restart = get 2;
+    des_soccer_learning_set_play_runs_team = get 3;
+    des_soccer_learning_set_play_runs_spot_x_micros = Int64.of_string (get 4);
+    des_soccer_learning_set_play_runs_spot_y_micros = Int64.of_string (get 5);
+    des_soccer_learning_set_play_runs_duration_seconds_micros = Int64.of_string (get 6);
+    des_soccer_learning_set_play_runs_episode_count = int_of_string (get 7);
+    des_soccer_learning_set_play_runs_goals = int_of_string (get 8);
+    des_soccer_learning_set_play_runs_goal_rate_micros = Int64.of_string (get 9);
+    des_soccer_learning_set_play_runs_first_window_goal_rate_micros = Int64.of_string (get 10);
+    des_soccer_learning_set_play_runs_last_window_goal_rate_micros = Int64.of_string (get 11);
+    des_soccer_learning_set_play_runs_goal_rate_delta_micros = Int64.of_string (get 12);
+    des_soccer_learning_set_play_runs_created_at = get 13;
+  }
+
+let validate_des_soccer_learning_set_play_runs_duration_seconds_micros (value : int64) : (int64, string) result =
+  if Int64.compare value 0L < 0 then Error "des_soccer_learning_set_play_runs.duration_seconds_micros is below the minimum"
+  else Ok value
+
+let validate_des_soccer_learning_set_play_runs_episode_count (value : int) : (int, string) result =
+  if value < 0 then Error "des_soccer_learning_set_play_runs.episode_count is below the minimum"
+  else Ok value
+
+let validate_des_soccer_learning_set_play_runs_goals (value : int) : (int, string) result =
+  if value < 0 then Error "des_soccer_learning_set_play_runs.goals is below the minimum"
+  else Ok value
+
+let validate_des_soccer_learning_set_play_runs_goal_rate_micros (value : int64) : (int64, string) result =
+  if Int64.compare value 0L < 0 then Error "des_soccer_learning_set_play_runs.goal_rate_micros is below the minimum"
+  else if Int64.compare value 1000000L > 0 then Error "des_soccer_learning_set_play_runs.goal_rate_micros is above the maximum"
+  else Ok value
+
+let des_soccer_learning_set_play_restart_mix_table = "des_soccer_learning_set_play_restart_mix"
+
+let des_soccer_learning_set_play_restart_mix_columns = ["run_id"; "ordinal"; "restart"]
+
+let des_soccer_learning_set_play_restart_mix_select_sql = "select\n      run_id::text as run_id,\n      ordinal,\n      restart\n    from des_soccer_learning_set_play_restart_mix"
+
+type des_soccer_learning_set_play_restart_mix_restart = [ `DirectFreeKick | `IndirectFreeKick ]
+
+let des_soccer_learning_set_play_restart_mix_restart_to_string (value : des_soccer_learning_set_play_restart_mix_restart) : string =
+  match value with
+  | `DirectFreeKick -> "direct-free-kick"
+  | `IndirectFreeKick -> "indirect-free-kick"
+
+let parse_des_soccer_learning_set_play_restart_mix_restart (value : string) : (des_soccer_learning_set_play_restart_mix_restart, string) result =
+  match value with
+  | "direct-free-kick" -> Ok `DirectFreeKick
+  | "indirect-free-kick" -> Ok `IndirectFreeKick
+  | _ -> Error ("unsupported des_soccer_learning_set_play_restart_mix.restart: " ^ value)
+
+type des_soccer_learning_set_play_restart_mix_row = {
+  des_soccer_learning_set_play_restart_mix_run_id : string;
+  des_soccer_learning_set_play_restart_mix_ordinal : int;
+  des_soccer_learning_set_play_restart_mix_restart : string;
+}
+
+let des_soccer_learning_set_play_restart_mix_row_of_row ~(get : int -> string) ~is_null:(_ : int -> bool) : des_soccer_learning_set_play_restart_mix_row =
+  {
+    des_soccer_learning_set_play_restart_mix_run_id = get 0;
+    des_soccer_learning_set_play_restart_mix_ordinal = int_of_string (get 1);
+    des_soccer_learning_set_play_restart_mix_restart = get 2;
+  }
+
+let validate_des_soccer_learning_set_play_restart_mix_ordinal (value : int) : (int, string) result =
+  if value < 0 then Error "des_soccer_learning_set_play_restart_mix.ordinal is below the minimum"
+  else Ok value
+
+let des_soccer_learning_set_play_episode_metrics_table = "des_soccer_learning_set_play_episode_metrics"
+
+let des_soccer_learning_set_play_episode_metrics_columns = ["run_id"; "episode_index"; "seed"; "restart"; "routine"; "scored"; "score_delta_for_team"; "ticks"; "simulated_seconds_micros"; "policy_updates"; "home_policy_entries"; "home_policy_target_entries"; "away_policy_entries"; "away_policy_target_entries"; "neural_training_steps"; "neural_samples"; "neural_replay_samples"; "neural_last_loss_micros"; "cumulative_goals"; "goal_rate_so_far_micros"]
+
+let des_soccer_learning_set_play_episode_metrics_select_sql = "select\n      run_id::text as run_id,\n      episode_index,\n      seed,\n      restart,\n      routine,\n      scored,\n      score_delta_for_team,\n      ticks,\n      simulated_seconds_micros,\n      policy_updates,\n      home_policy_entries,\n      home_policy_target_entries,\n      away_policy_entries,\n      away_policy_target_entries,\n      neural_training_steps,\n      neural_samples,\n      neural_replay_samples,\n      neural_last_loss_micros,\n      cumulative_goals,\n      goal_rate_so_far_micros\n    from des_soccer_learning_set_play_episode_metrics"
+
+type des_soccer_learning_set_play_episode_metrics_restart = [ `DirectFreeKick | `IndirectFreeKick ]
+
+let des_soccer_learning_set_play_episode_metrics_restart_to_string (value : des_soccer_learning_set_play_episode_metrics_restart) : string =
+  match value with
+  | `DirectFreeKick -> "direct-free-kick"
+  | `IndirectFreeKick -> "indirect-free-kick"
+
+let parse_des_soccer_learning_set_play_episode_metrics_restart (value : string) : (des_soccer_learning_set_play_episode_metrics_restart, string) result =
+  match value with
+  | "direct-free-kick" -> Ok `DirectFreeKick
+  | "indirect-free-kick" -> Ok `IndirectFreeKick
+  | _ -> Error ("unsupported des_soccer_learning_set_play_episode_metrics.restart: " ^ value)
+
+type des_soccer_learning_set_play_episode_metrics_row = {
+  des_soccer_learning_set_play_episode_metrics_run_id : string;
+  des_soccer_learning_set_play_episode_metrics_episode_index : int;
+  des_soccer_learning_set_play_episode_metrics_seed : int64;
+  des_soccer_learning_set_play_episode_metrics_restart : string;
+  des_soccer_learning_set_play_episode_metrics_routine : string option;
+  des_soccer_learning_set_play_episode_metrics_scored : bool;
+  des_soccer_learning_set_play_episode_metrics_score_delta_for_team : int;
+  des_soccer_learning_set_play_episode_metrics_ticks : int64;
+  des_soccer_learning_set_play_episode_metrics_simulated_seconds_micros : int64;
+  des_soccer_learning_set_play_episode_metrics_policy_updates : int64;
+  des_soccer_learning_set_play_episode_metrics_home_policy_entries : int;
+  des_soccer_learning_set_play_episode_metrics_home_policy_target_entries : int;
+  des_soccer_learning_set_play_episode_metrics_away_policy_entries : int;
+  des_soccer_learning_set_play_episode_metrics_away_policy_target_entries : int;
+  des_soccer_learning_set_play_episode_metrics_neural_training_steps : int;
+  des_soccer_learning_set_play_episode_metrics_neural_samples : int64;
+  des_soccer_learning_set_play_episode_metrics_neural_replay_samples : int;
+  des_soccer_learning_set_play_episode_metrics_neural_last_loss_micros : int64 option;
+  des_soccer_learning_set_play_episode_metrics_cumulative_goals : int;
+  des_soccer_learning_set_play_episode_metrics_goal_rate_so_far_micros : int64;
+}
+
+let des_soccer_learning_set_play_episode_metrics_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : des_soccer_learning_set_play_episode_metrics_row =
+  {
+    des_soccer_learning_set_play_episode_metrics_run_id = get 0;
+    des_soccer_learning_set_play_episode_metrics_episode_index = int_of_string (get 1);
+    des_soccer_learning_set_play_episode_metrics_seed = Int64.of_string (get 2);
+    des_soccer_learning_set_play_episode_metrics_restart = get 3;
+    des_soccer_learning_set_play_episode_metrics_routine = (if is_null 4 then None else Some (get 4));
+    des_soccer_learning_set_play_episode_metrics_scored = (get 5 = "t");
+    des_soccer_learning_set_play_episode_metrics_score_delta_for_team = int_of_string (get 6);
+    des_soccer_learning_set_play_episode_metrics_ticks = Int64.of_string (get 7);
+    des_soccer_learning_set_play_episode_metrics_simulated_seconds_micros = Int64.of_string (get 8);
+    des_soccer_learning_set_play_episode_metrics_policy_updates = Int64.of_string (get 9);
+    des_soccer_learning_set_play_episode_metrics_home_policy_entries = int_of_string (get 10);
+    des_soccer_learning_set_play_episode_metrics_home_policy_target_entries = int_of_string (get 11);
+    des_soccer_learning_set_play_episode_metrics_away_policy_entries = int_of_string (get 12);
+    des_soccer_learning_set_play_episode_metrics_away_policy_target_entries = int_of_string (get 13);
+    des_soccer_learning_set_play_episode_metrics_neural_training_steps = int_of_string (get 14);
+    des_soccer_learning_set_play_episode_metrics_neural_samples = Int64.of_string (get 15);
+    des_soccer_learning_set_play_episode_metrics_neural_replay_samples = int_of_string (get 16);
+    des_soccer_learning_set_play_episode_metrics_neural_last_loss_micros = (if is_null 17 then None else Some (Int64.of_string (get 17)));
+    des_soccer_learning_set_play_episode_metrics_cumulative_goals = int_of_string (get 18);
+    des_soccer_learning_set_play_episode_metrics_goal_rate_so_far_micros = Int64.of_string (get 19);
+  }
+
+let validate_des_soccer_learning_set_play_episode_metrics_episode_index (value : int) : (int, string) result =
+  if value < 0 then Error "des_soccer_learning_set_play_episode_metrics.episode_index is below the minimum"
+  else Ok value
+
+let validate_des_soccer_learning_set_play_episode_metrics_seed (value : int64) : (int64, string) result =
+  if Int64.compare value 0L < 0 then Error "des_soccer_learning_set_play_episode_metrics.seed is below the minimum"
+  else Ok value
+
+let validate_des_soccer_learning_set_play_episode_metrics_routine (value : string) : (string, string) result =
+  if String.length value > 80 then Error "des_soccer_learning_set_play_episode_metrics.routine must be at most 80 characters"
+  else Ok value
+
+let validate_des_soccer_learning_set_play_episode_metrics_ticks (value : int64) : (int64, string) result =
+  if Int64.compare value 0L < 0 then Error "des_soccer_learning_set_play_episode_metrics.ticks is below the minimum"
+  else Ok value
+
+let validate_des_soccer_learning_set_play_episode_metrics_simulated_seconds_micros (value : int64) : (int64, string) result =
+  if Int64.compare value 0L < 0 then Error "des_soccer_learning_set_play_episode_metrics.simulated_seconds_micros is below the minimum"
+  else Ok value
+
+let validate_des_soccer_learning_set_play_episode_metrics_policy_updates (value : int64) : (int64, string) result =
+  if Int64.compare value 0L < 0 then Error "des_soccer_learning_set_play_episode_metrics.policy_updates is below the minimum"
+  else Ok value
+
+let validate_des_soccer_learning_set_play_episode_metrics_home_policy_entries (value : int) : (int, string) result =
+  if value < 0 then Error "des_soccer_learning_set_play_episode_metrics.home_policy_entries is below the minimum"
+  else Ok value
+
+let validate_des_soccer_learning_set_play_episode_metrics_home_policy_target_entries (value : int) : (int, string) result =
+  if value < 0 then Error "des_soccer_learning_set_play_episode_metrics.home_policy_target_entries is below the minimum"
+  else Ok value
+
+let validate_des_soccer_learning_set_play_episode_metrics_away_policy_entries (value : int) : (int, string) result =
+  if value < 0 then Error "des_soccer_learning_set_play_episode_metrics.away_policy_entries is below the minimum"
+  else Ok value
+
+let validate_des_soccer_learning_set_play_episode_metrics_away_policy_target_entries (value : int) : (int, string) result =
+  if value < 0 then Error "des_soccer_learning_set_play_episode_metrics.away_policy_target_entries is below the minimum"
+  else Ok value
+
+let validate_des_soccer_learning_set_play_episode_metrics_neural_training_steps (value : int) : (int, string) result =
+  if value < 0 then Error "des_soccer_learning_set_play_episode_metrics.neural_training_steps is below the minimum"
+  else Ok value
+
+let validate_des_soccer_learning_set_play_episode_metrics_neural_samples (value : int64) : (int64, string) result =
+  if Int64.compare value 0L < 0 then Error "des_soccer_learning_set_play_episode_metrics.neural_samples is below the minimum"
+  else Ok value
+
+let validate_des_soccer_learning_set_play_episode_metrics_neural_replay_samples (value : int) : (int, string) result =
+  if value < 0 then Error "des_soccer_learning_set_play_episode_metrics.neural_replay_samples is below the minimum"
+  else Ok value
+
+let validate_des_soccer_learning_set_play_episode_metrics_cumulative_goals (value : int) : (int, string) result =
+  if value < 0 then Error "des_soccer_learning_set_play_episode_metrics.cumulative_goals is below the minimum"
+  else Ok value
+
+let validate_des_soccer_learning_set_play_episode_metrics_goal_rate_so_far_micros (value : int64) : (int64, string) result =
+  if Int64.compare value 0L < 0 then Error "des_soccer_learning_set_play_episode_metrics.goal_rate_so_far_micros is below the minimum"
+  else if Int64.compare value 1000000L > 0 then Error "des_soccer_learning_set_play_episode_metrics.goal_rate_so_far_micros is above the maximum"
+  else Ok value
+
+let des_soccer_learning_neural_run_metrics_table = "des_soccer_learning_neural_run_metrics"
+
+let des_soccer_learning_neural_run_metrics_columns = ["run_id"; "policy_version_id"; "enabled"; "backend"; "training_steps"; "samples"; "pending_batches"; "dropped_batches"; "replay_samples"; "replay_capacity"; "parameter_count"; "target_clip_micros"; "last_loss_micros"; "average_loss_micros"; "created_at"]
+
+let des_soccer_learning_neural_run_metrics_select_sql = "select\n      run_id::text as run_id,\n      policy_version_id::text as policy_version_id,\n      enabled,\n      backend,\n      training_steps,\n      samples,\n      pending_batches,\n      dropped_batches,\n      replay_samples,\n      replay_capacity,\n      parameter_count,\n      target_clip_micros,\n      last_loss_micros,\n      average_loss_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_neural_run_metrics"
+
+type des_soccer_learning_neural_run_metrics_backend = [ `Inline | `Threaded ]
+
+let des_soccer_learning_neural_run_metrics_backend_to_string (value : des_soccer_learning_neural_run_metrics_backend) : string =
+  match value with
+  | `Inline -> "inline"
+  | `Threaded -> "threaded"
+
+let parse_des_soccer_learning_neural_run_metrics_backend (value : string) : (des_soccer_learning_neural_run_metrics_backend, string) result =
+  match value with
+  | "inline" -> Ok `Inline
+  | "threaded" -> Ok `Threaded
+  | _ -> Error ("unsupported des_soccer_learning_neural_run_metrics.backend: " ^ value)
+
+type des_soccer_learning_neural_run_metrics_row = {
+  des_soccer_learning_neural_run_metrics_run_id : string;
+  des_soccer_learning_neural_run_metrics_policy_version_id : string;
+  des_soccer_learning_neural_run_metrics_enabled : bool;
+  des_soccer_learning_neural_run_metrics_backend : string;
+  des_soccer_learning_neural_run_metrics_training_steps : int;
+  des_soccer_learning_neural_run_metrics_samples : int64;
+  des_soccer_learning_neural_run_metrics_pending_batches : int;
+  des_soccer_learning_neural_run_metrics_dropped_batches : int;
+  des_soccer_learning_neural_run_metrics_replay_samples : int;
+  des_soccer_learning_neural_run_metrics_replay_capacity : int;
+  des_soccer_learning_neural_run_metrics_parameter_count : int;
+  des_soccer_learning_neural_run_metrics_target_clip_micros : int64;
+  des_soccer_learning_neural_run_metrics_last_loss_micros : int64 option;
+  des_soccer_learning_neural_run_metrics_average_loss_micros : int64 option;
+  des_soccer_learning_neural_run_metrics_created_at : string;
+}
+
+let des_soccer_learning_neural_run_metrics_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : des_soccer_learning_neural_run_metrics_row =
+  {
+    des_soccer_learning_neural_run_metrics_run_id = get 0;
+    des_soccer_learning_neural_run_metrics_policy_version_id = get 1;
+    des_soccer_learning_neural_run_metrics_enabled = (get 2 = "t");
+    des_soccer_learning_neural_run_metrics_backend = get 3;
+    des_soccer_learning_neural_run_metrics_training_steps = int_of_string (get 4);
+    des_soccer_learning_neural_run_metrics_samples = Int64.of_string (get 5);
+    des_soccer_learning_neural_run_metrics_pending_batches = int_of_string (get 6);
+    des_soccer_learning_neural_run_metrics_dropped_batches = int_of_string (get 7);
+    des_soccer_learning_neural_run_metrics_replay_samples = int_of_string (get 8);
+    des_soccer_learning_neural_run_metrics_replay_capacity = int_of_string (get 9);
+    des_soccer_learning_neural_run_metrics_parameter_count = int_of_string (get 10);
+    des_soccer_learning_neural_run_metrics_target_clip_micros = Int64.of_string (get 11);
+    des_soccer_learning_neural_run_metrics_last_loss_micros = (if is_null 12 then None else Some (Int64.of_string (get 12)));
+    des_soccer_learning_neural_run_metrics_average_loss_micros = (if is_null 13 then None else Some (Int64.of_string (get 13)));
+    des_soccer_learning_neural_run_metrics_created_at = get 14;
+  }
+
+let validate_des_soccer_learning_neural_run_metrics_training_steps (value : int) : (int, string) result =
+  if value < 0 then Error "des_soccer_learning_neural_run_metrics.training_steps is below the minimum"
+  else Ok value
+
+let validate_des_soccer_learning_neural_run_metrics_samples (value : int64) : (int64, string) result =
+  if Int64.compare value 0L < 0 then Error "des_soccer_learning_neural_run_metrics.samples is below the minimum"
+  else Ok value
+
+let validate_des_soccer_learning_neural_run_metrics_pending_batches (value : int) : (int, string) result =
+  if value < 0 then Error "des_soccer_learning_neural_run_metrics.pending_batches is below the minimum"
+  else Ok value
+
+let validate_des_soccer_learning_neural_run_metrics_dropped_batches (value : int) : (int, string) result =
+  if value < 0 then Error "des_soccer_learning_neural_run_metrics.dropped_batches is below the minimum"
+  else Ok value
+
+let validate_des_soccer_learning_neural_run_metrics_replay_samples (value : int) : (int, string) result =
+  if value < 0 then Error "des_soccer_learning_neural_run_metrics.replay_samples is below the minimum"
+  else Ok value
+
+let validate_des_soccer_learning_neural_run_metrics_replay_capacity (value : int) : (int, string) result =
+  if value < 0 then Error "des_soccer_learning_neural_run_metrics.replay_capacity is below the minimum"
+  else Ok value
+
+let validate_des_soccer_learning_neural_run_metrics_parameter_count (value : int) : (int, string) result =
+  if value < 0 then Error "des_soccer_learning_neural_run_metrics.parameter_count is below the minimum"
+  else Ok value
+
 let des_fel_elevator_learning_runs_table = "des_fel_elevator_learning_runs"
 
 let des_fel_elevator_learning_runs_columns = ["id"; "run_label"; "scenario_slug"; "status"; "dispatch_policy"; "seed"; "floors"; "shafts"; "capacity"; "travel_seconds_micros"; "dwell_seconds_micros"; "arrival_rate_micros"; "horizon_seconds_micros"; "events"; "arrivals"; "boarded"; "served"; "mean_wait_micros"; "dispatch_decisions"; "pomdp_belief_updates"; "online_learning_updates"; "online_learning_loss_last_micros"; "config"; "metrics"; "artifact"; "created_at"; "updated_at"]

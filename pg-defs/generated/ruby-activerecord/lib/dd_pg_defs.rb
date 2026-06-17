@@ -750,6 +750,183 @@ module DdPgDefs
     validates :decay_micros, numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 1000000 }
   end
 
+  class DesSoccerTournaments < ActiveRecord::Base
+    self.table_name = "des_soccer_tournaments"
+    self.primary_key = "id"
+
+    validates :experiment_id, presence: true
+    validates :tournament_date, presence: true
+    validates :seed, presence: true
+    validates :seed, numericality: { only_integer: true }
+    validates :learning_mode, presence: true
+    validates :format, presence: true
+    validates :team_count, presence: true
+    validates :team_count, numericality: { only_integer: true }
+    validates :match_count, numericality: { only_integer: true }
+    validates :matches_played, numericality: { only_integer: true }
+    validates :champion_team_id, numericality: { only_integer: true }, allow_nil: true
+    validates :runner_up_team_id, numericality: { only_integer: true }, allow_nil: true
+    validates :third_place_team_id, numericality: { only_integer: true }, allow_nil: true
+    validates :status, inclusion: { in: ["running", "completed", "failed", "aborted"] }
+  end
+
+  class DesSoccerTournamentMatches < ActiveRecord::Base
+    self.table_name = "des_soccer_tournament_matches"
+    self.primary_key = "id"
+
+    validates :match_index, presence: true
+    validates :match_index, numericality: { only_integer: true }
+    validates :stage, presence: true
+    validates :home_team_id, presence: true
+    validates :home_team_id, numericality: { only_integer: true }
+    validates :away_team_id, presence: true
+    validates :away_team_id, numericality: { only_integer: true }
+    validates :home_goals, presence: true
+    validates :home_goals, numericality: { only_integer: true }
+    validates :away_goals, presence: true
+    validates :away_goals, numericality: { only_integer: true }
+    validates :shootout_winner_team_id, numericality: { only_integer: true }, allow_nil: true
+    validates :home_training_steps, presence: true
+    validates :home_training_steps, numericality: { only_integer: true }
+    validates :away_training_steps, presence: true
+    validates :away_training_steps, numericality: { only_integer: true }
+  end
+
+  class DesSoccerTournamentTeamBrains < ActiveRecord::Base
+    self.table_name = "des_soccer_tournament_team_brains"
+    self.primary_key = "id"
+
+    validates :team_id, presence: true
+    validates :team_id, numericality: { only_integer: true }
+    validates :team_name, presence: true
+    validates :seed, presence: true
+    validates :seed, numericality: { only_integer: true }
+    validates :matches_learned, presence: true
+    validates :matches_learned, numericality: { only_integer: true }
+    validates :training_steps, presence: true
+    validates :training_steps, numericality: { only_integer: true }
+    validates :played, presence: true
+    validates :played, numericality: { only_integer: true }
+    validates :wins, presence: true
+    validates :wins, numericality: { only_integer: true }
+    validates :draws, presence: true
+    validates :draws, numericality: { only_integer: true }
+    validates :losses, presence: true
+    validates :losses, numericality: { only_integer: true }
+    validates :goals_for, presence: true
+    validates :goals_for, numericality: { only_integer: true }
+    validates :goals_against, presence: true
+    validates :goals_against, numericality: { only_integer: true }
+  end
+
+  class DesSoccerLearningSetPlayRuns < ActiveRecord::Base
+    self.table_name = "des_soccer_learning_set_play_runs"
+    self.primary_key = "run_id"
+
+    validates :policy_version_id, presence: true
+    validates :primary_restart, presence: true
+    validates :primary_restart, inclusion: { in: ["direct-free-kick", "indirect-free-kick"] }
+    validates :team, presence: true
+    validates :team, inclusion: { in: ["home", "away"] }
+    validates :spot_x_micros, presence: true
+    validates :spot_x_micros, numericality: { only_integer: true }
+    validates :spot_y_micros, presence: true
+    validates :spot_y_micros, numericality: { only_integer: true }
+    validates :duration_seconds_micros, presence: true
+    validates :duration_seconds_micros, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :episode_count, presence: true
+    validates :episode_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :goals, presence: true
+    validates :goals, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :goal_rate_micros, presence: true
+    validates :goal_rate_micros, numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 1000000 }
+    validates :first_window_goal_rate_micros, presence: true
+    validates :first_window_goal_rate_micros, numericality: { only_integer: true }
+    validates :last_window_goal_rate_micros, presence: true
+    validates :last_window_goal_rate_micros, numericality: { only_integer: true }
+    validates :goal_rate_delta_micros, presence: true
+    validates :goal_rate_delta_micros, numericality: { only_integer: true }
+  end
+
+  class DesSoccerLearningSetPlayRestartMix < ActiveRecord::Base
+    self.table_name = "des_soccer_learning_set_play_restart_mix"
+
+    validates :run_id, presence: true
+    validates :ordinal, presence: true
+    validates :ordinal, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :restart, presence: true
+    validates :restart, inclusion: { in: ["direct-free-kick", "indirect-free-kick"] }
+  end
+
+  class DesSoccerLearningSetPlayEpisodeMetrics < ActiveRecord::Base
+    self.table_name = "des_soccer_learning_set_play_episode_metrics"
+
+    validates :run_id, presence: true
+    validates :episode_index, presence: true
+    validates :episode_index, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :seed, presence: true
+    validates :seed, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :restart, presence: true
+    validates :restart, inclusion: { in: ["direct-free-kick", "indirect-free-kick"] }
+    validates :routine, length: { maximum: 80 }, allow_nil: true
+    validates :scored, presence: true
+    validates :score_delta_for_team, presence: true
+    validates :score_delta_for_team, numericality: { only_integer: true }
+    validates :ticks, presence: true
+    validates :ticks, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :simulated_seconds_micros, presence: true
+    validates :simulated_seconds_micros, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :policy_updates, presence: true
+    validates :policy_updates, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :home_policy_entries, presence: true
+    validates :home_policy_entries, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :home_policy_target_entries, presence: true
+    validates :home_policy_target_entries, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :away_policy_entries, presence: true
+    validates :away_policy_entries, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :away_policy_target_entries, presence: true
+    validates :away_policy_target_entries, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :neural_training_steps, presence: true
+    validates :neural_training_steps, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :neural_samples, presence: true
+    validates :neural_samples, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :neural_replay_samples, presence: true
+    validates :neural_replay_samples, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :neural_last_loss_micros, numericality: { only_integer: true }, allow_nil: true
+    validates :cumulative_goals, presence: true
+    validates :cumulative_goals, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :goal_rate_so_far_micros, presence: true
+    validates :goal_rate_so_far_micros, numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 1000000 }
+  end
+
+  class DesSoccerLearningNeuralRunMetrics < ActiveRecord::Base
+    self.table_name = "des_soccer_learning_neural_run_metrics"
+    self.primary_key = "run_id"
+
+    validates :policy_version_id, presence: true
+    validates :enabled, presence: true
+    validates :backend, presence: true
+    validates :backend, inclusion: { in: ["inline", "threaded"] }
+    validates :training_steps, presence: true
+    validates :training_steps, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :samples, presence: true
+    validates :samples, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :pending_batches, presence: true
+    validates :pending_batches, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :dropped_batches, presence: true
+    validates :dropped_batches, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :replay_samples, presence: true
+    validates :replay_samples, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :replay_capacity, presence: true
+    validates :replay_capacity, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :parameter_count, presence: true
+    validates :parameter_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :target_clip_micros, presence: true
+    validates :target_clip_micros, numericality: { only_integer: true }
+    validates :last_loss_micros, numericality: { only_integer: true }, allow_nil: true
+    validates :average_loss_micros, numericality: { only_integer: true }, allow_nil: true
+  end
+
   class DesFelElevatorLearningRuns < ActiveRecord::Base
     self.table_name = "des_fel_elevator_learning_runs"
     self.primary_key = "id"

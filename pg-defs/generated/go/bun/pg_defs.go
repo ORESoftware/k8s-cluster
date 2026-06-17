@@ -2547,6 +2547,332 @@ func (value DesSoccerLearningMergeEventsBun) Validate() error {
 	return nil
 }
 
+const DesSoccerTournamentsTable = "des_soccer_tournaments"
+const DesSoccerTournamentsSelectSQL = `select
+      id,
+      experiment_id::text as experiment_id,
+      tournament_date,
+      seed,
+      learning_mode,
+      format,
+      team_count,
+      match_count,
+      matches_played,
+      champion_team_id,
+      runner_up_team_id,
+      third_place_team_id,
+      wall_time_seconds,
+      status,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at
+    from des_soccer_tournaments`
+
+var DesSoccerTournamentsStatusValues = []string{"running", "completed", "failed", "aborted"}
+
+type DesSoccerTournamentsBun struct {
+	bun.BaseModel `bun:"table:des_soccer_tournaments"`
+	Id int64 `bun:"id,type:bigserial,pk" json:"id"`
+	ExperimentId uuid.UUID `bun:"experiment_id,type:uuid" json:"experimentId"`
+	TournamentDate string `bun:"tournament_date,type:text" json:"tournamentDate"`
+	Seed int64 `bun:"seed,type:bigint" json:"seed"`
+	LearningMode string `bun:"learning_mode,type:text" json:"learningMode"`
+	Format json.RawMessage `bun:"format,type:jsonb" json:"format"`
+	TeamCount int32 `bun:"team_count,type:integer" json:"teamCount"`
+	MatchCount int32 `bun:"match_count,type:integer,default:0" json:"matchCount"`
+	MatchesPlayed int32 `bun:"matches_played,type:integer,default:0" json:"matchesPlayed"`
+	ChampionTeamId *int32 `bun:"champion_team_id,type:integer,nullzero" json:"championTeamId,omitempty"`
+	RunnerUpTeamId *int32 `bun:"runner_up_team_id,type:integer,nullzero" json:"runnerUpTeamId,omitempty"`
+	ThirdPlaceTeamId *int32 `bun:"third_place_team_id,type:integer,nullzero" json:"thirdPlaceTeamId,omitempty"`
+	WallTimeSeconds *string `bun:"wall_time_seconds,type:double,nullzero" json:"wallTimeSeconds,omitempty"`
+	Status string `bun:"status,type:text,default:'running'" json:"status"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+	FinishedAt *time.Time `bun:"finished_at,type:timestamptz,nullzero" json:"finishedAt,omitempty"`
+}
+
+func (value DesSoccerTournamentsBun) Validate() error {
+	if !validateRawJSON(value.Format) { return errors.New("des_soccer_tournaments.format must be valid JSON") }
+	if !containsString(DesSoccerTournamentsStatusValues, value.Status) { return errors.New("unsupported des_soccer_tournaments.status") }
+	return nil
+}
+
+const DesSoccerTournamentMatchesTable = "des_soccer_tournament_matches"
+const DesSoccerTournamentMatchesSelectSQL = `select
+      id,
+      match_index,
+      stage,
+      home_team_id,
+      away_team_id,
+      home_goals,
+      away_goals,
+      shootout_winner_team_id,
+      home_training_steps,
+      away_training_steps,
+      to_char(recorded_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as recorded_at
+    from des_soccer_tournament_matches`
+
+type DesSoccerTournamentMatchesBun struct {
+	bun.BaseModel `bun:"table:des_soccer_tournament_matches"`
+	Id int64 `bun:"id,type:bigserial,pk" json:"id"`
+	MatchIndex int32 `bun:"match_index,type:integer" json:"matchIndex"`
+	Stage string `bun:"stage,type:text" json:"stage"`
+	HomeTeamId int32 `bun:"home_team_id,type:integer" json:"homeTeamId"`
+	AwayTeamId int32 `bun:"away_team_id,type:integer" json:"awayTeamId"`
+	HomeGoals int32 `bun:"home_goals,type:integer" json:"homeGoals"`
+	AwayGoals int32 `bun:"away_goals,type:integer" json:"awayGoals"`
+	ShootoutWinnerTeamId *int32 `bun:"shootout_winner_team_id,type:integer,nullzero" json:"shootoutWinnerTeamId,omitempty"`
+	HomeTrainingSteps int64 `bun:"home_training_steps,type:bigint" json:"homeTrainingSteps"`
+	AwayTrainingSteps int64 `bun:"away_training_steps,type:bigint" json:"awayTrainingSteps"`
+	RecordedAt time.Time `bun:"recorded_at,type:timestamptz,default:now()" json:"recordedAt"`
+}
+
+func (value DesSoccerTournamentMatchesBun) Validate() error {
+	return nil
+}
+
+const DesSoccerTournamentTeamBrainsTable = "des_soccer_tournament_team_brains"
+const DesSoccerTournamentTeamBrainsSelectSQL = `select
+      id,
+      team_id,
+      team_name,
+      seed,
+      matches_learned,
+      training_steps,
+      played,
+      wins,
+      draws,
+      losses,
+      goals_for,
+      goals_against,
+      neural_snapshot,
+      genome,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from des_soccer_tournament_team_brains`
+
+type DesSoccerTournamentTeamBrainsBun struct {
+	bun.BaseModel `bun:"table:des_soccer_tournament_team_brains"`
+	Id int64 `bun:"id,type:bigserial,pk" json:"id"`
+	TeamId int32 `bun:"team_id,type:integer" json:"teamId"`
+	TeamName string `bun:"team_name,type:text" json:"teamName"`
+	Seed int64 `bun:"seed,type:bigint" json:"seed"`
+	MatchesLearned int32 `bun:"matches_learned,type:integer" json:"matchesLearned"`
+	TrainingSteps int64 `bun:"training_steps,type:bigint" json:"trainingSteps"`
+	Played int32 `bun:"played,type:integer" json:"played"`
+	Wins int32 `bun:"wins,type:integer" json:"wins"`
+	Draws int32 `bun:"draws,type:integer" json:"draws"`
+	Losses int32 `bun:"losses,type:integer" json:"losses"`
+	GoalsFor int32 `bun:"goals_for,type:integer" json:"goalsFor"`
+	GoalsAgainst int32 `bun:"goals_against,type:integer" json:"goalsAgainst"`
+	NeuralSnapshot *json.RawMessage `bun:"neural_snapshot,type:jsonb,nullzero" json:"neuralSnapshot,omitempty"`
+	Genome *json.RawMessage `bun:"genome,type:jsonb,nullzero" json:"genome,omitempty"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value DesSoccerTournamentTeamBrainsBun) Validate() error {
+	if value.NeuralSnapshot != nil {
+		if !validateRawJSON(*value.NeuralSnapshot) { return errors.New("des_soccer_tournament_team_brains.neural_snapshot must be valid JSON") }
+	}
+	if value.Genome != nil {
+		if !validateRawJSON(*value.Genome) { return errors.New("des_soccer_tournament_team_brains.genome must be valid JSON") }
+	}
+	return nil
+}
+
+const DesSoccerLearningSetPlayRunsTable = "des_soccer_learning_set_play_runs"
+const DesSoccerLearningSetPlayRunsSelectSQL = `select
+      run_id::text as run_id,
+      policy_version_id::text as policy_version_id,
+      primary_restart,
+      team,
+      spot_x_micros,
+      spot_y_micros,
+      duration_seconds_micros,
+      episode_count,
+      goals,
+      goal_rate_micros,
+      first_window_goal_rate_micros,
+      last_window_goal_rate_micros,
+      goal_rate_delta_micros,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from des_soccer_learning_set_play_runs`
+
+var DesSoccerLearningSetPlayRunsPrimaryRestartValues = []string{"direct-free-kick", "indirect-free-kick"}
+var DesSoccerLearningSetPlayRunsTeamValues = []string{"home", "away"}
+
+type DesSoccerLearningSetPlayRunsBun struct {
+	bun.BaseModel `bun:"table:des_soccer_learning_set_play_runs"`
+	RunId uuid.UUID `bun:"run_id,type:uuid,pk" json:"runId"`
+	PolicyVersionId uuid.UUID `bun:"policy_version_id,type:uuid" json:"policyVersionId"`
+	PrimaryRestart string `bun:"primary_restart,type:varchar(40)" json:"primaryRestart"`
+	Team string `bun:"team,type:varchar(8)" json:"team"`
+	SpotXMicros int64 `bun:"spot_x_micros,type:bigint" json:"spotXMicros"`
+	SpotYMicros int64 `bun:"spot_y_micros,type:bigint" json:"spotYMicros"`
+	DurationSecondsMicros int64 `bun:"duration_seconds_micros,type:bigint" json:"durationSecondsMicros"`
+	EpisodeCount int32 `bun:"episode_count,type:integer" json:"episodeCount"`
+	Goals int32 `bun:"goals,type:integer" json:"goals"`
+	GoalRateMicros int64 `bun:"goal_rate_micros,type:bigint" json:"goalRateMicros"`
+	FirstWindowGoalRateMicros int64 `bun:"first_window_goal_rate_micros,type:bigint" json:"firstWindowGoalRateMicros"`
+	LastWindowGoalRateMicros int64 `bun:"last_window_goal_rate_micros,type:bigint" json:"lastWindowGoalRateMicros"`
+	GoalRateDeltaMicros int64 `bun:"goal_rate_delta_micros,type:bigint" json:"goalRateDeltaMicros"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+}
+
+func (value DesSoccerLearningSetPlayRunsBun) Validate() error {
+	if !containsString(DesSoccerLearningSetPlayRunsPrimaryRestartValues, value.PrimaryRestart) { return errors.New("unsupported des_soccer_learning_set_play_runs.primary_restart") }
+	if !containsString(DesSoccerLearningSetPlayRunsTeamValues, value.Team) { return errors.New("unsupported des_soccer_learning_set_play_runs.team") }
+	if value.DurationSecondsMicros < 0 { return errors.New("des_soccer_learning_set_play_runs.duration_seconds_micros is below the minimum") }
+	if value.EpisodeCount < 0 { return errors.New("des_soccer_learning_set_play_runs.episode_count is below the minimum") }
+	if value.Goals < 0 { return errors.New("des_soccer_learning_set_play_runs.goals is below the minimum") }
+	if value.GoalRateMicros < 0 { return errors.New("des_soccer_learning_set_play_runs.goal_rate_micros is below the minimum") }
+	if value.GoalRateMicros > 1000000 { return errors.New("des_soccer_learning_set_play_runs.goal_rate_micros is above the maximum") }
+	return nil
+}
+
+const DesSoccerLearningSetPlayRestartMixTable = "des_soccer_learning_set_play_restart_mix"
+const DesSoccerLearningSetPlayRestartMixSelectSQL = `select
+      run_id::text as run_id,
+      ordinal,
+      restart
+    from des_soccer_learning_set_play_restart_mix`
+
+var DesSoccerLearningSetPlayRestartMixRestartValues = []string{"direct-free-kick", "indirect-free-kick"}
+
+type DesSoccerLearningSetPlayRestartMixBun struct {
+	bun.BaseModel `bun:"table:des_soccer_learning_set_play_restart_mix"`
+	RunId uuid.UUID `bun:"run_id,type:uuid" json:"runId"`
+	Ordinal int32 `bun:"ordinal,type:integer" json:"ordinal"`
+	Restart string `bun:"restart,type:varchar(40)" json:"restart"`
+}
+
+func (value DesSoccerLearningSetPlayRestartMixBun) Validate() error {
+	if value.Ordinal < 0 { return errors.New("des_soccer_learning_set_play_restart_mix.ordinal is below the minimum") }
+	if !containsString(DesSoccerLearningSetPlayRestartMixRestartValues, value.Restart) { return errors.New("unsupported des_soccer_learning_set_play_restart_mix.restart") }
+	return nil
+}
+
+const DesSoccerLearningSetPlayEpisodeMetricsTable = "des_soccer_learning_set_play_episode_metrics"
+const DesSoccerLearningSetPlayEpisodeMetricsSelectSQL = `select
+      run_id::text as run_id,
+      episode_index,
+      seed,
+      restart,
+      routine,
+      scored,
+      score_delta_for_team,
+      ticks,
+      simulated_seconds_micros,
+      policy_updates,
+      home_policy_entries,
+      home_policy_target_entries,
+      away_policy_entries,
+      away_policy_target_entries,
+      neural_training_steps,
+      neural_samples,
+      neural_replay_samples,
+      neural_last_loss_micros,
+      cumulative_goals,
+      goal_rate_so_far_micros
+    from des_soccer_learning_set_play_episode_metrics`
+
+var DesSoccerLearningSetPlayEpisodeMetricsRestartValues = []string{"direct-free-kick", "indirect-free-kick"}
+
+type DesSoccerLearningSetPlayEpisodeMetricsBun struct {
+	bun.BaseModel `bun:"table:des_soccer_learning_set_play_episode_metrics"`
+	RunId uuid.UUID `bun:"run_id,type:uuid" json:"runId"`
+	EpisodeIndex int32 `bun:"episode_index,type:integer" json:"episodeIndex"`
+	Seed int64 `bun:"seed,type:bigint" json:"seed"`
+	Restart string `bun:"restart,type:varchar(40)" json:"restart"`
+	Routine *string `bun:"routine,type:varchar(80),nullzero" json:"routine,omitempty"`
+	Scored bool `bun:"scored,type:boolean" json:"scored"`
+	ScoreDeltaForTeam int32 `bun:"score_delta_for_team,type:integer" json:"scoreDeltaForTeam"`
+	Ticks int64 `bun:"ticks,type:bigint" json:"ticks"`
+	SimulatedSecondsMicros int64 `bun:"simulated_seconds_micros,type:bigint" json:"simulatedSecondsMicros"`
+	PolicyUpdates int64 `bun:"policy_updates,type:bigint" json:"policyUpdates"`
+	HomePolicyEntries int32 `bun:"home_policy_entries,type:integer" json:"homePolicyEntries"`
+	HomePolicyTargetEntries int32 `bun:"home_policy_target_entries,type:integer" json:"homePolicyTargetEntries"`
+	AwayPolicyEntries int32 `bun:"away_policy_entries,type:integer" json:"awayPolicyEntries"`
+	AwayPolicyTargetEntries int32 `bun:"away_policy_target_entries,type:integer" json:"awayPolicyTargetEntries"`
+	NeuralTrainingSteps int32 `bun:"neural_training_steps,type:integer" json:"neuralTrainingSteps"`
+	NeuralSamples int64 `bun:"neural_samples,type:bigint" json:"neuralSamples"`
+	NeuralReplaySamples int32 `bun:"neural_replay_samples,type:integer" json:"neuralReplaySamples"`
+	NeuralLastLossMicros *int64 `bun:"neural_last_loss_micros,type:bigint,nullzero" json:"neuralLastLossMicros,omitempty"`
+	CumulativeGoals int32 `bun:"cumulative_goals,type:integer" json:"cumulativeGoals"`
+	GoalRateSoFarMicros int64 `bun:"goal_rate_so_far_micros,type:bigint" json:"goalRateSoFarMicros"`
+}
+
+func (value DesSoccerLearningSetPlayEpisodeMetricsBun) Validate() error {
+	if value.EpisodeIndex < 0 { return errors.New("des_soccer_learning_set_play_episode_metrics.episode_index is below the minimum") }
+	if value.Seed < 0 { return errors.New("des_soccer_learning_set_play_episode_metrics.seed is below the minimum") }
+	if !containsString(DesSoccerLearningSetPlayEpisodeMetricsRestartValues, value.Restart) { return errors.New("unsupported des_soccer_learning_set_play_episode_metrics.restart") }
+	if value.Ticks < 0 { return errors.New("des_soccer_learning_set_play_episode_metrics.ticks is below the minimum") }
+	if value.SimulatedSecondsMicros < 0 { return errors.New("des_soccer_learning_set_play_episode_metrics.simulated_seconds_micros is below the minimum") }
+	if value.PolicyUpdates < 0 { return errors.New("des_soccer_learning_set_play_episode_metrics.policy_updates is below the minimum") }
+	if value.HomePolicyEntries < 0 { return errors.New("des_soccer_learning_set_play_episode_metrics.home_policy_entries is below the minimum") }
+	if value.HomePolicyTargetEntries < 0 { return errors.New("des_soccer_learning_set_play_episode_metrics.home_policy_target_entries is below the minimum") }
+	if value.AwayPolicyEntries < 0 { return errors.New("des_soccer_learning_set_play_episode_metrics.away_policy_entries is below the minimum") }
+	if value.AwayPolicyTargetEntries < 0 { return errors.New("des_soccer_learning_set_play_episode_metrics.away_policy_target_entries is below the minimum") }
+	if value.NeuralTrainingSteps < 0 { return errors.New("des_soccer_learning_set_play_episode_metrics.neural_training_steps is below the minimum") }
+	if value.NeuralSamples < 0 { return errors.New("des_soccer_learning_set_play_episode_metrics.neural_samples is below the minimum") }
+	if value.NeuralReplaySamples < 0 { return errors.New("des_soccer_learning_set_play_episode_metrics.neural_replay_samples is below the minimum") }
+	if value.CumulativeGoals < 0 { return errors.New("des_soccer_learning_set_play_episode_metrics.cumulative_goals is below the minimum") }
+	if value.GoalRateSoFarMicros < 0 { return errors.New("des_soccer_learning_set_play_episode_metrics.goal_rate_so_far_micros is below the minimum") }
+	if value.GoalRateSoFarMicros > 1000000 { return errors.New("des_soccer_learning_set_play_episode_metrics.goal_rate_so_far_micros is above the maximum") }
+	return nil
+}
+
+const DesSoccerLearningNeuralRunMetricsTable = "des_soccer_learning_neural_run_metrics"
+const DesSoccerLearningNeuralRunMetricsSelectSQL = `select
+      run_id::text as run_id,
+      policy_version_id::text as policy_version_id,
+      enabled,
+      backend,
+      training_steps,
+      samples,
+      pending_batches,
+      dropped_batches,
+      replay_samples,
+      replay_capacity,
+      parameter_count,
+      target_clip_micros,
+      last_loss_micros,
+      average_loss_micros,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from des_soccer_learning_neural_run_metrics`
+
+var DesSoccerLearningNeuralRunMetricsBackendValues = []string{"inline", "threaded"}
+
+type DesSoccerLearningNeuralRunMetricsBun struct {
+	bun.BaseModel `bun:"table:des_soccer_learning_neural_run_metrics"`
+	RunId uuid.UUID `bun:"run_id,type:uuid,pk" json:"runId"`
+	PolicyVersionId uuid.UUID `bun:"policy_version_id,type:uuid" json:"policyVersionId"`
+	Enabled bool `bun:"enabled,type:boolean" json:"enabled"`
+	Backend string `bun:"backend,type:varchar(32)" json:"backend"`
+	TrainingSteps int32 `bun:"training_steps,type:integer" json:"trainingSteps"`
+	Samples int64 `bun:"samples,type:bigint" json:"samples"`
+	PendingBatches int32 `bun:"pending_batches,type:integer" json:"pendingBatches"`
+	DroppedBatches int32 `bun:"dropped_batches,type:integer" json:"droppedBatches"`
+	ReplaySamples int32 `bun:"replay_samples,type:integer" json:"replaySamples"`
+	ReplayCapacity int32 `bun:"replay_capacity,type:integer" json:"replayCapacity"`
+	ParameterCount int32 `bun:"parameter_count,type:integer" json:"parameterCount"`
+	TargetClipMicros int64 `bun:"target_clip_micros,type:bigint" json:"targetClipMicros"`
+	LastLossMicros *int64 `bun:"last_loss_micros,type:bigint,nullzero" json:"lastLossMicros,omitempty"`
+	AverageLossMicros *int64 `bun:"average_loss_micros,type:bigint,nullzero" json:"averageLossMicros,omitempty"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+}
+
+func (value DesSoccerLearningNeuralRunMetricsBun) Validate() error {
+	if !containsString(DesSoccerLearningNeuralRunMetricsBackendValues, value.Backend) { return errors.New("unsupported des_soccer_learning_neural_run_metrics.backend") }
+	if value.TrainingSteps < 0 { return errors.New("des_soccer_learning_neural_run_metrics.training_steps is below the minimum") }
+	if value.Samples < 0 { return errors.New("des_soccer_learning_neural_run_metrics.samples is below the minimum") }
+	if value.PendingBatches < 0 { return errors.New("des_soccer_learning_neural_run_metrics.pending_batches is below the minimum") }
+	if value.DroppedBatches < 0 { return errors.New("des_soccer_learning_neural_run_metrics.dropped_batches is below the minimum") }
+	if value.ReplaySamples < 0 { return errors.New("des_soccer_learning_neural_run_metrics.replay_samples is below the minimum") }
+	if value.ReplayCapacity < 0 { return errors.New("des_soccer_learning_neural_run_metrics.replay_capacity is below the minimum") }
+	if value.ParameterCount < 0 { return errors.New("des_soccer_learning_neural_run_metrics.parameter_count is below the minimum") }
+	return nil
+}
+
 const DesFelElevatorLearningRunsTable = "des_fel_elevator_learning_runs"
 const DesFelElevatorLearningRunsSelectSQL = `select
       id::text as id,

@@ -409,6 +409,17 @@ function parseCreateTable(statement) {
       continue;
     }
 
+    // Table-level constraints that are not columns: bare `primary key (...)`,
+    // `unique (...)`, `foreign key (...)`, `exclude`/`like`, or the named
+    // `constraint <name> primary key|unique|foreign key (...)` forms. (Named
+    // `constraint <name> check (...)` is already captured above.) Skip them so they
+    // are not mis-parsed as a column named e.g. "primary" of type "key". The columns
+    // they reference carry their own `not null`, so no nullability is lost; composite
+    // primary keys are intentionally not surfaced (no adapter models them yet).
+    if (isTableLevelConstraint(trimmed)) {
+      continue;
+    }
+
     const column = parseColumn(trimmed);
     if (column) {
       columns.push(column);
@@ -552,6 +563,17 @@ function splitTriggerEvents(value) {
     .map((item) => item.trim().toLowerCase())
     .filter(Boolean)
     .sort();
+}
+
+// True for a table-level constraint line that is not a column definition and is not a
+// named CHECK (those are parsed separately). Covers bare `primary key (...)`,
+// `unique (...)`, `foreign key (...)`, `exclude`, `like`, a bare `check (...)`, and the
+// named `constraint <name> primary key|unique|foreign key (...)` forms.
+function isTableLevelConstraint(value) {
+  return (
+    /^(primary\s+key|unique|foreign\s+key|exclude|like|check)\b/i.test(value) ||
+    /^constraint\s+"?[\w]+"?\s+(primary\s+key|unique|foreign\s+key)\b/i.test(value)
+  );
 }
 
 function parseCheckConstraint(value) {

@@ -958,6 +958,143 @@ class DesSoccerLearningMergeEvents(BaseModel):
         table_name = "des_soccer_learning_merge_events"
 
 
+class DesSoccerTournaments(BaseModel):
+    id = BigAutoField(primary_key=True)
+    experiment_id = UUIDField()
+    tournament_date = TextField()
+    seed = BigIntegerField()
+    learning_mode = TextField()
+    format = BinaryJSONField()
+    team_count = IntegerField()
+    match_count = IntegerField()
+    matches_played = IntegerField()
+    champion_team_id = IntegerField(null=True)
+    runner_up_team_id = IntegerField(null=True)
+    third_place_team_id = IntegerField(null=True)
+    wall_time_seconds = TextField(null=True)
+    status = TextField()
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+    finished_at = DateTimeField(null=True)
+
+    class Meta:
+        table_name = "des_soccer_tournaments"
+
+
+class DesSoccerTournamentMatches(BaseModel):
+    id = BigAutoField(primary_key=True)
+    match_index = IntegerField()
+    stage = TextField()
+    home_team_id = IntegerField()
+    away_team_id = IntegerField()
+    home_goals = IntegerField()
+    away_goals = IntegerField()
+    shootout_winner_team_id = IntegerField(null=True)
+    home_training_steps = BigIntegerField()
+    away_training_steps = BigIntegerField()
+    recorded_at = DateTimeField()
+
+    class Meta:
+        table_name = "des_soccer_tournament_matches"
+
+
+class DesSoccerTournamentTeamBrains(BaseModel):
+    id = BigAutoField(primary_key=True)
+    team_id = IntegerField()
+    team_name = TextField()
+    seed = BigIntegerField()
+    matches_learned = IntegerField()
+    training_steps = BigIntegerField()
+    played = IntegerField()
+    wins = IntegerField()
+    draws = IntegerField()
+    losses = IntegerField()
+    goals_for = IntegerField()
+    goals_against = IntegerField()
+    neural_snapshot = BinaryJSONField(null=True)
+    genome = BinaryJSONField(null=True)
+    updated_at = DateTimeField()
+
+    class Meta:
+        table_name = "des_soccer_tournament_team_brains"
+
+
+class DesSoccerLearningSetPlayRuns(BaseModel):
+    run_id = UUIDField(primary_key=True)
+    policy_version_id = UUIDField()
+    primary_restart = CharField(max_length=40)
+    team = CharField(max_length=8)
+    spot_x_micros = BigIntegerField()
+    spot_y_micros = BigIntegerField()
+    duration_seconds_micros = BigIntegerField()
+    episode_count = IntegerField()
+    goals = IntegerField()
+    goal_rate_micros = BigIntegerField()
+    first_window_goal_rate_micros = BigIntegerField()
+    last_window_goal_rate_micros = BigIntegerField()
+    goal_rate_delta_micros = BigIntegerField()
+    created_at = DateTimeField()
+
+    class Meta:
+        table_name = "des_soccer_learning_set_play_runs"
+
+
+class DesSoccerLearningSetPlayRestartMix(BaseModel):
+    run_id = UUIDField()
+    ordinal = IntegerField()
+    restart = CharField(max_length=40)
+
+    class Meta:
+        table_name = "des_soccer_learning_set_play_restart_mix"
+
+
+class DesSoccerLearningSetPlayEpisodeMetrics(BaseModel):
+    run_id = UUIDField()
+    episode_index = IntegerField()
+    seed = BigIntegerField()
+    restart = CharField(max_length=40)
+    routine = CharField(max_length=80, null=True)
+    scored = BooleanField()
+    score_delta_for_team = IntegerField()
+    ticks = BigIntegerField()
+    simulated_seconds_micros = BigIntegerField()
+    policy_updates = BigIntegerField()
+    home_policy_entries = IntegerField()
+    home_policy_target_entries = IntegerField()
+    away_policy_entries = IntegerField()
+    away_policy_target_entries = IntegerField()
+    neural_training_steps = IntegerField()
+    neural_samples = BigIntegerField()
+    neural_replay_samples = IntegerField()
+    neural_last_loss_micros = BigIntegerField(null=True)
+    cumulative_goals = IntegerField()
+    goal_rate_so_far_micros = BigIntegerField()
+
+    class Meta:
+        table_name = "des_soccer_learning_set_play_episode_metrics"
+
+
+class DesSoccerLearningNeuralRunMetrics(BaseModel):
+    run_id = UUIDField(primary_key=True)
+    policy_version_id = UUIDField()
+    enabled = BooleanField()
+    backend = CharField(max_length=32)
+    training_steps = IntegerField()
+    samples = BigIntegerField()
+    pending_batches = IntegerField()
+    dropped_batches = IntegerField()
+    replay_samples = IntegerField()
+    replay_capacity = IntegerField()
+    parameter_count = IntegerField()
+    target_clip_micros = BigIntegerField()
+    last_loss_micros = BigIntegerField(null=True)
+    average_loss_micros = BigIntegerField(null=True)
+    created_at = DateTimeField()
+
+    class Meta:
+        table_name = "des_soccer_learning_neural_run_metrics"
+
+
 class DesFelElevatorLearningRuns(BaseModel):
     id = UUIDField(primary_key=True)
     run_label = CharField(max_length=200)

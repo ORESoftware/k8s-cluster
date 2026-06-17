@@ -4198,6 +4198,615 @@ class DesSoccerLearningMergeEventsObjectBox {
 }
 
 @Entity()
+class DesSoccerTournamentsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  int id;
+
+  String experimentId;
+
+  String tournamentDate;
+
+  int seed;
+
+  String learningMode;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String format;
+
+  int teamCount;
+
+  int matchCount;
+
+  int matchesPlayed;
+
+  int? championTeamId;
+
+  int? runnerUpTeamId;
+
+  int? thirdPlaceTeamId;
+
+  String? wallTimeSeconds;
+
+  String status;
+
+  String createdAt;
+
+  String updatedAt;
+
+  String? finishedAt;
+
+
+  DesSoccerTournamentsObjectBox({
+    required this.id,
+    required this.experimentId,
+    required this.tournamentDate,
+    required this.seed,
+    required this.learningMode,
+    required this.format,
+    required this.teamCount,
+    required this.matchCount,
+    required this.matchesPlayed,
+    this.championTeamId,
+    this.runnerUpTeamId,
+    this.thirdPlaceTeamId,
+    this.wallTimeSeconds,
+    required this.status,
+    required this.createdAt,
+    required this.updatedAt,
+    this.finishedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "experimentId": experimentId,
+    "tournamentDate": tournamentDate,
+    "seed": seed,
+    "learningMode": learningMode,
+    "format": jsonDecode(format),
+    "teamCount": teamCount,
+    "matchCount": matchCount,
+    "matchesPlayed": matchesPlayed,
+    "championTeamId": championTeamId,
+    "runnerUpTeamId": runnerUpTeamId,
+    "thirdPlaceTeamId": thirdPlaceTeamId,
+    "wallTimeSeconds": wallTimeSeconds,
+    "status": status,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "finishedAt": finishedAt,
+  };
+
+  static DesSoccerTournamentsObjectBox fromJson(Map<String, Object?> json) {
+    return DesSoccerTournamentsObjectBox(
+      id: (json["id"] as num).toInt(),
+      experimentId: json["experimentId"] as String,
+      tournamentDate: json["tournamentDate"] as String,
+      seed: (json["seed"] as num).toInt(),
+      learningMode: json["learningMode"] as String,
+      format: json["format"] is String ? json["format"] as String : jsonEncode(json["format"]),
+      teamCount: (json["teamCount"] as num).toInt(),
+      matchCount: (json["matchCount"] as num).toInt(),
+      matchesPlayed: (json["matchesPlayed"] as num).toInt(),
+      championTeamId: json["championTeamId"] == null ? null : (json["championTeamId"] as num).toInt(),
+      runnerUpTeamId: json["runnerUpTeamId"] == null ? null : (json["runnerUpTeamId"] as num).toInt(),
+      thirdPlaceTeamId: json["thirdPlaceTeamId"] == null ? null : (json["thirdPlaceTeamId"] as num).toInt(),
+      wallTimeSeconds: json["wallTimeSeconds"] as String?,
+      status: json["status"] as String,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+      finishedAt: json["finishedAt"] as String?,
+    );
+  }
+}
+
+@Entity()
+class DesSoccerTournamentMatchesObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  int id;
+
+  int matchIndex;
+
+  String stage;
+
+  int homeTeamId;
+
+  int awayTeamId;
+
+  int homeGoals;
+
+  int awayGoals;
+
+  int? shootoutWinnerTeamId;
+
+  int homeTrainingSteps;
+
+  int awayTrainingSteps;
+
+  String recordedAt;
+
+
+  DesSoccerTournamentMatchesObjectBox({
+    required this.id,
+    required this.matchIndex,
+    required this.stage,
+    required this.homeTeamId,
+    required this.awayTeamId,
+    required this.homeGoals,
+    required this.awayGoals,
+    this.shootoutWinnerTeamId,
+    required this.homeTrainingSteps,
+    required this.awayTrainingSteps,
+    required this.recordedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "matchIndex": matchIndex,
+    "stage": stage,
+    "homeTeamId": homeTeamId,
+    "awayTeamId": awayTeamId,
+    "homeGoals": homeGoals,
+    "awayGoals": awayGoals,
+    "shootoutWinnerTeamId": shootoutWinnerTeamId,
+    "homeTrainingSteps": homeTrainingSteps,
+    "awayTrainingSteps": awayTrainingSteps,
+    "recordedAt": recordedAt,
+  };
+
+  static DesSoccerTournamentMatchesObjectBox fromJson(Map<String, Object?> json) {
+    return DesSoccerTournamentMatchesObjectBox(
+      id: (json["id"] as num).toInt(),
+      matchIndex: (json["matchIndex"] as num).toInt(),
+      stage: json["stage"] as String,
+      homeTeamId: (json["homeTeamId"] as num).toInt(),
+      awayTeamId: (json["awayTeamId"] as num).toInt(),
+      homeGoals: (json["homeGoals"] as num).toInt(),
+      awayGoals: (json["awayGoals"] as num).toInt(),
+      shootoutWinnerTeamId: json["shootoutWinnerTeamId"] == null ? null : (json["shootoutWinnerTeamId"] as num).toInt(),
+      homeTrainingSteps: (json["homeTrainingSteps"] as num).toInt(),
+      awayTrainingSteps: (json["awayTrainingSteps"] as num).toInt(),
+      recordedAt: json["recordedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class DesSoccerTournamentTeamBrainsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  int id;
+
+  int teamId;
+
+  String teamName;
+
+  int seed;
+
+  int matchesLearned;
+
+  int trainingSteps;
+
+  int played;
+
+  int wins;
+
+  int draws;
+
+  int losses;
+
+  int goalsFor;
+
+  int goalsAgainst;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String? neuralSnapshot;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String? genome;
+
+  String updatedAt;
+
+
+  DesSoccerTournamentTeamBrainsObjectBox({
+    required this.id,
+    required this.teamId,
+    required this.teamName,
+    required this.seed,
+    required this.matchesLearned,
+    required this.trainingSteps,
+    required this.played,
+    required this.wins,
+    required this.draws,
+    required this.losses,
+    required this.goalsFor,
+    required this.goalsAgainst,
+    this.neuralSnapshot,
+    this.genome,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "teamId": teamId,
+    "teamName": teamName,
+    "seed": seed,
+    "matchesLearned": matchesLearned,
+    "trainingSteps": trainingSteps,
+    "played": played,
+    "wins": wins,
+    "draws": draws,
+    "losses": losses,
+    "goalsFor": goalsFor,
+    "goalsAgainst": goalsAgainst,
+    "neuralSnapshot": jsonDecode(neuralSnapshot),
+    "genome": jsonDecode(genome),
+    "updatedAt": updatedAt,
+  };
+
+  static DesSoccerTournamentTeamBrainsObjectBox fromJson(Map<String, Object?> json) {
+    return DesSoccerTournamentTeamBrainsObjectBox(
+      id: (json["id"] as num).toInt(),
+      teamId: (json["teamId"] as num).toInt(),
+      teamName: json["teamName"] as String,
+      seed: (json["seed"] as num).toInt(),
+      matchesLearned: (json["matchesLearned"] as num).toInt(),
+      trainingSteps: (json["trainingSteps"] as num).toInt(),
+      played: (json["played"] as num).toInt(),
+      wins: (json["wins"] as num).toInt(),
+      draws: (json["draws"] as num).toInt(),
+      losses: (json["losses"] as num).toInt(),
+      goalsFor: (json["goalsFor"] as num).toInt(),
+      goalsAgainst: (json["goalsAgainst"] as num).toInt(),
+      neuralSnapshot: json["neuralSnapshot"] is String ? json["neuralSnapshot"] as String : jsonEncode(json["neuralSnapshot"]),
+      genome: json["genome"] is String ? json["genome"] as String : jsonEncode(json["genome"]),
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class DesSoccerLearningSetPlayRunsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String runId;
+
+  String policyVersionId;
+
+  String primaryRestart;
+
+  String team;
+
+  int spotXMicros;
+
+  int spotYMicros;
+
+  int durationSecondsMicros;
+
+  int episodeCount;
+
+  int goals;
+
+  int goalRateMicros;
+
+  int firstWindowGoalRateMicros;
+
+  int lastWindowGoalRateMicros;
+
+  int goalRateDeltaMicros;
+
+  String createdAt;
+
+
+  DesSoccerLearningSetPlayRunsObjectBox({
+    required this.runId,
+    required this.policyVersionId,
+    required this.primaryRestart,
+    required this.team,
+    required this.spotXMicros,
+    required this.spotYMicros,
+    required this.durationSecondsMicros,
+    required this.episodeCount,
+    required this.goals,
+    required this.goalRateMicros,
+    required this.firstWindowGoalRateMicros,
+    required this.lastWindowGoalRateMicros,
+    required this.goalRateDeltaMicros,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "runId": runId,
+    "policyVersionId": policyVersionId,
+    "primaryRestart": primaryRestart,
+    "team": team,
+    "spotXMicros": spotXMicros,
+    "spotYMicros": spotYMicros,
+    "durationSecondsMicros": durationSecondsMicros,
+    "episodeCount": episodeCount,
+    "goals": goals,
+    "goalRateMicros": goalRateMicros,
+    "firstWindowGoalRateMicros": firstWindowGoalRateMicros,
+    "lastWindowGoalRateMicros": lastWindowGoalRateMicros,
+    "goalRateDeltaMicros": goalRateDeltaMicros,
+    "createdAt": createdAt,
+  };
+
+  static DesSoccerLearningSetPlayRunsObjectBox fromJson(Map<String, Object?> json) {
+    return DesSoccerLearningSetPlayRunsObjectBox(
+      runId: json["runId"] as String,
+      policyVersionId: json["policyVersionId"] as String,
+      primaryRestart: json["primaryRestart"] as String,
+      team: json["team"] as String,
+      spotXMicros: (json["spotXMicros"] as num).toInt(),
+      spotYMicros: (json["spotYMicros"] as num).toInt(),
+      durationSecondsMicros: (json["durationSecondsMicros"] as num).toInt(),
+      episodeCount: (json["episodeCount"] as num).toInt(),
+      goals: (json["goals"] as num).toInt(),
+      goalRateMicros: (json["goalRateMicros"] as num).toInt(),
+      firstWindowGoalRateMicros: (json["firstWindowGoalRateMicros"] as num).toInt(),
+      lastWindowGoalRateMicros: (json["lastWindowGoalRateMicros"] as num).toInt(),
+      goalRateDeltaMicros: (json["goalRateDeltaMicros"] as num).toInt(),
+      createdAt: json["createdAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class DesSoccerLearningSetPlayRestartMixObjectBox {
+  @Id()
+  int obxId = 0;
+
+  String runId;
+
+  int ordinal;
+
+  String restart;
+
+
+  DesSoccerLearningSetPlayRestartMixObjectBox({
+    required this.runId,
+    required this.ordinal,
+    required this.restart,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "runId": runId,
+    "ordinal": ordinal,
+    "restart": restart,
+  };
+
+  static DesSoccerLearningSetPlayRestartMixObjectBox fromJson(Map<String, Object?> json) {
+    return DesSoccerLearningSetPlayRestartMixObjectBox(
+      runId: json["runId"] as String,
+      ordinal: (json["ordinal"] as num).toInt(),
+      restart: json["restart"] as String,
+    );
+  }
+}
+
+@Entity()
+class DesSoccerLearningSetPlayEpisodeMetricsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  String runId;
+
+  int episodeIndex;
+
+  int seed;
+
+  String restart;
+
+  String? routine;
+
+  bool scored;
+
+  int scoreDeltaForTeam;
+
+  int ticks;
+
+  int simulatedSecondsMicros;
+
+  int policyUpdates;
+
+  int homePolicyEntries;
+
+  int homePolicyTargetEntries;
+
+  int awayPolicyEntries;
+
+  int awayPolicyTargetEntries;
+
+  int neuralTrainingSteps;
+
+  int neuralSamples;
+
+  int neuralReplaySamples;
+
+  int? neuralLastLossMicros;
+
+  int cumulativeGoals;
+
+  int goalRateSoFarMicros;
+
+
+  DesSoccerLearningSetPlayEpisodeMetricsObjectBox({
+    required this.runId,
+    required this.episodeIndex,
+    required this.seed,
+    required this.restart,
+    this.routine,
+    required this.scored,
+    required this.scoreDeltaForTeam,
+    required this.ticks,
+    required this.simulatedSecondsMicros,
+    required this.policyUpdates,
+    required this.homePolicyEntries,
+    required this.homePolicyTargetEntries,
+    required this.awayPolicyEntries,
+    required this.awayPolicyTargetEntries,
+    required this.neuralTrainingSteps,
+    required this.neuralSamples,
+    required this.neuralReplaySamples,
+    this.neuralLastLossMicros,
+    required this.cumulativeGoals,
+    required this.goalRateSoFarMicros,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "runId": runId,
+    "episodeIndex": episodeIndex,
+    "seed": seed,
+    "restart": restart,
+    "routine": routine,
+    "scored": scored,
+    "scoreDeltaForTeam": scoreDeltaForTeam,
+    "ticks": ticks,
+    "simulatedSecondsMicros": simulatedSecondsMicros,
+    "policyUpdates": policyUpdates,
+    "homePolicyEntries": homePolicyEntries,
+    "homePolicyTargetEntries": homePolicyTargetEntries,
+    "awayPolicyEntries": awayPolicyEntries,
+    "awayPolicyTargetEntries": awayPolicyTargetEntries,
+    "neuralTrainingSteps": neuralTrainingSteps,
+    "neuralSamples": neuralSamples,
+    "neuralReplaySamples": neuralReplaySamples,
+    "neuralLastLossMicros": neuralLastLossMicros,
+    "cumulativeGoals": cumulativeGoals,
+    "goalRateSoFarMicros": goalRateSoFarMicros,
+  };
+
+  static DesSoccerLearningSetPlayEpisodeMetricsObjectBox fromJson(Map<String, Object?> json) {
+    return DesSoccerLearningSetPlayEpisodeMetricsObjectBox(
+      runId: json["runId"] as String,
+      episodeIndex: (json["episodeIndex"] as num).toInt(),
+      seed: (json["seed"] as num).toInt(),
+      restart: json["restart"] as String,
+      routine: json["routine"] as String?,
+      scored: json["scored"] as bool,
+      scoreDeltaForTeam: (json["scoreDeltaForTeam"] as num).toInt(),
+      ticks: (json["ticks"] as num).toInt(),
+      simulatedSecondsMicros: (json["simulatedSecondsMicros"] as num).toInt(),
+      policyUpdates: (json["policyUpdates"] as num).toInt(),
+      homePolicyEntries: (json["homePolicyEntries"] as num).toInt(),
+      homePolicyTargetEntries: (json["homePolicyTargetEntries"] as num).toInt(),
+      awayPolicyEntries: (json["awayPolicyEntries"] as num).toInt(),
+      awayPolicyTargetEntries: (json["awayPolicyTargetEntries"] as num).toInt(),
+      neuralTrainingSteps: (json["neuralTrainingSteps"] as num).toInt(),
+      neuralSamples: (json["neuralSamples"] as num).toInt(),
+      neuralReplaySamples: (json["neuralReplaySamples"] as num).toInt(),
+      neuralLastLossMicros: json["neuralLastLossMicros"] == null ? null : (json["neuralLastLossMicros"] as num).toInt(),
+      cumulativeGoals: (json["cumulativeGoals"] as num).toInt(),
+      goalRateSoFarMicros: (json["goalRateSoFarMicros"] as num).toInt(),
+    );
+  }
+}
+
+@Entity()
+class DesSoccerLearningNeuralRunMetricsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String runId;
+
+  String policyVersionId;
+
+  bool enabled;
+
+  String backend;
+
+  int trainingSteps;
+
+  int samples;
+
+  int pendingBatches;
+
+  int droppedBatches;
+
+  int replaySamples;
+
+  int replayCapacity;
+
+  int parameterCount;
+
+  int targetClipMicros;
+
+  int? lastLossMicros;
+
+  int? averageLossMicros;
+
+  String createdAt;
+
+
+  DesSoccerLearningNeuralRunMetricsObjectBox({
+    required this.runId,
+    required this.policyVersionId,
+    required this.enabled,
+    required this.backend,
+    required this.trainingSteps,
+    required this.samples,
+    required this.pendingBatches,
+    required this.droppedBatches,
+    required this.replaySamples,
+    required this.replayCapacity,
+    required this.parameterCount,
+    required this.targetClipMicros,
+    this.lastLossMicros,
+    this.averageLossMicros,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "runId": runId,
+    "policyVersionId": policyVersionId,
+    "enabled": enabled,
+    "backend": backend,
+    "trainingSteps": trainingSteps,
+    "samples": samples,
+    "pendingBatches": pendingBatches,
+    "droppedBatches": droppedBatches,
+    "replaySamples": replaySamples,
+    "replayCapacity": replayCapacity,
+    "parameterCount": parameterCount,
+    "targetClipMicros": targetClipMicros,
+    "lastLossMicros": lastLossMicros,
+    "averageLossMicros": averageLossMicros,
+    "createdAt": createdAt,
+  };
+
+  static DesSoccerLearningNeuralRunMetricsObjectBox fromJson(Map<String, Object?> json) {
+    return DesSoccerLearningNeuralRunMetricsObjectBox(
+      runId: json["runId"] as String,
+      policyVersionId: json["policyVersionId"] as String,
+      enabled: json["enabled"] as bool,
+      backend: json["backend"] as String,
+      trainingSteps: (json["trainingSteps"] as num).toInt(),
+      samples: (json["samples"] as num).toInt(),
+      pendingBatches: (json["pendingBatches"] as num).toInt(),
+      droppedBatches: (json["droppedBatches"] as num).toInt(),
+      replaySamples: (json["replaySamples"] as num).toInt(),
+      replayCapacity: (json["replayCapacity"] as num).toInt(),
+      parameterCount: (json["parameterCount"] as num).toInt(),
+      targetClipMicros: (json["targetClipMicros"] as num).toInt(),
+      lastLossMicros: json["lastLossMicros"] == null ? null : (json["lastLossMicros"] as num).toInt(),
+      averageLossMicros: json["averageLossMicros"] == null ? null : (json["averageLossMicros"] as num).toInt(),
+      createdAt: json["createdAt"] as String,
+    );
+  }
+}
+
+@Entity()
 class DesFelElevatorLearningRunsObjectBox {
   @Id()
   int obxId = 0;

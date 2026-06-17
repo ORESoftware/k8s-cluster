@@ -2686,6 +2686,403 @@ pub struct DesSoccerLearningMergeEventsDieselInsert {
 
 diesel::table! {
     use diesel::sql_types::*;
+    des_soccer_tournaments (id) {
+        id -> Int8,
+        experiment_id -> Uuid,
+        tournament_date -> Text,
+        seed -> Int8,
+        learning_mode -> Text,
+        format -> Jsonb,
+        team_count -> Int4,
+        match_count -> Int4,
+        matches_played -> Int4,
+        champion_team_id -> Nullable<Int4>,
+        runner_up_team_id -> Nullable<Int4>,
+        third_place_team_id -> Nullable<Int4>,
+        wall_time_seconds -> Nullable<Text>,
+        status -> Text,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+        finished_at -> Nullable<Timestamptz>,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = des_soccer_tournaments)]
+pub struct DesSoccerTournamentsDieselRow {
+    pub id: i64,
+    pub experiment_id: Uuid,
+    pub tournament_date: String,
+    pub seed: i64,
+    pub learning_mode: String,
+    pub format: Value,
+    pub team_count: i32,
+    pub match_count: i32,
+    pub matches_played: i32,
+    pub champion_team_id: Option<i32>,
+    pub runner_up_team_id: Option<i32>,
+    pub third_place_team_id: Option<i32>,
+    pub wall_time_seconds: Option<String>,
+    pub status: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub finished_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = des_soccer_tournaments)]
+pub struct DesSoccerTournamentsDieselInsert {
+    pub id: Option<i64>,
+    pub experiment_id: Option<Uuid>,
+    pub tournament_date: Option<String>,
+    pub seed: Option<i64>,
+    pub learning_mode: Option<String>,
+    pub format: Option<Value>,
+    pub team_count: Option<i32>,
+    pub match_count: Option<i32>,
+    pub matches_played: Option<i32>,
+    pub champion_team_id: Option<i32>,
+    pub runner_up_team_id: Option<i32>,
+    pub third_place_team_id: Option<i32>,
+    pub wall_time_seconds: Option<String>,
+    pub status: Option<String>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+    pub finished_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    des_soccer_tournament_matches (id) {
+        id -> Int8,
+        match_index -> Int4,
+        stage -> Text,
+        home_team_id -> Int4,
+        away_team_id -> Int4,
+        home_goals -> Int4,
+        away_goals -> Int4,
+        shootout_winner_team_id -> Nullable<Int4>,
+        home_training_steps -> Int8,
+        away_training_steps -> Int8,
+        recorded_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = des_soccer_tournament_matches)]
+pub struct DesSoccerTournamentMatchesDieselRow {
+    pub id: i64,
+    pub match_index: i32,
+    pub stage: String,
+    pub home_team_id: i32,
+    pub away_team_id: i32,
+    pub home_goals: i32,
+    pub away_goals: i32,
+    pub shootout_winner_team_id: Option<i32>,
+    pub home_training_steps: i64,
+    pub away_training_steps: i64,
+    pub recorded_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = des_soccer_tournament_matches)]
+pub struct DesSoccerTournamentMatchesDieselInsert {
+    pub id: Option<i64>,
+    pub match_index: Option<i32>,
+    pub stage: Option<String>,
+    pub home_team_id: Option<i32>,
+    pub away_team_id: Option<i32>,
+    pub home_goals: Option<i32>,
+    pub away_goals: Option<i32>,
+    pub shootout_winner_team_id: Option<i32>,
+    pub home_training_steps: Option<i64>,
+    pub away_training_steps: Option<i64>,
+    pub recorded_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    des_soccer_tournament_team_brains (id) {
+        id -> Int8,
+        team_id -> Int4,
+        team_name -> Text,
+        seed -> Int8,
+        matches_learned -> Int4,
+        training_steps -> Int8,
+        played -> Int4,
+        wins -> Int4,
+        draws -> Int4,
+        losses -> Int4,
+        goals_for -> Int4,
+        goals_against -> Int4,
+        neural_snapshot -> Nullable<Jsonb>,
+        genome -> Nullable<Jsonb>,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = des_soccer_tournament_team_brains)]
+pub struct DesSoccerTournamentTeamBrainsDieselRow {
+    pub id: i64,
+    pub team_id: i32,
+    pub team_name: String,
+    pub seed: i64,
+    pub matches_learned: i32,
+    pub training_steps: i64,
+    pub played: i32,
+    pub wins: i32,
+    pub draws: i32,
+    pub losses: i32,
+    pub goals_for: i32,
+    pub goals_against: i32,
+    pub neural_snapshot: Option<Value>,
+    pub genome: Option<Value>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = des_soccer_tournament_team_brains)]
+pub struct DesSoccerTournamentTeamBrainsDieselInsert {
+    pub id: Option<i64>,
+    pub team_id: Option<i32>,
+    pub team_name: Option<String>,
+    pub seed: Option<i64>,
+    pub matches_learned: Option<i32>,
+    pub training_steps: Option<i64>,
+    pub played: Option<i32>,
+    pub wins: Option<i32>,
+    pub draws: Option<i32>,
+    pub losses: Option<i32>,
+    pub goals_for: Option<i32>,
+    pub goals_against: Option<i32>,
+    pub neural_snapshot: Option<Value>,
+    pub genome: Option<Value>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    des_soccer_learning_set_play_runs (run_id) {
+        run_id -> Uuid,
+        policy_version_id -> Uuid,
+        primary_restart -> Varchar,
+        team -> Varchar,
+        spot_x_micros -> Int8,
+        spot_y_micros -> Int8,
+        duration_seconds_micros -> Int8,
+        episode_count -> Int4,
+        goals -> Int4,
+        goal_rate_micros -> Int8,
+        first_window_goal_rate_micros -> Int8,
+        last_window_goal_rate_micros -> Int8,
+        goal_rate_delta_micros -> Int8,
+        created_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = des_soccer_learning_set_play_runs)]
+pub struct DesSoccerLearningSetPlayRunsDieselRow {
+    pub run_id: Uuid,
+    pub policy_version_id: Uuid,
+    pub primary_restart: String,
+    pub team: String,
+    pub spot_x_micros: i64,
+    pub spot_y_micros: i64,
+    pub duration_seconds_micros: i64,
+    pub episode_count: i32,
+    pub goals: i32,
+    pub goal_rate_micros: i64,
+    pub first_window_goal_rate_micros: i64,
+    pub last_window_goal_rate_micros: i64,
+    pub goal_rate_delta_micros: i64,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = des_soccer_learning_set_play_runs)]
+pub struct DesSoccerLearningSetPlayRunsDieselInsert {
+    pub run_id: Option<Uuid>,
+    pub policy_version_id: Option<Uuid>,
+    pub primary_restart: Option<String>,
+    pub team: Option<String>,
+    pub spot_x_micros: Option<i64>,
+    pub spot_y_micros: Option<i64>,
+    pub duration_seconds_micros: Option<i64>,
+    pub episode_count: Option<i32>,
+    pub goals: Option<i32>,
+    pub goal_rate_micros: Option<i64>,
+    pub first_window_goal_rate_micros: Option<i64>,
+    pub last_window_goal_rate_micros: Option<i64>,
+    pub goal_rate_delta_micros: Option<i64>,
+    pub created_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    des_soccer_learning_set_play_restart_mix (run_id) {
+        run_id -> Uuid,
+        ordinal -> Int4,
+        restart -> Varchar,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = des_soccer_learning_set_play_restart_mix)]
+pub struct DesSoccerLearningSetPlayRestartMixDieselRow {
+    pub run_id: Uuid,
+    pub ordinal: i32,
+    pub restart: String,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = des_soccer_learning_set_play_restart_mix)]
+pub struct DesSoccerLearningSetPlayRestartMixDieselInsert {
+    pub run_id: Option<Uuid>,
+    pub ordinal: Option<i32>,
+    pub restart: Option<String>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    des_soccer_learning_set_play_episode_metrics (run_id) {
+        run_id -> Uuid,
+        episode_index -> Int4,
+        seed -> Int8,
+        restart -> Varchar,
+        routine -> Nullable<Varchar>,
+        scored -> Bool,
+        score_delta_for_team -> Int4,
+        ticks -> Int8,
+        simulated_seconds_micros -> Int8,
+        policy_updates -> Int8,
+        home_policy_entries -> Int4,
+        home_policy_target_entries -> Int4,
+        away_policy_entries -> Int4,
+        away_policy_target_entries -> Int4,
+        neural_training_steps -> Int4,
+        neural_samples -> Int8,
+        neural_replay_samples -> Int4,
+        neural_last_loss_micros -> Nullable<Int8>,
+        cumulative_goals -> Int4,
+        goal_rate_so_far_micros -> Int8,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = des_soccer_learning_set_play_episode_metrics)]
+pub struct DesSoccerLearningSetPlayEpisodeMetricsDieselRow {
+    pub run_id: Uuid,
+    pub episode_index: i32,
+    pub seed: i64,
+    pub restart: String,
+    pub routine: Option<String>,
+    pub scored: bool,
+    pub score_delta_for_team: i32,
+    pub ticks: i64,
+    pub simulated_seconds_micros: i64,
+    pub policy_updates: i64,
+    pub home_policy_entries: i32,
+    pub home_policy_target_entries: i32,
+    pub away_policy_entries: i32,
+    pub away_policy_target_entries: i32,
+    pub neural_training_steps: i32,
+    pub neural_samples: i64,
+    pub neural_replay_samples: i32,
+    pub neural_last_loss_micros: Option<i64>,
+    pub cumulative_goals: i32,
+    pub goal_rate_so_far_micros: i64,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = des_soccer_learning_set_play_episode_metrics)]
+pub struct DesSoccerLearningSetPlayEpisodeMetricsDieselInsert {
+    pub run_id: Option<Uuid>,
+    pub episode_index: Option<i32>,
+    pub seed: Option<i64>,
+    pub restart: Option<String>,
+    pub routine: Option<String>,
+    pub scored: Option<bool>,
+    pub score_delta_for_team: Option<i32>,
+    pub ticks: Option<i64>,
+    pub simulated_seconds_micros: Option<i64>,
+    pub policy_updates: Option<i64>,
+    pub home_policy_entries: Option<i32>,
+    pub home_policy_target_entries: Option<i32>,
+    pub away_policy_entries: Option<i32>,
+    pub away_policy_target_entries: Option<i32>,
+    pub neural_training_steps: Option<i32>,
+    pub neural_samples: Option<i64>,
+    pub neural_replay_samples: Option<i32>,
+    pub neural_last_loss_micros: Option<i64>,
+    pub cumulative_goals: Option<i32>,
+    pub goal_rate_so_far_micros: Option<i64>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    des_soccer_learning_neural_run_metrics (run_id) {
+        run_id -> Uuid,
+        policy_version_id -> Uuid,
+        enabled -> Bool,
+        backend -> Varchar,
+        training_steps -> Int4,
+        samples -> Int8,
+        pending_batches -> Int4,
+        dropped_batches -> Int4,
+        replay_samples -> Int4,
+        replay_capacity -> Int4,
+        parameter_count -> Int4,
+        target_clip_micros -> Int8,
+        last_loss_micros -> Nullable<Int8>,
+        average_loss_micros -> Nullable<Int8>,
+        created_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = des_soccer_learning_neural_run_metrics)]
+pub struct DesSoccerLearningNeuralRunMetricsDieselRow {
+    pub run_id: Uuid,
+    pub policy_version_id: Uuid,
+    pub enabled: bool,
+    pub backend: String,
+    pub training_steps: i32,
+    pub samples: i64,
+    pub pending_batches: i32,
+    pub dropped_batches: i32,
+    pub replay_samples: i32,
+    pub replay_capacity: i32,
+    pub parameter_count: i32,
+    pub target_clip_micros: i64,
+    pub last_loss_micros: Option<i64>,
+    pub average_loss_micros: Option<i64>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = des_soccer_learning_neural_run_metrics)]
+pub struct DesSoccerLearningNeuralRunMetricsDieselInsert {
+    pub run_id: Option<Uuid>,
+    pub policy_version_id: Option<Uuid>,
+    pub enabled: Option<bool>,
+    pub backend: Option<String>,
+    pub training_steps: Option<i32>,
+    pub samples: Option<i64>,
+    pub pending_batches: Option<i32>,
+    pub dropped_batches: Option<i32>,
+    pub replay_samples: Option<i32>,
+    pub replay_capacity: Option<i32>,
+    pub parameter_count: Option<i32>,
+    pub target_clip_micros: Option<i64>,
+    pub last_loss_micros: Option<i64>,
+    pub average_loss_micros: Option<i64>,
+    pub created_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
     des_fel_elevator_learning_runs (id) {
         id -> Uuid,
         run_label -> Varchar,

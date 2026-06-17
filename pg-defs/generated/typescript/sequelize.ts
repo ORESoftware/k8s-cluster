@@ -803,6 +803,122 @@ export function defineDdModels(sequelize: Sequelize) {
     created_at: { type: DataTypes.DATE, allowNull: false },
   }, { tableName: "des_soccer_learning_merge_events", timestamps: false, freezeTableName: true });
 
+  const DesSoccerTournaments = sequelize.define("DesSoccerTournaments", {
+    id: { type: DataTypes.BIGINT, allowNull: false, primaryKey: true },
+    experiment_id: { type: DataTypes.UUID, allowNull: false },
+    tournament_date: { type: DataTypes.TEXT, allowNull: false },
+    seed: { type: DataTypes.BIGINT, allowNull: false },
+    learning_mode: { type: DataTypes.TEXT, allowNull: false },
+    format: { type: DataTypes.JSONB, allowNull: false },
+    team_count: { type: DataTypes.INTEGER, allowNull: false },
+    match_count: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+    matches_played: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+    champion_team_id: { type: DataTypes.INTEGER, allowNull: true },
+    runner_up_team_id: { type: DataTypes.INTEGER, allowNull: true },
+    third_place_team_id: { type: DataTypes.INTEGER, allowNull: true },
+    wall_time_seconds: { type: DataTypes.TEXT, allowNull: true },
+    status: { type: DataTypes.TEXT, allowNull: false, defaultValue: "running", validate: { isIn: [["running", "completed", "failed", "aborted"]] } },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+    updated_at: { type: DataTypes.DATE, allowNull: false },
+    finished_at: { type: DataTypes.DATE, allowNull: true },
+  }, { tableName: "des_soccer_tournaments", timestamps: false, freezeTableName: true });
+
+  const DesSoccerTournamentMatches = sequelize.define("DesSoccerTournamentMatches", {
+    id: { type: DataTypes.BIGINT, allowNull: false, primaryKey: true },
+    match_index: { type: DataTypes.INTEGER, allowNull: false },
+    stage: { type: DataTypes.TEXT, allowNull: false },
+    home_team_id: { type: DataTypes.INTEGER, allowNull: false },
+    away_team_id: { type: DataTypes.INTEGER, allowNull: false },
+    home_goals: { type: DataTypes.INTEGER, allowNull: false },
+    away_goals: { type: DataTypes.INTEGER, allowNull: false },
+    shootout_winner_team_id: { type: DataTypes.INTEGER, allowNull: true },
+    home_training_steps: { type: DataTypes.BIGINT, allowNull: false },
+    away_training_steps: { type: DataTypes.BIGINT, allowNull: false },
+    recorded_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "des_soccer_tournament_matches", timestamps: false, freezeTableName: true });
+
+  const DesSoccerTournamentTeamBrains = sequelize.define("DesSoccerTournamentTeamBrains", {
+    id: { type: DataTypes.BIGINT, allowNull: false, primaryKey: true },
+    team_id: { type: DataTypes.INTEGER, allowNull: false },
+    team_name: { type: DataTypes.TEXT, allowNull: false },
+    seed: { type: DataTypes.BIGINT, allowNull: false },
+    matches_learned: { type: DataTypes.INTEGER, allowNull: false },
+    training_steps: { type: DataTypes.BIGINT, allowNull: false },
+    played: { type: DataTypes.INTEGER, allowNull: false },
+    wins: { type: DataTypes.INTEGER, allowNull: false },
+    draws: { type: DataTypes.INTEGER, allowNull: false },
+    losses: { type: DataTypes.INTEGER, allowNull: false },
+    goals_for: { type: DataTypes.INTEGER, allowNull: false },
+    goals_against: { type: DataTypes.INTEGER, allowNull: false },
+    neural_snapshot: { type: DataTypes.JSONB, allowNull: true },
+    genome: { type: DataTypes.JSONB, allowNull: true },
+    updated_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "des_soccer_tournament_team_brains", timestamps: false, freezeTableName: true });
+
+  const DesSoccerLearningSetPlayRuns = sequelize.define("DesSoccerLearningSetPlayRuns", {
+    run_id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    policy_version_id: { type: DataTypes.UUID, allowNull: false },
+    primary_restart: { type: DataTypes.STRING(40), allowNull: false, validate: { isIn: [["direct-free-kick", "indirect-free-kick"]] } },
+    team: { type: DataTypes.STRING(8), allowNull: false, validate: { isIn: [["home", "away"]] } },
+    spot_x_micros: { type: DataTypes.BIGINT, allowNull: false },
+    spot_y_micros: { type: DataTypes.BIGINT, allowNull: false },
+    duration_seconds_micros: { type: DataTypes.BIGINT, allowNull: false, validate: { min: 0 } },
+    episode_count: { type: DataTypes.INTEGER, allowNull: false, validate: { min: 0 } },
+    goals: { type: DataTypes.INTEGER, allowNull: false, validate: { min: 0 } },
+    goal_rate_micros: { type: DataTypes.BIGINT, allowNull: false, validate: { min: 0, max: 1000000 } },
+    first_window_goal_rate_micros: { type: DataTypes.BIGINT, allowNull: false },
+    last_window_goal_rate_micros: { type: DataTypes.BIGINT, allowNull: false },
+    goal_rate_delta_micros: { type: DataTypes.BIGINT, allowNull: false },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "des_soccer_learning_set_play_runs", timestamps: false, freezeTableName: true });
+
+  const DesSoccerLearningSetPlayRestartMix = sequelize.define("DesSoccerLearningSetPlayRestartMix", {
+    run_id: { type: DataTypes.UUID, allowNull: false },
+    ordinal: { type: DataTypes.INTEGER, allowNull: false, validate: { min: 0 } },
+    restart: { type: DataTypes.STRING(40), allowNull: false, validate: { isIn: [["direct-free-kick", "indirect-free-kick"]] } },
+  }, { tableName: "des_soccer_learning_set_play_restart_mix", timestamps: false, freezeTableName: true });
+
+  const DesSoccerLearningSetPlayEpisodeMetrics = sequelize.define("DesSoccerLearningSetPlayEpisodeMetrics", {
+    run_id: { type: DataTypes.UUID, allowNull: false },
+    episode_index: { type: DataTypes.INTEGER, allowNull: false, validate: { min: 0 } },
+    seed: { type: DataTypes.BIGINT, allowNull: false, validate: { min: 0 } },
+    restart: { type: DataTypes.STRING(40), allowNull: false, validate: { isIn: [["direct-free-kick", "indirect-free-kick"]] } },
+    routine: { type: DataTypes.STRING(80), allowNull: true, validate: { len: [0, 80] } },
+    scored: { type: DataTypes.BOOLEAN, allowNull: false },
+    score_delta_for_team: { type: DataTypes.INTEGER, allowNull: false },
+    ticks: { type: DataTypes.BIGINT, allowNull: false, validate: { min: 0 } },
+    simulated_seconds_micros: { type: DataTypes.BIGINT, allowNull: false, validate: { min: 0 } },
+    policy_updates: { type: DataTypes.BIGINT, allowNull: false, validate: { min: 0 } },
+    home_policy_entries: { type: DataTypes.INTEGER, allowNull: false, validate: { min: 0 } },
+    home_policy_target_entries: { type: DataTypes.INTEGER, allowNull: false, validate: { min: 0 } },
+    away_policy_entries: { type: DataTypes.INTEGER, allowNull: false, validate: { min: 0 } },
+    away_policy_target_entries: { type: DataTypes.INTEGER, allowNull: false, validate: { min: 0 } },
+    neural_training_steps: { type: DataTypes.INTEGER, allowNull: false, validate: { min: 0 } },
+    neural_samples: { type: DataTypes.BIGINT, allowNull: false, validate: { min: 0 } },
+    neural_replay_samples: { type: DataTypes.INTEGER, allowNull: false, validate: { min: 0 } },
+    neural_last_loss_micros: { type: DataTypes.BIGINT, allowNull: true },
+    cumulative_goals: { type: DataTypes.INTEGER, allowNull: false, validate: { min: 0 } },
+    goal_rate_so_far_micros: { type: DataTypes.BIGINT, allowNull: false, validate: { min: 0, max: 1000000 } },
+  }, { tableName: "des_soccer_learning_set_play_episode_metrics", timestamps: false, freezeTableName: true });
+
+  const DesSoccerLearningNeuralRunMetrics = sequelize.define("DesSoccerLearningNeuralRunMetrics", {
+    run_id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    policy_version_id: { type: DataTypes.UUID, allowNull: false },
+    enabled: { type: DataTypes.BOOLEAN, allowNull: false },
+    backend: { type: DataTypes.STRING(32), allowNull: false, validate: { isIn: [["inline", "threaded"]] } },
+    training_steps: { type: DataTypes.INTEGER, allowNull: false, validate: { min: 0 } },
+    samples: { type: DataTypes.BIGINT, allowNull: false, validate: { min: 0 } },
+    pending_batches: { type: DataTypes.INTEGER, allowNull: false, validate: { min: 0 } },
+    dropped_batches: { type: DataTypes.INTEGER, allowNull: false, validate: { min: 0 } },
+    replay_samples: { type: DataTypes.INTEGER, allowNull: false, validate: { min: 0 } },
+    replay_capacity: { type: DataTypes.INTEGER, allowNull: false, validate: { min: 0 } },
+    parameter_count: { type: DataTypes.INTEGER, allowNull: false, validate: { min: 0 } },
+    target_clip_micros: { type: DataTypes.BIGINT, allowNull: false },
+    last_loss_micros: { type: DataTypes.BIGINT, allowNull: true },
+    average_loss_micros: { type: DataTypes.BIGINT, allowNull: true },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "des_soccer_learning_neural_run_metrics", timestamps: false, freezeTableName: true });
+
   const DesFelElevatorLearningRuns = sequelize.define("DesFelElevatorLearningRuns", {
     id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
     run_label: { type: DataTypes.STRING(200), allowNull: false, validate: { len: [0, 200] } },
@@ -1965,5 +2081,5 @@ export function defineDdModels(sequelize: Sequelize) {
     updated_at: { type: DataTypes.DATE, allowNull: false },
   }, { tableName: "vcs_operations", timestamps: false, freezeTableName: true });
 
-  return { AppConfig, VapiPhoneCallEvents, MusicSongs, MusicSongVotes, SoundRecorderAccounts, SoundRecorderDevices, SoundRecorderUploadSessions, SoundRecorderSegments, SoundRecorderEvidenceExports, SoundRecorderAuditEvents, SoundRecorderOauthStates, SoundRecorderCloudConnections, SoundRecorderCloudCopyJobs, ContainerPoolConfigs, KnownGitRepo, AgentContextBlobs, AgentContextEmbeddings, AgentRemoteDevThread, AgentRemoteDevTask, AgentRemoteDevEvent, AgentRemoteDevBreadcrumb, AgentRemoteDevArtifact, AgentRemoteDevRuntimeLock, MipSolverSessions, MipSolverSolves, MipSolverJobs, MipSolverEvents, LambdaFunction, WorkflowDefinitions, WorkflowRuns, WorkflowStepRuns, ContainerPoolImageRevisions, ContainerPoolBuildRuns, PresenceConvs, PresenceConvMembers, PresenceUsers, PresenceEvents, PresenceConsumerCheckpoints, DesSoccerLearningExperiments, DesSoccerLearningPolicyVersions, DesSoccerLearningPolicyEntries, DesSoccerLearningJobs, DesSoccerLearningRuns, DesSoccerLearningRunDeltas, DesSoccerLearningMergeEvents, DesFelElevatorLearningRuns, DesFelElevatorPolicyStates, DesFelElevatorDispatchDecisions, DesFelElevatorPomdpBeliefs, BenefactorMarketingClients, BenefactorMarketingContacts, BenefactorMarketingServicePackages, BenefactorMarketingContracts, BenefactorMarketingInvoices, BenefactorMarketingIntegrations, BenefactorMarketingLeads, BenefactorMarketingEnrichmentJobs, BenefactorMarketingCampaigns, BenefactorMarketingCampaignChannels, BenefactorMarketingCampaignExperiments, BenefactorMarketingAutomationWorkflows, BenefactorMarketingAutomationEvents, BenefactorMarketingReports, BenefactorMarketingAttributionEvents, BenefactorMarketingOpportunities, BenefactorMarketingContentAssets, BenefactorMarketingProjectTasks, BenefactorMarketingClientApprovals, BenefactorMarketingTickets, BenefactorMarketingMeetings, BenefactorMarketingTeamAllocations, BenefactorMarketingIntegrationSyncRuns, BenefactorMarketingOutreachSequences, BenefactorMarketingOutreachSteps, BenefactorMarketingOutreachEnrollments, BenefactorMarketingOutreachTouchpoints, BenefactorMarketingProspectResearchBriefs, BenefactorMarketingConversionEvents, BenefactorMarketingPortalMembers, BenefactorMarketingSharedDocuments, BenefactorMarketingCollaborationComments, BenefactorMarketingNotifications, BenefactorMarketingTimeEntries, BenefactorMarketingVendorCosts, BenefactorMarketingCommissionEntries, BenefactorMarketingBudgetForecasts, BenefactorMarketingCallInsights, UsaccUsers, UsaccCases, UsaccCaseParticipants, UsaccCaseStages, UsaccElections, UsaccVotes, UsaccEscrowAccounts, UsaccLedgerEntries, UsaccContractOperations, UsaccSimulationRuns, UsaccAuditEvents, BenefactorLeads, BenefactorLeadsDomains, BenefactorSearchLocations, BenefactorScrapeQueries, BenefactorDomainSearchTracking, BenefactorIcps, BenefactorLeadsThrottling, BenefactorLeadsReminders, VcsRepositories, VcsRefs, VcsOperations };
+  return { AppConfig, VapiPhoneCallEvents, MusicSongs, MusicSongVotes, SoundRecorderAccounts, SoundRecorderDevices, SoundRecorderUploadSessions, SoundRecorderSegments, SoundRecorderEvidenceExports, SoundRecorderAuditEvents, SoundRecorderOauthStates, SoundRecorderCloudConnections, SoundRecorderCloudCopyJobs, ContainerPoolConfigs, KnownGitRepo, AgentContextBlobs, AgentContextEmbeddings, AgentRemoteDevThread, AgentRemoteDevTask, AgentRemoteDevEvent, AgentRemoteDevBreadcrumb, AgentRemoteDevArtifact, AgentRemoteDevRuntimeLock, MipSolverSessions, MipSolverSolves, MipSolverJobs, MipSolverEvents, LambdaFunction, WorkflowDefinitions, WorkflowRuns, WorkflowStepRuns, ContainerPoolImageRevisions, ContainerPoolBuildRuns, PresenceConvs, PresenceConvMembers, PresenceUsers, PresenceEvents, PresenceConsumerCheckpoints, DesSoccerLearningExperiments, DesSoccerLearningPolicyVersions, DesSoccerLearningPolicyEntries, DesSoccerLearningJobs, DesSoccerLearningRuns, DesSoccerLearningRunDeltas, DesSoccerLearningMergeEvents, DesSoccerTournaments, DesSoccerTournamentMatches, DesSoccerTournamentTeamBrains, DesSoccerLearningSetPlayRuns, DesSoccerLearningSetPlayRestartMix, DesSoccerLearningSetPlayEpisodeMetrics, DesSoccerLearningNeuralRunMetrics, DesFelElevatorLearningRuns, DesFelElevatorPolicyStates, DesFelElevatorDispatchDecisions, DesFelElevatorPomdpBeliefs, BenefactorMarketingClients, BenefactorMarketingContacts, BenefactorMarketingServicePackages, BenefactorMarketingContracts, BenefactorMarketingInvoices, BenefactorMarketingIntegrations, BenefactorMarketingLeads, BenefactorMarketingEnrichmentJobs, BenefactorMarketingCampaigns, BenefactorMarketingCampaignChannels, BenefactorMarketingCampaignExperiments, BenefactorMarketingAutomationWorkflows, BenefactorMarketingAutomationEvents, BenefactorMarketingReports, BenefactorMarketingAttributionEvents, BenefactorMarketingOpportunities, BenefactorMarketingContentAssets, BenefactorMarketingProjectTasks, BenefactorMarketingClientApprovals, BenefactorMarketingTickets, BenefactorMarketingMeetings, BenefactorMarketingTeamAllocations, BenefactorMarketingIntegrationSyncRuns, BenefactorMarketingOutreachSequences, BenefactorMarketingOutreachSteps, BenefactorMarketingOutreachEnrollments, BenefactorMarketingOutreachTouchpoints, BenefactorMarketingProspectResearchBriefs, BenefactorMarketingConversionEvents, BenefactorMarketingPortalMembers, BenefactorMarketingSharedDocuments, BenefactorMarketingCollaborationComments, BenefactorMarketingNotifications, BenefactorMarketingTimeEntries, BenefactorMarketingVendorCosts, BenefactorMarketingCommissionEntries, BenefactorMarketingBudgetForecasts, BenefactorMarketingCallInsights, UsaccUsers, UsaccCases, UsaccCaseParticipants, UsaccCaseStages, UsaccElections, UsaccVotes, UsaccEscrowAccounts, UsaccLedgerEntries, UsaccContractOperations, UsaccSimulationRuns, UsaccAuditEvents, BenefactorLeads, BenefactorLeadsDomains, BenefactorSearchLocations, BenefactorScrapeQueries, BenefactorDomainSearchTracking, BenefactorIcps, BenefactorLeadsThrottling, BenefactorLeadsReminders, VcsRepositories, VcsRefs, VcsOperations };
 }

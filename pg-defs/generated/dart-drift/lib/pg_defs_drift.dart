@@ -1236,6 +1236,176 @@ class DesSoccerLearningMergeEventsTable extends Table {
   };
 }
 
+@DataClassName("DesSoccerTournamentsData")
+class DesSoccerTournamentsTable extends Table {
+  @override String get tableName => "des_soccer_tournaments";
+
+  Int64Column get id => int64().named("id").customConstraint("BIGSERIAL")();
+  TextColumn get experimentId => text().named("experiment_id").customConstraint("UUID")();
+  TextColumn get tournamentDate => text().named("tournament_date")();
+  Int64Column get seed => int64().named("seed")();
+  TextColumn get learningMode => text().named("learning_mode")();
+  TextColumn get format => text().named("format").customConstraint("JSONB")();
+  IntColumn get teamCount => integer().named("team_count")();
+  IntColumn get matchCount => integer().named("match_count").clientDefault(() => 0)();
+  IntColumn get matchesPlayed => integer().named("matches_played").clientDefault(() => 0)();
+  IntColumn get championTeamId => integer().named("champion_team_id").nullable()();
+  IntColumn get runnerUpTeamId => integer().named("runner_up_team_id").nullable()();
+  IntColumn get thirdPlaceTeamId => integer().named("third_place_team_id").nullable()();
+  TextColumn get wallTimeSeconds => text().named("wall_time_seconds").nullable()();
+  TextColumn get status => text().named("status").clientDefault(() => 'running')();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get finishedAt => dateTime().named("finished_at").nullable().customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("DesSoccerTournamentMatchesData")
+class DesSoccerTournamentMatchesTable extends Table {
+  @override String get tableName => "des_soccer_tournament_matches";
+
+  Int64Column get id => int64().named("id").customConstraint("BIGSERIAL")();
+  IntColumn get matchIndex => integer().named("match_index")();
+  TextColumn get stage => text().named("stage")();
+  IntColumn get homeTeamId => integer().named("home_team_id")();
+  IntColumn get awayTeamId => integer().named("away_team_id")();
+  IntColumn get homeGoals => integer().named("home_goals")();
+  IntColumn get awayGoals => integer().named("away_goals")();
+  IntColumn get shootoutWinnerTeamId => integer().named("shootout_winner_team_id").nullable()();
+  Int64Column get homeTrainingSteps => int64().named("home_training_steps")();
+  Int64Column get awayTrainingSteps => int64().named("away_training_steps")();
+  DateTimeColumn get recordedAt => dateTime().named("recorded_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("DesSoccerTournamentTeamBrainsData")
+class DesSoccerTournamentTeamBrainsTable extends Table {
+  @override String get tableName => "des_soccer_tournament_team_brains";
+
+  Int64Column get id => int64().named("id").customConstraint("BIGSERIAL")();
+  IntColumn get teamId => integer().named("team_id")();
+  TextColumn get teamName => text().named("team_name")();
+  Int64Column get seed => int64().named("seed")();
+  IntColumn get matchesLearned => integer().named("matches_learned")();
+  Int64Column get trainingSteps => int64().named("training_steps")();
+  IntColumn get played => integer().named("played")();
+  IntColumn get wins => integer().named("wins")();
+  IntColumn get draws => integer().named("draws")();
+  IntColumn get losses => integer().named("losses")();
+  IntColumn get goalsFor => integer().named("goals_for")();
+  IntColumn get goalsAgainst => integer().named("goals_against")();
+  TextColumn get neuralSnapshot => text().named("neural_snapshot").nullable().customConstraint("JSONB")();
+  TextColumn get genome => text().named("genome").nullable().customConstraint("JSONB")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("DesSoccerLearningSetPlayRunsData")
+class DesSoccerLearningSetPlayRunsTable extends Table {
+  @override String get tableName => "des_soccer_learning_set_play_runs";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get runId => text().named("run_id").customConstraint("UUID")();
+  TextColumn get policyVersionId => text().named("policy_version_id").customConstraint("UUID")();
+  TextColumn get primaryRestart => text().named("primary_restart")();
+  TextColumn get team => text().named("team")();
+  Int64Column get spotXMicros => int64().named("spot_x_micros")();
+  Int64Column get spotYMicros => int64().named("spot_y_micros")();
+  Int64Column get durationSecondsMicros => int64().named("duration_seconds_micros")();
+  IntColumn get episodeCount => integer().named("episode_count")();
+  IntColumn get goals => integer().named("goals")();
+  Int64Column get goalRateMicros => int64().named("goal_rate_micros")();
+  Int64Column get firstWindowGoalRateMicros => int64().named("first_window_goal_rate_micros")();
+  Int64Column get lastWindowGoalRateMicros => int64().named("last_window_goal_rate_micros")();
+  Int64Column get goalRateDeltaMicros => int64().named("goal_rate_delta_micros")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        runId,
+  };
+}
+
+@DataClassName("DesSoccerLearningSetPlayRestartMixData")
+class DesSoccerLearningSetPlayRestartMixTable extends Table {
+  @override String get tableName => "des_soccer_learning_set_play_restart_mix";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get runId => text().named("run_id").customConstraint("UUID")();
+  IntColumn get ordinal => integer().named("ordinal")();
+  TextColumn get restart => text().named("restart")();
+}
+
+@DataClassName("DesSoccerLearningSetPlayEpisodeMetricsData")
+class DesSoccerLearningSetPlayEpisodeMetricsTable extends Table {
+  @override String get tableName => "des_soccer_learning_set_play_episode_metrics";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get runId => text().named("run_id").customConstraint("UUID")();
+  IntColumn get episodeIndex => integer().named("episode_index")();
+  Int64Column get seed => int64().named("seed")();
+  TextColumn get restart => text().named("restart")();
+  TextColumn get routine => text().named("routine").withLength(max: 80).nullable()();
+  BoolColumn get scored => boolean().named("scored")();
+  IntColumn get scoreDeltaForTeam => integer().named("score_delta_for_team")();
+  Int64Column get ticks => int64().named("ticks")();
+  Int64Column get simulatedSecondsMicros => int64().named("simulated_seconds_micros")();
+  Int64Column get policyUpdates => int64().named("policy_updates")();
+  IntColumn get homePolicyEntries => integer().named("home_policy_entries")();
+  IntColumn get homePolicyTargetEntries => integer().named("home_policy_target_entries")();
+  IntColumn get awayPolicyEntries => integer().named("away_policy_entries")();
+  IntColumn get awayPolicyTargetEntries => integer().named("away_policy_target_entries")();
+  IntColumn get neuralTrainingSteps => integer().named("neural_training_steps")();
+  Int64Column get neuralSamples => int64().named("neural_samples")();
+  IntColumn get neuralReplaySamples => integer().named("neural_replay_samples")();
+  Int64Column get neuralLastLossMicros => int64().named("neural_last_loss_micros").nullable()();
+  IntColumn get cumulativeGoals => integer().named("cumulative_goals")();
+  Int64Column get goalRateSoFarMicros => int64().named("goal_rate_so_far_micros")();
+}
+
+@DataClassName("DesSoccerLearningNeuralRunMetricsData")
+class DesSoccerLearningNeuralRunMetricsTable extends Table {
+  @override String get tableName => "des_soccer_learning_neural_run_metrics";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get runId => text().named("run_id").customConstraint("UUID")();
+  TextColumn get policyVersionId => text().named("policy_version_id").customConstraint("UUID")();
+  BoolColumn get enabled => boolean().named("enabled")();
+  TextColumn get backend => text().named("backend")();
+  IntColumn get trainingSteps => integer().named("training_steps")();
+  Int64Column get samples => int64().named("samples")();
+  IntColumn get pendingBatches => integer().named("pending_batches")();
+  IntColumn get droppedBatches => integer().named("dropped_batches")();
+  IntColumn get replaySamples => integer().named("replay_samples")();
+  IntColumn get replayCapacity => integer().named("replay_capacity")();
+  IntColumn get parameterCount => integer().named("parameter_count")();
+  Int64Column get targetClipMicros => int64().named("target_clip_micros")();
+  Int64Column get lastLossMicros => int64().named("last_loss_micros").nullable()();
+  Int64Column get averageLossMicros => int64().named("average_loss_micros").nullable()();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        runId,
+  };
+}
+
 @DataClassName("DesFelElevatorLearningRunsData")
 class DesFelElevatorLearningRunsTable extends Table {
   @override String get tableName => "des_fel_elevator_learning_runs";
@@ -3086,6 +3256,13 @@ const List<Type> registeredDriftTables = <Type>[
   DesSoccerLearningRunsTable,
   DesSoccerLearningRunDeltasTable,
   DesSoccerLearningMergeEventsTable,
+  DesSoccerTournamentsTable,
+  DesSoccerTournamentMatchesTable,
+  DesSoccerTournamentTeamBrainsTable,
+  DesSoccerLearningSetPlayRunsTable,
+  DesSoccerLearningSetPlayRestartMixTable,
+  DesSoccerLearningSetPlayEpisodeMetricsTable,
+  DesSoccerLearningNeuralRunMetricsTable,
   DesFelElevatorLearningRunsTable,
   DesFelElevatorPolicyStatesTable,
   DesFelElevatorDispatchDecisionsTable,

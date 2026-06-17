@@ -2274,6 +2274,322 @@ export class DesSoccerLearningMergeEventsEntity {
 
 }
 
+// des_soccer_tournaments_experiment_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "des_soccer_tournaments" })
+export class DesSoccerTournamentsEntity {
+  @PrimaryGeneratedColumn("increment", { name: "id", type: "bigint" })
+  id!: number;
+
+  @Column({ name: "experiment_id", type: "uuid" })
+  experimentId!: string;
+
+  @Column({ name: "tournament_date", type: "text" })
+  tournamentDate!: string;
+
+  @Column({ name: "seed", type: "bigint" })
+  seed!: number;
+
+  @Column({ name: "learning_mode", type: "text" })
+  learningMode!: string;
+
+  @Column({ name: "format", type: "jsonb" })
+  format!: Record<string, unknown>;
+
+  @Column({ name: "team_count", type: "integer" })
+  teamCount!: number;
+
+  @Column({ name: "match_count", type: "integer", default: () => "0" })
+  matchCount!: number;
+
+  @Column({ name: "matches_played", type: "integer", default: () => "0" })
+  matchesPlayed!: number;
+
+  @Column({ name: "champion_team_id", type: "integer", nullable: true })
+  championTeamId!: number | null;
+
+  @Column({ name: "runner_up_team_id", type: "integer", nullable: true })
+  runnerUpTeamId!: number | null;
+
+  @Column({ name: "third_place_team_id", type: "integer", nullable: true })
+  thirdPlaceTeamId!: number | null;
+
+  @Column({ name: "wall_time_seconds", type: "double", nullable: true })
+  wallTimeSeconds!: string | null;
+
+  @Column({ name: "status", type: "text", default: () => "'running'" })
+  status!: string;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "finished_at", type: "timestamptz", nullable: true })
+  finishedAt!: Date | null;
+
+}
+
+@Entity({ name: "des_soccer_tournament_matches" })
+export class DesSoccerTournamentMatchesEntity {
+  @PrimaryGeneratedColumn("increment", { name: "id", type: "bigint" })
+  id!: number;
+
+  @Column({ name: "match_index", type: "integer" })
+  matchIndex!: number;
+
+  @Column({ name: "stage", type: "text" })
+  stage!: string;
+
+  @Column({ name: "home_team_id", type: "integer" })
+  homeTeamId!: number;
+
+  @Column({ name: "away_team_id", type: "integer" })
+  awayTeamId!: number;
+
+  @Column({ name: "home_goals", type: "integer" })
+  homeGoals!: number;
+
+  @Column({ name: "away_goals", type: "integer" })
+  awayGoals!: number;
+
+  @Column({ name: "shootout_winner_team_id", type: "integer", nullable: true })
+  shootoutWinnerTeamId!: number | null;
+
+  @Column({ name: "home_training_steps", type: "bigint" })
+  homeTrainingSteps!: number;
+
+  @Column({ name: "away_training_steps", type: "bigint" })
+  awayTrainingSteps!: number;
+
+  @Column({ name: "recorded_at", type: "timestamptz", default: () => "now()" })
+  recordedAt!: Date;
+
+}
+
+@Entity({ name: "des_soccer_tournament_team_brains" })
+export class DesSoccerTournamentTeamBrainsEntity {
+  @PrimaryGeneratedColumn("increment", { name: "id", type: "bigint" })
+  id!: number;
+
+  @Column({ name: "team_id", type: "integer" })
+  teamId!: number;
+
+  @Column({ name: "team_name", type: "text" })
+  teamName!: string;
+
+  @Column({ name: "seed", type: "bigint" })
+  seed!: number;
+
+  @Column({ name: "matches_learned", type: "integer" })
+  matchesLearned!: number;
+
+  @Column({ name: "training_steps", type: "bigint" })
+  trainingSteps!: number;
+
+  @Column({ name: "played", type: "integer" })
+  played!: number;
+
+  @Column({ name: "wins", type: "integer" })
+  wins!: number;
+
+  @Column({ name: "draws", type: "integer" })
+  draws!: number;
+
+  @Column({ name: "losses", type: "integer" })
+  losses!: number;
+
+  @Column({ name: "goals_for", type: "integer" })
+  goalsFor!: number;
+
+  @Column({ name: "goals_against", type: "integer" })
+  goalsAgainst!: number;
+
+  @Column({ name: "neural_snapshot", type: "jsonb", nullable: true })
+  neuralSnapshot!: Record<string, unknown> | null;
+
+  @Column({ name: "genome", type: "jsonb", nullable: true })
+  genome!: Record<string, unknown> | null;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+@Entity({ name: "des_soccer_learning_set_play_runs" })
+export class DesSoccerLearningSetPlayRunsEntity {
+  @PrimaryColumn({ name: "run_id", type: "uuid" })
+  runId!: string;
+
+  @Column({ name: "policy_version_id", type: "uuid" })
+  policyVersionId!: string;
+
+  @Column({ name: "primary_restart", type: "varchar", length: 40 })
+  primaryRestart!: string;
+
+  @Column({ name: "team", type: "varchar", length: 8 })
+  team!: string;
+
+  @Column({ name: "spot_x_micros", type: "bigint" })
+  spotXMicros!: number;
+
+  @Column({ name: "spot_y_micros", type: "bigint" })
+  spotYMicros!: number;
+
+  @Column({ name: "duration_seconds_micros", type: "bigint" })
+  durationSecondsMicros!: number;
+
+  @Column({ name: "episode_count", type: "integer" })
+  episodeCount!: number;
+
+  @Column({ name: "goals", type: "integer" })
+  goals!: number;
+
+  @Column({ name: "goal_rate_micros", type: "bigint" })
+  goalRateMicros!: number;
+
+  @Column({ name: "first_window_goal_rate_micros", type: "bigint" })
+  firstWindowGoalRateMicros!: number;
+
+  @Column({ name: "last_window_goal_rate_micros", type: "bigint" })
+  lastWindowGoalRateMicros!: number;
+
+  @Column({ name: "goal_rate_delta_micros", type: "bigint" })
+  goalRateDeltaMicros!: number;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+}
+
+@Entity({ name: "des_soccer_learning_set_play_restart_mix" })
+export class DesSoccerLearningSetPlayRestartMixEntity {
+  @Column({ name: "run_id", type: "uuid" })
+  runId!: string;
+
+  @Column({ name: "ordinal", type: "integer" })
+  ordinal!: number;
+
+  @Column({ name: "restart", type: "varchar", length: 40 })
+  restart!: string;
+
+}
+
+@Index("des_soccer_learning_set_play_episode_restart_idx", ["restart", "scored", "episodeIndex"])
+@Entity({ name: "des_soccer_learning_set_play_episode_metrics" })
+export class DesSoccerLearningSetPlayEpisodeMetricsEntity {
+  @Column({ name: "run_id", type: "uuid" })
+  runId!: string;
+
+  @Column({ name: "episode_index", type: "integer" })
+  episodeIndex!: number;
+
+  @Column({ name: "seed", type: "bigint" })
+  seed!: number;
+
+  @Column({ name: "restart", type: "varchar", length: 40 })
+  restart!: string;
+
+  @Column({ name: "routine", type: "varchar", length: 80, nullable: true })
+  routine!: string | null;
+
+  @Column({ name: "scored", type: "boolean" })
+  scored!: boolean;
+
+  @Column({ name: "score_delta_for_team", type: "integer" })
+  scoreDeltaForTeam!: number;
+
+  @Column({ name: "ticks", type: "bigint" })
+  ticks!: number;
+
+  @Column({ name: "simulated_seconds_micros", type: "bigint" })
+  simulatedSecondsMicros!: number;
+
+  @Column({ name: "policy_updates", type: "bigint" })
+  policyUpdates!: number;
+
+  @Column({ name: "home_policy_entries", type: "integer" })
+  homePolicyEntries!: number;
+
+  @Column({ name: "home_policy_target_entries", type: "integer" })
+  homePolicyTargetEntries!: number;
+
+  @Column({ name: "away_policy_entries", type: "integer" })
+  awayPolicyEntries!: number;
+
+  @Column({ name: "away_policy_target_entries", type: "integer" })
+  awayPolicyTargetEntries!: number;
+
+  @Column({ name: "neural_training_steps", type: "integer" })
+  neuralTrainingSteps!: number;
+
+  @Column({ name: "neural_samples", type: "bigint" })
+  neuralSamples!: number;
+
+  @Column({ name: "neural_replay_samples", type: "integer" })
+  neuralReplaySamples!: number;
+
+  @Column({ name: "neural_last_loss_micros", type: "bigint", nullable: true })
+  neuralLastLossMicros!: number | null;
+
+  @Column({ name: "cumulative_goals", type: "integer" })
+  cumulativeGoals!: number;
+
+  @Column({ name: "goal_rate_so_far_micros", type: "bigint" })
+  goalRateSoFarMicros!: number;
+
+}
+
+// des_soccer_learning_neural_run_steps_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "des_soccer_learning_neural_run_metrics" })
+export class DesSoccerLearningNeuralRunMetricsEntity {
+  @PrimaryColumn({ name: "run_id", type: "uuid" })
+  runId!: string;
+
+  @Column({ name: "policy_version_id", type: "uuid" })
+  policyVersionId!: string;
+
+  @Column({ name: "enabled", type: "boolean" })
+  enabled!: boolean;
+
+  @Column({ name: "backend", type: "varchar", length: 32 })
+  backend!: string;
+
+  @Column({ name: "training_steps", type: "integer" })
+  trainingSteps!: number;
+
+  @Column({ name: "samples", type: "bigint" })
+  samples!: number;
+
+  @Column({ name: "pending_batches", type: "integer" })
+  pendingBatches!: number;
+
+  @Column({ name: "dropped_batches", type: "integer" })
+  droppedBatches!: number;
+
+  @Column({ name: "replay_samples", type: "integer" })
+  replaySamples!: number;
+
+  @Column({ name: "replay_capacity", type: "integer" })
+  replayCapacity!: number;
+
+  @Column({ name: "parameter_count", type: "integer" })
+  parameterCount!: number;
+
+  @Column({ name: "target_clip_micros", type: "bigint" })
+  targetClipMicros!: number;
+
+  @Column({ name: "last_loss_micros", type: "bigint", nullable: true })
+  lastLossMicros!: number | null;
+
+  @Column({ name: "average_loss_micros", type: "bigint", nullable: true })
+  averageLossMicros!: number | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+}
+
 // des_fel_elevator_learning_runs_scenario_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
 // des_fel_elevator_learning_runs_policy_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
 // des_fel_elevator_learning_runs_mean_wait_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.

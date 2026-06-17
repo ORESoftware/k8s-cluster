@@ -2819,6 +2819,378 @@ public class DesSoccerLearningMergeEvents
     public DateTimeOffset CreatedAt { get; set; }
 }
 
+[Table("des_soccer_tournaments")]
+public class DesSoccerTournaments
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public long Id { get; set; }
+
+    [Column("experiment_id")]
+    public Guid ExperimentId { get; set; }
+
+    [Required]
+    [Column("tournament_date")]
+    public string TournamentDate { get; set; } = null!;
+
+    [Column("seed")]
+    public long Seed { get; set; }
+
+    [Required]
+    [Column("learning_mode")]
+    public string LearningMode { get; set; } = null!;
+
+    [Required]
+    [Column("format", TypeName = "jsonb")]
+    public string Format { get; set; } = null!;
+
+    [Column("team_count")]
+    public int TeamCount { get; set; }
+
+    [Column("match_count")]
+    public int MatchCount { get; set; }
+
+    [Column("matches_played")]
+    public int MatchesPlayed { get; set; }
+
+    [Column("champion_team_id")]
+    public int? ChampionTeamId { get; set; }
+
+    [Column("runner_up_team_id")]
+    public int? RunnerUpTeamId { get; set; }
+
+    [Column("third_place_team_id")]
+    public int? ThirdPlaceTeamId { get; set; }
+
+    [Column("wall_time_seconds")]
+    public string? WallTimeSeconds { get; set; }
+
+    [Required]
+    [Column("status")]
+    [RegularExpression(@"^(running|completed|failed|aborted)$")]
+    public string Status { get; set; } = null!;
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+
+    [Column("finished_at")]
+    public DateTimeOffset? FinishedAt { get; set; }
+}
+
+[Table("des_soccer_tournament_matches")]
+public class DesSoccerTournamentMatches
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public long Id { get; set; }
+
+    [Column("match_index")]
+    public int MatchIndex { get; set; }
+
+    [Required]
+    [Column("stage")]
+    public string Stage { get; set; } = null!;
+
+    [Column("home_team_id")]
+    public int HomeTeamId { get; set; }
+
+    [Column("away_team_id")]
+    public int AwayTeamId { get; set; }
+
+    [Column("home_goals")]
+    public int HomeGoals { get; set; }
+
+    [Column("away_goals")]
+    public int AwayGoals { get; set; }
+
+    [Column("shootout_winner_team_id")]
+    public int? ShootoutWinnerTeamId { get; set; }
+
+    [Column("home_training_steps")]
+    public long HomeTrainingSteps { get; set; }
+
+    [Column("away_training_steps")]
+    public long AwayTrainingSteps { get; set; }
+
+    [Column("recorded_at")]
+    public DateTimeOffset RecordedAt { get; set; }
+}
+
+[Table("des_soccer_tournament_team_brains")]
+public class DesSoccerTournamentTeamBrains
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public long Id { get; set; }
+
+    [Column("team_id")]
+    public int TeamId { get; set; }
+
+    [Required]
+    [Column("team_name")]
+    public string TeamName { get; set; } = null!;
+
+    [Column("seed")]
+    public long Seed { get; set; }
+
+    [Column("matches_learned")]
+    public int MatchesLearned { get; set; }
+
+    [Column("training_steps")]
+    public long TrainingSteps { get; set; }
+
+    [Column("played")]
+    public int Played { get; set; }
+
+    [Column("wins")]
+    public int Wins { get; set; }
+
+    [Column("draws")]
+    public int Draws { get; set; }
+
+    [Column("losses")]
+    public int Losses { get; set; }
+
+    [Column("goals_for")]
+    public int GoalsFor { get; set; }
+
+    [Column("goals_against")]
+    public int GoalsAgainst { get; set; }
+
+    [Column("neural_snapshot", TypeName = "jsonb")]
+    public string? NeuralSnapshot { get; set; }
+
+    [Column("genome", TypeName = "jsonb")]
+    public string? Genome { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+[Table("des_soccer_learning_set_play_runs")]
+public class DesSoccerLearningSetPlayRuns
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("run_id")]
+    public Guid RunId { get; set; }
+
+    [Column("policy_version_id")]
+    public Guid PolicyVersionId { get; set; }
+
+    [Required]
+    [Column("primary_restart")]
+    [MaxLength(40)]
+    [RegularExpression(@"^(direct-free-kick|indirect-free-kick)$")]
+    public string PrimaryRestart { get; set; } = null!;
+
+    [Required]
+    [Column("team")]
+    [MaxLength(8)]
+    [RegularExpression(@"^(home|away)$")]
+    public string Team { get; set; } = null!;
+
+    [Column("spot_x_micros")]
+    public long SpotXMicros { get; set; }
+
+    [Column("spot_y_micros")]
+    public long SpotYMicros { get; set; }
+
+    [Column("duration_seconds_micros")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long DurationSecondsMicros { get; set; }
+
+    [Column("episode_count")]
+    [Range(0, 2147483647)]
+    public int EpisodeCount { get; set; }
+
+    [Column("goals")]
+    [Range(0, 2147483647)]
+    public int Goals { get; set; }
+
+    [Column("goal_rate_micros")]
+    [Range(typeof(long), "0", "1000000")]
+    public long GoalRateMicros { get; set; }
+
+    [Column("first_window_goal_rate_micros")]
+    public long FirstWindowGoalRateMicros { get; set; }
+
+    [Column("last_window_goal_rate_micros")]
+    public long LastWindowGoalRateMicros { get; set; }
+
+    [Column("goal_rate_delta_micros")]
+    public long GoalRateDeltaMicros { get; set; }
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+[Table("des_soccer_learning_set_play_restart_mix")]
+public class DesSoccerLearningSetPlayRestartMix
+{
+    [Column("run_id")]
+    public Guid RunId { get; set; }
+
+    [Column("ordinal")]
+    [Range(0, 2147483647)]
+    public int Ordinal { get; set; }
+
+    [Required]
+    [Column("restart")]
+    [MaxLength(40)]
+    [RegularExpression(@"^(direct-free-kick|indirect-free-kick)$")]
+    public string Restart { get; set; } = null!;
+}
+
+[Table("des_soccer_learning_set_play_episode_metrics")]
+public class DesSoccerLearningSetPlayEpisodeMetrics
+{
+    [Column("run_id")]
+    public Guid RunId { get; set; }
+
+    [Column("episode_index")]
+    [Range(0, 2147483647)]
+    public int EpisodeIndex { get; set; }
+
+    [Column("seed")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long Seed { get; set; }
+
+    [Required]
+    [Column("restart")]
+    [MaxLength(40)]
+    [RegularExpression(@"^(direct-free-kick|indirect-free-kick)$")]
+    public string Restart { get; set; } = null!;
+
+    [Column("routine")]
+    [MaxLength(80)]
+    public string? Routine { get; set; }
+
+    [Column("scored")]
+    public bool Scored { get; set; }
+
+    [Column("score_delta_for_team")]
+    public int ScoreDeltaForTeam { get; set; }
+
+    [Column("ticks")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long Ticks { get; set; }
+
+    [Column("simulated_seconds_micros")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long SimulatedSecondsMicros { get; set; }
+
+    [Column("policy_updates")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long PolicyUpdates { get; set; }
+
+    [Column("home_policy_entries")]
+    [Range(0, 2147483647)]
+    public int HomePolicyEntries { get; set; }
+
+    [Column("home_policy_target_entries")]
+    [Range(0, 2147483647)]
+    public int HomePolicyTargetEntries { get; set; }
+
+    [Column("away_policy_entries")]
+    [Range(0, 2147483647)]
+    public int AwayPolicyEntries { get; set; }
+
+    [Column("away_policy_target_entries")]
+    [Range(0, 2147483647)]
+    public int AwayPolicyTargetEntries { get; set; }
+
+    [Column("neural_training_steps")]
+    [Range(0, 2147483647)]
+    public int NeuralTrainingSteps { get; set; }
+
+    [Column("neural_samples")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long NeuralSamples { get; set; }
+
+    [Column("neural_replay_samples")]
+    [Range(0, 2147483647)]
+    public int NeuralReplaySamples { get; set; }
+
+    [Column("neural_last_loss_micros")]
+    public long? NeuralLastLossMicros { get; set; }
+
+    [Column("cumulative_goals")]
+    [Range(0, 2147483647)]
+    public int CumulativeGoals { get; set; }
+
+    [Column("goal_rate_so_far_micros")]
+    [Range(typeof(long), "0", "1000000")]
+    public long GoalRateSoFarMicros { get; set; }
+}
+
+[Table("des_soccer_learning_neural_run_metrics")]
+public class DesSoccerLearningNeuralRunMetrics
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("run_id")]
+    public Guid RunId { get; set; }
+
+    [Column("policy_version_id")]
+    public Guid PolicyVersionId { get; set; }
+
+    [Column("enabled")]
+    public bool Enabled { get; set; }
+
+    [Required]
+    [Column("backend")]
+    [MaxLength(32)]
+    [RegularExpression(@"^(inline|threaded)$")]
+    public string Backend { get; set; } = null!;
+
+    [Column("training_steps")]
+    [Range(0, 2147483647)]
+    public int TrainingSteps { get; set; }
+
+    [Column("samples")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long Samples { get; set; }
+
+    [Column("pending_batches")]
+    [Range(0, 2147483647)]
+    public int PendingBatches { get; set; }
+
+    [Column("dropped_batches")]
+    [Range(0, 2147483647)]
+    public int DroppedBatches { get; set; }
+
+    [Column("replay_samples")]
+    [Range(0, 2147483647)]
+    public int ReplaySamples { get; set; }
+
+    [Column("replay_capacity")]
+    [Range(0, 2147483647)]
+    public int ReplayCapacity { get; set; }
+
+    [Column("parameter_count")]
+    [Range(0, 2147483647)]
+    public int ParameterCount { get; set; }
+
+    [Column("target_clip_micros")]
+    public long TargetClipMicros { get; set; }
+
+    [Column("last_loss_micros")]
+    public long? LastLossMicros { get; set; }
+
+    [Column("average_loss_micros")]
+    public long? AverageLossMicros { get; set; }
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
 [Table("des_fel_elevator_learning_runs")]
 public class DesFelElevatorLearningRuns
 {
@@ -7002,6 +7374,20 @@ public class DdPgDefsContext : DbContext
     public DbSet<DesSoccerLearningRunDeltas> DesSoccerLearningRunDeltasSet => Set<DesSoccerLearningRunDeltas>();
 
     public DbSet<DesSoccerLearningMergeEvents> DesSoccerLearningMergeEventsSet => Set<DesSoccerLearningMergeEvents>();
+
+    public DbSet<DesSoccerTournaments> DesSoccerTournamentsSet => Set<DesSoccerTournaments>();
+
+    public DbSet<DesSoccerTournamentMatches> DesSoccerTournamentMatchesSet => Set<DesSoccerTournamentMatches>();
+
+    public DbSet<DesSoccerTournamentTeamBrains> DesSoccerTournamentTeamBrainsSet => Set<DesSoccerTournamentTeamBrains>();
+
+    public DbSet<DesSoccerLearningSetPlayRuns> DesSoccerLearningSetPlayRunsSet => Set<DesSoccerLearningSetPlayRuns>();
+
+    public DbSet<DesSoccerLearningSetPlayRestartMix> DesSoccerLearningSetPlayRestartMixSet => Set<DesSoccerLearningSetPlayRestartMix>();
+
+    public DbSet<DesSoccerLearningSetPlayEpisodeMetrics> DesSoccerLearningSetPlayEpisodeMetricsSet => Set<DesSoccerLearningSetPlayEpisodeMetrics>();
+
+    public DbSet<DesSoccerLearningNeuralRunMetrics> DesSoccerLearningNeuralRunMetricsSet => Set<DesSoccerLearningNeuralRunMetrics>();
 
     public DbSet<DesFelElevatorLearningRuns> DesFelElevatorLearningRunsSet => Set<DesFelElevatorLearningRuns>();
 
