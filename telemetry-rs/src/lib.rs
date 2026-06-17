@@ -22,12 +22,16 @@
 //!   Tempo + Jaeger.
 //! - Everything is **explicit**: a real subscriber, a real exporter, a real tower
 //!   layer. No runtime patching, no auto-instrumentation agent.
-//! - Telemetry setup **never panics**: if the exporter can't be built the service
-//!   still starts and logs normally (traces are simply disabled).
+//! - Telemetry setup **does not panic** on a bad/unreachable collector (traces are
+//!   simply disabled and the service logs normally) and is **idempotent** — a
+//!   second `init` is a no-op rather than a double-install panic. Call it from
+//!   within a Tokio runtime (e.g. under `#[tokio::main]`): the batch span exporter
+//!   is installed via `install_batch(runtime::Tokio)`, which requires one.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use http::Request;
+use http::{Request, Response};
 use opentelemetry::global;
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry::KeyValue;
@@ -36,7 +40,7 @@ use opentelemetry_otlp::{Protocol, WithExportConfig};
 use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::Config, Resource};
 use opentelemetry_semantic_conventions::resource as semconv;
 use tower_http::classify::{ServerErrorsAsFailures, SharedClassifier};
-use tower_http::trace::{MakeSpan, TraceLayer};
+use tower_http::trace::{DefaultOnRequest, MakeSpan, OnResponse, TraceLayer};
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -56,6 +60,10 @@ pub struct OtelGuard {
 
 impl Drop for OtelGuard {
     fn drop(&mut self) {
+        // Only the guard that actually owns a provider tears telemetry down. An
+        // inert guard (logs-only, or a redundant `init` call) must NOT call
+        // `global::shutdown_tracer_provider`, or it would kill the real provider
+        // installed by the owning guard.
         if let Some(provider) = self.provider.take() {
             for result in provider.force_flush() {
                 if let Err(error) = result {
@@ -64,8 +72,8 @@ impl Drop for OtelGuard {
                 }
             }
             let _ = provider.shutdown();
+            global::shutdown_tracer_provider();
         }
-        global::shutdown_tracer_provider();
     }
 }
 
@@ -76,7 +84,20 @@ impl Drop for OtelGuard {
 /// Reads, all optional: `RUST_LOG`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME`,
 /// `OTEL_RESOURCE_ATTRIBUTES`, and `POD_NAME`/`POD_NAMESPACE` (downward API) for the
 /// `k8s.pod.name` / `k8s.namespace.name` resource attributes.
+/// Set once the first call has installed the global subscriber, so later calls
+/// become inert no-ops instead of panicking on a double install.
+static INITIALIZED: AtomicBool = AtomicBool::new(false);
+
 pub fn init(service_name: &str) -> OtelGuard {
+    // Idempotent: only the first call wires telemetry up. A later call (a test
+    // harness, or a service that calls `init` twice) returns an inert guard
+    // rather than panicking inside `try_init` — honouring the never-panics
+    // contract — and the inert guard's Drop is a no-op (see `OtelGuard::drop`).
+    if INITIALIZED.swap(true, Ordering::SeqCst) {
+        eprintln!("dd-telemetry: init() called more than once; ignoring the later call");
+        return OtelGuard { provider: None };
+    }
+
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         EnvFilter::new(
             "info,tower_http=info,hyper=warn,h2=warn,reqwest=warn,sqlx=warn,sea_orm=warn",
@@ -94,35 +115,60 @@ pub fn init(service_name: &str) -> OtelGuard {
 
     match build_tracer_provider(service_name) {
         Ok(provider) => {
-            global::set_text_map_propagator(TraceContextPropagator::new());
             let tracer = provider.tracer("dd-telemetry");
             let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
-            global::set_tracer_provider(provider.clone());
-            tracing_subscriber::registry()
+            // `try_init` (not `init`) so an already-installed subscriber yields an
+            // error we handle, not a panic.
+            match tracing_subscriber::registry()
                 .with(filter)
                 .with(fmt_layer)
                 .with(otel_layer)
-                .init();
-            tracing::info!(
-                service = service_name,
-                endpoint = %otlp_traces_endpoint(),
-                "dd-telemetry initialised; OTLP trace export enabled"
-            );
-            OtelGuard {
-                provider: Some(provider),
+                .try_init()
+            {
+                Ok(()) => {
+                    // Only touch global state once our subscriber owns the process.
+                    global::set_text_map_propagator(TraceContextPropagator::new());
+                    global::set_tracer_provider(provider.clone());
+                    tracing::info!(
+                        service = service_name,
+                        endpoint = %otlp_traces_endpoint(),
+                        "dd-telemetry initialised; OTLP trace export enabled"
+                    );
+                    OtelGuard {
+                        provider: Some(provider),
+                    }
+                }
+                Err(error) => {
+                    // A subscriber was already installed by something else; our
+                    // layers are inactive, so tear the exporter back down.
+                    eprintln!(
+                        "dd-telemetry: a tracing subscriber was already installed; \
+                         continuing without dd-telemetry ({error})"
+                    );
+                    let _ = provider.shutdown();
+                    OtelGuard { provider: None }
+                }
             }
         }
         Err(error) => {
             // Exporter unavailable (bad endpoint, etc.) — keep logging, drop traces.
-            tracing_subscriber::registry()
+            if tracing_subscriber::registry()
                 .with(filter)
                 .with(fmt_layer)
-                .init();
-            tracing::warn!(
-                service = service_name,
-                error = %error,
-                "dd-telemetry: OTLP exporter unavailable; continuing with logs only"
-            );
+                .try_init()
+                .is_ok()
+            {
+                tracing::warn!(
+                    service = service_name,
+                    error = %error,
+                    "dd-telemetry: OTLP exporter unavailable; continuing with logs only"
+                );
+            } else {
+                eprintln!(
+                    "dd-telemetry: OTLP exporter unavailable ({error}) and a subscriber \
+                     was already installed; dd-telemetry configured nothing"
+                );
+            }
             OtelGuard { provider: None }
         }
     }
@@ -130,9 +176,14 @@ pub fn init(service_name: &str) -> OtelGuard {
 
 /// A [`tower_http`] layer that opens one tracing span per inbound HTTP request,
 /// naming it `"{METHOD} {path}"`, extracting any upstream W3C `traceparent` so the
-/// span links into the caller's trace. Add to your axum `Router` via `.layer(...)`.
-pub fn http_trace_layer() -> TraceLayer<SharedClassifier<ServerErrorsAsFailures>, OtelMakeSpan> {
-    TraceLayer::new_for_http().make_span_with(OtelMakeSpan)
+/// span links into the caller's trace, and recording the response status onto the
+/// span when it completes. Add to your axum `Router` via `.layer(...)`.
+pub fn http_trace_layer(
+) -> TraceLayer<SharedClassifier<ServerErrorsAsFailures>, OtelMakeSpan, DefaultOnRequest, OtelOnResponse>
+{
+    TraceLayer::new_for_http()
+        .make_span_with(OtelMakeSpan)
+        .on_response(OtelOnResponse)
 }
 
 /// [`MakeSpan`] implementation used by [`http_trace_layer`]. Public so the layer's
@@ -163,14 +214,51 @@ impl<B> MakeSpan<B> for OtelMakeSpan {
     }
 }
 
-/// Resolved OTLP/HTTP traces endpoint (base + `/v1/traces`). The OTLP HTTP exporter
-/// uses a programmatically-set endpoint verbatim, so we append the signal path here.
+/// [`OnResponse`] implementation used by [`http_trace_layer`]: records the final
+/// HTTP status onto the request span, populating the `http.response.status_code`
+/// field that [`OtelMakeSpan`] declares empty. Public so the layer's concrete
+/// return type is nameable by callers.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct OtelOnResponse;
+
+impl<B> OnResponse<B> for OtelOnResponse {
+    fn on_response(self, response: &Response<B>, _latency: Duration, span: &Span) {
+        // Cast to u64: `tracing` records integer fields as i64/u64.
+        span.record("http.response.status_code", response.status().as_u16() as u64);
+    }
+}
+
+/// Resolved OTLP/HTTP traces endpoint. The OTLP HTTP exporter uses a
+/// programmatically-set endpoint verbatim (it does not append the signal path),
+/// so we resolve the full URL here, following the OTel env-var spec.
 fn otlp_traces_endpoint() -> String {
-    let base = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
+    resolve_traces_endpoint(
+        env_nonempty("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT").as_deref(),
+        env_nonempty("OTEL_EXPORTER_OTLP_ENDPOINT").as_deref(),
+    )
+}
+
+/// Apply the OTel endpoint precedence: a per-signal `..._TRACES_ENDPOINT` is used
+/// as-is; otherwise the base endpoint gets the `/v1/traces` signal path appended
+/// (and we never append it twice). Falls back to the in-cluster collector.
+fn resolve_traces_endpoint(traces_specific: Option<&str>, base: Option<&str>) -> String {
+    if let Some(full) = traces_specific {
+        return full.trim_end_matches('/').to_string();
+    }
+    let base = base.unwrap_or(DEFAULT_OTLP_ENDPOINT).trim_end_matches('/');
+    if base.ends_with("/v1/traces") {
+        base.to_string()
+    } else {
+        format!("{base}/v1/traces")
+    }
+}
+
+/// First non-empty (trimmed) value of `key` from the environment.
+fn env_nonempty(key: &str) -> Option<String> {
+    std::env::var(key)
         .ok()
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| DEFAULT_OTLP_ENDPOINT.to_string());
-    format!("{}/v1/traces", base.trim_end_matches('/'))
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn build_tracer_provider(
@@ -208,9 +296,51 @@ fn resource(service_name: &str) -> Resource {
 }
 
 fn first_env(keys: &[&str]) -> Option<String> {
-    keys.iter().find_map(|key| {
-        std::env::var(key)
-            .ok()
-            .filter(|value| !value.trim().is_empty())
-    })
+    keys.iter().find_map(|key| env_nonempty(key))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn endpoint_defaults_to_in_cluster_collector() {
+        assert_eq!(
+            resolve_traces_endpoint(None, None),
+            format!("{DEFAULT_OTLP_ENDPOINT}/v1/traces")
+        );
+    }
+
+    #[test]
+    fn endpoint_appends_signal_path_once() {
+        assert_eq!(
+            resolve_traces_endpoint(None, Some("http://collector:4318")),
+            "http://collector:4318/v1/traces"
+        );
+        // A trailing slash and an already-present signal path are both handled.
+        assert_eq!(
+            resolve_traces_endpoint(None, Some("http://collector:4318/")),
+            "http://collector:4318/v1/traces"
+        );
+        assert_eq!(
+            resolve_traces_endpoint(None, Some("http://collector:4318/v1/traces")),
+            "http://collector:4318/v1/traces"
+        );
+    }
+
+    #[test]
+    fn per_signal_endpoint_wins_and_is_verbatim() {
+        // OTEL_EXPORTER_OTLP_TRACES_ENDPOINT takes precedence and is not suffixed.
+        assert_eq!(
+            resolve_traces_endpoint(Some("http://other:4318/v1/traces"), Some("http://base:4318")),
+            "http://other:4318/v1/traces"
+        );
+    }
+
+    #[test]
+    fn http_trace_layer_type_composes() {
+        // Ensures make_span + on_response wire together and the nameable return
+        // type is correct (a compile/type check, no runtime needed).
+        let _layer = http_trace_layer();
+    }
 }
