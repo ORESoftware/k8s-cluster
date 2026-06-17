@@ -66,3 +66,7 @@
 	path = remote/submodules/sonus-auris-site.web
 	url = https://github.com/sonus-auris/sonus-auris-site.web
 	branch = main
+[submodule "remote/submodules/sonus-auris.infra"]
+	path = remote/submodules/sonus-auris.infra
+	url = git@github.com:sonus-auris/sonus-auris.infra.git
+	branch = main
