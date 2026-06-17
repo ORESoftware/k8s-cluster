@@ -214,6 +214,23 @@ test("gateway-backed stateless services use HA rolling deployment profile", asyn
   assert.match(desRsHpa, /scaleDown:[\s\S]*stabilizationWindowSeconds:\s*900/);
 });
 
+test("clone-first Rust services tolerate missing EC2 hostPath checkout", async () => {
+  const cloneFirstDeployments = [
+    "remote/argocd/dd-next-runtime/dd-des-rs.deployment.yaml",
+    "remote/argocd/dd-next-runtime/dd-soccer-rs.deployment.yaml",
+  ];
+
+  for (const relativePath of cloneFirstDeployments) {
+    const deployment = await readRepoFile(relativePath);
+
+    assert.match(
+      deployment,
+      /hostPath:\s*\n\s+path:\s*\/home\/ec2-user\/codes\/dd\/dd-next-1\s*\n\s+type:\s*DirectoryOrCreate/,
+      `${relativePath} should create the fallback hostPath on non-EC2 nodes`,
+    );
+  }
+});
+
 test("single-owner runtime workloads stay intentionally recreate", async () => {
   const singleOwnerDeployments = [
     { name: "dd-browser-job-runner", file: "dd-browser-job-runner.deployment.yaml" },

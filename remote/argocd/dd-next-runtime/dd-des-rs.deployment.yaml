@@ -258,7 +258,7 @@ spec:
         - name: repo
           hostPath:
             path: /home/ec2-user/codes/dd/dd-next-1
-            type: Directory
+            type: DirectoryOrCreate
         - name: tmp
           emptyDir:
             sizeLimit: 16Gi
