@@ -2864,7 +2864,7 @@ public class DesSoccerTournaments
     public int? ThirdPlaceTeamId { get; set; }
 
     [Column("wall_time_seconds")]
-    public string? WallTimeSeconds { get; set; }
+    public double? WallTimeSeconds { get; set; }
 
     [Required]
     [Column("status")]

@@ -2313,8 +2313,8 @@ export class DesSoccerTournamentsEntity {
   @Column({ name: "third_place_team_id", type: "integer", nullable: true })
   thirdPlaceTeamId!: number | null;
 
-  @Column({ name: "wall_time_seconds", type: "double", nullable: true })
-  wallTimeSeconds!: string | null;
+  @Column({ name: "wall_time_seconds", type: "double precision", nullable: true })
+  wallTimeSeconds!: number | null;
 
   @Column({ name: "status", type: "text", default: () => "'running'" })
   status!: string;

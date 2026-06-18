@@ -53,8 +53,8 @@ class DesSoccerTournaments
     #[ORM\Column(type: 'integer', name: 'third_place_team_id', nullable: true)]
     public ?int $thirdPlaceTeamId;
 
-    #[ORM\Column(type: 'string', name: 'wall_time_seconds', nullable: true)]
-    public ?string $wallTimeSeconds;
+    #[ORM\Column(type: 'float', name: 'wall_time_seconds', nullable: true)]
+    public ?float $wallTimeSeconds;
 
     #[ORM\Column(type: 'string')]
     public string $status;

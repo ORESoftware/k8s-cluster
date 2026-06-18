@@ -1359,7 +1359,7 @@ class DesSoccerTournaments extends Model
     protected $primaryKey = 'id';
     public $timestamps = true;
     protected $fillable = ['experiment_id', 'tournament_date', 'seed', 'learning_mode', 'format', 'team_count', 'match_count', 'matches_played', 'champion_team_id', 'runner_up_team_id', 'third_place_team_id', 'wall_time_seconds', 'status', 'created_at', 'updated_at', 'finished_at'];
-    protected $casts = ['id' => 'integer', 'seed' => 'integer', 'format' => 'array', 'team_count' => 'integer', 'match_count' => 'integer', 'matches_played' => 'integer', 'champion_team_id' => 'integer', 'runner_up_team_id' => 'integer', 'third_place_team_id' => 'integer', 'created_at' => 'datetime', 'updated_at' => 'datetime', 'finished_at' => 'datetime'];
+    protected $casts = ['id' => 'integer', 'seed' => 'integer', 'format' => 'array', 'team_count' => 'integer', 'match_count' => 'integer', 'matches_played' => 'integer', 'champion_team_id' => 'integer', 'runner_up_team_id' => 'integer', 'third_place_team_id' => 'integer', 'wall_time_seconds' => 'double', 'created_at' => 'datetime', 'updated_at' => 'datetime', 'finished_at' => 'datetime'];
 
     /** @return array<string, array<int, string>> */
     public static function rules(): array
@@ -1376,7 +1376,7 @@ class DesSoccerTournaments extends Model
             'champion_team_id' => ['nullable', 'integer'],
             'runner_up_team_id' => ['nullable', 'integer'],
             'third_place_team_id' => ['nullable', 'integer'],
-            'wall_time_seconds' => ['nullable', 'string'],
+            'wall_time_seconds' => ['nullable', 'numeric'],
             'status' => ['nullable', 'string', 'in:running,completed,failed,aborted'],
             'finished_at' => ['nullable', 'date'],
         ];

@@ -971,7 +971,7 @@ class DesSoccerTournaments(BaseModel):
     champion_team_id = IntegerField(null=True)
     runner_up_team_id = IntegerField(null=True)
     third_place_team_id = IntegerField(null=True)
-    wall_time_seconds = TextField(null=True)
+    wall_time_seconds = DoubleField(null=True)
     status = TextField()
     created_at = DateTimeField()
     updated_at = DateTimeField()

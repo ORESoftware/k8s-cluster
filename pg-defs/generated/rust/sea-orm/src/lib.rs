@@ -2015,7 +2015,7 @@ pub struct Model {
     #[sea_orm(column_name = "third_place_team_id")]
     pub third_place_team_id: Option<i32>,
     #[sea_orm(column_name = "wall_time_seconds")]
-    pub wall_time_seconds: Option<String>,
+    pub wall_time_seconds: Option<f64>,
     pub status: String,
     #[sea_orm(column_name = "created_at")]
     pub created_at: DateTimeWithTimeZone,

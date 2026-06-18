@@ -1030,7 +1030,7 @@ model DesSoccerTournaments {
   championTeamId Int? @map("champion_team_id")
   runnerUpTeamId Int? @map("runner_up_team_id")
   thirdPlaceTeamId Int? @map("third_place_team_id")
-  wallTimeSeconds String? @map("wall_time_seconds")
+  wallTimeSeconds Float? @map("wall_time_seconds")
   status String @default("running") @db.Text
   createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
   updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)

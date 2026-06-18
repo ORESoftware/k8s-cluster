@@ -4228,7 +4228,7 @@ class DesSoccerTournamentsObjectBox {
 
   int? thirdPlaceTeamId;
 
-  String? wallTimeSeconds;
+  double? wallTimeSeconds;
 
   String status;
 
@@ -4293,7 +4293,7 @@ class DesSoccerTournamentsObjectBox {
       championTeamId: json["championTeamId"] == null ? null : (json["championTeamId"] as num).toInt(),
       runnerUpTeamId: json["runnerUpTeamId"] == null ? null : (json["runnerUpTeamId"] as num).toInt(),
       thirdPlaceTeamId: json["thirdPlaceTeamId"] == null ? null : (json["thirdPlaceTeamId"] as num).toInt(),
-      wallTimeSeconds: json["wallTimeSeconds"] as String?,
+      wallTimeSeconds: json["wallTimeSeconds"] == null ? null : (json["wallTimeSeconds"] as num).toDouble(),
       status: json["status"] as String,
       createdAt: json["createdAt"] as String,
       updatedAt: json["updatedAt"] as String,

@@ -816,7 +816,7 @@ export function defineDdModels(sequelize: Sequelize) {
     champion_team_id: { type: DataTypes.INTEGER, allowNull: true },
     runner_up_team_id: { type: DataTypes.INTEGER, allowNull: true },
     third_place_team_id: { type: DataTypes.INTEGER, allowNull: true },
-    wall_time_seconds: { type: DataTypes.TEXT, allowNull: true },
+    wall_time_seconds: { type: DataTypes.DOUBLE, allowNull: true },
     status: { type: DataTypes.TEXT, allowNull: false, defaultValue: "running", validate: { isIn: [["running", "completed", "failed", "aborted"]] } },
     created_at: { type: DataTypes.DATE, allowNull: false },
     updated_at: { type: DataTypes.DATE, allowNull: false },

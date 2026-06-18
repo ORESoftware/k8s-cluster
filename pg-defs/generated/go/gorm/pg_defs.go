@@ -2628,7 +2628,7 @@ type DesSoccerTournamentsGorm struct {
 	ChampionTeamId *int32 `gorm:"column:champion_team_id;type:integer" json:"championTeamId,omitempty"`
 	RunnerUpTeamId *int32 `gorm:"column:runner_up_team_id;type:integer" json:"runnerUpTeamId,omitempty"`
 	ThirdPlaceTeamId *int32 `gorm:"column:third_place_team_id;type:integer" json:"thirdPlaceTeamId,omitempty"`
-	WallTimeSeconds *string `gorm:"column:wall_time_seconds;type:double" json:"wallTimeSeconds,omitempty"`
+	WallTimeSeconds *float64 `gorm:"column:wall_time_seconds;type:double precision" json:"wallTimeSeconds,omitempty"`
 	Status string `gorm:"column:status;type:text;default:'running';not null" json:"status"`
 	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
 	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`

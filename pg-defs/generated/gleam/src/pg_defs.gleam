@@ -3415,7 +3415,7 @@ pub type DesSoccerTournamentsRow {
     champion_team_id: Option(Int),
     runner_up_team_id: Option(Int),
     third_place_team_id: Option(Int),
-    wall_time_seconds: Option(String),
+    wall_time_seconds: Option(Float),
     status: String,
     created_at: String,
     updated_at: String,

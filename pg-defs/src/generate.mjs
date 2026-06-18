@@ -412,6 +412,9 @@ function typeOrmColumnType(column) {
   if (column.sqlType === 'timestamptz') {
     return 'timestamptz';
   }
+  if (column.sqlType === 'double') {
+    return 'double precision';
+  }
   return column.sqlType;
 }
 
@@ -420,6 +423,7 @@ function typeScriptType(column) {
   switch (column.kind) {
     case 'integer':
     case 'bigint':
+    case 'float':
       baseType = 'number';
       break;
     case 'boolean':
@@ -470,6 +474,9 @@ function prismaType(column) {
     case 'bigint':
       baseType = 'BigInt';
       break;
+    case 'float':
+      baseType = 'Float';
+      break;
     case 'boolean':
       baseType = 'Boolean';
       break;
@@ -499,6 +506,10 @@ function prismaDbAttribute(column) {
   }
   if (column.sqlType === 'bigint' || column.sqlType === 'bigserial') {
     return '@db.BigInt';
+  }
+  if (column.sqlType === 'real') {
+    // Prisma's Float defaults to `double precision`; pin float4 columns explicitly.
+    return '@db.Real';
   }
   if (column.sqlType === 'timestamptz') {
     return '@db.Timestamptz(6)';
@@ -545,7 +556,7 @@ function renderPythonSqlAlchemy(contract) {
     '',
     'from pydantic import BaseModel, ConfigDict, Field, field_validator',
     'from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Index, Integer, SmallInteger, String, Text, text',
-    'from sqlalchemy.dialects.postgresql import JSONB, UUID as PgUUID',
+    'from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, JSONB, REAL, UUID as PgUUID',
     'from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column',
     '',
     '',
@@ -891,6 +902,8 @@ function driftColumnBuilder(column) {
       return `integer().${named}`;
     case 'bigint':
       return `int64().${named}`;
+    case 'float':
+      return `real().${named}`;
     case 'boolean':
       return `boolean().${named}`;
     case 'jsonObject':
@@ -909,6 +922,8 @@ function driftColumnType(column) {
       return 'IntColumn';
     case 'bigint':
       return 'Int64Column';
+    case 'float':
+      return 'RealColumn';
     case 'boolean':
       return 'BoolColumn';
     case 'timestamp':
@@ -922,7 +937,7 @@ function driftDefaultExpression(column) {
   if (column.kind === 'boolean') {
     return column.defaultValue ? 'true' : 'false';
   }
-  if (column.kind === 'integer' || column.kind === 'bigint') {
+  if (column.kind === 'integer' || column.kind === 'bigint' || column.kind === 'float') {
     if (column.defaultValue === undefined) {
       return undefined;
     }
@@ -1078,6 +1093,8 @@ function objectBoxDartType(column) {
       return 'int';
     case 'bigint':
       return 'int';
+    case 'float':
+      return 'double';
     case 'boolean':
       return 'bool';
     case 'jsonObject':
@@ -1097,6 +1114,11 @@ function objectBoxFromJsonExpression(column) {
     return required
       ? `(json[${key}] as num).toInt()`
       : `json[${key}] == null ? null : (json[${key}] as num).toInt()`;
+  }
+  if (column.kind === 'float') {
+    return required
+      ? `(json[${key}] as num).toDouble()`
+      : `json[${key}] == null ? null : (json[${key}] as num).toDouble()`;
   }
   if (column.kind === 'boolean') {
     return required ? `json[${key}] as bool` : `json[${key}] as bool?`;
@@ -1206,6 +1228,19 @@ function renderDart(contract) {
   lines.push('  if (value == null) return null;');
   lines.push('  if (value is int) return value;');
   lines.push("  throw FormatException('Expected optional int for $key');");
+  lines.push('}');
+  lines.push('');
+  lines.push('double _readRequiredDouble(Map<String, Object?> json, String key) {');
+  lines.push('  final value = json[key];');
+  lines.push('  if (value is num) return value.toDouble();');
+  lines.push("  throw FormatException('Expected double for $key');");
+  lines.push('}');
+  lines.push('');
+  lines.push('double? _readOptionalDouble(Map<String, Object?> json, String key) {');
+  lines.push('  final value = json[key];');
+  lines.push('  if (value == null) return null;');
+  lines.push('  if (value is num) return value.toDouble();');
+  lines.push("  throw FormatException('Expected optional double for $key');");
   lines.push('}');
   lines.push('');
   lines.push('bool _readRequiredBool(Map<String, Object?> json, String key) {');
@@ -1433,6 +1468,8 @@ function pythonBaseType(column) {
     case 'integer':
     case 'bigint':
       return 'int';
+    case 'float':
+      return 'float';
     case 'boolean':
       return 'bool';
     case 'jsonObject':
@@ -1478,6 +1515,10 @@ function pythonSqlAlchemyType(column) {
     case 'bigint':
     case 'bigserial':
       return 'BigInteger()';
+    case 'double':
+      return 'DOUBLE_PRECISION()';
+    case 'real':
+      return 'REAL()';
     case 'boolean':
       return 'Boolean()';
     case 'jsonb':
@@ -1523,7 +1564,7 @@ function pythonPydanticField(column, insertMode) {
       options.push(`pattern=${pyString(validation.regex)}`);
     }
   }
-  if (column.kind === 'integer') {
+  if (column.kind === 'integer' || column.kind === 'float') {
     if (validation.min !== undefined) {
       options.push(`ge=${validation.min}`);
     }
@@ -1607,6 +1648,8 @@ function goBaseType(column, flavor) {
       return 'int32';
     case 'bigint':
       return 'int64';
+    case 'float':
+      return column.sqlType === 'real' ? 'float32' : 'float64';
     case 'boolean':
       return 'bool';
     case 'jsonObject':
@@ -1651,6 +1694,9 @@ function goPgType(column) {
   if (column.sqlType === 'varchar') {
     return `varchar(${column.maxLength})`;
   }
+  if (column.sqlType === 'double') {
+    return 'double precision';
+  }
   return column.sqlType;
 }
 
@@ -1689,7 +1735,7 @@ function goValidationStatements(table, binding, flavor) {
       const validator = flavor === 'bun' ? 'validateRawJSON' : 'validateJSONString';
       nestedLines.push(`if !${validator}(${derefField}) { return errors.New(${JSON.stringify(`${table.name}.${column.name} must be valid JSON`)}) }`);
     }
-    if (column.kind === 'integer' || column.kind === 'bigint') {
+    if (column.kind === 'integer' || column.kind === 'bigint' || column.kind === 'float') {
       if (validation.min !== undefined) {
         nestedLines.push(`if ${derefField} < ${validation.min} { return errors.New(${JSON.stringify(`${table.name}.${column.name} is below the minimum`)}) }`);
       }
@@ -1744,6 +1790,9 @@ function dartType(column) {
     case 'bigint':
       baseType = 'int';
       break;
+    case 'float':
+      baseType = 'double';
+      break;
     case 'boolean':
       baseType = 'bool';
       break;
@@ -1766,6 +1815,9 @@ function dartReadJson(column, fieldName) {
     if (column.kind === 'integer' || column.kind === 'bigint') {
       return `_readOptionalInt(json, ${key})`;
     }
+    if (column.kind === 'float') {
+      return `_readOptionalDouble(json, ${key})`;
+    }
     if (column.kind === 'boolean') {
       return `_readOptionalBool(json, ${key})`;
     }
@@ -1775,6 +1827,8 @@ function dartReadJson(column, fieldName) {
     case 'integer':
     case 'bigint':
       return `_readRequiredInt(json, ${key})`;
+    case 'float':
+      return `_readRequiredDouble(json, ${key})`;
     case 'boolean':
       return `_readRequiredBool(json, ${key})`;
     case 'jsonObject':
@@ -2043,15 +2097,21 @@ function rustInsertType(column) {
 }
 
 function rustBaseType(column) {
-  // sqlx is strict about Postgres OIDs: a `smallint` column must decode into `i16`, not `i32`.
+  // sqlx is strict about Postgres OIDs: a `smallint` column must decode into `i16`, not `i32`,
+  // and a `real` (float4) column must decode into `f32`, not `f64`.
   if (column.sqlType === 'smallint') {
     return 'i16';
+  }
+  if (column.sqlType === 'real') {
+    return 'f32';
   }
   switch (column.kind) {
     case 'integer':
       return 'i32';
     case 'bigint':
       return 'i64';
+    case 'float':
+      return 'f64';
     case 'boolean':
       return 'bool';
     case 'jsonObject':
@@ -2309,6 +2369,12 @@ function dieselSqlType(column) {
     case 'bigserial':
       baseType = 'Int8';
       break;
+    case 'double':
+      baseType = 'Double';
+      break;
+    case 'real':
+      baseType = 'Float';
+      break;
     case 'boolean':
       baseType = 'Bool';
       break;
@@ -2335,9 +2401,13 @@ function dieselInsertRustType(column) {
 }
 
 function seaOrmRustType(column) {
-  // SeaORM infers the column type from the Rust field type; i16 maps to SMALLINT.
+  // SeaORM infers the column type from the Rust field type; i16 maps to SMALLINT and
+  // f32 maps to REAL (float4).
   if (column.sqlType === 'smallint') {
     return column.notNull ? 'i16' : 'Option<i16>';
+  }
+  if (column.sqlType === 'real') {
+    return column.notNull ? 'f32' : 'Option<f32>';
   }
   let baseType;
   switch (column.kind) {
@@ -2349,6 +2419,9 @@ function seaOrmRustType(column) {
       break;
     case 'bigint':
       baseType = 'i64';
+      break;
+    case 'float':
+      baseType = 'f64';
       break;
     case 'boolean':
       baseType = 'bool';
@@ -2368,9 +2441,13 @@ function seaOrmRustType(column) {
 }
 
 function rustDbType(column) {
-  // Diesel's Int2 SQL type binds to i16; keep the Rust struct field in lockstep with dieselSqlType.
+  // Diesel's Int2 SQL type binds to i16 and Float (float4) binds to f32; keep the Rust struct
+  // field in lockstep with dieselSqlType.
   if (column.sqlType === 'smallint') {
     return 'i16';
+  }
+  if (column.sqlType === 'real') {
+    return 'f32';
   }
   switch (column.kind) {
     case 'uuid':
@@ -2379,6 +2456,8 @@ function rustDbType(column) {
       return 'i32';
     case 'bigint':
       return 'i64';
+    case 'float':
+      return 'f64';
     case 'boolean':
       return 'bool';
     case 'jsonObject':
@@ -2538,6 +2617,9 @@ function gleamType(column) {
     case 'integer':
     case 'bigint':
       baseType = 'Int';
+      break;
+    case 'float':
+      baseType = 'Float';
       break;
     case 'boolean':
       baseType = 'Bool';
@@ -2845,6 +2927,8 @@ function ectoFieldType(column) {
       return ':integer';
     case 'bigint':
       return ':integer';
+    case 'float':
+      return ':float';
     case 'boolean':
       return ':boolean';
     case 'timestamp':
@@ -3125,7 +3209,7 @@ function entFieldLines(column) {
       line += `.Match(regexp.MustCompile(${goRawString(validation.regex)}))`;
     }
   }
-  if (column.kind === 'integer' || column.kind === 'bigint') {
+  if (column.kind === 'integer' || column.kind === 'bigint' || column.kind === 'float') {
     if (validation.min !== undefined) {
       line += `.Min(${validation.min})`;
     }
@@ -3143,7 +3227,7 @@ function entFieldLines(column) {
   if (column.defaultValue !== undefined && !column.generated) {
     if (column.kind === 'string' && typeof column.defaultValue === 'string') {
       line += `.Default(${JSON.stringify(column.defaultValue)})`;
-    } else if (column.kind === 'integer' || column.kind === 'bigint') {
+    } else if (column.kind === 'integer' || column.kind === 'bigint' || column.kind === 'float') {
       line += `.Default(${column.defaultValue})`;
     } else if (column.kind === 'boolean') {
       line += `.Default(${column.defaultValue ? 'true' : 'false'})`;
@@ -3161,6 +3245,8 @@ function entFieldBuilder(column, fieldName) {
       return `field.Int32(${fieldName})`;
     case 'bigint':
       return `field.Int64(${fieldName})`;
+    case 'float':
+      return column.sqlType === 'real' ? `field.Float32(${fieldName})` : `field.Float(${fieldName})`;
     case 'boolean':
       return `field.Bool(${fieldName})`;
     case 'timestamp':
@@ -3376,6 +3462,8 @@ function jooqJavaType(column) {
       return 'Integer';
     case 'bigint':
       return 'Long';
+    case 'float':
+      return column.sqlType === 'real' ? 'Float' : 'Double';
     case 'boolean':
       return 'Boolean';
     case 'timestamp':
@@ -3409,6 +3497,10 @@ function jooqDataType(column) {
     case 'bigint':
     case 'bigserial':
       return 'SQLDataType.BIGINT';
+    case 'double':
+      return 'SQLDataType.DOUBLE';
+    case 'real':
+      return 'SQLDataType.REAL';
     case 'boolean':
       return 'SQLDataType.BOOLEAN';
     case 'jsonb':
@@ -3543,6 +3635,8 @@ function hibernateJavaType(column) {
       return 'Integer';
     case 'bigint':
       return 'Long';
+    case 'float':
+      return column.sqlType === 'real' ? 'Float' : 'Double';
     case 'boolean':
       return 'Boolean';
     case 'timestamp':
@@ -3646,6 +3740,8 @@ function djangoFieldType(column) {
       return column.sqlType === 'smallint' ? 'models.SmallIntegerField' : 'models.IntegerField';
     case 'bigint':
       return 'models.BigIntegerField';
+    case 'float':
+      return 'models.FloatField';
     case 'boolean':
       return 'models.BooleanField';
     case 'timestamp':
@@ -3818,6 +3914,17 @@ function activeRecordValidations(column) {
     }
     checks.push(`validates :${name}, numericality: { ${numericOpts.join(', ')} }${nilOpt}`);
   }
+  if (column.kind === 'float') {
+    const numericOpts = [];
+    if (validation.min !== undefined) {
+      numericOpts.push(`greater_than_or_equal_to: ${validation.min}`);
+    }
+    if (validation.max !== undefined) {
+      numericOpts.push(`less_than_or_equal_to: ${validation.max}`);
+    }
+    const numericBody = numericOpts.length > 0 ? `{ ${numericOpts.join(', ')} }` : 'true';
+    checks.push(`validates :${name}, numericality: ${numericBody}${nilOpt}`);
+  }
   return checks;
 }
 
@@ -3924,6 +4031,8 @@ function eloquentCast(column) {
     case 'integer':
     case 'bigint':
       return 'integer';
+    case 'float':
+      return 'double';
     case 'boolean':
       return 'boolean';
     case 'timestamp':
@@ -3947,6 +4056,9 @@ function eloquentRules(column) {
     case 'integer':
     case 'bigint':
       out.push(phpString('integer'));
+      break;
+    case 'float':
+      out.push(phpString('numeric'));
       break;
     case 'boolean':
       out.push(phpString('boolean'));
@@ -3974,7 +4086,7 @@ function eloquentRules(column) {
       out.push(phpRegexRule(validation.regex));
     }
   }
-  if (column.kind === 'integer' || column.kind === 'bigint') {
+  if (column.kind === 'integer' || column.kind === 'bigint' || column.kind === 'float') {
     if (validation.min !== undefined) {
       out.push(phpString(`min:${validation.min}`));
     }
@@ -4118,6 +4230,8 @@ function efCoreType(column) {
       return { base: column.sqlType === 'smallint' ? 'short' : 'int', valueType: true };
     case 'bigint':
       return { base: 'long', valueType: true };
+    case 'float':
+      return { base: column.sqlType === 'real' ? 'float' : 'double', valueType: true };
     case 'boolean':
       return { base: 'bool', valueType: true };
     case 'timestamp':
@@ -4139,6 +4253,11 @@ function efCoreRange(column) {
     const min = validation.min !== undefined ? String(validation.min) : '-9223372036854775808';
     const max = validation.max !== undefined ? String(validation.max) : '9223372036854775807';
     return `[Range(typeof(long), ${JSON.stringify(min)}, ${JSON.stringify(max)})]`;
+  }
+  if (column.kind === 'float') {
+    const min = validation.min !== undefined ? String(validation.min) : 'double.MinValue';
+    const max = validation.max !== undefined ? String(validation.max) : 'double.MaxValue';
+    return `[Range(${min}, ${max})]`;
   }
   // int / smallint share the int-literal Range overload; one-sided bounds fill the int extreme.
   const min = validation.min !== undefined ? validation.min : -2147483648;
@@ -4245,6 +4364,9 @@ function exposedKotlinType(column) {
     case 'bigint':
       base = 'Long';
       break;
+    case 'float':
+      base = column.sqlType === 'real' ? 'Float' : 'Double';
+      break;
     case 'boolean':
       base = 'Boolean';
       break;
@@ -4267,6 +4389,8 @@ function exposedColumnBuilder(column) {
       return `${column.sqlType === 'smallint' ? 'short' : 'integer'}(${name})`;
     case 'bigint':
       return `long(${name})`;
+    case 'float':
+      return `${column.sqlType === 'real' ? 'float' : 'double'}(${name})`;
     case 'boolean':
       return `bool(${name})`;
     case 'timestamp':
@@ -4408,6 +4532,9 @@ function haskellType(column) {
     case 'integer':
     case 'bigint':
       baseType = 'Int';
+      break;
+    case 'float':
+      baseType = 'Double';
       break;
     case 'boolean':
       baseType = 'Bool';
@@ -4578,6 +4705,10 @@ function ocamlType(column) {
       // OCaml's native int is 63-bit, so a 64-bit bigint must use int64 to avoid overflow.
       baseType = 'int64';
       break;
+    case 'float':
+      // OCaml's `float` is IEEE-754 double; covers both `real` and `double precision`.
+      baseType = 'float';
+      break;
     case 'boolean':
       baseType = 'bool';
       break;
@@ -4596,6 +4727,9 @@ function ocamlRowDecode(column, index) {
       break;
     case 'bigint':
       expr = `Int64.of_string (get ${index})`;
+      break;
+    case 'float':
+      expr = `float_of_string (get ${index})`;
       break;
     case 'boolean':
       expr = `(get ${index} = "t")`;
@@ -4770,6 +4904,9 @@ function fsharpType(column) {
     case 'bigint':
       baseType = 'int64';
       break;
+    case 'float':
+      baseType = column.sqlType === 'real' ? 'float32' : 'float';
+      break;
     case 'boolean':
       baseType = 'bool';
       break;
@@ -4788,6 +4925,9 @@ function fsharpRowDecode(column, index) {
       break;
     case 'bigint':
       expr = `int64 (get ${index})`;
+      break;
+    case 'float':
+      expr = column.sqlType === 'real' ? `float32 (get ${index})` : `float (get ${index})`;
       break;
     case 'boolean':
       expr = `(get ${index} = "t")`;
@@ -4951,6 +5091,8 @@ function cppBaseType(column) {
       return 'int32_t';
     case 'bigint':
       return 'int64_t';
+    case 'float':
+      return column.sqlType === 'real' ? 'float' : 'double';
     case 'boolean':
       return 'bool';
     default:
@@ -4985,6 +5127,9 @@ function cppRowDecodeExpr(column, index) {
       break;
     case 'bigint':
       expr = `std::stoll(get(${index}))`;
+      break;
+    case 'float':
+      expr = column.sqlType === 'real' ? `std::stof(get(${index}))` : `std::stod(get(${index}))`;
       break;
     case 'boolean':
       expr = `(get(${index}) == "t")`;
@@ -5076,6 +5221,7 @@ function renderZig(contract) {
     'pub const RowReader = struct {',
     '    text: *const fn (usize) []const u8,',
     '    int: *const fn (usize) i64,',
+    '    float: *const fn (usize) f64,',
     '    boolean: *const fn (usize) bool,',
     '    is_null: *const fn (usize) bool,',
     '};',
@@ -5169,6 +5315,9 @@ function zigType(column) {
     case 'bigint':
       base = 'i64';
       break;
+    case 'float':
+      base = column.sqlType === 'real' ? 'f32' : 'f64';
+      break;
     case 'boolean':
       base = 'bool';
       break;
@@ -5187,6 +5336,11 @@ function zigRowDecode(column, index) {
       break;
     case 'bigint':
       expr = `reader.int(${index})`;
+      break;
+    case 'float':
+      expr = column.sqlType === 'real'
+        ? `@as(f32, @floatCast(reader.float(${index})))`
+        : `reader.float(${index})`;
       break;
     case 'boolean':
       expr = `reader.boolean(${index})`;
@@ -5316,6 +5470,8 @@ function sequelizeDataType(column) {
       return column.sqlType === 'smallint' ? 'DataTypes.SMALLINT' : 'DataTypes.INTEGER';
     case 'bigint':
       return 'DataTypes.BIGINT';
+    case 'float':
+      return column.sqlType === 'real' ? 'DataTypes.REAL' : 'DataTypes.DOUBLE';
     case 'boolean':
       return 'DataTypes.BOOLEAN';
     case 'timestamp':
@@ -5443,6 +5599,8 @@ function peeweeFieldClass(column) {
       return column.sqlType === 'smallint' ? 'SmallIntegerField' : 'IntegerField';
     case 'bigint':
       return 'BigIntegerField';
+    case 'float':
+      return column.sqlType === 'real' ? 'FloatField' : 'DoubleField';
     case 'boolean':
       return 'BooleanField';
     case 'timestamp':
@@ -5536,6 +5694,8 @@ function doctrineType(column) {
       return column.sqlType === 'smallint' ? 'smallint' : 'integer';
     case 'bigint':
       return 'bigint';
+    case 'float':
+      return 'float';
     case 'boolean':
       return 'boolean';
     case 'timestamp':
@@ -5557,6 +5717,8 @@ function doctrinePhpType(column) {
     case 'bigint':
       // Doctrine maps bigint to string in PHP to avoid 64-bit precision loss on 32-bit platforms.
       return 'string';
+    case 'float':
+      return 'float';
     case 'boolean':
       return 'bool';
     case 'timestamp':
@@ -5635,6 +5797,10 @@ function physicalName(table) {
 function columnTypeSql(column) {
   if (column.sqlType === 'varchar') {
     return `varchar(${column.maxLength})`;
+  }
+  if (column.sqlType === 'double') {
+    // The parser collapses `double precision` to the `double` token; re-expand for valid SQL.
+    return 'double precision';
   }
   return column.sqlType;
 }

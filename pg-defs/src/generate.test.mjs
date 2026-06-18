@@ -121,6 +121,43 @@ test("parser maps smallint to the integer kind while preserving the physical typ
   assert.equal(column.validation?.max, 100);
 });
 
+test("parser maps double precision / real to the float kind, preserving the physical type", () => {
+  const sql = `
+    create table example (
+      id uuid primary key default gen_random_uuid(),
+      wall_time_seconds double precision,
+      ratio real
+    );
+  `;
+  const schema = parseSchemaSql(sql);
+  // `double precision` is collapsed to the `double` token; `real` stays `real`. Both carry the
+  // `float` kind so adapters treat them as real numbers (no integer range validation), while the
+  // narrower physical type is preserved on sqlType for f32/f64-strict adapters.
+  const dbl = findColumn(schema, "example", "wall_time_seconds");
+  assert.equal(dbl.kind, "float");
+  assert.equal(dbl.sqlType, "double");
+  const real = findColumn(schema, "example", "ratio");
+  assert.equal(real.kind, "float");
+  assert.equal(real.sqlType, "real");
+});
+
+test("parser skips composite table-level primary keys instead of parsing them as a column", () => {
+  const sql = `
+    create table example (
+      run_id uuid not null,
+      ordinal integer not null,
+      primary key (run_id, ordinal)
+    );
+  `;
+  const schema = parseSchemaSql(sql);
+  const table = schema.tables.find((item) => item.name === "example");
+  // The bare `primary key (...)` line must not become a column named "primary" of type "key".
+  assert.deepEqual(
+    table.columns.map((column) => column.name),
+    ["run_id", "ordinal"],
+  );
+});
+
 test("smallint decodes as i16 / Int2 in strict Rust adapters and smallint() in Drizzle", async () => {
   // The strict-typed adapters (sqlx FromRow, Diesel) must narrow smallint to a 16-bit type or they
   // break at runtime on the Postgres int2 OID; the loosely-typed adapters can widen it to an int.

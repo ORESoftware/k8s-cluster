@@ -2584,7 +2584,7 @@ type DesSoccerTournamentsBun struct {
 	ChampionTeamId *int32 `bun:"champion_team_id,type:integer,nullzero" json:"championTeamId,omitempty"`
 	RunnerUpTeamId *int32 `bun:"runner_up_team_id,type:integer,nullzero" json:"runnerUpTeamId,omitempty"`
 	ThirdPlaceTeamId *int32 `bun:"third_place_team_id,type:integer,nullzero" json:"thirdPlaceTeamId,omitempty"`
-	WallTimeSeconds *string `bun:"wall_time_seconds,type:double,nullzero" json:"wallTimeSeconds,omitempty"`
+	WallTimeSeconds *float64 `bun:"wall_time_seconds,type:double precision,nullzero" json:"wallTimeSeconds,omitempty"`
 	Status string `bun:"status,type:text,default:'running'" json:"status"`
 	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
 	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`

@@ -1045,7 +1045,7 @@ class DesSoccerTournaments(models.Model):
     champion_team_id = models.IntegerField(null=True, blank=True)
     runner_up_team_id = models.IntegerField(null=True, blank=True)
     third_place_team_id = models.IntegerField(null=True, blank=True)
-    wall_time_seconds = models.CharField(null=True, blank=True)
+    wall_time_seconds = models.FloatField(null=True, blank=True)
     status = models.TextField(choices=[("running", "running"), ("completed", "completed"), ("failed", "failed"), ("aborted", "aborted")], default="running")
     created_at = models.DateTimeField()
     updated_at = models.DateTimeField()

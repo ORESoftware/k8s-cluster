@@ -53,7 +53,7 @@ public class DesSoccerTournamentsEntity {
     private Integer thirdPlaceTeamId;
 
     @Column(name = "wall_time_seconds", nullable = true)
-    private String wallTimeSeconds;
+    private Double wallTimeSeconds;
 
     @Column(name = "status", nullable = false)
     private String status;
@@ -163,11 +163,11 @@ public class DesSoccerTournamentsEntity {
         this.thirdPlaceTeamId = thirdPlaceTeamId;
     }
 
-    public String getWallTimeSeconds() {
+    public Double getWallTimeSeconds() {
         return wallTimeSeconds;
     }
 
-    public void setWallTimeSeconds(String wallTimeSeconds) {
+    public void setWallTimeSeconds(Double wallTimeSeconds) {
         this.wallTimeSeconds = wallTimeSeconds;
     }
 

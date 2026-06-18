@@ -10,6 +10,7 @@ const std = @import("std");
 pub const RowReader = struct {
     text: *const fn (usize) []const u8,
     int: *const fn (usize) i64,
+    float: *const fn (usize) f64,
     boolean: *const fn (usize) bool,
     is_null: *const fn (usize) bool,
 };
@@ -4380,7 +4381,7 @@ pub const DesSoccerTournamentsRow = struct {
     champion_team_id: ?i32,
     runner_up_team_id: ?i32,
     third_place_team_id: ?i32,
-    wall_time_seconds: ?[]const u8,
+    wall_time_seconds: ?f64,
     status: []const u8,
     created_at: []const u8,
     updated_at: []const u8,
@@ -4400,7 +4401,7 @@ pub const DesSoccerTournamentsRow = struct {
             .champion_team_id = if (reader.is_null(9)) null else @as(i32, @intCast(reader.int(9))),
             .runner_up_team_id = if (reader.is_null(10)) null else @as(i32, @intCast(reader.int(10))),
             .third_place_team_id = if (reader.is_null(11)) null else @as(i32, @intCast(reader.int(11))),
-            .wall_time_seconds = if (reader.is_null(12)) null else reader.text(12),
+            .wall_time_seconds = if (reader.is_null(12)) null else reader.float(12),
             .status = reader.text(13),
             .created_at = reader.text(14),
             .updated_at = reader.text(15),

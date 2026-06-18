@@ -4723,7 +4723,7 @@ class DesSoccerTournamentsRow {
   final int? championTeamId;
   final int? runnerUpTeamId;
   final int? thirdPlaceTeamId;
-  final String? wallTimeSeconds;
+  final double? wallTimeSeconds;
   final String status;
   final String createdAt;
   final String updatedAt;
@@ -4743,7 +4743,7 @@ class DesSoccerTournamentsRow {
       championTeamId: _readOptionalInt(json, "championTeamId"),
       runnerUpTeamId: _readOptionalInt(json, "runnerUpTeamId"),
       thirdPlaceTeamId: _readOptionalInt(json, "thirdPlaceTeamId"),
-      wallTimeSeconds: _readOptionalString(json, "wallTimeSeconds"),
+      wallTimeSeconds: _readOptionalDouble(json, "wallTimeSeconds"),
       status: _readRequiredString(json, "status"),
       createdAt: _readRequiredString(json, "createdAt"),
       updatedAt: _readRequiredString(json, "updatedAt"),
@@ -11874,6 +11874,19 @@ int? _readOptionalInt(Map<String, Object?> json, String key) {
   if (value == null) return null;
   if (value is int) return value;
   throw FormatException('Expected optional int for $key');
+}
+
+double _readRequiredDouble(Map<String, Object?> json, String key) {
+  final value = json[key];
+  if (value is num) return value.toDouble();
+  throw FormatException('Expected double for $key');
+}
+
+double? _readOptionalDouble(Map<String, Object?> json, String key) {
+  final value = json[key];
+  if (value == null) return null;
+  if (value is num) return value.toDouble();
+  throw FormatException('Expected optional double for $key');
 }
 
 bool _readRequiredBool(Map<String, Object?> json, String key) {

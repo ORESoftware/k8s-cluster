@@ -3781,7 +3781,7 @@ type des_soccer_tournaments_row = {
   des_soccer_tournaments_champion_team_id : int option;
   des_soccer_tournaments_runner_up_team_id : int option;
   des_soccer_tournaments_third_place_team_id : int option;
-  des_soccer_tournaments_wall_time_seconds : string option;
+  des_soccer_tournaments_wall_time_seconds : float option;
   des_soccer_tournaments_status : string;
   des_soccer_tournaments_created_at : string;
   des_soccer_tournaments_updated_at : string;
@@ -3802,7 +3802,7 @@ let des_soccer_tournaments_row_of_row ~(get : int -> string) ~(is_null : int -> 
     des_soccer_tournaments_champion_team_id = (if is_null 9 then None else Some (int_of_string (get 9)));
     des_soccer_tournaments_runner_up_team_id = (if is_null 10 then None else Some (int_of_string (get 10)));
     des_soccer_tournaments_third_place_team_id = (if is_null 11 then None else Some (int_of_string (get 11)));
-    des_soccer_tournaments_wall_time_seconds = (if is_null 12 then None else Some (get 12));
+    des_soccer_tournaments_wall_time_seconds = (if is_null 12 then None else Some (float_of_string (get 12)));
     des_soccer_tournaments_status = get 13;
     des_soccer_tournaments_created_at = get 14;
     des_soccer_tournaments_updated_at = get 15;

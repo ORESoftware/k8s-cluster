@@ -4620,7 +4620,7 @@ struct DesSoccerTournamentsRow {
     std::optional<int32_t> champion_team_id;
     std::optional<int32_t> runner_up_team_id;
     std::optional<int32_t> third_place_team_id;
-    std::optional<std::string> wall_time_seconds;
+    std::optional<double> wall_time_seconds;
     std::string status;
     std::string created_at;
     std::string updated_at;
@@ -4642,7 +4642,7 @@ inline DesSoccerTournamentsRow des_soccer_tournaments_row_of_row(const std::func
     row.champion_team_id = is_null(9) ? std::nullopt : std::optional<int32_t>(std::stoi(get(9)));
     row.runner_up_team_id = is_null(10) ? std::nullopt : std::optional<int32_t>(std::stoi(get(10)));
     row.third_place_team_id = is_null(11) ? std::nullopt : std::optional<int32_t>(std::stoi(get(11)));
-    row.wall_time_seconds = is_null(12) ? std::nullopt : std::optional<std::string>(get(12));
+    row.wall_time_seconds = is_null(12) ? std::nullopt : std::optional<double>(std::stod(get(12)));
     row.status = get(13);
     row.created_at = get(14);
     row.updated_at = get(15);

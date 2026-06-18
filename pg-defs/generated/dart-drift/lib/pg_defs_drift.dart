@@ -1252,7 +1252,7 @@ class DesSoccerTournamentsTable extends Table {
   IntColumn get championTeamId => integer().named("champion_team_id").nullable()();
   IntColumn get runnerUpTeamId => integer().named("runner_up_team_id").nullable()();
   IntColumn get thirdPlaceTeamId => integer().named("third_place_team_id").nullable()();
-  TextColumn get wallTimeSeconds => text().named("wall_time_seconds").nullable()();
+  RealColumn get wallTimeSeconds => real().named("wall_time_seconds").nullable()();
   TextColumn get status => text().named("status").clientDefault(() => 'running')();
   DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
   DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();

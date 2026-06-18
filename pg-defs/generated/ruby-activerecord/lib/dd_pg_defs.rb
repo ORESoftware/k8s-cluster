@@ -767,6 +767,7 @@ module DdPgDefs
     validates :champion_team_id, numericality: { only_integer: true }, allow_nil: true
     validates :runner_up_team_id, numericality: { only_integer: true }, allow_nil: true
     validates :third_place_team_id, numericality: { only_integer: true }, allow_nil: true
+    validates :wall_time_seconds, numericality: true, allow_nil: true
     validates :status, inclusion: { in: ["running", "completed", "failed", "aborted"] }
   end
 

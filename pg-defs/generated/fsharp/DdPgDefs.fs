@@ -4001,7 +4001,7 @@ type DesSoccerTournamentsRow =
       DesSoccerTournamentsChampionTeamId: int option
       DesSoccerTournamentsRunnerUpTeamId: int option
       DesSoccerTournamentsThirdPlaceTeamId: int option
-      DesSoccerTournamentsWallTimeSeconds: string option
+      DesSoccerTournamentsWallTimeSeconds: float option
       DesSoccerTournamentsStatus: string
       DesSoccerTournamentsCreatedAt: string
       DesSoccerTournamentsUpdatedAt: string
@@ -4021,7 +4021,7 @@ let desSoccerTournamentsRowOfRow (get: int -> string) (isNullAt: int -> bool) : 
       DesSoccerTournamentsChampionTeamId = (if isNullAt 9 then None else Some (int (get 9)))
       DesSoccerTournamentsRunnerUpTeamId = (if isNullAt 10 then None else Some (int (get 10)))
       DesSoccerTournamentsThirdPlaceTeamId = (if isNullAt 11 then None else Some (int (get 11)))
-      DesSoccerTournamentsWallTimeSeconds = (if isNullAt 12 then None else Some (get 12))
+      DesSoccerTournamentsWallTimeSeconds = (if isNullAt 12 then None else Some (float (get 12)))
       DesSoccerTournamentsStatus = get 13
       DesSoccerTournamentsCreatedAt = get 14
       DesSoccerTournamentsUpdatedAt = get 15

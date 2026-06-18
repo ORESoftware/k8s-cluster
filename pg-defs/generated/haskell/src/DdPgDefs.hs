@@ -3485,7 +3485,7 @@ data DesSoccerTournamentsRow = DesSoccerTournamentsRow
   , desSoccerTournamentsChampionTeamId :: (Maybe Int)
   , desSoccerTournamentsRunnerUpTeamId :: (Maybe Int)
   , desSoccerTournamentsThirdPlaceTeamId :: (Maybe Int)
-  , desSoccerTournamentsWallTimeSeconds :: (Maybe Text)
+  , desSoccerTournamentsWallTimeSeconds :: (Maybe Double)
   , desSoccerTournamentsStatus :: Text
   , desSoccerTournamentsCreatedAt :: Text
   , desSoccerTournamentsUpdatedAt :: Text

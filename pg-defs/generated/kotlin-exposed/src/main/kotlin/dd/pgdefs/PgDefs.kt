@@ -911,7 +911,7 @@ object DesSoccerTournaments : Table("des_soccer_tournaments") {
     val championTeamId = integer("champion_team_id").nullable()
     val runnerUpTeamId = integer("runner_up_team_id").nullable()
     val thirdPlaceTeamId = integer("third_place_team_id").nullable()
-    val wallTimeSeconds = text("wall_time_seconds").nullable()
+    val wallTimeSeconds = double("wall_time_seconds").nullable()
     val status = text("status")
     val createdAt = timestampWithTimeZone("created_at")
     val updatedAt = timestampWithTimeZone("updated_at")
@@ -3905,7 +3905,7 @@ data class DesSoccerTournamentsRow(
     val championTeamId: Int?,
     val runnerUpTeamId: Int?,
     val thirdPlaceTeamId: Int?,
-    val wallTimeSeconds: String?,
+    val wallTimeSeconds: Double?,
     val status: String,
     val createdAt: OffsetDateTime,
     val updatedAt: OffsetDateTime,

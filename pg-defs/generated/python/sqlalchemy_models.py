@@ -10,7 +10,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Index, Integer, SmallInteger, String, Text, text
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PgUUID
+from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, JSONB, REAL, UUID as PgUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -4329,7 +4329,7 @@ class DesSoccerTournaments(Base):
     champion_team_id: Mapped[int | None] = mapped_column(Integer(), nullable=True)
     runner_up_team_id: Mapped[int | None] = mapped_column(Integer(), nullable=True)
     third_place_team_id: Mapped[int | None] = mapped_column(Integer(), nullable=True)
-    wall_time_seconds: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    wall_time_seconds: Mapped[float | None] = mapped_column(DOUBLE_PRECISION(), nullable=True)
     status: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("'running'"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
@@ -4350,7 +4350,7 @@ class DesSoccerTournamentsRow(BaseModel):
     championTeamId: int | None = None
     runnerUpTeamId: int | None = None
     thirdPlaceTeamId: int | None = None
-    wallTimeSeconds: str | None = None
+    wallTimeSeconds: float | None = None
     status: DesSoccerTournamentsStatus
     createdAt: datetime
     updatedAt: datetime
@@ -4371,7 +4371,7 @@ class DesSoccerTournamentsInsert(BaseModel):
     championTeamId: int | None = None
     runnerUpTeamId: int | None = None
     thirdPlaceTeamId: int | None = None
-    wallTimeSeconds: str | None = None
+    wallTimeSeconds: float | None = None
     status: DesSoccerTournamentsStatus | None = "running"
     createdAt: datetime | None = None
     updatedAt: datetime | None = None

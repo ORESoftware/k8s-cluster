@@ -23,7 +23,7 @@ defmodule DdPgDefs.DesSoccerTournaments do
     field :champion_team_id, :integer
     field :runner_up_team_id, :integer
     field :third_place_team_id, :integer
-    field :wall_time_seconds, :string
+    field :wall_time_seconds, :float
     field :status, :string, default: "running"
     field :finished_at, :utc_datetime_usec
     timestamps(inserted_at: :created_at, type: :utc_datetime_usec)

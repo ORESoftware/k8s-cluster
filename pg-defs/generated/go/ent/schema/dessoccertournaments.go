@@ -37,7 +37,7 @@ func (DesSoccerTournaments) Fields() []ent.Field {
 		field.Int32("champion_team_id").Optional().Nillable().StorageKey("champion_team_id"),
 		field.Int32("runner_up_team_id").Optional().Nillable().StorageKey("runner_up_team_id"),
 		field.Int32("third_place_team_id").Optional().Nillable().StorageKey("third_place_team_id"),
-		field.String("wall_time_seconds").Optional().Nillable().StorageKey("wall_time_seconds"),
+		field.Float("wall_time_seconds").Optional().Nillable().StorageKey("wall_time_seconds"),
 		field.Enum("status").Values("running", "completed", "failed", "aborted").StorageKey("status"),
 		field.Time("created_at").StorageKey("created_at"),
 		field.Time("updated_at").StorageKey("updated_at"),

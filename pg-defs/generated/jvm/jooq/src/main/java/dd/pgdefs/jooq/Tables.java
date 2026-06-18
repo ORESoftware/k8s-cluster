@@ -827,7 +827,7 @@ public final class Tables {
     public static final Field<Integer> DES_SOCCER_TOURNAMENTS_CHAMPION_TEAM_ID = DSL.field(DSL.name("des_soccer_tournaments", "champion_team_id"), SQLDataType.INTEGER);
     public static final Field<Integer> DES_SOCCER_TOURNAMENTS_RUNNER_UP_TEAM_ID = DSL.field(DSL.name("des_soccer_tournaments", "runner_up_team_id"), SQLDataType.INTEGER);
     public static final Field<Integer> DES_SOCCER_TOURNAMENTS_THIRD_PLACE_TEAM_ID = DSL.field(DSL.name("des_soccer_tournaments", "third_place_team_id"), SQLDataType.INTEGER);
-    public static final Field<String> DES_SOCCER_TOURNAMENTS_WALL_TIME_SECONDS = DSL.field(DSL.name("des_soccer_tournaments", "wall_time_seconds"), SQLDataType.CLOB);
+    public static final Field<Double> DES_SOCCER_TOURNAMENTS_WALL_TIME_SECONDS = DSL.field(DSL.name("des_soccer_tournaments", "wall_time_seconds"), SQLDataType.DOUBLE);
     public static final Field<String> DES_SOCCER_TOURNAMENTS_STATUS = DSL.field(DSL.name("des_soccer_tournaments", "status"), SQLDataType.CLOB);
     public static final Field<OffsetDateTime> DES_SOCCER_TOURNAMENTS_CREATED_AT = DSL.field(DSL.name("des_soccer_tournaments", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
     public static final Field<OffsetDateTime> DES_SOCCER_TOURNAMENTS_UPDATED_AT = DSL.field(DSL.name("des_soccer_tournaments", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
