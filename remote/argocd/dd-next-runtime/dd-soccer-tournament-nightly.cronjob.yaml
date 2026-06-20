@@ -1,9 +1,10 @@
-# Nightly 128-team soccer learning tournament.
+# Continuous 128-team soccer learning tournament lane.
 #
 # This lives in the parent GitOps repo so the shared dd-next-runtime Argo app
-# applies it to both AWS and Hetzner. The runner itself uses a Postgres advisory
-# lock keyed by SOCCER_TOURNAMENT_LOCK_KEY, so both clusters may schedule the
-# CronJob while only one proceeds with matches.
+# applies it to both AWS and Hetzner. The CronJob wakes up every 5 minutes; with
+# concurrencyPolicy=Forbid and the runner's Postgres advisory lock, this gives us
+# a 24/7 tournament lane where a new tournament starts soon after the prior one
+# finishes while duplicate cross-cluster match execution is skipped.
 #
 # OOM guardrails:
 # - CARGO_BUILD_JOBS=1 serializes the cold release build. The soccer-rs service
@@ -13,6 +14,8 @@
 #   cluster; the CPU limit is the real runtime cap.
 # - No activeDeadlineSeconds or runner soft deadline is set; once the CronJob
 #   starts, the tournament is allowed to run to completion.
+# - The learning branch seeds new tournaments from the previous tournament's top
+#   16 finishers, using neural/tactical-genome crossover plus mutation.
 # - The 14Gi memory limit is below half of a 32Gi Hetzner node, but high enough
 #   for the known cold source-build envelope used by dd-soccer-rs.
 apiVersion: batch/v1
@@ -26,7 +29,7 @@ metadata:
     app.kubernetes.io/component: learning-tournament
     app.kubernetes.io/part-of: dd-next-runtime
 spec:
-  schedule: "0 2 * * *"
+  schedule: "*/5 * * * *"
   timeZone: America/Chicago
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 600
@@ -141,6 +144,16 @@ spec:
                   value: "0.5"
                 - name: SOCCER_TOURNAMENT_PROMOTE
                   value: "true"
+                - name: SOCCER_TOURNAMENT_ELITE_POOL
+                  value: "16"
+                - name: SOCCER_TOURNAMENT_HYBRID_FRACTION
+                  value: "1.0"
+                - name: SOCCER_TOURNAMENT_DIVERSITY
+                  value: "true"
+                - name: SOCCER_TOURNAMENT_MUTATION_SCALE
+                  value: "0.03"
+                - name: SOCCER_TOURNAMENT_GENOME_MUTATION
+                  value: "0.1"
                 - name: SOCCER_TOURNAMENT_SEED
                   value: "20260613"
               resources:
