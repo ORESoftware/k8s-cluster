@@ -11,6 +11,8 @@
 # - SOCCER_TOURNAMENT_THREADS=2 keeps runtime match workers equal to the CPU cap.
 # - The CPU request stays low so the job can schedule on the packed one-node AWS
 #   cluster; the CPU limit is the real runtime cap.
+# - No activeDeadlineSeconds or runner soft deadline is set; once the CronJob
+#   starts, the tournament is allowed to run to completion.
 # - The 14Gi memory limit is below half of a 32Gi Hetzner node, but high enough
 #   for the known cold source-build envelope used by dd-soccer-rs.
 apiVersion: batch/v1
@@ -32,7 +34,6 @@ spec:
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
-      activeDeadlineSeconds: 28800
       backoffLimit: 1
       ttlSecondsAfterFinished: 172800
       template:
@@ -112,7 +113,7 @@ spec:
                 - name: SOCCER_SOURCE_REPO
                   value: https://github.com/ORESoftware/soccer-sim-game-engine.rs.git
                 - name: SOCCER_SOURCE_REF
-                  value: main
+                  value: learning
                 - name: SOCCER_ENGINE_SOURCE_REPO
                   value: https://github.com/ORESoftware/discrete-event-system.rs.git
                 - name: SOCCER_ENGINE_SOURCE_REF
@@ -131,7 +132,7 @@ spec:
                 - name: SOCCER_TOURNAMENT_MATCH_SECONDS
                   value: "3600"
                 - name: SOCCER_TOURNAMENT_SOFT_DEADLINE_SECONDS
-                  value: "25200"
+                  value: "0"
                 - name: SOCCER_TOURNAMENT_THREADS
                   value: "2"
                 - name: SOCCER_TOURNAMENT_LEARNING_MODE
