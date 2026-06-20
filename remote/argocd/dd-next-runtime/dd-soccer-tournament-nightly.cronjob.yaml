@@ -135,6 +135,10 @@ spec:
                   value: soccer-nightly-tournament
                 - name: SOCCER_TOURNAMENT_MATCH_SECONDS
                   value: "3600"
+                # Per-fixture wall-clock watchdog: abort only the stuck match and
+                # keep the bracket moving. Set 0 to disable.
+                - name: SOCCER_TOURNAMENT_MATCH_WATCHDOG_SECONDS
+                  value: "900"
                 - name: SOCCER_TOURNAMENT_SOFT_DEADLINE_SECONDS
                   value: "0"
                 - name: SOCCER_TOURNAMENT_THREADS
