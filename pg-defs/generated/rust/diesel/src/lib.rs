@@ -3083,6 +3083,58 @@ pub struct DesSoccerLearningNeuralRunMetricsDieselInsert {
 
 diesel::table! {
     use diesel::sql_types::*;
+    des_soccer_learning_pass_metrics (git_commit) {
+        git_commit -> Varchar,
+        runs -> Int8,
+        passes_attempted -> Int8,
+        passes_completed -> Int8,
+        completed_pass_gain_yards_micros -> Int8,
+        pass_chains -> Int8,
+        pass_chain_gain_yards_micros -> Int8,
+        pass_chains_net_loss -> Int8,
+        shots_on_target -> Int8,
+        shots_after_pass -> Int8,
+        first_seen_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = des_soccer_learning_pass_metrics)]
+pub struct DesSoccerLearningPassMetricsDieselRow {
+    pub git_commit: String,
+    pub runs: i64,
+    pub passes_attempted: i64,
+    pub passes_completed: i64,
+    pub completed_pass_gain_yards_micros: i64,
+    pub pass_chains: i64,
+    pub pass_chain_gain_yards_micros: i64,
+    pub pass_chains_net_loss: i64,
+    pub shots_on_target: i64,
+    pub shots_after_pass: i64,
+    pub first_seen_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = des_soccer_learning_pass_metrics)]
+pub struct DesSoccerLearningPassMetricsDieselInsert {
+    pub git_commit: Option<String>,
+    pub runs: Option<i64>,
+    pub passes_attempted: Option<i64>,
+    pub passes_completed: Option<i64>,
+    pub completed_pass_gain_yards_micros: Option<i64>,
+    pub pass_chains: Option<i64>,
+    pub pass_chain_gain_yards_micros: Option<i64>,
+    pub pass_chains_net_loss: Option<i64>,
+    pub shots_on_target: Option<i64>,
+    pub shots_after_pass: Option<i64>,
+    pub first_seen_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
     des_fel_elevator_learning_runs (id) {
         id -> Uuid,
         run_label -> Varchar,

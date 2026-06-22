@@ -3191,6 +3191,56 @@ public class DesSoccerLearningNeuralRunMetrics
     public DateTimeOffset CreatedAt { get; set; }
 }
 
+[Table("des_soccer_learning_pass_metrics")]
+public class DesSoccerLearningPassMetrics
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("git_commit")]
+    [MaxLength(64)]
+    public string GitCommit { get; set; } = null!;
+
+    [Column("runs")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long Runs { get; set; }
+
+    [Column("passes_attempted")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long PassesAttempted { get; set; }
+
+    [Column("passes_completed")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long PassesCompleted { get; set; }
+
+    [Column("completed_pass_gain_yards_micros")]
+    public long CompletedPassGainYardsMicros { get; set; }
+
+    [Column("pass_chains")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long PassChains { get; set; }
+
+    [Column("pass_chain_gain_yards_micros")]
+    public long PassChainGainYardsMicros { get; set; }
+
+    [Column("pass_chains_net_loss")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long PassChainsNetLoss { get; set; }
+
+    [Column("shots_on_target")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long ShotsOnTarget { get; set; }
+
+    [Column("shots_after_pass")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long ShotsAfterPass { get; set; }
+
+    [Column("first_seen_at")]
+    public DateTimeOffset FirstSeenAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
 [Table("des_fel_elevator_learning_runs")]
 public class DesFelElevatorLearningRuns
 {
@@ -7388,6 +7438,8 @@ public class DdPgDefsContext : DbContext
     public DbSet<DesSoccerLearningSetPlayEpisodeMetrics> DesSoccerLearningSetPlayEpisodeMetricsSet => Set<DesSoccerLearningSetPlayEpisodeMetrics>();
 
     public DbSet<DesSoccerLearningNeuralRunMetrics> DesSoccerLearningNeuralRunMetricsSet => Set<DesSoccerLearningNeuralRunMetrics>();
+
+    public DbSet<DesSoccerLearningPassMetrics> DesSoccerLearningPassMetricsSet => Set<DesSoccerLearningPassMetrics>();
 
     public DbSet<DesFelElevatorLearningRuns> DesFelElevatorLearningRunsSet => Set<DesFelElevatorLearningRuns>();
 

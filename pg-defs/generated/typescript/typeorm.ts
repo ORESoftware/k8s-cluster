@@ -2590,6 +2590,47 @@ export class DesSoccerLearningNeuralRunMetricsEntity {
 
 }
 
+// des_soccer_learning_pass_metrics_updated_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "des_soccer_learning_pass_metrics" })
+export class DesSoccerLearningPassMetricsEntity {
+  @PrimaryColumn({ name: "git_commit", type: "varchar", length: 64 })
+  gitCommit!: string;
+
+  @Column({ name: "runs", type: "bigint", default: () => "0" })
+  runs!: number;
+
+  @Column({ name: "passes_attempted", type: "bigint", default: () => "0" })
+  passesAttempted!: number;
+
+  @Column({ name: "passes_completed", type: "bigint", default: () => "0" })
+  passesCompleted!: number;
+
+  @Column({ name: "completed_pass_gain_yards_micros", type: "bigint", default: () => "0" })
+  completedPassGainYardsMicros!: number;
+
+  @Column({ name: "pass_chains", type: "bigint", default: () => "0" })
+  passChains!: number;
+
+  @Column({ name: "pass_chain_gain_yards_micros", type: "bigint", default: () => "0" })
+  passChainGainYardsMicros!: number;
+
+  @Column({ name: "pass_chains_net_loss", type: "bigint", default: () => "0" })
+  passChainsNetLoss!: number;
+
+  @Column({ name: "shots_on_target", type: "bigint", default: () => "0" })
+  shotsOnTarget!: number;
+
+  @Column({ name: "shots_after_pass", type: "bigint", default: () => "0" })
+  shotsAfterPass!: number;
+
+  @Column({ name: "first_seen_at", type: "timestamptz", default: () => "now()" })
+  firstSeenAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
 // des_fel_elevator_learning_runs_scenario_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
 // des_fel_elevator_learning_runs_policy_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
 // des_fel_elevator_learning_runs_mean_wait_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.

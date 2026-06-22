@@ -3747,6 +3747,34 @@ pub fn validate_des_soccer_learning_neural_run_metrics_backend(value: String) ->
   }
 }
 
+pub const des_soccer_learning_pass_metrics_table = "des_soccer_learning_pass_metrics"
+pub const des_soccer_learning_pass_metrics_select_sql = "select\n      git_commit,\n      runs,\n      passes_attempted,\n      passes_completed,\n      completed_pass_gain_yards_micros,\n      pass_chains,\n      pass_chain_gain_yards_micros,\n      pass_chains_net_loss,\n      shots_on_target,\n      shots_after_pass,\n      to_char(first_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as first_seen_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_soccer_learning_pass_metrics"
+
+pub type DesSoccerLearningPassMetricsRow {
+  DesSoccerLearningPassMetricsRow(
+    git_commit: String,
+    runs: Int,
+    passes_attempted: Int,
+    passes_completed: Int,
+    completed_pass_gain_yards_micros: Int,
+    pass_chains: Int,
+    pass_chain_gain_yards_micros: Int,
+    pass_chains_net_loss: Int,
+    shots_on_target: Int,
+    shots_after_pass: Int,
+    first_seen_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_des_soccer_learning_pass_metrics_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("des_soccer_learning_pass_metrics.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
 pub const des_fel_elevator_learning_runs_table = "des_fel_elevator_learning_runs"
 pub const des_fel_elevator_learning_runs_select_sql = "select\n      id::text as id,\n      run_label,\n      scenario_slug,\n      status,\n      dispatch_policy,\n      seed,\n      floors,\n      shafts,\n      capacity,\n      travel_seconds_micros,\n      dwell_seconds_micros,\n      arrival_rate_micros,\n      horizon_seconds_micros,\n      events,\n      arrivals,\n      boarded,\n      served,\n      mean_wait_micros,\n      dispatch_decisions,\n      pomdp_belief_updates,\n      online_learning_updates,\n      online_learning_loss_last_micros,\n      config::text as config_json,\n      metrics::text as metrics_json,\n      artifact::text as artifact_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_fel_elevator_learning_runs"
 

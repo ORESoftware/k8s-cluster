@@ -63,6 +63,7 @@ defmodule DdPgDefs do
     DdPgDefs.DesSoccerLearningSetPlayRestartMix,
     DdPgDefs.DesSoccerLearningSetPlayEpisodeMetrics,
     DdPgDefs.DesSoccerLearningNeuralRunMetrics,
+    DdPgDefs.DesSoccerLearningPassMetrics,
     DdPgDefs.DesFelElevatorLearningRuns,
     DdPgDefs.DesFelElevatorPolicyStates,
     DdPgDefs.DesFelElevatorDispatchDecisions,

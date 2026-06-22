@@ -4218,6 +4218,75 @@ let validate_des_soccer_learning_neural_run_metrics_parameter_count (value : int
   if value < 0 then Error "des_soccer_learning_neural_run_metrics.parameter_count is below the minimum"
   else Ok value
 
+let des_soccer_learning_pass_metrics_table = "des_soccer_learning_pass_metrics"
+
+let des_soccer_learning_pass_metrics_columns = ["git_commit"; "runs"; "passes_attempted"; "passes_completed"; "completed_pass_gain_yards_micros"; "pass_chains"; "pass_chain_gain_yards_micros"; "pass_chains_net_loss"; "shots_on_target"; "shots_after_pass"; "first_seen_at"; "updated_at"]
+
+let des_soccer_learning_pass_metrics_select_sql = "select\n      git_commit,\n      runs,\n      passes_attempted,\n      passes_completed,\n      completed_pass_gain_yards_micros,\n      pass_chains,\n      pass_chain_gain_yards_micros,\n      pass_chains_net_loss,\n      shots_on_target,\n      shots_after_pass,\n      to_char(first_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as first_seen_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_soccer_learning_pass_metrics"
+
+type des_soccer_learning_pass_metrics_row = {
+  des_soccer_learning_pass_metrics_git_commit : string;
+  des_soccer_learning_pass_metrics_runs : int64;
+  des_soccer_learning_pass_metrics_passes_attempted : int64;
+  des_soccer_learning_pass_metrics_passes_completed : int64;
+  des_soccer_learning_pass_metrics_completed_pass_gain_yards_micros : int64;
+  des_soccer_learning_pass_metrics_pass_chains : int64;
+  des_soccer_learning_pass_metrics_pass_chain_gain_yards_micros : int64;
+  des_soccer_learning_pass_metrics_pass_chains_net_loss : int64;
+  des_soccer_learning_pass_metrics_shots_on_target : int64;
+  des_soccer_learning_pass_metrics_shots_after_pass : int64;
+  des_soccer_learning_pass_metrics_first_seen_at : string;
+  des_soccer_learning_pass_metrics_updated_at : string;
+}
+
+let des_soccer_learning_pass_metrics_row_of_row ~(get : int -> string) ~is_null:(_ : int -> bool) : des_soccer_learning_pass_metrics_row =
+  {
+    des_soccer_learning_pass_metrics_git_commit = get 0;
+    des_soccer_learning_pass_metrics_runs = Int64.of_string (get 1);
+    des_soccer_learning_pass_metrics_passes_attempted = Int64.of_string (get 2);
+    des_soccer_learning_pass_metrics_passes_completed = Int64.of_string (get 3);
+    des_soccer_learning_pass_metrics_completed_pass_gain_yards_micros = Int64.of_string (get 4);
+    des_soccer_learning_pass_metrics_pass_chains = Int64.of_string (get 5);
+    des_soccer_learning_pass_metrics_pass_chain_gain_yards_micros = Int64.of_string (get 6);
+    des_soccer_learning_pass_metrics_pass_chains_net_loss = Int64.of_string (get 7);
+    des_soccer_learning_pass_metrics_shots_on_target = Int64.of_string (get 8);
+    des_soccer_learning_pass_metrics_shots_after_pass = Int64.of_string (get 9);
+    des_soccer_learning_pass_metrics_first_seen_at = get 10;
+    des_soccer_learning_pass_metrics_updated_at = get 11;
+  }
+
+let validate_des_soccer_learning_pass_metrics_git_commit (value : string) : (string, string) result =
+  if String.length value > 64 then Error "des_soccer_learning_pass_metrics.git_commit must be at most 64 characters"
+  else Ok value
+
+let validate_des_soccer_learning_pass_metrics_runs (value : int64) : (int64, string) result =
+  if Int64.compare value 0L < 0 then Error "des_soccer_learning_pass_metrics.runs is below the minimum"
+  else Ok value
+
+let validate_des_soccer_learning_pass_metrics_passes_attempted (value : int64) : (int64, string) result =
+  if Int64.compare value 0L < 0 then Error "des_soccer_learning_pass_metrics.passes_attempted is below the minimum"
+  else Ok value
+
+let validate_des_soccer_learning_pass_metrics_passes_completed (value : int64) : (int64, string) result =
+  if Int64.compare value 0L < 0 then Error "des_soccer_learning_pass_metrics.passes_completed is below the minimum"
+  else Ok value
+
+let validate_des_soccer_learning_pass_metrics_pass_chains (value : int64) : (int64, string) result =
+  if Int64.compare value 0L < 0 then Error "des_soccer_learning_pass_metrics.pass_chains is below the minimum"
+  else Ok value
+
+let validate_des_soccer_learning_pass_metrics_pass_chains_net_loss (value : int64) : (int64, string) result =
+  if Int64.compare value 0L < 0 then Error "des_soccer_learning_pass_metrics.pass_chains_net_loss is below the minimum"
+  else Ok value
+
+let validate_des_soccer_learning_pass_metrics_shots_on_target (value : int64) : (int64, string) result =
+  if Int64.compare value 0L < 0 then Error "des_soccer_learning_pass_metrics.shots_on_target is below the minimum"
+  else Ok value
+
+let validate_des_soccer_learning_pass_metrics_shots_after_pass (value : int64) : (int64, string) result =
+  if Int64.compare value 0L < 0 then Error "des_soccer_learning_pass_metrics.shots_after_pass is below the minimum"
+  else Ok value
+
 let des_fel_elevator_learning_runs_table = "des_fel_elevator_learning_runs"
 
 let des_fel_elevator_learning_runs_columns = ["id"; "run_label"; "scenario_slug"; "status"; "dispatch_policy"; "seed"; "floors"; "shafts"; "capacity"; "travel_seconds_micros"; "dwell_seconds_micros"; "arrival_rate_micros"; "horizon_seconds_micros"; "events"; "arrivals"; "boarded"; "served"; "mean_wait_micros"; "dispatch_decisions"; "pomdp_belief_updates"; "online_learning_updates"; "online_learning_loss_last_micros"; "config"; "metrics"; "artifact"; "created_at"; "updated_at"]

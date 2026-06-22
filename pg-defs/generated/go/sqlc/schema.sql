@@ -2645,6 +2645,41 @@ create index if not exists des_soccer_learning_set_play_episode_restart_idx
 create index if not exists des_soccer_learning_neural_run_steps_idx
   on des_soccer_learning_neural_run_metrics (training_steps desc, samples desc);
 
+-- Per-git-commit learning-progress pass metrics. One accumulating row per commit the
+-- learner ran under: pass completion (passes_completed / passes_attempted), average yards
+-- gained per pass (completed_pass_gain_yards_micros / passes_completed), consecutive-pass
+-- chains and their total gained yards, chains that ended in a net yards loss, and shots on
+-- target that came off at least one pass. Yard sums are 1e6 micros. Written via upsert by the
+-- learning-run completion path; the table is also created at runtime by the Rust engine
+-- (CREATE TABLE IF NOT EXISTS), so this contract entry keeps pg-defs in sync.
+create table if not exists des_soccer_learning_pass_metrics (
+  git_commit varchar(64) primary key,
+  runs bigint default 0 not null,
+  passes_attempted bigint default 0 not null,
+  passes_completed bigint default 0 not null,
+  completed_pass_gain_yards_micros bigint default 0 not null,
+  pass_chains bigint default 0 not null,
+  pass_chain_gain_yards_micros bigint default 0 not null,
+  pass_chains_net_loss bigint default 0 not null,
+  shots_on_target bigint default 0 not null,
+  shots_after_pass bigint default 0 not null,
+  first_seen_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint des_soccer_learning_pass_metrics_counts_chk
+    check (
+      runs >= 0
+      and passes_attempted >= 0
+      and passes_completed >= 0
+      and pass_chains >= 0
+      and pass_chains_net_loss >= 0
+      and shots_on_target >= 0
+      and shots_after_pass >= 0
+    )
+);
+
+create index if not exists des_soccer_learning_pass_metrics_updated_idx
+  on des_soccer_learning_pass_metrics (updated_at desc);
+
 -- ─────────────────────────────────────────────────────────────────────────────
 -- DES FEL elevator dispatch learning.
 --

@@ -2873,6 +2873,49 @@ func (value DesSoccerLearningNeuralRunMetricsBun) Validate() error {
 	return nil
 }
 
+const DesSoccerLearningPassMetricsTable = "des_soccer_learning_pass_metrics"
+const DesSoccerLearningPassMetricsSelectSQL = `select
+      git_commit,
+      runs,
+      passes_attempted,
+      passes_completed,
+      completed_pass_gain_yards_micros,
+      pass_chains,
+      pass_chain_gain_yards_micros,
+      pass_chains_net_loss,
+      shots_on_target,
+      shots_after_pass,
+      to_char(first_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as first_seen_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from des_soccer_learning_pass_metrics`
+
+type DesSoccerLearningPassMetricsBun struct {
+	bun.BaseModel `bun:"table:des_soccer_learning_pass_metrics"`
+	GitCommit string `bun:"git_commit,type:varchar(64),pk" json:"gitCommit"`
+	Runs int64 `bun:"runs,type:bigint,default:0" json:"runs"`
+	PassesAttempted int64 `bun:"passes_attempted,type:bigint,default:0" json:"passesAttempted"`
+	PassesCompleted int64 `bun:"passes_completed,type:bigint,default:0" json:"passesCompleted"`
+	CompletedPassGainYardsMicros int64 `bun:"completed_pass_gain_yards_micros,type:bigint,default:0" json:"completedPassGainYardsMicros"`
+	PassChains int64 `bun:"pass_chains,type:bigint,default:0" json:"passChains"`
+	PassChainGainYardsMicros int64 `bun:"pass_chain_gain_yards_micros,type:bigint,default:0" json:"passChainGainYardsMicros"`
+	PassChainsNetLoss int64 `bun:"pass_chains_net_loss,type:bigint,default:0" json:"passChainsNetLoss"`
+	ShotsOnTarget int64 `bun:"shots_on_target,type:bigint,default:0" json:"shotsOnTarget"`
+	ShotsAfterPass int64 `bun:"shots_after_pass,type:bigint,default:0" json:"shotsAfterPass"`
+	FirstSeenAt time.Time `bun:"first_seen_at,type:timestamptz,default:now()" json:"firstSeenAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value DesSoccerLearningPassMetricsBun) Validate() error {
+	if value.Runs < 0 { return errors.New("des_soccer_learning_pass_metrics.runs is below the minimum") }
+	if value.PassesAttempted < 0 { return errors.New("des_soccer_learning_pass_metrics.passes_attempted is below the minimum") }
+	if value.PassesCompleted < 0 { return errors.New("des_soccer_learning_pass_metrics.passes_completed is below the minimum") }
+	if value.PassChains < 0 { return errors.New("des_soccer_learning_pass_metrics.pass_chains is below the minimum") }
+	if value.PassChainsNetLoss < 0 { return errors.New("des_soccer_learning_pass_metrics.pass_chains_net_loss is below the minimum") }
+	if value.ShotsOnTarget < 0 { return errors.New("des_soccer_learning_pass_metrics.shots_on_target is below the minimum") }
+	if value.ShotsAfterPass < 0 { return errors.New("des_soccer_learning_pass_metrics.shots_after_pass is below the minimum") }
+	return nil
+}
+
 const DesFelElevatorLearningRunsTable = "des_fel_elevator_learning_runs"
 const DesFelElevatorLearningRunsSelectSQL = `select
       id::text as id,

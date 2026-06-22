@@ -928,6 +928,21 @@ module DdPgDefs
     validates :average_loss_micros, numericality: { only_integer: true }, allow_nil: true
   end
 
+  class DesSoccerLearningPassMetrics < ActiveRecord::Base
+    self.table_name = "des_soccer_learning_pass_metrics"
+    self.primary_key = "git_commit"
+
+    validates :runs, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :passes_attempted, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :passes_completed, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :completed_pass_gain_yards_micros, numericality: { only_integer: true }
+    validates :pass_chains, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :pass_chain_gain_yards_micros, numericality: { only_integer: true }
+    validates :pass_chains_net_loss, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :shots_on_target, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :shots_after_pass, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  end
+
   class DesFelElevatorLearningRuns < ActiveRecord::Base
     self.table_name = "des_fel_elevator_learning_runs"
     self.primary_key = "id"

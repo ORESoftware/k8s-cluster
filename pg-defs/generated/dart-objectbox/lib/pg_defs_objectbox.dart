@@ -4807,6 +4807,85 @@ class DesSoccerLearningNeuralRunMetricsObjectBox {
 }
 
 @Entity()
+class DesSoccerLearningPassMetricsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String gitCommit;
+
+  int runs;
+
+  int passesAttempted;
+
+  int passesCompleted;
+
+  int completedPassGainYardsMicros;
+
+  int passChains;
+
+  int passChainGainYardsMicros;
+
+  int passChainsNetLoss;
+
+  int shotsOnTarget;
+
+  int shotsAfterPass;
+
+  String firstSeenAt;
+
+  String updatedAt;
+
+
+  DesSoccerLearningPassMetricsObjectBox({
+    required this.gitCommit,
+    required this.runs,
+    required this.passesAttempted,
+    required this.passesCompleted,
+    required this.completedPassGainYardsMicros,
+    required this.passChains,
+    required this.passChainGainYardsMicros,
+    required this.passChainsNetLoss,
+    required this.shotsOnTarget,
+    required this.shotsAfterPass,
+    required this.firstSeenAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "gitCommit": gitCommit,
+    "runs": runs,
+    "passesAttempted": passesAttempted,
+    "passesCompleted": passesCompleted,
+    "completedPassGainYardsMicros": completedPassGainYardsMicros,
+    "passChains": passChains,
+    "passChainGainYardsMicros": passChainGainYardsMicros,
+    "passChainsNetLoss": passChainsNetLoss,
+    "shotsOnTarget": shotsOnTarget,
+    "shotsAfterPass": shotsAfterPass,
+    "firstSeenAt": firstSeenAt,
+    "updatedAt": updatedAt,
+  };
+
+  static DesSoccerLearningPassMetricsObjectBox fromJson(Map<String, Object?> json) {
+    return DesSoccerLearningPassMetricsObjectBox(
+      gitCommit: json["gitCommit"] as String,
+      runs: (json["runs"] as num).toInt(),
+      passesAttempted: (json["passesAttempted"] as num).toInt(),
+      passesCompleted: (json["passesCompleted"] as num).toInt(),
+      completedPassGainYardsMicros: (json["completedPassGainYardsMicros"] as num).toInt(),
+      passChains: (json["passChains"] as num).toInt(),
+      passChainGainYardsMicros: (json["passChainGainYardsMicros"] as num).toInt(),
+      passChainsNetLoss: (json["passChainsNetLoss"] as num).toInt(),
+      shotsOnTarget: (json["shotsOnTarget"] as num).toInt(),
+      shotsAfterPass: (json["shotsAfterPass"] as num).toInt(),
+      firstSeenAt: json["firstSeenAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
 class DesFelElevatorLearningRunsObjectBox {
   @Id()
   int obxId = 0;

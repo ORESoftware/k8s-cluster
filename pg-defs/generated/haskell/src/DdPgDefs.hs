@@ -3870,6 +3870,73 @@ validateDesSoccerLearningNeuralRunMetricsParameterCount value
   | value < 0 = Left "des_soccer_learning_neural_run_metrics.parameter_count is below the minimum"
   | otherwise = Right value
 
+desSoccerLearningPassMetricsTable :: Text
+desSoccerLearningPassMetricsTable = "des_soccer_learning_pass_metrics"
+
+desSoccerLearningPassMetricsColumns :: [Text]
+desSoccerLearningPassMetricsColumns = ["git_commit", "runs", "passes_attempted", "passes_completed", "completed_pass_gain_yards_micros", "pass_chains", "pass_chain_gain_yards_micros", "pass_chains_net_loss", "shots_on_target", "shots_after_pass", "first_seen_at", "updated_at"]
+
+desSoccerLearningPassMetricsSelectSql :: Text
+desSoccerLearningPassMetricsSelectSql = "select\n      git_commit,\n      runs,\n      passes_attempted,\n      passes_completed,\n      completed_pass_gain_yards_micros,\n      pass_chains,\n      pass_chain_gain_yards_micros,\n      pass_chains_net_loss,\n      shots_on_target,\n      shots_after_pass,\n      to_char(first_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as first_seen_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_soccer_learning_pass_metrics"
+
+data DesSoccerLearningPassMetricsRow = DesSoccerLearningPassMetricsRow
+  { desSoccerLearningPassMetricsGitCommit :: Text
+  , desSoccerLearningPassMetricsRuns :: Int
+  , desSoccerLearningPassMetricsPassesAttempted :: Int
+  , desSoccerLearningPassMetricsPassesCompleted :: Int
+  , desSoccerLearningPassMetricsCompletedPassGainYardsMicros :: Int
+  , desSoccerLearningPassMetricsPassChains :: Int
+  , desSoccerLearningPassMetricsPassChainGainYardsMicros :: Int
+  , desSoccerLearningPassMetricsPassChainsNetLoss :: Int
+  , desSoccerLearningPassMetricsShotsOnTarget :: Int
+  , desSoccerLearningPassMetricsShotsAfterPass :: Int
+  , desSoccerLearningPassMetricsFirstSeenAt :: Text
+  , desSoccerLearningPassMetricsUpdatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow DesSoccerLearningPassMetricsRow where
+  fromRow = DesSoccerLearningPassMetricsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateDesSoccerLearningPassMetricsGitCommit :: Text -> Either Text Text
+validateDesSoccerLearningPassMetricsGitCommit value
+  | T.length value > 64 = Left "des_soccer_learning_pass_metrics.git_commit must be at most 64 characters"
+  | otherwise = Right value
+
+validateDesSoccerLearningPassMetricsRuns :: Int -> Either Text Int
+validateDesSoccerLearningPassMetricsRuns value
+  | value < 0 = Left "des_soccer_learning_pass_metrics.runs is below the minimum"
+  | otherwise = Right value
+
+validateDesSoccerLearningPassMetricsPassesAttempted :: Int -> Either Text Int
+validateDesSoccerLearningPassMetricsPassesAttempted value
+  | value < 0 = Left "des_soccer_learning_pass_metrics.passes_attempted is below the minimum"
+  | otherwise = Right value
+
+validateDesSoccerLearningPassMetricsPassesCompleted :: Int -> Either Text Int
+validateDesSoccerLearningPassMetricsPassesCompleted value
+  | value < 0 = Left "des_soccer_learning_pass_metrics.passes_completed is below the minimum"
+  | otherwise = Right value
+
+validateDesSoccerLearningPassMetricsPassChains :: Int -> Either Text Int
+validateDesSoccerLearningPassMetricsPassChains value
+  | value < 0 = Left "des_soccer_learning_pass_metrics.pass_chains is below the minimum"
+  | otherwise = Right value
+
+validateDesSoccerLearningPassMetricsPassChainsNetLoss :: Int -> Either Text Int
+validateDesSoccerLearningPassMetricsPassChainsNetLoss value
+  | value < 0 = Left "des_soccer_learning_pass_metrics.pass_chains_net_loss is below the minimum"
+  | otherwise = Right value
+
+validateDesSoccerLearningPassMetricsShotsOnTarget :: Int -> Either Text Int
+validateDesSoccerLearningPassMetricsShotsOnTarget value
+  | value < 0 = Left "des_soccer_learning_pass_metrics.shots_on_target is below the minimum"
+  | otherwise = Right value
+
+validateDesSoccerLearningPassMetricsShotsAfterPass :: Int -> Either Text Int
+validateDesSoccerLearningPassMetricsShotsAfterPass value
+  | value < 0 = Left "des_soccer_learning_pass_metrics.shots_after_pass is below the minimum"
+  | otherwise = Right value
+
 desFelElevatorLearningRunsTable :: Text
 desFelElevatorLearningRunsTable = "des_fel_elevator_learning_runs"
 

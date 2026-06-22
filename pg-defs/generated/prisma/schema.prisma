@@ -1148,6 +1148,24 @@ model DesSoccerLearningNeuralRunMetrics {
   @@map("des_soccer_learning_neural_run_metrics")
 }
 
+model DesSoccerLearningPassMetrics {
+  gitCommit String @map("git_commit") @id @db.VarChar(64)
+  runs BigInt @default(0) @db.BigInt
+  passesAttempted BigInt @map("passes_attempted") @default(0) @db.BigInt
+  passesCompleted BigInt @map("passes_completed") @default(0) @db.BigInt
+  completedPassGainYardsMicros BigInt @map("completed_pass_gain_yards_micros") @default(0) @db.BigInt
+  passChains BigInt @map("pass_chains") @default(0) @db.BigInt
+  passChainGainYardsMicros BigInt @map("pass_chain_gain_yards_micros") @default(0) @db.BigInt
+  passChainsNetLoss BigInt @map("pass_chains_net_loss") @default(0) @db.BigInt
+  shotsOnTarget BigInt @map("shots_on_target") @default(0) @db.BigInt
+  shotsAfterPass BigInt @map("shots_after_pass") @default(0) @db.BigInt
+  firstSeenAt DateTime @map("first_seen_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@index([updatedAt], map: "des_soccer_learning_pass_metrics_updated_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("des_soccer_learning_pass_metrics")
+}
+
 model DesFelElevatorLearningRuns {
   id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   runLabel String @map("run_label") @db.VarChar(200)

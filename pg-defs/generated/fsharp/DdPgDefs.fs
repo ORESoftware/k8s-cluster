@@ -4434,6 +4434,72 @@ let validateDesSoccerLearningNeuralRunMetricsParameterCount (value: int) : Resul
     if value < 0 then Error "des_soccer_learning_neural_run_metrics.parameter_count is below the minimum"
     else Ok value
 
+let desSoccerLearningPassMetricsTable = "des_soccer_learning_pass_metrics"
+let desSoccerLearningPassMetricsColumns = [ "git_commit"; "runs"; "passes_attempted"; "passes_completed"; "completed_pass_gain_yards_micros"; "pass_chains"; "pass_chain_gain_yards_micros"; "pass_chains_net_loss"; "shots_on_target"; "shots_after_pass"; "first_seen_at"; "updated_at" ]
+let desSoccerLearningPassMetricsSelectSql = "select\n      git_commit,\n      runs,\n      passes_attempted,\n      passes_completed,\n      completed_pass_gain_yards_micros,\n      pass_chains,\n      pass_chain_gain_yards_micros,\n      pass_chains_net_loss,\n      shots_on_target,\n      shots_after_pass,\n      to_char(first_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as first_seen_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_soccer_learning_pass_metrics"
+
+type DesSoccerLearningPassMetricsRow =
+    { DesSoccerLearningPassMetricsGitCommit: string
+      DesSoccerLearningPassMetricsRuns: int64
+      DesSoccerLearningPassMetricsPassesAttempted: int64
+      DesSoccerLearningPassMetricsPassesCompleted: int64
+      DesSoccerLearningPassMetricsCompletedPassGainYardsMicros: int64
+      DesSoccerLearningPassMetricsPassChains: int64
+      DesSoccerLearningPassMetricsPassChainGainYardsMicros: int64
+      DesSoccerLearningPassMetricsPassChainsNetLoss: int64
+      DesSoccerLearningPassMetricsShotsOnTarget: int64
+      DesSoccerLearningPassMetricsShotsAfterPass: int64
+      DesSoccerLearningPassMetricsFirstSeenAt: string
+      DesSoccerLearningPassMetricsUpdatedAt: string
+    }
+
+let desSoccerLearningPassMetricsRowOfRow (get: int -> string) (isNullAt: int -> bool) : DesSoccerLearningPassMetricsRow =
+    { DesSoccerLearningPassMetricsGitCommit = get 0
+      DesSoccerLearningPassMetricsRuns = int64 (get 1)
+      DesSoccerLearningPassMetricsPassesAttempted = int64 (get 2)
+      DesSoccerLearningPassMetricsPassesCompleted = int64 (get 3)
+      DesSoccerLearningPassMetricsCompletedPassGainYardsMicros = int64 (get 4)
+      DesSoccerLearningPassMetricsPassChains = int64 (get 5)
+      DesSoccerLearningPassMetricsPassChainGainYardsMicros = int64 (get 6)
+      DesSoccerLearningPassMetricsPassChainsNetLoss = int64 (get 7)
+      DesSoccerLearningPassMetricsShotsOnTarget = int64 (get 8)
+      DesSoccerLearningPassMetricsShotsAfterPass = int64 (get 9)
+      DesSoccerLearningPassMetricsFirstSeenAt = get 10
+      DesSoccerLearningPassMetricsUpdatedAt = get 11
+    }
+
+let validateDesSoccerLearningPassMetricsGitCommit (value: string) : Result<string, string> =
+    if value.Length > 64 then Error "des_soccer_learning_pass_metrics.git_commit must be at most 64 characters"
+    else Ok value
+
+let validateDesSoccerLearningPassMetricsRuns (value: int64) : Result<int64, string> =
+    if value < 0L then Error "des_soccer_learning_pass_metrics.runs is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningPassMetricsPassesAttempted (value: int64) : Result<int64, string> =
+    if value < 0L then Error "des_soccer_learning_pass_metrics.passes_attempted is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningPassMetricsPassesCompleted (value: int64) : Result<int64, string> =
+    if value < 0L then Error "des_soccer_learning_pass_metrics.passes_completed is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningPassMetricsPassChains (value: int64) : Result<int64, string> =
+    if value < 0L then Error "des_soccer_learning_pass_metrics.pass_chains is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningPassMetricsPassChainsNetLoss (value: int64) : Result<int64, string> =
+    if value < 0L then Error "des_soccer_learning_pass_metrics.pass_chains_net_loss is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningPassMetricsShotsOnTarget (value: int64) : Result<int64, string> =
+    if value < 0L then Error "des_soccer_learning_pass_metrics.shots_on_target is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningPassMetricsShotsAfterPass (value: int64) : Result<int64, string> =
+    if value < 0L then Error "des_soccer_learning_pass_metrics.shots_after_pass is below the minimum"
+    else Ok value
+
 let desFelElevatorLearningRunsTable = "des_fel_elevator_learning_runs"
 let desFelElevatorLearningRunsColumns = [ "id"; "run_label"; "scenario_slug"; "status"; "dispatch_policy"; "seed"; "floors"; "shafts"; "capacity"; "travel_seconds_micros"; "dwell_seconds_micros"; "arrival_rate_micros"; "horizon_seconds_micros"; "events"; "arrivals"; "boarded"; "served"; "mean_wait_micros"; "dispatch_decisions"; "pomdp_belief_updates"; "online_learning_updates"; "online_learning_loss_last_micros"; "config"; "metrics"; "artifact"; "created_at"; "updated_at" ]
 let desFelElevatorLearningRunsSelectSql = "select\n      id::text as id,\n      run_label,\n      scenario_slug,\n      status,\n      dispatch_policy,\n      seed,\n      floors,\n      shafts,\n      capacity,\n      travel_seconds_micros,\n      dwell_seconds_micros,\n      arrival_rate_micros,\n      horizon_seconds_micros,\n      events,\n      arrivals,\n      boarded,\n      served,\n      mean_wait_micros,\n      dispatch_decisions,\n      pomdp_belief_updates,\n      online_learning_updates,\n      online_learning_loss_last_micros,\n      config::text as config_json,\n      metrics::text as metrics_json,\n      artifact::text as artifact_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_fel_elevator_learning_runs"

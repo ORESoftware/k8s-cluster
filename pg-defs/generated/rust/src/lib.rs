@@ -7698,6 +7698,98 @@ pub fn validate_des_soccer_learning_neural_run_metrics_insert(value: &DesSoccerL
     Ok(())
 }
 
+pub const DES_SOCCER_LEARNING_PASS_METRICS_TABLE: &str = "des_soccer_learning_pass_metrics";
+pub const DES_SOCCER_LEARNING_PASS_METRICS_COLUMNS: &[&str] = &["git_commit", "runs", "passes_attempted", "passes_completed", "completed_pass_gain_yards_micros", "pass_chains", "pass_chain_gain_yards_micros", "pass_chains_net_loss", "shots_on_target", "shots_after_pass", "first_seen_at", "updated_at"];
+pub const DES_SOCCER_LEARNING_PASS_METRICS_SELECT_SQL: &str = r###"select
+      git_commit,
+      runs,
+      passes_attempted,
+      passes_completed,
+      completed_pass_gain_yards_micros,
+      pass_chains,
+      pass_chain_gain_yards_micros,
+      pass_chains_net_loss,
+      shots_on_target,
+      shots_after_pass,
+      to_char(first_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as first_seen_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from des_soccer_learning_pass_metrics"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct DesSoccerLearningPassMetricsRow {
+    pub git_commit: String,
+    pub runs: i64,
+    pub passes_attempted: i64,
+    pub passes_completed: i64,
+    pub completed_pass_gain_yards_micros: i64,
+    pub pass_chains: i64,
+    pub pass_chain_gain_yards_micros: i64,
+    pub pass_chains_net_loss: i64,
+    pub shots_on_target: i64,
+    pub shots_after_pass: i64,
+    pub first_seen_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesSoccerLearningPassMetricsInsert {
+    pub git_commit: Option<String>,
+    pub runs: Option<i64>,
+    pub passes_attempted: Option<i64>,
+    pub passes_completed: Option<i64>,
+    pub completed_pass_gain_yards_micros: Option<i64>,
+    pub pass_chains: Option<i64>,
+    pub pass_chain_gain_yards_micros: Option<i64>,
+    pub pass_chains_net_loss: Option<i64>,
+    pub shots_on_target: Option<i64>,
+    pub shots_after_pass: Option<i64>,
+    pub first_seen_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_des_soccer_learning_pass_metrics_row(value: &DesSoccerLearningPassMetricsRow) -> Result<(), String> {
+    validate_string_length("des_soccer_learning_pass_metrics.git_commit", &value.git_commit, None, Some(64))?;
+    if *(&value.runs) < 0 { return Err("des_soccer_learning_pass_metrics.runs is below the minimum".to_string()); }
+    if *(&value.passes_attempted) < 0 { return Err("des_soccer_learning_pass_metrics.passes_attempted is below the minimum".to_string()); }
+    if *(&value.passes_completed) < 0 { return Err("des_soccer_learning_pass_metrics.passes_completed is below the minimum".to_string()); }
+    if *(&value.pass_chains) < 0 { return Err("des_soccer_learning_pass_metrics.pass_chains is below the minimum".to_string()); }
+    if *(&value.pass_chains_net_loss) < 0 { return Err("des_soccer_learning_pass_metrics.pass_chains_net_loss is below the minimum".to_string()); }
+    if *(&value.shots_on_target) < 0 { return Err("des_soccer_learning_pass_metrics.shots_on_target is below the minimum".to_string()); }
+    if *(&value.shots_after_pass) < 0 { return Err("des_soccer_learning_pass_metrics.shots_after_pass is below the minimum".to_string()); }
+    Ok(())
+}
+
+pub fn validate_des_soccer_learning_pass_metrics_insert(value: &DesSoccerLearningPassMetricsInsert) -> Result<(), String> {
+    if let Some(value) = &value.git_commit {
+        validate_string_length("des_soccer_learning_pass_metrics.git_commit", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.runs {
+        if *(value) < 0 { return Err("des_soccer_learning_pass_metrics.runs is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.passes_attempted {
+        if *(value) < 0 { return Err("des_soccer_learning_pass_metrics.passes_attempted is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.passes_completed {
+        if *(value) < 0 { return Err("des_soccer_learning_pass_metrics.passes_completed is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.pass_chains {
+        if *(value) < 0 { return Err("des_soccer_learning_pass_metrics.pass_chains is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.pass_chains_net_loss {
+        if *(value) < 0 { return Err("des_soccer_learning_pass_metrics.pass_chains_net_loss is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.shots_on_target {
+        if *(value) < 0 { return Err("des_soccer_learning_pass_metrics.shots_on_target is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.shots_after_pass {
+        if *(value) < 0 { return Err("des_soccer_learning_pass_metrics.shots_after_pass is below the minimum".to_string()); }
+    }
+    Ok(())
+}
+
 pub const DES_FEL_ELEVATOR_LEARNING_RUNS_TABLE: &str = "des_fel_elevator_learning_runs";
 pub const DES_FEL_ELEVATOR_LEARNING_RUNS_COLUMNS: &[&str] = &["id", "run_label", "scenario_slug", "status", "dispatch_policy", "seed", "floors", "shafts", "capacity", "travel_seconds_micros", "dwell_seconds_micros", "arrival_rate_micros", "horizon_seconds_micros", "events", "arrivals", "boarded", "served", "mean_wait_micros", "dispatch_decisions", "pomdp_belief_updates", "online_learning_updates", "online_learning_loss_last_micros", "config", "metrics", "artifact", "created_at", "updated_at"];
 pub const DES_FEL_ELEVATOR_LEARNING_RUNS_SELECT_SQL: &str = r###"select

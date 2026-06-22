@@ -2280,6 +2280,47 @@ impl ActiveModelBehavior for ActiveModel {}
 pub use des_soccer_learning_neural_run_metrics::Entity as DesSoccerLearningNeuralRunMetricsEntity;
 pub use des_soccer_learning_neural_run_metrics::Model as DesSoccerLearningNeuralRunMetricsModel;
 
+pub mod des_soccer_learning_pass_metrics {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "des_soccer_learning_pass_metrics")]
+pub struct Model {
+    #[sea_orm(primary_key, column_name = "git_commit")]
+    pub git_commit: String,
+    pub runs: i64,
+    #[sea_orm(column_name = "passes_attempted")]
+    pub passes_attempted: i64,
+    #[sea_orm(column_name = "passes_completed")]
+    pub passes_completed: i64,
+    #[sea_orm(column_name = "completed_pass_gain_yards_micros")]
+    pub completed_pass_gain_yards_micros: i64,
+    #[sea_orm(column_name = "pass_chains")]
+    pub pass_chains: i64,
+    #[sea_orm(column_name = "pass_chain_gain_yards_micros")]
+    pub pass_chain_gain_yards_micros: i64,
+    #[sea_orm(column_name = "pass_chains_net_loss")]
+    pub pass_chains_net_loss: i64,
+    #[sea_orm(column_name = "shots_on_target")]
+    pub shots_on_target: i64,
+    #[sea_orm(column_name = "shots_after_pass")]
+    pub shots_after_pass: i64,
+    #[sea_orm(column_name = "first_seen_at")]
+    pub first_seen_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use des_soccer_learning_pass_metrics::Entity as DesSoccerLearningPassMetricsEntity;
+pub use des_soccer_learning_pass_metrics::Model as DesSoccerLearningPassMetricsModel;
+
 pub mod des_fel_elevator_learning_runs {
     use super::*;
 

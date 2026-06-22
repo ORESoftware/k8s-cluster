@@ -1406,6 +1406,31 @@ class DesSoccerLearningNeuralRunMetricsTable extends Table {
   };
 }
 
+@DataClassName("DesSoccerLearningPassMetricsData")
+class DesSoccerLearningPassMetricsTable extends Table {
+  @override String get tableName => "des_soccer_learning_pass_metrics";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get gitCommit => text().named("git_commit").withLength(max: 64)();
+  Int64Column get runs => int64().named("runs").clientDefault(() => 0)();
+  Int64Column get passesAttempted => int64().named("passes_attempted").clientDefault(() => 0)();
+  Int64Column get passesCompleted => int64().named("passes_completed").clientDefault(() => 0)();
+  Int64Column get completedPassGainYardsMicros => int64().named("completed_pass_gain_yards_micros").clientDefault(() => 0)();
+  Int64Column get passChains => int64().named("pass_chains").clientDefault(() => 0)();
+  Int64Column get passChainGainYardsMicros => int64().named("pass_chain_gain_yards_micros").clientDefault(() => 0)();
+  Int64Column get passChainsNetLoss => int64().named("pass_chains_net_loss").clientDefault(() => 0)();
+  Int64Column get shotsOnTarget => int64().named("shots_on_target").clientDefault(() => 0)();
+  Int64Column get shotsAfterPass => int64().named("shots_after_pass").clientDefault(() => 0)();
+  DateTimeColumn get firstSeenAt => dateTime().named("first_seen_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        gitCommit,
+  };
+}
+
 @DataClassName("DesFelElevatorLearningRunsData")
 class DesFelElevatorLearningRunsTable extends Table {
   @override String get tableName => "des_fel_elevator_learning_runs";
@@ -3263,6 +3288,7 @@ const List<Type> registeredDriftTables = <Type>[
   DesSoccerLearningSetPlayRestartMixTable,
   DesSoccerLearningSetPlayEpisodeMetricsTable,
   DesSoccerLearningNeuralRunMetricsTable,
+  DesSoccerLearningPassMetricsTable,
   DesFelElevatorLearningRunsTable,
   DesFelElevatorPolicyStatesTable,
   DesFelElevatorDispatchDecisionsTable,

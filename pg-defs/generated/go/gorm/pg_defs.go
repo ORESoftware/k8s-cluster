@@ -2925,6 +2925,50 @@ func (value DesSoccerLearningNeuralRunMetricsGorm) Validate() error {
 	return nil
 }
 
+const DesSoccerLearningPassMetricsTable = "des_soccer_learning_pass_metrics"
+const DesSoccerLearningPassMetricsSelectSQL = `select
+      git_commit,
+      runs,
+      passes_attempted,
+      passes_completed,
+      completed_pass_gain_yards_micros,
+      pass_chains,
+      pass_chain_gain_yards_micros,
+      pass_chains_net_loss,
+      shots_on_target,
+      shots_after_pass,
+      to_char(first_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as first_seen_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from des_soccer_learning_pass_metrics`
+
+type DesSoccerLearningPassMetricsGorm struct {
+	GitCommit string `gorm:"column:git_commit;type:varchar(64);primaryKey" json:"gitCommit"`
+	Runs int64 `gorm:"column:runs;type:bigint;default:0;not null" json:"runs"`
+	PassesAttempted int64 `gorm:"column:passes_attempted;type:bigint;default:0;not null" json:"passesAttempted"`
+	PassesCompleted int64 `gorm:"column:passes_completed;type:bigint;default:0;not null" json:"passesCompleted"`
+	CompletedPassGainYardsMicros int64 `gorm:"column:completed_pass_gain_yards_micros;type:bigint;default:0;not null" json:"completedPassGainYardsMicros"`
+	PassChains int64 `gorm:"column:pass_chains;type:bigint;default:0;not null" json:"passChains"`
+	PassChainGainYardsMicros int64 `gorm:"column:pass_chain_gain_yards_micros;type:bigint;default:0;not null" json:"passChainGainYardsMicros"`
+	PassChainsNetLoss int64 `gorm:"column:pass_chains_net_loss;type:bigint;default:0;not null" json:"passChainsNetLoss"`
+	ShotsOnTarget int64 `gorm:"column:shots_on_target;type:bigint;default:0;not null" json:"shotsOnTarget"`
+	ShotsAfterPass int64 `gorm:"column:shots_after_pass;type:bigint;default:0;not null" json:"shotsAfterPass"`
+	FirstSeenAt time.Time `gorm:"column:first_seen_at;type:timestamptz;default:now();not null" json:"firstSeenAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (DesSoccerLearningPassMetricsGorm) TableName() string { return DesSoccerLearningPassMetricsTable }
+
+func (value DesSoccerLearningPassMetricsGorm) Validate() error {
+	if value.Runs < 0 { return errors.New("des_soccer_learning_pass_metrics.runs is below the minimum") }
+	if value.PassesAttempted < 0 { return errors.New("des_soccer_learning_pass_metrics.passes_attempted is below the minimum") }
+	if value.PassesCompleted < 0 { return errors.New("des_soccer_learning_pass_metrics.passes_completed is below the minimum") }
+	if value.PassChains < 0 { return errors.New("des_soccer_learning_pass_metrics.pass_chains is below the minimum") }
+	if value.PassChainsNetLoss < 0 { return errors.New("des_soccer_learning_pass_metrics.pass_chains_net_loss is below the minimum") }
+	if value.ShotsOnTarget < 0 { return errors.New("des_soccer_learning_pass_metrics.shots_on_target is below the minimum") }
+	if value.ShotsAfterPass < 0 { return errors.New("des_soccer_learning_pass_metrics.shots_after_pass is below the minimum") }
+	return nil
+}
+
 const DesFelElevatorLearningRunsTable = "des_fel_elevator_learning_runs"
 const DesFelElevatorLearningRunsSelectSQL = `select
       id::text as id,

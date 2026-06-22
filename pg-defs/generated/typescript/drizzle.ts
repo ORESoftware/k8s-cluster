@@ -3980,6 +3980,63 @@ export type DesSoccerLearningNeuralRunMetricsRow = z.infer<typeof desSoccerLearn
 export type DesSoccerLearningNeuralRunMetricsInsert = z.infer<typeof desSoccerLearningNeuralRunMetricsInsertSchema>;
 export type DesSoccerLearningNeuralRunMetricsUpdate = z.infer<typeof desSoccerLearningNeuralRunMetricsUpdateSchema>;
 
+export const desSoccerLearningPassMetrics = pgTable(
+  "des_soccer_learning_pass_metrics",
+  {
+    gitCommit: varchar("git_commit", { length: 64 }).primaryKey(),
+    runs: bigint("runs", { mode: "number" }).default(sql`0`).notNull(),
+    passesAttempted: bigint("passes_attempted", { mode: "number" }).default(sql`0`).notNull(),
+    passesCompleted: bigint("passes_completed", { mode: "number" }).default(sql`0`).notNull(),
+    completedPassGainYardsMicros: bigint("completed_pass_gain_yards_micros", { mode: "number" }).default(sql`0`).notNull(),
+    passChains: bigint("pass_chains", { mode: "number" }).default(sql`0`).notNull(),
+    passChainGainYardsMicros: bigint("pass_chain_gain_yards_micros", { mode: "number" }).default(sql`0`).notNull(),
+    passChainsNetLoss: bigint("pass_chains_net_loss", { mode: "number" }).default(sql`0`).notNull(),
+    shotsOnTarget: bigint("shots_on_target", { mode: "number" }).default(sql`0`).notNull(),
+    shotsAfterPass: bigint("shots_after_pass", { mode: "number" }).default(sql`0`).notNull(),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    desSoccerLearningPassMetricsCountsChk: check("des_soccer_learning_pass_metrics_counts_chk", sql.raw("runs >= 0\n      and passes_attempted >= 0\n      and passes_completed >= 0\n      and pass_chains >= 0\n      and pass_chains_net_loss >= 0\n      and shots_on_target >= 0\n      and shots_after_pass >= 0")),
+    desSoccerLearningPassMetricsUpdatedIdx: index("des_soccer_learning_pass_metrics_updated_idx").on(table.updatedAt.desc()),
+  }),
+);
+
+export const desSoccerLearningPassMetricsRowSchema = z.object({
+  gitCommit: z.string().max(64),
+  runs: z.number().int().min(0),
+  passesAttempted: z.number().int().min(0),
+  passesCompleted: z.number().int().min(0),
+  completedPassGainYardsMicros: z.number().int(),
+  passChains: z.number().int().min(0),
+  passChainGainYardsMicros: z.number().int(),
+  passChainsNetLoss: z.number().int().min(0),
+  shotsOnTarget: z.number().int().min(0),
+  shotsAfterPass: z.number().int().min(0),
+  firstSeenAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const desSoccerLearningPassMetricsInsertSchema = z.object({
+  gitCommit: z.string().max(64),
+  runs: z.number().int().min(0).optional().default(0),
+  passesAttempted: z.number().int().min(0).optional().default(0),
+  passesCompleted: z.number().int().min(0).optional().default(0),
+  completedPassGainYardsMicros: z.number().int().optional().default(0),
+  passChains: z.number().int().min(0).optional().default(0),
+  passChainGainYardsMicros: z.number().int().optional().default(0),
+  passChainsNetLoss: z.number().int().min(0).optional().default(0),
+  shotsOnTarget: z.number().int().min(0).optional().default(0),
+  shotsAfterPass: z.number().int().min(0).optional().default(0),
+  firstSeenAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const desSoccerLearningPassMetricsUpdateSchema = desSoccerLearningPassMetricsInsertSchema.partial();
+export type DesSoccerLearningPassMetricsRow = z.infer<typeof desSoccerLearningPassMetricsRowSchema>;
+export type DesSoccerLearningPassMetricsInsert = z.infer<typeof desSoccerLearningPassMetricsInsertSchema>;
+export type DesSoccerLearningPassMetricsUpdate = z.infer<typeof desSoccerLearningPassMetricsUpdateSchema>;
+
 export const desFelElevatorLearningRunsStatusValues = ["completed","failed","imported"] as const;
 export const desFelElevatorLearningRunsStatusSchema = z.enum(desFelElevatorLearningRunsStatusValues);
 export type DesFelElevatorLearningRunsStatus = z.infer<typeof desFelElevatorLearningRunsStatusSchema>;

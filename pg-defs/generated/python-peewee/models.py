@@ -1095,6 +1095,24 @@ class DesSoccerLearningNeuralRunMetrics(BaseModel):
         table_name = "des_soccer_learning_neural_run_metrics"
 
 
+class DesSoccerLearningPassMetrics(BaseModel):
+    git_commit = CharField(max_length=64, primary_key=True)
+    runs = BigIntegerField()
+    passes_attempted = BigIntegerField()
+    passes_completed = BigIntegerField()
+    completed_pass_gain_yards_micros = BigIntegerField()
+    pass_chains = BigIntegerField()
+    pass_chain_gain_yards_micros = BigIntegerField()
+    pass_chains_net_loss = BigIntegerField()
+    shots_on_target = BigIntegerField()
+    shots_after_pass = BigIntegerField()
+    first_seen_at = DateTimeField()
+    updated_at = DateTimeField()
+
+    class Meta:
+        table_name = "des_soccer_learning_pass_metrics"
+
+
 class DesFelElevatorLearningRuns(BaseModel):
     id = UUIDField(primary_key=True)
     run_label = CharField(max_length=200)

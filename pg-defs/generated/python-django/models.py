@@ -1183,6 +1183,26 @@ class DesSoccerLearningNeuralRunMetrics(models.Model):
         db_table = "des_soccer_learning_neural_run_metrics"
 
 
+class DesSoccerLearningPassMetrics(models.Model):
+    git_commit = models.CharField(primary_key=True, max_length=64)
+    runs = models.BigIntegerField(default=0, validators=[MinValueValidator(0)])
+    passes_attempted = models.BigIntegerField(default=0, validators=[MinValueValidator(0)])
+    passes_completed = models.BigIntegerField(default=0, validators=[MinValueValidator(0)])
+    completed_pass_gain_yards_micros = models.BigIntegerField(default=0)
+    pass_chains = models.BigIntegerField(default=0, validators=[MinValueValidator(0)])
+    pass_chain_gain_yards_micros = models.BigIntegerField(default=0)
+    pass_chains_net_loss = models.BigIntegerField(default=0, validators=[MinValueValidator(0)])
+    shots_on_target = models.BigIntegerField(default=0, validators=[MinValueValidator(0)])
+    shots_after_pass = models.BigIntegerField(default=0, validators=[MinValueValidator(0)])
+    first_seen_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "des_soccer_learning_pass_metrics"
+
+
 class DesFelElevatorLearningRuns(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     run_label = models.CharField(max_length=200)

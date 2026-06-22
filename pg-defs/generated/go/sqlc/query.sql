@@ -781,6 +781,21 @@ update des_soccer_learning_neural_run_metrics set policy_version_id = $2, enable
 -- name: DeleteDesSoccerLearningNeuralRunMetrics :exec
 delete from des_soccer_learning_neural_run_metrics where run_id = $1;
 
+-- name: ListDesSoccerLearningPassMetrics :many
+select git_commit, runs, passes_attempted, passes_completed, completed_pass_gain_yards_micros, pass_chains, pass_chain_gain_yards_micros, pass_chains_net_loss, shots_on_target, shots_after_pass, first_seen_at, updated_at from des_soccer_learning_pass_metrics;
+
+-- name: GetDesSoccerLearningPassMetrics :one
+select git_commit, runs, passes_attempted, passes_completed, completed_pass_gain_yards_micros, pass_chains, pass_chain_gain_yards_micros, pass_chains_net_loss, shots_on_target, shots_after_pass, first_seen_at, updated_at from des_soccer_learning_pass_metrics where git_commit = $1 limit 1;
+
+-- name: CreateDesSoccerLearningPassMetrics :one
+insert into des_soccer_learning_pass_metrics (git_commit, runs, passes_attempted, passes_completed, completed_pass_gain_yards_micros, pass_chains, pass_chain_gain_yards_micros, pass_chains_net_loss, shots_on_target, shots_after_pass, first_seen_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) returning git_commit, runs, passes_attempted, passes_completed, completed_pass_gain_yards_micros, pass_chains, pass_chain_gain_yards_micros, pass_chains_net_loss, shots_on_target, shots_after_pass, first_seen_at, updated_at;
+
+-- name: UpdateDesSoccerLearningPassMetrics :one
+update des_soccer_learning_pass_metrics set runs = $2, passes_attempted = $3, passes_completed = $4, completed_pass_gain_yards_micros = $5, pass_chains = $6, pass_chain_gain_yards_micros = $7, pass_chains_net_loss = $8, shots_on_target = $9, shots_after_pass = $10, first_seen_at = $11, updated_at = $12 where git_commit = $1 returning git_commit, runs, passes_attempted, passes_completed, completed_pass_gain_yards_micros, pass_chains, pass_chain_gain_yards_micros, pass_chains_net_loss, shots_on_target, shots_after_pass, first_seen_at, updated_at;
+
+-- name: DeleteDesSoccerLearningPassMetrics :exec
+delete from des_soccer_learning_pass_metrics where git_commit = $1;
+
 -- name: ListDesFelElevatorLearningRuns :many
 select id, run_label, scenario_slug, status, dispatch_policy, seed, floors, shafts, capacity, travel_seconds_micros, dwell_seconds_micros, arrival_rate_micros, horizon_seconds_micros, events, arrivals, boarded, served, mean_wait_micros, dispatch_decisions, pomdp_belief_updates, online_learning_updates, online_learning_loss_last_micros, config, metrics, artifact, created_at, updated_at from des_fel_elevator_learning_runs;
 

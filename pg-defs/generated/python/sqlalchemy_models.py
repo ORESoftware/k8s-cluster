@@ -4726,6 +4726,58 @@ class DesSoccerLearningNeuralRunMetricsInsert(BaseModel):
     averageLossMicros: int | None = None
     createdAt: datetime | None = None
 
+class DesSoccerLearningPassMetrics(Base):
+    __tablename__ = "des_soccer_learning_pass_metrics"
+    __table_args__ = (
+        CheckConstraint("runs >= 0\n      and passes_attempted >= 0\n      and passes_completed >= 0\n      and pass_chains >= 0\n      and pass_chains_net_loss >= 0\n      and shots_on_target >= 0\n      and shots_after_pass >= 0", name="des_soccer_learning_pass_metrics_counts_chk"),
+        Index("des_soccer_learning_pass_metrics_updated_idx", text("updated_at desc")),
+    )
+
+    git_commit: Mapped[str] = mapped_column(String(64), primary_key=True)
+    runs: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    passes_attempted: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    passes_completed: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    completed_pass_gain_yards_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    pass_chains: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    pass_chain_gain_yards_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    pass_chains_net_loss: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    shots_on_target: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    shots_after_pass: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class DesSoccerLearningPassMetricsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    gitCommit: str = Field(..., max_length=64)
+    runs: int
+    passesAttempted: int
+    passesCompleted: int
+    completedPassGainYardsMicros: int
+    passChains: int
+    passChainGainYardsMicros: int
+    passChainsNetLoss: int
+    shotsOnTarget: int
+    shotsAfterPass: int
+    firstSeenAt: datetime
+    updatedAt: datetime
+
+class DesSoccerLearningPassMetricsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    gitCommit: str = Field(..., max_length=64)
+    runs: int | None = 0
+    passesAttempted: int | None = 0
+    passesCompleted: int | None = 0
+    completedPassGainYardsMicros: int | None = 0
+    passChains: int | None = 0
+    passChainGainYardsMicros: int | None = 0
+    passChainsNetLoss: int | None = 0
+    shotsOnTarget: int | None = 0
+    shotsAfterPass: int | None = 0
+    firstSeenAt: datetime | None = None
+    updatedAt: datetime | None = None
+
 DesFelElevatorLearningRunsStatus = Literal["completed", "failed", "imported"]
 DesFelElevatorLearningRunsDispatchPolicy = Literal["look", "mdp-table", "neural-scorer", "pomdp-belief", "neural-td"]
 

@@ -5148,6 +5148,88 @@ inline std::optional<std::string> validate_des_soccer_learning_neural_run_metric
     return std::nullopt;
 }
 
+inline const char* des_soccer_learning_pass_metrics_table = "des_soccer_learning_pass_metrics";
+inline const std::vector<std::string> des_soccer_learning_pass_metrics_columns = { "git_commit", "runs", "passes_attempted", "passes_completed", "completed_pass_gain_yards_micros", "pass_chains", "pass_chain_gain_yards_micros", "pass_chains_net_loss", "shots_on_target", "shots_after_pass", "first_seen_at", "updated_at" };
+inline const char* des_soccer_learning_pass_metrics_select_sql = R"SQL(select
+      git_commit,
+      runs,
+      passes_attempted,
+      passes_completed,
+      completed_pass_gain_yards_micros,
+      pass_chains,
+      pass_chain_gain_yards_micros,
+      pass_chains_net_loss,
+      shots_on_target,
+      shots_after_pass,
+      to_char(first_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as first_seen_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from des_soccer_learning_pass_metrics)SQL";
+
+struct DesSoccerLearningPassMetricsRow {
+    std::string git_commit;
+    int64_t runs;
+    int64_t passes_attempted;
+    int64_t passes_completed;
+    int64_t completed_pass_gain_yards_micros;
+    int64_t pass_chains;
+    int64_t pass_chain_gain_yards_micros;
+    int64_t pass_chains_net_loss;
+    int64_t shots_on_target;
+    int64_t shots_after_pass;
+    std::string first_seen_at;
+    std::string updated_at;
+};
+
+inline DesSoccerLearningPassMetricsRow des_soccer_learning_pass_metrics_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    DesSoccerLearningPassMetricsRow row;
+    (void)is_null;
+    row.git_commit = get(0);
+    row.runs = std::stoll(get(1));
+    row.passes_attempted = std::stoll(get(2));
+    row.passes_completed = std::stoll(get(3));
+    row.completed_pass_gain_yards_micros = std::stoll(get(4));
+    row.pass_chains = std::stoll(get(5));
+    row.pass_chain_gain_yards_micros = std::stoll(get(6));
+    row.pass_chains_net_loss = std::stoll(get(7));
+    row.shots_on_target = std::stoll(get(8));
+    row.shots_after_pass = std::stoll(get(9));
+    row.first_seen_at = get(10);
+    row.updated_at = get(11);
+    return row;
+}
+inline std::optional<std::string> validate_des_soccer_learning_pass_metrics_git_commit(const std::string& value) {
+    if (value.size() > 64) return std::string("des_soccer_learning_pass_metrics.git_commit must be at most 64 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_pass_metrics_runs(int64_t value) {
+    if (value < 0) return std::string("des_soccer_learning_pass_metrics.runs is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_pass_metrics_passes_attempted(int64_t value) {
+    if (value < 0) return std::string("des_soccer_learning_pass_metrics.passes_attempted is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_pass_metrics_passes_completed(int64_t value) {
+    if (value < 0) return std::string("des_soccer_learning_pass_metrics.passes_completed is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_pass_metrics_pass_chains(int64_t value) {
+    if (value < 0) return std::string("des_soccer_learning_pass_metrics.pass_chains is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_pass_metrics_pass_chains_net_loss(int64_t value) {
+    if (value < 0) return std::string("des_soccer_learning_pass_metrics.pass_chains_net_loss is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_pass_metrics_shots_on_target(int64_t value) {
+    if (value < 0) return std::string("des_soccer_learning_pass_metrics.shots_on_target is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_pass_metrics_shots_after_pass(int64_t value) {
+    if (value < 0) return std::string("des_soccer_learning_pass_metrics.shots_after_pass is below the minimum");
+    return std::nullopt;
+}
+
 inline const char* des_fel_elevator_learning_runs_table = "des_fel_elevator_learning_runs";
 inline const std::vector<std::string> des_fel_elevator_learning_runs_columns = { "id", "run_label", "scenario_slug", "status", "dispatch_policy", "seed", "floors", "shafts", "capacity", "travel_seconds_micros", "dwell_seconds_micros", "arrival_rate_micros", "horizon_seconds_micros", "events", "arrivals", "boarded", "served", "mean_wait_micros", "dispatch_decisions", "pomdp_belief_updates", "online_learning_updates", "online_learning_loss_last_micros", "config", "metrics", "artifact", "created_at", "updated_at" };
 inline const char* des_fel_elevator_learning_runs_select_sql = R"SQL(select

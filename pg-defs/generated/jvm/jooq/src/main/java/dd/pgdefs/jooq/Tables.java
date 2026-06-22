@@ -929,6 +929,21 @@ public final class Tables {
     public static final Field<Long> DES_SOCCER_LEARNING_NEURAL_RUN_METRICS_AVERAGE_LOSS_MICROS = DSL.field(DSL.name("des_soccer_learning_neural_run_metrics", "average_loss_micros"), SQLDataType.BIGINT);
     public static final Field<OffsetDateTime> DES_SOCCER_LEARNING_NEURAL_RUN_METRICS_CREATED_AT = DSL.field(DSL.name("des_soccer_learning_neural_run_metrics", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
 
+    public static final Name DES_SOCCER_LEARNING_PASS_METRICS_NAME = DSL.name("des_soccer_learning_pass_metrics");
+    public static final Table<org.jooq.Record> DES_SOCCER_LEARNING_PASS_METRICS = DSL.table(DES_SOCCER_LEARNING_PASS_METRICS_NAME);
+    public static final Field<String> DES_SOCCER_LEARNING_PASS_METRICS_GIT_COMMIT = DSL.field(DSL.name("des_soccer_learning_pass_metrics", "git_commit"), SQLDataType.VARCHAR(64));
+    public static final Field<Long> DES_SOCCER_LEARNING_PASS_METRICS_RUNS = DSL.field(DSL.name("des_soccer_learning_pass_metrics", "runs"), SQLDataType.BIGINT);
+    public static final Field<Long> DES_SOCCER_LEARNING_PASS_METRICS_PASSES_ATTEMPTED = DSL.field(DSL.name("des_soccer_learning_pass_metrics", "passes_attempted"), SQLDataType.BIGINT);
+    public static final Field<Long> DES_SOCCER_LEARNING_PASS_METRICS_PASSES_COMPLETED = DSL.field(DSL.name("des_soccer_learning_pass_metrics", "passes_completed"), SQLDataType.BIGINT);
+    public static final Field<Long> DES_SOCCER_LEARNING_PASS_METRICS_COMPLETED_PASS_GAIN_YARDS_MICROS = DSL.field(DSL.name("des_soccer_learning_pass_metrics", "completed_pass_gain_yards_micros"), SQLDataType.BIGINT);
+    public static final Field<Long> DES_SOCCER_LEARNING_PASS_METRICS_PASS_CHAINS = DSL.field(DSL.name("des_soccer_learning_pass_metrics", "pass_chains"), SQLDataType.BIGINT);
+    public static final Field<Long> DES_SOCCER_LEARNING_PASS_METRICS_PASS_CHAIN_GAIN_YARDS_MICROS = DSL.field(DSL.name("des_soccer_learning_pass_metrics", "pass_chain_gain_yards_micros"), SQLDataType.BIGINT);
+    public static final Field<Long> DES_SOCCER_LEARNING_PASS_METRICS_PASS_CHAINS_NET_LOSS = DSL.field(DSL.name("des_soccer_learning_pass_metrics", "pass_chains_net_loss"), SQLDataType.BIGINT);
+    public static final Field<Long> DES_SOCCER_LEARNING_PASS_METRICS_SHOTS_ON_TARGET = DSL.field(DSL.name("des_soccer_learning_pass_metrics", "shots_on_target"), SQLDataType.BIGINT);
+    public static final Field<Long> DES_SOCCER_LEARNING_PASS_METRICS_SHOTS_AFTER_PASS = DSL.field(DSL.name("des_soccer_learning_pass_metrics", "shots_after_pass"), SQLDataType.BIGINT);
+    public static final Field<OffsetDateTime> DES_SOCCER_LEARNING_PASS_METRICS_FIRST_SEEN_AT = DSL.field(DSL.name("des_soccer_learning_pass_metrics", "first_seen_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> DES_SOCCER_LEARNING_PASS_METRICS_UPDATED_AT = DSL.field(DSL.name("des_soccer_learning_pass_metrics", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
     public static final Name DES_FEL_ELEVATOR_LEARNING_RUNS_NAME = DSL.name("des_fel_elevator_learning_runs");
     public static final Table<org.jooq.Record> DES_FEL_ELEVATOR_LEARNING_RUNS = DSL.table(DES_FEL_ELEVATOR_LEARNING_RUNS_NAME);
     public static final Field<UUID> DES_FEL_ELEVATOR_LEARNING_RUNS_ID = DSL.field(DSL.name("des_fel_elevator_learning_runs", "id"), SQLDataType.UUID);

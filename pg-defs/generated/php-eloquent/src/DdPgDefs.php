@@ -1552,6 +1552,32 @@ class DesSoccerLearningNeuralRunMetrics extends Model
     }
 }
 
+class DesSoccerLearningPassMetrics extends Model
+{
+    protected $table = 'des_soccer_learning_pass_metrics';
+    protected $primaryKey = 'git_commit';
+    public $timestamps = false;
+    protected $fillable = ['runs', 'passes_attempted', 'passes_completed', 'completed_pass_gain_yards_micros', 'pass_chains', 'pass_chain_gain_yards_micros', 'pass_chains_net_loss', 'shots_on_target', 'shots_after_pass', 'first_seen_at', 'updated_at'];
+    protected $casts = ['runs' => 'integer', 'passes_attempted' => 'integer', 'passes_completed' => 'integer', 'completed_pass_gain_yards_micros' => 'integer', 'pass_chains' => 'integer', 'pass_chain_gain_yards_micros' => 'integer', 'pass_chains_net_loss' => 'integer', 'shots_on_target' => 'integer', 'shots_after_pass' => 'integer', 'first_seen_at' => 'datetime', 'updated_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'runs' => ['nullable', 'integer', 'min:0'],
+            'passes_attempted' => ['nullable', 'integer', 'min:0'],
+            'passes_completed' => ['nullable', 'integer', 'min:0'],
+            'completed_pass_gain_yards_micros' => ['nullable', 'integer'],
+            'pass_chains' => ['nullable', 'integer', 'min:0'],
+            'pass_chain_gain_yards_micros' => ['nullable', 'integer'],
+            'pass_chains_net_loss' => ['nullable', 'integer', 'min:0'],
+            'shots_on_target' => ['nullable', 'integer', 'min:0'],
+            'shots_after_pass' => ['nullable', 'integer', 'min:0'],
+            'first_seen_at' => ['nullable', 'date'],
+        ];
+    }
+}
+
 class DesFelElevatorLearningRuns extends Model
 {
     protected $table = 'des_fel_elevator_learning_runs';

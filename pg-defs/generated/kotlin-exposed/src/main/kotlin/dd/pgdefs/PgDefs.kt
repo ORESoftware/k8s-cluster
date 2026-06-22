@@ -1024,6 +1024,23 @@ object DesSoccerLearningNeuralRunMetrics : Table("des_soccer_learning_neural_run
     override val primaryKey = PrimaryKey(runId)
 }
 
+object DesSoccerLearningPassMetrics : Table("des_soccer_learning_pass_metrics") {
+    val gitCommit = varchar("git_commit", 64)
+    val runs = long("runs")
+    val passesAttempted = long("passes_attempted")
+    val passesCompleted = long("passes_completed")
+    val completedPassGainYardsMicros = long("completed_pass_gain_yards_micros")
+    val passChains = long("pass_chains")
+    val passChainGainYardsMicros = long("pass_chain_gain_yards_micros")
+    val passChainsNetLoss = long("pass_chains_net_loss")
+    val shotsOnTarget = long("shots_on_target")
+    val shotsAfterPass = long("shots_after_pass")
+    val firstSeenAt = timestampWithTimeZone("first_seen_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+
+    override val primaryKey = PrimaryKey(gitCommit)
+}
+
 object DesFelElevatorLearningRuns : Table("des_fel_elevator_learning_runs") {
     val id = uuid("id")
     val runLabel = varchar("run_label", 200)
@@ -4122,6 +4139,36 @@ fun toDesSoccerLearningNeuralRunMetricsRow(row: ResultRow): DesSoccerLearningNeu
     row[DesSoccerLearningNeuralRunMetrics.lastLossMicros],
     row[DesSoccerLearningNeuralRunMetrics.averageLossMicros],
     row[DesSoccerLearningNeuralRunMetrics.createdAt],
+)
+
+data class DesSoccerLearningPassMetricsRow(
+    val gitCommit: String,
+    val runs: Long,
+    val passesAttempted: Long,
+    val passesCompleted: Long,
+    val completedPassGainYardsMicros: Long,
+    val passChains: Long,
+    val passChainGainYardsMicros: Long,
+    val passChainsNetLoss: Long,
+    val shotsOnTarget: Long,
+    val shotsAfterPass: Long,
+    val firstSeenAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+)
+
+fun toDesSoccerLearningPassMetricsRow(row: ResultRow): DesSoccerLearningPassMetricsRow = DesSoccerLearningPassMetricsRow(
+    row[DesSoccerLearningPassMetrics.gitCommit],
+    row[DesSoccerLearningPassMetrics.runs],
+    row[DesSoccerLearningPassMetrics.passesAttempted],
+    row[DesSoccerLearningPassMetrics.passesCompleted],
+    row[DesSoccerLearningPassMetrics.completedPassGainYardsMicros],
+    row[DesSoccerLearningPassMetrics.passChains],
+    row[DesSoccerLearningPassMetrics.passChainGainYardsMicros],
+    row[DesSoccerLearningPassMetrics.passChainsNetLoss],
+    row[DesSoccerLearningPassMetrics.shotsOnTarget],
+    row[DesSoccerLearningPassMetrics.shotsAfterPass],
+    row[DesSoccerLearningPassMetrics.firstSeenAt],
+    row[DesSoccerLearningPassMetrics.updatedAt],
 )
 
 data class DesFelElevatorLearningRunsRow(

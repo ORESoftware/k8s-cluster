@@ -5299,6 +5299,76 @@ class DesSoccerLearningNeuralRunMetricsRow {
   }
 }
 
+const desSoccerLearningPassMetricsTable = "des_soccer_learning_pass_metrics";
+const desSoccerLearningPassMetricsSelectSql = "select\n      git_commit,\n      runs,\n      passes_attempted,\n      passes_completed,\n      completed_pass_gain_yards_micros,\n      pass_chains,\n      pass_chain_gain_yards_micros,\n      pass_chains_net_loss,\n      shots_on_target,\n      shots_after_pass,\n      to_char(first_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as first_seen_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_soccer_learning_pass_metrics";
+
+class DesSoccerLearningPassMetricsRow {
+  const DesSoccerLearningPassMetricsRow({
+    required this.gitCommit,
+    required this.runs,
+    required this.passesAttempted,
+    required this.passesCompleted,
+    required this.completedPassGainYardsMicros,
+    required this.passChains,
+    required this.passChainGainYardsMicros,
+    required this.passChainsNetLoss,
+    required this.shotsOnTarget,
+    required this.shotsAfterPass,
+    required this.firstSeenAt,
+    required this.updatedAt,
+  });
+
+  final String gitCommit;
+  final int runs;
+  final int passesAttempted;
+  final int passesCompleted;
+  final int completedPassGainYardsMicros;
+  final int passChains;
+  final int passChainGainYardsMicros;
+  final int passChainsNetLoss;
+  final int shotsOnTarget;
+  final int shotsAfterPass;
+  final String firstSeenAt;
+  final String updatedAt;
+
+  factory DesSoccerLearningPassMetricsRow.fromJson(Map<String, Object?> json) {
+    return DesSoccerLearningPassMetricsRow(
+      gitCommit: _readRequiredString(json, "gitCommit"),
+      runs: _readRequiredInt(json, "runs"),
+      passesAttempted: _readRequiredInt(json, "passesAttempted"),
+      passesCompleted: _readRequiredInt(json, "passesCompleted"),
+      completedPassGainYardsMicros: _readRequiredInt(json, "completedPassGainYardsMicros"),
+      passChains: _readRequiredInt(json, "passChains"),
+      passChainGainYardsMicros: _readRequiredInt(json, "passChainGainYardsMicros"),
+      passChainsNetLoss: _readRequiredInt(json, "passChainsNetLoss"),
+      shotsOnTarget: _readRequiredInt(json, "shotsOnTarget"),
+      shotsAfterPass: _readRequiredInt(json, "shotsAfterPass"),
+      firstSeenAt: _readRequiredString(json, "firstSeenAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "gitCommit": gitCommit,
+    "runs": runs,
+    "passesAttempted": passesAttempted,
+    "passesCompleted": passesCompleted,
+    "completedPassGainYardsMicros": completedPassGainYardsMicros,
+    "passChains": passChains,
+    "passChainGainYardsMicros": passChainGainYardsMicros,
+    "passChainsNetLoss": passChainsNetLoss,
+    "shotsOnTarget": shotsOnTarget,
+    "shotsAfterPass": shotsAfterPass,
+    "firstSeenAt": firstSeenAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+}
+
 const desFelElevatorLearningRunsTable = "des_fel_elevator_learning_runs";
 const desFelElevatorLearningRunsSelectSql = "select\n      id::text as id,\n      run_label,\n      scenario_slug,\n      status,\n      dispatch_policy,\n      seed,\n      floors,\n      shafts,\n      capacity,\n      travel_seconds_micros,\n      dwell_seconds_micros,\n      arrival_rate_micros,\n      horizon_seconds_micros,\n      events,\n      arrivals,\n      boarded,\n      served,\n      mean_wait_micros,\n      dispatch_decisions,\n      pomdp_belief_updates,\n      online_learning_updates,\n      online_learning_loss_last_micros,\n      config::text as config_json,\n      metrics::text as metrics_json,\n      artifact::text as artifact_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_fel_elevator_learning_runs";
 
