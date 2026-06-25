@@ -1,0 +1,233 @@
+# Soccer queue learning farm.
+#
+# This is the scalable lane for extra self-play throughput: keep the continuous
+# learner deterministic/single-game (`SOCCER_PARALLEL_GAMES=1`) and add finite
+# queue workers here via `main_soccer_learning_queue`. Each run fans out with
+# `SOCCER_QUEUE_PARALLEL_GAMES` and persists completed-game batches to Postgres.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: dd-soccer-learning-queue
+  namespace: default
+  labels:
+    app: dd-soccer-learning-queue
+    app.kubernetes.io/name: dd-soccer-learning-queue
+    app.kubernetes.io/component: learning-queue
+    app.kubernetes.io/part-of: dd-next-runtime
+spec:
+  schedule: "*/15 * * * *"
+  timeZone: America/Chicago
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 172800
+      template:
+        metadata:
+          labels:
+            app: dd-soccer-learning-queue
+            app.kubernetes.io/name: dd-soccer-learning-queue
+            app.kubernetes.io/component: learning-queue
+            app.kubernetes.io/part-of: dd-next-runtime
+        spec:
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          restartPolicy: Never
+          terminationGracePeriodSeconds: 30
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            fsGroupChangePolicy: OnRootMismatch
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: soccer-learning-queue
+              image: docker.io/library/rust:1.90-bookworm
+              imagePullPolicy: IfNotPresent
+              command:
+                - /bin/bash
+                - -lc
+              args:
+                - |
+                  set -euo pipefail
+                  export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+                  run_prefix="${SOCCER_RUN_ID_PREFIX:-codex-soccer-learning-queue}"
+                  soccer_repo="${SOCCER_SOURCE_REPO:-https://github.com/ORESoftware/soccer-sim-game-engine.rs.git}"
+                  engine_repo="${SOCCER_ENGINE_SOURCE_REPO:-https://github.com/ORESoftware/discrete-event-system.rs.git}"
+                  source_ref="${SOCCER_SOURCE_REF:-learning}"
+                  engine_ref="${SOCCER_ENGINE_SOURCE_REF:-main}"
+                  stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+                  base="/tmp/${run_prefix}-${stamp}-src"
+                  soccer="${base}/soccer-sim-game-engine.rs"
+                  engine="${base}/discrete-event-system.rs"
+                  target="/tmp/${run_prefix}-${stamp}-target"
+                  export CARGO_TARGET_DIR="${target}"
+
+                  clone_ref() {
+                    repo="$1"; ref="$2"; dir="$3"
+                    echo "source_clone_started dir=${dir} ref=${ref}"
+                    git clone --depth 1 --filter=blob:none --no-checkout "${repo}" "${dir}"
+                    git -C "${dir}" fetch --depth 1 origin "${ref}"
+                    git -C "${dir}" switch --detach FETCH_HEAD
+                  }
+
+                  mkdir -p "${base}"
+                  clone_ref "${engine_repo}" "${engine_ref}" "${engine}"
+                  clone_ref "${soccer_repo}" "${source_ref}" "${soccer}"
+
+                  cd "${soccer}"
+                  echo "queue_build_started_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                  echo "soccer_commit=$(git rev-parse HEAD) engine_commit=$(git -C "${engine}" rev-parse HEAD)"
+                  /usr/local/cargo/bin/cargo build --release --features postgres-persistence --bin main_soccer_learning_queue
+
+                  export SOCCER_RUN_ID="${run_prefix}-${stamp}"
+                  echo "queue_run_started_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ) run_id=${SOCCER_RUN_ID}"
+                  exec "${target}/release/main_soccer_learning_queue"
+              env:
+                - name: HOME
+                  value: /tmp
+                - name: CARGO_HOME
+                  value: /tmp/cargo
+                - name: CARGO_BUILD_JOBS
+                  value: "1"
+                - name: CARGO_NET_RETRY
+                  value: "5"
+                - name: RUST_BACKTRACE
+                  value: "1"
+                - name: SOCCER_SOURCE_REPO
+                  value: https://github.com/ORESoftware/soccer-sim-game-engine.rs.git
+                - name: SOCCER_SOURCE_REF
+                  value: learning
+                - name: SOCCER_ENGINE_SOURCE_REPO
+                  value: https://github.com/ORESoftware/discrete-event-system.rs.git
+                - name: SOCCER_ENGINE_SOURCE_REF
+                  value: main
+                - name: SOCCER_DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: dd-remote-rest-api-secrets
+                      key: RDS_DATABASE_URL
+                - name: SOCCER_PG_TLS_INSECURE
+                  value: "1"
+                - name: SOCCER_REQUIRE_POSTGRES
+                  value: "true"
+                - name: SOCCER_EXPERIMENT_SLUG
+                  value: soccer-self-play-k8s-queue
+                - name: SOCCER_QUEUE_GAMES
+                  value: "40"
+                - name: SOCCER_QUEUE_PARALLEL_GAMES
+                  value: "4"
+                - name: SOCCER_HALVES
+                  value: "2"
+                - name: SOCCER_HALF_MINUTES
+                  value: "15"
+                - name: SOCCER_MINUTES
+                  value: "30"
+                - name: SOCCER_DT_SECONDS
+                  value: "0.2"
+                - name: SOCCER_LEARNING_INTERVAL_TICKS
+                  value: "4"
+                - name: SOCCER_NEURAL_LEARNING_ENABLED
+                  value: "true"
+                - name: SOCCER_NEURAL_LEARNING_BACKEND
+                  value: threaded
+                - name: SOCCER_NEURAL_BATCH_SIZE
+                  value: "32"
+                - name: SOCCER_NEURAL_TRAIN_EVERY_TICKS
+                  value: "1"
+                - name: SOCCER_NEURAL_MAX_BATCHES_PER_TICK
+                  value: "2"
+                - name: SOCCER_NEURAL_REPLAY_CAPACITY
+                  value: "2048"
+                - name: SOCCER_NEURAL_REPLAY_SAMPLES_PER_TICK
+                  value: "32"
+                - name: SOCCER_NEURAL_MAX_PENDING_BATCHES
+                  value: "64"
+                - name: SOCCER_NEURAL_SNAPSHOT_EVERY_BATCHES
+                  value: "16"
+                - name: SOCCER_QUEUE_NEURAL_DRAIN_TIMEOUT_MS
+                  value: "2000"
+                - name: SOCCER_QUEUE_POSTGRES_POLICY_VERSION_INTERVAL_GAMES
+                  value: "4"
+                - name: SOCCER_QUEUE_POSTGRES_COMPLETED_RUN_BATCH_GAMES
+                  value: "4"
+                - name: SOCCER_QUEUE_POSTGRES_COMPLETED_RUN_RETENTION_GAMES
+                  value: "500"
+                - name: SOCCER_QUEUE_POSTGRES_ASYNC_BATCH_QUEUE
+                  value: "16"
+                - name: SOCCER_QUEUE_POSTGRES_ASYNC_COALESCE_BATCHES
+                  value: "16"
+                - name: SOCCER_QUEUE_POSTGRES_ASYNC_COALESCE_WAIT_MS
+                  value: "2"
+                - name: SOCCER_QUEUE_POSTGRES_TACTICAL_LEARNING_AUTHORITATIVE
+                  value: "true"
+                - name: SOCCER_QUEUE_POSTGRES_REFRESH_WITH_RESUME_ARTIFACT
+                  value: "true"
+                - name: SOCCER_QUEUE_POSTGRES_FLUSH_POLICY_VERSIONS_BEFORE_NEW_SIM
+                  value: "true"
+                - name: SOCCER_QUEUE_POSTGRES_TRAINING_REPLAY_DELTA_ROWS
+                  value: "50000"
+                - name: SOCCER_QUEUE_POSTGRES_TRAINING_REPLAY_PRIOR_WEIGHT
+                  value: "1.0"
+                - name: SOCCER_QUEUE_EVOLUTION_ENABLED
+                  value: "true"
+                - name: SOCCER_QUEUE_EVOLUTION_INTERVAL_GAMES
+                  value: "8"
+                - name: SOCCER_QUEUE_EVOLUTION_ELITE_GAMES
+                  value: "4"
+                - name: SOCCER_QUEUE_EVOLUTION_WINDOW_GAMES
+                  value: "16"
+                - name: SOCCER_QUEUE_EVOLUTION_MUTATION_RATE
+                  value: "0.08"
+                - name: SOCCER_QUEUE_EVOLUTION_MUTATION_SCALE
+                  value: "0.34"
+                - name: SOCCER_QUEUE_EVOLUTION_CROSSOVER_RATE
+                  value: "0.62"
+                - name: SOCCER_QUEUE_EVOLUTION_EXPLORATION_RATE
+                  value: "0.14"
+                - name: SOCCER_QUEUE_EVOLUTION_EXPLORATION_SCALE
+                  value: "0.90"
+                - name: SOCCER_QUEUE_EVOLUTION_ELITE_WEIGHT_FLOOR
+                  value: "0.08"
+                - name: SOCCER_QUEUE_EVOLUTION_POPULATION_SIZE
+                  value: "16"
+                - name: SOCCER_QUEUE_EVOLUTION_SEED
+                  value: "20260625"
+                - name: DD_SOCCER_ENABLE_BACK_FOUR_LINE_MODEL
+                  value: "true"
+                - name: DD_SOCCER_ENABLE_MIDFIELD_LINE_MODEL
+                  value: "true"
+                - name: DD_SOCCER_ENABLE_PITCH_VALUE_REWARD
+                  value: "true"
+                - name: SOCCER_PG_PASS_COMPLETION_SAMPLE_LIMIT
+                  value: "50000"
+                - name: SOCCER_PG_PASS_COMPLETION_EPOCHS
+                  value: "8"
+                - name: SOCCER_PG_PASS_COMPLETION_LR
+                  value: "0.05"
+              resources:
+                requests:
+                  cpu: 500m
+                  memory: 8Gi
+                limits:
+                  cpu: "4"
+                  memory: 24Gi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir:
+                sizeLimit: 32Gi

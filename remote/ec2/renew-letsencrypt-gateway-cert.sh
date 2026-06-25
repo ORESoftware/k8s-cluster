@@ -14,6 +14,21 @@ CERTBOT_LOGS_DIR="${CERTBOT_LOGS_DIR:-/home/ec2-user/letsencrypt/logs}"
 K8S_NAMESPACE="${K8S_NAMESPACE:-default}"
 K8S_SECRET_NAME="${K8S_SECRET_NAME:-dd-remote-gateway-tls}"
 K8S_GATEWAY_DEPLOYMENT="${K8S_GATEWAY_DEPLOYMENT:-dd-remote-gateway}"
+KUBECTL_BIN="${KUBECTL_BIN:-kubectl}"
+KUBECTL_KUBECONFIG="${KUBECTL_KUBECONFIG:-/etc/kubernetes/admin.conf}"
+KUBECTL_SUDO="${KUBECTL_SUDO:-sudo}"
+
+kubectl_cmd() {
+  local cmd=()
+  if [ -n "${KUBECTL_SUDO}" ]; then
+    cmd+=("${KUBECTL_SUDO}")
+  fi
+  cmd+=("${KUBECTL_BIN}")
+  if [ -n "${KUBECTL_KUBECONFIG}" ]; then
+    cmd+=(--kubeconfig "${KUBECTL_KUBECONFIG}")
+  fi
+  "${cmd[@]}" "$@"
+}
 
 deploy_gateway_secret() {
   # Prefer the lineage certbot just renewed; fall back to CERT_NAME for manual runs.
@@ -23,14 +38,14 @@ deploy_gateway_secret() {
     exit 1
   fi
 
-  kubectl create secret tls "${K8S_SECRET_NAME}" \
+  kubectl_cmd create secret tls "${K8S_SECRET_NAME}" \
     --cert="${lineage}/fullchain.pem" \
     --key="${lineage}/privkey.pem" \
     -n "${K8S_NAMESPACE}" \
-    --dry-run=client -o yaml | kubectl apply -f -
+    --dry-run=client -o yaml | kubectl_cmd apply --validate=false -f -
 
-  kubectl rollout restart "deployment/${K8S_GATEWAY_DEPLOYMENT}" -n "${K8S_NAMESPACE}"
-  kubectl rollout status "deployment/${K8S_GATEWAY_DEPLOYMENT}" -n "${K8S_NAMESPACE}" --timeout=180s
+  kubectl_cmd rollout restart "deployment/${K8S_GATEWAY_DEPLOYMENT}" -n "${K8S_NAMESPACE}"
+  kubectl_cmd rollout status "deployment/${K8S_GATEWAY_DEPLOYMENT}" -n "${K8S_NAMESPACE}" --timeout=180s
 }
 
 renew_certificate() {
