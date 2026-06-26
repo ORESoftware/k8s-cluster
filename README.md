@@ -1,4 +1,12 @@
-# 3FA — Sync Server (backend)
+<!-- BEGIN k8s-cluster-submodule-notice -->
+> [!NOTE]
+> **Canonical source.** This repository is the source of truth for its code. It
+> is also vendored as a **secondary** git submodule of
+> [ORESoftware/k8s-cluster](https://github.com/ORESoftware/k8s-cluster) at
+> `remote/deployments/3fa-backend` — make changes here, not in that submodule checkout.
+>
+> On disk: source clone `~/codes/3FA-app/3fa-backend.rs` · submodule checkout `~/codes/ores/k8s-cluster/remote/deployments/3fa-backend`.
+<!-- END k8s-cluster-submodule-notice --># 3FA — Sync Server (backend)
 
 Zero-knowledge sync for the 3FA authenticator. The server stores only an opaque,
 client-encrypted vault blob plus a version vector — it can never read your OTP
