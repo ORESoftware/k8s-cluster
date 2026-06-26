@@ -22,7 +22,7 @@ spec:
     metadata:
       annotations:
         dd.dev/fiducia-ui-revision: 'fiducia-cloud/fiducia-ui.web@main'
-        dd.dev/fiducia-backend-revision: 'fiducia-cloud/fiducia-backend.rs@main'
+        dd.dev/fiducia-backend-revision: 'fiducia-cloud/fiducia-backend.rs@fc9c8a5 (api-docs)'
       labels:
         app: dd-fiducia-rs
     spec:
