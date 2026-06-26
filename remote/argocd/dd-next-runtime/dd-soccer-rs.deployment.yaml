@@ -158,6 +158,13 @@ spec:
               value: https://github.com/ORESoftware/k8s-cluster.git
             - name: SOCCER_SERVER_GIT_REF
               value: dev
+            # Read access for the private backend submodule
+            # (akrion-sim/akrion-backend.rs), fetched via the http extraheader above.
+            - name: GH_PAT
+              valueFrom:
+                secretKeyRef:
+                  name: dd-git-clone-token
+                  key: token
             - name: SOCCER_ENGINE_GIT_URL
               value: https://github.com/ORESoftware/soccer-sim-game-engine.rs.git
             - name: SOCCER_ENGINE_GIT_REF
