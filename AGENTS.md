@@ -4,6 +4,15 @@ This repo uses `AGENTS.md` as the durable local context entrypoint for coding ag
 Read this file first when starting work in the repo, then read the docs that match the
 task instead of relying only on prompt history.
 
+## Submodules are secondary
+
+Everything under `remote/deployments/`, `remote/submodules/`, `remote/modules/`,
+and `remote/libs` that is a git submodule is a **secondary checkout** — the
+source of truth is each submodule's own upstream repo. Develop in the upstream
+repo (or its standalone clone under `~/codes/…`) and bump the pointer here; do
+not treat the in-tree submodule copy as canonical. See [SUBMODULES.md](SUBMODULES.md)
+for the full path → upstream → on-disk-clone table.
+
 ## Context Sources
 
 - Read `docs/*.md` for cross-repo product or architecture notes.
