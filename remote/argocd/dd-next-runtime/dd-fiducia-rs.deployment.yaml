@@ -1,0 +1,144 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-fiducia-rs
+  namespace: default
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+  labels:
+    app: dd-fiducia-rs
+spec:
+  replicas: 1
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: dd-fiducia-rs
+  template:
+    metadata:
+      annotations:
+        dd.dev/fiducia-backend-revision: 'fiducia-cloud/fiducia-backend.rs@main'
+      labels:
+        app: dd-fiducia-rs
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        - name: fiducia-rs
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              # fiducia-backend.rs is self-contained (no path deps) and bundles its
+              # built Astro site under static/, so we just need the one repo. Prefer
+              # the read-only host mount when the node has it; otherwise clone the
+              # PUBLIC repo directly (works identically on AWS and Hetzner, whose
+              # mount may be empty — no token needed).
+              build_root="$(mktemp -d /tmp/dd-fiducia-rs-build.XXXXXX)"
+              src="/opt/dd-next-1/remote/deployments/fiducia-backend.rs"
+              if [ -f "${src}/Cargo.toml" ]; then
+                echo "[dd-fiducia-rs] using mounted source at ${src}"
+              else
+                echo "[dd-fiducia-rs] mounted source absent; cloning ${FIDUCIA_GIT_URL}@${FIDUCIA_GIT_REF:-main}"
+                git clone --depth 1 --branch "${FIDUCIA_GIT_REF:-main}" "${FIDUCIA_GIT_URL}" "${build_root}/src"
+                src="${build_root}/src"
+              fi
+              if [ ! -f "${src}/Cargo.toml" ]; then
+                echo "[dd-fiducia-rs] FATAL: no Cargo.toml at ${src}" >&2
+                exit 1
+              fi
+              # The repo mount is read-only; copy into a writable build dir
+              # (carrying static/ — the committed Astro build it serves).
+              dst="${build_root}/build"
+              mkdir -p "${dst}"
+              tar -C "${src}" --exclude=./.git --exclude=./target -cf - . | tar -C "${dst}" -xf -
+              cd "${dst}"
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - name: PORT
+              value: '8117'
+            - name: FIDUCIA_GIT_URL
+              value: https://github.com/fiducia-cloud/fiducia-backend.rs.git
+            - name: FIDUCIA_GIT_REF
+              value: main
+            - name: RUST_LOG
+              value: info
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /tmp/cargo
+            - name: CARGO_TARGET_DIR
+              value: /tmp/fiducia-rs-target
+            # Keep peak build memory predictable on the shared 2-CPU nodes.
+            - name: CARGO_BUILD_JOBS
+              value: '2'
+          ports:
+            - name: http
+              containerPort: 8117
+          resources:
+            requests:
+              cpu: 100m
+              memory: 768Mi
+            limits:
+              cpu: '2'
+              # Cold release build of axum/tokio/tower-http from an empty /tmp.
+              memory: 3Gi
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            # Cold from-source build on a shared node; allow ~15 min (5s * 180).
+            periodSeconds: 5
+            failureThreshold: 180
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: DirectoryOrCreate
+        - name: tmp
+          emptyDir:
+            sizeLimit: 6Gi

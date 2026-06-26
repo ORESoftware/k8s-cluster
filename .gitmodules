@@ -74,3 +74,15 @@
 	path = remote/deployments/soccer-rs
 	url = git@github.com:akrion-sim/akrion-backend.rs.git
 	branch = main
+[submodule "remote/deployments/canonical-cloud"]
+	path = remote/deployments/canonical-cloud
+	url = https://github.com/canonical-cloud/canonical.cloud.git
+	branch = main
+[submodule "remote/deployments/fiducia-backend.rs"]
+	path = remote/deployments/fiducia-backend.rs
+	url = https://github.com/fiducia-cloud/fiducia-backend.rs.git
+	branch = main
+[submodule "remote/deployments/fiducia-ui.web"]
+	path = remote/deployments/fiducia-ui.web
+	url = https://github.com/fiducia-cloud/fiducia-ui.web.git
+	branch = main
