@@ -131,6 +131,60 @@ preferred operator path is:
   `InvalidClientTokenId`/expiry, refresh the profile rather than falling back to another auth path.
   It is **not** a WireGuard-VPN-plus-`dd-bastion` human-only step. (That bastion path still exists as
   a legacy fallback for private access and read-only kubeconfig retrieval, but is not required.)
+- **Fallback when the API endpoint (`:6443`) is unreachable** (the cluster security group only
+  whitelists certain source IPs — from a non-whitelisted IP, direct `kubectl` and `curl
+  https://98.90.186.114:6443/version` just hang/time out, and SSH `:22` is also SG-blocked):
+  drive `kubectl` **on the node via SSM Run Command** (needs only `~/.aws`; no
+  `session-manager-plugin` required). The cluster is a single kubeadm node
+  `i-0cc2461a55d491af6` (`dd-remote-k8s-1`, EIP `98.90.186.114`, private `172.31.29.64`,
+  `us-east-1`), SSM-`Online`, with admin kubeconfig at `/etc/kubernetes/admin.conf`. Pattern
+  (runs as root on the node):
+
+  ```sh
+  cid=$(aws ssm send-command --region us-east-1 --instance-ids i-0cc2461a55d491af6 \
+    --document-name AWS-RunShellScript \
+    --parameters 'commands=["export KUBECONFIG=/etc/kubernetes/admin.conf","kubectl get nodes"]' \
+    --query Command.CommandId --output text)
+  sleep 8
+  aws ssm get-command-invocation --region us-east-1 --command-id "$cid" \
+    --instance-id i-0cc2461a55d491af6 --query StandardOutputContent --output text
+  ```
+
+  Find the node id/state with `aws ec2 describe-instances --region us-east-1 --filters
+  Name=instance-state-name,Values=running` and confirm SSM with `aws ssm
+  describe-instance-information --region us-east-1`. `benefactor-backend-rs` (axum :8135) runs
+  in namespace `default`; ArgoCD app of the same name in ns `argocd`.
+- **Verifying a PUBLIC gateway route from the laptop (no SSM/SSH needed).** Unlike the API
+  (`:6443`) and SSH (`:22`), the gateway's **HTTPS edge (`:443`) is open to any source IP** on the
+  AWS node's public IP, with a valid Let's Encrypt **IP-address cert** — so public routes (e.g. the
+  soccer mermaid docs `/soccer/docs`, `/soccer/docs/flowchart`) verify with a plain `curl` and **no
+  `-k`**. The catch that wastes time: **node IPs in committed docs go stale.**
+  `dd-next-runtime/readme.md` hardcodes `CN=54.91.17.58`, but EC2 rotated it — always resolve the
+  live IP from `~/.aws` first, don't trust the hardcoded one:
+
+  ```sh
+  ip=$(aws ec2 describe-instances --region us-east-1 \
+    --filters Name=tag:Name,Values=dd-remote-k8s-1 Name=instance-state-name,Values=running \
+    --query 'Reservations[].Instances[].PublicIpAddress' --output text)   # 98.90.186.114 (2026-06-26)
+  curl -s -o /dev/null -w '%{http_code}\n' "https://$ip/soccer/docs/flowchart"   # 200, cert valid
+  ```
+
+  Both clouds serve identical content — ArgoCD `dd-next-runtime` syncs AWS **and** Hetzner from
+  `k8s-cluster@dev`. The **Hetzner** edge is the ingress host `https://hello.95-217-171-250.sslip.io`
+  (e.g. `…/soccer/docs/flowchart`); AWS has **no ingress/DNS** (single node, hostPort 80/443,
+  self-terminated TLS), so its public URL is the bare node IP above. A public route returning `502`
+  briefly after a redeploy is the expected transient while the pod does its cold in-pod `cargo build`
+  (~10-15 min); `/soccer/` (the auth-gated root game server) returning `401` while `/soccer/docs`
+  (public) returns `200` is correct, not a failure.
+- **Known deploy blocker (2026-06-26): expired GitHub token.** The `benefactor-cc/backend.rs`
+  deploy is GitOps (ArgoCD app `benefactor-backend-rs` → repo `benefactor-cc/backend.rs`, branch
+  `main`, path `k8s/ec2`; pod is `rust:1.95-bookworm` that clones `main` + `cargo run --release`
+  on start). Both the ArgoCD repo cred AND the pod clone secret `default/dd-git-clone-token`
+  hold an **expired PAT** (`Invalid username or token`), so ArgoCD shows `SYNC=Unknown`
+  (`ComparisonError`) and a pod restart would fail its clone — pushes to `main` do **not**
+  deploy until a human refreshes that token. The push-to-`main` GitHub Action *does* build a
+  usable image at `ghcr.io/benefactor-cc/backend.rs:main` (alternate deploy path if GHCR pull
+  creds exist).
 - Browser access to protected public gateway paths goes through `dd-remote-auth`; configure
   the optional TOTP seed there when a passphrase plus one-time code is required.
 - The legacy gateway auth header name is `Auth`; read its value from the operator secret or local
