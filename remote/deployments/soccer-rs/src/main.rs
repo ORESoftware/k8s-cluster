@@ -26,7 +26,7 @@ use std::time::{Duration, Instant};
 
 use axum::{
     body::Bytes,
-    extract::{Query, State},
+    extract::{Path as AxumPath, Query, State},
     http::{header, HeaderMap, Method, StatusCode, Uri},
     response::{Html, IntoResponse, Response},
     routing::{any, get, post},
@@ -34,6 +34,10 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+// `DOC_PAGES: &[(&str /* slug */, &str /* markdown */)]` — the mermaid docs
+// (`docs/*.md`), embedded at compile time by `build.rs`.
+include!(concat!(env!("OUT_DIR"), "/docs_registry.rs"));
 
 // `SoccerRealtimeSession` is the agnostic game core (also driven directly by the
 // desktop client). `SoccerLiveHttpBridge` is HTTP glue that lives in the
