@@ -269,6 +269,100 @@ fn bridge_reply(reply: soccer_engine::soccer::SoccerLiveHttpReply) -> Response {
         .into_response()
 }
 
+/// Derive a human title from a doc's markdown: the first `# ` heading, else the
+/// slug with dashes turned into spaces.
+fn doc_title<'a>(slug: &'a str, markdown: &'a str) -> String {
+    markdown
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("# ").map(|t| t.trim().to_string()))
+        .unwrap_or_else(|| slug.replace('-', " "))
+}
+
+/// HTML-escape text so it round-trips through an element's `textContent` (which
+/// decodes entities) without corrupting the original markdown.
+fn html_escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+/// `GET /docs` — index of the embedded mermaid docs.
+async fn docs_index() -> Html<String> {
+    let mut items = String::new();
+    for (slug, markdown) in DOC_PAGES {
+        let title = html_escape(&doc_title(slug, markdown));
+        items.push_str(&format!(
+            "<li><a href=\"/docs/{slug}\">{title}</a> <span class=\"slug\">{slug}</span></li>"
+        ));
+    }
+    if DOC_PAGES.is_empty() {
+        items.push_str("<li><em>no docs were embedded at build time</em></li>");
+    }
+    Html(format!(
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
+         <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\
+         <title>soccer-sim docs</title>\
+         <style>{css}\
+           ul{{list-style:none;padding:0;max-width:48rem;margin:0 auto}}\
+           li{{padding:.6rem .2rem;border-bottom:1px solid #2a2f3a}}\
+           a{{font-size:1.1rem;color:#7db4ff;text-decoration:none}}a:hover{{text-decoration:underline}}\
+           .slug{{color:#5b6472;font-size:.8rem;margin-left:.5rem}}\
+         </style></head>\
+         <body><div class=\"wrap\"><h1>soccer-sim-game-engine docs</h1>\
+         <p class=\"sub\">Mermaid diagrams render in your browser. Served by <code>dd-soccer-rs</code>.</p>\
+         <ul>{items}</ul></div></body></html>",
+        css = DOCS_CSS,
+    ))
+}
+
+/// `GET /docs/:slug` — render one doc (markdown + mermaid) client-side.
+async fn docs_page(AxumPath(slug): AxumPath<String>) -> Response {
+    let Some((slug, markdown)) = DOC_PAGES.iter().find(|(s, _)| *s == slug) else {
+        return (StatusCode::NOT_FOUND, "no such doc").into_response();
+    };
+    let title = html_escape(&doc_title(slug, markdown));
+    Html(format!(
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
+         <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\
+         <title>{title} · soccer-sim docs</title>\
+         <style>{css}\
+           #content{{max-width:60rem;margin:0 auto}}\
+           #content pre{{background:#11151c;padding:1rem;border-radius:6px;overflow:auto}}\
+           #content code{{background:#11151c;padding:.1rem .3rem;border-radius:4px}}\
+           #content pre code{{background:none;padding:0}}\
+           pre.mermaid{{background:#0d1117;text-align:center}}\
+           table{{border-collapse:collapse}}th,td{{border:1px solid #2a2f3a;padding:.3rem .6rem}}\
+           img{{max-width:100%}}\
+         </style></head>\
+         <body><div class=\"wrap\"><p class=\"sub\"><a href=\"/docs\">&larr; all docs</a></p>\
+         <div id=\"content\">rendering…</div>\
+         <div id=\"md\" style=\"display:none\">{body}</div>\
+         <script type=\"module\">\
+           import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';\
+           import {{ marked }} from 'https://cdn.jsdelivr.net/npm/marked@12/lib/marked.esm.js';\
+           mermaid.initialize({{ startOnLoad: false, theme: 'dark' }});\
+           const md = document.getElementById('md').textContent;\
+           const content = document.getElementById('content');\
+           content.innerHTML = marked.parse(md);\
+           content.querySelectorAll('code.language-mermaid').forEach((code) => {{\
+             const pre = document.createElement('pre');\
+             pre.className = 'mermaid';\
+             pre.textContent = code.textContent;\
+             (code.closest('pre') || code).replaceWith(pre);\
+           }});\
+           try {{ await mermaid.run({{ querySelector: 'pre.mermaid' }}); }} catch (e) {{ console.error(e); }}\
+         </script></div></body></html>",
+        css = DOCS_CSS,
+        body = html_escape(markdown),
+    ))
+    .into_response()
+}
+
+/// Shared dark-theme chrome for the docs pages.
+const DOCS_CSS: &str = "body{background:#0b0e13;color:#c9d1d9;font:16px/1.6 -apple-system,Segoe UI,Roboto,sans-serif;margin:0;padding:2rem 1rem}\
+.wrap{max-width:60rem;margin:0 auto}h1{color:#e6edf3}.sub{color:#8b949e}\
+.sub a{color:#7db4ff;text-decoration:none}a{color:#7db4ff}";
+
 fn live_html(id: Uuid) -> String {
     format!(
         "<!doctype html><html><head><meta charset=\"utf-8\"><title>soccer/live {id}</title></head>\
