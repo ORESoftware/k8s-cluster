@@ -122,7 +122,11 @@ spec:
                 - name: SOCCER_QUEUE_GAMES
                   value: "40"
                 - name: SOCCER_QUEUE_PARALLEL_GAMES
-                  value: "4"
+                  # Reduced 4->2: 4 concurrent 30-min sims exceeded the 24Gi
+                  # limit (OOMKilled). A crashing job has zero throughput, so
+                  # 2-that-completes beats 4-that-OOMs. Bump memory before
+                  # raising this again (the continuous learner shares the pool).
+                  value: "2"
                 - name: SOCCER_HALVES
                   value: "2"
                 - name: SOCCER_HALF_MINUTES
