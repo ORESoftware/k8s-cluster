@@ -6,7 +6,9 @@
 > `remote/deployments/3fa-backend` — make changes here, not in that submodule checkout.
 >
 > On disk: source clone `~/codes/3FA-app/3fa-backend.rs` · submodule checkout `~/codes/ores/k8s-cluster/remote/deployments/3fa-backend`.
-<!-- END k8s-cluster-submodule-notice --># 3FA — Sync Server (backend)
+<!-- END k8s-cluster-submodule-notice -->
+
+# 3FA — Sync Server (backend)
 
 Zero-knowledge sync for the 3FA authenticator. The server stores only an opaque,
 client-encrypted vault blob plus a version vector — it can never read your OTP
