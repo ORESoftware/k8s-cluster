@@ -334,7 +334,7 @@ async fn docs_page(AxumPath(slug): AxumPath<String>) -> Response {
            table{{border-collapse:collapse}}th,td{{border:1px solid #2a2f3a;padding:.3rem .6rem}}\
            img{{max-width:100%}}\
          </style></head>\
-         <body><div class=\"wrap\"><p class=\"sub\"><a href=\"/docs\">&larr; all docs</a></p>\
+         <body><div class=\"wrap\"><p class=\"sub\"><a href=\"/soccer/docs\">&larr; all docs</a></p>\
          <div id=\"content\">rendering…</div>\
          <div id=\"md\" style=\"display:none\">{body}</div>\
          <script type=\"module\">\
