@@ -71,7 +71,11 @@ spec:
                 clone_root="$(mktemp -d /tmp/dd-sound-recorder-rs-source.XXXXXX)"
                 if git clone --depth 1 \
                      --branch "${SOUND_RECORDER_GIT_REF:-dev}" "${SOUND_RECORDER_GIT_URL}" "$clone_root" &&
-                   git -C "$clone_root" submodule update --init --depth 1 remote/deployments/dd-sound-recorder-rs; then
+                   git -C "$clone_root" submodule init remote/deployments/dd-sound-recorder-rs &&
+                   if [ -n "${GH_PAT:-}" ]; then
+                     git -C "$clone_root" config "submodule.remote/deployments/dd-sound-recorder-rs.url" "https://x-access-token:${GH_PAT}@github.com/sonus-auris/sonus-auris-backend.rs.git";
+                   fi &&
+                   git -C "$clone_root" submodule update --depth 1 remote/deployments/dd-sound-recorder-rs; then
                   source_root="$clone_root"
                   sub_sha="$(git -C "$clone_root/remote/deployments/dd-sound-recorder-rs" rev-parse --short HEAD 2>/dev/null || echo '?')"
                   echo "[dd-sound-recorder-rs] source: cloned ${SOUND_RECORDER_GIT_URL}@${SOUND_RECORDER_GIT_REF:-dev} ($(git -C "$clone_root" rev-parse --short HEAD)); backend submodule ${sub_sha}"
