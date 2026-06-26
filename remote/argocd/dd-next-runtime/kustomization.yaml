@@ -113,6 +113,13 @@ resources:
   - dd-canonical-cloud.deployment.yaml
   - dd-canonical-cloud.networkpolicy.yaml
   - dd-canonical-cloud.service.yaml
+  # fiducia.cloud marketing site: same shape as canonical (in-pod node build of
+  # the Astro frontend, served by its axum backend), proxied publicly under
+  # /fiducia/. The Service MUST be applied or the gateway can't resolve the
+  # upstream at startup and crashloops.
+  - dd-fiducia-rs.deployment.yaml
+  - dd-fiducia-rs.networkpolicy.yaml
+  - dd-fiducia-rs.service.yaml
   - dd-patent-filing-rs.deployment.yaml
   - dd-patent-filing-rs.service.yaml
   - dd-live-mutex.deployment.yaml
