@@ -1,0 +1,10 @@
+# Dependencies & build artifacts (rebuilt in-pod / locally; never committed)
+**/node_modules/
+canonical-frontend/dist/
+canonical-frontend/.astro/
+canonical-backend.rs/target/
+canonical-backend.rs/static/
+
+# misc
+.DS_Store
+*.log

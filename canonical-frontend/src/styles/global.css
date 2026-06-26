@@ -1,0 +1,378 @@
+/* ========================================
+   canonical.cloud — Global Design System
+   Trust-Forward Dark Theme · CPA & IT Compliance
+   ======================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ── Design Tokens ── */
+:root {
+  /* Brand — Emerald Security */
+  --av-emerald: #34d399;
+  --av-emerald-light: #6ee7b7;
+  --av-emerald-dark: #059669;
+  --av-emerald-glow: rgba(52, 211, 153, 0.12);
+  --av-teal: #2dd4bf;
+  --av-blue: #38bdf8;
+
+  /* Neutrals — Deep Navy */
+  --av-black: #060a10;
+  --av-bg: #0a0f1a;
+  --av-surface: #111827;
+  --av-surface-hover: #1e293b;
+  --av-surface-elevated: #1e2a3a;
+  --av-border: rgba(148, 163, 184, 0.08);
+  --av-border-hover: rgba(148, 163, 184, 0.15);
+  --av-border-active: rgba(52, 211, 153, 0.35);
+
+  /* Text */
+  --av-text-primary: #f1f5f9;
+  --av-text-secondary: #94a3b8;
+  --av-text-muted: #64748b;
+  --av-text-accent: var(--av-emerald);
+
+  /* Functional */
+  --av-success: #4ade80;
+  --av-error: #f87171;
+  --av-warning: #fbbf24;
+
+  /* Typography */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* Spacing */
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --space-2xl: 3rem;
+  --space-3xl: 4rem;
+  --space-4xl: 6rem;
+  --space-5xl: 8rem;
+
+  /* Radii */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.7);
+  --shadow-glow: 0 0 40px rgba(52, 211, 153, 0.06);
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-fast: 150ms;
+  --duration-normal: 250ms;
+  --duration-slow: 400ms;
+
+  /* Layout */
+  --max-width: 1200px;
+  --nav-height: 72px;
+}
+
+/* ── Reset ── */
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+body {
+  font-family: var(--font-sans);
+  background: var(--av-bg);
+  color: var(--av-text-primary);
+  line-height: 1.6;
+  overflow-x: hidden;
+}
+img,
+video {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+a {
+  color: inherit;
+  text-decoration: none;
+}
+ul,
+ol {
+  list-style: none;
+}
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+}
+
+/* ── Typography ── */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  line-height: 1.15;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+h1 {
+  font-size: clamp(2.5rem, 5vw + 1rem, 4.5rem);
+}
+h2 {
+  font-size: clamp(1.8rem, 3vw + 0.5rem, 3rem);
+}
+h3 {
+  font-size: clamp(1.3rem, 2vw + 0.3rem, 1.75rem);
+}
+h4 {
+  font-size: 1.25rem;
+}
+p {
+  color: var(--av-text-secondary);
+  font-size: 1.05rem;
+  line-height: 1.7;
+}
+
+/* ── Layout ── */
+.container {
+  width: 100%;
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: 0 var(--space-xl);
+}
+.section {
+  padding: var(--space-5xl) 0;
+}
+.section--hero {
+  padding-top: calc(var(--nav-height) + var(--space-4xl));
+  padding-bottom: var(--space-5xl);
+}
+
+/* ── Buttons ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 0.75rem 1.75rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  border-radius: var(--radius-full);
+  transition: all var(--duration-normal) var(--ease-out);
+  white-space: nowrap;
+}
+.btn--primary {
+  background: linear-gradient(135deg, var(--av-emerald), var(--av-emerald-dark));
+  color: var(--av-black);
+  box-shadow: 0 4px 16px rgba(52, 211, 153, 0.25);
+}
+.btn--primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(52, 211, 153, 0.35);
+}
+.btn--secondary {
+  background: transparent;
+  color: var(--av-text-primary);
+  border: 1px solid var(--av-border-hover);
+}
+.btn--secondary:hover {
+  border-color: var(--av-emerald);
+  color: var(--av-emerald);
+  background: var(--av-emerald-glow);
+}
+.btn--large {
+  padding: 1rem 2.25rem;
+  font-size: 1.05rem;
+}
+
+/* ── Cards ── */
+.card {
+  background: var(--av-surface);
+  border: 1px solid var(--av-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-2xl);
+  transition: all var(--duration-normal) var(--ease-out);
+}
+.card:hover {
+  border-color: var(--av-border-active);
+  box-shadow: var(--shadow-glow);
+  transform: translateY(-4px);
+}
+
+/* ── Badges ── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border-radius: var(--radius-full);
+  background: var(--av-emerald-glow);
+  color: var(--av-emerald);
+  border: 1px solid rgba(52, 211, 153, 0.2);
+}
+
+/* ── Gradient Text ── */
+.gradient-text {
+  background: linear-gradient(
+    135deg,
+    var(--av-emerald-light),
+    var(--av-emerald),
+    var(--av-teal)
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Divider ── */
+.divider {
+  width: 60px;
+  height: 3px;
+  background: linear-gradient(90deg, var(--av-emerald), transparent);
+  border-radius: 2px;
+}
+
+/* ── Animations ── */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+@keyframes pulseGlow {
+  0%,
+  100% {
+    box-shadow: 0 0 20px rgba(52, 211, 153, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(52, 211, 153, 0.2);
+  }
+}
+@keyframes scanLine {
+  0% {
+    top: -2px;
+  }
+  100% {
+    top: calc(100% + 2px);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.7s var(--ease-out) both;
+}
+.animate-fade-in {
+  animation: fadeIn 0.5s var(--ease-out) both;
+}
+.stagger-1 {
+  animation-delay: 0.1s;
+}
+.stagger-2 {
+  animation-delay: 0.2s;
+}
+.stagger-3 {
+  animation-delay: 0.3s;
+}
+.stagger-4 {
+  animation-delay: 0.4s;
+}
+.stagger-5 {
+  animation-delay: 0.5s;
+}
+.stagger-6 {
+  animation-delay: 0.6s;
+}
+
+/* ── Background Effects ── */
+.bg-grid {
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.03) 1px, transparent 1px);
+  background-size: 60px 60px;
+}
+.bg-radial {
+  background: radial-gradient(ellipse at 50% 0%, rgba(52, 211, 153, 0.06) 0%, transparent 60%);
+}
+.bg-noise {
+  position: relative;
+}
+.bg-noise::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+  .container {
+    padding: 0 var(--space-md);
+  }
+  .section {
+    padding: var(--space-3xl) 0;
+  }
+  .section--hero {
+    padding-top: calc(var(--nav-height) + var(--space-2xl));
+    padding-bottom: var(--space-3xl);
+  }
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--av-bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--av-surface-hover);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--av-text-muted);
+}
+
+/* ── Selection ── */
+::selection {
+  background: rgba(52, 211, 153, 0.3);
+  color: var(--av-text-primary);
+}

@@ -1,0 +1,337 @@
+---
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const { title, description = "canonical.cloud — SOC 2, FedRAMP & HIPAA compliance audits via CPA and technology services." } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#0a0f18" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>{title} | canonical.cloud</title>
+
+    <!-- Open Graph -->
+    <meta property="og:title" content={`${title} | canonical.cloud`} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+  </head>
+  <body>
+    <nav class="nav" id="main-nav">
+      <div class="nav__inner container">
+        <a href="/" class="nav__logo" id="nav-logo">
+          <svg class="nav__logo-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <!-- Shield icon -->
+            <path d="M16 2L4 7V15C4 22.18 9.12 28.82 16 30C22.88 28.82 28 22.18 28 15V7L16 2Z" stroke="currentColor" stroke-width="1.5" fill="none"/>
+            <path d="M16 2L4 7V15C4 22.18 9.12 28.82 16 30C22.88 28.82 28 22.18 28 15V7L16 2Z" fill="currentColor" opacity="0.08"/>
+            <path d="M12 16L15 19L21 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="nav__logo-text">
+            <span class="nav__logo-aardvark">CANONICAL</span><span class="nav__logo-compliance">.CLOUD</span>
+          </span>
+        </a>
+
+        <div class="nav__links" id="nav-links">
+          <a href="#services" class="nav__link" id="nav-services">Services</a>
+          <a href="#process" class="nav__link" id="nav-process">Process</a>
+          <a href="#frameworks" class="nav__link" id="nav-frameworks">Frameworks</a>
+          <a href="#about" class="nav__link" id="nav-about">About</a>
+          <a href="#contact" class="btn btn--primary nav__cta" id="nav-contact">Get Compliant</a>
+        </div>
+
+        <button class="nav__mobile-toggle" id="nav-toggle" aria-label="Toggle navigation">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+      </div>
+    </nav>
+
+    <main>
+      <slot />
+    </main>
+
+    <footer class="footer" id="site-footer">
+      <div class="container">
+        <div class="footer__top">
+          <div class="footer__brand">
+            <a href="/" class="nav__logo">
+              <svg class="nav__logo-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M16 2L4 7V15C4 22.18 9.12 28.82 16 30C22.88 28.82 28 22.18 28 15V7L16 2Z" stroke="currentColor" stroke-width="1.5" fill="none"/>
+                <path d="M16 2L4 7V15C4 22.18 9.12 28.82 16 30C22.88 28.82 28 22.18 28 15V7L16 2Z" fill="currentColor" opacity="0.08"/>
+                <path d="M12 16L15 19L21 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span class="nav__logo-text">
+                <span class="nav__logo-aardvark">CANONICAL</span><span class="nav__logo-compliance">.CLOUD</span>
+              </span>
+            </a>
+            <p class="footer__tagline">SOC 2, FedRAMP & HIPAA compliance<br/>audits powered by CPA + technology.</p>
+          </div>
+
+          <div class="footer__columns">
+            <div class="footer__col">
+              <h4 class="footer__col-title">Services</h4>
+              <a href="#services" class="footer__link">SOC 2 Attestation</a>
+              <a href="#services" class="footer__link">FedRAMP Authorization</a>
+              <a href="#services" class="footer__link">HIPAA Compliance</a>
+              <a href="#services" class="footer__link">vCISO Services</a>
+            </div>
+            <div class="footer__col">
+              <h4 class="footer__col-title">Company</h4>
+              <a href="#about" class="footer__link">About Us</a>
+              <a href="#process" class="footer__link">Our Process</a>
+              <a href="#frameworks" class="footer__link">Frameworks</a>
+              <a href="#contact" class="footer__link">Contact</a>
+            </div>
+            <div class="footer__col">
+              <h4 class="footer__col-title">Connect</h4>
+              <a href="https://dancingdragons.cc" target="_blank" class="footer__link">Dancing Dragons ↗</a>
+              <a href="https://dragonteam.co" target="_blank" class="footer__link">Dragon Team ↗</a>
+              <a href="mailto:compliance@canonical.cloud" class="footer__link">compliance@canonical.cloud</a>
+            </div>
+          </div>
+        </div>
+
+        <div class="footer__bottom">
+          <p class="footer__copy">&copy; {new Date().getFullYear()} canonical.cloud. All rights reserved.</p>
+          <p class="footer__copy">A <a href="https://dancingdragons.cc" target="_blank" class="footer__link--inline">Dancing Dragons</a> company.</p>
+        </div>
+      </div>
+    </footer>
+
+    <style>
+      /* ── Navigation ── */
+      .nav {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 1000;
+        height: var(--nav-height);
+        background: rgba(10, 15, 24, 0.85);
+        backdrop-filter: blur(20px) saturate(180%);
+        -webkit-backdrop-filter: blur(20px) saturate(180%);
+        border-bottom: 1px solid var(--ac-border);
+      }
+
+      .nav__inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 100%;
+      }
+
+      .nav__logo {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .nav__logo-icon {
+        width: 32px;
+        height: 32px;
+        color: var(--ac-teal);
+      }
+
+      .nav__logo-text {
+        font-size: 0.95rem;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+      }
+
+      .nav__logo-aardvark {
+        color: var(--ac-text-primary);
+      }
+
+      .nav__logo-compliance {
+        color: var(--ac-teal);
+      }
+
+      .nav__links {
+        display: flex;
+        align-items: center;
+        gap: var(--space-xl);
+      }
+
+      .nav__link {
+        font-size: 0.9rem;
+        font-weight: 500;
+        color: var(--ac-text-secondary);
+        transition: color var(--duration-fast) var(--ease-out);
+        position: relative;
+      }
+
+      .nav__link::after {
+        content: '';
+        position: absolute;
+        bottom: -4px;
+        left: 0;
+        width: 0;
+        height: 2px;
+        background: var(--ac-teal);
+        transition: width var(--duration-normal) var(--ease-out);
+      }
+
+      .nav__link:hover {
+        color: var(--ac-text-primary);
+      }
+
+      .nav__link:hover::after {
+        width: 100%;
+      }
+
+      .nav__cta {
+        padding: 0.5rem 1.25rem;
+        font-size: 0.85rem;
+      }
+
+      .nav__mobile-toggle {
+        display: none;
+        flex-direction: column;
+        gap: 5px;
+        padding: 4px;
+      }
+
+      .nav__mobile-toggle span {
+        display: block;
+        width: 22px;
+        height: 2px;
+        background: var(--ac-text-secondary);
+        border-radius: 2px;
+        transition: all var(--duration-fast) var(--ease-out);
+      }
+
+      /* ── Footer ── */
+      .footer {
+        border-top: 1px solid var(--ac-border);
+        padding: var(--space-4xl) 0 var(--space-xl);
+        background: var(--ac-black);
+      }
+
+      .footer__top {
+        display: flex;
+        justify-content: space-between;
+        gap: var(--space-4xl);
+        margin-bottom: var(--space-3xl);
+      }
+
+      .footer__brand {
+        max-width: 300px;
+      }
+
+      .footer__tagline {
+        margin-top: var(--space-md);
+        font-size: 0.95rem;
+        color: var(--ac-text-muted);
+        line-height: 1.6;
+      }
+
+      .footer__columns {
+        display: flex;
+        gap: var(--space-3xl);
+      }
+
+      .footer__col {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-sm);
+      }
+
+      .footer__col-title {
+        font-size: 0.85rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--ac-text-primary);
+        margin-bottom: var(--space-sm);
+      }
+
+      .footer__link {
+        font-size: 0.9rem;
+        color: var(--ac-text-muted);
+        transition: color var(--duration-fast) var(--ease-out);
+      }
+
+      .footer__link:hover {
+        color: var(--ac-teal);
+      }
+
+      .footer__bottom {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding-top: var(--space-xl);
+        border-top: 1px solid var(--ac-border);
+      }
+
+      .footer__copy {
+        font-size: 0.8rem;
+        color: var(--ac-text-muted);
+      }
+
+      .footer__link--inline {
+        color: var(--ac-teal);
+        transition: opacity var(--duration-fast);
+      }
+
+      .footer__link--inline:hover {
+        opacity: 0.8;
+      }
+
+      @media (max-width: 768px) {
+        .nav__links {
+          display: none;
+        }
+
+        .nav__mobile-toggle {
+          display: flex;
+        }
+
+        .footer__top {
+          flex-direction: column;
+          gap: var(--space-2xl);
+        }
+
+        .footer__columns {
+          flex-wrap: wrap;
+          gap: var(--space-2xl);
+        }
+
+        .footer__bottom {
+          flex-direction: column;
+          gap: var(--space-sm);
+          text-align: center;
+        }
+      }
+    </style>
+
+    <script>
+      // Navbar scroll effect
+      const nav = document.getElementById('main-nav');
+      if (nav) {
+        window.addEventListener('scroll', () => {
+          if (window.scrollY > 10) {
+            nav.style.borderBottomColor = 'rgba(255,255,255,0.1)';
+          } else {
+            nav.style.borderBottomColor = 'rgba(255,255,255,0.06)';
+          }
+        });
+      }
+
+      // Mobile toggle
+      const toggle = document.getElementById('nav-toggle');
+      const links = document.getElementById('nav-links');
+      if (toggle && links) {
+        toggle.addEventListener('click', () => {
+          links.classList.toggle('nav__links--open');
+        });
+      }
+    </script>
+  </body>
+</html>
