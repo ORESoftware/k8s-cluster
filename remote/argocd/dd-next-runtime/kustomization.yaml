@@ -158,11 +158,6 @@ resources:
   # and the whole gateway crashloops.
   - dd-soccer-rs.deployment.yaml
   - dd-soccer-rs.service.yaml
-  # fiducia.cloud landing site (Rust/axum serving a built Astro app), proxied by
-  # the gateway under /fiducia/. Like dd-soccer-rs, the Service MUST be applied or
-  # nginx fails to resolve the upstream at startup and the gateway crashloops.
-  - dd-fiducia-rs.deployment.yaml
-  - dd-fiducia-rs.service.yaml
   # Nightly soccer learning tournament. AWS and Hetzner both schedule it, while
   # the runner's Postgres advisory lock lets only one cluster run matches.
   - dd-soccer-tournament-nightly.cronjob.yaml
