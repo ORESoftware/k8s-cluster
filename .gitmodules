@@ -1,3 +1,6 @@
+# These submodules are SECONDARY checkouts. The source of truth for each is its
+# own upstream repo (the `url` below). Develop in the upstream repo / its
+# standalone ~/codes clone and bump the pointer here. See SUBMODULES.md.
 [submodule "remote/deployments/gcs/chat-vibe"]
 	path = remote/deployments/gcs/chat-vibe
 	url = git@github.com:ORESoftware/chat.vibe.git
