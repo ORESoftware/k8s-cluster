@@ -221,7 +221,7 @@ spec:
                   memory: 8Gi
                 limits:
                   cpu: "4"
-                  memory: 24Gi
+                  memory: 48Gi
               securityContext:
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: true
