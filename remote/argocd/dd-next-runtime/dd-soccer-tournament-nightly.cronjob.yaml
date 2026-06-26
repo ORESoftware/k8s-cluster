@@ -1,16 +1,22 @@
-# Nightly 128-team soccer learning tournament.
+# Continuous 128-team soccer learning tournament lane.
 #
 # This lives in the parent GitOps repo so the shared dd-next-runtime Argo app
-# applies it to both AWS and Hetzner. The runner itself uses a Postgres advisory
-# lock keyed by SOCCER_TOURNAMENT_LOCK_KEY, so both clusters may schedule the
-# CronJob while only one proceeds with matches.
+# applies it to both AWS and Hetzner. The CronJob wakes up every 5 minutes; with
+# concurrencyPolicy=Forbid and the runner's Postgres advisory lock, this gives us
+# a 24/7 tournament lane where a new tournament starts soon after the prior one
+# finishes while duplicate cross-cluster match execution is skipped.
 #
 # OOM guardrails:
 # - CARGO_BUILD_JOBS=1 serializes the cold release build. The soccer-rs service
 #   needs the same treatment because soccer_engine + des_engine compile hot.
-# - SOCCER_TOURNAMENT_THREADS=2 keeps runtime match workers equal to the CPU cap.
+# - SOCCER_TOURNAMENT_THREADS=4 keeps the first wave checkpoint from sitting at
+#   0/256 for too long after the release build; CARGO_BUILD_JOBS still serializes compile.
 # - The CPU request stays low so the job can schedule on the packed one-node AWS
 #   cluster; the CPU limit is the real runtime cap.
+# - No activeDeadlineSeconds or runner soft deadline is set; once the CronJob
+#   starts, the tournament is allowed to run to completion.
+# - The learning branch seeds new tournaments from the previous tournament's top
+#   16 finishers, using neural/tactical-genome crossover plus mutation.
 # - The 14Gi memory limit is below half of a 32Gi Hetzner node, but high enough
 #   for the known cold source-build envelope used by dd-soccer-rs.
 apiVersion: batch/v1
@@ -24,7 +30,7 @@ metadata:
     app.kubernetes.io/component: learning-tournament
     app.kubernetes.io/part-of: dd-next-runtime
 spec:
-  schedule: "0 2 * * *"
+  schedule: "*/5 * * * *"
   timeZone: America/Chicago
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 600
@@ -32,7 +38,6 @@ spec:
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
-      activeDeadlineSeconds: 28800
       backoffLimit: 1
       ttlSecondsAfterFinished: 172800
       template:
@@ -112,7 +117,7 @@ spec:
                 - name: SOCCER_SOURCE_REPO
                   value: https://github.com/ORESoftware/soccer-sim-game-engine.rs.git
                 - name: SOCCER_SOURCE_REF
-                  value: main
+                  value: learning
                 - name: SOCCER_ENGINE_SOURCE_REPO
                   value: https://github.com/ORESoftware/discrete-event-system.rs.git
                 - name: SOCCER_ENGINE_SOURCE_REF
@@ -130,16 +135,32 @@ spec:
                   value: soccer-nightly-tournament
                 - name: SOCCER_TOURNAMENT_MATCH_SECONDS
                   value: "3600"
+                # Per-fixture wall-clock watchdog: abort only the stuck match and
+                # keep the bracket moving. Set 0 to disable.
+                - name: SOCCER_TOURNAMENT_MATCH_WATCHDOG_SECONDS
+                  value: "900"
                 - name: SOCCER_TOURNAMENT_SOFT_DEADLINE_SECONDS
-                  value: "25200"
+                  value: "0"
                 - name: SOCCER_TOURNAMENT_THREADS
-                  value: "2"
+                  value: "4"
+                - name: DD_SOCCER_OBSERVATION_TELEMETRY
+                  value: "0"
                 - name: SOCCER_TOURNAMENT_LEARNING_MODE
                   value: bilearning
                 - name: SOCCER_TOURNAMENT_SEED_FRACTION
                   value: "0.5"
                 - name: SOCCER_TOURNAMENT_PROMOTE
                   value: "true"
+                - name: SOCCER_TOURNAMENT_ELITE_POOL
+                  value: "16"
+                - name: SOCCER_TOURNAMENT_HYBRID_FRACTION
+                  value: "1.0"
+                - name: SOCCER_TOURNAMENT_DIVERSITY
+                  value: "true"
+                - name: SOCCER_TOURNAMENT_MUTATION_SCALE
+                  value: "0.03"
+                - name: SOCCER_TOURNAMENT_GENOME_MUTATION
+                  value: "0.1"
                 - name: SOCCER_TOURNAMENT_SEED
                   value: "20260613"
               resources:
@@ -147,7 +168,7 @@ spec:
                   cpu: 250m
                   memory: 4Gi
                 limits:
-                  cpu: "2"
+                  cpu: "4"
                   memory: 14Gi
               securityContext:
                 allowPrivilegeEscalation: false
