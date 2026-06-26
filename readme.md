@@ -1,4 +1,12 @@
-# sonus-auris-backend.rs (`dd-sound-recorder-rs`)
+<!-- BEGIN k8s-cluster-submodule-notice -->
+> [!NOTE]
+> **Canonical source.** This repository is the source of truth for its code. It
+> is also vendored as a **secondary** git submodule of
+> [ORESoftware/k8s-cluster](https://github.com/ORESoftware/k8s-cluster) at
+> `remote/deployments/dd-sound-recorder-rs` — make changes here, not in that submodule checkout.
+>
+> On disk: source clone `~/codes/sonus-auris/sonus-auris-backend.rs` · submodule checkout `~/codes/ores/k8s-cluster/remote/deployments/dd-sound-recorder-rs`.
+<!-- END k8s-cluster-submodule-notice --># sonus-auris-backend.rs (`dd-sound-recorder-rs`)
 
 Backend for **Sonus Auris** — the audio-dashcam product. The Cargo crate / binary is named
 `dd-sound-recorder-rs` (kept stable so the cluster image, service, and deployment manifests do not
