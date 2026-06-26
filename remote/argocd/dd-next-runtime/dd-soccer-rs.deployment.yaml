@@ -78,16 +78,44 @@ spec:
                 fi
               }
 
-              # 1) Server source (this k8s repo @ dev), fall back to the mount.
+              # GH_PAT (dd-git-clone-token) authenticates the private backend fetch
+              # via an HTTP header instead of a URL, so an auth failure cannot print
+              # the token; insteadOf rewrites the .gitmodules SSH URL to HTTPS in-pod.
+              git_auth_args=()
+              if [ -n "${GH_PAT:-}" ]; then
+                authhdr="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_PAT" | base64 | tr -d '\n')"
+                git_auth_args=(-c "http.https://github.com/.extraheader=${authhdr}")
+                git config --global url."https://github.com/".insteadOf "git@github.com:"
+              fi
+
+              # 1) Server source: the soccer-rs backend now lives in its own private
+              # repo (akrion-sim/akrion-backend.rs), wired as a git submodule at
+              # remote/deployments/soccer-rs (mirrors sonus-auris-backend.rs ->
+              # remote/deployments/dd-sound-recorder-rs). Prefer mounted source when
+              # the node has it; otherwise clone the superproject and initialize ONLY
+              # this backend submodule so unrelated private submodules cannot block
+              # startup.
               server_src="/opt/dd-next-1/remote/deployments/soccer-rs"
               server_clone="${build_root}/k8s-source"
-              if [ -n "${SOCCER_SERVER_GIT_URL:-}" ]; then
-                if git clone --depth 1 --branch "${SOCCER_SERVER_GIT_REF:-dev}" "${SOCCER_SERVER_GIT_URL}" "${server_clone}"; then
+              if [ -f "${server_src}/Cargo.toml" ]; then
+                echo "[dd-soccer-rs] server: using mounted backend at ${server_src}"
+              elif [ -n "${SOCCER_SERVER_GIT_URL:-}" ]; then
+                if git clone --depth 1 --branch "${SOCCER_SERVER_GIT_REF:-dev}" "${SOCCER_SERVER_GIT_URL}" "${server_clone}" \
+                   && git -C "${server_clone}" submodule init remote/deployments/soccer-rs \
+                   && git -C "${server_clone}" config "submodule.remote/deployments/soccer-rs.url" "https://github.com/akrion-sim/akrion-backend.rs.git" \
+                   && git -C "${server_clone}" "${git_auth_args[@]}" submodule update --depth 1 remote/deployments/soccer-rs; then
                   server_src="${server_clone}/remote/deployments/soccer-rs"
-                  echo "[dd-soccer-rs] server: cloned ${SOCCER_SERVER_GIT_URL}@${SOCCER_SERVER_GIT_REF:-dev} ($(git -C "${server_clone}" rev-parse --short HEAD))"
+                  echo "[dd-soccer-rs] server: cloned ${SOCCER_SERVER_GIT_URL}@${SOCCER_SERVER_GIT_REF:-dev}; backend submodule ($(git -C "${server_src}" rev-parse --short HEAD 2>/dev/null || echo '?'))"
                 else
-                  echo "[dd-soccer-rs] server clone failed; using mounted source at ${server_src}" >&2
+                  echo "[dd-soccer-rs] server clone/submodule failed; using mounted source at ${server_src}" >&2
                 fi
+              fi
+              # Fail loudly if the backend submodule never populated (bad/missing GH_PAT,
+              # or a mounted superproject whose host never ran `git submodule update
+              # --init remote/deployments/soccer-rs`) instead of a confusing cargo error.
+              if [ ! -f "${server_src}/Cargo.toml" ]; then
+                echo "[dd-soccer-rs] FATAL: backend submodule not populated at ${server_src}. Set GH_PAT (private-repo read) or run 'git submodule update --init remote/deployments/soccer-rs' on the host." >&2
+                exit 1
               fi
 
               # 2) soccer_engine source (soccer-sim-game-engine.rs at the pinned ref).

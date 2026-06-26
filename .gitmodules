@@ -70,3 +70,7 @@
 	path = remote/submodules/sonus-auris.infra
 	url = git@github.com:sonus-auris/sonus-auris.infra.git
 	branch = main
+[submodule "remote/deployments/soccer-rs"]
+	path = remote/deployments/soccer-rs
+	url = git@github.com:akrion-sim/akrion-backend.rs.git
+	branch = main
