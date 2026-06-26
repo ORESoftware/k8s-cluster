@@ -408,9 +408,12 @@ async fn main() {
 
     let app = Router::new()
         .route("/healthz", get(healthz))
-        .route("/docs", get(docs_index))
-        .route("/docs/", get(docs_index))
-        .route("/docs/:slug", get(docs_page))
+        // Docs live under /soccer/* so the existing gateway prefix (which proxies
+        // /soccer/ to this server) reaches them with no gateway change. A bare
+        // /docs 302s to the canonical path for convenience.
+        .route("/docs", get(|| async { axum::response::Redirect::permanent("/soccer/docs") }))
+        .route("/soccer/docs", get(docs_index))
+        .route("/soccer/docs/:slug", get(docs_page))
         .route("/soccer/game", post(create_game).get(game_meta))
         .route("/soccer/live", get(live_ui))
         .route("/soccer/sim", get(sim_view))
