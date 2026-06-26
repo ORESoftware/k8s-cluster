@@ -108,6 +108,11 @@ resources:
   - dd-compliance-rs.deployment.yaml
   - dd-compliance-rs.networkpolicy.yaml
   - dd-compliance-rs.service.yaml
+  # canonical.cloud marketing site: Astro frontend built in-pod (node) and
+  # served by its axum backend, proxied publicly by the gateway under /canonical/.
+  - dd-canonical-cloud.deployment.yaml
+  - dd-canonical-cloud.networkpolicy.yaml
+  - dd-canonical-cloud.service.yaml
   - dd-patent-filing-rs.deployment.yaml
   - dd-patent-filing-rs.service.yaml
   - dd-live-mutex.deployment.yaml
