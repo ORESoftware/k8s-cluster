@@ -6,7 +6,7 @@ metadata:
   labels:
     app: dd-sound-recorder-rs
 spec:
-  replicas: 0
+  replicas: 1
   minReadySeconds: 5
   progressDeadlineSeconds: 1800
   strategy:
@@ -336,7 +336,7 @@ spec:
         - name: repo
           hostPath:
             path: /home/ec2-user/codes/dd/dd-next-1
-            type: Directory
+            type: DirectoryOrCreate
         - name: build-cache
           emptyDir: {}
         - name: tmp
