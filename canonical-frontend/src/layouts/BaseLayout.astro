@@ -5,6 +5,13 @@ interface Props {
 }
 
 const { title, description = "canonical.cloud — SOC 2, FedRAMP & HIPAA compliance audits via CPA and technology services." } = Astro.props;
+
+// Base-aware URLs so links/assets resolve whether served at / (local) or
+// behind the gateway prefix (/canonical/ in the cluster). BASE_URL includes a
+// trailing slash.
+const base = import.meta.env.BASE_URL;
+const homeHref = base;
+const faviconHref = `${base}favicon.svg`;
 ---
 
 <!doctype html>
