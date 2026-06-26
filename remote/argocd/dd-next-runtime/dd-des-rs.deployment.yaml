@@ -176,7 +176,7 @@ spec:
             - name: SOCCER_ENGINE_GIT_URL
               value: https://github.com/ORESoftware/soccer-sim-game-engine.rs.git
             - name: SOCCER_ENGINE_GIT_REF
-              value: 5c7132891c1eb2d91737deed0c273850da0ac9fc
+              value: 15bd673830bcbfceeadbbb1533fdc2739c7de35a
             - name: HOME
               value: /tmp
             - name: CARGO_HOME
