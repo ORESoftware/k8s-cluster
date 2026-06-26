@@ -1598,29 +1598,6 @@ data:
         proxy_pass http://dd-soccer-rs.default.svc.cluster.local:8113;
       }
 
-      # fiducia.cloud public landing site (dd-fiducia-rs): a Rust/axum server that
-      # serves a built Astro app + a small read-only JSON API. PUBLIC marketing
-      # surface, so it SKIPS the gateway auth gate (like /soccer/docs above).
-      # The Astro build is base-prefixed with /fiducia, but the backend serves at
-      # root, so the trailing slash on proxy_pass STRIPS the /fiducia prefix:
-      # /fiducia/_astro/x -> /_astro/x, /fiducia/api/info -> /api/info.
-      location = /fiducia {
-        return 308 /fiducia/;
-      }
-
-      location /fiducia/ {
-        if ($request_method !~ ^(GET|HEAD)$) {
-          return 405;
-        }
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header Auth "";
-        proxy_set_header Cookie "";
-        proxy_pass http://dd-fiducia-rs.default.svc.cluster.local:8117/;
-      }
-
       location = /contracts {
         if ($dd_gateway_auth_ok = 0) {
           return 401;
