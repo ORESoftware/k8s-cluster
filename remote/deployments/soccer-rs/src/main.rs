@@ -292,7 +292,7 @@ async fn docs_index() -> Html<String> {
     for (slug, markdown) in DOC_PAGES {
         let title = html_escape(&doc_title(slug, markdown));
         items.push_str(&format!(
-            "<li><a href=\"/docs/{slug}\">{title}</a> <span class=\"slug\">{slug}</span></li>"
+            "<li><a href=\"/soccer/docs/{slug}\">{title}</a> <span class=\"slug\">{slug}</span></li>"
         ));
     }
     if DOC_PAGES.is_empty() {
