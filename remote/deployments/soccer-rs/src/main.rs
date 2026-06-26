@@ -408,6 +408,9 @@ async fn main() {
 
     let app = Router::new()
         .route("/healthz", get(healthz))
+        .route("/docs", get(docs_index))
+        .route("/docs/", get(docs_index))
+        .route("/docs/:slug", get(docs_page))
         .route("/soccer/game", post(create_game).get(game_meta))
         .route("/soccer/live", get(live_ui))
         .route("/soccer/sim", get(sim_view))
