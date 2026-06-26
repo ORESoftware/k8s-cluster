@@ -24,7 +24,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: optimizer
-          image: 710156900967.dkr.ecr.us-east-1.amazonaws.com/dd-evolution-optimizer:latest
+          image: REPLACE_ME_ECR_URI/dd-evolution-optimizer:latest
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
