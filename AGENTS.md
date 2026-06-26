@@ -154,6 +154,28 @@ preferred operator path is:
   Name=instance-state-name,Values=running` and confirm SSM with `aws ssm
   describe-instance-information --region us-east-1`. `benefactor-backend-rs` (axum :8135) runs
   in namespace `default`; ArgoCD app of the same name in ns `argocd`.
+- **Verifying a PUBLIC gateway route from the laptop (no SSM/SSH needed).** Unlike the API
+  (`:6443`) and SSH (`:22`), the gateway's **HTTPS edge (`:443`) is open to any source IP** on the
+  AWS node's public IP, with a valid Let's Encrypt **IP-address cert** — so public routes (e.g. the
+  soccer mermaid docs `/soccer/docs`, `/soccer/docs/flowchart`) verify with a plain `curl` and **no
+  `-k`**. The catch that wastes time: **node IPs in committed docs go stale.**
+  `dd-next-runtime/readme.md` hardcodes `CN=54.91.17.58`, but EC2 rotated it — always resolve the
+  live IP from `~/.aws` first, don't trust the hardcoded one:
+
+  ```sh
+  ip=$(aws ec2 describe-instances --region us-east-1 \
+    --filters Name=tag:Name,Values=dd-remote-k8s-1 Name=instance-state-name,Values=running \
+    --query 'Reservations[].Instances[].PublicIpAddress' --output text)   # 98.90.186.114 (2026-06-26)
+  curl -s -o /dev/null -w '%{http_code}\n' "https://$ip/soccer/docs/flowchart"   # 200, cert valid
+  ```
+
+  Both clouds serve identical content — ArgoCD `dd-next-runtime` syncs AWS **and** Hetzner from
+  `k8s-cluster@dev`. The **Hetzner** edge is the ingress host `https://hello.95-217-171-250.sslip.io`
+  (e.g. `…/soccer/docs/flowchart`); AWS has **no ingress/DNS** (single node, hostPort 80/443,
+  self-terminated TLS), so its public URL is the bare node IP above. A public route returning `502`
+  briefly after a redeploy is the expected transient while the pod does its cold in-pod `cargo build`
+  (~10-15 min); `/soccer/` (the auth-gated root game server) returning `401` while `/soccer/docs`
+  (public) returns `200` is correct, not a failure.
 - **Known deploy blocker (2026-06-26): expired GitHub token.** The `benefactor-cc/backend.rs`
   deploy is GitOps (ArgoCD app `benefactor-backend-rs` → repo `benefactor-cc/backend.rs`, branch
   `main`, path `k8s/ec2`; pod is `rust:1.95-bookworm` that clones `main` + `cargo run --release`
