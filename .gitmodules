@@ -1,0 +1,60 @@
+[submodule "apps/fiducia-admin.rs"]
+	path = apps/fiducia-admin.rs
+	url = git@github.com:fiducia-cloud/fiducia-admin.rs
+	branch = main
+[submodule "apps/fiducia-auth.rs"]
+	path = apps/fiducia-auth.rs
+	url = git@github.com:fiducia-cloud/fiducia-auth.rs
+	branch = main
+[submodule "apps/fiducia-backend.rs"]
+	path = apps/fiducia-backend.rs
+	url = git@github.com:fiducia-cloud/fiducia-backend.rs
+	branch = main
+[submodule "apps/fiducia-brain.rs"]
+	path = apps/fiducia-brain.rs
+	url = git@github.com:fiducia-cloud/fiducia-brain.rs
+	branch = main
+[submodule "apps/fiducia-clients"]
+	path = apps/fiducia-clients
+	url = git@github.com:fiducia-cloud/fiducia-clients
+	branch = main
+[submodule "apps/fiducia-customer-ui.web"]
+	path = apps/fiducia-customer-ui.web
+	url = git@github.com:fiducia-cloud/fiducia-customer-ui.web.git
+	branch = main
+[submodule "apps/fiducia-edge"]
+	path = apps/fiducia-edge
+	url = git@github.com:fiducia-cloud/fiducia-edge
+	branch = main
+[submodule "apps/fiducia-infra"]
+	path = apps/fiducia-infra
+	url = git@github.com:fiducia-cloud/fiducia-infra
+	branch = main
+[submodule "apps/fiducia-interfaces"]
+	path = apps/fiducia-interfaces
+	url = git@github.com:fiducia-cloud/fiducia-interfaces
+	branch = main
+[submodule "apps/fiducia-load-balance.rs"]
+	path = apps/fiducia-load-balance.rs
+	url = git@github.com:fiducia-cloud/fiducia-load-balance.rs
+	branch = main
+[submodule "apps/fiducia-node-sidecar.rs"]
+	path = apps/fiducia-node-sidecar.rs
+	url = git@github.com:fiducia-cloud/fiducia-node-sidecar.rs
+	branch = main
+[submodule "apps/fiducia-node.rs"]
+	path = apps/fiducia-node.rs
+	url = git@github.com:fiducia-cloud/fiducia-node.rs
+	branch = main
+[submodule "apps/fiducia-routing.rs"]
+	path = apps/fiducia-routing.rs
+	url = git@github.com:fiducia-cloud/fiducia-routing.rs
+	branch = main
+[submodule "apps/fiducia-telemetry.rs"]
+	path = apps/fiducia-telemetry.rs
+	url = git@github.com:fiducia-cloud/fiducia-telemetry.rs
+	branch = main
+[submodule "apps/fiducia-ui.web"]
+	path = apps/fiducia-ui.web
+	url = git@github.com:fiducia-cloud/fiducia-ui.web
+	branch = main
