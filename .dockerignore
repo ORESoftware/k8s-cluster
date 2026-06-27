@@ -1,0 +1,11 @@
+.git
+env
+.env
+.env.*
+apps/*/.git
+apps/*/target
+apps/*/node_modules
+apps/*/dist
+apps/*/.wrangler
+apps/*/rendered
+*.log
