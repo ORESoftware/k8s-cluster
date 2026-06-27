@@ -23,7 +23,7 @@ spec:
     metadata:
       annotations:
         dd.dev/soccer-server-revision: 'full-live-canvas-ui+lazy-uuid-games+mermaid-docs+flowchart-doc+ws-push+server-push'
-        dd.dev/soccer-engine-revision: 'soccer-sim-game-engine.rs@15bd673830bcbfceeadbbb1533fdc2739c7de35a'
+        dd.dev/soccer-engine-revision: 'soccer-sim-game-engine.rs@learning (87e6b50)'
         dd.dev/des-engine-revision: 'discrete-event-system.rs@main'
       labels:
         app: dd-soccer-rs
@@ -168,7 +168,7 @@ spec:
             - name: SOCCER_ENGINE_GIT_URL
               value: https://github.com/ORESoftware/soccer-sim-game-engine.rs.git
             - name: SOCCER_ENGINE_GIT_REF
-              value: 15bd673830bcbfceeadbbb1533fdc2739c7de35a
+              value: learning
             - name: DES_ENGINE_GIT_URL
               value: https://github.com/ORESoftware/discrete-event-system.rs.git
             - name: DES_ENGINE_GIT_REF
