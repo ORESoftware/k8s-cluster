@@ -1,0 +1,140 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fiducia-load-balance
+  namespace: fiducia
+  labels:
+    app: fiducia-load-balance
+spec:
+  # 1 LB instance (it holds no consensus state — just a shard->leader cache — so
+  # it's a plain stateless Deployment; scale it freely later).
+  replicas: 1
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: fiducia-load-balance
+  template:
+    metadata:
+      labels:
+        app: fiducia-load-balance
+      annotations:
+        dd.dev/fiducia-source: 'fiducia-cloud/fiducia-monorepo@main (apps/fiducia-load-balance.rs)'
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: fiducia-load-balance
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          command: [/bin/bash, -lc]
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              git config --global url."https://github.com/".insteadOf "git@github.com:"
+              git config --global --add safe.directory '*'
+              rm -rf /tmp/mono
+              git clone --depth 1 --branch main https://github.com/fiducia-cloud/fiducia-monorepo.git /tmp/mono
+              cd /tmp/mono
+              git submodule update --init --depth 1 \
+                apps/fiducia-load-balance.rs apps/fiducia-routing.rs apps/fiducia-interfaces
+              echo "[fiducia-load-balance] building apps/fiducia-load-balance.rs @ $(git -C apps/fiducia-load-balance.rs rev-parse --short HEAD)"
+              cd apps/fiducia-load-balance.rs
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - name: PORT
+              value: '8088'
+            # Must match the data plane: one shard for the whole keyspace.
+            - name: FIDUCIA_SHARD_COUNT
+              value: '1'
+            # Seed list of nodes (stable headless DNS). The LB round-robins these
+            # for shard 0 and self-corrects to the leader on a NotLeader redirect.
+            - name: FIDUCIA_NODES
+              value: 'http://fiducia-node-0.fiducia-node-peer.fiducia.svc.cluster.local:8090,http://fiducia-node-1.fiducia-node-peer.fiducia.svc.cluster.local:8090,http://fiducia-node-2.fiducia-node-peer.fiducia.svc.cluster.local:8090'
+            - name: FIDUCIA_BRAIN_URL
+              value: http://fiducia-brain.fiducia.svc.cluster.local:8095
+            - name: RUST_LOG
+              value: info
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /tmp/cargo
+            - name: CARGO_TARGET_DIR
+              value: /tmp/target
+            - name: CARGO_BUILD_JOBS
+              value: '1'
+          ports:
+            - name: http
+              containerPort: 8088
+          resources:
+            requests:
+              cpu: 100m
+              memory: 768Mi
+            limits:
+              cpu: '2'
+              memory: 3Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 240
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 8Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-load-balance
+  namespace: fiducia
+  labels:
+    app: fiducia-load-balance
+spec:
+  type: ClusterIP
+  selector:
+    app: fiducia-load-balance
+  ports:
+    - name: http
+      port: 8088
+      targetPort: http
