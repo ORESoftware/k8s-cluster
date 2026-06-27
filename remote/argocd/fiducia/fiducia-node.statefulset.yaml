@@ -103,7 +103,6 @@ spec:
               containerPort: 8090
           resources:
             requests:
-              cpu: 100m
               memory: 768Mi
             limits:
               cpu: '2'

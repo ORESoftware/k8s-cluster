@@ -68,7 +68,7 @@ spec:
           ports:
             - { name: http, containerPort: 8096 }
           resources:
-            requests: { cpu: 100m, memory: 768Mi }
+            requests: { memory: 768Mi }
             limits: { cpu: '2', memory: 3Gi }
           startupProbe:
             httpGet: { path: /healthz, port: http }

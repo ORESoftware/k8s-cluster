@@ -63,7 +63,7 @@ spec:
             - { name: npm_config_cache, value: /work/npm-cache }
             - { name: HOME, value: /work }
           resources:
-            requests: { cpu: 100m, memory: 512Mi }
+            requests: { memory: 512Mi }
             limits: { cpu: '1', memory: 2Gi }
           volumeMounts:
             - { name: site-dist, mountPath: /site-dist }
@@ -110,7 +110,6 @@ spec:
               containerPort: 8117
           resources:
             requests:
-              cpu: 50m
               memory: 768Mi
             limits:
               cpu: '2'
