@@ -1,0 +1,39 @@
+# Client-facing service — round-robins the 3 nodes. Followers redirect writes to
+# the shard leader (NotLeader), so any node is a valid entry point; the load
+# balancer consumes that redirect. Used by fiducia-load-balance as its seed list.
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-node
+  namespace: fiducia
+  labels:
+    app: fiducia-node
+spec:
+  type: ClusterIP
+  selector:
+    app: fiducia-node
+  ports:
+    - name: http
+      port: 8090
+      targetPort: http
+---
+# Headless peer service — gives each pod a stable DNS name
+# (fiducia-node-0.fiducia-node-peer.fiducia.svc.cluster.local) for Raft peer RPC.
+# publishNotReadyAddresses so members can reach each other during the cold build /
+# initial election, before /readyz passes.
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-node-peer
+  namespace: fiducia
+  labels:
+    app: fiducia-node
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app: fiducia-node
+  ports:
+    - name: http
+      port: 8090
+      targetPort: http
