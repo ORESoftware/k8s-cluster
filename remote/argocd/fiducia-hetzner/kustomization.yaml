@@ -32,6 +32,16 @@ patches:
       spec:
         template:
           spec:
+            # Tolerate the (stale) cilium agent-not-ready taint so a Raft member
+            # can use the Helsinki control-plane node: cilium is actually 1/1
+            # Running there and the node reports NetworkUnavailable=False, but the
+            # startup taint never cleared. Without this, all 3 members would be
+            # forced onto the two non-tainted big nodes' leftovers + the full 8GB
+            # workers — and the hard anti-affinity can't place the 3rd.
+            tolerations:
+              - key: node.cilium.io/agent-not-ready
+                operator: Exists
+                effect: NoSchedule
             affinity:
               podAntiAffinity:
                 requiredDuringSchedulingIgnoredDuringExecution:
