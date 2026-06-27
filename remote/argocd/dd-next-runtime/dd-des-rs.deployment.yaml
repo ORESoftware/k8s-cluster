@@ -14,8 +14,8 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: dd-des-rs
@@ -213,10 +213,16 @@ spec:
               containerPort: 8112
           resources:
             requests:
-              cpu: 50m
+              # Guarantee a full core so the live soccer step loop sustains its
+              # ~10Hz tick under node contention (the UI animates one tick per
+              # server step; a starved/throttled server = slow-motion playback).
+              cpu: '1'
               memory: 4Gi
             limits:
-              cpu: '2'
+              # Burst ceiling raised 2 -> 6: the per-tick sim + tokio workers
+              # briefly exceeded a 2-core cgroup quota, causing CFS throttle
+              # stalls (~300ms tick spikes). The 16-core nodes have ample room.
+              cpu: '6'
               # Headroom for the cold release build: the pod recompiles the full
               # des_engine crate (plus axum/tokio) from an empty /tmp on every
               # (re)start, which peaks higher than des-simulator's smaller build.
