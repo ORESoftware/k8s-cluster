@@ -1,16 +1,19 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-# Single-cluster (AWS) fiducia.cloud deployment — the full sharded-multi-Raft
-# coordination stack, built from the fiducia-monorepo apps/ at main.
+# Base fiducia.cloud deployment — the full sharded-multi-Raft coordination stack,
+# built in-pod from each app repo's main. Used directly on AWS (single EC2 node,
+# all pods co-located); Hetzner layers a separate-machines anti-affinity overlay
+# on top (see ../fiducia-hetzner).
 #
 #   data plane:   fiducia-node  (StatefulSet x3, 1 shard, RF3)
 #   control plane: fiducia-brain (Deployment x3)
 #   router:       fiducia-load-balance (Deployment x1)
 #   website:      fiducia-backend (Deployment + HPA, autoscaled)
 #
-# Wired AWS-only via remote/argocd/clusters/aws/applications.yaml (the `fiducia`
-# Application) — intentionally NOT in clusters/hetzner.
+# Wired via remote/argocd/clusters/aws/applications.yaml (path remote/argocd/
+# fiducia) and clusters/hetzner/applications.yaml (path remote/argocd/
+# fiducia-hetzner).
 
 namespace: fiducia
 
