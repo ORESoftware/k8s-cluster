@@ -73,7 +73,7 @@ spec:
               export FIDUCIA_NODE_ID="http://${POD_NAME}.${suffix}:8090"
               export FIDUCIA_PEERS="$peers"
               echo "[fiducia-node] id=${FIDUCIA_NODE_ID} peers=${FIDUCIA_PEERS} shards=${FIDUCIA_SHARD_COUNT}"
-              cd apps/fiducia-node.rs
+              cd /tmp/src/fiducia-node.rs
               exec /usr/local/cargo/bin/cargo run --release
           env:
             - name: POD_NAME
