@@ -22,7 +22,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/soccer-server-revision: 'full-live-canvas-ui+lazy-uuid-games+mermaid-docs+flowchart-doc+ws-push'
+        dd.dev/soccer-server-revision: 'full-live-canvas-ui+lazy-uuid-games+mermaid-docs+flowchart-doc+ws-push+server-push'
         dd.dev/soccer-engine-revision: 'soccer-sim-game-engine.rs@15bd673830bcbfceeadbbb1533fdc2739c7de35a'
         dd.dev/des-engine-revision: 'discrete-event-system.rs@main'
       labels:
