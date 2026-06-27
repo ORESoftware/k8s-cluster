@@ -25,7 +25,8 @@ spec:
         app: fiducia-load-balance
       annotations:
         dd.dev/fiducia-source: 'fiducia-cloud/fiducia-monorepo@main (apps/fiducia-load-balance.rs)'
-        dd.dev/fiducia-build: '2026-06-27-raft-locks-merge'
+        # Re-roll for the proxy NotLeader-redirect fix (stale-leader 404).
+        dd.dev/fiducia-build: '2026-06-27-lb-redirect-fix'
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
