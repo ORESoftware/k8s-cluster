@@ -49,12 +49,10 @@ spec:
             - |
               set -euo pipefail
               command -v git >/dev/null 2>&1 || { apt-get update && apt-get install -y --no-install-recommends git ca-certificates; }
-              git config --global url."https://github.com/".insteadOf "git@github.com:"
-              git config --global --add safe.directory '*'
-              rm -rf /work/mono
-              git clone --depth 1 --branch main https://github.com/fiducia-cloud/fiducia-monorepo.git /work/mono
-              cd /work/mono && git submodule update --init --depth 1 apps/fiducia-ui.web
-              cd apps/fiducia-ui.web
+              # Clone the PUBLIC ui repo directly (the monorepo is private).
+              rm -rf /work/src && mkdir -p /work/src && cd /work/src
+              git clone --depth 1 --branch main https://github.com/fiducia-cloud/fiducia-ui.web.git
+              cd /work/src/fiducia-ui.web
               npm ci --no-audit --no-fund
               PUBLIC_BASE=/ npm run build
               cp -R dist/. /site-dist/
@@ -87,14 +85,10 @@ spec:
             - |
               set -euo pipefail
               export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-              git config --global url."https://github.com/".insteadOf "git@github.com:"
-              git config --global --add safe.directory '*'
-              rm -rf /tmp/mono
-              git clone --depth 1 --branch main https://github.com/fiducia-cloud/fiducia-monorepo.git /tmp/mono
-              cd /tmp/mono
-              git submodule update --init --depth 1 apps/fiducia-backend.rs apps/fiducia-interfaces
-              echo "[fiducia-backend] building apps/fiducia-backend.rs @ $(git -C apps/fiducia-backend.rs rev-parse --short HEAD)"
-              cd apps/fiducia-backend.rs
+              # Clone the PUBLIC app repos as siblings (the monorepo is private).
+              rm -rf /tmp/src && mkdir -p /tmp/src && cd /tmp/src
+              for repo in fiducia-backend.rs fiducia-interfaces; do git clone --depth 1 --branch main "https://github.com/fiducia-cloud/${repo}.git"; done
+              cd /tmp/src/fiducia-backend.rs
               exec /usr/local/cargo/bin/cargo run --release
           env:
             - { name: HOST, value: 0.0.0.0 }

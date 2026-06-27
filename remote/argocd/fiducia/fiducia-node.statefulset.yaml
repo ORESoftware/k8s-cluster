@@ -54,16 +54,14 @@ spec:
             - |
               set -euo pipefail
               export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-              # Public clone of the monorepo + only the submodules this service needs
-              # (itself + its path-dep siblings). git@ -> https so no SSH keys needed.
-              git config --global url."https://github.com/".insteadOf "git@github.com:"
-              git config --global --add safe.directory '*'
-              rm -rf /tmp/mono
-              git clone --depth 1 --branch main https://github.com/fiducia-cloud/fiducia-monorepo.git /tmp/mono
-              cd /tmp/mono
-              git submodule update --init --depth 1 \
-                apps/fiducia-node.rs apps/fiducia-routing.rs apps/fiducia-interfaces
-              echo "[fiducia-node] ${POD_NAME} building apps/fiducia-node.rs @ $(git -C apps/fiducia-node.rs rev-parse --short HEAD)"
+              # Clone the PUBLIC app repos as siblings (the monorepo is private). This
+              # recreates the sibling layout so the ../fiducia-routing.rs and
+              # ../fiducia-interfaces path-deps resolve — no credentials needed.
+              rm -rf /tmp/src && mkdir -p /tmp/src && cd /tmp/src
+              for repo in fiducia-node.rs fiducia-routing.rs fiducia-interfaces; do
+                git clone --depth 1 --branch main "https://github.com/fiducia-cloud/${repo}.git"
+              done
+              echo "[fiducia-node] ${POD_NAME} building fiducia-node.rs @ $(git -C fiducia-node.rs rev-parse --short HEAD)"
               # Raft identity + peer list from the StatefulSet ordinal (exclude self).
               suffix="fiducia-node-peer.fiducia.svc.cluster.local"
               peers=""
@@ -75,7 +73,7 @@ spec:
               export FIDUCIA_NODE_ID="http://${POD_NAME}.${suffix}:8090"
               export FIDUCIA_PEERS="$peers"
               echo "[fiducia-node] id=${FIDUCIA_NODE_ID} peers=${FIDUCIA_PEERS} shards=${FIDUCIA_SHARD_COUNT}"
-              cd apps/fiducia-node.rs
+              cd /tmp/src/fiducia-node.rs
               exec /usr/local/cargo/bin/cargo run --release
           env:
             - name: POD_NAME
