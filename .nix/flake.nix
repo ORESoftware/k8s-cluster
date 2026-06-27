@@ -30,6 +30,7 @@
               rust-analyzer
 
               git
+              direnv
               just
               bacon
 

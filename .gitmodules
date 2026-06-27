@@ -58,3 +58,7 @@
 	path = apps/fiducia-ui.web
 	url = git@github.com:fiducia-cloud/fiducia-ui.web
 	branch = main
+[submodule "apps/fiducia-cli.rs"]
+	path = apps/fiducia-cli.rs
+	url = git@github.com:fiducia-cloud/fiducia-cli.rs.git
+	branch = main
