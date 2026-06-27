@@ -22,10 +22,27 @@ git submodule update --init --recursive
 ## Update Pins
 
 ```sh
-git submodule update --remote --merge --recursive
+scripts/pin-submodules.sh main
 git status
-git add .gitmodules apps
-git commit -m "Update Fiducia app pins"
+git diff --cached --submodule
+git commit -m "Pin Fiducia apps to main"
+```
+
+To pin all submodules to another branch, use the branch name:
+
+```sh
+scripts/pin-submodules.sh dev
+git commit -m "Pin Fiducia apps to dev"
+```
+
+The script verifies that the target branch exists on every submodule remote,
+refuses dirty submodule checkouts, updates every `.gitmodules` `branch` entry,
+fast-forwards each submodule, and stages the resulting gitlink pins.
+
+Preview without changing files:
+
+```sh
+scripts/pin-submodules.sh dev --dry-run
 ```
 
 ## Apps
