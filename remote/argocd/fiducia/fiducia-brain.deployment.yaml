@@ -88,10 +88,8 @@ spec:
               containerPort: 8095
           resources:
             requests:
-              cpu: 100m
               memory: 768Mi
             limits:
-              cpu: '2'
               memory: 3Gi
           startupProbe:
             httpGet:

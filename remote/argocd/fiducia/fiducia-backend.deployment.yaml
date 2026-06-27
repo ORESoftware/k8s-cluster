@@ -63,8 +63,8 @@ spec:
             - { name: npm_config_cache, value: /work/npm-cache }
             - { name: HOME, value: /work }
           resources:
-            requests: { cpu: 100m, memory: 512Mi }
-            limits: { cpu: '1', memory: 2Gi }
+            requests: { memory: 512Mi }
+            limits: { memory: 2Gi }
           volumeMounts:
             - { name: site-dist, mountPath: /site-dist }
             - { name: work, mountPath: /work }
@@ -110,10 +110,8 @@ spec:
               containerPort: 8117
           resources:
             requests:
-              cpu: 50m
               memory: 768Mi
             limits:
-              cpu: '2'
               memory: 3Gi
           startupProbe:
             httpGet: { path: /healthz, port: http }
