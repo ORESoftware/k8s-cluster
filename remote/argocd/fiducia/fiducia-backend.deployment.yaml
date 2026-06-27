@@ -64,7 +64,7 @@ spec:
             - { name: HOME, value: /work }
           resources:
             requests: { memory: 512Mi }
-            limits: { cpu: '1', memory: 2Gi }
+            limits: { memory: 2Gi }
           volumeMounts:
             - { name: site-dist, mountPath: /site-dist }
             - { name: work, mountPath: /work }
@@ -112,7 +112,6 @@ spec:
             requests:
               memory: 768Mi
             limits:
-              cpu: '2'
               memory: 3Gi
           startupProbe:
             httpGet: { path: /healthz, port: http }
