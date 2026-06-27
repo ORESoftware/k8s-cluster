@@ -23,7 +23,7 @@ spec:
     metadata:
       annotations:
         dd.dev/soccer-server-revision: 'full-live-canvas-ui+lazy-uuid-games+mermaid-docs+flowchart-doc+ws-push+server-push'
-        dd.dev/soccer-engine-revision: 'soccer-sim-game-engine.rs@learning (87e6b50)'
+        dd.dev/soccer-engine-revision: 'soccer-sim-game-engine.rs@learning (314b3d2: +bind-first +passeval-dedup)'
         dd.dev/des-engine-revision: 'discrete-event-system.rs@main'
       labels:
         app: dd-soccer-rs
@@ -148,7 +148,14 @@ spec:
               copy_source_tree "${soccer_src}" "${build_soccer}"
               copy_source_tree "${engine_src}" "${build_engine}"
               cd "${build_src}"
-              exec /usr/local/cargo/bin/cargo run --release
+              # `soccer_engine/postgres-persistence` turns ON the engine's Postgres
+              # policy-load path (compiled out by default). With the SOCCER_DATABASE_URL
+              # + SOCCER_EXPERIMENT_SLUG env below, the live server loads the latest
+              # ACTIVE learned policy for that experiment from RDS on the first game
+              # session (in-VPC → fast; warm-cached for subsequent games) instead of
+              # playing a cold, unlearned policy. Same feature the learning cronjobs
+              # build, proven on this rust:1.90-bookworm image.
+              exec /usr/local/cargo/bin/cargo run --release --features soccer_engine/postgres-persistence
           env:
             - name: HOST
               value: 0.0.0.0
