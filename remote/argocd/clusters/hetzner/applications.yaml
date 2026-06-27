@@ -231,7 +231,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: git@github.com:ORESoftware/k8s-cluster.git
+    # HTTPS (the dd-repo-https cred on this cluster) — not the SSH URL the AWS
+    # app uses, since Hetzner argocd only has the HTTPS repository secret.
+    repoURL: https://github.com/ORESoftware/k8s-cluster.git
     targetRevision: dev
     path: remote/argocd/fiducia-hetzner
   destination:
