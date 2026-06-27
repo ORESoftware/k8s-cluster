@@ -45,6 +45,31 @@ Preview without changing files:
 scripts/pin-submodules.sh dev --dry-run
 ```
 
+## Feature Branches
+
+Switch the superproject and every app submodule to the same feature branch:
+
+```sh
+scripts/checkout-feature-branch.sh feature/customer-portal-streams
+```
+
+If the branch exists on a submodule remote, the script checks it out and
+fast-forwards it. If it does not exist yet, the script creates it from
+`origin/main`. It refuses dirty superproject or submodule checkouts.
+
+Preview first:
+
+```sh
+scripts/checkout-feature-branch.sh feature/customer-portal-streams --dry-run
+```
+
+If the feature branch should also become the `.gitmodules` tracking branch for
+the superproject branch:
+
+```sh
+scripts/checkout-feature-branch.sh feature/customer-portal-streams --set-submodule-branch --stage-pins
+```
+
 ## Apps
 
 - `apps/fiducia-admin.rs`
