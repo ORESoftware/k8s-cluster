@@ -190,10 +190,16 @@ spec:
               containerPort: 8113
           resources:
             requests:
-              cpu: 50m
+              # Guarantee a full core so the live soccer step loop sustains its
+              # ~10Hz tick under node contention (the UI animates one tick per
+              # server step; a starved/throttled server = slow-motion playback).
+              cpu: '1'
               memory: 4Gi
             limits:
-              cpu: '2'
+              # Burst ceiling raised 2 -> 6: the per-tick sim + tokio workers
+              # briefly exceeded a 2-core cgroup quota, causing CFS throttle
+              # stalls. The 16-core nodes have ample room.
+              cpu: '6'
               # Soccer_engine recompiles the full 115k-line soccer.rs plus des_engine
               # from an empty /tmp on every (re)start, peaking higher than des-rs.
               memory: 14Gi
