@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-canonical-cloud
+  namespace: default
+  labels:
+    app: dd-canonical-cloud
+spec:
+  selector:
+    app: dd-canonical-cloud
+  ports:
+    - name: http
+      port: 8119
+      targetPort: http

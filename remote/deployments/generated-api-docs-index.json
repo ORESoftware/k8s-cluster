@@ -286,10 +286,10 @@
     {
       "service": "dd-sound-recorder-rs",
       "language": "rust",
-      "routeCount": 29,
+      "routeCount": 30,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 22
+        "user-generated": 23
       },
       "generated": [
         "remote/deployments/dd-sound-recorder-rs/generated/api-docs.json",
@@ -350,6 +350,19 @@
       "generated": [
         "remote/deployments/fabrication-server-rs/generated/api-docs.json",
         "remote/deployments/fabrication-server-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "fiducia-backend.rs",
+      "language": "rust",
+      "routeCount": 7,
+      "routeTypeCounts": {
+        "service": 4,
+        "user-generated": 3
+      },
+      "generated": [
+        "remote/deployments/fiducia-backend.rs/generated/api-docs.json",
+        "remote/deployments/fiducia-backend.rs/generated/api-docs.html"
       ]
     },
     {

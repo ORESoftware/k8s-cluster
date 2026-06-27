@@ -14,8 +14,8 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: dd-des-rs
@@ -25,6 +25,7 @@ spec:
         dd.dev/telemetry-revision: '2026-06-13-stdout-subscriber-drop-telemetry-and-soccer-buildinfo'
         dd.dev/des-server-revision: 'streamed-out-artifacts'
         dd.dev/des-engine-revision: 'f694d98170a3efb4459c6c92778a9715d1e61c50'
+        dd.dev/soccer-engine-revision: 'soccer-sim-game-engine.rs@15bd673830bcbfceeadbbb1533fdc2739c7de35a'
       labels:
         app: dd-des-rs
     spec:
@@ -175,7 +176,7 @@ spec:
             - name: SOCCER_ENGINE_GIT_URL
               value: https://github.com/ORESoftware/soccer-sim-game-engine.rs.git
             - name: SOCCER_ENGINE_GIT_REF
-              value: 5c7132891c1eb2d91737deed0c273850da0ac9fc
+              value: 15bd673830bcbfceeadbbb1533fdc2739c7de35a
             - name: HOME
               value: /tmp
             - name: CARGO_HOME
@@ -212,10 +213,16 @@ spec:
               containerPort: 8112
           resources:
             requests:
-              cpu: 50m
+              # Guarantee a full core so the live soccer step loop sustains its
+              # ~10Hz tick under node contention (the UI animates one tick per
+              # server step; a starved/throttled server = slow-motion playback).
+              cpu: '1'
               memory: 4Gi
             limits:
-              cpu: '2'
+              # Burst ceiling raised 2 -> 6: the per-tick sim + tokio workers
+              # briefly exceeded a 2-core cgroup quota, causing CFS throttle
+              # stalls (~300ms tick spikes). The 16-core nodes have ample room.
+              cpu: '6'
               # Headroom for the cold release build: the pod recompiles the full
               # des_engine crate (plus axum/tokio) from an empty /tmp on every
               # (re)start, which peaks higher than des-simulator's smaller build.

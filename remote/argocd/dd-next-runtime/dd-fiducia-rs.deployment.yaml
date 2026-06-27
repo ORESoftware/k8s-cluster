@@ -1,0 +1,193 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-fiducia-rs
+  namespace: default
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+  labels:
+    app: dd-fiducia-rs
+spec:
+  replicas: 1
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
+  strategy:
+    # Builds the Astro site (node) and the axum backend (cargo) from source at
+    # pod start. Use RollingUpdate so the OLD pod keeps serving while the new
+    # one does its cold build — avoids the 502 window that Recreate caused.
+    # maxUnavailable: 0 = never drop below 1 ready replica; maxSurge: 1 = at most
+    # one extra (build) pod during a rollout.
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: dd-fiducia-rs
+  template:
+    metadata:
+      annotations:
+        dd.dev/fiducia-ui-revision: 'fiducia-cloud/fiducia-ui.web@main'
+        dd.dev/fiducia-backend-revision: 'fiducia-cloud/fiducia-backend.rs@fc9c8a5 (api-docs)'
+      labels:
+        app: dd-fiducia-rs
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        # 1) Clone fiducia-ui.web and build the Astro frontend with the gateway
+        # prefix baked in (--base /fiducia) so asset URLs resolve behind
+        # /fiducia/. The built dist is handed to the backend via the shared
+        # site-dist emptyDir.
+        - name: build-frontend
+          image: docker.io/library/node:22-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsUser: 0
+            runAsGroup: 0
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              if ! command -v git >/dev/null 2>&1; then
+                apt-get update
+                apt-get install -y --no-install-recommends git ca-certificates
+              fi
+              git clone --depth 1 --branch "${FIDUCIA_UI_GIT_REF}" "${FIDUCIA_UI_GIT_URL}" /work/ui
+              echo "[dd-fiducia-rs] ui: ${FIDUCIA_UI_GIT_URL}@${FIDUCIA_UI_GIT_REF} ($(git -C /work/ui rev-parse --short HEAD))"
+              cd /work/ui
+              npm ci --no-audit --no-fund
+              npm run build -- --base /fiducia
+              cp -R dist/. /site-dist/
+              # World-readable so the non-root backend (uid 1000) can serve it.
+              chmod -R a+rX /site-dist
+          env:
+            - name: FIDUCIA_UI_GIT_URL
+              value: https://github.com/fiducia-cloud/fiducia-ui.web.git
+            - name: FIDUCIA_UI_GIT_REF
+              value: main
+            - name: npm_config_cache
+              value: /work/npm-cache
+            - name: HOME
+              value: /work
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: '1'
+              memory: 2Gi
+          volumeMounts:
+            - name: site-dist
+              mountPath: /site-dist
+            - name: build-work
+              mountPath: /work
+      containers:
+        # 2) Clone fiducia-backend.rs, build the axum backend, and serve the
+        # built site from the shared site-dist volume (STATIC_DIR) plus /healthz
+        # and /api/*.
+        - name: fiducia-backend
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              # fiducia-backend.rs is self-contained (no path deps) and no longer
+              # vendors the site, so a shallow clone of the PUBLIC repo is all we
+              # need. Build from /tmp (the root fs is read-only).
+              git clone --depth 1 --branch "${FIDUCIA_BACKEND_GIT_REF}" "${FIDUCIA_BACKEND_GIT_URL}" /tmp/build
+              echo "[dd-fiducia-rs] backend: ${FIDUCIA_BACKEND_GIT_URL}@${FIDUCIA_BACKEND_GIT_REF} ($(git -C /tmp/build rev-parse --short HEAD))"
+              cd /tmp/build
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8117'
+            - name: STATIC_DIR
+              value: /site-dist
+            - name: FIDUCIA_BACKEND_GIT_URL
+              value: https://github.com/fiducia-cloud/fiducia-backend.rs.git
+            - name: FIDUCIA_BACKEND_GIT_REF
+              value: main
+            - name: RUST_LOG
+              value: info
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /tmp/cargo
+            - name: CARGO_TARGET_DIR
+              value: /tmp/target
+            # Keep rustc memory predictable during the cold in-pod release build.
+            - name: CARGO_BUILD_JOBS
+              value: '1'
+          ports:
+            - name: http
+              containerPort: 8117
+          resources:
+            requests:
+              cpu: 50m
+              memory: 768Mi
+            limits:
+              cpu: '2'
+              memory: 3Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            # Cold release build from an empty /tmp can take several minutes on
+            # the 2-CPU node; allow ~20 min (5s * 240).
+            periodSeconds: 5
+            failureThreshold: 240
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: site-dist
+              mountPath: /site-dist
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: site-dist
+          emptyDir: {}
+        - name: build-work
+          emptyDir: {}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 6Gi

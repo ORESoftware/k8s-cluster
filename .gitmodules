@@ -1,3 +1,6 @@
+# These submodules are SECONDARY checkouts. The source of truth for each is its
+# own upstream repo (the `url` below). Develop in the upstream repo / its
+# standalone ~/codes clone and bump the pointer here. See SUBMODULES.md.
 [submodule "remote/deployments/gcs/chat-vibe"]
 	path = remote/deployments/gcs/chat-vibe
 	url = git@github.com:ORESoftware/chat.vibe.git
@@ -69,4 +72,20 @@
 [submodule "remote/submodules/sonus-auris.infra"]
 	path = remote/submodules/sonus-auris.infra
 	url = git@github.com:sonus-auris/sonus-auris.infra.git
+	branch = main
+[submodule "remote/deployments/soccer-rs"]
+	path = remote/deployments/soccer-rs
+	url = git@github.com:akrion-sim/akrion-backend.rs.git
+	branch = main
+[submodule "remote/deployments/canonical-cloud"]
+	path = remote/deployments/canonical-cloud
+	url = https://github.com/canonical-cloud/canonical.cloud.git
+	branch = main
+[submodule "remote/deployments/fiducia-backend.rs"]
+	path = remote/deployments/fiducia-backend.rs
+	url = https://github.com/fiducia-cloud/fiducia-backend.rs.git
+	branch = main
+[submodule "remote/deployments/fiducia-ui.web"]
+	path = remote/deployments/fiducia-ui.web
+	url = https://github.com/fiducia-cloud/fiducia-ui.web.git
 	branch = main

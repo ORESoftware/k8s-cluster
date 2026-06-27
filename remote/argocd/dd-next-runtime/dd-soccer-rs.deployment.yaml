@@ -14,16 +14,16 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: dd-soccer-rs
   template:
     metadata:
       annotations:
-        dd.dev/soccer-server-revision: 'uuid-keyed-root-server+mermaid-docs'
-        dd.dev/soccer-engine-revision: 'soccer-sim-game-engine.rs@5c7132891c1eb2d91737deed0c273850da0ac9fc'
+        dd.dev/soccer-server-revision: 'full-live-canvas-ui+lazy-uuid-games+mermaid-docs+flowchart-doc'
+        dd.dev/soccer-engine-revision: 'soccer-sim-game-engine.rs@15bd673830bcbfceeadbbb1533fdc2739c7de35a'
         dd.dev/des-engine-revision: 'discrete-event-system.rs@main'
       labels:
         app: dd-soccer-rs
@@ -78,16 +78,44 @@ spec:
                 fi
               }
 
-              # 1) Server source (this k8s repo @ dev), fall back to the mount.
+              # GH_PAT (dd-git-clone-token) authenticates the private backend fetch
+              # via an HTTP header instead of a URL, so an auth failure cannot print
+              # the token; insteadOf rewrites the .gitmodules SSH URL to HTTPS in-pod.
+              git_auth_args=()
+              if [ -n "${GH_PAT:-}" ]; then
+                authhdr="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_PAT" | base64 | tr -d '\n')"
+                git_auth_args=(-c "http.https://github.com/.extraheader=${authhdr}")
+                git config --global url."https://github.com/".insteadOf "git@github.com:"
+              fi
+
+              # 1) Server source: the soccer-rs backend now lives in its own private
+              # repo (akrion-sim/akrion-backend.rs), wired as a git submodule at
+              # remote/deployments/soccer-rs (mirrors sonus-auris-backend.rs ->
+              # remote/deployments/dd-sound-recorder-rs). Prefer mounted source when
+              # the node has it; otherwise clone the superproject and initialize ONLY
+              # this backend submodule so unrelated private submodules cannot block
+              # startup.
               server_src="/opt/dd-next-1/remote/deployments/soccer-rs"
               server_clone="${build_root}/k8s-source"
-              if [ -n "${SOCCER_SERVER_GIT_URL:-}" ]; then
-                if git clone --depth 1 --branch "${SOCCER_SERVER_GIT_REF:-dev}" "${SOCCER_SERVER_GIT_URL}" "${server_clone}"; then
+              if [ -f "${server_src}/Cargo.toml" ]; then
+                echo "[dd-soccer-rs] server: using mounted backend at ${server_src}"
+              elif [ -n "${SOCCER_SERVER_GIT_URL:-}" ]; then
+                if git clone --depth 1 --branch "${SOCCER_SERVER_GIT_REF:-dev}" "${SOCCER_SERVER_GIT_URL}" "${server_clone}" \
+                   && git -C "${server_clone}" submodule init remote/deployments/soccer-rs \
+                   && git -C "${server_clone}" config "submodule.remote/deployments/soccer-rs.url" "https://github.com/akrion-sim/akrion-backend.rs.git" \
+                   && git -C "${server_clone}" "${git_auth_args[@]}" submodule update --depth 1 remote/deployments/soccer-rs; then
                   server_src="${server_clone}/remote/deployments/soccer-rs"
-                  echo "[dd-soccer-rs] server: cloned ${SOCCER_SERVER_GIT_URL}@${SOCCER_SERVER_GIT_REF:-dev} ($(git -C "${server_clone}" rev-parse --short HEAD))"
+                  echo "[dd-soccer-rs] server: cloned ${SOCCER_SERVER_GIT_URL}@${SOCCER_SERVER_GIT_REF:-dev}; backend submodule ($(git -C "${server_src}" rev-parse --short HEAD 2>/dev/null || echo '?'))"
                 else
-                  echo "[dd-soccer-rs] server clone failed; using mounted source at ${server_src}" >&2
+                  echo "[dd-soccer-rs] server clone/submodule failed; using mounted source at ${server_src}" >&2
                 fi
+              fi
+              # Fail loudly if the backend submodule never populated (bad/missing GH_PAT,
+              # or a mounted superproject whose host never ran `git submodule update
+              # --init remote/deployments/soccer-rs`) instead of a confusing cargo error.
+              if [ ! -f "${server_src}/Cargo.toml" ]; then
+                echo "[dd-soccer-rs] FATAL: backend submodule not populated at ${server_src}. Set GH_PAT (private-repo read) or run 'git submodule update --init remote/deployments/soccer-rs' on the host." >&2
+                exit 1
               fi
 
               # 2) soccer_engine source (soccer-sim-game-engine.rs at the pinned ref).
@@ -130,10 +158,17 @@ spec:
               value: https://github.com/ORESoftware/k8s-cluster.git
             - name: SOCCER_SERVER_GIT_REF
               value: dev
+            # Read access for the private backend submodule
+            # (akrion-sim/akrion-backend.rs), fetched via the http extraheader above.
+            - name: GH_PAT
+              valueFrom:
+                secretKeyRef:
+                  name: dd-git-clone-token
+                  key: token
             - name: SOCCER_ENGINE_GIT_URL
               value: https://github.com/ORESoftware/soccer-sim-game-engine.rs.git
             - name: SOCCER_ENGINE_GIT_REF
-              value: 5c7132891c1eb2d91737deed0c273850da0ac9fc
+              value: 15bd673830bcbfceeadbbb1533fdc2739c7de35a
             - name: DES_ENGINE_GIT_URL
               value: https://github.com/ORESoftware/discrete-event-system.rs.git
             - name: DES_ENGINE_GIT_REF
@@ -155,10 +190,16 @@ spec:
               containerPort: 8113
           resources:
             requests:
-              cpu: 50m
+              # Guarantee a full core so the live soccer step loop sustains its
+              # ~10Hz tick under node contention (the UI animates one tick per
+              # server step; a starved/throttled server = slow-motion playback).
+              cpu: '1'
               memory: 4Gi
             limits:
-              cpu: '2'
+              # Burst ceiling raised 2 -> 6: the per-tick sim + tokio workers
+              # briefly exceeded a 2-core cgroup quota, causing CFS throttle
+              # stalls. The 16-core nodes have ample room.
+              cpu: '6'
               # Soccer_engine recompiles the full 115k-line soccer.rs plus des_engine
               # from an empty /tmp on every (re)start, peaking higher than des-rs.
               memory: 14Gi
