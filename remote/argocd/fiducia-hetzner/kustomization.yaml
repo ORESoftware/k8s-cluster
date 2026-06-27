@@ -62,6 +62,10 @@ patches:
       spec:
         template:
           spec:
+            tolerations:
+              - key: node.cilium.io/agent-not-ready
+                operator: Exists
+                effect: NoSchedule
             affinity:
               podAntiAffinity:
                 preferredDuringSchedulingIgnoredDuringExecution:
