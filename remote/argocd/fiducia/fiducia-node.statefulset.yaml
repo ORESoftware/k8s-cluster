@@ -22,6 +22,9 @@ spec:
         app: fiducia-node
       annotations:
         dd.dev/fiducia-source: 'fiducia-cloud/fiducia-monorepo@main (apps/fiducia-node.rs)'
+        # Bump to force a rebuild onto the merged main (real multi-node Raft +
+        # union locks + counting semaphores).
+        dd.dev/fiducia-build: '2026-06-27-raft-locks-merge'
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
