@@ -21,3 +21,5 @@ resources:
   - fiducia-brain.deployment.yaml
   - fiducia-load-balance.deployment.yaml
   - fiducia-backend.deployment.yaml
+  - fiducia-auth.deployment.yaml
+  - fiducia-admin.deployment.yaml
