@@ -7,6 +7,11 @@ The superproject pins each submodule to an exact commit, while `.gitmodules`
 sets `branch = main` for every submodule so updates intentionally follow each
 repo's main branch.
 
+This repo is the private all-up integration and GitOps view. Individual app
+repos keep their own visibility boundaries, so public SDK/protocol repos can
+coexist with private control-plane, infra, customer, and runtime repos. See
+`docs/repo-boundaries.md`.
+
 ## Clone
 
 ```sh
@@ -70,12 +75,32 @@ the superproject branch:
 scripts/checkout-feature-branch.sh feature/customer-portal-streams --set-submodule-branch --stage-pins
 ```
 
+## Audit
+
+Run the monorepo audit before publishing a deployable pin set:
+
+```sh
+scripts/audit-repo-state.sh
+```
+
+The audit checks for dirty submodules, stale conflict markers, tracked secret
+files, secret-looking values, missing Dockerfiles, Rust runtime images that are
+not distroless/nonroot, README app-list drift, and the expected private
+visibility of the all-up superproject when `gh` is available.
+
+During local edits, preview the non-dirty checks with:
+
+```sh
+scripts/audit-repo-state.sh --allow-dirty
+```
+
 ## Apps
 
 - `apps/fiducia-admin.rs`
 - `apps/fiducia-auth.rs`
 - `apps/fiducia-backend.rs`
 - `apps/fiducia-brain.rs`
+- `apps/fiducia-cli.rs`
 - `apps/fiducia-clients`
 - `apps/fiducia-customer-ui.web`
 - `apps/fiducia-edge`
