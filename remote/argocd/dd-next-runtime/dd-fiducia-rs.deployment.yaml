@@ -13,8 +13,14 @@ spec:
   progressDeadlineSeconds: 1800
   strategy:
     # Builds the Astro site (node) and the axum backend (cargo) from source at
-    # pod start. Recreate avoids surge build pods on the single-node EC2 runtime.
-    type: Recreate
+    # pod start. Use RollingUpdate so the OLD pod keeps serving while the new
+    # one does its cold build — avoids the 502 window that Recreate caused.
+    # maxUnavailable: 0 = never drop below 1 ready replica; maxSurge: 1 = at most
+    # one extra (build) pod during a rollout.
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: dd-fiducia-rs
