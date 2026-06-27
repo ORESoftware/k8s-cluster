@@ -85,14 +85,10 @@ spec:
             - |
               set -euo pipefail
               export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-              git config --global url."https://github.com/".insteadOf "git@github.com:"
-              git config --global --add safe.directory '*'
-              rm -rf /tmp/mono
-              git clone --depth 1 --branch main https://github.com/fiducia-cloud/fiducia-monorepo.git /tmp/mono
-              cd /tmp/mono
-              git submodule update --init --depth 1 apps/fiducia-backend.rs apps/fiducia-interfaces
-              echo "[fiducia-backend] building apps/fiducia-backend.rs @ $(git -C apps/fiducia-backend.rs rev-parse --short HEAD)"
-              cd apps/fiducia-backend.rs
+              # Clone the PUBLIC app repos as siblings (the monorepo is private).
+              rm -rf /tmp/src && mkdir -p /tmp/src && cd /tmp/src
+              for repo in fiducia-backend.rs fiducia-interfaces; do git clone --depth 1 --branch main "https://github.com/fiducia-cloud/${repo}.git"; done
+              cd /tmp/src/fiducia-backend.rs
               exec /usr/local/cargo/bin/cargo run --release
           env:
             - { name: HOST, value: 0.0.0.0 }
