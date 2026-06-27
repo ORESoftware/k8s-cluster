@@ -1,0 +1,180 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fiducia-backend
+  namespace: fiducia
+  labels:
+    app: fiducia-backend
+spec:
+  # The customer-facing website/marketing server. Stateless → autoscaled by the
+  # HPA below (replicas is just the starting point; the HPA owns it after).
+  replicas: 2
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: fiducia-backend
+  template:
+    metadata:
+      labels:
+        app: fiducia-backend
+      annotations:
+        dd.dev/fiducia-source: 'fiducia-cloud/fiducia-monorepo@main (apps/fiducia-backend.rs + apps/fiducia-ui.web)'
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        # Build the Astro UI from the monorepo and hand it to the backend via the
+        # shared site-dist emptyDir (served at STATIC_DIR).
+        - name: build-ui
+          image: docker.io/library/node:22-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsUser: 0
+            runAsGroup: 0
+          command: [/bin/bash, -lc]
+          args:
+            - |
+              set -euo pipefail
+              command -v git >/dev/null 2>&1 || { apt-get update && apt-get install -y --no-install-recommends git ca-certificates; }
+              git config --global url."https://github.com/".insteadOf "git@github.com:"
+              git config --global --add safe.directory '*'
+              rm -rf /work/mono
+              git clone --depth 1 --branch main https://github.com/fiducia-cloud/fiducia-monorepo.git /work/mono
+              cd /work/mono && git submodule update --init --depth 1 apps/fiducia-ui.web
+              cd apps/fiducia-ui.web
+              npm ci --no-audit --no-fund
+              PUBLIC_BASE=/ npm run build
+              cp -R dist/. /site-dist/
+              chmod -R a+rX /site-dist
+          env:
+            - { name: npm_config_cache, value: /work/npm-cache }
+            - { name: HOME, value: /work }
+          resources:
+            requests: { cpu: 100m, memory: 512Mi }
+            limits: { cpu: '1', memory: 2Gi }
+          volumeMounts:
+            - { name: site-dist, mountPath: /site-dist }
+            - { name: work, mountPath: /work }
+      containers:
+        - name: fiducia-backend
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          command: [/bin/bash, -lc]
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              git config --global url."https://github.com/".insteadOf "git@github.com:"
+              git config --global --add safe.directory '*'
+              rm -rf /tmp/mono
+              git clone --depth 1 --branch main https://github.com/fiducia-cloud/fiducia-monorepo.git /tmp/mono
+              cd /tmp/mono
+              git submodule update --init --depth 1 apps/fiducia-backend.rs apps/fiducia-interfaces
+              echo "[fiducia-backend] building apps/fiducia-backend.rs @ $(git -C apps/fiducia-backend.rs rev-parse --short HEAD)"
+              cd apps/fiducia-backend.rs
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - { name: HOST, value: 0.0.0.0 }
+            - { name: PORT, value: '8117' }
+            - { name: STATIC_DIR, value: /site-dist }
+            - { name: RUST_LOG, value: info }
+            - { name: HOME, value: /tmp }
+            - { name: CARGO_HOME, value: /tmp/cargo }
+            - { name: CARGO_TARGET_DIR, value: /tmp/target }
+            - { name: CARGO_BUILD_JOBS, value: '1' }
+          ports:
+            - name: http
+              containerPort: 8117
+          resources:
+            requests:
+              cpu: 50m
+              memory: 768Mi
+            limits:
+              cpu: '2'
+              memory: 3Gi
+          startupProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 5
+            failureThreshold: 240
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - { name: site-dist, mountPath: /site-dist, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: site-dist, emptyDir: {} }
+        - { name: work, emptyDir: {} }
+        - name: tmp
+          emptyDir: { sizeLimit: 6Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-backend
+  namespace: fiducia
+  labels:
+    app: fiducia-backend
+spec:
+  type: ClusterIP
+  selector:
+    app: fiducia-backend
+  ports:
+    - name: http
+      port: 8117
+      targetPort: http
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: fiducia-backend
+  namespace: fiducia
+  labels:
+    app: fiducia-backend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: fiducia-backend
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300

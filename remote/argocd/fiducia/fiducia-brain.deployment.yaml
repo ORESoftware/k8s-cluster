@@ -1,0 +1,138 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fiducia-brain
+  namespace: fiducia
+  labels:
+    app: fiducia-brain
+spec:
+  # 3 control-plane replicas. The brain's *own* Raft (replicating membership +
+  # placement across brain members) is still a TODO, so these run as independent
+  # Deployment replicas behind a Service for now — hence Deployment, not StatefulSet.
+  replicas: 3
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: fiducia-brain
+  template:
+    metadata:
+      labels:
+        app: fiducia-brain
+      annotations:
+        dd.dev/fiducia-source: 'fiducia-cloud/fiducia-monorepo@main (apps/fiducia-brain.rs)'
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: fiducia-brain
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          command: [/bin/bash, -lc]
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              git config --global url."https://github.com/".insteadOf "git@github.com:"
+              git config --global --add safe.directory '*'
+              rm -rf /tmp/mono
+              git clone --depth 1 --branch main https://github.com/fiducia-cloud/fiducia-monorepo.git /tmp/mono
+              cd /tmp/mono
+              git submodule update --init --depth 1 \
+                apps/fiducia-brain.rs apps/fiducia-routing.rs apps/fiducia-interfaces
+              echo "[fiducia-brain] building apps/fiducia-brain.rs @ $(git -C apps/fiducia-brain.rs rev-parse --short HEAD)"
+              cd apps/fiducia-brain.rs
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - name: PORT
+              value: '8095'
+            - name: FIDUCIA_SHARD_COUNT
+              value: '1'
+            - name: FIDUCIA_TARGET_NODES
+              value: '3'
+            - name: FIDUCIA_REPLICATION_FACTOR
+              value: '3'
+            - name: RUST_LOG
+              value: info
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /tmp/cargo
+            - name: CARGO_TARGET_DIR
+              value: /tmp/target
+            - name: CARGO_BUILD_JOBS
+              value: '1'
+          ports:
+            - name: http
+              containerPort: 8095
+          resources:
+            requests:
+              cpu: 100m
+              memory: 768Mi
+            limits:
+              cpu: '2'
+              memory: 3Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 240
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 8Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-brain
+  namespace: fiducia
+  labels:
+    app: fiducia-brain
+spec:
+  type: ClusterIP
+  selector:
+    app: fiducia-brain
+  ports:
+    - name: http
+      port: 8095
+      targetPort: http
