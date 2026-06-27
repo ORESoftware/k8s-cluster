@@ -35,8 +35,8 @@ Use embedded RocksDB per node for production durability:
    payload types from `fiducia-interfaces`; keep `fiducia-clients/PROTOCOL.md`
    as the method/endpoint contract. Grow `fiducia-cli.rs` from closest-region
    selection into `fiduciactl`: login, project selection, API key lifecycle, KV
-   get/put/watch, lock inspect, schedule history, shard health, and support
-   bundles.
+   get/put/watch, lock/semaphore/multi-key inspect, schedule history, shard
+   health, and support bundles.
 
 3. **Admin and observability APIs**
    Owner repos: `fiducia-node.rs`, `fiducia-brain.rs`, `fiducia-admin.rs`,
@@ -50,9 +50,11 @@ Use embedded RocksDB per node for production durability:
 4. **Transactions and workflows**
    Owner repos: `fiducia-node.rs`, `fiducia-interfaces`, `fiducia-clients`.
 
-   Add atomic multi-key CAS when keys share a shard, batch acquire, lock plus
-   config update, semaphore plus fencing token, and a cross-shard workflow story
-   for operations that cannot be made single-shard.
+   Multi-key locks and capped semaphores are now part of the node/client
+   contract. Next, add atomic multi-key CAS when keys share a shard, composite
+   wait/idempotency semantics, lock plus config update, semaphore plus fencing
+   token in one workflow, and a cross-shard workflow story for operations that
+   cannot be made single-shard.
 
 5. **Disaster recovery and retention**
    Owner repos: `fiducia-node.rs`, `fiducia-brain.rs`, `fiducia-infra`,
