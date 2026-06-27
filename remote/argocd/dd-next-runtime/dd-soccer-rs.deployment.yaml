@@ -23,7 +23,7 @@ spec:
     metadata:
       annotations:
         dd.dev/soccer-server-revision: 'full-live-canvas-ui+lazy-uuid-games+mermaid-docs+flowchart-doc+ws-push+server-push'
-        dd.dev/soccer-engine-revision: 'soccer-sim-game-engine.rs@learning (314b3d2: +bind-first +passeval-dedup)'
+        dd.dev/soccer-engine-revision: 'soccer-sim-game-engine.rs@learning (314b3d2: +bind-first +passeval-dedup) +pg-policy-load(overnight)'
         dd.dev/des-engine-revision: 'discrete-event-system.rs@main'
       labels:
         app: dd-soccer-rs
@@ -148,7 +148,14 @@ spec:
               copy_source_tree "${soccer_src}" "${build_soccer}"
               copy_source_tree "${engine_src}" "${build_engine}"
               cd "${build_src}"
-              exec /usr/local/cargo/bin/cargo run --release
+              # `soccer_engine/postgres-persistence` turns ON the engine's Postgres
+              # policy-load path (compiled out by default). With the SOCCER_DATABASE_URL
+              # + SOCCER_EXPERIMENT_SLUG env below, the live server loads the latest
+              # ACTIVE learned policy for that experiment from RDS on the first game
+              # session (in-VPC → fast; warm-cached for subsequent games) instead of
+              # playing a cold, unlearned policy. Same feature the learning cronjobs
+              # build, proven on this rust:1.90-bookworm image.
+              exec /usr/local/cargo/bin/cargo run --release --features soccer_engine/postgres-persistence
           env:
             - name: HOST
               value: 0.0.0.0
@@ -185,6 +192,23 @@ spec:
             # server binds.
             - name: CARGO_BUILD_JOBS
               value: '1'
+            # --- Load the learned policy from RDS (the in-VPC pod reaches it fast,
+            # unlike a laptop). Mirrors the dd-soccer-learning-queue cronjob's PG
+            # wiring. The live server loads the latest ACTIVE policy for this
+            # experiment on the first game session, then serves it. ---
+            - name: SOCCER_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-remote-rest-api-secrets
+                  key: RDS_DATABASE_URL
+            - name: SOCCER_PG_TLS_INSECURE
+              value: '1'
+            # The continuous overnight self-play learner's experiment (gen 290+,
+            # ~1.3M tabular Q-entries). The bridge loads it once per pod on the
+            # first game session (warm-cached after); a newer generation is picked
+            # up on the next pod roll. Switch this slug to serve a different run.
+            - name: SOCCER_EXPERIMENT_SLUG
+              value: soccer-self-play-k8s-overnight
           ports:
             - name: http
               containerPort: 8113
