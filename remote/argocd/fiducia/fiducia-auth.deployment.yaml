@@ -46,14 +46,10 @@ spec:
             - |
               set -euo pipefail
               export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-              git config --global url."https://github.com/".insteadOf "git@github.com:"
-              git config --global --add safe.directory '*'
-              rm -rf /tmp/mono
-              git clone --depth 1 --branch main https://github.com/fiducia-cloud/fiducia-monorepo.git /tmp/mono
-              cd /tmp/mono
-              git submodule update --init --depth 1 apps/fiducia-auth.rs apps/fiducia-interfaces
-              echo "[fiducia-auth] building apps/fiducia-auth.rs @ $(git -C apps/fiducia-auth.rs rev-parse --short HEAD)"
-              cd apps/fiducia-auth.rs
+              # Clone PUBLIC app repos as siblings (the monorepo is private).
+              rm -rf /tmp/src && mkdir -p /tmp/src && cd /tmp/src
+              for repo in fiducia-auth.rs fiducia-interfaces; do git clone --depth 1 --branch main "https://github.com/fiducia-cloud/${repo}.git"; done
+              cd /tmp/src/fiducia-auth.rs
               exec /usr/local/cargo/bin/cargo run --release
           env:
             - { name: PORT, value: '8097' }
