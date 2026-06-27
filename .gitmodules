@@ -89,3 +89,7 @@
 	path = remote/deployments/fiducia-ui.web
 	url = https://github.com/fiducia-cloud/fiducia-ui.web.git
 	branch = main
+[submodule "remote/deployments/fiducia-monorepo"]
+	path = remote/deployments/fiducia-monorepo
+	url = https://github.com/fiducia-cloud/fiducia-monorepo.git
+	branch = main
