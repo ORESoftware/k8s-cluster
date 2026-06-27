@@ -204,13 +204,11 @@ spec:
             - name: SOCCER_PG_TLS_INSECURE
               value: '1'
             # The continuous overnight self-play learner's experiment (gen 290+,
-            # ~1.3M tabular Q-entries). Switch this slug to serve a different run.
+            # ~1.3M tabular Q-entries). The bridge loads it once per pod on the
+            # first game session (warm-cached after); a newer generation is picked
+            # up on the next pod roll. Switch this slug to serve a different run.
             - name: SOCCER_EXPERIMENT_SLUG
               value: soccer-self-play-k8s-overnight
-            # Keep the cluster learner publishing newer generations hot-swapped in
-            # without a pod roll (background refresh poll, seconds).
-            - name: SOCCER_LIVE_POLICY_PG_REFRESH_SECONDS
-              value: '120'
           ports:
             - name: http
               containerPort: 8113
