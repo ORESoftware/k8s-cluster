@@ -23,7 +23,7 @@ spec:
     metadata:
       annotations:
         dd.dev/soccer-server-revision: 'full-live-canvas-ui+lazy-uuid-games+mermaid-docs+flowchart-doc+ws-push+server-push'
-        dd.dev/soccer-engine-revision: 'soccer-sim-game-engine.rs@learning (314b3d2: +bind-first +passeval-dedup) +pg-policy-load(overnight)'
+        dd.dev/soccer-engine-revision: 'soccer-sim-game-engine.rs@learning (314b3d2: +bind-first +passeval-dedup) +pg-policy-load(overnight, blocking-startup)'
         dd.dev/des-engine-revision: 'discrete-event-system.rs@main'
       labels:
         app: dd-soccer-rs
@@ -204,11 +204,19 @@ spec:
             - name: SOCCER_PG_TLS_INSECURE
               value: '1'
             # The continuous overnight self-play learner's experiment (gen 290+,
-            # ~1.3M tabular Q-entries). The bridge loads it once per pod on the
-            # first game session (warm-cached after); a newer generation is picked
-            # up on the next pod roll. Switch this slug to serve a different run.
+            # ~1.3M tabular Q-entries). Switch this slug to serve a different run.
             - name: SOCCER_EXPERIMENT_SLUG
               value: soccer-self-play-k8s-overnight
+            # REQUIRED here: the engine's default "bind-first" path DEFERS the PG
+            # load to a background refresher that only runs inside
+            # SoccerLiveServer::run() — but this backend drives the engine through
+            # SoccerLiveHttpBridge::new() -> SoccerLiveServer::new() and never calls
+            # run(), so the refresher never starts and the policy would never load.
+            # Forcing the blocking startup load makes new() load synchronously: the
+            # first game session pays the ~1.3M-entry RDS load (in-VPC, ~1-2 min)
+            # and warm-caches it for every subsequent game.
+            - name: SOCCER_LIVE_POLICY_BLOCKING_STARTUP_LOAD
+              value: '1'
           ports:
             - name: http
               containerPort: 8113
