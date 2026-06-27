@@ -25,6 +25,7 @@ spec:
         app: fiducia-backend
       annotations:
         dd.dev/fiducia-source: 'fiducia-cloud/fiducia-monorepo@main (apps/fiducia-backend.rs + apps/fiducia-ui.web)'
+        dd.dev/fiducia-build: '2026-06-27-raft-locks-merge'
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
