@@ -130,7 +130,103 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+        # Per-node operational sidecar: scrapes the local node's /v1/status and
+        # heartbeats it (+ failure domain) to fiducia-brain, so the control plane
+        # actually learns membership. Without this the brain's membership is empty.
+        # Co-located (localhost to the node) by design; builds from source in-pod
+        # like everything else, sharing the /tmp build volume + cargo dep cache.
+        - name: fiducia-node-sidecar
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          command: [/bin/bash, -lc]
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              rm -rf /tmp/sidecar-src && mkdir -p /tmp/sidecar-src && cd /tmp/sidecar-src
+              for repo in fiducia-node-sidecar.rs fiducia-interfaces; do git clone --depth 1 --branch main "https://github.com/fiducia-cloud/${repo}.git"; done
+              # Membership key = the pod name (a URL-safe path segment for the brain's
+              # /v1/nodes/{id}/heartbeat); the reachable address travels separately.
+              suffix="fiducia-node-peer.fiducia.svc.cluster.local"
+              export FIDUCIA_NODE_ID="${POD_NAME}"
+              export FIDUCIA_NODE_ADDRESS="http://${POD_NAME}.${suffix}:8090"
+              echo "[sidecar] node_id=${FIDUCIA_NODE_ID} addr=${FIDUCIA_NODE_ADDRESS} region=${FIDUCIA_REGION:-} brain=${FIDUCIA_BRAIN_URL}"
+              cd /tmp/sidecar-src/fiducia-node-sidecar.rs
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            # Failure domain = the host machine. With the hard one-pod-per-host
+            # anti-affinity this spreads a shard's replicas across machines; the
+            # KubeOracle can later override with the authoritative region/zone label.
+            - name: FIDUCIA_REGION
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: PORT
+              value: '8091'
+            - name: FIDUCIA_NODE_URL
+              value: http://localhost:8090
+            - name: FIDUCIA_BRAIN_URL
+              value: http://fiducia-brain.fiducia.svc.cluster.local:8095
+            - name: FIDUCIA_HEARTBEAT_MS
+              value: '2000'
+            - name: RUST_LOG
+              value: info
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /tmp/cargo
+            - name: CARGO_TARGET_DIR
+              value: /tmp/sidecar-target
+            - name: CARGO_BUILD_JOBS
+              value: '1'
+          ports:
+            - name: sidecar
+              containerPort: 8091
+          resources:
+            requests:
+              memory: 384Mi
+            limits:
+              memory: 1536Mi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: sidecar
+            periodSeconds: 5
+            failureThreshold: 240
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: sidecar
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: sidecar
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: tmp
           emptyDir:
-            sizeLimit: 8Gi
+            # Two in-pod Rust builds (node + sidecar) share this; sized for both
+            # target dirs plus the shared cargo registry cache.
+            sizeLimit: 12Gi
