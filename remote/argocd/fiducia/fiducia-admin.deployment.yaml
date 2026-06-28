@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fiducia-admin
+  namespace: fiducia
+  labels:
+    app: fiducia-admin
+spec:
+  replicas: 1
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }
+  selector:
+    matchLabels:
+      app: fiducia-admin
+  template:
+    metadata:
+      labels:
+        app: fiducia-admin
+      annotations:
+        dd.dev/fiducia-source: 'fiducia-cloud/fiducia-monorepo@main (apps/fiducia-admin.rs)'
+        dd.dev/fiducia-build: '2026-06-27-raft-locks-merge'
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: fiducia-admin
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities: { drop: [ALL] }
+            seccompProfile: { type: RuntimeDefault }
+          command: [/bin/bash, -lc]
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              # Clone PUBLIC app repos as siblings (the monorepo is private).
+              rm -rf /tmp/src && mkdir -p /tmp/src && cd /tmp/src
+              for repo in fiducia-admin.rs fiducia-interfaces; do git clone --depth 1 --branch main "https://github.com/fiducia-cloud/${repo}.git"; done
+              cd /tmp/src/fiducia-admin.rs
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - { name: PORT, value: '8096' }
+            # Where the admin dashboard reaches the auth + brain services in-cluster.
+            - { name: FIDUCIA_AUTH_URL, value: http://fiducia-auth.fiducia.svc.cluster.local:8097 }
+            - { name: FIDUCIA_BRAIN_URL, value: http://fiducia-brain.fiducia.svc.cluster.local:8095 }
+            - { name: RUST_LOG, value: info }
+            - { name: HOME, value: /tmp }
+            - { name: CARGO_HOME, value: /tmp/cargo }
+            - { name: CARGO_TARGET_DIR, value: /tmp/target }
+            - { name: CARGO_BUILD_JOBS, value: '1' }
+          ports:
+            - { name: http, containerPort: 8096 }
+          resources:
+            requests: { memory: 768Mi }
+            limits: { memory: 3Gi }
+          startupProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 5
+            failureThreshold: 240
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 8Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-admin
+  namespace: fiducia
+  labels:
+    app: fiducia-admin
+spec:
+  type: ClusterIP
+  selector:
+    app: fiducia-admin
+  ports:
+    - { name: http, port: 8096, targetPort: http }

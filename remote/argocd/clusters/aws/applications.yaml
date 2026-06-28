@@ -197,3 +197,29 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+---
+# fiducia.cloud — the sharded-multi-Raft coordination stack (data plane + control
+# plane + LB + website). Single-machine here on AWS (all pods co-located on the
+# one EC2 node); Hetzner runs the same stack spread across separate machines (see
+# clusters/hetzner + remote/argocd/fiducia-hetzner).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fiducia
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:ORESoftware/k8s-cluster.git
+    targetRevision: dev
+    path: remote/argocd/fiducia
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: fiducia
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

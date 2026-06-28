@@ -1,0 +1,136 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: fiducia-node
+  namespace: fiducia
+  labels:
+    app: fiducia-node
+spec:
+  # Raft needs STABLE network identity per member, so this is a StatefulSet (not a
+  # Deployment) with a headless peer service — the same pattern the in-repo
+  # dd-rust-network-mutex-raft cluster uses. 3 replicas = a 3-member group whose
+  # single shard (FIDUCIA_SHARD_COUNT=1) has replication factor 3 (tolerates 1 loss).
+  serviceName: fiducia-node-peer
+  replicas: 3
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app: fiducia-node
+  template:
+    metadata:
+      labels:
+        app: fiducia-node
+      annotations:
+        dd.dev/fiducia-source: 'fiducia-cloud/fiducia-monorepo@main (apps/fiducia-node.rs)'
+        # Bump to force a rebuild onto the merged main (real multi-node Raft +
+        # union locks + counting semaphores).
+        dd.dev/fiducia-build: '2026-06-27-raft-locks-merge'
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: fiducia-node
+          # In-pod source build (matches the repo's other Rust services) until a
+          # published image is wired. The path-deps (../fiducia-routing.rs,
+          # ../fiducia-interfaces) resolve because we build from the monorepo's
+          # apps/ sibling layout.
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          command: [/bin/bash, -lc]
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              # Clone the PUBLIC app repos as siblings (the monorepo is private). This
+              # recreates the sibling layout so the ../fiducia-routing.rs and
+              # ../fiducia-interfaces path-deps resolve — no credentials needed.
+              rm -rf /tmp/src && mkdir -p /tmp/src && cd /tmp/src
+              for repo in fiducia-node.rs fiducia-routing.rs fiducia-interfaces; do
+                git clone --depth 1 --branch main "https://github.com/fiducia-cloud/${repo}.git"
+              done
+              echo "[fiducia-node] ${POD_NAME} building fiducia-node.rs @ $(git -C fiducia-node.rs rev-parse --short HEAD)"
+              # Raft identity + peer list from the StatefulSet ordinal (exclude self).
+              suffix="fiducia-node-peer.fiducia.svc.cluster.local"
+              peers=""
+              for i in 0 1 2; do
+                n="fiducia-node-$i"
+                [ "$n" = "${POD_NAME}" ] && continue
+                peers="${peers:+$peers,}${n}.${suffix}:8090"
+              done
+              export FIDUCIA_NODE_ID="http://${POD_NAME}.${suffix}:8090"
+              export FIDUCIA_PEERS="$peers"
+              echo "[fiducia-node] id=${FIDUCIA_NODE_ID} peers=${FIDUCIA_PEERS} shards=${FIDUCIA_SHARD_COUNT}"
+              cd /tmp/src/fiducia-node.rs
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: PORT
+              value: '8090'
+            # One shard for the whole keyspace — every key (and all locks, via the
+            # lock-coordination key) lands on shard 0's single Raft group.
+            - name: FIDUCIA_SHARD_COUNT
+              value: '1'
+            - name: RUST_LOG
+              value: info
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /tmp/cargo
+            - name: CARGO_TARGET_DIR
+              value: /tmp/target
+            - name: CARGO_BUILD_JOBS
+              value: '1'
+          ports:
+            - name: http
+              containerPort: 8090
+          resources:
+            requests:
+              memory: 768Mi
+            limits:
+              memory: 3Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 240
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 8Gi
