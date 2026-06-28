@@ -1,4 +1,4 @@
-const config = window.__AKRION_CONFIG__ || {};
+let config = {};
 const allowedThemes = new Set(["dark", "medium", "light"]);
 const authStatus = document.getElementById("auth-status");
 const authUser = document.getElementById("auth-user");
@@ -42,15 +42,34 @@ async function refreshSession() {
   if (data.session) setAuthStatus("Signed in", "ready");
 }
 
-if (window.supabase && config.supabase?.enabled) {
-  supabaseClient = window.supabase.createClient(config.supabase.url, config.supabase.anon_key);
-  supabaseClient.auth.onAuthStateChange((_event, session) => {
-    setUser(session);
-    setAuthStatus(session ? "Signed in" : "Signed out", session ? "ready" : "");
-  });
-  refreshSession();
-} else {
-  setAuthStatus("Set SUPABASE_URL and SUPABASE_ANON_KEY", "offline");
+async function loadConfig() {
+  const configUrl = document.documentElement.dataset.configUrl || "/config";
+  try {
+    const response = await fetch(configUrl, {
+      cache: "no-store",
+      credentials: "same-origin",
+      headers: { Accept: "application/json" },
+    });
+    if (!response.ok) throw new Error(`config ${response.status}`);
+    return response.json();
+  } catch (_error) {
+    setAuthStatus("Config unavailable", "offline");
+    return {};
+  }
+}
+
+async function initializeAuth() {
+  config = await loadConfig();
+  if (window.supabase && config.supabase?.enabled) {
+    supabaseClient = window.supabase.createClient(config.supabase.url, config.supabase.anon_key);
+    supabaseClient.auth.onAuthStateChange((_event, session) => {
+      setUser(session);
+      setAuthStatus(session ? "Signed in" : "Signed out", session ? "ready" : "");
+    });
+    refreshSession();
+  } else {
+    setAuthStatus("Set SUPABASE_URL and SUPABASE_ANON_KEY", "offline");
+  }
 }
 
 document.body.addEventListener("htmx:configRequest", (event) => {
@@ -112,3 +131,4 @@ document.body.addEventListener("htmx:afterSwap", () => {
 });
 setTheme(activeTheme());
 window.lucide?.createIcons();
+initializeAuth();

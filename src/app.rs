@@ -58,6 +58,36 @@ impl AppState {
             },
         }
     }
+
+    pub(crate) fn content_security_policy(&self) -> String {
+        let mut connect_src = vec![
+            "'self'".to_string(),
+            "https://*.supabase.co".to_string(),
+            "wss://*.supabase.co".to_string(),
+        ];
+
+        if let Some(url) = self.supabase_url.as_deref() {
+            if let Ok(url) = reqwest::Url::parse(url) {
+                if let Some(host) = url.host_str() {
+                    let scheme = url.scheme();
+                    if scheme == "http" || scheme == "https" {
+                        connect_src.push(format!("{scheme}://{host}"));
+                    }
+                    if scheme == "https" {
+                        connect_src.push(format!("wss://{host}"));
+                    }
+                }
+            }
+        }
+
+        connect_src.sort();
+        connect_src.dedup();
+
+        format!(
+            "default-src 'self'; script-src 'self' https://unpkg.com https://cdn.jsdelivr.net; style-src 'self'; img-src 'self' data:; connect-src {}; font-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'self'; upgrade-insecure-requests",
+            connect_src.join(" ")
+        )
+    }
 }
 
 #[derive(Serialize)]
@@ -91,6 +121,49 @@ fn normalize_base_path(value: String) -> String {
         String::new()
     } else {
         format!("/{trimmed}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn state_with_base_path(base_path: &str) -> AppState {
+        AppState {
+            client: reqwest::Client::new(),
+            backend_url: "http://127.0.0.1:8113".to_string(),
+            base_path: normalize_base_path(base_path.to_string()),
+            supabase_url: Some("https://example.supabase.co".to_string()),
+            supabase_anon_key: Some("anon".to_string()),
+            started: Instant::now(),
+        }
+    }
+
+    #[test]
+    fn normalizes_base_path_once() {
+        assert_eq!(normalize_base_path(String::new()), "");
+        assert_eq!(
+            normalize_base_path("/akrion-sim/".to_string()),
+            "/akrion-sim"
+        );
+    }
+
+    #[test]
+    fn prefixes_paths_under_base_path() {
+        let state = state_with_base_path("/akrion-sim/");
+        assert_eq!(state.path("/"), "/akrion-sim");
+        assert_eq!(state.path("portal"), "/akrion-sim/portal");
+        assert_eq!(state.path("/assets/app.css"), "/akrion-sim/assets/app.css");
+    }
+
+    #[test]
+    fn content_security_policy_blocks_inline_script() {
+        let state = state_with_base_path("/akrion-sim");
+        let policy = state.content_security_policy();
+        assert!(policy.contains("script-src 'self' https://unpkg.com https://cdn.jsdelivr.net"));
+        assert!(policy.contains("https://example.supabase.co"));
+        assert!(policy.contains("wss://example.supabase.co"));
+        assert!(!policy.contains("'unsafe-inline'"));
     }
 }
 

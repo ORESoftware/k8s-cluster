@@ -1,10 +1,13 @@
 use std::time::Duration;
 
 use axum::{
+    body::Body,
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         State,
     },
+    http::{header::CACHE_CONTROL, HeaderMap, HeaderName, HeaderValue, Request},
+    middleware::{self, Next},
     response::Response,
     routing::get,
     Json, Router,
@@ -31,7 +34,14 @@ pub(crate) fn router(state: AppState) -> Router {
             .nest(base_path.as_str(), app_routes())
     };
 
-    routes.layer(TraceLayer::new_for_http()).with_state(state)
+    let header_state = state.clone();
+    routes
+        .layer(middleware::from_fn_with_state(
+            header_state,
+            security_headers,
+        ))
+        .layer(TraceLayer::new_for_http())
+        .with_state(state)
 }
 
 fn app_routes() -> Router<AppState> {
@@ -72,8 +82,10 @@ async fn auth_partial(State(state): State<AppState>) -> Markup {
     views::auth_panel(&state)
 }
 
-async fn public_config(State(state): State<AppState>) -> Json<PublicConfig> {
-    Json(state.public_config())
+async fn public_config(State(state): State<AppState>) -> (HeaderMap, Json<PublicConfig>) {
+    let mut headers = HeaderMap::new();
+    headers.insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    (headers, Json(state.public_config()))
 }
 
 async fn portal_ws(ws: WebSocketUpgrade, State(state): State<AppState>) -> Response {
@@ -106,4 +118,35 @@ async fn stream_portal_stats(mut socket: WebSocket, state: AppState) {
 
 async fn healthz() -> &'static str {
     "ok"
+}
+
+async fn security_headers(
+    State(state): State<AppState>,
+    request: Request<Body>,
+    next: Next,
+) -> Response {
+    let mut response = next.run(request).await;
+    let headers = response.headers_mut();
+    headers.insert(
+        HeaderName::from_static("content-security-policy"),
+        HeaderValue::from_str(&state.content_security_policy())
+            .unwrap_or_else(|_| HeaderValue::from_static("default-src 'self'")),
+    );
+    headers.insert(
+        HeaderName::from_static("x-content-type-options"),
+        HeaderValue::from_static("nosniff"),
+    );
+    headers.insert(
+        HeaderName::from_static("referrer-policy"),
+        HeaderValue::from_static("strict-origin-when-cross-origin"),
+    );
+    headers.insert(
+        HeaderName::from_static("permissions-policy"),
+        HeaderValue::from_static("camera=(), geolocation=(), microphone=()"),
+    );
+    headers.insert(
+        HeaderName::from_static("cross-origin-opener-policy"),
+        HeaderValue::from_static("same-origin"),
+    );
+    response
 }

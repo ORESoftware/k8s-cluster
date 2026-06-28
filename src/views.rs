@@ -1,4 +1,4 @@
-use maud::{html, Markup, PreEscaped, DOCTYPE};
+use maud::{html, Markup, DOCTYPE};
 
 use crate::{
     app::AppState,
@@ -234,23 +234,21 @@ pub(crate) fn auth_panel(state: &AppState) -> Markup {
 }
 
 pub(crate) fn render_page(state: &AppState, active: &str, body: Markup) -> Markup {
-    let config = serde_json::to_string(&state.public_config()).expect("public config serializes");
     html! {
         (DOCTYPE)
-        html lang="en" {
+        html lang="en" data-config-url=(state.path("/config")) {
             head {
                 meta charset="utf-8";
                 meta name="viewport" content="width=device-width, initial-scale=1";
                 title { "Akrion Sim" }
-                script { (PreEscaped(THEME_BOOT_JS)) }
+                script src=(state.path("/assets/theme.js")) {}
                 link rel="preconnect" href="https://unpkg.com";
                 link rel="preconnect" href="https://cdn.jsdelivr.net";
                 link rel="stylesheet" href=(state.path("/assets/app.css"));
                 script src="https://unpkg.com/htmx.org@1.9.12" {}
-                script src="https://unpkg.com/htmx.org/dist/ext/ws.js" {}
+                script src="https://unpkg.com/htmx.org@1.9.12/dist/ext/ws.js" {}
                 script src="https://unpkg.com/lucide@latest" {}
                 script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" {}
-                script { (PreEscaped(format!("window.__AKRION_CONFIG__ = {config};"))) }
             }
             body {
                 header class="topbar" {
@@ -283,15 +281,6 @@ pub(crate) fn render_page(state: &AppState, active: &str, body: Markup) -> Marku
         }
     }
 }
-
-const THEME_BOOT_JS: &str = r#"
-(() => {
-  const allowed = new Set(["dark", "medium", "light"]);
-  const stored = localStorage.getItem("akrion-theme");
-  const theme = allowed.has(stored) ? stored : "dark";
-  document.documentElement.dataset.theme = theme;
-})();
-"#;
 
 pub(crate) fn live_ticker(stats: &DashboardStats) -> Markup {
     html! {
