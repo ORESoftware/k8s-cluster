@@ -145,7 +145,7 @@ spec:
             failureThreshold: 3
           resources:
             requests:
-              cpu: 50m
+              cpu: 25m
               memory: 192Mi
             # Matches dd-container-pool: the headroom is for the in-cluster
             # `cargo run --release` build (axum + tokio + async-nats/rustls),

@@ -103,7 +103,7 @@ spec:
               containerPort: 8139
           resources:
             requests:
-              cpu: 150m
+              cpu: 25m
               memory: 192Mi
             limits:
               # Symbolic search and neuroevolution are CPU-bound; give it two cores.

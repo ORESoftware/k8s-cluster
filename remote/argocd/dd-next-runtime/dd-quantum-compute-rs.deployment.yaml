@@ -98,7 +98,7 @@ spec:
               containerPort: 8140
           resources:
             requests:
-              cpu: 150m
+              cpu: 25m
               memory: 192Mi
             limits:
               # The variational optimiser (QAOA/VQE) re-simulates the circuit
