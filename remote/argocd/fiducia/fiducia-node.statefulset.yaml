@@ -206,7 +206,11 @@ spec:
               path: /healthz
               port: sidecar
             periodSeconds: 5
-            failureThreshold: 240
+            # 30 min: the node + sidecar build concurrently and share CARGO_HOME, so
+            # cargo's package-cache lock serializes their dependency fetch — give the
+            # sidecar headroom so a cold pull can't trip the probe and restart it.
+            # (The /tmp emptyDir survives container restarts, so retries are warm.)
+            failureThreshold: 360
           readinessProbe:
             httpGet:
               path: /readyz
