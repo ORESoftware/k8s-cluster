@@ -1,0 +1,178 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: fiducia-brain
+  namespace: fiducia
+  labels:
+    app: fiducia-brain
+spec:
+  # The brain now runs its OWN Raft (one member per ordinal), replicating the
+  # placement map + scale plan and electing a single leader that alone reconciles.
+  # That needs STABLE per-member network identity, so this is a StatefulSet with a
+  # headless peer service — the same pattern as fiducia-node. (It replaces the old
+  # Deployment x3, which was split-brain: 3 independent in-memory brains behind a
+  # round-robin Service.)
+  serviceName: fiducia-brain-peer
+  replicas: 3
+  podManagementPolicy: Parallel
+  minReadySeconds: 5
+  selector:
+    matchLabels:
+      app: fiducia-brain
+  template:
+    metadata:
+      labels:
+        app: fiducia-brain
+      annotations:
+        dd.dev/fiducia-source: 'fiducia-cloud/fiducia-monorepo@main (apps/fiducia-brain.rs)'
+        dd.dev/fiducia-build: '2026-06-28-brain-raft'
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: fiducia-brain
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          command: [/bin/bash, -lc]
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              # Clone PUBLIC app repos as siblings (the monorepo is private).
+              rm -rf /tmp/src && mkdir -p /tmp/src && cd /tmp/src
+              for repo in fiducia-brain.rs fiducia-routing.rs fiducia-interfaces; do git clone --depth 1 --branch main "https://github.com/fiducia-cloud/${repo}.git"; done
+              # Raft identity + peer list from the StatefulSet ordinal (exclude self).
+              # Ids are full base URLs (scheme+host+port) — the engine uses them as
+              # both peer identity and the address its HTTP transport POSTs to.
+              suffix="fiducia-brain-peer.fiducia.svc.cluster.local"
+              peers=""
+              for i in 0 1 2; do
+                n="fiducia-brain-$i"
+                [ "$n" = "${POD_NAME}" ] && continue
+                peers="${peers:+$peers,}http://${n}.${suffix}:8095"
+              done
+              export FIDUCIA_BRAIN_ID="http://${POD_NAME}.${suffix}:8095"
+              export FIDUCIA_BRAIN_PEERS="$peers"
+              echo "[fiducia-brain] id=${FIDUCIA_BRAIN_ID} peers=${FIDUCIA_BRAIN_PEERS}"
+              cd /tmp/src/fiducia-brain.rs
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: PORT
+              value: '8095'
+            # Raft WAL home (on the /tmp emptyDir). A pod that loses this rejoins
+            # empty and re-syncs from the leader; a total brain loss re-derives
+            # placement from node heartbeats (the reconciler's cold-start adoption).
+            # A PVC would harden this further.
+            - name: FIDUCIA_DATA_DIR
+              value: /tmp/fiducia-brain/raft
+            - name: FIDUCIA_SHARD_COUNT
+              value: '1'
+            - name: FIDUCIA_TARGET_NODES
+              value: '3'
+            - name: FIDUCIA_REPLICATION_FACTOR
+              value: '3'
+            - name: RUST_LOG
+              value: info
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /tmp/cargo
+            - name: CARGO_TARGET_DIR
+              value: /tmp/target
+            - name: CARGO_BUILD_JOBS
+              value: '1'
+          ports:
+            - name: http
+              containerPort: 8095
+          resources:
+            requests:
+              memory: 768Mi
+            limits:
+              memory: 3Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 240
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 8Gi
+---
+# Client-facing API service (admin, load balancer, operators). Round-robins the
+# members: reads are served locally (placement is replicated); writes (`/v1/scale`)
+# are accepted only by the leader, which a follower reports via `leader`.
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-brain
+  namespace: fiducia
+  labels:
+    app: fiducia-brain
+spec:
+  type: ClusterIP
+  selector:
+    app: fiducia-brain
+  ports:
+    - name: http
+      port: 8095
+      targetPort: http
+---
+# Headless peer service — stable DNS per member
+# (fiducia-brain-0.fiducia-brain-peer.fiducia.svc.cluster.local) for Raft peer RPC
+# on /raft/*. publishNotReadyAddresses so members reach each other during the cold
+# build / initial election, before /readyz passes.
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-brain-peer
+  namespace: fiducia
+  labels:
+    app: fiducia-brain
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app: fiducia-brain
+  ports:
+    - name: http
+      port: 8095
+      targetPort: http
