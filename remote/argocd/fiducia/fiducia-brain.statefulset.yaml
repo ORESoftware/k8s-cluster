@@ -27,7 +27,10 @@ spec:
         dd.dev/fiducia-source: 'fiducia-cloud/fiducia-monorepo@main (apps/fiducia-brain.rs)'
         dd.dev/fiducia-build: '2026-06-28-brain-raft'
     spec:
-      automountServiceAccountToken: false
+      # The KubeOracle reads pod status from the k8s API, so it needs its SA token
+      # mounted. The token is scoped by the read-only Role below (pods get/list).
+      serviceAccountName: fiducia-brain
+      automountServiceAccountToken: true
       enableServiceLinks: false
       terminationGracePeriodSeconds: 20
       securityContext:
