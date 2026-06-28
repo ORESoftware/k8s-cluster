@@ -8,18 +8,18 @@ metadata:
   labels:
     app: dd-fiducia-rs
 spec:
-  replicas: 1
+  replicas: 2
   minReadySeconds: 5
   progressDeadlineSeconds: 1800
   strategy:
     # Builds the Astro site (node) and the axum backend (cargo) from source at
     # pod start. Use RollingUpdate so the OLD pod keeps serving while the new
     # one does its cold build — avoids the 502 window that Recreate caused.
-    # maxUnavailable: 0 = never drop below 1 ready replica; maxSurge: 1 = at most
-    # one extra (build) pod during a rollout.
+    # maxUnavailable: 0 = never drop below the ready replica target; maxSurge: 2
+    # lets two cold-build pods come up before old serving pods are removed.
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 1
+      maxSurge: 2
       maxUnavailable: 0
   selector:
     matchLabels:
@@ -160,8 +160,8 @@ spec:
             - name: http
               containerPort: 8117
           resources:
-            # Keep CPU explicit and tiny so this one-replica site can preserve
-            # maxUnavailable: 0 on the saturated single-node AWS cluster.
+            # Keep CPU explicit and tiny so surge builders can schedule while
+            # old serving pods preserve maxUnavailable: 0.
             requests:
               cpu: 1m
               memory: 768Mi
