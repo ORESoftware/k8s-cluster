@@ -56,6 +56,18 @@ spec:
           env:
             - { name: PORT, value: '8097' }
             - { name: RUST_LOG, value: info }
+            # Shared ES256 signing key (same across all replicas + both clusters,
+            # so a JWT minted anywhere verifies everywhere) + the internal-only
+            # introspect guard. Secret created out-of-band (kubectl), not in git.
+            - name: FIDUCIA_JWT_SIGNING_KEY
+              valueFrom:
+                secretKeyRef: { name: fiducia-auth-secrets, key: jwt-signing-key }
+            - name: FIDUCIA_INTROSPECT_SECRET
+              valueFrom:
+                secretKeyRef: { name: fiducia-auth-secrets, key: introspect-secret }
+            # Durable API-key storage via fiducia's own KV — through the LB so KV
+            # writes reach the shard leader (the LB follows the NotLeader redirect).
+            - { name: FIDUCIA_KV_URL, value: 'http://fiducia-load-balance.fiducia.svc.cluster.local:8088' }
             - { name: HOME, value: /tmp }
             - { name: CARGO_HOME, value: /tmp/cargo }
             - { name: CARGO_TARGET_DIR, value: /tmp/target }
