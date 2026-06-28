@@ -116,12 +116,16 @@ spec:
             - |
               set -euo pipefail
               export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-              # fiducia-backend.rs is self-contained (no path deps) and no longer
-              # vendors the site, so a shallow clone of the PUBLIC repo is all we
-              # need. Build from /tmp (the root fs is read-only).
-              git clone --depth 1 --branch "${FIDUCIA_BACKEND_GIT_REF}" "${FIDUCIA_BACKEND_GIT_URL}" /tmp/build
-              echo "[dd-fiducia-rs] backend: ${FIDUCIA_BACKEND_GIT_URL}@${FIDUCIA_BACKEND_GIT_REF} ($(git -C /tmp/build rev-parse --short HEAD))"
-              cd /tmp/build
+              # Build from a fresh /tmp workspace every container start. The
+              # backend's Cargo.toml depends on ../fiducia-interfaces/generated/rust.
+              work_dir="$(mktemp -d /tmp/fiducia-build.XXXXXX)"
+              interfaces_dir="$work_dir/fiducia-interfaces"
+              backend_dir="$work_dir/fiducia-backend.rs"
+              git clone --depth 1 --branch "${FIDUCIA_INTERFACES_GIT_REF}" "${FIDUCIA_INTERFACES_GIT_URL}" "$interfaces_dir"
+              echo "[dd-fiducia-rs] interfaces: ${FIDUCIA_INTERFACES_GIT_URL}@${FIDUCIA_INTERFACES_GIT_REF} ($(git -C "$interfaces_dir" rev-parse --short HEAD))"
+              git clone --depth 1 --branch "${FIDUCIA_BACKEND_GIT_REF}" "${FIDUCIA_BACKEND_GIT_URL}" "$backend_dir"
+              echo "[dd-fiducia-rs] backend: ${FIDUCIA_BACKEND_GIT_URL}@${FIDUCIA_BACKEND_GIT_REF} ($(git -C "$backend_dir" rev-parse --short HEAD))"
+              cd "$backend_dir"
               exec /usr/local/cargo/bin/cargo run --release
           env:
             - name: HOST
@@ -133,6 +137,10 @@ spec:
             - name: FIDUCIA_BACKEND_GIT_URL
               value: https://github.com/fiducia-cloud/fiducia-backend.rs.git
             - name: FIDUCIA_BACKEND_GIT_REF
+              value: main
+            - name: FIDUCIA_INTERFACES_GIT_URL
+              value: https://github.com/fiducia-cloud/fiducia-interfaces.git
+            - name: FIDUCIA_INTERFACES_GIT_REF
               value: main
             - name: RUST_LOG
               value: info
