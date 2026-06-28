@@ -1,5 +1,6 @@
 # Rust build output
 /target
+.direnv/
 **/*.rs.bk
 
 # Secrets — never commit real credentials. Only .env.example is tracked.
