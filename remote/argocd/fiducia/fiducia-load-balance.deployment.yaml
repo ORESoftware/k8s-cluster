@@ -80,7 +80,7 @@ spec:
               value: http://fiducia-auth.fiducia.svc.cluster.local:8097
             - name: FIDUCIA_INTROSPECT_SECRET
               valueFrom:
-                secretKeyRef: { name: fiducia-auth-secrets, key: introspect-secret }
+                secretKeyRef: { name: fiducia-auth-secrets, key: introspect-secret, optional: true }
             - name: RUST_LOG
               value: info
             - name: HOME
