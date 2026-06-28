@@ -71,8 +71,6 @@ spec:
               npm ci --no-audit --no-fund
               npm run build -- --base /fiducia
               cp -R dist/. /site-dist/
-              # World-readable so the non-root backend (uid 1000) can serve it.
-              chmod -R a+rX /site-dist
           env:
             - name: FIDUCIA_UI_GIT_URL
               value: https://github.com/fiducia-cloud/fiducia-ui.web.git
