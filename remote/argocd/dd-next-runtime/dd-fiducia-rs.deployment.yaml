@@ -8,15 +8,22 @@ metadata:
   labels:
     app: dd-fiducia-rs
 spec:
-  replicas: 1
+  # Two replicas so a single node going NotReady (or a rollout) can never drop
+  # /fiducia/ to zero ready backends — the cause of the 502s. A from-source cold
+  # build takes minutes, so a 1-replica deployment is dark for that whole window
+  # whenever its node fails; with 2 (anti-affined onto different nodes below) the
+  # surviving replica keeps serving while the other rebuilds.
+  replicas: 2
   minReadySeconds: 5
   progressDeadlineSeconds: 1800
   strategy:
     # Builds the Astro site (node) and the axum backend (cargo) from source at
-    # pod start. Use RollingUpdate so the OLD pod keeps serving while the new
-    # one does its cold build — avoids the 502 window that Recreate caused.
-    # maxUnavailable: 0 = never drop below 1 ready replica; maxSurge: 1 = at most
-    # one extra (build) pod during a rollout.
+    # pod start. Use RollingUpdate so OLD pods keep serving while a new one does
+    # its cold build — avoids the 502 window that Recreate caused. NOTE: this
+    # strategy only governs ROLLOUTS; node failure resilience comes from
+    # replicas: 2 + the anti-affinity below, not from maxSurge.
+    # maxUnavailable: 0 = never drop a ready replica; maxSurge: 1 = at most one
+    # extra (build) pod at a time during a rollout.
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 1
