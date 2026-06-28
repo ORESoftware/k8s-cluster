@@ -72,6 +72,15 @@ spec:
               value: 'http://fiducia-node-0.fiducia-node-peer.fiducia.svc.cluster.local:8090,http://fiducia-node-1.fiducia-node-peer.fiducia.svc.cluster.local:8090,http://fiducia-node-2.fiducia-node-peer.fiducia.svc.cluster.local:8090'
             - name: FIDUCIA_BRAIN_URL
               value: http://fiducia-brain.fiducia.svc.cluster.local:8095
+            # Edge auth: verify fiducia JWTs offline (JWKS fetched from auth) +
+            # introspect API keys via auth (carrying the shared internal secret),
+            # both cached. Permissive by default (FIDUCIA_AUTH_MODE unset) so
+            # existing clients keep working; set =enforce to require auth.
+            - name: FIDUCIA_AUTH_URL
+              value: http://fiducia-auth.fiducia.svc.cluster.local:8097
+            - name: FIDUCIA_INTROSPECT_SECRET
+              valueFrom:
+                secretKeyRef: { name: fiducia-auth-secrets, key: introspect-secret }
             - name: RUST_LOG
               value: info
             - name: HOME
