@@ -21,7 +21,7 @@ resources:
   - namespace.yaml
   - fiducia-node.statefulset.yaml
   - fiducia-node.service.yaml
-  - fiducia-brain.deployment.yaml
+  - fiducia-brain.statefulset.yaml
   - fiducia-load-balance.deployment.yaml
   - fiducia-backend.deployment.yaml
   - fiducia-auth.deployment.yaml
