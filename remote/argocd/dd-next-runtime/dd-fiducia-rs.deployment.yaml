@@ -80,9 +80,10 @@ spec:
             - name: HOME
               value: /work
           resources:
-            # CPU is limit-only here so the one-replica public site can surge on
-            # the saturated single-node AWS cluster without dropping readiness.
+            # Keep CPU explicit and tiny so LimitRange cannot default the
+            # request up to the limit and block surges on saturated AWS.
             requests:
+              cpu: 1m
               memory: 512Mi
             limits:
               cpu: '1'
@@ -158,9 +159,10 @@ spec:
             - name: http
               containerPort: 8117
           resources:
-            # Keep the memory request for scheduling; CPU is limit-only because
-            # this deployment has no HPA and must preserve maxUnavailable: 0.
+            # Keep CPU explicit and tiny so this one-replica site can preserve
+            # maxUnavailable: 0 on the saturated single-node AWS cluster.
             requests:
+              cpu: 1m
               memory: 768Mi
             limits:
               cpu: '2'
