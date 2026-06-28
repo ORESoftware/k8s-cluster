@@ -14,8 +14,8 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: fiducia-backend
@@ -51,9 +51,10 @@ spec:
               set -euo pipefail
               command -v git >/dev/null 2>&1 || { apt-get update && apt-get install -y --no-install-recommends git ca-certificates; }
               # Clone the PUBLIC ui repo directly (the monorepo is private).
-              rm -rf /work/src && mkdir -p /work/src && cd /work/src
+              work_dir="$(mktemp -d /work/fiducia-ui.XXXXXX)"
+              cd "$work_dir"
               git clone --depth 1 --branch main https://github.com/fiducia-cloud/fiducia-ui.web.git
-              cd /work/src/fiducia-ui.web
+              cd "$work_dir/fiducia-ui.web"
               npm ci --no-audit --no-fund
               PUBLIC_BASE=/ npm run build
               cp -R dist/. /site-dist/
@@ -87,9 +88,10 @@ spec:
               set -euo pipefail
               export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
               # Clone the PUBLIC app repos as siblings (the monorepo is private).
-              rm -rf /tmp/src && mkdir -p /tmp/src && cd /tmp/src
+              work_dir="$(mktemp -d /tmp/fiducia-build.XXXXXX)"
+              cd "$work_dir"
               for repo in fiducia-backend.rs fiducia-interfaces; do git clone --depth 1 --branch main "https://github.com/fiducia-cloud/${repo}.git"; done
-              cd /tmp/src/fiducia-backend.rs
+              cd "$work_dir/fiducia-backend.rs"
               exec /usr/local/cargo/bin/cargo run --release
           env:
             - { name: HOST, value: 0.0.0.0 }
