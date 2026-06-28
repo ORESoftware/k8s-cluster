@@ -34,6 +34,7 @@ always lives at `~/codes/ores/k8s-cluster/<submodule path>`.
 | `remote/submodules/sonus-auris-site.web` | [sonus-auris/sonus-auris-site.web](https://github.com/sonus-auris/sonus-auris-site.web) | `main` | `~/codes/sonus-auris/sonus-auris-site.web` |
 | `remote/submodules/sonus-auris.infra` | [sonus-auris/sonus-auris.infra](https://github.com/sonus-auris/sonus-auris.infra) | `main` | — _(submodule checkout only)_ |
 | `remote/deployments/soccer-rs` | [akrion-sim/akrion-backend.rs](https://github.com/akrion-sim/akrion-backend.rs) | `main` | `~/codes/akrion-sim/akrion-backend.rs` |
+| `remote/deployments/akrion-web-server-rs` | [akrion-sim/akrion-web-server.rs](https://github.com/akrion-sim/akrion-web-server.rs) | `main` | `~/codes/akrion-sim/akrion-web-server.rs` |
 | `remote/deployments/canonical-cloud` | [canonical-cloud/canonical.cloud](https://github.com/canonical-cloud/canonical.cloud) | `main` | `~/codes/canonical.cloud` |
 | `remote/deployments/fiducia-backend.rs` | [fiducia-cloud/fiducia-backend.rs](https://github.com/fiducia-cloud/fiducia-backend.rs) | `main` | `~/codes/fiducia.cloud/fiducia-backend.rs` |
 | `remote/deployments/fiducia-ui.web` | [fiducia-cloud/fiducia-ui.web](https://github.com/fiducia-cloud/fiducia-ui.web) | `main` | `~/codes/fiducia.cloud/fiducia-ui.web` |
