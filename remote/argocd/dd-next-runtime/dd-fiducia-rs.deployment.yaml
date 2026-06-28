@@ -50,18 +50,19 @@ spec:
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
-            runAsUser: 0
-            runAsGroup: 0
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
           command:
             - /bin/bash
             - -lc
           args:
             - |
               set -euo pipefail
-              if ! command -v git >/dev/null 2>&1; then
-                apt-get update
-                apt-get install -y --no-install-recommends git ca-certificates
-              fi
+              command -v git >/dev/null 2>&1 || { echo "git is required in the node:22-bookworm image" >&2; exit 1; }
               git clone --depth 1 --branch "${FIDUCIA_UI_GIT_REF}" "${FIDUCIA_UI_GIT_URL}" /work/ui
               echo "[dd-fiducia-rs] ui: ${FIDUCIA_UI_GIT_URL}@${FIDUCIA_UI_GIT_REF} ($(git -C /work/ui rev-parse --short HEAD))"
               cd /work/ui
