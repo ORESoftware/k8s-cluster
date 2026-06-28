@@ -49,14 +49,17 @@ patches:
                       matchLabels:
                         app: fiducia-node
                     topologyKey: kubernetes.io/hostname
-  # Control-plane replicas prefer distinct machines too, but stay schedulable even
-  # if the scheduler has to double up (soft constraint).
+  # The 3 control-plane (brain) Raft members ALSO land on 3 distinct machines —
+  # now that the brain runs its own Raft, its quorum deserves the same
+  # single-failure-domain-loss tolerance as the data plane. (Was a soft spread
+  # when the brain was a stateless Deployment x3.) Brain pods may still co-locate
+  # with node pods; the anti-affinity is only among brains.
   - target:
-      kind: Deployment
+      kind: StatefulSet
       name: fiducia-brain
     patch: |-
       apiVersion: apps/v1
-      kind: Deployment
+      kind: StatefulSet
       metadata:
         name: fiducia-brain
       spec:
@@ -68,10 +71,8 @@ patches:
                 effect: NoSchedule
             affinity:
               podAntiAffinity:
-                preferredDuringSchedulingIgnoredDuringExecution:
-                  - weight: 100
-                    podAffinityTerm:
-                      labelSelector:
-                        matchLabels:
-                          app: fiducia-brain
-                      topologyKey: kubernetes.io/hostname
+                requiredDuringSchedulingIgnoredDuringExecution:
+                  - labelSelector:
+                      matchLabels:
+                        app: fiducia-brain
+                    topologyKey: kubernetes.io/hostname
