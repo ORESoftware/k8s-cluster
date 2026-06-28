@@ -59,12 +59,15 @@ spec:
             # Shared ES256 signing key (same across all replicas + both clusters,
             # so a JWT minted anywhere verifies everywhere) + the internal-only
             # introspect guard. Secret created out-of-band (kubectl), not in git.
+            # optional: a cluster without the secret yet degrades to an ephemeral
+            # signing key (auth logs a warning) instead of crash-looping; apply the
+            # shared secret + restart to get cross-cluster JWT consistency.
             - name: FIDUCIA_JWT_SIGNING_KEY
               valueFrom:
-                secretKeyRef: { name: fiducia-auth-secrets, key: jwt-signing-key }
+                secretKeyRef: { name: fiducia-auth-secrets, key: jwt-signing-key, optional: true }
             - name: FIDUCIA_INTROSPECT_SECRET
               valueFrom:
-                secretKeyRef: { name: fiducia-auth-secrets, key: introspect-secret }
+                secretKeyRef: { name: fiducia-auth-secrets, key: introspect-secret, optional: true }
             # Durable API-key storage via fiducia's own KV — through the LB so KV
             # writes reach the shard leader (the LB follows the NotLeader redirect).
             - { name: FIDUCIA_KV_URL, value: 'http://fiducia-load-balance.fiducia.svc.cluster.local:8088' }
