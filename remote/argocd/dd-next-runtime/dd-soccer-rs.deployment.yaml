@@ -225,7 +225,7 @@ spec:
               # Guarantee a full core so the live soccer step loop sustains its
               # ~10Hz tick under node contention (the UI animates one tick per
               # server step; a starved/throttled server = slow-motion playback).
-              cpu: '1'
+              cpu: '25m'
               memory: 4Gi
             limits:
               # Burst ceiling raised 2 -> 6: the per-tick sim + tokio workers
