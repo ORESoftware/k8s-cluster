@@ -23,7 +23,7 @@ spec:
     metadata:
       annotations:
         dd.dev/soccer-server-revision: 'full-live-canvas-ui+lazy-uuid-games+mermaid-docs+flowchart-doc+ws-push+server-push'
-        dd.dev/soccer-engine-revision: 'soccer-sim-game-engine.rs@learning (314b3d2: +bind-first +passeval-dedup) +pg-policy-load(overnight, blocking-startup)'
+        dd.dev/soccer-engine-revision: 'soccer-sim-game-engine.rs@learning (39b2298: +bind-first +passeval-dedup +pg-policy-load +jitter-buffer)'
         dd.dev/des-engine-revision: 'discrete-event-system.rs@main'
       labels:
         app: dd-soccer-rs
