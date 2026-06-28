@@ -7,7 +7,7 @@ kind: Kustomization
 # on top (see ../fiducia-hetzner).
 #
 #   data plane:   fiducia-node  (StatefulSet x3, 1 shard, RF3)
-#   control plane: fiducia-brain (Deployment x3)
+#   control plane: fiducia-brain (StatefulSet x3, own Raft, leader reconciles)
 #   router:       fiducia-load-balance (Deployment x1)
 #   website:      fiducia-backend (Deployment + HPA, autoscaled)
 #
