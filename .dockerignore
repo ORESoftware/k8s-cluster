@@ -1,0 +1,22 @@
+# Keep the build context tiny and secret-free. The Dockerfile only needs
+# Cargo.toml, Cargo.lock, src/, and generated/.
+
+# Build output (2.7 GB) — never send it to the daemon.
+target/
+
+# VCS + tooling
+.git/
+.gitignore
+.idea/
+.vscode/
+
+# Secrets / local config — must NOT enter the image context.
+.env
+.env.*
+!.env.example
+
+# Docs / meta not needed to compile
+*.md
+Dockerfile
+.dockerignore
+migrations/
