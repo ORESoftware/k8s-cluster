@@ -21,7 +21,8 @@ spec:
         app: fiducia-auth
       annotations:
         dd.dev/fiducia-source: 'fiducia-cloud/fiducia-monorepo@main (apps/fiducia-auth.rs)'
-        dd.dev/fiducia-build: '2026-06-27-raft-locks-merge'
+        # Real ES256 JWT minting + JWKS + KV-backed keys; wire signing key + KV.
+        dd.dev/fiducia-build: '2026-06-28-auth-jwt-kv'
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
