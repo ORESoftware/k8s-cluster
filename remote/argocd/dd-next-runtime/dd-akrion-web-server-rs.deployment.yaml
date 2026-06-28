@@ -25,6 +25,7 @@ spec:
         app: dd-akrion-web-server-rs
     spec:
       automountServiceAccountToken: false
+      enableServiceLinks: false
       terminationGracePeriodSeconds: 20
       securityContext:
         fsGroup: 1000

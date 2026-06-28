@@ -168,6 +168,8 @@ resources:
   # Akrion Sim web portal: Maud/HTMX pages and Supabase browser-login shell,
   # mounted by the gateway at /akrion-sim.
   - dd-akrion-web-server-rs.deployment.yaml
+  - dd-akrion-web-server-rs.networkpolicy.yaml
+  - dd-akrion-web-server-rs.pdb.yaml
   - dd-akrion-web-server-rs.service.yaml
   # Nightly soccer learning tournament. AWS and Hetzner both schedule it, while
   # the runner's Postgres advisory lock lets only one cluster run matches.
