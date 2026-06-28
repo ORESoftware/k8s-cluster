@@ -49,6 +49,9 @@ the event.
   callers and may assert an arbitrary `externalSubject`; public registration keys the account to the
   install id and ignores any client-supplied `externalSubject`, so an anonymous caller can never
   claim another user's account.
+- Account deletion is also rooted in Supabase: `DELETE /api/mobile/v1/account` verifies the signed-in
+  user's JWT, deletes Sonus Auris backend metadata, revokes device/cloud tokens, and deletes the
+  Supabase Auth user with the server-only service-role key.
 - Google Drive / OneDrive links support a hybrid OAuth flow: the client may pass Supabase-brokered
   `providerAccessToken`/`providerRefreshToken` to `cloud-connections/oauth/complete` to be sealed
   directly, or omit them to fall back to the server-side authorization-code exchange.
@@ -68,6 +71,7 @@ the event.
 - `GET /download/ios` — redirects to `SOUND_RECORDER_IOS_APP_STORE_URL`.
 - `GET /download/android` — redirects to `SOUND_RECORDER_ANDROID_PLAY_STORE_URL`.
 - `POST /api/mobile/v1/devices/register` — creates or rotates a device token.
+- `DELETE /api/mobile/v1/account` — deletes the signed-in Supabase account and Sonus Auris metadata.
 - `POST /api/mobile/v1/upload-sessions` — starts a device upload session.
 - `POST /api/mobile/v1/upload-sessions/:session_id/segments/presign` — creates/refreshes one
   segment row and returns a presigned S3 `PUT`.
@@ -133,6 +137,7 @@ the event.
 | `SOUND_RECORDER_SUPABASE_JWKS_URL` | `${SUPABASE_URL}/auth/v1/.well-known/jwks.json` | JWKS endpoint for asymmetric (RS256/ES256) Supabase signing keys. Cached for one hour. |
 | `SOUND_RECORDER_SUPABASE_ISSUER` | `${SUPABASE_URL}/auth/v1` | Expected `iss` claim. |
 | `SOUND_RECORDER_SUPABASE_AUDIENCE` | `authenticated` | Expected `aud` claim. |
+| `SOUND_RECORDER_SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_SERVICE_ROLE_KEY` | unset | Server-only Supabase service-role key. Required for `DELETE /api/mobile/v1/account`; never expose it to the mobile app. |
 | `SOUND_RECORDER_GOOGLE_CLIENT_ID` / `SOUND_RECORDER_GOOGLE_CLIENT_SECRET` | unset | OAuth client for Google Drive `drive.file` links. |
 | `SOUND_RECORDER_MICROSOFT_CLIENT_ID` / `SOUND_RECORDER_MICROSOFT_CLIENT_SECRET` | unset | OAuth client for Microsoft OneDrive AppFolder links. |
 | `SOUND_RECORDER_GOOGLE_AUTHORIZATION_URL` / `SOUND_RECORDER_GOOGLE_TOKEN_URL` | Google OAuth endpoints | Optional provider endpoint overrides for local integration tests. |
