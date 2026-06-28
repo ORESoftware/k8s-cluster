@@ -109,7 +109,7 @@ spec:
               containerPort: 7991
           resources:
             requests:
-              cpu: 50m
+              cpu: 25m
               memory: 256Mi
             limits:
               cpu: '1'
