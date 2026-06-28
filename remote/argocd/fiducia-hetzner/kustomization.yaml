@@ -19,6 +19,32 @@ resources:
   - ../fiducia
 
 patches:
+  # Hetzner has enough room to keep zero-unavailable backend rollouts and a
+  # stronger HPA CPU denominator than the cramped single-node AWS base.
+  - target:
+      kind: Deployment
+      name: fiducia-backend
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: fiducia-backend
+      spec:
+        strategy:
+          type: RollingUpdate
+          rollingUpdate:
+            maxSurge: 1
+            maxUnavailable: 0
+        template:
+          spec:
+            containers:
+              - name: fiducia-backend
+                resources:
+                  requests:
+                    cpu: 100m
+                    memory: 768Mi
+                  limits:
+                    memory: 3Gi
   # The 3 Raft data-plane members MUST land on 3 distinct machines — a real
   # quorum that tolerates a single-node (single-datacenter) loss.
   - target:
