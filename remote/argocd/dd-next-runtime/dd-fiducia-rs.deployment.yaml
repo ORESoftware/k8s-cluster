@@ -8,25 +8,18 @@ metadata:
   labels:
     app: dd-fiducia-rs
 spec:
-  # Two replicas so a single node going NotReady (or a rollout) can never drop
-  # /fiducia/ to zero ready backends — the cause of the 502s. A from-source cold
-  # build takes minutes, so a 1-replica deployment is dark for that whole window
-  # whenever its node fails; with 2 (anti-affined onto different nodes below) the
-  # surviving replica keeps serving while the other rebuilds.
   replicas: 2
   minReadySeconds: 5
   progressDeadlineSeconds: 1800
   strategy:
     # Builds the Astro site (node) and the axum backend (cargo) from source at
-    # pod start. Use RollingUpdate so OLD pods keep serving while a new one does
-    # its cold build — avoids the 502 window that Recreate caused. NOTE: this
-    # strategy only governs ROLLOUTS; node failure resilience comes from
-    # replicas: 2 + the anti-affinity below, not from maxSurge.
-    # maxUnavailable: 0 = never drop a ready replica; maxSurge: 1 = at most one
-    # extra (build) pod at a time during a rollout.
+    # pod start. Use RollingUpdate so the OLD pod keeps serving while the new
+    # one does its cold build — avoids the 502 window that Recreate caused.
+    # maxUnavailable: 0 = never drop below the ready replica target; maxSurge: 2
+    # lets two cold-build pods come up before old serving pods are removed.
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 1
+      maxSurge: 2
       maxUnavailable: 0
   selector:
     matchLabels:
@@ -42,9 +35,11 @@ spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
       terminationGracePeriodSeconds: 20
-      # Spread the replicas across nodes so losing one node (e.g. nbg1 going
-      # NotReady) leaves a ready replica on another. "preferred" (not required)
-      # so the pod still schedules if only one node is currently available.
+      # Spread the 2 replicas across nodes so losing one node (e.g. dd-k8s-nbg1
+      # going NotReady) leaves a ready replica on another rather than emptying
+      # the Service and 502-ing /fiducia/ for the multi-minute cold rebuild.
+      # "preferred" (not required) so the pod still schedules if only one node
+      # is currently available.
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -69,26 +64,27 @@ spec:
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
-            runAsUser: 0
-            runAsGroup: 0
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
           command:
             - /bin/bash
             - -lc
           args:
             - |
               set -euo pipefail
-              if ! command -v git >/dev/null 2>&1; then
-                apt-get update
-                apt-get install -y --no-install-recommends git ca-certificates
-              fi
-              git clone --depth 1 --branch "${FIDUCIA_UI_GIT_REF}" "${FIDUCIA_UI_GIT_URL}" /work/ui
-              echo "[dd-fiducia-rs] ui: ${FIDUCIA_UI_GIT_URL}@${FIDUCIA_UI_GIT_REF} ($(git -C /work/ui rev-parse --short HEAD))"
-              cd /work/ui
+              command -v git >/dev/null 2>&1 || { echo "git is required in the node:22-bookworm image" >&2; exit 1; }
+              work_dir="$(mktemp -d /work/fiducia-ui.XXXXXX)"
+              ui_dir="$work_dir/ui"
+              git clone --depth 1 --branch "${FIDUCIA_UI_GIT_REF}" "${FIDUCIA_UI_GIT_URL}" "$ui_dir"
+              echo "[dd-fiducia-rs] ui: ${FIDUCIA_UI_GIT_URL}@${FIDUCIA_UI_GIT_REF} ($(git -C "$ui_dir" rev-parse --short HEAD))"
+              cd "$ui_dir"
               npm ci --no-audit --no-fund
               npm run build -- --base /fiducia
               cp -R dist/. /site-dist/
-              # World-readable so the non-root backend (uid 1000) can serve it.
-              chmod -R a+rX /site-dist
           env:
             - name: FIDUCIA_UI_GIT_URL
               value: https://github.com/fiducia-cloud/fiducia-ui.web.git
@@ -99,8 +95,10 @@ spec:
             - name: HOME
               value: /work
           resources:
+            # Keep CPU explicit and tiny so LimitRange cannot default the
+            # request up to the limit and block surges on saturated AWS.
             requests:
-              cpu: 100m
+              cpu: 1m
               memory: 512Mi
             limits:
               cpu: '1'
@@ -135,12 +133,16 @@ spec:
             - |
               set -euo pipefail
               export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-              # fiducia-backend.rs is self-contained (no path deps) and no longer
-              # vendors the site, so a shallow clone of the PUBLIC repo is all we
-              # need. Build from /tmp (the root fs is read-only).
-              git clone --depth 1 --branch "${FIDUCIA_BACKEND_GIT_REF}" "${FIDUCIA_BACKEND_GIT_URL}" /tmp/build
-              echo "[dd-fiducia-rs] backend: ${FIDUCIA_BACKEND_GIT_URL}@${FIDUCIA_BACKEND_GIT_REF} ($(git -C /tmp/build rev-parse --short HEAD))"
-              cd /tmp/build
+              # Build from a fresh /tmp workspace every container start. The
+              # backend's Cargo.toml depends on ../fiducia-interfaces/generated/rust.
+              work_dir="$(mktemp -d /tmp/fiducia-build.XXXXXX)"
+              interfaces_dir="$work_dir/fiducia-interfaces"
+              backend_dir="$work_dir/fiducia-backend.rs"
+              git clone --depth 1 --branch "${FIDUCIA_INTERFACES_GIT_REF}" "${FIDUCIA_INTERFACES_GIT_URL}" "$interfaces_dir"
+              echo "[dd-fiducia-rs] interfaces: ${FIDUCIA_INTERFACES_GIT_URL}@${FIDUCIA_INTERFACES_GIT_REF} ($(git -C "$interfaces_dir" rev-parse --short HEAD))"
+              git clone --depth 1 --branch "${FIDUCIA_BACKEND_GIT_REF}" "${FIDUCIA_BACKEND_GIT_URL}" "$backend_dir"
+              echo "[dd-fiducia-rs] backend: ${FIDUCIA_BACKEND_GIT_URL}@${FIDUCIA_BACKEND_GIT_REF} ($(git -C "$backend_dir" rev-parse --short HEAD))"
+              cd "$backend_dir"
               exec /usr/local/cargo/bin/cargo run --release
           env:
             - name: HOST
@@ -152,6 +154,10 @@ spec:
             - name: FIDUCIA_BACKEND_GIT_URL
               value: https://github.com/fiducia-cloud/fiducia-backend.rs.git
             - name: FIDUCIA_BACKEND_GIT_REF
+              value: main
+            - name: FIDUCIA_INTERFACES_GIT_URL
+              value: https://github.com/fiducia-cloud/fiducia-interfaces.git
+            - name: FIDUCIA_INTERFACES_GIT_REF
               value: main
             - name: RUST_LOG
               value: info
@@ -168,8 +174,10 @@ spec:
             - name: http
               containerPort: 8117
           resources:
+            # Keep CPU explicit and tiny so surge builders can schedule while
+            # old serving pods preserve maxUnavailable: 0.
             requests:
-              cpu: 50m
+              cpu: 1m
               memory: 768Mi
             limits:
               cpu: '2'
