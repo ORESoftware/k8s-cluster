@@ -25,8 +25,8 @@ spec:
         app: fiducia-load-balance
       annotations:
         dd.dev/fiducia-source: 'fiducia-cloud/fiducia-monorepo@main (apps/fiducia-load-balance.rs)'
-        # Re-roll for the proxy unresponsive-node shed (connect/request timeouts).
-        dd.dev/fiducia-build: '2026-06-27-lb-frozen-node-timeout'
+        # Wire edge auth (offline JWT verify + cached introspection); rebuild.
+        dd.dev/fiducia-build: '2026-06-28-lb-auth-wired'
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
