@@ -63,9 +63,11 @@ spec:
             - |
               set -euo pipefail
               command -v git >/dev/null 2>&1 || { echo "git is required in the node:22-bookworm image" >&2; exit 1; }
-              git clone --depth 1 --branch "${FIDUCIA_UI_GIT_REF}" "${FIDUCIA_UI_GIT_URL}" /work/ui
-              echo "[dd-fiducia-rs] ui: ${FIDUCIA_UI_GIT_URL}@${FIDUCIA_UI_GIT_REF} ($(git -C /work/ui rev-parse --short HEAD))"
-              cd /work/ui
+              work_dir="$(mktemp -d /work/fiducia-ui.XXXXXX)"
+              ui_dir="$work_dir/ui"
+              git clone --depth 1 --branch "${FIDUCIA_UI_GIT_REF}" "${FIDUCIA_UI_GIT_URL}" "$ui_dir"
+              echo "[dd-fiducia-rs] ui: ${FIDUCIA_UI_GIT_URL}@${FIDUCIA_UI_GIT_REF} ($(git -C "$ui_dir" rev-parse --short HEAD))"
+              cd "$ui_dir"
               npm ci --no-audit --no-fund
               npm run build -- --base /fiducia
               cp -R dist/. /site-dist/
