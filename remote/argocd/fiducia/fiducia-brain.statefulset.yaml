@@ -179,3 +179,37 @@ spec:
     - name: http
       port: 8095
       targetPort: http
+---
+# Least-privilege identity for the KubeOracle: READ-ONLY on pods in this namespace
+# (it confirms data-plane pod liveness; it never mutates cluster state — k8s
+# schedules pods, the brain only places shards).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fiducia-brain
+  namespace: fiducia
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fiducia-brain-pod-reader
+  namespace: fiducia
+rules:
+  - apiGroups: ['']
+    resources: [pods]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fiducia-brain-pod-reader
+  namespace: fiducia
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: fiducia-brain-pod-reader
+subjects:
+  - kind: ServiceAccount
+    name: fiducia-brain
+    namespace: fiducia
