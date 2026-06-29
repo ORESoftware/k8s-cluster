@@ -58,4 +58,8 @@ spec:
           configMap:
             name: dd-loki-config
         - name: data
-          emptyDir: {}
+          # Hard backstop: even if retention lags, Loki can never consume more
+          # than this of the node root disk (kubelet evicts the pod if exceeded),
+          # so it can't re-trip node disk-pressure. Pairs with retention_period.
+          emptyDir:
+            sizeLimit: 40Gi
