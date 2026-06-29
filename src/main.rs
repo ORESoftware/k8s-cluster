@@ -10,20 +10,20 @@ use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
 use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_s3::{config::Region, presigning::PresigningConfig, types::ServerSideEncryption};
-use bb8::{Pool, PooledConnection};
-use bb8_postgres::PostgresConnectionManager;
 use axum::{
     extract::{ConnectInfo, DefaultBodyLimit, Path, Query, Request, State},
     http::{header, HeaderMap, HeaderName, HeaderValue, StatusCode},
     middleware::Next,
     response::{Html, IntoResponse, Redirect, Response},
-    routing::{get, post},
+    routing::{delete, get, post},
     Json, Router,
 };
 use base64::{
     engine::general_purpose::{STANDARD as BASE64_STANDARD, URL_SAFE_NO_PAD},
     Engine as _,
 };
+use bb8::{Pool, PooledConnection};
+use bb8_postgres::PostgresConnectionManager;
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use jsonwebtoken::{decode, decode_header, jwk::JwkSet, Algorithm, DecodingKey, Validation};
 use once_cell::sync::Lazy;
@@ -219,6 +219,9 @@ struct SupabaseConfig {
     issuer: Option<String>,
     /// Expected `aud` claim; defaults to `authenticated`.
     audience: String,
+    /// Server-only service-role key used for privileged Auth Admin operations
+    /// such as deleting the signed-in user's Supabase Auth identity.
+    service_role_key: Option<String>,
 }
 
 impl SupabaseConfig {
@@ -351,6 +354,17 @@ struct RegisterDeviceResponse {
     device_id: String,
     device_token: String,
     policy: MobilePolicy,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DeleteAccountResponse {
+    ok: bool,
+    account_id: String,
+    deleted_segments: u64,
+    revoked_devices: u64,
+    revoked_cloud_connections: u64,
+    supabase_auth_deleted: bool,
 }
 
 #[derive(Deserialize)]
@@ -1074,12 +1088,11 @@ fn config_from_env() -> Config {
 fn supabase_config_from_env() -> SupabaseConfig {
     let url = first_env(&["SOUND_RECORDER_SUPABASE_URL", "SUPABASE_URL"])
         .map(|url| url.trim_end_matches('/').to_string());
-    let jwks_url = first_env(&["SOUND_RECORDER_SUPABASE_JWKS_URL", "SUPABASE_JWKS_URL"]).or_else(
-        || {
+    let jwks_url =
+        first_env(&["SOUND_RECORDER_SUPABASE_JWKS_URL", "SUPABASE_JWKS_URL"]).or_else(|| {
             url.as_ref()
                 .map(|url| format!("{url}/auth/v1/.well-known/jwks.json"))
-        },
-    );
+        });
     let issuer = first_env(&["SOUND_RECORDER_SUPABASE_ISSUER", "SUPABASE_ISSUER"])
         .or_else(|| url.as_ref().map(|url| format!("{url}/auth/v1")));
     SupabaseConfig {
@@ -1089,6 +1102,10 @@ fn supabase_config_from_env() -> SupabaseConfig {
         issuer,
         audience: first_env(&["SOUND_RECORDER_SUPABASE_AUDIENCE", "SUPABASE_AUDIENCE"])
             .unwrap_or_else(|| SUPABASE_DEFAULT_AUDIENCE.to_string()),
+        service_role_key: first_env(&[
+            "SOUND_RECORDER_SUPABASE_SERVICE_ROLE_KEY",
+            "SUPABASE_SERVICE_ROLE_KEY",
+        ]),
     }
 }
 
@@ -1398,8 +1415,7 @@ mod segment_job_cipher {
                 "encrypted segment is truncated".to_string(),
             ));
         }
-        let (nonce_bytes, ciphertext_and_tag) =
-            container[content_offset..].split_at(NONCE_LEN);
+        let (nonce_bytes, ciphertext_and_tag) = container[content_offset..].split_at(NONCE_LEN);
         let cipher = Aes256Gcm::new_from_slice(dek)
             .map_err(|_| ServiceError::Internal("invalid segment key".to_string()))?;
         cipher
@@ -1562,8 +1578,7 @@ impl SupabaseVerifier {
         } else {
             let kid = header.kid.ok_or(ServiceError::Unauthorized)?;
             let jwk = self.jwk_for_kid(http, &kid).await?;
-            let key = DecodingKey::from_jwk(&jwk)
-                .map_err(|_| ServiceError::Unauthorized)?;
+            let key = DecodingKey::from_jwk(&jwk).map_err(|_| ServiceError::Unauthorized)?;
             decode::<SupabaseClaims>(token, &key, &self.validation(header.alg))
                 .map_err(|_| ServiceError::Unauthorized)?
                 .claims
@@ -1595,9 +1610,7 @@ impl SupabaseVerifier {
         if !self.try_refresh_jwks(http).await? {
             return Err(ServiceError::Unauthorized);
         }
-        self.cached_jwk(kid)
-            .await
-            .ok_or(ServiceError::Unauthorized)
+        self.cached_jwk(kid).await.ok_or(ServiceError::Unauthorized)
     }
 
     /// Refreshes the JWKS cache unless a refresh was attempted within the last
@@ -2319,6 +2332,33 @@ async fn authorize_registration(
     }
 }
 
+async fn authenticate_supabase_account(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<(String, SupabaseIdentity, PgConn), ServiceError> {
+    let verifier = state
+        .supabase
+        .as_ref()
+        .ok_or_else(|| ServiceError::Unavailable("Supabase auth is not configured".to_string()))?;
+    let token = supabase_token(headers).ok_or(ServiceError::Unauthorized)?;
+    let identity = verifier.verify(&state.http, token).await?;
+    let external_subject = identity.external_subject();
+    let client = db_conn(state).await?;
+    let row = client
+        .query_opt(
+            "select id::text
+             from sound_recorder_accounts
+             where external_subject = $1 and status = 'active'",
+            &[&external_subject],
+        )
+        .await
+        .map_err(db_error)?;
+    let Some(row) = row else {
+        return Err(ServiceError::NotFound("account not found".to_string()));
+    };
+    Ok((row.get("id"), identity, client))
+}
+
 async fn authenticate_device(
     state: &AppState,
     headers: &HeaderMap,
@@ -2483,7 +2523,10 @@ fn resolve_registration_subject(
         RegistrationTrust::Public => {
             // No verified identity: key the account to the install id and ignore
             // any client-supplied externalSubject so accounts can't be claimed.
-            Ok((Some(format!("install:{install_id}")), req.display_name.clone()))
+            Ok((
+                Some(format!("install:{install_id}")),
+                req.display_name.clone(),
+            ))
         }
     }
 }
@@ -2711,6 +2754,183 @@ async fn register_device(
         device_id,
         device_token: token,
         policy: policy(&state.config, retention_hours),
+    }))
+}
+
+async fn delete_supabase_auth_user(state: &AppState, user_id: &str) -> Result<(), ServiceError> {
+    let user_id = validate_nonempty(user_id, "supabaseUserId", 160)?;
+    if user_id.contains('/') {
+        return Err(ServiceError::BadRequest(
+            "supabaseUserId must not contain path separators".to_string(),
+        ));
+    }
+    let url = state.config.supabase.url.as_deref().ok_or_else(|| {
+        ServiceError::Unavailable("Supabase URL is required for account deletion".to_string())
+    })?;
+    let service_role_key = state
+        .config
+        .supabase
+        .service_role_key
+        .as_deref()
+        .ok_or_else(|| {
+            ServiceError::Unavailable(
+                "SOUND_RECORDER_SUPABASE_SERVICE_ROLE_KEY is required for account deletion"
+                    .to_string(),
+            )
+        })?;
+    let uri = format!(
+        "{}/auth/v1/admin/users/{user_id}",
+        url.trim_end_matches('/')
+    );
+    let response = state
+        .http
+        .delete(uri)
+        .header("apikey", service_role_key)
+        .bearer_auth(service_role_key)
+        .send()
+        .await
+        .map_err(|err| {
+            warn!(error = %err, "Supabase Auth delete request failed");
+            ServiceError::Unavailable("Supabase Auth deletion failed".to_string())
+        })?;
+    let status = response.status();
+    if status.is_success() {
+        return Ok(());
+    }
+    let body = response.text().await.unwrap_or_default();
+    warn!(
+        status = status.as_u16(),
+        body = %body.chars().take(200).collect::<String>(),
+        "Supabase Auth deletion returned non-success status"
+    );
+    Err(ServiceError::Unavailable(format!(
+        "Supabase Auth deletion failed with status {}",
+        status.as_u16()
+    )))
+}
+
+async fn delete_account(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<DeleteAccountResponse>, ServiceError> {
+    let (account_id, identity, mut client) =
+        authenticate_supabase_account(&state, &headers).await?;
+    let tx = client.transaction().await.map_err(db_error)?;
+    let deletion_manifest = json!({ "deletedAt": Utc::now() });
+    let deleted_segments = tx
+        .execute(
+            "update sound_recorder_segments
+             set status = 'deleted',
+                 expires_at = now(),
+                 updated_at = now()
+             where account_id = $1::uuid and status <> 'deleted'",
+            &[&account_id],
+        )
+        .await
+        .map_err(db_error)?;
+    tx.execute(
+        "update sound_recorder_upload_sessions
+         set status = 'closed',
+             closed_at = coalesce(closed_at, now()),
+             updated_at = now()
+         where account_id = $1::uuid and status <> 'closed'",
+        &[&account_id],
+    )
+    .await
+    .map_err(db_error)?;
+    let revoked_devices = tx
+        .execute(
+            "update sound_recorder_devices
+             set status = 'deleted',
+                 transfer_paused = true,
+                 transfer_pause_reason = 'manual',
+                 updated_at = now()
+             where account_id = $1::uuid and status <> 'deleted'",
+            &[&account_id],
+        )
+        .await
+        .map_err(db_error)?;
+    let revoked_cloud_connections = tx
+        .execute(
+            "update sound_recorder_cloud_connections
+             set status = 'revoked',
+                 token_ciphertext = null,
+                 token_nonce = null,
+                 token_aad = null,
+                 token_version = null,
+                 token_expires_at = null,
+                 updated_at = now()
+             where account_id = $1::uuid and status <> 'revoked'",
+            &[&account_id],
+        )
+        .await
+        .map_err(db_error)?;
+    tx.execute(
+        "update sound_recorder_cloud_copy_jobs
+         set status = 'skipped', updated_at = now()
+         where account_id = $1::uuid
+           and status in ('pending', 'waiting_client', 'running')",
+        &[&account_id],
+    )
+    .await
+    .map_err(db_error)?;
+    tx.execute(
+        "update sound_recorder_oauth_states
+         set status = 'consumed', consumed_at = coalesce(consumed_at, now()), updated_at = now()
+         where account_id = $1::uuid and status = 'pending'",
+        &[&account_id],
+    )
+    .await
+    .map_err(db_error)?;
+    tx.execute(
+        "update sound_recorder_evidence_exports
+         set manifest = $2,
+             download_url_expires_at = now(),
+             expires_at = now()
+         where account_id = $1::uuid",
+        &[&account_id, &deletion_manifest],
+    )
+    .await
+    .map_err(db_error)?;
+    let deleted_account = tx
+        .execute(
+            "update sound_recorder_accounts
+             set status = 'deleted',
+                 external_subject = concat('deleted:', id::text),
+                 display_name = null,
+                 legal_region = null,
+                 updated_at = now()
+             where id = $1::uuid and status <> 'deleted'",
+            &[&account_id],
+        )
+        .await
+        .map_err(db_error)?;
+    if deleted_account == 0 {
+        return Err(ServiceError::NotFound("account not found".to_string()));
+    }
+    tx.commit().await.map_err(db_error)?;
+    delete_supabase_auth_user(&state, &identity.subject).await?;
+    audit_event(
+        &client,
+        Some(&account_id),
+        None,
+        "sound_recorder.account.deleted",
+        json!({
+            "deletedSegments": deleted_segments,
+            "revokedDevices": revoked_devices,
+            "revokedCloudConnections": revoked_cloud_connections,
+            "supabaseAuthDeleted": true,
+        }),
+    )
+    .await;
+    record_request("DELETE", "/api/mobile/v1/account", StatusCode::OK);
+    Ok(Json(DeleteAccountResponse {
+        ok: true,
+        account_id,
+        deleted_segments,
+        revoked_devices,
+        revoked_cloud_connections,
+        supabase_auth_deleted: true,
     }))
 }
 
@@ -5592,6 +5812,7 @@ fn app(state: AppState) -> Router {
         .route("/listen/:alert_id", get(listen_alert))
         .route("/download/ios", get(download_ios))
         .route("/download/android", get(download_android))
+        .route("/api/mobile/v1/account", delete(delete_account))
         .route("/api/mobile/v1/devices/register", post(register_device))
         .route(
             "/api/mobile/v1/devices/transfer-state",
@@ -5681,11 +5902,16 @@ async fn add_security_headers(req: Request, next: Next) -> Response {
     let mut res = next.run(req).await;
     let h = res.headers_mut();
     fn set(h: &mut HeaderMap, name: HeaderName, value: &'static str) {
-        h.entry(name).or_insert_with(|| HeaderValue::from_static(value));
+        h.entry(name)
+            .or_insert_with(|| HeaderValue::from_static(value));
     }
     set(h, header::X_CONTENT_TYPE_OPTIONS, "nosniff");
     set(h, header::X_FRAME_OPTIONS, "DENY");
-    set(h, header::REFERRER_POLICY, "strict-origin-when-cross-origin");
+    set(
+        h,
+        header::REFERRER_POLICY,
+        "strict-origin-when-cross-origin",
+    );
     set(
         h,
         header::STRICT_TRANSPORT_SECURITY,
@@ -5842,8 +6068,8 @@ async fn main() {
         app(state).into_make_service_with_connect_info::<SocketAddr>(),
     )
     .with_graceful_shutdown(shutdown_signal())
-        .await
-        .expect("axum server crashed");
+    .await
+    .expect("axum server crashed");
 }
 
 async fn shutdown_signal() {
@@ -6219,7 +6445,10 @@ mod tests {
     #[test]
     fn use_case_validation_defaults_and_rejects() {
         assert_eq!(validate_use_case(None).unwrap(), "security");
-        assert_eq!(validate_use_case(Some("Music".to_string())).unwrap(), "music");
+        assert_eq!(
+            validate_use_case(Some("Music".to_string())).unwrap(),
+            "music"
+        );
         assert!(validate_use_case(Some("karaoke".to_string())).is_err());
     }
 
@@ -6320,12 +6549,10 @@ mod tests {
             any
         )
         .is_ok());
-        assert!(validate_redirect_uri(
-            provider,
-            Some("http://localhost:8080/cb".to_string()),
-            any
-        )
-        .is_ok());
+        assert!(
+            validate_redirect_uri(provider, Some("http://localhost:8080/cb".to_string()), any)
+                .is_ok()
+        );
         // The pre-fix prefix match accepted these lookalike hosts.
         assert!(validate_redirect_uri(
             provider,
@@ -6339,12 +6566,10 @@ mod tests {
             any
         )
         .is_err());
-        assert!(validate_redirect_uri(
-            provider,
-            Some("http://example.com/cb".to_string()),
-            any
-        )
-        .is_err());
+        assert!(
+            validate_redirect_uri(provider, Some("http://example.com/cb".to_string()), any)
+                .is_err()
+        );
     }
 
     #[test]
