@@ -6455,6 +6455,65 @@ mod tests {
 
         handle.join().unwrap();
     }
+
+    #[test]
+    fn storage_key_zero_pads_sequence_and_maps_extension() {
+        // The sequence number is zero-padded to ten digits so object keys sort
+        // lexicographically in the order segments were captured.
+        assert_eq!(
+            storage_key("sound-recorder/segments", 1, "audio/m4a"),
+            "sound-recorder/segments/segment-0000000001.m4a"
+        );
+        assert_eq!(
+            storage_key("p", 1234567890, "audio/wav"),
+            "p/segment-1234567890.wav"
+        );
+        // Content-type detection is case-insensitive and substring-based, with
+        // m4a as the catch-all default for unrecognized types.
+        assert_eq!(extension_for_content_type("audio/WEBM"), "webm");
+        assert_eq!(extension_for_content_type("audio/ogg; codecs=opus"), "opus");
+        assert_eq!(extension_for_content_type("audio/mpeg"), "mp3");
+        assert_eq!(extension_for_content_type("audio/3gpp"), "3gp");
+        assert_eq!(extension_for_content_type("application/octet-stream"), "m4a");
+    }
+
+    #[test]
+    fn destination_key_derives_from_segment_file_name() {
+        let mut segment = test_segment();
+        segment.device_id = "dev-7".to_string();
+        segment.session_id = "sess-9".to_string();
+        segment.storage_key =
+            "sound-recorder/segments/device=dev/session=s/segment-0000000042.wav".to_string();
+        // The folder path is trimmed of surrounding slashes and the file name is
+        // taken from the segment's own storage key.
+        assert_eq!(
+            destination_key("/sound-recorder/", &segment),
+            "sound-recorder/device=dev-7/session=sess-9/segment-0000000042.wav"
+        );
+        // When the storage key has no trailing file name component, a stable
+        // fallback name is used instead of producing an empty segment.
+        segment.storage_key = "trailing-slash/".to_string();
+        assert_eq!(
+            destination_key("backup", &segment),
+            "backup/device=dev-7/session=sess-9/segment.m4a"
+        );
+    }
+
+    #[test]
+    fn signed_ttl_floors_expired_urls_at_one_second() {
+        // An already-expired (or exactly-now) expiry yields the minimum 1s TTL
+        // rather than a zero or negative duration that a signer would reject.
+        let past = Utc::now() - ChronoDuration::hours(1);
+        assert_eq!(signed_ttl(past), Duration::from_secs(1));
+        // A future expiry maps to a positive duration close to the remaining
+        // time; allow slack for the Utc::now() call inside signed_ttl.
+        let future = Utc::now() + ChronoDuration::seconds(300);
+        let ttl = signed_ttl(future);
+        assert!(
+            ttl >= Duration::from_secs(290) && ttl <= Duration::from_secs(300),
+            "unexpected ttl: {ttl:?}"
+        );
+    }
 }
 
 fn render_home(config: &Config) -> String {
