@@ -17,21 +17,25 @@ See `soccer-sim-game-engine.rs/k8s/LEARNING_RUNBOOK.md` for the learning loop.
 
 ---
 
-## 1. Loki disk-hoard → recurring `disk-pressure` (HIGH — recurring; blocks the learner)
+## 1. Loki disk-hoard → recurring `disk-pressure` — ✅ FIXED (Jun 2026, commit on `dev`)
 
-`dd-loki` (namespace `observability`) writes log chunks to an **unbounded
-`emptyDir`** with no retention/compaction. It grew to **~259 GB** (`/data/chunks`),
-pushing the node disk to 90% → `node.kubernetes.io/disk-pressure` taint → the learner
-(and anything else) can't schedule. This destabilizes the **whole** node, not just soccer.
+`dd-loki` (namespace `observability`) had **no retention/compactor** and an
+**unbounded `emptyDir`**; it grew to **~259 GB** (`/data/chunks`), pushed the node
+disk to 90% → `node.kubernetes.io/disk-pressure` taint → stranded the learner (and
+destabilized the whole node).
 
-- **Interim fix (frees ~260 GB instantly):** `kubectl -n observability delete pod -l app=dd-loki`
-  (its store is an emptyDir = ephemeral, so this is safe; it restarts empty).
-- **Durable fix:** give Loki real retention — run the **compactor** with
-  `retention_enabled: true` + a `retention_period` (e.g. 72h), and/or move its store
-  to a **sized PVC** (so it can't consume the node root disk). Without this it refills
-  in days and re-wedges the learner.
-- Diagnose disk hogs: `sudo du -sh /var/lib/kubelet/pods/* | sort -rh | head` then map
-  the pod UID → name via `kubectl get pods -A -o custom-columns=N:.metadata.name,UID:.metadata.uid`.
+**Fixed** in `remote/argocd/observability/`:
+- `loki.configmap.yaml`: added a `compactor` (`retention_enabled: true`,
+  `delete_request_store: filesystem`, `compaction_interval: 10m`) + `limits_config.retention_period: 72h`.
+- `loki.deployment.yaml`: capped the data `emptyDir` at `sizeLimit: 40Gi` (hard
+  backstop — kubelet evicts Loki before it can fill the node root disk again).
+- Verified: Loki `1/1 Running`, compactor `ACTIVE`, sizeLimit applied, disk 59% / DiskPressure False.
+
+Tuning note: if 72 h of logs approaches 40 Gi (eviction churn), lower `retention_period`
+(e.g. 48h/24h) — the cap is the safety net, retention keeps it graceful.
+Interim manual reclaim (if ever needed): `kubectl -n observability delete pod -l app=dd-loki`
+(emptyDir = ephemeral). Diagnose disk hogs: `sudo du -sh /var/lib/kubelet/pods/* | sort -rh | head`
+then map UID→pod via `kubectl get pods -A -o custom-columns=N:.metadata.name,UID:.metadata.uid`.
 
 ## 2. `dd-dart-server` + `dd-dev-server-api` ImagePullBackOff (MED — pre-existing, not capacity)
 
