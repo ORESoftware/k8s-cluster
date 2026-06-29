@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-akrion-web-server-rs
+  namespace: default
+  labels:
+    app: dd-akrion-web-server-rs
+spec:
+  selector:
+    app: dd-akrion-web-server-rs
+  ports:
+    - name: http
+      port: 8127
+      targetPort: http
