@@ -3,3 +3,6 @@ env/
 .env.*
 !.env.example
 .direnv/
+
+# Scratch space (git worktrees, build scratch, etc.) — see agents.md
+tmp/
