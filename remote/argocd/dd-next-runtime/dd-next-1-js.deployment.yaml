@@ -9,7 +9,8 @@ spec:
   # The standalone Next.js app (the same dd-next-1 repo that ships to Vercel) running long-lived in
   # the cluster. No repo fork: the build sets DD_DEPLOY_TARGET=standalone, which next.config emits as
   # output:'standalone'. App env comes from the dd-next-1-js-env Secret (create from env/.prod.env).
-  replicas: 1
+  # Scaled to 0 for now (removed from the cluster) — bump back to 1 to restore.
+  replicas: 0
   minReadySeconds: 10
   progressDeadlineSeconds: 3600
   strategy:
