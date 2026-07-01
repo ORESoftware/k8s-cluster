@@ -73,7 +73,7 @@ spec:
                   export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
                   run_prefix="${SOCCER_RUN_ID_PREFIX:-codex-soccer-tournament-nightly}"
-                  soccer_repo="${SOCCER_SOURCE_REPO:-https://github.com/ORESoftware/soccer-sim-game-engine.rs.git}"
+                  soccer_repo="${SOCCER_SOURCE_REPO:-https://github.com/akrion-sim/akrion-soccer-engine-rs.git}"
                   engine_repo="${SOCCER_ENGINE_SOURCE_REPO:-https://github.com/ORESoftware/discrete-event-system.rs.git}"
                   source_ref="${SOCCER_SOURCE_REF:-main}"
                   engine_ref="${SOCCER_ENGINE_SOURCE_REF:-main}"
@@ -103,6 +103,9 @@ spec:
                   export SOCCER_RUN_ID="${run_prefix}-$(date -u +%Y%m%dT%H%M%SZ)"
                   echo "tournament_run_started_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ) run_id=${SOCCER_RUN_ID}"
                   exec "${target}/release/main_soccer_tournament_run"
+              envFrom:
+                - configMapRef:
+                    name: dd-soccer-feature-gates
               env:
                 - name: HOME
                   value: /tmp
@@ -115,9 +118,9 @@ spec:
                 - name: RUST_BACKTRACE
                   value: "1"
                 - name: SOCCER_SOURCE_REPO
-                  value: https://github.com/ORESoftware/soccer-sim-game-engine.rs.git
+                  value: https://github.com/akrion-sim/akrion-soccer-engine-rs.git
                 - name: SOCCER_SOURCE_REF
-                  value: learning
+                  value: main
                 - name: SOCCER_ENGINE_SOURCE_REPO
                   value: https://github.com/ORESoftware/discrete-event-system.rs.git
                 - name: SOCCER_ENGINE_SOURCE_REF

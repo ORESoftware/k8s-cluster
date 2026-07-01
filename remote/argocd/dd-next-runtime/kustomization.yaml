@@ -163,6 +163,7 @@ resources:
   # /soccer/. The gateway configmap below proxies to the dd-soccer-rs Service,
   # so these MUST be applied or nginx fails to resolve the upstream at startup
   # and the whole gateway crashloops.
+  - dd-soccer-feature-gates.configmap.yaml
   - dd-soccer-rs.deployment.yaml
   - dd-soccer-rs.service.yaml
   # Akrion Sim web portal: Maud/HTMX pages and Supabase browser-login shell,

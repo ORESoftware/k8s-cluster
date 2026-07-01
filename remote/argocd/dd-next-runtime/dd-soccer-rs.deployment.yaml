@@ -23,7 +23,7 @@ spec:
     metadata:
       annotations:
         dd.dev/soccer-server-revision: 'full-live-canvas-ui+lazy-uuid-games+mermaid-docs+flowchart-doc+ws-push+server-push'
-        dd.dev/soccer-engine-revision: 'soccer-sim-game-engine.rs@learning (39b2298: +bind-first +passeval-dedup +pg-policy-load +jitter-buffer)'
+        dd.dev/soccer-engine-revision: 'akrion-soccer-engine-rs@main'
         dd.dev/des-engine-revision: 'discrete-event-system.rs@main'
       labels:
         app: dd-soccer-rs
@@ -156,6 +156,9 @@ spec:
               # playing a cold, unlearned policy. Same feature the learning cronjobs
               # build, proven on this rust:1.90-bookworm image.
               exec /usr/local/cargo/bin/cargo run --release --features soccer_engine/postgres-persistence
+          envFrom:
+            - configMapRef:
+                name: dd-soccer-feature-gates
           env:
             - name: HOST
               value: 0.0.0.0
@@ -173,9 +176,9 @@ spec:
                   name: dd-git-clone-token
                   key: token
             - name: SOCCER_ENGINE_GIT_URL
-              value: https://github.com/ORESoftware/soccer-sim-game-engine.rs.git
+              value: https://github.com/akrion-sim/akrion-soccer-engine-rs.git
             - name: SOCCER_ENGINE_GIT_REF
-              value: learning
+              value: main
             - name: DES_ENGINE_GIT_URL
               value: https://github.com/ORESoftware/discrete-event-system.rs.git
             - name: DES_ENGINE_GIT_REF
