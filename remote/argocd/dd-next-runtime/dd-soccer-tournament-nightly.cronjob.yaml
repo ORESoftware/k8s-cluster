@@ -92,7 +92,7 @@ spec:
                   clone_ref() {
                     repo="$1"; ref="$2"; dir="$3"
                     echo "source_clone_started dir=${dir} ref=${ref}"
-                    git "${git_auth_args[@]}" clone --depth 1 --filter=blob:none --no-checkout "${repo}" "${dir}"
+                    git "${git_auth_args[@]}" clone --depth 1 --no-checkout "${repo}" "${dir}"
                     git -C "${dir}" "${git_auth_args[@]}" fetch --depth 1 origin "${ref}"
                     git -C "${dir}" switch --detach FETCH_HEAD
                   }
