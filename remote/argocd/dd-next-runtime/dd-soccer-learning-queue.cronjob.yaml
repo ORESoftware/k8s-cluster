@@ -38,6 +38,16 @@ spec:
           enableServiceLinks: false
           restartPolicy: Never
           terminationGracePeriodSeconds: 30
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - key: kubernetes.io/hostname
+                        operator: In
+                        values:
+                          - dd-k8s-hel1
+                          - dd-k8s-nbg1
           securityContext:
             runAsNonRoot: true
             runAsUser: 1000
@@ -135,19 +145,18 @@ spec:
                 - name: SOCCER_EXPERIMENT_SLUG
                   value: soccer-self-play-k8s-queue
                 - name: SOCCER_QUEUE_GAMES
-                  value: "40"
+                  value: "60"
                 - name: SOCCER_QUEUE_PARALLEL_GAMES
-                  # Reduced 4->2: 4 concurrent 30-min sims exceeded the 24Gi
-                  # limit (OOMKilled). A crashing job has zero throughput, so
-                  # 2-that-completes beats 4-that-OOMs. Bump memory before
-                  # raising this again (the continuous learner shares the pool).
+                  # Keep per-pod fanout at 2 and scale by placing workers on the
+                  # 32Gi Hetzner nodes. The smaller 8Gi workers have repeatedly
+                  # OOMed queue pods before they produced useful samples.
                   value: "2"
                 - name: SOCCER_HALVES
                   value: "2"
                 - name: SOCCER_HALF_MINUTES
-                  value: "15"
+                  value: "10"
                 - name: SOCCER_MINUTES
-                  value: "30"
+                  value: "20"
                 - name: SOCCER_DT_SECONDS
                   value: "0.2"
                 - name: SOCCER_LEARNING_INTERVAL_TICKS
@@ -162,6 +171,8 @@ spec:
                   value: "1"
                 - name: SOCCER_NEURAL_MAX_BATCHES_PER_TICK
                   value: "2"
+                - name: SOCCER_NEURAL_HIDDEN_UNITS
+                  value: "96"
                 - name: SOCCER_NEURAL_REPLAY_CAPACITY
                   value: "2048"
                 - name: SOCCER_NEURAL_REPLAY_SAMPLES_PER_TICK
@@ -173,9 +184,11 @@ spec:
                 - name: SOCCER_QUEUE_NEURAL_DRAIN_TIMEOUT_MS
                   value: "2000"
                 - name: SOCCER_QUEUE_POSTGRES_POLICY_VERSION_INTERVAL_GAMES
-                  value: "4"
+                  value: "5"
                 - name: SOCCER_QUEUE_POSTGRES_COMPLETED_RUN_BATCH_GAMES
-                  value: "4"
+                  value: "5"
+                - name: SOCCER_QUEUE_POLICY_PROMOTION_MIN_SAMPLE_GAMES
+                  value: "5"
                 - name: SOCCER_QUEUE_POSTGRES_COMPLETED_RUN_RETENTION_GAMES
                   value: "500"
                 - name: SOCCER_QUEUE_POSTGRES_ASYNC_BATCH_QUEUE
@@ -232,11 +245,11 @@ spec:
                   value: "0.05"
               resources:
                 requests:
-                  cpu: 500m
-                  memory: 1Mi
-                limits:
                   cpu: "4"
-                  memory: 48Gi
+                  memory: 20Gi
+                limits:
+                  cpu: "8"
+                  memory: 30Gi
               securityContext:
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: true
