@@ -17,7 +17,9 @@ metadata:
 spec:
   schedule: "*/15 * * * *"
   timeZone: America/Chicago
-  suspend: false
+  # Disabled by default on Hetzner while the continuous one-game learner is the
+  # source of truth; unsuspend only when a healthy 32Gi worker is dedicated to it.
+  suspend: true
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 600
   successfulJobsHistoryLimit: 3
@@ -134,7 +136,7 @@ spec:
                 - name: SOCCER_SOURCE_REPO
                   value: https://github.com/akrion-sim/akrion-soccer-engine-rs.git
                 - name: SOCCER_SOURCE_REF
-                  value: main
+                  value: learning
                 - name: SOCCER_ENGINE_SOURCE_REPO
                   value: https://github.com/ORESoftware/discrete-event-system.rs.git
                 - name: SOCCER_ENGINE_SOURCE_REF
@@ -151,7 +153,7 @@ spec:
                 - name: SOCCER_EXPERIMENT_SLUG
                   value: soccer-self-play-k8s-queue
                 - name: SOCCER_QUEUE_GAMES
-                  value: "60"
+                  value: "1"
                 - name: SOCCER_QUEUE_PARALLEL_GAMES
                   # Keep per-pod fanout at 1 on Hetzner; the active policy +
                   # neural state can OOM a 32Gi node when 2 games hydrate in
@@ -190,11 +192,11 @@ spec:
                 - name: SOCCER_QUEUE_NEURAL_DRAIN_TIMEOUT_MS
                   value: "2000"
                 - name: SOCCER_QUEUE_POSTGRES_POLICY_VERSION_INTERVAL_GAMES
-                  value: "5"
+                  value: "1"
                 - name: SOCCER_QUEUE_POSTGRES_COMPLETED_RUN_BATCH_GAMES
-                  value: "5"
+                  value: "1"
                 - name: SOCCER_QUEUE_POLICY_PROMOTION_MIN_SAMPLE_GAMES
-                  value: "5"
+                  value: "1"
                 - name: SOCCER_QUEUE_POSTGRES_COMPLETED_RUN_RETENTION_GAMES
                   value: "500"
                 - name: SOCCER_QUEUE_POSTGRES_ASYNC_BATCH_QUEUE
@@ -257,7 +259,7 @@ spec:
                   memory: 1Gi
                 limits:
                   cpu: "8"
-                  memory: 30Gi
+                  memory: 12Gi
               securityContext:
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: true
