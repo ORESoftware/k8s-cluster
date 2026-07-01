@@ -70,11 +70,17 @@ spec:
                   target="/tmp/${run_prefix}-${stamp}-target"
                   export CARGO_TARGET_DIR="${target}"
 
+                  git_auth_args=()
+                  if [ -n "${GH_PAT:-}" ]; then
+                    authhdr="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_PAT" | base64 | tr -d '\n')"
+                    git_auth_args=(-c "http.https://github.com/.extraheader=${authhdr}")
+                  fi
+
                   clone_ref() {
                     repo="$1"; ref="$2"; dir="$3"
                     echo "source_clone_started dir=${dir} ref=${ref}"
-                    git clone --depth 1 --filter=blob:none --no-checkout "${repo}" "${dir}"
-                    git -C "${dir}" fetch --depth 1 origin "${ref}"
+                    git "${git_auth_args[@]}" clone --depth 1 --filter=blob:none --no-checkout "${repo}" "${dir}"
+                    git -C "${dir}" "${git_auth_args[@]}" fetch --depth 1 origin "${ref}"
                     git -C "${dir}" switch --detach FETCH_HEAD
                   }
 
@@ -104,6 +110,11 @@ spec:
                   value: "5"
                 - name: RUST_BACKTRACE
                   value: "1"
+                - name: GH_PAT
+                  valueFrom:
+                    secretKeyRef:
+                      name: dd-git-clone-token
+                      key: token
                 - name: SOCCER_SOURCE_REPO
                   value: https://github.com/akrion-sim/akrion-soccer-engine-rs.git
                 - name: SOCCER_SOURCE_REF

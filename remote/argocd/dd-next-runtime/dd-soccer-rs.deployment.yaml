@@ -71,8 +71,8 @@ spec:
               fetch_git_ref() {
                 # fetch_git_ref <url> <ref> <dest> ; echo dest on success, empty on fail
                 url="$1"; ref="$2"; dest="$3"
-                if git clone --depth 1 --no-checkout "${url}" "${dest}" \
-                  && git -C "${dest}" fetch --depth 1 origin "${ref}" \
+                if git "${git_auth_args[@]}" clone --depth 1 --no-checkout "${url}" "${dest}" \
+                  && git -C "${dest}" "${git_auth_args[@]}" fetch --depth 1 origin "${ref}" \
                   && git -C "${dest}" switch --detach FETCH_HEAD; then
                   echo "${dest}"
                 fi
