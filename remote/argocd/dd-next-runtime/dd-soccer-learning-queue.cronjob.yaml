@@ -254,7 +254,7 @@ spec:
                   cpu: "4"
                   # Keep the request schedulable on Hetzner's over-requested
                   # 32Gi nodes; the limit is the real OOM guardrail.
-                  memory: 2Gi
+                  memory: 1Gi
                 limits:
                   cpu: "8"
                   memory: 30Gi
