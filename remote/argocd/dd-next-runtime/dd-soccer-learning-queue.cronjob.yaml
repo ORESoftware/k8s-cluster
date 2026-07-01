@@ -48,6 +48,12 @@ spec:
                         values:
                           - dd-k8s-hel1
                           - dd-k8s-nbg1
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app.kubernetes.io/name: dd-soccer-learning-queue
+                  topologyKey: kubernetes.io/hostname
           securityContext:
             runAsNonRoot: true
             runAsUser: 1000
@@ -246,7 +252,9 @@ spec:
               resources:
                 requests:
                   cpu: "4"
-                  memory: 20Gi
+                  # Keep the request schedulable on Hetzner's over-requested
+                  # 32Gi nodes; the limit is the real OOM guardrail.
+                  memory: 2Gi
                 limits:
                   cpu: "8"
                   memory: 30Gi
