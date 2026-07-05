@@ -45,6 +45,14 @@ async fn main() -> Result<()> {
         .with_target(false)
         .init();
 
+    // Optional overlay membership secret, folded into every handshake.
+    if let Ok(secret) = std::env::var("TOR_NETWORK_SECRET") {
+        if !secret.is_empty() {
+            crypto::set_network_secret(secret.into_bytes());
+            info!("overlay pre-shared key active (TOR_NETWORK_SECRET set)");
+        }
+    }
+
     let role = std::env::args()
         .nth(1)
         .or_else(|| std::env::var("TOR_ROLE").ok())
