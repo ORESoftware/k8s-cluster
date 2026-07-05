@@ -150,15 +150,3 @@ async fn send_reply(client: &mut TcpStream, status: u8) -> Result<()> {
     client.flush().await?;
     return Ok(());
 }
-
-/// Pick `hops` distinct relays at random; the last is the exit.
-fn choose_path(dir: &Directory, hops: usize) -> Result<Vec<crate::config::RelayInfo>> {
-    let mut rng = rand::thread_rng();
-    let mut relays = dir.relays.clone();
-    relays.shuffle(&mut rng);
-    if relays.len() < hops {
-        bail!("not enough relays for {hops} hops");
-    }
-    relays.truncate(hops);
-    return Ok(relays);
-}
