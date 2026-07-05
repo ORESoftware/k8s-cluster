@@ -26,6 +26,17 @@ TOR_LISTEN=127.0.0.1:9103 TOR_KEY_FILE=./relayC.key cargo run -- relay &
 TOR_DIRECTORY=./directory.toml TOR_HOPS=3 cargo run -- client &
 ```
 
+## Use the real Tor network instead
+
+Build with the `arti` feature and flip the backend — no relays or directory
+needed (Tor's directory authorities provide the consensus):
+
+```sh
+cargo build --release --features arti
+TOR_BACKEND=arti cargo run --release --features arti -- client
+curl -x socks5h://127.0.0.1:9050 https://check.torproject.org/api/ip   # {"IsTor":true,…}
+```
+
 ## Send traffic through it
 
 ```sh
@@ -50,6 +61,7 @@ to a `proxy.pac`, and serves these docs at `/docs`.
 | Env var             | Mode   | Default            | Meaning                                   |
 | ------------------- | ------ | ------------------ | ----------------------------------------- |
 | `TOR_ROLE`          | all    | (argv[1])          | `relay` \| `client` \| `keygen`           |
+| `TOR_BACKEND`       | client | `overlay`          | `overlay` (own relays) \| `arti` (real Tor, needs `--features arti`) |
 | `TOR_NETWORK_SECRET`| all    | (empty = open)     | Overlay pre-shared key folded into handshakes |
 | `TOR_LISTEN`        | relay  | `0.0.0.0:9001`     | Relay listen address                      |
 | `TOR_KEY_FILE`      | relay  | `./relay.key`      | Static identity key file                  |

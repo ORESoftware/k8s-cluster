@@ -37,7 +37,7 @@
 <body>
 <header>
   <h1>tor-server</h1>
-  <span class="badge">onion proxy</span>
+  <span class="badge" id="backend-badge" data-testid="backend-badge">onion proxy</span>
   <span class="muted" style="margin-left:auto"><a href="/docs" data-testid="docs-link">Docs</a></span>
 </header>
 <main>
@@ -92,6 +92,7 @@ async function refresh() {
     document.getElementById('s-failed').textContent = s.circuits_failed;
     document.getElementById('s-hops').textContent = s.hops;
     document.getElementById('s-relays').textContent = s.relay_count;
+    if (s.backend) document.getElementById('backend-badge').textContent = s.backend + ' backend';
     document.getElementById('socks-addr').textContent = s.socks_listen;
     document.querySelectorAll('.socks').forEach(e => e.textContent = s.socks_listen.replace('0.0.0.0','127.0.0.1'));
     document.getElementById('relays').innerHTML =
@@ -116,8 +117,7 @@ async function doFetch() {
       return;
     }
     meta.className = 'ok';
-    meta.innerHTML = `<span data-testid="result-status">${d.status_line}</span> · exit path: ` +
-      (d.path||[]).map(n=>`<span class="pill">${n}</span>`).join('') +
+    meta.innerHTML = `<span data-testid="result-status">${d.status_line}</span> · via <span class="pill">${d.backend||'?'}</span>` +
       ` · ${d.body_len} bytes · ${d.elapsed_ms} ms`;
     pre.style.display = 'block';
     pre.textContent = (d.headers||[]).join('\n') + '\n\n' + (d.body_preview||'');

@@ -20,6 +20,7 @@
 mod cell;
 mod circuit;
 mod config;
+mod connector;
 mod crypto;
 mod policy;
 mod relay;
@@ -85,24 +86,29 @@ async fn run_relay() -> Result<()> {
 async fn run_client() -> Result<()> {
     let socks_listen = env_or("TOR_SOCKS_LISTEN", "127.0.0.1:9050");
     let ui_listen = env_or("TOR_UI_LISTEN", "127.0.0.1:9060");
-    let dir_path = std::env::var("TOR_DIRECTORY")
-        .context("TOR_DIRECTORY is required in client mode (path to directory.toml)")?;
+    let backend = env_or("TOR_BACKEND", "overlay");
     let hops: usize = env_or("TOR_HOPS", "3")
         .parse()
         .context("TOR_HOPS must be a positive integer")?;
     let docs_dir = PathBuf::from(env_or("TOR_DOCS_DIR", "./docs"));
-    let directory = config::Directory::load(&PathBuf::from(&dir_path))?;
+
+    // The overlay backend needs a relay directory; arti does not.
+    let directory = match std::env::var("TOR_DIRECTORY") {
+        Ok(p) => Some(config::Directory::load(&PathBuf::from(&p))?),
+        Err(_) => None,
+    };
+    let connector = Arc::new(connector::build(&backend, directory.clone(), hops).await?);
     let stats = Arc::new(stats::Stats::default());
 
     let client_cfg = Arc::new(socks::ClientConfig {
         socks_listen: socks_listen.clone(),
-        directory: directory.clone(),
-        hops,
+        connector: connector.clone(),
         stats: stats.clone(),
     });
     let web_cfg = Arc::new(web::WebConfig {
         ui_listen: ui_listen.clone(),
         socks_listen,
+        connector,
         directory,
         hops,
         docs_dir,

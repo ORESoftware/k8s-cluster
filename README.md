@@ -110,13 +110,36 @@ Browsers cannot speak SOCKS from a web page, so the UI's job is to prove the
 overlay works and hand you the config to point real apps (curl, Firefox,
 Chromium) at the SOCKS proxy — which carries HTTPS end-to-end.
 
-## Can it talk to the real Tor network?
+## Backends: private overlay or the real Tor network
 
-**No.** It uses its own cell format, an ntor-*like* (not ntor) handshake, no TLS
-link layer, and no Tor directory/consensus, so it is wire-incompatible with Tor
-relays and cannot reach `.onion` services. If you need the real Tor network, use
-[Arti](https://gitlab.torproject.org/tpo/core/arti) (Rust) or the C `tor` daemon
-and point your apps at its SOCKS port. See [docs/tor-interop.md](docs/tor-interop.md).
+The same SOCKS port and dashboard run over either of two backends, chosen with
+`TOR_BACKEND`:
+
+| Backend            | `TOR_BACKEND` | What it uses                                              |
+| ------------------ | ------------- | -------------------------------------------------------- |
+| Private overlay    | `overlay` (default) | This project's own onion relays (from your directory). |
+| **Real Tor**       | `arti`        | The actual Tor network via [Arti](https://gitlab.torproject.org/tpo/core/arti). |
+
+The project's *own* protocol is **not** wire-compatible with Tor (custom cells,
+an ntor-*like* handshake, no directory/consensus) — see
+[docs/tor-interop.md](docs/tor-interop.md). Rather than reimplement tor-spec, the
+`arti` backend embeds the Tor Project's official Rust client, so real Tor is a
+build flag away:
+
+```sh
+# Build with Tor support (pulls the Arti stack) and run over the real network.
+cargo build --release --features arti
+TOR_BACKEND=arti cargo run --release --features arti -- client
+
+# Verify: the Tor Project's own checker reports IsTor:true and a Tor exit IP.
+curl -x socks5h://127.0.0.1:9050 https://check.torproject.org/api/ip
+# {"IsTor":true,"IP":"185.220.101.181"}
+# .onion services work too:
+curl -x socks5h://127.0.0.1:9050 https://duckduckgogg42xjoc72x3sjasowoarfbgcmvfimaftt6twagswzczad.onion/
+```
+
+With `arti`, `TOR_DIRECTORY` is not needed (Tor's directory authorities provide
+the consensus). The dashboard's backend badge shows which mode is active.
 
 ## Hardening
 
@@ -138,6 +161,7 @@ See [docs/security.md](docs/security.md) for the full model.
 | Env var             | Mode   | Default            | Meaning                                  |
 | ------------------- | ------ | ------------------ | ---------------------------------------- |
 | `TOR_ROLE`          | all    | (from argv[1])     | `relay` \| `client` \| `keygen`          |
+| `TOR_BACKEND`       | client | `overlay`          | `overlay` (own relays) \| `arti` (real Tor; needs `--features arti`) |
 | `TOR_NETWORK_SECRET`| all    | (empty = open)     | Overlay pre-shared key folded into handshakes |
 | `TOR_LISTEN`        | relay  | `0.0.0.0:9001`     | Relay listen address                     |
 | `TOR_KEY_FILE`      | relay  | `./relay.key`      | Static identity key file (created if absent) |

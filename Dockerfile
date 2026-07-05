@@ -18,16 +18,21 @@
 FROM rust:1.90-bookworm AS build
 WORKDIR /app
 
+# Optional cargo features. Pass `--build-arg CARGO_FEATURES=arti` to bake in the
+# real-Tor (Arti) backend; leave empty for the lean overlay-only build.
+ARG CARGO_FEATURES=""
+
 # Cache dependencies against a stub source tree first.
 COPY Cargo.toml Cargo.lock ./
 RUN mkdir -p src \
   && echo "fn main() {}" > src/main.rs \
-  && cargo build --release \
+  && cargo build --release ${CARGO_FEATURES:+--features ${CARGO_FEATURES}} \
   && rm -rf src
 
 COPY src ./src
 # Ensure the real binary is rebuilt even if the stub fingerprint matches.
-RUN cargo clean -p tor-server --release && cargo build --release
+RUN cargo clean -p tor-server --release \
+  && cargo build --release ${CARGO_FEATURES:+--features ${CARGO_FEATURES}}
 
 FROM debian:bookworm-slim
 RUN apt-get update \

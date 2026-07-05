@@ -29,8 +29,8 @@ use tokio::net::TcpListener;
 use tokio::time::{timeout, Duration};
 use tracing::info;
 
-use crate::circuit::Circuit;
 use crate::config::Directory;
+use crate::connector::Connector;
 use crate::stats::Stats;
 
 /// Cap on the response body we buffer for the in-browser fetch preview.
@@ -40,7 +40,9 @@ const FETCH_TIMEOUT: Duration = Duration::from_secs(25);
 pub struct WebConfig {
     pub ui_listen: String,
     pub socks_listen: String,
-    pub directory: Directory,
+    pub connector: Arc<Connector>,
+    /// Present only for the overlay backend; used to display the relay list.
+    pub directory: Option<Directory>,
     pub hops: usize,
     pub docs_dir: PathBuf,
     pub stats: Arc<Stats>,
@@ -73,14 +75,19 @@ async fn status(State(cfg): State<AppState>) -> Json<serde_json::Value> {
     let s = cfg.stats.snapshot();
     let relays: Vec<serde_json::Value> = cfg
         .directory
-        .relays
-        .iter()
-        .map(|r| serde_json::json!({ "name": r.name, "addr": r.addr }))
-        .collect();
+        .as_ref()
+        .map(|d| {
+            d.relays
+                .iter()
+                .map(|r| serde_json::json!({ "name": r.name, "addr": r.addr }))
+                .collect()
+        })
+        .unwrap_or_default();
     return Json(serde_json::json!({
+        "backend": cfg.connector.backend(),
         "socks_listen": cfg.socks_listen,
         "hops": cfg.hops,
-        "relay_count": cfg.directory.relays.len(),
+        "relay_count": relays.len(),
         "relays": relays,
         "circuits_built": s.circuits_built,
         "circuits_failed": s.circuits_failed,
@@ -113,27 +120,19 @@ async fn fetch(State(cfg): State<AppState>, Query(q): Query<HashMap<String, Stri
     }
 }
 
-/// Build a fresh circuit and perform one plaintext HTTP GET through it.
+/// Open a stream through the active backend and perform one plaintext HTTP GET.
 async fn onion_get(cfg: &WebConfig, url: &str) -> Result<serde_json::Value> {
     let (host, port, path) = parse_http_url(url)?;
-    let relays = cfg.directory.choose_path(cfg.hops)?;
-    let path_names: Vec<String> = relays.iter().map(|r| r.name.clone()).collect();
 
-    let mut circuit = Circuit::build(&relays).await?;
-    circuit.begin(&host, port).await?;
+    let mut stream = cfg.connector.connect(&host, port).await?;
     cfg.stats.built();
-
-    let (mut mine, theirs) = tokio::io::duplex(64 * 1024);
-    tokio::spawn(async move {
-        let _ = circuit.splice(theirs).await;
-    });
 
     let request = format!(
         "GET {path} HTTP/1.1\r\nHost: {host}\r\nUser-Agent: tor-server-ui/0.1\r\nAccept: */*\r\nConnection: close\r\n\r\n"
     );
-    mine.write_all(request.as_bytes()).await?;
+    stream.write_all(request.as_bytes()).await?;
 
-    let raw = timeout(FETCH_TIMEOUT, read_all_capped(&mut mine, FETCH_MAX_BODY))
+    let raw = timeout(FETCH_TIMEOUT, read_all_capped(&mut stream, FETCH_MAX_BODY))
         .await
         .map_err(|_| anyhow::anyhow!("fetch timed out after {}s", FETCH_TIMEOUT.as_secs()))??;
 
@@ -162,7 +161,7 @@ async fn onion_get(cfg: &WebConfig, url: &str) -> Result<serde_json::Value> {
         "ok": true,
         "url": url,
         "target": format!("{host}:{port}"),
-        "path": path_names,
+        "backend": cfg.connector.backend(),
         "status_line": status_line,
         "status_code": status_code,
         "headers": headers.iter().map(|(k, v)| format!("{k}: {v}")).collect::<Vec<_>>(),

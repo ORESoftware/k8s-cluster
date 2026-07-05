@@ -1,8 +1,19 @@
 # Interoperability with the Tor network
 
-**Short answer: no.** `tor-server.rs` cannot talk to real Tor relays, cannot
-publish to the Tor directory, and cannot reach `.onion` services. It is a
-self-contained overlay with its own protocol.
+Two things are true at once:
+
+- The project's **own protocol** (the `overlay` backend) is **not** compatible
+  with the Tor network — different everything (below).
+- But you can still use the **real Tor network** through this project by
+  selecting the **`arti` backend**, which embeds the Tor Project's official Rust
+  client. `TOR_BACKEND=arti` (built with `--features arti`) gives you real Tor
+  circuits, real exits, and `.onion` access behind the same SOCKS port and
+  dashboard. Verified with `https://check.torproject.org/api/ip` →
+  `{"IsTor":true,…}` and a working v3 `.onion` fetch.
+
+So: to *reimplement* the Tor protocol from scratch — no, and you shouldn't. To
+*use* the Tor network from here — yes, via Arti. The rest of this page explains
+why reimplementing is the wrong path.
 
 ## Why not
 
@@ -22,17 +33,23 @@ Even the parts with the same name (a three-hop circuit, an ntor-ish handshake,
 SOCKS5 in front) are wire-incompatible. A Tor relay would reject our CREATE, and
 we would reject its cells.
 
-## If you need the real Tor network
+## Using the real Tor network from here
 
-Use the official implementations rather than trying to make this interoperate:
+This project already integrates Arti as a backend, so you don't run a separate
+proxy:
 
-- **Arti** — the Rust Tor client (`arti`), the modern, maintained option. Run
-  `arti proxy` for a SOCKS port on the real network.
-- **C Tor** (`tor`) — the reference daemon; run it and use its SOCKS port.
+```sh
+cargo build --release --features arti
+TOR_BACKEND=arti cargo run --release --features arti -- client
+curl -x socks5h://127.0.0.1:9050 https://check.torproject.org/api/ip   # IsTor:true
+```
 
-You can point the same applications at Arti/Tor's SOCKS port exactly as you would
-point them at this project's — the *client interface* (SOCKS5) is the same even
-though the *network* is not.
+Under the hood this uses [`arti-client`](https://crates.io/crates/arti-client),
+the Tor Project's maintained Rust implementation, which handles the TLS link
+layer, ntor handshake, directory consensus, path selection, flow control, and
+onion services for you. The alternative is the C `tor` daemon; either way the
+*client interface* (SOCKS5) is identical to this project's overlay mode — only
+the *network* underneath differs.
 
 ## When this project is the right tool
 
