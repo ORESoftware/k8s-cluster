@@ -1,0 +1,12 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-akrion-web-server-rs
+  namespace: default
+  labels:
+    app: dd-akrion-web-server-rs
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dd-akrion-web-server-rs
