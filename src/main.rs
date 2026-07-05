@@ -20,6 +20,7 @@
 mod cell;
 mod circuit;
 mod config;
+mod connector;
 mod crypto;
 mod policy;
 mod relay;
