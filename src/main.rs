@@ -21,12 +21,16 @@ mod cell;
 mod circuit;
 mod config;
 mod crypto;
+mod policy;
 mod relay;
 mod socks;
+mod stats;
+mod web;
 mod wire;
 
 use anyhow::{bail, Context, Result};
 use std::path::PathBuf;
+use std::sync::Arc;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
