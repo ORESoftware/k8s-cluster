@@ -35,6 +35,15 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 axum = "0.8"
 pulldown-cmark = { version = "0.12", default-features = false, features = ["html"] }
 
+# Real-Tor backend (TOR_BACKEND=arti). Off by default because it pulls the full
+# Arti stack (hundreds of crates); enable with `--features arti`.
+arti-client = { version = "0.44", optional = true, default-features = false, features = ["tokio", "rustls", "compression", "onion-service-client"] }
+tor-rtcompat = { version = "0.44", optional = true, default-features = false, features = ["tokio", "rustls"] }
+
+[features]
+default = []
+arti = ["dep:arti-client", "dep:tor-rtcompat"]
+
 [profile.release]
 opt-level = 3
 lto = "thin"
