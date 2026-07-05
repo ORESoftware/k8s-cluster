@@ -39,10 +39,12 @@ pulldown-cmark = { version = "0.12", default-features = false, features = ["html
 # Arti stack (hundreds of crates); enable with `--features arti`.
 arti-client = { version = "0.44", optional = true, default-features = false, features = ["tokio", "rustls", "compression", "onion-service-client"] }
 tor-rtcompat = { version = "0.44", optional = true, default-features = false, features = ["tokio", "rustls"] }
+# Needed to install a rustls CryptoProvider (rustls 0.23 requires selecting one).
+rustls = { version = "0.23", optional = true, default-features = false, features = ["ring"] }
 
 [features]
 default = []
-arti = ["dep:arti-client", "dep:tor-rtcompat"]
+arti = ["dep:arti-client", "dep:tor-rtcompat", "dep:rustls"]
 
 [profile.release]
 opt-level = 3
