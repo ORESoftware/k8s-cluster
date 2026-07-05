@@ -139,6 +139,10 @@ async fn onion_get(cfg: &WebConfig, url: &str) -> Result<serde_json::Value> {
         .await
         .map_err(|_| anyhow::anyhow!("fetch timed out after {}s", FETCH_TIMEOUT.as_secs()))??;
 
+    if raw.is_empty() {
+        bail!("no response from exit — destination unreachable, refused, or blocked by the exit policy");
+    }
+
     let (status_line, status_code, headers, body) = split_http_response(&raw);
     let content_type = headers
         .iter()
