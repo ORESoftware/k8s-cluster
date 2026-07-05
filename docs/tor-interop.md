@@ -1,8 +1,19 @@
 # Interoperability with the Tor network
 
-**Short answer: no.** `tor-server.rs` cannot talk to real Tor relays, cannot
-publish to the Tor directory, and cannot reach `.onion` services. It is a
-self-contained overlay with its own protocol.
+Two things are true at once:
+
+- The project's **own protocol** (the `overlay` backend) is **not** compatible
+  with the Tor network — different everything (below).
+- But you can still use the **real Tor network** through this project by
+  selecting the **`arti` backend**, which embeds the Tor Project's official Rust
+  client. `TOR_BACKEND=arti` (built with `--features arti`) gives you real Tor
+  circuits, real exits, and `.onion` access behind the same SOCKS port and
+  dashboard. Verified with `https://check.torproject.org/api/ip` →
+  `{"IsTor":true,…}` and a working v3 `.onion` fetch.
+
+So: to *reimplement* the Tor protocol from scratch — no, and you shouldn't. To
+*use* the Tor network from here — yes, via Arti. The rest of this page explains
+why reimplementing is the wrong path.
 
 ## Why not
 
