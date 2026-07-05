@@ -97,3 +97,7 @@
 	path = remote/deployments/akrion-web-server-rs
 	url = git@github.com:akrion-sim/akrion-web-server.rs.git
 	branch = main
+[submodule "remote/deployments/tor-server.rs"]
+	path = remote/deployments/tor-server.rs
+	url = git@github.com:ORESoftware/tor-server.rs.git
+	branch = main
