@@ -135,7 +135,9 @@ async fn handle_circuit(prev: TcpStream, secret: Arc<StaticSecret>, policy: Arc<
                 if next_w.is_some() || dest_w.is_some() {
                     bail!("Begin after this relay already has a next hop");
                 }
-                let dest = TcpStream::connect((host.as_str(), port)).await?;
+                // Exit policy: resolve + reject private/loopback/metadata ranges.
+                let addr = policy.resolve_exit(&host, port).await?;
+                let dest = TcpStream::connect(addr).await?;
                 dest.set_nodelay(true).ok();
                 let (dest_r, dw) = dest.into_split();
                 dest_w = Some(dw);
