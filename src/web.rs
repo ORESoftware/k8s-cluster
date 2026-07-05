@@ -120,27 +120,19 @@ async fn fetch(State(cfg): State<AppState>, Query(q): Query<HashMap<String, Stri
     }
 }
 
-/// Build a fresh circuit and perform one plaintext HTTP GET through it.
+/// Open a stream through the active backend and perform one plaintext HTTP GET.
 async fn onion_get(cfg: &WebConfig, url: &str) -> Result<serde_json::Value> {
     let (host, port, path) = parse_http_url(url)?;
-    let relays = cfg.directory.choose_path(cfg.hops)?;
-    let path_names: Vec<String> = relays.iter().map(|r| r.name.clone()).collect();
 
-    let mut circuit = Circuit::build(&relays).await?;
-    circuit.begin(&host, port).await?;
+    let mut stream = cfg.connector.connect(&host, port).await?;
     cfg.stats.built();
-
-    let (mut mine, theirs) = tokio::io::duplex(64 * 1024);
-    tokio::spawn(async move {
-        let _ = circuit.splice(theirs).await;
-    });
 
     let request = format!(
         "GET {path} HTTP/1.1\r\nHost: {host}\r\nUser-Agent: tor-server-ui/0.1\r\nAccept: */*\r\nConnection: close\r\n\r\n"
     );
-    mine.write_all(request.as_bytes()).await?;
+    stream.write_all(request.as_bytes()).await?;
 
-    let raw = timeout(FETCH_TIMEOUT, read_all_capped(&mut mine, FETCH_MAX_BODY))
+    let raw = timeout(FETCH_TIMEOUT, read_all_capped(&mut stream, FETCH_MAX_BODY))
         .await
         .map_err(|_| anyhow::anyhow!("fetch timed out after {}s", FETCH_TIMEOUT.as_secs()))??;
 
