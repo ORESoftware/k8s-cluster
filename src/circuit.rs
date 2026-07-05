@@ -93,10 +93,13 @@ impl Circuit {
     }
 
     /// Splice a local application stream onto this circuit, relaying in both
-    /// directions until either side closes.
-    pub async fn splice(self, app: TcpStream) -> Result<()> {
-        app.set_nodelay(true).ok();
-        let (mut app_r, mut app_w) = app.into_split();
+    /// directions until either side closes. Works over a real TCP socket
+    /// (SOCKS) or an in-memory duplex pipe (the web fetch feature).
+    pub async fn splice<S>(self, app: S) -> Result<()>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    {
+        let (mut app_r, mut app_w) = tokio::io::split(app);
 
         let Circuit {
             mut r0_r,
