@@ -80,6 +80,8 @@ pub async fn build(backend: &str, directory: Option<Directory>, hops: usize) -> 
 #[cfg(feature = "arti")]
 async fn build_arti() -> Result<Connector> {
     use arti_client::{TorClient, TorClientConfig};
+    // rustls 0.23 requires a process-wide CryptoProvider to be chosen explicitly.
+    let _ = rustls::crypto::ring::default_provider().install_default();
     tracing::info!("bootstrapping Tor via arti (fetching directory consensus, may take a while)…");
     let config = TorClientConfig::default();
     let client = TorClient::create_bootstrapped(config)
