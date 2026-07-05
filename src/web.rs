@@ -85,8 +85,6 @@ async fn status(State(cfg): State<AppState>) -> Json<serde_json::Value> {
         "circuits_built": s.circuits_built,
         "circuits_failed": s.circuits_failed,
         "circuits_active": s.circuits_active,
-        "bytes_up": s.bytes_up,
-        "bytes_down": s.bytes_down,
     }));
 }
 
