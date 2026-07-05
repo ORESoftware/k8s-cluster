@@ -5,7 +5,6 @@
 //! through a randomly chosen path, then its bytes are spliced onto it.
 
 use anyhow::{bail, Result};
-use rand::seq::SliceRandom;
 use std::net::Ipv4Addr;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -14,14 +13,16 @@ use tracing::{debug, info, warn};
 
 use crate::circuit::Circuit;
 use crate::config::Directory;
+use crate::stats::Stats;
 
 pub struct ClientConfig {
     pub socks_listen: String,
     pub directory: Directory,
     pub hops: usize,
+    pub stats: Arc<Stats>,
 }
 
-pub async fn run(cfg: ClientConfig) -> Result<()> {
+pub async fn run(cfg: Arc<ClientConfig>) -> Result<()> {
     if cfg.hops == 0 {
         bail!("hop count must be at least 1");
     }
@@ -32,7 +33,6 @@ pub async fn run(cfg: ClientConfig) -> Result<()> {
             cfg.hops
         );
     }
-    let cfg = Arc::new(cfg);
     let listener = TcpListener::bind(&cfg.socks_listen).await?;
     info!(listen = %cfg.socks_listen, hops = cfg.hops, relays = cfg.directory.relays.len(), "SOCKS5 proxy listening");
 
