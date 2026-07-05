@@ -1,0 +1,182 @@
+//! Relay node.
+//!
+//! A relay accepts an inbound TCP link from the previous hop (the client or an
+//! upstream relay), performs the handshake, then forwards cells. It holds
+//! exactly one symmetric key pair (forward/backward) and knows only its
+//! immediate neighbours — never the full path, never the payload destined for
+//! deeper hops.
+//!
+//! A relay's role is decided by the first control cell it receives:
+//!   * `Extend`  -> it becomes a *middle* relay: it opens a link to the next
+//!                  relay and thereafter forwards `Relay` cells verbatim.
+//!   * `Begin`   -> it becomes the *exit*: it opens a TCP connection to the
+//!                  real destination and shuttles application `Data`.
+
+use anyhow::{anyhow, bail, Result};
+use std::sync::Arc;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
+use tokio::net::{TcpListener, TcpStream};
+use tracing::{debug, info, warn};
+use x25519_dalek::StaticSecret;
+
+use crate::cell::Cell;
+use crate::crypto::{relay_handshake, Opener, Sealer};
+use crate::wire::{frame_bytes, read_frame, write_frame};
+
+/// Bytes read from the exit's destination per chunk before being wrapped in a
+/// `Data` cell.
+const EXIT_READ_CHUNK: usize = 32 * 1024;
+
+pub async fn run(listen: &str, secret: StaticSecret) -> Result<()> {
+    let secret = Arc::new(secret);
+    let listener = TcpListener::bind(listen).await?;
+    info!(%listen, "relay listening");
+    loop {
+        let (stream, peer) = match listener.accept().await {
+            Ok(v) => v,
+            Err(e) => {
+                warn!("accept failed: {e}");
+                continue;
+            }
+        };
+        let secret = secret.clone();
+        tokio::spawn(async move {
+            if let Err(e) = handle_circuit(stream, secret).await {
+                debug!("circuit from {peer} ended: {e:#}");
+            }
+        });
+    }
+}
+
+async fn handle_circuit(prev: TcpStream, secret: Arc<StaticSecret>) -> Result<()> {
+    prev.set_nodelay(true).ok();
+    let (mut prev_r, mut prev_w) = prev.into_split();
+
+    // First frame on the link is always the CREATE handshake blob.
+    let create = read_frame(&mut prev_r).await?;
+    let (created, keys) = relay_handshake(&secret, &create)?;
+    write_frame(&mut prev_w, &created).await?;
+
+    let mut opener_fwd = Opener::new(keys.forward);
+
+    // `prev_w` and the backward sealer are handed to whichever pump we spawn
+    // once this relay learns its role. Until then they stay here.
+    let mut prev_w = Some(prev_w);
+    let mut sealer_bwd = Some(Sealer::new(keys.backward));
+
+    // At most one of these is ever set (a relay has exactly one next hop).
+    let mut next_w: Option<OwnedWriteHalf> = None; // middle: link to next relay
+    let mut dest_w: Option<OwnedWriteHalf> = None; // exit: link to destination
+
+    loop {
+        let frame = match read_frame(&mut prev_r).await {
+            Ok(f) => f,
+            Err(_) => break, // previous hop closed
+        };
+        let plaintext = opener_fwd.open(&frame)?;
+        let cell = Cell::decode(&plaintext)?;
+        match cell {
+            Cell::Extend { addr, create } => {
+                if next_w.is_some() || dest_w.is_some() {
+                    bail!("Extend after this relay already has a next hop");
+                }
+                let next = TcpStream::connect(&addr).await?;
+                next.set_nodelay(true).ok();
+                let (next_r, mut nw) = next.into_split();
+                write_frame(&mut nw, &create).await?;
+                next_w = Some(nw);
+                let pw = prev_w.take().ok_or_else(|| anyhow!("prev_w already taken"))?;
+                let sealer = sealer_bwd.take().ok_or_else(|| anyhow!("sealer already taken"))?;
+                tokio::spawn(async move {
+                    if let Err(e) = middle_pump(next_r, pw, sealer).await {
+                        debug!("middle pump ended: {e:#}");
+                    }
+                });
+            }
+            Cell::Relay { payload } => {
+                let nw = next_w
+                    .as_mut()
+                    .ok_or_else(|| anyhow!("Relay cell before Extend"))?;
+                // `payload` is already a complete framed blob for the next hop.
+                nw.write_all(&payload).await?;
+                nw.flush().await?;
+            }
+            Cell::Begin { host, port } => {
+                if next_w.is_some() || dest_w.is_some() {
+                    bail!("Begin after this relay already has a next hop");
+                }
+                let dest = TcpStream::connect((host.as_str(), port)).await?;
+                dest.set_nodelay(true).ok();
+                let (dest_r, dw) = dest.into_split();
+                dest_w = Some(dw);
+                let pw = prev_w.take().ok_or_else(|| anyhow!("prev_w already taken"))?;
+                let sealer = sealer_bwd.take().ok_or_else(|| anyhow!("sealer already taken"))?;
+                tokio::spawn(async move {
+                    if let Err(e) = exit_pump(dest_r, pw, sealer).await {
+                        debug!("exit pump ended: {e:#}");
+                    }
+                });
+            }
+            Cell::Data { bytes } => {
+                let dw = dest_w
+                    .as_mut()
+                    .ok_or_else(|| anyhow!("Data cell before Begin"))?;
+                dw.write_all(&bytes).await?;
+                dw.flush().await?;
+            }
+            Cell::End => break,
+        }
+    }
+    return Ok(());
+}
+
+/// Middle-relay backward path: read framed blobs coming back from the next hop,
+/// wrap each in a `Relay` cell, seal it under our backward key, and send toward
+/// the previous hop.
+async fn middle_pump(
+    mut next_r: OwnedReadHalf,
+    mut prev_w: OwnedWriteHalf,
+    mut sealer: Sealer,
+) -> Result<()> {
+    loop {
+        let frame = match read_frame(&mut next_r).await {
+            Ok(f) => f,
+            Err(_) => break,
+        };
+        let cell = Cell::Relay {
+            payload: frame_bytes(&frame),
+        };
+        let ct = sealer.seal(&cell.encode())?;
+        write_frame(&mut prev_w, &ct).await?;
+    }
+    return Ok(());
+}
+
+/// Exit-relay backward path: read raw application bytes from the destination,
+/// wrap each chunk in a `Data` cell sealed under our backward key, and send
+/// toward the previous hop. On EOF, send an `End` cell.
+async fn exit_pump(
+    mut dest_r: OwnedReadHalf,
+    mut prev_w: OwnedWriteHalf,
+    mut sealer: Sealer,
+) -> Result<()> {
+    let mut buf = vec![0u8; EXIT_READ_CHUNK];
+    loop {
+        let n = match dest_r.read(&mut buf).await {
+            Ok(0) => {
+                let ct = sealer.seal(&Cell::End.encode())?;
+                let _ = write_frame(&mut prev_w, &ct).await;
+                break;
+            }
+            Ok(n) => n,
+            Err(_) => break,
+        };
+        let cell = Cell::Data {
+            bytes: buf[..n].to_vec(),
+        };
+        let ct = sealer.seal(&cell.encode())?;
+        write_frame(&mut prev_w, &ct).await?;
+    }
+    return Ok(());
+}

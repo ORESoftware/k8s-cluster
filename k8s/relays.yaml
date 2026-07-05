@@ -1,0 +1,174 @@
+# Three relay nodes (relay-a/-b/-c), each with its own static identity key
+# mounted read-only from a Secret (see relay-keys.example.secret.yaml). Each
+# relay peels exactly one onion layer; any of them may serve as a circuit's exit.
+#
+# The three Deployments are identical except for name/label/secret. Kept as one
+# file for readability; edit resource requests to fit your cluster.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tor-relay-a
+  namespace: anon-proxy
+  labels: { app: tor-relay, relay: a }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: tor-relay, relay: a } }
+  template:
+    metadata:
+      labels: { app: tor-relay, relay: a }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: relay
+          image: oresoftware/tor-server:0.1.0
+          imagePullPolicy: IfNotPresent
+          args: ["relay"]
+          env:
+            - { name: TOR_LISTEN, value: "0.0.0.0:9001" }
+            - { name: TOR_KEY_FILE, value: "/keys/relay.key" }
+            - { name: RUST_LOG, value: "info" }
+          ports:
+            - { name: onion, containerPort: 9001 }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: "25m", memory: "32Mi" }
+            limits: { memory: "128Mi" }
+          volumeMounts:
+            - { name: key, mountPath: /keys, readOnly: true }
+      volumes:
+        - name: key
+          secret:
+            secretName: tor-relay-a-key
+            items: [{ key: relay.key, path: relay.key }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tor-relay-a
+  namespace: anon-proxy
+  labels: { app: tor-relay, relay: a }
+spec:
+  selector: { app: tor-relay, relay: a }
+  ports: [{ name: onion, port: 9001, targetPort: onion }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tor-relay-b
+  namespace: anon-proxy
+  labels: { app: tor-relay, relay: b }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: tor-relay, relay: b } }
+  template:
+    metadata:
+      labels: { app: tor-relay, relay: b }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: relay
+          image: oresoftware/tor-server:0.1.0
+          imagePullPolicy: IfNotPresent
+          args: ["relay"]
+          env:
+            - { name: TOR_LISTEN, value: "0.0.0.0:9001" }
+            - { name: TOR_KEY_FILE, value: "/keys/relay.key" }
+            - { name: RUST_LOG, value: "info" }
+          ports:
+            - { name: onion, containerPort: 9001 }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: "25m", memory: "32Mi" }
+            limits: { memory: "128Mi" }
+          volumeMounts:
+            - { name: key, mountPath: /keys, readOnly: true }
+      volumes:
+        - name: key
+          secret:
+            secretName: tor-relay-b-key
+            items: [{ key: relay.key, path: relay.key }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tor-relay-b
+  namespace: anon-proxy
+  labels: { app: tor-relay, relay: b }
+spec:
+  selector: { app: tor-relay, relay: b }
+  ports: [{ name: onion, port: 9001, targetPort: onion }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tor-relay-c
+  namespace: anon-proxy
+  labels: { app: tor-relay, relay: c }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: tor-relay, relay: c } }
+  template:
+    metadata:
+      labels: { app: tor-relay, relay: c }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: relay
+          image: oresoftware/tor-server:0.1.0
+          imagePullPolicy: IfNotPresent
+          args: ["relay"]
+          env:
+            - { name: TOR_LISTEN, value: "0.0.0.0:9001" }
+            - { name: TOR_KEY_FILE, value: "/keys/relay.key" }
+            - { name: RUST_LOG, value: "info" }
+          ports:
+            - { name: onion, containerPort: 9001 }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: "25m", memory: "32Mi" }
+            limits: { memory: "128Mi" }
+          volumeMounts:
+            - { name: key, mountPath: /keys, readOnly: true }
+      volumes:
+        - name: key
+          secret:
+            secretName: tor-relay-c-key
+            items: [{ key: relay.key, path: relay.key }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tor-relay-c
+  namespace: anon-proxy
+  labels: { app: tor-relay, relay: c }
+spec:
+  selector: { app: tor-relay, relay: c }
+  ports: [{ name: onion, port: 9001, targetPort: onion }]

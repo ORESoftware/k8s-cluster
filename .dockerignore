@@ -1,0 +1,6 @@
+target
+.git
+*.key
+directory.local.toml
+k8s
+README.md

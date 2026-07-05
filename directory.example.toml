@@ -1,0 +1,23 @@
+# Relay directory consumed by a `client` node (TOR_DIRECTORY).
+#
+# Each entry is one relay the client may route through. Generate a relay's
+# `pubkey` by running the binary in `keygen` mode with its TOR_KEY_FILE set:
+#
+#   TOR_KEY_FILE=./relayA.key tor-server keygen
+#
+# The last hop of every circuit is the exit; any relay can serve as an exit.
+
+[[relays]]
+name = "relayA"
+addr = "127.0.0.1:9101"
+pubkey = "REPLACE_WITH_BASE64_PUBKEY_A="
+
+[[relays]]
+name = "relayB"
+addr = "127.0.0.1:9102"
+pubkey = "REPLACE_WITH_BASE64_PUBKEY_B="
+
+[[relays]]
+name = "relayC"
+addr = "127.0.0.1:9103"
+pubkey = "REPLACE_WITH_BASE64_PUBKEY_C="

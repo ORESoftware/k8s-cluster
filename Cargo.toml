@@ -1,0 +1,37 @@
+[package]
+name = "tor-server"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "An onion-routing anonymizing proxy: a SOCKS5 front-end that builds telescoped multi-hop circuits through relay nodes with per-hop layered encryption (X25519 + ChaCha20-Poly1305)."
+authors = ["ORE Software"]
+license = "MIT"
+repository = "https://github.com/oresoftware/tor-server.rs"
+homepage = "https://github.com/oresoftware/tor-server.rs"
+readme = "README.md"
+keywords = ["onion-routing", "socks5", "proxy", "anonymity", "tor"]
+categories = ["network-programming", "cryptography"]
+
+[[bin]]
+name = "tor-server"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "macros", "time", "sync"] }
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+chacha20poly1305 = "0.10"
+hkdf = "0.12"
+sha2 = "0.10"
+hmac = "0.12"
+rand = "0.8"
+serde = { version = "1", features = ["derive"] }
+bincode = "1.3"
+base64 = "0.22"
+toml = "0.8"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"

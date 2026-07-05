@@ -1,0 +1,7 @@
+/target
+**/*.rs.bk
+*.key
+directory.local.toml
+directory.toml
+k8s/directory-configmap.yaml
+k8s/*-key.secret.yaml

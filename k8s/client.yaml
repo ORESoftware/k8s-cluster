@@ -1,0 +1,60 @@
+# The SOCKS5 client/proxy. Reads the relay directory from a ConfigMap and builds
+# a fresh 3-hop circuit per connection. Expose the Service to whatever workloads
+# should route their outbound traffic anonymously (point them at
+# socks5h://tor-client.anon-proxy:9050).
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tor-client
+  namespace: anon-proxy
+  labels: { app: tor-client }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: tor-client } }
+  template:
+    metadata:
+      labels: { app: tor-client }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: client
+          image: oresoftware/tor-server:0.1.0
+          imagePullPolicy: IfNotPresent
+          args: ["client"]
+          env:
+            - { name: TOR_SOCKS_LISTEN, value: "0.0.0.0:9050" }
+            - { name: TOR_DIRECTORY, value: "/etc/tor/directory.toml" }
+            - { name: TOR_HOPS, value: "3" }
+            - { name: RUST_LOG, value: "info" }
+          ports:
+            - { name: socks, containerPort: 9050 }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: "25m", memory: "32Mi" }
+            limits: { memory: "128Mi" }
+          volumeMounts:
+            - { name: directory, mountPath: /etc/tor, readOnly: true }
+      volumes:
+        - name: directory
+          configMap:
+            name: tor-directory
+            items: [{ key: directory.toml, path: directory.toml }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tor-client
+  namespace: anon-proxy
+  labels: { app: tor-client }
+spec:
+  selector: { app: tor-client }
+  ports: [{ name: socks, port: 9050, targetPort: socks }]
