@@ -57,26 +57,32 @@ async fn handle(mut client: TcpStream, cfg: Arc<ClientConfig>) -> Result<()> {
     client.set_nodelay(true).ok();
     let (host, port) = socks_handshake(&mut client).await?;
 
-    let path = choose_path(&cfg.directory, cfg.hops)?;
+    let path = cfg.directory.choose_path(cfg.hops)?;
     let names: Vec<&str> = path.iter().map(|r| r.name.as_str()).collect();
     debug!(target = %format!("{host}:{port}"), path = ?names, "building circuit");
 
     let mut circuit = match Circuit::build(&path).await {
         Ok(c) => c,
         Err(e) => {
+            cfg.stats.failed();
             warn!("circuit build failed: {e:#}");
             send_reply(&mut client, 0x01).await?; // general failure
             return Ok(());
         }
     };
     if let Err(e) = circuit.begin(&host, port).await {
+        cfg.stats.failed();
         warn!("begin failed: {e:#}");
         send_reply(&mut client, 0x01).await?;
         return Ok(());
     }
+    cfg.stats.built();
 
     send_reply(&mut client, 0x00).await?; // succeeded
-    circuit.splice(client).await?;
+    cfg.stats.active_inc();
+    let result = circuit.splice(client).await;
+    cfg.stats.active_dec();
+    result?;
     return Ok(());
 }
 
