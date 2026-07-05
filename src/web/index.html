@@ -116,8 +116,7 @@ async function doFetch() {
       return;
     }
     meta.className = 'ok';
-    meta.innerHTML = `<span data-testid="result-status">${d.status_line}</span> · exit path: ` +
-      (d.path||[]).map(n=>`<span class="pill">${n}</span>`).join('') +
+    meta.innerHTML = `<span data-testid="result-status">${d.status_line}</span> · via <span class="pill">${d.backend||'?'}</span>` +
       ` · ${d.body_len} bytes · ${d.elapsed_ms} ms`;
     pre.style.display = 'block';
     pre.textContent = (d.headers||[]).join('\n') + '\n\n' + (d.body_preview||'');
