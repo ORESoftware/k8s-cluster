@@ -75,14 +75,19 @@ async fn status(State(cfg): State<AppState>) -> Json<serde_json::Value> {
     let s = cfg.stats.snapshot();
     let relays: Vec<serde_json::Value> = cfg
         .directory
-        .relays
-        .iter()
-        .map(|r| serde_json::json!({ "name": r.name, "addr": r.addr }))
-        .collect();
+        .as_ref()
+        .map(|d| {
+            d.relays
+                .iter()
+                .map(|r| serde_json::json!({ "name": r.name, "addr": r.addr }))
+                .collect()
+        })
+        .unwrap_or_default();
     return Json(serde_json::json!({
+        "backend": cfg.connector.backend(),
         "socks_listen": cfg.socks_listen,
         "hops": cfg.hops,
-        "relay_count": cfg.directory.relays.len(),
+        "relay_count": relays.len(),
         "relays": relays,
         "circuits_built": s.circuits_built,
         "circuits_failed": s.circuits_failed,
