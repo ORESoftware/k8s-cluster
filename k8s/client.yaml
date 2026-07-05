@@ -29,11 +29,14 @@ spec:
           args: ["client"]
           env:
             - { name: TOR_SOCKS_LISTEN, value: "0.0.0.0:9050" }
+            - { name: TOR_UI_LISTEN, value: "0.0.0.0:9060" }
             - { name: TOR_DIRECTORY, value: "/etc/tor/directory.toml" }
             - { name: TOR_HOPS, value: "3" }
+            - { name: TOR_DOCS_DIR, value: "/docs" }
             - { name: RUST_LOG, value: "info" }
           ports:
             - { name: socks, containerPort: 9050 }
+            - { name: ui, containerPort: 9060 }
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -57,4 +60,6 @@ metadata:
   labels: { app: tor-client }
 spec:
   selector: { app: tor-client }
-  ports: [{ name: socks, port: 9050, targetPort: socks }]
+  ports:
+    - { name: socks, port: 9050, targetPort: socks }
+    - { name: ui, port: 9060, targetPort: ui }

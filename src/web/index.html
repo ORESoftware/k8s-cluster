@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>tor-server · onion proxy</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { background:#0d1117; color:#c9d1d9; font:15px/1.55 -apple-system,Segoe UI,Roboto,Helvetica,sans-serif; margin:0; }
+  header { padding:1.5rem 2rem; border-bottom:1px solid #21262d; display:flex; align-items:center; gap:.8rem; }
+  header h1 { font-size:1.25rem; margin:0; color:#e6edf3; }
+  .badge { font-size:.7rem; background:#1f6feb33; color:#58a6ff; border:1px solid #1f6feb55; padding:.15rem .5rem; border-radius:999px; }
+  main { max-width:1000px; margin:0 auto; padding:2rem; }
+  a { color:#58a6ff; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:1rem; margin-bottom:2rem; }
+  .card { background:#161b22; border:1px solid #21262d; border-radius:10px; padding:1rem; }
+  .card .k { font-size:.75rem; color:#8b949e; text-transform:uppercase; letter-spacing:.04em; }
+  .card .v { font-size:1.6rem; color:#e6edf3; font-variant-numeric:tabular-nums; margin-top:.25rem; }
+  section { background:#161b22; border:1px solid #21262d; border-radius:10px; padding:1.25rem 1.5rem; margin-bottom:1.5rem; }
+  h2 { font-size:1rem; color:#e6edf3; margin:0 0 1rem; }
+  input[type=text] { width:100%; padding:.6rem .7rem; background:#0d1117; border:1px solid #30363d; border-radius:8px; color:#e6edf3; font:inherit; }
+  .row { display:flex; gap:.6rem; }
+  button { padding:.6rem 1.1rem; background:#238636; border:1px solid #2ea04366; color:#fff; border-radius:8px; font:inherit; cursor:pointer; }
+  button:hover { background:#2ea043; }
+  button.secondary { background:#21262d; border-color:#30363d; }
+  pre { background:#0d1117; border:1px solid #21262d; border-radius:8px; padding:1rem; overflow:auto; max-height:420px; white-space:pre-wrap; word-break:break-word; }
+  .muted { color:#8b949e; font-size:.85rem; }
+  .pill { display:inline-block; background:#0d1117; border:1px solid #30363d; border-radius:999px; padding:.1rem .6rem; margin:.15rem; font-size:.8rem; }
+  .examples { margin-top:.6rem; }
+  .examples button { background:#21262d; border-color:#30363d; padding:.35rem .7rem; font-size:.8rem; margin-right:.4rem; }
+  code { background:#0d1117; padding:.1em .4em; border-radius:4px; }
+  .ok { color:#3fb950; } .err { color:#f85149; }
+  iframe { width:100%; height:340px; border:1px solid #21262d; border-radius:8px; background:#fff; margin-top:.8rem; }
+</style>
+</head>
+<body>
+<header>
+  <h1>tor-server</h1>
+  <span class="badge">onion proxy</span>
+  <span class="muted" style="margin-left:auto"><a href="/docs" data-testid="docs-link">Docs</a></span>
+</header>
+<main>
+  <div class="grid" data-testid="status-grid">
+    <div class="card"><div class="k">Circuits built</div><div class="v" id="s-built" data-testid="stat-built">–</div></div>
+    <div class="card"><div class="k">Active</div><div class="v" id="s-active" data-testid="stat-active">–</div></div>
+    <div class="card"><div class="k">Failed</div><div class="v" id="s-failed" data-testid="stat-failed">–</div></div>
+    <div class="card"><div class="k">Hops / circuit</div><div class="v" id="s-hops" data-testid="stat-hops">–</div></div>
+    <div class="card"><div class="k">Relays</div><div class="v" id="s-relays" data-testid="stat-relays">–</div></div>
+  </div>
+
+  <section>
+    <h2>Browse through the onion network</h2>
+    <p class="muted">Fetches a plaintext <code>http://</code> URL through a fresh multi-hop circuit — a quick way to confirm traffic exits via the relays (check your exit IP). For HTTPS and real browsing, point your app at the SOCKS proxy below.</p>
+    <div class="row">
+      <input type="text" id="url" data-testid="url-input" placeholder="http://example.com/" value="http://example.com/">
+      <button id="go" data-testid="fetch-btn" onclick="doFetch()">Fetch</button>
+    </div>
+    <div class="examples">
+      <button onclick="setUrl('http://example.com/')">example.com</button>
+      <button onclick="setUrl('http://icanhazip.com/')">my exit IP</button>
+      <button onclick="setUrl('http://neverssl.com/')">neverssl.com</button>
+    </div>
+    <div id="result-meta" class="muted" data-testid="result-meta" style="margin-top:1rem"></div>
+    <pre id="result" data-testid="result" style="display:none"></pre>
+    <iframe id="rendered" data-testid="rendered" sandbox="" style="display:none"></iframe>
+  </section>
+
+  <section>
+    <h2>Point your apps at the proxy</h2>
+    <p>SOCKS5 proxy (remote DNS): <code id="socks-addr" data-testid="socks-addr">…</code></p>
+    <ul>
+      <li><strong>curl:</strong> <code>curl -x socks5h://<span class="socks">…</span> https://example.com</code></li>
+      <li><strong>Firefox/Chromium:</strong> use the SOCKS host/port above, or a <a href="/proxy.pac" data-testid="pac-link">proxy.pac</a> auto-config.</li>
+      <li><strong>Chromium flag:</strong> <code>--proxy-server=socks5://<span class="socks">…</span></code></li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Circuit relays</h2>
+    <div id="relays" data-testid="relays"></div>
+  </section>
+</main>
+
+<script>
+async function refresh() {
+  try {
+    const r = await fetch('/api/status');
+    const s = await r.json();
+    document.getElementById('s-built').textContent = s.circuits_built;
+    document.getElementById('s-active').textContent = s.circuits_active;
+    document.getElementById('s-failed').textContent = s.circuits_failed;
+    document.getElementById('s-hops').textContent = s.hops;
+    document.getElementById('s-relays').textContent = s.relay_count;
+    document.getElementById('socks-addr').textContent = s.socks_listen;
+    document.querySelectorAll('.socks').forEach(e => e.textContent = s.socks_listen.replace('0.0.0.0','127.0.0.1'));
+    document.getElementById('relays').innerHTML =
+      (s.relays||[]).map(x => `<span class="pill" data-testid="relay-pill">${x.name} · ${x.addr}</span>`).join('');
+  } catch (e) { /* transient */ }
+}
+function setUrl(u){ document.getElementById('url').value = u; }
+async function doFetch() {
+  const url = document.getElementById('url').value.trim();
+  const meta = document.getElementById('result-meta');
+  const pre = document.getElementById('result');
+  const frame = document.getElementById('rendered');
+  meta.textContent = 'Building circuit and fetching…';
+  meta.className = 'muted';
+  pre.style.display = 'none'; frame.style.display = 'none';
+  try {
+    const r = await fetch('/api/fetch?url=' + encodeURIComponent(url));
+    const d = await r.json();
+    if (!d.ok) {
+      meta.className = 'err';
+      meta.textContent = 'Error: ' + d.error;
+      return;
+    }
+    meta.className = 'ok';
+    meta.innerHTML = `<span data-testid="result-status">${d.status_line}</span> · exit path: ` +
+      (d.path||[]).map(n=>`<span class="pill">${n}</span>`).join('') +
+      ` · ${d.body_len} bytes · ${d.elapsed_ms} ms`;
+    pre.style.display = 'block';
+    pre.textContent = (d.headers||[]).join('\n') + '\n\n' + (d.body_preview||'');
+    if (d.is_text && /html/i.test(d.content_type||'')) {
+      frame.style.display = 'block';
+      frame.srcdoc = d.body_preview || '';
+    }
+  } catch (e) {
+    meta.className = 'err';
+    meta.textContent = 'Request failed: ' + e;
+  }
+}
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

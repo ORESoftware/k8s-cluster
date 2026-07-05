@@ -5,7 +5,6 @@
 //! through a randomly chosen path, then its bytes are spliced onto it.
 
 use anyhow::{bail, Result};
-use rand::seq::SliceRandom;
 use std::net::Ipv4Addr;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -14,14 +13,16 @@ use tracing::{debug, info, warn};
 
 use crate::circuit::Circuit;
 use crate::config::Directory;
+use crate::stats::Stats;
 
 pub struct ClientConfig {
     pub socks_listen: String,
     pub directory: Directory,
     pub hops: usize,
+    pub stats: Arc<Stats>,
 }
 
-pub async fn run(cfg: ClientConfig) -> Result<()> {
+pub async fn run(cfg: Arc<ClientConfig>) -> Result<()> {
     if cfg.hops == 0 {
         bail!("hop count must be at least 1");
     }
@@ -32,7 +33,6 @@ pub async fn run(cfg: ClientConfig) -> Result<()> {
             cfg.hops
         );
     }
-    let cfg = Arc::new(cfg);
     let listener = TcpListener::bind(&cfg.socks_listen).await?;
     info!(listen = %cfg.socks_listen, hops = cfg.hops, relays = cfg.directory.relays.len(), "SOCKS5 proxy listening");
 
@@ -57,26 +57,32 @@ async fn handle(mut client: TcpStream, cfg: Arc<ClientConfig>) -> Result<()> {
     client.set_nodelay(true).ok();
     let (host, port) = socks_handshake(&mut client).await?;
 
-    let path = choose_path(&cfg.directory, cfg.hops)?;
+    let path = cfg.directory.choose_path(cfg.hops)?;
     let names: Vec<&str> = path.iter().map(|r| r.name.as_str()).collect();
     debug!(target = %format!("{host}:{port}"), path = ?names, "building circuit");
 
     let mut circuit = match Circuit::build(&path).await {
         Ok(c) => c,
         Err(e) => {
+            cfg.stats.failed();
             warn!("circuit build failed: {e:#}");
             send_reply(&mut client, 0x01).await?; // general failure
             return Ok(());
         }
     };
     if let Err(e) = circuit.begin(&host, port).await {
+        cfg.stats.failed();
         warn!("begin failed: {e:#}");
         send_reply(&mut client, 0x01).await?;
         return Ok(());
     }
+    cfg.stats.built();
 
     send_reply(&mut client, 0x00).await?; // succeeded
-    circuit.splice(client).await?;
+    cfg.stats.active_inc();
+    let result = circuit.splice(client).await;
+    cfg.stats.active_dec();
+    result?;
     return Ok(());
 }
 
@@ -143,16 +149,4 @@ async fn send_reply(client: &mut TcpStream, status: u8) -> Result<()> {
     client.write_all(&reply).await?;
     client.flush().await?;
     return Ok(());
-}
-
-/// Pick `hops` distinct relays at random; the last is the exit.
-fn choose_path(dir: &Directory, hops: usize) -> Result<Vec<crate::config::RelayInfo>> {
-    let mut rng = rand::thread_rng();
-    let mut relays = dir.relays.clone();
-    relays.shuffle(&mut rng);
-    if relays.len() < hops {
-        bail!("not enough relays for {hops} hops");
-    }
-    relays.truncate(hops);
-    return Ok(relays);
 }

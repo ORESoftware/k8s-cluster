@@ -21,12 +21,16 @@ mod cell;
 mod circuit;
 mod config;
 mod crypto;
+mod policy;
 mod relay;
 mod socks;
+mod stats;
+mod web;
 mod wire;
 
 use anyhow::{bail, Context, Result};
 use std::path::PathBuf;
+use std::sync::Arc;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
@@ -40,6 +44,14 @@ async fn main() -> Result<()> {
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .with_target(false)
         .init();
+
+    // Optional overlay membership secret, folded into every handshake.
+    if let Ok(secret) = std::env::var("TOR_NETWORK_SECRET") {
+        if !secret.is_empty() {
+            crypto::set_network_secret(secret.into_bytes());
+            info!("overlay pre-shared key active (TOR_NETWORK_SECRET set)");
+        }
+    }
 
     let role = std::env::args()
         .nth(1)
@@ -72,18 +84,39 @@ async fn run_relay() -> Result<()> {
 
 async fn run_client() -> Result<()> {
     let socks_listen = env_or("TOR_SOCKS_LISTEN", "127.0.0.1:9050");
+    let ui_listen = env_or("TOR_UI_LISTEN", "127.0.0.1:9060");
     let dir_path = std::env::var("TOR_DIRECTORY")
         .context("TOR_DIRECTORY is required in client mode (path to directory.toml)")?;
     let hops: usize = env_or("TOR_HOPS", "3")
         .parse()
         .context("TOR_HOPS must be a positive integer")?;
+    let docs_dir = PathBuf::from(env_or("TOR_DOCS_DIR", "./docs"));
     let directory = config::Directory::load(&PathBuf::from(&dir_path))?;
-    let cfg = socks::ClientConfig {
+    let stats = Arc::new(stats::Stats::default());
+
+    let client_cfg = Arc::new(socks::ClientConfig {
+        socks_listen: socks_listen.clone(),
+        directory: directory.clone(),
+        hops,
+        stats: stats.clone(),
+    });
+    let web_cfg = Arc::new(web::WebConfig {
+        ui_listen: ui_listen.clone(),
         socks_listen,
         directory,
         hops,
-    };
-    return socks::run(cfg).await;
+        docs_dir,
+        stats,
+    });
+
+    // Run the SOCKS proxy and the web dashboard concurrently; if either exits,
+    // the process exits with its error.
+    let socks_task = tokio::spawn(async move { socks::run(client_cfg).await });
+    let web_task = tokio::spawn(async move { web::run(web_cfg).await });
+    tokio::select! {
+        r = socks_task => r.context("socks task panicked")?,
+        r = web_task => r.context("web task panicked")?,
+    }
 }
 
 fn run_keygen() -> Result<()> {

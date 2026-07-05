@@ -38,6 +38,24 @@ impl Directory {
         }
         return Ok(dir);
     }
+
+    /// Pick `hops` distinct relays at random; the last is the exit.
+    pub fn choose_path(&self, hops: usize) -> Result<Vec<RelayInfo>> {
+        use rand::seq::SliceRandom;
+        if hops == 0 {
+            bail!("hop count must be at least 1");
+        }
+        if self.relays.len() < hops {
+            bail!(
+                "directory has {} relays but {hops} hops were requested",
+                self.relays.len()
+            );
+        }
+        let mut relays = self.relays.clone();
+        relays.shuffle(&mut rand::thread_rng());
+        relays.truncate(hops);
+        return Ok(relays);
+    }
 }
 
 pub fn encode_pubkey(pubkey: &[u8; 32]) -> String {

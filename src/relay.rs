@@ -17,21 +17,37 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::Semaphore;
+use tokio::time::{timeout, Duration};
 use tracing::{debug, info, warn};
 use x25519_dalek::StaticSecret;
 
 use crate::cell::Cell;
 use crate::crypto::{relay_handshake, Opener, Sealer};
+use crate::policy::Policy;
 use crate::wire::{frame_bytes, read_frame, write_frame};
 
 /// Bytes read from the exit's destination per chunk before being wrapped in a
 /// `Data` cell.
 const EXIT_READ_CHUNK: usize = 32 * 1024;
 
+/// A stalled peer must complete the handshake within this window, so half-open
+/// connections cannot pile up.
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(20);
+
+fn max_circuits() -> usize {
+    return std::env::var("TOR_MAX_CIRCUITS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1024);
+}
+
 pub async fn run(listen: &str, secret: StaticSecret) -> Result<()> {
     let secret = Arc::new(secret);
+    let policy = Arc::new(Policy::from_env());
+    let limit = Arc::new(Semaphore::new(max_circuits()));
     let listener = TcpListener::bind(listen).await?;
-    info!(%listen, "relay listening");
+    info!(%listen, allow_private_exit = policy.allow_private_exit(), "relay listening");
     loop {
         let (stream, peer) = match listener.accept().await {
             Ok(v) => v,
@@ -40,21 +56,33 @@ pub async fn run(listen: &str, secret: StaticSecret) -> Result<()> {
                 continue;
             }
         };
+        // Reject rather than queue when saturated, bounding memory/FD use.
+        let permit = match limit.clone().try_acquire_owned() {
+            Ok(p) => p,
+            Err(_) => {
+                debug!("at circuit capacity, dropping {peer}");
+                continue;
+            }
+        };
         let secret = secret.clone();
+        let policy = policy.clone();
         tokio::spawn(async move {
-            if let Err(e) = handle_circuit(stream, secret).await {
+            if let Err(e) = handle_circuit(stream, secret, policy).await {
                 debug!("circuit from {peer} ended: {e:#}");
             }
+            drop(permit);
         });
     }
 }
 
-async fn handle_circuit(prev: TcpStream, secret: Arc<StaticSecret>) -> Result<()> {
+async fn handle_circuit(prev: TcpStream, secret: Arc<StaticSecret>, policy: Arc<Policy>) -> Result<()> {
     prev.set_nodelay(true).ok();
     let (mut prev_r, mut prev_w) = prev.into_split();
 
     // First frame on the link is always the CREATE handshake blob.
-    let create = read_frame(&mut prev_r).await?;
+    let create = timeout(HANDSHAKE_TIMEOUT, read_frame(&mut prev_r))
+        .await
+        .map_err(|_| anyhow!("handshake timed out"))??;
     let (created, keys) = relay_handshake(&secret, &create)?;
     write_frame(&mut prev_w, &created).await?;
 
@@ -81,6 +109,7 @@ async fn handle_circuit(prev: TcpStream, secret: Arc<StaticSecret>) -> Result<()
                 if next_w.is_some() || dest_w.is_some() {
                     bail!("Extend after this relay already has a next hop");
                 }
+                policy.check_extend(&addr)?;
                 let next = TcpStream::connect(&addr).await?;
                 next.set_nodelay(true).ok();
                 let (next_r, mut nw) = next.into_split();
@@ -106,7 +135,9 @@ async fn handle_circuit(prev: TcpStream, secret: Arc<StaticSecret>) -> Result<()
                 if next_w.is_some() || dest_w.is_some() {
                     bail!("Begin after this relay already has a next hop");
                 }
-                let dest = TcpStream::connect((host.as_str(), port)).await?;
+                // Exit policy: resolve + reject private/loopback/metadata ranges.
+                let addr = policy.resolve_exit(&host, port).await?;
+                let dest = TcpStream::connect(addr).await?;
                 dest.set_nodelay(true).ok();
                 let (dest_r, dw) = dest.into_split();
                 dest_w = Some(dw);

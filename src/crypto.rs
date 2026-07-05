@@ -26,12 +26,28 @@ use hkdf::Hkdf;
 use hmac::{Hmac, Mac};
 use rand::rngs::OsRng;
 use sha2::Sha256;
+use std::sync::OnceLock;
 use x25519_dalek::{PublicKey, StaticSecret};
 
 type HmacSha256 = Hmac<Sha256>;
 
 const HKDF_SALT: &[u8] = b"tor-server.rs/v1/onion-handshake";
 const HKDF_INFO: &[u8] = b"tor-server.rs/v1/keys";
+
+/// Optional overlay-membership pre-shared key. When set (via `TOR_NETWORK_SECRET`),
+/// it is folded into every hop's key derivation, so a client and relay only
+/// agree on keys — and pass the handshake's auth MAC — if they share the same
+/// secret. Empty (the default) means an open overlay. Set once at startup.
+static NETWORK_SECRET: OnceLock<Vec<u8>> = OnceLock::new();
+
+/// Install the overlay pre-shared key. Idempotent; only the first call wins.
+pub fn set_network_secret(secret: Vec<u8>) {
+    let _ = NETWORK_SECRET.set(secret);
+}
+
+fn network_secret() -> &'static [u8] {
+    return NETWORK_SECRET.get().map(|v| v.as_slice()).unwrap_or(&[]);
+}
 
 /// The directional symmetric keys derived from one hop's handshake.
 pub struct HopKeys {
@@ -42,9 +58,11 @@ pub struct HopKeys {
 }
 
 fn derive_keys(s1: &[u8; 32], s2: &[u8; 32], client_pub: &[u8; 32], relay_eph_pub: &[u8; 32]) -> (HopKeys, [u8; 32]) {
-    let mut ikm = Vec::with_capacity(64);
+    let psk = network_secret();
+    let mut ikm = Vec::with_capacity(64 + psk.len());
     ikm.extend_from_slice(s1);
     ikm.extend_from_slice(s2);
+    ikm.extend_from_slice(psk);
     let hk = Hkdf::<Sha256>::new(Some(HKDF_SALT), &ikm);
     let mut okm = [0u8; 96];
     hk.expand(HKDF_INFO, &mut okm).expect("96 bytes is a valid HKDF length");

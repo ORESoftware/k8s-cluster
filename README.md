@@ -91,17 +91,79 @@ TOR_DIRECTORY=./directory.toml TOR_HOPS=3 cargo run -- client &
 curl -x socks5h://127.0.0.1:9050 https://example.com/
 ```
 
+The client also serves a **web dashboard** at <http://127.0.0.1:9060/>.
+
+## Web dashboard & docs
+
+In `client` mode a small web server runs alongside the SOCKS proxy
+(`TOR_UI_LISTEN`, default `127.0.0.1:9060`):
+
+- **`/`** — a dashboard showing live circuit counters, a "browse through the
+  onion network" box (fetch an `http://` URL through a fresh circuit — handy to
+  confirm your exit IP), and copy-paste proxy config.
+- **`/docs`** and **`/docs/{name}`** — the markdown files in `docs/` rendered to
+  HTML.
+- **`/proxy.pac`** — a browser proxy auto-config pointing at the SOCKS port.
+- **`/api/status`**, **`/api/fetch?url=`** — JSON used by the dashboard.
+
+Browsers cannot speak SOCKS from a web page, so the UI's job is to prove the
+overlay works and hand you the config to point real apps (curl, Firefox,
+Chromium) at the SOCKS proxy — which carries HTTPS end-to-end.
+
+## Can it talk to the real Tor network?
+
+**No.** It uses its own cell format, an ntor-*like* (not ntor) handshake, no TLS
+link layer, and no Tor directory/consensus, so it is wire-incompatible with Tor
+relays and cannot reach `.onion` services. If you need the real Tor network, use
+[Arti](https://gitlab.torproject.org/tpo/core/arti) (Rust) or the C `tor` daemon
+and point your apps at its SOCKS port. See [docs/tor-interop.md](docs/tor-interop.md).
+
+## Hardening
+
+- **Exit policy (SSRF protection):** exits refuse loopback, private
+  (RFC1918/CGNAT/ULA), link-local, and cloud-metadata (`169.254.169.254`)
+  destinations by default. Override for local testing with
+  `TOR_EXIT_ALLOW_PRIVATE=1`.
+- **Overlay pre-shared key:** `TOR_NETWORK_SECRET` is folded into every
+  handshake, so only nodes/clients sharing it can build circuits.
+- **Extend allowlist:** `TOR_RELAY_PEERS` pins which peers a relay will extend to.
+- **Limits & timeouts:** handshakes time out after 20 s; `TOR_MAX_CIRCUITS`
+  bounds concurrent circuits; frames are capped at 1 MiB; doc names are
+  sanitized against path traversal.
+
+See [docs/security.md](docs/security.md) for the full model.
+
 ## Configuration
 
 | Env var             | Mode   | Default            | Meaning                                  |
 | ------------------- | ------ | ------------------ | ---------------------------------------- |
 | `TOR_ROLE`          | all    | (from argv[1])     | `relay` \| `client` \| `keygen`          |
+| `TOR_NETWORK_SECRET`| all    | (empty = open)     | Overlay pre-shared key folded into handshakes |
 | `TOR_LISTEN`        | relay  | `0.0.0.0:9001`     | Relay listen address                     |
 | `TOR_KEY_FILE`      | relay  | `./relay.key`      | Static identity key file (created if absent) |
+| `TOR_EXIT_ALLOW_PRIVATE` | relay | `0`           | Allow exits to private/loopback ranges   |
+| `TOR_RELAY_PEERS`   | relay  | (any)              | Comma-separated `host:port` extend allowlist |
+| `TOR_MAX_CIRCUITS`  | relay  | `1024`             | Max concurrent circuits before rejecting |
 | `TOR_SOCKS_LISTEN`  | client | `127.0.0.1:9050`   | Local SOCKS5 listen address              |
+| `TOR_UI_LISTEN`     | client | `127.0.0.1:9060`   | Dashboard/docs listen address            |
 | `TOR_DIRECTORY`     | client | (required)         | Path to the relay directory TOML         |
 | `TOR_HOPS`          | client | `3`                | Number of relays per circuit             |
+| `TOR_DOCS_DIR`      | client | `./docs`           | Directory of markdown docs to serve      |
 | `RUST_LOG`          | all    | `info`             | Log filter (`tracing` env-filter syntax) |
+
+## Tests
+
+- **Rust unit tests:** `cargo test` (handshake agreement/authentication, AEAD
+  round-trip, nonce-desync detection, exit-policy ranges).
+- **Browser e2e (Playwright + Puppeteer):** [tests/](tests/) drive a real
+  headless Chromium **through the SOCKS proxy** to surf a local origin, proving
+  traffic traverses the overlay (the client's `circuits_built` counter grows),
+  DNS resolves at the exit, and caches are busted on every navigation. They also
+  exercise the dashboard and rendered docs.
+
+  ```sh
+  cd tests && npm install && npm run setup && npm test
+  ```
 
 ## Container
 
