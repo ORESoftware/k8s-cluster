@@ -29,8 +29,8 @@ use tokio::net::TcpListener;
 use tokio::time::{timeout, Duration};
 use tracing::info;
 
-use crate::circuit::Circuit;
 use crate::config::Directory;
+use crate::connector::Connector;
 use crate::stats::Stats;
 
 /// Cap on the response body we buffer for the in-browser fetch preview.
@@ -40,7 +40,9 @@ const FETCH_TIMEOUT: Duration = Duration::from_secs(25);
 pub struct WebConfig {
     pub ui_listen: String,
     pub socks_listen: String,
-    pub directory: Directory,
+    pub connector: Arc<Connector>,
+    /// Present only for the overlay backend; used to display the relay list.
+    pub directory: Option<Directory>,
     pub hops: usize,
     pub docs_dir: PathBuf,
     pub stats: Arc<Stats>,
