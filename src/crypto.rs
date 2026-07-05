@@ -58,9 +58,11 @@ pub struct HopKeys {
 }
 
 fn derive_keys(s1: &[u8; 32], s2: &[u8; 32], client_pub: &[u8; 32], relay_eph_pub: &[u8; 32]) -> (HopKeys, [u8; 32]) {
-    let mut ikm = Vec::with_capacity(64);
+    let psk = network_secret();
+    let mut ikm = Vec::with_capacity(64 + psk.len());
     ikm.extend_from_slice(s1);
     ikm.extend_from_slice(s2);
+    ikm.extend_from_slice(psk);
     let hk = Hkdf::<Sha256>::new(Some(HKDF_SALT), &ikm);
     let mut okm = [0u8; 96];
     hk.expand(HKDF_INFO, &mut okm).expect("96 bytes is a valid HKDF length");
