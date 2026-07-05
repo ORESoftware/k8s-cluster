@@ -25,7 +25,7 @@ pub enum Connector {
     Overlay { directory: Directory, hops: usize },
     #[cfg(feature = "arti")]
     Arti {
-        client: arti_client::TorClient<tor_rtcompat::PreferredRuntime>,
+        client: std::sync::Arc<arti_client::TorClient<tor_rtcompat::PreferredRuntime>>,
     },
 }
 
