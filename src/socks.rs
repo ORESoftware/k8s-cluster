@@ -1,8 +1,9 @@
 //! SOCKS5 front-end (RFC 1928, CONNECT only, no authentication).
 //!
 //! This is the local interface applications point at — the same role Tor's
-//! SOCKS port plays. Each accepted connection gets its own fresh onion circuit
-//! through a randomly chosen path, then its bytes are spliced onto it.
+//! SOCKS port plays. Each accepted connection opens a stream to the requested
+//! destination through the active backend (the onion overlay or real Tor via
+//! arti) and splices bytes both ways.
 
 use anyhow::{bail, Result};
 use std::net::Ipv4Addr;
@@ -11,30 +12,18 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tracing::{debug, info, warn};
 
-use crate::circuit::Circuit;
-use crate::config::Directory;
+use crate::connector::Connector;
 use crate::stats::Stats;
 
 pub struct ClientConfig {
     pub socks_listen: String,
-    pub directory: Directory,
-    pub hops: usize,
+    pub connector: Arc<Connector>,
     pub stats: Arc<Stats>,
 }
 
 pub async fn run(cfg: Arc<ClientConfig>) -> Result<()> {
-    if cfg.hops == 0 {
-        bail!("hop count must be at least 1");
-    }
-    if cfg.directory.relays.len() < cfg.hops {
-        bail!(
-            "directory has {} relays but {} hops were requested",
-            cfg.directory.relays.len(),
-            cfg.hops
-        );
-    }
     let listener = TcpListener::bind(&cfg.socks_listen).await?;
-    info!(listen = %cfg.socks_listen, hops = cfg.hops, relays = cfg.directory.relays.len(), "SOCKS5 proxy listening");
+    info!(listen = %cfg.socks_listen, backend = cfg.connector.backend(), "SOCKS5 proxy listening");
 
     loop {
         let (stream, peer) = match listener.accept().await {
@@ -56,31 +45,24 @@ pub async fn run(cfg: Arc<ClientConfig>) -> Result<()> {
 async fn handle(mut client: TcpStream, cfg: Arc<ClientConfig>) -> Result<()> {
     client.set_nodelay(true).ok();
     let (host, port) = socks_handshake(&mut client).await?;
+    debug!(target = %format!("{host}:{port}"), backend = cfg.connector.backend(), "connecting");
 
-    let path = cfg.directory.choose_path(cfg.hops)?;
-    let names: Vec<&str> = path.iter().map(|r| r.name.as_str()).collect();
-    debug!(target = %format!("{host}:{port}"), path = ?names, "building circuit");
-
-    let mut circuit = match Circuit::build(&path).await {
-        Ok(c) => c,
+    let mut upstream = match cfg.connector.connect(&host, port).await {
+        Ok(s) => {
+            cfg.stats.built();
+            s
+        }
         Err(e) => {
             cfg.stats.failed();
-            warn!("circuit build failed: {e:#}");
+            warn!("connect to {host}:{port} failed: {e:#}");
             send_reply(&mut client, 0x01).await?; // general failure
             return Ok(());
         }
     };
-    if let Err(e) = circuit.begin(&host, port).await {
-        cfg.stats.failed();
-        warn!("begin failed: {e:#}");
-        send_reply(&mut client, 0x01).await?;
-        return Ok(());
-    }
-    cfg.stats.built();
 
     send_reply(&mut client, 0x00).await?; // succeeded
     cfg.stats.active_inc();
-    let result = circuit.splice(client).await;
+    let result = tokio::io::copy_bidirectional(&mut client, &mut upstream).await;
     cfg.stats.active_dec();
     result?;
     return Ok(());
