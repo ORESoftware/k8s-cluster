@@ -7,7 +7,7 @@
   "scripts": {
     "setup": "playwright install chromium",
     "test": "npm run test:puppeteer && npm run test:playwright",
-    "test:puppeteer": "node --test --test-timeout=180000 puppeteer/",
+    "test:puppeteer": "node --test --test-timeout=180000 puppeteer/*.test.mjs",
     "test:playwright": "playwright test --config=playwright/playwright.config.mjs"
   },
   "devDependencies": {
