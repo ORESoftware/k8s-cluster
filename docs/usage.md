@@ -50,6 +50,7 @@ to a `proxy.pac`, and serves these docs at `/docs`.
 | Env var             | Mode   | Default            | Meaning                                   |
 | ------------------- | ------ | ------------------ | ----------------------------------------- |
 | `TOR_ROLE`          | all    | (argv[1])          | `relay` \| `client` \| `keygen`           |
+| `TOR_BACKEND`       | client | `overlay`          | `overlay` (own relays) \| `arti` (real Tor, needs `--features arti`) |
 | `TOR_NETWORK_SECRET`| all    | (empty = open)     | Overlay pre-shared key folded into handshakes |
 | `TOR_LISTEN`        | relay  | `0.0.0.0:9001`     | Relay listen address                      |
 | `TOR_KEY_FILE`      | relay  | `./relay.key`      | Static identity key file                  |
