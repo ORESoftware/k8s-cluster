@@ -161,7 +161,7 @@ async fn onion_get(cfg: &WebConfig, url: &str) -> Result<serde_json::Value> {
         "ok": true,
         "url": url,
         "target": format!("{host}:{port}"),
-        "path": path_names,
+        "backend": cfg.connector.backend(),
         "status_line": status_line,
         "status_code": status_code,
         "headers": headers.iter().map(|(k, v)| format!("{k}: {v}")).collect::<Vec<_>>(),
