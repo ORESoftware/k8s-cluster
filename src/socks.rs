@@ -10,10 +10,16 @@ use std::net::Ipv4Addr;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::time::{timeout, Duration};
 use tracing::{debug, info, warn};
 
 use crate::connector::Connector;
 use crate::stats::Stats;
+
+/// A client must finish the SOCKS negotiation within this window (anti-slowloris).
+const SOCKS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
+/// Bound on establishing the upstream circuit/connection.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub struct ClientConfig {
     pub socks_listen: String,
