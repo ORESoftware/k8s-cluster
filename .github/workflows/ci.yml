@@ -1,0 +1,23 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      # Only a stub package-lock (no runtime deps); fall back to `npm install`
+      # if `npm ci` refuses the lockfile.
+      - run: npm ci || npm install
+      # Contract test for the superproject wiring.
+      - run: node --test tests/*.test.mjs
