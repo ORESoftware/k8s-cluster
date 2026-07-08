@@ -372,3 +372,36 @@ table{border-collapse:collapse}th,td{border:1px solid #30363d;padding:.4rem .7re
 const DOC_FOOTER: &str = "</body></html>";
 
 const INDEX_HTML: &str = include_str!("web/index.html");
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_http_url_accepts_valid() {
+        let (h, p, path) = parse_http_url("http://example.com/foo?bar=1").unwrap();
+        assert_eq!(h, "example.com");
+        assert_eq!(p, 80);
+        assert_eq!(path, "/foo?bar=1");
+        let (h, p, _) = parse_http_url("http://example.com:8080/").unwrap();
+        assert_eq!((h.as_str(), p), ("example.com", 8080));
+    }
+
+    #[test]
+    fn parse_http_url_rejects_crlf_injection() {
+        // Percent-decoding happens in the query extractor, so by the time we
+        // parse, a CRLF is a real control character and must be rejected.
+        assert!(parse_http_url("http://example.com/x\r\nX-Injected: 1").is_err());
+        assert!(parse_http_url("http://exa\r\nmple.com/").is_err());
+        assert!(parse_http_url("http://example.com/a b").is_err()); // space breaks request line
+        assert!(parse_http_url("https://example.com/").is_err()); // https not supported here
+    }
+
+    #[test]
+    fn ct_str_eq_matches_and_differs() {
+        assert!(ct_str_eq("s3cret", "s3cret"));
+        assert!(!ct_str_eq("s3cret", "s3creT"));
+        assert!(!ct_str_eq("s3cret", "s3cret-longer"));
+        assert!(!ct_str_eq("", "x"));
+    }
+}
