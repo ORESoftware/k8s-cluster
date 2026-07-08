@@ -20,7 +20,7 @@ use std::time::Instant;
 
 use anyhow::{bail, Result};
 use axum::extract::{Path as AxPath, Query, State};
-use axum::http::{header, StatusCode};
+use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{Html, IntoResponse, Json, Response};
 use axum::routing::get;
 use axum::Router;
