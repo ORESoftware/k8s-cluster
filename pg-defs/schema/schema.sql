@@ -2206,6 +2206,8 @@ create table if not exists des_soccer_learning_policy_entries (
     check (target_macro_cell_id >= -1),
   constraint des_soccer_learning_policy_entries_target_root_chk
     check (target_root_cell_id >= -1),
+  constraint des_soccer_learning_policy_entries_receiver_descriptor_chk
+    check (receiver_descriptor >= -1),
   constraint des_soccer_learning_policy_entries_visits_chk
     check (visits >= 0)
 );
@@ -2220,7 +2222,8 @@ create unique index if not exists des_soccer_learning_policy_entries_key_uq
     target_fine_cell_id,
     target_tactical_cell_id,
     target_macro_cell_id,
-    target_root_cell_id
+    target_root_cell_id,
+    receiver_descriptor
   );
 
 create index if not exists des_soccer_learning_policy_entries_lookup_idx
