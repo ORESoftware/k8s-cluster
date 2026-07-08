@@ -107,6 +107,14 @@ async fn run_client() -> Result<()> {
         .parse()
         .context("TOR_HOPS must be a positive integer")?;
     let docs_dir = PathBuf::from(env_or("TOR_DOCS_DIR", "./docs"));
+    let ui_token = read_env_or_file("TOR_UI_TOKEN", "TOR_UI_TOKEN_FILE")?
+        .filter(|t| !t.is_empty());
+    if ui_token.is_none() && !ui_listen.starts_with("127.") && !ui_listen.starts_with("localhost") {
+        tracing::warn!(
+            listen = %ui_listen,
+            "dashboard bound to a non-loopback address without TOR_UI_TOKEN; /api/fetch is an open proxy"
+        );
+    }
 
     // The overlay backend needs a relay directory; arti does not.
     let directory = match std::env::var("TOR_DIRECTORY") {
