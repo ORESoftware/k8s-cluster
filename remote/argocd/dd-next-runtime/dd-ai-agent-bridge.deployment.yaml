@@ -105,6 +105,17 @@ spec:
               value: json
             - name: RUST_LOG
               value: info,ai_agent_bridge=info,hyper=warn,reqwest=warn
+            # claude-inbox backward-compat (supersedes the old ai-agent-bridge-rs):
+            # inbox.jsonl lives on the writable tmp mount; the POST /claude bearer
+            # is optional (open when the secret/key is absent).
+            - name: AI_AGENT_BRIDGE_DIR
+              value: /tmp/claude_bridge
+            - name: AI_AGENT_BRIDGE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-ai-agent-bridge-secrets
+                  key: inbox_token
+                  optional: true
             # In-cluster embedder is optional — the built-in deterministic local
             # embedder is used when this is unset. Enable once the endpoint/contract
             # is confirmed:
