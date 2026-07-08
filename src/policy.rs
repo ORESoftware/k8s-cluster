@@ -111,7 +111,24 @@ fn is_blocked_v4(v4: Ipv4Addr) -> bool {
 }
 
 fn is_blocked_v6(v6: Ipv6Addr) -> bool {
-    let seg0 = v6.segments()[0];
+    // IPv4-mapped (::ffff:a.b.c.d) embeds a v4 address that is reachable as v4;
+    // without this, `::ffff:127.0.0.1` would bypass the v4 loopback/private
+    // checks entirely. Apply the v4 rules to the embedded address.
+    if let Some(v4) = v6.to_ipv4_mapped() {
+        return is_blocked_v4(v4);
+    }
+    // 6to4 (2002:V4::/16) and NAT64 well-known prefix (64:ff9b::/96) likewise
+    // embed a v4 destination; block if that embedded v4 is private/loopback.
+    let seg = v6.segments();
+    if seg[0] == 0x2002 {
+        let v4 = Ipv4Addr::new((seg[1] >> 8) as u8, seg[1] as u8, (seg[2] >> 8) as u8, seg[2] as u8);
+        return is_blocked_v4(v4);
+    }
+    if seg[0] == 0x0064 && seg[1] == 0xff9b && seg[2] == 0 && seg[3] == 0 && seg[4] == 0 && seg[5] == 0 {
+        let v4 = Ipv4Addr::new((seg[6] >> 8) as u8, seg[6] as u8, (seg[7] >> 8) as u8, seg[7] as u8);
+        return is_blocked_v4(v4);
+    }
+    let seg0 = seg[0];
     let is_ula = (seg0 & 0xfe00) == 0xfc00; // fc00::/7 unique local
     let is_link_local = (seg0 & 0xffc0) == 0xfe80; // fe80::/10
     return v6.is_loopback() || v6.is_unspecified() || v6.is_multicast() || is_ula || is_link_local;
