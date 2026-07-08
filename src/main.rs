@@ -137,6 +137,7 @@ async fn run_client() -> Result<()> {
         hops,
         docs_dir,
         stats,
+        ui_token,
     });
 
     // Run the SOCKS proxy and the web dashboard concurrently; if either exits,
