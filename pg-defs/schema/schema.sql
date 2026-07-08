@@ -2378,6 +2378,8 @@ create table if not exists des_soccer_learning_run_deltas (
     check (target_macro_cell_id >= -1),
   constraint des_soccer_learning_run_deltas_target_root_chk
     check (target_root_cell_id >= -1),
+  constraint des_soccer_learning_run_deltas_receiver_descriptor_chk
+    check (receiver_descriptor >= -1),
   constraint des_soccer_learning_run_deltas_visit_delta_chk
     check (visit_delta > 0),
   constraint des_soccer_learning_run_deltas_merge_weight_chk
