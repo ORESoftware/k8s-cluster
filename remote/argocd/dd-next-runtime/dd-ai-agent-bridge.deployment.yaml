@@ -1,0 +1,184 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-ai-agent-bridge
+  namespace: default
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+  labels:
+    app: dd-ai-agent-bridge
+spec:
+  replicas: 1
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Single-node friendly: don't try to schedule a second builder pod.
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: dd-ai-agent-bridge
+  template:
+    metadata:
+      annotations:
+        dd.dev/ai-agent-bridge-revision: 'in-memory-default+http-sse+tcp-jsonl+32-cap+embedding-topics'
+      labels:
+        app: dd-ai-agent-bridge
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        - name: ai-agent-bridge
+          image: docker.io/library/rust:1.95-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+              # ai-agent-bridge is a k8s-cluster submodule at
+              # remote/deployments/ai-agent-bridge. Its Cargo.toml has an OPTIONAL
+              # path dep on ../../libs/pg-defs/generated/rust (only compiled with
+              # --features postgres), but cargo still resolves that path at build
+              # time — so the build root must contain BOTH this submodule and
+              # remote/libs. Prefer the mounted superproject; otherwise clone
+              # k8s-cluster and init just those two submodules so unrelated private
+              # submodules can't block startup (mirrors dd-soccer-rs).
+              build_root=""
+              mounted="/opt/dd-next-1"
+              if [ -f "${mounted}/remote/deployments/ai-agent-bridge/Cargo.toml" ] \
+                 && [ -f "${mounted}/remote/libs/pg-defs/generated/rust/Cargo.toml" ]; then
+                build_root="${mounted}"
+                echo "[dd-ai-agent-bridge] using mounted superproject at ${mounted}"
+              else
+                # GH_PAT (dd-git-clone-token) authenticates private fetches via an
+                # HTTP header so an auth failure cannot print the token.
+                git_auth_args=()
+                if [ -n "${GH_PAT:-}" ]; then
+                  authhdr="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_PAT" | base64 | tr -d '\n')"
+                  git_auth_args=(-c "http.https://github.com/.extraheader=${authhdr}")
+                  git config --global url."https://github.com/".insteadOf "git@github.com:"
+                fi
+                clone="$(mktemp -d /tmp/ai-agent-bridge-src.XXXXXX)"
+                echo "[dd-ai-agent-bridge] mounted source absent; cloning k8s-cluster@${K8S_GIT_REF:-dev}"
+                git clone --depth 1 --branch "${K8S_GIT_REF:-dev}" "${git_auth_args[@]}" \
+                  "${K8S_GIT_URL:-https://github.com/ORESoftware/k8s-cluster.git}" "${clone}"
+                git -C "${clone}" "${git_auth_args[@]}" submodule update --init --depth 1 \
+                  remote/libs remote/deployments/ai-agent-bridge
+                build_root="${clone}"
+              fi
+
+              cd "${build_root}/remote/deployments/ai-agent-bridge"
+              echo "[dd-ai-agent-bridge] building ($(git rev-parse --short HEAD 2>/dev/null || echo '?'))"
+              # Default (in-memory) build: no Postgres, no pg-defs compilation. Flip
+              # to `--features postgres` once the ai_agent_bridge schema migration
+              # is applied and the DATABASE_URL env below is enabled.
+              cargo build --release --locked
+              exec "${CARGO_TARGET_DIR:-target}/release/ai-agent-bridge"
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: HTTP_PORT
+              value: '8142'
+            - name: TCP_PORT
+              value: '8143'
+            - name: LOG_FORMAT
+              value: json
+            - name: RUST_LOG
+              value: info,ai_agent_bridge=info,hyper=warn,reqwest=warn
+            # In-cluster embedder is optional — the built-in deterministic local
+            # embedder is used when this is unset. Enable once the endpoint/contract
+            # is confirmed:
+            # - name: EMBEDDINGS_URL
+            #   value: http://dd-embeddings-rs.default.svc.cluster.local:8090
+            # Postgres is OFF by default (in-memory-first). To enable durable
+            # persistence, build with --features postgres above and set:
+            # - name: DATABASE_URL
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: dd-remote-rest-api-secrets
+            #       key: RDS_DATABASE_URL
+            - name: K8S_GIT_URL
+              value: https://github.com/ORESoftware/k8s-cluster.git
+            - name: K8S_GIT_REF
+              value: dev
+            # Read access for the fallback clone path (public repo today, but this
+            # keeps it working if visibility ever changes / for private libs).
+            - name: GH_PAT
+              valueFrom:
+                secretKeyRef:
+                  name: dd-git-clone-token
+                  key: token
+                  optional: true
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /tmp/cargo
+            - name: CARGO_TARGET_DIR
+              value: /tmp/ai-agent-bridge-target
+          ports:
+            - name: http
+              containerPort: 8142
+            - name: tcp
+              containerPort: 8143
+          resources:
+            requests:
+              cpu: '50m'
+              memory: 512Mi
+            limits:
+              cpu: '2'
+              memory: 3Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            # Cold release build from an empty /tmp can take a few minutes; allow ~15 min.
+            periodSeconds: 5
+            failureThreshold: 180
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: DirectoryOrCreate
+        - name: tmp
+          emptyDir:
+            sizeLimit: 8Gi
