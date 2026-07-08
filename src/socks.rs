@@ -10,10 +10,16 @@ use std::net::Ipv4Addr;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::time::{timeout, Duration};
 use tracing::{debug, info, warn};
 
 use crate::connector::Connector;
 use crate::stats::Stats;
+
+/// A client must finish the SOCKS negotiation within this window (anti-slowloris).
+const SOCKS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
+/// Bound on establishing the upstream circuit/connection.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub struct ClientConfig {
     pub socks_listen: String,
@@ -44,18 +50,27 @@ pub async fn run(cfg: Arc<ClientConfig>) -> Result<()> {
 
 async fn handle(mut client: TcpStream, cfg: Arc<ClientConfig>) -> Result<()> {
     client.set_nodelay(true).ok();
-    let (host, port) = socks_handshake(&mut client).await?;
+    let (host, port) = timeout(SOCKS_HANDSHAKE_TIMEOUT, socks_handshake(&mut client))
+        .await
+        .map_err(|_| anyhow::anyhow!("SOCKS handshake timed out"))??;
     debug!(target = %format!("{host}:{port}"), backend = cfg.connector.backend(), "connecting");
 
-    let mut upstream = match cfg.connector.connect(&host, port).await {
-        Ok(s) => {
+    let connect = timeout(CONNECT_TIMEOUT, cfg.connector.connect(&host, port)).await;
+    let mut upstream = match connect {
+        Ok(Ok(s)) => {
             cfg.stats.built();
             s
         }
-        Err(e) => {
+        Ok(Err(e)) => {
             cfg.stats.failed();
             warn!("connect to {host}:{port} failed: {e:#}");
             send_reply(&mut client, 0x01).await?; // general failure
+            return Ok(());
+        }
+        Err(_) => {
+            cfg.stats.failed();
+            warn!("connect to {host}:{port} timed out");
+            send_reply(&mut client, 0x01).await?;
             return Ok(());
         }
     };

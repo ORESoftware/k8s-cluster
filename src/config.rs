@@ -102,5 +102,13 @@ pub fn load_or_create_static_secret(path: &Path) -> Result<(StaticSecret, [u8; 3
     }
     let encoded = base64::engine::general_purpose::STANDARD.encode(secret.to_bytes());
     std::fs::write(path, encoded).with_context(|| format!("writing key file {}", path.display()))?;
+    // A relay's static secret is its identity; keep it owner-only so it is not
+    // readable by other users on a shared host.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+            .with_context(|| format!("restricting permissions on key file {}", path.display()))?;
+    }
     return Ok((secret, public));
 }

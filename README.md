@@ -145,14 +145,19 @@ the consensus). The dashboard's backend badge shows which mode is active.
 
 - **Exit policy (SSRF protection):** exits refuse loopback, private
   (RFC1918/CGNAT/ULA), link-local, and cloud-metadata (`169.254.169.254`)
-  destinations by default. Override for local testing with
+  destinations by default — including IPv4-mapped/6to4/NAT64 IPv6 forms that
+  embed a private v4 (e.g. `::ffff:127.0.0.1`). Override for local testing with
   `TOR_EXIT_ALLOW_PRIVATE=1`.
-- **Overlay pre-shared key:** `TOR_NETWORK_SECRET` is folded into every
-  handshake, so only nodes/clients sharing it can build circuits.
+- **Dashboard `/api/fetch` guard:** this endpoint is a server-side proxy; set
+  `TOR_UI_TOKEN` when the dashboard is bound to a non-loopback address (required
+  via `?token=`/`Authorization: Bearer`). Host/path with control characters are
+  rejected (no CRLF header injection).
+- **Overlay pre-shared key:** `TOR_NETWORK_SECRET` (or `…_FILE`) is folded into
+  every handshake, so only nodes/clients sharing it can build circuits.
 - **Extend allowlist:** `TOR_RELAY_PEERS` pins which peers a relay will extend to.
-- **Limits & timeouts:** handshakes time out after 20 s; `TOR_MAX_CIRCUITS`
-  bounds concurrent circuits; frames are capped at 1 MiB; doc names are
-  sanitized against path traversal.
+- **Limits & timeouts:** handshake (20 s), dial (15–60 s), and SOCKS-negotiation
+  (30 s) timeouts; `TOR_MAX_CIRCUITS` cap; optional `TOR_CIRCUIT_IDLE_TIMEOUT_SECS`;
+  1 MiB frame cap; path-traversal-sanitized doc names; relay key file is `0600`.
 
 See [docs/security.md](docs/security.md) for the full model.
 
@@ -168,6 +173,9 @@ See [docs/security.md](docs/security.md) for the full model.
 | `TOR_EXIT_ALLOW_PRIVATE` | relay | `0`           | Allow exits to private/loopback ranges   |
 | `TOR_RELAY_PEERS`   | relay  | (any)              | Comma-separated `host:port` extend allowlist |
 | `TOR_MAX_CIRCUITS`  | relay  | `1024`             | Max concurrent circuits before rejecting |
+| `TOR_CIRCUIT_IDLE_TIMEOUT_SECS` | relay | `0` (off) | Close circuits idle for this long        |
+| `TOR_NETWORK_SECRET_FILE` | all | (unset)           | Read overlay PSK from a file (not env)   |
+| `TOR_UI_TOKEN` / `TOR_UI_TOKEN_FILE` | client | (unset) | Require token for `/api/fetch` (guard exposed dashboard) |
 | `TOR_SOCKS_LISTEN`  | client | `127.0.0.1:9050`   | Local SOCKS5 listen address              |
 | `TOR_UI_LISTEN`     | client | `127.0.0.1:9060`   | Dashboard/docs listen address            |
 | `TOR_DIRECTORY`     | client | (required)         | Path to the relay directory TOML         |

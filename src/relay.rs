@@ -35,11 +35,34 @@ const EXIT_READ_CHUNK: usize = 32 * 1024;
 /// connections cannot pile up.
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(20);
 
+/// Bound on dialing the next hop / destination, so a black-holed target cannot
+/// pin a circuit slot during connect.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+
 fn max_circuits() -> usize {
     return std::env::var("TOR_MAX_CIRCUITS")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(1024);
+}
+
+/// Optional idle timeout on the forward read loop (0 = disabled). Bounds
+/// post-handshake slowloris, where a peer completes the handshake then holds
+/// the circuit open sending nothing.
+fn idle_timeout() -> Option<Duration> {
+    let secs: u64 = std::env::var("TOR_CIRCUIT_IDLE_TIMEOUT_SECS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    return if secs == 0 { None } else { Some(Duration::from_secs(secs)) };
+}
+
+/// Connect to `addr` with a bounded timeout.
+async fn connect_timeout(addr: impl tokio::net::ToSocketAddrs) -> Result<TcpStream> {
+    return timeout(CONNECT_TIMEOUT, TcpStream::connect(addr))
+        .await
+        .map_err(|_| anyhow!("connect timed out"))?
+        .map_err(|e| anyhow!("connect failed: {e}"));
 }
 
 pub async fn run(listen: &str, secret: StaticSecret) -> Result<()> {
@@ -97,10 +120,19 @@ async fn handle_circuit(prev: TcpStream, secret: Arc<StaticSecret>, policy: Arc<
     let mut next_w: Option<OwnedWriteHalf> = None; // middle: link to next relay
     let mut dest_w: Option<OwnedWriteHalf> = None; // exit: link to destination
 
+    let idle = idle_timeout();
     loop {
-        let frame = match read_frame(&mut prev_r).await {
-            Ok(f) => f,
-            Err(_) => break, // previous hop closed
+        let read = read_frame(&mut prev_r);
+        let frame = match idle {
+            Some(d) => match timeout(d, read).await {
+                Ok(Ok(f)) => f,
+                Ok(Err(_)) => break,           // previous hop closed
+                Err(_) => break,               // idle timeout
+            },
+            None => match read.await {
+                Ok(f) => f,
+                Err(_) => break,
+            },
         };
         let plaintext = opener_fwd.open(&frame)?;
         let cell = Cell::decode(&plaintext)?;
@@ -110,7 +142,7 @@ async fn handle_circuit(prev: TcpStream, secret: Arc<StaticSecret>, policy: Arc<
                     bail!("Extend after this relay already has a next hop");
                 }
                 policy.check_extend(&addr)?;
-                let next = TcpStream::connect(&addr).await?;
+                let next = connect_timeout(&addr).await?;
                 next.set_nodelay(true).ok();
                 let (next_r, mut nw) = next.into_split();
                 write_frame(&mut nw, &create).await?;
@@ -137,7 +169,7 @@ async fn handle_circuit(prev: TcpStream, secret: Arc<StaticSecret>, policy: Arc<
                 }
                 // Exit policy: resolve + reject private/loopback/metadata ranges.
                 let addr = policy.resolve_exit(&host, port).await?;
-                let dest = TcpStream::connect(addr).await?;
+                let dest = connect_timeout(addr).await?;
                 dest.set_nodelay(true).ok();
                 let (dest_r, dw) = dest.into_split();
                 dest_w = Some(dw);

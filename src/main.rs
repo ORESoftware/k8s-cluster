@@ -39,6 +39,20 @@ fn env_or(key: &str, default: &str) -> String {
     return std::env::var(key).unwrap_or_else(|_| default.to_string());
 }
 
+/// Read a secret from `env_key`, or from the file named by `file_key`, trimming
+/// trailing whitespace/newline. Returns None if neither is set.
+fn read_env_or_file(env_key: &str, file_key: &str) -> Result<Option<String>> {
+    if let Ok(v) = std::env::var(env_key) {
+        return Ok(Some(v));
+    }
+    if let Ok(path) = std::env::var(file_key) {
+        let contents = std::fs::read_to_string(&path)
+            .with_context(|| format!("reading secret file {path}"))?;
+        return Ok(Some(contents.trim_end_matches(['\n', '\r']).to_string()));
+    }
+    return Ok(None);
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -46,11 +60,13 @@ async fn main() -> Result<()> {
         .with_target(false)
         .init();
 
-    // Optional overlay membership secret, folded into every handshake.
-    if let Ok(secret) = std::env::var("TOR_NETWORK_SECRET") {
+    // Optional overlay membership secret, folded into every handshake. Prefer a
+    // file (TOR_NETWORK_SECRET_FILE) so the secret is not exposed in the
+    // process environment; fall back to TOR_NETWORK_SECRET.
+    if let Some(secret) = read_env_or_file("TOR_NETWORK_SECRET", "TOR_NETWORK_SECRET_FILE")? {
         if !secret.is_empty() {
             crypto::set_network_secret(secret.into_bytes());
-            info!("overlay pre-shared key active (TOR_NETWORK_SECRET set)");
+            info!("overlay pre-shared key active");
         }
     }
 
@@ -91,6 +107,14 @@ async fn run_client() -> Result<()> {
         .parse()
         .context("TOR_HOPS must be a positive integer")?;
     let docs_dir = PathBuf::from(env_or("TOR_DOCS_DIR", "./docs"));
+    let ui_token = read_env_or_file("TOR_UI_TOKEN", "TOR_UI_TOKEN_FILE")?
+        .filter(|t| !t.is_empty());
+    if ui_token.is_none() && !ui_listen.starts_with("127.") && !ui_listen.starts_with("localhost") {
+        tracing::warn!(
+            listen = %ui_listen,
+            "dashboard bound to a non-loopback address without TOR_UI_TOKEN; /api/fetch is an open proxy"
+        );
+    }
 
     // The overlay backend needs a relay directory; arti does not.
     let directory = match std::env::var("TOR_DIRECTORY") {
@@ -113,6 +137,7 @@ async fn run_client() -> Result<()> {
         hops,
         docs_dir,
         stats,
+        ui_token,
     });
 
     // Run the SOCKS proxy and the web dashboard concurrently; if either exits,

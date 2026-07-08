@@ -20,7 +20,7 @@ use std::time::Instant;
 
 use anyhow::{bail, Result};
 use axum::extract::{Path as AxPath, Query, State};
-use axum::http::{header, StatusCode};
+use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{Html, IntoResponse, Json, Response};
 use axum::routing::get;
 use axum::Router;
@@ -46,6 +46,10 @@ pub struct WebConfig {
     pub hops: usize,
     pub docs_dir: PathBuf,
     pub stats: Arc<Stats>,
+    /// If set, the `/api/fetch` proxy primitive requires this token (via
+    /// `?token=` or `Authorization: Bearer`). Guards the dashboard when it is
+    /// bound to a non-loopback address.
+    pub ui_token: Option<String>,
 }
 
 type AppState = Arc<WebConfig>;
@@ -95,7 +99,17 @@ async fn status(State(cfg): State<AppState>) -> Json<serde_json::Value> {
     }));
 }
 
-async fn fetch(State(cfg): State<AppState>, Query(q): Query<HashMap<String, String>>) -> Json<serde_json::Value> {
+async fn fetch(
+    State(cfg): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<HashMap<String, String>>,
+) -> Json<serde_json::Value> {
+    if !authorized(&cfg, &headers, &q) {
+        return Json(serde_json::json!({
+            "ok": false,
+            "error": "unauthorized: /api/fetch requires the TOR_UI_TOKEN (pass ?token= or Authorization: Bearer)"
+        }));
+    }
     let url = match q.get("url") {
         Some(u) if !u.is_empty() => u.clone(),
         _ => {
@@ -118,6 +132,41 @@ async fn fetch(State(cfg): State<AppState>, Query(q): Query<HashMap<String, Stri
             }))
         }
     }
+}
+
+/// Whether a request may use the `/api/fetch` proxy primitive. Open when no
+/// `TOR_UI_TOKEN` is configured; otherwise the token must match (checked in
+/// constant time).
+fn authorized(cfg: &WebConfig, headers: &HeaderMap, q: &HashMap<String, String>) -> bool {
+    let expected = match &cfg.ui_token {
+        None => return true,
+        Some(t) => t,
+    };
+    let provided = q.get("token").map(|s| s.as_str()).or_else(|| {
+        headers
+            .get(header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.strip_prefix("Bearer "))
+    });
+    return match provided {
+        Some(p) => ct_str_eq(p, expected),
+        None => false,
+    };
+}
+
+/// Constant-time string comparison (length-independent short-circuit avoided by
+/// folding, but differing lengths return false immediately — the token length
+/// is not itself secret).
+fn ct_str_eq(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for i in 0..a.len() {
+        diff |= a[i] ^ b[i];
+    }
+    return diff == 0;
 }
 
 /// Open a stream through the active backend and perform one plaintext HTTP GET.
@@ -213,6 +262,17 @@ fn parse_http_url(url: &str) -> Result<(String, u16, String)> {
         None => (authority.to_string(), 80u16),
     };
     let path = if path.is_empty() { "/".to_string() } else { path.to_string() };
+
+    // The host and path are interpolated into a raw HTTP request; any control
+    // character (notably CR/LF) would allow header injection / request
+    // smuggling to the target through the proxy. A space in the path would
+    // break the request line. Reject all of them.
+    if host.is_empty() || host.bytes().any(|b| b.is_ascii_control() || b == b' ') {
+        bail!("invalid host in URL");
+    }
+    if path.bytes().any(|b| b.is_ascii_control() || b == b' ') {
+        bail!("invalid characters in URL path (control or space)");
+    }
     return Ok((host, port, path));
 }
 
@@ -312,3 +372,36 @@ table{border-collapse:collapse}th,td{border:1px solid #30363d;padding:.4rem .7re
 const DOC_FOOTER: &str = "</body></html>";
 
 const INDEX_HTML: &str = include_str!("web/index.html");
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_http_url_accepts_valid() {
+        let (h, p, path) = parse_http_url("http://example.com/foo?bar=1").unwrap();
+        assert_eq!(h, "example.com");
+        assert_eq!(p, 80);
+        assert_eq!(path, "/foo?bar=1");
+        let (h, p, _) = parse_http_url("http://example.com:8080/").unwrap();
+        assert_eq!((h.as_str(), p), ("example.com", 8080));
+    }
+
+    #[test]
+    fn parse_http_url_rejects_crlf_injection() {
+        // Percent-decoding happens in the query extractor, so by the time we
+        // parse, a CRLF is a real control character and must be rejected.
+        assert!(parse_http_url("http://example.com/x\r\nX-Injected: 1").is_err());
+        assert!(parse_http_url("http://exa\r\nmple.com/").is_err());
+        assert!(parse_http_url("http://example.com/a b").is_err()); // space breaks request line
+        assert!(parse_http_url("https://example.com/").is_err()); // https not supported here
+    }
+
+    #[test]
+    fn ct_str_eq_matches_and_differs() {
+        assert!(ct_str_eq("s3cret", "s3cret"));
+        assert!(!ct_str_eq("s3cret", "s3creT"));
+        assert!(!ct_str_eq("s3cret", "s3cret-longer"));
+        assert!(!ct_str_eq("", "x"));
+    }
+}
