@@ -39,6 +39,20 @@ fn env_or(key: &str, default: &str) -> String {
     return std::env::var(key).unwrap_or_else(|_| default.to_string());
 }
 
+/// Read a secret from `env_key`, or from the file named by `file_key`, trimming
+/// trailing whitespace/newline. Returns None if neither is set.
+fn read_env_or_file(env_key: &str, file_key: &str) -> Result<Option<String>> {
+    if let Ok(v) = std::env::var(env_key) {
+        return Ok(Some(v));
+    }
+    if let Ok(path) = std::env::var(file_key) {
+        let contents = std::fs::read_to_string(&path)
+            .with_context(|| format!("reading secret file {path}"))?;
+        return Ok(Some(contents.trim_end_matches(['\n', '\r']).to_string()));
+    }
+    return Ok(None);
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
