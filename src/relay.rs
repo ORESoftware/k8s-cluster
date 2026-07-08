@@ -142,7 +142,7 @@ async fn handle_circuit(prev: TcpStream, secret: Arc<StaticSecret>, policy: Arc<
                     bail!("Extend after this relay already has a next hop");
                 }
                 policy.check_extend(&addr)?;
-                let next = TcpStream::connect(&addr).await?;
+                let next = connect_timeout(&addr).await?;
                 next.set_nodelay(true).ok();
                 let (next_r, mut nw) = next.into_split();
                 write_frame(&mut nw, &create).await?;
