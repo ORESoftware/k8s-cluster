@@ -68,6 +68,9 @@ to a `proxy.pac`, and serves these docs at `/docs`.
 | `TOR_EXIT_ALLOW_PRIVATE` | relay | `0`            | Allow exits to private/loopback ranges    |
 | `TOR_RELAY_PEERS`   | relay  | (any)              | Comma-separated `host:port` extend allowlist |
 | `TOR_MAX_CIRCUITS`  | relay  | `1024`             | Max concurrent circuits before rejecting  |
+| `TOR_CIRCUIT_IDLE_TIMEOUT_SECS` | relay | `0` (off) | Close circuits idle for this long         |
+| `TOR_NETWORK_SECRET_FILE` | all | (unset)           | Read the overlay PSK from a file instead of env |
+| `TOR_UI_TOKEN` / `_FILE` | client | (unset)         | Require this token for `/api/fetch`       |
 | `TOR_SOCKS_LISTEN`  | client | `127.0.0.1:9050`   | Local SOCKS5 listen address               |
 | `TOR_UI_LISTEN`     | client | `127.0.0.1:9060`   | Dashboard/docs listen address             |
 | `TOR_DIRECTORY`     | client | (required)         | Path to the relay directory TOML          |
