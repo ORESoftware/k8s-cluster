@@ -145,14 +145,19 @@ the consensus). The dashboard's backend badge shows which mode is active.
 
 - **Exit policy (SSRF protection):** exits refuse loopback, private
   (RFC1918/CGNAT/ULA), link-local, and cloud-metadata (`169.254.169.254`)
-  destinations by default. Override for local testing with
+  destinations by default — including IPv4-mapped/6to4/NAT64 IPv6 forms that
+  embed a private v4 (e.g. `::ffff:127.0.0.1`). Override for local testing with
   `TOR_EXIT_ALLOW_PRIVATE=1`.
-- **Overlay pre-shared key:** `TOR_NETWORK_SECRET` is folded into every
-  handshake, so only nodes/clients sharing it can build circuits.
+- **Dashboard `/api/fetch` guard:** this endpoint is a server-side proxy; set
+  `TOR_UI_TOKEN` when the dashboard is bound to a non-loopback address (required
+  via `?token=`/`Authorization: Bearer`). Host/path with control characters are
+  rejected (no CRLF header injection).
+- **Overlay pre-shared key:** `TOR_NETWORK_SECRET` (or `…_FILE`) is folded into
+  every handshake, so only nodes/clients sharing it can build circuits.
 - **Extend allowlist:** `TOR_RELAY_PEERS` pins which peers a relay will extend to.
-- **Limits & timeouts:** handshakes time out after 20 s; `TOR_MAX_CIRCUITS`
-  bounds concurrent circuits; frames are capped at 1 MiB; doc names are
-  sanitized against path traversal.
+- **Limits & timeouts:** handshake (20 s), dial (15–60 s), and SOCKS-negotiation
+  (30 s) timeouts; `TOR_MAX_CIRCUITS` cap; optional `TOR_CIRCUIT_IDLE_TIMEOUT_SECS`;
+  1 MiB frame cap; path-traversal-sanitized doc names; relay key file is `0600`.
 
 See [docs/security.md](docs/security.md) for the full model.
 
