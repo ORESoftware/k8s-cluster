@@ -99,7 +99,17 @@ async fn status(State(cfg): State<AppState>) -> Json<serde_json::Value> {
     }));
 }
 
-async fn fetch(State(cfg): State<AppState>, Query(q): Query<HashMap<String, String>>) -> Json<serde_json::Value> {
+async fn fetch(
+    State(cfg): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<HashMap<String, String>>,
+) -> Json<serde_json::Value> {
+    if !authorized(&cfg, &headers, &q) {
+        return Json(serde_json::json!({
+            "ok": false,
+            "error": "unauthorized: /api/fetch requires the TOR_UI_TOKEN (pass ?token= or Authorization: Bearer)"
+        }));
+    }
     let url = match q.get("url") {
         Some(u) if !u.is_empty() => u.clone(),
         _ => {
