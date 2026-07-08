@@ -213,6 +213,17 @@ fn parse_http_url(url: &str) -> Result<(String, u16, String)> {
         None => (authority.to_string(), 80u16),
     };
     let path = if path.is_empty() { "/".to_string() } else { path.to_string() };
+
+    // The host and path are interpolated into a raw HTTP request; any control
+    // character (notably CR/LF) would allow header injection / request
+    // smuggling to the target through the proxy. A space in the path would
+    // break the request line. Reject all of them.
+    if host.is_empty() || host.bytes().any(|b| b.is_ascii_control() || b == b' ') {
+        bail!("invalid host in URL");
+    }
+    if path.bytes().any(|b| b.is_ascii_control() || b == b' ') {
+        bail!("invalid characters in URL path (control or space)");
+    }
     return Ok((host, port, path));
 }
 
