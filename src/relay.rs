@@ -169,7 +169,7 @@ async fn handle_circuit(prev: TcpStream, secret: Arc<StaticSecret>, policy: Arc<
                 }
                 // Exit policy: resolve + reject private/loopback/metadata ranges.
                 let addr = policy.resolve_exit(&host, port).await?;
-                let dest = TcpStream::connect(addr).await?;
+                let dest = connect_timeout(addr).await?;
                 dest.set_nodelay(true).ok();
                 let (dest_r, dw) = dest.into_split();
                 dest_w = Some(dw);
