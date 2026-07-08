@@ -3937,7 +3937,7 @@ inline std::optional<std::string> validate_des_soccer_learning_policy_versions_v
 }
 
 inline const char* des_soccer_learning_policy_entries_table = "des_soccer_learning_policy_entries";
-inline const std::vector<std::string> des_soccer_learning_policy_entries_columns = { "id", "policy_version_id", "team", "entry_kind", "state_hash", "state_key", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "value_micros", "visits", "source_run_id", "created_at" };
+inline const std::vector<std::string> des_soccer_learning_policy_entries_columns = { "id", "policy_version_id", "team", "entry_kind", "state_hash", "state_key", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "receiver_descriptor", "value_micros", "visits", "source_run_id", "created_at" };
 inline const char* des_soccer_learning_policy_entries_select_sql = R"SQL(select
       id::text as id,
       policy_version_id::text as policy_version_id,
@@ -3950,6 +3950,7 @@ inline const char* des_soccer_learning_policy_entries_select_sql = R"SQL(select
       target_tactical_cell_id,
       target_macro_cell_id,
       target_root_cell_id,
+      receiver_descriptor,
       value_micros,
       visits,
       source_run_id::text as source_run_id,
@@ -3996,6 +3997,7 @@ struct DesSoccerLearningPolicyEntriesRow {
     int32_t target_tactical_cell_id;
     int32_t target_macro_cell_id;
     int32_t target_root_cell_id;
+    int32_t receiver_descriptor;
     int64_t value_micros;
     int32_t visits;
     std::optional<std::string> source_run_id;
@@ -4016,10 +4018,11 @@ inline DesSoccerLearningPolicyEntriesRow des_soccer_learning_policy_entries_row_
     row.target_tactical_cell_id = std::stoi(get(8));
     row.target_macro_cell_id = std::stoi(get(9));
     row.target_root_cell_id = std::stoi(get(10));
-    row.value_micros = std::stoll(get(11));
-    row.visits = std::stoi(get(12));
-    row.source_run_id = is_null(13) ? std::nullopt : std::optional<std::string>(get(13));
-    row.created_at = get(14);
+    row.receiver_descriptor = std::stoi(get(11));
+    row.value_micros = std::stoll(get(12));
+    row.visits = std::stoi(get(13));
+    row.source_run_id = is_null(14) ? std::nullopt : std::optional<std::string>(get(14));
+    row.created_at = get(15);
     return row;
 }
 inline std::optional<std::string> validate_des_soccer_learning_policy_entries_state_hash(const std::string& value) {
@@ -4045,6 +4048,10 @@ inline std::optional<std::string> validate_des_soccer_learning_policy_entries_ta
 }
 inline std::optional<std::string> validate_des_soccer_learning_policy_entries_target_root_cell_id(int32_t value) {
     if (value < -1) return std::string("des_soccer_learning_policy_entries.target_root_cell_id is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_policy_entries_receiver_descriptor(int32_t value) {
+    if (value < -1) return std::string("des_soccer_learning_policy_entries.receiver_descriptor is below the minimum");
     return std::nullopt;
 }
 inline std::optional<std::string> validate_des_soccer_learning_policy_entries_visits(int32_t value) {
@@ -4360,7 +4367,7 @@ inline std::optional<std::string> validate_des_soccer_learning_runs_transitions(
 }
 
 inline const char* des_soccer_learning_run_deltas_table = "des_soccer_learning_run_deltas";
-inline const std::vector<std::string> des_soccer_learning_run_deltas_columns = { "id", "run_id", "team", "entry_kind", "state_hash", "state_key", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "before_value_micros", "after_value_micros", "value_delta_micros", "visit_delta", "merge_weight_micros", "effective_visit_micros", "created_at" };
+inline const std::vector<std::string> des_soccer_learning_run_deltas_columns = { "id", "run_id", "team", "entry_kind", "state_hash", "state_key", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "receiver_descriptor", "before_value_micros", "after_value_micros", "value_delta_micros", "visit_delta", "merge_weight_micros", "effective_visit_micros", "created_at" };
 inline const char* des_soccer_learning_run_deltas_select_sql = R"SQL(select
       id::text as id,
       run_id::text as run_id,
@@ -4373,6 +4380,7 @@ inline const char* des_soccer_learning_run_deltas_select_sql = R"SQL(select
       target_tactical_cell_id,
       target_macro_cell_id,
       target_root_cell_id,
+      receiver_descriptor,
       before_value_micros,
       after_value_micros,
       value_delta_micros,
@@ -4422,6 +4430,7 @@ struct DesSoccerLearningRunDeltasRow {
     int32_t target_tactical_cell_id;
     int32_t target_macro_cell_id;
     int32_t target_root_cell_id;
+    int32_t receiver_descriptor;
     int64_t before_value_micros;
     int64_t after_value_micros;
     int64_t value_delta_micros;
@@ -4445,13 +4454,14 @@ inline DesSoccerLearningRunDeltasRow des_soccer_learning_run_deltas_row_of_row(c
     row.target_tactical_cell_id = std::stoi(get(8));
     row.target_macro_cell_id = std::stoi(get(9));
     row.target_root_cell_id = std::stoi(get(10));
-    row.before_value_micros = std::stoll(get(11));
-    row.after_value_micros = std::stoll(get(12));
-    row.value_delta_micros = std::stoll(get(13));
-    row.visit_delta = std::stoi(get(14));
-    row.merge_weight_micros = std::stoll(get(15));
-    row.effective_visit_micros = std::stoll(get(16));
-    row.created_at = get(17);
+    row.receiver_descriptor = std::stoi(get(11));
+    row.before_value_micros = std::stoll(get(12));
+    row.after_value_micros = std::stoll(get(13));
+    row.value_delta_micros = std::stoll(get(14));
+    row.visit_delta = std::stoi(get(15));
+    row.merge_weight_micros = std::stoll(get(16));
+    row.effective_visit_micros = std::stoll(get(17));
+    row.created_at = get(18);
     return row;
 }
 inline std::optional<std::string> validate_des_soccer_learning_run_deltas_state_hash(const std::string& value) {
@@ -4477,6 +4487,10 @@ inline std::optional<std::string> validate_des_soccer_learning_run_deltas_target
 }
 inline std::optional<std::string> validate_des_soccer_learning_run_deltas_target_root_cell_id(int32_t value) {
     if (value < -1) return std::string("des_soccer_learning_run_deltas.target_root_cell_id is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_run_deltas_receiver_descriptor(int32_t value) {
+    if (value < -1) return std::string("des_soccer_learning_run_deltas.receiver_descriptor is below the minimum");
     return std::nullopt;
 }
 inline std::optional<std::string> validate_des_soccer_learning_run_deltas_visit_delta(int32_t value) {

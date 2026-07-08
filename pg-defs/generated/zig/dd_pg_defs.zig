@@ -3728,8 +3728,8 @@ pub fn validateDesSoccerLearningPolicyVersionsVisitCount(value: i64) ?[]const u8
 }
 
 pub const des_soccer_learning_policy_entries_table: []const u8 = "des_soccer_learning_policy_entries";
-pub const des_soccer_learning_policy_entries_columns = [_][]const u8{ "id", "policy_version_id", "team", "entry_kind", "state_hash", "state_key", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "value_micros", "visits", "source_run_id", "created_at" };
-pub const des_soccer_learning_policy_entries_select_sql: []const u8 = "select\n      id::text as id,\n      policy_version_id::text as policy_version_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      value_micros,\n      visits,\n      source_run_id::text as source_run_id,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_policy_entries";
+pub const des_soccer_learning_policy_entries_columns = [_][]const u8{ "id", "policy_version_id", "team", "entry_kind", "state_hash", "state_key", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "receiver_descriptor", "value_micros", "visits", "source_run_id", "created_at" };
+pub const des_soccer_learning_policy_entries_select_sql: []const u8 = "select\n      id::text as id,\n      policy_version_id::text as policy_version_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      receiver_descriptor,\n      value_micros,\n      visits,\n      source_run_id::text as source_run_id,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_policy_entries";
 
 pub const DesSoccerLearningPolicyEntriesTeam = enum {
     home,
@@ -3779,6 +3779,7 @@ pub const DesSoccerLearningPolicyEntriesRow = struct {
     target_tactical_cell_id: i32,
     target_macro_cell_id: i32,
     target_root_cell_id: i32,
+    receiver_descriptor: i32,
     value_micros: i64,
     visits: i32,
     source_run_id: ?[]const u8,
@@ -3797,10 +3798,11 @@ pub const DesSoccerLearningPolicyEntriesRow = struct {
             .target_tactical_cell_id = @as(i32, @intCast(reader.int(8))),
             .target_macro_cell_id = @as(i32, @intCast(reader.int(9))),
             .target_root_cell_id = @as(i32, @intCast(reader.int(10))),
-            .value_micros = reader.int(11),
-            .visits = @as(i32, @intCast(reader.int(12))),
-            .source_run_id = if (reader.is_null(13)) null else reader.text(13),
-            .created_at = reader.text(14),
+            .receiver_descriptor = @as(i32, @intCast(reader.int(11))),
+            .value_micros = reader.int(12),
+            .visits = @as(i32, @intCast(reader.int(13))),
+            .source_run_id = if (reader.is_null(14)) null else reader.text(14),
+            .created_at = reader.text(15),
         };
     }
 };
@@ -3832,6 +3834,11 @@ pub fn validateDesSoccerLearningPolicyEntriesTargetMacroCellId(value: i32) ?[]co
 
 pub fn validateDesSoccerLearningPolicyEntriesTargetRootCellId(value: i32) ?[]const u8 {
     if (value < -1) return "des_soccer_learning_policy_entries.target_root_cell_id is below the minimum";
+    return null;
+}
+
+pub fn validateDesSoccerLearningPolicyEntriesReceiverDescriptor(value: i32) ?[]const u8 {
+    if (value < -1) return "des_soccer_learning_policy_entries.receiver_descriptor is below the minimum";
     return null;
 }
 
@@ -4140,8 +4147,8 @@ pub fn validateDesSoccerLearningRunsTransitions(value: i32) ?[]const u8 {
 }
 
 pub const des_soccer_learning_run_deltas_table: []const u8 = "des_soccer_learning_run_deltas";
-pub const des_soccer_learning_run_deltas_columns = [_][]const u8{ "id", "run_id", "team", "entry_kind", "state_hash", "state_key", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "before_value_micros", "after_value_micros", "value_delta_micros", "visit_delta", "merge_weight_micros", "effective_visit_micros", "created_at" };
-pub const des_soccer_learning_run_deltas_select_sql: []const u8 = "select\n      id::text as id,\n      run_id::text as run_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      before_value_micros,\n      after_value_micros,\n      value_delta_micros,\n      visit_delta,\n      merge_weight_micros,\n      effective_visit_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_run_deltas";
+pub const des_soccer_learning_run_deltas_columns = [_][]const u8{ "id", "run_id", "team", "entry_kind", "state_hash", "state_key", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "receiver_descriptor", "before_value_micros", "after_value_micros", "value_delta_micros", "visit_delta", "merge_weight_micros", "effective_visit_micros", "created_at" };
+pub const des_soccer_learning_run_deltas_select_sql: []const u8 = "select\n      id::text as id,\n      run_id::text as run_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      receiver_descriptor,\n      before_value_micros,\n      after_value_micros,\n      value_delta_micros,\n      visit_delta,\n      merge_weight_micros,\n      effective_visit_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_run_deltas";
 
 pub const DesSoccerLearningRunDeltasTeam = enum {
     home,
@@ -4191,6 +4198,7 @@ pub const DesSoccerLearningRunDeltasRow = struct {
     target_tactical_cell_id: i32,
     target_macro_cell_id: i32,
     target_root_cell_id: i32,
+    receiver_descriptor: i32,
     before_value_micros: i64,
     after_value_micros: i64,
     value_delta_micros: i64,
@@ -4212,13 +4220,14 @@ pub const DesSoccerLearningRunDeltasRow = struct {
             .target_tactical_cell_id = @as(i32, @intCast(reader.int(8))),
             .target_macro_cell_id = @as(i32, @intCast(reader.int(9))),
             .target_root_cell_id = @as(i32, @intCast(reader.int(10))),
-            .before_value_micros = reader.int(11),
-            .after_value_micros = reader.int(12),
-            .value_delta_micros = reader.int(13),
-            .visit_delta = @as(i32, @intCast(reader.int(14))),
-            .merge_weight_micros = reader.int(15),
-            .effective_visit_micros = reader.int(16),
-            .created_at = reader.text(17),
+            .receiver_descriptor = @as(i32, @intCast(reader.int(11))),
+            .before_value_micros = reader.int(12),
+            .after_value_micros = reader.int(13),
+            .value_delta_micros = reader.int(14),
+            .visit_delta = @as(i32, @intCast(reader.int(15))),
+            .merge_weight_micros = reader.int(16),
+            .effective_visit_micros = reader.int(17),
+            .created_at = reader.text(18),
         };
     }
 };
@@ -4250,6 +4259,11 @@ pub fn validateDesSoccerLearningRunDeltasTargetMacroCellId(value: i32) ?[]const 
 
 pub fn validateDesSoccerLearningRunDeltasTargetRootCellId(value: i32) ?[]const u8 {
     if (value < -1) return "des_soccer_learning_run_deltas.target_root_cell_id is below the minimum";
+    return null;
+}
+
+pub fn validateDesSoccerLearningRunDeltasReceiverDescriptor(value: i32) ?[]const u8 {
+    if (value < -1) return "des_soccer_learning_run_deltas.receiver_descriptor is below the minimum";
     return null;
 }
 

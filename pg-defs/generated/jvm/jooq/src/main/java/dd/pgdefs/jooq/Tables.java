@@ -722,6 +722,7 @@ public final class Tables {
     public static final Field<Integer> DES_SOCCER_LEARNING_POLICY_ENTRIES_TARGET_TACTICAL_CELL_ID = DSL.field(DSL.name("des_soccer_learning_policy_entries", "target_tactical_cell_id"), SQLDataType.INTEGER);
     public static final Field<Integer> DES_SOCCER_LEARNING_POLICY_ENTRIES_TARGET_MACRO_CELL_ID = DSL.field(DSL.name("des_soccer_learning_policy_entries", "target_macro_cell_id"), SQLDataType.INTEGER);
     public static final Field<Integer> DES_SOCCER_LEARNING_POLICY_ENTRIES_TARGET_ROOT_CELL_ID = DSL.field(DSL.name("des_soccer_learning_policy_entries", "target_root_cell_id"), SQLDataType.INTEGER);
+    public static final Field<Integer> DES_SOCCER_LEARNING_POLICY_ENTRIES_RECEIVER_DESCRIPTOR = DSL.field(DSL.name("des_soccer_learning_policy_entries", "receiver_descriptor"), SQLDataType.INTEGER);
     public static final Field<Long> DES_SOCCER_LEARNING_POLICY_ENTRIES_VALUE_MICROS = DSL.field(DSL.name("des_soccer_learning_policy_entries", "value_micros"), SQLDataType.BIGINT);
     public static final Field<Integer> DES_SOCCER_LEARNING_POLICY_ENTRIES_VISITS = DSL.field(DSL.name("des_soccer_learning_policy_entries", "visits"), SQLDataType.INTEGER);
     public static final Field<UUID> DES_SOCCER_LEARNING_POLICY_ENTRIES_SOURCE_RUN_ID = DSL.field(DSL.name("des_soccer_learning_policy_entries", "source_run_id"), SQLDataType.UUID);
@@ -792,6 +793,7 @@ public final class Tables {
     public static final Field<Integer> DES_SOCCER_LEARNING_RUN_DELTAS_TARGET_TACTICAL_CELL_ID = DSL.field(DSL.name("des_soccer_learning_run_deltas", "target_tactical_cell_id"), SQLDataType.INTEGER);
     public static final Field<Integer> DES_SOCCER_LEARNING_RUN_DELTAS_TARGET_MACRO_CELL_ID = DSL.field(DSL.name("des_soccer_learning_run_deltas", "target_macro_cell_id"), SQLDataType.INTEGER);
     public static final Field<Integer> DES_SOCCER_LEARNING_RUN_DELTAS_TARGET_ROOT_CELL_ID = DSL.field(DSL.name("des_soccer_learning_run_deltas", "target_root_cell_id"), SQLDataType.INTEGER);
+    public static final Field<Integer> DES_SOCCER_LEARNING_RUN_DELTAS_RECEIVER_DESCRIPTOR = DSL.field(DSL.name("des_soccer_learning_run_deltas", "receiver_descriptor"), SQLDataType.INTEGER);
     public static final Field<Long> DES_SOCCER_LEARNING_RUN_DELTAS_BEFORE_VALUE_MICROS = DSL.field(DSL.name("des_soccer_learning_run_deltas", "before_value_micros"), SQLDataType.BIGINT);
     public static final Field<Long> DES_SOCCER_LEARNING_RUN_DELTAS_AFTER_VALUE_MICROS = DSL.field(DSL.name("des_soccer_learning_run_deltas", "after_value_micros"), SQLDataType.BIGINT);
     public static final Field<Long> DES_SOCCER_LEARNING_RUN_DELTAS_VALUE_DELTA_MICROS = DSL.field(DSL.name("des_soccer_learning_run_deltas", "value_delta_micros"), SQLDataType.BIGINT);

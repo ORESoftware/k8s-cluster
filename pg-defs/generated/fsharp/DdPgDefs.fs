@@ -3410,8 +3410,8 @@ let validateDesSoccerLearningPolicyVersionsVisitCount (value: int64) : Result<in
     else Ok value
 
 let desSoccerLearningPolicyEntriesTable = "des_soccer_learning_policy_entries"
-let desSoccerLearningPolicyEntriesColumns = [ "id"; "policy_version_id"; "team"; "entry_kind"; "state_hash"; "state_key"; "action"; "target_fine_cell_id"; "target_tactical_cell_id"; "target_macro_cell_id"; "target_root_cell_id"; "value_micros"; "visits"; "source_run_id"; "created_at" ]
-let desSoccerLearningPolicyEntriesSelectSql = "select\n      id::text as id,\n      policy_version_id::text as policy_version_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      value_micros,\n      visits,\n      source_run_id::text as source_run_id,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_policy_entries"
+let desSoccerLearningPolicyEntriesColumns = [ "id"; "policy_version_id"; "team"; "entry_kind"; "state_hash"; "state_key"; "action"; "target_fine_cell_id"; "target_tactical_cell_id"; "target_macro_cell_id"; "target_root_cell_id"; "receiver_descriptor"; "value_micros"; "visits"; "source_run_id"; "created_at" ]
+let desSoccerLearningPolicyEntriesSelectSql = "select\n      id::text as id,\n      policy_version_id::text as policy_version_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      receiver_descriptor,\n      value_micros,\n      visits,\n      source_run_id::text as source_run_id,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_policy_entries"
 
 [<RequireQualifiedAccess>]
 type DesSoccerLearningPolicyEntriesTeam =
@@ -3457,6 +3457,7 @@ type DesSoccerLearningPolicyEntriesRow =
       DesSoccerLearningPolicyEntriesTargetTacticalCellId: int
       DesSoccerLearningPolicyEntriesTargetMacroCellId: int
       DesSoccerLearningPolicyEntriesTargetRootCellId: int
+      DesSoccerLearningPolicyEntriesReceiverDescriptor: int
       DesSoccerLearningPolicyEntriesValueMicros: int64
       DesSoccerLearningPolicyEntriesVisits: int
       DesSoccerLearningPolicyEntriesSourceRunId: string option
@@ -3475,10 +3476,11 @@ let desSoccerLearningPolicyEntriesRowOfRow (get: int -> string) (isNullAt: int -
       DesSoccerLearningPolicyEntriesTargetTacticalCellId = int (get 8)
       DesSoccerLearningPolicyEntriesTargetMacroCellId = int (get 9)
       DesSoccerLearningPolicyEntriesTargetRootCellId = int (get 10)
-      DesSoccerLearningPolicyEntriesValueMicros = int64 (get 11)
-      DesSoccerLearningPolicyEntriesVisits = int (get 12)
-      DesSoccerLearningPolicyEntriesSourceRunId = (if isNullAt 13 then None else Some (get 13))
-      DesSoccerLearningPolicyEntriesCreatedAt = get 14
+      DesSoccerLearningPolicyEntriesReceiverDescriptor = int (get 11)
+      DesSoccerLearningPolicyEntriesValueMicros = int64 (get 12)
+      DesSoccerLearningPolicyEntriesVisits = int (get 13)
+      DesSoccerLearningPolicyEntriesSourceRunId = (if isNullAt 14 then None else Some (get 14))
+      DesSoccerLearningPolicyEntriesCreatedAt = get 15
     }
 
 let validateDesSoccerLearningPolicyEntriesStateHash (value: string) : Result<string, string> =
@@ -3504,6 +3506,10 @@ let validateDesSoccerLearningPolicyEntriesTargetMacroCellId (value: int) : Resul
 
 let validateDesSoccerLearningPolicyEntriesTargetRootCellId (value: int) : Result<int, string> =
     if value < -1 then Error "des_soccer_learning_policy_entries.target_root_cell_id is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningPolicyEntriesReceiverDescriptor (value: int) : Result<int, string> =
+    if value < -1 then Error "des_soccer_learning_policy_entries.receiver_descriptor is below the minimum"
     else Ok value
 
 let validateDesSoccerLearningPolicyEntriesVisits (value: int) : Result<int, string> =
@@ -3783,8 +3789,8 @@ let validateDesSoccerLearningRunsTransitions (value: int) : Result<int, string> 
     else Ok value
 
 let desSoccerLearningRunDeltasTable = "des_soccer_learning_run_deltas"
-let desSoccerLearningRunDeltasColumns = [ "id"; "run_id"; "team"; "entry_kind"; "state_hash"; "state_key"; "action"; "target_fine_cell_id"; "target_tactical_cell_id"; "target_macro_cell_id"; "target_root_cell_id"; "before_value_micros"; "after_value_micros"; "value_delta_micros"; "visit_delta"; "merge_weight_micros"; "effective_visit_micros"; "created_at" ]
-let desSoccerLearningRunDeltasSelectSql = "select\n      id::text as id,\n      run_id::text as run_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      before_value_micros,\n      after_value_micros,\n      value_delta_micros,\n      visit_delta,\n      merge_weight_micros,\n      effective_visit_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_run_deltas"
+let desSoccerLearningRunDeltasColumns = [ "id"; "run_id"; "team"; "entry_kind"; "state_hash"; "state_key"; "action"; "target_fine_cell_id"; "target_tactical_cell_id"; "target_macro_cell_id"; "target_root_cell_id"; "receiver_descriptor"; "before_value_micros"; "after_value_micros"; "value_delta_micros"; "visit_delta"; "merge_weight_micros"; "effective_visit_micros"; "created_at" ]
+let desSoccerLearningRunDeltasSelectSql = "select\n      id::text as id,\n      run_id::text as run_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      receiver_descriptor,\n      before_value_micros,\n      after_value_micros,\n      value_delta_micros,\n      visit_delta,\n      merge_weight_micros,\n      effective_visit_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_run_deltas"
 
 [<RequireQualifiedAccess>]
 type DesSoccerLearningRunDeltasTeam =
@@ -3830,6 +3836,7 @@ type DesSoccerLearningRunDeltasRow =
       DesSoccerLearningRunDeltasTargetTacticalCellId: int
       DesSoccerLearningRunDeltasTargetMacroCellId: int
       DesSoccerLearningRunDeltasTargetRootCellId: int
+      DesSoccerLearningRunDeltasReceiverDescriptor: int
       DesSoccerLearningRunDeltasBeforeValueMicros: int64
       DesSoccerLearningRunDeltasAfterValueMicros: int64
       DesSoccerLearningRunDeltasValueDeltaMicros: int64
@@ -3851,13 +3858,14 @@ let desSoccerLearningRunDeltasRowOfRow (get: int -> string) (isNullAt: int -> bo
       DesSoccerLearningRunDeltasTargetTacticalCellId = int (get 8)
       DesSoccerLearningRunDeltasTargetMacroCellId = int (get 9)
       DesSoccerLearningRunDeltasTargetRootCellId = int (get 10)
-      DesSoccerLearningRunDeltasBeforeValueMicros = int64 (get 11)
-      DesSoccerLearningRunDeltasAfterValueMicros = int64 (get 12)
-      DesSoccerLearningRunDeltasValueDeltaMicros = int64 (get 13)
-      DesSoccerLearningRunDeltasVisitDelta = int (get 14)
-      DesSoccerLearningRunDeltasMergeWeightMicros = int64 (get 15)
-      DesSoccerLearningRunDeltasEffectiveVisitMicros = int64 (get 16)
-      DesSoccerLearningRunDeltasCreatedAt = get 17
+      DesSoccerLearningRunDeltasReceiverDescriptor = int (get 11)
+      DesSoccerLearningRunDeltasBeforeValueMicros = int64 (get 12)
+      DesSoccerLearningRunDeltasAfterValueMicros = int64 (get 13)
+      DesSoccerLearningRunDeltasValueDeltaMicros = int64 (get 14)
+      DesSoccerLearningRunDeltasVisitDelta = int (get 15)
+      DesSoccerLearningRunDeltasMergeWeightMicros = int64 (get 16)
+      DesSoccerLearningRunDeltasEffectiveVisitMicros = int64 (get 17)
+      DesSoccerLearningRunDeltasCreatedAt = get 18
     }
 
 let validateDesSoccerLearningRunDeltasStateHash (value: string) : Result<string, string> =
@@ -3883,6 +3891,10 @@ let validateDesSoccerLearningRunDeltasTargetMacroCellId (value: int) : Result<in
 
 let validateDesSoccerLearningRunDeltasTargetRootCellId (value: int) : Result<int, string> =
     if value < -1 then Error "des_soccer_learning_run_deltas.target_root_cell_id is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningRunDeltasReceiverDescriptor (value: int) : Result<int, string> =
+    if value < -1 then Error "des_soccer_learning_run_deltas.receiver_descriptor is below the minimum"
     else Ok value
 
 let validateDesSoccerLearningRunDeltasVisitDelta (value: int) : Result<int, string> =

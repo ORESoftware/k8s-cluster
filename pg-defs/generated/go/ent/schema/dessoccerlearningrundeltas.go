@@ -38,6 +38,7 @@ func (DesSoccerLearningRunDeltas) Fields() []ent.Field {
 		field.Int32("target_tactical_cell_id").Min(-1).Default(-1).StorageKey("target_tactical_cell_id"),
 		field.Int32("target_macro_cell_id").Min(-1).Default(-1).StorageKey("target_macro_cell_id"),
 		field.Int32("target_root_cell_id").Min(-1).Default(-1).StorageKey("target_root_cell_id"),
+		field.Int32("receiver_descriptor").Min(-1).Default(-1).StorageKey("receiver_descriptor"),
 		field.Int64("before_value_micros").Default(0).StorageKey("before_value_micros"),
 		field.Int64("after_value_micros").Default(0).StorageKey("after_value_micros"),
 		field.Int64("value_delta_micros").Default(0).StorageKey("value_delta_micros"),
@@ -50,7 +51,7 @@ func (DesSoccerLearningRunDeltas) Fields() []ent.Field {
 
 func (DesSoccerLearningRunDeltas) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("run_id", "team", "entry_kind", "state_hash", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id").Unique(),
+		index.Fields("run_id", "team", "entry_kind", "state_hash", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "receiver_descriptor").Unique(),
 		index.Fields("team", "entry_kind", "state_hash", "action"),
 	}
 }

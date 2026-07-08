@@ -3222,9 +3222,9 @@ let validate_des_soccer_learning_policy_versions_visit_count (value : int64) : (
 
 let des_soccer_learning_policy_entries_table = "des_soccer_learning_policy_entries"
 
-let des_soccer_learning_policy_entries_columns = ["id"; "policy_version_id"; "team"; "entry_kind"; "state_hash"; "state_key"; "action"; "target_fine_cell_id"; "target_tactical_cell_id"; "target_macro_cell_id"; "target_root_cell_id"; "value_micros"; "visits"; "source_run_id"; "created_at"]
+let des_soccer_learning_policy_entries_columns = ["id"; "policy_version_id"; "team"; "entry_kind"; "state_hash"; "state_key"; "action"; "target_fine_cell_id"; "target_tactical_cell_id"; "target_macro_cell_id"; "target_root_cell_id"; "receiver_descriptor"; "value_micros"; "visits"; "source_run_id"; "created_at"]
 
-let des_soccer_learning_policy_entries_select_sql = "select\n      id::text as id,\n      policy_version_id::text as policy_version_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      value_micros,\n      visits,\n      source_run_id::text as source_run_id,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_policy_entries"
+let des_soccer_learning_policy_entries_select_sql = "select\n      id::text as id,\n      policy_version_id::text as policy_version_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      receiver_descriptor,\n      value_micros,\n      visits,\n      source_run_id::text as source_run_id,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_policy_entries"
 
 type des_soccer_learning_policy_entries_team = [ `Home | `Away ]
 
@@ -3264,6 +3264,7 @@ type des_soccer_learning_policy_entries_row = {
   des_soccer_learning_policy_entries_target_tactical_cell_id : int;
   des_soccer_learning_policy_entries_target_macro_cell_id : int;
   des_soccer_learning_policy_entries_target_root_cell_id : int;
+  des_soccer_learning_policy_entries_receiver_descriptor : int;
   des_soccer_learning_policy_entries_value_micros : int64;
   des_soccer_learning_policy_entries_visits : int;
   des_soccer_learning_policy_entries_source_run_id : string option;
@@ -3283,10 +3284,11 @@ let des_soccer_learning_policy_entries_row_of_row ~(get : int -> string) ~(is_nu
     des_soccer_learning_policy_entries_target_tactical_cell_id = int_of_string (get 8);
     des_soccer_learning_policy_entries_target_macro_cell_id = int_of_string (get 9);
     des_soccer_learning_policy_entries_target_root_cell_id = int_of_string (get 10);
-    des_soccer_learning_policy_entries_value_micros = Int64.of_string (get 11);
-    des_soccer_learning_policy_entries_visits = int_of_string (get 12);
-    des_soccer_learning_policy_entries_source_run_id = (if is_null 13 then None else Some (get 13));
-    des_soccer_learning_policy_entries_created_at = get 14;
+    des_soccer_learning_policy_entries_receiver_descriptor = int_of_string (get 11);
+    des_soccer_learning_policy_entries_value_micros = Int64.of_string (get 12);
+    des_soccer_learning_policy_entries_visits = int_of_string (get 13);
+    des_soccer_learning_policy_entries_source_run_id = (if is_null 14 then None else Some (get 14));
+    des_soccer_learning_policy_entries_created_at = get 15;
   }
 
 let validate_des_soccer_learning_policy_entries_state_hash (value : string) : (string, string) result =
@@ -3311,6 +3313,10 @@ let validate_des_soccer_learning_policy_entries_target_macro_cell_id (value : in
 
 let validate_des_soccer_learning_policy_entries_target_root_cell_id (value : int) : (int, string) result =
   if value < -1 then Error "des_soccer_learning_policy_entries.target_root_cell_id is below the minimum"
+  else Ok value
+
+let validate_des_soccer_learning_policy_entries_receiver_descriptor (value : int) : (int, string) result =
+  if value < -1 then Error "des_soccer_learning_policy_entries.receiver_descriptor is below the minimum"
   else Ok value
 
 let validate_des_soccer_learning_policy_entries_visits (value : int) : (int, string) result =
@@ -3573,9 +3579,9 @@ let validate_des_soccer_learning_runs_transitions (value : int) : (int, string) 
 
 let des_soccer_learning_run_deltas_table = "des_soccer_learning_run_deltas"
 
-let des_soccer_learning_run_deltas_columns = ["id"; "run_id"; "team"; "entry_kind"; "state_hash"; "state_key"; "action"; "target_fine_cell_id"; "target_tactical_cell_id"; "target_macro_cell_id"; "target_root_cell_id"; "before_value_micros"; "after_value_micros"; "value_delta_micros"; "visit_delta"; "merge_weight_micros"; "effective_visit_micros"; "created_at"]
+let des_soccer_learning_run_deltas_columns = ["id"; "run_id"; "team"; "entry_kind"; "state_hash"; "state_key"; "action"; "target_fine_cell_id"; "target_tactical_cell_id"; "target_macro_cell_id"; "target_root_cell_id"; "receiver_descriptor"; "before_value_micros"; "after_value_micros"; "value_delta_micros"; "visit_delta"; "merge_weight_micros"; "effective_visit_micros"; "created_at"]
 
-let des_soccer_learning_run_deltas_select_sql = "select\n      id::text as id,\n      run_id::text as run_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      before_value_micros,\n      after_value_micros,\n      value_delta_micros,\n      visit_delta,\n      merge_weight_micros,\n      effective_visit_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_run_deltas"
+let des_soccer_learning_run_deltas_select_sql = "select\n      id::text as id,\n      run_id::text as run_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      receiver_descriptor,\n      before_value_micros,\n      after_value_micros,\n      value_delta_micros,\n      visit_delta,\n      merge_weight_micros,\n      effective_visit_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_run_deltas"
 
 type des_soccer_learning_run_deltas_team = [ `Home | `Away ]
 
@@ -3615,6 +3621,7 @@ type des_soccer_learning_run_deltas_row = {
   des_soccer_learning_run_deltas_target_tactical_cell_id : int;
   des_soccer_learning_run_deltas_target_macro_cell_id : int;
   des_soccer_learning_run_deltas_target_root_cell_id : int;
+  des_soccer_learning_run_deltas_receiver_descriptor : int;
   des_soccer_learning_run_deltas_before_value_micros : int64;
   des_soccer_learning_run_deltas_after_value_micros : int64;
   des_soccer_learning_run_deltas_value_delta_micros : int64;
@@ -3637,13 +3644,14 @@ let des_soccer_learning_run_deltas_row_of_row ~(get : int -> string) ~is_null:(_
     des_soccer_learning_run_deltas_target_tactical_cell_id = int_of_string (get 8);
     des_soccer_learning_run_deltas_target_macro_cell_id = int_of_string (get 9);
     des_soccer_learning_run_deltas_target_root_cell_id = int_of_string (get 10);
-    des_soccer_learning_run_deltas_before_value_micros = Int64.of_string (get 11);
-    des_soccer_learning_run_deltas_after_value_micros = Int64.of_string (get 12);
-    des_soccer_learning_run_deltas_value_delta_micros = Int64.of_string (get 13);
-    des_soccer_learning_run_deltas_visit_delta = int_of_string (get 14);
-    des_soccer_learning_run_deltas_merge_weight_micros = Int64.of_string (get 15);
-    des_soccer_learning_run_deltas_effective_visit_micros = Int64.of_string (get 16);
-    des_soccer_learning_run_deltas_created_at = get 17;
+    des_soccer_learning_run_deltas_receiver_descriptor = int_of_string (get 11);
+    des_soccer_learning_run_deltas_before_value_micros = Int64.of_string (get 12);
+    des_soccer_learning_run_deltas_after_value_micros = Int64.of_string (get 13);
+    des_soccer_learning_run_deltas_value_delta_micros = Int64.of_string (get 14);
+    des_soccer_learning_run_deltas_visit_delta = int_of_string (get 15);
+    des_soccer_learning_run_deltas_merge_weight_micros = Int64.of_string (get 16);
+    des_soccer_learning_run_deltas_effective_visit_micros = Int64.of_string (get 17);
+    des_soccer_learning_run_deltas_created_at = get 18;
   }
 
 let validate_des_soccer_learning_run_deltas_state_hash (value : string) : (string, string) result =
@@ -3668,6 +3676,10 @@ let validate_des_soccer_learning_run_deltas_target_macro_cell_id (value : int) :
 
 let validate_des_soccer_learning_run_deltas_target_root_cell_id (value : int) : (int, string) result =
   if value < -1 then Error "des_soccer_learning_run_deltas.target_root_cell_id is below the minimum"
+  else Ok value
+
+let validate_des_soccer_learning_run_deltas_receiver_descriptor (value : int) : (int, string) result =
+  if value < -1 then Error "des_soccer_learning_run_deltas.receiver_descriptor is below the minimum"
   else Ok value
 
 let validate_des_soccer_learning_run_deltas_visit_delta (value : int) : (int, string) result =

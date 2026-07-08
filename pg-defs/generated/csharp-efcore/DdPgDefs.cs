@@ -2500,6 +2500,10 @@ public class DesSoccerLearningPolicyEntries
     [Range(-1, 2147483647)]
     public int TargetRootCellId { get; set; }
 
+    [Column("receiver_descriptor")]
+    [Range(-1, 2147483647)]
+    public int ReceiverDescriptor { get; set; }
+
     [Column("value_micros")]
     public long ValueMicros { get; set; }
 
@@ -2750,6 +2754,10 @@ public class DesSoccerLearningRunDeltas
     [Column("target_root_cell_id")]
     [Range(-1, 2147483647)]
     public int TargetRootCellId { get; set; }
+
+    [Column("receiver_descriptor")]
+    [Range(-1, 2147483647)]
+    public int ReceiverDescriptor { get; set; }
 
     [Column("before_value_micros")]
     public long BeforeValueMicros { get; set; }

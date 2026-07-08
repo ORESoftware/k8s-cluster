@@ -2961,10 +2961,10 @@ desSoccerLearningPolicyEntriesTable :: Text
 desSoccerLearningPolicyEntriesTable = "des_soccer_learning_policy_entries"
 
 desSoccerLearningPolicyEntriesColumns :: [Text]
-desSoccerLearningPolicyEntriesColumns = ["id", "policy_version_id", "team", "entry_kind", "state_hash", "state_key", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "value_micros", "visits", "source_run_id", "created_at"]
+desSoccerLearningPolicyEntriesColumns = ["id", "policy_version_id", "team", "entry_kind", "state_hash", "state_key", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "receiver_descriptor", "value_micros", "visits", "source_run_id", "created_at"]
 
 desSoccerLearningPolicyEntriesSelectSql :: Text
-desSoccerLearningPolicyEntriesSelectSql = "select\n      id::text as id,\n      policy_version_id::text as policy_version_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      value_micros,\n      visits,\n      source_run_id::text as source_run_id,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_policy_entries"
+desSoccerLearningPolicyEntriesSelectSql = "select\n      id::text as id,\n      policy_version_id::text as policy_version_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      receiver_descriptor,\n      value_micros,\n      visits,\n      source_run_id::text as source_run_id,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_policy_entries"
 
 data DesSoccerLearningPolicyEntriesTeam = DesSoccerLearningPolicyEntriesTeamHome | DesSoccerLearningPolicyEntriesTeamAway
   deriving (Eq, Show)
@@ -3006,6 +3006,7 @@ data DesSoccerLearningPolicyEntriesRow = DesSoccerLearningPolicyEntriesRow
   , desSoccerLearningPolicyEntriesTargetTacticalCellId :: Int
   , desSoccerLearningPolicyEntriesTargetMacroCellId :: Int
   , desSoccerLearningPolicyEntriesTargetRootCellId :: Int
+  , desSoccerLearningPolicyEntriesReceiverDescriptor :: Int
   , desSoccerLearningPolicyEntriesValueMicros :: Int
   , desSoccerLearningPolicyEntriesVisits :: Int
   , desSoccerLearningPolicyEntriesSourceRunId :: (Maybe Text)
@@ -3013,7 +3014,7 @@ data DesSoccerLearningPolicyEntriesRow = DesSoccerLearningPolicyEntriesRow
   } deriving (Eq, Show)
 
 instance FromRow DesSoccerLearningPolicyEntriesRow where
-  fromRow = DesSoccerLearningPolicyEntriesRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+  fromRow = DesSoccerLearningPolicyEntriesRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
 
 validateDesSoccerLearningPolicyEntriesStateHash :: Text -> Either Text Text
 validateDesSoccerLearningPolicyEntriesStateHash value
@@ -3043,6 +3044,11 @@ validateDesSoccerLearningPolicyEntriesTargetMacroCellId value
 validateDesSoccerLearningPolicyEntriesTargetRootCellId :: Int -> Either Text Int
 validateDesSoccerLearningPolicyEntriesTargetRootCellId value
   | value < -1 = Left "des_soccer_learning_policy_entries.target_root_cell_id is below the minimum"
+  | otherwise = Right value
+
+validateDesSoccerLearningPolicyEntriesReceiverDescriptor :: Int -> Either Text Int
+validateDesSoccerLearningPolicyEntriesReceiverDescriptor value
+  | value < -1 = Left "des_soccer_learning_policy_entries.receiver_descriptor is below the minimum"
   | otherwise = Right value
 
 validateDesSoccerLearningPolicyEntriesVisits :: Int -> Either Text Int
@@ -3284,10 +3290,10 @@ desSoccerLearningRunDeltasTable :: Text
 desSoccerLearningRunDeltasTable = "des_soccer_learning_run_deltas"
 
 desSoccerLearningRunDeltasColumns :: [Text]
-desSoccerLearningRunDeltasColumns = ["id", "run_id", "team", "entry_kind", "state_hash", "state_key", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "before_value_micros", "after_value_micros", "value_delta_micros", "visit_delta", "merge_weight_micros", "effective_visit_micros", "created_at"]
+desSoccerLearningRunDeltasColumns = ["id", "run_id", "team", "entry_kind", "state_hash", "state_key", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "receiver_descriptor", "before_value_micros", "after_value_micros", "value_delta_micros", "visit_delta", "merge_weight_micros", "effective_visit_micros", "created_at"]
 
 desSoccerLearningRunDeltasSelectSql :: Text
-desSoccerLearningRunDeltasSelectSql = "select\n      id::text as id,\n      run_id::text as run_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      before_value_micros,\n      after_value_micros,\n      value_delta_micros,\n      visit_delta,\n      merge_weight_micros,\n      effective_visit_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_run_deltas"
+desSoccerLearningRunDeltasSelectSql = "select\n      id::text as id,\n      run_id::text as run_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      receiver_descriptor,\n      before_value_micros,\n      after_value_micros,\n      value_delta_micros,\n      visit_delta,\n      merge_weight_micros,\n      effective_visit_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_run_deltas"
 
 data DesSoccerLearningRunDeltasTeam = DesSoccerLearningRunDeltasTeamHome | DesSoccerLearningRunDeltasTeamAway
   deriving (Eq, Show)
@@ -3329,6 +3335,7 @@ data DesSoccerLearningRunDeltasRow = DesSoccerLearningRunDeltasRow
   , desSoccerLearningRunDeltasTargetTacticalCellId :: Int
   , desSoccerLearningRunDeltasTargetMacroCellId :: Int
   , desSoccerLearningRunDeltasTargetRootCellId :: Int
+  , desSoccerLearningRunDeltasReceiverDescriptor :: Int
   , desSoccerLearningRunDeltasBeforeValueMicros :: Int
   , desSoccerLearningRunDeltasAfterValueMicros :: Int
   , desSoccerLearningRunDeltasValueDeltaMicros :: Int
@@ -3339,7 +3346,7 @@ data DesSoccerLearningRunDeltasRow = DesSoccerLearningRunDeltasRow
   } deriving (Eq, Show)
 
 instance FromRow DesSoccerLearningRunDeltasRow where
-  fromRow = DesSoccerLearningRunDeltasRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+  fromRow = DesSoccerLearningRunDeltasRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
 
 validateDesSoccerLearningRunDeltasStateHash :: Text -> Either Text Text
 validateDesSoccerLearningRunDeltasStateHash value
@@ -3369,6 +3376,11 @@ validateDesSoccerLearningRunDeltasTargetMacroCellId value
 validateDesSoccerLearningRunDeltasTargetRootCellId :: Int -> Either Text Int
 validateDesSoccerLearningRunDeltasTargetRootCellId value
   | value < -1 = Left "des_soccer_learning_run_deltas.target_root_cell_id is below the minimum"
+  | otherwise = Right value
+
+validateDesSoccerLearningRunDeltasReceiverDescriptor :: Int -> Either Text Int
+validateDesSoccerLearningRunDeltasReceiverDescriptor value
+  | value < -1 = Left "des_soccer_learning_run_deltas.receiver_descriptor is below the minimum"
   | otherwise = Right value
 
 validateDesSoccerLearningRunDeltasVisitDelta :: Int -> Either Text Int

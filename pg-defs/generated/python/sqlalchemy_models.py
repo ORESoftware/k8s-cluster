@@ -3828,8 +3828,9 @@ class DesSoccerLearningPolicyEntries(Base):
         CheckConstraint("target_tactical_cell_id >= -1", name="des_soccer_learning_policy_entries_target_tactical_chk"),
         CheckConstraint("target_macro_cell_id >= -1", name="des_soccer_learning_policy_entries_target_macro_chk"),
         CheckConstraint("target_root_cell_id >= -1", name="des_soccer_learning_policy_entries_target_root_chk"),
+        CheckConstraint("receiver_descriptor >= -1", name="des_soccer_learning_policy_entries_receiver_descriptor_chk"),
         CheckConstraint("visits >= 0", name="des_soccer_learning_policy_entries_visits_chk"),
-        Index("des_soccer_learning_policy_entries_key_uq", "policy_version_id", "team", "entry_kind", "state_hash", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", unique=True),
+        Index("des_soccer_learning_policy_entries_key_uq", "policy_version_id", "team", "entry_kind", "state_hash", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "receiver_descriptor", unique=True),
         Index("des_soccer_learning_policy_entries_lookup_idx", "policy_version_id", "team", "entry_kind", "state_hash"),
     )
 
@@ -3844,6 +3845,7 @@ class DesSoccerLearningPolicyEntries(Base):
     target_tactical_cell_id: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("-1"))
     target_macro_cell_id: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("-1"))
     target_root_cell_id: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("-1"))
+    receiver_descriptor: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("-1"))
     value_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False)
     visits: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
     source_run_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
@@ -3863,6 +3865,7 @@ class DesSoccerLearningPolicyEntriesRow(BaseModel):
     targetTacticalCellId: int = Field(..., ge=-1)
     targetMacroCellId: int = Field(..., ge=-1)
     targetRootCellId: int = Field(..., ge=-1)
+    receiverDescriptor: int = Field(..., ge=-1)
     valueMicros: int
     visits: int = Field(..., ge=0)
     sourceRunId: UUID | None = None
@@ -3889,6 +3892,7 @@ class DesSoccerLearningPolicyEntriesInsert(BaseModel):
     targetTacticalCellId: int | None = Field(-1, ge=-1)
     targetMacroCellId: int | None = Field(-1, ge=-1)
     targetRootCellId: int | None = Field(-1, ge=-1)
+    receiverDescriptor: int | None = Field(-1, ge=-1)
     valueMicros: int
     visits: int | None = Field(0, ge=0)
     sourceRunId: UUID | None = None
@@ -4172,10 +4176,11 @@ class DesSoccerLearningRunDeltas(Base):
         CheckConstraint("target_tactical_cell_id >= -1", name="des_soccer_learning_run_deltas_target_tactical_chk"),
         CheckConstraint("target_macro_cell_id >= -1", name="des_soccer_learning_run_deltas_target_macro_chk"),
         CheckConstraint("target_root_cell_id >= -1", name="des_soccer_learning_run_deltas_target_root_chk"),
+        CheckConstraint("receiver_descriptor >= -1", name="des_soccer_learning_run_deltas_receiver_descriptor_chk"),
         CheckConstraint("visit_delta > 0", name="des_soccer_learning_run_deltas_visit_delta_chk"),
         CheckConstraint("merge_weight_micros >= 0", name="des_soccer_learning_run_deltas_merge_weight_chk"),
         CheckConstraint("effective_visit_micros >= 0", name="des_soccer_learning_run_deltas_effective_visit_chk"),
-        Index("des_soccer_learning_run_deltas_key_uq", "run_id", "team", "entry_kind", "state_hash", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", unique=True),
+        Index("des_soccer_learning_run_deltas_key_uq", "run_id", "team", "entry_kind", "state_hash", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "receiver_descriptor", unique=True),
         Index("des_soccer_learning_run_deltas_merge_idx", "team", "entry_kind", "state_hash", "action"),
     )
 
@@ -4190,6 +4195,7 @@ class DesSoccerLearningRunDeltas(Base):
     target_tactical_cell_id: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("-1"))
     target_macro_cell_id: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("-1"))
     target_root_cell_id: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("-1"))
+    receiver_descriptor: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("-1"))
     before_value_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
     after_value_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
     value_delta_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
@@ -4212,6 +4218,7 @@ class DesSoccerLearningRunDeltasRow(BaseModel):
     targetTacticalCellId: int = Field(..., ge=-1)
     targetMacroCellId: int = Field(..., ge=-1)
     targetRootCellId: int = Field(..., ge=-1)
+    receiverDescriptor: int = Field(..., ge=-1)
     beforeValueMicros: int
     afterValueMicros: int
     valueDeltaMicros: int
@@ -4241,6 +4248,7 @@ class DesSoccerLearningRunDeltasInsert(BaseModel):
     targetTacticalCellId: int | None = Field(-1, ge=-1)
     targetMacroCellId: int | None = Field(-1, ge=-1)
     targetRootCellId: int | None = Field(-1, ge=-1)
+    receiverDescriptor: int | None = Field(-1, ge=-1)
     beforeValueMicros: int | None = 0
     afterValueMicros: int | None = 0
     valueDeltaMicros: int | None = 0

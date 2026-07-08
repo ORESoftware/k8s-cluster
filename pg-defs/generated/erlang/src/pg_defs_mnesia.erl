@@ -45,10 +45,10 @@
 -record(presence_consumer_checkpoints, {consumer_id, last_seq, updated_at}).
 -record(des_soccer_learning_experiments, {id, slug, display_name, description, status, config, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by}).
 -record(des_soccer_learning_policy_versions, {id, experiment_id, parent_policy_version_id, generation, version_label, source_kind, status, options, config, lineage, metrics, entry_count, target_entry_count, visit_count, fitness_micros, branch_key, retention_kind, full_entries_retained, full_entries_pruned_at, created_at, updated_at, created_by, updated_by}).
--record(des_soccer_learning_policy_entries, {id, policy_version_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, value_micros, visits, source_run_id, created_at}).
+-record(des_soccer_learning_policy_entries, {id, policy_version_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, receiver_descriptor, value_micros, visits, source_run_id, created_at}).
 -record(des_soccer_learning_jobs, {id, experiment_id, base_policy_version_id, spawn_strategy, status, priority, seed, attempt, max_attempts, lease_owner, lease_expires_at, started_at, finished_at, config, runner_config, result_run_id, error, created_at, updated_at}).
 -record(des_soccer_learning_runs, {id, job_id, experiment_id, base_policy_version_id, output_policy_version_id, runner_id, seed, episode_index, status, score_home, score_away, home_goal_diff, away_goal_diff, home_outcome, away_outcome, home_merge_weight_micros, away_merge_weight_micros, fitness_micros, duration_ticks, simulated_seconds_micros, elapsed_millis, transitions, summary, stats, error, created_at, updated_at}).
--record(des_soccer_learning_run_deltas, {id, run_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, before_value_micros, after_value_micros, value_delta_micros, visit_delta, merge_weight_micros, effective_visit_micros, created_at}).
+-record(des_soccer_learning_run_deltas, {id, run_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, receiver_descriptor, before_value_micros, after_value_micros, value_delta_micros, visit_delta, merge_weight_micros, effective_visit_micros, created_at}).
 -record(des_soccer_learning_merge_events, {id, experiment_id, base_policy_version_id, output_policy_version_id, strategy, input_run_count, input_delta_count, decay_micros, metrics, created_at}).
 -record(des_soccer_tournaments, {id, experiment_id, tournament_date, seed, learning_mode, format, team_count, match_count, matches_played, champion_team_id, runner_up_team_id, third_place_team_id, wall_time_seconds, status, created_at, updated_at, finished_at}).
 -record(des_soccer_tournament_matches, {id, match_index, stage, home_team_id, away_team_id, home_goals, away_goals, shootout_winner_team_id, home_training_steps, away_training_steps, recorded_at}).
@@ -643,10 +643,10 @@ des_soccer_learning_policy_versions_table_def() ->
         {disc_copies, [node()]}
     ].
 
-des_soccer_learning_policy_entries_attributes() -> ['id', 'policy_version_id', 'team', 'entry_kind', 'state_hash', 'state_key', 'action', 'target_fine_cell_id', 'target_tactical_cell_id', 'target_macro_cell_id', 'target_root_cell_id', 'value_micros', 'visits', 'source_run_id', 'created_at'].
+des_soccer_learning_policy_entries_attributes() -> ['id', 'policy_version_id', 'team', 'entry_kind', 'state_hash', 'state_key', 'action', 'target_fine_cell_id', 'target_tactical_cell_id', 'target_macro_cell_id', 'target_root_cell_id', 'receiver_descriptor', 'value_micros', 'visits', 'source_run_id', 'created_at'].
 
 des_soccer_learning_policy_entries_record_info() ->
-    {des_soccer_learning_policy_entries, 15, des_soccer_learning_policy_entries_attributes()}.
+    {des_soccer_learning_policy_entries, 16, des_soccer_learning_policy_entries_attributes()}.
 
 des_soccer_learning_policy_entries_table_def() ->
     [
@@ -682,10 +682,10 @@ des_soccer_learning_runs_table_def() ->
         {disc_copies, [node()]}
     ].
 
-des_soccer_learning_run_deltas_attributes() -> ['id', 'run_id', 'team', 'entry_kind', 'state_hash', 'state_key', 'action', 'target_fine_cell_id', 'target_tactical_cell_id', 'target_macro_cell_id', 'target_root_cell_id', 'before_value_micros', 'after_value_micros', 'value_delta_micros', 'visit_delta', 'merge_weight_micros', 'effective_visit_micros', 'created_at'].
+des_soccer_learning_run_deltas_attributes() -> ['id', 'run_id', 'team', 'entry_kind', 'state_hash', 'state_key', 'action', 'target_fine_cell_id', 'target_tactical_cell_id', 'target_macro_cell_id', 'target_root_cell_id', 'receiver_descriptor', 'before_value_micros', 'after_value_micros', 'value_delta_micros', 'visit_delta', 'merge_weight_micros', 'effective_visit_micros', 'created_at'].
 
 des_soccer_learning_run_deltas_record_info() ->
-    {des_soccer_learning_run_deltas, 18, des_soccer_learning_run_deltas_attributes()}.
+    {des_soccer_learning_run_deltas, 19, des_soccer_learning_run_deltas_attributes()}.
 
 des_soccer_learning_run_deltas_table_def() ->
     [

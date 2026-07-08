@@ -1193,8 +1193,8 @@ class DesSoccerLearningPolicyEntries extends Model
     public $incrementing = false;
     protected $keyType = 'string';
     public $timestamps = false;
-    protected $fillable = ['policy_version_id', 'team', 'entry_kind', 'state_hash', 'state_key', 'action', 'target_fine_cell_id', 'target_tactical_cell_id', 'target_macro_cell_id', 'target_root_cell_id', 'value_micros', 'visits', 'source_run_id', 'created_at'];
-    protected $casts = ['state_key' => 'array', 'target_fine_cell_id' => 'integer', 'target_tactical_cell_id' => 'integer', 'target_macro_cell_id' => 'integer', 'target_root_cell_id' => 'integer', 'value_micros' => 'integer', 'visits' => 'integer', 'created_at' => 'datetime'];
+    protected $fillable = ['policy_version_id', 'team', 'entry_kind', 'state_hash', 'state_key', 'action', 'target_fine_cell_id', 'target_tactical_cell_id', 'target_macro_cell_id', 'target_root_cell_id', 'receiver_descriptor', 'value_micros', 'visits', 'source_run_id', 'created_at'];
+    protected $casts = ['state_key' => 'array', 'target_fine_cell_id' => 'integer', 'target_tactical_cell_id' => 'integer', 'target_macro_cell_id' => 'integer', 'target_root_cell_id' => 'integer', 'receiver_descriptor' => 'integer', 'value_micros' => 'integer', 'visits' => 'integer', 'created_at' => 'datetime'];
 
     /** @return array<string, array<int, string>> */
     public static function rules(): array
@@ -1210,6 +1210,7 @@ class DesSoccerLearningPolicyEntries extends Model
             'target_tactical_cell_id' => ['nullable', 'integer', 'min:-1'],
             'target_macro_cell_id' => ['nullable', 'integer', 'min:-1'],
             'target_root_cell_id' => ['nullable', 'integer', 'min:-1'],
+            'receiver_descriptor' => ['nullable', 'integer', 'min:-1'],
             'value_micros' => ['required', 'integer'],
             'visits' => ['nullable', 'integer', 'min:0'],
             'source_run_id' => ['nullable', 'uuid'],
@@ -1300,8 +1301,8 @@ class DesSoccerLearningRunDeltas extends Model
     public $incrementing = false;
     protected $keyType = 'string';
     public $timestamps = false;
-    protected $fillable = ['run_id', 'team', 'entry_kind', 'state_hash', 'state_key', 'action', 'target_fine_cell_id', 'target_tactical_cell_id', 'target_macro_cell_id', 'target_root_cell_id', 'before_value_micros', 'after_value_micros', 'value_delta_micros', 'visit_delta', 'merge_weight_micros', 'effective_visit_micros', 'created_at'];
-    protected $casts = ['state_key' => 'array', 'target_fine_cell_id' => 'integer', 'target_tactical_cell_id' => 'integer', 'target_macro_cell_id' => 'integer', 'target_root_cell_id' => 'integer', 'before_value_micros' => 'integer', 'after_value_micros' => 'integer', 'value_delta_micros' => 'integer', 'visit_delta' => 'integer', 'merge_weight_micros' => 'integer', 'effective_visit_micros' => 'integer', 'created_at' => 'datetime'];
+    protected $fillable = ['run_id', 'team', 'entry_kind', 'state_hash', 'state_key', 'action', 'target_fine_cell_id', 'target_tactical_cell_id', 'target_macro_cell_id', 'target_root_cell_id', 'receiver_descriptor', 'before_value_micros', 'after_value_micros', 'value_delta_micros', 'visit_delta', 'merge_weight_micros', 'effective_visit_micros', 'created_at'];
+    protected $casts = ['state_key' => 'array', 'target_fine_cell_id' => 'integer', 'target_tactical_cell_id' => 'integer', 'target_macro_cell_id' => 'integer', 'target_root_cell_id' => 'integer', 'receiver_descriptor' => 'integer', 'before_value_micros' => 'integer', 'after_value_micros' => 'integer', 'value_delta_micros' => 'integer', 'visit_delta' => 'integer', 'merge_weight_micros' => 'integer', 'effective_visit_micros' => 'integer', 'created_at' => 'datetime'];
 
     /** @return array<string, array<int, string>> */
     public static function rules(): array
@@ -1317,6 +1318,7 @@ class DesSoccerLearningRunDeltas extends Model
             'target_tactical_cell_id' => ['nullable', 'integer', 'min:-1'],
             'target_macro_cell_id' => ['nullable', 'integer', 'min:-1'],
             'target_root_cell_id' => ['nullable', 'integer', 'min:-1'],
+            'receiver_descriptor' => ['nullable', 'integer', 'min:-1'],
             'before_value_micros' => ['nullable', 'integer'],
             'after_value_micros' => ['nullable', 'integer'],
             'value_delta_micros' => ['nullable', 'integer'],

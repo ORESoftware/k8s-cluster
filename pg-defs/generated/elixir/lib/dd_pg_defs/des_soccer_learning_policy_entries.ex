@@ -23,13 +23,14 @@ defmodule DdPgDefs.DesSoccerLearningPolicyEntries do
     field :target_tactical_cell_id, :integer, default: -1
     field :target_macro_cell_id, :integer, default: -1
     field :target_root_cell_id, :integer, default: -1
+    field :receiver_descriptor, :integer, default: -1
     field :value_micros, :integer
     field :visits, :integer, default: 0
     field :source_run_id, :binary_id
   end
 
   @required_fields ~w(policy_version_id team entry_kind state_hash state_key action value_micros)a
-  @optional_fields ~w(target_fine_cell_id target_tactical_cell_id target_macro_cell_id target_root_cell_id visits source_run_id)a
+  @optional_fields ~w(target_fine_cell_id target_tactical_cell_id target_macro_cell_id target_root_cell_id receiver_descriptor visits source_run_id)a
 
   @doc "Builds an Ecto changeset enforcing every constraint exposed in schema.sql."
   def changeset(struct, attrs) do
@@ -45,6 +46,7 @@ defmodule DdPgDefs.DesSoccerLearningPolicyEntries do
     |> validate_number(:target_tactical_cell_id, greater_than_or_equal_to: -1)
     |> validate_number(:target_macro_cell_id, greater_than_or_equal_to: -1)
     |> validate_number(:target_root_cell_id, greater_than_or_equal_to: -1)
+    |> validate_number(:receiver_descriptor, greater_than_or_equal_to: -1)
     |> validate_number(:visits, greater_than_or_equal_to: 0)
   end
 end

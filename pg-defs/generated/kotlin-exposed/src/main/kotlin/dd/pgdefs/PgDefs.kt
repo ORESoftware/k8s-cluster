@@ -796,6 +796,7 @@ object DesSoccerLearningPolicyEntries : Table("des_soccer_learning_policy_entrie
     val targetTacticalCellId = integer("target_tactical_cell_id")
     val targetMacroCellId = integer("target_macro_cell_id")
     val targetRootCellId = integer("target_root_cell_id")
+    val receiverDescriptor = integer("receiver_descriptor")
     val valueMicros = long("value_micros")
     val visits = integer("visits")
     val sourceRunId = uuid("source_run_id").nullable()
@@ -872,6 +873,7 @@ object DesSoccerLearningRunDeltas : Table("des_soccer_learning_run_deltas") {
     val targetTacticalCellId = integer("target_tactical_cell_id")
     val targetMacroCellId = integer("target_macro_cell_id")
     val targetRootCellId = integer("target_root_cell_id")
+    val receiverDescriptor = integer("receiver_descriptor")
     val beforeValueMicros = long("before_value_micros")
     val afterValueMicros = long("after_value_micros")
     val valueDeltaMicros = long("value_delta_micros")
@@ -3713,6 +3715,7 @@ data class DesSoccerLearningPolicyEntriesRow(
     val targetTacticalCellId: Int,
     val targetMacroCellId: Int,
     val targetRootCellId: Int,
+    val receiverDescriptor: Int,
     val valueMicros: Long,
     val visits: Int,
     val sourceRunId: UUID?,
@@ -3731,6 +3734,7 @@ fun toDesSoccerLearningPolicyEntriesRow(row: ResultRow): DesSoccerLearningPolicy
     row[DesSoccerLearningPolicyEntries.targetTacticalCellId],
     row[DesSoccerLearningPolicyEntries.targetMacroCellId],
     row[DesSoccerLearningPolicyEntries.targetRootCellId],
+    row[DesSoccerLearningPolicyEntries.receiverDescriptor],
     row[DesSoccerLearningPolicyEntries.valueMicros],
     row[DesSoccerLearningPolicyEntries.visits],
     row[DesSoccerLearningPolicyEntries.sourceRunId],
@@ -3853,6 +3857,7 @@ data class DesSoccerLearningRunDeltasRow(
     val targetTacticalCellId: Int,
     val targetMacroCellId: Int,
     val targetRootCellId: Int,
+    val receiverDescriptor: Int,
     val beforeValueMicros: Long,
     val afterValueMicros: Long,
     val valueDeltaMicros: Long,
@@ -3874,6 +3879,7 @@ fun toDesSoccerLearningRunDeltasRow(row: ResultRow): DesSoccerLearningRunDeltasR
     row[DesSoccerLearningRunDeltas.targetTacticalCellId],
     row[DesSoccerLearningRunDeltas.targetMacroCellId],
     row[DesSoccerLearningRunDeltas.targetRootCellId],
+    row[DesSoccerLearningRunDeltas.receiverDescriptor],
     row[DesSoccerLearningRunDeltas.beforeValueMicros],
     row[DesSoccerLearningRunDeltas.afterValueMicros],
     row[DesSoccerLearningRunDeltas.valueDeltaMicros],

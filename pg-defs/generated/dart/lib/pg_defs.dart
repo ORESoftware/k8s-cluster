@@ -4085,7 +4085,7 @@ class DesSoccerLearningPolicyVersionsRow {
 }
 
 const desSoccerLearningPolicyEntriesTable = "des_soccer_learning_policy_entries";
-const desSoccerLearningPolicyEntriesSelectSql = "select\n      id::text as id,\n      policy_version_id::text as policy_version_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      value_micros,\n      visits,\n      source_run_id::text as source_run_id,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_policy_entries";
+const desSoccerLearningPolicyEntriesSelectSql = "select\n      id::text as id,\n      policy_version_id::text as policy_version_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      receiver_descriptor,\n      value_micros,\n      visits,\n      source_run_id::text as source_run_id,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_policy_entries";
 
 const desSoccerLearningPolicyEntriesTeamValues = <String>["home", "away"];
 const desSoccerLearningPolicyEntriesEntryKindValues = <String>["action", "target"];
@@ -4103,6 +4103,7 @@ class DesSoccerLearningPolicyEntriesRow {
     required this.targetTacticalCellId,
     required this.targetMacroCellId,
     required this.targetRootCellId,
+    required this.receiverDescriptor,
     required this.valueMicros,
     required this.visits,
     this.sourceRunId,
@@ -4120,6 +4121,7 @@ class DesSoccerLearningPolicyEntriesRow {
   final int targetTacticalCellId;
   final int targetMacroCellId;
   final int targetRootCellId;
+  final int receiverDescriptor;
   final int valueMicros;
   final int visits;
   final String? sourceRunId;
@@ -4138,6 +4140,7 @@ class DesSoccerLearningPolicyEntriesRow {
       targetTacticalCellId: _readRequiredInt(json, "targetTacticalCellId"),
       targetMacroCellId: _readRequiredInt(json, "targetMacroCellId"),
       targetRootCellId: _readRequiredInt(json, "targetRootCellId"),
+      receiverDescriptor: _readRequiredInt(json, "receiverDescriptor"),
       valueMicros: _readRequiredInt(json, "valueMicros"),
       visits: _readRequiredInt(json, "visits"),
       sourceRunId: _readOptionalString(json, "sourceRunId"),
@@ -4157,6 +4160,7 @@ class DesSoccerLearningPolicyEntriesRow {
     "targetTacticalCellId": targetTacticalCellId,
     "targetMacroCellId": targetMacroCellId,
     "targetRootCellId": targetRootCellId,
+    "receiverDescriptor": receiverDescriptor,
     "valueMicros": valueMicros,
     "visits": visits,
     "sourceRunId": sourceRunId,
@@ -4191,6 +4195,9 @@ class DesSoccerLearningPolicyEntriesRow {
     }
     if (targetRootCellId < -1) {
       errors.add("des_soccer_learning_policy_entries.target_root_cell_id is below the minimum");
+    }
+    if (receiverDescriptor < -1) {
+      errors.add("des_soccer_learning_policy_entries.receiver_descriptor is below the minimum");
     }
     if (visits < 0) {
       errors.add("des_soccer_learning_policy_entries.visits is below the minimum");
@@ -4486,7 +4493,7 @@ class DesSoccerLearningRunsRow {
 }
 
 const desSoccerLearningRunDeltasTable = "des_soccer_learning_run_deltas";
-const desSoccerLearningRunDeltasSelectSql = "select\n      id::text as id,\n      run_id::text as run_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      before_value_micros,\n      after_value_micros,\n      value_delta_micros,\n      visit_delta,\n      merge_weight_micros,\n      effective_visit_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_run_deltas";
+const desSoccerLearningRunDeltasSelectSql = "select\n      id::text as id,\n      run_id::text as run_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      receiver_descriptor,\n      before_value_micros,\n      after_value_micros,\n      value_delta_micros,\n      visit_delta,\n      merge_weight_micros,\n      effective_visit_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_run_deltas";
 
 const desSoccerLearningRunDeltasTeamValues = <String>["home", "away"];
 const desSoccerLearningRunDeltasEntryKindValues = <String>["action", "target"];
@@ -4504,6 +4511,7 @@ class DesSoccerLearningRunDeltasRow {
     required this.targetTacticalCellId,
     required this.targetMacroCellId,
     required this.targetRootCellId,
+    required this.receiverDescriptor,
     required this.beforeValueMicros,
     required this.afterValueMicros,
     required this.valueDeltaMicros,
@@ -4524,6 +4532,7 @@ class DesSoccerLearningRunDeltasRow {
   final int targetTacticalCellId;
   final int targetMacroCellId;
   final int targetRootCellId;
+  final int receiverDescriptor;
   final int beforeValueMicros;
   final int afterValueMicros;
   final int valueDeltaMicros;
@@ -4545,6 +4554,7 @@ class DesSoccerLearningRunDeltasRow {
       targetTacticalCellId: _readRequiredInt(json, "targetTacticalCellId"),
       targetMacroCellId: _readRequiredInt(json, "targetMacroCellId"),
       targetRootCellId: _readRequiredInt(json, "targetRootCellId"),
+      receiverDescriptor: _readRequiredInt(json, "receiverDescriptor"),
       beforeValueMicros: _readRequiredInt(json, "beforeValueMicros"),
       afterValueMicros: _readRequiredInt(json, "afterValueMicros"),
       valueDeltaMicros: _readRequiredInt(json, "valueDeltaMicros"),
@@ -4567,6 +4577,7 @@ class DesSoccerLearningRunDeltasRow {
     "targetTacticalCellId": targetTacticalCellId,
     "targetMacroCellId": targetMacroCellId,
     "targetRootCellId": targetRootCellId,
+    "receiverDescriptor": receiverDescriptor,
     "beforeValueMicros": beforeValueMicros,
     "afterValueMicros": afterValueMicros,
     "valueDeltaMicros": valueDeltaMicros,
@@ -4604,6 +4615,9 @@ class DesSoccerLearningRunDeltasRow {
     }
     if (targetRootCellId < -1) {
       errors.add("des_soccer_learning_run_deltas.target_root_cell_id is below the minimum");
+    }
+    if (receiverDescriptor < -1) {
+      errors.add("des_soccer_learning_run_deltas.receiver_descriptor is below the minimum");
     }
     if (visitDelta < 1) {
       errors.add("des_soccer_learning_run_deltas.visit_delta is below the minimum");

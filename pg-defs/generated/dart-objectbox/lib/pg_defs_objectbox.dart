@@ -3679,6 +3679,8 @@ class DesSoccerLearningPolicyEntriesObjectBox {
 
   int targetRootCellId;
 
+  int receiverDescriptor;
+
   int valueMicros;
 
   int visits;
@@ -3700,6 +3702,7 @@ class DesSoccerLearningPolicyEntriesObjectBox {
     required this.targetTacticalCellId,
     required this.targetMacroCellId,
     required this.targetRootCellId,
+    required this.receiverDescriptor,
     required this.valueMicros,
     required this.visits,
     this.sourceRunId,
@@ -3718,6 +3721,7 @@ class DesSoccerLearningPolicyEntriesObjectBox {
     "targetTacticalCellId": targetTacticalCellId,
     "targetMacroCellId": targetMacroCellId,
     "targetRootCellId": targetRootCellId,
+    "receiverDescriptor": receiverDescriptor,
     "valueMicros": valueMicros,
     "visits": visits,
     "sourceRunId": sourceRunId,
@@ -3737,6 +3741,7 @@ class DesSoccerLearningPolicyEntriesObjectBox {
       targetTacticalCellId: (json["targetTacticalCellId"] as num).toInt(),
       targetMacroCellId: (json["targetMacroCellId"] as num).toInt(),
       targetRootCellId: (json["targetRootCellId"] as num).toInt(),
+      receiverDescriptor: (json["receiverDescriptor"] as num).toInt(),
       valueMicros: (json["valueMicros"] as num).toInt(),
       visits: (json["visits"] as num).toInt(),
       sourceRunId: json["sourceRunId"] as String?,
@@ -4046,6 +4051,8 @@ class DesSoccerLearningRunDeltasObjectBox {
 
   int targetRootCellId;
 
+  int receiverDescriptor;
+
   int beforeValueMicros;
 
   int afterValueMicros;
@@ -4073,6 +4080,7 @@ class DesSoccerLearningRunDeltasObjectBox {
     required this.targetTacticalCellId,
     required this.targetMacroCellId,
     required this.targetRootCellId,
+    required this.receiverDescriptor,
     required this.beforeValueMicros,
     required this.afterValueMicros,
     required this.valueDeltaMicros,
@@ -4094,6 +4102,7 @@ class DesSoccerLearningRunDeltasObjectBox {
     "targetTacticalCellId": targetTacticalCellId,
     "targetMacroCellId": targetMacroCellId,
     "targetRootCellId": targetRootCellId,
+    "receiverDescriptor": receiverDescriptor,
     "beforeValueMicros": beforeValueMicros,
     "afterValueMicros": afterValueMicros,
     "valueDeltaMicros": valueDeltaMicros,
@@ -4116,6 +4125,7 @@ class DesSoccerLearningRunDeltasObjectBox {
       targetTacticalCellId: (json["targetTacticalCellId"] as num).toInt(),
       targetMacroCellId: (json["targetMacroCellId"] as num).toInt(),
       targetRootCellId: (json["targetRootCellId"] as num).toInt(),
+      receiverDescriptor: (json["receiverDescriptor"] as num).toInt(),
       beforeValueMicros: (json["beforeValueMicros"] as num).toInt(),
       afterValueMicros: (json["afterValueMicros"] as num).toInt(),
       valueDeltaMicros: (json["valueDeltaMicros"] as num).toInt(),

@@ -2189,6 +2189,7 @@ create table if not exists des_soccer_learning_policy_entries (
   target_tactical_cell_id integer default -1 not null,
   target_macro_cell_id integer default -1 not null,
   target_root_cell_id integer default -1 not null,
+  receiver_descriptor integer default -1 not null,
   value_micros bigint not null,
   visits integer default 0 not null,
   source_run_id uuid,
@@ -2211,6 +2212,8 @@ create table if not exists des_soccer_learning_policy_entries (
     check (target_macro_cell_id >= -1),
   constraint des_soccer_learning_policy_entries_target_root_chk
     check (target_root_cell_id >= -1),
+  constraint des_soccer_learning_policy_entries_receiver_descriptor_chk
+    check (receiver_descriptor >= -1),
   constraint des_soccer_learning_policy_entries_visits_chk
     check (visits >= 0)
 );
@@ -2225,7 +2228,8 @@ create unique index if not exists des_soccer_learning_policy_entries_key_uq
     target_fine_cell_id,
     target_tactical_cell_id,
     target_macro_cell_id,
-    target_root_cell_id
+    target_root_cell_id,
+    receiver_descriptor
   );
 
 create index if not exists des_soccer_learning_policy_entries_lookup_idx
@@ -2354,6 +2358,7 @@ create table if not exists des_soccer_learning_run_deltas (
   target_tactical_cell_id integer default -1 not null,
   target_macro_cell_id integer default -1 not null,
   target_root_cell_id integer default -1 not null,
+  receiver_descriptor integer default -1 not null,
   before_value_micros bigint default 0 not null,
   after_value_micros bigint default 0 not null,
   value_delta_micros bigint default 0 not null,
@@ -2379,6 +2384,8 @@ create table if not exists des_soccer_learning_run_deltas (
     check (target_macro_cell_id >= -1),
   constraint des_soccer_learning_run_deltas_target_root_chk
     check (target_root_cell_id >= -1),
+  constraint des_soccer_learning_run_deltas_receiver_descriptor_chk
+    check (receiver_descriptor >= -1),
   constraint des_soccer_learning_run_deltas_visit_delta_chk
     check (visit_delta > 0),
   constraint des_soccer_learning_run_deltas_merge_weight_chk
@@ -2397,7 +2404,8 @@ create unique index if not exists des_soccer_learning_run_deltas_key_uq
     target_fine_cell_id,
     target_tactical_cell_id,
     target_macro_cell_id,
-    target_root_cell_id
+    target_root_cell_id,
+    receiver_descriptor
   );
 
 create index if not exists des_soccer_learning_run_deltas_merge_idx

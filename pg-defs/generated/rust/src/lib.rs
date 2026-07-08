@@ -5964,7 +5964,7 @@ pub fn validate_des_soccer_learning_policy_versions_insert(value: &DesSoccerLear
 }
 
 pub const DES_SOCCER_LEARNING_POLICY_ENTRIES_TABLE: &str = "des_soccer_learning_policy_entries";
-pub const DES_SOCCER_LEARNING_POLICY_ENTRIES_COLUMNS: &[&str] = &["id", "policy_version_id", "team", "entry_kind", "state_hash", "state_key", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "value_micros", "visits", "source_run_id", "created_at"];
+pub const DES_SOCCER_LEARNING_POLICY_ENTRIES_COLUMNS: &[&str] = &["id", "policy_version_id", "team", "entry_kind", "state_hash", "state_key", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "receiver_descriptor", "value_micros", "visits", "source_run_id", "created_at"];
 pub const DES_SOCCER_LEARNING_POLICY_ENTRIES_SELECT_SQL: &str = r###"select
       id::text as id,
       policy_version_id::text as policy_version_id,
@@ -5977,6 +5977,7 @@ pub const DES_SOCCER_LEARNING_POLICY_ENTRIES_SELECT_SQL: &str = r###"select
       target_tactical_cell_id,
       target_macro_cell_id,
       target_root_cell_id,
+      receiver_descriptor,
       value_micros,
       visits,
       source_run_id::text as source_run_id,
@@ -6058,6 +6059,7 @@ pub struct DesSoccerLearningPolicyEntriesRow {
     pub target_tactical_cell_id: i32,
     pub target_macro_cell_id: i32,
     pub target_root_cell_id: i32,
+    pub receiver_descriptor: i32,
     pub value_micros: i64,
     pub visits: i32,
     pub source_run_id: Option<String>,
@@ -6078,6 +6080,7 @@ pub struct DesSoccerLearningPolicyEntriesInsert {
     pub target_tactical_cell_id: Option<i32>,
     pub target_macro_cell_id: Option<i32>,
     pub target_root_cell_id: Option<i32>,
+    pub receiver_descriptor: Option<i32>,
     pub value_micros: Option<i64>,
     pub visits: Option<i32>,
     pub source_run_id: Option<String>,
@@ -6095,6 +6098,7 @@ pub fn validate_des_soccer_learning_policy_entries_row(value: &DesSoccerLearning
     if *(&value.target_tactical_cell_id) < -1 { return Err("des_soccer_learning_policy_entries.target_tactical_cell_id is below the minimum".to_string()); }
     if *(&value.target_macro_cell_id) < -1 { return Err("des_soccer_learning_policy_entries.target_macro_cell_id is below the minimum".to_string()); }
     if *(&value.target_root_cell_id) < -1 { return Err("des_soccer_learning_policy_entries.target_root_cell_id is below the minimum".to_string()); }
+    if *(&value.receiver_descriptor) < -1 { return Err("des_soccer_learning_policy_entries.receiver_descriptor is below the minimum".to_string()); }
     if *(&value.visits) < 0 { return Err("des_soccer_learning_policy_entries.visits is below the minimum".to_string()); }
     Ok(())
 }
@@ -6127,6 +6131,9 @@ pub fn validate_des_soccer_learning_policy_entries_insert(value: &DesSoccerLearn
     }
     if let Some(value) = &value.target_root_cell_id {
         if *(value) < -1 { return Err("des_soccer_learning_policy_entries.target_root_cell_id is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.receiver_descriptor {
+        if *(value) < -1 { return Err("des_soccer_learning_policy_entries.receiver_descriptor is below the minimum".to_string()); }
     }
     if let Some(value) = &value.visits {
         if *(value) < 0 { return Err("des_soccer_learning_policy_entries.visits is below the minimum".to_string()); }
@@ -6606,7 +6613,7 @@ pub fn validate_des_soccer_learning_runs_insert(value: &DesSoccerLearningRunsIns
 }
 
 pub const DES_SOCCER_LEARNING_RUN_DELTAS_TABLE: &str = "des_soccer_learning_run_deltas";
-pub const DES_SOCCER_LEARNING_RUN_DELTAS_COLUMNS: &[&str] = &["id", "run_id", "team", "entry_kind", "state_hash", "state_key", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "before_value_micros", "after_value_micros", "value_delta_micros", "visit_delta", "merge_weight_micros", "effective_visit_micros", "created_at"];
+pub const DES_SOCCER_LEARNING_RUN_DELTAS_COLUMNS: &[&str] = &["id", "run_id", "team", "entry_kind", "state_hash", "state_key", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "receiver_descriptor", "before_value_micros", "after_value_micros", "value_delta_micros", "visit_delta", "merge_weight_micros", "effective_visit_micros", "created_at"];
 pub const DES_SOCCER_LEARNING_RUN_DELTAS_SELECT_SQL: &str = r###"select
       id::text as id,
       run_id::text as run_id,
@@ -6619,6 +6626,7 @@ pub const DES_SOCCER_LEARNING_RUN_DELTAS_SELECT_SQL: &str = r###"select
       target_tactical_cell_id,
       target_macro_cell_id,
       target_root_cell_id,
+      receiver_descriptor,
       before_value_micros,
       after_value_micros,
       value_delta_micros,
@@ -6703,6 +6711,7 @@ pub struct DesSoccerLearningRunDeltasRow {
     pub target_tactical_cell_id: i32,
     pub target_macro_cell_id: i32,
     pub target_root_cell_id: i32,
+    pub receiver_descriptor: i32,
     pub before_value_micros: i64,
     pub after_value_micros: i64,
     pub value_delta_micros: i64,
@@ -6726,6 +6735,7 @@ pub struct DesSoccerLearningRunDeltasInsert {
     pub target_tactical_cell_id: Option<i32>,
     pub target_macro_cell_id: Option<i32>,
     pub target_root_cell_id: Option<i32>,
+    pub receiver_descriptor: Option<i32>,
     pub before_value_micros: Option<i64>,
     pub after_value_micros: Option<i64>,
     pub value_delta_micros: Option<i64>,
@@ -6746,6 +6756,7 @@ pub fn validate_des_soccer_learning_run_deltas_row(value: &DesSoccerLearningRunD
     if *(&value.target_tactical_cell_id) < -1 { return Err("des_soccer_learning_run_deltas.target_tactical_cell_id is below the minimum".to_string()); }
     if *(&value.target_macro_cell_id) < -1 { return Err("des_soccer_learning_run_deltas.target_macro_cell_id is below the minimum".to_string()); }
     if *(&value.target_root_cell_id) < -1 { return Err("des_soccer_learning_run_deltas.target_root_cell_id is below the minimum".to_string()); }
+    if *(&value.receiver_descriptor) < -1 { return Err("des_soccer_learning_run_deltas.receiver_descriptor is below the minimum".to_string()); }
     if *(&value.visit_delta) < 1 { return Err("des_soccer_learning_run_deltas.visit_delta is below the minimum".to_string()); }
     if *(&value.merge_weight_micros) < 0 { return Err("des_soccer_learning_run_deltas.merge_weight_micros is below the minimum".to_string()); }
     if *(&value.effective_visit_micros) < 0 { return Err("des_soccer_learning_run_deltas.effective_visit_micros is below the minimum".to_string()); }
@@ -6780,6 +6791,9 @@ pub fn validate_des_soccer_learning_run_deltas_insert(value: &DesSoccerLearningR
     }
     if let Some(value) = &value.target_root_cell_id {
         if *(value) < -1 { return Err("des_soccer_learning_run_deltas.target_root_cell_id is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.receiver_descriptor {
+        if *(value) < -1 { return Err("des_soccer_learning_run_deltas.receiver_descriptor is below the minimum".to_string()); }
     }
     if let Some(value) = &value.visit_delta {
         if *(value) < 1 { return Err("des_soccer_learning_run_deltas.visit_delta is below the minimum".to_string()); }

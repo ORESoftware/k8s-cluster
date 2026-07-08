@@ -1352,7 +1352,7 @@ validate_des_soccer_learning_policy_versions_retention_kind(Value) when is_list(
 
 des_soccer_learning_policy_entries_table() -> <<"des_soccer_learning_policy_entries">>.
 
-des_soccer_learning_policy_entries_columns() -> [<<"id">>, <<"policy_version_id">>, <<"team">>, <<"entry_kind">>, <<"state_hash">>, <<"state_key">>, <<"action">>, <<"target_fine_cell_id">>, <<"target_tactical_cell_id">>, <<"target_macro_cell_id">>, <<"target_root_cell_id">>, <<"value_micros">>, <<"visits">>, <<"source_run_id">>, <<"created_at">>].
+des_soccer_learning_policy_entries_columns() -> [<<"id">>, <<"policy_version_id">>, <<"team">>, <<"entry_kind">>, <<"state_hash">>, <<"state_key">>, <<"action">>, <<"target_fine_cell_id">>, <<"target_tactical_cell_id">>, <<"target_macro_cell_id">>, <<"target_root_cell_id">>, <<"receiver_descriptor">>, <<"value_micros">>, <<"visits">>, <<"source_run_id">>, <<"created_at">>].
 
 des_soccer_learning_policy_entries_select_sql() -> <<"select
       id::text as id,
@@ -1366,6 +1366,7 @@ des_soccer_learning_policy_entries_select_sql() -> <<"select
       target_tactical_cell_id,
       target_macro_cell_id,
       target_root_cell_id,
+      receiver_descriptor,
       value_micros,
       visits,
       source_run_id::text as source_run_id,
@@ -1504,7 +1505,7 @@ validate_des_soccer_learning_runs_away_outcome(Value) when is_list(Value) ->
 
 des_soccer_learning_run_deltas_table() -> <<"des_soccer_learning_run_deltas">>.
 
-des_soccer_learning_run_deltas_columns() -> [<<"id">>, <<"run_id">>, <<"team">>, <<"entry_kind">>, <<"state_hash">>, <<"state_key">>, <<"action">>, <<"target_fine_cell_id">>, <<"target_tactical_cell_id">>, <<"target_macro_cell_id">>, <<"target_root_cell_id">>, <<"before_value_micros">>, <<"after_value_micros">>, <<"value_delta_micros">>, <<"visit_delta">>, <<"merge_weight_micros">>, <<"effective_visit_micros">>, <<"created_at">>].
+des_soccer_learning_run_deltas_columns() -> [<<"id">>, <<"run_id">>, <<"team">>, <<"entry_kind">>, <<"state_hash">>, <<"state_key">>, <<"action">>, <<"target_fine_cell_id">>, <<"target_tactical_cell_id">>, <<"target_macro_cell_id">>, <<"target_root_cell_id">>, <<"receiver_descriptor">>, <<"before_value_micros">>, <<"after_value_micros">>, <<"value_delta_micros">>, <<"visit_delta">>, <<"merge_weight_micros">>, <<"effective_visit_micros">>, <<"created_at">>].
 
 des_soccer_learning_run_deltas_select_sql() -> <<"select
       id::text as id,
@@ -1518,6 +1519,7 @@ des_soccer_learning_run_deltas_select_sql() -> <<"select
       target_tactical_cell_id,
       target_macro_cell_id,
       target_root_cell_id,
+      receiver_descriptor,
       before_value_micros,
       after_value_micros,
       value_delta_micros,

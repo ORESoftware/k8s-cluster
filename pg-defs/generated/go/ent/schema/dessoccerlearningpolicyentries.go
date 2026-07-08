@@ -38,6 +38,7 @@ func (DesSoccerLearningPolicyEntries) Fields() []ent.Field {
 		field.Int32("target_tactical_cell_id").Min(-1).Default(-1).StorageKey("target_tactical_cell_id"),
 		field.Int32("target_macro_cell_id").Min(-1).Default(-1).StorageKey("target_macro_cell_id"),
 		field.Int32("target_root_cell_id").Min(-1).Default(-1).StorageKey("target_root_cell_id"),
+		field.Int32("receiver_descriptor").Min(-1).Default(-1).StorageKey("receiver_descriptor"),
 		field.Int64("value_micros").StorageKey("value_micros"),
 		field.Int32("visits").Min(0).Default(0).StorageKey("visits"),
 		field.UUID("source_run_id", uuid.UUID{}).Optional().Nillable().StorageKey("source_run_id"),
@@ -47,7 +48,7 @@ func (DesSoccerLearningPolicyEntries) Fields() []ent.Field {
 
 func (DesSoccerLearningPolicyEntries) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("policy_version_id", "team", "entry_kind", "state_hash", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id").Unique(),
+		index.Fields("policy_version_id", "team", "entry_kind", "state_hash", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "receiver_descriptor").Unique(),
 		index.Fields("policy_version_id", "team", "entry_kind", "state_hash"),
 	}
 }

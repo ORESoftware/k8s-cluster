@@ -49,6 +49,9 @@ public class DesSoccerLearningPolicyEntriesEntity {
     @Column(name = "target_root_cell_id", nullable = false)
     private Integer targetRootCellId;
 
+    @Column(name = "receiver_descriptor", nullable = false)
+    private Integer receiverDescriptor;
+
     @Column(name = "value_micros", nullable = false)
     private Long valueMicros;
 
@@ -147,6 +150,14 @@ public class DesSoccerLearningPolicyEntriesEntity {
 
     public void setTargetRootCellId(Integer targetRootCellId) {
         this.targetRootCellId = targetRootCellId;
+    }
+
+    public Integer getReceiverDescriptor() {
+        return receiverDescriptor;
+    }
+
+    public void setReceiverDescriptor(Integer receiverDescriptor) {
+        this.receiverDescriptor = receiverDescriptor;
     }
 
     public Long getValueMicros() {

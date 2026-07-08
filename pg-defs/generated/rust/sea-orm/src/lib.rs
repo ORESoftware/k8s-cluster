@@ -1763,6 +1763,8 @@ pub struct Model {
     pub target_macro_cell_id: i32,
     #[sea_orm(column_name = "target_root_cell_id")]
     pub target_root_cell_id: i32,
+    #[sea_orm(column_name = "receiver_descriptor")]
+    pub receiver_descriptor: i32,
     #[sea_orm(column_name = "value_micros")]
     pub value_micros: i64,
     pub visits: i32,
@@ -1924,6 +1926,8 @@ pub struct Model {
     pub target_macro_cell_id: i32,
     #[sea_orm(column_name = "target_root_cell_id")]
     pub target_root_cell_id: i32,
+    #[sea_orm(column_name = "receiver_descriptor")]
+    pub receiver_descriptor: i32,
     #[sea_orm(column_name = "before_value_micros")]
     pub before_value_micros: i64,
     #[sea_orm(column_name = "after_value_micros")]

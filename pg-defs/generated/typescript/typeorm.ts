@@ -1978,7 +1978,7 @@ export class DesSoccerLearningPolicyVersionsEntity {
 
 }
 
-@Index("des_soccer_learning_policy_entries_key_uq", ["policyVersionId", "team", "entryKind", "stateHash", "action", "targetFineCellId", "targetTacticalCellId", "targetMacroCellId", "targetRootCellId"], { unique: true })
+@Index("des_soccer_learning_policy_entries_key_uq", ["policyVersionId", "team", "entryKind", "stateHash", "action", "targetFineCellId", "targetTacticalCellId", "targetMacroCellId", "targetRootCellId", "receiverDescriptor"], { unique: true })
 @Index("des_soccer_learning_policy_entries_lookup_idx", ["policyVersionId", "team", "entryKind", "stateHash"])
 @Entity({ name: "des_soccer_learning_policy_entries" })
 export class DesSoccerLearningPolicyEntriesEntity {
@@ -2014,6 +2014,9 @@ export class DesSoccerLearningPolicyEntriesEntity {
 
   @Column({ name: "target_root_cell_id", type: "integer", default: () => "-1" })
   targetRootCellId!: number;
+
+  @Column({ name: "receiver_descriptor", type: "integer", default: () => "-1" })
+  receiverDescriptor!: number;
 
   @Column({ name: "value_micros", type: "bigint" })
   valueMicros!: number;
@@ -2179,7 +2182,7 @@ export class DesSoccerLearningRunsEntity {
 
 }
 
-@Index("des_soccer_learning_run_deltas_key_uq", ["runId", "team", "entryKind", "stateHash", "action", "targetFineCellId", "targetTacticalCellId", "targetMacroCellId", "targetRootCellId"], { unique: true })
+@Index("des_soccer_learning_run_deltas_key_uq", ["runId", "team", "entryKind", "stateHash", "action", "targetFineCellId", "targetTacticalCellId", "targetMacroCellId", "targetRootCellId", "receiverDescriptor"], { unique: true })
 @Index("des_soccer_learning_run_deltas_merge_idx", ["team", "entryKind", "stateHash", "action"])
 @Entity({ name: "des_soccer_learning_run_deltas" })
 export class DesSoccerLearningRunDeltasEntity {
@@ -2215,6 +2218,9 @@ export class DesSoccerLearningRunDeltasEntity {
 
   @Column({ name: "target_root_cell_id", type: "integer", default: () => "-1" })
   targetRootCellId!: number;
+
+  @Column({ name: "receiver_descriptor", type: "integer", default: () => "-1" })
+  receiverDescriptor!: number;
 
   @Column({ name: "before_value_micros", type: "bigint", default: () => "0" })
   beforeValueMicros!: number;

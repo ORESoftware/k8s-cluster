@@ -665,6 +665,7 @@ module DdPgDefs
     validates :target_tactical_cell_id, numericality: { only_integer: true, greater_than_or_equal_to: -1 }
     validates :target_macro_cell_id, numericality: { only_integer: true, greater_than_or_equal_to: -1 }
     validates :target_root_cell_id, numericality: { only_integer: true, greater_than_or_equal_to: -1 }
+    validates :receiver_descriptor, numericality: { only_integer: true, greater_than_or_equal_to: -1 }
     validates :value_micros, presence: true
     validates :value_micros, numericality: { only_integer: true }
     validates :visits, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
@@ -730,6 +731,7 @@ module DdPgDefs
     validates :target_tactical_cell_id, numericality: { only_integer: true, greater_than_or_equal_to: -1 }
     validates :target_macro_cell_id, numericality: { only_integer: true, greater_than_or_equal_to: -1 }
     validates :target_root_cell_id, numericality: { only_integer: true, greater_than_or_equal_to: -1 }
+    validates :receiver_descriptor, numericality: { only_integer: true, greater_than_or_equal_to: -1 }
     validates :before_value_micros, numericality: { only_integer: true }
     validates :after_value_micros, numericality: { only_integer: true }
     validates :value_delta_micros, numericality: { only_integer: true }

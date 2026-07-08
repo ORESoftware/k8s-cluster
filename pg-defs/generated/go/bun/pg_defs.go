@@ -2245,6 +2245,7 @@ const DesSoccerLearningPolicyEntriesSelectSQL = `select
       target_tactical_cell_id,
       target_macro_cell_id,
       target_root_cell_id,
+      receiver_descriptor,
       value_micros,
       visits,
       source_run_id::text as source_run_id,
@@ -2267,6 +2268,7 @@ type DesSoccerLearningPolicyEntriesBun struct {
 	TargetTacticalCellId int32 `bun:"target_tactical_cell_id,type:integer,default:-1" json:"targetTacticalCellId"`
 	TargetMacroCellId int32 `bun:"target_macro_cell_id,type:integer,default:-1" json:"targetMacroCellId"`
 	TargetRootCellId int32 `bun:"target_root_cell_id,type:integer,default:-1" json:"targetRootCellId"`
+	ReceiverDescriptor int32 `bun:"receiver_descriptor,type:integer,default:-1" json:"receiverDescriptor"`
 	ValueMicros int64 `bun:"value_micros,type:bigint" json:"valueMicros"`
 	Visits int32 `bun:"visits,type:integer,default:0" json:"visits"`
 	SourceRunId *uuid.UUID `bun:"source_run_id,type:uuid,nullzero" json:"sourceRunId,omitempty"`
@@ -2284,6 +2286,7 @@ func (value DesSoccerLearningPolicyEntriesBun) Validate() error {
 	if value.TargetTacticalCellId < -1 { return errors.New("des_soccer_learning_policy_entries.target_tactical_cell_id is below the minimum") }
 	if value.TargetMacroCellId < -1 { return errors.New("des_soccer_learning_policy_entries.target_macro_cell_id is below the minimum") }
 	if value.TargetRootCellId < -1 { return errors.New("des_soccer_learning_policy_entries.target_root_cell_id is below the minimum") }
+	if value.ReceiverDescriptor < -1 { return errors.New("des_soccer_learning_policy_entries.receiver_descriptor is below the minimum") }
 	if value.Visits < 0 { return errors.New("des_soccer_learning_policy_entries.visits is below the minimum") }
 	return nil
 }
@@ -2456,6 +2459,7 @@ const DesSoccerLearningRunDeltasSelectSQL = `select
       target_tactical_cell_id,
       target_macro_cell_id,
       target_root_cell_id,
+      receiver_descriptor,
       before_value_micros,
       after_value_micros,
       value_delta_micros,
@@ -2481,6 +2485,7 @@ type DesSoccerLearningRunDeltasBun struct {
 	TargetTacticalCellId int32 `bun:"target_tactical_cell_id,type:integer,default:-1" json:"targetTacticalCellId"`
 	TargetMacroCellId int32 `bun:"target_macro_cell_id,type:integer,default:-1" json:"targetMacroCellId"`
 	TargetRootCellId int32 `bun:"target_root_cell_id,type:integer,default:-1" json:"targetRootCellId"`
+	ReceiverDescriptor int32 `bun:"receiver_descriptor,type:integer,default:-1" json:"receiverDescriptor"`
 	BeforeValueMicros int64 `bun:"before_value_micros,type:bigint,default:0" json:"beforeValueMicros"`
 	AfterValueMicros int64 `bun:"after_value_micros,type:bigint,default:0" json:"afterValueMicros"`
 	ValueDeltaMicros int64 `bun:"value_delta_micros,type:bigint,default:0" json:"valueDeltaMicros"`
@@ -2501,6 +2506,7 @@ func (value DesSoccerLearningRunDeltasBun) Validate() error {
 	if value.TargetTacticalCellId < -1 { return errors.New("des_soccer_learning_run_deltas.target_tactical_cell_id is below the minimum") }
 	if value.TargetMacroCellId < -1 { return errors.New("des_soccer_learning_run_deltas.target_macro_cell_id is below the minimum") }
 	if value.TargetRootCellId < -1 { return errors.New("des_soccer_learning_run_deltas.target_root_cell_id is below the minimum") }
+	if value.ReceiverDescriptor < -1 { return errors.New("des_soccer_learning_run_deltas.receiver_descriptor is below the minimum") }
 	if value.VisitDelta < 1 { return errors.New("des_soccer_learning_run_deltas.visit_delta is below the minimum") }
 	if value.MergeWeightMicros < 0 { return errors.New("des_soccer_learning_run_deltas.merge_weight_micros is below the minimum") }
 	if value.EffectiveVisitMicros < 0 { return errors.New("des_soccer_learning_run_deltas.effective_visit_micros is below the minimum") }

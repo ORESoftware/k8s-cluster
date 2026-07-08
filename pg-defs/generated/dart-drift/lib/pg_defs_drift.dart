@@ -1099,6 +1099,7 @@ class DesSoccerLearningPolicyEntriesTable extends Table {
   IntColumn get targetTacticalCellId => integer().named("target_tactical_cell_id").clientDefault(() => -1)();
   IntColumn get targetMacroCellId => integer().named("target_macro_cell_id").clientDefault(() => -1)();
   IntColumn get targetRootCellId => integer().named("target_root_cell_id").clientDefault(() => -1)();
+  IntColumn get receiverDescriptor => integer().named("receiver_descriptor").clientDefault(() => -1)();
   Int64Column get valueMicros => int64().named("value_micros")();
   IntColumn get visits => integer().named("visits").clientDefault(() => 0)();
   TextColumn get sourceRunId => text().named("source_run_id").nullable().customConstraint("UUID")();
@@ -1199,6 +1200,7 @@ class DesSoccerLearningRunDeltasTable extends Table {
   IntColumn get targetTacticalCellId => integer().named("target_tactical_cell_id").clientDefault(() => -1)();
   IntColumn get targetMacroCellId => integer().named("target_macro_cell_id").clientDefault(() => -1)();
   IntColumn get targetRootCellId => integer().named("target_root_cell_id").clientDefault(() => -1)();
+  IntColumn get receiverDescriptor => integer().named("receiver_descriptor").clientDefault(() => -1)();
   Int64Column get beforeValueMicros => int64().named("before_value_micros").clientDefault(() => 0)();
   Int64Column get afterValueMicros => int64().named("after_value_micros").clientDefault(() => 0)();
   Int64Column get valueDeltaMicros => int64().named("value_delta_micros").clientDefault(() => 0)();

@@ -906,11 +906,12 @@ model DesSoccerLearningPolicyEntries {
   targetTacticalCellId Int @map("target_tactical_cell_id") @default(-1)
   targetMacroCellId Int @map("target_macro_cell_id") @default(-1)
   targetRootCellId Int @map("target_root_cell_id") @default(-1)
+  receiverDescriptor Int @map("receiver_descriptor") @default(-1)
   valueMicros BigInt @map("value_micros") @db.BigInt
   visits Int @default(0)
   sourceRunId String? @map("source_run_id") @db.Uuid
   createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
-  @@unique([policyVersionId, team, entryKind, stateHash, action, targetFineCellId, targetTacticalCellId, targetMacroCellId, targetRootCellId], map: "des_soccer_learning_policy_entries_key_uq")
+  @@unique([policyVersionId, team, entryKind, stateHash, action, targetFineCellId, targetTacticalCellId, targetMacroCellId, targetRootCellId, receiverDescriptor], map: "des_soccer_learning_policy_entries_key_uq")
   @@index([policyVersionId, team, entryKind, stateHash], map: "des_soccer_learning_policy_entries_lookup_idx")
   // Check constraints live in schema.sql and must be migrated from the SQL contract.
   @@map("des_soccer_learning_policy_entries")
@@ -988,6 +989,7 @@ model DesSoccerLearningRunDeltas {
   targetTacticalCellId Int @map("target_tactical_cell_id") @default(-1)
   targetMacroCellId Int @map("target_macro_cell_id") @default(-1)
   targetRootCellId Int @map("target_root_cell_id") @default(-1)
+  receiverDescriptor Int @map("receiver_descriptor") @default(-1)
   beforeValueMicros BigInt @map("before_value_micros") @default(0) @db.BigInt
   afterValueMicros BigInt @map("after_value_micros") @default(0) @db.BigInt
   valueDeltaMicros BigInt @map("value_delta_micros") @default(0) @db.BigInt
@@ -995,7 +997,7 @@ model DesSoccerLearningRunDeltas {
   mergeWeightMicros BigInt @map("merge_weight_micros") @default(0) @db.BigInt
   effectiveVisitMicros BigInt @map("effective_visit_micros") @default(0) @db.BigInt
   createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
-  @@unique([runId, team, entryKind, stateHash, action, targetFineCellId, targetTacticalCellId, targetMacroCellId, targetRootCellId], map: "des_soccer_learning_run_deltas_key_uq")
+  @@unique([runId, team, entryKind, stateHash, action, targetFineCellId, targetTacticalCellId, targetMacroCellId, targetRootCellId, receiverDescriptor], map: "des_soccer_learning_run_deltas_key_uq")
   @@index([team, entryKind, stateHash, action], map: "des_soccer_learning_run_deltas_merge_idx")
   // Check constraints live in schema.sql and must be migrated from the SQL contract.
   @@map("des_soccer_learning_run_deltas")

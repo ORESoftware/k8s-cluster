@@ -2901,7 +2901,7 @@ pub fn validate_des_soccer_learning_policy_versions_retention_kind(value: String
 }
 
 pub const des_soccer_learning_policy_entries_table = "des_soccer_learning_policy_entries"
-pub const des_soccer_learning_policy_entries_select_sql = "select\n      id::text as id,\n      policy_version_id::text as policy_version_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      value_micros,\n      visits,\n      source_run_id::text as source_run_id,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_policy_entries"
+pub const des_soccer_learning_policy_entries_select_sql = "select\n      id::text as id,\n      policy_version_id::text as policy_version_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      receiver_descriptor,\n      value_micros,\n      visits,\n      source_run_id::text as source_run_id,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_policy_entries"
 
 pub type DesSoccerLearningPolicyEntriesTeam {
   DesSoccerLearningPolicyEntriesTeamHome
@@ -2956,6 +2956,7 @@ pub type DesSoccerLearningPolicyEntriesRow {
     target_tactical_cell_id: Int,
     target_macro_cell_id: Int,
     target_root_cell_id: Int,
+    receiver_descriptor: Int,
     value_micros: Int,
     visits: Int,
     source_run_id: Option(String),
@@ -3226,7 +3227,7 @@ pub fn validate_des_soccer_learning_runs_away_outcome(value: String) -> Result(S
 }
 
 pub const des_soccer_learning_run_deltas_table = "des_soccer_learning_run_deltas"
-pub const des_soccer_learning_run_deltas_select_sql = "select\n      id::text as id,\n      run_id::text as run_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      before_value_micros,\n      after_value_micros,\n      value_delta_micros,\n      visit_delta,\n      merge_weight_micros,\n      effective_visit_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_run_deltas"
+pub const des_soccer_learning_run_deltas_select_sql = "select\n      id::text as id,\n      run_id::text as run_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      receiver_descriptor,\n      before_value_micros,\n      after_value_micros,\n      value_delta_micros,\n      visit_delta,\n      merge_weight_micros,\n      effective_visit_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_run_deltas"
 
 pub type DesSoccerLearningRunDeltasTeam {
   DesSoccerLearningRunDeltasTeamHome
@@ -3281,6 +3282,7 @@ pub type DesSoccerLearningRunDeltasRow {
     target_tactical_cell_id: Int,
     target_macro_cell_id: Int,
     target_root_cell_id: Int,
+    receiver_descriptor: Int,
     before_value_micros: Int,
     after_value_micros: Int,
     value_delta_micros: Int,
