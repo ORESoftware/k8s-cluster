@@ -2183,7 +2183,6 @@ create table if not exists des_soccer_learning_policy_entries (
   target_tactical_cell_id integer default -1 not null,
   target_macro_cell_id integer default -1 not null,
   target_root_cell_id integer default -1 not null,
-  receiver_descriptor integer default -1 not null,
   value_micros bigint not null,
   visits integer default 0 not null,
   source_run_id uuid,
