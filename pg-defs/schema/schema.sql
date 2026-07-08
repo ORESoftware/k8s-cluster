@@ -2352,6 +2352,7 @@ create table if not exists des_soccer_learning_run_deltas (
   target_tactical_cell_id integer default -1 not null,
   target_macro_cell_id integer default -1 not null,
   target_root_cell_id integer default -1 not null,
+  receiver_descriptor integer default -1 not null,
   before_value_micros bigint default 0 not null,
   after_value_micros bigint default 0 not null,
   value_delta_micros bigint default 0 not null,
