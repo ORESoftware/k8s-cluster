@@ -157,4 +157,17 @@ mod tests {
         assert!(!is_blocked("93.184.216.34".parse().unwrap())); // example.com
         assert!(!is_blocked("2606:4700:4700::1111".parse().unwrap()));
     }
+
+    #[test]
+    fn blocks_v6_embedded_private_v4() {
+        // IPv4-mapped forms of loopback/private must be blocked.
+        assert!(is_blocked("::ffff:127.0.0.1".parse().unwrap()));
+        assert!(is_blocked("::ffff:169.254.169.254".parse().unwrap())); // metadata
+        assert!(is_blocked("::ffff:10.0.0.1".parse().unwrap()));
+        // 6to4 and NAT64 wrapping a private v4.
+        assert!(is_blocked("2002:0a00:0001::1".parse().unwrap())); // 6to4 of 10.0.0.1
+        assert!(is_blocked("64:ff9b::7f00:1".parse().unwrap())); // NAT64 of 127.0.0.1
+        // A mapped public address is still allowed.
+        assert!(!is_blocked("::ffff:1.1.1.1".parse().unwrap()));
+    }
 }
