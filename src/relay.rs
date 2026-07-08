@@ -35,11 +35,34 @@ const EXIT_READ_CHUNK: usize = 32 * 1024;
 /// connections cannot pile up.
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(20);
 
+/// Bound on dialing the next hop / destination, so a black-holed target cannot
+/// pin a circuit slot during connect.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+
 fn max_circuits() -> usize {
     return std::env::var("TOR_MAX_CIRCUITS")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(1024);
+}
+
+/// Optional idle timeout on the forward read loop (0 = disabled). Bounds
+/// post-handshake slowloris, where a peer completes the handshake then holds
+/// the circuit open sending nothing.
+fn idle_timeout() -> Option<Duration> {
+    let secs: u64 = std::env::var("TOR_CIRCUIT_IDLE_TIMEOUT_SECS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    return if secs == 0 { None } else { Some(Duration::from_secs(secs)) };
+}
+
+/// Connect to `addr` with a bounded timeout.
+async fn connect_timeout(addr: impl tokio::net::ToSocketAddrs) -> Result<TcpStream> {
+    return timeout(CONNECT_TIMEOUT, TcpStream::connect(addr))
+        .await
+        .map_err(|_| anyhow!("connect timed out"))?
+        .map_err(|e| anyhow!("connect failed: {e}"));
 }
 
 pub async fn run(listen: &str, secret: StaticSecret) -> Result<()> {
