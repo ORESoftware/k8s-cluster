@@ -100,6 +100,9 @@ async function refresh() {
   } catch (e) { /* transient */ }
 }
 function setUrl(u){ document.getElementById('url').value = u; }
+// If the dashboard was opened with ?token=…, forward it to the guarded
+// /api/fetch endpoint so token-protected deployments remain usable.
+const UI_TOKEN = new URLSearchParams(location.search).get('token');
 async function doFetch() {
   const url = document.getElementById('url').value.trim();
   const meta = document.getElementById('result-meta');
@@ -109,7 +112,9 @@ async function doFetch() {
   meta.className = 'muted';
   pre.style.display = 'none'; frame.style.display = 'none';
   try {
-    const r = await fetch('/api/fetch?url=' + encodeURIComponent(url));
+    let api = '/api/fetch?url=' + encodeURIComponent(url);
+    if (UI_TOKEN) api += '&token=' + encodeURIComponent(UI_TOKEN);
+    const r = await fetch(api);
     const d = await r.json();
     if (!d.ok) {
       meta.className = 'err';
