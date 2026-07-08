@@ -17,16 +17,31 @@
 - **Exit policy (SSRF protection).** By default an exit refuses to connect to
   loopback, RFC1918/CGNAT/ULA private ranges, link-local, and the cloud metadata
   address `169.254.169.254`. It resolves the destination first and rejects if all
-  resolved addresses are blocked. Override for local testing with
+  resolved addresses are blocked. IPv4-mapped/6to4/NAT64 IPv6 forms that embed a
+  private v4 address (e.g. `::ffff:127.0.0.1`) are unwrapped and blocked too, so
+  they cannot be used to bypass the v4 rules. Override for local testing with
   `TOR_EXIT_ALLOW_PRIVATE=1`.
 - **Extend allowlist.** Set `TOR_RELAY_PEERS` to pin which `host:port` a relay
   will extend to, preventing relays from being used to reach arbitrary internal
-  hosts.
-- **Overlay pre-shared key.** `TOR_NETWORK_SECRET` is folded into every
-  handshake, so only nodes/clients sharing it can build circuits — turning the
-  open overlay into a closed one.
-- **Handshake timeout + circuit cap.** Half-open connections are dropped after
-  20 s; `TOR_MAX_CIRCUITS` bounds concurrent circuits (reject, don't queue).
+  hosts. In untrusted deployments (relays reachable by parties you don't
+  control) this should be set, since `Extend` targets are otherwise unrestricted.
+- **Overlay pre-shared key.** `TOR_NETWORK_SECRET` (or `TOR_NETWORK_SECRET_FILE`,
+  which keeps it out of the process environment) is folded into every handshake,
+  so only nodes/clients sharing it can build circuits — turning the open overlay
+  into a closed one.
+- **Timeouts & circuit cap.** Half-open handshakes are dropped after 20 s; dialing
+  the next hop/destination is bounded (15 s relay, 60 s client); the SOCKS
+  negotiation must finish in 30 s; `TOR_MAX_CIRCUITS` bounds concurrent circuits
+  (reject, don't queue); `TOR_CIRCUIT_IDLE_TIMEOUT_SECS` optionally closes idle
+  circuits (0 = off, to avoid breaking legitimately long-idle streams).
+- **Dashboard `/api/fetch` auth.** The fetch endpoint is a server-side proxy
+  primitive. When the dashboard is bound to a non-loopback address, set
+  `TOR_UI_TOKEN` (or `TOR_UI_TOKEN_FILE`); requests must then present it via
+  `?token=` or `Authorization: Bearer` (checked in constant time). Without it,
+  `/api/fetch` is an unauthenticated proxy — the process logs a warning if bound
+  non-loopback with no token. The URL's host/path are also rejected if they
+  contain control characters, preventing CRLF header-injection/request smuggling.
+- **Relay key file permissions.** The static identity secret is written `0600`.
 - **Framer bounds.** Frames are capped at 1 MiB; doc names are sanitized against
   path traversal; the fetch preview is size-capped.
 
