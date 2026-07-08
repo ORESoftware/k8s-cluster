@@ -46,6 +46,10 @@ pub struct WebConfig {
     pub hops: usize,
     pub docs_dir: PathBuf,
     pub stats: Arc<Stats>,
+    /// If set, the `/api/fetch` proxy primitive requires this token (via
+    /// `?token=` or `Authorization: Bearer`). Guards the dashboard when it is
+    /// bound to a non-loopback address.
+    pub ui_token: Option<String>,
 }
 
 type AppState = Arc<WebConfig>;
