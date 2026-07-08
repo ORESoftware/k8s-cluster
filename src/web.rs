@@ -134,6 +134,41 @@ async fn fetch(
     }
 }
 
+/// Whether a request may use the `/api/fetch` proxy primitive. Open when no
+/// `TOR_UI_TOKEN` is configured; otherwise the token must match (checked in
+/// constant time).
+fn authorized(cfg: &WebConfig, headers: &HeaderMap, q: &HashMap<String, String>) -> bool {
+    let expected = match &cfg.ui_token {
+        None => return true,
+        Some(t) => t,
+    };
+    let provided = q.get("token").map(|s| s.as_str()).or_else(|| {
+        headers
+            .get(header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.strip_prefix("Bearer "))
+    });
+    return match provided {
+        Some(p) => ct_str_eq(p, expected),
+        None => false,
+    };
+}
+
+/// Constant-time string comparison (length-independent short-circuit avoided by
+/// folding, but differing lengths return false immediately — the token length
+/// is not itself secret).
+fn ct_str_eq(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for i in 0..a.len() {
+        diff |= a[i] ^ b[i];
+    }
+    return diff == 0;
+}
+
 /// Open a stream through the active backend and perform one plaintext HTTP GET.
 async fn onion_get(cfg: &WebConfig, url: &str) -> Result<serde_json::Value> {
     let (host, port, path) = parse_http_url(url)?;
