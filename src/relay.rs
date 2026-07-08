@@ -120,10 +120,19 @@ async fn handle_circuit(prev: TcpStream, secret: Arc<StaticSecret>, policy: Arc<
     let mut next_w: Option<OwnedWriteHalf> = None; // middle: link to next relay
     let mut dest_w: Option<OwnedWriteHalf> = None; // exit: link to destination
 
+    let idle = idle_timeout();
     loop {
-        let frame = match read_frame(&mut prev_r).await {
-            Ok(f) => f,
-            Err(_) => break, // previous hop closed
+        let read = read_frame(&mut prev_r);
+        let frame = match idle {
+            Some(d) => match timeout(d, read).await {
+                Ok(Ok(f)) => f,
+                Ok(Err(_)) => break,           // previous hop closed
+                Err(_) => break,               // idle timeout
+            },
+            None => match read.await {
+                Ok(f) => f,
+                Err(_) => break,
+            },
         };
         let plaintext = opener_fwd.open(&frame)?;
         let cell = Cell::decode(&plaintext)?;
