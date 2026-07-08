@@ -2398,7 +2398,8 @@ create unique index if not exists des_soccer_learning_run_deltas_key_uq
     target_fine_cell_id,
     target_tactical_cell_id,
     target_macro_cell_id,
-    target_root_cell_id
+    target_root_cell_id,
+    receiver_descriptor
   );
 
 create index if not exists des_soccer_learning_run_deltas_merge_idx
