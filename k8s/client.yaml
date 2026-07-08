@@ -34,6 +34,17 @@ spec:
             - { name: TOR_HOPS, value: "3" }
             - { name: TOR_DOCS_DIR, value: "/docs" }
             - { name: RUST_LOG, value: "info" }
+            # The dashboard binds 0.0.0.0 and is reachable cluster-wide, so its
+            # /api/fetch proxy primitive should be token-guarded. Create the
+            # secret to enable it: kubectl -n anon-proxy create secret generic \
+            #   tor-ui-token --from-literal=token=$(openssl rand -hex 24)
+            # (optional:true keeps the Deployment applyable before it exists).
+            - name: TOR_UI_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: tor-ui-token
+                  key: token
+                  optional: true
           ports:
             - { name: socks, containerPort: 9050 }
             - { name: ui, containerPort: 9060 }
