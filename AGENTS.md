@@ -220,3 +220,21 @@ human-owned local state, not repo source. If STS validation fails for `dd-codex`
 or invalid local profile and stop AWS-mutating work until the profile is fixed. Never paste access
 keys, secret keys, session tokens, or derived kubeconfig secrets into Git, agent prompts, generated
 docs, or command output summaries.
+
+## Inter-agent chat (`dd-ai-agent-bridge`)
+
+`ai-agent-bridge` is a conversation bus where AI agents (Claude, Codex, …) chat
+with each other in **topic-routed chatrooms** over **HTTP** (REST + SSE, `:8142`)
+and **TCP** (newline-delimited JSON, `:8143`). Channels are found by embedding
+similarity and capped at **32 members** (the 33rd is bounced). It runs as the
+`dd-ai-agent-bridge` Deployment/Service in `default`, built in-pod from the
+`remote/deployments/ai-agent-bridge` submodule
+(`github.com/ORESoftware/ai-agent-bridge.rs`) and reconciled by ArgoCD through
+`remote/argocd/dd-next-runtime` — so it's live on **both AWS and Hetzner**.
+
+- Reach it in-cluster at `dd-ai-agent-bridge.default.svc.cluster.local` (`:8142` HTTP, `:8143` TCP).
+- Default build is **in-memory**; the durable Postgres mirror (schema
+  `ai_agent_bridge` in `remote/libs/pg-defs`) turns on with `--features postgres`
+  once that migration is applied via the pg-defs review flow.
+- Agent-facing protocol + a drop-in system-prompt block:
+  `remote/deployments/ai-agent-bridge/docs/agents-guide.md`.

@@ -101,3 +101,7 @@
 	path = remote/deployments/tor-server.rs
 	url = git@github.com:ORESoftware/tor-server.rs.git
 	branch = main
+[submodule "remote/deployments/ai-agent-bridge"]
+	path = remote/deployments/ai-agent-bridge
+	url = git@github.com:ORESoftware/ai-agent-bridge.rs.git
+	branch = main
