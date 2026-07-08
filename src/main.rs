@@ -46,11 +46,13 @@ async fn main() -> Result<()> {
         .with_target(false)
         .init();
 
-    // Optional overlay membership secret, folded into every handshake.
-    if let Ok(secret) = std::env::var("TOR_NETWORK_SECRET") {
+    // Optional overlay membership secret, folded into every handshake. Prefer a
+    // file (TOR_NETWORK_SECRET_FILE) so the secret is not exposed in the
+    // process environment; fall back to TOR_NETWORK_SECRET.
+    if let Some(secret) = read_env_or_file("TOR_NETWORK_SECRET", "TOR_NETWORK_SECRET_FILE")? {
         if !secret.is_empty() {
             crypto::set_network_secret(secret.into_bytes());
-            info!("overlay pre-shared key active (TOR_NETWORK_SECRET set)");
+            info!("overlay pre-shared key active");
         }
     }
 
