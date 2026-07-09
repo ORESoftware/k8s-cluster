@@ -218,6 +218,96 @@ Owner repos: `fiducia-node.rs`, `fiducia-clients`, `fiducia-interfaces`.
 
 ---
 
+## Broader use-case surface
+
+Everything here is native (crash-fault, operator-visible) territory — fiducia's
+sweet spot, no second layer required. This is the catalog a customer maps their
+problem onto. Grouped by the primitive that powers it.
+
+### By primitive
+
+**Multi-key locks** — single-writer serialization:
+- Terraform / infra **state locking** (the DynamoDB-lock-table role).
+- **Deploy locks** — only one deploy to an environment at a time.
+- **Migration guard** — exactly one schema migration runs.
+- Single-writer to a non-transactional external system (an S3 object, a legacy
+  API, a file) — serialize writes fiducia can't see.
+- **Resource checkout** — a staging slot, a test device, a physical fixture.
+- Tenant / shard / partition **ownership** (one worker owns one key).
+
+**Semaphores** — bounded concurrency:
+- Cap workers hitting a **rate-limited third-party API**.
+- **License / seat** enforcement (N concurrent users of a paid feature).
+- **GPU / job pool** — only N training or batch jobs at once.
+- Shared **connection-pool / quota** ceiling across a fleet.
+- Canary cohort sizing.
+
+**RW-locks** — many readers / exclusive writer:
+- Config reload; **cache-stampede** prevention (one loader repopulates, readers wait);
+- Block writers during a **consistent backup / snapshot**.
+
+**Idempotency keys** — exactly-once:
+- **Webhook / event** dedup (Stripe events, at-least-once queues, Kafka/SQS consumers).
+- Retry-safe payments / order placement.
+- **Notification dedup** — don't send the same email/SMS/push twice.
+- Outbox-pattern dedup.
+
+**Rate limiting** — per-tenant fairness & cost control:
+- Per-tenant **API quotas** (consistent across replicas).
+- Login/OTP **brute-force throttle**; abuse/spam control.
+- **LLM spend caps** per tenant; fair-share scheduling; ad **budget pacing**.
+
+**Cron / schedules** — no double-fire across a fleet:
+- Distributed scheduled jobs, delayed jobs / reminders.
+- Billing runs, report generation, retention cleanup.
+- **Certificate renewal / token rotation** triggers; watchdog heartbeats.
+
+**KV + watches** — live shared state:
+- Dynamic **config / feature flags** with push (no poll).
+- **Kill switches / circuit-breaker** state shared fleet-wide.
+- Dynamic **routing tables / traffic splitting**, runtime log-level control.
+- Cache-invalidation signal; A/B experiment assignment; shared blackboard.
+
+**Leader election** — active/standby singletons:
+- Failover for a scheduler / poller / reconciler; **regional primary** selection.
+- **Kubernetes-operator / controller** leader election (etcd's own headline use).
+- Coordinator election inside a customer's own app.
+
+**Service discovery** — live membership:
+- Dynamic endpoint registry replacing stale DNS; health-aware routing;
+- Blue-green / canary member sets; sidecar-mesh membership; locality-aware lookup.
+
+### Composed primitives (need the `future-work.md` build-out)
+
+Higher-level recipes that layer on the above but aren't shipped yet — flag them
+as roadmap, not available today: **distributed barrier / gang scheduling**,
+**countdown latch** (fan-in), **distributed FIFO queue** on the Raft log,
+**sequencer / monotonic ID** service, **saga / workflow** coordinator, **2PC /
+distributed-transaction** coordinator, atomic **multi-key CAS** (same shard), and
+**fencing-token-as-a-service** for external stateful systems (DB rows, S3,
+payment idempotency tables).
+
+### By vertical (the buyer-facing framing)
+
+| Vertical | Fiducia earns its place doing |
+|----------|-------------------------------|
+| **CI/CD** | deploy locks, environment reservation, concurrency groups, release-train ordering |
+| **Data pipelines** | exactly-once batch, Kafka-consumer partition ownership, watermark coordination |
+| **Multi-region active-active** | write ownership, conflict avoidance, regional failover |
+| **Kubernetes / operators** | controller leader election, dynamic operator config |
+| **IoT / edge fleets** | device-shadow config, command dedup, firmware-rollout gating |
+| **Gaming / realtime** | matchmaking authority, room/session ownership, seat reservation |
+| **E-commerce** | inventory reservation (oversell prevention), checkout lock, flash-sale rate limiting |
+| **Ad tech** | budget pacing, frequency capping |
+| **Databases / storage** | migration gate, backup coordination, primary election for a customer DB |
+| **Batch / HPC** | gang scheduling, GPU-pool semaphores |
+
+The pattern behind all of them is the same three-word test: **exactly-once**,
+**single-owner**, **fenced** — whenever a customer has many replicas but a
+decision that must have one authoritative outcome, that's a fiducia call.
+
+---
+
 ## Summary
 
 | Idea | Fit | One-line reason |
