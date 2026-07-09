@@ -1,0 +1,9 @@
+target
+static
+.git
+.github
+.nix
+tmp
+.env
+.env.*
+*.md
