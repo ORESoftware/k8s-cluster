@@ -22,7 +22,7 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: "22"
       # Only a stub package-lock (no runtime deps); fall back to `npm install`
