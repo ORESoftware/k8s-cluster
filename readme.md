@@ -110,5 +110,7 @@ scripts/audit-repo-state.sh --allow-dirty
 - `apps/fiducia-node-sidecar.rs`
 - `apps/fiducia-node.rs`
 - `apps/fiducia-routing.rs`
+- `apps/fiducia-sync`
 - `apps/fiducia-telemetry.rs`
+- `apps/fiducia-test-config`
 - `apps/fiducia-ui.web`
