@@ -1,0 +1,13 @@
+# env
+env/
+.env
+.env.*
+!.env.example
+
+# nix / direnv
+.direnv/
+result
+result-*
+
+# scratch space (git worktrees, build scratch, etc.)
+tmp/

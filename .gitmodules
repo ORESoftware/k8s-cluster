@@ -1,0 +1,24 @@
+[submodule "apps/sonus-auris-backend.rs"]
+	path = apps/sonus-auris-backend.rs
+	url = git@github.com:sonus-auris/sonus-auris-backend.rs.git
+	branch = main
+[submodule "apps/sonus-auris-ui.dart"]
+	path = apps/sonus-auris-ui.dart
+	url = git@github.com:sonus-auris/sonus-auris-ui.dart.git
+	branch = main
+[submodule "apps/sonus-auris-interfaces"]
+	path = apps/sonus-auris-interfaces
+	url = git@github.com:sonus-auris/sonus-auris-interfaces.git
+	branch = main
+[submodule "apps/sonus-auris-site.web"]
+	path = apps/sonus-auris-site.web
+	url = git@github.com:sonus-auris/sonus-auris-site.web.git
+	branch = main
+[submodule "apps/desktop.app.rs"]
+	path = apps/desktop.app.rs
+	url = git@github.com:sonus-auris/desktop.app.rs.git
+	branch = main
+[submodule "apps/sonus-auris.infra"]
+	path = apps/sonus-auris.infra
+	url = git@github.com:sonus-auris/sonus-auris.infra.git
+	branch = main
