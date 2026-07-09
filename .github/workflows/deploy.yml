@@ -48,7 +48,7 @@ jobs:
       # before checkout so the default token can init the (public) submodules.
       - name: Use HTTPS for submodule fetch
         run: git config --global url."https://github.com/".insteadOf "git@github.com:"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || github.ref }}
           submodules: recursive
