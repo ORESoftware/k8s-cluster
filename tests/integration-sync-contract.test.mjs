@@ -126,24 +126,24 @@ test("decode.mjs exports the transport decoders that speak the ChangeEvent shape
   assert.equal(del.op, "delete");
 });
 
-test("the ChangeEvent field set agrees across the Rust core, the JS decoder, and the SQL doc", { skip }, () => {
-  // Rust struct fields.
+test("the ChangeEvent field set agrees across the Rust core, the JS decoder, and the SQL doc", { skip }, async () => {
+  // Rust struct fields, parsed from source.
   const struct = read(SYNC_LIB).match(/pub struct ChangeEvent\s*\{([\s\S]*?)\}/);
   const rustFields = [...struct[1].matchAll(/pub\s+(\w+)\s*:/g)].map((m) => m[1]).sort();
 
-  // JS decoder output fields (derived, not hard-coded).
-  const decode = read(SYNC_DECODE);
-  const jsReturn = decode.match(/return\s*\{([\s\S]*?)\}\s*;/);
-  assert.ok(jsReturn, "decode.mjs must build a ChangeEvent object literal");
-  const jsFields = [...jsReturn[1].matchAll(/(\w+)\s*:/g)].map((m) => m[1]).sort();
+  // JS decoder output fields, observed at runtime (survives shorthand props).
+  const { decodeSupabaseChange } = await import(pathToFileURL(path.join(root, SYNC_DECODE)).href);
+  const decoded = decodeSupabaseChange("api_keys", { eventType: "INSERT", new: { id: "k1", version: 7 } });
+  const jsFields = Object.keys(decoded).sort();
 
   assert.deepEqual(rustFields, CHANGE_EVENT_FIELDS, "Rust ChangeEvent must be the canonical envelope");
   assert.deepEqual(jsFields, CHANGE_EVENT_FIELDS, "JS decoder must emit the canonical envelope");
+  assert.deepEqual(rustFields, jsFields, "Rust core and JS decoder must agree on the ChangeEvent fields");
 
   // SQL documents the transport-agnostic subset (no at_ms wire timestamp).
   const sqlShape = read(CUSTOMER_SQL).match(/\{\s*table\s*,\s*op\s*,\s*id\s*,\s*version\s*,\s*row\s*\}/);
   assert.ok(sqlShape, "customer.sql must document the change-event shape");
   for (const field of ["table", "op", "id", "version", "row"]) {
-    assert.ok(CHANGE_EVENT_FIELDS.includes(field), `SQL field ${field} must be part of the ChangeEvent envelope`);
+    assert.ok(rustFields.includes(field), `SQL-documented field ${field} must exist in the ChangeEvent envelope`);
   }
 });
