@@ -67,7 +67,9 @@ test("submodule declarations stay complete, pinned to main, and backed by apps d
     "apps/fiducia-node-sidecar.rs",
     "apps/fiducia-node.rs",
     "apps/fiducia-routing.rs",
+    "apps/fiducia-sync",
     "apps/fiducia-telemetry.rs",
+    "apps/fiducia-test-config",
     "apps/fiducia-ui.web",
   ]);
 
