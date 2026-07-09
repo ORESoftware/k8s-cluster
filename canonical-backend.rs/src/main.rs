@@ -23,25 +23,7 @@ async fn main() {
         .unwrap_or_else(|_| "static".to_string())
         .into();
 
-    // JSON API. Mounted under /api so it takes precedence over the static site.
-    let api = Router::new()
-        .route("/health", get(health))
-        .route("/info", get(info));
-
-    // Everything else is served from the static Astro build. Requests for
-    // directories resolve to index.html, and unknown paths fall back to the
-    // SPA-style index so client routing keeps working.
-    let serve_dir = ServeDir::new(&static_dir)
-        .append_index_html_on_directories(true)
-        .fallback(ServeFile::new(static_dir.join("index.html")));
-
-    let app = Router::new()
-        // Plain liveness/readiness endpoint for k8s probes (served at root,
-        // bypassing the gateway prefix so probes hit the pod directly).
-        .route("/healthz", get(healthz))
-        .nest("/api", api)
-        .fallback_service(serve_dir)
-        .layer(TraceLayer::new_for_http());
+    let app = build_router(&static_dir).layer(TraceLayer::new_for_http());
 
     let port: u16 = std::env::var("PORT")
         .ok()
