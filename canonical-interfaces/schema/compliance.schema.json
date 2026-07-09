@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CanonicalCompliance",
+  "description": "Domain types for canonical.cloud compliance-audit engagements.",
+  "$defs": {
+    "AuditEngagement": {
+      "type": "object",
+      "description": "A single compliance-audit engagement for a customer company.",
+      "required": ["id", "company", "framework", "status", "opened_at"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Opaque engagement identifier (UUID)."
+        },
+        "company": {
+          "type": "string",
+          "description": "Customer company name."
+        },
+        "framework": {
+          "type": "string",
+          "enum": ["soc2", "fedramp", "hipaa", "iso_27001", "pci_dss", "gdpr"],
+          "description": "Compliance framework being audited."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["scoping", "remediation", "in_audit", "complete"],
+          "description": "Lifecycle stage of the engagement."
+        },
+        "opened_at": {
+          "type": "string",
+          "description": "RFC 3339 timestamp the engagement was opened."
+        },
+        "target_report_date": {
+          "type": "string",
+          "description": "Optional RFC 3339 date the attestation report is targeted for."
+        }
+      }
+    }
+  }
+}
