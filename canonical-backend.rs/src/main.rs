@@ -78,3 +78,55 @@ async fn info() -> Json<serde_json::Value> {
         "domain": "canonical.cloud",
     }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::Request;
+    use http_body_util::BodyExt;
+    use tower::ServiceExt; // for `oneshot`
+
+    fn router() -> Router {
+        // Point the static fallback at a directory that does not exist; these
+        // tests only exercise the API/probe routes, which take precedence.
+        build_router(std::path::Path::new("static"))
+    }
+
+    async fn get_json(path: &str) -> (StatusCode, serde_json::Value) {
+        let res = router()
+            .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let status = res.status();
+        let bytes = res.into_body().collect().await.unwrap().to_bytes();
+        let json = serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
+        (status, json)
+    }
+
+    #[tokio::test]
+    async fn healthz_is_bare_ok() {
+        let res = router()
+            .oneshot(Request::builder().uri("/healthz").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn api_health_reports_service() {
+        let (status, body) = get_json("/api/health").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "ok");
+        assert_eq!(body["service"], SERVICE);
+    }
+
+    #[tokio::test]
+    async fn api_info_reports_version_and_domain() {
+        let (status, body) = get_json("/api/info").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["service"], SERVICE);
+        assert_eq!(body["domain"], "canonical.cloud");
+        assert_eq!(body["version"], env!("CARGO_PKG_VERSION"));
+    }
+}
