@@ -1,0 +1,14 @@
+.DS_Store
+*.log
+.env
+.env.*
+!.env.example
+
+# Nix / direnv
+.direnv/
+
+# Node (only a stub package.json; no runtime deps expected)
+node_modules/
+
+# Scratch / git worktrees (tmp/worktrees/*)
+tmp/

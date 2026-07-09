@@ -1,0 +1,37 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: fmt
+        run: cargo fmt --check
+        continue-on-error: true
+      - name: clippy
+        run: cargo clippy --all-targets -- -D warnings
+        continue-on-error: true
+      - name: test
+        # Bin-only crate (no lib.rs): `--lib` would error with "no library
+        # targets found", so run the in-binary unit tests with `--bins`.
+        run: cargo test --bins
+      - name: audit
+        run: |
+          cargo install cargo-audit --locked || true
+          cargo audit
+        continue-on-error: true
