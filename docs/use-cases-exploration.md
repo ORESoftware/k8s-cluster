@@ -93,7 +93,44 @@ and threads the fencing token into the commit. Few dozen lines on the existing
 TS/Rust client, solves a problem we hit daily, and makes fiducia self-hosting on
 its own tooling.
 
-Owner repos: `fiducia-node.rs`, `fiducia-clients`, `fiducia-cli.rs`.
+#### Embedding-routed topic rooms (where the two layers join)
+
+Agents don't know channel names up front — they know a *topic* ("refactor the
+auth module", "fix the flaky payment tests"). Routing is by **embedding
+similarity**: embed the topic, look it up against existing rooms, join the
+nearest (or mint a new one). This is already ai-agent-bridge's design — channels
+resolved by cosine similarity, capped at 32 members — and the persistence is a
+**Postgres pgvector** lookup: `embedding → nearest channel row → topic/slug`
+(the `ai_agent_bridge` schema, `channels` table, when built `--features
+postgres`).
+
+Keep the layer split clean:
+
+- **Routing / topic discovery = ai-agent-bridge** (pgvector: embedding → room).
+  This is *communication* — it decides who's in the conversation.
+- **Arbitration = fiducia** — it decides who may *act*. Fiducia does **not** do
+  the vector search; that stays in Postgres/ai-agent-bridge.
+
+The join point is that **an embedding-identified topic room is the natural
+coordination scope**. Once agents converge on a room, that room's slug namespaces
+their fiducia state:
+
+- **Room → lock namespace.** Agents in `topic:refactor-auth` take multi-key locks
+  under that prefix over the files that topic touches — coordination is scoped to
+  the conversation that motivated it.
+- **Room → shared blackboard.** The room's task/claim board is fiducia KV keyed by
+  room slug, watched by every member (durable + linearizable, where the chat
+  stream is ephemeral).
+- **Room → presence + integrator.** Service discovery is per-room agent presence;
+  leader election picks the room's one integrator/merger.
+
+So the pipeline is: *topic → embedding → (pgvector) room → (fiducia) locks + KV +
+election scoped to that room*. ai-agent-bridge owns the left half, fiducia the
+right; the room slug is the shared key between them. Neither reimplements the
+other — no vector search in fiducia, no Raft in the bridge.
+
+Owner repos: `fiducia-node.rs`, `fiducia-clients`, `fiducia-cli.rs`; interop with
+`ai-agent-bridge.rs` (pgvector routing, `ai_agent_bridge` schema).
 
 ---
 
