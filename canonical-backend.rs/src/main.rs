@@ -39,6 +39,30 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
+/// Builds the application router. Kept separate from `main` so unit tests can
+/// exercise the routes without binding a socket.
+///
+/// `/api/*` is mounted first so it takes precedence over the static site.
+/// Everything else is served from `static_dir`: directory requests resolve to
+/// `index.html`, and unknown paths fall back to the SPA-style index so client
+/// routing keeps working.
+fn build_router(static_dir: &std::path::Path) -> Router {
+    let api = Router::new()
+        .route("/health", get(health))
+        .route("/info", get(info));
+
+    let serve_dir = ServeDir::new(static_dir)
+        .append_index_html_on_directories(true)
+        .fallback(ServeFile::new(static_dir.join("index.html")));
+
+    Router::new()
+        // Plain liveness/readiness endpoint for k8s probes (served at root,
+        // bypassing the gateway prefix so probes hit the pod directly).
+        .route("/healthz", get(healthz))
+        .nest("/api", api)
+        .fallback_service(serve_dir)
+}
+
 async fn healthz() -> StatusCode {
     StatusCode::OK
 }
