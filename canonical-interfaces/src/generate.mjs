@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// JSON Schema -> per-language types for the Akrion soccer simulation.
+// JSON Schema -> per-language types for the canonical.cloud API.
 //
 //   node src/generate.mjs          # write generated/<lang>/...
 //   node src/generate.mjs --check  # verify generated files are up to date (CI)
