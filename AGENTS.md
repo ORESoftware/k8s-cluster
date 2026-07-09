@@ -9,27 +9,25 @@ Every app lives under `apps/<name>` as a git submodule pinned to a commit on its
 push **inside** that submodule, then stage the updated gitlink here with
 `git add apps/<name>`. Put scratch checkouts / worktrees under `tmp/` (gitignored).
 
-## Command safety
+## Command safety — STRICT (all agents MUST follow)
 
-Prefer reversible, git-tracked operations. Route every file deletion and move
-through git so it lands in history and stays recoverable. Never run a command
-that irreversibly destroys files, history, or system state.
+Never run destructive or irreversible shell commands. To remove or move files,
+**always go through git** so the change is tracked and recoverable.
 
-### Forbidden — never run
+**Blacklisted — do NOT run:**
+- `rm`, `rm -rf`, `rmdir`, `unlink` — never delete via raw `rm`.
+- bulk / indirect deletion: `find … -delete`, `find … -exec rm …`, `xargs rm` — no bypasses of the `rm` ban.
+- raw `mv` of tracked files; truncating a tracked file with `>` or `truncate`.
+- `git reset --hard`, `git clean -fdx`, `git checkout -- .` / `git restore .` mass-discard.
+- `git stash drop` / `git stash clear`, `git branch -D`, `git tag -d` — destroy unmerged work / refs; not on shared branches unless the operator explicitly asks.
+- `git push --force` / history rewrites on shared branches (esp. `main`).
+- `dd`, `mkfs`, `shred`, recursive `chmod -R` / `chown -R` on broad paths, fork bombs.
 
-- **Raw deletion:** `rm`, `rm -rf`, `rmdir`, `unlink`, `find … -delete`, `find … -exec rm …`
-- **Clobbering:** `mv`/`cp` over an existing path, `> file`, `>|`, `truncate`, `dd`, `shred`, `mkfs`
-- **Discarding local work:** `git clean -f`/`-fdx`, `git reset --hard`, `git checkout -- <path>`, `git restore <path>`, `git stash drop`/`clear`
-- **Rewriting shared history:** `git push -f`/`--force`/`--force-with-lease`, `git rebase`, `git commit --amend`, `git filter-branch`, `git reflog expire`, `git gc --prune=now` on anything already pushed
-- **System / privilege:** `sudo …`, `chmod -R`, `chown -R`, `kill -9`, `pkill`, `killall`
-- **Remote-to-shell piping:** `curl … | sh`, `wget … | bash`
+**Whitelisted — safe, prefer these:**
+- `git rm` / `git rm --cached` — remove files through git (recoverable via history).
+- `git mv` — rename/move through git.
+- `git restore <path>` (single file), `git revert`, `git stash` (push) — reversible.
+- Editing via the editor tools, `git add`, `git commit`, `git switch -c`.
 
-### Allowed — use these instead
-
-- `git rm <path>` instead of `rm` — stages the deletion; fully recoverable from history
-- `git mv <old> <new>` instead of `mv` — a tracked rename
-- `git revert`, a fresh branch, or `git restore --staged <path>` (unstage only) to undo safely
-- Read-only inspection is always fine: `ls`, `cat`, `git status`, `git diff`, `git log`, `rg`, `grep`
-- Branch switching is fine (`git switch <branch>`, `git checkout <branch>`); only the pathspec forms that discard changes are forbidden
-
-If a task appears to require a forbidden command, stop and ask first.
+If a genuinely destructive action seems unavoidable, **STOP and ask the operator
+first** — do not improvise around this rule.
