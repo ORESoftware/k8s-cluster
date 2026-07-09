@@ -227,7 +227,7 @@ function emitPython(types) {
 }
 
 function emitGo(types) {
-  const out = [`// ${BANNER}`, "", "package akrionsim", ""];
+  const out = [`// ${BANNER}`, "", "package canonicalinterfaces", ""];
   for (const t of types) {
     if (t.description) out.push(`// ${t.name}: ${cLine(t.description)}`);
     out.push(`type ${t.name} struct {`);
