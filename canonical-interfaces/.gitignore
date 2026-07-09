@@ -1,0 +1,12 @@
+node_modules/
+target/
+Cargo.lock
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+.env
+
+# Scratch / git worktrees (tmp/worktrees/*)
+tmp/
