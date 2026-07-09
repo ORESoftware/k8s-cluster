@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CanonicalApi",
+  "description": "Typed-IO for the canonical-backend.rs HTTP API.",
+  "$defs": {
+    "HealthStatus": {
+      "type": "object",
+      "description": "Response of GET /api/health.",
+      "required": ["status", "service"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["ok", "degraded"],
+          "description": "Liveness of the service."
+        },
+        "service": {
+          "type": "string",
+          "description": "Service name (e.g. \"canonical-backend\")."
+        }
+      }
+    },
+    "ServiceInfo": {
+      "type": "object",
+      "description": "Response of GET /api/info.",
+      "required": ["service", "version", "domain"],
+      "properties": {
+        "service": {
+          "type": "string",
+          "description": "Service name."
+        },
+        "version": {
+          "type": "string",
+          "description": "Semantic version of the running build (CARGO_PKG_VERSION)."
+        },
+        "domain": {
+          "type": "string",
+          "description": "Public domain served (e.g. \"canonical.cloud\")."
+        }
+      }
+    }
+  }
+}
