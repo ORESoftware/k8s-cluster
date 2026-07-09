@@ -1,0 +1,33 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      # Submodule URLs in .gitmodules use SSH (git@github.com:...), but CI
+      # authenticates over HTTPS with the default GITHUB_TOKEN. Rewrite SSH ->
+      # HTTPS BEFORE checkout so it can init every submodule with that token.
+      # All app submodules are public.
+      - name: Use HTTPS for submodule fetch
+        run: git config --global url."https://github.com/".insteadOf "git@github.com:"
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      # Superproject contract specs; need submodules checked out (the contract
+      # asserts apps/ dirs exist and reads each app's agents.md).
+      - run: node --test tests/*.test.mjs
+      - name: audit repo state
+        run: bash scripts/audit-repo-state.sh
+        continue-on-error: true
