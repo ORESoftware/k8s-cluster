@@ -1,0 +1,53 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: fmt
+        run: cargo fmt --check
+        continue-on-error: true
+      - name: clippy
+        run: cargo clippy --all-targets -- -D warnings
+        continue-on-error: true
+      - name: test
+        run: cargo test
+
+  # Browser e2e (Playwright + Puppeteer) boots the built server binary and drives
+  # its pages. Best-effort: needs a real Chrome.
+  browser-e2e:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: build server
+        run: cargo build --bin akrion-web-server
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: install e2e deps
+        working-directory: e2e
+        run: npm ci || npm install
+      - name: install chromium
+        working-directory: e2e
+        run: npx playwright install --with-deps chromium
+      - name: browser e2e (playwright + puppeteer)
+        working-directory: e2e
+        run: npm test
