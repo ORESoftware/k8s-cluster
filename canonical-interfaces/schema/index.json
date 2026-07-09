@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CanonicalInterfacesIndex",
+  "description": "Lists the JSON Schema source files that the generator turns into per-language types. Add a type by adding a $def in one of these files; add a file by listing it here.",
+  "schemas": [
+    "api.schema.json",
+    "compliance.schema.json"
+  ]
+}
