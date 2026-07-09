@@ -1,0 +1,34 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      # Submodule URLs in .gitmodules use SSH (git@github.com:...), but CI
+      # authenticates over HTTPS with the default GITHUB_TOKEN. Rewrite SSH ->
+      # HTTPS BEFORE checkout so it can init every submodule with that token.
+      # All app submodules are public; only this superproject is private.
+      - name: Use HTTPS for submodule fetch
+        run: git config --global url."https://github.com/".insteadOf "git@github.com:"
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      # Only a stub package-lock (no runtime deps); fall back to `npm install`
+      # if `npm ci` refuses the lockfile.
+      - run: npm ci || npm install
+      # Contract tests for the superproject wiring; needs submodules checked out
+      # (monorepo-contract asserts apps/ dirs; integration-sync-contract reads
+      # files from apps/fiducia-interfaces and apps/fiducia-sync).
+      - run: node --test tests/*.test.mjs
