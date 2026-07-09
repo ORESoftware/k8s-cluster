@@ -1,0 +1,108 @@
+# Production deploy — the monorepo is the ONLY path to prod.
+#
+# Manual only (workflow_dispatch); NEVER triggered by push. Individual app repos
+# deploy to a TEST environment from their own CI on merge to main; production
+# happens HERE, and only when an operator dispatches this workflow against a
+# reviewed superproject pin set. See docs/deploy.md.
+#
+# Required secrets/vars for a REAL rollout. If none are present the workflow
+# validates the rendered manifests and exits GREEN without deploying anything
+# (validation-only) — so it is safe to run on a repo with no prod credentials:
+#   KUBE_CONFIG_PROD    raw kubeconfig (YAML) with apply rights on the prod
+#                       cluster(s). Primary gate for a kubectl rollout.
+#   ARGOCD_SERVER       ArgoCD API host (optional; enables `argocd app sync`).
+#   ARGOCD_AUTH_TOKEN   ArgoCD auth token (optional; pairs with ARGOCD_SERVER).
+#   REGISTRY_USERNAME   container registry user for pulling release images.
+#   REGISTRY_PASSWORD   container registry token/password.
+# For a human approval gate, protect the `prod` GitHub Environment with required
+# reviewers — this job binds to it via `environment:` below.
+
+name: deploy
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: string
+        default: prod
+      ref:
+        description: Superproject ref (branch, tag, or SHA) to deploy; blank = the dispatched ref
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Binds to a GitHub Environment so required-reviewer protection (if enabled)
+    # gates every run. Reinforces: prod never deploys automatically.
+    environment: ${{ inputs.environment }}
+    steps:
+      # Submodules use SSH URLs; CI authenticates over HTTPS. Rewrite SSH -> HTTPS
+      # before checkout so the default token can init the (public) submodules.
+      - name: Use HTTPS for submodule fetch
+        run: git config --global url."https://github.com/".insteadOf "git@github.com:"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          submodules: recursive
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # --- Validate the deployable state BEFORE any apply -------------------
+      # topology.toml is the single source of truth; fail if generated cluster
+      # inputs are stale relative to it.
+      - name: Validate infra topology is in sync
+        working-directory: apps/fiducia-infra
+        run: node tools/render.mjs --check
+      # Every per-cluster kustomization must build cleanly.
+      - name: Validate every cluster kustomization builds
+        run: |
+          shopt -s nullglob
+          built=0
+          for c in apps/fiducia-infra/clusters/*/; do
+            echo "::group::kubectl kustomize $c"
+            kubectl kustomize "$c" >/dev/null
+            echo "::endgroup::"
+            built=$((built + 1))
+          done
+          echo "validated $built cluster kustomization(s)"
+          test "$built" -gt 0
+
+      # --- Prod rollout — ONLY with credentials ----------------------------
+      # Never auto-deploys: with no ArgoCD/kubeconfig secret this prints a notice
+      # and succeeds, leaving prod untouched (the workflow ran validation-only).
+      - name: Prod rollout
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          KUBE_CONFIG_PROD: ${{ secrets.KUBE_CONFIG_PROD }}
+          ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+          ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "${ARGOCD_SERVER}" ] && [ -n "${ARGOCD_AUTH_TOKEN}" ]; then
+            echo "ArgoCD credentials present — syncing '${ENVIRONMENT}' via GitOps"
+            argocd app sync "fiducia-${ENVIRONMENT}" \
+              --server "${ARGOCD_SERVER}" --auth-token "${ARGOCD_AUTH_TOKEN}" \
+              --prune --timeout 600
+          elif [ -n "${KUBE_CONFIG_PROD}" ]; then
+            echo "Kubeconfig present — applying rendered manifests to '${ENVIRONMENT}'"
+            kubeconfig="$(mktemp)"
+            trap 'rm -f "${kubeconfig}"' EXIT
+            printf '%s' "${KUBE_CONFIG_PROD}" > "${kubeconfig}"
+            shopt -s nullglob
+            for c in apps/fiducia-infra/clusters/*/; do
+              echo "apply ${c}"
+              kubectl --kubeconfig "${kubeconfig}" apply -k "${c}"
+            done
+          else
+            echo "no prod credentials configured — validation-only; nothing deployed"
+          fi
