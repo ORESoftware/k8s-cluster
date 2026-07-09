@@ -1,1 +1,12 @@
 /target/
+.DS_Store
+*.log
+.env
+.env.*
+!.env.example
+
+# e2e node deps (browser tests)
+e2e/node_modules/
+
+# scratch / git worktrees
+tmp/

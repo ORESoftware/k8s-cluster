@@ -1,0 +1,9 @@
+target
+.git
+.github
+.nix
+e2e/node_modules
+tmp
+.env
+.env.*
+*.md
