@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+
+if [[ $# -gt 0 ]]; then
+  exec nix develop "$repo_root/.nix" --command "$@"
+fi
+
+exec nix develop "$repo_root/.nix"
