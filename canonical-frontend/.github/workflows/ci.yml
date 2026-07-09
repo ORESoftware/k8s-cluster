@@ -1,0 +1,40 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci || npm install
+      # Static contract specs (site-contract.test.mjs).
+      - run: npm test
+      # Astro production build — the gating step.
+      - run: npm run build
+
+  # Browser e2e (Playwright + Puppeteer) needs a real Chrome, so it is
+  # best-effort only.
+  browser-e2e:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci || npm install
+      # Install the Chromium builds both runners drive.
+      - run: npx playwright install --with-deps chromium
+      - name: browser e2e (playwright + puppeteer)
+        run: npm run test:browser
