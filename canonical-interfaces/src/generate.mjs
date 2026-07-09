@@ -223,7 +223,7 @@ function emitPython(types) {
     }
     out.push("");
   }
-  return { "python/akrion_sim_interfaces.py": out.join("\n") };
+  return { "python/canonical_interfaces.py": out.join("\n") };
 }
 
 function emitGo(types) {
