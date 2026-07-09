@@ -15,6 +15,12 @@ Public or public-ready repositories:
 
 - `fiducia-interfaces`: protocol, schema, generated language contracts.
 - `fiducia-clients`: public SDKs and protocol documentation.
+- `fiducia-sync`: local-first sync SDK (`@fiducia/sync`) — a zero-IO Rust
+  reconcile core (also compiled to WASM) plus a thin TS shim. Consumes the
+  `fiducia-interfaces` row/change-event contracts; ships no private history.
+- `fiducia-test-config`: shared `node --test` browser-test harness and
+  tsconfig/eslint presets (`@fiducia/test-config`). Dev-tooling only, no
+  product or control-plane code — public-ready like `fiducia-interfaces`.
 - `fiducia-cli.rs`: developer CLI and closest-region tooling.
 - `fiducia-routing.rs`: region enum and deterministic routing helpers.
 - `fiducia-ui.web`: public marketing/product web surface.
