@@ -41,6 +41,21 @@ Create git worktrees under `tmp/worktrees/` (e.g. `tmp/worktrees/<branch>`).
 `tmp/` is gitignored, so worktree checkouts never show up as untracked files or
 get committed by accident.
 
+## Command safety
+
+Agents working in this repo must **not** run destructive shell commands.
+
+**Blacklisted (never run):** `rm`, `rm -rf`, `rmdir`, `dd`, `mkfs`, `shred`,
+`truncate`, `> file` truncation, `find … -delete`, `git clean -fdx`,
+`git reset --hard` on shared branches, `git push --force` to `main`, and any
+`sudo`-prefixed or disk/format command.
+
+**Whitelisted (prefer these):** `git rm` and `git mv` to delete/move tracked
+files (they stay reviewable and reversible via history), `git restore` /
+`git revert` to undo, and creating files under the gitignored `tmp/` for scratch
+work. When something genuinely must be removed, stage it with `git rm` and let a
+human review the commit — do not delete files out-of-band with `rm`.
+
 ## Conventions
 
 - Keep the API additive and JSON-shaped; probes must stay dependency-free so a
