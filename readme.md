@@ -97,6 +97,7 @@ scripts/audit-repo-state.sh --allow-dirty
 ## Apps
 
 - `apps/fiducia-admin.rs`
+- `apps/fiducia-ai-agent-control-plane`
 - `apps/fiducia-auth.rs`
 - `apps/fiducia-backend.rs`
 - `apps/fiducia-brain.rs`
@@ -109,6 +110,7 @@ scripts/audit-repo-state.sh --allow-dirty
 - `apps/fiducia-load-balance.rs`
 - `apps/fiducia-node-sidecar.rs`
 - `apps/fiducia-node.rs`
+- `apps/fiducia-operations-control-plane`
 - `apps/fiducia-routing.rs`
 - `apps/fiducia-sync`
 - `apps/fiducia-telemetry.rs`
