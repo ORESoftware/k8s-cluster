@@ -97,6 +97,7 @@ scripts/audit-repo-state.sh --allow-dirty
 ## Apps
 
 - `apps/fiducia-admin.rs`
+- `apps/fiducia-ai-agent-bridge.rs`
 - `apps/fiducia-ai-agent-control-plane`
 - `apps/fiducia-auth.rs`
 - `apps/fiducia-backend.rs`
