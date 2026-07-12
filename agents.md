@@ -1,7 +1,8 @@
 # Agent guidelines — fiducia-monorepo
 
-## Git worktrees
+## Git branch policy — temporary
 
-Create git worktrees under `tmp/worktrees/` (e.g. `tmp/worktrees/<branch>`).
-`tmp/` is gitignored, so worktree checkouts never show up as untracked files or
-get committed by accident.
+Work directly on the `main` branch. Do not create or use feature branches,
+topic branches, or git worktrees. Before making changes, switch to `main` and
+confirm it is the checked-out branch. Preserve existing uncommitted work and
+stop for operator guidance if switching to `main` cannot be done safely.
