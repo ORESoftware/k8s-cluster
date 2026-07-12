@@ -4029,6 +4029,15 @@ async fn send_alert_email(
     listen_url: Option<&str>,
     segment_count: usize,
 ) -> bool {
+    if to.trim().is_empty() {
+        info!(
+            trigger,
+            %occurred_at,
+            segment_count,
+            "alert email recipient (SOUND_RECORDER_ALERT_EMAIL_TO) is not configured; skipping send"
+        );
+        return false;
+    }
     let Some(webhook_url) = state.config.alert_email_webhook_url.as_deref() else {
         info!(
             to,
