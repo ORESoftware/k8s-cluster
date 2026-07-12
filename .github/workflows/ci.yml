@@ -1,3 +1,5 @@
+# CI: checks out all submodules and runs the superproject contract tests
+# (tests/*.test.mjs) that guard submodule wiring and the cross-repo sync contract.
 name: ci
 on:
   push:
