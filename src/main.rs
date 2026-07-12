@@ -1079,9 +1079,14 @@ fn config_from_env() -> Config {
             "SOUND_RECORDER_RATE_LIMIT_PER_MINUTE",
             DEFAULT_RATE_LIMIT_PER_MINUTE,
         ),
+        // Secure by default: key the rate limiter on the real peer IP, not a
+        // client-spoofable X-Forwarded-For header. Operators behind a trusted
+        // proxy that sets XFF must opt in with
+        // SOUND_RECORDER_RATE_LIMIT_TRUST_FORWARDED_FOR=1; otherwise an attacker
+        // could rotate XFF per request to get an unbounded per-key budget.
         rate_limit_trust_forwarded_for: env_bool(
             "SOUND_RECORDER_RATE_LIMIT_TRUST_FORWARDED_FOR",
-            true,
+            false,
         ),
         supabase: supabase_config_from_env(),
     }
