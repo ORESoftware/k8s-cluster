@@ -105,6 +105,7 @@ scripts/audit-repo-state.sh --allow-dirty
 - `apps/fiducia-cli.rs`
 - `apps/fiducia-clients`
 - `apps/fiducia-customer-ui.web`
+- `apps/fiducia-e2e`
 - `apps/fiducia-edge`
 - `apps/fiducia-infra`
 - `apps/fiducia-interfaces`

@@ -44,6 +44,7 @@ Private repositories by default:
 - `fiducia-operations-control-plane`: single-tenant deployment, migration,
   scheduling, runner, rollout, and infrastructure audit state.
 - `fiducia-edge`: edge routing and deployment-adjacent policy.
+- `fiducia-e2e`: cross-cluster conformance and chaos test orchestration.
 - `fiducia-telemetry.rs`: internal tracing conventions and service metadata.
 
 ## Rules

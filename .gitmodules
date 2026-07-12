@@ -82,3 +82,7 @@
 	path = apps/fiducia-ai-agent-bridge.rs
 	url = git@github.com:fiducia-cloud/fiducia-ai-agent-bridge.rs.git
 	branch = main
+[submodule "apps/fiducia-e2e"]
+	path = apps/fiducia-e2e
+	url = git@github.com:fiducia-cloud/fiducia-e2e.git
+	branch = main
