@@ -18,11 +18,11 @@ jobs:
       # All app submodules are public; only this superproject is private.
       - name: Use HTTPS for submodule fetch
         run: git config --global url."https://github.com/".insteadOf "git@github.com:"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: "22"
       # Only a stub package-lock (no runtime deps); fall back to `npm install`

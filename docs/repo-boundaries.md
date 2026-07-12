@@ -34,10 +34,17 @@ Private repositories by default:
 - `fiducia-load-balance.rs`: leader-routing and fleet topology behavior.
 - `fiducia-auth.rs`: auth integration, key handling, and trust policy.
 - `fiducia-admin.rs`: internal admin and operator APIs.
+- `fiducia-ai-agent-bridge.rs`: customer-operated, topic-routed AI-agent
+  conversation bus, transport hardening, and optional message persistence.
+- `fiducia-ai-agent-control-plane`: single-tenant, customer-operated agent
+  orchestration, source context, model workflows, memory, and audit state.
 - `fiducia-backend.rs`: customer portal backend integration.
 - `fiducia-customer-ui.web`: authenticated customer portal.
 - `fiducia-node-sidecar.rs`: node-local bridge and heartbeat logic.
+- `fiducia-operations-control-plane`: single-tenant deployment, migration,
+  scheduling, runner, rollout, and infrastructure audit state.
 - `fiducia-edge`: edge routing and deployment-adjacent policy.
+- `fiducia-e2e`: cross-cluster conformance and chaos test orchestration.
 - `fiducia-telemetry.rs`: internal tracing conventions and service metadata.
 
 ## Rules
