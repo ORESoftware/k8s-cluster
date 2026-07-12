@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Pre-deploy audit of the superproject + every app submodule: fails on dirty
+# checkouts, conflict markers, tracked/committed secrets, missing Dockerfiles or
+# non-distroless Rust runtimes, readme app-list drift, and non-private visibility.
+
 failures=0
 allow_dirty=0
 

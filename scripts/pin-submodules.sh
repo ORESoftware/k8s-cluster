@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Pins every app submodule to a given branch: verifies the branch exists on each
+# remote, rewrites .gitmodules, fast-forwards each submodule, and stages the
+# resulting gitlink pins as deployable superproject state.
+
 usage() {
   cat <<'USAGE'
 Usage:

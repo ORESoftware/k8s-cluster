@@ -1,3 +1,5 @@
+# Nix flake defining the cross-platform Fiducia dev shell (Rust, Node/pnpm, and
+# supporting tooling) consumed by .envrc and the ./shell launcher.
 {
   description = "Fiducia development environment";
 

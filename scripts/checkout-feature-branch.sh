@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Checks out (or creates from base) the same feature branch across the
+# superproject and every app submodule, refusing dirty trees. Never pushes;
+# optionally updates .gitmodules branch entries and stages the resulting pins.
+
 usage() {
   cat <<'USAGE'
 Usage:
