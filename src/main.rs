@@ -6194,7 +6194,7 @@ mod tests {
             google_drive_upload_url: "https://www.googleapis.com/upload/drive/v3/files".to_string(),
             microsoft_graph_base_url: "https://graph.microsoft.com/v1.0".to_string(),
             public_base_url: Some("https://sound.example".to_string()),
-            alert_email_to: "alexander.d.mills@gmail.com".to_string(),
+            alert_email_to: "alerts@sound.example".to_string(),
             alert_email_webhook_url: None,
             rate_limit_per_minute: 0,
             rate_limit_trust_forwarded_for: true,
