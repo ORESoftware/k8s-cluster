@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "dd-sound-recorder-rs",
   "language": "rust",
-  "routeCount": 29,
+  "routeCount": 30,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 22
+    "user-generated": 23
   },
   "standardDocsRoutes": [
     "/docs/api",
@@ -183,6 +183,23 @@
         "remote/deployments/dd-sound-recorder-rs/src/main.rs"
       ],
       "notes": ""
+    },
+    {
+      "path": "/api/mobile/v1/account",
+      "methods": [
+        "DELETE"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Deletes the signed-in Supabase Auth user and Sonus Auris backend account metadata.",
+      "handlers": [
+        "delete_account"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+      ],
+      "notes": "Requires x-supabase-auth and server-side SOUND_RECORDER_SUPABASE_SERVICE_ROLE_KEY."
     },
     {
       "path": "/api/mobile/v1/devices/register",
