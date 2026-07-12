@@ -1,3 +1,7 @@
+// Contract tests for the superproject wiring: asserts .gitmodules stays complete
+// and pinned to main, that readme/boundary docs classify every app, that
+// .env.example keeps required (placeholder-only) knobs, and that the ops scripts
+// keep destructive actions manual with dry-run/audit guardrails.
 import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
