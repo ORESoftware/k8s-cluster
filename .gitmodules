@@ -70,3 +70,11 @@
 	path = apps/fiducia-sync
 	url = git@github.com:fiducia-cloud/fiducia-sync
 	branch = main
+[submodule "apps/fiducia-ai-agent-control-plane"]
+	path = apps/fiducia-ai-agent-control-plane
+	url = git@github.com:fiducia-cloud/fiducia-ai-agent-control-plane.git
+	branch = main
+[submodule "apps/fiducia-operations-control-plane"]
+	path = apps/fiducia-operations-control-plane
+	url = git@github.com:fiducia-cloud/fiducia-operations-control-plane.git
+	branch = main
