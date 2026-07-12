@@ -16,8 +16,11 @@ file ever disagrees with `schema.sql` + the runtime diff, **`schema.sql` and the
 - **`0001_use_case_and_pinned_at.sql`** — adds `upload_sessions.use_case` (musician/meeting capture
   intent, with its `CHECK`) and `segments.pinned_at` (permanent-save marker exempt from the retention
   sweep). Idempotent, forward-only.
-- **`0002_device_transfer_state.sql`** — adds device transfer-state columns supporting the
-  device/account transfer flow. Idempotent, forward-only.
+- **`0002_device_transfer_state.sql`** — adds per-device transfer-gate columns on
+  `sound_recorder_devices` (`transfer_paused`, `transfer_pause_reason`, `network_policy`,
+  `battery_level`, `charging`, `transfer_state_updated_at`, plus `CHECK`s and a partial index) so the
+  app can pause cloud streaming (low battery / network policy) and have server-managed copies defer in
+  lockstep. Idempotent, forward-only.
 
 Each file's header comment documents the exact `psql` invocation and the post-apply verification
 command.
