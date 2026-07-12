@@ -1,8 +1,11 @@
 # Agent guidelines — fiducia-monorepo
 
-## Git branch policy — temporary
+## Branch and Worktree Policy
 
-Work directly on the `main` branch. Do not create or use feature branches,
-topic branches, or git worktrees. Before making changes, switch to `main` and
-confirm it is the checked-out branch. Preserve existing uncommitted work and
-stop for operator guidance if switching to `main` cannot be done safely.
+- Work directly on the `main` branch for now.
+- Do not create or use feature branches.
+- Do not create or use Git worktrees.
+- Merge any existing non-`main` branch into `main` with an intent-preserving merge, resolve conflicts semantically, and continue work on `main`.
+- Push completed work to `origin/main`.
+- Preserve existing uncommitted work and stop for operator guidance if moving to
+  `main` cannot be done safely.
