@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Convenience launcher: drops you into (or runs a command in) the repo's Nix dev
+# shell defined by .nix/flake.nix.
+
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 
 if [[ $# -gt 0 ]]; then
