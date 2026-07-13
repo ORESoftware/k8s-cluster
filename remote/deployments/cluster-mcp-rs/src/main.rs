@@ -1638,7 +1638,7 @@ async fn kubernetes_get(state: &AppState, path: &str, limit: usize, metadata_onl
             match response.bytes().await {
                 Ok(bytes) => {
                     let body = String::from_utf8_lossy(&bytes).to_string();
-                    let (sample, truncated) = response_sample(&body, limit);
+                    let (sample, truncated) = kubernetes_response_sample(&body, limit);
                     let (item_count, items) = summarize_kubernetes_items(
                         &body,
                         state.config.kubernetes_items_limit,
