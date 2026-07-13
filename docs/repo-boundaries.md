@@ -22,6 +22,12 @@ Public or public-ready repositories:
   tsconfig/eslint presets (`@fiducia/test-config`). Dev-tooling only, no
   product or control-plane code — public-ready like `fiducia-interfaces`.
 - `fiducia-cli.rs`: developer CLI and closest-region tooling.
+- `fiducia-memory`: PostgreSQL/pgvector-backed tenant memory and hybrid recall.
+- `fiducia-memory.rs`: contestable claim ledger, governed durable memory, and
+  explainable hybrid recall primitives and service APIs.
+- `fiducia-messaging`: versioned NATS envelopes with a PostgreSQL outbox/inbox.
+- `fiducia-messaging.rs`: reusable NATS subject, envelope, fencing, deduplication,
+  and optional Postgres/JetStream relay primitives.
 - `fiducia-routing.rs`: region enum and deterministic routing helpers.
 - `fiducia-ui.web`: public marketing/product web surface.
 
