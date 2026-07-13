@@ -28,7 +28,46 @@ Print SQL DDL for review or declarative diff tooling:
 node src/generate.mjs --print-sql
 ```
 
-Generate a reviewable diff against a live database using read-only catalog queries:
+## Migrations — dpm (declarative-postgres-migrate)
+
+Migrations are generated declaratively with
+[`dpm`](https://github.com/declarative-migrations/declarative-postgres-migrate.rs):
+`schema/schema.sql` is the source of truth, and the live database converges onto it.
+dpm materializes the schema file on a shadow server, introspects both sides from
+`pg_catalog`, and emits ordered, reviewable SQL — so re-applying the full schema file
+to a live database (`psql -f schema.sql`, which is not fully re-runnable: the FK
+`add constraint` statements have no exists-guards) is no longer the workflow.
+
+```sh
+brew install declarative-migrations/tap/dpm   # or scripts/install.sh from the dpm repo
+
+export SHADOW_DATABASE_URL=postgres://...     # server where dpm may create throwaway DBs
+export TARGET_DATABASE_URL=postgres://...     # or RDS_DATABASE_URL / DATABASE_URL etc.
+
+scripts/dpm.sh diff                # print the migration SQL (never executes)
+scripts/dpm.sh verify              # rehearse on a shadow replica, prove convergence
+scripts/dpm.sh review              # diff + AI review
+scripts/dpm.sh apply               # generate + execute (interactive confirm)
+```
+
+Destructive statements are emitted commented-out and refused at apply time unless
+dpm's two consent flags are passed explicitly. Never apply migrations automatically;
+a human reviews the generated SQL first.
+
+CI (`.github/workflows/ci.yml`) proves on every push that `schema.sql` applies
+cleanly to a fresh Postgres 17 and that dpm sees zero drift between the file and
+the applied database.
+
+Known dpm limitation (tracked upstream): varchar IN-list CHECK constraints deparse
+as `(ARRAY[...])::text[]`, which re-parses into per-element casts, so a database
+built from dpm's own re-emitted SQL never converges to string equality against the
+schema file. Databases built from `schema.sql` itself diff clean.
+
+### Legacy differ — second opinion
+
+`src/diff.mjs` predates dpm and remains as an independent cross-check on dpm's
+output. It generates a reviewable diff against a live database using read-only
+catalog queries:
 
 ```sh
 node src/diff.mjs --env=prod

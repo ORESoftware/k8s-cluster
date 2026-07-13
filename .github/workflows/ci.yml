@@ -1,0 +1,82 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # All four generators are Node-stdlib-only; the async-java nested submodule
+  # is not needed for any of these checks, so the checkout is non-recursive.
+  generators-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: pg-defs generated output in sync with schema.sql
+        run: node pg-defs/src/generate.mjs --check
+      - name: nats subject-defs generated output in sync
+        run: node nats/subject-defs/src/generate.mjs --check
+      - name: redis interfaces generated output in sync
+        run: node interfaces/redis/src/generate.mjs --check
+      - name: shared interfaces generated output in sync
+        run: node interfaces/shared/src/generate.mjs --check
+      - name: pg-defs parser/generator self-tests
+        run: node --test pg-defs/src/*.test.mjs
+      - name: pg-defs sql-contract parse sanity (no DB)
+        run: node pg-defs/src/diff.mjs --parse-only
+
+  # Proves schema.sql is a valid declarative source: it applies cleanly to a
+  # fresh Postgres 17, and dpm (declarative-postgres-migrate) sees zero drift
+  # between the file and the applied database (all nine source/target pairings
+  # go through pg_catalog, so this exercises dpm's shadow materialization too).
+  schema-migration-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SHADOW_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      TARGET_DATABASE_URL: postgres://postgres:postgres@localhost:5432/pg_defs_target
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dpm
+        run: curl -fsSL https://raw.githubusercontent.com/declarative-migrations/declarative-postgres-migrate.rs/main/scripts/install.sh | bash
+      - name: schema.sql applies cleanly to a fresh Postgres 17
+        run: |
+          psql "$SHADOW_DATABASE_URL" -c 'create database pg_defs_target'
+          psql "$TARGET_DATABASE_URL" -v ON_ERROR_STOP=1 -q -f pg-defs/schema/schema.sql
+      - name: dpm sees no drift between schema.sql and the applied database
+        run: ./pg-defs/scripts/dpm.sh diff --fail-on-diff
+      # Known-failing until dpm fixes its deparse fixed-point bug: varchar
+      # IN-list CHECK constraints deparse as (ARRAY[...])::text[], which
+      # re-parses into per-element casts, so dpm's re-emitted SQL never
+      # converges to string equality. Flips green when dpm normalizes both
+      # sides consistently.
+      - name: dpm verify (bootstrap convergence proof — known dpm bug, advisory)
+        continue-on-error: true
+        env:
+          TARGET_DATABASE_URL: postgres://postgres:postgres@localhost:5432/pg_defs_verify
+        run: |
+          psql "$SHADOW_DATABASE_URL" -c 'create database pg_defs_verify'
+          ./pg-defs/scripts/dpm.sh verify
