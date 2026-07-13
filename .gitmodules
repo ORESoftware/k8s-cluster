@@ -81,13 +81,13 @@
 	path = remote/deployments/canonical-cloud
 	url = https://github.com/canonical-cloud/canonical.cloud.git
 	branch = main
-[submodule "remote/deployments/fiducia-backend.rs"]
-	path = remote/deployments/fiducia-backend.rs
-	url = https://github.com/fiducia-cloud/fiducia-backend.rs.git
+[submodule "remote/deployments/fiducia-customer.rs"]
+	path = remote/deployments/fiducia-customer.rs
+	url = https://github.com/fiducia-cloud/fiducia-customer.rs.git
 	branch = main
-[submodule "remote/deployments/fiducia-ui.web"]
-	path = remote/deployments/fiducia-ui.web
-	url = https://github.com/fiducia-cloud/fiducia-ui.web.git
+[submodule "remote/deployments/fiducia-marketing.web"]
+	path = remote/deployments/fiducia-marketing.web
+	url = https://github.com/fiducia-cloud/fiducia-marketing.web.git
 	branch = main
 [submodule "remote/deployments/fiducia-monorepo"]
 	path = remote/deployments/fiducia-monorepo
