@@ -71,9 +71,13 @@ use once_cell::sync::Lazy;
 use prometheus::{Encoder, IntCounter, IntCounterVec, IntGauge, Opts, TextEncoder};
 use rand::{rngs::OsRng, RngCore};
 use reqwest::multipart::{Form, Part};
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use sonus_auris_interfaces::{
+    AcousticEvent, UserConsent, ACOUSTIC_EVENTS_COLUMNS, ACOUSTIC_EVENTS_TABLE,
+    USER_CONSENTS_COLUMNS, USER_CONSENTS_TABLE,
+};
 use tokio::sync::RwLock;
 use tokio_postgres::Row;
 use tokio_postgres_rustls::MakeRustlsConnect;
@@ -144,6 +148,8 @@ const DEFAULT_UPLOAD_URL_TTL_SECONDS: u64 = 300;
 const DEFAULT_DOWNLOAD_URL_TTL_SECONDS: u64 = 900;
 const DEFAULT_SESSION_TTL_HOURS: i64 = 24;
 const MAX_TIMELINE_LIMIT: i64 = 500;
+const DEFAULT_USER_DATA_LIMIT: usize = 50;
+const MAX_USER_DATA_LIMIT: usize = 200;
 const MAX_EXPORT_SEGMENTS: i64 = 240;
 const MAX_META_BYTES: usize = 4096;
 const MAX_CAPTURE_CLOCK_SKEW_SECONDS: i64 = 300;
@@ -260,6 +266,9 @@ struct SupabaseConfig {
     issuer: Option<String>,
     /// Expected `aud` claim; defaults to `authenticated`.
     audience: String,
+    /// Publishable (or legacy anon) key used with the caller's JWT when the
+    /// backend reads owner-scoped rows through the Supabase Data API.
+    publishable_key: Option<String>,
     /// Server-only service-role key used for privileged Auth Admin operations
     /// such as deleting the signed-in user's Supabase Auth identity.
     service_role_key: Option<String>,
@@ -268,6 +277,10 @@ struct SupabaseConfig {
 impl SupabaseConfig {
     fn is_enabled(&self) -> bool {
         self.jwt_secret.is_some() || self.jwks_url.is_some()
+    }
+
+    fn is_data_api_enabled(&self) -> bool {
+        self.url.is_some() && self.publishable_key.is_some() && self.is_enabled()
     }
 }
 
@@ -367,7 +380,20 @@ struct HealthResponse {
     google_drive_configured: bool,
     microsoft_onedrive_configured: bool,
     supabase_configured: bool,
+    supabase_data_api_configured: bool,
     retention_hours: i32,
+}
+
+#[derive(Deserialize)]
+struct UserDataQuery {
+    limit: Option<usize>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UserDataList<T> {
+    count: usize,
+    data: Vec<T>,
 }
 
 #[derive(Deserialize)]
@@ -1150,6 +1176,12 @@ fn supabase_config_from_env() -> SupabaseConfig {
         issuer,
         audience: first_env(&["SOUND_RECORDER_SUPABASE_AUDIENCE", "SUPABASE_AUDIENCE"])
             .unwrap_or_else(|| SUPABASE_DEFAULT_AUDIENCE.to_string()),
+        publishable_key: first_env(&[
+            "SOUND_RECORDER_SUPABASE_PUBLISHABLE_KEY",
+            "SUPABASE_PUBLISHABLE_KEY",
+            "SOUND_RECORDER_SUPABASE_ANON_KEY",
+            "SUPABASE_ANON_KEY",
+        ]),
         service_role_key: first_env(&[
             "SOUND_RECORDER_SUPABASE_SERVICE_ROLE_KEY",
             "SUPABASE_SERVICE_ROLE_KEY",
@@ -2629,6 +2661,7 @@ async fn healthz(State(state): State<AppState>) -> Json<HealthResponse> {
         microsoft_onedrive_configured: state.config.microsoft_oauth.client_id.is_some()
             && state.config.microsoft_oauth.client_secret.is_some(),
         supabase_configured: state.supabase.is_some(),
+        supabase_data_api_configured: state.config.supabase.is_data_api_enabled(),
         retention_hours: state.config.default_retention_hours,
     })
 }
@@ -2665,6 +2698,7 @@ async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
             microsoft_onedrive_configured: state.config.microsoft_oauth.client_id.is_some()
                 && state.config.microsoft_oauth.client_secret.is_some(),
             supabase_configured: state.supabase.is_some(),
+            supabase_data_api_configured: state.config.supabase.is_data_api_enabled(),
             retention_hours: state.config.default_retention_hours,
         }),
     )
@@ -2698,6 +2732,110 @@ async fn api_docs_json() -> impl IntoResponse {
         [(header::CONTENT_TYPE, "application/json")],
         include_str!("../generated/api-docs.json"),
     )
+}
+
+fn user_data_limit(requested: Option<usize>) -> usize {
+    requested
+        .unwrap_or(DEFAULT_USER_DATA_LIMIT)
+        .clamp(1, MAX_USER_DATA_LIMIT)
+}
+
+async fn fetch_supabase_rows<T: DeserializeOwned>(
+    state: &AppState,
+    headers: &HeaderMap,
+    table: &str,
+    columns: &[&str],
+    order: &str,
+    limit: usize,
+) -> Result<Vec<T>, ServiceError> {
+    let verifier = state
+        .supabase
+        .as_deref()
+        .ok_or_else(|| ServiceError::Unavailable("Supabase auth is not configured".to_string()))?;
+    let token = supabase_token(headers).ok_or(ServiceError::Unauthorized)?;
+    verifier.verify(&state.http, token).await?;
+
+    let base_url =
+        state.config.supabase.url.as_deref().ok_or_else(|| {
+            ServiceError::Unavailable("Supabase URL is not configured".to_string())
+        })?;
+    let publishable_key = state
+        .config
+        .supabase
+        .publishable_key
+        .as_deref()
+        .ok_or_else(|| {
+            ServiceError::Unavailable("Supabase publishable key is not configured".to_string())
+        })?;
+    let response = state
+        .http
+        .get(format!("{base_url}/rest/v1/{table}"))
+        .header("apikey", publishable_key)
+        .bearer_auth(token)
+        .query(&[
+            ("select", columns.join(",")),
+            ("order", order.to_string()),
+            ("limit", limit.to_string()),
+        ])
+        .send()
+        .await
+        .map_err(|_| {
+            ServiceError::Unavailable(format!(
+                "Supabase Data API request for {table} could not be completed"
+            ))
+        })?;
+    let status = response.status();
+    if matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) {
+        return Err(ServiceError::Unauthorized);
+    }
+    if !status.is_success() {
+        return Err(ServiceError::Unavailable(format!(
+            "Supabase Data API request for {table} failed with {status}"
+        )));
+    }
+    response.json::<Vec<T>>().await.map_err(|_| {
+        ServiceError::Internal(format!(
+            "Supabase Data API returned an invalid {table} payload"
+        ))
+    })
+}
+
+async fn list_acoustic_events(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<UserDataQuery>,
+) -> Result<Json<UserDataList<AcousticEvent>>, ServiceError> {
+    let data = fetch_supabase_rows(
+        &state,
+        &headers,
+        ACOUSTIC_EVENTS_TABLE,
+        ACOUSTIC_EVENTS_COLUMNS,
+        "started_at.desc",
+        user_data_limit(query.limit),
+    )
+    .await?;
+    let count = data.len();
+    record_request("GET", "/api/v1/data/acoustic-events", StatusCode::OK);
+    Ok(Json(UserDataList { count, data }))
+}
+
+async fn list_user_consents(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<UserDataQuery>,
+) -> Result<Json<UserDataList<UserConsent>>, ServiceError> {
+    let data = fetch_supabase_rows(
+        &state,
+        &headers,
+        USER_CONSENTS_TABLE,
+        USER_CONSENTS_COLUMNS,
+        "accepted_at.desc",
+        user_data_limit(query.limit),
+    )
+    .await?;
+    let count = data.len();
+    record_request("GET", "/api/v1/data/user-consents", StatusCode::OK);
+    Ok(Json(UserDataList { count, data }))
 }
 
 async fn register_device(
@@ -5869,6 +6007,8 @@ fn app(state: AppState) -> Router {
         .route("/listen/:alert_id", get(listen_alert))
         .route("/download/ios", get(download_ios))
         .route("/download/android", get(download_android))
+        .route("/api/v1/data/acoustic-events", get(list_acoustic_events))
+        .route("/api/v1/data/user-consents", get(list_user_consents))
         .route("/api/mobile/v1/account", delete(delete_account))
         .route("/api/mobile/v1/devices/register", post(register_device))
         .route(
@@ -6246,6 +6386,16 @@ mod tests {
             rate_limit_trust_forwarded_for: true,
             supabase: SupabaseConfig::default(),
         }
+    }
+
+    #[test]
+    fn user_data_limits_are_bounded() {
+        assert_eq!(user_data_limit(None), DEFAULT_USER_DATA_LIMIT);
+        assert_eq!(user_data_limit(Some(0)), 1);
+        assert_eq!(
+            user_data_limit(Some(MAX_USER_DATA_LIMIT + 1)),
+            MAX_USER_DATA_LIMIT
+        );
     }
 
     #[test]
@@ -6756,7 +6906,10 @@ mod tests {
         assert_eq!(extension_for_content_type("audio/ogg; codecs=opus"), "opus");
         assert_eq!(extension_for_content_type("audio/mpeg"), "mp3");
         assert_eq!(extension_for_content_type("audio/3gpp"), "3gp");
-        assert_eq!(extension_for_content_type("application/octet-stream"), "m4a");
+        assert_eq!(
+            extension_for_content_type("application/octet-stream"),
+            "m4a"
+        );
     }
 
     #[test]

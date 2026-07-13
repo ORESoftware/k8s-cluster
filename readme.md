@@ -69,6 +69,10 @@ The crate is also packaged with Nix (`flake.nix`, `.nix/`) and a `Dockerfile` fo
 - Account deletion is also rooted in Supabase: `DELETE /api/mobile/v1/account` verifies the signed-in
   user's JWT, deletes Sonus Auris backend metadata, revokes device/cloud tokens, and deletes the
   Supabase Auth user with the server-only service-role key.
+- Browser account data stays a JSON concern here: the typed `/api/v1/data/*` routes verify the
+  caller's Supabase JWT and forward that JWT plus the publishable key to the Supabase Data API.
+  `sonus-auris-interfaces` deserializes the response and Supabase RLS remains the row-authorization
+  boundary; these routes never use the service-role key.
 - Google Drive / OneDrive links support a hybrid OAuth flow: the client may pass Supabase-brokered
   `providerAccessToken`/`providerRefreshToken` to `cloud-connections/oauth/complete` to be sealed
   directly, or omit them to fall back to the server-side authorization-code exchange.
@@ -87,6 +91,10 @@ The crate is also packaged with Nix (`flake.nix`, `.nix/`) and a `Dockerfile` fo
 - `GET /listen/:alert_id` — short-lived audio alert listening page.
 - `GET /download/ios` — redirects to `SOUND_RECORDER_IOS_APP_STORE_URL`.
 - `GET /download/android` — redirects to `SOUND_RECORDER_ANDROID_PLAY_STORE_URL`.
+- `GET /api/v1/data/acoustic-events?limit=50` — returns up to 200 owner-scoped `AcousticEvent`
+  rows using the shared interface crate and the caller's Supabase access token.
+- `GET /api/v1/data/user-consents?limit=50` — returns up to 200 owner-scoped `UserConsent` rows
+  using the same JWT/RLS path. Both data routes return `{ "count": N, "data": [...] }`.
 - `POST /api/mobile/v1/devices/register` — creates or rotates a device token.
 - `DELETE /api/mobile/v1/account` — deletes the signed-in Supabase account and Sonus Auris metadata.
 - `POST /api/mobile/v1/upload-sessions` — starts a device upload session.
@@ -150,6 +158,7 @@ The crate is also packaged with Nix (`flake.nix`, `.nix/`) and a `Dockerfile` fo
 | `SOUND_RECORDER_DOWNLOAD_URL_TTL_SECONDS` | `900` | Short-lived evidence GET URL TTL. |
 | `SOUND_RECORDER_CLOUD_TOKEN_ENCRYPTION_KEY` | unset | Base64-encoded 32-byte AES-GCM key required for server-managed Google Drive and OneDrive links. |
 | `SOUND_RECORDER_SUPABASE_URL` / `SUPABASE_URL` | unset | Supabase project URL. Used to derive the JWKS URL and expected issuer. |
+| `SOUND_RECORDER_SUPABASE_PUBLISHABLE_KEY` / `SUPABASE_PUBLISHABLE_KEY` | unset | Publishable (or legacy anon) key used with the caller's JWT for typed `/api/v1/data/*` reads. It is not a service-role key. |
 | `SOUND_RECORDER_SUPABASE_JWT_SECRET` / `SUPABASE_JWT_SECRET` | unset | Legacy HS256 JWT secret. Enables verifying HS256 Supabase tokens. |
 | `SOUND_RECORDER_SUPABASE_JWKS_URL` | `${SUPABASE_URL}/auth/v1/.well-known/jwks.json` | JWKS endpoint for asymmetric (RS256/ES256) Supabase signing keys. Cached for one hour. |
 | `SOUND_RECORDER_SUPABASE_ISSUER` | `${SUPABASE_URL}/auth/v1` | Expected `iss` claim. |
