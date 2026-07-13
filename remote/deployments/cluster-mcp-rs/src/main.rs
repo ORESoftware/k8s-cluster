@@ -351,16 +351,44 @@ fn header_secret_ok(secret: Option<&str>, headers: &HeaderMap) -> bool {
     let Some(secret) = secret.filter(|value| !value.is_empty()) else {
         return false;
     };
-    let bearer = format!("Bearer {secret}");
     let bearer_ok = headers
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value == bearer);
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .is_some_and(|value| constant_time_secret_eq(secret, value));
     let header_ok = headers
         .get("x-server-auth")
         .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value == secret);
+        .is_some_and(|value| constant_time_secret_eq(secret, value));
     bearer_ok || header_ok
+}
+
+// Constant-time secret comparison so response timing does not reveal how much
+// of a guessed secret matched. `subtle` is already in the dependency tree via
+// rustls; its slice ct_eq compares every byte of equal-length inputs without
+// data-dependent branches (length itself is not secret).
+fn constant_time_secret_eq(expected: &str, provided: &str) -> bool {
+    expected.as_bytes().ct_eq(provided.as_bytes()).into()
+}
+
+// When the bearer gate is on it must also cover the read-only GET surfaces
+// that leak cluster state without a tool call: /observability returns the full
+// telemetry_summary tool output, /metrics exposes internal counters, and the
+// generated API docs describe the deployment. /healthz and /readyz stay open
+// so kubelet probes keep working without a secret mount.
+fn gated_unauthorized_response(state: &AppState, headers: &HeaderMap) -> Option<Response> {
+    if !state.config.require_auth || request_authorized(&state.config, headers) {
+        return None;
+    }
+    let mut response = json_response(
+        StatusCode::UNAUTHORIZED,
+        json!({ "ok": false, "error": "unauthorized" }),
+    );
+    response.headers_mut().insert(
+        header::WWW_AUTHENTICATE,
+        HeaderValue::from_static("Bearer realm=\"dd-cluster-mcp-rs\""),
+    );
+    Some(response)
 }
 
 fn build_k8s_client(config: &Config) -> reqwest::Client {
