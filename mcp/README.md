@@ -13,6 +13,40 @@ Both expose the same read-only `dd_cluster` tool surface (cluster inventory,
 service directory, observability health), reached **through the
 `dd-remote-gateway`**, never directly.
 
+## Tool surface additions (Rust server only)
+
+The Rust server (`dd-cluster-mcp-rs`) additionally exposes these zero-argument
+read-only tools. **They are Rust-server-only for now** — Gleam server parity is
+pending consolidation.
+
+| Tool                           | What it reads                                                                                       |
+| ------------------------------ | --------------------------------------------------------------------------------------------------- |
+| `kubernetes_ingress_endpoints` | Ingress hosts/rules + LoadBalancer Service external IPs/hostnames and ports.                        |
+| `deployment_rollout_status`    | Per-deployment ready/updated/available replica counts + Available/Progressing conditions.           |
+| `kubernetes_events_warnings`   | Recent non-Normal (`type!=Normal`) events, bounded and message-redacted.                            |
+| `cloudflare_zones`             | Cloudflare zone list (name, id, status, paused, plan, nameservers) — bounded pagination.            |
+| `cloudflare_dns_records`       | DNS records per zone (type, name, redacted content, proxied, ttl) — capped zones/records.           |
+| `domain_registration`          | RDAP registration data per configured domain: registrar, status, expiry + `daysUntilExpiry`, NS.    |
+| `domain_dns_wiring`            | DNS-over-HTTPS A/AAAA/CNAME/NS resolution per domain, correlated against expected cluster ingress.  |
+
+> **Squarespace-registered domains.** Squarespace has **no public domains
+> API**, so those domains are covered honestly via registrar-neutral **RDAP**
+> (registration/registrar/expiry — surfaces registrar strings like
+> "Squarespace Domains") plus **DNS-over-HTTPS** (live wiring checks). No
+> Squarespace credentials exist or are needed.
+
+Environment knobs (all optional; set on the `dd-cluster-mcp-rs` Deployment):
+
+| Env var                          | Purpose                                                                                     |
+| -------------------------------- | ------------------------------------------------------------------------------------------- |
+| `CLOUDFLARE_API_TOKEN`           | Read-only Cloudflare token (optional `secretKeyRef` into `dd-cluster-mcp-rs-secrets`). When absent the Cloudflare tools return a "not configured" hint instead of erroring. |
+| `DD_MCP_DOMAINS`                 | Comma-separated domains for RDAP/DoH tools. Default: `fiducia.cloud,app.fiducia.cloud,admin.fiducia.cloud,canonical.cloud` (derived from the gateway vhosts). |
+| `DD_MCP_EXPECTED_INGRESS_IPS`    | Comma-separated expected ingress IPs/hostnames (default in-manifest: the gateway EIP `98.90.186.114`); live LB/Ingress endpoints are unioned in automatically. |
+| `DD_MCP_DOH_URL`                 | DNS-over-HTTPS endpoint (default `https://cloudflare-dns.com/dns-query`).                    |
+| `DD_MCP_RDAP_URL`                | RDAP bootstrap base (default `https://rdap.org`).                                            |
+| `DD_MCP_EXTERNAL_TIMEOUT_MS`     | Per-call timeout for Cloudflare/RDAP/DoH reads (default 2500, clamped ≤5000).                |
+| `DD_MCP_EXTERNAL_BODY_LIMIT_BYTES` | Parse guard for external response bodies (default 65536, clamped ≤262144).                 |
+
 > **Gateway IP.** The gateway is the EC2 Elastic IP `98.90.186.114`. If the
 > instance is rebuilt and the EIP changes, update the URLs in `.cursor/mcp.json`,
 > `.vscode/mcp.json`, this file, and `codex-config.example.toml`. Discover the

@@ -24,7 +24,7 @@ spec:
       labels:
         app: fiducia-backend
       annotations:
-        dd.dev/fiducia-source: 'fiducia-cloud/fiducia-monorepo@main (apps/fiducia-backend.rs + apps/fiducia-ui.web)'
+        dd.dev/fiducia-source: 'fiducia-cloud/fiducia-monorepo@main (apps/fiducia-customer.rs + apps/fiducia-marketing.web)'
         dd.dev/fiducia-build: '2026-06-27-raft-locks-merge'
     spec:
       automountServiceAccountToken: false
@@ -52,8 +52,8 @@ spec:
               command -v git >/dev/null 2>&1 || { apt-get update && apt-get install -y --no-install-recommends git ca-certificates; }
               # Clone the PUBLIC ui repo directly (the monorepo is private).
               rm -rf /work/src && mkdir -p /work/src && cd /work/src
-              git clone --depth 1 --branch main https://github.com/fiducia-cloud/fiducia-ui.web.git
-              cd /work/src/fiducia-ui.web
+              git clone --depth 1 --branch main https://github.com/fiducia-cloud/fiducia-marketing.web.git
+              cd /work/src/fiducia-marketing.web
               npm ci --no-audit --no-fund
               PUBLIC_BASE=/ npm run build
               cp -R dist/. /site-dist/
@@ -88,13 +88,16 @@ spec:
               export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
               # Clone the PUBLIC app repos as siblings (the monorepo is private).
               rm -rf /tmp/src && mkdir -p /tmp/src && cd /tmp/src
-              for repo in fiducia-backend.rs fiducia-interfaces; do git clone --depth 1 --branch main "https://github.com/fiducia-cloud/${repo}.git"; done
-              cd /tmp/src/fiducia-backend.rs
+              for repo in fiducia-customer.rs fiducia-interfaces; do git clone --depth 1 --branch main "https://github.com/fiducia-cloud/${repo}.git"; done
+              cd /tmp/src/fiducia-customer.rs
               exec /usr/local/cargo/bin/cargo run --release
           env:
             - { name: HOST, value: 0.0.0.0 }
             - { name: PORT, value: '8117' }
             - { name: STATIC_DIR, value: /site-dist }
+            # Export OTLP traces to the shared observability collector
+            # (fiducia-telemetry degrades to stdout-only logging when unset).
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://dd-otel-collector.observability.svc.cluster.local:4317 }
             - { name: RUST_LOG, value: info }
             - { name: HOME, value: /tmp }
             - { name: CARGO_HOME, value: /tmp/cargo }

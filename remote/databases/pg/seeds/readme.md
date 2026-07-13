@@ -9,11 +9,19 @@ which drives every generated adapter under `remote/libs/pg-defs/generated/`
 (Drizzle / TypeORM / Prisma / SQLAlchemy / GORM / Bun / Dart / Diesel / SeaORM /
 Gleam / Erlang / raw Rust + sqlx).
 
-Apply the schema first, then apply any seeds your service needs:
+Converge the schema first, then apply any seeds your service needs:
 
 ```bash
-# 1. schema (review the diff first; never apply blindly to a live DB)
-psql "$RDS_DATABASE_URL" -f remote/libs/pg-defs/schema/schema.sql
+# 1. schema — declarative migration via dpm (declarative-postgres-migrate).
+#    Generates reviewable SQL that converges the DB onto schema.sql; a human
+#    reviews before apply. (A fresh empty database can still be bootstrapped
+#    with `psql -f schema.sql`, but re-applying the full file to a live DB is
+#    deprecated: its FK `add constraint` statements are not re-runnable.)
+export TARGET_DATABASE_URL="$RDS_DATABASE_URL"
+export SHADOW_DATABASE_URL=postgres://...   # server where dpm may create throwaway DBs
+remote/libs/pg-defs/scripts/dpm.sh diff     # review the SQL
+remote/libs/pg-defs/scripts/dpm.sh verify   # rehearse on a shadow replica
+remote/libs/pg-defs/scripts/dpm.sh apply    # interactive confirm
 
 # 2. seeds (idempotent inserts into app_config)
 psql "$RDS_DATABASE_URL" -f remote/databases/pg/seeds/container-pool-app-config.sql

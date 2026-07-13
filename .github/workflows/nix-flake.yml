@@ -1,0 +1,40 @@
+name: nix flake check
+
+on:
+  pull_request:
+    paths:
+      - flake.nix
+      - flake.lock
+      - .nix/**
+      - .github/workflows/nix-flake.yml
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - flake.nix
+      - flake.lock
+      - .nix/**
+      - .github/workflows/nix-flake.yml
+
+permissions:
+  contents: read
+
+jobs:
+  flake-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # flake.nix only references files in the repo root and .nix/, so no
+      # submodules are needed.
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v16
+
+      - name: Set up Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@v9
+
+      - name: nix flake check
+        run: nix flake check

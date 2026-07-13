@@ -53,7 +53,7 @@ const RUST_DEPLOYMENT_ALLOWLIST = new Set([
   'dd-escrow-rs',
   'dd-git-rs',
   'des-simulator-rs',
-  'fiducia-backend.rs',
+  'fiducia-customer.rs',
   'dd-music-rs',
   'knowledge-graph-builder-rs',
   'dd-ocr-rs',
