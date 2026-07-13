@@ -1263,6 +1263,7 @@ fn s3_storage_config_from_env() -> S3StorageConfig {
         "SOUND_RECORDER_S3_ENDPOINT",
         "SOUND_RECORDER_R2_ENDPOINT",
         "CLOUDFLARE_R2_ENDPOINT",
+        "R2_ENDPOINT",
         "S3_ENDPOINT",
         "AWS_ENDPOINT_URL_S3",
         "AWS_ENDPOINT_URL",
@@ -1286,6 +1287,7 @@ fn s3_storage_config_from_env() -> S3StorageConfig {
     } else {
         first_env(&[
             "SOUND_RECORDER_S3_REGION",
+            "R2_REGION",
             "S3_REGION",
             "AWS_REGION",
             "AWS_DEFAULT_REGION",
@@ -1324,12 +1326,14 @@ fn s3_storage_config_from_env() -> S3StorageConfig {
         "SOUND_RECORDER_R2_ACCESS_KEY_ID",
         "CLOUDFLARE_R2_ACCESS_KEY_ID",
         "R2_ACCESS_KEY_ID",
+        "AWS_ACCESS_KEY_ID",
     ]);
     let secret_access_key = first_env(&[
         "SOUND_RECORDER_S3_SECRET_ACCESS_KEY",
         "SOUND_RECORDER_R2_SECRET_ACCESS_KEY",
         "CLOUDFLARE_R2_SECRET_ACCESS_KEY",
         "R2_SECRET_ACCESS_KEY",
+        "AWS_SECRET_ACCESS_KEY",
     ]);
     if access_key_id.is_some() != secret_access_key.is_some() {
         validation_errors.push(
@@ -1502,6 +1506,8 @@ fn s3_storage_config_from_env() -> S3StorageConfig {
         session_token: first_env(&[
             "SOUND_RECORDER_S3_SESSION_TOKEN",
             "SOUND_RECORDER_R2_SESSION_TOKEN",
+            "R2_SESSION_TOKEN",
+            "AWS_SESSION_TOKEN",
         ]),
         backend,
         validation_errors,

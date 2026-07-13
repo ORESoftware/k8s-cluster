@@ -146,8 +146,8 @@ The crate is also packaged with Nix (`flake.nix`, `.nix/`) and a `Dockerfile` fo
 | `SOUND_RECORDER_PG_POOL_MAX_SIZE` | `16` | Max pooled Postgres connections (clamped to `1..100`). Connections are pooled and reused, not opened per request. |
 | `SOUND_RECORDER_S3_BUCKET` / `S3_BUCKET` | unset | Primary AWS S3 bucket. `SOUND_RECORDER_R2_BUCKET` / `R2_BUCKET` are equivalent R2 aliases. |
 | `SOUND_RECORDER_S3_KEY_PREFIX` | `sound-recorder/segments` | Object key prefix. |
-| `SOUND_RECORDER_S3_REGION` | `us-east-1` (`auto` for R2) | SigV4 region. R2 endpoints are always signed with Cloudflare's required `auto` region. |
-| `SOUND_RECORDER_S3_ENDPOINT` / `S3_ENDPOINT` | unset | HTTPS S3-compatible endpoint. `SOUND_RECORDER_R2_ACCOUNT_ID` can derive Cloudflare's endpoint automatically. |
+| `SOUND_RECORDER_S3_REGION` / `R2_REGION` | `us-east-1` (`auto` for R2) | SigV4 region. R2 endpoints are always signed with Cloudflare's required `auto` region. |
+| `SOUND_RECORDER_S3_ENDPOINT` / `SOUND_RECORDER_R2_ENDPOINT` / `R2_ENDPOINT` / `S3_ENDPOINT` | unset | HTTPS S3-compatible endpoint. `SOUND_RECORDER_R2_ACCOUNT_ID` can derive Cloudflare's endpoint automatically. |
 | `SOUND_RECORDER_S3_ACCESS_KEY_ID` / `SOUND_RECORDER_S3_SECRET_ACCESS_KEY` | SDK credential chain | Optional service-scoped credential pair. R2-specific aliases are also supported; native AWS IAM roles and standard `AWS_*` credentials continue to work. |
 | `SOUND_RECORDER_S3_FORCE_PATH_STYLE` | `false` (`true` for generic custom endpoints) | Select path-style addressing when required by MinIO/another compatible store. R2 defaults to its documented virtual-host style. |
 | `SOUND_RECORDER_S3_SERVER_SIDE_ENCRYPTION` | `auto` | `auto`, `aes256`, or `none`. Auto signs explicit AES256 only for native AWS S3; it omits the unsupported header for R2, which already encrypts objects at rest. |
@@ -159,7 +159,7 @@ The crate is also packaged with Nix (`flake.nix`, `.nix/`) and a `Dockerfile` fo
 | `SOUND_RECORDER_UNMARKED_STORAGE_HISTORY_FINGERPRINT` | unset | When the legacy acknowledgment is true, this must exactly match `storageBackendFingerprint` from `/healthz`. Changing endpoint/region/bucket invalidates the acknowledgment automatically. |
 | `SOUND_RECORDER_CDN_BASE_URL` | unset | Optional CloudFront/base URL returned as `cdnUrl`. |
 | `SOUND_RECORDER_PUBLIC_BASE_URL` | unset | HTTPS base URL used to build `/listen/:alert_id` links in alert emails. HTTP is allowed only for localhost development. |
-| `SOUND_RECORDER_ALERT_EMAIL_TO` | unset | Server-controlled alert recipient. Client-supplied recipients are ignored; unset disables alert delivery. |
+| `SOUND_RECORDER_ALERT_EMAIL_TO` | unset | Server-controlled alert recipient. Alerts fail closed until configured; client-supplied recipients are ignored. |
 | `SOUND_RECORDER_ALERT_EMAIL_WEBHOOK_URL` | unset | Optional webhook that receives `{ to, subject, text, html }` for alert emails. |
 | `SOUND_RECORDER_DEVICE_TOKEN_PEPPER` | local random fallback | Required for durable device-token verification. |
 | `SOUND_RECORDER_REGISTRATION_BEARER` | unset | Optional bearer required by device registration. |
@@ -205,15 +205,36 @@ configuration remain required. `/healthz` reports process health, the non-secret
 and configuration booleans without contacting dependencies. Unknown boolean spellings are invalid
 configuration and fail readiness; they never silently become `false`.
 
+## CLI flags
+
+[`flags-2-env`](https://github.com/ORESoftware/flags-2-env) maps the declared
+options in `.cli-flags.toml` onto the existing environment contract before the
+backend starts:
+
+```sh
+scripts/with-flags help
+scripts/with-flags audit
+scripts/with-flags --port=8126 --supabase-url=https://project.supabase.co -- cargo run
+```
+
+The wrapper uses the monorepo's pinned native source when available and builds
+it into a commit-keyed user cache. Set `FLAGS2ENV_BIN` for a standalone install.
+Database credentials, JWT secrets, service-role keys, token peppers, and server
+auth secrets intentionally remain environment-only.
+
 ## AWS S3 and Cloudflare R2
 
 The service supports either AWS S3 or Cloudflare R2 as its primary private object store through the
 same S3 API contract. For R2, set `SOUND_RECORDER_R2_ACCOUNT_ID`, bucket, access-key id, and secret;
-the endpoint and `auto` signing region are selected automatically. An explicit
-`SOUND_RECORDER_S3_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com` works as well. Presigned
-URLs use the S3 API domain, not an R2 custom domain. PUT URLs sign the expected content type and,
-when supplied, byte length; completion verifies the stored object before it becomes visible in the
-timeline or cloud-copy queue.
+the endpoint and `auto` signing region are selected automatically. The generic
+`R2_BUCKET`, `R2_REGION`, `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, and
+`R2_SECRET_ACCESS_KEY` names emitted by the shared infrastructure templates are
+also accepted. An explicit
+`SOUND_RECORDER_S3_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com` works as
+well. Presigned URLs use the S3 API domain, not an R2 custom domain. PUT URLs
+sign the expected content type and, when supplied, byte length; completion
+verifies the stored object before it becomes visible in the timeline or
+cloud-copy queue.
 
 Production readiness uses a persistent sentinel inside `SOUND_RECORDER_S3_KEY_PREFIX`, proving
 remote endpoint reachability and object authorization without bucket listing. Deployment validation
