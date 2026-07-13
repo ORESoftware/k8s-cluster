@@ -2497,6 +2497,561 @@ async fn trace_backends_json(state: &AppState) -> Value {
     })
 }
 
+// Bounded external GET returning (meta, parsed body). The meta value always
+// carries ok/status/durationMs (error strings sanitized); the body is only
+// parsed when the response succeeded and fits DD_MCP_EXTERNAL_BODY_LIMIT_BYTES.
+async fn external_json_get(
+    state: &AppState,
+    client: &reqwest::Client,
+    url: &str,
+    bearer: Option<&str>,
+    accept: &str,
+) -> (Value, Option<Value>) {
+    state
+        .metrics
+        .external_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let started = Instant::now();
+    let mut request = client
+        .get(url)
+        .timeout(state.config.external_timeout)
+        .header(header::ACCEPT, accept);
+    if let Some(bearer) = bearer {
+        request = request.bearer_auth(bearer);
+    }
+    let response = match request.send().await {
+        Ok(response) => response,
+        Err(error) => {
+            return (
+                json!({
+                    "ok": false,
+                    "durationMs": elapsed_ms(started),
+                    "error": sanitize_text(&error.to_string())
+                }),
+                None,
+            );
+        }
+    };
+    let status = response.status();
+    let bytes = match response.bytes().await {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            return (
+                json!({
+                    "ok": false,
+                    "status": status.as_u16(),
+                    "durationMs": elapsed_ms(started),
+                    "error": sanitize_text(&error.to_string())
+                }),
+                None,
+            );
+        }
+    };
+    if bytes.len() > state.config.external_body_limit_bytes {
+        return (
+            json!({
+                "ok": false,
+                "status": status.as_u16(),
+                "durationMs": elapsed_ms(started),
+                "error": format!(
+                    "response body ({} bytes) exceeded DD_MCP_EXTERNAL_BODY_LIMIT_BYTES ({})",
+                    bytes.len(),
+                    state.config.external_body_limit_bytes
+                )
+            }),
+            None,
+        );
+    }
+    let body = serde_json::from_slice::<Value>(&bytes).ok();
+    let ok = status.is_success() && body.is_some();
+    let body = body.filter(|_| status.is_success());
+    (
+        json!({ "ok": ok, "status": status.as_u16(), "durationMs": elapsed_ms(started) }),
+        body,
+    )
+}
+
+// Cloudflare's token is optional by design: without it the tools report a
+// not-configured ok:false payload instead of a JSON-RPC error, so agents can
+// discover the capability gap without noise.
+fn cloudflare_not_configured() -> Value {
+    json!({
+        "source": "cloudflare",
+        "ok": false,
+        "configured": false,
+        "hint": "CLOUDFLARE_API_TOKEN is not configured; populate the optional CLOUDFLARE_API_TOKEN key in dd-cluster-mcp-rs-secrets to enable read-only Cloudflare zone/DNS reads"
+    })
+}
+
+// Bounded zone listing: at most MAX_CLOUDFLARE_ZONE_PAGES pages of
+// CLOUDFLARE_ZONES_PER_PAGE, stopping early on the API's own total_pages.
+async fn cloudflare_list_zones(state: &AppState, token: &str) -> (Vec<Value>, Vec<Value>) {
+    let base = state.config.cloudflare_api_url.trim_end_matches('/');
+    let mut zones = Vec::new();
+    let mut pages = Vec::new();
+    for page in 1..=MAX_CLOUDFLARE_ZONE_PAGES {
+        let url = format!("{base}/zones?page={page}&per_page={CLOUDFLARE_ZONES_PER_PAGE}");
+        let (meta, body) =
+            external_json_get(state, &state.http, &url, Some(token), "application/json").await;
+        let Some(body) = body else {
+            pages.push(json!({ "page": page, "result": meta }));
+            break;
+        };
+        let result = body
+            .get("result")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let page_count = result.len();
+        let total_pages = body
+            .pointer("/result_info/total_pages")
+            .and_then(Value::as_u64)
+            .unwrap_or(1);
+        zones.extend(result);
+        pages.push(json!({ "page": page, "result": meta, "zones": page_count }));
+        if page as u64 >= total_pages || page_count == 0 {
+            break;
+        }
+    }
+    (zones, pages)
+}
+
+fn summarize_cloudflare_zone(zone: &Value) -> Value {
+    json!({
+        "name": zone.get("name"),
+        "id": zone.get("id"),
+        "status": zone.get("status"),
+        "paused": zone.get("paused"),
+        "plan": zone.pointer("/plan/name"),
+        "nameServers": zone.get("name_servers").cloned().unwrap_or_else(|| json!([]))
+    })
+}
+
+async fn cloudflare_zones_json(state: &AppState) -> Value {
+    let Some(token) = state.config.cloudflare_api_token.clone() else {
+        return cloudflare_not_configured();
+    };
+    let (zones, pages) = cloudflare_list_zones(state, &token).await;
+    json!({
+        "source": "cloudflare",
+        "endpoint": sanitize_url_for_output(&join_url(&state.config.cloudflare_api_url, "/zones")),
+        "readOnly": true,
+        "pages": pages,
+        "zoneCount": zones.len(),
+        "zones": zones.iter().map(summarize_cloudflare_zone).collect::<Vec<_>>()
+    })
+}
+
+fn summarize_cloudflare_dns_record(record: &Value) -> Value {
+    // Record content goes through the full text redaction pipeline: TXT
+    // records routinely embed verification tokens and other secret-shaped
+    // values under non-secret-like names.
+    json!({
+        "type": record.get("type"),
+        "name": record.get("name"),
+        "content": record.get("content").and_then(Value::as_str).map(sanitize_text),
+        "proxied": record.get("proxied"),
+        "ttl": record.get("ttl")
+    })
+}
+
+// Summarize up to `budget` records; the bool reports whether the budget
+// clipped anything.
+fn summarize_cloudflare_dns_records(records: &[Value], budget: usize) -> (Vec<Value>, bool) {
+    let summarized = records
+        .iter()
+        .take(budget)
+        .map(summarize_cloudflare_dns_record)
+        .collect::<Vec<_>>();
+    let truncated = records.len() > summarized.len();
+    (summarized, truncated)
+}
+
+async fn cloudflare_dns_records_json(state: &AppState) -> Value {
+    let Some(token) = state.config.cloudflare_api_token.clone() else {
+        return cloudflare_not_configured();
+    };
+    let base = state.config.cloudflare_api_url.trim_end_matches('/').to_string();
+    let (zones, _pages) = cloudflare_list_zones(state, &token).await;
+    let mut remaining = MAX_CLOUDFLARE_DNS_RECORDS;
+    let mut truncated = zones.len() > MAX_CLOUDFLARE_DNS_ZONES;
+    let mut scanned = Vec::new();
+    for zone in zones.iter().take(MAX_CLOUDFLARE_DNS_ZONES) {
+        let Some(zone_id) = zone.get("id").and_then(Value::as_str) else {
+            continue;
+        };
+        // Zone ids come from the Cloudflare response body; constrain them to
+        // alphanumerics before using them as a path segment.
+        if !zone_id.bytes().all(|byte| byte.is_ascii_alphanumeric()) {
+            continue;
+        }
+        if remaining == 0 {
+            truncated = true;
+            break;
+        }
+        let url = format!("{base}/zones/{zone_id}/dns_records?per_page=100");
+        let (meta, body) =
+            external_json_get(state, &state.http, &url, Some(token), "application/json").await;
+        let records = body
+            .as_ref()
+            .and_then(|body| body.get("result"))
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let (summarized, clipped) = summarize_cloudflare_dns_records(&records, remaining);
+        truncated = truncated || clipped;
+        remaining -= summarized.len();
+        scanned.push(json!({
+            "zone": zone.get("name"),
+            "zoneId": zone_id,
+            "result": meta,
+            "recordCount": records.len(),
+            "records": summarized
+        }));
+    }
+    json!({
+        "source": "cloudflare",
+        "readOnly": true,
+        "zoneCount": zones.len(),
+        "zonesScanned": scanned.len(),
+        "recordCap": MAX_CLOUDFLARE_DNS_RECORDS,
+        "truncated": truncated,
+        "zones": scanned
+    })
+}
+
+fn normalize_dns_name(name: &str) -> String {
+    name.trim().trim_end_matches('.').to_ascii_lowercase()
+}
+
+fn valid_dns_name(domain: &str) -> bool {
+    !domain.is_empty()
+        && domain.len() <= 253
+        && domain.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-' || byte == b'.'
+        })
+}
+
+// Registrar-neutral RDAP: rdap.org bootstraps to the registry's RDAP server
+// via redirects. This is the honest integration for registrars with no public
+// domains API (e.g. Squarespace) — registrar name, status, and expiry come
+// from the registry record.
+async fn domain_registration_json(state: &AppState) -> Value {
+    let base = state.config.rdap_url.trim_end_matches('/').to_string();
+    let mut domains = Vec::new();
+    for domain in &state.config.domains {
+        if !valid_dns_name(domain) {
+            domains.push(json!({ "domain": domain, "ok": false, "error": "invalid domain name" }));
+            continue;
+        }
+        let url = format!("{base}/domain/{domain}");
+        let (meta, body) = external_json_get(
+            state,
+            &state.external_http,
+            &url,
+            None,
+            "application/rdap+json, application/json",
+        )
+        .await;
+        domains.push(json!({
+            "domain": domain,
+            "result": meta,
+            "registration": body.as_ref().map(|body| summarize_rdap_domain(domain, body))
+        }));
+    }
+    json!({
+        "source": "rdap",
+        "endpoint": sanitize_url_for_output(&state.config.rdap_url),
+        "note": "Registrar-neutral RDAP lookups; covers registrars without a public API (e.g. Squarespace-registered domains).",
+        "domainCount": domains.len(),
+        "domains": domains
+    })
+}
+
+fn summarize_rdap_domain(domain: &str, body: &Value) -> Value {
+    let expiration = rdap_event_date(body, "expiration");
+    json!({
+        "domain": domain,
+        "registrar": rdap_registrar_name(body),
+        "status": body.get("status").cloned().unwrap_or_else(|| json!([])),
+        "registered": rdap_event_date(body, "registration"),
+        "expires": expiration,
+        "daysUntilExpiry": expiration.as_deref().and_then(days_until_date),
+        "nameservers": rdap_nameservers(body)
+    })
+}
+
+fn rdap_registrar_name(body: &Value) -> Option<String> {
+    let entities = body.get("entities")?.as_array()?;
+    entities.iter().find_map(|entity| {
+        let is_registrar = entity
+            .get("roles")
+            .and_then(Value::as_array)
+            .is_some_and(|roles| roles.iter().any(|role| role.as_str() == Some("registrar")));
+        if !is_registrar {
+            return None;
+        }
+        vcard_full_name(entity)
+            .or_else(|| {
+                entity
+                    .pointer("/publicIds/0/identifier")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            })
+            .or_else(|| entity.get("handle").and_then(Value::as_str).map(str::to_string))
+    })
+}
+
+// vcardArray shape: ["vcard", [["version",{},"text","4.0"],
+// ["fn",{},"text","Squarespace Domains II, LLC"], ...]]
+fn vcard_full_name(entity: &Value) -> Option<String> {
+    entity
+        .pointer("/vcardArray/1")?
+        .as_array()?
+        .iter()
+        .find_map(|property| {
+            let property = property.as_array()?;
+            if property.first()?.as_str()? != "fn" {
+                return None;
+            }
+            property.get(3)?.as_str().map(str::to_string)
+        })
+}
+
+fn rdap_event_date(body: &Value, action: &str) -> Option<String> {
+    body.get("events")?.as_array()?.iter().find_map(|event| {
+        if event.get("eventAction").and_then(Value::as_str) != Some(action) {
+            return None;
+        }
+        event.get("eventDate").and_then(Value::as_str).map(str::to_string)
+    })
+}
+
+fn rdap_nameservers(body: &Value) -> Vec<String> {
+    body.get("nameservers")
+        .and_then(Value::as_array)
+        .map(|servers| {
+            servers
+                .iter()
+                .filter_map(|server| {
+                    server
+                        .get("ldhName")
+                        .and_then(Value::as_str)
+                        .map(normalize_dns_name)
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+// Days from today (UTC) until an RFC3339 date like "2027-01-15T04:00:00Z".
+// Date precision is plenty for expiry monitoring; negative means expired.
+fn days_until_date(date: &str) -> Option<i64> {
+    let expiry_days = civil_days_from_rfc3339_date(date)?;
+    let today_days = (SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()?
+        .as_secs()
+        / 86_400) as i64;
+    Some(expiry_days - today_days)
+}
+
+fn civil_days_from_rfc3339_date(date: &str) -> Option<i64> {
+    let date = date.get(..10)?;
+    let mut parts = date.split('-');
+    let year = parts.next()?.parse::<i64>().ok()?;
+    let month = parts.next()?.parse::<u32>().ok()?;
+    let day = parts.next()?.parse::<u32>().ok()?;
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return None;
+    }
+    Some(days_from_civil(year, month, day))
+}
+
+// Howard Hinnant's days_from_civil: days since 1970-01-01 for a proleptic
+// Gregorian date. Avoids pulling a date crate for one subtraction.
+fn days_from_civil(year: i64, month: u32, day: u32) -> i64 {
+    let y = if month <= 2 { year - 1 } else { year };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let mp = i64::from(if month > 2 { month - 3 } else { month + 9 });
+    let doy = (153 * mp + 2) / 5 + i64::from(day) - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+const DOH_QUERY_TYPES: &[&str] = &["A", "AAAA", "CNAME", "NS"];
+
+fn doh_type_name(code: u16) -> &'static str {
+    match code {
+        1 => "A",
+        2 => "NS",
+        5 => "CNAME",
+        28 => "AAAA",
+        _ => "OTHER",
+    }
+}
+
+// dns-json shape: { "Status": 0, "Answer": [{ "name", "type": 1, "TTL",
+// "data" }] }. Status 3 = NXDOMAIN (no Answer array). Names/data are
+// normalized (lowercase, no trailing dot) for endpoint matching.
+fn parse_doh_answers(body: &Value) -> (Option<i64>, Vec<(u16, String, String)>) {
+    let status = body.get("Status").and_then(Value::as_i64);
+    let answers = body
+        .get("Answer")
+        .and_then(Value::as_array)
+        .map(|answers| {
+            answers
+                .iter()
+                .filter_map(|answer| {
+                    let rtype = answer.get("type").and_then(Value::as_u64)? as u16;
+                    let name = normalize_dns_name(answer.get("name").and_then(Value::as_str)?);
+                    let data = normalize_dns_name(answer.get("data").and_then(Value::as_str)?);
+                    Some((rtype, name, data))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    (status, answers)
+}
+
+// A domain is "wired" to the cluster when any resolved A/AAAA address or any
+// CNAME target in its chain equals an expected endpoint (env-configured
+// ingress IPs plus live LoadBalancer/Ingress status endpoints).
+fn correlate_domain_wiring(
+    records: &[(u16, String, String)],
+    expected: &[String],
+) -> (bool, Option<String>) {
+    for (rtype, _name, data) in records {
+        if !matches!(rtype, 1 | 5 | 28) {
+            continue;
+        }
+        if let Some(endpoint) = expected.iter().find(|endpoint| *endpoint == data) {
+            return (true, Some(endpoint.clone()));
+        }
+    }
+    (false, None)
+}
+
+// Union of env-configured expected ingress IPs and live cluster LB endpoints
+// (LoadBalancer Services + Ingress statuses), deduplicated, with provenance.
+fn expected_cluster_endpoints(
+    configured: &[String],
+    services_body: Option<&Value>,
+    ingresses_body: Option<&Value>,
+) -> Vec<(String, String)> {
+    let mut endpoints: Vec<(String, String)> = Vec::new();
+    let mut push = |endpoint: String, source: String, endpoints: &mut Vec<(String, String)>| {
+        if !endpoint.is_empty() && !endpoints.iter().any(|(existing, _)| *existing == endpoint) {
+            endpoints.push((endpoint, source));
+        }
+    };
+    for ip in configured {
+        push(normalize_dns_name(ip), "env:DD_MCP_EXPECTED_INGRESS_IPS".to_string(), &mut endpoints);
+    }
+    if let Some(items) = services_body
+        .and_then(|body| body.get("items"))
+        .and_then(Value::as_array)
+    {
+        for item in items {
+            if item.pointer("/spec/type").and_then(Value::as_str) != Some("LoadBalancer") {
+                continue;
+            }
+            let name = item.pointer("/metadata/name").and_then(Value::as_str).unwrap_or("");
+            let namespace = item
+                .pointer("/metadata/namespace")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            for endpoint in lb_ingress_endpoints(item.pointer("/status/loadBalancer/ingress")) {
+                push(endpoint, format!("service:{namespace}/{name}"), &mut endpoints);
+            }
+        }
+    }
+    if let Some(items) = ingresses_body
+        .and_then(|body| body.get("items"))
+        .and_then(Value::as_array)
+    {
+        for item in items {
+            let name = item.pointer("/metadata/name").and_then(Value::as_str).unwrap_or("");
+            let namespace = item
+                .pointer("/metadata/namespace")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            for endpoint in lb_ingress_endpoints(item.pointer("/status/loadBalancer/ingress")) {
+                push(endpoint, format!("ingress:{namespace}/{name}"), &mut endpoints);
+            }
+        }
+    }
+    endpoints
+}
+
+async fn domain_dns_wiring_json(state: &AppState) -> Value {
+    let services_body = kubernetes_get_body(state, "/api/v1/services?limit=500").await.ok();
+    let ingresses_body = kubernetes_get_body(state, "/apis/networking.k8s.io/v1/ingresses?limit=500")
+        .await
+        .ok();
+    let expected = expected_cluster_endpoints(
+        &state.config.expected_ingress_ips,
+        services_body.as_ref(),
+        ingresses_body.as_ref(),
+    );
+    let expected_names = expected
+        .iter()
+        .map(|(endpoint, _)| endpoint.clone())
+        .collect::<Vec<_>>();
+
+    let doh = state.config.doh_url.trim_end_matches('/').to_string();
+    let mut domains = Vec::new();
+    for domain in &state.config.domains {
+        if !valid_dns_name(domain) {
+            domains.push(json!({ "domain": domain, "ok": false, "error": "invalid domain name" }));
+            continue;
+        }
+        let mut records: Vec<(u16, String, String)> = Vec::new();
+        let mut queries = Vec::new();
+        for record_type in DOH_QUERY_TYPES {
+            let url = format!("{doh}?name={domain}&type={record_type}");
+            let (meta, body) =
+                external_json_get(state, &state.external_http, &url, None, "application/dns-json")
+                    .await;
+            let (dns_status, answers) = body
+                .as_ref()
+                .map(parse_doh_answers)
+                .unwrap_or((None, Vec::new()));
+            queries.push(json!({ "type": record_type, "result": meta, "dnsStatus": dns_status }));
+            for answer in answers {
+                if !records.contains(&answer) {
+                    records.push(answer);
+                }
+            }
+        }
+        let (matched, matched_endpoint) = correlate_domain_wiring(&records, &expected_names);
+        domains.push(json!({
+            "domain": domain,
+            "queries": queries,
+            "records": records
+                .iter()
+                .map(|(rtype, name, data)| {
+                    json!({ "type": doh_type_name(*rtype), "name": name, "data": data })
+                })
+                .collect::<Vec<_>>(),
+            "matched": matched,
+            "matchedEndpoint": matched_endpoint
+        }));
+    }
+
+    json!({
+        "source": "dns-over-https",
+        "endpoint": sanitize_url_for_output(&state.config.doh_url),
+        "expectedEndpoints": expected
+            .iter()
+            .map(|(endpoint, source)| json!({ "endpoint": endpoint, "source": source }))
+            .collect::<Vec<_>>(),
+        "domainCount": domains.len(),
+        "domains": domains
+    })
+}
+
 async fn parallel_http_checks(
     state: &AppState,
     checks: Vec<(&'static str, String, usize)>,
