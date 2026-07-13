@@ -1046,10 +1046,10 @@ async fn rpc(
     }
 
     let response = match method.as_str() {
-        "initialize" => initialize_result(id),
+        "initialize" => initialize_result(id, request.params.as_ref()),
         "ping" => json!({ "jsonrpc": "2.0", "id": id, "result": {} }),
         "tools/list" => tools_list_result(id),
-        "tools/call" => tools_call_result(&state, id, request.params.as_ref()).await,
+        "tools/call" => tools_call_result(&state, id, request.params.as_ref(), peer, &headers).await,
         _ => {
             state
                 .metrics
