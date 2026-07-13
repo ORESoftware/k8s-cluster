@@ -1262,15 +1262,58 @@ async fn tools_call_result(
 }
 
 fn tool_json_result(id: Value, tool: &str, text: &str, structured_content: Value) -> Value {
+    // Spec-minimal MCP clients only read `content`, so serialize the (already
+    // bounded + redacted) structured payload into the text block instead of
+    // shipping just a static blurb. isError reflects the ok:false shape: set
+    // only when the tool made upstream calls and every one of them failed.
+    let is_error = all_upstream_calls_failed(&structured_content);
+    let rendered = format!("{text}\n{structured_content}");
     json!({
         "jsonrpc": "2.0",
         "id": id,
         "result": {
-            "content": [{ "type": "text", "text": text }],
+            "content": [{ "type": "text", "text": rendered }],
             "structuredContent": structured_content,
+            "isError": is_error,
             "_meta": { "tool": tool }
         }
     })
+}
+
+fn all_upstream_calls_failed(value: &Value) -> bool {
+    let (total, failed) = count_ok_fields(value);
+    total > 0 && failed == total
+}
+
+// Count the boolean "ok" fields the upstream helpers (kubernetes_get,
+// http_result) embed in tool payloads. Static tools have none, so they can
+// never be flagged as errors.
+fn count_ok_fields(value: &Value) -> (usize, usize) {
+    match value {
+        Value::Object(map) => {
+            let mut total = 0usize;
+            let mut failed = 0usize;
+            if let Some(Value::Bool(ok)) = map.get("ok") {
+                total += 1;
+                if !*ok {
+                    failed += 1;
+                }
+            }
+            for child in map.values() {
+                let (child_total, child_failed) = count_ok_fields(child);
+                total += child_total;
+                failed += child_failed;
+            }
+            (total, failed)
+        }
+        Value::Array(items) => items.iter().map(count_ok_fields).fold(
+            (0, 0),
+            |(total, failed), (child_total, child_failed)| {
+                (total + child_total, failed + child_failed)
+            },
+        ),
+        _ => (0, 0),
+    }
 }
 
 fn cluster_status_json(state: &AppState) -> Value {
