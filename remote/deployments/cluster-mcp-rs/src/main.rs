@@ -2641,6 +2641,163 @@ mod tests {
     }
 
     #[test]
+    fn constant_time_secret_eq_matches_only_exact_values() {
+        assert!(constant_time_secret_eq("s3cret", "s3cret"));
+        assert!(!constant_time_secret_eq("s3cret", "s3cres"));
+        assert!(!constant_time_secret_eq("s3cret", "s3cre"));
+        assert!(!constant_time_secret_eq("s3cret", "s3cret-and-more"));
+        assert!(!constant_time_secret_eq("s3cret", ""));
+        assert!(constant_time_secret_eq("", ""));
+    }
+
+    #[test]
+    fn value_patterns_redact_jwts() {
+        let jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
+        let line = format!("upstream said: {jwt} (rejected)");
+        let redacted = redact_sensitive_values(&line);
+        assert!(!redacted.contains("SflKxwRJ"));
+        assert!(!redacted.contains("eyJhbGci"));
+        assert!(redacted.contains(REDACTED));
+        assert!(redacted.contains("upstream said:"));
+        assert!(redacted.contains("(rejected)"));
+        // Also caught when glued to key=value syntax.
+        let glued = redact_sensitive_values("id_token=eyJhbGciOiJIUzI1NiJ9.e30.x1y2");
+        assert!(!glued.contains("eyJhbGci"));
+    }
+
+    #[test]
+    fn value_patterns_redact_aws_access_key_ids() {
+        let redacted = redact_sensitive_values("cred check AKIAIOSFODNN7EXAMPLE failed");
+        assert!(!redacted.contains("AKIAIOSFODNN7EXAMPLE"));
+        assert!(redacted.contains("cred check"));
+        // Lowercase-adjacent prefix is not a key id boundary.
+        let untouched = redact_sensitive_values("nakiakind is a word");
+        assert_eq!(untouched, "nakiakind is a word");
+    }
+
+    #[test]
+    fn value_patterns_redact_long_hex_and_base64_runs() {
+        // 64-char sha256-style digest behind a non-secret-like key.
+        let digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        let redacted = redact_sensitive_values(&format!("digest sha256:{digest} ok"));
+        assert!(!redacted.contains(digest));
+        assert!(redacted.contains("sha256:"));
+        // 40-char AWS-style secret (mixed case + digit).
+        let secret = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
+        let redacted = redact_sensitive_values(&format!("value {secret} here"));
+        assert!(!redacted.contains("K7MDENG"));
+    }
+
+    #[test]
+    fn value_patterns_keep_ordinary_identifiers() {
+        for line in [
+            "dd-otel-collector.observability.svc.cluster.local:8889 reachable",
+            "kubernetes.default.svc responded 200 OK",
+            "deployment dd-cluster-mcp-rs scaled to 2 replicas",
+            "short hex deadbeefdeadbeefdeadbeef is fine", // 24 < 32
+        ] {
+            assert_eq!(redact_sensitive_values(line), line);
+        }
+    }
+
+    #[test]
+    fn response_sample_redacts_value_patterns_in_json_strings() {
+        let body = json!({
+            "note": "login used eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.abc123def456",
+            "imageID": "docker://sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "hostname": "dd-prometheus.observability.svc.cluster.local"
+        })
+        .to_string();
+        let (sample, _) = response_sample(&body, 10_000);
+        assert!(!sample.contains("eyJhbGci"));
+        assert!(!sample.contains("e3b0c442"));
+        assert!(sample.contains("dd-prometheus.observability.svc.cluster.local"));
+    }
+
+    #[test]
+    fn kubernetes_sample_strips_annotations_and_managed_fields() {
+        let body = json!({
+            "kind": "ServiceList",
+            "items": [{
+                "metadata": {
+                    "name": "dd-example",
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration":
+                            "{\"metadata\":{\"labels\":{\"harmless\":\"embedded-prior-object\"}}}"
+                    },
+                    "managedFields": [{ "manager": "kubectl" }]
+                }
+            }]
+        })
+        .to_string();
+        let (sample, truncated) = kubernetes_response_sample(&body, 10_000);
+        assert!(!truncated);
+        assert!(!sample.contains("last-applied-configuration"));
+        assert!(!sample.contains("embedded-prior-object"));
+        assert!(!sample.contains("managedFields"));
+        assert!(sample.contains("dd-example"));
+    }
+
+    #[test]
+    fn initialize_negotiates_protocol_version() {
+        assert_eq!(
+            negotiated_protocol_version(Some(&json!({ "protocolVersion": "2025-06-18" }))),
+            "2025-06-18"
+        );
+        assert_eq!(
+            negotiated_protocol_version(Some(&json!({ "protocolVersion": "1999-01-01" }))),
+            PROTOCOL_VERSION
+        );
+        assert_eq!(
+            negotiated_protocol_version(Some(&json!({ "protocolVersion": 42 }))),
+            PROTOCOL_VERSION
+        );
+        assert_eq!(negotiated_protocol_version(None), PROTOCOL_VERSION);
+        let result = initialize_result(
+            json!(1),
+            Some(&json!({ "protocolVersion": "2025-03-26" })),
+        );
+        assert_eq!(result["result"]["protocolVersion"], json!("2025-03-26"));
+    }
+
+    #[test]
+    fn tool_results_embed_data_in_text_and_flag_total_failure() {
+        let mixed = tool_json_result(
+            json!(1),
+            "telemetry_summary",
+            "blurb",
+            json!({ "sources": [
+                { "result": { "ok": true } },
+                { "result": { "ok": false } }
+            ]}),
+        );
+        assert_eq!(mixed["result"]["isError"], json!(false));
+        let text = mixed["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.starts_with("blurb"));
+        assert!(text.contains("\"sources\""));
+
+        let failed = tool_json_result(
+            json!(2),
+            "telemetry_summary",
+            "blurb",
+            json!({ "sources": [
+                { "result": { "ok": false } },
+                { "result": { "ok": false } }
+            ]}),
+        );
+        assert_eq!(failed["result"]["isError"], json!(true));
+
+        // Static tools have no upstream ok fields => never an error.
+        let static_tool = tool_json_result(
+            json!(3),
+            "human_access_policy",
+            "blurb",
+            json!({ "readOnlyByDefault": true }),
+        );
+        assert_eq!(static_tool["result"]["isError"], json!(false));
+    }
+
+    #[test]
     fn header_secret_gate_accepts_only_matching_credentials() {
         let mut headers = HeaderMap::new();
         // No secret configured => fail closed even with a header present.
