@@ -66,6 +66,7 @@ spec:
               if checkout_git_ref "${MIP_SOLVER_CLUSTER_GIT_URL}" "${MIP_SOLVER_CLUSTER_GIT_REF:-dev}" "${source_root}"; then
                 git -C "${source_root}" config url.https://github.com/.insteadOf git@github.com:
                 git -C "${source_root}" config url.https://github.com/.insteadOf ssh://git@github.com/
+                git -C "${source_root}" submodule set-url remote/libs https://github.com/ORESoftware/k8s-libs-and-shared-defs.git
                 git -C "${source_root}" submodule sync --recursive remote/libs remote/submodules/discrete-event-system.rs
                 git -C "${source_root}" submodule update --init --depth 1 remote/libs remote/submodules/discrete-event-system.rs
                 if [ -n "${MIP_SOLVER_NODE_GIT_URL:-}" ]; then
@@ -165,7 +166,7 @@ spec:
           resources:
             requests:
               cpu: 25m
-              memory: 64Mi
+              memory: 32Mi
             limits:
               cpu: '4'
               memory: 8Gi
