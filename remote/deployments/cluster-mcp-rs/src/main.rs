@@ -3826,6 +3826,348 @@ mod tests {
     }
 
     #[test]
+    fn cloudflare_zone_summary_extracts_expected_fields() {
+        // Shape mirrors the Cloudflare v4 GET /zones response items.
+        let zone = json!({
+            "id": "023e105f4ecef8ad9ca31a8372d0c353",
+            "name": "fiducia.cloud",
+            "status": "active",
+            "paused": false,
+            "plan": { "id": "plan-id", "name": "Free Website" },
+            "name_servers": ["ada.ns.cloudflare.com", "bob.ns.cloudflare.com"],
+            "account": { "id": "acct", "name": "ops@example.test" }
+        });
+        let summary = summarize_cloudflare_zone(&zone);
+        assert_eq!(summary["name"], json!("fiducia.cloud"));
+        assert_eq!(summary["id"], json!("023e105f4ecef8ad9ca31a8372d0c353"));
+        assert_eq!(summary["status"], json!("active"));
+        assert_eq!(summary["paused"], json!(false));
+        assert_eq!(summary["plan"], json!("Free Website"));
+        assert_eq!(summary["nameServers"][1], json!("bob.ns.cloudflare.com"));
+        // Only the picked fields ship — account details are dropped.
+        assert!(summary.get("account").is_none());
+    }
+
+    #[test]
+    fn cloudflare_dns_record_summary_redacts_secretish_content() {
+        let records = vec![
+            json!({ "type": "A", "name": "fiducia.cloud", "content": "98.90.186.114",
+                    "proxied": true, "ttl": 1 }),
+            json!({ "type": "TXT", "name": "_verify.fiducia.cloud",
+                    "content": "site-verification=wJalrXUtnFEMI7K7MDENGbPxRfiCYEXAMPLEKEY9aB",
+                    "proxied": false, "ttl": 300 }),
+        ];
+        let (summarized, truncated) = summarize_cloudflare_dns_records(&records, 500);
+        assert!(!truncated);
+        assert_eq!(summarized[0]["content"], json!("98.90.186.114"));
+        assert_eq!(summarized[0]["proxied"], json!(true));
+        // The TXT verification token (long mixed-case base64 run) is redacted.
+        let txt = summarized[1]["content"].as_str().unwrap();
+        assert!(txt.contains(REDACTED));
+        assert!(!txt.contains("wJalrXUtnFEMI7K7MDENG"));
+    }
+
+    #[test]
+    fn cloudflare_dns_records_honor_record_budget() {
+        let records = (0..5)
+            .map(|index| {
+                json!({ "type": "A", "name": format!("host{index}.example.test"),
+                        "content": "10.0.0.1", "proxied": false, "ttl": 60 })
+            })
+            .collect::<Vec<_>>();
+        let (summarized, truncated) = summarize_cloudflare_dns_records(&records, 2);
+        assert_eq!(summarized.len(), 2);
+        assert!(truncated);
+    }
+
+    #[test]
+    fn cloudflare_unconfigured_reports_hint_not_error() {
+        let result = cloudflare_not_configured();
+        assert_eq!(result["ok"], json!(false));
+        assert_eq!(result["configured"], json!(false));
+        assert!(result["hint"].as_str().unwrap().contains("CLOUDFLARE_API_TOKEN"));
+        // Wrapped as a tool result it is a well-formed result, not a JSON-RPC
+        // error (agents see the hint instead of noise).
+        let wrapped = tool_json_result(json!(1), "cloudflare_zones", "blurb", result);
+        assert!(wrapped.get("error").is_none());
+        assert!(wrapped["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("not configured"));
+    }
+
+    #[test]
+    fn rdap_summary_extracts_squarespace_registrar_and_expiry() {
+        // Trimmed from a real Verisign RDAP response for a Squarespace-
+        // registered .cloud/.com domain.
+        let body = json!({
+            "objectClassName": "domain",
+            "ldhName": "EXAMPLE-SQSP.CLOUD",
+            "status": ["client delete prohibited", "client transfer prohibited"],
+            "entities": [{
+                "objectClassName": "entity",
+                "handle": "895",
+                "roles": ["registrar"],
+                "vcardArray": ["vcard", [
+                    ["version", {}, "text", "4.0"],
+                    ["fn", {}, "text", "Squarespace Domains II, LLC"]
+                ]],
+                "publicIds": [{ "type": "IANA Registrar ID", "identifier": "895" }]
+            }],
+            "events": [
+                { "eventAction": "registration", "eventDate": "2023-11-02T17:31:15Z" },
+                { "eventAction": "expiration", "eventDate": "2999-11-02T17:31:15Z" }
+            ],
+            "nameservers": [
+                { "objectClassName": "nameserver", "ldhName": "ADA.NS.CLOUDFLARE.COM." },
+                { "objectClassName": "nameserver", "ldhName": "BOB.NS.CLOUDFLARE.COM." }
+            ]
+        });
+        let summary = summarize_rdap_domain("example-sqsp.cloud", &body);
+        assert_eq!(summary["registrar"], json!("Squarespace Domains II, LLC"));
+        assert_eq!(summary["registered"], json!("2023-11-02T17:31:15Z"));
+        assert_eq!(summary["expires"], json!("2999-11-02T17:31:15Z"));
+        assert!(summary["daysUntilExpiry"].as_i64().unwrap() > 0);
+        assert_eq!(summary["nameservers"][0], json!("ada.ns.cloudflare.com"));
+        assert_eq!(summary["status"][0], json!("client delete prohibited"));
+        // An already-expired date is reported as negative, not dropped.
+        let expired = json!({ "events": [
+            { "eventAction": "expiration", "eventDate": "1999-01-01T00:00:00Z" }
+        ]});
+        let summary = summarize_rdap_domain("expired.test", &expired);
+        assert!(summary["daysUntilExpiry"].as_i64().unwrap() < 0);
+    }
+
+    #[test]
+    fn days_from_civil_matches_known_epochs() {
+        assert_eq!(days_from_civil(1970, 1, 1), 0);
+        assert_eq!(days_from_civil(1970, 1, 2), 1);
+        assert_eq!(days_from_civil(2000, 1, 1), 10_957);
+        assert_eq!(civil_days_from_rfc3339_date("2000-01-01T00:00:00Z"), Some(10_957));
+        assert_eq!(civil_days_from_rfc3339_date("not-a-date"), None);
+        assert_eq!(civil_days_from_rfc3339_date("2000-13-01T00:00:00Z"), None);
+    }
+
+    #[test]
+    fn doh_answers_parse_a_and_cname_chains_and_nxdomain() {
+        // cloudflare-dns.com dns-json shape: an A query whose answer carries
+        // the CNAME chain plus the terminal A record.
+        let body = json!({
+            "Status": 0,
+            "Answer": [
+                { "name": "app.fiducia.cloud.", "type": 5, "TTL": 300,
+                  "data": "lb.example-elb.amazonaws.com." },
+                { "name": "lb.example-elb.amazonaws.com.", "type": 1, "TTL": 60,
+                  "data": "98.90.186.114" }
+            ]
+        });
+        let (status, answers) = parse_doh_answers(&body);
+        assert_eq!(status, Some(0));
+        assert_eq!(
+            answers,
+            vec![
+                (5, "app.fiducia.cloud".to_string(), "lb.example-elb.amazonaws.com".to_string()),
+                (1, "lb.example-elb.amazonaws.com".to_string(), "98.90.186.114".to_string()),
+            ]
+        );
+        // NXDOMAIN: Status 3, no Answer array.
+        let nxdomain = json!({ "Status": 3, "Authority": [{ "type": 6 }] });
+        let (status, answers) = parse_doh_answers(&nxdomain);
+        assert_eq!(status, Some(3));
+        assert!(answers.is_empty());
+    }
+
+    #[test]
+    fn domain_wiring_matches_a_records_cname_targets_or_nothing() {
+        let expected = vec![
+            "98.90.186.114".to_string(),
+            "lb.example-elb.amazonaws.com".to_string(),
+        ];
+        // Direct A-record match.
+        let a_records = vec![(1u16, "fiducia.cloud".to_string(), "98.90.186.114".to_string())];
+        assert_eq!(
+            correlate_domain_wiring(&a_records, &expected),
+            (true, Some("98.90.186.114".to_string()))
+        );
+        // CNAME-to-LB-hostname match (no A answer needed).
+        let cname_records = vec![(
+            5u16,
+            "app.fiducia.cloud".to_string(),
+            "lb.example-elb.amazonaws.com".to_string(),
+        )];
+        assert_eq!(
+            correlate_domain_wiring(&cname_records, &expected),
+            (true, Some("lb.example-elb.amazonaws.com".to_string()))
+        );
+        // No match: unrelated A record, and NS records never match.
+        let unrelated = vec![
+            (1u16, "elsewhere.test".to_string(), "203.0.113.9".to_string()),
+            (2u16, "elsewhere.test".to_string(), "98.90.186.114".to_string()),
+        ];
+        assert_eq!(correlate_domain_wiring(&unrelated, &expected), (false, None));
+    }
+
+    #[test]
+    fn expected_endpoints_union_env_lb_services_and_ingresses() {
+        let services = json!({ "items": [
+            { "metadata": { "name": "edge", "namespace": "default" },
+              "spec": { "type": "LoadBalancer" },
+              "status": { "loadBalancer": { "ingress": [
+                  { "ip": "98.90.186.114" },
+                  { "hostname": "LB.Example-ELB.amazonaws.com." }
+              ]}}},
+            { "metadata": { "name": "internal", "namespace": "default" },
+              "spec": { "type": "ClusterIP" },
+              "status": { "loadBalancer": { "ingress": [{ "ip": "10.0.0.9" }] }}}
+        ]});
+        let ingresses = json!({ "items": [
+            { "metadata": { "name": "web", "namespace": "default" },
+              "status": { "loadBalancer": { "ingress": [{ "ip": "203.0.113.7" }] }}}
+        ]});
+        let configured = vec!["98.90.186.114".to_string()];
+        let endpoints =
+            expected_cluster_endpoints(&configured, Some(&services), Some(&ingresses));
+        let names = endpoints.iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>();
+        // Dedup: the env IP and the LB service IP are the same entry; the
+        // ClusterIP service is excluded.
+        assert_eq!(
+            names,
+            vec!["98.90.186.114", "lb.example-elb.amazonaws.com", "203.0.113.7"]
+        );
+        assert_eq!(endpoints[0].1, "env:DD_MCP_EXPECTED_INGRESS_IPS");
+        assert_eq!(endpoints[2].1, "ingress:default/web");
+    }
+
+    #[test]
+    fn ingress_and_lb_service_summaries_extract_hosts_and_endpoints() {
+        let ingresses = json!({ "items": [{
+            "metadata": { "name": "web", "namespace": "default" },
+            "spec": {
+                "ingressClassName": "nginx",
+                "rules": [{ "host": "app.fiducia.cloud" }, { "host": "admin.fiducia.cloud" }]
+            },
+            "status": { "loadBalancer": { "ingress": [{ "ip": "98.90.186.114" }] } }
+        }]});
+        let summary = summarize_ingress_endpoints(&ingresses, 10);
+        assert_eq!(summary.len(), 1);
+        assert_eq!(summary[0]["hosts"], json!(["app.fiducia.cloud", "admin.fiducia.cloud"]));
+        assert_eq!(summary[0]["className"], json!("nginx"));
+        assert_eq!(summary[0]["loadBalancer"][0]["ip"], json!("98.90.186.114"));
+
+        let services = json!({ "items": [
+            { "metadata": { "name": "edge", "namespace": "default" },
+              "spec": { "type": "LoadBalancer",
+                        "ports": [{ "name": "https", "port": 443, "protocol": "TCP" }] },
+              "status": { "loadBalancer": { "ingress": [{ "ip": "98.90.186.114" }] } } },
+            { "metadata": { "name": "plain", "namespace": "default" },
+              "spec": { "type": "ClusterIP" } }
+        ]});
+        let summary = summarize_loadbalancer_services(&services, 10);
+        assert_eq!(summary.len(), 1);
+        assert_eq!(summary[0]["name"], json!("edge"));
+        assert_eq!(summary[0]["ports"][0]["port"], json!(443));
+        assert_eq!(summary[0]["externalEndpoints"], json!(["98.90.186.114"]));
+    }
+
+    #[test]
+    fn deployment_rollout_summary_keeps_replicas_and_key_conditions() {
+        let body = json!({ "items": [{
+            "metadata": { "name": "dd-cluster-mcp-rs", "namespace": "default" },
+            "spec": { "replicas": 2 },
+            "status": {
+                "readyReplicas": 1,
+                "updatedReplicas": 2,
+                "availableReplicas": 1,
+                "conditions": [
+                    { "type": "Available", "status": "False", "reason": "MinimumReplicasUnavailable",
+                      "message": "Deployment does not have minimum availability." },
+                    { "type": "Progressing", "status": "True", "reason": "ReplicaSetUpdated",
+                      "message": "ReplicaSet is progressing." },
+                    { "type": "ReplicaFailure", "status": "True", "reason": "FailedCreate",
+                      "message": "pods exceeded quota" }
+                ]
+            }
+        }]});
+        let rollouts = summarize_deployment_rollouts(&body, 10);
+        assert_eq!(rollouts.len(), 1);
+        let rollout = &rollouts[0];
+        assert_eq!(rollout["replicas"], json!(2));
+        assert_eq!(rollout["readyReplicas"], json!(1));
+        assert_eq!(rollout["availableReplicas"], json!(1));
+        // Only Available/Progressing conditions ship.
+        assert_eq!(rollout["conditions"].as_array().unwrap().len(), 2);
+        assert_eq!(rollout["conditions"][0]["type"], json!("Available"));
+        assert_eq!(rollout["conditions"][1]["reason"], json!("ReplicaSetUpdated"));
+    }
+
+    #[test]
+    fn warning_event_summary_bounds_and_redacts_messages() {
+        let event = |message: &str| {
+            json!({
+                "reason": "FailedMount", "type": "Warning",
+                "involvedObject": { "kind": "Pod", "name": "dd-x-0", "namespace": "default" },
+                "count": 7, "lastTimestamp": "2026-07-13T00:00:00Z",
+                "message": message
+            })
+        };
+        let body = json!({ "items": [
+            event("MountVolume.SetUp failed: secret \"dd-agent-secrets\" not found"),
+            event("failed: api_key=super-secret-value rejected"),
+            event("third event")
+        ]});
+        let events = summarize_warning_events(&body, 2);
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0]["involvedObject"]["kind"], json!("Pod"));
+        assert_eq!(events[0]["count"], json!(7));
+        // Key-based line redaction applies to messages.
+        let message = events[1]["message"].as_str().unwrap();
+        assert!(message.contains(REDACTED));
+        assert!(!message.contains("super-secret-value"));
+    }
+
+    #[test]
+    fn tools_list_includes_new_integrations() {
+        assert_eq!(TOOL_NAMES.len(), 20);
+        for tool in [
+            "cloudflare_zones",
+            "cloudflare_dns_records",
+            "domain_registration",
+            "domain_dns_wiring",
+            "kubernetes_ingress_endpoints",
+            "deployment_rollout_status",
+            "kubernetes_events_warnings",
+        ] {
+            assert!(TOOL_NAMES.contains(&tool), "missing tool {tool}");
+        }
+        let listed = tools_list_result(json!(1));
+        let tools = listed["result"]["tools"].as_array().unwrap();
+        assert_eq!(tools.len(), TOOL_NAMES.len());
+        let names = tools
+            .iter()
+            .map(|tool| tool["name"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        for tool in TOOL_NAMES {
+            assert!(names.contains(tool), "tools/list missing {tool}");
+        }
+    }
+
+    #[test]
+    fn csv_env_lists_normalize_and_bound() {
+        // env_csv_bounded is exercised through its parser behavior: values are
+        // trimmed, lowercased, de-dotted, and capped.
+        std::env::set_var(
+            "DD_MCP_DOMAINS_TEST_FIXTURE",
+            " Fiducia.Cloud. , app.fiducia.cloud ,, canonical.cloud,a.test,b.test,c.test",
+        );
+        let domains = env_csv_bounded("DD_MCP_DOMAINS_TEST_FIXTURE", "", 4);
+        std::env::remove_var("DD_MCP_DOMAINS_TEST_FIXTURE");
+        assert_eq!(
+            domains,
+            vec!["fiducia.cloud", "app.fiducia.cloud", "canonical.cloud", "a.test"]
+        );
+    }
+
+    #[test]
     fn header_secret_gate_accepts_only_matching_credentials() {
         let mut headers = HeaderMap::new();
         // No secret configured => fail closed even with a header present.
