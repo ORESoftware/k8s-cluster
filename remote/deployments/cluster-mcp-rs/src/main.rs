@@ -1003,7 +1003,11 @@ async fn rpc(
             13,
             "MCP JSON-RPC invalid request",
             "cluster_mcp.rpc.invalid_request",
-            json!({ "rpc.method": sanitize_text(&request.method) }),
+            client_attrs(
+                json!({ "rpc.method": sanitize_text(&request.method) }),
+                peer,
+                &headers,
+            ),
             Some(&trace),
         );
         finish_span(
