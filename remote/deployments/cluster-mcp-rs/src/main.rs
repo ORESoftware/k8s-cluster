@@ -2142,6 +2142,44 @@ fn response_sample(body: &str, limit: usize) -> (String, bool) {
     (clip_string(&sanitized, limit), truncated)
 }
 
+// Kubernetes API bodies get an extra strip before the generic redact/clip:
+// metadata.annotations can embed entire prior objects (e.g.
+// kubectl.kubernetes.io/last-applied-configuration) under keys that are not
+// secret-like, and metadata.managedFields is pure noise. The per-item summary
+// already drops both; this keeps the raw `sample` from shipping them.
+fn kubernetes_response_sample(body: &str, limit: usize) -> (String, bool) {
+    match serde_json::from_str::<Value>(body) {
+        Ok(mut value) => {
+            strip_kubernetes_metadata_noise(&mut value);
+            redact_json_value(&mut value);
+            let sanitized = value.to_string();
+            let truncated = sanitized.len() > limit;
+            (clip_string(&sanitized, limit), truncated)
+        }
+        Err(_) => response_sample(body, limit),
+    }
+}
+
+fn strip_kubernetes_metadata_noise(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            if let Some(Value::Object(metadata)) = map.get_mut("metadata") {
+                metadata.remove("annotations");
+                metadata.remove("managedFields");
+            }
+            for child in map.values_mut() {
+                strip_kubernetes_metadata_noise(child);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                strip_kubernetes_metadata_noise(item);
+            }
+        }
+        _ => {}
+    }
+}
+
 fn sanitize_response_body(body: &str) -> String {
     match serde_json::from_str::<Value>(body) {
         Ok(mut value) => {
