@@ -84,7 +84,7 @@ jobs:
 
       - name: Build and push remote-dev image
         if: steps.cadence.outputs.run_build == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: remote/deployments/dev-server
           file: remote/deployments/dev-server/Dockerfile
