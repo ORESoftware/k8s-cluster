@@ -975,7 +975,7 @@ async fn rpc(
                 13,
                 "MCP JSON-RPC parse error",
                 "cluster_mcp.rpc.parse_error",
-                json!({ "error": error.to_string() }),
+                client_attrs(json!({ "error": error.to_string() }), peer, &headers),
                 Some(&trace),
             );
             finish_span(
