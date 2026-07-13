@@ -86,3 +86,11 @@
 	path = apps/fiducia-e2e
 	url = git@github.com:fiducia-cloud/fiducia-e2e.git
 	branch = main
+[submodule "apps/fiducia-memory.rs"]
+	path = apps/fiducia-memory.rs
+	url = git@github.com:fiducia-cloud/fiducia-memory.rs.git
+	branch = main
+[submodule "apps/fiducia-messaging.rs"]
+	path = apps/fiducia-messaging.rs
+	url = git@github.com:fiducia-cloud/fiducia-messaging.rs.git
+	branch = main
