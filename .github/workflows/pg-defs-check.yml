@@ -70,7 +70,7 @@ concurrency:
 
 jobs:
   check:
-    name: node src/generate.mjs --check
+    name: generate.mjs --check (all remote/libs generators)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
