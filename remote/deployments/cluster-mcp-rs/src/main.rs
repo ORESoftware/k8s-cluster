@@ -960,6 +960,10 @@ async fn metrics(State(state): State<AppState>, headers: HeaderMap) -> Response 
             .metrics
             .observability_requests_total
             .load(Ordering::Relaxed),
+        external = state
+            .metrics
+            .external_requests_total
+            .load(Ordering::Relaxed),
         otlp = state.metrics.otlp_spans_total.load(Ordering::Relaxed),
         otlp_failures = state.metrics.otlp_failures_total.load(Ordering::Relaxed)
     );
