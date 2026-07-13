@@ -1,3 +1,44 @@
+//! `dd-sound-recorder-rs` — the Sonus Auris "sound-recorder" backend.
+//!
+//! A single-binary Axum/Tokio HTTP service. Mobile clients record short audio
+//! segments, and this service issues presigned S3 upload URLs, tracks segment
+//! metadata in Postgres, brokers cloud-copy (mirror) jobs to user-owned Google
+//! Drive / OneDrive / iCloud destinations, and emails short-lived alert
+//! "listen" links. Audio bytes never flow through this process — only presigned
+//! URLs and metadata do. See `readme.md` for routes, environment variables, and
+//! the wider product/deployment context.
+//!
+//! This is intentionally one large file. Its major sections, roughly in the
+//! order they appear below, are:
+//!
+//! - **Metrics** — Prometheus `Lazy` collectors (`HTTP_REQUESTS`,
+//!   `SEGMENT_PRESIGNS`, `RATE_LIMITED`, uptime) exposed at `GET /metrics`.
+//! - **Constants** — service defaults and clamped limits (retention hours,
+//!   segment sizes, URL TTLs, OAuth scopes, rate-limit window).
+//! - **Config** — `Config`/`SupabaseConfig`/`S3StorageConfig` structs, the
+//!   `env_*` parsing helpers, `config_from_env`, and `state_from_config` which
+//!   builds the shared `AppState` (Postgres pool, S3 client, token sealer).
+//! - **Types** — `ServiceError` (→ HTTP responses) plus the request/response
+//!   DTO structs for every route.
+//! - **Auth / JWT** — Supabase JWT verification (`SupabaseVerifier` with cached
+//!   JWKS, HS256 + RS256/ES256), `authenticate_supabase_account`, opaque device
+//!   bearer tokens (`authenticate_device`, SHA-256 + pepper), the registration
+//!   bearer, and internal server-auth secret for `/internal/*` routes.
+//! - **Presign** — upload-session lifecycle, `presign_segment`, and the
+//!   `presign_put` / `presign_get` S3 URL builders (short-lived PUT/GET).
+//! - **Cloud connections** — OAuth link start/complete, AES-256-GCM
+//!   `CloudTokenSealer`, and the `/internal/cloud-copy/drain` worker that
+//!   uploads segments to Google Drive / OneDrive.
+//! - **Alerts** — `create_alert`, the `/listen/:alert_id` page, and
+//!   `send_alert_email` webhook payload.
+//! - **Account deletion** — `delete_account` and `delete_supabase_auth_user`
+//!   (Supabase service-role key), which purge backend metadata and revoke tokens.
+//! - **Retention** — `retention_sweep` marks expired (non-pinned) segment rows.
+//! - **Rate limiting & security** — the `rate_limit` and `add_security_headers`
+//!   middleware layers.
+//! - **`main` / router** — `Router::new()` wiring, TLS Postgres setup, and
+//!   graceful shutdown. Unit tests live in the trailing `#[cfg(test)]` module.
+
 use std::{
     collections::HashMap,
     env,

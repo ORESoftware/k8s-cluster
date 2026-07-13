@@ -26,6 +26,23 @@ destinations so completed segments are mirrored out of the centralized S3 bucket
 It also accepts mobile alert events and can email a timestamped listening link that starts before
 the event.
 
+## Repository layout
+
+This crate is deliberately small on disk. Each meaningful folder has its own `README.md`.
+
+- [`src/`](./src/README.md) — the Rust source. All logic lives in the single binary
+  [`src/main.rs`](./src/main.rs), whose top-of-file `//!` doc comment maps its sections
+  (config, auth/JWT, presign, cloud-copy, alerts, account deletion, retention, rate limiting,
+  metrics, router).
+- [`migrations/`](./migrations/README.md) — reviewed, copy-pasteable reference SQL and the
+  [`RUNBOOK.md`](./migrations/RUNBOOK.md). Schema is declared authoritatively in the
+  `ores/k8s-cluster` monorepo (`remote/libs/pg-defs/schema/schema.sql`) and applied out-of-band,
+  not by this process.
+- [`generated/`](./generated/README.md) — generated, checked-in API documentation
+  (`api-docs.json` / `api-docs.html`) served at `/api/docs`. Do not hand-edit.
+
+The crate is also packaged with Nix (`flake.nix`, `.nix/`) and a `Dockerfile` for the cluster image.
+
 ## Shape
 
 - Mobile clients record short audio segments locally and request a new presigned S3 `PUT` URL for
