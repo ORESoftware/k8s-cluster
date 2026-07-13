@@ -2212,6 +2212,14 @@ fn redact_json_value(value: &mut Value) {
                 redact_json_value(item);
             }
         }
+        Value::String(text) => {
+            // Key-based redaction misses secrets stored under innocuous keys;
+            // catch high-signal value shapes (JWTs, AWS key ids, long hex or
+            // base64 runs) wherever they appear.
+            if let Cow::Owned(redacted) = redact_sensitive_values(text) {
+                *value = Value::String(redacted);
+            }
+        }
         _ => {}
     }
 }
