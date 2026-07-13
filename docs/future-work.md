@@ -40,7 +40,7 @@ Use embedded RocksDB per node for production durability:
 
 3. **Admin and observability APIs**
    Owner repos: `fiducia-node.rs`, `fiducia-brain.rs`, `fiducia-admin.rs`,
-   `fiducia-telemetry.rs`, `fiducia-backend.rs`.
+   `fiducia-telemetry.rs`, `fiducia-customer.rs`.
 
    Expose lock holders, FIFO wait queues, lease state, leader history, schedule
    run history, shard health, quorum status, per-shard latency, Raft term/index,
@@ -226,7 +226,7 @@ certification strategy, accessibility review, and independent audit path.
 Consensus alone does not solve malware on voter devices, ballot secrecy,
 coercion, identity proofing, recounts, or public legitimacy.
 
-This track belongs behind careful language in `fiducia-ui.web` and deeper
+This track belongs behind careful language in `fiducia-marketing.web` and deeper
 protocol work in `fiducia-interfaces` plus `fiducia-node.rs`.
 
 ### Other coordination and cooperation surfaces

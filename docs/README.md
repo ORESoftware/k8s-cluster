@@ -3,9 +3,9 @@
 Cross-cutting documentation for the `fiducia-monorepo` superproject — the
 concerns that span the whole fleet rather than any single app repo.
 
-- `repo-boundaries.md` — why the superproject is private, per-repo visibility
-  defaults, and the rules for keeping public contracts separate from private
-  history.
+- `repo-boundaries.md` — intended per-repo visibility, the live audited
+  visibility snapshot, and the rules for keeping public contracts separate from
+  private history.
 - `deploy.md` — the two-environment model: app repos own TEST, the monorepo owns
   a single manual PROD deploy.
 - `SECURITY-AUDIT.md` — static security review across the pinned app repos.

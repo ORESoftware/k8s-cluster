@@ -7,9 +7,11 @@ The superproject pins each submodule to an exact commit, while `.gitmodules`
 sets `branch = main` for every submodule so updates intentionally follow each
 repo's main branch.
 
-This repo is the private all-up integration and GitOps view. Individual app
-repos keep their own visibility boundaries, so public SDK/protocol repos can
-coexist with private control-plane, infra, customer, and runtime repos. See
+This repo is the all-up integration and GitOps view and is intended to be
+private. Its live GitHub visibility was still `PUBLIC` on 2026-07-13; changing
+that setting has fork, release, and collaborator consequences, so the audit
+reports it for an explicit owner decision rather than mutating visibility.
+Individual app repos keep their own visibility boundaries; see
 `docs/repo-boundaries.md`.
 
 ## Clone
@@ -33,47 +35,27 @@ git diff --cached --submodule
 git commit -m "Pin Fiducia apps to main"
 ```
 
-To pin all submodules to another branch, use the branch name:
-
-```sh
-scripts/pin-submodules.sh dev
-git commit -m "Pin Fiducia apps to dev"
-```
-
-The script verifies that the target branch exists on every submodule remote,
-refuses dirty submodule checkouts, updates every `.gitmodules` `branch` entry,
+The script accepts only `main` under the current branch policy. It verifies that
+the branch exists on every submodule remote, refuses dirty submodule checkouts,
 fast-forwards each submodule, and stages the resulting gitlink pins.
 
 Preview without changing files:
 
 ```sh
-scripts/pin-submodules.sh dev --dry-run
+scripts/pin-submodules.sh main --dry-run
 ```
 
-## Feature Branches
+## Branch policy
 
-Switch the superproject and every app submodule to the same feature branch:
+The current integration policy is **main-only** for the superproject and every
+application repository. Keep each checkout on `main`, preserve any existing
+uncommitted work, and use fast-forward pulls only after confirming that the
+tree is clean. Do not create feature branches or linked worktrees while this
+temporary policy is in force.
 
-```sh
-scripts/checkout-feature-branch.sh feature/customer-portal-streams
-```
-
-If the branch exists on a submodule remote, the script checks it out and
-fast-forwards it. If it does not exist yet, the script creates it from
-`origin/main`. It refuses dirty superproject or submodule checkouts.
-
-Preview first:
-
-```sh
-scripts/checkout-feature-branch.sh feature/customer-portal-streams --dry-run
-```
-
-If the feature branch should also become the `.gitmodules` tracking branch for
-the superproject branch:
-
-```sh
-scripts/checkout-feature-branch.sh feature/customer-portal-streams --set-submodule-branch --stage-pins
-```
+The historical `scripts/checkout-feature-branch.sh` helper remains in the
+repository for a future policy change, but it is not part of the authorized
+workflow today.
 
 ## Audit
 
@@ -84,9 +66,13 @@ scripts/audit-repo-state.sh
 ```
 
 The audit checks for dirty submodules, stale conflict markers, tracked secret
-files, secret-looking values, missing Dockerfiles, Rust runtime images that are
-not distroless/nonroot, README app-list drift, and the expected private
-visibility of the all-up superproject when `gh` is available.
+files, secret-looking values, mutable or fail-open workflows, unlocked Cargo
+commands, enabled npm dependency hooks, moving sibling refs, container bases
+without immutable digests, unsafe runtime identities, missing Docker update
+automation, unreproducible README examples, README app-list drift, and
+visibility-policy drift. Workflow actions must use an immutable 40-character
+commit SHA; retain a version comment so dependency automation can keep the pin
+current.
 
 During local edits, preview the non-dirty checks with:
 
@@ -103,10 +89,12 @@ and rejects any submodule checkout that differs from its reviewed gitlink. It
 then validates and directly applies the pinned `apps/fiducia-infra` overlays.
 
 Configure the `prod` Environment with required reviewers, restrict deployment
-branches to protected `main`, and store `KUBE_CONFIG_PROD` only in that
-Environment. There is no caller-selected environment/ref and no ArgoCD fallback
-that can follow an application repository's mutable `main`. The ApplicationSet
-in `fiducia-infra` is explicitly restricted to labeled non-production clusters.
+branches to protected `main`, and store both `KUBE_CONFIG_PROD` and a read-only
+fine-grained `FIDUCIA_SUBMODULE_TOKEN` there. Missing credentials fail the
+manual deployment. Public PRs run the contract suite against public interface
+and sync gitlinks; trusted `main` CI uses the token for the recursive fleet
+audit. There is no caller-selected environment/ref or mutable-main deployment
+fallback.
 
 ## Apps
 
@@ -115,17 +103,17 @@ in `fiducia-infra` is explicitly restricted to labeled non-production clusters.
 - `apps/fiducia-ai-agent-control-plane`
 - `apps/fiducia-ai-agent-manager.rs`
 - `apps/fiducia-auth.rs`
-- `apps/fiducia-backend.rs`
 - `apps/fiducia-brain.rs`
 - `apps/fiducia-cli.rs`
 - `apps/fiducia-clients`
-- `apps/fiducia-customer-ui.web`
+- `apps/fiducia-customer.rs`
 - `apps/fiducia-e2e`
 - `apps/fiducia-edge`
 - `apps/fiducia-infra`
 - `apps/fiducia-interfaces`
 - `apps/fiducia-lambda-service.rs`
 - `apps/fiducia-load-balance.rs`
+- `apps/fiducia-marketing.web`
 - `apps/fiducia-memory.rs`
 - `apps/fiducia-messaging.rs`
 - `apps/fiducia-node-sidecar.rs`
@@ -135,7 +123,6 @@ in `fiducia-infra` is explicitly restricted to labeled non-production clusters.
 - `apps/fiducia-sync`
 - `apps/fiducia-telemetry.rs`
 - `apps/fiducia-test-config`
-- `apps/fiducia-ui.web`
 
 ## Security posture
 
@@ -143,8 +130,13 @@ The superproject itself ships no application code and no secrets — it only pin
 submodule commits. `.env*` are git-ignored (`!.env.example` excepted), and
 `.env.example` carries placeholder values only. Secret hygiene is enforced by
 `scripts/audit-repo-state.sh`, which fails on tracked secret files,
-secret-looking values, stale conflict markers, missing Dockerfiles, and Rust
-runtime images that are not distroless/nonroot. Each app repo keeps its own
+secret-looking values, stale conflict markers, mutable/fail-open workflows,
+unlocked or moving dependency inputs, non-digest container bases, missing
+Docker Dependabot coverage, and unsafe runtime users. Rust services use
+distroless/nonroot by default; an explicitly labeled uid/gid `65532:65532` tool
+runner is reserved for contracts requiring executables such as `psql` or agent
+CLIs. The superproject tooling image follows that same labeled non-root profile.
+Each app repo keeps its own
 visibility boundary (see `docs/repo-boundaries.md`), so public SDK/protocol
 repos can coexist with private control-plane/infra/customer repos under one
 integration view. Per-app security posture lives in each submodule's own README;

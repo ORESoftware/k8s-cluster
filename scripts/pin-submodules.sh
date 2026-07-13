@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Pins every app submodule to a given branch: verifies the branch exists on each
-# remote, rewrites .gitmodules, fast-forwards each submodule, and stages the
-# resulting gitlink pins as deployable superproject state.
+# Pins every app submodule to main: verifies main exists on each remote,
+# fast-forwards each submodule, and stages the resulting gitlink pins as
+# deployable superproject state. Other branches are disabled by current policy.
 
 usage() {
   cat <<'USAGE'
 Usage:
-  scripts/pin-submodules.sh <branch> [--remote origin] [--dry-run] [--no-fetch]
+  scripts/pin-submodules.sh main [--remote origin] [--dry-run] [--no-fetch]
 
-Pins every submodule declared in .gitmodules to the requested branch:
-  - verifies the branch exists on every submodule remote
+Pins every submodule declared in .gitmodules to main:
+  - verifies main exists on every submodule remote
   - updates each .gitmodules branch entry
   - checks out the branch inside each submodule
   - fast-forwards each submodule to remote/<branch>
@@ -19,10 +19,14 @@ Pins every submodule declared in .gitmodules to the requested branch:
 
 Examples:
   scripts/pin-submodules.sh main
-  scripts/pin-submodules.sh dev
-  scripts/pin-submodules.sh dev --dry-run
+  scripts/pin-submodules.sh main --dry-run
 USAGE
 }
+
+if [[ $# -ge 1 && ( "$1" == "-h" || "$1" == "--help" ) ]]; then
+  usage
+  exit 0
+fi
 
 if [[ $# -lt 1 ]]; then
   usage
@@ -67,6 +71,11 @@ done
 
 if [[ ! "$target_branch" =~ ^[A-Za-z0-9._/-]+$ ]]; then
   echo "invalid branch name: $target_branch" >&2
+  exit 64
+fi
+
+if [[ "$target_branch" != "main" ]]; then
+  echo "current repository policy permits only the main branch" >&2
   exit 64
 fi
 
