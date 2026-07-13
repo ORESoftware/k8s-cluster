@@ -98,6 +98,36 @@ aliases = ["trust-forwarded-for"]
 type = "bool"
 help = "Trust the leftmost X-Forwarded-For hop behind a trusted proxy."
 
+[flags.pg_pool_max_size]
+env = "SOUND_RECORDER_PG_POOL_MAX_SIZE"
+aliases = ["pg-pool-max-size"]
+type = "integer"
+help = "Maximum Postgres connection-pool size."
+
+[flags.allow_public_device_registration]
+env = "SOUND_RECORDER_ALLOW_PUBLIC_DEVICE_REGISTRATION"
+aliases = ["allow-public-device-registration"]
+type = "bool"
+help = "Allow install-id-only device registration; keep disabled in production."
+
+[flags.default_retention_hours]
+env = "SOUND_RECORDER_DEFAULT_RETENTION_HOURS"
+aliases = ["default-retention-hours"]
+type = "integer"
+help = "Default cloud retention window in hours."
+
+[flags.upload_url_ttl_seconds]
+env = "SOUND_RECORDER_UPLOAD_URL_TTL_SECONDS"
+aliases = ["upload-url-ttl-seconds"]
+type = "integer"
+help = "Lifetime of presigned upload URLs in seconds."
+
+[flags.download_url_ttl_seconds]
+env = "SOUND_RECORDER_DOWNLOAD_URL_TTL_SECONDS"
+aliases = ["download-url-ttl-seconds"]
+type = "integer"
+help = "Lifetime of presigned download URLs in seconds."
+
 [flags.rust_log]
 env = "RUST_LOG"
 aliases = ["rust-log", "log-filter"]

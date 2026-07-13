@@ -977,6 +977,7 @@ dependencies = [
  "bb8",
  "bb8-postgres",
  "chrono",
+ "flags2env",
  "jsonwebtoken",
  "once_cell",
  "prometheus",
@@ -1140,6 +1141,15 @@ name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
+
+[[package]]
+name = "flags2env"
+version = "0.1.0"
+source = "git+https://github.com/ORESoftware/flags-2-env.git#16fbd8b724e76990e9dcf6237bf44528433b09b1"
+dependencies = [
+ "libloading",
+ "serde_json",
+]
 
 [[package]]
 name = "fnv"
@@ -1762,6 +1772,16 @@ name = "libc"
 version = "0.2.186"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
+
+[[package]]
+name = "libloading"
+version = "0.8.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7c4b02199fee7c5d21a5ae7d8cfa79a6ef5bb2fc834d6e9058e89c825efdc55"
+dependencies = [
+ "cfg-if",
+ "windows-link",
+]
 
 [[package]]
 name = "libredox"
