@@ -205,8 +205,11 @@ impl ServerHandler for CanonicalMcp {
             .with_instructions(
                 "Operational tooling for the canonical.cloud stack (GitHub org canonical-cloud). \
                  Use stack_ci_status for CI health, submodule_pins to check monorepo pins, \
-                 service_health to probe a deployment, and stack_docs for deploy/repo-boundary \
-                 documentation. Set GITHUB_TOKEN (or GH_TOKEN) for higher GitHub rate limits.",
+                 service_health to probe a deployment, stack_docs for deploy/repo-boundary \
+                 documentation, domain_status for registrar (RDAP) and DNS delegation state, \
+                 cloudflare_dns to list zone records (needs CLOUDFLARE_API_TOKEN), and \
+                 k8s_status for read-only cluster state via kubectl. Set GITHUB_TOKEN (or \
+                 GH_TOKEN) for higher GitHub rate limits.",
             )
     }
 }
