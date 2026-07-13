@@ -16,9 +16,16 @@ permissions:
   id-token: write
   contents: read
 
+# Serialize runs against the shared EC2/SSM target; never cancel an
+# in-flight e2e mid-command.
+concurrency:
+  group: ec2-ssm-container-pool-e2e
+  cancel-in-progress: false
+
 jobs:
   e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
