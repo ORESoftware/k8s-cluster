@@ -2679,12 +2679,14 @@ mod tests {
     fn value_patterns_redact_long_hex_and_base64_runs() {
         // 64-char sha256-style digest behind a non-secret-like key.
         let digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
-        let redacted = redact_sensitive_values(&format!("digest sha256:{digest} ok"));
+        let hex_line = format!("digest sha256:{digest} ok");
+        let redacted = redact_sensitive_values(&hex_line);
         assert!(!redacted.contains(digest));
         assert!(redacted.contains("sha256:"));
         // 40-char AWS-style secret (mixed case + digit).
         let secret = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
-        let redacted = redact_sensitive_values(&format!("value {secret} here"));
+        let base64_line = format!("value {secret} here");
+        let redacted = redact_sensitive_values(&base64_line);
         assert!(!redacted.contains("K7MDENG"));
     }
 
