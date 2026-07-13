@@ -22,6 +22,9 @@ Public or public-ready repositories:
   tsconfig/eslint presets (`@fiducia/test-config`). Dev-tooling only, no
   product or control-plane code — public-ready like `fiducia-interfaces`.
 - `fiducia-cli.rs`: developer CLI and closest-region tooling.
+- `fiducia-mcp-server.rs`: read-only MCP server (`fiducia-mcp`, stdio) giving
+  MCP-capable agents diagnostics over brain/node/agent-control-plane plus an
+  embedded repo map; no mutating tools, public-ready.
 - `fiducia-memory.rs`: contestable claim ledger, governed durable memory, and
   explainable hybrid recall primitives and service APIs.
 - `fiducia-messaging.rs`: reusable NATS subject, envelope, fencing, deduplication,

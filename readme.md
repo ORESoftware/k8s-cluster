@@ -114,6 +114,7 @@ fallback.
 - `apps/fiducia-lambda-service.rs`
 - `apps/fiducia-load-balance.rs`
 - `apps/fiducia-marketing.web`
+- `apps/fiducia-mcp-server.rs`
 - `apps/fiducia-memory.rs`
 - `apps/fiducia-messaging.rs`
 - `apps/fiducia-node-sidecar.rs`
