@@ -188,3 +188,8 @@ resources:
   - dd-idle-reaper-rbac.yaml
   - dd-idle-reaper.deployment.yaml
   - dd-headlamp-cron-sentinel.cronjob.yaml
+  # ai-agent-bridge: inter-agent conversation bus (HTTP :8142 + TCP :8143).
+  # Built in-pod from the remote/deployments/ai-agent-bridge submodule; synced on
+  # both AWS and Hetzner via the dd-next-runtime app.
+  - dd-ai-agent-bridge.deployment.yaml
+  - dd-ai-agent-bridge.service.yaml

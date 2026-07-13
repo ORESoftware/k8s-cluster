@@ -38,6 +38,8 @@ always lives at `~/codes/ores/k8s-cluster/<submodule path>`.
 | `remote/deployments/canonical-cloud` | [canonical-cloud/canonical.cloud](https://github.com/canonical-cloud/canonical.cloud) | `main` | `~/codes/canonical.cloud` |
 | `remote/deployments/fiducia-backend.rs` | [fiducia-cloud/fiducia-backend.rs](https://github.com/fiducia-cloud/fiducia-backend.rs) | `main` | `~/codes/fiducia.cloud/fiducia-backend.rs` |
 | `remote/deployments/fiducia-ui.web` | [fiducia-cloud/fiducia-ui.web](https://github.com/fiducia-cloud/fiducia-ui.web) | `main` | `~/codes/fiducia.cloud/fiducia-ui.web` |
+| `remote/deployments/tor-server.rs` | [ORESoftware/tor-server.rs](https://github.com/ORESoftware/tor-server.rs) | `main` | `~/codes/ores/tor-server.rs` |
+| `remote/deployments/ai-agent-bridge` | [ORESoftware/ai-agent-bridge.rs](https://github.com/ORESoftware/ai-agent-bridge.rs) | `main` | `~/codes/ores/ai-agent-bridge` |
 
 ---
 
