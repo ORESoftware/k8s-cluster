@@ -5,9 +5,9 @@
 # happens HERE, and only when an operator dispatches this workflow against a
 # reviewed superproject pin set. See docs/deploy.md.
 #
-# Required secrets/vars for a REAL rollout. If none are present the workflow
-# validates the rendered manifests and exits GREEN without deploying anything
-# (validation-only) — so it is safe to run on a repo with no prod credentials:
+# Required secrets for every rollout. Missing credentials fail the manual job
+# before validation or apply; CI is the validation-only path.
+#   FIDUCIA_SUBMODULE_TOKEN  read-only fine-grained token for all app repos.
 #   KUBE_CONFIG_PROD    raw kubeconfig (YAML) with apply rights on the prod
 #                       cluster(s). Primary gate for a kubectl rollout.
 # For a human approval gate, protect the `prod` GitHub Environment with required
@@ -31,19 +31,34 @@ jobs:
     # gates every run. Reinforces: prod never deploys automatically.
     environment: prod
     steps:
-      # Submodules use SSH URLs; Actions authenticates over HTTPS. Production
-      # rendering only consumes the public infra module, so do not require the
-      # default token to clone unrelated private application repositories.
+      - name: Require deployment credentials
+        env:
+          FIDUCIA_SUBMODULE_TOKEN: ${{ secrets.FIDUCIA_SUBMODULE_TOKEN }}
+          KUBE_CONFIG_PROD: ${{ secrets.KUBE_CONFIG_PROD }}
+        run: |
+          test -n "$FIDUCIA_SUBMODULE_TOKEN"
+          test -n "$KUBE_CONFIG_PROD"
+      # Submodules use SSH URLs; Actions authenticates over HTTPS with the
+      # explicit read-only token so private modules cannot be silently skipped.
       - name: Use HTTPS for submodule fetch
         run: git config --global url."https://github.com/".insteadOf "git@github.com:"
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
+          submodules: recursive
           fetch-depth: 0
-      - name: Initialize reviewed infra pin
-        run: git submodule update --init --depth 1 apps/fiducia-infra
+          token: ${{ secrets.FIDUCIA_SUBMODULE_TOKEN }}
+          persist-credentials: false
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "22"
+
+      - run: npm ci --ignore-scripts
+      - run: npm audit --omit=dev
+      - run: npm test
+      - name: Audit the exact deployable fleet
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/audit-repo-state.sh
 
       - name: Verify protected main and exact pin set
         shell: bash
@@ -52,8 +67,8 @@ jobs:
           test "${GITHUB_REF}" = "refs/heads/main"
           git fetch origin main --no-tags
           test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
-          if git submodule status apps/fiducia-infra | grep -Eq '^[+U-]'; then
-            echo "infra checkout does not match the reviewed gitlink pin" >&2
+          if git submodule status --recursive | grep -Eq '^[+U-]'; then
+            echo "submodule checkout does not match the reviewed gitlink pins" >&2
             exit 1
           fi
 
@@ -77,23 +92,18 @@ jobs:
           echo "validated $built cluster kustomization(s)"
           test "$built" -gt 0
 
-      # --- Prod rollout — ONLY with credentials ----------------------------
-      # Never auto-deploys: with no kubeconfig secret this prints a notice
-      # and succeeds, leaving prod untouched (the workflow ran validation-only).
+      # --- Prod rollout ----------------------------------------------------
       - name: Prod rollout
         env:
           KUBE_CONFIG_PROD: ${{ secrets.KUBE_CONFIG_PROD }}
         run: |
           set -euo pipefail
-          if [ -n "${KUBE_CONFIG_PROD}" ]; then
-            echo "Kubeconfig present — applying reviewed production pin set"
-            kubeconfig="$(mktemp)"
-            printf '%s' "${KUBE_CONFIG_PROD}" | install -m 600 /dev/stdin "${kubeconfig}"
-            shopt -s nullglob
-            for c in apps/fiducia-infra/clusters/*/; do
-              echo "apply ${c}"
-              kubectl --kubeconfig "${kubeconfig}" apply -k "${c}"
-            done
-          else
-            echo "no prod credentials configured — validation-only; nothing deployed"
-          fi
+          test -n "${KUBE_CONFIG_PROD}"
+          echo "Applying reviewed production pin set"
+          kubeconfig="$(mktemp)"
+          printf '%s' "${KUBE_CONFIG_PROD}" | install -m 600 /dev/stdin "${kubeconfig}"
+          shopt -s nullglob
+          for c in apps/fiducia-infra/clusters/*/; do
+            echo "apply ${c}"
+            kubectl --kubeconfig "${kubeconfig}" apply -k "${c}"
+          done

@@ -1,12 +1,21 @@
 # Fiducia.cloud Security Audit
 
-**Date:** 2026-07-08
+**Original review:** 2026-07-08
+
+**Remediation revalidation:** 2026-07-13
+
 **Scope:** All app repositories pinned under `fiducia-monorepo` (auth, admin, backend,
 brain, load-balance, node, node-sidecar, edge, telemetry, infra, UI/web) plus the
 GitOps superproject itself.
+
 **Method:** Static review of authentication/authorization code, secret handling,
 container images, CI workflow posture, and repository visibility. Line references
 were verified against the tree at audit time and may drift as code changes.
+
+The detailed findings below preserve the original evidence. The summary table
+and final remediation section record the current state after the 2026-07-13
+fleet-wide hardening pass; do not treat historical code snippets as the live
+implementation.
 
 The codebase is, on the whole, **well-hardened**: JWT algorithm-confusion is
 actively defended, secret comparisons are constant-time, admin HTML output is
@@ -22,15 +31,15 @@ Kubernetes Secret is never provisioned.
 
 | # | Severity | Repo · File | Issue | One-line fix | Status |
 |---|----------|-------------|-------|--------------|--------|
-| 0 | **High** (flag-only) | `docs/repo-boundaries.md` vs GitHub | 10 repos documented "private by default" are actually **public** | Review each repo's real visibility against intent | Flag only — no change |
-| 1 | **Med-High** | `fiducia-node.rs/src/internal_auth.rs` (~90) | Trusted-hop guard is **fail-open**; secret wired `optional: true` and missing from `.env.example` | Fail-closed in prod; set `secretKeyRef optional: false`; document the knob | Recommended patch (not applied) |
-| 2 | **Med** | `fiducia-admin.rs/src/main.rs` (~141) | Session cookie lacks `Secure` | Append `; Secure` to the cookie | Doc only (admin.rs owned elsewhere) |
-| 3 | **Med** | `fiducia-auth.rs/src/keys.rs` (~235) | `CUSTOMER_API_KEY_PEPPER` required + test-enforced but **never applied** (plain SHA-256) | HMAC-SHA256(secret, pepper) | Recommended patch (not applied) |
+| 0 | **High** (owner decision) | `docs/repo-boundaries.md` vs GitHub | 12 private-by-default repos, including the monorepo, are currently **public** | Review real visibility against intent | Flagged; live snapshot documented, settings unchanged |
+| 1 | **Med-High** | `fiducia-node.rs` + infra | Trusted-hop guard and secret wiring were fail-open | Require the secret and fail closed | **RESOLVED** |
+| 2 | **Med** | `fiducia-admin.rs` | Session cookie lacked `Secure` | Enforce `Secure` in release builds | **RESOLVED** |
+| 3 | **Med** | `fiducia-auth.rs` | API-key pepper was not applied | HMAC-SHA256(secret, pepper) with controlled legacy reads | **RESOLVED** |
 | 4 | **Med** | `fiducia-edge/Dockerfile` | root user, `npm install`, ships `wrangler dev --ip 0.0.0.0` as runtime | Lockfile install, non-root, production CMD | **APPLIED** |
-| 5 | **Low-Med** | all `.github/workflows/*` | Actions pinned to **mutable major tags** (`@v4`, `@stable`) | Pin to commit SHAs; Dependabot being added | Doc only (workflows owned elsewhere) |
-| 6 | **Low** | `fiducia-telemetry.rs`, `fiducia-infra`, `fiducia-ui.web` Dockerfiles | root-user images; unpinned `fiducia-interfaces` clone in telemetry | Add non-root `USER`; pin `INTERFACES_REF` | telemetry **APPLIED**; rest doc only |
-| 7 | **Low** | `fiducia-auth.rs/src/supabase.rs` (~26) | Hardcoded `DEFAULT_PROJECT_REF` fallback | Drop the fallback; require config | Doc only |
-| 8 | **Low** | `fiducia-admin.rs/src/session.rs` (~155) | `FIDUCIA_ADMIN_ALL_USERS=1` promotes **all** users to admin | Gate to non-prod; log loudly | Doc only (admin.rs owned elsewhere) |
+| 5 | **Low-Med** | all `.github/workflows/*` | Mutable actions and fail-open checks | Exact action/tool pins and blocking gates | **RESOLVED** |
+| 6 | **Low** | fleet Dockerfiles | Root/mutable images and moving sibling inputs | Non-root runtimes, exact sibling SHAs, digest-pinned bases | **RESOLVED** |
+| 7 | **Low** | `fiducia-auth.rs/src/supabase.rs` | Hardcoded production project fallback | Require explicit Supabase configuration | **RESOLVED** |
+| 8 | **Low** | `fiducia-admin.rs` | Broad all-users promotion switch | Remove the unsafe authority shortcut | **RESOLVED** |
 
 ---
 
@@ -76,10 +85,12 @@ correctly. Call them out in review so they are not regressed.
 lines ~22–35) vs. actual GitHub visibility.
 
 **Issue:** The boundaries doc marks the following as **private by default**, but
-they are all **PUBLIC** on GitHub today (only `fiducia-monorepo` is private):
+they were all **PUBLIC** in the 2026-07-13 live GitHub audit:
 
 | Repo | Documented | Actual (GitHub) |
 |------|-----------|-----------------|
+| `fiducia-monorepo` | private | **public** |
+| `fiducia-infra` | private | **public** |
 | `fiducia-auth.rs` | private | **public** |
 | `fiducia-admin.rs` | private | **public** |
 | `fiducia-backend.rs` | private | **public** |
@@ -437,12 +448,18 @@ new per-service examples).
 
 ---
 
-## Explicitly NOT touched
+## 2026-07-13 remediation status
 
-- `fiducia-admin.rs` (any file) — owned elsewhere. Findings #2 and #8 are doc-only.
-- `**/.github/workflows/*` — owned elsewhere. Finding #5 is doc-only.
-- Delicate Rust auth/consensus logic (`internal_auth.rs` fail-open, `keys.rs`
-  pepper, `supabase.rs` fallback) — findings #1, #3, #7 carry recommended patches
-  in this document only; nothing was changed in code.
-- Repository visibility (#0) — flagged for owner decision; not altered.
-- No `git commit` / `git push` was performed.
+The follow-through pass semantically applied findings #1 through #8 across the
+owning repositories, added regression tests, updated their READMEs, validated
+the focused suites, and pushed every component `main`. CI now blocks on action
+pins, locked dependency resolution, audits, and browser/package gates. Every
+Dockerfile uses an explicit non-root runtime and registry-verified
+`tag@sha256` bases with Docker Dependabot coverage. Cross-repository build inputs
+are full reviewed commit IDs rather than moving branches.
+
+Finding #0 remains intentionally external: repository visibility was inspected
+but not changed. The current snapshot and private-by-default intent now coexist
+explicitly in `docs/repo-boundaries.md`; an owner must decide whether to restore
+the twelve mismatched repositories to private or accept/document a public
+release posture.

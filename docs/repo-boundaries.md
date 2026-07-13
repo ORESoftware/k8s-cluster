@@ -1,15 +1,15 @@
 # Repository Boundaries
 
-`fiducia-monorepo` is the private integration and GitOps superproject. It pins
-every Fiducia app repository to exact commits under `apps/`, but it is not the
-source of truth for component ownership. Each app repo keeps its own visibility,
-history, CI, issue surface, and release permissions.
+`fiducia-monorepo` is the integration and GitOps superproject and is intended to
+be private. It pins every Fiducia app repository to exact commits under `apps/`,
+but it is not the source of truth for component ownership. Each app repo keeps
+its own visibility, history, CI, issue surface, and release permissions.
 
 This separation lets Fiducia make selected components open source without
 exposing private control-plane, deployment, customer, or security-sensitive
 history.
 
-## Visibility Defaults
+## Intended visibility defaults
 
 Public or public-ready repositories:
 
@@ -55,10 +55,29 @@ Private repositories by default:
 - `fiducia-e2e`: cross-cluster conformance and chaos test orchestration.
 - `fiducia-telemetry.rs`: internal tracing conventions and service metadata.
 
+## Live visibility snapshot
+
+The live GitHub audit on 2026-07-13 found four private application repositories:
+`fiducia-ai-agent-bridge.rs`, `fiducia-ai-agent-control-plane`, `fiducia-e2e`,
+and `fiducia-operations-control-plane`. Every other repository in this workspace,
+including `fiducia-monorepo`, was public. That is a policy mismatch for twelve
+repositories listed as private-by-default above. Visibility is an owner-level
+release decision because changing it affects forks, collaborators, disclosure,
+and automation; this code audit therefore reports the mismatch without changing
+GitHub settings.
+
+Trusted `main` fleet-audit runs and production checkout use a read-only
+fine-grained `FIDUCIA_SUBMODULE_TOKEN` so private submodules are never silently
+omitted from a deployable-state audit. Public PR contract CI intentionally
+initializes only `fiducia-interfaces` and `fiducia-sync`; it still verifies all
+26 declarations as exact gitlinks without requesting private repository data.
+The token belongs in GitHub Environments/secrets, never in this repository.
+
 ## Rules
 
-- Keep the all-up superproject private unless every submodule URL and pin is
-  safe for public consumption.
+- Restore the all-up superproject to private unless an owner explicitly accepts
+  the audited public posture and confirms every submodule URL and pin is safe
+  for public consumption.
 - Use a separate public-only superproject if contributors need a single checkout
   across public components.
 - Do not commit real `.env*` files, private keys, tokens, certificates, or
