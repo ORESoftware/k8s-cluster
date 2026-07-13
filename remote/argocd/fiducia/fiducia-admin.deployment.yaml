@@ -57,6 +57,31 @@ spec:
             # Where the admin dashboard reaches the auth + brain services in-cluster.
             - { name: FIDUCIA_AUTH_URL, value: http://fiducia-auth.fiducia.svc.cluster.local:8097 }
             - { name: FIDUCIA_BRAIN_URL, value: http://fiducia-brain.fiducia.svc.cluster.local:8095 }
+            # Public canonical origin — release builds fail closed without it, and
+            # the exact-Host/Origin CSRF checks compare against this value. Must
+            # match the dd-remote-gateway server_name for the admin host.
+            - { name: FIDUCIA_ADMIN_ORIGIN, value: https://admin.fiducia.cloud }
+            # Secrets are provisioned out-of-band (same posture as
+            # fiducia-auth-secrets). Release builds fail closed when csrf-secret
+            # is missing; login needs the Supabase pair; the admin plane needs
+            # its own Postgres (admin.sql):
+            #   kubectl -n fiducia create secret generic fiducia-admin-secrets \
+            #     --from-literal=csrf-secret=<32+ random bytes> \
+            #     --from-literal=database-url=postgres://... \
+            #     --from-literal=supabase-url=https://<project>.supabase.co \
+            #     --from-literal=supabase-publishable-key=<key>
+            - name: FIDUCIA_ADMIN_CSRF_SECRET
+              valueFrom:
+                secretKeyRef: { name: fiducia-admin-secrets, key: csrf-secret, optional: true }
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: fiducia-admin-secrets, key: database-url, optional: true }
+            - name: SUPABASE_URL
+              valueFrom:
+                secretKeyRef: { name: fiducia-admin-secrets, key: supabase-url, optional: true }
+            - name: SUPABASE_PUBLISHABLE_KEY
+              valueFrom:
+                secretKeyRef: { name: fiducia-admin-secrets, key: supabase-publishable-key, optional: true }
             - { name: RUST_LOG, value: info }
             - { name: HOME, value: /tmp }
             - { name: CARGO_HOME, value: /tmp/cargo }
