@@ -9258,6 +9258,28 @@ mod tests {
     }
 
     #[test]
+    fn deployment_bootstrap_includes_every_shared_path_dependency() {
+        for manifest in [
+            include_str!("../k8s/master-deployment.yaml"),
+            include_str!("../k8s/slave-deployment.yaml"),
+        ] {
+            assert!(manifest.contains(
+                "submodule update --init --depth 1 remote/libs remote/submodules/discrete-event-system.rs"
+            ));
+        }
+
+        let dockerfile = include_str!("../Dockerfile");
+        for dependency in [
+            "remote/libs/nats/subject-defs/generated/rust",
+            "remote/libs/pg-defs/generated/rust",
+            "remote/libs/interfaces/redis/generated/rust",
+            "remote/submodules/discrete-event-system.rs",
+        ] {
+            assert!(dockerfile.contains(dependency), "missing {dependency}");
+        }
+    }
+
+    #[test]
     fn persistence_contract_uses_generated_mip_pg_defs_and_redis_namespace() {
         let contract = persistence_contract();
 

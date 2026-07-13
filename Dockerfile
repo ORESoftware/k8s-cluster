@@ -4,6 +4,8 @@ FROM rust:1.90-bookworm AS build
 WORKDIR /repo
 COPY remote/deployments/mip-solver-node.rs ./remote/deployments/mip-solver-node.rs
 COPY remote/libs/nats/subject-defs/generated/rust ./remote/libs/nats/subject-defs/generated/rust
+COPY remote/libs/pg-defs/generated/rust ./remote/libs/pg-defs/generated/rust
+COPY remote/libs/interfaces/redis/generated/rust ./remote/libs/interfaces/redis/generated/rust
 COPY remote/submodules/discrete-event-system.rs ./remote/submodules/discrete-event-system.rs
 WORKDIR /repo/remote/deployments/mip-solver-node.rs
 RUN cargo build --release
