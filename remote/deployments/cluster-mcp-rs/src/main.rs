@@ -1069,12 +1069,27 @@ async fn rpc(
     json_response(StatusCode::OK, response)
 }
 
-fn initialize_result(id: Value) -> Value {
+// Echo the client's requested protocolVersion when the server supports it,
+// otherwise answer the newest supported version (per MCP version negotiation).
+fn negotiated_protocol_version(params: Option<&Value>) -> &'static str {
+    params
+        .and_then(|params| params.get("protocolVersion"))
+        .and_then(Value::as_str)
+        .and_then(|requested| {
+            SUPPORTED_PROTOCOL_VERSIONS
+                .iter()
+                .copied()
+                .find(|version| *version == requested)
+        })
+        .unwrap_or(PROTOCOL_VERSION)
+}
+
+fn initialize_result(id: Value, params: Option<&Value>) -> Value {
     json!({
         "jsonrpc": "2.0",
         "id": id,
         "result": {
-            "protocolVersion": PROTOCOL_VERSION,
+            "protocolVersion": negotiated_protocol_version(params),
             "capabilities": {
                 "tools": { "listChanged": false }
             },
