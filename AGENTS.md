@@ -106,10 +106,16 @@ API contract. If generic database inspection is needed for operators, keep it be
 enabled internal route such as `/internal/db/*`, with service/operator auth, and keep it out of
 public gateway paths.
 
+Migrations are generated with `dpm` (declarative-postgres-migrate) via
+`remote/libs/pg-defs/scripts/dpm.sh {diff|verify|review|apply}`: `schema.sql` is the declarative
+source and dpm emits ordered, reviewable SQL that converges the live database onto it. Destructive
+statements are emitted commented-out and refused at apply time without explicit consent flags.
+Never apply migrations automatically; a human reviews the generated SQL first.
+
 Use `scripts/pg/diff/rds-vs-pg-defs.mjs` for declarative RDS-vs-pg-defs drift reports. The script
 compares live RDS catalog state to `remote/libs/pg-defs/schema/schema.sql` and does not generate
-`.sql` migration files. Treat its output as review context for human-owned manual migration work,
-not as an executable migration artifact.
+`.sql` migration files. Treat its output as an independent second opinion on dpm's diff, review
+context for human-owned migration work, not as an executable migration artifact.
 
 ## API Docs Contract
 
