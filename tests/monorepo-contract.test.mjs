@@ -55,7 +55,7 @@ test("submodule declarations stay complete, pinned to main, and backed by apps d
   const modules = parseGitmodules();
   const paths = modules.map((module) => module.path).sort();
 
-  assert.equal(modules.length, 22);
+  assert.equal(modules.length, 26);
   assert.deepEqual(paths, [
     "apps/fiducia-admin.rs",
     "apps/fiducia-ai-agent-bridge.rs",
@@ -71,6 +71,10 @@ test("submodule declarations stay complete, pinned to main, and backed by apps d
     "apps/fiducia-infra",
     "apps/fiducia-interfaces",
     "apps/fiducia-load-balance.rs",
+    "apps/fiducia-memory",
+    "apps/fiducia-memory.rs",
+    "apps/fiducia-messaging",
+    "apps/fiducia-messaging.rs",
     "apps/fiducia-node-sidecar.rs",
     "apps/fiducia-node.rs",
     "apps/fiducia-operations-control-plane",
