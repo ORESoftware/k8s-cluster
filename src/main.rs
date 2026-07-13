@@ -6087,6 +6087,29 @@ async fn rate_limit(State(state): State<AppState>, req: Request, next: Next) -> 
     }
 }
 
+/// Parse this process's CLI flags into env-var overrides via flags2env
+/// (`.cli-flags.toml`), applied before we read config so `--flag` and env both
+/// work and flags win. Best-effort: if the native flags2env lib isn't installed
+/// we log and fall back to plain env vars.
+fn apply_cli_flags() {
+    let f2e = match unsafe { flags2env::Flags2Env::load(None) } {
+        Ok(f) => f,
+        Err(cause) => {
+            debug!(%cause, "flags2env native lib not loaded; using plain env");
+            return;
+        }
+    };
+    let argv: Vec<String> = std::env::args().collect();
+    match f2e.parse(&argv, None) {
+        Ok(overrides) => {
+            for (key, value) in overrides {
+                std::env::set_var(key, value);
+            }
+        }
+        Err(cause) => warn!(%cause, "flags2env parse failed; using plain env"),
+    }
+}
+
 #[tokio::main]
 async fn main() {
     rustls::crypto::ring::default_provider()
