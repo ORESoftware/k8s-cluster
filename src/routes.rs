@@ -110,7 +110,7 @@ async fn stream_portal_stats(mut socket: WebSocket, state: AppState) {
         }
         .into_string();
 
-        if socket.send(Message::Text(update)).await.is_err() {
+        if socket.send(Message::Text(update.into())).await.is_err() {
             break;
         }
     }
