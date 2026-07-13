@@ -6100,6 +6100,8 @@ async fn main() {
         .without_time()
         .init();
 
+    apply_cli_flags();
+
     let config = config_from_env();
     if !config.token_pepper_configured {
         warn!("SOUND_RECORDER_DEVICE_TOKEN_PEPPER is not configured; device tokens will not survive process restart");
