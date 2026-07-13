@@ -27,7 +27,7 @@
         {
           default = pkgs.mkShell {
             packages = with pkgs; [
-              # Rust — sonus-auris-backend.rs, desktop.app.rs
+              # Rust — backend, account web server, desktop app
               rustc
               cargo
               rustfmt
@@ -49,6 +49,7 @@
               # Native build deps (openssl-sys, cpal, etc.)
               pkg-config
               openssl
+              postgresql_17
             ];
 
             shellHook = ''

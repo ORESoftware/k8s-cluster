@@ -22,3 +22,7 @@
 	path = apps/sonus-auris.infra
 	url = git@github.com:sonus-auris/sonus-auris.infra.git
 	branch = main
+[submodule "apps/sonus-auris-web-server.rs"]
+	path = apps/sonus-auris-web-server.rs
+	url = git@github.com:sonus-auris/sonus-auris-web-server.rs.git
+	branch = main
