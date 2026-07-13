@@ -9268,6 +9268,7 @@ mod tests {
             ));
             assert!(!manifest.contains("remote/libs"));
             assert!(manifest.contains("memory: 32Mi"));
+            assert!(manifest.contains("failureThreshold: 360"));
         }
 
         let dockerfile = include_str!("../Dockerfile");
