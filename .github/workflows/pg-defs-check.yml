@@ -180,7 +180,7 @@ jobs:
           rebar3-version: '3'
 
       - name: Install tsx (remote/tests)
-        run: pnpm install --frozen-lockfile=false
+        run: pnpm install --frozen-lockfile
         working-directory: remote/tests
 
       # Drives `gleam test` in: the dd_pg_defs package itself,
