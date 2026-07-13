@@ -4,9 +4,10 @@
 //! segments, and this service issues presigned S3 upload URLs, tracks segment
 //! metadata in Postgres, brokers cloud-copy (mirror) jobs to user-owned Google
 //! Drive / OneDrive / iCloud destinations, and emails short-lived alert
-//! "listen" links. Audio bytes never flow through this process — only presigned
-//! URLs and metadata do. See `readme.md` for routes, environment variables, and
-//! the wider product/deployment context.
+//! "listen" links. Normal mobile transfer uses presigned URLs; bytes flow
+//! through this process only when the authenticated cloud-copy worker mirrors a
+//! segment to Google Drive or OneDrive. See `readme.md` for routes, environment
+//! variables, and the wider product/deployment context.
 //!
 //! This is intentionally one large file. Its major sections, roughly in the
 //! order they appear below, are:
@@ -49,8 +50,12 @@ use std::{
 
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
-use aws_config::meta::region::RegionProviderChain;
-use aws_sdk_s3::{config::Region, presigning::PresigningConfig, types::ServerSideEncryption};
+use aws_config::retry::RetryConfig;
+use aws_sdk_s3::{
+    config::Region,
+    presigning::PresigningConfig,
+    types::{Delete, ObjectIdentifier, ServerSideEncryption},
+};
 use axum::{
     extract::{ConnectInfo, DefaultBodyLimit, Path, Query, Request, State},
     http::{header, HeaderMap, HeaderName, HeaderValue, StatusCode},
@@ -78,7 +83,7 @@ use sonus_auris_interfaces::{
     AcousticEvent, UserConsent, ACOUSTIC_EVENTS_COLUMNS, ACOUSTIC_EVENTS_TABLE,
     USER_CONSENTS_COLUMNS, USER_CONSENTS_TABLE,
 };
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex as AsyncMutex, RwLock};
 use tokio_postgres::Row;
 use tokio_postgres_rustls::MakeRustlsConnect;
 use tracing::{error, info, warn};
@@ -146,12 +151,27 @@ const DEFAULT_MAX_SEGMENT_BYTES: i32 = 10 * 1024 * 1024;
 const MAX_SEGMENT_BYTES: i32 = 200 * 1024 * 1024;
 const DEFAULT_UPLOAD_URL_TTL_SECONDS: u64 = 300;
 const DEFAULT_DOWNLOAD_URL_TTL_SECONDS: u64 = 900;
+// Do not mint a PUT URL right at the retention boundary. An upload that starts
+// before its signature expires may still be in flight when the row expires;
+// this settle window keeps normal retention deletion well after that request.
+const PRESIGNED_UPLOAD_SETTLE_GRACE_SECONDS: u64 = 600;
+const DEFAULT_S3_MAX_ATTEMPTS: u32 = 3;
+const STORAGE_PROBE_TIMEOUT: Duration = Duration::from_secs(8);
+const STORAGE_HISTORY_CACHE_TTL: Duration = Duration::from_secs(60);
+const SUPABASE_PROBE_TIMEOUT: Duration = Duration::from_secs(8);
+const STORAGE_OBJECT_TIMEOUT: Duration = Duration::from_secs(30);
+const POSTGRES_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 const DEFAULT_SESSION_TTL_HOURS: i64 = 24;
 const MAX_TIMELINE_LIMIT: i64 = 500;
 const DEFAULT_USER_DATA_LIMIT: usize = 50;
 const MAX_USER_DATA_LIMIT: usize = 200;
 const MAX_EXPORT_SEGMENTS: i64 = 240;
 const MAX_META_BYTES: usize = 4096;
+const STORAGE_FINGERPRINT_META_KEY: &str = "sonusAurisStorageFingerprint";
+const RETENTION_DELETE_PENDING_META_KEY: &str = "retentionDeletePending";
+const RETENTION_DELETE_CLAIM_ID_META_KEY: &str = "retentionDeleteClaimId";
+const RETENTION_DELETE_CLAIMED_AT_META_KEY: &str = "retentionDeleteClaimedAt";
+const RETENTION_PREVIOUS_STATUS_META_KEY: &str = "retentionPreviousStatus";
 const MAX_CAPTURE_CLOCK_SKEW_SECONDS: i64 = 300;
 const DEFAULT_OAUTH_STATE_TTL_SECONDS: u64 = 600;
 const DEFAULT_CLOUD_COPY_BATCH_SIZE: i64 = 25;
@@ -170,7 +190,9 @@ const GOOGLE_DRIVE_SCOPE: &str = "https://www.googleapis.com/auth/drive.file";
 const MICROSOFT_ONEDRIVE_SCOPE: &str = "offline_access Files.ReadWrite.AppFolder";
 const SUPABASE_DEFAULT_AUDIENCE: &str = "authenticated";
 const SUPABASE_SUBJECT_PREFIX: &str = "supabase:";
-const JWKS_CACHE_TTL: Duration = Duration::from_secs(3600);
+// Supabase's JWKS edge cache is ten minutes. Do not retain keys longer here or
+// emergency key revocation could remain trusted well beyond the provider cache.
+const JWKS_CACHE_TTL: Duration = Duration::from_secs(600);
 /// Minimum wall-clock between Supabase JWKS fetches. A flood of tokens bearing
 /// unknown `kid`s (random or post-rotation) must not amplify into one outbound
 /// JWKS request per token; once the cache is warm, legitimate tokens are served
@@ -204,10 +226,15 @@ struct AppState {
     cloud_sealer: Option<CloudTokenSealer>,
     supabase: Option<Arc<SupabaseVerifier>>,
     pg_pool: Option<PgPool>,
+    storage_history_cache: Arc<RwLock<Option<(Instant, bool)>>>,
+    storage_history_refresh_lock: Arc<AsyncMutex<()>>,
 }
 
 #[derive(Clone)]
 struct Config {
+    /// Safe configuration diagnostics. Invalid booleans and other global
+    /// settings fail readiness instead of silently changing security posture.
+    validation_errors: Vec<String>,
     database_url: Option<String>,
     server_auth_secret: Option<String>,
     token_pepper: String,
@@ -249,6 +276,10 @@ struct Config {
     /// the limiter keys on the TCP peer address only (do this if the service is
     /// directly internet-exposed, so clients can't spoof their key via XFF).
     rate_limit_trust_forwarded_for: bool,
+    /// Treat Supabase-backed sign-in, typed data reads, and account deletion as
+    /// required service capabilities. Production defaults to strict; local
+    /// anonymous-only development can explicitly opt out.
+    require_supabase: bool,
     supabase: SupabaseConfig,
 }
 
@@ -272,15 +303,47 @@ struct SupabaseConfig {
     /// Server-only service-role key used for privileged Auth Admin operations
     /// such as deleting the signed-in user's Supabase Auth identity.
     service_role_key: Option<String>,
+    /// Safe, secret-free configuration diagnostics. A malformed URL disables
+    /// the verifier instead of being accepted as an outbound request target.
+    validation_errors: Vec<String>,
 }
 
 impl SupabaseConfig {
     fn is_enabled(&self) -> bool {
-        self.jwt_secret.is_some() || self.jwks_url.is_some()
+        self.validation_errors.is_empty() && (self.jwt_secret.is_some() || self.jwks_url.is_some())
     }
 
     fn is_data_api_enabled(&self) -> bool {
         self.url.is_some() && self.publishable_key.is_some() && self.is_enabled()
+    }
+
+    fn account_features_configured(&self) -> bool {
+        self.url.is_some()
+            && self.issuer.is_some()
+            && self.publishable_key.is_some()
+            && self.service_role_key.is_some()
+            && self.is_enabled()
+    }
+
+    fn auth_health_url(&self) -> Option<String> {
+        self.url.as_ref().map(|url| format!("{url}/auth/v1/health"))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ObjectStorageBackend {
+    AmazonS3,
+    CloudflareR2,
+    S3Compatible,
+}
+
+impl ObjectStorageBackend {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::AmazonS3 => "amazon_s3",
+            Self::CloudflareR2 => "cloudflare_r2",
+            Self::S3Compatible => "s3_compatible",
+        }
     }
 }
 
@@ -289,6 +352,46 @@ struct S3StorageConfig {
     bucket: String,
     key_prefix: String,
     cdn_base_url: Option<String>,
+    region: String,
+    endpoint: Option<String>,
+    force_path_style: bool,
+    send_sse_aes256: bool,
+    max_attempts: u32,
+    readiness_object_key: Option<String>,
+    /// Development-only escape hatch. Production readiness requires a remote
+    /// object-level probe rather than merely proving that a request can sign.
+    allow_signing_only_readiness: bool,
+    /// Allows pre-fingerprint rows only after an operator has confirmed that
+    /// they belong to the currently configured backend. Mismatched marked rows
+    /// are never accepted.
+    allow_unmarked_storage_history: bool,
+    /// Non-secret hash of backend kind, endpoint, region, and bucket. New rows
+    /// carry this value so a global-client cutover cannot misroute old objects.
+    backend_fingerprint: String,
+    /// R2 has no object versioning. Native/custom S3 must be explicitly
+    /// declared unversioned because key-only deletes do not purge old versions.
+    versioning_mode: &'static str,
+    access_key_id: Option<String>,
+    secret_access_key: Option<String>,
+    session_token: Option<String>,
+    backend: ObjectStorageBackend,
+    validation_errors: Vec<String>,
+}
+
+impl S3StorageConfig {
+    fn is_configured(&self) -> bool {
+        !self.bucket.is_empty() && self.validation_errors.is_empty()
+    }
+
+    fn readiness_probe_mode(&self) -> &'static str {
+        if self.readiness_object_key.is_some() {
+            "head_object"
+        } else if self.allow_signing_only_readiness {
+            "signing_dev_only"
+        } else {
+            "remote_probe_not_configured"
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -373,6 +476,13 @@ struct HealthResponse {
     mode: &'static str,
     postgres_configured: bool,
     s3_configured: bool,
+    storage_ready: Option<bool>,
+    storage_history_compatible: Option<bool>,
+    storage_probe_mode: &'static str,
+    storage_backend: &'static str,
+    storage_backend_fingerprint: String,
+    storage_versioning_mode: &'static str,
+    configuration_valid: bool,
     token_pepper_configured: bool,
     registration_configured: bool,
     server_auth_configured: bool,
@@ -381,6 +491,9 @@ struct HealthResponse {
     microsoft_onedrive_configured: bool,
     supabase_configured: bool,
     supabase_data_api_configured: bool,
+    supabase_accounts_configured: bool,
+    supabase_ready: Option<bool>,
+    supabase_required: bool,
     retention_hours: i32,
 }
 
@@ -429,6 +542,7 @@ struct DeleteAccountResponse {
     ok: bool,
     account_id: String,
     deleted_segments: u64,
+    deleted_objects: u64,
     revoked_devices: u64,
     revoked_cloud_connections: u64,
     supabase_auth_deleted: bool,
@@ -699,6 +813,28 @@ struct PresignedTransfer {
     expires_at: DateTime<Utc>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct VerifiedStoredObject {
+    byte_count: i32,
+    etag: String,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct StoredObjectMetadata<'a> {
+    content_length: Option<i64>,
+    content_type: Option<&'a str>,
+    etag: Option<&'a str>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct StoredObjectExpectation<'a> {
+    content_type: &'a str,
+    presigned_byte_count: Option<i32>,
+    reported_byte_count: Option<i32>,
+    reported_etag: Option<&'a str>,
+    max_segment_bytes: i32,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SignedHeader {
@@ -884,6 +1020,7 @@ struct SessionPolicy {
     status: String,
     storage_bucket: String,
     storage_prefix: String,
+    storage_fingerprint: Option<String>,
     content_type: String,
     codec: Option<String>,
     segment_duration_seconds: i32,
@@ -952,16 +1089,31 @@ fn first_env(keys: &[&str]) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-fn env_bool(name: &str, default: bool) -> bool {
-    env::var(name)
-        .ok()
-        .map(|value| {
-            matches!(
-                value.trim().to_ascii_lowercase().as_str(),
-                "1" | "true" | "yes" | "on"
-            )
-        })
-        .unwrap_or(default)
+fn parse_bool_value(name: &str, value: &str) -> Result<bool, String> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => Ok(true),
+        "0" | "false" | "no" | "off" => Ok(false),
+        _ => Err(format!(
+            "{name} must be one of true/false, 1/0, yes/no, or on/off"
+        )),
+    }
+}
+
+fn env_bool(name: &str, default: bool, validation_errors: &mut Vec<String>) -> bool {
+    match env::var(name) {
+        Ok(value) => match parse_bool_value(name, &value) {
+            Ok(value) => value,
+            Err(error) => {
+                validation_errors.push(error);
+                default
+            }
+        },
+        Err(env::VarError::NotPresent) => default,
+        Err(env::VarError::NotUnicode(_)) => {
+            validation_errors.push(format!("{name} must contain valid UTF-8"));
+            default
+        }
+    }
 }
 
 fn env_i32(name: &str, default: i32) -> i32 {
@@ -1005,7 +1157,359 @@ fn env_i64_clamped(name: &str, default: i64, min: i64, max: i64) -> i64 {
     env_i64(name, default).clamp(min, max)
 }
 
+fn is_valid_r2_account_id(value: &str) -> bool {
+    value.len() == 32 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn validate_service_url(value: &str, root_path_only: bool) -> bool {
+    let Ok(url) = reqwest::Url::parse(value.trim()) else {
+        return false;
+    };
+    let safe_scheme = match url.scheme() {
+        "https" => url.host_str().is_some(),
+        "http" => matches!(
+            url.host_str(),
+            Some("localhost") | Some("127.0.0.1") | Some("::1")
+        ),
+        _ => false,
+    };
+    safe_scheme
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.query().is_none()
+        && url.fragment().is_none()
+        && (!root_path_only || matches!(url.path(), "" | "/"))
+}
+
+fn urls_have_same_origin(left: &str, right: &str) -> bool {
+    let (Ok(left), Ok(right)) = (reqwest::Url::parse(left), reqwest::Url::parse(right)) else {
+        return false;
+    };
+    left.scheme() == right.scheme()
+        && left.host_str() == right.host_str()
+        && left.port_or_known_default() == right.port_or_known_default()
+}
+
+fn storage_backend_for_endpoint(endpoint: Option<&str>) -> ObjectStorageBackend {
+    let Some(endpoint) = endpoint else {
+        return ObjectStorageBackend::AmazonS3;
+    };
+    let host = reqwest::Url::parse(endpoint)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_ascii_lowercase));
+    if host
+        .as_deref()
+        .is_some_and(|host| host.ends_with(".r2.cloudflarestorage.com"))
+    {
+        ObjectStorageBackend::CloudflareR2
+    } else {
+        ObjectStorageBackend::S3Compatible
+    }
+}
+
+fn storage_backend_fingerprint(
+    backend: ObjectStorageBackend,
+    endpoint: Option<&str>,
+    region: &str,
+    bucket: &str,
+) -> String {
+    let endpoint = endpoint.unwrap_or("aws-default-endpoint");
+    let identity = format!("{}|{endpoint}|{region}|{bucket}", backend.as_str());
+    Sha256::digest(identity.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+fn unmarked_history_acknowledgment(
+    requested: bool,
+    acknowledged_fingerprint: Option<&str>,
+    current_fingerprint: &str,
+) -> Result<bool, String> {
+    if !requested {
+        return Ok(false);
+    }
+    if acknowledged_fingerprint == Some(current_fingerprint) {
+        Ok(true)
+    } else {
+        Err(
+            "SOUND_RECORDER_ALLOW_UNMARKED_STORAGE_HISTORY=true requires SOUND_RECORDER_UNMARKED_STORAGE_HISTORY_FINGERPRINT to exactly match the current /healthz fingerprint"
+                .to_string(),
+        )
+    }
+}
+
+fn s3_storage_config_from_env() -> S3StorageConfig {
+    let mut validation_errors = Vec::new();
+    let r2_account_id = first_env(&[
+        "SOUND_RECORDER_R2_ACCOUNT_ID",
+        "CLOUDFLARE_R2_ACCOUNT_ID",
+        "R2_ACCOUNT_ID",
+    ]);
+    if r2_account_id
+        .as_deref()
+        .is_some_and(|account_id| !is_valid_r2_account_id(account_id))
+    {
+        validation_errors.push(
+            "SOUND_RECORDER_R2_ACCOUNT_ID must be a 32-character hexadecimal account id"
+                .to_string(),
+        );
+    }
+    let derived_r2_endpoint = r2_account_id
+        .as_deref()
+        .filter(|account_id| is_valid_r2_account_id(account_id))
+        .map(|account_id| format!("https://{account_id}.r2.cloudflarestorage.com"));
+    let endpoint = first_env(&[
+        "SOUND_RECORDER_S3_ENDPOINT",
+        "SOUND_RECORDER_R2_ENDPOINT",
+        "CLOUDFLARE_R2_ENDPOINT",
+        "S3_ENDPOINT",
+        "AWS_ENDPOINT_URL_S3",
+        "AWS_ENDPOINT_URL",
+    ])
+    .or(derived_r2_endpoint)
+    .map(|endpoint| endpoint.trim_end_matches('/').to_string());
+    if endpoint
+        .as_deref()
+        .is_some_and(|endpoint| !validate_service_url(endpoint, true))
+    {
+        validation_errors.push(
+            "SOUND_RECORDER_S3_ENDPOINT must be HTTPS (or loopback HTTP) with no path, credentials, query, or fragment"
+                .to_string(),
+        );
+    }
+    let backend = storage_backend_for_endpoint(endpoint.as_deref());
+    let region = if backend == ObjectStorageBackend::CloudflareR2 {
+        // R2 requires `auto`; us-east-1 is accepted as an alias, but signing
+        // explicitly with `auto` matches Cloudflare's SDK guidance.
+        "auto".to_string()
+    } else {
+        first_env(&[
+            "SOUND_RECORDER_S3_REGION",
+            "S3_REGION",
+            "AWS_REGION",
+            "AWS_DEFAULT_REGION",
+        ])
+        .unwrap_or_else(|| "us-east-1".to_string())
+    };
+    if region.len() > 80
+        || !region
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+    {
+        validation_errors.push("SOUND_RECORDER_S3_REGION is invalid".to_string());
+    }
+
+    let bucket = first_env(&[
+        "SOUND_RECORDER_S3_BUCKET",
+        "SOUND_RECORDER_R2_BUCKET",
+        "S3_BUCKET",
+        "R2_BUCKET",
+    ])
+    .unwrap_or_default();
+    if !bucket.is_empty()
+        && (bucket.len() > 200
+            || bucket
+                .chars()
+                .any(|ch| ch.is_control() || ch.is_whitespace() || matches!(ch, '/' | '\\')))
+    {
+        validation_errors.push(
+            "SOUND_RECORDER_S3_BUCKET must be 1-200 characters without whitespace or slashes"
+                .to_string(),
+        );
+    }
+
+    let access_key_id = first_env(&[
+        "SOUND_RECORDER_S3_ACCESS_KEY_ID",
+        "SOUND_RECORDER_R2_ACCESS_KEY_ID",
+        "CLOUDFLARE_R2_ACCESS_KEY_ID",
+        "R2_ACCESS_KEY_ID",
+    ]);
+    let secret_access_key = first_env(&[
+        "SOUND_RECORDER_S3_SECRET_ACCESS_KEY",
+        "SOUND_RECORDER_R2_SECRET_ACCESS_KEY",
+        "CLOUDFLARE_R2_SECRET_ACCESS_KEY",
+        "R2_SECRET_ACCESS_KEY",
+    ]);
+    if access_key_id.is_some() != secret_access_key.is_some() {
+        validation_errors.push(
+            "object-storage access key id and secret access key must be configured together"
+                .to_string(),
+        );
+    }
+
+    let key_prefix = first_env(&["SOUND_RECORDER_S3_KEY_PREFIX", "S3_KEY_PREFIX"])
+        .unwrap_or_else(|| "sound-recorder/segments".to_string())
+        .trim_matches('/')
+        .to_string();
+    if key_prefix.is_empty() || key_prefix.len() > 1024 || key_prefix.chars().any(char::is_control)
+    {
+        validation_errors
+            .push("SOUND_RECORDER_S3_KEY_PREFIX must be 1-1024 non-control characters".to_string());
+    }
+    let readiness_object_key = first_env(&["SOUND_RECORDER_S3_READINESS_OBJECT_KEY"]);
+    if readiness_object_key.as_deref().is_some_and(|key| {
+        key.len() > 2048
+            || key.chars().any(char::is_control)
+            || !(key == key_prefix || key.starts_with(&format!("{key_prefix}/")))
+    }) {
+        validation_errors.push(
+            "SOUND_RECORDER_S3_READINESS_OBJECT_KEY must be inside SOUND_RECORDER_S3_KEY_PREFIX"
+                .to_string(),
+        );
+    }
+    let cdn_base_url = first_env(&[
+        "SOUND_RECORDER_CDN_BASE_URL",
+        "SOUND_RECORDER_S3_PUBLIC_BASE_URL",
+        "S3_PUBLIC_BASE_URL",
+    ]);
+    if cdn_base_url
+        .as_deref()
+        .is_some_and(|url| !validate_service_url(url, false))
+    {
+        validation_errors.push(
+            "SOUND_RECORDER_CDN_BASE_URL must be HTTPS (or loopback HTTP) without credentials, query, or fragment"
+                .to_string(),
+        );
+    }
+
+    let requested_sse = first_env(&["SOUND_RECORDER_S3_SERVER_SIDE_ENCRYPTION"])
+        .unwrap_or_else(|| "auto".to_string())
+        .to_ascii_lowercase();
+    let send_sse_aes256 = match requested_sse.as_str() {
+        "auto" => backend == ObjectStorageBackend::AmazonS3,
+        "aes256" | "aes-256" => {
+            if backend == ObjectStorageBackend::CloudflareR2 {
+                validation_errors.push(
+                    "SOUND_RECORDER_S3_SERVER_SIDE_ENCRYPTION=aes256 is incompatible with Cloudflare R2; use auto or none"
+                        .to_string(),
+                );
+                false
+            } else {
+                true
+            }
+        }
+        "none" | "off" | "disabled" => false,
+        _ => {
+            validation_errors.push(
+                "SOUND_RECORDER_S3_SERVER_SIDE_ENCRYPTION must be auto, aes256, or none"
+                    .to_string(),
+            );
+            false
+        }
+    };
+
+    // Cloudflare documents that R2 does not implement bucket versioning. For
+    // AWS/custom S3, require an explicit unversioned declaration: DeleteObject
+    // and DeleteObjects only create delete markers in versioned buckets and do
+    // not satisfy physical retention/account erasure.
+    let requested_versioning = first_env(&["SOUND_RECORDER_S3_VERSIONING_MODE"]);
+    let versioning_mode = if backend == ObjectStorageBackend::CloudflareR2 {
+        if requested_versioning.as_deref().is_some_and(|value| {
+            !matches!(
+                value.to_ascii_lowercase().as_str(),
+                "unversioned" | "disabled"
+            )
+        }) {
+            validation_errors.push(
+                "Cloudflare R2 does not support versioning; SOUND_RECORDER_S3_VERSIONING_MODE must be unversioned"
+                    .to_string(),
+            );
+        }
+        "unversioned"
+    } else {
+        match requested_versioning
+            .as_deref()
+            .map(str::trim)
+            .map(str::to_ascii_lowercase)
+            .as_deref()
+        {
+            Some("unversioned" | "disabled") => "unversioned",
+            Some("versioned" | "enabled" | "suspended") => {
+                validation_errors.push(
+                    "versioned or versioning-suspended S3 buckets are unsupported: key-only deletion does not physically erase object versions"
+                        .to_string(),
+                );
+                "unsupported"
+            }
+            Some(_) => {
+                validation_errors.push(
+                    "SOUND_RECORDER_S3_VERSIONING_MODE must be unversioned; versioned buckets are unsupported"
+                        .to_string(),
+                );
+                "invalid"
+            }
+            None => {
+                validation_errors.push(
+                    "SOUND_RECORDER_S3_VERSIONING_MODE=unversioned must be explicitly set for AWS/custom S3"
+                        .to_string(),
+                );
+                "unknown"
+            }
+        }
+    };
+    let force_path_style = env_bool(
+        "SOUND_RECORDER_S3_FORCE_PATH_STYLE",
+        backend == ObjectStorageBackend::S3Compatible,
+        &mut validation_errors,
+    );
+    let allow_signing_only_readiness = env_bool(
+        "SOUND_RECORDER_ALLOW_SIGNING_ONLY_STORAGE_READINESS",
+        false,
+        &mut validation_errors,
+    );
+    let requested_allow_unmarked_storage_history = env_bool(
+        "SOUND_RECORDER_ALLOW_UNMARKED_STORAGE_HISTORY",
+        false,
+        &mut validation_errors,
+    );
+    let backend_fingerprint =
+        storage_backend_fingerprint(backend, endpoint.as_deref(), &region, &bucket);
+    let history_fingerprint_ack =
+        first_env(&["SOUND_RECORDER_UNMARKED_STORAGE_HISTORY_FINGERPRINT"]);
+    let allow_unmarked_storage_history = match unmarked_history_acknowledgment(
+        requested_allow_unmarked_storage_history,
+        history_fingerprint_ack.as_deref(),
+        &backend_fingerprint,
+    ) {
+        Ok(allowed) => allowed,
+        Err(error) => {
+            validation_errors.push(error);
+            false
+        }
+    };
+
+    S3StorageConfig {
+        bucket,
+        key_prefix,
+        cdn_base_url,
+        region,
+        endpoint,
+        force_path_style,
+        send_sse_aes256,
+        max_attempts: env_u64(
+            "SOUND_RECORDER_S3_MAX_ATTEMPTS",
+            DEFAULT_S3_MAX_ATTEMPTS as u64,
+        )
+        .clamp(1, 10) as u32,
+        readiness_object_key,
+        allow_signing_only_readiness,
+        allow_unmarked_storage_history,
+        backend_fingerprint,
+        versioning_mode,
+        access_key_id,
+        secret_access_key,
+        session_token: first_env(&[
+            "SOUND_RECORDER_S3_SESSION_TOKEN",
+            "SOUND_RECORDER_R2_SESSION_TOKEN",
+        ]),
+        backend,
+        validation_errors,
+    }
+}
+
 fn config_from_env() -> Config {
+    let mut validation_errors = Vec::new();
     let token_pepper = first_env(&["SOUND_RECORDER_DEVICE_TOKEN_PEPPER"]);
     let token_pepper_configured = token_pepper.is_some();
     let token_pepper =
@@ -1035,7 +1539,24 @@ fn config_from_env() -> Config {
     );
     max_segment_bytes = max_segment_bytes.clamp(1, MAX_SEGMENT_BYTES);
 
+    let allow_public_device_registration = env_bool(
+        "SOUND_RECORDER_ALLOW_PUBLIC_DEVICE_REGISTRATION",
+        false,
+        &mut validation_errors,
+    );
+    let rate_limit_trust_forwarded_for = env_bool(
+        "SOUND_RECORDER_RATE_LIMIT_TRUST_FORWARDED_FOR",
+        false,
+        &mut validation_errors,
+    );
+    let require_supabase = env_bool(
+        "SOUND_RECORDER_REQUIRE_SUPABASE",
+        true,
+        &mut validation_errors,
+    );
+
     Config {
+        validation_errors,
         database_url: first_env(&[
             "SOUND_RECORDER_RDS_DATABASE_URL",
             "AGENT_TASKS_RDS_DATABASE_URL",
@@ -1047,20 +1568,8 @@ fn config_from_env() -> Config {
         token_pepper,
         token_pepper_configured,
         registration_bearer: first_env(&["SOUND_RECORDER_REGISTRATION_BEARER"]),
-        allow_public_device_registration: env_bool(
-            "SOUND_RECORDER_ALLOW_PUBLIC_DEVICE_REGISTRATION",
-            false,
-        ),
-        s3: S3StorageConfig {
-            bucket: first_env(&["SOUND_RECORDER_S3_BUCKET", "S3_BUCKET"]).unwrap_or_default(),
-            key_prefix: first_env(&["SOUND_RECORDER_S3_KEY_PREFIX", "S3_KEY_PREFIX"])
-                .unwrap_or_else(|| "sound-recorder/segments".to_string()),
-            cdn_base_url: first_env(&[
-                "SOUND_RECORDER_CDN_BASE_URL",
-                "SOUND_RECORDER_S3_PUBLIC_BASE_URL",
-                "S3_PUBLIC_BASE_URL",
-            ]),
-        },
+        allow_public_device_registration,
+        s3: s3_storage_config_from_env(),
         ios_app_store_url: first_env(&["SOUND_RECORDER_IOS_APP_STORE_URL"]),
         android_play_store_url: first_env(&["SOUND_RECORDER_ANDROID_PLAY_STORE_URL"]),
         default_retention_hours,
@@ -1151,24 +1660,70 @@ fn config_from_env() -> Config {
         // proxy that sets XFF must opt in with
         // SOUND_RECORDER_RATE_LIMIT_TRUST_FORWARDED_FOR=1; otherwise an attacker
         // could rotate XFF per request to get an unbounded per-key budget.
-        rate_limit_trust_forwarded_for: env_bool(
-            "SOUND_RECORDER_RATE_LIMIT_TRUST_FORWARDED_FOR",
-            false,
-        ),
+        rate_limit_trust_forwarded_for,
+        require_supabase,
         supabase: supabase_config_from_env(),
     }
 }
 
 fn supabase_config_from_env() -> SupabaseConfig {
-    let url = first_env(&["SOUND_RECORDER_SUPABASE_URL", "SUPABASE_URL"])
+    let mut validation_errors = Vec::new();
+    let mut url = first_env(&["SOUND_RECORDER_SUPABASE_URL", "SUPABASE_URL"])
         .map(|url| url.trim_end_matches('/').to_string());
-    let jwks_url =
-        first_env(&["SOUND_RECORDER_SUPABASE_JWKS_URL", "SUPABASE_JWKS_URL"]).or_else(|| {
+    if url
+        .as_deref()
+        .is_some_and(|url| !validate_service_url(url, true))
+    {
+        validation_errors.push(
+            "SOUND_RECORDER_SUPABASE_URL must be HTTPS (or loopback HTTP) with no path, credentials, query, or fragment"
+                .to_string(),
+        );
+        url = None;
+    }
+    let mut jwks_url = first_env(&["SOUND_RECORDER_SUPABASE_JWKS_URL", "SUPABASE_JWKS_URL"])
+        .or_else(|| {
             url.as_ref()
                 .map(|url| format!("{url}/auth/v1/.well-known/jwks.json"))
         });
-    let issuer = first_env(&["SOUND_RECORDER_SUPABASE_ISSUER", "SUPABASE_ISSUER"])
+    if jwks_url
+        .as_deref()
+        .is_some_and(|url| !validate_service_url(url, false))
+    {
+        validation_errors.push(
+            "SOUND_RECORDER_SUPABASE_JWKS_URL must be HTTPS (or loopback HTTP) without credentials, query, or fragment"
+                .to_string(),
+        );
+        jwks_url = None;
+    }
+    if let (Some(project_url), Some(candidate)) = (url.as_deref(), jwks_url.as_deref()) {
+        if !urls_have_same_origin(project_url, candidate) {
+            validation_errors.push(
+                "SOUND_RECORDER_SUPABASE_JWKS_URL must use the same origin as SOUND_RECORDER_SUPABASE_URL"
+                    .to_string(),
+            );
+            jwks_url = None;
+        }
+    }
+    let mut issuer = first_env(&["SOUND_RECORDER_SUPABASE_ISSUER", "SUPABASE_ISSUER"])
         .or_else(|| url.as_ref().map(|url| format!("{url}/auth/v1")));
+    if issuer
+        .as_deref()
+        .is_some_and(|url| !validate_service_url(url, false))
+    {
+        validation_errors.push(
+            "SOUND_RECORDER_SUPABASE_ISSUER must be an HTTPS (or loopback HTTP) URL".to_string(),
+        );
+        issuer = None;
+    }
+    if let (Some(project_url), Some(candidate)) = (url.as_deref(), issuer.as_deref()) {
+        if !urls_have_same_origin(project_url, candidate) {
+            validation_errors.push(
+                "SOUND_RECORDER_SUPABASE_ISSUER must use the same origin as SOUND_RECORDER_SUPABASE_URL"
+                    .to_string(),
+            );
+            issuer = None;
+        }
+    }
     SupabaseConfig {
         url,
         jwt_secret: first_env(&["SOUND_RECORDER_SUPABASE_JWT_SECRET", "SUPABASE_JWT_SECRET"]),
@@ -1186,28 +1741,51 @@ fn supabase_config_from_env() -> SupabaseConfig {
             "SOUND_RECORDER_SUPABASE_SERVICE_ROLE_KEY",
             "SUPABASE_SERVICE_ROLE_KEY",
         ]),
+        validation_errors,
     }
 }
 
 async fn state_from_config(config: Config) -> AppState {
-    let s3 = if !config.s3.bucket.is_empty() {
-        let region = first_env(&[
-            "SOUND_RECORDER_S3_REGION",
-            "S3_REGION",
-            "AWS_REGION",
-            "AWS_DEFAULT_REGION",
-        ]);
-        let region_provider = RegionProviderChain::first_try(region.map(Region::new))
-            .or_default_provider()
-            .or_else("us-east-1");
-        let shared_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-            .region(region_provider)
-            .load()
-            .await;
+    for error in &config.validation_errors {
+        warn!(error, "service configuration is invalid");
+    }
+    for error in &config.s3.validation_errors {
+        warn!(error, "object storage configuration is invalid");
+    }
+    for error in &config.supabase.validation_errors {
+        warn!(error, "Supabase configuration is invalid");
+    }
+    let s3 = if config.s3.is_configured() {
+        let retry_config = RetryConfig::standard().with_max_attempts(config.s3.max_attempts);
+        let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest())
+            .region(Region::new(config.s3.region.clone()))
+            .retry_config(retry_config);
+        if let (Some(access_key_id), Some(secret_access_key)) = (
+            config.s3.access_key_id.as_deref(),
+            config.s3.secret_access_key.as_deref(),
+        ) {
+            loader = loader.credentials_provider(aws_sdk_s3::config::Credentials::new(
+                access_key_id,
+                secret_access_key,
+                config.s3.session_token.clone(),
+                None,
+                "sonus-auris-object-storage",
+            ));
+        }
+        let shared_config = loader.load().await;
         let mut builder = aws_sdk_s3::config::Builder::from(&shared_config);
-        if let Some(endpoint) = first_env(&["SOUND_RECORDER_S3_ENDPOINT", "S3_ENDPOINT"]) {
+        if let Some(endpoint) = &config.s3.endpoint {
             builder = builder.endpoint_url(endpoint);
         }
+        builder = builder.force_path_style(config.s3.force_path_style);
+        info!(
+            backend = config.s3.backend.as_str(),
+            region = %config.s3.region,
+            custom_endpoint = config.s3.endpoint.is_some(),
+            force_path_style = config.s3.force_path_style,
+            max_attempts = config.s3.max_attempts,
+            "object storage client configured"
+        );
         Some(aws_sdk_s3::Client::from_conf(builder.build()))
     } else {
         None
@@ -1244,6 +1822,8 @@ async fn state_from_config(config: Config) -> AppState {
         cloud_sealer,
         supabase,
         pg_pool,
+        storage_history_cache: Arc::new(RwLock::new(None)),
+        storage_history_refresh_lock: Arc::new(AsyncMutex::new(())),
     }
 }
 
@@ -1320,7 +1900,7 @@ impl CloudProvider {
         }
     }
 
-    fn oauth_config<'a>(self, config: &'a Config) -> Option<&'a OAuthProviderConfig> {
+    fn oauth_config(self, config: &Config) -> Option<&OAuthProviderConfig> {
         match self {
             Self::GoogleDrive => Some(&config.google_oauth),
             Self::MicrosoftOneDrive => Some(&config.microsoft_oauth),
@@ -1609,6 +2189,10 @@ struct SupabaseVerifier {
     /// When the last JWKS refresh was *attempted* (success or failure), used to
     /// rate-limit outbound fetches. See [`JWKS_MIN_REFRESH_INTERVAL`].
     jwks_last_refresh: RwLock<Option<Instant>>,
+    /// Single-flight guard: concurrent cache misses wait for the same refresh
+    /// instead of racing and incorrectly returning 401 while a valid key is
+    /// still being fetched.
+    jwks_refresh_lock: AsyncMutex<()>,
 }
 
 impl SupabaseVerifier {
@@ -1623,6 +2207,7 @@ impl SupabaseVerifier {
             jwks_url: config.jwks_url.clone(),
             jwks_cache: RwLock::new(None),
             jwks_last_refresh: RwLock::new(None),
+            jwks_refresh_lock: AsyncMutex::new(()),
         })
     }
 
@@ -1642,6 +2227,9 @@ impl SupabaseVerifier {
         token: &str,
     ) -> Result<SupabaseIdentity, ServiceError> {
         let header = decode_header(token).map_err(|_| ServiceError::Unauthorized)?;
+        if !is_supported_supabase_algorithm(header.alg) {
+            return Err(ServiceError::Unauthorized);
+        }
         let claims = if matches!(header.alg, Algorithm::HS256) {
             let secret = self.jwt_secret.as_deref().ok_or_else(|| {
                 ServiceError::Unavailable(
@@ -1664,7 +2252,12 @@ impl SupabaseVerifier {
                 .claims
         };
         let subject = claims.sub.trim().to_string();
-        if subject.is_empty() {
+        if subject.is_empty()
+            || subject.len() > 160
+            || subject
+                .chars()
+                .any(|ch| ch.is_control() || matches!(ch, '/' | '\\'))
+        {
             return Err(ServiceError::Unauthorized);
         }
         Ok(SupabaseIdentity {
@@ -1672,7 +2265,7 @@ impl SupabaseVerifier {
             email: claims
                 .email
                 .map(|email| email.trim().to_string())
-                .filter(|email| !email.is_empty()),
+                .filter(|email| !email.is_empty() && email.len() <= 320),
         })
     }
 
@@ -1687,16 +2280,26 @@ impl SupabaseVerifier {
         // Cache miss: the kid is unknown or the cache aged out. Refresh at most
         // once per JWKS_MIN_REFRESH_INTERVAL so a burst of unknown-kid tokens
         // cannot turn into a burst of outbound JWKS fetches.
-        if !self.try_refresh_jwks(http).await? {
-            return Err(ServiceError::Unauthorized);
+        let refreshed = self.try_refresh_jwks(http).await?;
+        if let Some(jwk) = self.cached_jwk(kid).await {
+            return Ok(jwk);
         }
-        self.cached_jwk(kid).await.ok_or(ServiceError::Unauthorized)
+        if refreshed || self.jwks_cache.read().await.is_some() {
+            Err(ServiceError::Unauthorized)
+        } else {
+            // No cache exists and a prior refresh failed or is throttled. This
+            // is an identity-provider availability failure, not bad caller auth.
+            Err(ServiceError::Unavailable(
+                "Supabase signing keys are temporarily unavailable".to_string(),
+            ))
+        }
     }
 
     /// Refreshes the JWKS cache unless a refresh was attempted within the last
     /// [`JWKS_MIN_REFRESH_INTERVAL`]. Returns `Ok(true)` if a refresh ran (so the
     /// caller should re-check the cache) and `Ok(false)` if it was throttled.
     async fn try_refresh_jwks(&self, http: &reqwest::Client) -> Result<bool, ServiceError> {
+        let _refresh_guard = self.jwks_refresh_lock.lock().await;
         {
             // Fast path: reserve the refresh slot under the write lock and bail
             // out (without an HTTP call) if another task refreshed recently.
@@ -1739,6 +2342,11 @@ impl SupabaseVerifier {
             error!(error = %err, "Supabase JWKS decode failed");
             ServiceError::Unavailable("Supabase JWKS response was invalid".to_string())
         })?;
+        if set.keys.is_empty() {
+            return Err(ServiceError::Unavailable(
+                "Supabase JWKS did not contain any signing keys".to_string(),
+            ));
+        }
         let mut guard = self.jwks_cache.write().await;
         *guard = Some(JwksCacheEntry {
             fetched_at: Instant::now(),
@@ -1746,6 +2354,13 @@ impl SupabaseVerifier {
         });
         Ok(())
     }
+}
+
+fn is_supported_supabase_algorithm(algorithm: Algorithm) -> bool {
+    matches!(
+        algorithm,
+        Algorithm::HS256 | Algorithm::RS256 | Algorithm::ES256
+    )
 }
 
 fn record_request(method: &str, path: &str, status: StatusCode) {
@@ -1771,13 +2386,22 @@ fn const_time_eq(left: &[u8], right: &[u8]) -> bool {
         == 0
 }
 
+fn strip_bearer_scheme(value: &str) -> Option<&str> {
+    let value = value.trim();
+    let (scheme, token) = value.split_once(' ')?;
+    if scheme.eq_ignore_ascii_case("bearer") {
+        let token = token.trim();
+        (!token.is_empty()).then_some(token)
+    } else {
+        None
+    }
+}
+
 fn bearer_token(headers: &HeaderMap) -> Option<&str> {
     headers
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
+        .and_then(strip_bearer_scheme)
 }
 
 /// Reads a Supabase access token from `x-supabase-auth` (with or without a
@@ -1787,7 +2411,7 @@ fn supabase_token(headers: &HeaderMap) -> Option<&str> {
     headers
         .get("x-supabase-auth")
         .and_then(|value| value.to_str().ok())
-        .map(|value| value.strip_prefix("Bearer ").unwrap_or(value))
+        .map(|value| strip_bearer_scheme(value).unwrap_or(value))
         .map(str::trim)
         .filter(|value| !value.is_empty())
 }
@@ -1967,6 +2591,46 @@ fn validate_meta(value: Option<Value>) -> Result<Value, ServiceError> {
         Some(_) => Err(ServiceError::BadRequest(
             "metaData must be a JSON object".to_string(),
         )),
+    }
+}
+
+fn attach_storage_metadata(
+    mut meta_data: Value,
+    backend_fingerprint: &str,
+) -> Result<Value, ServiceError> {
+    let object = meta_data
+        .as_object_mut()
+        .ok_or_else(|| ServiceError::BadRequest("metaData must be a JSON object".to_string()))?;
+    // These fields are owned by the service. Removing client-supplied values is
+    // necessary both for cutover enforcement and for safe retention retries.
+    for key in [
+        STORAGE_FINGERPRINT_META_KEY,
+        RETENTION_DELETE_PENDING_META_KEY,
+        RETENTION_DELETE_CLAIM_ID_META_KEY,
+        RETENTION_DELETE_CLAIMED_AT_META_KEY,
+        RETENTION_PREVIOUS_STATUS_META_KEY,
+    ] {
+        object.remove(key);
+    }
+    object.insert(
+        STORAGE_FINGERPRINT_META_KEY.to_string(),
+        Value::String(backend_fingerprint.to_string()),
+    );
+    let size = serde_json::to_vec(&meta_data)
+        .map(|bytes| bytes.len())
+        .unwrap_or(MAX_META_BYTES + 1);
+    if size > MAX_META_BYTES {
+        return Err(ServiceError::BadRequest(format!(
+            "metaData including server storage metadata must be at most {MAX_META_BYTES} bytes"
+        )));
+    }
+    Ok(meta_data)
+}
+
+fn storage_record_is_compatible(config: &S3StorageConfig, fingerprint: Option<&str>) -> bool {
+    match fingerprint.filter(|value| !value.is_empty()) {
+        Some(fingerprint) => fingerprint == config.backend_fingerprint,
+        None => config.allow_unmarked_storage_history,
     }
 }
 
@@ -2412,7 +3076,11 @@ async fn authorize_registration(
     }
 }
 
-async fn authenticate_supabase_account(
+/// Authenticates the Supabase owner for the deletion workflow. A previously
+/// marked-deleted row remains eligible only while its external subject is still
+/// present, allowing an idempotent retry if Supabase Auth was temporarily down.
+/// Do not use this helper for ordinary account reads.
+async fn authenticate_supabase_account_for_deletion(
     state: &AppState,
     headers: &HeaderMap,
 ) -> Result<(String, SupabaseIdentity, PgConn), ServiceError> {
@@ -2428,7 +3096,7 @@ async fn authenticate_supabase_account(
         .query_opt(
             "select id::text
              from sound_recorder_accounts
-             where external_subject = $1 and status = 'active'",
+             where external_subject = $1 and status in ('active', 'deleted')",
             &[&external_subject],
         )
         .await
@@ -2514,36 +3182,23 @@ async fn find_or_create_account(
 ) -> Result<(String, i32), ServiceError> {
     let display_name = clean_string(display_name, 160);
     if let Some(external_subject) = external_subject {
-        if let Some(row) = client
-            .query_opt(
-                "select id::text, retention_hours
-                 from sound_recorder_accounts
-                 where external_subject = $1 and status <> 'deleted'",
-                &[&external_subject],
-            )
-            .await
-            .map_err(db_error)?
-        {
-            let account_id: String = row.get("id");
-            let _ = client
-                .execute(
-                    "update sound_recorder_accounts
-                     set display_name = coalesce($2, display_name),
-                         legal_region = coalesce($3, legal_region),
-                         updated_at = now()
-                     where id = $1::uuid",
-                    &[&account_id, &display_name, &legal_region],
-                )
-                .await;
-            return Ok((account_id, row.get("retention_hours")));
+        if external_subject.len() > 240 || external_subject.chars().any(char::is_control) {
+            return Err(ServiceError::BadRequest(
+                "externalSubject is invalid".to_string(),
+            ));
         }
-
         let account_id = Uuid::new_v4().to_string();
         let row = client
-            .query_one(
+            .query_opt(
                 "insert into sound_recorder_accounts
                   (id, external_subject, display_name, legal_region, retention_hours)
                  values ($1::uuid, $2, $3, $4, $5)
+                 on conflict (external_subject) where external_subject is not null
+                 do update set
+                   display_name = coalesce(excluded.display_name, sound_recorder_accounts.display_name),
+                   legal_region = coalesce(excluded.legal_region, sound_recorder_accounts.legal_region),
+                   updated_at = now()
+                 where sound_recorder_accounts.status = 'active'
                  returning id::text, retention_hours",
                 &[
                     &account_id,
@@ -2555,6 +3210,11 @@ async fn find_or_create_account(
             )
             .await
             .map_err(db_error)?;
+        let Some(row) = row else {
+            return Err(ServiceError::Conflict(
+                "account is paused, locked, or deleted".to_string(),
+            ));
+        };
         return Ok((row.get("id"), row.get("retention_hours")));
     }
 
@@ -2650,9 +3310,19 @@ async fn healthz(State(state): State<AppState>) -> Json<HealthResponse> {
         service: SERVICE_NAME,
         mode: "http",
         postgres_configured: state.config.database_url.is_some(),
-        s3_configured: state.s3.is_some() && !state.config.s3.bucket.is_empty(),
+        s3_configured: state.s3.is_some() && state.config.s3.is_configured(),
+        storage_ready: None,
+        storage_history_compatible: None,
+        storage_probe_mode: state.config.s3.readiness_probe_mode(),
+        storage_backend: state.config.s3.backend.as_str(),
+        storage_backend_fingerprint: state.config.s3.backend_fingerprint.clone(),
+        storage_versioning_mode: state.config.s3.versioning_mode,
+        configuration_valid: state.config.validation_errors.is_empty()
+            && state.config.s3.validation_errors.is_empty()
+            && state.config.supabase.validation_errors.is_empty(),
         token_pepper_configured: state.config.token_pepper_configured,
-        registration_configured: state.config.registration_bearer.is_some()
+        registration_configured: state.supabase.is_some()
+            || state.config.registration_bearer.is_some()
             || state.config.allow_public_device_registration,
         server_auth_configured: state.config.server_auth_secret.is_some(),
         cloud_token_sealer_configured: state.cloud_sealer.is_some(),
@@ -2662,18 +3332,232 @@ async fn healthz(State(state): State<AppState>) -> Json<HealthResponse> {
             && state.config.microsoft_oauth.client_secret.is_some(),
         supabase_configured: state.supabase.is_some(),
         supabase_data_api_configured: state.config.supabase.is_data_api_enabled(),
+        supabase_accounts_configured: state.config.supabase.account_features_configured(),
+        supabase_ready: None,
+        supabase_required: state.config.require_supabase,
         retention_hours: state.config.default_retention_hours,
     })
 }
 
+async fn postgres_is_reachable(state: &AppState) -> bool {
+    let client = match tokio::time::timeout(POSTGRES_PROBE_TIMEOUT, db_conn(state)).await {
+        Ok(Ok(client)) => client,
+        _ => return false,
+    };
+    matches!(
+        tokio::time::timeout(POSTGRES_PROBE_TIMEOUT, client.simple_query("select 1")).await,
+        Ok(Ok(_))
+    )
+}
+
+async fn storage_is_ready(state: &AppState) -> bool {
+    let Some(s3) = state.s3.as_ref() else {
+        return false;
+    };
+    if !state.config.s3.is_configured() {
+        return false;
+    }
+    if let Some(key) = state.config.s3.readiness_object_key.as_deref() {
+        return matches!(
+            tokio::time::timeout(
+                STORAGE_PROBE_TIMEOUT,
+                s3.head_object()
+                    .bucket(&state.config.s3.bucket)
+                    .key(key)
+                    .send()
+            )
+            .await,
+            Ok(Ok(_))
+        );
+    }
+    if !state.config.s3.allow_signing_only_readiness {
+        return false;
+    }
+    // Explicit local-development escape hatch. This is intentionally not the
+    // production default because signing proves neither remote reachability nor
+    // that the configured principal can access the sentinel/prefix.
+    let key = format!("{}/.readiness-signing-probe", state.config.s3.key_prefix);
+    let Ok(presigning_config) = PresigningConfig::builder()
+        .expires_in(Duration::from_secs(30))
+        .build()
+    else {
+        return false;
+    };
+    matches!(
+        tokio::time::timeout(
+            STORAGE_PROBE_TIMEOUT,
+            s3.head_object()
+                .bucket(&state.config.s3.bucket)
+                .key(key)
+                .presigned(presigning_config)
+        )
+        .await,
+        Ok(Ok(_))
+    )
+}
+
+fn storage_history_compatible(
+    has_mismatch: bool,
+    has_unmarked: bool,
+    allow_unmarked: bool,
+) -> bool {
+    !has_mismatch && (!has_unmarked || allow_unmarked)
+}
+
+async fn storage_history_is_compatible(state: &AppState) -> bool {
+    if let Some((checked_at, compatible)) = *state.storage_history_cache.read().await {
+        if checked_at.elapsed() < STORAGE_HISTORY_CACHE_TTL {
+            return compatible;
+        }
+    }
+    let _refresh_guard = state.storage_history_refresh_lock.lock().await;
+    if let Some((checked_at, compatible)) = *state.storage_history_cache.read().await {
+        if checked_at.elapsed() < STORAGE_HISTORY_CACHE_TTL {
+            return compatible;
+        }
+    }
+    let client = match tokio::time::timeout(POSTGRES_PROBE_TIMEOUT, db_conn(state)).await {
+        Ok(Ok(client)) => client,
+        _ => return false,
+    };
+    let row = match tokio::time::timeout(
+        POSTGRES_PROBE_TIMEOUT,
+        client.query_one(
+            "select
+               (exists (
+                 select 1 from sound_recorder_segments
+                 where storage_bucket <> '' and storage_key <> ''
+                   and (status <> 'expired' or meta_data->>($1::text) = 'true')
+                   and nullif(meta_data->>($2::text), '') is not null
+                   and meta_data->>($2::text) <> $3
+               ) or exists (
+                 select 1 from sound_recorder_upload_sessions
+                 where status = 'active'
+                   and nullif(meta_data->>($2::text), '') is not null
+                   and meta_data->>($2::text) <> $3
+               )) as has_mismatch,
+               (exists (
+                 select 1 from sound_recorder_segments
+                 where storage_bucket <> '' and storage_key <> ''
+                   and (status <> 'expired' or meta_data->>($1::text) = 'true')
+                   and nullif(meta_data->>($2::text), '') is null
+               ) or exists (
+                 select 1 from sound_recorder_upload_sessions
+                 where status = 'active'
+                   and nullif(meta_data->>($2::text), '') is null
+               )) as has_unmarked",
+            &[
+                &RETENTION_DELETE_PENDING_META_KEY,
+                &STORAGE_FINGERPRINT_META_KEY,
+                &state.config.s3.backend_fingerprint,
+            ],
+        ),
+    )
+    .await
+    {
+        Ok(Ok(row)) => row,
+        _ => return false,
+    };
+    let compatible = storage_history_compatible(
+        row.get("has_mismatch"),
+        row.get("has_unmarked"),
+        state.config.s3.allow_unmarked_storage_history,
+    );
+    *state.storage_history_cache.write().await = Some((Instant::now(), compatible));
+    compatible
+}
+
+async fn require_storage_history_compatible(state: &AppState) -> Result<(), ServiceError> {
+    // Unit/local rendering paths can operate without a database. Every real
+    // storage-backed deployment already requires Postgres, and must not serve
+    // object operations merely because an orchestrator ignored readiness.
+    if state.config.database_url.is_some() && !storage_history_is_compatible(state).await {
+        return Err(ServiceError::Unavailable(
+            "object-storage history is incompatible with the configured backend".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+async fn supabase_is_ready(state: &AppState) -> bool {
+    let Some(verifier) = state.supabase.as_deref() else {
+        return false;
+    };
+    if !state.config.supabase.account_features_configured() {
+        return false;
+    }
+    let probe = async {
+        if verifier.jwt_secret.is_none() {
+            // The JWKS endpoint is a real, object-level Auth dependency probe
+            // and must contain at least one usable signing key.
+            return verifier.refresh_jwks(&state.http).await;
+        }
+        // Legacy HS256 projects can legitimately publish an empty asymmetric
+        // JWKS. Probe the documented GoTrue health route instead.
+        let health_url =
+            state.config.supabase.auth_health_url().ok_or_else(|| {
+                ServiceError::Unavailable("Supabase URL is not configured".into())
+            })?;
+        let api_key = state
+            .config
+            .supabase
+            .publishable_key
+            .as_deref()
+            .ok_or_else(|| {
+                ServiceError::Unavailable("Supabase publishable key is not configured".into())
+            })?;
+        let response = state
+            .http
+            .get(health_url)
+            .header("apikey", api_key)
+            .send()
+            .await
+            .map_err(|_| ServiceError::Unavailable("Supabase Auth probe failed".into()))?;
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            Err(ServiceError::Unavailable(format!(
+                "Supabase Auth probe returned status {}",
+                response.status().as_u16()
+            )))
+        }
+    };
+    matches!(
+        tokio::time::timeout(SUPABASE_PROBE_TIMEOUT, probe).await,
+        Ok(Ok(()))
+    )
+}
+
 async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
+    let supabase_probe = async {
+        if state.config.require_supabase {
+            Some(supabase_is_ready(&state).await)
+        } else {
+            None
+        }
+    };
+    let (postgres_reachable, storage_ready, storage_history_compatible, supabase_ready) = tokio::join!(
+        postgres_is_reachable(&state),
+        storage_is_ready(&state),
+        storage_history_is_compatible(&state),
+        supabase_probe
+    );
+    let registration_configured = state.supabase.is_some()
+        || state.config.registration_bearer.is_some()
+        || state.config.allow_public_device_registration;
+    let supabase_accounts_configured = state.config.supabase.account_features_configured();
     let ready = state.config.database_url.is_some()
+        && postgres_reachable
+        && state.config.validation_errors.is_empty()
         && state.s3.is_some()
-        && !state.config.s3.bucket.is_empty()
+        && state.config.s3.is_configured()
+        && storage_ready
+        && storage_history_compatible
         && state.config.token_pepper_configured
-        && (state.config.registration_bearer.is_some()
-            || state.config.allow_public_device_registration)
-        && state.config.server_auth_secret.is_some();
+        && registration_configured
+        && state.config.server_auth_secret.is_some()
+        && (!state.config.require_supabase
+            || (supabase_accounts_configured && supabase_ready == Some(true)));
     let status = if ready {
         StatusCode::OK
     } else {
@@ -2687,10 +3571,18 @@ async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
             service: SERVICE_NAME,
             mode: "http",
             postgres_configured: state.config.database_url.is_some(),
-            s3_configured: state.s3.is_some() && !state.config.s3.bucket.is_empty(),
+            s3_configured: state.s3.is_some() && state.config.s3.is_configured(),
+            storage_ready: Some(storage_ready),
+            storage_history_compatible: Some(storage_history_compatible),
+            storage_probe_mode: state.config.s3.readiness_probe_mode(),
+            storage_backend: state.config.s3.backend.as_str(),
+            storage_backend_fingerprint: state.config.s3.backend_fingerprint.clone(),
+            storage_versioning_mode: state.config.s3.versioning_mode,
+            configuration_valid: state.config.validation_errors.is_empty()
+                && state.config.s3.validation_errors.is_empty()
+                && state.config.supabase.validation_errors.is_empty(),
             token_pepper_configured: state.config.token_pepper_configured,
-            registration_configured: state.config.registration_bearer.is_some()
-                || state.config.allow_public_device_registration,
+            registration_configured,
             server_auth_configured: state.config.server_auth_secret.is_some(),
             cloud_token_sealer_configured: state.cloud_sealer.is_some(),
             google_drive_configured: state.config.google_oauth.client_id.is_some()
@@ -2699,6 +3591,9 @@ async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
                 && state.config.microsoft_oauth.client_secret.is_some(),
             supabase_configured: state.supabase.is_some(),
             supabase_data_api_configured: state.config.supabase.is_data_api_enabled(),
+            supabase_accounts_configured,
+            supabase_ready,
+            supabase_required: state.config.require_supabase,
             retention_hours: state.config.default_retention_hours,
         }),
     )
@@ -2943,6 +3838,87 @@ async fn register_device(
     }))
 }
 
+async fn delete_account_storage_objects(
+    state: &AppState,
+    client: &tokio_postgres::Client,
+    account_id: &str,
+) -> Result<u64, ServiceError> {
+    require_storage_history_compatible(state).await?;
+    let rows = client
+        .query(
+            "select storage_bucket, storage_key
+             from sound_recorder_segments
+             where account_id = $1::uuid
+               and storage_bucket <> ''
+               and storage_key <> ''
+             order by storage_bucket, storage_key",
+            &[&account_id],
+        )
+        .await
+        .map_err(db_error)?;
+    if rows.is_empty() {
+        return Ok(0);
+    }
+    let s3 = state
+        .s3
+        .as_ref()
+        .ok_or_else(|| ServiceError::Unavailable("S3 client is not configured".to_string()))?;
+    let mut by_bucket: HashMap<String, Vec<String>> = HashMap::new();
+    for row in rows {
+        by_bucket
+            .entry(row.get("storage_bucket"))
+            .or_default()
+            .push(row.get("storage_key"));
+    }
+    let mut deleted = 0u64;
+    for (bucket, keys) in by_bucket {
+        for chunk in keys.chunks(1000) {
+            let objects = chunk
+                .iter()
+                .map(|key| {
+                    ObjectIdentifier::builder().key(key).build().map_err(|_| {
+                        ServiceError::Internal(
+                            "failed to build object deletion request".to_string(),
+                        )
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let delete = Delete::builder()
+                .set_objects(Some(objects))
+                .quiet(true)
+                .build()
+                .map_err(|_| {
+                    ServiceError::Internal("failed to build object deletion request".to_string())
+                })?;
+            let output = tokio::time::timeout(
+                STORAGE_OBJECT_TIMEOUT,
+                s3.delete_objects().bucket(&bucket).delete(delete).send(),
+            )
+            .await
+            .map_err(|_| {
+                warn!(account_id, "account object deletion timed out");
+                ServiceError::Unavailable("account object deletion timed out".to_string())
+            })?
+            .map_err(|err| {
+                warn!(error = %err, account_id, "account object deletion failed");
+                ServiceError::Unavailable("account object deletion failed".to_string())
+            })?;
+            if !output.errors().is_empty() {
+                warn!(
+                    account_id,
+                    failures = output.errors().len(),
+                    "account object deletion returned per-object failures"
+                );
+                return Err(ServiceError::Unavailable(
+                    "one or more account objects could not be deleted".to_string(),
+                ));
+            }
+            deleted = deleted.saturating_add(chunk.len() as u64);
+        }
+    }
+    Ok(deleted)
+}
+
 async fn delete_supabase_auth_user(state: &AppState, user_id: &str) -> Result<(), ServiceError> {
     let user_id = validate_nonempty(user_id, "supabaseUserId", 160)?;
     if user_id.contains('/') {
@@ -2980,13 +3956,11 @@ async fn delete_supabase_auth_user(state: &AppState, user_id: &str) -> Result<()
             ServiceError::Unavailable("Supabase Auth deletion failed".to_string())
         })?;
     let status = response.status();
-    if status.is_success() {
+    if status.is_success() || status == StatusCode::NOT_FOUND {
         return Ok(());
     }
-    let body = response.text().await.unwrap_or_default();
     warn!(
         status = status.as_u16(),
-        body = %body.chars().take(200).collect::<String>(),
         "Supabase Auth deletion returned non-success status"
     );
     Err(ServiceError::Unavailable(format!(
@@ -3000,7 +3974,16 @@ async fn delete_account(
     headers: HeaderMap,
 ) -> Result<Json<DeleteAccountResponse>, ServiceError> {
     let (account_id, identity, mut client) =
-        authenticate_supabase_account(&state, &headers).await?;
+        authenticate_supabase_account_for_deletion(&state, &headers).await?;
+    if !state.config.supabase.account_features_configured() {
+        return Err(ServiceError::Unavailable(
+            "Supabase account administration is not fully configured".to_string(),
+        ));
+    }
+    // Delete private audio first and fail before mutating account state if the
+    // storage provider cannot confirm the purge. DeleteObjects is idempotent,
+    // so a retry safely covers a partially completed multi-bucket purge.
+    let deleted_objects = delete_account_storage_objects(&state, &client, &account_id).await?;
     let tx = client.transaction().await.map_err(db_error)?;
     let deletion_manifest = json!({ "deletedAt": Utc::now() });
     let deleted_segments = tx
@@ -3082,11 +4065,10 @@ async fn delete_account(
         .execute(
             "update sound_recorder_accounts
              set status = 'deleted',
-                 external_subject = concat('deleted:', id::text),
                  display_name = null,
                  legal_region = null,
                  updated_at = now()
-             where id = $1::uuid and status <> 'deleted'",
+             where id = $1::uuid",
             &[&account_id],
         )
         .await
@@ -3095,7 +4077,19 @@ async fn delete_account(
         return Err(ServiceError::NotFound("account not found".to_string()));
     }
     tx.commit().await.map_err(db_error)?;
+    // Keep the verified external subject only until the upstream delete
+    // succeeds. If Supabase is temporarily unavailable, the still-valid JWT can
+    // retry this one deletion endpoint even though all device access is revoked.
     delete_supabase_auth_user(&state, &identity.subject).await?;
+    client
+        .execute(
+            "update sound_recorder_accounts
+             set external_subject = concat('deleted:', id::text), updated_at = now()
+             where id = $1::uuid",
+            &[&account_id],
+        )
+        .await
+        .map_err(db_error)?;
     audit_event(
         &client,
         Some(&account_id),
@@ -3103,6 +4097,7 @@ async fn delete_account(
         "sound_recorder.account.deleted",
         json!({
             "deletedSegments": deleted_segments,
+            "deletedObjects": deleted_objects,
             "revokedDevices": revoked_devices,
             "revokedCloudConnections": revoked_cloud_connections,
             "supabaseAuthDeleted": true,
@@ -3114,6 +4109,7 @@ async fn delete_account(
         ok: true,
         account_id,
         deleted_segments,
+        deleted_objects,
         revoked_devices,
         revoked_cloud_connections,
         supabase_auth_deleted: true,
@@ -3200,6 +4196,7 @@ async fn create_upload_session(
     Json(req): Json<CreateUploadSessionRequest>,
 ) -> Result<Json<CreateUploadSessionResponse>, ServiceError> {
     let (auth, client) = authenticate_device(&state, &headers).await?;
+    require_storage_history_compatible(&state).await?;
     let bucket = state.config.s3.bucket.trim().to_string();
     if bucket.is_empty() || state.s3.is_none() {
         return Err(ServiceError::Unavailable(
@@ -3233,6 +4230,7 @@ async fn create_upload_session(
     } else if let Some(object) = meta_data.as_object_mut() {
         object.insert("useCase".to_string(), Value::String(use_case.clone()));
     }
+    let meta_data = attach_storage_metadata(meta_data, &state.config.s3.backend_fingerprint)?;
     let session_id = Uuid::new_v4().to_string();
     let storage_prefix = format!(
         "{}/account={}/device={}/session={}",
@@ -3310,6 +4308,12 @@ async fn presign_segment(
     let (auth, client) = authenticate_device(&state, &headers).await?;
     let session_id = validate_uuid(&session_id, "sessionId")?;
     let session = load_session_policy(&client, &auth, &session_id).await?;
+    if !storage_record_is_compatible(&state.config.s3, session.storage_fingerprint.as_deref()) {
+        return Err(ServiceError::Unavailable(
+            "upload session belongs to a different or unacknowledged object-storage backend"
+                .to_string(),
+        ));
+    }
     if session.status != "active" {
         return Err(ServiceError::Conflict(
             "upload session is not active".to_string(),
@@ -3332,15 +4336,18 @@ async fn presign_segment(
     let codec = clean_string(req.codec, 80).or(session.codec.clone());
     let byte_count = req.byte_count;
     if let Some(byte_count) = byte_count {
-        if byte_count < 0 || byte_count > session.max_segment_bytes {
+        if byte_count <= 0 || byte_count > session.max_segment_bytes {
             return Err(ServiceError::BadRequest(format!(
-                "byteCount must be between 0 and {}",
+                "byteCount must be between 1 and {}",
                 session.max_segment_bytes
             )));
         }
     }
     let sha256_hex = validate_sha256(req.sha256_hex)?;
-    let meta_data = validate_meta(req.meta_data)?;
+    let meta_data = attach_storage_metadata(
+        validate_meta(req.meta_data)?,
+        &state.config.s3.backend_fingerprint,
+    )?;
     let now = Utc::now();
     let max_future_capture = now
         .checked_add_signed(ChronoDuration::seconds(MAX_CAPTURE_CLOCK_SKEW_SECONDS))
@@ -3366,9 +4373,23 @@ async fn presign_segment(
         .captured_started_at
         .checked_add_signed(ChronoDuration::hours(auth.retention_hours as i64))
         .unwrap_or_else(Utc::now);
-    let upload_expires_at = Utc::now()
+    let required_upload_window = state
+        .config
+        .upload_url_ttl
+        .checked_add(Duration::from_secs(PRESIGNED_UPLOAD_SETTLE_GRACE_SECONDS))
+        .ok_or_else(|| ServiceError::Internal("upload window overflow".to_string()))?;
+    let minimum_retention_expiry = now
+        .checked_add_signed(chrono_duration_from_std(required_upload_window)?)
+        .unwrap_or(now);
+    if expires_at <= minimum_retention_expiry {
+        return Err(ServiceError::BadRequest(
+            "capturedStartedAt is too close to the retention cutoff for a safe upload".to_string(),
+        ));
+    }
+    let upload_expires_at = now
         .checked_add_signed(chrono_duration_from_std(state.config.upload_url_ttl)?)
-        .unwrap_or_else(Utc::now);
+        .unwrap_or(now)
+        .min(expires_at);
     let key = storage_key(&session.storage_prefix, req.sequence_number, &content_type);
 
     let upload = presign_put(
@@ -3406,7 +4427,7 @@ async fn presign_segment(
                expires_at = excluded.expires_at,
                meta_data = excluded.meta_data,
                updated_at = now()
-             where sound_recorder_segments.status <> 'uploaded'
+             where sound_recorder_segments.status in ('pending', 'failed')
              returning id::text, account_id::text, device_id::text, session_id::text,
                        sequence_number, status, storage_provider, storage_bucket, storage_key,
                        content_type, codec, captured_started_at, captured_ended_at,
@@ -3465,6 +4486,121 @@ async fn presign_segment(
     }))
 }
 
+fn normalize_etag(value: &str) -> String {
+    let value = value.trim();
+    let value = value
+        .strip_prefix("W/")
+        .or_else(|| value.strip_prefix("w/"))
+        .unwrap_or(value)
+        .trim();
+    value.trim_matches('"').to_string()
+}
+
+fn validate_stored_object_metadata(
+    metadata: StoredObjectMetadata<'_>,
+    expected: StoredObjectExpectation<'_>,
+) -> Result<VerifiedStoredObject, ServiceError> {
+    let byte_count = metadata.content_length.ok_or_else(|| {
+        ServiceError::Conflict("uploaded object did not report a content length".to_string())
+    })?;
+    if byte_count <= 0
+        || byte_count > expected.max_segment_bytes as i64
+        || byte_count > i32::MAX as i64
+    {
+        return Err(ServiceError::Conflict(format!(
+            "uploaded object size must be between 1 and {} bytes",
+            expected.max_segment_bytes
+        )));
+    }
+    let byte_count = byte_count as i32;
+    if expected
+        .presigned_byte_count
+        .is_some_and(|expected| expected != byte_count)
+    {
+        return Err(ServiceError::Conflict(
+            "uploaded object size does not match the presigned byteCount".to_string(),
+        ));
+    }
+    if expected
+        .reported_byte_count
+        .is_some_and(|reported| reported != byte_count)
+    {
+        return Err(ServiceError::Conflict(
+            "uploaded object size does not match the completed byteCount".to_string(),
+        ));
+    }
+    let content_type = metadata.content_type.ok_or_else(|| {
+        ServiceError::Conflict("uploaded object did not report a content type".to_string())
+    })?;
+    if !content_type
+        .trim()
+        .eq_ignore_ascii_case(expected.content_type.trim())
+    {
+        return Err(ServiceError::Conflict(
+            "uploaded object content type does not match the presigned contentType".to_string(),
+        ));
+    }
+    let etag = metadata
+        .etag
+        .map(normalize_etag)
+        .filter(|etag| !etag.is_empty())
+        .ok_or_else(|| {
+            ServiceError::Conflict("uploaded object did not report an ETag".to_string())
+        })?;
+    if etag.len() > 160 {
+        return Err(ServiceError::Conflict(
+            "uploaded object ETag is too long".to_string(),
+        ));
+    }
+    if expected
+        .reported_etag
+        .map(normalize_etag)
+        .is_some_and(|reported| reported != etag)
+    {
+        return Err(ServiceError::Conflict(
+            "uploaded object ETag does not match the completed ETag".to_string(),
+        ));
+    }
+    Ok(VerifiedStoredObject { byte_count, etag })
+}
+
+async fn verify_uploaded_object(
+    state: &AppState,
+    segment_id: &str,
+    bucket: &str,
+    key: &str,
+    expected: StoredObjectExpectation<'_>,
+) -> Result<VerifiedStoredObject, ServiceError> {
+    require_storage_history_compatible(state).await?;
+    let s3 = state
+        .s3
+        .as_ref()
+        .ok_or_else(|| ServiceError::Unavailable("S3 client is not configured".to_string()))?;
+    let head = tokio::time::timeout(
+        STORAGE_OBJECT_TIMEOUT,
+        s3.head_object().bucket(bucket).key(key).send(),
+    )
+    .await
+    .map_err(|_| {
+        warn!(segment_id, "uploaded object verification timed out");
+        ServiceError::Unavailable("uploaded object verification timed out".to_string())
+    })?
+    .map_err(|err| {
+        warn!(error = %err, segment_id, "uploaded object verification failed");
+        ServiceError::Unavailable(
+            "uploaded object could not be verified in object storage".to_string(),
+        )
+    })?;
+    validate_stored_object_metadata(
+        StoredObjectMetadata {
+            content_length: head.content_length(),
+            content_type: head.content_type(),
+            etag: head.e_tag(),
+        },
+        expected,
+    )
+}
+
 async fn complete_segment(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -3478,14 +4614,17 @@ async fn complete_segment(
     let etag = clean_string(req.etag, 160);
     let policy_row = client
         .query_opt(
-            "select s.captured_started_at, s.duration_millis, us.max_segment_bytes
+            "select s.captured_started_at, s.duration_millis, s.storage_bucket,
+                    s.storage_key, s.content_type, s.byte_count, s.meta_data,
+                    us.max_segment_bytes
              from sound_recorder_segments s
              join sound_recorder_upload_sessions us on us.id = s.session_id
              where s.id = $1::uuid
                and s.session_id = $2::uuid
                and s.account_id = $3::uuid
                and s.device_id = $4::uuid
-               and s.status <> 'deleted'",
+               and s.status in ('pending', 'uploaded')
+               and s.expires_at > now()",
             &[&segment_id, &session_id, &auth.account_id, &auth.device_id],
         )
         .await
@@ -3493,11 +4632,20 @@ async fn complete_segment(
     let Some(policy_row) = policy_row else {
         return Err(ServiceError::NotFound("segment not found".to_string()));
     };
+    let segment_meta: Value = policy_row.get("meta_data");
+    let storage_fingerprint = segment_meta
+        .get(STORAGE_FINGERPRINT_META_KEY)
+        .and_then(Value::as_str);
+    if !storage_record_is_compatible(&state.config.s3, storage_fingerprint) {
+        return Err(ServiceError::Unavailable(
+            "segment belongs to a different or unacknowledged object-storage backend".to_string(),
+        ));
+    }
     let max_segment_bytes: i32 = policy_row.get("max_segment_bytes");
     if let Some(byte_count) = req.byte_count {
-        if byte_count < 0 || byte_count > max_segment_bytes {
+        if byte_count <= 0 || byte_count > max_segment_bytes {
             return Err(ServiceError::BadRequest(format!(
-                "byteCount must be between 0 and {max_segment_bytes}"
+                "byteCount must be between 1 and {max_segment_bytes}"
             )));
         }
     }
@@ -3515,12 +4663,30 @@ async fn complete_segment(
             ));
         }
     }
+    let storage_bucket: String = policy_row.get("storage_bucket");
+    let storage_key: String = policy_row.get("storage_key");
+    let content_type: String = policy_row.get("content_type");
+    let presigned_byte_count: Option<i32> = policy_row.get("byte_count");
+    let verified_object = verify_uploaded_object(
+        &state,
+        &segment_id,
+        &storage_bucket,
+        &storage_key,
+        StoredObjectExpectation {
+            content_type: &content_type,
+            presigned_byte_count,
+            reported_byte_count: req.byte_count,
+            reported_etag: etag.as_deref(),
+            max_segment_bytes,
+        },
+    )
+    .await?;
     let row = client
         .query_opt(
             "update sound_recorder_segments
              set status = 'uploaded',
-                 etag = coalesce($5, etag),
-                 byte_count = coalesce($6, byte_count),
+                 etag = $5,
+                 byte_count = $6,
                  sha256_hex = coalesce($7, sha256_hex),
                  captured_ended_at = coalesce($8, captured_ended_at),
                  uploaded_at = now(),
@@ -3529,7 +4695,8 @@ async fn complete_segment(
                and session_id = $2::uuid
                and account_id = $3::uuid
                and device_id = $4::uuid
-               and status <> 'deleted'
+               and status in ('pending', 'uploaded')
+               and (pinned_at is not null or expires_at > now())
              returning id::text, account_id::text, device_id::text, session_id::text,
                        sequence_number, status, storage_provider, storage_bucket, storage_key,
                        content_type, codec, captured_started_at, captured_ended_at,
@@ -3540,8 +4707,8 @@ async fn complete_segment(
                 &session_id,
                 &auth.account_id,
                 &auth.device_id,
-                &etag,
-                &req.byte_count,
+                &verified_object.etag,
+                &verified_object.byte_count,
                 &sha256_hex,
                 &req.captured_ended_at,
             ],
@@ -3700,6 +4867,7 @@ async fn timeline(
              from sound_recorder_segments
              where account_id = $1::uuid
                and status = 'uploaded'
+               and (pinned_at is not null or expires_at > now())
                and captured_started_at >= $2
                and captured_started_at <= $3
              order by captured_started_at asc
@@ -3776,6 +4944,7 @@ async fn create_evidence_export(
                  where account_id = $1::uuid
                    and device_id = $2::uuid
                    and status = 'uploaded'
+                   and (pinned_at is not null or expires_at > now())
                    and captured_started_at >= $3
                    and captured_started_at <= $4
                  order by captured_started_at asc
@@ -3795,6 +4964,7 @@ async fn create_evidence_export(
                  from sound_recorder_segments
                  where account_id = $1::uuid
                    and status = 'uploaded'
+                   and (pinned_at is not null or expires_at > now())
                    and captured_started_at >= $2
                    and captured_started_at <= $3
                  order by captured_started_at asc
@@ -3920,6 +5090,7 @@ async fn create_permanent_save(
                  set pinned_at = coalesce(pinned_at, now()), updated_at = now()
                  where account_id = $1::uuid
                    and status = 'uploaded'
+                   and expires_at > now()
                    and storage_key = any($2::text[])
                  returning storage_key",
                 &[&auth.account_id, &keys],
@@ -3946,6 +5117,7 @@ async fn create_permanent_save(
                    select id from sound_recorder_segments
                    where account_id = $1::uuid
                      and status = 'uploaded'
+                     and expires_at > now()
                      and captured_started_at >= $2
                      and captured_started_at <= $3
                    order by captured_started_at asc
@@ -4044,7 +5216,7 @@ async fn create_alert(
                and status = 'uploaded'
                and captured_started_at <= $4
                and coalesce(captured_ended_at, captured_started_at + (duration_millis * interval '1 millisecond')) >= $3
-               and expires_at > now()
+               and (pinned_at is not null or expires_at > now())
              order by captured_started_at asc
              limit 8",
             &[&auth.account_id, &auth.device_id, &listen_from, &listen_to],
@@ -4623,6 +5795,7 @@ async fn list_client_cloud_copy_jobs(
                and j.status = 'waiting_client'
                and c.status = 'active'
                and s.status = 'uploaded'
+               and (s.pinned_at is not null or s.expires_at > now())
              order by j.created_at asc
              limit $3",
             &[&auth.account_id, &provider.as_str(), &limit],
@@ -4755,11 +5928,14 @@ async fn drain_cloud_copy_jobs(
              from sound_recorder_cloud_copy_jobs j
              join sound_recorder_cloud_connections c on c.id = j.connection_id
              join sound_recorder_segments s on s.id = j.segment_id
-             where j.status = 'pending'
-               and (j.locked_until is null or j.locked_until < now())
+             where (
+                 (j.status = 'pending' and (j.locked_until is null or j.locked_until < now()))
+                 or (j.status = 'running' and j.locked_until < now())
+               )
                and c.status = 'active'
                and c.link_mode = 'server_oauth'
                and s.status = 'uploaded'
+               and (s.pinned_at is not null or s.expires_at > now())
                -- Hold server-managed copies for any segment whose source device
                -- is currently pausing cloud streaming, so server delivery stays
                -- consistent with the device's battery/network intent. The pause
@@ -4864,8 +6040,10 @@ async fn claim_cloud_copy_job(
                  locked_until = $2,
                  updated_at = now()
              where id = $1::uuid
-               and status = 'pending'
-               and (locked_until is null or locked_until < now())
+               and (
+                 (status = 'pending' and (locked_until is null or locked_until < now()))
+                 or (status = 'running' and locked_until < now())
+               )
              returning attempts",
             &[&job_id, &locked_until],
         )
@@ -4931,24 +6109,37 @@ async fn download_segment_bytes(
     state: &AppState,
     segment: &SegmentResponse,
 ) -> Result<Vec<u8>, ServiceError> {
+    require_storage_history_compatible(state).await?;
     let s3 = state
         .s3
         .as_ref()
         .ok_or_else(|| ServiceError::Unavailable("S3 client is not configured".to_string()))?;
-    let object = s3
-        .get_object()
-        .bucket(&segment.storage_bucket)
-        .key(&segment.storage_key)
-        .send()
-        .await
-        .map_err(|err| {
-            error!(error = %err, segment_id = segment.id, "S3 segment download failed");
-            ServiceError::Unavailable("S3 segment download failed".to_string())
-        })?;
-    let bytes = object.body.collect().await.map_err(|err| {
-        error!(error = %err, segment_id = segment.id, "S3 segment body read failed");
-        ServiceError::Unavailable("S3 segment body read failed".to_string())
+    let object = tokio::time::timeout(
+        STORAGE_OBJECT_TIMEOUT,
+        s3.get_object()
+            .bucket(&segment.storage_bucket)
+            .key(&segment.storage_key)
+            .send(),
+    )
+    .await
+    .map_err(|_| {
+        error!(segment_id = segment.id, "S3 segment download timed out");
+        ServiceError::Unavailable("S3 segment download timed out".to_string())
+    })?
+    .map_err(|err| {
+        error!(error = %err, segment_id = segment.id, "S3 segment download failed");
+        ServiceError::Unavailable("S3 segment download failed".to_string())
     })?;
+    let bytes = tokio::time::timeout(STORAGE_OBJECT_TIMEOUT, object.body.collect())
+        .await
+        .map_err(|_| {
+            error!(segment_id = segment.id, "S3 segment body read timed out");
+            ServiceError::Unavailable("S3 segment body read timed out".to_string())
+        })?
+        .map_err(|err| {
+            error!(error = %err, segment_id = segment.id, "S3 segment body read failed");
+            ServiceError::Unavailable("S3 segment body read failed".to_string())
+        })?;
     Ok(bytes.into_bytes().to_vec())
 }
 
@@ -5136,64 +6327,169 @@ async fn retention_sweep(
 ) -> Result<Json<RetentionSweepResponse>, ServiceError> {
     require_internal_auth(&state.config, &headers)?;
     let client = db_conn(&state).await?;
+    require_storage_history_compatible(&state).await?;
     // Bound work per call so a large backlog is drained across cron runs instead
     // of one unbounded transaction. The cron re-invokes until nothing is left.
     const SWEEP_BATCH: i64 = 1000;
+    let claim_id = Uuid::new_v4().to_string();
     let rows = client
         .query(
-            "select id::text, storage_bucket, storage_key
-             from sound_recorder_segments
-             where status in ('pending', 'uploaded')
-               and pinned_at is null
-               and expires_at < now()
-             order by expires_at asc
-             limit $1",
-            &[&SWEEP_BATCH],
+            "with candidates as (
+               select id,
+                      case
+                        when status in ('pending', 'uploaded') then status
+                        when meta_data->>($5::text) in ('pending', 'uploaded')
+                          then meta_data->>($5::text)
+                        else 'uploaded'
+                      end as previous_status
+               from sound_recorder_segments
+               where pinned_at is null
+                 and (
+                   (status in ('pending', 'uploaded') and expires_at < now()
+                     and (status <> 'pending' or upload_url_expires_at is null
+                          or upload_url_expires_at < now()))
+                   or (
+                     status = 'expired'
+                     and meta_data->>($2::text) = 'true'
+                     and (
+                       nullif(meta_data->>($4::text), '') is null
+                       or (meta_data->>($4::text))::timestamptz
+                            < now() - interval '10 minutes'
+                     )
+                   )
+                 )
+               order by expires_at asc
+               limit $1
+               for update skip locked
+             )
+             update sound_recorder_segments s
+             set status = 'expired',
+                 meta_data = (
+                   coalesce(s.meta_data, '{}'::jsonb)
+                   - $2::text - $3::text - $4::text - $5::text
+                 ) || jsonb_build_object(
+                   $2::text, true,
+                   $3::text, $6::text,
+                   $4::text, now(),
+                   $5::text, candidates.previous_status
+                 ),
+                 updated_at = now()
+             from candidates
+             where s.id = candidates.id and s.pinned_at is null
+             returning s.id::text, s.storage_bucket, s.storage_key,
+                       candidates.previous_status",
+            &[
+                &SWEEP_BATCH,
+                &RETENTION_DELETE_PENDING_META_KEY,
+                &RETENTION_DELETE_CLAIM_ID_META_KEY,
+                &RETENTION_DELETE_CLAIMED_AT_META_KEY,
+                &RETENTION_PREVIOUS_STATUS_META_KEY,
+                &claim_id,
+            ],
         )
         .await
         .map_err(db_error)?;
 
-    // Physically delete the rolling-window objects from S3 before expiring the
-    // row. Pinned (permanent-save) segments are excluded by the query above, so
-    // they are never deleted. Deletion is best-effort: a transient S3 failure is
-    // logged and the row is still expired (the logical retention window must
-    // hold); a bucket lifecycle rule is the backstop for any leaked object.
+    // The atomic claim above moves each candidate out of the readable/uploadable
+    // states before remote I/O. That closes the pin/delete and completion/delete
+    // races. A bounded lease lets a later sweep reclaim work after a process
+    // crash; the S3 DeleteObject call is idempotent.
     let mut deleted_objects: u64 = 0;
     let mut delete_failures: u64 = 0;
-    let mut expired_ids: Vec<String> = Vec::with_capacity(rows.len());
+    let mut expired: u64 = 0;
     for row in &rows {
         let id: String = row.get("id");
         let bucket: String = row.get("storage_bucket");
         let key: String = row.get("storage_key");
-        if let Some(s3) = state.s3.as_ref() {
-            if !bucket.is_empty() && !key.is_empty() {
-                match s3.delete_object().bucket(&bucket).key(&key).send().await {
-                    Ok(_) => deleted_objects += 1,
-                    Err(err) => {
-                        delete_failures += 1;
-                        warn!(error = %err, segment_id = id, "retention S3 object delete failed");
-                    }
-                }
-            }
-        }
-        expired_ids.push(id);
-    }
-
-    let expired = if expired_ids.is_empty() {
-        0
-    } else {
-        client
-            .execute(
-                "update sound_recorder_segments
-                 set status = 'expired', updated_at = now()
-                 where id = any($1::uuid[])
-                   and status in ('pending', 'uploaded')
-                   and pinned_at is null",
-                &[&expired_ids],
+        let previous_status: String = row.get("previous_status");
+        let deleted = if bucket.is_empty() || key.is_empty() {
+            true
+        } else if let Some(s3) = state.s3.as_ref() {
+            match tokio::time::timeout(
+                STORAGE_OBJECT_TIMEOUT,
+                s3.delete_object().bucket(&bucket).key(&key).send(),
             )
             .await
-            .map_err(db_error)?
-    };
+            {
+                Ok(Ok(_)) => {
+                    deleted_objects += 1;
+                    true
+                }
+                Ok(Err(err)) => {
+                    delete_failures += 1;
+                    warn!(error = %err, segment_id = id, "retention S3 object delete failed");
+                    false
+                }
+                Err(_) => {
+                    delete_failures += 1;
+                    warn!(segment_id = id, "retention S3 object delete timed out");
+                    false
+                }
+            }
+        } else {
+            delete_failures += 1;
+            warn!(
+                segment_id = id,
+                "retention object delete skipped; S3 client unavailable"
+            );
+            false
+        };
+        if deleted {
+            expired += client
+                .execute(
+                    "update sound_recorder_segments
+                     set meta_data = coalesce(meta_data, '{}'::jsonb)
+                       - $3::text - $4::text - $5::text - $6::text,
+                         updated_at = now()
+                     where id = $1::uuid
+                       and status = 'expired'
+                       and meta_data->>($3::text) = 'true'
+                       and meta_data->>($4::text) = $2",
+                    &[
+                        &id,
+                        &claim_id,
+                        &RETENTION_DELETE_PENDING_META_KEY,
+                        &RETENTION_DELETE_CLAIM_ID_META_KEY,
+                        &RETENTION_DELETE_CLAIMED_AT_META_KEY,
+                        &RETENTION_PREVIOUS_STATUS_META_KEY,
+                    ],
+                )
+                .await
+                .map_err(db_error)?;
+        } else {
+            // Restore the prior state only if this sweep still owns the claim.
+            // Another process cannot steal a live claim before its ten-minute
+            // lease, far longer than the bounded 30-second object operation.
+            let previous_status = if previous_status == "pending" {
+                "pending"
+            } else {
+                "uploaded"
+            };
+            client
+                .execute(
+                    "update sound_recorder_segments
+                 set status = $3,
+                     meta_data = coalesce(meta_data, '{}'::jsonb)
+                       - $4::text - $5::text - $6::text - $7::text,
+                     updated_at = now()
+                 where id = $1::uuid
+                   and status = 'expired'
+                   and meta_data->>($4::text) = 'true'
+                   and meta_data->>($5::text) = $2",
+                    &[
+                        &id,
+                        &claim_id,
+                        &previous_status,
+                        &RETENTION_DELETE_PENDING_META_KEY,
+                        &RETENTION_DELETE_CLAIM_ID_META_KEY,
+                        &RETENTION_DELETE_CLAIMED_AT_META_KEY,
+                        &RETENTION_PREVIOUS_STATUS_META_KEY,
+                    ],
+                )
+                .await
+                .map_err(db_error)?;
+        }
+    }
     audit_event(
         &client,
         None,
@@ -5223,7 +6519,7 @@ async fn load_session_policy(
     let row = client
         .query_opt(
             "select account_id::text, device_id::text, status, storage_bucket, storage_prefix,
-                    content_type, codec, segment_duration_seconds, max_segment_bytes
+                    content_type, codec, segment_duration_seconds, max_segment_bytes, meta_data
              from sound_recorder_upload_sessions
              where id = $1::uuid and account_id = $2::uuid and device_id = $3::uuid",
             &[&session_id, &auth.account_id, &auth.device_id],
@@ -5235,10 +6531,15 @@ async fn load_session_policy(
             "upload session not found".to_string(),
         ));
     };
+    let meta_data: Value = row.get("meta_data");
     Ok(SessionPolicy {
         status: row.get("status"),
         storage_bucket: row.get("storage_bucket"),
         storage_prefix: row.get("storage_prefix"),
+        storage_fingerprint: meta_data
+            .get(STORAGE_FINGERPRINT_META_KEY)
+            .and_then(Value::as_str)
+            .map(ToString::to_string),
         content_type: row.get("content_type"),
         codec: row.get("codec"),
         segment_duration_seconds: row.get("segment_duration_seconds"),
@@ -5254,6 +6555,7 @@ async fn presign_put(
     byte_count: Option<i32>,
     expires_at: DateTime<Utc>,
 ) -> Result<PresignedTransfer, ServiceError> {
+    require_storage_history_compatible(state).await?;
     let Some(s3) = &state.s3 else {
         return Err(ServiceError::Unavailable(
             "S3 client is not configured".to_string(),
@@ -5268,18 +6570,32 @@ async fn presign_put(
         .put_object()
         .bucket(bucket)
         .key(key)
-        .content_type(content_type)
-        .server_side_encryption(ServerSideEncryption::Aes256);
+        .content_type(content_type);
+    // Cloudflare R2 rejects x-amz-server-side-encryption even though it
+    // encrypts every object at rest. AWS S3 accepts the explicit AES256 header,
+    // so `auto` emits it only for native AWS and omits it for R2/custom stores.
+    if state.config.s3.send_sse_aes256 {
+        request = request.server_side_encryption(ServerSideEncryption::Aes256);
+    }
     if let Some(byte_count) = byte_count {
         request = request.content_length(byte_count as i64);
     }
-    let presigned = request.presigned(presigning_config).await.map_err(|err| {
-        error!(error = %err, "S3 upload presign failed");
-        SEGMENT_PRESIGNS
-            .with_label_values(&["upload", "error"])
-            .inc();
-        ServiceError::Unavailable("S3 upload presign failed".to_string())
-    })?;
+    let presigned =
+        tokio::time::timeout(STORAGE_PROBE_TIMEOUT, request.presigned(presigning_config))
+            .await
+            .map_err(|_| {
+                SEGMENT_PRESIGNS
+                    .with_label_values(&["upload", "error"])
+                    .inc();
+                ServiceError::Unavailable("S3 upload presign timed out".to_string())
+            })?
+            .map_err(|err| {
+                error!(error = %err, "S3 upload presign failed");
+                SEGMENT_PRESIGNS
+                    .with_label_values(&["upload", "error"])
+                    .inc();
+                ServiceError::Unavailable("S3 upload presign failed".to_string())
+            })?;
     Ok(PresignedTransfer {
         method: presigned.method().to_string(),
         url: presigned.uri().to_string(),
@@ -5294,6 +6610,7 @@ async fn presign_get(
     key: &str,
     expires_at: DateTime<Utc>,
 ) -> Result<PresignedTransfer, ServiceError> {
+    require_storage_history_compatible(state).await?;
     let Some(s3) = &state.s3 else {
         return Err(ServiceError::Unavailable(
             "S3 client is not configured".to_string(),
@@ -5304,19 +6621,23 @@ async fn presign_get(
         .expires_in(ttl)
         .build()
         .map_err(|err| ServiceError::Internal(format!("invalid presign ttl: {err}")))?;
-    let presigned = s3
-        .get_object()
-        .bucket(bucket)
-        .key(key)
-        .presigned(presigning_config)
-        .await
-        .map_err(|err| {
-            error!(error = %err, "S3 download presign failed");
-            SEGMENT_PRESIGNS
-                .with_label_values(&["download", "error"])
-                .inc();
-            ServiceError::Unavailable("S3 download presign failed".to_string())
-        })?;
+    let request = s3.get_object().bucket(bucket).key(key);
+    let presigned =
+        tokio::time::timeout(STORAGE_PROBE_TIMEOUT, request.presigned(presigning_config))
+            .await
+            .map_err(|_| {
+                SEGMENT_PRESIGNS
+                    .with_label_values(&["download", "error"])
+                    .inc();
+                ServiceError::Unavailable("S3 download presign timed out".to_string())
+            })?
+            .map_err(|err| {
+                error!(error = %err, "S3 download presign failed");
+                SEGMENT_PRESIGNS
+                    .with_label_values(&["download", "error"])
+                    .inc();
+                ServiceError::Unavailable("S3 download presign failed".to_string())
+            })?;
     Ok(PresignedTransfer {
         method: presigned.method().to_string(),
         url: presigned.uri().to_string(),
@@ -5779,6 +7100,7 @@ async fn token_set_for_connection(
     Ok(refreshed)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn upsert_cloud_connection(
     client: &tokio_postgres::Client,
     auth: &DeviceAuth,
@@ -5985,7 +7307,7 @@ async fn enqueue_retained_cloud_copy_jobs(
              from sound_recorder_segments
              where account_id = $1::uuid
                and status = 'uploaded'
-               and expires_at > now()
+               and (pinned_at is not null or expires_at > now())
              order by captured_started_at desc
              limit $2",
             &[&account_id, &config.cloud_backfill_segments],
@@ -6269,11 +7591,36 @@ async fn main() {
     if !config.token_pepper_configured {
         warn!("SOUND_RECORDER_DEVICE_TOKEN_PEPPER is not configured; device tokens will not survive process restart");
     }
-    if config.registration_bearer.is_none() && !config.allow_public_device_registration {
+    if !config.supabase.is_enabled()
+        && config.registration_bearer.is_none()
+        && !config.allow_public_device_registration
+    {
         warn!("device registration is disabled until registration auth is configured");
     }
+    if config.require_supabase && !config.supabase.account_features_configured() {
+        let mut missing = Vec::new();
+        if config.supabase.url.is_none() {
+            missing.push("SOUND_RECORDER_SUPABASE_URL");
+        }
+        if config.supabase.jwks_url.is_none() && config.supabase.jwt_secret.is_none() {
+            missing.push("SOUND_RECORDER_SUPABASE_JWKS_URL");
+        }
+        if config.supabase.issuer.is_none() {
+            missing.push("SOUND_RECORDER_SUPABASE_ISSUER");
+        }
+        if config.supabase.publishable_key.is_none() {
+            missing.push("SOUND_RECORDER_SUPABASE_PUBLISHABLE_KEY");
+        }
+        if config.supabase.service_role_key.is_none() {
+            missing.push("SOUND_RECORDER_SUPABASE_SERVICE_ROLE_KEY");
+        }
+        warn!(
+            missing = ?missing,
+            "strict Supabase readiness is enabled but account configuration is incomplete"
+        );
+    }
     let host = first_env(&["HOST"]).unwrap_or_else(|| "0.0.0.0".to_string());
-    let port = env_u64("PORT", DEFAULT_PORT as u64) as u16;
+    let port = env_u64("PORT", DEFAULT_PORT as u64).clamp(1, u16::MAX as u64) as u16;
     let state = state_from_config(config).await;
 
     let addr: SocketAddr = format!("{host}:{port}")
@@ -6299,6 +7646,7 @@ async fn shutdown_signal() {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
     use std::io::{Read, Write};
@@ -6364,6 +7712,7 @@ mod tests {
 
     fn test_config() -> Config {
         Config {
+            validation_errors: Vec::new(),
             database_url: None,
             server_auth_secret: Some("test-server-secret".to_string()),
             token_pepper: "test-token-pepper".to_string(),
@@ -6374,6 +7723,26 @@ mod tests {
                 bucket: "test-bucket".to_string(),
                 key_prefix: "sound-recorder/segments".to_string(),
                 cdn_base_url: None,
+                region: "us-east-1".to_string(),
+                endpoint: None,
+                force_path_style: false,
+                send_sse_aes256: true,
+                max_attempts: DEFAULT_S3_MAX_ATTEMPTS,
+                readiness_object_key: None,
+                allow_signing_only_readiness: false,
+                allow_unmarked_storage_history: false,
+                backend_fingerprint: storage_backend_fingerprint(
+                    ObjectStorageBackend::AmazonS3,
+                    None,
+                    "us-east-1",
+                    "test-bucket",
+                ),
+                versioning_mode: "unversioned",
+                access_key_id: None,
+                secret_access_key: None,
+                session_token: None,
+                backend: ObjectStorageBackend::AmazonS3,
+                validation_errors: Vec::new(),
             },
             ios_app_store_url: None,
             android_play_store_url: None,
@@ -6409,6 +7778,7 @@ mod tests {
             alert_email_webhook_url: None,
             rate_limit_per_minute: 0,
             rate_limit_trust_forwarded_for: true,
+            require_supabase: false,
             supabase: SupabaseConfig::default(),
         }
     }
@@ -6434,7 +7804,7 @@ mod tests {
         assert!(limiter.check("1.2.3.4", 3, window, now).is_ok());
         // The fourth in the same window is rejected with a Retry-After.
         let retry = limiter.check("1.2.3.4", 3, window, now).unwrap_err();
-        assert!(retry >= 1 && retry <= 60);
+        assert!((1..=60).contains(&retry));
         // A different client has its own independent budget.
         assert!(limiter.check("5.6.7.8", 3, window, now).is_ok());
     }
@@ -6462,6 +7832,8 @@ mod tests {
             cloud_sealer: None,
             supabase: None,
             pg_pool: None,
+            storage_history_cache: Arc::new(RwLock::new(None)),
+            storage_history_refresh_lock: Arc::new(AsyncMutex::new(())),
         }
     }
 
@@ -6879,7 +8251,7 @@ mod tests {
                     .ok();
                 let mut buf = [0u8; 1024];
                 let _ = stream.read(&mut buf);
-                let body = r#"{"keys":[]}"#;
+                let body = r#"{"keys":[{"kty":"oct","k":"c2VjcmV0","alg":"HS256","kid":"test"}]}"#;
                 let response = format!(
                     "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
                     body.len(),
@@ -6896,6 +8268,7 @@ mod tests {
             jwks_url: Some(format!("http://{addr}/jwks")),
             jwks_cache: RwLock::new(None),
             jwks_last_refresh: RwLock::new(None),
+            jwks_refresh_lock: AsyncMutex::new(()),
         };
         let http = reqwest::Client::builder().build().unwrap();
 
@@ -6911,6 +8284,336 @@ mod tests {
         );
 
         handle.join().unwrap();
+    }
+
+    #[test]
+    fn storage_endpoint_detection_and_validation_cover_r2() {
+        let account_id = "0123456789abcdef0123456789abcdef";
+        assert!(is_valid_r2_account_id(account_id));
+        assert!(!is_valid_r2_account_id("not-an-account-id"));
+        let endpoint = format!("https://{account_id}.r2.cloudflarestorage.com");
+        assert!(validate_service_url(&endpoint, true));
+        assert_eq!(
+            storage_backend_for_endpoint(Some(&endpoint)),
+            ObjectStorageBackend::CloudflareR2
+        );
+        assert_eq!(
+            storage_backend_for_endpoint(Some("https://minio.example.com")),
+            ObjectStorageBackend::S3Compatible
+        );
+        assert!(!validate_service_url(
+            "https://user:pass@storage.example.com",
+            true
+        ));
+        assert!(!validate_service_url("http://storage.example.com", true));
+    }
+
+    #[test]
+    fn boolean_configuration_rejects_ambiguous_values() {
+        assert!(parse_bool_value("FLAG", " TRUE ").unwrap());
+        assert!(!parse_bool_value("FLAG", "off").unwrap());
+        assert!(parse_bool_value("SOUND_RECORDER_REQUIRE_SUPABASE", "tru").is_err());
+        assert!(parse_bool_value("FLAG", "").is_err());
+    }
+
+    #[test]
+    fn supabase_overrides_must_stay_on_the_project_origin() {
+        assert!(urls_have_same_origin(
+            "https://project.supabase.co",
+            "https://project.supabase.co/auth/v1/.well-known/jwks.json"
+        ));
+        assert!(!urls_have_same_origin(
+            "https://project.supabase.co",
+            "https://attacker.example/auth/v1/.well-known/jwks.json"
+        ));
+        assert!(!urls_have_same_origin(
+            "http://127.0.0.1:54321",
+            "http://127.0.0.1:54322/auth/v1"
+        ));
+    }
+
+    #[test]
+    fn storage_metadata_is_server_owned_and_cutover_checked() {
+        let mut config = test_config().s3;
+        let meta = attach_storage_metadata(
+            json!({
+                STORAGE_FINGERPRINT_META_KEY: "client-forgery",
+                RETENTION_DELETE_PENDING_META_KEY: true,
+                "client": "kept"
+            }),
+            &config.backend_fingerprint,
+        )
+        .unwrap();
+        assert_eq!(
+            meta.get(STORAGE_FINGERPRINT_META_KEY)
+                .and_then(Value::as_str),
+            Some(config.backend_fingerprint.as_str())
+        );
+        assert!(meta.get(RETENTION_DELETE_PENDING_META_KEY).is_none());
+        assert_eq!(meta.get("client").and_then(Value::as_str), Some("kept"));
+        assert!(storage_record_is_compatible(
+            &config,
+            Some(&config.backend_fingerprint)
+        ));
+        assert!(!storage_record_is_compatible(&config, Some("old-backend")));
+        assert!(!storage_record_is_compatible(&config, None));
+        config.allow_unmarked_storage_history = true;
+        assert!(storage_record_is_compatible(&config, None));
+
+        assert!(storage_history_compatible(false, false, false));
+        assert!(!storage_history_compatible(false, true, false));
+        assert!(storage_history_compatible(false, true, true));
+        assert!(!storage_history_compatible(true, false, true));
+
+        assert!(!unmarked_history_acknowledgment(false, None, "current").unwrap());
+        assert!(unmarked_history_acknowledgment(true, Some("current"), "current").unwrap());
+        assert!(unmarked_history_acknowledgment(true, Some("old"), "current").is_err());
+    }
+
+    #[tokio::test]
+    async fn sentinel_readiness_performs_remote_head_object() {
+        let (endpoint, requests, handle) = spawn_json_server("");
+        let mut config = test_config();
+        config.s3.backend = ObjectStorageBackend::S3Compatible;
+        config.s3.endpoint = Some(endpoint);
+        config.s3.force_path_style = true;
+        config.s3.send_sse_aes256 = false;
+        config.s3.access_key_id = Some("test-access-key".to_string());
+        config.s3.secret_access_key = Some("test-secret-key".to_string());
+        config.s3.readiness_object_key = Some("sound-recorder/segments/.readiness".to_string());
+        config.s3.backend_fingerprint = storage_backend_fingerprint(
+            config.s3.backend,
+            config.s3.endpoint.as_deref(),
+            &config.s3.region,
+            &config.s3.bucket,
+        );
+        let state = state_from_config(config).await;
+        assert!(storage_is_ready(&state).await);
+        let request = requests.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert!(
+            request.starts_with("HEAD /test-bucket/sound-recorder/segments/.readiness HTTP/1.1")
+        );
+        handle.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn asymmetric_supabase_readiness_fetches_nonempty_jwks() {
+        let body = r#"{"keys":[{"kty":"oct","k":"c2VjcmV0","alg":"HS256","kid":"test"}]}"#;
+        let (project_url, requests, handle) = spawn_json_server(body);
+        let mut config = test_config();
+        config.supabase = SupabaseConfig {
+            url: Some(project_url.clone()),
+            jwt_secret: None,
+            jwks_url: Some(format!("{project_url}/auth/v1/.well-known/jwks.json")),
+            issuer: Some(format!("{project_url}/auth/v1")),
+            audience: SUPABASE_DEFAULT_AUDIENCE.to_string(),
+            publishable_key: Some("publishable-key".to_string()),
+            service_role_key: Some("service-role-key".to_string()),
+            validation_errors: Vec::new(),
+        };
+        let verifier = SupabaseVerifier::from_config(&config.supabase)
+            .map(Arc::new)
+            .unwrap();
+        let mut state = test_state(config);
+        state.supabase = Some(verifier);
+        assert!(supabase_is_ready(&state).await);
+        let request = requests.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert!(request.starts_with("GET /auth/v1/.well-known/jwks.json HTTP/1.1"));
+        handle.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn legacy_supabase_readiness_probes_auth_health_with_api_key() {
+        let (project_url, requests, handle) = spawn_json_server(r#"{"version":"test"}"#);
+        let mut config = test_config();
+        config.supabase = SupabaseConfig {
+            url: Some(project_url.clone()),
+            jwt_secret: Some("legacy-secret".to_string()),
+            jwks_url: Some(format!("{project_url}/auth/v1/.well-known/jwks.json")),
+            issuer: Some(format!("{project_url}/auth/v1")),
+            audience: SUPABASE_DEFAULT_AUDIENCE.to_string(),
+            publishable_key: Some("publishable-key".to_string()),
+            service_role_key: Some("service-role-key".to_string()),
+            validation_errors: Vec::new(),
+        };
+        let verifier = SupabaseVerifier::from_config(&config.supabase)
+            .map(Arc::new)
+            .unwrap();
+        let mut state = test_state(config);
+        state.supabase = Some(verifier);
+        assert!(supabase_is_ready(&state).await);
+        let request = requests.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert!(request.starts_with("GET /auth/v1/health HTTP/1.1"));
+        assert!(request
+            .lines()
+            .any(|line| line.eq_ignore_ascii_case("apikey: publishable-key")));
+        handle.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn r2_presign_uses_auto_region_and_omits_unsupported_sse() {
+        let account_id = "0123456789abcdef0123456789abcdef";
+        let mut config = test_config();
+        config.s3.backend = ObjectStorageBackend::CloudflareR2;
+        config.s3.region = "auto".to_string();
+        config.s3.endpoint = Some(format!("https://{account_id}.r2.cloudflarestorage.com"));
+        config.s3.send_sse_aes256 = false;
+        config.s3.access_key_id = Some("test-r2-access-key".to_string());
+        config.s3.secret_access_key = Some("test-r2-secret-key".to_string());
+        config.s3.backend_fingerprint = storage_backend_fingerprint(
+            config.s3.backend,
+            config.s3.endpoint.as_deref(),
+            &config.s3.region,
+            &config.s3.bucket,
+        );
+        let strict_state = state_from_config(config.clone()).await;
+        assert!(
+            !storage_is_ready(&strict_state).await,
+            "production readiness must fail closed without a remote sentinel"
+        );
+        assert_eq!(
+            strict_state.config.s3.readiness_probe_mode(),
+            "remote_probe_not_configured"
+        );
+        config.s3.allow_signing_only_readiness = true;
+        let state = state_from_config(config).await;
+        assert!(
+            storage_is_ready(&state).await,
+            "explicit development opt-out may use signing-only readiness"
+        );
+        assert_eq!(state.config.s3.readiness_probe_mode(), "signing_dev_only");
+        let transfer = presign_put(
+            &state,
+            "test-bucket",
+            "sound-recorder/segments/test.m4a",
+            "audio/mp4",
+            Some(128),
+            Utc::now() + ChronoDuration::minutes(5),
+        )
+        .await
+        .unwrap();
+        let url = reqwest::Url::parse(&transfer.url).unwrap();
+        assert_eq!(
+            url.host_str(),
+            Some("test-bucket.0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com")
+        );
+        let credential = url
+            .query_pairs()
+            .find(|(name, _)| name.eq_ignore_ascii_case("X-Amz-Credential"))
+            .map(|(_, value)| value.into_owned())
+            .unwrap();
+        assert!(credential.contains("/auto/s3/aws4_request"));
+        assert!(!transfer.headers.iter().any(|header| {
+            header
+                .name
+                .eq_ignore_ascii_case("x-amz-server-side-encryption")
+        }));
+        assert!(transfer
+            .headers
+            .iter()
+            .any(|header| header.name.eq_ignore_ascii_case("content-type")
+                && header.value == "audio/mp4"));
+    }
+
+    #[test]
+    fn uploaded_object_metadata_must_match_the_presign() {
+        let verified = validate_stored_object_metadata(
+            StoredObjectMetadata {
+                content_length: Some(128),
+                content_type: Some("audio/mp4"),
+                etag: Some("\"abc123\""),
+            },
+            StoredObjectExpectation {
+                content_type: "audio/mp4",
+                presigned_byte_count: Some(128),
+                reported_byte_count: Some(128),
+                reported_etag: Some("abc123"),
+                max_segment_bytes: 1024,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            verified,
+            VerifiedStoredObject {
+                byte_count: 128,
+                etag: "abc123".to_string()
+            }
+        );
+        assert!(validate_stored_object_metadata(
+            StoredObjectMetadata {
+                content_length: Some(127),
+                content_type: Some("audio/mp4"),
+                etag: Some("abc123"),
+            },
+            StoredObjectExpectation {
+                content_type: "audio/mp4",
+                presigned_byte_count: Some(128),
+                reported_byte_count: None,
+                reported_etag: None,
+                max_segment_bytes: 1024,
+            },
+        )
+        .is_err());
+        assert!(validate_stored_object_metadata(
+            StoredObjectMetadata {
+                content_length: Some(128),
+                content_type: Some("text/plain"),
+                etag: Some("abc123"),
+            },
+            StoredObjectExpectation {
+                content_type: "audio/mp4",
+                presigned_byte_count: Some(128),
+                reported_byte_count: None,
+                reported_etag: None,
+                max_segment_bytes: 1024,
+            },
+        )
+        .is_err());
+        assert!(validate_stored_object_metadata(
+            StoredObjectMetadata {
+                content_length: Some(0),
+                content_type: Some("audio/mp4"),
+                etag: Some("abc123"),
+            },
+            StoredObjectExpectation {
+                content_type: "audio/mp4",
+                presigned_byte_count: None,
+                reported_byte_count: None,
+                reported_etag: None,
+                max_segment_bytes: 1024,
+            },
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn supabase_auth_contract_is_strict_and_case_insensitive() {
+        assert_eq!(strip_bearer_scheme("bearer token-123"), Some("token-123"));
+        assert_eq!(strip_bearer_scheme("BEARER   token-123"), Some("token-123"));
+        assert_eq!(strip_bearer_scheme("Basic token-123"), None);
+        assert!(is_supported_supabase_algorithm(Algorithm::HS256));
+        assert!(is_supported_supabase_algorithm(Algorithm::RS256));
+        assert!(is_supported_supabase_algorithm(Algorithm::ES256));
+        assert!(!is_supported_supabase_algorithm(Algorithm::HS512));
+
+        let mut config = SupabaseConfig {
+            url: Some("https://project.supabase.co".to_string()),
+            jwt_secret: None,
+            jwks_url: Some("https://project.supabase.co/auth/v1/.well-known/jwks.json".to_string()),
+            issuer: Some("https://project.supabase.co/auth/v1".to_string()),
+            audience: SUPABASE_DEFAULT_AUDIENCE.to_string(),
+            publishable_key: Some("publishable-key".to_string()),
+            service_role_key: Some("service-role-key".to_string()),
+            validation_errors: Vec::new(),
+        };
+        assert!(config.account_features_configured());
+        config.service_role_key = None;
+        assert!(!config.account_features_configured());
+        config.service_role_key = Some("service-role-key".to_string());
+        config
+            .validation_errors
+            .push("invalid Supabase URL".to_string());
+        assert!(!config.account_features_configured());
     }
 
     #[test]
@@ -7048,7 +8751,7 @@ fn render_home(config: &Config) -> String {
     <div class="hero">
       <div>
         <h1>Rolling audio memory for moments that need a record.</h1>
-        <p class="lede">A mobile sound recorder backend for explicit, user-controlled recording with a {retention} hour rolling window, encrypted S3 storage, and short-lived evidence export links.</p>
+        <p class="lede">A mobile sound recorder backend for explicit, user-controlled recording with a {retention} hour rolling window, private object storage, and short-lived evidence export links.</p>
         <div class="actions">{ios}{android}</div>
       </div>
       <div class="recorder" aria-label="Recorder status preview">
@@ -7057,7 +8760,7 @@ fn render_home(config: &Config) -> String {
         <div class="facts">
           <div class="fact"><strong>{retention}h</strong><span>rolling retention</span></div>
           <div class="fact"><strong>{segment}s</strong><span>default segments</span></div>
-          <div class="fact"><strong>S3</strong><span>presigned upload</span></div>
+          <div class="fact"><strong>S3 API</strong><span>direct private upload</span></div>
         </div>
       </div>
     </div>
@@ -7071,7 +8774,7 @@ fn render_home(config: &Config) -> String {
     <section>
       <h2>Evidence Export</h2>
       <div>
-        <p>Audio segments stay private by default. The API exports a selected time range as short-lived S3 download URLs and stores an audit event for each export.</p>
+        <p>Audio segments stay private by default. The API exports a selected time range as short-lived object-storage download URLs and stores an audit event for each export.</p>
       </div>
     </section>
   </main>
