@@ -221,6 +221,19 @@ data:
         static_configs:
           - targets:
               - gcs-router.default.svc.cluster.local:9100
+      # fiducia data-plane raft metrics. Each fiducia-node StatefulSet pod runs a
+      # sidecar (fiducia-node-sidecar) that translates the node's JSON observe API
+      # into Prometheus text on :8091/metrics. Addressed per-pod through the
+      # headless peer Service (serviceName: fiducia-node-peer); the pod ordinal is
+      # kept as the `instance` label. The sidecar also self-reports scrape health
+      # via fiducia_sidecar_scrape_up so a node it cannot reach still surfaces.
+      - job_name: fiducia-node-sidecar
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - fiducia-node-0.fiducia-node-peer.fiducia.svc.cluster.local:8091
+              - fiducia-node-1.fiducia-node-peer.fiducia.svc.cluster.local:8091
+              - fiducia-node-2.fiducia-node-peer.fiducia.svc.cluster.local:8091
   observability.rules.yml: |
     groups:
       - name: dd.observability.rules
