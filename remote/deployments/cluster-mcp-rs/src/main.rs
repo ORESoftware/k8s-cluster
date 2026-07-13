@@ -397,7 +397,11 @@ fn config_from_env() -> Config {
             .ok()
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty()),
-        rdap_url: env_mcp_base_url("DD_MCP_RDAP_URL", "https://rdap.org", allow_external_mcp_urls),
+        rdap_url: env_mcp_base_url(
+            "DD_MCP_RDAP_URL",
+            "https://rdap.org",
+            allow_external_mcp_urls,
+        ),
         doh_url: env_mcp_base_url(
             "DD_MCP_DOH_URL",
             "https://cloudflare-dns.com/dns-query",
@@ -1675,7 +1679,8 @@ async fn kubernetes_get_body(state: &AppState, path: &str) -> Result<Value, Stri
 }
 
 async fn kubernetes_ingress_endpoints_json(state: &AppState) -> Value {
-    let ingresses = kubernetes_get_body(state, "/apis/networking.k8s.io/v1/ingresses?limit=500").await;
+    let ingresses =
+        kubernetes_get_body(state, "/apis/networking.k8s.io/v1/ingresses?limit=500").await;
     let services = kubernetes_get_body(state, "/api/v1/services?limit=500").await;
     let limit = state.config.kubernetes_items_limit;
     let ingresses = match &ingresses {
@@ -2676,7 +2681,11 @@ async fn cloudflare_dns_records_json(state: &AppState) -> Value {
     let Some(token) = state.config.cloudflare_api_token.clone() else {
         return cloudflare_not_configured();
     };
-    let base = state.config.cloudflare_api_url.trim_end_matches('/').to_string();
+    let base = state
+        .config
+        .cloudflare_api_url
+        .trim_end_matches('/')
+        .to_string();
     let (zones, _pages) = cloudflare_list_zones(state, &token).await;
     let mut remaining = MAX_CLOUDFLARE_DNS_RECORDS;
     let mut truncated = zones.len() > MAX_CLOUDFLARE_DNS_ZONES;
@@ -2803,7 +2812,12 @@ fn rdap_registrar_name(body: &Value) -> Option<String> {
                     .and_then(Value::as_str)
                     .map(str::to_string)
             })
-            .or_else(|| entity.get("handle").and_then(Value::as_str).map(str::to_string))
+            .or_else(|| {
+                entity
+                    .get("handle")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            })
     })
 }
 
@@ -2828,7 +2842,10 @@ fn rdap_event_date(body: &Value, action: &str) -> Option<String> {
         if event.get("eventAction").and_then(Value::as_str) != Some(action) {
             return None;
         }
-        event.get("eventDate").and_then(Value::as_str).map(str::to_string)
+        event
+            .get("eventDate")
+            .and_then(Value::as_str)
+            .map(str::to_string)
     })
 }
 
@@ -2853,11 +2870,7 @@ fn rdap_nameservers(body: &Value) -> Vec<String> {
 // Date precision is plenty for expiry monitoring; negative means expired.
 fn days_until_date(date: &str) -> Option<i64> {
     let expiry_days = civil_days_from_rfc3339_date(date)?;
-    let today_days = (SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .ok()?
-        .as_secs()
-        / 86_400) as i64;
+    let today_days = (SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs() / 86_400) as i64;
     Some(expiry_days - today_days)
 }
 
@@ -2952,7 +2965,11 @@ fn expected_cluster_endpoints(
         }
     };
     for ip in configured {
-        push(normalize_dns_name(ip), "env:DD_MCP_EXPECTED_INGRESS_IPS".to_string(), &mut endpoints);
+        push(
+            normalize_dns_name(ip),
+            "env:DD_MCP_EXPECTED_INGRESS_IPS".to_string(),
+            &mut endpoints,
+        );
     }
     if let Some(items) = services_body
         .and_then(|body| body.get("items"))
@@ -2962,13 +2979,20 @@ fn expected_cluster_endpoints(
             if item.pointer("/spec/type").and_then(Value::as_str) != Some("LoadBalancer") {
                 continue;
             }
-            let name = item.pointer("/metadata/name").and_then(Value::as_str).unwrap_or("");
+            let name = item
+                .pointer("/metadata/name")
+                .and_then(Value::as_str)
+                .unwrap_or("");
             let namespace = item
                 .pointer("/metadata/namespace")
                 .and_then(Value::as_str)
                 .unwrap_or("");
             for endpoint in lb_ingress_endpoints(item.pointer("/status/loadBalancer/ingress")) {
-                push(endpoint, format!("service:{namespace}/{name}"), &mut endpoints);
+                push(
+                    endpoint,
+                    format!("service:{namespace}/{name}"),
+                    &mut endpoints,
+                );
             }
         }
     }
@@ -2977,13 +3001,20 @@ fn expected_cluster_endpoints(
         .and_then(Value::as_array)
     {
         for item in items {
-            let name = item.pointer("/metadata/name").and_then(Value::as_str).unwrap_or("");
+            let name = item
+                .pointer("/metadata/name")
+                .and_then(Value::as_str)
+                .unwrap_or("");
             let namespace = item
                 .pointer("/metadata/namespace")
                 .and_then(Value::as_str)
                 .unwrap_or("");
             for endpoint in lb_ingress_endpoints(item.pointer("/status/loadBalancer/ingress")) {
-                push(endpoint, format!("ingress:{namespace}/{name}"), &mut endpoints);
+                push(
+                    endpoint,
+                    format!("ingress:{namespace}/{name}"),
+                    &mut endpoints,
+                );
             }
         }
     }
@@ -2991,10 +3022,13 @@ fn expected_cluster_endpoints(
 }
 
 async fn domain_dns_wiring_json(state: &AppState) -> Value {
-    let services_body = kubernetes_get_body(state, "/api/v1/services?limit=500").await.ok();
-    let ingresses_body = kubernetes_get_body(state, "/apis/networking.k8s.io/v1/ingresses?limit=500")
+    let services_body = kubernetes_get_body(state, "/api/v1/services?limit=500")
         .await
         .ok();
+    let ingresses_body =
+        kubernetes_get_body(state, "/apis/networking.k8s.io/v1/ingresses?limit=500")
+            .await
+            .ok();
     let expected = expected_cluster_endpoints(
         &state.config.expected_ingress_ips,
         services_body.as_ref(),
@@ -3016,9 +3050,14 @@ async fn domain_dns_wiring_json(state: &AppState) -> Value {
         let mut queries = Vec::new();
         for record_type in DOH_QUERY_TYPES {
             let url = format!("{doh}?name={domain}&type={record_type}");
-            let (meta, body) =
-                external_json_get(state, &state.external_http, &url, None, "application/dns-json")
-                    .await;
+            let (meta, body) = external_json_get(
+                state,
+                &state.external_http,
+                &url,
+                None,
+                "application/dns-json",
+            )
+            .await;
             let (dns_status, answers) = body
                 .as_ref()
                 .map(parse_doh_answers)
@@ -3648,7 +3687,7 @@ mod tests {
 
     #[test]
     fn tool_catalog_keeps_expected_names() {
-        let listed = TOOL_NAMES.iter().copied().collect::<Vec<_>>();
+        let listed = TOOL_NAMES.to_vec();
         assert!(listed.contains(&"kubernetes_inventory"));
         assert!(listed.contains(&"telemetry_summary"));
         assert!(listed.contains(&"trace_backends"));
@@ -3885,7 +3924,10 @@ mod tests {
         let result = cloudflare_not_configured();
         assert_eq!(result["ok"], json!(false));
         assert_eq!(result["configured"], json!(false));
-        assert!(result["hint"].as_str().unwrap().contains("CLOUDFLARE_API_TOKEN"));
+        assert!(result["hint"]
+            .as_str()
+            .unwrap()
+            .contains("CLOUDFLARE_API_TOKEN"));
         // Wrapped as a tool result it is a well-formed result, not a JSON-RPC
         // error (agents see the hint instead of noise).
         let wrapped = tool_json_result(json!(1), "cloudflare_zones", "blurb", result);
@@ -3943,7 +3985,10 @@ mod tests {
         assert_eq!(days_from_civil(1970, 1, 1), 0);
         assert_eq!(days_from_civil(1970, 1, 2), 1);
         assert_eq!(days_from_civil(2000, 1, 1), 10_957);
-        assert_eq!(civil_days_from_rfc3339_date("2000-01-01T00:00:00Z"), Some(10_957));
+        assert_eq!(
+            civil_days_from_rfc3339_date("2000-01-01T00:00:00Z"),
+            Some(10_957)
+        );
         assert_eq!(civil_days_from_rfc3339_date("not-a-date"), None);
         assert_eq!(civil_days_from_rfc3339_date("2000-13-01T00:00:00Z"), None);
     }
@@ -3966,8 +4011,16 @@ mod tests {
         assert_eq!(
             answers,
             vec![
-                (5, "app.fiducia.cloud".to_string(), "lb.example-elb.amazonaws.com".to_string()),
-                (1, "lb.example-elb.amazonaws.com".to_string(), "98.90.186.114".to_string()),
+                (
+                    5,
+                    "app.fiducia.cloud".to_string(),
+                    "lb.example-elb.amazonaws.com".to_string()
+                ),
+                (
+                    1,
+                    "lb.example-elb.amazonaws.com".to_string(),
+                    "98.90.186.114".to_string()
+                ),
             ]
         );
         // NXDOMAIN: Status 3, no Answer array.
@@ -3984,7 +4037,11 @@ mod tests {
             "lb.example-elb.amazonaws.com".to_string(),
         ];
         // Direct A-record match.
-        let a_records = vec![(1u16, "fiducia.cloud".to_string(), "98.90.186.114".to_string())];
+        let a_records = vec![(
+            1u16,
+            "fiducia.cloud".to_string(),
+            "98.90.186.114".to_string(),
+        )];
         assert_eq!(
             correlate_domain_wiring(&a_records, &expected),
             (true, Some("98.90.186.114".to_string()))
@@ -4001,10 +4058,21 @@ mod tests {
         );
         // No match: unrelated A record, and NS records never match.
         let unrelated = vec![
-            (1u16, "elsewhere.test".to_string(), "203.0.113.9".to_string()),
-            (2u16, "elsewhere.test".to_string(), "98.90.186.114".to_string()),
+            (
+                1u16,
+                "elsewhere.test".to_string(),
+                "203.0.113.9".to_string(),
+            ),
+            (
+                2u16,
+                "elsewhere.test".to_string(),
+                "98.90.186.114".to_string(),
+            ),
         ];
-        assert_eq!(correlate_domain_wiring(&unrelated, &expected), (false, None));
+        assert_eq!(
+            correlate_domain_wiring(&unrelated, &expected),
+            (false, None)
+        );
     }
 
     #[test]
@@ -4025,14 +4093,20 @@ mod tests {
               "status": { "loadBalancer": { "ingress": [{ "ip": "203.0.113.7" }] }}}
         ]});
         let configured = vec!["98.90.186.114".to_string()];
-        let endpoints =
-            expected_cluster_endpoints(&configured, Some(&services), Some(&ingresses));
-        let names = endpoints.iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>();
+        let endpoints = expected_cluster_endpoints(&configured, Some(&services), Some(&ingresses));
+        let names = endpoints
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect::<Vec<_>>();
         // Dedup: the env IP and the LB service IP are the same entry; the
         // ClusterIP service is excluded.
         assert_eq!(
             names,
-            vec!["98.90.186.114", "lb.example-elb.amazonaws.com", "203.0.113.7"]
+            vec![
+                "98.90.186.114",
+                "lb.example-elb.amazonaws.com",
+                "203.0.113.7"
+            ]
         );
         assert_eq!(endpoints[0].1, "env:DD_MCP_EXPECTED_INGRESS_IPS");
         assert_eq!(endpoints[2].1, "ingress:default/web");
@@ -4050,7 +4124,10 @@ mod tests {
         }]});
         let summary = summarize_ingress_endpoints(&ingresses, 10);
         assert_eq!(summary.len(), 1);
-        assert_eq!(summary[0]["hosts"], json!(["app.fiducia.cloud", "admin.fiducia.cloud"]));
+        assert_eq!(
+            summary[0]["hosts"],
+            json!(["app.fiducia.cloud", "admin.fiducia.cloud"])
+        );
         assert_eq!(summary[0]["className"], json!("nginx"));
         assert_eq!(summary[0]["loadBalancer"][0]["ip"], json!("98.90.186.114"));
 
@@ -4097,7 +4174,10 @@ mod tests {
         // Only Available/Progressing conditions ship.
         assert_eq!(rollout["conditions"].as_array().unwrap().len(), 2);
         assert_eq!(rollout["conditions"][0]["type"], json!("Available"));
-        assert_eq!(rollout["conditions"][1]["reason"], json!("ReplicaSetUpdated"));
+        assert_eq!(
+            rollout["conditions"][1]["reason"],
+            json!("ReplicaSetUpdated")
+        );
     }
 
     #[test]
@@ -4163,7 +4243,12 @@ mod tests {
         std::env::remove_var("DD_MCP_DOMAINS_TEST_FIXTURE");
         assert_eq!(
             domains,
-            vec!["fiducia.cloud", "app.fiducia.cloud", "canonical.cloud", "a.test"]
+            vec![
+                "fiducia.cloud",
+                "app.fiducia.cloud",
+                "canonical.cloud",
+                "a.test"
+            ]
         );
     }
 
