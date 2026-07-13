@@ -61,6 +61,13 @@ on:
       - 'AGENTS.md'
       - '.github/workflows/pg-defs-check.yml'
 
+permissions:
+  contents: read
+
+concurrency:
+  group: pg-defs-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     name: node src/generate.mjs --check
