@@ -2946,7 +2946,7 @@ fn expected_cluster_endpoints(
     ingresses_body: Option<&Value>,
 ) -> Vec<(String, String)> {
     let mut endpoints: Vec<(String, String)> = Vec::new();
-    let mut push = |endpoint: String, source: String, endpoints: &mut Vec<(String, String)>| {
+    let push = |endpoint: String, source: String, endpoints: &mut Vec<(String, String)>| {
         if !endpoint.is_empty() && !endpoints.iter().any(|(existing, _)| *existing == endpoint) {
             endpoints.push((endpoint, source));
         }
