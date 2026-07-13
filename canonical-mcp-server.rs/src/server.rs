@@ -229,6 +229,9 @@ mod tests {
         assert_eq!(
             names,
             vec![
+                "cloudflare_dns",
+                "domain_status",
+                "k8s_status",
                 "service_health",
                 "stack_ci_status",
                 "stack_docs",
