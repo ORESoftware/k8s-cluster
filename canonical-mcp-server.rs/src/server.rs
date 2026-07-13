@@ -2,9 +2,7 @@
 
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
-    model::{
-        CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerInfo,
-    },
+    model::{CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerInfo},
     tool, tool_handler, tool_router, ErrorData, ServerHandler,
 };
 use serde::Deserialize;
@@ -123,7 +121,10 @@ impl CanonicalMcp {
 impl ServerHandler for CanonicalMcp {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
-            .with_server_info(Implementation::new("canonical-mcp", env!("CARGO_PKG_VERSION")))
+            .with_server_info(Implementation::new(
+                "canonical-mcp",
+                env!("CARGO_PKG_VERSION"),
+            ))
             .with_instructions(
                 "Operational tooling for the canonical.cloud stack (GitHub org canonical-cloud). \
                  Use stack_ci_status for CI health, submodule_pins to check monorepo pins, \

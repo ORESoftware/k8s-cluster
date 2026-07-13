@@ -312,9 +312,7 @@ pub async fn submodule_pins_report(client: &GitHubClient) -> Result<Value, Strin
                     Some(0)
                 } else {
                     let compare = client
-                        .get_json(&format!(
-                            "/repos/{ORG}/{repo}/compare/{pinned_sha}...main"
-                        ))
+                        .get_json(&format!("/repos/{ORG}/{repo}/compare/{pinned_sha}...main"))
                         .await;
                     compare.ok().as_ref().and_then(compare_ahead_by)
                 };

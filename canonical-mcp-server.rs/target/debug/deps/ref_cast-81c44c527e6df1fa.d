@@ -1,0 +1,12 @@
+/Users/maca5/codes/canonical.cloud/canonical-mcp-server.rs/target/debug/deps/ref_cast-81c44c527e6df1fa.d: /Users/maca5/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ref-cast-1.0.25/src/lib.rs /Users/maca5/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ref-cast-1.0.25/src/custom.rs /Users/maca5/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ref-cast-1.0.25/src/layout.rs /Users/maca5/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ref-cast-1.0.25/src/trivial.rs /Users/maca5/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ref-cast-1.0.25/src/private.rs /Users/maca5/codes/canonical.cloud/canonical-mcp-server.rs/target/debug/build/ref-cast-8151146740ffe5a1/out/private.rs
+
+/Users/maca5/codes/canonical.cloud/canonical-mcp-server.rs/target/debug/deps/libref_cast-81c44c527e6df1fa.rmeta: /Users/maca5/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ref-cast-1.0.25/src/lib.rs /Users/maca5/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ref-cast-1.0.25/src/custom.rs /Users/maca5/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ref-cast-1.0.25/src/layout.rs /Users/maca5/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ref-cast-1.0.25/src/trivial.rs /Users/maca5/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ref-cast-1.0.25/src/private.rs /Users/maca5/codes/canonical.cloud/canonical-mcp-server.rs/target/debug/build/ref-cast-8151146740ffe5a1/out/private.rs
+
+/Users/maca5/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ref-cast-1.0.25/src/lib.rs:
+/Users/maca5/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ref-cast-1.0.25/src/custom.rs:
+/Users/maca5/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ref-cast-1.0.25/src/layout.rs:
+/Users/maca5/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ref-cast-1.0.25/src/trivial.rs:
+/Users/maca5/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ref-cast-1.0.25/src/private.rs:
+/Users/maca5/codes/canonical.cloud/canonical-mcp-server.rs/target/debug/build/ref-cast-8151146740ffe5a1/out/private.rs:
+
+# env-dep:OUT_DIR=/Users/maca5/codes/canonical.cloud/canonical-mcp-server.rs/target/debug/build/ref-cast-8151146740ffe5a1/out

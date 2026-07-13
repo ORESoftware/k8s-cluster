@@ -48,7 +48,10 @@ pub fn truncate_body(body: &str, max_chars: usize) -> String {
 }
 
 /// Probe every health endpoint under `base_url` and collect reports.
-pub async fn probe(client: &reqwest::Client, base_url: &str) -> Result<Vec<EndpointReport>, String> {
+pub async fn probe(
+    client: &reqwest::Client,
+    base_url: &str,
+) -> Result<Vec<EndpointReport>, String> {
     let base = validate_base_url(base_url)?;
     let mut reports = Vec::with_capacity(HEALTH_PATHS.len());
     for path in HEALTH_PATHS {
