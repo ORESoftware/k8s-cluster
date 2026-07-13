@@ -111,6 +111,15 @@ struct Config {
     otlp_timeout: Duration,
     require_auth: bool,
     auth_secret: Option<String>,
+    kubernetes_full_body_limit_bytes: usize,
+    cloudflare_api_url: String,
+    cloudflare_api_token: Option<String>,
+    rdap_url: String,
+    doh_url: String,
+    domains: Vec<String>,
+    expected_ingress_ips: Vec<String>,
+    external_timeout: Duration,
+    external_body_limit_bytes: usize,
 }
 
 #[derive(Default)]
