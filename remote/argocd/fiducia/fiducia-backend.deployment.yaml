@@ -95,6 +95,9 @@ spec:
             - { name: HOST, value: 0.0.0.0 }
             - { name: PORT, value: '8117' }
             - { name: STATIC_DIR, value: /site-dist }
+            # Export OTLP traces to the shared observability collector
+            # (fiducia-telemetry degrades to stdout-only logging when unset).
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://dd-otel-collector.observability.svc.cluster.local:4317 }
             - { name: RUST_LOG, value: info }
             - { name: HOME, value: /tmp }
             - { name: CARGO_HOME, value: /tmp/cargo }
