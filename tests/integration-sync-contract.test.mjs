@@ -29,8 +29,10 @@ const SYNC_README = "apps/fiducia-sync/README.md";
 const SYNC_LIB = "apps/fiducia-sync/src/lib.rs";
 const SYNC_DECODE = "apps/fiducia-sync/sdk/src/transports/decode.mjs";
 
-// The canonical ChangeEvent envelope every side must agree on.
-const CHANGE_EVENT_FIELDS = ["at_ms", "id", "op", "row", "table", "version"];
+// Every transport emits the required fields. Backend acknowledgements may add
+// the client-minted write_key that makes optimistic echo matching replay-safe.
+const REQUIRED_CHANGE_EVENT_FIELDS = ["at_ms", "id", "op", "row", "table", "version"];
+const CHANGE_EVENT_FIELDS = [...REQUIRED_CHANGE_EVENT_FIELDS, "write_key"];
 
 const missing = [CUSTOMER_SQL, SYNC_README, SYNC_LIB, SYNC_DECODE].filter(
   (rel) => !existsSync(path.join(root, rel)),
@@ -106,21 +108,34 @@ test("decode.mjs exports the transport decoders that speak the ChangeEvent shape
     assert.equal(typeof mod[name], "function", `decode.mjs must export ${name}()`);
   }
 
-  const event = { table: "api_keys", op: "upsert", id: "k1", version: 7, row: { name: "prod" }, at_ms: 123 };
+  const event = {
+    table: "api_keys",
+    op: "upsert",
+    id: "k1",
+    version: 7,
+    row: { name: "prod" },
+    at_ms: 123,
+    write_key: "write-k1",
+  };
 
   // The guard accepts a well-formed envelope and rejects contract violations.
   assert.equal(mod.isChangeEvent(event), true);
   assert.equal(mod.isChangeEvent({ ...event, op: "patch" }), false, "op must be upsert|delete");
   assert.equal(mod.isChangeEvent({ ...event, version: "7" }), false, "version must be a number");
+  assert.equal(mod.isChangeEvent({ ...event, write_key: 7 }), false, "write_key must be a string");
 
   // Backend WS/SSE frame -> ChangeEvent[]; non-sync frames decode to [].
   const frame = JSON.stringify({ event: "fiducia:sync", changes: [event] });
   assert.deepEqual(mod.decodeBackendMessage(frame), [event]);
   assert.deepEqual(mod.decodeBackendMessage(JSON.stringify({ event: "other" })), []);
 
-  // Supabase postgres_changes payload -> ChangeEvent with the canonical fields.
+  // Supabase has no client write token, so it emits only the required fields.
   const upsert = mod.decodeSupabaseChange("api_keys", { eventType: "INSERT", new: { id: "k1", version: 7 } });
-  assert.deepEqual(Object.keys(upsert).sort(), CHANGE_EVENT_FIELDS, "decoded event keys must be the canonical envelope");
+  assert.deepEqual(
+    Object.keys(upsert).sort(),
+    REQUIRED_CHANGE_EVENT_FIELDS,
+    "Supabase events must emit every required envelope field",
+  );
   assert.equal(upsert.op, "upsert");
   const del = mod.decodeSupabaseChange("api_keys", { eventType: "DELETE", old: { id: "k1", version: 8 } });
   assert.equal(del.op, "delete");
@@ -137,10 +152,13 @@ test("the ChangeEvent field set agrees across the Rust core, the JS decoder, and
   const jsFields = Object.keys(decoded).sort();
 
   assert.deepEqual(rustFields, CHANGE_EVENT_FIELDS, "Rust ChangeEvent must be the canonical envelope");
-  assert.deepEqual(jsFields, CHANGE_EVENT_FIELDS, "JS decoder must emit the canonical envelope");
-  assert.deepEqual(rustFields, jsFields, "Rust core and JS decoder must agree on the ChangeEvent fields");
+  assert.deepEqual(jsFields, REQUIRED_CHANGE_EVENT_FIELDS, "Supabase decoder must emit required fields");
+  for (const field of REQUIRED_CHANGE_EVENT_FIELDS) {
+    assert.ok(rustFields.includes(field), `required JS field ${field} must exist in Rust ChangeEvent`);
+  }
+  assert.match(struct[1], /pub\s+write_key\s*:\s*Option<String>/, "write_key must stay optional in Rust");
 
-  // SQL documents the transport-agnostic subset (no at_ms wire timestamp).
+  // SQL documents the row-change subset (no wire timestamp or client token).
   const sqlShape = read(CUSTOMER_SQL).match(/\{\s*table\s*,\s*op\s*,\s*id\s*,\s*version\s*,\s*row\s*\}/);
   assert.ok(sqlShape, "customer.sql must document the change-event shape");
   for (const field of ["table", "op", "id", "version", "row"]) {
