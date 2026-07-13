@@ -76,6 +76,11 @@ tools (matching the read-only MCP contract used across the org's ops repos).
   (CI runs, `.gitmodules` parsing, pin comparison).
 - `src/tools/health.rs` — endpoint probing and body truncation.
 - `src/tools/docs.rs` — monorepo doc fetching.
+- `src/tools/domain.rs` — RDAP + DNS-over-HTTPS summarization and domain
+  validation.
+- `src/tools/cloudflare.rs` — Cloudflare zone/record listing.
+- `src/tools/k8s.rs` — allowlisted `kubectl get` runner and per-resource
+  summarizers.
 
 Network access is confined to the thin client/orchestration functions; all
 response interpretation is pure functions over fixture-testable JSON.
