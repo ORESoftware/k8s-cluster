@@ -2696,7 +2696,7 @@ async fn cloudflare_dns_records_json(state: &AppState) -> Value {
         }
         let url = format!("{base}/zones/{zone_id}/dns_records?per_page=100");
         let (meta, body) =
-            external_json_get(state, &state.http, &url, Some(token), "application/json").await;
+            external_json_get(state, &state.http, &url, Some(&token), "application/json").await;
         let records = body
             .as_ref()
             .and_then(|body| body.get("result"))
