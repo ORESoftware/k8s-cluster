@@ -6,3 +6,20 @@ env/
 
 # Scratch space (git worktrees, build scratch, etc.) — see agents.md
 tmp/
+
+# --- hardened baseline (auto) ---
+.DS_Store
+Thumbs.db
+*.log
+*.swp
+*~
+node_modules/
+dist/
+.next/
+.astro/
+.cache/
+coverage/
+*.tsbuildinfo
+pkg/
+pkg-node/
+*-debug.log*
