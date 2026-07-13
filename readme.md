@@ -94,6 +94,20 @@ During local edits, preview the non-dirty checks with:
 scripts/audit-repo-state.sh --allow-dirty
 ```
 
+## Production deployment
+
+This repository is the only production deployment source. Dispatch the `deploy`
+workflow from protected `main`; the job binds to the fixed `prod` GitHub
+Environment, verifies that the checked-out commit equals current `origin/main`,
+and rejects any submodule checkout that differs from its reviewed gitlink. It
+then validates and directly applies the pinned `apps/fiducia-infra` overlays.
+
+Configure the `prod` Environment with required reviewers, restrict deployment
+branches to protected `main`, and store `KUBE_CONFIG_PROD` only in that
+Environment. There is no caller-selected environment/ref and no ArgoCD fallback
+that can follow an application repository's mutable `main`. The ApplicationSet
+in `fiducia-infra` is explicitly restricted to labeled non-production clusters.
+
 ## Apps
 
 - `apps/fiducia-admin.rs`
