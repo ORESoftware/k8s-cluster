@@ -26,3 +26,7 @@
 	path = apps/sonus-auris-web-server.rs
 	url = git@github.com:sonus-auris/sonus-auris-web-server.rs.git
 	branch = main
+[submodule "tools/flags-2-env"]
+	path = tools/flags-2-env
+	url = https://github.com/ORESoftware/flags-2-env.git
+	branch = main

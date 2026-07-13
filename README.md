@@ -22,6 +22,25 @@ visibility, so public repos (UI, marketing site) coexist with private ones
 | Desktop app (Rust) | [`apps/desktop.app.rs`](apps/desktop.app.rs) | `sonus-auris/desktop.app.rs` |
 | Infra (k8s) | [`apps/sonus-auris.infra`](apps/sonus-auris.infra) | `sonus-auris/sonus-auris.infra` |
 
+## Shared CLI flags
+
+[`tools/flags-2-env`](tools/flags-2-env) pins
+[`ORESoftware/flags-2-env`](https://github.com/ORESoftware/flags-2-env) for the
+whole workspace. Every app repository declares its own `.cli-flags.toml` and
+ships the same strict wrapper:
+
+```sh
+scripts/with-flags help
+scripts/with-flags audit
+scripts/with-flags --web-port=8130 -- \
+  cargo run --manifest-path apps/sonus-auris-web-server.rs/Cargo.toml
+```
+
+The wrapper compiles the pinned native source into a commit-keyed user cache,
+rejects unknown or invalid options, and then exports the validated map to the
+downstream command. CLI values override inherited environment values. Secrets
+remain environment-only and are excluded from the declared flag surfaces.
+
 ## Clone
 
 ```sh

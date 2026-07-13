@@ -1,0 +1,55 @@
+[help]
+url = "https://github.com/sonus-auris/sonus-auris-monorepo"
+columns = ["options", "env", "type", "description"]
+
+[parse]
+require_equals = true
+stop_at_first_positional = false
+unknown_options_env = "FLAGS2ENV_UNKNOWN_OPTIONS"
+errors_env = "FLAGS2ENV_PARSE_ERRORS"
+allow_unknown = false
+
+[env]
+ignore = ["DATABASE_URL", "SONUS_AURIS_WEB_DATABASE_URL", "SONUS_AURIS_WEB_SESSION_ENCRYPTION_KEY", "SOUND_RECORDER_RDS_DATABASE_URL", "SOUND_RECORDER_SUPABASE_SERVICE_ROLE_KEY"]
+
+[flags.api_host]
+env = "HOST"
+aliases = ["api-host"]
+type = "string"
+help = "Bind host used when launching the JSON backend."
+
+[flags.api_port]
+env = "PORT"
+aliases = ["api-port"]
+type = "integer"
+help = "Bind port used when launching the JSON backend."
+
+[flags.web_host]
+env = "SONUS_AURIS_WEB_HOST"
+aliases = ["web-host"]
+type = "string"
+help = "Bind host used when launching the account web server."
+
+[flags.web_port]
+env = "SONUS_AURIS_WEB_PORT"
+aliases = ["web-port"]
+type = "integer"
+help = "Bind port used when launching the account web server."
+
+[flags.backend_url]
+env = "SONUS_AURIS_WEB_BACKEND_URL"
+aliases = ["backend-url", "api-url"]
+type = "string"
+help = "JSON API base URL consumed by the account web server."
+
+[flags.supabase_url]
+env = "SONUS_AURIS_WEB_SUPABASE_URL"
+aliases = ["supabase-url"]
+type = "string"
+help = "Supabase project URL consumed by the account web server."
+
+[flags.rust_log]
+env = "RUST_LOG"
+aliases = ["rust-log", "log-filter"]
+type = "string"
+help = "Shared tracing filter for Rust services."
