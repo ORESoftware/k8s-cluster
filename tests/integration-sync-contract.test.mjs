@@ -14,8 +14,9 @@
 // A drift between them (a renamed field, a dropped column, a changed op value)
 // silently breaks sync, so this asserts they stay coherent. Pure `node --test`:
 // it only reads files and dynamically imports the pure JS decoder. Requires the
-// app submodules to be checked out (CI does `submodules: recursive`); when they
-// are absent it skips with an actionable message rather than crashing.
+// the two contract submodules to be checked out (public CI initializes them
+// explicitly); when absent it skips with an actionable message rather than
+// crashing.
 
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
@@ -110,7 +111,15 @@ test("decode.mjs exports the transport decoders that speak the ChangeEvent shape
     assert.equal(typeof mod[name], "function", `decode.mjs must export ${name}()`);
   }
 
-  const event = { table: "api_keys", op: "upsert", id: "k1", version: 7, row: { name: "prod" }, at_ms: 123 };
+  const event = {
+    table: "api_keys",
+    op: "upsert",
+    id: "k1",
+    version: 7,
+    row: { name: "prod" },
+    at_ms: 123,
+    write_key: "write-k1",
+  };
 
   // The guard accepts a well-formed envelope and rejects contract violations.
   assert.equal(mod.isChangeEvent(event), true);
@@ -124,9 +133,13 @@ test("decode.mjs exports the transport decoders that speak the ChangeEvent shape
   assert.deepEqual(mod.decodeBackendMessage(frame), [event]);
   assert.deepEqual(mod.decodeBackendMessage(JSON.stringify({ event: "other" })), []);
 
-  // Supabase postgres_changes payload -> ChangeEvent with the canonical fields.
+  // Supabase has no client write token, so it emits only the required fields.
   const upsert = mod.decodeSupabaseChange("api_keys", { eventType: "INSERT", new: { id: "k1", version: 7 } });
-  assert.deepEqual(Object.keys(upsert).sort(), REQUIRED_CHANGE_EVENT_FIELDS, "Supabase events must contain the required envelope");
+  assert.deepEqual(
+    Object.keys(upsert).sort(),
+    REQUIRED_CHANGE_EVENT_FIELDS,
+    "Supabase events must emit every required envelope field",
+  );
   assert.equal(upsert.op, "upsert");
   const del = mod.decodeSupabaseChange("api_keys", { eventType: "DELETE", old: { id: "k1", version: 8 } });
   assert.equal(del.op, "delete");
@@ -147,10 +160,11 @@ test("the ChangeEvent field set agrees across the Rust core, the JS decoder, and
   for (const field of REQUIRED_CHANGE_EVENT_FIELDS) {
     assert.ok(rustFields.includes(field), `Rust ChangeEvent must include required decoder field ${field}`);
   }
+  assert.match(struct[1], /pub\s+write_key\s*:\s*Option<String>/, "write_key must stay optional in Rust");
   assert.ok(rustFields.includes("write_key"), "Rust core must retain the backend-only write identity");
   assert.ok(!jsFields.includes("write_key"), "Supabase CDC must not fabricate a backend write identity");
 
-  // SQL documents the transport-agnostic subset (no at_ms wire timestamp).
+  // SQL documents the row-change subset (no wire timestamp or client token).
   const sqlShape = read(CUSTOMER_SQL).match(/\{\s*table\s*,\s*op\s*,\s*id\s*,\s*version\s*,\s*row\s*\}/);
   assert.ok(sqlShape, "customer.sql must document the change-event shape");
   for (const field of ["table", "op", "id", "version", "row"]) {
