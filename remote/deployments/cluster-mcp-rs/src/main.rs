@@ -2471,10 +2471,16 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind(address)
         .await
         .expect("failed to bind tcp listener");
-    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .expect("axum server crashed");
+    // into_make_service_with_connect_info exposes the socket peer address to
+    // handlers (ConnectInfo) so rpc/tool log events can attribute callers.
+    axum::serve(
+        listener,
+        app.layer(dd_telemetry::http_trace_layer())
+            .into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await
+    .expect("axum server crashed");
 }
 
 async fn shutdown_signal() {
