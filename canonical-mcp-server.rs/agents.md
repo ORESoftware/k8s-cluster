@@ -31,9 +31,13 @@ cargo test --all-targets
 - Tests never touch the network. Keep response interpretation in pure
   functions over `serde_json::Value`/`&str` fixtures; confine I/O to the thin
   client and orchestration functions.
-- Tools stay read-only against GitHub and deployments. Adding a mutating tool
-  is a design change, not a patch.
-- Never log or echo the GitHub token; it is sent only to `api.github.com`.
+- Tools stay read-only against GitHub, Cloudflare, Kubernetes, and
+  deployments. Adding a mutating tool is a design change, not a patch.
+- `k8s.rs` may only ever build `kubectl get` (and `kubectl config
+  get-contexts`) argument vectors — never exec/delete/apply, and never via a
+  shell.
+- Never log or echo tokens: the GitHub token goes only to `api.github.com`,
+  the Cloudflare token only to `api.cloudflare.com`.
 - Truncate and bound anything returned from remote services.
 
 ## Command safety
