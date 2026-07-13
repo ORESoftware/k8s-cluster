@@ -31,6 +31,9 @@ const SERVICE_VERSION: &str = "0.1.0";
 const SERVICE_SCOPE: &str = "cluster-mcp-rs";
 const RESOURCE_NAMESPACE: &str = "remote-dev";
 const PROTOCOL_VERSION: &str = "2025-11-25";
+// Newest first. `initialize` echoes the client's requested protocolVersion
+// when it is one of these; anything else gets the newest supported version.
+const SUPPORTED_PROTOCOL_VERSIONS: &[&str] = &["2025-11-25", "2025-06-18", "2025-03-26"];
 const DEFAULT_PORT: u16 = 8091;
 const MAX_RPC_BODY_BYTES: usize = 1_000_000;
 const MAX_TIMEOUT_MS: u64 = 5_000;
