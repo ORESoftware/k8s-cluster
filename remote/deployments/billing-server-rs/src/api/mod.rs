@@ -127,6 +127,13 @@ pub fn build_router(state: AppState) -> Router {
         .route("/v1/webhooks/bridge", post(webhooks::bridge))
         .route("/v1/webhooks/fireblocks", post(webhooks::fireblocks))
         .route("/v1/webhooks/circle", post(webhooks::circle))
+        .route("/v1/webhooks/adyen", post(webhooks::adyen))
+        .route("/v1/webhooks/square", post(webhooks::square))
+        .route(
+            "/v1/webhooks/modern_treasury",
+            post(webhooks::modern_treasury),
+        )
+        .route("/v1/webhooks/dwolla", post(webhooks::dwolla))
         // Public verification (no auth required — that's the point)
         .route(
             "/v1/verify/tenants/{tenant_id}/postings/{id}",

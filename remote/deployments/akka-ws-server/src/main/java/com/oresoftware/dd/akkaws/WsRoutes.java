@@ -4,6 +4,7 @@ import akka.NotUsed;
 import akka.actor.typed.ActorSystem;
 import akka.http.javadsl.model.ContentTypes;
 import akka.http.javadsl.model.HttpEntities;
+import akka.http.javadsl.model.HttpRequest;
 import akka.http.javadsl.model.ws.Message;
 import akka.http.javadsl.model.ws.TextMessage;
 import akka.http.javadsl.server.AllDirectives;
@@ -12,6 +13,13 @@ import akka.stream.javadsl.Flow;
 import com.oresoftware.dd.akkaws.bench.BenchmarkRunner;
 import com.oresoftware.dd.akkaws.pipeline.AkkaStreamsPipeline;
 import com.oresoftware.dd.akkaws.pipeline.AsyncJavaPipeline;
+import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanKind;
+import io.opentelemetry.api.trace.StatusCode;
+import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.context.Context;
+import io.opentelemetry.context.propagation.TextMapGetter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,6 +51,30 @@ public final class WsRoutes extends AllDirectives {
   private final AsyncJavaPipeline asyncJavaPipeline;
   private final AkkaStreamsPipeline akkaStreamsPipeline;
   private final BenchmarkRunner benchmark;
+  private final OpenTelemetry openTelemetry;
+  private final Tracer tracer;
+
+  /**
+   * Reads W3C {@code traceparent} / {@code tracestate} out of an inbound Akka HTTP request so an
+   * upstream trace context is continued rather than orphaned. Akka header names are matched
+   * case-insensitively, which is what {@code getFirstHeader} already does.
+   */
+  private static final TextMapGetter<HttpRequest> REQUEST_GETTER = new TextMapGetter<>() {
+    @Override
+    public Iterable<String> keys(final HttpRequest carrier) {
+      final java.util.List<String> names = new java.util.ArrayList<>();
+      carrier.getHeaders().forEach(h -> names.add(h.name()));
+      return names;
+    }
+
+    @Override
+    public String get(final HttpRequest carrier, final String key) {
+      if (carrier == null) {
+        return null;
+      }
+      return carrier.getHeader(key).map(akka.http.javadsl.model.HttpHeader::value).orElse(null);
+    }
+  };
   private final AtomicLong asyncJavaMessagesIn = new AtomicLong();
   private final AtomicLong asyncJavaMessagesOut = new AtomicLong();
   private final AtomicLong asyncJavaBytesIn = new AtomicLong();
@@ -56,15 +88,20 @@ public final class WsRoutes extends AllDirectives {
 
   public WsRoutes(final ActorSystem<?> system,
                   final AsyncJavaPipeline asyncJavaPipeline,
-                  final AkkaStreamsPipeline akkaStreamsPipeline) {
+                  final AkkaStreamsPipeline akkaStreamsPipeline,
+                  final Telemetry telemetry) {
     this.system = system;
     this.asyncJavaPipeline = asyncJavaPipeline;
     this.akkaStreamsPipeline = akkaStreamsPipeline;
     this.benchmark = new BenchmarkRunner(asyncJavaPipeline, akkaStreamsPipeline);
+    this.openTelemetry = telemetry.openTelemetry();
+    this.tracer = telemetry.tracer();
   }
 
   public Route all() {
-    return concat(
+    // One SERVER span per HTTP route. `traced` extracts any inbound W3C traceparent so we continue
+    // the caller's trace, opens the span, and ends it when the response is produced.
+    return traced(() -> concat(
         path("healthz", () -> get(() -> complete("ok\n"))),
         path("readyz",  () -> get(() -> complete("ready\n"))),
         path("metrics",
@@ -82,7 +119,42 @@ public final class WsRoutes extends AllDirectives {
               return onSuccess(result,
                   json -> complete(HttpEntities.create(ContentTypes.APPLICATION_JSON, json)));
             })))
-    );
+    ));
+  }
+
+  /**
+   * Wraps {@code inner} in a SERVER span. The parent context is extracted from the request's W3C
+   * {@code traceparent}/{@code tracestate} headers (so a caller-initiated trace continues), the
+   * span is named {@code "HTTP <METHOD> <path>"}, and the response status code is recorded before
+   * the span ends. The span is closed via {@code mapResponse}, which fires once the inner route
+   * has produced its {@code HttpResponse} — including for upgraded WebSocket handshakes.
+   */
+  private Route traced(final java.util.function.Supplier<Route> inner) {
+    return extractRequest(request -> {
+      final Context parent = openTelemetry.getPropagators().getTextMapPropagator()
+          .extract(Context.current(), request, REQUEST_GETTER);
+      final String method = request.method().value();
+      final String path = request.getUri().getPathString();
+      final Span span = tracer.spanBuilder("HTTP " + method + " " + path)
+          .setParent(parent)
+          .setSpanKind(SpanKind.SERVER)
+          .setAttribute("http.request.method", method)
+          .setAttribute("url.path", path)
+          .setAttribute("server.address", request.getUri().getHost().address())
+          .startSpan();
+      return mapResponse(response -> {
+        try {
+          final int status = response.status().intValue();
+          span.setAttribute("http.response.status_code", (long) status);
+          if (status >= 500) {
+            span.setStatus(StatusCode.ERROR);
+          }
+        } finally {
+          span.end();
+        }
+        return response;
+      }, inner);
+    });
   }
 
   /**

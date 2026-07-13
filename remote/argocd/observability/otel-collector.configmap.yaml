@@ -51,12 +51,24 @@ data:
               static_configs:
                 - targets:
                     - dd-gleam-mcp-server.default.svc.cluster.local:8090
+            - job_name: dd-cluster-mcp-rs
+              scrape_interval: 10s
+              metrics_path: /metrics
+              static_configs:
+                - targets:
+                    - dd-cluster-mcp-rs.default.svc.cluster.local:8091
             - job_name: dd-webrtc-signaling
               scrape_interval: 10s
               metrics_path: /metrics
               static_configs:
                 - targets:
                     - dd-webrtc-signaling.default.svc.cluster.local:8095
+            - job_name: dd-webrtc-media
+              scrape_interval: 10s
+              metrics_path: /metrics
+              static_configs:
+                - targets:
+                    - dd-webrtc-media.default.svc.cluster.local:8125
             # dd-dart-server exposes the unified Prometheus exposition on its
             # coordinator (admin) port 8088: per-shard WS gauges plus the MDP
             # isolate-pool autotuner counters/gauges and the adopt /
@@ -73,6 +85,51 @@ data:
               static_configs:
                 - targets:
                     - dd-mdp-optimizer.default.svc.cluster.local:8096
+            - job_name: dd-runtime-config
+              scrape_interval: 10s
+              metrics_path: /metrics
+              static_configs:
+                - targets:
+                    - dd-runtime-config.default.svc.cluster.local:8110
+            - job_name: dd-fabrication-server
+              scrape_interval: 10s
+              metrics_path: /metrics
+              static_configs:
+                - targets:
+                    - dd-fabrication-server.default.svc.cluster.local:8113
+            - job_name: dd-economics-server
+              scrape_interval: 10s
+              metrics_path: /metrics
+              static_configs:
+                - targets:
+                    - dd-economics-server.default.svc.cluster.local:8114
+            - job_name: dd-fabrication-server-pods
+              scrape_interval: 10s
+              metrics_path: /metrics
+              kubernetes_sd_configs:
+                - role: pod
+                  namespaces:
+                    names:
+                      - default
+              relabel_configs:
+                - source_labels: [__meta_kubernetes_pod_label_app]
+                  action: keep
+                  regex: dd-fabrication-server
+                - source_labels: [__meta_kubernetes_pod_container_port_name]
+                  action: keep
+                  regex: http
+                - source_labels: [__meta_kubernetes_pod_phase]
+                  action: keep
+                  regex: Running
+                - source_labels: [__meta_kubernetes_pod_ready]
+                  action: keep
+                  regex: "true"
+                - source_labels: [__meta_kubernetes_namespace]
+                  target_label: namespace
+                - source_labels: [__meta_kubernetes_pod_name]
+                  target_label: pod
+                - source_labels: [__meta_kubernetes_pod_label_app]
+                  target_label: app
             - job_name: dd-des-simulator
               scrape_interval: 10s
               metrics_path: /metrics
@@ -85,12 +142,30 @@ data:
               static_configs:
                 - targets:
                     - dd-contract-service.default.svc.cluster.local:8101
+            - job_name: dd-escrow-rs
+              scrape_interval: 10s
+              metrics_path: /metrics
+              static_configs:
+                - targets:
+                    - dd-escrow-rs.default.svc.cluster.local:8115
             - job_name: dd-trading-server
               scrape_interval: 10s
               metrics_path: /metrics
               static_configs:
                 - targets:
                     - dd-trading-server.default.svc.cluster.local:8103
+            - job_name: dd-patent-filing-rs
+              scrape_interval: 10s
+              metrics_path: /metrics
+              static_configs:
+                - targets:
+                    - dd-patent-filing-rs.default.svc.cluster.local:8116
+            - job_name: dd-compliance-rs
+              scrape_interval: 10s
+              metrics_path: /metrics
+              static_configs:
+                - targets:
+                    - dd-compliance-rs.default.svc.cluster.local:8118
             - job_name: dd-ai-ml-pipeline
               scrape_interval: 10s
               metrics_path: /metrics
@@ -262,6 +337,10 @@ data:
                 - source_labels: [__meta_kubernetes_pod_label_app]
                   target_label: app
 
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+
     processors:
       batch: {}
       memory_limiter:
@@ -272,6 +351,8 @@ data:
     exporters:
       prometheus:
         endpoint: 0.0.0.0:8889
+        const_labels:
+          cluster: dd-ec2
       otlp/tempo:
         endpoint: dd-tempo.observability.svc.cluster.local:4317
         tls:
@@ -284,6 +365,13 @@ data:
         verbosity: basic
 
     service:
+      extensions:
+        - health_check
+      telemetry:
+        logs:
+          level: info
+        metrics:
+          address: 0.0.0.0:8888
       pipelines:
         metrics:
           receivers:

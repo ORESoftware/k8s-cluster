@@ -137,8 +137,8 @@ test("web home route has rollout and gateway guards against transient 502s", asy
   assert.match(deployment, /minReadySeconds:\s*5/);
   assert.match(deployment, /progressDeadlineSeconds:\s*1800/);
   assert.match(deployment, /type:\s*RollingUpdate/);
-  assert.match(deployment, /maxSurge:\s*1/);
-  assert.match(deployment, /maxUnavailable:\s*0/);
+  assert.match(deployment, /maxSurge:\s*0/);
+  assert.match(deployment, /maxUnavailable:\s*1/);
   assert.match(deployment, /readinessProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*http/);
 
   assert.match(pdb, /kind:\s*PodDisruptionBudget/);
@@ -152,6 +152,12 @@ test("web home route has rollout and gateway guards against transient 502s", asy
   );
   assert.match(gatewayConfig, /proxy_next_upstream_tries\s+3;/);
   assert.match(gatewayConfig, /proxy_connect_timeout\s+5s;/);
+  assert.match(gatewayConfig, /gzip\s+on;/);
+  assert.match(gatewayConfig, /gzip_vary\s+on;/);
+  assert.match(gatewayConfig, /gzip_min_length\s+1024;/);
+  assert.match(gatewayConfig, /gzip_comp_level\s+5;/);
+  assert.match(gatewayConfig, /gzip_proxied\s+any;/);
+  assert.match(gatewayConfig, /gzip_types[\s\S]*application\/json[\s\S]*application\/javascript/);
 });
 
 test("gateway-backed stateless services use HA rolling deployment profile", async () => {
@@ -181,8 +187,8 @@ test("gateway-backed stateless services use HA rolling deployment profile", asyn
     assert.match(deployment, /minReadySeconds:\s*5/);
     assert.match(deployment, /progressDeadlineSeconds:\s*1800/);
     assert.match(deployment, /type:\s*RollingUpdate/);
-    assert.match(deployment, /maxSurge:\s*1/);
-    assert.match(deployment, /maxUnavailable:\s*0/);
+    assert.match(deployment, /maxSurge:\s*0/);
+    assert.match(deployment, /maxUnavailable:\s*1/);
     assert.match(deployment, /readinessProbe:[\s\S]*httpGet:/);
     assert.match(
       pdbs,
@@ -193,10 +199,36 @@ test("gateway-backed stateless services use HA rolling deployment profile", asyn
   }
 
   const desRs = await readRepoFile("remote/argocd/dd-next-runtime/dd-des-rs.deployment.yaml");
+  const desRsHpa = await readRepoFile("remote/argocd/dd-next-runtime/dd-des-rs.hpa.yaml");
+  const kustomization = await readRepoFile("remote/argocd/dd-next-runtime/kustomization.yaml");
   assert.match(
     desRs,
-    /readinessProbe:[\s\S]*path:\s*\/out\/delivery-planner\.html[\s\S]*port:\s*http/,
+    /readinessProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*http/,
   );
+  assert.match(kustomization, /dd-des-rs\.hpa\.yaml/);
+  assert.match(desRsHpa, /kind:\s*HorizontalPodAutoscaler/);
+  assert.match(desRsHpa, /name:\s*dd-des-rs/);
+  assert.match(desRsHpa, /scaleTargetRef:[\s\S]*kind:\s*Deployment[\s\S]*name:\s*dd-des-rs/);
+  assert.match(desRsHpa, /minReplicas:\s*2/);
+  assert.match(desRsHpa, /maxReplicas:\s*3/);
+  assert.match(desRsHpa, /scaleDown:[\s\S]*stabilizationWindowSeconds:\s*900/);
+});
+
+test("clone-first Rust services tolerate missing EC2 hostPath checkout", async () => {
+  const cloneFirstDeployments = [
+    "remote/argocd/dd-next-runtime/dd-des-rs.deployment.yaml",
+    "remote/argocd/dd-next-runtime/dd-soccer-rs.deployment.yaml",
+  ];
+
+  for (const relativePath of cloneFirstDeployments) {
+    const deployment = await readRepoFile(relativePath);
+
+    assert.match(
+      deployment,
+      /hostPath:\s*\n\s+path:\s*\/home\/ec2-user\/codes\/dd\/dd-next-1\s*\n\s+type:\s*DirectoryOrCreate/,
+      `${relativePath} should create the fallback hostPath on non-EC2 nodes`,
+    );
+  }
 });
 
 test("single-owner runtime workloads stay intentionally recreate", async () => {
@@ -210,11 +242,14 @@ test("single-owner runtime workloads stay intentionally recreate", async () => {
     { name: "dd-idle-reaper", file: "dd-idle-reaper.deployment.yaml" },
     { name: "dd-live-mutex", file: "dd-live-mutex.deployment.yaml" },
     { name: "dd-live-mutex-submodule", file: "dd-live-mutex-submodule.deployment.yaml" },
+    { name: "dd-music-rs", file: "dd-music-rs.deployment.yaml" },
+    { name: "dd-sound-recorder-rs", file: "dd-sound-recorder-rs.deployment.yaml" },
     { name: "dd-redis-cache", file: "dd-redis-cache.deployment.yaml" },
     { name: "dd-remote-gateway", file: "dd-remote-gateway.deployment.yaml" },
     { name: "dd-runtime-config", file: "dd-runtime-config.deployment.yaml" },
     { name: "dd-rust-network-mutex", file: "dd-rust-network-mutex.deployment.yaml" },
     { name: "dd-rust-wss-server", file: "dd-rust-wss-server.deployment.yaml" },
+    { name: "dd-webrtc-media", file: "dd-webrtc-media.deployment.yaml" },
     { name: "dd-webrtc-signaling", file: "dd-webrtc-signaling.deployment.yaml" },
   ];
 
@@ -228,7 +263,7 @@ test("single-owner runtime workloads stay intentionally recreate", async () => {
   }
 });
 
-test("queue consumer rolls replacement before terminating the old consumer", async () => {
+test("queue consumer rolls within single-node capacity", async () => {
   const deployment = await readRepoFile(
     "remote/argocd/dd-next-runtime/dd-remote-queue-consumer.deployment.yaml",
   );
@@ -237,6 +272,108 @@ test("queue consumer rolls replacement before terminating the old consumer", asy
   assert.match(deployment, /minReadySeconds:\s*5/);
   assert.match(deployment, /progressDeadlineSeconds:\s*1800/);
   assert.match(deployment, /type:\s*RollingUpdate/);
-  assert.match(deployment, /maxSurge:\s*1/);
-  assert.match(deployment, /maxUnavailable:\s*0/);
+  assert.match(deployment, /maxSurge:\s*0/);
+  assert.match(deployment, /maxUnavailable:\s*1/);
+});
+
+test("public data server uses source-build rollout and disruption guardrails", async () => {
+  const deployment = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-public-data-server.deployment.yaml",
+  );
+  const pdbs = await readRepoFile("remote/argocd/dd-next-runtime/availability-pdbs.yaml");
+
+  assert.match(deployment, /name:\s*dd-public-data-server/);
+  assert.match(deployment, /replicas:\s*2/);
+  assert.match(deployment, /strategy:[\s\S]*type:\s*Recreate/);
+  assert.match(deployment, /CARGO_BUILD_JOBS[\s\S]*value:\s*'1'/);
+  assert.match(deployment, /requests:[\s\S]*cpu:\s*100m/);
+  assert.match(
+    pdbs,
+    /kind:\s*PodDisruptionBudget[\s\S]*name:\s*dd-public-data-server[\s\S]*minAvailable:\s*1[\s\S]*app:\s*dd-public-data-server/,
+  );
+});
+
+test("fabrication server runtime keeps planner replicas hardened and observable", async () => {
+  const deployment = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-fabrication-server.deployment.yaml",
+  );
+  const service = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-fabrication-server.service.yaml",
+  );
+  const hpa = await readRepoFile("remote/argocd/dd-next-runtime/dd-fabrication-server.hpa.yaml");
+  const networkPolicy = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-fabrication-server.networkpolicy.yaml",
+  );
+  const serviceAccount = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-fabrication-server.serviceaccount.yaml",
+  );
+  const pdbs = await readRepoFile("remote/argocd/dd-next-runtime/availability-pdbs.yaml");
+
+  assert.match(deployment, /name:\s*dd-fabrication-server/);
+  assert.match(deployment, /replicas:\s*2/);
+  assert.match(deployment, /minReadySeconds:\s*5/);
+  assert.match(deployment, /progressDeadlineSeconds:\s*1800/);
+  assert.match(deployment, /type:\s*RollingUpdate/);
+  assert.match(deployment, /maxSurge:\s*0/);
+  assert.match(deployment, /maxUnavailable:\s*1/);
+  assert.match(deployment, /serviceAccountName:\s*dd-fabrication-server/);
+  assert.match(deployment, /automountServiceAccountToken:\s*false/);
+  assert.match(deployment, /enableServiceLinks:\s*false/);
+  assert.match(deployment, /hostNetwork:\s*false/);
+  assert.match(deployment, /hostPID:\s*false/);
+  assert.match(deployment, /hostIPC:\s*false/);
+  assert.match(deployment, /shareProcessNamespace:\s*false/);
+  assert.match(deployment, /dnsPolicy:\s*ClusterFirst/);
+  assert.match(deployment, /runAsNonRoot:\s*true/);
+  assert.match(deployment, /seccompProfile:[\s\S]*type:\s*RuntimeDefault/);
+  assert.match(deployment, /capabilities:[\s\S]*drop:[\s\S]*- ALL/);
+  assert.match(deployment, /readOnlyRootFilesystem:\s*true/);
+  assert.match(deployment, /startupProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*http/);
+  assert.match(deployment, /readinessProbe:[\s\S]*path:\s*\/readyz[\s\S]*port:\s*http/);
+  assert.match(deployment, /livenessProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*http/);
+  assert.match(deployment, /requests:[\s\S]*ephemeral-storage:\s*4Gi/);
+  assert.match(deployment, /limits:[\s\S]*ephemeral-storage:\s*8Gi/);
+  assert.match(deployment, /emptyDir:[\s\S]*sizeLimit:\s*7Gi/);
+  assert.match(deployment, /des_engine = \{ path = "\.\.\/\.\.\/submodules\/discrete-event-system\.rs" \}/);
+  assert.match(
+    deployment,
+    /dd-nats-subject-defs = \{ path = "\.\.\/\.\.\/libs\/nats\/subject-defs\/generated\/rust" \}/,
+  );
+  assert.match(
+    deployment,
+    /dd-runtime-config-client = \{ path = "\.\.\/\.\.\/libs\/runtime-config-client-rs" \}/,
+  );
+
+  assert.match(serviceAccount, /name:\s*dd-fabrication-server/);
+  assert.match(serviceAccount, /automountServiceAccountToken:\s*false/);
+
+  assert.match(service, /type:\s*ClusterIP/);
+  assert.match(service, /prometheus\.io\/scrape:\s*'true'/);
+  assert.match(service, /sessionAffinity:\s*ClientIP/);
+  assert.match(service, /port:\s*8113/);
+  assert.match(service, /targetPort:\s*http/);
+
+  assert.match(hpa, /minReplicas:\s*2/);
+  assert.match(hpa, /maxReplicas:\s*2/);
+  assert.match(hpa, /name:\s*cpu[\s\S]*averageUtilization:\s*70/);
+  assert.match(hpa, /name:\s*memory[\s\S]*averageUtilization:\s*80/);
+
+  assert.match(
+    pdbs,
+    /kind:\s*PodDisruptionBudget[\s\S]*name:\s*dd-fabrication-server[\s\S]*minAvailable:\s*1[\s\S]*app:\s*dd-fabrication-server/,
+  );
+
+  assert.match(networkPolicy, /kind:\s*NetworkPolicy/);
+  assert.match(networkPolicy, /policyTypes:[\s\S]*- Ingress[\s\S]*- Egress/);
+  assert.match(networkPolicy, /app:\s*dd-remote-gateway/);
+  assert.match(networkPolicy, /app:\s*dd-runtime-config/);
+  assert.match(networkPolicy, /kubernetes\.io\/metadata\.name:\s*observability/);
+  assert.match(networkPolicy, /app:\s*dd-nats/);
+  assert.match(networkPolicy, /app:\s*dd-mdp-optimizer/);
+  assert.match(networkPolicy, /port:\s*8113/);
+  assert.match(networkPolicy, /port:\s*4222/);
+  assert.match(networkPolicy, /port:\s*8110/);
+  assert.match(networkPolicy, /port:\s*8096/);
+  assert.match(networkPolicy, /cidr:\s*0\.0\.0\.0\/0/);
+  assert.match(networkPolicy, /cidr:\s*::\/0/);
 });

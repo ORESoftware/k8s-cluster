@@ -96,9 +96,53 @@ The dedicated fallback table shape is the `container_pool_configs` block in
 - `min_warm` and `max_warm`: reconciliation floor and ceiling.
 - `request_timeout_ms`: per-dispatch timeout.
 - `nats_subject`: optional per-pool subject for NATS request routing.
+- `mounts` (alias `volumes`): optional array of `{source|volume, target|mountPath, readOnly?}`
+  entries mounted into every warm container of the pool. See "Shared-volume code/binaries" below.
+- `unconfined`: optional bool (default false). Opts a mounted-code pool out of the automatic
+  `--cap-drop ALL`/`--security-opt no-new-privileges` hardening (see below). It does **not** grant
+  `--privileged` or add capabilities — it only falls back to the service-level security flags.
 
 The service also accepts `CONTAINER_POOL_CONFIG_JSON` as a development fallback. Production should
 use Postgres so pool definitions can be changed without a pod rollout.
+
+## Shared-volume code/binaries (generic runtimes)
+
+Rather than baking a separate image per language/function, a pool can run a **generic runtime
+image** and pull the *code or compiled binary* from a shared volume at start (zero-copy). The image
+supplies the runtime/libc; the mount supplies the code; `command` and `env` are the per-pool flags.
+This scales to many (20-30+) runtimes/functions without rebuilding images for code changes — only the
+volume contents change. The warm container still runs a long-lived server (listening on `$PORT`,
+serving `health_path`/`request_path`); `command` should start that server from the mounted path, e.g.
+
+```json
+{
+  "slug": "rust-svc-foo",
+  "image": "docker.io/library/dd-container-pool-rust-runtime:dev",
+  "mounts": [{ "source": "dd-code", "target": "/opt/code", "readOnly": true }],
+  "command": ["/opt/code/bin/foo-server"],
+  "env": { "FOO_FLAG": "1" }
+}
+```
+
+`source` is either a nerdctl/docker **named volume** (always permitted) or an **absolute host path**.
+Host paths are rejected unless they sit under a prefix in `CONTAINER_POOL_MOUNT_SOURCE_ALLOWLIST`
+(comma-separated, matched on a path boundary). Mounts are **read-only by default**; a `readOnly:false`
+mount additionally requires `CONTAINER_POOL_ALLOW_WRITABLE_MOUNTS=true`. `target` must be an absolute
+in-container path (no `..`); `:` and `,` are disallowed in both so the `-v src:dst:mode` arg is
+unambiguous. Up to 16 mounts per pool. Policy violations fail the container start with a clear error
+(visible in reconcile logs) rather than silently dropping the mount. Mounts are surfaced per pool in
+`GET /pools`. The `command`/`mounts` shape still comes only from trusted Postgres config — never from
+dispatch requests — so this stays a control-plane capability, not a shell-exec API.
+
+Because a mounted-code pool runs code the image did not bake in, such pools are **confined by
+default**: the manager applies `--cap-drop ALL` and `--security-opt no-new-privileges` to them even
+when the service-level `CONTAINER_POOL_CAP_DROP_ALL` / `CONTAINER_POOL_NO_NEW_PRIVILEGES` are off
+(those default off and govern mount-less pools). A normal server running as uid `10001` on the
+injected high `$PORT` needs no capabilities, so this is transparent; set `unconfined: true` on the
+pool only for the rare binary that genuinely needs one (it then falls back to the service flags and
+still does not get `--privileged`). On SELinux-enforcing hosts, host-path bind mounts may need a
+relabel (`:z`/`:Z`) to be readable — prefer named volumes there, since `:Z` relabels the host path
+and can disrupt other consumers.
 
 ## Runtime images
 
@@ -130,6 +174,30 @@ By default the manager calls `/usr/local/bin/nerdctl -n k8s.io run -d`, allocate
 `CONTAINER_POOL_PORT_START..CONTAINER_POOL_PORT_END`, and posts to `127.0.0.1:<allocatedPort>`.
 `CONTAINER_POOL_NETWORK=host` is the default for the EC2 runtime; workers should listen on the
 injected `PORT` value.
+
+### Container engines and OCI runtimes
+
+The engine is selected with `CONTAINER_POOL_ENGINE` (default `nerdctl`; also `docker`, `podman`) —
+these share one Docker-UX `run`/`ps`/`inspect`/`rm` flag surface. nerdctl scopes to the containerd
+namespace via the global `-n` (`CONTAINER_POOL_CONTAINERD_NAMESPACE`); docker/podman take no
+namespace. The binary path is `CONTAINER_POOL_ENGINE_BIN` (falls back to the legacy
+`CONTAINER_POOL_NERDCTL_BIN`, else a per-engine default).
+
+The low-level **OCI runtime** is orthogonal and set with `CONTAINER_POOL_OCI_RUNTIME`, passed through
+as `--runtime` under whichever engine is active. This covers `runc` (default when unset), `crun`,
+and sandboxed runtimes — gVisor (`runsc`, or `io.containerd.runsc.v1` under containerd/nerdctl) and
+Kata Containers (`io.containerd.kata.v2`). The value is validated to a runtime handler name or an
+absolute binary path (no whitespace/shell metacharacters); a set-but-invalid value is **ignored with
+a startup warning** rather than silently dropping to the engine default — important because for a
+sandbox runtime that silent fallback (e.g. intending gVisor/Kata, getting `runc`) would be an
+isolation downgrade. So `nerdctl` over `containerd` with
+`--runtime io.containerd.kata.v2` gives Kata-isolated warm pools; `docker --runtime runsc` gives
+gVisor. Any OCI image (built declaratively from a Dockerfile) works across all of these.
+
+**Out of scope:** `LXD` (system containers, not Dockerfile/OCI images) and `CRI-O` (driven via
+`crictl` with a pod-sandbox + container JSON spec, not a `docker run`-style CLI) use fundamentally
+different command models and are not driven by this manager. Use one of the Docker-UX engines above
+to run OCI images; select `runc`/`crun`/Kata/gVisor via `--runtime` for the isolation profile.
 
 ## Worker contract
 

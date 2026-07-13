@@ -24,6 +24,7 @@
 ////   GET    /worker-ws/<secret>                          Secret-gated worker ws on the broadcaster
 ////                                                       tick stream; can also publish frames.
 
+import dd_otel_client
 import dd_runtime_config_client
 import gleam/bit_array
 import gleam/bytes_tree
@@ -40,7 +41,6 @@ import gleam/otp/supervision.{type ChildSpecification}
 import gleam/result
 import gleam/string
 import gleam/string_tree
-import mist.{type Connection, type ResponseData, Bytes}
 import gleamlang_ws_server/api_docs
 import gleamlang_ws_server/broadcaster
 import gleamlang_ws_server/connection.{type ConnScope, ConvScope, UserScope}
@@ -53,6 +53,7 @@ import gleamlang_ws_server/groups.{
 import gleamlang_ws_server/nats_transport.{type Nats}
 import gleamlang_ws_server/registry.{type Registry}
 import gleamlang_ws_server/store.{type Store}
+import mist.{type Connection, type ResponseData, Bytes}
 
 @external(erlang, "gleamlang_ws_server_ffi", "getenv")
 fn env_get(name: String) -> Result(String, Nil)
@@ -87,7 +88,7 @@ pub fn supervised(
   port port: Int,
   deps deps: Deps,
 ) -> ChildSpecification(Supervisor) {
-  mist.new(fn(req) { with_cors(route(deps, req)) })
+  mist.new(dd_otel_client.trace(fn(req) { with_cors(route(deps, req)) }))
   |> mist.port(port)
   |> mist.bind("0.0.0.0")
   |> mist.supervised
@@ -224,9 +225,7 @@ fn route(deps: Deps, req: Request(Connection)) -> Response(ResponseData) {
         ByUserDevice(user_id, device_id),
         Kick(reason),
       )
-      ok_text(
-        "logout queued for user=" <> user_id <> " device=" <> device_id,
-      )
+      ok_text("logout queued for user=" <> user_id <> " device=" <> device_id)
     }
 
     Get, ["internal", "runtime-config"] ->
@@ -267,8 +266,7 @@ fn handle_ws_upgrade(
   case conv_id {
     Some(cid) ->
       case is_member(deps, cid, user_id) {
-        True ->
-          upgrade(deps, req, ConvScope(user_id, cid, device_id))
+        True -> upgrade(deps, req, ConvScope(user_id, cid, device_id))
         False -> forbidden("user is not a member of conv " <> cid)
       }
     None -> upgrade(deps, req, UserScope(user_id, device_id))
@@ -480,10 +478,7 @@ fn worker_ws_handler(
   }
 }
 
-fn broadcast(
-  deps: Deps,
-  req: Request(Connection),
-) -> Response(ResponseData) {
+fn broadcast(deps: Deps, req: Request(Connection)) -> Response(ResponseData) {
   let expected_secret = broadcast_secret()
   case request.get_header(req, "x-dd-internal-auth") {
     Ok(secret) -> {
@@ -581,10 +576,7 @@ fn home_page() -> Response(ResponseData) {
   |> response.set_body(Bytes(bytes_tree.from_string(home_html)))
 }
 
-fn json_response(
-  status: Int,
-  body: String,
-) -> Response(ResponseData) {
+fn json_response(status: Int, body: String) -> Response(ResponseData) {
   response.new(status)
   |> response.set_header("content-type", "application/json")
   |> response.set_body(Bytes(bytes_tree.from_string(body)))

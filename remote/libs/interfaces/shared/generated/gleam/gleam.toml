@@ -1,8 +1,0 @@
-name = "dd_shared_interfaces"
-version = "0.1.0"
-description = "Generated Gleam types for dd shared cross-runtime interfaces. Do not edit by hand."
-target = "erlang"
-
-[dependencies]
-gleam_stdlib = ">= 0.40.0 and < 2.0.0"
-gleam_json = ">= 1.0.0 and < 3.0.0"

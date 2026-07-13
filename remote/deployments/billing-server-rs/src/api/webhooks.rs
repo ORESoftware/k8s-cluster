@@ -19,15 +19,19 @@ use crate::error::{AppError, AppResult};
 use crate::providers::connection::ProviderConnection;
 use crate::providers::{
     ProviderKind,
+    adyen::{self, AdyenCredential},
     bridge,
     circle::{self, CircleCredential},
     coinbase::{self, CoinbaseCredential},
     coinflow::{self, CoinflowCredential},
+    dwolla::{self, DwollaCredential},
     fireblocks::{self, FireblocksCredential},
     gocardless::{self, GoCardlessCredential},
     mercury::{self, MercuryCredential},
+    modern_treasury::{self, ModernTreasuryCredential},
     paypal,
     revolut::{self, RevolutCredential},
+    square::{self, SquareCredential},
     stripe,
 };
 use crate::state::AppState;
@@ -133,6 +137,38 @@ pub async fn circle(
     record_event(&state, WebhookProvider::Circle, &headers, &body).await
 }
 
+pub async fn adyen(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> AppResult<Json<Ack>> {
+    record_event(&state, WebhookProvider::Adyen, &headers, &body).await
+}
+
+pub async fn square(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> AppResult<Json<Ack>> {
+    record_event(&state, WebhookProvider::Square, &headers, &body).await
+}
+
+pub async fn modern_treasury(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> AppResult<Json<Ack>> {
+    record_event(&state, WebhookProvider::ModernTreasury, &headers, &body).await
+}
+
+pub async fn dwolla(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> AppResult<Json<Ack>> {
+    record_event(&state, WebhookProvider::Dwolla, &headers, &body).await
+}
+
 #[derive(Clone, Copy)]
 enum WebhookProvider {
     Stripe,
@@ -146,6 +182,10 @@ enum WebhookProvider {
     Bridge,
     Fireblocks,
     Circle,
+    Adyen,
+    Square,
+    ModernTreasury,
+    Dwolla,
 }
 
 impl WebhookProvider {
@@ -162,6 +202,10 @@ impl WebhookProvider {
             Self::Bridge => ProviderKind::Bridge,
             Self::Fireblocks => ProviderKind::Fireblocks,
             Self::Circle => ProviderKind::Circle,
+            Self::Adyen => ProviderKind::Adyen,
+            Self::Square => ProviderKind::Square,
+            Self::ModernTreasury => ProviderKind::ModernTreasury,
+            Self::Dwolla => ProviderKind::Dwolla,
         }
     }
 
@@ -215,15 +259,32 @@ async fn record_event(
     let tenant_id = connection.as_ref().map(|c| c.tenant_id);
     let connection_id = connection.as_ref().map(|c| c.id);
 
+    // Encrypt the raw body at rest with the master sealer (AES-256-GCM). The
+    // AAD binds the blob to its provider; we deliberately use the nil tenant
+    // (not the resolved `tenant_id`) so the sealing is STABLE across
+    // re-deliveries — a webhook can arrive unbound and later bind to a tenant,
+    // and `ON CONFLICT` overwrites `payload_sealed`, so a tenant-dependent AAD
+    // would make the row undecryptable. Tenant routing lives in the
+    // `tenant_id` column; the at-rest crypto must not depend on it. We store
+    // the sealed envelope in `payload_sealed` and never persist the plaintext
+    // `payload` column. The integrity hash (`payload_sha256`) is kept in the
+    // clear for dedup / correlation.
+    let sealed = state
+        .sealer
+        .seal(uuid::Uuid::nil(), provider.tag(), body.as_ref())?;
+    let payload_sealed =
+        serde_json::to_value(&sealed).map_err(|e| AppError::Other(anyhow::anyhow!(e)))?;
+
     sqlx::query(
         r#"
         INSERT INTO webhook_events
-            (provider, external_event_id, event_type, payload, signature_ok,
+            (provider, external_event_id, event_type, payload_sealed, signature_ok,
              tenant_id, connection_id, payload_sha256, verification_error,
              external_account_id)
         VALUES ($1::provider_kind, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         ON CONFLICT (provider, external_event_id) DO UPDATE
         SET signature_ok = webhook_events.signature_ok OR EXCLUDED.signature_ok,
+            payload_sealed = EXCLUDED.payload_sealed,
             tenant_id = COALESCE(webhook_events.tenant_id, EXCLUDED.tenant_id),
             connection_id = COALESCE(webhook_events.connection_id, EXCLUDED.connection_id),
             payload_sha256 = COALESCE(webhook_events.payload_sha256, EXCLUDED.payload_sha256),
@@ -238,7 +299,7 @@ async fn record_event(
     .bind(provider.tag())
     .bind(&external_event_id)
     .bind(&event_type)
-    .bind(&payload)
+    .bind(&payload_sealed)
     .bind(signature_ok)
     .bind(tenant_id)
     .bind(connection_id)
@@ -276,6 +337,22 @@ async fn record_event(
         connection_id = ?connection_id,
         "webhook accepted"
     );
+
+    // Best-effort redacted receipt onto the event bus. Only the payload hash
+    // travels — never the body or the verification-error detail.
+    state
+        .events
+        .publish_webhook_receipt(
+            provider.tag(),
+            &external_event_id,
+            &event_type,
+            signature_ok,
+            tenant_id,
+            connection_id,
+            &payload_sha256,
+        )
+        .await;
+
     Ok(Json(Ack { received: true }))
 }
 
@@ -462,7 +539,149 @@ async fn verify_delivery(
             circle::verify_webhook_signature(body, sig, &secret)?;
             Ok(true)
         }
+        WebhookProvider::Adyen => {
+            // Adyen carries the signature inside each notification item
+            // (notificationItems[].NotificationRequestItem.additionalData
+            // .hmacSignature), signing a `:`-joined field string with the
+            // merchant HMAC key. Adyen batches multiple items per delivery, so
+            // we must verify EVERY item — one validly-signed item must not
+            // vouch for unsigned/forged siblings stored in the same row.
+            let Some(key_hex) = load_adyen_hmac_key(state, connection).await? else {
+                return Ok(false);
+            };
+            let Some(items) = payload.get("notificationItems").and_then(|v| v.as_array()) else {
+                return Ok(false);
+            };
+            if items.is_empty() {
+                return Ok(false);
+            }
+            for entry in items {
+                let Some(item_val) = entry.pointer("/NotificationRequestItem") else {
+                    return Ok(false);
+                };
+                let Some(sig) = item_val
+                    .pointer("/additionalData/hmacSignature")
+                    .and_then(|v| v.as_str())
+                else {
+                    return Ok(false);
+                };
+                let item: adyen::AdyenNotificationItem = serde_json::from_value(item_val.clone())
+                    .map_err(|e| AppError::BadRequest(format!("adyen notification item: {e}")))?;
+                // Err (wrong signature) propagates and rejects the whole batch.
+                adyen::verify_item_signature(&item, sig, &key_hex)?;
+            }
+            Ok(true)
+        }
+        WebhookProvider::Square => {
+            let Some(sig) = header_str(headers, "x-square-hmacsha256-signature") else {
+                return Ok(false);
+            };
+            let Some(conn) = connection else {
+                return Ok(false);
+            };
+            let Some((url, key)) = load_square_webhook_config(state, conn).await? else {
+                return Ok(false);
+            };
+            square::verify_webhook_signature(&url, body, sig, &key)?;
+            Ok(true)
+        }
+        WebhookProvider::ModernTreasury => {
+            let Some(sig) = header_str(headers, "x-signature") else {
+                return Ok(false);
+            };
+            let Some(secret) = load_modern_treasury_secret(state, connection).await? else {
+                return Ok(false);
+            };
+            modern_treasury::verify_webhook_signature(body, sig, &secret)?;
+            Ok(true)
+        }
+        WebhookProvider::Dwolla => {
+            let Some(sig) = header_str(headers, "x-request-signature-sha-256") else {
+                return Ok(false);
+            };
+            let Some(secret) = load_dwolla_secret(state, connection).await? else {
+                return Ok(false);
+            };
+            dwolla::verify_webhook_signature(body, sig, &secret)?;
+            Ok(true)
+        }
     }
+}
+
+async fn load_adyen_hmac_key(
+    state: &AppState,
+    conn: Option<&ProviderConnection>,
+) -> AppResult<Option<String>> {
+    let Some(conn) = conn else {
+        return Ok(None);
+    };
+    let plaintext = state
+        .connections
+        .load_credential(conn.tenant_id, conn.id)
+        .await?;
+    let cred: AdyenCredential =
+        serde_json::from_slice(&plaintext).map_err(|e| AppError::Provider {
+            provider: "adyen".into(),
+            message: format!("decode sealed credential: {e}"),
+        })?;
+    Ok(cred.hmac_key_hex)
+}
+
+async fn load_square_webhook_config(
+    state: &AppState,
+    conn: &ProviderConnection,
+) -> AppResult<Option<(String, String)>> {
+    let plaintext = state
+        .connections
+        .load_credential(conn.tenant_id, conn.id)
+        .await?;
+    let cred: SquareCredential =
+        serde_json::from_slice(&plaintext).map_err(|e| AppError::Provider {
+            provider: "square".into(),
+            message: format!("decode sealed credential: {e}"),
+        })?;
+    match (cred.webhook_notification_url, cred.webhook_signature_key) {
+        (Some(url), Some(key)) => Ok(Some((url, key))),
+        _ => Ok(None),
+    }
+}
+
+async fn load_modern_treasury_secret(
+    state: &AppState,
+    conn: Option<&ProviderConnection>,
+) -> AppResult<Option<String>> {
+    let Some(conn) = conn else {
+        return Ok(None);
+    };
+    let plaintext = state
+        .connections
+        .load_credential(conn.tenant_id, conn.id)
+        .await?;
+    let cred: ModernTreasuryCredential =
+        serde_json::from_slice(&plaintext).map_err(|e| AppError::Provider {
+            provider: "modern_treasury".into(),
+            message: format!("decode sealed credential: {e}"),
+        })?;
+    Ok(cred.webhook_secret)
+}
+
+async fn load_dwolla_secret(
+    state: &AppState,
+    conn: Option<&ProviderConnection>,
+) -> AppResult<Option<String>> {
+    let Some(conn) = conn else {
+        return Ok(None);
+    };
+    let plaintext = state
+        .connections
+        .load_credential(conn.tenant_id, conn.id)
+        .await?;
+    let cred: DwollaCredential =
+        serde_json::from_slice(&plaintext).map_err(|e| AppError::Provider {
+            provider: "dwolla".into(),
+            message: format!("decode sealed credential: {e}"),
+        })?;
+    Ok(cred.webhook_secret)
 }
 
 async fn load_fireblocks_public_key(
@@ -618,6 +837,14 @@ fn event_id(provider: WebhookProvider, payload: &Value) -> Option<String> {
             .or_else(|| payload.get("subscriptionId"))
             .and_then(|v| v.as_str())
             .map(str::to_string),
+        WebhookProvider::Adyen => payload
+            .pointer("/notificationItems/0/NotificationRequestItem/pspReference")
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+        WebhookProvider::Square => payload
+            .get("event_id")
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
         _ => payload
             .get("id")
             .and_then(|v| v.as_str())
@@ -633,6 +860,10 @@ fn event_type(provider: WebhookProvider, payload: &Value) -> Option<String> {
             .map(str::to_string),
         WebhookProvider::PlaidBank => payload
             .get("webhook_code")
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+        WebhookProvider::Adyen => payload
+            .pointer("/notificationItems/0/NotificationRequestItem/eventCode")
             .and_then(|v| v.as_str())
             .map(str::to_string),
         _ => payload
@@ -704,6 +935,32 @@ fn external_account_id(provider: WebhookProvider, payload: &Value) -> Option<Str
             .or_else(|| payload.pointer("/notification/subscriptionId"))
             .and_then(|v| v.as_str())
             .map(str::to_string),
+        WebhookProvider::Adyen => payload
+            // The merchant account code (our stored external account id) is on
+            // each notification item.
+            .pointer("/notificationItems/0/NotificationRequestItem/merchantAccountCode")
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+        WebhookProvider::Square => payload
+            // Square stamps the merchant id on every event envelope.
+            .get("merchant_id")
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+        WebhookProvider::Dwolla => payload
+            // Dwolla carries the account/customer id as the trailing path
+            // segment of the `_links.account.href` (falling back to customer),
+            // which matches the `account_id` we store as external_account_id.
+            .pointer("/_links/account/href")
+            .or_else(|| payload.pointer("/_links/customer/href"))
+            .and_then(|v| v.as_str())
+            .and_then(|href| href.trim_end_matches('/').rsplit('/').next())
+            .filter(|s| !s.is_empty())
+            .map(str::to_string),
+        // Modern Treasury event bodies carry no stable account-routing key, so
+        // in strict mode MT webhooks cannot bind to a connection and are
+        // recorded-not-verified (see readme "Webhook posture"). A dedicated
+        // per-connection webhook path/secret-id is the follow-up.
+        WebhookProvider::ModernTreasury => None,
     }
 }
 
@@ -978,6 +1235,45 @@ mod tests {
         assert!(external_account_id(WebhookProvider::Stripe, &empty).is_none());
         assert!(external_account_id(WebhookProvider::Paypal, &empty).is_none());
         assert!(external_account_id(WebhookProvider::Circle, &empty).is_none());
+    }
+
+    #[test]
+    fn external_account_id_dwolla_extracts_id_from_links() {
+        let payload = json!({
+            "topic": "customer_transfer_created",
+            "_links": {
+                "account": { "href": "https://api.dwolla.com/accounts/acct-uuid-123" },
+                "customer": { "href": "https://api.dwolla.com/customers/cust-uuid-999" }
+            }
+        });
+        // Account link wins; only the trailing path segment (the id) is used.
+        assert_eq!(
+            external_account_id(WebhookProvider::Dwolla, &payload),
+            Some("acct-uuid-123".into())
+        );
+        // Falls back to the customer link when no account link is present.
+        let cust_only = json!({
+            "_links": { "customer": { "href": "https://api.dwolla.com/customers/cust-1/" } }
+        });
+        assert_eq!(
+            external_account_id(WebhookProvider::Dwolla, &cust_only),
+            Some("cust-1".into())
+        );
+        // No links → None (records but, in strict mode, cannot bind).
+        assert!(external_account_id(WebhookProvider::Dwolla, &json!({})).is_none());
+    }
+
+    #[test]
+    fn external_account_id_adyen_reads_merchant_account_code() {
+        let payload = json!({
+            "notificationItems": [
+                { "NotificationRequestItem": { "merchantAccountCode": "AcmeCorpECOM" } }
+            ]
+        });
+        assert_eq!(
+            external_account_id(WebhookProvider::Adyen, &payload),
+            Some("AcmeCorpECOM".into())
+        );
     }
 
     #[test]

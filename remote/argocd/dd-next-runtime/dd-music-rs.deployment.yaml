@@ -1,0 +1,269 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-music-rs
+  namespace: default
+  labels:
+    app: dd-music-rs
+spec:
+  replicas: 1
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-music-rs
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-06-07-music-server'
+        dd.dev/des-engine-revision: '61bd09c6c86df1ffe55ac7b9c6b52ead81cb129c'
+        dd.dev/source-revision: '2026-06-07-music-degraded-readiness'
+      labels:
+        app: dd-music-rs
+        dd.dev/redis-cache-client: 'true'
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        - name: music-rs
+          image: docker.io/library/rust:1.91.1-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              build_root="$(mktemp -d /tmp/dd-music-rs-build.XXXXXX)"
+              copy_source_tree() {
+                src="$1"
+                dst="$2"
+                mkdir -p "${dst}"
+                tar -C "${src}" --exclude=./.git --exclude=./target --exclude='*/target' -cf - . | tar -C "${dst}" -xf -
+              }
+
+              source_root="/opt/dd-next-1"
+              if [ -n "${MUSIC_SERVER_GIT_URL:-}" ]; then
+                source_clone="${build_root}/k8s-source"
+                if git clone --depth 1 --branch "${MUSIC_SERVER_GIT_REF:-dev}" "${MUSIC_SERVER_GIT_URL}" "${source_clone}"; then
+                  source_root="${source_clone}"
+                  echo "[dd-music-rs] source: cloned ${MUSIC_SERVER_GIT_URL}@${MUSIC_SERVER_GIT_REF:-dev} ($(git -C "${source_clone}" rev-parse --short HEAD))"
+                else
+                  echo "[dd-music-rs] source clone failed; using mounted source at ${source_root}" >&2
+                fi
+              fi
+
+              build_source="${build_root}/k8s-cluster"
+              copy_source_tree "${source_root}" "${build_source}"
+
+              engine_dest="${build_source}/remote/submodules/discrete-event-system.rs"
+              if [ -n "${DES_ENGINE_GIT_URL:-}" ]; then
+                engine_clone="${build_root}/engine-source"
+                if git clone --depth 1 --no-checkout "${DES_ENGINE_GIT_URL}" "${engine_clone}" \
+                  && git -C "${engine_clone}" fetch --depth 1 origin "${DES_ENGINE_GIT_REF:-main}" \
+                  && git -C "${engine_clone}" switch --detach FETCH_HEAD; then
+                  copy_source_tree "${engine_clone}" "${engine_dest}"
+                  echo "[dd-music-rs] engine: cloned ${DES_ENGINE_GIT_URL}@${DES_ENGINE_GIT_REF:-main} ($(git -C "${engine_clone}" rev-parse --short HEAD))"
+                else
+                  echo "[dd-music-rs] engine clone failed; using copied submodule at ${engine_dest}" >&2
+                fi
+              fi
+
+              cd "${build_source}/remote/deployments/dd-music-rs"
+              exec /usr/local/cargo/bin/cargo run --release --locked
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8115'
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /var/cache/dd-music-rs/cargo
+            - name: CARGO_TARGET_DIR
+              value: /var/cache/dd-music-rs/target
+            - name: CARGO_BUILD_JOBS
+              value: '1'
+            - name: MUSIC_SERVER_GIT_URL
+              value: https://github.com/ORESoftware/k8s-cluster.git
+            - name: MUSIC_SERVER_GIT_REF
+              value: dev
+            - name: DES_ENGINE_GIT_URL
+              value: https://github.com/ORESoftware/discrete-event-system.rs.git
+            - name: DES_ENGINE_GIT_REF
+              value: main
+            - name: MUSIC_GENERATOR_ENABLED
+              value: 'true'
+            - name: MUSIC_GENERATOR_INTERVAL_SECONDS
+              value: '3600'
+            - name: MUSIC_GENERATOR_MAX_PER_SWEEP
+              value: '2'
+            - name: MUSIC_GENERATION_MAX_ATTEMPTS
+              value: '8'
+            - name: MUSIC_DAILY_TARGET_MIN
+              value: '3'
+            - name: MUSIC_DAILY_TARGET_MAX
+              value: '5'
+            - name: MUSIC_SONG_DURATION_SECONDS
+              value: '180'
+            - name: MUSIC_MIN_LISTENABILITY_SCORE
+              value: '0.55'
+            - name: MUSIC_REDIS_URL
+              value: redis://dd-redis-cache.default.svc.cluster.local:6379/0
+            - name: MUSIC_REDIS_PREFIX
+              value: dd:music
+            - name: NATS_URL
+              value: nats://dd-nats.messaging.svc.cluster.local:4222
+            # Publish fan-out (songs/votes/results) is on with NATS_URL above.
+            # The inbound generation trigger is an expensive, unauthenticated
+            # capability — keep it opt-in until upstream auth/rate-limiting lands.
+            - name: MUSIC_NATS_GENERATION_ENABLED
+              value: 'false'
+            - name: MUSIC_STORAGE_PROVIDER
+              value: s3
+            - name: MUSIC_S3_KEY_PREFIX
+              value: music/generated
+            - name: MUSIC_S3_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: MUSIC_S3_BUCKET
+                  optional: true
+            - name: MUSIC_S3_PUBLIC_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: MUSIC_S3_PUBLIC_BASE_URL
+                  optional: true
+            - name: S3_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: S3_BUCKET
+                  optional: true
+            - name: S3_PUBLIC_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: S3_PUBLIC_BASE_URL
+                  optional: true
+            - name: AWS_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: AWS_REGION
+                  optional: true
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: AWS_ACCESS_KEY_ID
+                  optional: true
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: AWS_SECRET_ACCESS_KEY
+                  optional: true
+            - name: AWS_SESSION_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: AWS_SESSION_TOKEN
+                  optional: true
+            - name: MUSIC_RDS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-remote-rest-api-secrets
+                  key: MUSIC_RDS_DATABASE_URL
+                  optional: true
+            - name: AGENT_TASKS_RDS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-remote-rest-api-secrets
+                  key: AGENT_TASKS_RDS_DATABASE_URL
+                  optional: true
+            - name: RDS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-remote-rest-api-secrets
+                  key: RDS_DATABASE_URL
+                  optional: true
+            - name: SERVER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
+            - name: MUSIC_VOTE_HASH_SALT
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: MUSIC_VOTE_HASH_SALT
+                  optional: true
+          ports:
+            - name: http
+              containerPort: 8115
+          resources:
+            requests:
+              cpu: 25m
+              memory: 4Gi
+            limits:
+              cpu: '2'
+              memory: 12Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 600
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: build-cache
+              mountPath: /var/cache/dd-music-rs
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
+        - name: build-cache
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

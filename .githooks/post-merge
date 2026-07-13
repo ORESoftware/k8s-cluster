@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Runs after `git pull` / `git merge`. A merge often advances submodule
+# pointers; remind the user to sync their submodule working trees.
+exec "$(git rev-parse --show-toplevel)/.githooks/submodule-sync-reminder.sh"

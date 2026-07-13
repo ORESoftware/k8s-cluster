@@ -914,6 +914,8 @@ async fn api_docs_json() -> impl axum::response::IntoResponse {
 
 #[tokio::main]
 async fn main() {
+    let _otel = dd_telemetry::init("dd-webrtc-signaling");
+
     let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
     let port = env::var("PORT").unwrap_or_else(|_| "8095".to_string());
     let addr: SocketAddr = format!("{host}:{port}")
@@ -949,8 +951,8 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .expect("failed to bind WebRTC signaling listener");
-    println!("dd-webrtc-signaling listening on http://{addr}");
-    axum::serve(listener, app)
+    tracing::info!("dd-webrtc-signaling listening on http://{addr}");
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
         })

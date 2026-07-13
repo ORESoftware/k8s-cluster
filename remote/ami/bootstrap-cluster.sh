@@ -11,11 +11,12 @@
 # nodes; see remote/k8s/readme.md for sizing.
 #
 # Usage (from a repo checkout):
-#   sudo ./remote/ami/bootstrap-cluster.sh [--pod-cidr CIDR] [--manifests-dir DIR]
+#   sudo ./remote/ami/bootstrap-cluster.sh [--pod-cidr CIDR] [--kubelet-max-pods N] [--manifests-dir DIR]
 #
 # Defaults:
 #   --pod-cidr        10.244.0.0/16
-#   --manifests-dir   $(dirname "$0")/../k8s     (i.e. remote/k8s/)
+#   --kubelet-max-pods 220
+#   --manifests-dir    $(dirname "$0")/../k8s     (i.e. remote/k8s/)
 #
 # Before running, fill in real secret values:
 #   cp $MANIFESTS_DIR/02-secrets.template.yaml $MANIFESTS_DIR/02-secrets.yaml
@@ -35,13 +36,28 @@
 set -euo pipefail
 
 POD_CIDR="10.244.0.0/16"
+KUBELET_MAX_PODS="${KUBELET_MAX_PODS:-220}"
 DD_NAMESPACE="dd-dev"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MANIFESTS_DIR="${MANIFESTS_DIR:-$SCRIPT_DIR/../k8s}"
 
+# Pinned add-on versions — pin for reproducible bootstraps instead of pulling
+# "latest", so a bad/breaking upstream release can never silently land on a
+# re-bootstrap. Review and bump these deliberately when you upgrade Kubernetes
+# (verify each is compatible with the cluster's k8s version first).
+CERT_MANAGER_VERSION="${CERT_MANAGER_VERSION:-v1.16.2}"
+INGRESS_NGINX_CHART_VERSION="${INGRESS_NGINX_CHART_VERSION:-4.11.3}"
+EBS_CSI_CHART_VERSION="${EBS_CSI_CHART_VERSION:-2.35.0}"
+
+# K8s API TLS for external (Vercel) clients. Default stays permissive so the
+# existing integration keeps working; set to false once Vercel is configured to
+# trust K8S_CA_CERT (printed at the end) so the API connection can verify TLS.
+K8S_INSECURE_TLS="${K8S_INSECURE_TLS:-true}"
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --pod-cidr) POD_CIDR="$2"; shift 2 ;;
+    --kubelet-max-pods) KUBELET_MAX_PODS="$2"; shift 2 ;;
     --manifests-dir) MANIFESTS_DIR="$2"; shift 2 ;;
     -h|--help)
       awk 'NR >= 2 && NR <= 33 { sub(/^# ?/, ""); print }' "$0"
@@ -68,11 +84,92 @@ TARGET_USER="${SUDO_USER:-$(whoami)}"
 TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
 NODE_IP="$(hostname -I | awk '{print $1}')"
 
+configure_kubelet_max_pods() {
+  local config="/var/lib/kubelet/config.yaml"
+
+  if [[ ! "${KUBELET_MAX_PODS}" =~ ^[0-9]+$ ]]; then
+    echo "ERROR: --kubelet-max-pods must be a positive integer." >&2
+    exit 1
+  fi
+
+  if (( KUBELET_MAX_PODS < 110 || KUBELET_MAX_PODS > 240 )); then
+    cat >&2 <<EOF
+ERROR: --kubelet-max-pods=${KUBELET_MAX_PODS} is outside the supported range.
+
+This single-node Cilium cluster gets a /24 pod CIDR by default, so keep the
+kubelet ceiling between 110 and 240 pods unless the pod CIDR sizing changes too.
+EOF
+    exit 1
+  fi
+
+  if [[ ! -f "${config}" ]]; then
+    echo "ERROR: kubelet config not found at ${config}" >&2
+    exit 1
+  fi
+
+  echo "==> Setting kubelet maxPods=${KUBELET_MAX_PODS}"
+  awk -v max_pods="${KUBELET_MAX_PODS}" '
+    BEGIN { wrote = 0 }
+    /^maxPods:/ { print "maxPods: " max_pods; wrote = 1; next }
+    { print }
+    END { if (wrote == 0) print "maxPods: " max_pods }
+  ' "${config}" > /tmp/dd-kubelet-config.yaml
+  cp /tmp/dd-kubelet-config.yaml "${config}"
+
+  # Reserve headroom for the OS, kubelet, container runtime, and control plane
+  # so workloads can never starve them. Without this, allocatable == capacity and
+  # a workload burst (e.g. a cold-start build stampede) can wedge kubelet/apiserver.
+  #
+  # Sized proportionally to the box (single-node cluster you scale up, not out):
+  #   - per-pool CPU  ~6% of cores, clamped to [250m, 1000m]
+  #   - per-pool mem  ~5% of RAM,   clamped to [512Mi, 2048Mi]
+  #   - hard mem-eviction floor ~2% of RAM, clamped to [512Mi, 2048Mi]
+  # On the target x8i.2xlarge (8 vCPU / 128 GiB) this reserves ~1 vCPU + ~4 GiB
+  # total, leaving allocatable ~7 vCPU so kube-system pods still fit alongside
+  # the dd-dev ResourceQuota (requests.cpu=6). A flat 1000m/pool reserved 2 of 8
+  # vCPU (25%) and collided with that quota; flat values also over-reserve on the
+  # 4-vCPU smoke box.
+  if ! grep -q '^systemReserved:' "${config}"; then
+    local total_mcpu total_mem_mi res_cpu res_mem evict_mem
+    total_mcpu=$(( $(nproc) * 1000 ))
+    total_mem_mi=$(( $(awk '/^MemTotal:/ {print $2}' /proc/meminfo) / 1024 ))
+
+    res_cpu=$(( total_mcpu * 6 / 100 ))
+    if (( res_cpu < 250 ));  then res_cpu=250;  fi
+    if (( res_cpu > 1000 )); then res_cpu=1000; fi
+
+    res_mem=$(( total_mem_mi * 5 / 100 ))
+    if (( res_mem < 512 ));  then res_mem=512;  fi
+    if (( res_mem > 2048 )); then res_mem=2048; fi
+
+    evict_mem=$(( total_mem_mi * 2 / 100 ))
+    if (( evict_mem < 512 ));  then evict_mem=512;  fi
+    if (( evict_mem > 2048 )); then evict_mem=2048; fi
+
+    echo "==> Adding kubelet reservations: system+kube ${res_cpu}m cpu / ${res_mem}Mi each (evict <${evict_mem}Mi avail)"
+    cat >> "${config}" <<KUBELET_RESERVATIONS
+systemReserved:
+  cpu: ${res_cpu}m
+  memory: ${res_mem}Mi
+kubeReserved:
+  cpu: ${res_cpu}m
+  memory: ${res_mem}Mi
+evictionHard:
+  memory.available: ${evict_mem}Mi
+  nodefs.available: 10%
+  imagefs.available: 10%
+KUBELET_RESERVATIONS
+  fi
+
+  systemctl restart kubelet
+}
+
 echo "============================================"
 echo "  DD K8s Cluster Bootstrap (single-node)"
 echo "============================================"
 echo "  Node IP:    $NODE_IP"
 echo "  Pod CIDR:   $POD_CIDR"
+echo "  Max pods:   $KUBELET_MAX_PODS"
 echo "  Namespace:  $DD_NAMESPACE"
 echo "  Manifests:  $MANIFESTS_DIR"
 echo "  kubectl-as: $TARGET_USER"
@@ -97,6 +194,7 @@ kubeadm init \
   --skip-phases=addon/kube-proxy \
   --cri-socket=unix:///run/containerd/containerd.sock \
   2>&1 | tee /tmp/kubeadm-init.log
+configure_kubelet_max_pods
 
 # ---- 3. Configure kubectl for the invoking user ----
 echo "==> Configuring kubectl for $TARGET_USER"
@@ -136,15 +234,17 @@ helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx >/dev/nul
 helm repo add aws-ebs-csi-driver https://kubernetes-sigs.github.io/aws-ebs-csi-driver >/dev/null 2>&1 || true
 helm repo update >/dev/null
 
-echo "==> Installing ingress-nginx"
+echo "==> Installing ingress-nginx (chart $INGRESS_NGINX_CHART_VERSION)"
 helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+  --version "$INGRESS_NGINX_CHART_VERSION" \
   --namespace ingress-nginx --create-namespace
 
-echo "==> Installing cert-manager"
-kubectl apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml
+echo "==> Installing cert-manager $CERT_MANAGER_VERSION"
+kubectl apply -f "https://github.com/cert-manager/cert-manager/releases/download/${CERT_MANAGER_VERSION}/cert-manager.yaml"
 
-echo "==> Installing AWS EBS CSI driver"
+echo "==> Installing AWS EBS CSI driver (chart $EBS_CSI_CHART_VERSION)"
 helm upgrade --install aws-ebs-csi-driver aws-ebs-csi-driver/aws-ebs-csi-driver \
+  --version "$EBS_CSI_CHART_VERSION" \
   --namespace kube-system
 
 echo "==> Applying gp3 default StorageClass"
@@ -183,6 +283,23 @@ done
 SA_TOKEN="$(kubectl -n "$DD_NAMESPACE" get secret dd-control-plane-token \
             -o jsonpath='{.data.token}' | base64 -d)"
 K8S_API="https://${NODE_IP}:6443"
+# Cluster CA (base64 PEM) so external clients can verify TLS instead of skipping it.
+K8S_CA_CERT="$(kubectl config view --raw \
+  -o jsonpath='{.clusters[0].cluster.certificate-authority-data}' 2>/dev/null || true)"
+
+# Write the Vercel env to a private file (mode 600) instead of leaving the SA
+# token only in terminal scrollback / CI logs.
+ENV_FILE="$TARGET_HOME/dd-vercel-env.txt"
+( umask 077; cat > "$ENV_FILE" <<ENVEOF
+K8S_API_SERVER=$K8S_API
+K8S_NAMESPACE=$DD_NAMESPACE
+K8S_SA_TOKEN=$SA_TOKEN
+K8S_INSECURE_TLS=$K8S_INSECURE_TLS
+K8S_CA_CERT=$K8S_CA_CERT
+ENVEOF
+)
+chown "$TARGET_USER:$TARGET_USER" "$ENV_FILE"
+chmod 600 "$ENV_FILE"
 
 echo ""
 echo "============================================"
@@ -193,12 +310,16 @@ echo "  K8s API:      $K8S_API"
 echo "  ArgoCD UI:    https://${NODE_IP}:30443"
 echo "  Namespace:    $DD_NAMESPACE"
 echo ""
-echo "  --- Vercel env vars (paste into the project) ---"
+echo "  --- Vercel env vars (full values in $ENV_FILE, mode 600) ---"
 echo ""
 echo "  K8S_API_SERVER=$K8S_API"
 echo "  K8S_NAMESPACE=$DD_NAMESPACE"
-echo "  K8S_SA_TOKEN=$SA_TOKEN"
-echo "  K8S_INSECURE_TLS=true"
+echo "  K8S_SA_TOKEN=${SA_TOKEN:0:6}…(${#SA_TOKEN} chars — see $ENV_FILE)"
+echo "  K8S_INSECURE_TLS=$K8S_INSECURE_TLS"
+echo ""
+echo "  # Retrieve the full env (incl. token + CA) to paste into Vercel:"
+echo "  cat $ENV_FILE"
+echo "  # To drop insecure TLS: load K8S_CA_CERT into Vercel, re-run with K8S_INSECURE_TLS=false"
 echo ""
 echo "  --- ArgoCD admin password ---"
 echo "  kubectl -n argocd get secret argocd-initial-admin-secret \\"

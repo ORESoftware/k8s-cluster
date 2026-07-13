@@ -240,14 +240,16 @@ async fn api_docs_json() -> impl axum::response::IntoResponse {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let _otel = dd_telemetry::init("dd-wal-gateway");
+
     let config = Arc::new(Config::from_env().map_err(|error| {
-        eprintln!("{SERVICE_NAME} config error: {error}");
+        tracing::error!("{SERVICE_NAME} config error: {error}");
         error
     })?);
     let metrics = Arc::new(Metrics::default());
     metrics.started_at_ms.store(now_ms(), Ordering::Relaxed);
 
-    println!(
+    tracing::info!(
         "{SERVICE_NAME} starting pod={} slot={} stream={} subject_prefix={} poll_ms={}",
         config.pod_name,
         config.slot_name,
@@ -276,15 +278,15 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
     let addr: SocketAddr = format!("0.0.0.0:{}", config.http_port).parse()?;
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    println!("{SERVICE_NAME} listening on http://{addr}");
+    tracing::info!("{SERVICE_NAME} listening on http://{addr}");
     tokio::spawn(async move {
-        if let Err(error) = axum::serve(listener, app)
+        if let Err(error) = axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
             .with_graceful_shutdown(async {
                 let _ = tokio::signal::ctrl_c().await;
             })
             .await
         {
-            eprintln!("{SERVICE_NAME} http server error: {error}");
+            tracing::error!("{SERVICE_NAME} http server error: {error}");
         }
     });
 
@@ -298,10 +300,10 @@ async fn run_gateway_forever(config: Arc<Config>, metrics: Arc<Metrics>) {
     loop {
         match run_gateway_once(&config, &metrics).await {
             Ok(()) => {
-                eprintln!("{SERVICE_NAME} pump exited cleanly; restarting");
+                tracing::error!("{SERVICE_NAME} pump exited cleanly; restarting");
             }
             Err(error) => {
-                eprintln!("{SERVICE_NAME} pump failed: {error}");
+                tracing::error!("{SERVICE_NAME} pump failed: {error}");
             }
         }
         metrics.leader.store(false, Ordering::Relaxed);
@@ -347,7 +349,12 @@ async fn run_gateway_once(
     let Some(nats_url) = config.nats_url.as_deref() else {
         return Err("NATS_URL not configured; the gateway needs JetStream".into());
     };
-    let nats = async_nats::connect(nats_url).await?;
+    // NATS is the gateway's whole purpose, so wait for the broker on a transient
+    // boot outage (retry with backoff) instead of crash-looping the pod.
+    let nats = async_nats::ConnectOptions::new()
+        .retry_on_initial_connect()
+        .connect(nats_url)
+        .await?;
     let jetstream = async_nats::jetstream::new(nats.clone());
     ensure_stream(&jetstream, &config.stream_name, &config.subject_prefix).await?;
 
@@ -359,7 +366,7 @@ async fn run_gateway_once(
     // dedicated short-lived connection so the main pump connection can
     // serialize transactions independently.
     let leader = wait_for_leadership(&config.database_url).await?;
-    println!(
+    tracing::info!(
         "{SERVICE_NAME} became leader pod={} slot={}",
         config.pod_name, config.slot_name
     );
@@ -387,7 +394,7 @@ async fn connect_postgres(database_url: &str) -> Result<tokio_postgres::Client, 
         .map_err(|error| format!("postgres connect failed: {error}"))?;
     tokio::spawn(async move {
         if let Err(error) = connection.await {
-            eprintln!("{SERVICE_NAME} postgres connection task ended: {error}");
+            tracing::error!("{SERVICE_NAME} postgres connection task ended: {error}");
         }
     });
     Ok(client)
@@ -454,7 +461,7 @@ async fn pump_loop(
             Ok(batch) => batch,
             Err(error) => {
                 metrics.poll_failures_total.fetch_add(1, Ordering::Relaxed);
-                eprintln!("{SERVICE_NAME} slot peek failed: {error}");
+                tracing::error!("{SERVICE_NAME} slot peek failed: {error}");
                 // Bubble up — the outer loop will reconnect everything.
                 return Err(error);
             }
@@ -471,7 +478,7 @@ async fn pump_loop(
                     let bytes = match serde_json::to_vec(&envelope) {
                         Ok(b) => b,
                         Err(error) => {
-                            eprintln!("{SERVICE_NAME} envelope encode failed: {error}");
+                            tracing::error!("{SERVICE_NAME} envelope encode failed: {error}");
                             metrics
                                 .publish_failures_total
                                 .fetch_add(1, Ordering::Relaxed);
@@ -493,7 +500,7 @@ async fn pump_loop(
                                     metrics
                                         .publish_failures_total
                                         .fetch_add(1, Ordering::Relaxed);
-                                    eprintln!("{SERVICE_NAME} jetstream ack failed: {error}");
+                                    tracing::error!("{SERVICE_NAME} jetstream ack failed: {error}");
                                     return Err(error.into());
                                 }
                                 Err(_) => {
@@ -508,7 +515,7 @@ async fn pump_loop(
                             metrics
                                 .publish_failures_total
                                 .fetch_add(1, Ordering::Relaxed);
-                            eprintln!("{SERVICE_NAME} jetstream publish failed: {error}");
+                            tracing::error!("{SERVICE_NAME} jetstream publish failed: {error}");
                             return Err(error.into());
                         }
                     }
@@ -537,7 +544,7 @@ async fn pump_loop(
                 metrics
                     .slot_advance_failures_total
                     .fetch_add(1, Ordering::Relaxed);
-                eprintln!("{SERVICE_NAME} slot advance failed: {error}");
+                tracing::error!("{SERVICE_NAME} slot advance failed: {error}");
                 return Err(error);
             }
         }
@@ -901,7 +908,7 @@ async fn metrics_handler(State(state): State<AppState>) -> impl IntoResponse {
     let encoder = TextEncoder::new();
     let metric_families = registry.gather();
     if let Err(error) = encoder.encode(&metric_families, &mut buffer) {
-        eprintln!("{SERVICE_NAME} metrics encode failed: {error}");
+        tracing::error!("{SERVICE_NAME} metrics encode failed: {error}");
     }
     (
         [(

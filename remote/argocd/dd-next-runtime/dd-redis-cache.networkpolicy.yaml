@@ -14,7 +14,8 @@ spec:
     - Egress
   ingress:
     - from:
-        - podSelector:
+        - namespaceSelector: {}
+          podSelector:
             matchLabels:
               dd.dev/redis-cache-client: 'true'
       ports:

@@ -25,6 +25,8 @@ const SERVICE_ROUTE_PATHS = new Set([
   '/docs/api',
   '/api/docs',
   '/api/docs.json',
+  '/graphql/schema',
+  '/api/graphql/schema',
   '/api-docs',
   '/api-docs/',
   '/api-docs.json',
@@ -36,28 +38,50 @@ const CENTRAL_DOCS_ROUTES = ['/api-docs', '/api-docs.json'];
 
 const RUST_DEPLOYMENT_ALLOWLIST = new Set([
   'agent-worker-broker-rs',
+  'apostille-services-server-rs',
   'auth-server-rs',
   'bastion-rs',
   'billing-server-rs',
   'build-server-rs',
+  'cluster-mcp-rs',
   'container-pool-rs',
   'contract-service-rs',
+  'dataset-labeling-rs',
+  'dd-benefactor-marketing-rs',
+  'dd-compliance-rs',
+  'dd-document-rs',
+  'dd-escrow-rs',
+  'dd-git-rs',
   'des-simulator-rs',
+  'fiducia-customer.rs',
+  'dd-music-rs',
+  'knowledge-graph-builder-rs',
+  'dd-ocr-rs',
+  'dd-sound-recorder-rs',
+  'economics-server-rs',
+  'fabrication-server-rs',
   'formal-methods-service-rs',
   'formal-methods-server-rs',
+  'fabrication-server-rs',
   'mdp-optimizer-rs',
+  'patent-filing-rs',
+  'public-data-server-rs',
   'rest-api-rs',
   'runtime-config-rs',
   'rust-vapi-phone-rs',
   'trading-server-rs',
+  'usacc-rest-api-backend-rs',
   'wal-gateway-rs',
   'web-home-rs',
+  'webrtc-media-rs',
   'webrtc-signaling-rs',
 ]);
 
 const RUST_ROUTE_SOURCE_OVERRIDES = new Map([
   ['billing-server-rs', 'src/api/mod.rs'],
+  ['dd-compliance-rs', 'src/routes.rs'],
   ['formal-methods-service-rs', 'src/routes/mod.rs'],
+  ['usacc-rest-api-backend-rs', 'src/routes/mod.rs'],
 ]);
 
 // Subscriber receive surface auto-mounted by `dd_runtime_config_client::router()`
@@ -337,6 +361,62 @@ function extractFsharpRoutes(source, sourceFile) {
   return mergeRoutes(routes);
 }
 
+function javaHandlerName(expression) {
+  const trimmed = expression.trim();
+  const newHandler = /^new\s+([a-zA-Z_][a-zA-Z0-9_]*)/.exec(trimmed);
+  if (newHandler) {
+    return newHandler[1];
+  }
+  const staticCall = /^([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)?)\s*\(/.exec(trimmed);
+  if (staticCall) {
+    return staticCall[1];
+  }
+  const symbol = /^([a-zA-Z_][a-zA-Z0-9_]*)$/.exec(trimmed);
+  return symbol?.[1] ?? null;
+}
+
+function extractJavaVertxRoutes(source, sourceFile) {
+  const routes = [];
+  const routePattern = /\brouter\.(get|post|patch|delete|put|options)\s*\(/g;
+  for (const match of source.matchAll(routePattern)) {
+    const open = source.indexOf('(', match.index);
+    const close = findMatchingParen(source, open);
+    const pathMatch = /^\s*"([^"]+)"/.exec(source.slice(open + 1, close));
+    if (!pathMatch) {
+      continue;
+    }
+
+    const semi = source.indexOf(';', close);
+    if (semi === -1) {
+      continue;
+    }
+    const chain = source.slice(close + 1, semi);
+    const handlers = [];
+    let cursor = 0;
+    for (;;) {
+      const handlerIndex = chain.indexOf('.handler(', cursor);
+      if (handlerIndex === -1) {
+        break;
+      }
+      const handlerOpen = chain.indexOf('(', handlerIndex);
+      const handlerClose = findMatchingParen(chain, handlerOpen);
+      const handler = javaHandlerName(chain.slice(handlerOpen + 1, handlerClose));
+      if (handler) {
+        handlers.push(handler);
+      }
+      cursor = handlerClose + 1;
+    }
+
+    routes.push({
+      path: pathMatch[1],
+      methods: [METHOD_CALLS.get(match[1])],
+      handlers: [...new Set(handlers)].sort(),
+      sourceFile,
+    });
+  }
+  return mergeRoutes(routes);
+}
+
 function extractDartStringConstants(source) {
   const constants = new Map();
   for (const match of source.matchAll(/\bconst\s+String\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*'([^']+)'/g)) {
@@ -435,6 +515,12 @@ function routePurpose(routeType, route) {
   if (route.path === '/api/docs.json') {
     return 'Machine-readable generated API route metadata.';
   }
+  if (route.path === '/graphql' || route.path === '/api/graphql') {
+    return 'GraphQL endpoint for typed remote REST API queries, guarded subservice calls, and the optional GraphiQL IDE on GET.';
+  }
+  if (route.path === '/graphql/schema' || route.path === '/api/graphql/schema') {
+    return 'Machine-readable GraphQL SDL schema for the remote REST API service; protected by internal auth by default.';
+  }
   if (route.path === '/api-docs' || route.path === '/api-docs/') {
     return 'Central generated API documentation index.';
   }
@@ -474,6 +560,9 @@ function routeAuth(routeType, route) {
   }
   if (route.path.includes('/webhooks/')) {
     return 'webhook signature';
+  }
+  if (route.path === '/graphql/schema' || route.path === '/api/graphql/schema') {
+    return 'operator secret by default';
   }
   if (
     route.path === '/healthz' ||
@@ -633,6 +722,26 @@ async function discoverRustServices() {
         // docs unless the main router exposes its private mount point.
         rawRoutes.push(...extractAxumRoutesFromSource(await readUtf8(dbRoutes), dbRoutes, '/internal/db'));
       }
+      const graphqlRoutes = join(deploymentDir, 'src/graphql_routes.rs');
+      if ((await pathExists(graphqlRoutes)) && source.includes('graphql_routes::router()')) {
+        rawRoutes.push(...extractAxumRoutesFromSource(await readUtf8(graphqlRoutes), graphqlRoutes));
+      }
+    }
+    if (entry.name === 'contract-service-rs' && source.includes('blockchain::router()')) {
+      // The keyless blockchain feature suite mounts its routes from per-feature
+      // submodules under src/blockchain/. Scan those source files so the docs
+      // stay derived from `.route("...")` declarations (no manual inventory).
+      const blockchainDir = join(deploymentDir, 'src/blockchain');
+      if (await pathExists(blockchainDir)) {
+        const blockchainFiles = (await readdir(blockchainDir)).filter((file) => file.endsWith('.rs')).sort();
+        for (const file of blockchainFiles) {
+          const filePath = join(blockchainDir, file);
+          const fileSource = await readUtf8(filePath);
+          if (fileSource.includes('.route(')) {
+            rawRoutes.push(...extractAxumRoutesFromSource(fileSource, filePath));
+          }
+        }
+      }
     }
     if (await rustDependsOnRuntimeConfigClient(deploymentDir)) {
       injectRuntimeConfigRoutes(rawRoutes, join(repoRoot, 'remote/libs/runtime-config-client-rs/src/lib.rs'));
@@ -729,6 +838,13 @@ async function discoverExtraServices() {
       parser: extractNodeRoutes,
       deploymentDir: 'remote/deployments/gleamlang-server',
       outputName: 'api-docs.nats-bridge',
+    },
+    {
+      service: 'spark-pipeline-server',
+      language: 'java',
+      file: 'remote/deployments/spark-pipeline-server/src/main/java/com/oresoftware/dd/sparkpipeline/MainVerticle.java',
+      parser: extractJavaVertxRoutes,
+      deploymentDir: 'remote/deployments/spark-pipeline-server',
     },
     {
       service: 'web-scraper-service',
@@ -839,6 +955,16 @@ function renderDocsHtml(docs) {
 </tr>`;
     })
     .join('\n');
+  const optionalSummaryRows = [
+    docs.routeTypeCounts['internal-db']
+      ? `      <span>${docs.routeTypeCounts['internal-db']} internal-db</span>`
+      : null,
+    docs.routeTypeCounts['runtime-config']
+      ? `      <span>${docs.routeTypeCounts['runtime-config']} runtime-config</span>`
+      : null,
+  ]
+    .filter(Boolean)
+    .join('\n');
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -886,9 +1012,7 @@ function renderDocsHtml(docs) {
       <span>${docs.routeCount} routes</span>
       <span>${escapeHtml(docs.language)}</span>
       <span>${docs.routeTypeCounts.service ?? 0} service</span>
-      <span>${docs.routeTypeCounts['user-generated'] ?? 0} user-generated</span>
-      ${docs.routeTypeCounts['internal-db'] ? `<span>${docs.routeTypeCounts['internal-db']} internal-db</span>` : ''}
-      ${docs.routeTypeCounts['runtime-config'] ? `<span>${docs.routeTypeCounts['runtime-config']} runtime-config</span>` : ''}
+      <span>${docs.routeTypeCounts['user-generated'] ?? 0} user-generated</span>${optionalSummaryRows ? `\n${optionalSummaryRows}` : ''}
     </div>
   </header>
   <main>

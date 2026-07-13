@@ -44,11 +44,22 @@ spec:
               containerPort: 4317
             - name: otlp-http
               containerPort: 4318
+            - name: self-metrics
+              containerPort: 8888
             - name: prom-export
               containerPort: 8889
+            - name: health
+              containerPort: 13133
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 13133
+            initialDelaySeconds: 10
+            periodSeconds: 20
           readinessProbe:
-            tcpSocket:
-              port: 4318
+            httpGet:
+              path: /
+              port: 13133
             initialDelaySeconds: 5
             periodSeconds: 10
           resources:

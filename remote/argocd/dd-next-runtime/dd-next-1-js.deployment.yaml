@@ -1,0 +1,176 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-next-1-js
+  namespace: default
+  labels:
+    app: dd-next-1-js
+spec:
+  # The standalone Next.js app (the same dd-next-1 repo that ships to Vercel) running long-lived in
+  # the cluster. No repo fork: the build sets DD_DEPLOY_TARGET=standalone, which next.config emits as
+  # output:'standalone'. App env comes from the dd-next-1-js-env Secret (create from env/.prod.env).
+  # Scaled to 0 for now (removed from the cluster) — bump back to 1 to restore.
+  replicas: 0
+  minReadySeconds: 10
+  progressDeadlineSeconds: 3600
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-next-1-js
+  template:
+    metadata:
+      annotations:
+        dd.dev/source-revision: '2026-06-10-next-standalone'
+      labels:
+        app: dd-next-1-js
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: next-1-js
+          image: docker.io/library/node:24-bookworm
+          imagePullPolicy: IfNotPresent
+          # Runs as root for write access to the root-owned hostPath build cache; otherwise hardened.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              # Persistent on-node cache: repo + pnpm store + node_modules + turbopack cache survive
+              # restarts so OOM/crash retries reuse the incremental build (faster + lower peak memory).
+              export HOME=/cache PNPM_HOME=/cache/pnpm COREPACK_HOME=/cache/corepack npm_config_cache=/cache/.npm XDG_CACHE_HOME=/cache/.cache
+              mkdir -p "$PNPM_HOME" "$COREPACK_HOME" "$npm_config_cache" "$XDG_CACHE_HOME" /cache/pnpm-store
+              corepack enable && corepack prepare pnpm@9.15.4 --activate
+              src=/cache/dd-next-1
+              ref="${DD_REPO_REF:-dev}"
+              # Auth via a per-command http.extraheader, NOT embedded in the remote URL — so the
+              # GH_PAT is never persisted in .git/config on the node's (shared) hostPath cache.
+              cleanrepo="https://github.com/dancing-dragons/dd-next-1.git"
+              authhdr="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_PAT" | base64 | tr -d '\n')"
+              if [ -d "$src/.git" ]; then
+                git -C "$src" remote set-url origin "$cleanrepo"
+                git -c "http.extraheader=$authhdr" -C "$src" fetch --depth 1 origin "$ref" && git -C "$src" reset --hard FETCH_HEAD && git -C "$src" clean -fdx -e node_modules -e .next
+              else
+                rm -rf "$src"; git -c "http.extraheader=$authhdr" clone --depth 1 --branch "$ref" "$cleanrepo" "$src"
+              fi
+              cd "$src"
+              # Serve under a gateway subpath: inject Next basePath (env-gated). Without it the app
+              # resolves /_next assets from root and 404s behind the /dd-next-1 location.
+              if [ -n "${DD_BASE_PATH:-}" ]; then
+                grep -q "basePath:" next.config.ts || sed -i "s|^[[:space:]]*// *output: 'standalone',.*|  basePath: '${DD_BASE_PATH}',|" next.config.ts
+                grep -q "basePath: '${DD_BASE_PATH}'" next.config.ts && echo "[build] basePath ${DD_BASE_PATH} set" || { echo "[build] FATAL basePath not set" >&2; exit 1; }
+              fi
+              # Reuse the existing build for the current commit so a container restart (liveness/crash)
+              # is a fast `next start`, NOT a 15-min rebuild. Only (re)build when the commit changed.
+              # --prod=false: NODE_ENV=production skips devDeps (glob, tsx) the prebuild codegen needs.
+              # WEBPACK, not turbopack (Next 16 default), and NOT output:'standalone' — both ballooned
+              # RSS past 60Gi; webpack peaks ~22Gi.
+              CUR=$(git -C "$src" rev-parse HEAD)
+              SIG="$CUR:basePath=${DD_BASE_PATH:-none}"
+              if [ "$(cat /cache/.built_sig 2>/dev/null)" = "$SIG" ] && [ -f "$src/.next/BUILD_ID" ]; then
+                echo "[build] reusing existing build for $SIG — skipping install + build"
+              else
+                pnpm install --frozen-lockfile --node-linker=hoisted --prod=false --store-dir /cache/pnpm-store
+                pnpm run prebuild
+                DD_APP_IS_BUILD=yes NEXT_NO_STATIC_GENERATION=1 SKIP_NEXT_SITEMAP=true NODE_OPTIONS="--max-old-space-size=12288" pnpm exec next build --webpack
+                echo "$SIG" > /cache/.built_sig
+              fi
+              exec env DD_APP_IS_RUNNING=yes pnpm exec next start -H 0.0.0.0 -p "${PORT:-3000}"
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: HOST
+              value: 0.0.0.0
+            - name: HOSTNAME
+              value: 0.0.0.0
+            - name: PORT
+              value: '3000'
+            # prod is the branch Vercel deploys (stable); dev branches carry in-progress commits
+            # (e.g. a re-exported route-segment config that breaks the turbopack build).
+            - name: DD_REPO_REF
+              value: prod
+            # Served at the /dd-next-1 subpath (web-home keeps the canonical /). The app's root-relative
+            # client /api fetches are handled by the gateway's Referer-based /api routing, not basePath.
+            - name: DD_BASE_PATH
+              value: /dd-next-1
+            - name: NODE_OPTIONS
+              value: '--max-old-space-size=14336'
+            - name: NATS_URL
+              value: nats://dd-nats.messaging.svc.cluster.local:4222
+            - name: GH_PAT
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: GH_PAT
+          # All app config (NeonDB, Clerk, Supabase, OAuth, API keys, ...) comes from this Secret.
+          # Create it from the prod env file (not committed to git):
+          #   kubectl create secret generic dd-next-1-js-env --from-env-file=env/.prod.env -n default
+          # SECURITY (known residual): the in-pod build runs `pnpm install` (dependency postinstall
+          # scripts) + `next build` AS ROOT with this full prod secret in env — a compromised
+          # transitive dependency could exfiltrate every prod credential. Accepted for now (build-at-
+          # startup). To reduce blast radius later: build the image in CI (see todos.md / GHA), and/or
+          # split a minimal build-time env from the runtime secret. Image is also a mutable tag
+          # (node:24-bookworm) — pin to a digest for reproducibility/supply-chain once a digest is chosen.
+          envFrom:
+            - secretRef:
+                name: dd-next-1-js-env
+                optional: true
+          ports:
+            - name: http
+              containerPort: 3000
+          resources:
+            requests:
+              cpu: '25m'
+              memory: 4Gi
+              ephemeral-storage: 4Gi
+            limits:
+              cpu: '6'
+              # Forced-webpack build (turbopack was the 60Gi+ hog). 40Gi headroom for this large app's
+              # webpack peak; runtime (`next start`) needs only ~1-2Gi.
+              memory: 40Gi
+              # Cap the container writable layer + /tmp emptyDir so a runaway build can't fill node
+              # disk. NOTE: the /cache hostPath is node storage (NOT bounded by this) — its growth is
+              # bounded instead by reusing one cache dir; prune /home/ec2-user/cache if it ever bloats.
+              ephemeral-storage: 16Gi
+          startupProbe:
+            httpGet:
+              path: /dd-next-1
+              port: http
+            periodSeconds: 10
+            failureThreshold: 540
+          readinessProbe:
+            httpGet:
+              path: /dd-next-1
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 3
+          # Liveness is a cheap TCP check — a slow SSR must NOT trigger a kill+rebuild.
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 6
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: build-cache
+              mountPath: /cache
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 8Gi
+        - name: build-cache
+          hostPath:
+            path: /home/ec2-user/cache/dd-next-1-js
+            type: DirectoryOrCreate

@@ -48,6 +48,7 @@ pub fn build_registry(state: &AppState) -> crate::scheduler::HandlerRegistry {
                 state.ledger.clone(),
                 state.locks.clone(),
                 state.connections.clone(),
+                state.events.clone(),
                 state.solana_client.clone(),
             )),
         )

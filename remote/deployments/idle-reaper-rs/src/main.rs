@@ -6,7 +6,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use chrono::{TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use chrono_tz::Tz;
 use dd_nats_subject_defs::{
     DD_REMOTE_TASKS_STREAM_NAME, RUNTIME_EVENTS_SUBJECT, THREAD_PREPARER_QUEUE_GROUP,
@@ -153,6 +153,21 @@ struct BrowserJobReapJob {
     event_subject: String,
 }
 
+#[derive(Clone)]
+struct ContainerPoolReapJob {
+    nerdctl: String,
+    namespace: String,
+    label: String,
+    container_pool_url: String,
+    interval_seconds: u64,
+    idle_grace_seconds: u64,
+    stopped_ttl_seconds: u64,
+    orphan_ttl_seconds: u64,
+    dry_run: bool,
+    nats_url: String,
+    event_subject: String,
+}
+
 type QueueTaskMessage = AgentTaskQueueMessage;
 
 #[derive(Debug, Deserialize)]
@@ -169,6 +184,34 @@ struct RuntimeFloorPoolSummary {
     idle_containers: usize,
     active_containers: usize,
     unhealthy_containers: usize,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PoolReapPoolsResponse {
+    pools: Vec<PoolReapPoolSummary>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PoolReapPoolSummary {
+    slug: String,
+    min_warm: usize,
+    idle_ttl_seconds: u64,
+    containers: Vec<PoolReapWarmContainer>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PoolReapWarmContainer {
+    name: String,
+    status: String,
+    #[serde(default)]
+    in_flight: usize,
+    #[serde(default)]
+    launched_at_ms: u128,
+    #[serde(default)]
+    last_used_at_ms: u128,
 }
 
 fn is_shadow_task(task: &QueueTaskMessage) -> bool {
@@ -258,7 +301,7 @@ fn sweep_job_from_env() -> Option<SweepJob> {
     let url = env_string("REAPER_SWEEP_URL");
     let auth_secret = env_string("REAPER_SECRET");
     if url.is_none() || auth_secret.is_none() {
-        println!("idle sweep disabled: REAPER_SWEEP_URL or REAPER_SECRET missing");
+        tracing::info!("idle sweep disabled: REAPER_SWEEP_URL or REAPER_SECRET missing");
         return None;
     }
 
@@ -272,14 +315,14 @@ fn sweep_job_from_env() -> Option<SweepJob> {
 
 fn cluster_doctor_job_from_env() -> Option<ClusterDoctorJob> {
     if !env_bool("CLUSTER_DOCTOR_ENABLED", false) {
-        println!("cluster doctor disabled: CLUSTER_DOCTOR_ENABLED is false");
+        tracing::info!("cluster doctor disabled: CLUSTER_DOCTOR_ENABLED is false");
         return None;
     }
 
     let server_auth_secret = env_string("CLUSTER_DOCTOR_SERVER_AUTH_SECRET")
         .or_else(|| env_string("SERVER_AUTH_SECRET"));
     if server_auth_secret.is_none() {
-        println!(
+        tracing::info!(
             "cluster doctor disabled: CLUSTER_DOCTOR_SERVER_AUTH_SECRET or SERVER_AUTH_SECRET missing"
         );
         return None;
@@ -308,20 +351,20 @@ fn server_auth_secret_from_env() -> Option<String> {
 
 fn nats_watch_job_from_env() -> Option<NatsWatchJob> {
     if !env_bool("NATS_WATCH_ENABLED", false) {
-        println!("nats watchdog disabled: NATS_WATCH_ENABLED is false");
+        tracing::info!("nats watchdog disabled: NATS_WATCH_ENABLED is false");
         return None;
     }
 
     let server_auth_secret = server_auth_secret_from_env();
     if server_auth_secret.is_none() {
-        println!(
+        tracing::info!(
             "nats watchdog disabled: NATS_WATCH_SERVER_AUTH_SECRET, CLUSTER_DOCTOR_SERVER_AUTH_SECRET, or SERVER_AUTH_SECRET missing"
         );
         return None;
     }
     let gleam_broadcast_secret = env_string("NATS_WATCH_GLEAM_BROADCAST_SECRET");
     if gleam_broadcast_secret.is_none() {
-        println!("nats watchdog disabled: NATS_WATCH_GLEAM_BROADCAST_SECRET missing");
+        tracing::info!("nats watchdog disabled: NATS_WATCH_GLEAM_BROADCAST_SECRET missing");
         return None;
     }
 
@@ -347,13 +390,13 @@ fn nats_watch_job_from_env() -> Option<NatsWatchJob> {
 
 fn runtime_floor_job_from_env() -> Option<RuntimeFloorJob> {
     if !env_bool("RUNTIME_FLOOR_ENABLED", false) {
-        println!("runtime floor disabled: RUNTIME_FLOOR_ENABLED is false");
+        tracing::info!("runtime floor disabled: RUNTIME_FLOOR_ENABLED is false");
         return None;
     }
 
     let server_auth_secret = server_auth_secret_from_env();
     if server_auth_secret.is_none() {
-        println!(
+        tracing::info!(
             "runtime floor disabled: NATS_WATCH_SERVER_AUTH_SECRET, CLUSTER_DOCTOR_SERVER_AUTH_SECRET, or SERVER_AUTH_SECRET missing"
         );
         return None;
@@ -388,25 +431,25 @@ fn runtime_floor_job_from_env() -> Option<RuntimeFloorJob> {
 
 fn worker_image_build_job_from_env() -> Option<WorkerImageBuildJob> {
     if !env_bool("WORKER_IMAGE_BUILD_ENABLED", false) {
-        println!("worker image build disabled: WORKER_IMAGE_BUILD_ENABLED is false");
+        tracing::info!("worker image build disabled: WORKER_IMAGE_BUILD_ENABLED is false");
         return None;
     }
 
     let deploy_key =
         env_string("WORKER_IMAGE_BUILD_GITHUB_DEPLOY_KEY").or_else(|| env_string("GH_DEPLOY_KEY"));
     if deploy_key.is_none() {
-        println!("worker image build disabled: WORKER_IMAGE_BUILD_GITHUB_DEPLOY_KEY or GH_DEPLOY_KEY missing");
+        tracing::info!("worker image build disabled: WORKER_IMAGE_BUILD_GITHUB_DEPLOY_KEY or GH_DEPLOY_KEY missing");
         return None;
     }
     let Some(repo_url) = env_string("WORKER_IMAGE_BUILD_REPO_URL") else {
-        println!("worker image build disabled: WORKER_IMAGE_BUILD_REPO_URL missing");
+        tracing::info!("worker image build disabled: WORKER_IMAGE_BUILD_REPO_URL missing");
         return None;
     };
 
     let timezone_name =
         env_string("WORKER_IMAGE_BUILD_TIMEZONE").unwrap_or_else(|| "America/New_York".to_string());
     let timezone = timezone_name.parse::<Tz>().unwrap_or_else(|_| {
-        eprintln!(
+        tracing::error!(
             "invalid WORKER_IMAGE_BUILD_TIMEZONE={timezone_name}; falling back to America/New_York"
         );
         chrono_tz::America::New_York
@@ -435,13 +478,13 @@ fn worker_image_build_job_from_env() -> Option<WorkerImageBuildJob> {
 
 fn k8s_runtime_watch_job_from_env() -> Option<K8sRuntimeWatchJob> {
     if !env_bool("K8S_RUNTIME_WATCH_ENABLED", false) {
-        println!("k8s runtime watch disabled: K8S_RUNTIME_WATCH_ENABLED is false");
+        tracing::info!("k8s runtime watch disabled: K8S_RUNTIME_WATCH_ENABLED is false");
         return None;
     }
 
     let namespaces = env_csv("K8S_RUNTIME_WATCH_NAMESPACES", "default,vpn");
     if namespaces.is_empty() {
-        println!("k8s runtime watch disabled: no namespaces configured");
+        tracing::info!("k8s runtime watch disabled: no namespaces configured");
         return None;
     }
 
@@ -464,13 +507,15 @@ fn k8s_runtime_watch_job_from_env() -> Option<K8sRuntimeWatchJob> {
 
 fn browser_job_reap_job_from_env() -> Option<BrowserJobReapJob> {
     if !env_bool("BROWSER_JOB_REAP_ENABLED", false) {
-        println!("browser job reaper disabled: BROWSER_JOB_REAP_ENABLED is false");
+        tracing::info!("browser job reaper disabled: BROWSER_JOB_REAP_ENABLED is false");
         return None;
     }
 
     Some(BrowserJobReapJob {
-        nerdctl: env_string("BROWSER_JOB_REAP_NERDCTL").unwrap_or_else(|| "/usr/local/bin/nerdctl".to_string()),
-        namespace: env_string("BROWSER_JOB_REAP_NAMESPACE").unwrap_or_else(|| "dd-browser-jobs".to_string()),
+        nerdctl: env_string("BROWSER_JOB_REAP_NERDCTL")
+            .unwrap_or_else(|| "/usr/local/bin/nerdctl".to_string()),
+        namespace: env_string("BROWSER_JOB_REAP_NAMESPACE")
+            .unwrap_or_else(|| "dd-browser-jobs".to_string()),
         label: env_string("BROWSER_JOB_REAP_LABEL")
             .unwrap_or_else(|| "dd.browser-job.managed=true".to_string()),
         deadline_label: env_string("BROWSER_JOB_REAP_DEADLINE_LABEL")
@@ -487,6 +532,36 @@ fn browser_job_reap_job_from_env() -> Option<BrowserJobReapJob> {
     })
 }
 
+fn container_pool_reap_job_from_env() -> Option<ContainerPoolReapJob> {
+    if !env_bool("CONTAINER_POOL_REAP_ENABLED", false) {
+        tracing::info!("container pool reaper disabled: CONTAINER_POOL_REAP_ENABLED is false");
+        return None;
+    }
+
+    Some(ContainerPoolReapJob {
+        nerdctl: env_string("CONTAINER_POOL_REAP_NERDCTL")
+            .unwrap_or_else(|| "/usr/local/bin/nerdctl".to_string()),
+        namespace: env_string("CONTAINER_POOL_REAP_NAMESPACE")
+            .unwrap_or_else(|| "dd-pool".to_string()),
+        label: env_string("CONTAINER_POOL_REAP_LABEL")
+            .unwrap_or_else(|| "dd.container-pool.managed=true".to_string()),
+        container_pool_url: env_string("CONTAINER_POOL_REAP_CONTAINER_POOL_URL")
+            .or_else(|| env_string("RUNTIME_FLOOR_CONTAINER_POOL_URL"))
+            .unwrap_or_else(|| {
+                "http://dd-container-pool.default.svc.cluster.local:8102".to_string()
+            }),
+        interval_seconds: env_u64("CONTAINER_POOL_REAP_INTERVAL_SECONDS", 300),
+        idle_grace_seconds: env_u64("CONTAINER_POOL_REAP_IDLE_GRACE_SECONDS", 300),
+        stopped_ttl_seconds: env_u64("CONTAINER_POOL_REAP_STOPPED_TTL_SECONDS", 300),
+        orphan_ttl_seconds: env_u64("CONTAINER_POOL_REAP_ORPHAN_TTL_SECONDS", 3600),
+        dry_run: env_bool("CONTAINER_POOL_REAP_DRY_RUN", false),
+        nats_url: env_string("NATS_URL")
+            .unwrap_or_else(|| "nats://dd-nats.messaging.svc.cluster.local:4222".to_string()),
+        event_subject: env_string("CONTAINER_POOL_REAP_EVENT_SUBJECT")
+            .unwrap_or_else(|| RUNTIME_EVENTS_SUBJECT.to_string()),
+    })
+}
+
 fn parse_label_value(labels: &str, key: &str) -> Option<String> {
     labels
         .split(',')
@@ -497,7 +572,7 @@ fn parse_label_value(labels: &str, key: &str) -> Option<String> {
 
 async fn publish_browser_job_reap_event(job: &BrowserJobReapJob, reaped: &[String]) {
     let Ok(nats) = async_nats::connect(job.nats_url.clone()).await else {
-        eprintln!("browser job reaper could not publish event: nats connect failed");
+        tracing::error!("browser job reaper could not publish event: nats connect failed");
         return;
     };
     let payload = json!({
@@ -510,8 +585,11 @@ async fn publish_browser_job_reap_event(job: &BrowserJobReapJob, reaped: &[Strin
         "atMs": now_ms(),
     })
     .to_string();
-    if let Err(error) = nats.publish(job.event_subject.clone(), payload.into()).await {
-        eprintln!("browser job reap event publish failed: {error}");
+    if let Err(error) = nats
+        .publish(job.event_subject.clone(), payload.into())
+        .await
+    {
+        tracing::error!("browser job reap event publish failed: {error}");
     }
 }
 
@@ -530,14 +608,14 @@ async fn run_browser_job_reap_once(job: &BrowserJobReapJob) {
     let output = match list.output().await {
         Ok(output) if output.status.success() => output,
         Ok(output) => {
-            eprintln!(
+            tracing::error!(
                 "browser job reaper ps failed: {}",
                 truncate_for_log(&output.stderr).trim()
             );
             return;
         }
         Err(error) => {
-            eprintln!("browser job reaper ps could not start: {error}");
+            tracing::error!("browser job reaper ps could not start: {error}");
             return;
         }
     };
@@ -554,7 +632,9 @@ async fn run_browser_job_reap_once(job: &BrowserJobReapJob) {
         }
         // Reap when past deadline + grace, or when a managed container has no
         // parseable deadline label at all (malformed/leaked → not ours-shaped).
-        let expired = match parse_label_value(labels, &job.deadline_label).and_then(|v| v.parse::<u128>().ok()) {
+        let expired = match parse_label_value(labels, &job.deadline_label)
+            .and_then(|v| v.parse::<u128>().ok())
+        {
             Some(deadline_ms) => now > deadline_ms + grace_ms,
             None => true,
         };
@@ -578,14 +658,14 @@ async fn run_browser_job_reap_once(job: &BrowserJobReapJob) {
             .arg(name);
         match remove.output().await {
             Ok(output) if output.status.success() => {
-                println!("browser job reaper removed expired container {name}");
+                tracing::info!("browser job reaper removed expired container {name}");
                 reaped.push(name.clone());
             }
-            Ok(output) => eprintln!(
+            Ok(output) => tracing::error!(
                 "browser job reaper failed to remove {name}: {}",
                 truncate_for_log(&output.stderr).trim()
             ),
-            Err(error) => eprintln!("browser job reaper rm could not start for {name}: {error}"),
+            Err(error) => tracing::error!("browser job reaper rm could not start for {name}: {error}"),
         }
     }
 
@@ -595,12 +675,373 @@ async fn run_browser_job_reap_once(job: &BrowserJobReapJob) {
 }
 
 async fn run_browser_job_reap_loop(job: BrowserJobReapJob) {
-    println!(
+    tracing::info!(
         "browser job reaper starting: namespace={} label={} interval={}s grace={}s",
         job.namespace, job.label, job.interval_seconds, job.grace_seconds
     );
     loop {
         run_browser_job_reap_once(&job).await;
+        sleep(Duration::from_secs(job.interval_seconds)).await;
+    }
+}
+
+fn is_pool_container_idle(container: &PoolReapWarmContainer) -> bool {
+    container.status.eq_ignore_ascii_case("idle") && container.in_flight == 0
+}
+
+fn select_stale_pool_idle_containers(
+    pools: &[PoolReapPoolSummary],
+    now_ms: u128,
+    idle_grace_seconds: u64,
+) -> HashMap<String, String> {
+    let mut targets = HashMap::new();
+    for pool in pools {
+        let mut idle = pool
+            .containers
+            .iter()
+            .filter(|container| is_pool_container_idle(container))
+            .collect::<Vec<_>>();
+        idle.sort_by_key(|container| (container.last_used_at_ms, container.launched_at_ms));
+        let mut idle_remaining = idle.len();
+
+        let ttl_ms = u128::from(pool.idle_ttl_seconds.saturating_add(idle_grace_seconds)) * 1000;
+        for container in idle {
+            if idle_remaining <= pool.min_warm {
+                break;
+            }
+            let idle_for_ms = now_ms.saturating_sub(container.last_used_at_ms);
+            if idle_for_ms >= ttl_ms {
+                targets.insert(
+                    container.name.clone(),
+                    format!(
+                        "pool={} idle_for={}s ttl={}s minWarm={}",
+                        pool.slug,
+                        idle_for_ms / 1000,
+                        pool.idle_ttl_seconds.saturating_add(idle_grace_seconds),
+                        pool.min_warm
+                    ),
+                );
+                idle_remaining = idle_remaining.saturating_sub(1);
+            }
+        }
+    }
+    targets
+}
+
+fn parse_rfc3339_ms(value: &str) -> Option<u128> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() || trimmed.starts_with("0001-") {
+        return None;
+    }
+    let timestamp_ms = DateTime::parse_from_rfc3339(trimmed)
+        .ok()?
+        .timestamp_millis();
+    u128::try_from(timestamp_ms).ok()
+}
+
+fn json_at_timestamp_ms(value: &Value, paths: &[&[&str]]) -> Option<u128> {
+    paths
+        .iter()
+        .filter_map(|path| json_at_string(value, path))
+        .find_map(|timestamp| parse_rfc3339_ms(&timestamp))
+}
+
+fn container_inspect_status(container: &Value) -> Option<String> {
+    json_at_string(container, &["State", "Status"])
+        .or_else(|| json_at_string(container, &["State", "status"]))
+        .or_else(|| json_at_string(container, &["State", "State"]))
+        .map(|status| status.to_ascii_lowercase())
+}
+
+fn container_inspect_created_ms(container: &Value) -> Option<u128> {
+    json_at_timestamp_ms(container, &[&["Created"], &["created"]])
+}
+
+fn container_inspect_finished_ms(container: &Value) -> Option<u128> {
+    json_at_timestamp_ms(
+        container,
+        &[
+            &["State", "FinishedAt"],
+            &["State", "finishedAt"],
+            &["State", "Finished"],
+        ],
+    )
+}
+
+async fn fetch_container_pool_reap_pools(
+    client: &Client,
+    job: &ContainerPoolReapJob,
+) -> Result<PoolReapPoolsResponse, String> {
+    let url = format!("{}/pools", job.container_pool_url.trim_end_matches('/'));
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|error| format!("container pool reaper pools request failed: {error}"))?;
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(format!(
+            "container pool reaper pools failed status={} body={}",
+            status,
+            body.chars().take(500).collect::<String>()
+        ));
+    }
+    serde_json::from_str::<PoolReapPoolsResponse>(&body)
+        .map_err(|error| format!("container pool reaper pools invalid json: {error}"))
+}
+
+async fn list_managed_pool_containers(job: &ContainerPoolReapJob) -> Result<Vec<String>, String> {
+    let mut list = Command::new(&job.nerdctl);
+    list.arg("-n")
+        .arg(&job.namespace)
+        .arg("ps")
+        .arg("-a")
+        .arg("--no-trunc")
+        .arg("--filter")
+        .arg(format!("label={}", job.label))
+        .arg("--format")
+        .arg("{{.Names}}");
+    let output = list
+        .output()
+        .await
+        .map_err(|error| format!("container pool reaper ps could not start: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "container pool reaper ps failed: {}",
+            truncate_for_log(&output.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(ToString::to_string)
+        .collect())
+}
+
+async fn inspect_managed_pool_container(
+    job: &ContainerPoolReapJob,
+    name: &str,
+) -> Result<Value, String> {
+    let mut inspect = Command::new(&job.nerdctl);
+    inspect
+        .arg("-n")
+        .arg(&job.namespace)
+        .arg("inspect")
+        .arg(name);
+    let output = inspect.output().await.map_err(|error| {
+        format!("container pool reaper inspect could not start for {name}: {error}")
+    })?;
+    if !output.status.success() {
+        return Err(format!(
+            "container pool reaper inspect failed for {name}: {}",
+            truncate_for_log(&output.stderr).trim()
+        ));
+    }
+    let value = serde_json::from_slice::<Value>(&output.stdout).map_err(|error| {
+        format!("container pool reaper inspect invalid json for {name}: {error}")
+    })?;
+    if let Some(first) = value.as_array().and_then(|items| items.first()).cloned() {
+        Ok(first)
+    } else {
+        Ok(value)
+    }
+}
+
+fn inspect_reap_reason(
+    name: &str,
+    inspect: &Value,
+    known_to_pool: bool,
+    now_ms: u128,
+    job: &ContainerPoolReapJob,
+) -> Option<String> {
+    let status = container_inspect_status(inspect).unwrap_or_else(|| "unknown".to_string());
+    let is_running = status == "running";
+    if !is_running {
+        let timestamp_ms = container_inspect_finished_ms(inspect)
+            .or_else(|| container_inspect_created_ms(inspect))?;
+        let stopped_for_ms = now_ms.saturating_sub(timestamp_ms);
+        let stopped_ttl_ms = u128::from(job.stopped_ttl_seconds) * 1000;
+        if stopped_for_ms >= stopped_ttl_ms {
+            return Some(format!(
+                "container={} status={} stopped_for={}s ttl={}s",
+                name,
+                status,
+                stopped_for_ms / 1000,
+                job.stopped_ttl_seconds
+            ));
+        }
+    }
+
+    if !known_to_pool {
+        let created_ms = container_inspect_created_ms(inspect)?;
+        let age_ms = now_ms.saturating_sub(created_ms);
+        let orphan_ttl_ms = u128::from(job.orphan_ttl_seconds) * 1000;
+        if age_ms >= orphan_ttl_ms {
+            return Some(format!(
+                "container={} status={} orphan_age={}s ttl={}s",
+                name,
+                status,
+                age_ms / 1000,
+                job.orphan_ttl_seconds
+            ));
+        }
+    }
+
+    None
+}
+
+async fn remove_managed_pool_container(
+    job: &ContainerPoolReapJob,
+    name: &str,
+    reason: &str,
+) -> bool {
+    if job.dry_run {
+        tracing::info!("container pool reaper dry-run would remove {name}: {reason}");
+        return true;
+    }
+
+    let mut remove = Command::new(&job.nerdctl);
+    remove
+        .arg("-n")
+        .arg(&job.namespace)
+        .arg("rm")
+        .arg("-f")
+        .arg(name);
+    match remove.output().await {
+        Ok(output) if output.status.success() => {
+            tracing::info!("container pool reaper removed {name}: {reason}");
+            true
+        }
+        Ok(output) => {
+            tracing::error!(
+                "container pool reaper failed to remove {name}: {}",
+                truncate_for_log(&output.stderr).trim()
+            );
+            false
+        }
+        Err(error) => {
+            tracing::error!("container pool reaper remove could not start for {name}: {error}");
+            false
+        }
+    }
+}
+
+async fn publish_container_pool_reap_event(
+    job: &ContainerPoolReapJob,
+    reaped: &[(String, String)],
+) {
+    let Ok(nats) = async_nats::connect(job.nats_url.clone()).await else {
+        tracing::error!("container pool reaper could not publish event: nats connect failed");
+        return;
+    };
+    let containers = reaped
+        .iter()
+        .map(|(name, reason)| json!({ "name": name, "reason": reason }))
+        .collect::<Vec<_>>();
+    let payload = json!({
+        "type": "container-pool-reap",
+        "scope": "admin",
+        "source": "dd-idle-reaper",
+        "namespace": job.namespace,
+        "label": job.label,
+        "dryRun": job.dry_run,
+        "reapedCount": reaped.len(),
+        "containers": containers,
+        "atMs": now_ms(),
+    })
+    .to_string();
+    if let Err(error) = nats
+        .publish(job.event_subject.clone(), payload.into())
+        .await
+    {
+        tracing::error!("container pool reap event publish failed: {error}");
+    }
+}
+
+async fn run_container_pool_reap_once(client: &Client, job: &ContainerPoolReapJob) {
+    let now = now_ms();
+    let mut targets: HashMap<String, String> = HashMap::new();
+    let mut known_pool_containers: HashSet<String> = HashSet::new();
+    let mut pool_snapshot_available = false;
+
+    match fetch_container_pool_reap_pools(client, job).await {
+        Ok(response) => {
+            pool_snapshot_available = true;
+            for pool in &response.pools {
+                for container in &pool.containers {
+                    known_pool_containers.insert(container.name.clone());
+                }
+            }
+            targets.extend(select_stale_pool_idle_containers(
+                &response.pools,
+                now,
+                job.idle_grace_seconds,
+            ));
+        }
+        Err(error) => tracing::error!("{error}"),
+    }
+
+    let names = match list_managed_pool_containers(job).await {
+        Ok(names) => names,
+        Err(error) => {
+            tracing::error!("{error}");
+            return;
+        }
+    };
+
+    for name in names {
+        if targets.contains_key(&name) {
+            continue;
+        }
+        let known_to_pool = known_pool_containers.contains(&name);
+        let Ok(inspect) = inspect_managed_pool_container(job, &name).await else {
+            continue;
+        };
+        let known_for_orphan_check = if pool_snapshot_available {
+            known_to_pool
+        } else {
+            true
+        };
+        if let Some(reason) = inspect_reap_reason(&name, &inspect, known_for_orphan_check, now, job)
+        {
+            targets.insert(name, reason);
+        }
+    }
+
+    if targets.is_empty() {
+        return;
+    }
+
+    let mut target_entries = targets.into_iter().collect::<Vec<_>>();
+    target_entries.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut reaped = Vec::new();
+    for (name, reason) in target_entries {
+        if remove_managed_pool_container(job, &name, &reason).await {
+            reaped.push((name, reason));
+        }
+    }
+
+    if !reaped.is_empty() {
+        publish_container_pool_reap_event(job, &reaped).await;
+    }
+}
+
+async fn run_container_pool_reap_loop(client: Client, job: ContainerPoolReapJob) {
+    tracing::info!(
+        "container pool reaper starting: namespace={} label={} interval={}s idleGrace={}s stoppedTtl={}s orphanTtl={}s poolUrl={} dryRun={}",
+        job.namespace,
+        job.label,
+        job.interval_seconds,
+        job.idle_grace_seconds,
+        job.stopped_ttl_seconds,
+        job.orphan_ttl_seconds,
+        job.container_pool_url,
+        job.dry_run
+    );
+    loop {
+        run_container_pool_reap_once(&client, &job).await;
         sleep(Duration::from_secs(job.interval_seconds)).await;
     }
 }
@@ -632,19 +1073,19 @@ async fn run_sweep_once(client: &Client, job: &SweepJob) {
                 .await
                 .unwrap_or_else(|_| String::from("<body unreadable>"));
             if status.is_success() {
-                println!("sweep ok status={} body={}", status, body);
+                tracing::info!("sweep ok status={} body={}", status, body);
             } else {
-                eprintln!("sweep failed status={} body={}", status, body);
+                tracing::error!("sweep failed status={} body={}", status, body);
             }
         }
         Err(err) => {
-            eprintln!("sweep request error: {}", err);
+            tracing::error!("sweep request error: {}", err);
         }
     }
 }
 
 async fn run_sweep_loop(client: Client, job: SweepJob) {
-    println!(
+    tracing::info!(
         "idle sweep loop starting: interval={}s dryRun={} url={}",
         job.interval_seconds,
         job.dry_run,
@@ -687,22 +1128,22 @@ async fn run_cluster_doctor_once(client: &Client, job: &ClusterDoctorJob) {
                 .await
                 .unwrap_or_else(|_| String::from("<body unreadable>"));
             if status.is_success() {
-                println!("cluster doctor dispatched status={} body={}", status, body);
+                tracing::info!("cluster doctor dispatched status={} body={}", status, body);
             } else {
-                eprintln!(
+                tracing::error!(
                     "cluster doctor dispatch failed status={} body={}",
                     status, body
                 );
             }
         }
         Err(err) => {
-            eprintln!("cluster doctor dispatch request error: {}", err);
+            tracing::error!("cluster doctor dispatch request error: {}", err);
         }
     }
 }
 
 async fn run_cluster_doctor_loop(client: Client, job: ClusterDoctorJob) {
-    println!(
+    tracing::info!(
         "cluster doctor loop starting: interval={}s runOnStart={} taskUrl={} provider={}",
         job.interval_seconds,
         job.run_on_start,
@@ -733,10 +1174,10 @@ async fn run_command(mut command: Command, label: &str) -> Result<(), String> {
     let stdout = truncate_for_log(&output.stdout);
     let stderr = truncate_for_log(&output.stderr);
     if !stdout.trim().is_empty() {
-        println!("{label} stdout: {}", stdout.trim());
+        tracing::info!("{label} stdout: {}", stdout.trim());
     }
     if !stderr.trim().is_empty() {
-        eprintln!("{label} stderr: {}", stderr.trim());
+        tracing::error!("{label} stderr: {}", stderr.trim());
     }
     if output.status.success() {
         Ok(())
@@ -747,7 +1188,7 @@ async fn run_command(mut command: Command, label: &str) -> Result<(), String> {
 
 async fn publish_worker_image_build_event(job: &WorkerImageBuildJob, status: &str, message: &str) {
     let Ok(nats) = async_nats::connect(job.nats_url.clone()).await else {
-        eprintln!("worker image build could not publish event: nats connect failed");
+        tracing::error!("worker image build could not publish event: nats connect failed");
         return;
     };
     let payload = json!({
@@ -763,7 +1204,7 @@ async fn publish_worker_image_build_event(job: &WorkerImageBuildJob, status: &st
         .publish(job.event_subject.clone(), payload.into())
         .await
     {
-        eprintln!("worker image build event publish failed: {error}");
+        tracing::error!("worker image build event publish failed: {error}");
     }
 }
 
@@ -853,14 +1294,14 @@ fn next_worker_image_build_delay(job: &WorkerImageBuildJob) -> Duration {
 }
 
 async fn run_worker_image_build_loop(job: WorkerImageBuildJob) {
-    println!(
+    tracing::info!(
         "worker image build loop starting: image={} ref={} schedule={:02}:{:02} {:?} runOnStart={}",
         job.image, job.repo_ref, job.hour, job.minute, job.timezone, job.run_on_start
     );
     if job.run_on_start {
         match run_worker_image_build_once(&job).await {
             Ok(()) => {
-                println!("worker image build succeeded on start");
+                tracing::info!("worker image build succeeded on start");
                 publish_worker_image_build_event(
                     &job,
                     "ok",
@@ -869,22 +1310,22 @@ async fn run_worker_image_build_loop(job: WorkerImageBuildJob) {
                 .await;
             }
             Err(error) => {
-                eprintln!("worker image build failed on start: {error}");
+                tracing::error!("worker image build failed on start: {error}");
                 publish_worker_image_build_event(&job, "error", &error).await;
             }
         }
     }
     loop {
         let delay = next_worker_image_build_delay(&job);
-        println!("worker image build sleeping for {}s", delay.as_secs());
+        tracing::info!("worker image build sleeping for {}s", delay.as_secs());
         sleep(delay).await;
         match run_worker_image_build_once(&job).await {
             Ok(()) => {
-                println!("worker image build succeeded");
+                tracing::info!("worker image build succeeded");
                 publish_worker_image_build_event(&job, "ok", "worker image build succeeded").await;
             }
             Err(error) => {
-                eprintln!("worker image build failed: {error}");
+                tracing::error!("worker image build failed: {error}");
                 publish_worker_image_build_event(&job, "error", &error).await;
             }
         }
@@ -1175,10 +1616,10 @@ async fn publish_k8s_runtime_event(
     match serde_json::to_vec(&payload) {
         Ok(body) => {
             if let Err(error) = nats.publish(subject.to_string(), body.into()).await {
-                eprintln!("k8s runtime watch nats publish failed: {error}");
+                tracing::error!("k8s runtime watch nats publish failed: {error}");
             }
         }
-        Err(error) => eprintln!("k8s runtime watch payload encode failed: {error}"),
+        Err(error) => tracing::error!("k8s runtime watch payload encode failed: {error}"),
     }
 }
 
@@ -1361,7 +1802,7 @@ async fn run_k8s_runtime_resource_loop(
     let (client, base_url, token) = match k8s_runtime_client(client_timeout).await {
         Ok(parts) => parts,
         Err(error) => {
-            eprintln!("k8s runtime watch disabled for namespace={namespace}: {error}");
+            tracing::error!("k8s runtime watch disabled for namespace={namespace}: {error}");
             return;
         }
     };
@@ -1370,7 +1811,7 @@ async fn run_k8s_runtime_resource_loop(
     loop {
         match async_nats::connect(job.nats_url.clone()).await {
             Ok(nats) => {
-                println!(
+                tracing::info!(
                     "k8s runtime watch connected: namespace={} resource={} subject={}",
                     namespace,
                     resource.kind(),
@@ -1384,7 +1825,7 @@ async fn run_k8s_runtime_resource_loop(
                     .await
                     {
                         Ok(next_resource_version) => resource_version = next_resource_version,
-                        Err(error) => eprintln!(
+                        Err(error) => tracing::error!(
                             "k8s runtime resync failed namespace={} resource={}: {}",
                             namespace,
                             resource.kind(),
@@ -1405,7 +1846,7 @@ async fn run_k8s_runtime_resource_loop(
                     )
                     .await
                     {
-                        eprintln!(
+                        tracing::error!(
                             "k8s runtime watch failed namespace={} resource={}: {}",
                             namespace,
                             resource.kind(),
@@ -1416,7 +1857,7 @@ async fn run_k8s_runtime_resource_loop(
                 }
             }
             Err(error) => {
-                eprintln!("k8s runtime watch nats connect failed: {error}");
+                tracing::error!("k8s runtime watch nats connect failed: {error}");
                 sleep(Duration::from_secs(job.retry_interval_seconds)).await;
             }
         }
@@ -1424,7 +1865,7 @@ async fn run_k8s_runtime_resource_loop(
 }
 
 async fn run_k8s_runtime_watch_loop(job: K8sRuntimeWatchJob) {
-    println!(
+    tracing::info!(
         "k8s runtime watch starting: namespaces={} subject={} resync={}s watchTimeout={}s",
         job.namespaces.join(","),
         job.event_subject,
@@ -1458,7 +1899,7 @@ async fn prepare_thread_from_nats(client: &Client, job: &NatsWatchJob, task: &Qu
         .await
     {
         Ok(response) if response.status().is_success() => {
-            println!(
+            tracing::info!(
                 "nats watchdog prepared thread={} task={} shadow={} direct_dispatch={}",
                 task.thread_id,
                 task.task_id,
@@ -1469,7 +1910,7 @@ async fn prepare_thread_from_nats(client: &Client, job: &NatsWatchJob, task: &Qu
         Ok(response) => {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            eprintln!(
+            tracing::error!(
                 "nats watchdog prepare failed thread={} task={} status={} body={}",
                 task.thread_id,
                 task.task_id,
@@ -1478,7 +1919,7 @@ async fn prepare_thread_from_nats(client: &Client, job: &NatsWatchJob, task: &Qu
             );
         }
         Err(error) => {
-            eprintln!(
+            tracing::error!(
                 "nats watchdog prepare request failed thread={} task={} error={}",
                 task.thread_id, task.task_id, error
             );
@@ -1496,25 +1937,25 @@ async fn broadcast_event_from_nats(client: &Client, job: &NatsWatchJob, payload:
         .await
     {
         Ok(response) if response.status().is_success() => {
-            println!("nats watchdog bridged task event to gleam websocket fanout");
+            tracing::info!("nats watchdog bridged task event to gleam websocket fanout");
         }
         Ok(response) => {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            eprintln!(
+            tracing::error!(
                 "nats watchdog gleam broadcast failed status={} body={}",
                 status,
                 body.chars().take(500).collect::<String>()
             );
         }
         Err(error) => {
-            eprintln!("nats watchdog gleam broadcast request failed: {}", error);
+            tracing::error!("nats watchdog gleam broadcast request failed: {}", error);
         }
     }
 }
 
 async fn run_nats_watch_loop(client: Client, job: NatsWatchJob) {
-    println!(
+    tracing::info!(
         "nats watchdog starting: taskSubject={} eventSubject={} active={}s idle={}s natsUrl={}",
         job.task_subject,
         job.event_subject,
@@ -1545,13 +1986,13 @@ async fn run_nats_watch_loop(client: Client, job: NatsWatchJob) {
                                 tokio::select! {
                                     maybe_message = task_subscription.next() => {
                                         let Some(message) = maybe_message else {
-                                            eprintln!("nats watchdog task subscription ended");
+                                            tracing::error!("nats watchdog task subscription ended");
                                             break 'connected;
                                         };
                                         window_had_message = true;
                                         match serde_json::from_slice::<QueueTaskMessage>(&message.payload) {
                                             Ok(task) if is_shadow_task(&task) => prepare_thread_from_nats(&client, &job, &task).await,
-                                            Ok(task) => println!(
+                                            Ok(task) => tracing::info!(
                                                 "nats watchdog ignored queued task thread={} task={} kind={} shadow={} direct_dispatch={}",
                                                 task.thread_id,
                                                 task.task_id,
@@ -1559,12 +2000,12 @@ async fn run_nats_watch_loop(client: Client, job: NatsWatchJob) {
                                                 task.shadow.unwrap_or(false),
                                                 task.direct_dispatch.unwrap_or(false)
                                             ),
-                                            Err(error) => eprintln!("nats watchdog invalid task message: {}", error),
+                                            Err(error) => tracing::error!("nats watchdog invalid task message: {}", error),
                                         }
                                     }
                                     maybe_message = event_subscription.next() => {
                                         let Some(message) = maybe_message else {
-                                            eprintln!("nats watchdog event subscription ended");
+                                            tracing::error!("nats watchdog event subscription ended");
                                             break 'connected;
                                         };
                                         window_had_message = true;
@@ -1580,17 +2021,17 @@ async fn run_nats_watch_loop(client: Client, job: NatsWatchJob) {
                         }
                     }
                     (Err(task_error), Err(event_error)) => {
-                        eprintln!(
+                        tracing::error!(
                             "nats watchdog subscribe failed: task={} event={}",
                             task_error, event_error
                         );
                     }
-                    (Err(error), _) => eprintln!("nats watchdog task subscribe failed: {}", error),
-                    (_, Err(error)) => eprintln!("nats watchdog event subscribe failed: {}", error),
+                    (Err(error), _) => tracing::error!("nats watchdog task subscribe failed: {}", error),
+                    (_, Err(error)) => tracing::error!("nats watchdog event subscribe failed: {}", error),
                 }
             }
             Err(error) => {
-                eprintln!("nats watchdog connect failed: {}", error);
+                tracing::error!("nats watchdog connect failed: {}", error);
             }
         }
 
@@ -1659,10 +2100,10 @@ async fn publish_runtime_floor_event(
     match serde_json::to_vec(&payload) {
         Ok(body) => {
             if let Err(error) = nats.publish(job.event_subject(), body.into()).await {
-                eprintln!("runtime floor event publish failed: {error}");
+                tracing::error!("runtime floor event publish failed: {error}");
             }
         }
-        Err(error) => eprintln!("runtime floor event encode failed: {error}"),
+        Err(error) => tracing::error!("runtime floor event encode failed: {error}"),
     }
 }
 
@@ -1793,7 +2234,7 @@ async fn run_runtime_floor_once(http: &Client, job: &RuntimeFloorJob) {
     let nats = match ensure_runtime_floor_nats(job).await {
         Ok(client) => Some(client),
         Err(error) => {
-            eprintln!("{error}");
+            tracing::error!("{error}");
             None
         }
     };
@@ -1801,7 +2242,7 @@ async fn run_runtime_floor_once(http: &Client, job: &RuntimeFloorJob) {
     match reconcile_queue_consumer_floor(job).await {
         Ok(summary) => {
             if summary.get("ok").and_then(Value::as_bool) != Some(true) {
-                eprintln!("runtime floor queue consumer below ready floor: {summary}");
+                tracing::error!("runtime floor queue consumer below ready floor: {summary}");
                 publish_runtime_floor_event(
                     nats.as_ref(),
                     job,
@@ -1813,7 +2254,7 @@ async fn run_runtime_floor_once(http: &Client, job: &RuntimeFloorJob) {
             }
         }
         Err(error) => {
-            eprintln!("runtime floor queue consumer reconcile failed: {error}");
+            tracing::error!("runtime floor queue consumer reconcile failed: {error}");
             publish_runtime_floor_event(
                 nats.as_ref(),
                 job,
@@ -1847,7 +2288,7 @@ async fn run_runtime_floor_once(http: &Client, job: &RuntimeFloorJob) {
             }
         }
         Err(error) => {
-            eprintln!("runtime floor container pool reconcile failed: {error}");
+            tracing::error!("runtime floor container pool reconcile failed: {error}");
             publish_runtime_floor_event(
                 nats.as_ref(),
                 job,
@@ -1861,7 +2302,7 @@ async fn run_runtime_floor_once(http: &Client, job: &RuntimeFloorJob) {
 }
 
 async fn run_runtime_floor_loop(client: Client, job: RuntimeFloorJob) {
-    println!(
+    tracing::info!(
         "runtime floor starting: interval={}s stream={} consumer={} queueDeployment={}/{} containerPool={}",
         job.interval_seconds,
         job.task_stream,
@@ -1879,6 +2320,8 @@ async fn run_runtime_floor_loop(client: Client, job: RuntimeFloorJob) {
 
 #[tokio::main]
 async fn main() {
+    let _otel = dd_telemetry::init("idle-reaper");
+
     let timeout_seconds = env_u64("REAPER_TIMEOUT_SECONDS", 25);
     let client = Client::builder()
         .timeout(Duration::from_secs(timeout_seconds))
@@ -1892,8 +2335,9 @@ async fn main() {
     let worker_image_build_job = worker_image_build_job_from_env();
     let k8s_runtime_watch_job = k8s_runtime_watch_job_from_env();
     let browser_job_reap_job = browser_job_reap_job_from_env();
+    let container_pool_reap_job = container_pool_reap_job_from_env();
 
-    println!("idle-reaper starting: timeout={}s", timeout_seconds);
+    tracing::info!("idle-reaper starting: timeout={}s", timeout_seconds);
 
     let mut enabled_jobs = 0;
     if let Some(sweep) = sweep_job {
@@ -1924,15 +2368,108 @@ async fn main() {
         enabled_jobs += 1;
         tokio::spawn(run_browser_job_reap_loop(browser_job_reap));
     }
+    if let Some(container_pool_reap) = container_pool_reap_job {
+        enabled_jobs += 1;
+        tokio::spawn(run_container_pool_reap_loop(
+            client.clone(),
+            container_pool_reap,
+        ));
+    }
 
     if enabled_jobs == 0 {
         loop {
-            println!("idle-reaper has no enabled jobs; sleeping");
+            tracing::info!("idle-reaper has no enabled jobs; sleeping");
             sleep(Duration::from_secs(300)).await;
         }
     }
 
     loop {
         sleep(Duration::from_secs(3600)).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pool(
+        slug: &str,
+        min_warm: usize,
+        idle_ttl_seconds: u64,
+        containers: Vec<PoolReapWarmContainer>,
+    ) -> PoolReapPoolSummary {
+        PoolReapPoolSummary {
+            slug: slug.to_string(),
+            min_warm,
+            idle_ttl_seconds,
+            containers,
+        }
+    }
+
+    fn warm(name: &str, status: &str, last_used_at_ms: u128) -> PoolReapWarmContainer {
+        PoolReapWarmContainer {
+            name: name.to_string(),
+            status: status.to_string(),
+            in_flight: 0,
+            launched_at_ms: last_used_at_ms,
+            last_used_at_ms,
+        }
+    }
+
+    #[test]
+    fn stale_idle_selection_preserves_min_warm() {
+        let pools = vec![pool(
+            "nodejs",
+            1,
+            900,
+            vec![
+                warm("old-a", "idle", 1_000),
+                warm("old-b", "idle", 2_000),
+                warm("busy", "busy", 1_000),
+            ],
+        )];
+
+        let targets = select_stale_pool_idle_containers(&pools, 2_000_000, 0);
+
+        assert!(targets.contains_key("old-a"));
+        assert_eq!(targets.len(), 1);
+    }
+
+    #[test]
+    fn stale_idle_selection_ignores_busy_and_recent_workers() {
+        let pools = vec![pool(
+            "nodejs",
+            1,
+            900,
+            vec![
+                warm("floor", "idle", 1_000),
+                warm("recent", "idle", 1_950_000),
+                warm("busy", "busy", 1_000),
+            ],
+        )];
+
+        let targets = select_stale_pool_idle_containers(&pools, 2_000_000, 0);
+
+        assert!(targets.contains_key("floor"));
+        assert!(!targets.contains_key("recent"));
+        assert!(!targets.contains_key("busy"));
+        assert_eq!(targets.len(), 1);
+    }
+
+    #[test]
+    fn stale_idle_selection_keeps_last_idle_worker() {
+        let pools = vec![pool(
+            "nodejs",
+            1,
+            900,
+            vec![
+                warm("last-idle", "idle", 1_000),
+                warm("busy", "busy", 1_000),
+            ],
+        )];
+
+        let targets = select_stale_pool_idle_containers(&pools, 2_000_000, 0);
+
+        assert!(targets.is_empty());
     }
 }

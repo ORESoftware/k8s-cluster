@@ -1,3 +1,4 @@
+import dd_otel_client
 import dd_runtime_config_client
 import gleam/bit_array
 import gleam/bytes_tree
@@ -5,9 +6,11 @@ import gleam/http.{Get, Post}
 import gleam/http/request
 import gleam/http/response
 import gleam/int
+import gleam/list
 import gleam/string
 import gleam_lambda_runner/api_docs
 import gleam_lambda_runner/child_process
+import gleam_lambda_runner/workflow
 import mist
 
 @external(erlang, "lambda_runtime_env", "getenv")
@@ -26,7 +29,7 @@ const child_idle_ms = 300_000
 const child_timeout_ms = 30_000
 
 pub fn supervised() {
-  mist.new(route)
+  mist.new(dd_otel_client.trace(route))
   |> mist.bind(bind_host())
   |> mist.port(bind_port())
   |> mist.supervised
@@ -67,6 +70,16 @@ fn route(
     Post, ["check"] -> require_authenticated_post(req, fn() { check(req) })
     Post, ["destroy", reuse_key] ->
       require_authenticated_post(req, fn() { destroy(reuse_key) })
+    Post, ["workflows", "start"] ->
+      require_authenticated_post(req, fn() { workflow_start(req) })
+    Get, ["workflows", "runs"] ->
+      require_authenticated(req, fn() { workflow_list(req) })
+    Get, ["workflows", "runs", run_id] ->
+      require_authenticated(req, fn() { workflow_get(run_id) })
+    Post, ["workflows", "runs", run_id, "signal"] ->
+      require_authenticated_post(req, fn() { workflow_signal(req, run_id) })
+    Post, ["workflows", "runs", run_id, "cancel"] ->
+      require_authenticated_post(req, fn() { workflow_cancel(run_id) })
     Get, ["internal", "runtime-config"] ->
       dd_runtime_config_client.handle_snapshot(req)
     Post, ["internal", "update-runtime-config"] ->
@@ -168,6 +181,124 @@ fn destroy(reuse_key: String) -> response.Response(mist.ResponseData) {
   }
 }
 
+fn workflow_start(
+  req: request.Request(mist.Connection),
+) -> response.Response(mist.ResponseData) {
+  with_body(req, fn(payload) {
+    workflow_result_response(201, "run", workflow.start_run(payload))
+  })
+}
+
+fn workflow_signal(
+  req: request.Request(mist.Connection),
+  run_id: String,
+) -> response.Response(mist.ResponseData) {
+  with_body(req, fn(payload) {
+    workflow_result_response(200, "run", workflow.signal_run(run_id, payload))
+  })
+}
+
+fn workflow_cancel(run_id: String) -> response.Response(mist.ResponseData) {
+  workflow_result_response(200, "run", workflow.cancel_run(run_id))
+}
+
+fn workflow_get(run_id: String) -> response.Response(mist.ResponseData) {
+  // get_run already returns a wrapped {"ok":true,"run":...,"steps":...} body.
+  case workflow.get_run(run_id) {
+    Ok(body) -> json_response(200, body)
+    Error(error) -> workflow_error_response(error)
+  }
+}
+
+fn workflow_list(
+  req: request.Request(mist.Connection),
+) -> response.Response(mist.ResponseData) {
+  let definition = query_value(req, "definition")
+  let limit = case int.parse(query_value(req, "limit")) {
+    Ok(value) -> value
+    Error(_) -> 100
+  }
+  case workflow.list_runs(definition, limit) {
+    Ok(runs) ->
+      json_response(200, "{\"ok\":true,\"runs\":" <> runs <> "}")
+    Error(error) -> workflow_error_response(error)
+  }
+}
+
+fn workflow_result_response(
+  ok_status: Int,
+  key: String,
+  result: Result(String, String),
+) -> response.Response(mist.ResponseData) {
+  case result {
+    Ok(body) ->
+      json_response(
+        ok_status,
+        "{\"ok\":true,\"" <> key <> "\":" <> body <> "}",
+      )
+    Error(error) -> workflow_error_response(error)
+  }
+}
+
+fn workflow_error_response(
+  error: String,
+) -> response.Response(mist.ResponseData) {
+  let status = workflow_error_status(error)
+  json_response(
+    status,
+    "{\"ok\":false,\"error\":\"" <> json_escape(error) <> "\"}",
+  )
+}
+
+fn workflow_error_status(error: String) -> Int {
+  case string.contains(error, "not found") {
+    True -> 404
+    False ->
+      case
+        string.contains(error, "not cancelable")
+        || string.contains(error, "not running")
+      {
+        True -> 409
+        False ->
+          case
+            string.contains(error, "required")
+            || string.contains(error, "invalid")
+            || string.contains(error, "must")
+            || string.contains(error, "not active")
+          {
+            True -> 400
+            False -> 502
+          }
+      }
+  }
+}
+
+fn with_body(
+  req: request.Request(mist.Connection),
+  next: fn(String) -> response.Response(mist.ResponseData),
+) -> response.Response(mist.ResponseData) {
+  case mist.read_body(req, max_body_bytes) {
+    Ok(req) ->
+      case bit_array.to_string(req.body) {
+        Ok(payload) -> next(payload)
+        Error(_) ->
+          json_response(400, "{\"ok\":false,\"error\":\"body-not-utf8\"}")
+      }
+    Error(_) -> json_response(400, "{\"ok\":false,\"error\":\"invalid-body\"}")
+  }
+}
+
+fn query_value(req: request.Request(mist.Connection), key: String) -> String {
+  case request.get_query(req) {
+    Ok(pairs) ->
+      case list.key_find(pairs, key) {
+        Ok(value) -> value
+        Error(_) -> ""
+      }
+    Error(_) -> ""
+  }
+}
+
 fn redirect(path: String) -> response.Response(mist.ResponseData) {
   response.new(302)
   |> response.set_header("location", path)
@@ -189,6 +320,8 @@ fn healthz() -> response.Response(mist.ResponseData) {
       <> bool_json(env_get("LAMBDA_DATABASE_URL") != "")
       <> ",\"natsConfigured\":"
       <> bool_json(env_get("NATS_URL") != "")
+      <> ",\"workflowEngineEnabled\":"
+      <> bool_json(workflow.enabled())
       <> "}",
   )
 }
@@ -200,7 +333,9 @@ fn metrics() -> response.Response(mist.ResponseData) {
     "text/plain; version=0.0.4; charset=utf-8",
   )
   |> response.set_body(
-    mist.Bytes(bytes_tree.from_string(child_process.metrics())),
+    mist.Bytes(bytes_tree.from_string(
+      child_process.metrics() <> "\n" <> workflow.metrics(),
+    )),
   )
 }
 
@@ -244,18 +379,23 @@ fn require_authenticated_post(
   req: request.Request(mist.Connection),
   next: fn() -> response.Response(mist.ResponseData),
 ) -> response.Response(mist.ResponseData) {
-  require_post(req, fn() {
-    let secret = server_auth_secret()
-    case secret {
-      "" -> auth_not_configured()
-      _ -> {
-        case request_is_authorized(req, secret) {
-          True -> next()
-          False -> unauthorized()
-        }
+  require_post(req, fn() { require_authenticated(req, next) })
+}
+
+fn require_authenticated(
+  req: request.Request(mist.Connection),
+  next: fn() -> response.Response(mist.ResponseData),
+) -> response.Response(mist.ResponseData) {
+  let secret = server_auth_secret()
+  case secret {
+    "" -> auth_not_configured()
+    _ -> {
+      case request_is_authorized(req, secret) {
+        True -> next()
+        False -> unauthorized()
       }
     }
-  })
+  }
 }
 
 fn server_auth_secret() -> String {

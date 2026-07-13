@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-quantum-compute-rs
+  namespace: default
+  labels:
+    app: dd-quantum-compute-rs
+spec:
+  selector:
+    app: dd-quantum-compute-rs
+  ports:
+    - name: http
+      port: 8140
+      targetPort: http

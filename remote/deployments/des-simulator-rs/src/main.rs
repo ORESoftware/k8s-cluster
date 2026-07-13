@@ -1526,7 +1526,7 @@ async fn publish_job_event(state: &AppState, snapshot: &SimulationJobSnapshot) {
         .publish(state.event_subject.clone(), payload.to_string().into())
         .await
     {
-        eprintln!("failed to publish des job event: {error}");
+        tracing::error!("failed to publish des job event: {error}");
     }
 }
 
@@ -1541,7 +1541,7 @@ async fn publish_result(state: &AppState, snapshot: &SimulationJobSnapshot) {
     })) {
         Ok(payload) => payload,
         Err(error) => {
-            eprintln!("failed to encode des result: {error}");
+            tracing::error!("failed to encode des result: {error}");
             return;
         }
     };
@@ -1549,7 +1549,7 @@ async fn publish_result(state: &AppState, snapshot: &SimulationJobSnapshot) {
         .publish(state.result_subject.clone(), payload.into())
         .await
     {
-        eprintln!("failed to publish des result: {error}");
+        tracing::error!("failed to publish des result: {error}");
     }
     publish_job_event(state, snapshot).await;
 }
@@ -1878,50 +1878,58 @@ async fn metrics(State(state): State<AppState>) -> Response {
 
 async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
     let Some(nats) = state.nats.clone() else {
-        println!("des simulator nats loop disabled: NATS_URL is not configured");
+        tracing::info!("des simulator nats loop disabled: NATS_URL is not configured");
         return;
     };
-    println!(
+    tracing::info!(
         "des simulator nats loop starting: subject={subject} queue_group={queue_group} resultSubject={}",
         state.result_subject
     );
-    let mut subscription = match nats.queue_subscribe(subject, queue_group).await {
-        Ok(subscription) => subscription,
-        Err(error) => {
-            eprintln!("des simulator nats subscribe failed: {error}");
-            return;
-        }
-    };
-    while let Some(message) = subscription.next().await {
-        state
-            .metrics
-            .nats_messages_total
-            .fetch_add(1, Ordering::Relaxed);
-        let payload = message.payload.to_vec();
-        if payload.len() > MAX_NATS_PAYLOAD_BYTES {
-            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            eprintln!(
-                "des simulator rejected oversize nats request: bytes={} max={MAX_NATS_PAYLOAD_BYTES}",
-                payload.len()
-            );
-            continue;
-        }
+    loop {
+        let mut subscription =
+            match nats.queue_subscribe(subject.clone(), queue_group.clone()).await {
+                Ok(subscription) => subscription,
+                Err(error) => {
+                    tracing::error!("des simulator nats subscribe failed: {error}; retrying in 5s");
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    continue;
+                }
+            };
+        while let Some(message) = subscription.next().await {
+            state
+                .metrics
+                .nats_messages_total
+                .fetch_add(1, Ordering::Relaxed);
+            let payload = message.payload.to_vec();
+            if payload.len() > MAX_NATS_PAYLOAD_BYTES {
+                state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+                tracing::error!(
+                    "des simulator rejected oversize nats request: bytes={} max={MAX_NATS_PAYLOAD_BYTES}",
+                    payload.len()
+                );
+                continue;
+            }
 
-        match serde_json::from_slice::<SimulationRequest>(&payload) {
-            Ok(request) => {
-                if let Err(error) = start_simulation_job(state.clone(), request, "nats") {
+            match serde_json::from_slice::<SimulationRequest>(&payload) {
+                Ok(request) => {
+                    if let Err(error) = start_simulation_job(state.clone(), request, "nats") {
+                        state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+                        tracing::error!(
+                            "des simulator rejected nats simulation: {}",
+                            error.message()
+                        );
+                    }
+                }
+                Err(error) => {
                     state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                    eprintln!(
-                        "des simulator rejected nats simulation: {}",
-                        error.message()
-                    );
+                    tracing::error!("des simulator invalid nats request: {error}");
                 }
             }
-            Err(error) => {
-                state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                eprintln!("des simulator invalid nats request: {error}");
-            }
         }
+        tracing::error!(
+            "des simulator nats subscription ended (subject={subject}); re-subscribing in 5s"
+        );
+        tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }
 
@@ -2140,13 +2148,23 @@ async fn des_out_file(Path(rel_path): Path<String>) -> Response {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let _otel = dd_telemetry::init("dd-des-simulator");
+
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8099").parse::<u16>()?;
     let nats = match env::var("NATS_URL")
         .ok()
         .filter(|value| !value.trim().is_empty())
     {
-        Some(url) => Some(async_nats::connect(url).await?),
+        // Degrade gracefully if the broker is down at boot rather than crashing;
+        // async-nats serves a reconnecting client once it recovers.
+        Some(url) => match async_nats::connect(&url).await {
+            Ok(client) => Some(client),
+            Err(error) => {
+                tracing::error!("dd-des-simulator NATS connect failed ({url}): {error}");
+                None
+            }
+        },
         None => None,
     };
     let state = AppState {
@@ -2185,9 +2203,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
-    println!("dd-des-simulator listening on http://{addr}");
+    tracing::info!("dd-des-simulator listening on http://{addr}");
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
         })

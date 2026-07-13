@@ -1,0 +1,25 @@
+[package]
+name = "dd-email-sms-contact-rs"
+version = "0.1.0"
+edition = "2021"
+
+# Long-running contact server: sends transactional/outreach email (SendGrid, SES-ready), SMS
+# (Twilio), and push notifications (Web Push/VAPID, Firebase Cloud Messaging, Expo, Apple APNs),
+# with per-process rate limiting and a shared-secret auth gate. Mirrors the Axum + /healthz +
+# /readyz + graceful-shutdown conventions of the other remote Rust servers.
+
+[dependencies]
+dd-telemetry = { path = "../../libs/telemetry-rs" }
+tracing = "0.1"
+axum = { version = "0.7", features = ["macros"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "http2"] }
+async-nats = "=0.38.0"
+futures = "0.3"
+dd-nats-subject-defs = { path = "../../libs/nats/subject-defs/generated/rust" }
+# Push transports: web-push builds the RFC 8291/8188 encrypted body + VAPID headers (sent via
+# reqwest, so no second HTTP stack); jsonwebtoken mints the FCM OAuth (RS256) and APNs (ES256) JWTs.
+web-push = { version = "0.11", default-features = false }
+jsonwebtoken = "9"

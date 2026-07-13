@@ -29,15 +29,19 @@ It runs as a single replica with `Recreate` rollout strategy so only one pod eve
 port and WireGuard state.
 
 `dd-bastion` is not a broad public SSH server. It is an authenticated Rust HTTP service that
-operators reach through WireGuard or the gateway-proxied `/bastion/...` paths:
+operators reach either directly through WireGuard or indirectly through the public gateway's
+`/bastion/...` paths:
 
 - `GET /healthz` - unauthenticated health check.
 - `GET /profile` or `/config` - VPN endpoint, DNS, service CIDR, pod CIDR, and cluster API info.
 - `GET /kubeconfig` - read-only kubeconfig using the `dd-bastion` service account token.
 - `GET /runtime/deployments` - live managed Deployment, Pod, and container inventory.
 
-Protected routes accept `X-Bastion-Auth`, `X-Server-Auth`, `Auth`, or `Authorization: Bearer ...`
-with `SERVER_AUTH_SECRET`. The generated kubeconfig is bound to
+Direct bastion routes accept `X-Bastion-Auth`, `X-Server-Auth`, `Auth`, or
+`Authorization: Bearer ...` with `SERVER_AUTH_SECRET`. Public gateway-proxied `/bastion/...`
+routes first require the gateway `Auth` header or `dd_auth` cookie value from
+`dd-remote-auth-secrets` / `DD_AUTH_COOKIE_VALUE`; after that the gateway injects the internal
+`X-Server-Auth` value for bastion. The generated kubeconfig is bound to
 `ClusterRole/dd-bastion-readonly`; it intentionally does not grant Kubernetes Secret access or
 patch/update/delete verbs.
 
@@ -64,8 +68,9 @@ should not be returned by MCP tools or the bastion API.
 For day-to-day operations:
 
 1. Connect a WireGuard client created by the private wg-easy UI.
-2. Query `dd-bastion` with `X-Bastion-Auth: $SERVER_AUTH_SECRET` for `/profile`, `/kubeconfig`, and
-   `/runtime/deployments`.
+2. Query `dd-bastion` with `X-Bastion-Auth: $SERVER_AUTH_SECRET` for direct VPN access, or query
+   the gateway `/bastion/...` paths with the operator `Auth` header / `dd_auth` cookie value.
+   Use `/profile`, `/kubeconfig`, and `/runtime/deployments`.
 3. Use the generated kubeconfig for read-only `kubectl get/list/watch` work.
 4. Use normal key-based SSH or AWS Systems Manager Session Manager for host shell access. Do not
    make the Kubernetes MCP endpoint a public SSH/AWS credential broker.

@@ -1,0 +1,235 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-dataset-labeling
+  namespace: default
+  labels:
+    app: dd-dataset-labeling
+spec:
+  replicas: 0
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
+  strategy:
+    # This service builds from a hostPath source checkout at pod start. Avoid
+    # surge pods on the single-node EC2 cluster so deploys do not deadlock on
+    # requested CPU while old build pods are still present.
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-dataset-labeling
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-06-10-dataset-labeling'
+      labels:
+        app: dd-dataset-labeling
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: release-build
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          terminationMessagePolicy: FallbackToLogsOnError
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              export HOME=/tmp
+              export CARGO_HOME=/var/cache/dd-dataset-labeling/cargo
+              export CARGO_TARGET_DIR=/var/cache/dd-dataset-labeling/target
+              export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}"
+              export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-0}"
+              export CARGO_TERM_COLOR="${CARGO_TERM_COLOR:-never}"
+              export CARGO_REGISTRIES_CRATES_IO_PROTOCOL="${CARGO_REGISTRIES_CRATES_IO_PROTOCOL:-sparse}"
+              mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR"
+              cd /opt/dd-next-1/remote/deployments/dataset-labeling-rs
+              echo "dd-dataset-labeling release build starting pod=${POD_NAME} namespace=${POD_NAMESPACE} node=${NODE_NAME}"
+              /usr/local/cargo/bin/cargo build --release --locked
+              if [ ! -x "$CARGO_TARGET_DIR/release/dd-dataset-labeling" ]; then
+                echo "dd-dataset-labeling release build failed: compiled binary missing" >&2
+                exit 78
+              fi
+              echo "dd-dataset-labeling release build completed pod=${POD_NAME} namespace=${POD_NAMESPACE} node=${NODE_NAME}"
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: CARGO_BUILD_JOBS
+              value: '1'
+            - name: CARGO_INCREMENTAL
+              value: '0'
+            - name: CARGO_TERM_COLOR
+              value: never
+            - name: CARGO_NET_RETRY
+              value: '5'
+            - name: CARGO_HTTP_TIMEOUT
+              value: '120'
+            - name: CARGO_REGISTRIES_CRATES_IO_PROTOCOL
+              value: sparse
+          resources:
+            requests:
+              cpu: 100m
+              memory: 2Gi
+              ephemeral-storage: 4Gi
+            limits:
+              cpu: '2'
+              memory: 8Gi
+              ephemeral-storage: 8Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: build-cache
+              mountPath: /var/cache/dd-dataset-labeling
+            - name: tmp
+              mountPath: /tmp
+      containers:
+        - name: dataset-labeling
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              export HOME=/tmp
+              export CARGO_TARGET_DIR=/var/cache/dd-dataset-labeling/target
+              cd /opt/dd-next-1/remote/deployments/dataset-labeling-rs
+              if [ ! -x "$CARGO_TARGET_DIR/release/dd-dataset-labeling" ]; then
+                echo "dd-dataset-labeling startup failed: compiled binary missing" >&2
+                exit 78
+              fi
+              exec "$CARGO_TARGET_DIR/release/dd-dataset-labeling"
+          env:
+            - name: HOME
+              value: /tmp
+            - name: CARGO_TARGET_DIR
+              value: /var/cache/dd-dataset-labeling/target
+            - name: RUST_LOG
+              value: info
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8138'
+            - name: SERVER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+            - name: DATASET_LABELING_ALLOW_UNAUTHENTICATED
+              value: 'false'
+            - name: NATS_URL
+              value: nats://dd-nats.messaging.svc.cluster.local:4222
+            - name: DATASET_LABELING_TASK_REQUEST_SUBJECT
+              value: dd.remote.dataset_labeling.task.requests
+            - name: DATASET_LABELING_QUEUE_GROUP
+              value: dd-dataset-labeling
+            - name: DATASET_LABELING_LABEL_EVENT_SUBJECT
+              value: dd.remote.dataset_labeling.label.events
+            - name: DATASET_LABELING_RESULT_SUBJECT
+              value: dd.remote.dataset_labeling.results
+            - name: DATASET_LABELING_PIPELINE_JOB_SUBJECT
+              value: dd.remote.dataset_labeling.pipeline.jobs
+            - name: DATASET_LABELING_RUNTIME_EVENT_SUBJECT
+              value: dd.remote.events
+          envFrom:
+            - secretRef:
+                name: dd-agent-secrets
+                optional: true
+          ports:
+            - name: http
+              containerPort: 8138
+          resources:
+            requests:
+              cpu: 25m
+              memory: 512Mi
+            limits:
+              cpu: '2'
+              memory: 2Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 120
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: build-cache
+              mountPath: /var/cache/dd-dataset-labeling
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
+        - name: build-cache
+          emptyDir:
+            sizeLimit: 8Gi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 512Mi

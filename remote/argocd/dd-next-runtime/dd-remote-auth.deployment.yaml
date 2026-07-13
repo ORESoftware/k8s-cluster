@@ -41,13 +41,70 @@ spec:
             - |
               set -euo pipefail
               export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-              cd /opt/dd-next-1/remote/deployments/auth-server-rs
+              export GIT_TERMINAL_PROMPT=0
+              # The EC2 hostPath mount (/opt/dd-next-1) is empty on the Hetzner
+              # nodes, so resolve the source by cloning. auth-server-rs path-deps
+              # on ../../libs/{telemetry-rs,runtime-config-client-rs} (the latter
+              # pulling ../interfaces/*) which live in the *private*
+              # k8s-libs-and-shared-defs repo — so a GitHub token (GIT_CLONE_TOKEN)
+              # is required for that one. We clone the public k8s-cluster source,
+              # then clone the private libs repo directly into remote/libs so the
+              # path deps resolve. We deliberately skip --recurse-submodules: the
+              # repo has other private submodules irrelevant to auth. Build
+              # in-tree under the writable /tmp emptyDir; fall back to the mounted
+              # checkout only if the clone fails.
+              src="/opt/dd-next-1/remote/deployments/auth-server-rs"
+              build_root="$(mktemp -d /tmp/dd-remote-auth-build.XXXXXX)"
+              if [ -n "${AUTH_SERVER_GIT_URL:-}" ]; then
+                cred=""
+                [ -n "${GIT_CLONE_TOKEN:-}" ] && cred="x-access-token:${GIT_CLONE_TOKEN}@"
+                src_url="https://${cred}${AUTH_SERVER_GIT_URL#https://}"
+                libs_url="https://${cred}${AUTH_LIBS_GIT_URL#https://}"
+                if git clone --depth 1 --branch "${AUTH_SERVER_GIT_REF:-dev}" "${src_url}" "${build_root}/src" \
+                   && rm -rf "${build_root}/src/remote/libs" \
+                   && git clone --depth 1 "${libs_url}" "${build_root}/src/remote/libs"; then
+                  src="${build_root}/src/remote/deployments/auth-server-rs"
+                  echo "[dd-remote-auth] cloned source@${AUTH_SERVER_GIT_REF:-dev} ($(git -C "${build_root}/src" rev-parse --short HEAD)) + libs"
+                else
+                  echo "[dd-remote-auth] clone failed; using mounted source at ${src}" >&2
+                fi
+              fi
+              cd "${src}"
               exec /usr/local/cargo/bin/cargo run --release
           env:
             - name: HOST
               value: 0.0.0.0
             - name: PORT
               value: '8083'
+            # Server source: fetch this k8s repo at pod start so the auth code
+            # does not depend on the EC2 hostPath checkout being present/fresh
+            # (it is empty on the Hetzner nodes). Submodules are pulled so the
+            # ../../libs/* path deps resolve. Set AUTH_SERVER_GIT_URL="" to fall
+            # back to the mounted checkout instead.
+            - name: AUTH_SERVER_GIT_URL
+              value: https://github.com/ORESoftware/k8s-cluster.git
+            - name: AUTH_SERVER_GIT_REF
+              value: dev
+            # The auth crate's ../../libs/* path deps live in this PRIVATE repo,
+            # cloned with GIT_CLONE_TOKEN into remote/libs at pod start.
+            - name: AUTH_LIBS_GIT_URL
+              value: https://github.com/ORESoftware/k8s-libs-and-shared-defs.git
+            - name: GIT_CLONE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-git-clone-token
+                  key: token
+                  optional: true
+            # Keep the cold in-pod release build self-contained on the writable
+            # /tmp emptyDir, and cap parallelism so rustc stays under the limit.
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /tmp/cargo
+            - name: CARGO_TARGET_DIR
+              value: /tmp/auth-target
+            - name: CARGO_BUILD_JOBS
+              value: '1'
             - name: DD_AUTH_PIN
               valueFrom:
                 secretKeyRef:
@@ -96,17 +153,23 @@ spec:
               containerPort: 8083
           resources:
             requests:
-              cpu: 50m
-              memory: 96Mi
+              cpu: 25m
+              memory: 256Mi
             limits:
-              cpu: '1'
-              memory: 1Gi
+              cpu: '2'
+              # Headroom for the cold release build: the pod compiles the auth
+              # crate plus telemetry-rs/runtime-config-client-rs and the
+              # axum/tokio tree from an empty /tmp on every (re)start.
+              memory: 4Gi
           startupProbe:
             httpGet:
               path: /healthz
               port: http
+            # Cold release build from an empty /tmp can take several minutes on
+            # the build-from-source node, so allow up to ~50 min (5s * 600)
+            # before the startup probe gives up.
             periodSeconds: 5
-            failureThreshold: 60
+            failureThreshold: 600
           readinessProbe:
             httpGet:
               path: /healthz
@@ -124,8 +187,14 @@ spec:
           volumeMounts:
             - name: repo
               mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: repo
           hostPath:
             path: /home/ec2-user/codes/dd/dd-next-1
             type: Directory
+        - name: tmp
+          emptyDir:
+            sizeLimit: 8Gi

@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "rest-api-rs",
   "language": "rust",
-  "routeCount": 41,
+  "routeCount": 45,
   "routeTypeCounts": {
-    "user-generated": 23,
-    "service": 5,
+    "user-generated": 25,
+    "service": 7,
     "internal-db": 10,
     "runtime-config": 3
   },
@@ -393,6 +393,42 @@
       "notes": ""
     },
     {
+      "path": "/api/graphql",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "GraphQL endpoint for typed remote REST API queries, guarded subservice calls, and the optional GraphiQL IDE on GET.",
+      "handlers": [
+        "api_graphiql",
+        "graphql_handler"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/graphql_routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/graphql/schema",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "operator secret by default",
+      "purpose": "Machine-readable GraphQL SDL schema for the remote REST API service; protected by internal auth by default.",
+      "handlers": [
+        "graphql_schema_sdl"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/graphql_routes.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/api/lambdas/functions",
       "methods": [
         "GET",
@@ -461,6 +497,42 @@
       ],
       "sourceFiles": [
         "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/graphql",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "GraphQL endpoint for typed remote REST API queries, guarded subservice calls, and the optional GraphiQL IDE on GET.",
+      "handlers": [
+        "graphiql",
+        "graphql_handler"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/graphql_routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/graphql/schema",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "operator secret by default",
+      "purpose": "Machine-readable GraphQL SDL schema for the remote REST API service; protected by internal auth by default.",
+      "handlers": [
+        "graphql_schema_sdl"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/graphql_routes.rs"
       ],
       "notes": ""
     },

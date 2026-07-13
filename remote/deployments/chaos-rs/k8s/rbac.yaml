@@ -1,0 +1,46 @@
+# RBAC for dd-chaos. Cluster-scoped read so it can discover pods/deployments in any
+# target namespace, plus narrow mutate verbs (delete pods, scale deployments). The
+# protected-namespace blocklist is ALSO enforced in code (CHAOS_PROTECTED_NAMESPACES),
+# so RBAC breadth here is a backstop, not the primary guard.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dd-chaos
+  namespace: ai-ml
+  labels:
+    app.kubernetes.io/name: dd-chaos
+    app.kubernetes.io/part-of: dd-remote
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: dd-chaos
+  labels:
+    app.kubernetes.io/name: dd-chaos
+rules:
+  # Discover and kill pods.
+  - apiGroups: ['']
+    resources: [pods]
+    verbs: [get, list, delete]
+  # Read deployments and adjust their replica count for jitter experiments.
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get, list]
+  - apiGroups: [apps]
+    resources: [deployments/scale]
+    verbs: [get, patch, update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dd-chaos
+  labels:
+    app.kubernetes.io/name: dd-chaos
+subjects:
+  - kind: ServiceAccount
+    name: dd-chaos
+    namespace: ai-ml
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: dd-chaos

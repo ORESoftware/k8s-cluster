@@ -32,6 +32,9 @@ spec:
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
             seccompProfile:
               type: RuntimeDefault
           command:
@@ -50,6 +53,11 @@ spec:
               value: '8098'
             - name: NATS_URL
               value: nats://dd-nats.messaging.svc.cluster.local:4222
+            # Require TLS to the NATS broker. Left 'false' for the in-cluster
+            # plaintext listener; set 'true' once a TLS listener/creds exist.
+            # Optional auth: NATS_CREDENTIALS_FILE / NATS_TOKEN / NATS_NKEY.
+            - name: NATS_REQUIRE_TLS
+              value: 'false'
             - name: NATS_TASK_SUBJECT
               value: dd.remote.thread.*.tasks
             - name: NATS_TASK_STREAM
@@ -93,7 +101,7 @@ spec:
               containerPort: 8098
           resources:
             requests:
-              cpu: 50m
+              cpu: 25m
               memory: 96Mi
             limits:
               cpu: '1'

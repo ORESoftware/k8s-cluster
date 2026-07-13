@@ -1,0 +1,102 @@
+[help]
+url = "https://github.com/ORESoftware/flags-2-env"
+
+[parse]
+allow_unknown = true
+errors_env = "FLAGS2ENV_PARSE_ERRORS"
+unknown_options_env = "FLAGS2ENV_UNKNOWN_OPTIONS"
+
+[flags.target_ws_url]
+env = "TARGET_WS_URL"
+aliases = ["target-ws-url", "ws-url"]
+type = "string"
+
+[flags.load_mode]
+env = "LOAD_MODE"
+aliases = ["load-mode"]
+type = "string"
+default = "hold"
+
+[flags.client_count]
+env = "CLIENT_COUNT"
+aliases = ["client-count", "clients"]
+short = "c"
+type = "integer"
+default = 5000
+
+[flags.messages_per_second_per_client]
+env = "MESSAGES_PER_SECOND_PER_CLIENT"
+aliases = ["messages-per-second-per-client", "mps-per-client"]
+type = "string"
+default = "10.0"
+
+[flags.message_payload]
+env = "MESSAGE_PAYLOAD"
+aliases = ["message-payload"]
+type = "string"
+
+[flags.message_encodings]
+env = "MESSAGE_ENCODINGS"
+aliases = ["message-encodings"]
+type = "string"
+default = "json"
+
+[flags.loadtest_transports]
+env = "LOADTEST_TRANSPORTS"
+aliases = ["loadtest-transports", "transports"]
+type = "string"
+default = "http,tcp,websocket"
+
+[flags.hold_seconds]
+env = "HOLD_SECONDS"
+aliases = ["hold-seconds"]
+type = "integer"
+default = 300
+
+[flags.connect_timeout_ms]
+env = "CONNECT_TIMEOUT_MS"
+aliases = ["connect-timeout-ms"]
+type = "integer"
+default = 20000
+
+[flags.reconnect_delay_ms]
+env = "RECONNECT_DELAY_MS"
+aliases = ["reconnect-delay-ms"]
+type = "integer"
+default = 1000
+
+[flags.ramp_delay_ms]
+env = "RAMP_DELAY_MS"
+aliases = ["ramp-delay-ms"]
+type = "integer"
+default = 1
+
+[flags.report_interval_seconds]
+env = "REPORT_INTERVAL_SECONDS"
+aliases = ["report-interval-seconds"]
+type = "integer"
+default = 10
+
+[flags.correlation_timeout_ms]
+env = "CORRELATION_TIMEOUT_MS"
+aliases = ["correlation-timeout-ms"]
+type = "integer"
+default = 10000
+
+[flags.gcs_clients_per_conv]
+env = "GCS_CLIENTS_PER_CONV"
+aliases = ["gcs-clients-per-conv"]
+type = "integer"
+default = 5
+
+[flags.gcs_senders_per_conv]
+env = "GCS_SENDERS_PER_CONV"
+aliases = ["gcs-senders-per-conv"]
+type = "integer"
+default = 0
+
+[flags.container_pool_timeout_ms]
+env = "CONTAINER_POOL_TIMEOUT_MS"
+aliases = ["container-pool-timeout-ms"]
+type = "integer"
+default = 30000

@@ -27,9 +27,12 @@ metadata:
   labels:
     app: gcs-router
 spec:
-  # gcs-router is stateless; keep one router per gcs pod during load
-  # tests so 20k upgrades do not bottleneck on two half-core proxies.
-  replicas: 3
+  # gcs-router is stateless. Default to a single replica: gcs is a
+  # singleton backend (gcs.deployment.yaml replicas: 1), so one router
+  # is sufficient and conserves CPU on the single-node EC2 cluster.
+  # Scale up (e.g. replicas: 3) when running high-connection load tests
+  # so 20k upgrades do not bottleneck on a single half-core proxy.
+  replicas: 1
   strategy:
     # Single-node CPU-bound cluster: surge=0 to avoid Pending pods
     # blocking the rollout. Brief downtime is acceptable for the
@@ -99,7 +102,7 @@ spec:
                 --vnodes=160 \
                 --connect-timeout=15s \
                 --ws-idle-timeout=4h \
-                --max-active-conns=12000
+                --max-active-conns=60000
           ports:
             - name: ws
               containerPort: 3001
@@ -109,7 +112,7 @@ spec:
               protocol: TCP
           resources:
             requests:
-              cpu: 100m
+              cpu: 25m
               memory: 128Mi
             limits:
               # 2Gi covers the initial `go build` (heavy peak), then steady

@@ -1,0 +1,87 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dd-gpu-rs
+  namespace: default
+  labels:
+    app: dd-gpu-rs
+spec:
+  podSelector:
+    matchLabels:
+      app: dd-gpu-rs
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # HTTP API + /metrics is reachable only from the gateway, the runtime-config
+    # control plane (which pushes config to /internal/update-runtime-config), and
+    # the observability scrapers — nothing else may hit :8136.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: dd-remote-gateway
+        - podSelector:
+            matchLabels:
+              app: dd-runtime-config
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - dd-prometheus
+                  - dd-otel-collector
+      ports:
+        - protocol: TCP
+          port: 8136
+  egress:
+    # Allow OTLP trace export to the in-cluster OpenTelemetry collector.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
+    # DNS resolution.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # NATS job request/result lane.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: messaging
+          podSelector:
+            matchLabels:
+              app: dd-nats
+      ports:
+        - protocol: TCP
+          port: 4222
+    # runtime-config registration (POST /subscribers).
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dd-runtime-config
+      ports:
+        - protocol: TCP
+          port: 8110
+    # crates.io / static.crates.io over HTTPS for the startup `cargo build`
+    # (this service compiles from the hostPath checkout, like the other
+    # cargo-run-from-hostPath dd-*-rs deployments).
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443

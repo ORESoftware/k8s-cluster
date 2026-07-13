@@ -83,10 +83,16 @@ to `repo_unresolved` without failing the job.
 | GET    | `/healthz`       | Liveness probe.                                      |
 | GET    | `/readyz`        | Readiness probe.                                     |
 | GET    | `/metrics`       | Prometheus scrape endpoint.                          |
+| GET    | `/docs/api`, `/api/docs` | Generated API docs HTML.                    |
+| GET    | `/api/docs.json` | Generated machine-readable API docs.                 |
 | POST   | `/v1/jobs`       | Submit a new pipeline job. Requires `X-Server-Auth` / `Auth`. |
 | GET    | `/v1/jobs`       | List all jobs known to this server. Requires `X-Server-Auth` / `Auth`. |
 | GET    | `/v1/jobs/{id}`  | Fetch a single job's state. Requires `X-Server-Auth` / `Auth`. |
 | GET    | `/v1/repos`      | List `known_git_repos` rows. Requires Postgres and `X-Server-Auth` / `Auth`. |
+
+Route docs are generated from `MainVerticle.java` by `remote/tools/generate-api-docs.mjs`.
+Run `pnpm --dir remote/tests run generate:api-docs` after changing routes and
+`pnpm --dir remote/tests run check:api-docs` in CI-style validation.
 
 ### Submit example
 
@@ -120,17 +126,49 @@ mvn -B -DskipTests package
 java -jar target/dd-spark-pipeline-server.jar
 ```
 
+## EC2 runtime image
+
+The EC2 Kubernetes overlay runs `docker.io/library/maven:3.9.9-eclipse-temurin-17`, mounts the host
+checkout at `/opt/dd-next-1`, copies this module plus generated JVM pg-defs into an emptyDir
+workspace, and self-builds the jar on pod start. This keeps the cluster from depending on a locally
+prebuilt `docker.io/library/dd-spark-pipeline-server:dev` image that may not exist in containerd.
+
+The Dockerfile remains useful for local image testing. Build it from the k8s-cluster repo root so it
+can include the generated JVM pg-defs sources and generated API docs:
+
+```bash
+docker build -f remote/deployments/spark-pipeline-server/Dockerfile \
+  -t docker.io/library/dd-spark-pipeline-server:dev .
+```
+
+For local containerd image testing on the EC2 node, build the first-party AI/ML images in one pass:
+
+```bash
+bash remote/tools/build-ai-ml-platform-images.sh
+```
+
+Or build this service directly with the same tag in the `k8s.io` namespace:
+
+```bash
+nerdctl -n k8s.io build -f remote/deployments/spark-pipeline-server/Dockerfile \
+  -t docker.io/library/dd-spark-pipeline-server:dev .
+```
+
 ## Kubernetes layout
 
-* `k8s/dd-spark-pipeline-server.deployment.yaml` — main Deployment.
-* `k8s/dd-spark-pipeline-server.service.yaml` — ClusterIP Service on 8085.
+* `k8s/ec2/dd-spark-pipeline-server.deployment.yaml` — main EC2 Deployment.
+* `k8s/ec2/dd-spark-pipeline-server.service.yaml` — ClusterIP Service on 8085.
+* `k8s/ec2/dd-spark-pipeline-server.networkpolicy.yaml` — authenticated ingress plus DNS and
+  private-CIDR Postgres egress.
+* `k8s/ec2/dd-spark-pipeline-server.pdb.yaml` — `minAvailable: 1` disruption guard.
 * `k8s/kustomization.yaml` — local kustomize entry point.
 * `k8s/ec2/kustomization.yaml` — EC2 overlay consumed by Argo CD via
   `remote/argocd/apps/dd-spark-pipeline-server.application.yaml`.
 
-The EC2 deployment runs in the `ai-ml` namespace, mounts the repo hostPath read-only at
-`/opt/dd-next-1`, copies the Spark module plus generated pg-defs sources into an `emptyDir`
-workspace, and runs `mvn package` there before booting the shaded jar. The optional
-`RDS_DATABASE_URL` key is read from `dd-remote-rest-api-secrets`, mirrored into `ai-ml` by the
-AI/ML seed layer, so the manifest reuses the existing External Secrets bridge instead of depending
-on an uncreated service-specific secret.
+The EC2 deployment runs in the `ai-ml` namespace from the prebuilt shaded-jar image instead of
+mounting the repo with `hostPath` or fetching Maven dependencies at runtime. Rollouts use
+`maxUnavailable: 0` plus the PDB so an ordinary deploy does not intentionally drop the API to zero
+ready pods. The NetworkPolicy allows DNS for service/RDS resolution and keeps optional TCP 5432
+Postgres traffic on private CIDRs only. The optional `RDS_DATABASE_URL` key is read from
+`dd-remote-rest-api-secrets`, mirrored into `ai-ml` by the AI/ML seed layer, so the manifest reuses
+the existing External Secrets bridge instead of depending on an uncreated service-specific secret.

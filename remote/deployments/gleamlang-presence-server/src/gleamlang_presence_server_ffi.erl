@@ -23,10 +23,7 @@ stable_name(S) ->
 %% Read an environment variable as a UTF-8 binary, returning `{ok, Value}`
 %% or `{error, nil}`. The Gleam side decodes the result via a small wrapper.
 env(Name) ->
-    case os:getenv(binary_to_list(Name)) of
-        false -> {error, nil};
-        Value -> {ok, list_to_binary(Value)}
-    end.
+    dd_cli_config_client_ffi:env(Name).
 
 %% Read a small file (a few KB) into a UTF-8 binary. Used to read the
 %% in-pod k8s service account token (~1 KB JWT). Returns `{ok, Body}` or

@@ -5,6 +5,7 @@ resources:
   - namespace.yaml
   - availability-pdbs.yaml
   - dd-remote-auth.deployment.yaml
+  - dd-remote-auth.networkpolicy.yaml
   - dd-remote-auth.service.yaml
   - dd-dev-server-home.deployment.yaml
   - dd-dev-server-api.service.yaml
@@ -26,28 +27,117 @@ resources:
   - dd-remote-queue-consumer.scaledobject.yaml
   - dd-mdp-optimizer.deployment.yaml
   - dd-mdp-optimizer.service.yaml
+  # Fun compute servers (scaled to 0 by default): SAT/SMT, constraint scheduling,
+  # routing, agent/CA simulation, Monte Carlo, Raft consensus simulation, the
+  # Eureqa-style symbolic-regression function approximator, and a state-vector
+  # quantum simulator (circuit / Grover / QAOA / VQE).
+  - dd-sat-smt-server.deployment.yaml
+  - dd-sat-smt-server.service.yaml
+  - dd-constraint-scheduler.deployment.yaml
+  - dd-constraint-scheduler.service.yaml
+  - dd-route-optimizer.deployment.yaml
+  - dd-route-optimizer.service.yaml
+  - dd-agent-sim-server.deployment.yaml
+  - dd-agent-sim-server.service.yaml
+  - dd-monte-carlo-server.deployment.yaml
+  - dd-monte-carlo-server.service.yaml
+  - dd-raft-consensus.deployment.yaml
+  - dd-raft-consensus.service.yaml
+  - dd-func-approx-rs.deployment.yaml
+  - dd-func-approx-rs.service.yaml
+  - dd-quantum-compute-rs.deployment.yaml
+  - dd-quantum-compute-rs.service.yaml
+  - dd-gpu-rs.deployment.yaml
+  - dd-gpu-rs.networkpolicy.yaml
+  - dd-gpu-rs.service.yaml
+  - dd-fabrication-server.serviceaccount.yaml
+  - dd-fabrication-server.deployment.yaml
+  - dd-fabrication-server.service.yaml
+  - dd-fabrication-server.networkpolicy.yaml
   - dd-des-simulator.deployment.yaml
   - dd-des-simulator.service.yaml
   - dd-des-rs.deployment.yaml
+  - dd-des-rs.hpa.yaml
+  - dd-des-rs.networkpolicy.yaml
   - dd-des-rs.service.yaml
+  - dd-music-rs.deployment.yaml
+  - dd-music-rs.networkpolicy.yaml
+  - dd-music-rs.service.yaml
+  - dd-data-viz-rs.deployment.yaml
+  - dd-data-viz-rs.networkpolicy.yaml
+  - dd-data-viz-rs.service.yaml
+  - dd-email-sms-contact-rs.deployment.yaml
+  - dd-email-sms-contact-rs.externalsecret.yaml
+  - dd-email-sms-contact-rs.service.yaml
+  - dd-next-1-js.deployment.yaml
+  - dd-next-1-js.service.yaml
+  - dd-sound-recorder-rs.deployment.yaml
+  - dd-sound-recorder-rs.networkpolicy.yaml
+  - dd-sound-recorder-rs.service.yaml
   - dd-contract-service.deployment.yaml
+  - dd-contract-service.networkpolicy.yaml
   - dd-contract-service.service.yaml
+  - usacc-rest-api-backend-rs.deployment.yaml
+  - usacc-rest-api-backend-rs.networkpolicy.yaml
+  - usacc-rest-api-backend-rs.service.yaml
+  - dd-escrow-rs.deployment.yaml
+  - dd-escrow-rs.networkpolicy.yaml
+  - dd-escrow-rs.service.yaml
+  - dd-document-rs.deployment.yaml
+  - dd-document-rs.networkpolicy.yaml
+  - dd-document-rs.service.yaml
+  - dd-ocr-rs.deployment.yaml
+  - dd-ocr-rs.externalsecret.yaml
+  - dd-ocr-rs.networkpolicy.yaml
+  - dd-ocr-rs.service.yaml
   - dd-rust-vapi-phone.deployment.yaml
+  - dd-rust-vapi-phone.networkpolicy.yaml
   - dd-rust-vapi-phone.service.yaml
   - dd-trading-server.deployment.yaml
   - dd-trading-server.service.yaml
+  - dd-economics-server.deployment.yaml
+  - dd-economics-server.service.yaml
+  - dd-public-data-server.deployment.yaml
+  - dd-public-data-server.service.yaml
+  - dd-knowledge-graph-builder.deployment.yaml
+  - dd-knowledge-graph-builder.networkpolicy.yaml
+  - dd-knowledge-graph-builder.service.yaml
+  - dd-dataset-labeling.deployment.yaml
+  - dd-dataset-labeling.networkpolicy.yaml
+  - dd-dataset-labeling.service.yaml
+  - dd-compliance-rs.deployment.yaml
+  - dd-compliance-rs.networkpolicy.yaml
+  - dd-compliance-rs.service.yaml
+  # canonical.cloud marketing site: Astro frontend built in-pod (node) and
+  # served by its axum backend, proxied publicly by the gateway under /canonical/.
+  - dd-canonical-cloud.deployment.yaml
+  - dd-canonical-cloud.networkpolicy.yaml
+  - dd-canonical-cloud.service.yaml
+  # fiducia.cloud marketing site: same shape as canonical (in-pod node build of
+  # the Astro frontend, served by its axum backend), proxied publicly under
+  # /fiducia/. The Service MUST be applied or the gateway can't resolve the
+  # upstream at startup and crashloops.
+  - dd-fiducia-rs.deployment.yaml
+  - dd-fiducia-rs.networkpolicy.yaml
+  - dd-fiducia-rs.service.yaml
+  - dd-patent-filing-rs.deployment.yaml
+  - dd-patent-filing-rs.service.yaml
   - dd-live-mutex.deployment.yaml
   - dd-live-mutex.service.yaml
   - dd-live-mutex-submodule.deployment.yaml
   - dd-live-mutex-submodule.service.yaml
   - dd-rust-network-mutex.deployment.yaml
   - dd-rust-network-mutex.service.yaml
+  - dd-rust-network-mutex-raft.configmap.yaml
+  - dd-rust-network-mutex-raft.service.yaml
+  - dd-rust-network-mutex-raft.statefulset.yaml
   - dd-redis-cache.configmap.yaml
   - dd-redis-cache.deployment.yaml
   - dd-redis-cache.networkpolicy.yaml
   - dd-redis-cache.service.yaml
   - dd-web-scraper.deployment.yaml
   - dd-web-scraper.service.yaml
+  - dd-web-scraper.networkpolicy.yaml
   - dd-browser-test-server.deployment.yaml
   - dd-browser-test-server.service.yaml
   - dd-selenium-server.deployment.yaml
@@ -58,17 +148,48 @@ resources:
   - dd-remote-web-home.deployment.yaml
   - dd-remote-web-home.pdb.yaml
   - dd-remote-web-home.service.yaml
+  - dd-sonus-auris-site.configmap.yaml
+  - dd-sonus-auris-site.deployment.yaml
+  - dd-sonus-auris-site.service.yaml
   - dd-webrtc-signaling.deployment.yaml
   - dd-webrtc-signaling.service.yaml
+  - dd-webrtc-media.deployment.yaml
+  - dd-webrtc-media.service.yaml
   - dd-rust-wss-server.deployment.yaml
   - dd-rust-wss-server.service.yaml
   - dd-go-wss-server.deployment.yaml
   - dd-go-wss-server.service.yaml
+  # Root soccer game server (uuid-keyed games) proxied by the gateway under
+  # /soccer/. The gateway configmap below proxies to the dd-soccer-rs Service,
+  # so these MUST be applied or nginx fails to resolve the upstream at startup
+  # and the whole gateway crashloops.
+  - dd-soccer-feature-gates.configmap.yaml
+  - dd-soccer-rs.deployment.yaml
+  - dd-soccer-rs.service.yaml
+  # Akrion Sim web portal: Maud/HTMX pages and Supabase browser-login shell,
+  # mounted by the gateway at /akrion-sim.
+  - dd-akrion-web-server-rs.deployment.yaml
+  - dd-akrion-web-server-rs.networkpolicy.yaml
+  - dd-akrion-web-server-rs.pdb.yaml
+  - dd-akrion-web-server-rs.service.yaml
+  # Nightly soccer learning tournament. AWS and Hetzner both schedule it, while
+  # the runner's Postgres advisory lock lets only one cluster run matches.
+  - dd-soccer-tournament-nightly.cronjob.yaml
+  # Queue self-play farm: extra throughput lives here, not in the continuous
+  # learner's deterministic SOCCER_PARALLEL_GAMES=1 loop.
+  - dd-soccer-learning-queue.cronjob.yaml
   - dd-remote-gateway.configmap.yaml
   - dd-remote-gateway.deployment.yaml
+  - dd-remote-gateway.service.yaml
+  - dd-remote-gateway.ingress.yaml
   - dd-runtime-config.deployment.yaml
   - dd-runtime-config.service.yaml
   - dd-idle-reaper.configmap.yaml
   - dd-idle-reaper-rbac.yaml
   - dd-idle-reaper.deployment.yaml
   - dd-headlamp-cron-sentinel.cronjob.yaml
+  # ai-agent-bridge: inter-agent conversation bus (HTTP :8142 + TCP :8143).
+  # Built in-pod from the remote/deployments/ai-agent-bridge submodule; synced on
+  # both AWS and Hetzner via the dd-next-runtime app.
+  - dd-ai-agent-bridge.deployment.yaml
+  - dd-ai-agent-bridge.service.yaml

@@ -1,13 +1,14 @@
 use std::{env, net::SocketAddr, time::Instant};
 
 use dd_nats_subject_defs::{
-    CONTRACTS_SOLANA_VALIDATE_SUBJECT, DES_SIMULATE_SUBJECT, MDP_OPTIMIZE_SUBJECT,
-    ML_FEATURES_SUBJECT, TELEMETRY_MDP_SUBJECT, TELEMETRY_RAW_SUBJECT, THREAD_TASKS_WILDCARD,
-    TRADING_ORDER_INTENTS_SUBJECT, TRADING_SIGNALS_SUBJECT,
+    CONTRACTS_SOLANA_VALIDATE_SUBJECT, DES_SIMULATE_SUBJECT, FABRICATION_REQUESTS_SUBJECT,
+    FABRICATION_RESULTS_SUBJECT, MDP_OPTIMIZE_SUBJECT, ML_FEATURES_SUBJECT, TELEMETRY_MDP_SUBJECT,
+    TELEMETRY_RAW_SUBJECT, THREAD_TASKS_WILDCARD, TRADING_ORDER_INTENTS_SUBJECT,
+    TRADING_SIGNALS_SUBJECT,
 };
 
 use axum::{
-    extract::State,
+    extract::{Path, Query, State},
     http::StatusCode,
     http::{header, HeaderValue},
     response::{Html, IntoResponse, Response},
@@ -17,7 +18,7 @@ use axum::{
 use maud::{html, Markup, PreEscaped, DOCTYPE};
 use once_cell::sync::Lazy;
 use prometheus::{Encoder, IntCounterVec, IntGauge, Opts, TextEncoder};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 static STARTED_AT: Lazy<Instant> = Lazy::new(Instant::now);
 static HTTP_REQUESTS: Lazy<IntCounterVec> = Lazy::new(|| {
@@ -61,6 +62,11 @@ struct HealthResponse {
     mode: String,
 }
 
+#[derive(Deserialize)]
+struct JelloSampleQuery {
+    product: Option<String>,
+}
+
 fn redirect_home() -> Response {
     let mut response = Response::new(axum::body::Body::empty());
     *response.status_mut() = StatusCode::FOUND;
@@ -84,6 +90,105 @@ async fn root() -> impl IntoResponse {
 async fn home(State(state): State<AppState>) -> impl IntoResponse {
     record_request("GET", "/home", StatusCode::OK);
     home_document(&state)
+}
+
+async fn jello_page() -> impl IntoResponse {
+    record_request("GET", "/jello", StatusCode::OK);
+    jello_document()
+}
+
+async fn jello_sample(Query(query): Query<JelloSampleQuery>) -> impl IntoResponse {
+    record_request("GET", "/jello/sample", StatusCode::OK);
+    Html(jello_sample_markup(query.product.as_deref()).into_string())
+}
+
+fn canonical_grafana_deployment_name(deployment: &str) -> Option<String> {
+    let value = deployment.trim();
+    if value.is_empty() || value.len() > 128 {
+        return None;
+    }
+    if !value
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+    {
+        return None;
+    }
+
+    Some(
+        match value {
+            "billing-server" => "dd-billing-server",
+            "dart-server" => "dd-dart-server",
+            "des-rs" => "dd-des-rs",
+            other => other,
+        }
+        .to_string(),
+    )
+}
+
+fn grafana_deployment_path(deployment: &str) -> String {
+    format!("/grafana/depl/{deployment}")
+}
+
+fn grafana_deployment_dashboard_path(deployment: &str) -> String {
+    format!("/telemetry/d/dd-deployment-drilldown/deployment-drilldown?orgId=1&var-deployment={deployment}")
+}
+
+async fn grafana_observability_redirect() -> Response {
+    record_request("GET", "/grafana/observability", StatusCode::FOUND);
+    let mut response = Response::new(axum::body::Body::empty());
+    *response.status_mut() = StatusCode::FOUND;
+    response.headers_mut().insert(
+        header::LOCATION,
+        HeaderValue::from_static(
+            "/telemetry/d/dd-observability-control-plane/observability-control-plane?orgId=1",
+        ),
+    );
+    response
+}
+
+async fn grafana_fabrication_redirect() -> Response {
+    record_request("GET", "/grafana/fabrication", StatusCode::FOUND);
+    let mut response = Response::new(axum::body::Body::empty());
+    *response.status_mut() = StatusCode::FOUND;
+    response.headers_mut().insert(
+        header::LOCATION,
+        HeaderValue::from_static("/telemetry/d/dd-fabrication-planner/fabrication-planner?orgId=1"),
+    );
+    response
+}
+
+async fn grafana_deployment_redirect(Path(deployment): Path<String>) -> Response {
+    match canonical_grafana_deployment_name(&deployment) {
+        Some(deployment) => {
+            record_request("GET", "/grafana/depl/{deployment}", StatusCode::FOUND);
+            let location = grafana_deployment_dashboard_path(&deployment);
+            let mut response = Response::new(axum::body::Body::empty());
+            *response.status_mut() = StatusCode::FOUND;
+            if let Ok(value) = HeaderValue::from_str(&location) {
+                response.headers_mut().insert(header::LOCATION, value);
+                response
+            } else {
+                record_request(
+                    "GET",
+                    "/grafana/depl/{deployment}",
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                );
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to build Grafana deployment URL",
+                )
+                    .into_response()
+            }
+        }
+        None => {
+            record_request("GET", "/grafana/depl/{deployment}", StatusCode::BAD_REQUEST);
+            (
+                StatusCode::BAD_REQUEST,
+                "deployment must be a Kubernetes-safe name",
+            )
+                .into_response()
+        }
+    }
 }
 
 async fn api_docs_html() -> Html<&'static str> {
@@ -227,6 +332,7 @@ fn shared_header(active_page: &'static str) -> Markup {
                     span { "Labs" }
                     select data-dd-nav-select="labs" aria-label="Browser test labs" {
                         option value="" { "Labs" }
+                        (nav_option(active_page, "jello", "/jello", "Athlet-O"))
                         (nav_option(active_page, "wss", "/wss-test", "WebSocket lab"))
                         (nav_option(active_page, "presence", "/presence-test", "Presence lab"))
                     }
@@ -276,14 +382,14 @@ fn home_summary() -> Markup {
             "Public entrypoint for the EC2 Kubernetes runtime. Open paths: "
             code { "/" } ", " code { "/home" } ", " code { "/auth" } ", "
             code { "/agents/tasks" } ", " code { "/agents/threads" } ", "
-            code { "/factmachine-markets" } ", " code { "/presence-test" } ", "
+            code { "/factmachine-markets" } ", " code { "/jello" } ", " code { "/music/" } ", " code { "/presence-test" } ", "
             code { "/wss-test" } ", " code { "/api-docs" } ". Server-auth paths: "
             code { "/api/agents/" } ", " code { "/lambdas/functions" } ", " code { "/lambdas/invoke/<function-id>" } ", "
             code { "/api/lambdas/" } ", " code { "/api/agent-worker/" } ", "
             code { "/container-pools" } ", " code { "/bastion/" } ", " code { "/scrape" } ", "
-            code { "/trading/" } ", " code { "/contracts/" } ", " code { "/ml/" } ", "
+            code { "/trading/" } ", " code { "/contracts/" } ", " code { "/compliance/" } ", " code { "/ml/" } ", "
             code { "/builds" } ", " code { "/gleam/" } ", " code { "/presence/" } ", " code { "/mcp" } ", and "
-            code { "/gcs/" } ", " code { "/webrtc/" } ", " code { "/fsws/" } ", "
+            code { "/gcs/" } ", " code { "/webrtc/" } ", " code { "/webrtc-media/" } ", " code { "/fsws/" } ", "
             code { "/mdp/" } ", " code { "/des/" } ", and " code { "/des-rs/" } ". Internal-access ops: " code { "/headlamp/" } ", "
             code { "/telemetry/" } ", "
             code { "/prometheus/" } ", " code { "/nats/" } ", " code { "/nats-metrics/" } ", "
@@ -340,7 +446,19 @@ fn deployments_section() -> Markup {
 fn deployment_row(row: &DeploymentRow) -> Markup {
     html! {
         tr {
-            td { (code_list(row.deployments)) }
+            td {
+                (code_list(row.deployments))
+                div class="grafana-links" {
+                    @for deployment in row.deployments {
+                        a href=(grafana_deployment_path(deployment)) {
+                            "Grafana"
+                            @if row.deployments.len() > 1 {
+                                " " code { (deployment) }
+                            }
+                        }
+                    }
+                }
+            }
             td {
                 (code_list(row.service))
                 @if let Some(note) = row.service_note {
@@ -475,6 +593,7 @@ static DEPLOYMENT_ROWS: &[DeploymentRow] = &[
     DeploymentRow { deployments: &["dd-ai-ml-pipeline"], service: &["dd-ai-ml-pipeline.ai-ml:8099"], service_note: None, access: SERVER_AUTH, notes: "Python3 online feature pipeline for telemetry risk scoring, anomaly detection, transition hints, and MDP-ready events on dd.remote.telemetry.mdp." },
     DeploymentRow { deployments: &["dd-des-simulator"], service: &["dd-des-simulator:8099"], service_note: None, access: SERVER_AUTH, notes: "Rust DES simulator with declared des.v1 schema, validation endpoint, async job status, and NATS result publishing." },
     DeploymentRow { deployments: &["dd-des-rs"], service: &["dd-des-rs:8112"], service_note: None, access: SERVER_AUTH, notes: "Rust DES engine deployment that imports the discrete-event-system.rs crate as a library (git submodule), runs its simulation catalogue in-process, and serves the rendered HTML/JSON results at /des-rs/." },
+    DeploymentRow { deployments: &["dd-music-rs"], service: &["dd-music-rs:8115"], service_note: None, access: PUBLIC, notes: "Rust generative music shelf that renders daily DES music-engine WAV tracks, uploads published audio to S3, records anonymous votes in RDS Postgres, and uses Redis for generation locks plus vote throttling." },
     DeploymentRow { deployments: &["dd-contract-service"], service: &["dd-contract-service:8101"], service_note: None, access: SERVER_AUTH, notes: "Rust Solana contract gateway for solana.contract.v1 validation, signed transaction simulation, metrics, and NATS validation results." },
     DeploymentRow { deployments: &["dd-vpn"], service: &["dd-vpn-ui.vpn:51821"], service_note: None, access: VPN_PRIVATE, notes: "WireGuard wg-easy VPN server and private admin UI for split-tunnel access to the cluster service and pod CIDRs." },
     DeploymentRow { deployments: &["dd-live-mutex"], service: &["dd-live-mutex:6970"], service_note: None, access: CLUSTER_LOCAL, notes: "Singleton live-mutex broker deployment for TCP lock coordination." },
@@ -482,11 +601,13 @@ static DEPLOYMENT_ROWS: &[DeploymentRow] = &[
     DeploymentRow { deployments: &["dd-redis-cache"], service: &["dd-redis-cache:6379"], service_note: None, access: CLUSTER_LOCAL, notes: "Ephemeral Redis cache deployment with bounded memory and Redis health probes." },
     DeploymentRow { deployments: &["dd-lock-loadtest-trigger"], service: &["dd-lock-loadtest-trigger:8110"], service_note: None, access: INTERNAL, notes: "Node.js HTTP trigger for live-mutex versus Redis aggregate lock load tests." },
     DeploymentRow { deployments: &["dd-trading-server"], service: &["dd-trading-server:8103"], service_note: None, access: SERVER_AUTH, notes: "Rust trading decision service for trading.decision.v1 scoring, scraper and AI/ML signals, MDP/POMDP policy hints, risk gates, and NATS order intents." },
+    DeploymentRow { deployments: &["dd-fabrication-server"], service: &["dd-fabrication-server:8113"], service_note: None, access: SERVER_AUTH, notes: "Rust fabrication planner for 3D printers, CNC mills, routers, lathes, hybrid assemblies, instruction validation, and MDP/POMDP/neural policy learning hooks." },
+    DeploymentRow { deployments: &["dd-compliance-rs"], service: &["dd-compliance-rs:8118"], service_note: None, access: SERVER_AUTH, notes: "Rust compliance readiness job server for artifacts, codebases, networks, systems, infra diagrams, PDF/Markdown reports, bounded vulnerability/malware/dependency/secret scans, and fraud/bot/login-anomaly detection across SOC 2, ISO, GDPR, PCI DSS, HIPAA, FedRAMP, CMMC, NIST, AI, quality, and ESG frameworks." },
     DeploymentRow { deployments: &["dd-container-pool"], service: &["dd-container-pool:8102"], service_note: None, access: SERVER_AUTH, notes: "Rust warm container pool service that loads runtime pool config from Postgres and starts local containerd workers through nerdctl." },
     DeploymentRow { deployments: &["headlamp"], service: &["headlamp.headlamp:80"], service_note: Some("(pod 4466)"), access: SERVER_AUTH, notes: "Kubernetes web UI served at /headlamp/. Use the headlamp-viewer service-account token for read-only pod, container, log, workload, Argo CD, KEDA, and External Secrets inspection." },
     DeploymentRow { deployments: &["dd-gleam-lambda-runner"], service: &["dd-gleam-lambda-runner:8083"], service_note: None, access: SERVER_AUTH, notes: "Gleam child-process runner deployment for POST /lambdas/invoke/<function-id>. It uses its own Argo CD app and dd-gleam-lambda-runner-secrets." },
     DeploymentRow { deployments: &["dd-remote-gateway"], service: &["dd-remote-gateway:80/443"], service_note: None, access: PUBLIC, notes: "nginx Ingress for the EC2 single-node cluster. Owns hostPort 80/443 and proxies every documented public/auth path into its in-cluster service." },
-    DeploymentRow { deployments: &["dd-remote-web-home"], service: &["dd-remote-web-home:8080"], service_note: None, access: PUBLIC, notes: "This Rust service. Renders /, /home, /agents/tasks, /agents/threads, /lambdas/functions, /presence-test, and /wss-test; also exposes /healthz and /metrics." },
+    DeploymentRow { deployments: &["dd-remote-web-home"], service: &["dd-remote-web-home:8080"], service_note: None, access: PUBLIC, notes: "This Rust service. Renders /, /home, /jello, /agents/tasks, /agents/threads, /lambdas/functions, /presence-test, and /wss-test; also exposes /healthz and /metrics." },
     DeploymentRow { deployments: &["dd-remote-auth"], service: &["dd-remote-auth:8083"], service_note: None, access: PUBLIC, notes: "Rust PIN auth service. Issues the short-lived dd_auth cookie that the gateway accepts in place of the legacy Auth header for browser sessions." },
     DeploymentRow { deployments: &["dd-remote-rest-api"], service: &["dd-remote-rest-api:8082"], service_note: None, access: SERVER_AUTH, notes: "Rust REST API boundary for RDS/Postgres-backed agent task data. Serves /api/agents/* and /api/lambdas/* JSON behind gateway auth." },
     DeploymentRow { deployments: &["dd-agent-worker-broker"], service: &["dd-agent-worker-broker:8098"], service_note: None, access: SERVER_AUTH, notes: "Rust NATS-first worker dispatch broker behind /api/agent-worker/. Handles wakeup and direct-if-awake handoff to the UUID-pinned worker." },
@@ -497,8 +618,10 @@ static DEPLOYMENT_ROWS: &[DeploymentRow] = &[
     DeploymentRow { deployments: &["dd-wal-gateway"], service: &["dd-wal-gateway:8104"], service_note: None, access: INTERNAL, notes: "Rust Postgres -> NATS JetStream CDC gateway. Owns one logical replication slot, publishes cdc.<schema>.<table>.<op> envelopes on stream CDC, and exposes /healthz, /readyz, /metrics." },
     DeploymentRow { deployments: &["dd-gleamlang-server"], service: &["dd-gleamlang-server:8081"], service_note: None, access: SERVER_AUTH, notes: "Gleam/OTP WebSocket fan-out behind /gleam/*. Exposes /gleam/home, /gleam/healthz, /gleam/metrics, and wss://<host>/gleam/ws." },
     DeploymentRow { deployments: &["presence"], service: &["presence-svc.presence:8081"], service_note: Some("(StatefulSet)"), access: SERVER_AUTH, notes: "Gleam gleamlang-presence-server behind /presence/*. Distributed-Erlang StatefulSet that powers user-scoped and conv-scoped websockets driving the /presence-test browser harness." },
-    DeploymentRow { deployments: &["dd-gleam-mcp-server"], service: &["dd-gleam-mcp-server:8090"], service_note: None, access: SERVER_AUTH, notes: "Gleam JSON-RPC MCP service behind /mcp and /mcp/*. Ships read-only runtime tools, Prometheus metrics, and Loki-collected stdout." },
+    DeploymentRow { deployments: &["dd-cluster-mcp-rs"], service: &["dd-cluster-mcp-rs:8091"], service_note: None, access: SERVER_AUTH, notes: "Rust JSON-RPC MCP service behind /cluster-mcp and /cluster-mcp/*. Ships read-only cluster inventory, service wiring, telemetry tools, Prometheus metrics, dd.log.v1 stdout, and OTLP spans." },
+    DeploymentRow { deployments: &["dd-gleam-mcp-server"], service: &["dd-gleam-mcp-server:8090"], service_note: None, access: SERVER_AUTH, notes: "Legacy Gleam JSON-RPC MCP service behind /mcp and /mcp/*. Ships read-only runtime tools, Prometheus metrics, and Loki-collected stdout." },
     DeploymentRow { deployments: &["dd-webrtc-signaling"], service: &["dd-webrtc-signaling:8095"], service_note: None, access: SERVER_AUTH, notes: "Rust WebRTC signaling service behind /webrtc/. Room WebSocket signaling for browser/mobile peer handshakes; media and data channels stay peer-to-peer." },
+    DeploymentRow { deployments: &["dd-webrtc-media"], service: &["dd-webrtc-media:8125"], service_note: None, access: SERVER_AUTH, notes: "Rust WebRTC media-plane config service behind /webrtc-media/. Publishes STUN/TURN ICE metadata and optional SFU/media-relay endpoints; UDP media still requires a separate data-plane deployment." },
     DeploymentRow { deployments: &["dd-mdp-optimizer"], service: &["dd-mdp-optimizer:8096"], service_note: None, access: SERVER_AUTH, notes: "Rust MDP/POMDP/RL optimizer behind /mdp/. Consumes dd.remote.mdp.optimize and dd.remote.telemetry.mdp." },
     DeploymentRow { deployments: &["dd-akka-ws-server"], service: &["dd-akka-ws-server:8086"], service_note: None, access: INTERNAL, notes: "Scala/Akka WebSocket reference server backing the akka-streams and async-java load-test targets." },
     DeploymentRow { deployments: &["dd-fsharp-ws-server"], service: &["dd-fsharp-ws-server:8087"], service_note: None, access: SERVER_AUTH, notes: "F# + ASP.NET Core WebSocket server behind /fsws/. Exposes /fsws/healthz, /fsws/livez, /fsws/ws/rx, and /fsws/ws/async." },
@@ -515,30 +638,37 @@ static DEPLOYMENT_ROWS: &[DeploymentRow] = &[
 static PATH_ROWS: &[PathRow] = &[
     PathRow { paths: &[PathEntry { label: "/", href: Some("/") }, PathEntry { label: "/home", href: Some("/home") }, PathEntry { label: "/agents/tasks", href: Some("/agents/tasks") }, PathEntry { label: "/agents/threads", href: Some("/agents/threads") }], target: "Rust web homepage deployment", access: PUBLIC, notes: "Service directory plus cluster-served task/thread/PR UI. Browser UIs call JSON APIs for stored state while runtime invocation paths stay separate." },
     PathRow { paths: &[PathEntry { label: "/api-docs", href: Some("/api-docs") }, PathEntry { label: "/api-docs.json", href: Some("/api-docs.json") }, PathEntry { label: "/docs/api", href: Some("/docs/api") }, PathEntry { label: "/api/docs", href: Some("/api/docs") }], target: "Generated API documentation", access: PUBLIC, notes: "Central generated index plus this deployment's standard generated docs endpoints. Each HTTP API deployment also serves /docs/api, /api/docs, and /api/docs.json on its own service port." },
+    PathRow { paths: &[PathEntry { label: "/jello", href: Some("/jello") }, PathEntry { label: "/jello/sample", href: Some("/jello/sample?product=athlet") }], target: "Athlet-O performance gelatin storefront", access: PUBLIC, notes: "Brand/product concept page for protein gelatin cups with fiber, vitamin C, electrolytes, probiotics, stevia, retailer search links, and htmx sample-pack fragments." },
+    PathRow { paths: &[PathEntry { label: "/music/", href: Some("/music/") }, PathEntry { label: "/music/songs", href: Some("/music/songs") }, PathEntry { label: "/music/docs/api", href: Some("/music/docs/api") }, PathEntry { label: "POST /music/songs/<song_id>/votes", href: None }], target: "dd-music-rs generative music shelf", access: PUBLIC, notes: "Native browser audio player for daily generated tracks. The service publishes curated WAV files to S3, stores song/vote state in Postgres, and keeps generation coordination in Redis. Manual generation stays behind /music/internal/generate." },
     PathRow { paths: &[PathEntry { label: "/factmachine-markets", href: Some("/factmachine-markets") }], target: "FactMachine MDP/POMDP market simulation", access: PUBLIC, notes: "Single generated HTML artifact with a 50-day multi-market simulation, time-step controls, and scalar/binary/scale comparison plots." },
     PathRow { paths: &[PathEntry { label: "/tasks", href: Some("/tasks") }, PathEntry { label: "/status", href: Some("/status") }, PathEntry { label: "/stream/<uuid>", href: Some("/stream/example-task-id") }], target: "Node.js Coding Agent Task Manager", access: SERVER_AUTH, notes: "Runs inside the already-selected worker container. It executes prompts, tracks taskIds, streams events, and rejects requests for the wrong pinned thread." },
     PathRow { paths: &[PathEntry { label: "/api/agents/tasks", href: Some("/api/agents/tasks") }, PathEntry { label: "/api/agents/threads/<uuid>/context", href: Some("/api/agents/threads/example-thread-id/context") }], target: "Rust REST API (JSON only)", access: SERVER_AUTH, notes: "JSON-only boundary for task snapshots and thread context. The browser UI lives at /agents/tasks and uses the dd_auth cookie for same-origin API reads." },
     PathRow { paths: &[PathEntry { label: "/lambdas/functions", href: Some("/lambdas/functions") }, PathEntry { label: "/api/lambdas/functions", href: Some("/api/lambdas/functions") }, PathEntry { label: "POST /lambdas/invoke/<function-id>", href: Some("/lambdas/invoke/00000000-0000-0000-0000-000000000000") }], target: "dd-gleam-lambda-runner deployment + Rust REST API", access: SERVER_AUTH, notes: "CRUD/read models stay in the REST API. Invocation traffic is routed directly by the gateway to the Gleam child-process runner." },
-    PathRow { paths: &[PathEntry { label: "/presence-test", href: Some("/presence-test?user=alice&device=d1&autoconnect=1") }], target: "gleamlang-presence-server browser harness", access: PUBLIC, notes: "Self-contained page that opens one user-scoped ws plus N conv-scoped ws connections against the presence server." },
-    PathRow { paths: &[PathEntry { label: "/presence/healthz", href: Some("/presence/healthz") }, PathEntry { label: "/presence/ws", href: None }, PathEntry { label: "/presence/user/<id>/broadcast", href: None }], target: "gleamlang-presence-server gateway proxy", access: SERVER_AUTH, notes: "Authenticated same-origin proxy for the presence lab. WebSocket endpoint is wss://<host>/presence/ws." },
+    PathRow { paths: &[PathEntry { label: "/presence-test", href: Some("/presence-test?user=alice&device=d1") }], target: "gleamlang-presence-server browser harness", access: PUBLIC, notes: "Self-contained page for one user-scoped ws plus N conv-scoped ws connections against the presence server. Operators can opt into connection attempts from the page after the presence deployment is installed." },
+    PathRow { paths: &[PathEntry { label: "/presence/healthz", href: None }, PathEntry { label: "/presence/ws", href: None }, PathEntry { label: "/presence/user/<id>/broadcast", href: None }], target: "gleamlang-presence-server gateway proxy", access: SERVER_AUTH, notes: "Authenticated same-origin proxy reserved for the presence lab. It is intentionally not linked as a finite page until the presence Argo app and image are deployed." },
     PathRow { paths: &[PathEntry { label: "/wss-test", href: Some("/wss-test") }, PathEntry { label: "?preset=gleam", href: Some("/wss-test?preset=gleam") }, PathEntry { label: "?preset=webrtc", href: Some("/wss-test?preset=webrtc") }, PathEntry { label: "?preset=gcs", href: Some("/wss-test?preset=gcs") }, PathEntry { label: "?preset=fsrx", href: Some("/wss-test?preset=fsrx") }], target: "Gateway WebSocket test lab", access: PUBLIC, notes: "Rust-served browser harness. Preset health checks and sockets use gateway-authenticated upstream routes when they leave the public page." },
-    PathRow { paths: &[PathEntry { label: "/auth", href: Some("/auth?return=/home") }, PathEntry { label: "/auth/login", href: Some("/auth/login") }, PathEntry { label: "/auth/logout", href: Some("/auth/logout") }], target: "dd-remote-auth Rust PIN auth", access: PUBLIC, notes: "Sets the temporary dd_auth cookie so the gateway can accept browser sessions without the legacy Auth header." },
+    PathRow { paths: &[PathEntry { label: "/auth", href: Some("/auth?return=/home") }, PathEntry { label: "/auth/status", href: Some("/auth/status") }], target: "dd-remote-auth Rust PIN auth", access: PUBLIC, notes: "Sets the temporary dd_auth cookie so the gateway can accept browser sessions without the legacy Auth header." },
     PathRow { paths: &[PathEntry { label: "/bastion/runtime/deployments", href: Some("/bastion/runtime/deployments") }, PathEntry { label: "/bastion/profile", href: Some("/bastion/profile") }, PathEntry { label: "/bastion/terminal", href: None }], target: "Rust bastion/jumphost access broker", access: SERVER_AUTH, notes: "Same-origin gateway access to bastion inventory and allowlisted browser exec terminals." },
     PathRow { paths: &[PathEntry { label: "/headlamp/", href: Some("/headlamp/") }], target: "Headlamp Kubernetes UI", access: SERVER_AUTH, notes: "Read-only cluster browser for workload, pod, container, logs, node, Argo CD, KEDA, and External Secrets state. Paste a token from `kubectl -n headlamp create token headlamp-viewer`." },
     PathRow { paths: &[PathEntry { label: THREAD_TASKS_WILDCARD, href: None }, PathEntry { label: "POST /api/agents/threads/<uuid>/prepare", href: Some("/api/agents/threads/example-thread-id/prepare") }], target: "Rust NATS Queue Consumer", access: INTERNAL_ACCESS, notes: "Queued consumer reads task.dispatch messages, routes repo-matched work into warm container pools, and falls back to the UUID-bound worker when needed. Legacy shadow messages only prepare workers." },
     PathRow { paths: &[PathEntry { label: "/dd-thread/<short>", href: Some("/dd-thread/example") }, PathEntry { label: "/dd-thread/<short>/tasks", href: Some("/dd-thread/example/tasks") }, PathEntry { label: "/dd-thread/<short>/stream/<taskId>", href: Some("/dd-thread/example/stream/example-task-id") }, PathEntry { label: "/dd-thread/<short>/ws", href: Some("/dd-thread/example/ws") }], target: "Kubernetes per-thread Ingress", access: SERVER_AUTH, notes: "Ingress selects the UUID-bound worker Service; Node.js handles only the task inside that selected container." },
     PathRow { paths: &[PathEntry { label: "/gleam/home", href: Some("/gleam/home") }, PathEntry { label: "/gleam/healthz", href: Some("/gleam/healthz") }, PathEntry { label: "/gleam/metrics", href: Some("/gleam/metrics") }, PathEntry { label: "/gleam/ws", href: None }], target: "Gleam WebSocket service", access: INTERNAL_ACCESS, notes: "Gleam/OTP fan-out socket behind the gateway; WebSocket endpoint is wss://<host>/gleam/ws." },
-    PathRow { paths: &[PathEntry { label: "/mcp", href: Some("/mcp") }, PathEntry { label: "/mcp/home", href: Some("/mcp/home") }, PathEntry { label: "/mcp/healthz", href: Some("/mcp/healthz") }, PathEntry { label: "/mcp/metrics", href: Some("/mcp/metrics") }], target: "Gleam MCP service", access: INTERNAL_ACCESS, notes: "Dedicated MCP deployment with read-only runtime tools, Prometheus metrics, and Loki-collected stdout logs." },
+    PathRow { paths: &[PathEntry { label: "/cluster-mcp", href: Some("/cluster-mcp") }, PathEntry { label: "/cluster-mcp/home", href: Some("/cluster-mcp/home") }, PathEntry { label: "/cluster-mcp/healthz", href: Some("/cluster-mcp/healthz") }, PathEntry { label: "/cluster-mcp/metrics", href: Some("/cluster-mcp/metrics") }], target: "Rust cluster MCP service", access: INTERNAL_ACCESS, notes: "Primary dd_cluster MCP deployment with read-only Kubernetes inventory, service discovery, observability, Prometheus metrics, dd.log.v1 stdout logs, and explicit OTLP spans." },
+    PathRow { paths: &[PathEntry { label: "/mcp", href: Some("/mcp") }, PathEntry { label: "/mcp/home", href: Some("/mcp/home") }, PathEntry { label: "/mcp/healthz", href: Some("/mcp/healthz") }, PathEntry { label: "/mcp/metrics", href: Some("/mcp/metrics") }], target: "Legacy Gleam MCP service", access: INTERNAL_ACCESS, notes: "Legacy dedicated MCP deployment with read-only runtime tools, Prometheus metrics, and Loki-collected stdout logs." },
     PathRow { paths: &[PathEntry { label: "/webrtc/", href: Some("/webrtc/") }, PathEntry { label: "/webrtc/healthz", href: Some("/webrtc/healthz") }, PathEntry { label: "/webrtc/metrics", href: Some("/webrtc/metrics") }, PathEntry { label: "/webrtc/signal test", href: Some("/wss-test?preset=webrtc") }], target: "Rust WebRTC signaling service", access: SERVER_AUTH, notes: "Room WebSocket signaling for browser/mobile peer handshakes. Media and data channels stay peer-to-peer. The gateway requires the operator Auth header or dd_auth cookie before forwarding." },
+    PathRow { paths: &[PathEntry { label: "/webrtc-media/", href: Some("/webrtc-media/") }, PathEntry { label: "/webrtc-media/config", href: Some("/webrtc-media/config") }, PathEntry { label: "/webrtc-media/ice", href: Some("/webrtc-media/ice") }, PathEntry { label: "/webrtc-media/metrics", href: Some("/webrtc-media/metrics") }], target: "Rust WebRTC media config service", access: SERVER_AUTH, notes: "Advertises ICE servers plus optional TURN/SFU/media-relay metadata. The gateway carries only HTTP config; media UDP/TCP paths require a separate public data-plane route." },
     PathRow { paths: &[PathEntry { label: "/mdp/", href: Some("/mdp/") }, PathEntry { label: "/mdp/healthz", href: Some("/mdp/healthz") }, PathEntry { label: "/mdp/metrics", href: Some("/mdp/metrics") }, PathEntry { label: "POST /mdp/optimize", href: Some("/mdp/optimize") }, PathEntry { label: "POST /mdp/telemetry/learn", href: Some("/mdp/telemetry/learn") }, PathEntry { label: MDP_OPTIMIZE_SUBJECT, href: None }, PathEntry { label: TELEMETRY_MDP_SUBJECT, href: None }], target: "Rust MDP/POMDP optimizer", access: SERVER_AUTH, notes: "Async optimizer behind the authenticated gateway; it subscribes to NATS optimization and telemetry jobs, then publishes runtime events." },
+    PathRow { paths: &[PathEntry { label: "/fabrication/", href: Some("/fabrication/") }, PathEntry { label: "/fabrication/healthz", href: Some("/fabrication/healthz") }, PathEntry { label: "/fabrication/metrics", href: Some("/fabrication/metrics") }, PathEntry { label: "/fabrication/docs/api", href: Some("/fabrication/docs/api") }, PathEntry { label: "/fabrication/jobs", href: Some("/fabrication/jobs") }, PathEntry { label: "/grafana/fabrication", href: Some("/grafana/fabrication") }, PathEntry { label: "POST /fabrication/plan", href: Some("/fabrication/plan") }, PathEntry { label: "POST /fabrication/instructions/analyze", href: Some("/fabrication/instructions/analyze") }, PathEntry { label: FABRICATION_REQUESTS_SUBJECT, href: None }, PathEntry { label: FABRICATION_RESULTS_SUBJECT, href: None }], target: "Rust fabrication planner", access: SERVER_AUTH, notes: "Hybrid additive/subtractive/turning planner with draft machine programs, instruction analysis, failure-boundary detection, artifact inspection, and optional MDP optimizer publication." },
     PathRow { paths: &[PathEntry { label: "/des/", href: Some("/des/") }, PathEntry { label: "/des/healthz", href: Some("/des/healthz") }, PathEntry { label: "/des/metrics", href: Some("/des/metrics") }, PathEntry { label: "/des/model/schema", href: Some("/des/model/schema") }, PathEntry { label: "/des/model/example", href: Some("/des/model/example") }, PathEntry { label: "POST /des/validate", href: Some("/des/validate") }, PathEntry { label: "POST /des/simulate", href: Some("/des/simulate") }, PathEntry { label: DES_SIMULATE_SUBJECT, href: None }], target: "Rust discrete event simulator", access: SERVER_AUTH, notes: "Async DES job runner behind the authenticated gateway, with declared des.v1 schema, strict validation, in-memory job status, metrics, and NATS result publishing." },
     PathRow { paths: &[PathEntry { label: "/des-rs/", href: Some("/des-rs/") }, PathEntry { label: "/des-rs/info", href: Some("/des-rs/info") }, PathEntry { label: "/des-rs/simulations", href: Some("/des-rs/simulations") }, PathEntry { label: "POST /des-rs/simulate", href: Some("/des-rs/simulate") }, PathEntry { label: "/des-rs/out/", href: Some("/des-rs/out/") }, PathEntry { label: "/des-rs/out/soccer-sim.html", href: Some("/des-rs/out/soccer-sim.html") }, PathEntry { label: "/des-rs/healthz", href: Some("/des-rs/healthz") }, PathEntry { label: "/des-rs/docs/api", href: Some("/des-rs/docs/api") }, PathEntry { label: "/des-rs/api/docs.json", href: Some("/des-rs/api/docs.json") }], target: "Rust DES engine (library) result pages", access: SERVER_AUTH, notes: "Landing page with per-simulation run buttons that execute the discrete-event-system.rs engine (git submodule) in-process and serve its rendered HTML/JSON result pages, including the 2D 11v11 soccer videogame artifact. Ships a canonical machine-readable service descriptor at /api/docs.json (built JSON-first by the engine's des::service module), an HTML view at /docs/api, and RFC 8288 service-doc/service-desc discovery headers on / and /info." },
     PathRow { paths: &[PathEntry { label: "/contracts/", href: Some("/contracts/") }, PathEntry { label: "/contracts/healthz", href: Some("/contracts/healthz") }, PathEntry { label: "/contracts/metrics", href: Some("/contracts/metrics") }, PathEntry { label: "/contracts/schema", href: Some("/contracts/schema") }, PathEntry { label: "/contracts/example", href: Some("/contracts/example") }, PathEntry { label: "POST /contracts/validate", href: Some("/contracts/validate") }, PathEntry { label: "POST /contracts/simulate", href: Some("/contracts/simulate") }, PathEntry { label: CONTRACTS_SOLANA_VALIDATE_SUBJECT, href: None }], target: "Rust Solana contract service", access: SERVER_AUTH, notes: "Validates solana.contract.v1 instruction envelopes, proxies signed simulation through Solana JSON-RPC, and publishes NATS validation results." },
+    PathRow { paths: &[PathEntry { label: "/compliance/", href: Some("/compliance/") }, PathEntry { label: "/compliance/standards", href: Some("/compliance/standards") }, PathEntry { label: "/compliance/controls", href: Some("/compliance/controls") }, PathEntry { label: "/compliance/example", href: Some("/compliance/example") }, PathEntry { label: "/compliance/diagrams/example", href: Some("/compliance/diagrams/example") }, PathEntry { label: "/compliance/reports/example", href: Some("/compliance/reports/example") }, PathEntry { label: "/compliance/vulnerability-scan/example", href: Some("/compliance/vulnerability-scan/example") }, PathEntry { label: "/compliance/docs/api", href: Some("/compliance/docs/api") }, PathEntry { label: "POST /compliance/audits", href: Some("/compliance/audits") }, PathEntry { label: "POST /compliance/audit-sync", href: Some("/compliance/audit-sync") }, PathEntry { label: "POST /compliance/diagrams/infrastructure", href: Some("/compliance/diagrams/infrastructure") }, PathEntry { label: "POST /compliance/reports/system", href: Some("/compliance/reports/system") }, PathEntry { label: "POST /compliance/vulnerability-scan", href: Some("/compliance/vulnerability-scan") }, PathEntry { label: "POST /compliance/malware-scan", href: Some("/compliance/malware-scan/example") }, PathEntry { label: "POST /compliance/dependency-audit", href: Some("/compliance/dependency-audit/example") }, PathEntry { label: "POST /compliance/secret-scan", href: Some("/compliance/secret-scan/example") }, PathEntry { label: "POST /compliance/fraud-detection", href: Some("/compliance/fraud-detection/example") }, PathEntry { label: "POST /compliance/bot-detection", href: Some("/compliance/bot-detection/example") }, PathEntry { label: "POST /compliance/login-anomaly", href: Some("/compliance/login-anomaly/example") }], target: "Rust compliance readiness server", access: SERVER_AUTH, notes: "Runs bounded evidence-readiness audit jobs, infra parity diagrams, Markdown/PDF system reports, static vulnerability scans, plus malware/dependency/secret scanners and fraud/bot/login-anomaly detectors for artifacts, codebases, networks, and systems across global compliance frameworks." },
     PathRow { paths: &[PathEntry { label: "/ml/", href: Some("/ml/") }, PathEntry { label: "/ml/healthz", href: Some("/ml/healthz") }, PathEntry { label: "/ml/metrics", href: Some("/ml/metrics") }, PathEntry { label: "/ml/status", href: Some("/ml/status") }, PathEntry { label: "POST /ml/analyze", href: Some("/ml/analyze") }, PathEntry { label: "POST /ml/ingest", href: Some("/ml/ingest") }, PathEntry { label: TELEMETRY_RAW_SUBJECT, href: None }, PathEntry { label: ML_FEATURES_SUBJECT, href: None }], target: "Python AI/ML feature pipeline", access: SERVER_AUTH, notes: "Normalizes runtime telemetry into features, EWMA baselines, z-score anomalies, transition estimates, and MDP telemetry requests." },
     PathRow { paths: &[PathEntry { label: "/trading/", href: Some("/trading/") }, PathEntry { label: "/trading/healthz", href: Some("/trading/healthz") }, PathEntry { label: "/trading/metrics", href: Some("/trading/metrics") }, PathEntry { label: "/trading/schema", href: Some("/trading/schema") }, PathEntry { label: "/trading/example", href: Some("/trading/example") }, PathEntry { label: "POST /trading/decide", href: Some("/trading/decide") }, PathEntry { label: TRADING_SIGNALS_SUBJECT, href: None }, PathEntry { label: TRADING_ORDER_INTENTS_SUBJECT, href: None }], target: "Rust trading decision service", access: SERVER_AUTH, notes: "Combines scraped web sentiment, AI/ML features, market snapshots, and MDP/POMDP hints into risk-gated buy/sell/hold decisions." },
     PathRow { paths: &[PathEntry { label: "POST /scrape", href: Some("/scrape") }, PathEntry { label: "/scrape/strategies", href: Some("/scrape/strategies") }, PathEntry { label: "/scrape/healthz", href: Some("/scrape/healthz") }, PathEntry { label: "/scrape/metrics", href: Some("/scrape/metrics") }], target: "dd-web-scraper Fastify deployment", access: SERVER_AUTH, notes: "Long-running strategy router for native fetch, Cheerio, JSDOM, LinkeDOM, Playwright, Puppeteer, and Browserless scraping." },
     PathRow { paths: &[PathEntry { label: "POST /builds", href: Some("/builds") }, PathEntry { label: "/builds/<jobId>", href: Some("/builds/example-job") }, PathEntry { label: "/builds/<jobId>/logs", href: Some("/builds/example-job/logs") }], target: "dd-build-server Rust CI/CD deployment", access: SERVER_AUTH, notes: "Authenticated repo build queue. Jobs are build-server.v1 JSON, push only to allowlisted ECR prefixes, and deploy only allowlisted manifests/namespaces." },
-    PathRow { paths: &[PathEntry { label: "/telemetry/", href: Some("/telemetry/") }], target: "Grafana", access: INTERNAL_ACCESS, notes: "Primary HTML dashboard for Prometheus metrics, Loki logs, Tempo traces, and NATS metrics." },
+    PathRow { paths: &[PathEntry { label: "/telemetry/", href: Some("/telemetry/") }, PathEntry { label: "/grafana/observability", href: Some("/grafana/observability") }, PathEntry { label: "/grafana/fabrication", href: Some("/grafana/fabrication") }], target: "Grafana", access: INTERNAL_ACCESS, notes: "Primary HTML dashboards for Prometheus metrics, Loki logs, Tempo traces, NATS metrics, the observability control plane, and the Rust fabrication planner." },
+    PathRow { paths: &[PathEntry { label: "/grafana/depl/<deployment>", href: Some("/grafana/depl/dd-remote-web-home") }, PathEntry { label: "/grafana/depl/dd-dart-server", href: Some("/grafana/depl/dd-dart-server") }, PathEntry { label: "/grafana/depl/des-rs", href: Some("/grafana/depl/des-rs") }], target: "Grafana deployment drilldown", access: INTERNAL_ACCESS, notes: "Rust web-home redirect into the canonical per-deployment Grafana page, backed by Kubernetes resource metrics plus Loki logs." },
     PathRow { paths: &[PathEntry { label: "/prometheus/", href: Some("/prometheus/") }], target: "Prometheus", access: INTERNAL_ACCESS, notes: "Low-level metrics UI and query surface." },
     PathRow { paths: &[PathEntry { label: "/nats/", href: Some("/nats/") }, PathEntry { label: "/nats-metrics/metrics", href: Some("/nats-metrics/metrics") }], target: "NATS monitor and exporter", access: INTERNAL_ACCESS, notes: "NATS should usually be inspected through Grafana; these paths expose raw health and metrics." },
     PathRow { paths: &[PathEntry { label: "/reaper/", href: Some("/reaper/") }, PathEntry { label: "/cron/", href: Some("/cron/") }], target: "Runtime service status", access: INTERNAL_ACCESS, notes: "Gateway status surfaces for idle reaper and cron scheduler deployments." },
@@ -999,6 +1129,19 @@ code {
 .path-links a:focus-visible code {
   border-color: rgba(94, 234, 212, 0.62);
   background: rgba(94, 234, 212, 0.1);
+}
+.grafana-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 7px;
+  font-size: 12px;
+}
+.grafana-links a {
+  color: var(--accent);
+}
+.grafana-links code {
+  font-size: 11px;
 }
 .pill {
   display: inline-flex;
@@ -1606,6 +1749,856 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
 })();
 "##;
 
+const JELLO_CSS: &str = r###"
+:root {
+  color-scheme: light;
+  --ink: #12323a;
+  --muted: #516872;
+  --paper: #f8fbff;
+  --paper-2: #ffffff;
+  --line: rgba(18, 50, 58, 0.16);
+  --green: #53d86a;
+  --green-dark: #168943;
+  --aqua: #27c9c3;
+  --blue: #355dff;
+  --coral: #ff6f61;
+  --yellow: #ffd84d;
+  --berry: #d9498b;
+  --shadow: 0 22px 55px rgba(18, 50, 58, 0.16);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+a {
+  color: inherit;
+}
+
+.jello-page {
+  overflow: hidden;
+}
+
+.jello-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(360px, 1.05fr);
+  min-height: calc(100vh - var(--dd-site-header-height, 72px));
+  gap: 28px;
+  align-items: center;
+  padding: 56px clamp(22px, 5%, 76px) 42px;
+  background: #f8fbff;
+}
+
+.jello-hero::before {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 96px;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 216, 77, 0.52) 0 56px,
+      rgba(83, 216, 106, 0.34) 56px 112px,
+      rgba(39, 201, 195, 0.32) 112px 168px,
+      rgba(255, 111, 97, 0.34) 168px 224px
+    );
+  opacity: 0.72;
+}
+
+.hero-copy,
+.hero-stage {
+  position: relative;
+  z-index: 1;
+}
+
+.brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.brand-mark {
+  display: inline-grid;
+  width: 64px;
+  height: 64px;
+  place-items: center;
+  border: 3px solid var(--ink);
+  border-radius: 18px;
+  background: var(--yellow);
+  box-shadow: 8px 8px 0 var(--ink);
+}
+
+.brand-mark svg {
+  width: 48px;
+  height: 48px;
+}
+
+.brand-name {
+  font-weight: 950;
+  font-size: 2.2rem;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.eyebrow {
+  width: fit-content;
+  margin: 42px 0 16px;
+  padding: 8px 14px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--green-dark);
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+
+.jello-hero h1 {
+  max-width: 760px;
+  margin-bottom: 20px;
+  font-size: 4.8rem;
+  line-height: 0.94;
+  letter-spacing: 0;
+}
+
+.lede {
+  max-width: 680px;
+  margin-bottom: 26px;
+  color: var(--muted);
+  font-size: 1.28rem;
+  line-height: 1.6;
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.hero-actions a,
+.retailer-row a {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  color: var(--ink);
+  font-weight: 900;
+  text-decoration: none;
+  box-shadow: 4px 4px 0 var(--ink);
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.hero-actions a {
+  padding: 12px 18px;
+  background: var(--green);
+}
+
+.hero-actions a:nth-child(2) {
+  background: #ffffff;
+}
+
+.hero-actions a:hover,
+.retailer-row a:hover {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+
+.hero-stage {
+  display: grid;
+  min-height: 560px;
+  align-items: end;
+}
+
+.shelf {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  align-items: end;
+}
+
+.hero-pack {
+  display: grid;
+  min-height: 440px;
+  align-items: end;
+}
+
+.hero-pack:nth-child(2) {
+  min-height: 510px;
+}
+
+.cup-visual {
+  width: 100%;
+  aspect-ratio: 5 / 6;
+  filter: drop-shadow(0 24px 20px rgba(18, 50, 58, 0.2));
+}
+
+.jello-section {
+  padding: 52px clamp(22px, 5%, 76px);
+}
+
+.section-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 22px;
+  margin-bottom: 24px;
+}
+
+.section-heading h2 {
+  max-width: 720px;
+  margin-bottom: 0;
+  font-size: 2.45rem;
+  line-height: 1.05;
+  letter-spacing: 0;
+}
+
+.section-heading p {
+  max-width: 520px;
+  margin-bottom: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.product-line {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.product-card {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-height: 720px;
+  border: 2px solid var(--ink);
+  border-radius: 8px;
+  background: var(--paper-2);
+  box-shadow: 8px 8px 0 var(--ink);
+  overflow: hidden;
+}
+
+.product-visual {
+  display: grid;
+  min-height: 270px;
+  place-items: center;
+  padding: 22px;
+  border-bottom: 2px solid var(--ink);
+}
+
+.athlet .product-visual {
+  background: #e9fff0;
+}
+
+.recover .product-visual {
+  background: #f2edff;
+}
+
+.pregame .product-visual {
+  background: #fff3df;
+}
+
+.product-copy {
+  display: grid;
+  grid-template-rows: auto auto auto 1fr auto;
+  gap: 14px;
+  padding: 22px;
+}
+
+.product-kicker {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.product-card h3 {
+  margin-bottom: 0;
+  font-size: 2rem;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.tagline {
+  margin-bottom: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.benefits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-content: start;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.benefits li {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid rgba(18, 50, 58, 0.2);
+  border-radius: 999px;
+  background: #f8fbff;
+  color: var(--ink);
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.formula-list {
+  display: grid;
+  gap: 10px;
+  padding-left: 18px;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.formula-list strong {
+  color: var(--ink);
+}
+
+.retailer-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.retailer-row a {
+  padding: 9px 10px;
+  background: #ffffff;
+  font-size: 0.92rem;
+}
+
+.sampler-band {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(360px, 1.15fr);
+  gap: 24px;
+  align-items: center;
+  border-top: 2px solid var(--ink);
+  border-bottom: 2px solid var(--ink);
+  background: #fff7d7;
+}
+
+.sampler-copy h2 {
+  max-width: 640px;
+  margin-bottom: 16px;
+  font-size: 2.35rem;
+  line-height: 1.05;
+  letter-spacing: 0;
+}
+
+.sampler-copy p {
+  max-width: 620px;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.sampler-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.sampler-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.sampler-controls button {
+  min-height: 42px;
+  padding: 9px 14px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+.sampler-controls button:hover {
+  transform: translate(1px, 1px);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+
+.sampler-result {
+  min-height: 232px;
+}
+
+.sample-card {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.45fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: center;
+  min-height: 232px;
+  padding: 20px;
+  border: 2px solid var(--ink);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 8px 8px 0 var(--ink);
+}
+
+.sample-badge {
+  display: grid;
+  aspect-ratio: 1;
+  place-items: center;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--sample-color, var(--green));
+  color: #ffffff;
+  font-weight: 950;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.sample-card h3 {
+  margin-bottom: 8px;
+  font-size: 1.8rem;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.sample-card p {
+  margin-bottom: 12px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.sample-stack {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sample-stack span {
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: #eef8ff;
+  color: var(--ink);
+  font-weight: 850;
+}
+
+.sample-card.athlet {
+  --sample-color: var(--green-dark);
+}
+
+.sample-card.recover {
+  --sample-color: var(--berry);
+}
+
+.sample-card.pregame {
+  --sample-color: var(--blue);
+}
+
+.formula-band {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  gap: 22px;
+  align-items: stretch;
+  background: #12323a;
+  color: #ffffff;
+}
+
+.formula-band h2 {
+  max-width: 620px;
+  margin-bottom: 18px;
+  font-size: 2.35rem;
+  line-height: 1.08;
+  letter-spacing: 0;
+}
+
+.formula-band p {
+  max-width: 620px;
+  color: #d9eef2;
+  line-height: 1.7;
+}
+
+.formula-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.formula-tile {
+  min-height: 156px;
+  padding: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.34);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.formula-tile b {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--yellow);
+  font-size: 1.05rem;
+}
+
+.formula-tile span {
+  color: #e7f6f7;
+  line-height: 1.5;
+}
+
+.store-note {
+  padding-top: 24px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+@media (max-width: 1120px) {
+  .jello-hero {
+    grid-template-columns: 1fr;
+    min-height: auto;
+  }
+
+  .hero-stage {
+    min-height: auto;
+  }
+
+  .shelf {
+    max-width: 780px;
+  }
+
+  .product-line {
+    grid-template-columns: 1fr;
+  }
+
+  .product-card {
+    min-height: auto;
+  }
+
+  .product-copy {
+    grid-template-rows: auto;
+  }
+
+  .formula-band {
+    grid-template-columns: 1fr;
+  }
+
+  .sampler-band {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .jello-hero {
+    padding-top: 28px;
+    padding-bottom: 18px;
+    gap: 12px;
+  }
+
+  .brand-mark {
+    width: 54px;
+    height: 54px;
+    border-radius: 15px;
+  }
+
+  .brand-name {
+    font-size: 1.7rem;
+  }
+
+  .eyebrow {
+    margin-top: 22px;
+    margin-bottom: 12px;
+    padding: 7px 12px;
+  }
+
+  .jello-hero h1 {
+    margin-bottom: 14px;
+    font-size: 2.45rem;
+  }
+
+  .lede {
+    margin-bottom: 16px;
+    font-size: 1rem;
+    line-height: 1.5;
+  }
+
+  .hero-actions a {
+    min-height: 40px;
+    padding: 10px 14px;
+  }
+
+  .shelf {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .hero-pack,
+  .hero-pack:nth-child(2) {
+    min-height: 148px;
+  }
+
+  .cup-visual {
+    max-height: 180px;
+  }
+
+  .section-heading {
+    display: grid;
+  }
+
+  .section-heading h2,
+  .formula-band h2 {
+    font-size: 2rem;
+  }
+
+  .product-visual {
+    min-height: 230px;
+  }
+
+  .retailer-row,
+  .formula-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sample-card {
+    grid-template-columns: 1fr;
+  }
+
+  .sample-badge {
+    max-width: 168px;
+  }
+}
+"###;
+
+const JELLO_BODY: &str = r###"
+<main class="jello-page">
+  <section class="jello-hero" aria-labelledby="jello-title">
+    <div class="hero-copy">
+      <a class="brand-lockup" href="/jello" aria-label="Athlet-O home">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 64 64" role="presentation" focusable="false">
+            <path d="M13 42c0-15 8-29 19-29s19 14 19 29c0 9-7 14-19 14S13 51 13 42Z" fill="#53d86a" stroke="#12323a" stroke-width="4"/>
+            <path d="M24 36c0-6 3-12 8-12s8 6 8 12-3 9-8 9-8-3-8-9Z" fill="#f8fbff" stroke="#12323a" stroke-width="4"/>
+            <path d="M20 15c4 6 20 6 24 0" fill="none" stroke="#12323a" stroke-width="4" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <span class="brand-name">Athlet-O</span>
+      </a>
+      <p class="eyebrow">Performance gelatin cups</p>
+      <h1 id="jello-title">Wobble hard. Recover clean.</h1>
+      <p class="lede">A jello-ish sports snack built with gelatin protein, inulin fiber, vitamin C, electrolytes, probiotics, and stevia instead of sugar.</p>
+      <div class="hero-actions" aria-label="Athlet-O page links">
+        <a href="#products">Shop the lineup</a>
+        <a href="#formula">See the formula</a>
+      </div>
+    </div>
+    <div class="hero-stage" aria-label="Athlet-O product lineup">
+      <div class="shelf">
+        <div class="hero-pack" aria-hidden="true">
+          <svg class="cup-visual" viewBox="0 0 260 312" role="img" aria-label="Athlet-O green protein gelatin cup">
+            <path d="M43 68h174l-23 224H66L43 68Z" fill="#53d86a" stroke="#12323a" stroke-width="7"/>
+            <path d="M35 48h190v42H35z" fill="#ffd84d" stroke="#12323a" stroke-width="7"/>
+            <path d="M69 112h122v126H69z" fill="#f8fbff" stroke="#12323a" stroke-width="6"/>
+            <text x="130" y="148" text-anchor="middle" font-size="30" font-weight="900" fill="#12323a">Athlet-O</text>
+            <text x="130" y="184" text-anchor="middle" font-size="20" font-weight="800" fill="#168943">protein</text>
+            <text x="130" y="218" text-anchor="middle" font-size="18" font-weight="800" fill="#12323a">20g</text>
+          </svg>
+        </div>
+        <div class="hero-pack" aria-hidden="true">
+          <svg class="cup-visual" viewBox="0 0 260 312" role="img" aria-label="Recover-O berry recovery gelatin cup">
+            <path d="M43 68h174l-23 224H66L43 68Z" fill="#d9498b" stroke="#12323a" stroke-width="7"/>
+            <path d="M35 48h190v42H35z" fill="#27c9c3" stroke="#12323a" stroke-width="7"/>
+            <path d="M69 112h122v126H69z" fill="#ffffff" stroke="#12323a" stroke-width="6"/>
+            <text x="130" y="148" text-anchor="middle" font-size="29" font-weight="900" fill="#12323a">Recover-O</text>
+            <text x="130" y="184" text-anchor="middle" font-size="20" font-weight="800" fill="#d9498b">rebuild</text>
+            <text x="130" y="218" text-anchor="middle" font-size="18" font-weight="800" fill="#12323a">C + salts</text>
+          </svg>
+        </div>
+        <div class="hero-pack" aria-hidden="true">
+          <svg class="cup-visual" viewBox="0 0 260 312" role="img" aria-label="Pre-Game-O citrus pre-game gelatin cup">
+            <path d="M43 68h174l-23 224H66L43 68Z" fill="#ff6f61" stroke="#12323a" stroke-width="7"/>
+            <path d="M35 48h190v42H35z" fill="#355dff" stroke="#12323a" stroke-width="7"/>
+            <path d="M69 112h122v126H69z" fill="#fff3df" stroke="#12323a" stroke-width="6"/>
+            <text x="130" y="146" text-anchor="middle" font-size="25" font-weight="900" fill="#12323a">Pre-Game-O</text>
+            <text x="130" y="184" text-anchor="middle" font-size="20" font-weight="800" fill="#355dff">hydrate</text>
+            <text x="130" y="218" text-anchor="middle" font-size="18" font-weight="800" fill="#12323a">zero sugar</text>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="jello-section" id="products" aria-labelledby="products-title">
+    <div class="section-heading">
+      <h2 id="products-title">Three cups, three locker-room jobs.</h2>
+      <p>Gelatin gives each cup its bounce and protein base. Inulin brings the fiber. Stevia keeps the sugar out. The rest is built for sweat, travel, and second halves.</p>
+    </div>
+    <div class="product-line">
+      <article class="product-card athlet">
+        <div class="product-visual" aria-hidden="true">
+          <svg class="cup-visual" viewBox="0 0 260 312" role="presentation" focusable="false">
+            <path d="M43 68h174l-23 224H66L43 68Z" fill="#53d86a" stroke="#12323a" stroke-width="7"/>
+            <path d="M35 48h190v42H35z" fill="#ffd84d" stroke="#12323a" stroke-width="7"/>
+            <path d="M69 112h122v126H69z" fill="#f8fbff" stroke="#12323a" stroke-width="6"/>
+            <text x="130" y="148" text-anchor="middle" font-size="30" font-weight="900" fill="#12323a">Athlet-O</text>
+            <text x="130" y="184" text-anchor="middle" font-size="20" font-weight="800" fill="#168943">protein</text>
+            <text x="130" y="218" text-anchor="middle" font-size="18" font-weight="800" fill="#12323a">20g</text>
+          </svg>
+        </div>
+        <div class="product-copy">
+          <p class="product-kicker">Daily training</p>
+          <h3>Athlet-O</h3>
+          <p class="tagline">The flagship cup: lime-citrus wobble with protein, fiber, vitamin C, electrolytes, and probiotic cultures.</p>
+          <ul class="benefits" aria-label="Athlet-O benefits">
+            <li>Gelatin protein</li>
+            <li>Inulin fiber</li>
+            <li>No sugar</li>
+            <li>Stevia sweetened</li>
+            <li>Vitamin C</li>
+            <li>Electrolytes</li>
+            <li>Probiotics</li>
+          </ul>
+          <div class="retailer-row" aria-label="Athlet-O retailer links">
+            <a href="https://www.amazon.com/s?k=Athlet-O+protein+jello" target="_blank" rel="noopener noreferrer">Amazon</a>
+            <a href="https://www.wholefoodsmarket.com/search?text=Athlet-O" target="_blank" rel="noopener noreferrer">Whole Foods</a>
+            <a href="https://www.target.com/s?searchTerm=Athlet-O" target="_blank" rel="noopener noreferrer">Target</a>
+            <a href="https://www.walmart.com/search?q=Athlet-O+protein+jello" target="_blank" rel="noopener noreferrer">Walmart</a>
+          </div>
+        </div>
+      </article>
+
+      <article class="product-card recover">
+        <div class="product-visual" aria-hidden="true">
+          <svg class="cup-visual" viewBox="0 0 260 312" role="presentation" focusable="false">
+            <path d="M43 68h174l-23 224H66L43 68Z" fill="#d9498b" stroke="#12323a" stroke-width="7"/>
+            <path d="M35 48h190v42H35z" fill="#27c9c3" stroke="#12323a" stroke-width="7"/>
+            <path d="M69 112h122v126H69z" fill="#ffffff" stroke="#12323a" stroke-width="6"/>
+            <text x="130" y="148" text-anchor="middle" font-size="29" font-weight="900" fill="#12323a">Recover-O</text>
+            <text x="130" y="184" text-anchor="middle" font-size="20" font-weight="800" fill="#d9498b">rebuild</text>
+            <text x="130" y="218" text-anchor="middle" font-size="18" font-weight="800" fill="#12323a">C + salts</text>
+          </svg>
+        </div>
+        <div class="product-copy">
+          <p class="product-kicker">Post-workout</p>
+          <h3>Recover-O</h3>
+          <p class="tagline">Berry-orange cool-down gelatin for the ride home, the ice bath, and the morning-after training log.</p>
+          <ul class="benefits" aria-label="Recover-O benefits">
+            <li>Gelatin protein</li>
+            <li>Added vitamin C</li>
+            <li>Magnesium</li>
+            <li>Potassium</li>
+            <li>Prebiotic fiber</li>
+            <li>Live cultures</li>
+            <li>Zero sugar</li>
+          </ul>
+          <div class="retailer-row" aria-label="Recover-O retailer links">
+            <a href="https://www.amazon.com/s?k=Recover-O+recovery+jello" target="_blank" rel="noopener noreferrer">Amazon</a>
+            <a href="https://www.wholefoodsmarket.com/search?text=Recover-O" target="_blank" rel="noopener noreferrer">Whole Foods</a>
+            <a href="https://www.target.com/s?searchTerm=Recover-O" target="_blank" rel="noopener noreferrer">Target</a>
+            <a href="https://www.costco.com/CatalogSearch?keyword=Recover-O" target="_blank" rel="noopener noreferrer">Costco</a>
+          </div>
+        </div>
+      </article>
+
+      <article class="product-card pregame">
+        <div class="product-visual" aria-hidden="true">
+          <svg class="cup-visual" viewBox="0 0 260 312" role="presentation" focusable="false">
+            <path d="M43 68h174l-23 224H66L43 68Z" fill="#ff6f61" stroke="#12323a" stroke-width="7"/>
+            <path d="M35 48h190v42H35z" fill="#355dff" stroke="#12323a" stroke-width="7"/>
+            <path d="M69 112h122v126H69z" fill="#fff3df" stroke="#12323a" stroke-width="6"/>
+            <text x="130" y="146" text-anchor="middle" font-size="25" font-weight="900" fill="#12323a">Pre-Game-O</text>
+            <text x="130" y="184" text-anchor="middle" font-size="20" font-weight="800" fill="#355dff">hydrate</text>
+            <text x="130" y="218" text-anchor="middle" font-size="18" font-weight="800" fill="#12323a">zero sugar</text>
+          </svg>
+        </div>
+        <div class="product-copy">
+          <p class="product-kicker">Before the whistle</p>
+          <h3>Pre-Game-O</h3>
+          <p class="tagline">Citrus-punch gelatin for pre-game rituals: bright vitamin C, easy electrolytes, fiber, and no sugar rush.</p>
+          <ul class="benefits" aria-label="Pre-Game-O benefits">
+            <li>Sodium</li>
+            <li>Potassium</li>
+            <li>Vitamin C</li>
+            <li>Inulin fiber</li>
+            <li>Stevia sweetened</li>
+            <li>Light protein</li>
+            <li>No sugar</li>
+          </ul>
+          <div class="retailer-row" aria-label="Pre-Game-O retailer links">
+            <a href="https://www.amazon.com/s?k=Pre-Game-O+electrolyte+jello" target="_blank" rel="noopener noreferrer">Amazon</a>
+            <a href="https://www.wholefoodsmarket.com/search?text=Pre-Game-O" target="_blank" rel="noopener noreferrer">Whole Foods</a>
+            <a href="https://www.target.com/s?searchTerm=Pre-Game-O" target="_blank" rel="noopener noreferrer">Target</a>
+            <a href="https://www.gnc.com/search?q=Pre-Game-O" target="_blank" rel="noopener noreferrer">GNC</a>
+          </div>
+        </div>
+      </article>
+    </div>
+    <p class="store-note">Retail links open retailer searches for this concept lineup.</p>
+  </section>
+
+  <section class="jello-section sampler-band" aria-labelledby="sampler-title">
+    <div class="sampler-copy">
+      <h2 id="sampler-title">Build a snack-table sample pack.</h2>
+      <p>Pick the cup for the moment and the flavor brief lands ready for the sideline cooler.</p>
+    </div>
+    <div class="sampler-panel">
+      <div class="sampler-controls" aria-label="Sample pack choices">
+        <button type="button" hx-get="/jello/sample?product=athlet" hx-target="#sampler-result" hx-swap="innerHTML">Athlet-O</button>
+        <button type="button" hx-get="/jello/sample?product=recover" hx-target="#sampler-result" hx-swap="innerHTML">Recover-O</button>
+        <button type="button" hx-get="/jello/sample?product=pregame" hx-target="#sampler-result" hx-swap="innerHTML">Pre-Game-O</button>
+      </div>
+      <div id="sampler-result" class="sampler-result" hx-get="/jello/sample?product=athlet" hx-trigger="load" hx-swap="innerHTML">
+        <div class="sample-card athlet">
+          <div class="sample-badge">A-O</div>
+          <div>
+            <h3>Athlet-O starter box</h3>
+            <p>Lime-citrus protein wobble for daily training bags, bus rides, and after-school lift sessions.</p>
+            <div class="sample-stack">
+              <span>20g gelatin protein</span>
+              <span>Inulin fiber</span>
+              <span>Vitamin C</span>
+              <span>Electrolytes</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="jello-section formula-band" id="formula" aria-labelledby="formula-title">
+    <div>
+      <h2 id="formula-title">Built like a sports drink moved into a snack cup.</h2>
+      <p>Each concept cup starts with a bouncy gelatin base, then stacks athlete-friendly add-ins without the syrupy sugar crash.</p>
+    </div>
+    <div class="formula-grid">
+      <div class="formula-tile"><b>Protein bounce</b><span>Gelatin gives the signature wobble and a compact protein payload.</span></div>
+      <div class="formula-tile"><b>Fiber assist</b><span>Inulin brings prebiotic fiber while keeping the texture smooth.</span></div>
+      <div class="formula-tile"><b>Hydration salts</b><span>Sodium, potassium, and magnesium help the cup earn its gym-bag spot.</span></div>
+      <div class="formula-tile"><b>Bright support</b><span>Vitamin C and probiotic cultures round out the everyday performance stack.</span></div>
+    </div>
+  </section>
+</main>
+"###;
+
 async fn agents_tasks_page() -> impl IntoResponse {
     record_request("GET", "/agents/tasks", StatusCode::OK);
     ui_document(
@@ -1720,6 +2713,78 @@ async fn wss_test_page() -> impl IntoResponse {
         WSS_TEST_BODY,
         WSS_TEST_JS,
     )
+}
+
+fn jello_document() -> Html<String> {
+    Html(
+        html! {
+            (DOCTYPE)
+            html lang="en" data-dd-mode="dark" {
+                head {
+                    meta charset="utf-8";
+                    meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover";
+                    meta name="theme-color" content="#f8fbff";
+                    title { "Athlet-O performance gelatin" }
+                    script { (PreEscaped(SHARED_HEADER_BOOT_JS)) }
+                    style { (PreEscaped(JELLO_CSS)) }
+                    link rel="stylesheet" href="/assets/web-home/shared-header.css";
+                    script defer="defer" src="https://unpkg.com/htmx.org@2.0.4" {}
+                    script defer="defer" src="/assets/web-home/shared-header.js" {}
+                }
+                body {
+                    (shared_header("jello"))
+                    (PreEscaped(JELLO_BODY))
+                }
+            }
+        }
+        .into_string(),
+    )
+}
+
+fn jello_sample_markup(product: Option<&str>) -> Markup {
+    let (class_name, badge, title, description, chips) = match product {
+        Some("recover") => (
+            "recover",
+            "R-O",
+            "Recover-O cooldown box",
+            "Berry-orange recovery wobble for the ride home, with minerals, vitamin C, fiber, and live cultures.",
+            &["Gelatin protein", "Magnesium", "Potassium", "Probiotics"][..],
+        ),
+        Some("pregame") => (
+            "pregame",
+            "P-G",
+            "Pre-Game-O tunnel box",
+            "Citrus-punch prep cup for pre-game rituals, packed with electrolytes, vitamin C, and no sugar rush.",
+            &["Sodium", "Potassium", "Vitamin C", "Zero sugar"][..],
+        ),
+        _ => (
+            "athlet",
+            "A-O",
+            "Athlet-O starter box",
+            "Lime-citrus protein wobble for daily training bags, bus rides, and after-school lift sessions.",
+            &[
+                "20g gelatin protein",
+                "Inulin fiber",
+                "Vitamin C",
+                "Electrolytes",
+            ][..],
+        ),
+    };
+
+    html! {
+        div class=(format!("sample-card {class_name}")) {
+            div class="sample-badge" { (badge) }
+            div {
+                h3 { (title) }
+                p { (description) }
+                div class="sample-stack" {
+                    @for chip in chips {
+                        span { (chip) }
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn ui_document(
@@ -7678,6 +8743,7 @@ const state = {
   userWs: null,
   convs: {},          // convId → { ws, panel, logEl, statusEl, membersEl }
   helloUserNode: null,
+  presenceProbe: null,
 };
 
 function nowTs() {
@@ -7703,25 +8769,82 @@ function setPill(el, text, cls) {
   el.className = "pill " + cls;
 }
 
+function compactBody(text) {
+  const s = String(text || "").trim();
+  return s.length > 180 ? s.slice(0, 180) + "..." : s;
+}
+function normalizedHost(hostname) {
+  return String(hostname || "").toLowerCase().replace(/^\[|\]$/g, "");
+}
+function isLoopbackHost(hostname) {
+  const h = normalizedHost(hostname);
+  return h === "localhost" || h === "::1" || h === "0.0.0.0" || h.startsWith("127.");
+}
+function isLocalPage() {
+  return isLoopbackHost(location.hostname);
+}
 function presenceBaseUrl() {
   const raw = $("presence").value.trim() || "/presence";
   const url = new URL(raw, location.origin);
   if (url.protocol === "ws:") url.protocol = "http:";
   if (url.protocol === "wss:") url.protocol = "https:";
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(`unsupported presence base protocol: ${url.protocol}`);
+  }
+  if (!isLocalPage() && isLoopbackHost(url.hostname)) {
+    throw new Error(`refusing loopback presence base from remote page: ${url.hostname}`);
+  }
   url.hash = "";
   url.search = "";
   return url;
 }
+function safePresenceBaseUrl(panelLog) {
+  try {
+    return presenceBaseUrl();
+  } catch (e) {
+    const targetLog = panelLog || $("user-log");
+    log(targetLog, e && e.message ? e.message : String(e), "bad");
+    setPill($("status"), "invalid base", "bad");
+    return null;
+  }
+}
 function stripTrailingSlash(value) {
   return value.replace(/\/$/, "");
 }
-function wsBase() {
-  const url = presenceBaseUrl();
+function wsBase(panelLog) {
+  const url = safePresenceBaseUrl(panelLog);
+  if (!url) return null;
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   return stripTrailingSlash(url.toString());
 }
-function httpBase() {
-  return stripTrailingSlash(presenceBaseUrl().toString());
+function httpBase(panelLog) {
+  const url = safePresenceBaseUrl(panelLog);
+  return url ? stripTrailingSlash(url.toString()) : null;
+}
+async function ensurePresenceReady(panelLog) {
+  const base = httpBase(panelLog);
+  if (!base) return false;
+  const now = Date.now();
+  const cached = state.presenceProbe;
+  if (cached && cached.base === base && now - cached.at < 3000) return cached.ok;
+  try {
+    const r = await fetch(`${base}/healthz`, { credentials: "same-origin", cache: "no-store" });
+    const body = compactBody(await r.text());
+    const ok = r.ok;
+    state.presenceProbe = { base, ok, at: now };
+    if (!ok) {
+      const auth = r.status === 401 ? "presence gateway auth required" : "presence health check failed";
+      log(panelLog, `${auth}: HTTP ${r.status}${body ? " " + body : ""}`, "bad");
+      setPill($("status"), r.status === 401 ? "auth required" : "health failed", "bad");
+      return false;
+    }
+    return true;
+  } catch (e) {
+    state.presenceProbe = { base, ok: false, at: now };
+    log(panelLog, `presence health check failed: ${e}`, "bad");
+    setPill($("status"), "health failed", "bad");
+    return false;
+  }
 }
 
 function updateWsCount() {
@@ -7805,27 +8928,32 @@ function buildConvPanels() {
 
 // ───────────────────────────────────────────────────────────────────
 // user-ws lifecycle
-function openUserWs() {
-  if (state.userWs && state.userWs.readyState <= 1) return;
+async function openUserWs(skipPreflight = false) {
+  const logEl = $("user-log");
+  if (state.userWs && state.userWs.readyState <= 1) return true;
+  if (!skipPreflight && !(await ensurePresenceReady(logEl))) return false;
   const user = $("user").value.trim();
   const device = $("device").value.trim();
-  if (!user) { log($("user-log"), "missing user-id", "bad"); return; }
+  if (!user) { log(logEl, "missing user-id", "bad"); return false; }
   const qs = new URLSearchParams({ user });
   if (device) qs.set("device", device);
-  const url = `${wsBase()}/ws?${qs}`;
+  const base = wsBase(logEl);
+  if (!base) return false;
+  const url = `${base}/ws?${qs}`;
   $("user-meta").textContent = url;
   const ws = new WebSocket(url);
   state.userWs = ws;
   setPill($("user-status"), "connecting", "warn");
-  log($("user-log"), `→ open ${url}`, "muted");
+  log(logEl, `→ open ${url}`, "muted");
   ws.onopen = () => { setPill($("user-status"), "open", "ok"); updateWsCount(); };
   ws.onclose = (e) => {
     setPill($("user-status"), `closed (${e.code})`, "bad");
-    log($("user-log"), `← close code=${e.code} reason="${e.reason || ""}"`, "warn");
+    log(logEl, `← close code=${e.code} reason="${e.reason || ""}"`, "warn");
     updateWsCount();
   };
-  ws.onerror = () => log($("user-log"), "← error (see devtools)", "bad");
+  ws.onerror = () => log(logEl, "← error (see devtools)", "bad");
   ws.onmessage = (e) => handleUserFrame(e.data);
+  return true;
 }
 
 function closeUserWs() {
@@ -7865,15 +8993,18 @@ function handleUserFrame(raw) {
 
 // ───────────────────────────────────────────────────────────────────
 // conv-ws lifecycle
-function openConvWs(convId) {
+async function openConvWs(convId, skipPreflight = false) {
   const c = state.convs[convId];
-  if (!c) return;
-  if (c.ws && c.ws.readyState <= 1) return;
+  if (!c) return false;
+  if (c.ws && c.ws.readyState <= 1) return true;
+  if (!skipPreflight && !(await ensurePresenceReady(c.logEl))) return false;
   const user = $("user").value.trim();
   const device = $("device").value.trim();
   const qs = new URLSearchParams({ user, conv: convId });
   if (device) qs.set("device", device);
-  const url = `${wsBase()}/ws?${qs}`;
+  const base = wsBase(c.logEl);
+  if (!base) return false;
+  const url = `${base}/ws?${qs}`;
   const ws = new WebSocket(url);
   c.ws = ws;
   setPill(c.statusEl, "connecting", "warn");
@@ -7886,6 +9017,7 @@ function openConvWs(convId) {
   };
   ws.onerror = () => log(c.logEl, "← error", "bad");
   ws.onmessage = (e) => handleConvFrame(convId, e.data);
+  return true;
 }
 
 function closeConvWs(convId) {
@@ -7917,17 +9049,22 @@ function handleConvFrame(convId, raw) {
 async function joinConv(convId) {
   const user = $("user").value.trim();
   const c = state.convs[convId];
-  const res = await postPlain(`${httpBase()}/conv/${enc(convId)}/members/${enc(user)}`);
+  const base = httpBase(c ? c.logEl : $("user-log"));
+  if (!base) return false;
+  const res = await postPlain(`${base}/conv/${enc(convId)}/members/${enc(user)}`);
   if (c) log(c.logEl, `POST /members/${user} → ${res}`, "system");
   // Refresh membership pill (the user-ws will also see the membership-
   // changed JSON if I'm registered).
   refreshConvMembers(convId);
+  return !res.startsWith("HTTP 401");
 }
 
 async function leaveConv(convId) {
   const user = $("user").value.trim();
   const c = state.convs[convId];
-  const res = await deletePlain(`${httpBase()}/conv/${enc(convId)}/members/${enc(user)}`);
+  const base = httpBase(c ? c.logEl : $("user-log"));
+  if (!base) return;
+  const res = await deletePlain(`${base}/conv/${enc(convId)}/members/${enc(user)}`);
   if (c) log(c.logEl, `DELETE /members/${user} → ${res}`, "warn");
   refreshConvMembers(convId);
 }
@@ -7935,9 +9072,15 @@ async function leaveConv(convId) {
 async function refreshConvMembers(convId) {
   const c = state.convs[convId];
   if (!c) return;
+  const base = httpBase(c.logEl);
+  if (!base) return;
   try {
-    const r = await fetch(`${httpBase()}/conv/${enc(convId)}/members`);
+    const r = await fetch(`${base}/conv/${enc(convId)}/members`, { credentials: "same-origin", cache: "no-store" });
     const body = (await r.text()).trim();
+    if (!r.ok) {
+      setPill(c.membersEl, `members: HTTP ${r.status}`, "bad");
+      return;
+    }
     const members = body ? body.split("\n") : [];
     setPill(c.membersEl, `members: ${members.join(",") || "—"}`, members.length ? "" : "warn");
   } catch (e) {
@@ -7947,13 +9090,17 @@ async function refreshConvMembers(convId) {
 
 async function convBroadcast(convId, payload) {
   const c = state.convs[convId];
-  const res = await postPlain(`${httpBase()}/conv/${enc(convId)}/broadcast`, payload);
+  const base = httpBase(c ? c.logEl : $("user-log"));
+  if (!base) return;
+  const res = await postPlain(`${base}/conv/${enc(convId)}/broadcast`, payload);
   if (c) log(c.logEl, `POST /broadcast (${payload.length}B) → ${res}`, "muted");
 }
 
 async function userBroadcast(payload) {
   const user = $("user").value.trim();
-  const res = await postPlain(`${httpBase()}/user/${enc(user)}/broadcast`, payload);
+  const base = httpBase($("user-log"));
+  if (!base) return;
+  const res = await postPlain(`${base}/user/${enc(user)}/broadcast`, payload);
   log($("user-log"), `POST /user/${user}/broadcast → ${res}`, "muted");
 }
 
@@ -7961,7 +9108,9 @@ async function deviceLogout() {
   const user = $("user").value.trim();
   const device = $("device").value.trim();
   if (!device) { log($("user-log"), "device-id required for logout", "bad"); return; }
-  const res = await postPlain(`${httpBase()}/user/${enc(user)}/devices/${enc(device)}/logout`, "ui-button");
+  const base = httpBase($("user-log"));
+  if (!base) return;
+  const res = await postPlain(`${base}/user/${enc(user)}/devices/${enc(device)}/logout`, "ui-button");
   log($("user-log"), `POST /devices/${device}/logout → ${res}`, "warn");
 }
 
@@ -7969,13 +9118,19 @@ async function deviceLogout() {
 // helpers
 async function postPlain(url, body = "") {
   try {
-    const r = await fetch(url, { method: "POST", body, headers: { "content-type": "text/plain" } });
+    const r = await fetch(url, {
+      method: "POST",
+      body,
+      headers: { "content-type": "text/plain" },
+      credentials: "same-origin",
+      cache: "no-store",
+    });
     return `HTTP ${r.status} ${(await r.text()).trim()}`;
   } catch (e) { return `error: ${e}`; }
 }
 async function deletePlain(url) {
   try {
-    const r = await fetch(url, { method: "DELETE" });
+    const r = await fetch(url, { method: "DELETE", credentials: "same-origin", cache: "no-store" });
     return `HTTP ${r.status} ${(await r.text()).trim()}`;
   } catch (e) { return `error: ${e}`; }
 }
@@ -7995,12 +9150,13 @@ function tryParseSystemFrame(raw) {
 // top-level connect / disconnect
 async function connectAll() {
   setPill($("status"), "connecting", "warn");
-  openUserWs();
+  if (!(await ensurePresenceReady($("user-log")))) return;
+  await openUserWs(true);
   // Join every conv THEN open its ws. Membership is required for the
   // conv-ws upgrade to succeed.
   for (const convId of Object.keys(state.convs)) {
-    await joinConv(convId);
-    openConvWs(convId);
+    const joined = await joinConv(convId);
+    if (joined) await openConvWs(convId, true);
   }
   setPill($("status"), "connected", "ok");
 }
@@ -8016,6 +9172,7 @@ function disconnectAll() {
 $("user").addEventListener("input", applySelfInfo);
 $("device").addEventListener("input", applySelfInfo);
 $("convs").addEventListener("change", buildConvPanels);
+$("presence").addEventListener("input", () => { state.presenceProbe = null; });
 
 $("connect").onclick = connectAll;
 $("disconnect").onclick = disconnectAll;
@@ -8351,23 +9508,34 @@ const LAMBDA_FUNCTIONS_BODY: &str = r###"<div class="app">
         </label>
         <label>
           <span>Runtime</span>
-          <select id="runtime">
-            <option value="nodejs">nodejs</option>
-            <option value="python3">python3</option>
-            <option value="ruby">ruby</option>
-            <option value="bash">bash</option>
-          </select>
-        </label>
-        <label>
-          <span>Process profile</span>
-          <select id="process-profile">
-            <option value="nodejs">nodejs process</option>
-            <option value="python3">python3 process</option>
-            <option value="rust">rust process</option>
-            <option value="golang">golang process</option>
-            <option value="gleamlang">gleamlang process</option>
-          </select>
-        </label>
+            <select id="runtime">
+              <option value="nodejs">nodejs</option>
+              <option value="python3">python3</option>
+              <option value="ruby">ruby</option>
+              <option value="bash">bash</option>
+              <option value="golang">golang</option>
+              <option value="dart">dart</option>
+              <option value="erlang">erlang</option>
+              <option value="elixir">elixir</option>
+              <option value="java">java</option>
+            </select>
+          </label>
+          <label>
+            <span>Process profile</span>
+            <select id="process-profile">
+              <option value="nodejs">nodejs process</option>
+              <option value="python3">python3 process</option>
+              <option value="ruby">ruby process</option>
+              <option value="bash">bash process</option>
+              <option value="golang">golang process</option>
+              <option value="dart">dart process</option>
+              <option value="erlang">erlang process</option>
+              <option value="elixir">elixir process</option>
+              <option value="java">java process</option>
+              <option value="rust">rust process</option>
+              <option value="gleamlang">gleamlang process</option>
+            </select>
+          </label>
         <label>
           <span>Container runner</span>
           <select id="container-runner">
@@ -8460,6 +9628,11 @@ const entryCommands = {
   python3: "env -i PATH=\"$PATH\" PYTHONUNBUFFERED=1 python3 child-runtimes/python-function-runner.py",
   ruby: "env -i PATH=\"$PATH\" ruby child-runtimes/ruby-function-runner.rb",
   bash: "env -i PATH=\"$PATH\" NODE_NO_WARNINGS=1 node --permission --allow-net --allow-child-process child-runtimes/bash-function-runner.mjs",
+  golang: "env -i PATH=\"$PATH\" LAMBDA_TARGET_RUNTIME=\"golang\" NODE_NO_WARNINGS=1 node child-runtimes/polyglot-function-runner.mjs",
+  dart: "env -i PATH=\"$PATH\" LAMBDA_TARGET_RUNTIME=\"dart\" NODE_NO_WARNINGS=1 node child-runtimes/polyglot-function-runner.mjs",
+  erlang: "env -i PATH=\"$PATH\" LAMBDA_TARGET_RUNTIME=\"erlang\" NODE_NO_WARNINGS=1 node child-runtimes/polyglot-function-runner.mjs",
+  elixir: "env -i PATH=\"$PATH\" LAMBDA_TARGET_RUNTIME=\"elixir\" NODE_NO_WARNINGS=1 node child-runtimes/polyglot-function-runner.mjs",
+  java: "env -i PATH=\"$PATH\" LAMBDA_TARGET_RUNTIME=\"java\" NODE_NO_WARNINGS=1 node child-runtimes/polyglot-function-runner.mjs",
 };
 const processProfiles = {
   nodejs: {
@@ -8479,24 +9652,72 @@ const processProfiles = {
       "docker.io/library/dd-container-pool-python3-runtime:dev",
       "docker.io/library/python:3.12-alpine",
     ],
-  },
-  rust: {
-    runtime: "nodejs",
-    poolSlug: "rust",
+    },
+    ruby: {
+      runtime: "ruby",
+      poolSlug: "ruby",
+      baseImages: [
+        "docker.io/library/dd-lambda-ruby-runtime:dev",
+        "docker.io/library/ruby:3.3-alpine",
+      ],
+    },
+    bash: {
+      runtime: "bash",
+      poolSlug: "bash",
+      baseImages: [
+        "docker.io/library/dd-lambda-bash-runtime:dev",
+        "docker.io/library/bash:5.3-alpine",
+      ],
+    },
+    golang: {
+      runtime: "golang",
+      poolSlug: "golang",
+      baseImages: [
+        "docker.io/library/dd-lambda-golang-runtime:dev",
+        "docker.io/library/dd-container-pool-golang-runtime:dev",
+        "docker.io/library/golang:1.25-alpine",
+      ],
+    },
+    dart: {
+      runtime: "dart",
+      poolSlug: "dart",
+      baseImages: [
+        "docker.io/library/dd-lambda-dart-runtime:dev",
+        "docker.io/library/dart:stable",
+      ],
+    },
+    erlang: {
+      runtime: "erlang",
+      poolSlug: "erlang",
+      baseImages: [
+        "docker.io/library/dd-lambda-erlang-runtime:dev",
+        "docker.io/library/erlang:28-alpine",
+      ],
+    },
+    elixir: {
+      runtime: "elixir",
+      poolSlug: "elixir",
+      baseImages: [
+        "docker.io/library/dd-lambda-elixir-runtime:dev",
+        "docker.io/library/elixir:1.18-alpine",
+      ],
+    },
+    java: {
+      runtime: "java",
+      poolSlug: "java",
+      baseImages: [
+        "docker.io/library/dd-lambda-java-runtime:dev",
+        "docker.io/library/eclipse-temurin:21-jdk-alpine",
+      ],
+    },
+    rust: {
+      runtime: "nodejs",
+      poolSlug: "rust",
     requiresContainerPool: true,
     baseImages: [
       "docker.io/library/dd-container-pool-rust-runtime:dev",
       "docker.io/library/rust:1.90-bookworm",
       "docker.io/library/rust:1.90-alpine",
-    ],
-  },
-  golang: {
-    runtime: "nodejs",
-    poolSlug: "golang",
-    requiresContainerPool: true,
-    baseImages: [
-      "docker.io/library/dd-container-pool-golang-runtime:dev",
-      "docker.io/library/golang:1.25-alpine",
     ],
   },
   gleamlang: {
@@ -8517,9 +9738,12 @@ const state = {
   functions: [],
   selectedId: null,
   queryAutofillActive: false,
-  editorDirty: false,
-  bodyProfile: "nodejs",
-};
+    editorDirty: false,
+    bodyProfile: "nodejs",
+    activeProfile: "nodejs",
+    draftLoadToken: 0,
+    draftSaveTimer: null,
+  };
 const queryParams = new URLSearchParams(location.search);
 const autofillParamNames = [
   "slug", "name", "displayName", "title", "description", "status", "runtime",
@@ -8543,30 +9767,72 @@ const codeKeywordSets = {
     "move", "mut", "pub", "ref", "return", "self", "Self", "static", "struct", "super",
     "trait", "true", "type", "unsafe", "use", "where", "while",
   ]),
-  golang: new Set([
-    "break", "case", "chan", "const", "continue", "default", "defer", "else", "fallthrough",
-    "for", "func", "go", "goto", "if", "import", "interface", "map", "nil", "package",
-    "range", "return", "select", "struct", "switch", "type", "var",
+    golang: new Set([
+      "break", "case", "chan", "const", "continue", "default", "defer", "else", "fallthrough",
+      "for", "func", "go", "goto", "if", "import", "interface", "map", "nil", "package",
+      "range", "return", "select", "struct", "switch", "type", "var",
+    ]),
+    dart: new Set([
+      "abstract", "as", "async", "await", "base", "break", "case", "catch", "class", "const",
+      "continue", "default", "deferred", "do", "dynamic", "else", "enum", "export", "extends",
+      "extension", "external", "factory", "false", "final", "finally", "for", "Function",
+      "if", "implements", "import", "in", "interface", "is", "late", "library", "mixin",
+      "new", "null", "on", "operator", "part", "required", "return", "sealed", "static",
+      "super", "switch", "sync", "this", "throw", "true", "try", "typedef", "var", "void",
+      "when", "while", "with", "yield",
+    ]),
+    erlang: new Set([
+      "after", "and", "andalso", "band", "begin", "bnot", "bor", "bsl", "bsr", "bxor",
+      "case", "catch", "cond", "div", "end", "fun", "if", "let", "not", "of", "or",
+      "orelse", "receive", "rem", "try", "when", "xor",
+    ]),
+    elixir: new Set([
+      "after", "alias", "and", "case", "catch", "cond", "def", "defmodule", "defp", "do",
+      "else", "end", "false", "fn", "for", "if", "import", "in", "nil", "not", "or",
+      "quote", "raise", "receive", "require", "rescue", "super", "throw", "true", "try",
+      "unless", "unquote", "use", "when",
+    ]),
+    java: new Set([
+      "abstract", "assert", "boolean", "break", "byte", "case", "catch", "char", "class",
+      "const", "continue", "default", "do", "double", "else", "enum", "extends", "false",
+      "final", "finally", "float", "for", "goto", "if", "implements", "import", "instanceof",
+      "int", "interface", "long", "native", "new", "null", "package", "private", "protected",
+      "public", "return", "short", "static", "strictfp", "super", "switch", "synchronized",
+      "this", "throw", "throws", "transient", "true", "try", "void", "volatile", "while",
+    ]),
+    gleamlang: new Set([
+      "as", "assert", "case", "const", "echo", "else", "external", "fn", "if", "import",
+      "let", "opaque", "panic", "pub", "todo", "type", "use",
   ]),
-  gleamlang: new Set([
-    "as", "assert", "case", "const", "echo", "else", "external", "fn", "if", "import",
-    "let", "opaque", "panic", "pub", "todo", "type", "use",
-  ]),
-  python3: new Set([
-    "and", "as", "assert", "async", "await", "break", "class", "continue", "def", "del",
-    "elif", "else", "except", "False", "finally", "for", "from", "global", "if",
-    "import", "in", "is", "lambda", "None", "nonlocal", "not", "or", "pass", "raise",
-    "return", "True", "try", "while", "with", "yield",
-  ]),
-};
+    python3: new Set([
+      "and", "as", "assert", "async", "await", "break", "class", "continue", "def", "del",
+      "elif", "else", "except", "False", "finally", "for", "from", "global", "if",
+      "import", "in", "is", "lambda", "None", "nonlocal", "not", "or", "pass", "raise",
+      "return", "True", "try", "while", "with", "yield",
+    ]),
+    ruby: new Set([
+      "BEGIN", "END", "alias", "and", "begin", "break", "case", "class", "def", "defined?",
+      "do", "else", "elsif", "end", "ensure", "false", "for", "if", "in", "module", "next",
+      "nil", "not", "or", "redo", "rescue", "retry", "return", "self", "super", "then",
+      "true", "undef", "unless", "until", "when", "while", "yield",
+    ]),
+    bash: new Set([
+      "case", "coproc", "do", "done", "elif", "else", "esac", "fi", "for", "function", "if",
+      "in", "return", "select", "then", "time", "until", "while",
+    ]),
+  };
 const commentPatterns = {
-  nodejs: String.raw`\/\/[^\n]*|\/\*[\s\S]*?\*\/`,
-  rust: String.raw`\/\/[^\n]*|\/\*[\s\S]*?\*\/`,
-  golang: String.raw`\/\/[^\n]*|\/\*[\s\S]*?\*\/`,
-  gleamlang: String.raw`\/\/[^\n]*`,
-  python3: String.raw`#[^\n]*`,
-  bash: String.raw`#[^\n]*`,
-  ruby: String.raw`#[^\n]*`,
+    nodejs: String.raw`\/\/[^\n]*|\/\*[\s\S]*?\*\/`,
+    rust: String.raw`\/\/[^\n]*|\/\*[\s\S]*?\*\/`,
+    golang: String.raw`\/\/[^\n]*|\/\*[\s\S]*?\*\/`,
+    dart: String.raw`\/\/[^\n]*|\/\*[\s\S]*?\*\/`,
+    java: String.raw`\/\/[^\n]*|\/\*[\s\S]*?\*\/`,
+    gleamlang: String.raw`\/\/[^\n]*`,
+    erlang: String.raw`%[^\n]*`,
+    elixir: String.raw`#[^\n]*`,
+    python3: String.raw`#[^\n]*`,
+    bash: String.raw`#[^\n]*`,
+    ruby: String.raw`#[^\n]*`,
 };
 
 function queryParam(...names) {
@@ -8627,30 +9893,38 @@ function ensureSelectValue(id, value) {
   select.value = value;
 }
 
-function normalizeRuntime(value) {
-  if (value === "javascript" || value === "typescript" || value === "node") return "nodejs";
-  if (value === "python") return "python3";
-  if (value === "shell") return "bash";
-  return entryCommands[value] ? value : "nodejs";
-}
+  function normalizeRuntime(value) {
+    if (value === "javascript" || value === "typescript" || value === "node") return "nodejs";
+    if (value === "python") return "python3";
+    if (value === "shell") return "bash";
+    if (value === "go") return "golang";
+    if (value === "erl") return "erlang";
+    if (value === "ex") return "elixir";
+    if (value === "jvm") return "java";
+    return entryCommands[value] ? value : "nodejs";
+  }
 
 function normalizeProcessProfile(value) {
   const key = String(value || "").trim().toLowerCase();
-  if (key === "gleam") return "gleamlang";
-  if (key === "go") return "golang";
-  if (key === "python") return "python3";
-  return processProfiles[key] ? key : "nodejs";
-}
+    if (key === "gleam") return "gleamlang";
+    if (key === "go") return "golang";
+    if (key === "python") return "python3";
+    if (key === "node") return "nodejs";
+    if (key === "erl") return "erlang";
+    if (key === "ex") return "elixir";
+    if (key === "jvm") return "java";
+    return processProfiles[key] ? key : "nodejs";
+  }
 
 function processProfileForRuntime(runtime) {
   const raw = String(runtime || "").trim().toLowerCase();
-  if (raw === "go" || raw === "golang") return "golang";
-  if (raw === "rust") return "rust";
-  if (raw === "gleam" || raw === "gleamlang") return "gleamlang";
-  const normalized = normalizeRuntime(runtime);
-  if (normalized === "python3") return "python3";
-  return "nodejs";
-}
+    if (raw === "go" || raw === "golang") return "golang";
+    if (raw === "rust") return "rust";
+    if (raw === "gleam" || raw === "gleamlang") return "gleamlang";
+    const normalized = normalizeRuntime(runtime);
+    if (processProfiles[normalized]) return normalized;
+    return "nodejs";
+  }
 
 function deploymentMeta(metaData) {
   const value = metaData?.lambdaDeployment;
@@ -8729,10 +10003,104 @@ function updateCodeHighlight() {
   syncCodeScroll();
 }
 
-function setFunctionBody(value) {
-  $("function-body").value = value;
-  updateCodeHighlight();
-}
+  function setFunctionBody(value) {
+    $("function-body").value = value;
+    updateCodeHighlight();
+  }
+
+  function draftFunctionKey(fn = selectedFunction()) {
+    if (fn?.id) return `id:${fn.id}`;
+    const slug = normalizeSlug($("slug")?.value || fn?.slug || "");
+    return slug ? `slug:${slug}` : "new";
+  }
+
+  function draftStorageKey(profileName, functionKey = draftFunctionKey()) {
+    return `dd-lambda-function-draft:v2:${functionKey}:${normalizeProcessProfile(profileName)}`;
+  }
+
+  function serviceWorkerRequest(message, timeoutMs = 1000) {
+    if (!("serviceWorker" in navigator)) return Promise.resolve(null);
+    return navigator.serviceWorker.ready.then((registration) => {
+      const target = registration.active || navigator.serviceWorker.controller;
+      if (!target) return null;
+      return new Promise((resolve) => {
+        const channel = new MessageChannel();
+        const timer = setTimeout(() => resolve(null), timeoutMs);
+        channel.port1.onmessage = (event) => {
+          clearTimeout(timer);
+          resolve(event.data || null);
+        };
+        target.postMessage(message, [channel.port2]);
+      });
+    }).catch(() => null);
+  }
+
+  function storeDraftInServiceWorker(key, record) {
+    void serviceWorkerRequest({ type: "dd-lambda-draft-save", key, record }, 1000);
+  }
+
+  function loadLocalDraft(profileName, functionKey = draftFunctionKey()) {
+    try {
+      const raw = window.localStorage.getItem(draftStorageKey(profileName, functionKey));
+      if (!raw) return null;
+      const record = JSON.parse(raw);
+      return record && typeof record.body === "string" ? record : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function persistLanguageDraft(profileName = state.activeProfile || normalizeProcessProfile($("process-profile").value)) {
+    const normalizedProfile = normalizeProcessProfile(profileName);
+    const key = draftStorageKey(normalizedProfile);
+    const record = {
+      schema: "dd.lambda.functionDraft.v2",
+      functionKey: draftFunctionKey(),
+      profile: normalizedProfile,
+      runtime: normalizeRuntime((processProfiles[normalizedProfile] || processProfiles.nodejs).runtime),
+      body: $("function-body").value,
+      updatedAt: new Date().toISOString(),
+    };
+    try {
+      window.localStorage.setItem(key, JSON.stringify(record));
+    } catch {
+      // localStorage can be unavailable in hardened browser contexts; the
+      // service worker cache is the secondary same-origin draft store.
+    }
+    storeDraftInServiceWorker(key, record);
+    return record;
+  }
+
+  function queueLanguageDraftPersist() {
+    clearTimeout(state.draftSaveTimer);
+    state.draftSaveTimer = setTimeout(() => persistLanguageDraft(), 250);
+  }
+
+  function restoreServiceWorkerDraft(profileName, functionKey, token) {
+    const key = draftStorageKey(profileName, functionKey);
+    void serviceWorkerRequest({ type: "dd-lambda-draft-load", key }, 1200).then((reply) => {
+      const record = reply?.ok && reply.record && typeof reply.record.body === "string" ? reply.record : null;
+      if (!record || token !== state.draftLoadToken) return;
+      if (draftFunctionKey() !== functionKey) return;
+      if (normalizeProcessProfile($("process-profile").value) !== normalizeProcessProfile(profileName)) return;
+      if (state.editorDirty) return;
+      setFunctionBody(record.body);
+      state.bodyProfile = generatedDefaultProfile(record.body) || null;
+    });
+  }
+
+  function bodyForProfile(profileName, fallback, functionKey = draftFunctionKey()) {
+    const draft = loadLocalDraft(profileName, functionKey);
+    if (draft?.body !== undefined) return draft.body;
+    const token = ++state.draftLoadToken;
+    restoreServiceWorkerDraft(profileName, functionKey, token);
+    return fallback;
+  }
+
+  function registerLambdaServiceWorker() {
+    if (!("serviceWorker" in navigator) || !window.isSecureContext) return;
+    navigator.serviceWorker.register("/service-worker.js", { scope: "/" }).catch(() => {});
+  }
 
 function containerPoolFunctionBody(profileName) {
   const profile = processProfiles[normalizeProcessProfile(profileName)] || processProfiles.nodejs;
@@ -8745,27 +10113,101 @@ function containerPoolFunctionBody(profileName) {
   ].join("\n");
 }
 
-function defaultFunctionBody(runtimeOrProfile) {
-  const profileName = processProfiles[runtimeOrProfile]
-    ? runtimeOrProfile
-    : processProfileForRuntime(runtimeOrProfile);
-  switch (profileName) {
-    case "python3":
-      return "result = { \"status\": 200, \"body\": { \"ok\": True, \"echo\": request.get(\"body\") } }";
-    case "rust":
-    case "golang":
-    case "gleamlang":
-      return containerPoolFunctionBody(profileName);
-    case "nodejs":
-      return "return { status: 200, body: { ok: true, echo: request.body ?? null } };";
-    case "ruby":
-      return "{ status: 200, body: { ok: true, echo: request[\"body\"] } }";
-    case "bash":
-      return "printf '%s\\n' '{\"status\":200,\"body\":{\"ok\":true}}'";
-    default:
-      return "return { status: 200, body: { ok: true, echo: request.body ?? null } };";
+  function defaultFunctionBody(runtimeOrProfile) {
+    const profileName = processProfiles[runtimeOrProfile]
+      ? runtimeOrProfile
+      : processProfileForRuntime(runtimeOrProfile);
+    switch (profileName) {
+      case "python3":
+        return [
+          "def handler(request, context):",
+          "    return { \"status\": 200, \"body\": { \"ok\": True, \"echo\": request.get(\"body\") } }",
+          "",
+          "result = handler(request, context)",
+        ].join("\n");
+      case "ruby":
+        return [
+          "def handler(request, context)",
+          "  { status: 200, body: { ok: true, echo: request[\"body\"] } }",
+          "end",
+          "",
+          "handler(request, context)",
+        ].join("\n");
+      case "bash":
+        return [
+          "handler() {",
+          "  printf '%s\\n' '{\"status\":200,\"body\":{\"ok\":true}}'",
+          "}",
+          "",
+          "handler",
+        ].join("\n");
+      case "golang":
+        return [
+          "package main",
+          "",
+          "func Handler(request map[string]any, context map[string]any) (any, error) {",
+          "  return map[string]any{",
+          "    \"status\": 200,",
+          "    \"body\": map[string]any{",
+          "      \"ok\": true,",
+          "      \"echo\": request[\"body\"],",
+          "    },",
+          "  }, nil",
+          "}",
+        ].join("\n");
+      case "dart":
+        return [
+          "dynamic handler(Map<String, dynamic> request, Map<String, dynamic> context) {",
+          "  return {",
+          "    \"status\": 200,",
+          "    \"body\": {",
+          "      \"ok\": true,",
+          "      \"echo\": request[\"body\"],",
+          "    },",
+          "  };",
+          "}",
+        ].join("\n");
+      case "erlang":
+        return [
+          "-module(handler).",
+          "-export([handle/2]).",
+          "-spec handle(binary(), binary()) -> binary().",
+          "",
+          "handle(_RequestJson, _ContextJson) ->",
+          "  <<\"{\\\"status\\\":200,\\\"body\\\":{\\\"ok\\\":true}}\">>.",
+        ].join("\n");
+      case "elixir":
+        return [
+          "defmodule Handler do",
+          "  @spec handle(binary(), binary()) :: binary()",
+          "  def handle(_request_json, _context_json) do",
+          "    ~s({\"status\":200,\"body\":{\"ok\":true}})",
+          "  end",
+          "end",
+        ].join("\n");
+      case "java":
+        return [
+          "public final class Handler {",
+          "  public static String handle(String requestJson, String contextJson) throws Exception {",
+          "    return \"{\\\"status\\\":200,\\\"body\\\":{\\\"ok\\\":true}}\";",
+          "  }",
+          "}",
+        ].join("\n");
+      case "rust":
+      case "gleamlang":
+        return containerPoolFunctionBody(profileName);
+      case "nodejs":
+        return [
+          "async function handler(request, context) {",
+          "  return { status: 200, body: { ok: true, echo: request.body ?? null } };",
+          "}",
+          "",
+          "return await handler(request, context);",
+        ].join("\n");
+      default:
+        return defaultFunctionBody("nodejs");
+    }
   }
-}
 
 function normalizedBody(value) {
   return String(value || "").trim().replace(/\r\n/g, "\n");
@@ -8796,11 +10238,12 @@ function markEditorDirty() {
   state.editorDirty = true;
 }
 
-function markBodyDirty() {
-  state.bodyProfile = generatedDefaultProfile($("function-body").value) || null;
-  updateCodeHighlight();
-  markEditorDirty();
-}
+  function markBodyDirty() {
+    state.bodyProfile = generatedDefaultProfile($("function-body").value) || null;
+    updateCodeHighlight();
+    queueLanguageDraftPersist();
+    markEditorDirty();
+  }
 
 function syncEntryCommand() {
   $("entry-command").value = entryCommands[normalizeRuntime($("runtime").value)] || defaultCommand;
@@ -8829,21 +10272,25 @@ function syncContainerPolicy() {
   if (requiresContainer) $("containerized").checked = true;
 }
 
-function syncProcessProfile(options = {}) {
-  const profileName = normalizeProcessProfile($("process-profile").value);
-  const profile = processProfiles[profileName] || processProfiles.nodejs;
-  $("process-profile").value = profileName;
-  $("runtime").value = profile.runtime;
-  syncEntryCommand();
-  syncContainerPolicy();
-  syncBaseImages(options.baseImage || "");
-  if (profile.requiresContainerPool) $("containerized").checked = false;
-  if (options.replaceBody) {
-    setFunctionBody(defaultFunctionBody(profileName));
-    state.bodyProfile = profileName;
+  function syncProcessProfile(options = {}) {
+    const profileName = normalizeProcessProfile($("process-profile").value);
+    const profile = processProfiles[profileName] || processProfiles.nodejs;
+    $("process-profile").value = profileName;
+    $("runtime").value = profile.runtime;
+    state.activeProfile = profileName;
+    syncEntryCommand();
+    syncContainerPolicy();
+    syncBaseImages(options.baseImage || "");
+    if (profile.requiresContainerPool) $("containerized").checked = false;
+    if (options.restoreBody || options.replaceBody) {
+      const functionKey = options.functionKey || draftFunctionKey();
+      const fallback = options.bodyFallback ?? defaultFunctionBody(profileName);
+      const body = bodyForProfile(profileName, fallback, functionKey);
+      setFunctionBody(body);
+      state.bodyProfile = generatedDefaultProfile(body) || null;
+    }
+    updateCodeHighlight();
   }
-  updateCodeHighlight();
-}
 
 function deploymentMetaFromControls(existingMeta = {}) {
   const profileName = normalizeProcessProfile($("process-profile").value);
@@ -9104,17 +10551,20 @@ function setRunState(message, kind = "warn") {
   node.className = kind === "bad" ? "pill bad" : kind === "ok" ? "pill" : "pill warn";
 }
 
-function fillEditor(fn) {
-  state.selectedId = fn?.id || null;
-  $("editor-title").textContent = fn?.displayName || "New function";
-  $("editor-subtitle").textContent = fn?.slug || "draft";
+  function fillEditor(fn) {
+    persistLanguageDraft();
+    state.selectedId = fn?.id || null;
+    $("editor-title").textContent = fn?.displayName || "New function";
+    $("editor-subtitle").textContent = fn?.slug || "draft";
   $("slug").value = fn?.slug || "";
   $("display-name").value = fn?.displayName || "";
   $("status").value = fn?.status || "draft";
-  const profileName = processProfileForFunction(fn);
-  const lambdaDeployment = deploymentMeta(fn?.metaData);
-  $("process-profile").value = profileName;
-  $("runtime").value = normalizeRuntime(fn?.runtime || processProfiles[profileName]?.runtime || "nodejs");
+    const profileName = processProfileForFunction(fn);
+    const functionKey = draftFunctionKey(fn);
+    const lambdaDeployment = deploymentMeta(fn?.metaData);
+    $("process-profile").value = profileName;
+    state.activeProfile = profileName;
+    $("runtime").value = normalizeRuntime(fn?.runtime || processProfiles[profileName]?.runtime || "nodejs");
   $("container-runner").value = lambdaDeployment.containerRunner || defaultContainerRunner;
   $("reuse-key").value = fn?.reuseKey || "";
   $("idle-timeout").value = fn?.idleTimeoutSeconds || 300;
@@ -9123,11 +10573,12 @@ function fillEditor(fn) {
   $("containerized").checked = Boolean(fn?.containerized);
   syncContainerPolicy();
   syncBaseImages(lambdaDeployment.baseImage || "");
-  $("container-image").value = fn?.containerImage || "";
-  $("container-build-status").value = fn?.containerBuildStatus || (fn?.containerized ? "pending" : "not_requested");
-  $("description").value = fn?.description || "";
-  setFunctionBody(fn?.functionBody || defaultFunctionBody(profileName));
-  state.bodyProfile = generatedDefaultProfile($("function-body").value) || profileName;
+    $("container-image").value = fn?.containerImage || "";
+    $("container-build-status").value = fn?.containerBuildStatus || (fn?.containerized ? "pending" : "not_requested");
+    $("description").value = fn?.description || "";
+    const body = bodyForProfile(profileName, fn?.functionBody || defaultFunctionBody(profileName), functionKey);
+    setFunctionBody(body);
+    state.bodyProfile = generatedDefaultProfile(body) || null;
   $("labels-json").value = JSON.stringify(fn?.labels ?? [], null, 2);
   $("meta-json").value = JSON.stringify(fn?.metaData ?? {}, null, 2);
   $("request-json").value = JSON.stringify({ body: { ping: "pong" } }, null, 2);
@@ -9231,9 +10682,10 @@ async function load() {
   renderFunctions();
 }
 
-async function save() {
-  setSaveState("saving");
-  const checked = await checkDraft();
+  async function save() {
+    setSaveState("saving");
+    persistLanguageDraft();
+    const checked = await checkDraft();
   if (!checked.ok) {
     return;
   }
@@ -9287,28 +10739,29 @@ async function invokeSelected() {
 $("refresh").addEventListener("click", () => load().catch((error) => setSaveState(String(error), "bad")));
 $("new-function").addEventListener("click", () => {
   state.queryAutofillActive = false;
+  registerLambdaServiceWorker();
   fillEditor(null);
 });
 $("search").addEventListener("input", renderFunctions);
-$("slug").addEventListener("input", () => {
-  markEditorDirty();
-  $("slug").value = normalizeSlug($("slug").value);
-  $("invoke-route").textContent = `/lambdas/invoke/${selectedFunction()?.id || ":function-id"}`;
-});
-$("runtime").addEventListener("change", () => {
-  const previousProfile = normalizeProcessProfile($("process-profile").value);
-  const replaceBody = shouldReplaceGeneratedBody(previousProfile);
-  $("process-profile").value = processProfileForRuntime($("runtime").value);
-  syncProcessProfile({ replaceBody });
-  markEditorDirty();
-});
-$("process-profile").addEventListener("change", () => {
-  const previousProfile = state.bodyProfile || generatedDefaultProfile($("function-body").value);
-  const replaceBody = shouldReplaceGeneratedBody(previousProfile);
-  syncProcessProfile({ replaceBody });
-  markEditorDirty();
-  if (!replaceBody) setSaveState("kept custom body", "warn");
-});
+  $("slug").addEventListener("input", () => {
+    markEditorDirty();
+    $("slug").value = normalizeSlug($("slug").value);
+    queueLanguageDraftPersist();
+    $("invoke-route").textContent = `/lambdas/invoke/${selectedFunction()?.id || ":function-id"}`;
+  });
+  $("runtime").addEventListener("change", () => {
+    persistLanguageDraft(state.activeProfile || normalizeProcessProfile($("process-profile").value));
+    $("process-profile").value = processProfileForRuntime($("runtime").value);
+    syncProcessProfile({ restoreBody: true });
+    markEditorDirty();
+  });
+  $("process-profile").addEventListener("change", () => {
+    const previousProfile = state.activeProfile || generatedDefaultProfile($("function-body").value);
+    persistLanguageDraft(previousProfile);
+    syncProcessProfile({ restoreBody: true });
+    markEditorDirty();
+    setSaveState(`${normalizeProcessProfile($("process-profile").value)} draft restored`, "warn");
+  });
 for (const id of [
   "display-name", "status", "container-runner", "base-image", "containerized",
   "reuse-key", "idle-timeout", "max-run", "description", "labels-json", "meta-json",
@@ -9343,8 +10796,25 @@ const handleLoadError = (error) => {
   $("snapshot-meta").textContent = String(error);
 };
 load().catch(handleLoadError);
-setInterval(() => load().catch(handleLoadError), 15000);
-"###;
+  setInterval(() => load().catch(handleLoadError), 15000);
+  "###;
+
+const SHARED_SERVICE_WORKER_JS: &str = include_str!("../../../libs/browser/service-worker.js");
+
+async fn service_worker_js() -> impl IntoResponse {
+    record_request("GET", "/service-worker.js", StatusCode::OK);
+    (
+        [
+            (header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-cache"),
+            (
+                header::HeaderName::from_static("service-worker-allowed"),
+                "/",
+            ),
+        ],
+        SHARED_SERVICE_WORKER_JS,
+    )
+}
 
 async fn favicon() -> impl IntoResponse {
     record_request("GET", "/favicon.ico", StatusCode::NO_CONTENT);
@@ -9893,6 +11363,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
 #[tokio::main]
 async fn main() {
+    let _otel = dd_telemetry::init("dd-remote-web-home");
+
     let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
     let port = env::var("PORT")
         .ok()
@@ -9901,7 +11373,7 @@ async fn main() {
 
     let state = AppState {
         server_label:
-            "Rust home server (/ + /home + /agents/tasks + /agents/threads + /lambdas/functions)"
+            "Rust home server (/ + /home + /jello + /agents/tasks + /agents/threads + /lambdas/functions)"
                 .to_string(),
         control_plane_label: "Kubernetes Ingress selects the UUID-bound worker Service".to_string(),
         workers_label: "Node.js containers pinned to one chat/thread".to_string(),
@@ -9917,6 +11389,10 @@ async fn main() {
         .route("/", get(root))
         .route("/home", get(home))
         .route("/home/", get(root))
+        .route("/jello", get(jello_page))
+        .route("/jello/", get(jello_page))
+        .route("/jello/sample", get(jello_sample))
+        .route("/jello/sample/", get(jello_sample))
         .route("/agents/tasks", get(agents_tasks_page))
         .route("/agents/tasks/", get(agents_tasks_page))
         .route("/agents/threads", get(agents_threads_page))
@@ -9925,6 +11401,7 @@ async fn main() {
         .route("/assets/web-home/agents-tasks.js", get(agents_tasks_js))
         .route("/assets/web-home/shared-header.css", get(shared_header_css))
         .route("/assets/web-home/shared-header.js", get(shared_header_js))
+        .route("/service-worker.js", get(service_worker_js))
         .route(
             "/assets/web-home/agents-tasks.html",
             get(agents_tasks_html_fragment),
@@ -9946,6 +11423,24 @@ async fn main() {
         .route("/presence-test/", get(presence_test_page))
         .route("/wss-test", get(wss_test_page))
         .route("/wss-test/", get(wss_test_page))
+        .route(
+            "/grafana/observability",
+            get(grafana_observability_redirect),
+        )
+        .route(
+            "/grafana/observability/",
+            get(grafana_observability_redirect),
+        )
+        .route("/grafana/fabrication", get(grafana_fabrication_redirect))
+        .route("/grafana/fabrication/", get(grafana_fabrication_redirect))
+        .route(
+            "/grafana/depl/{deployment}",
+            get(grafana_deployment_redirect),
+        )
+        .route(
+            "/grafana/depl/{deployment}/",
+            get(grafana_deployment_redirect),
+        )
         .route("/healthz", get(healthz))
         .route("/docs/api", get(api_docs_html))
         .route("/api/docs", get(api_docs_html))
@@ -9963,12 +11458,12 @@ async fn main() {
     let address: SocketAddr = format!("{host}:{port}")
         .parse()
         .expect("failed to parse bind address");
-    println!("dd-remote-web-home listening on http://{address}");
+    tracing::info!("dd-remote-web-home listening on http://{address}");
 
     let listener = tokio::net::TcpListener::bind(address)
         .await
         .expect("failed to bind tcp listener");
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(shutdown_signal())
         .await
         .expect("axum server crashed");

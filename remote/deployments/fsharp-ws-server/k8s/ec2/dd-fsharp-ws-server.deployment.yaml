@@ -166,12 +166,12 @@ spec:
             timeoutSeconds: 5
             failureThreshold: 3
           resources:
-            # Bumped from 200m/384Mi/2/1Gi for the cross-language WSS
-            # benchmark (5-way Dart/F#/Akka/Gleam/Rust comparison at
-            # 30K connections). Matches dd-rust-wss-server's headroom
-            # so any CPU/mem differences are framework-attributable.
+            # Keep the benchmark burst ceiling high, but reserve only
+            # steady-state CPU on the single-node cluster so scheduler
+            # accounting does not strand this service when the node is
+            # otherwise idle.
             requests:
-              cpu: '1'
+              cpu: 100m
               memory: 2Gi
             limits:
               cpu: '6'

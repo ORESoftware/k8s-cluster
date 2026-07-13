@@ -8,7 +8,9 @@ use crate::error::{AppError, AppResult};
 use crate::providers::ProviderAuthKind;
 use crate::providers::connection::{CreateConnection, ProviderConnection, UpsertCredential};
 use crate::providers::{
-    ProviderKind, coinbase::CoinbaseCredential, coinflow::CoinflowCredential, wise::WiseCredential,
+    ProviderKind, adyen::AdyenCredential, coinbase::CoinbaseCredential,
+    coinflow::CoinflowCredential, dwolla::DwollaCredential, ethereum::EthereumWalletCredential,
+    modern_treasury::ModernTreasuryCredential, square::SquareCredential, wise::WiseCredential,
 };
 use crate::scheduler::{CreateScheduledJob, ScheduleKind, ScheduledJob};
 use crate::state::AppState;
@@ -277,9 +279,8 @@ fn validate_api_key_credential(
         }
         ProviderKind::Bridge => {
             let cred: crate::providers::bridge::BridgeCredential =
-                serde_json::from_value(credential.clone()).map_err(|e| {
-                    AppError::BadRequest(format!("invalid bridge credential: {e}"))
-                })?;
+                serde_json::from_value(credential.clone())
+                    .map_err(|e| AppError::BadRequest(format!("invalid bridge credential: {e}")))?;
             require_non_empty("bridge.api_key", &cred.api_key)?;
             validate_environment("bridge.environment", &cred.environment)?;
             Ok(None)
@@ -301,13 +302,200 @@ fn validate_api_key_credential(
             Ok(None)
         }
         ProviderKind::Remitly => {
-            let _cred: crate::providers::remitly::RemitlyCredential =
+            let cred: crate::providers::remitly::RemitlyCredential =
                 serde_json::from_value(credential.clone()).map_err(|e| {
                     AppError::BadRequest(format!("invalid remitly credential: {e}"))
                 })?;
-            // No required fields — Remitly is limited_fit; we accept the
-            // attach so tenants can register intent, but sync is a no-op.
-            Ok(None)
+            // Remitly is limited_fit and can remain intent-only. If the
+            // tenant has partner/export credentials, validate the pieces that
+            // would make typed API calls usable.
+            let api_key = optional_trimmed(cred.api_key.as_deref());
+            let api_base_url = optional_trimmed(cred.api_base_url.as_deref());
+            if let Some(partner_id) = cred.partner_id.as_deref() {
+                require_non_empty("remitly.partner_id", partner_id)?;
+            }
+            match (api_key, api_base_url) {
+                (Some(api_key), Some(api_base_url)) => {
+                    require_non_empty("remitly.api_key", api_key)?;
+                    crate::providers::remitly::validate_partner_base_url(api_base_url)?;
+                }
+                (None, None) => {}
+                _ => {
+                    return Err(AppError::BadRequest(
+                        "remitly.api_key and remitly.api_base_url must be provided together".into(),
+                    ));
+                }
+            }
+            validate_environment("remitly.environment", &cred.environment)?;
+            Ok(cred.partner_id.clone())
+        }
+        ProviderKind::MoneyGram => {
+            let cred: crate::providers::moneygram::MoneyGramCredential =
+                serde_json::from_value(credential.clone()).map_err(|e| {
+                    AppError::BadRequest(format!("invalid moneygram credential: {e}"))
+                })?;
+            require_non_empty("moneygram.client_id", &cred.client_id)?;
+            require_non_empty("moneygram.client_secret", &cred.client_secret)?;
+            require_non_empty("moneygram.agent_partner_id", &cred.agent_partner_id)?;
+            require_non_empty("moneygram.user_language", &cred.user_language)?;
+            validate_language_tag("moneygram.user_language", &cred.user_language)?;
+            validate_environment("moneygram.environment", &cred.environment)?;
+            Ok(Some(cred.agent_partner_id))
+        }
+        ProviderKind::WesternUnion => {
+            let cred: crate::providers::western_union::WesternUnionCredential =
+                serde_json::from_value(credential.clone()).map_err(|e| {
+                    AppError::BadRequest(format!("invalid western_union credential: {e}"))
+                })?;
+            require_non_empty("western_union.client_id", &cred.client_id)?;
+            validate_environment("western_union.environment", &cred.environment)?;
+            match (
+                cred.client_certificate_pem.as_deref(),
+                cred.client_private_key_pem.as_deref(),
+            ) {
+                (Some(cert), Some(key)) => {
+                    require_non_empty("western_union.client_certificate_pem", cert)?;
+                    require_non_empty("western_union.client_private_key_pem", key)?;
+                    crate::providers::western_union::validate_client_identity_pem(cert, key)?;
+                }
+                (None, None) => {}
+                _ => {
+                    return Err(AppError::BadRequest(
+                        "western_union requires both client_certificate_pem and client_private_key_pem"
+                            .into(),
+                    ));
+                }
+            }
+            Ok(Some(cred.client_id))
+        }
+        ProviderKind::UsBankZelle => {
+            let cred: crate::providers::zelle_disbursements::UsBankZelleCredential =
+                serde_json::from_value(credential.clone()).map_err(|e| {
+                    AppError::BadRequest(format!("invalid us_bank_zelle credential: {e}"))
+                })?;
+            require_non_empty("us_bank_zelle.access_token", &cred.access_token)?;
+            require_non_empty("us_bank_zelle.client_id", &cred.client_id)?;
+            require_non_empty("us_bank_zelle.program_id", &cred.program_id)?;
+            validate_environment("us_bank_zelle.environment", &cred.environment)?;
+            crate::providers::zelle_disbursements::validate_zelle_api_base_url(
+                "us_bank_zelle.api_base_url",
+                &cred.api_base_url,
+            )?;
+            crate::providers::zelle_disbursements::validate_zelle_path(
+                "us_bank_zelle.payments_path",
+                &cred.payments_path,
+            )?;
+            crate::providers::zelle_disbursements::validate_zelle_path(
+                "us_bank_zelle.enrollment_path",
+                &cred.enrollment_path,
+            )?;
+            Ok(Some(cred.program_id))
+        }
+        ProviderKind::JpmorganZelle => {
+            let cred: crate::providers::zelle_disbursements::JpmorganZelleCredential =
+                serde_json::from_value(credential.clone()).map_err(|e| {
+                    AppError::BadRequest(format!("invalid jpmorgan_zelle credential: {e}"))
+                })?;
+            require_non_empty("jpmorgan_zelle.access_token", &cred.access_token)?;
+            require_non_empty("jpmorgan_zelle.debtor_account_id", &cred.debtor_account_id)?;
+            require_non_empty("jpmorgan_zelle.debtor_name", &cred.debtor_name)?;
+            require_non_empty("jpmorgan_zelle.debtor_bic", &cred.debtor_bic)?;
+            validate_environment("jpmorgan_zelle.environment", &cred.environment)?;
+            if let Some(api_base_url) = cred.api_base_url.as_deref() {
+                crate::providers::zelle_disbursements::validate_zelle_api_base_url(
+                    "jpmorgan_zelle.api_base_url",
+                    api_base_url,
+                )?;
+            }
+            Ok(Some(cred.debtor_account_id))
+        }
+        ProviderKind::BofaCashProGdd => {
+            let cred: crate::providers::zelle_disbursements::BofaCashProGddCredential =
+                serde_json::from_value(credential.clone()).map_err(|e| {
+                    AppError::BadRequest(format!("invalid bofa_cashpro_gdd credential: {e}"))
+                })?;
+            require_non_empty("bofa_cashpro_gdd.client_id", &cred.client_id)?;
+            require_non_empty("bofa_cashpro_gdd.client_secret", &cred.client_secret)?;
+            require_non_empty(
+                "bofa_cashpro_gdd.cashpro_company_id",
+                &cred.cashpro_company_id,
+            )?;
+            if let Some(access_token) = cred.access_token.as_deref() {
+                require_non_empty("bofa_cashpro_gdd.access_token", access_token)?;
+            }
+            validate_environment("bofa_cashpro_gdd.environment", &cred.environment)?;
+            crate::providers::zelle_disbursements::validate_zelle_api_base_url(
+                "bofa_cashpro_gdd.api_base_url",
+                &cred.api_base_url,
+            )?;
+            crate::providers::zelle_disbursements::validate_zelle_path(
+                "bofa_cashpro_gdd.disbursements_path",
+                &cred.disbursements_path,
+            )?;
+            Ok(Some(cred.cashpro_company_id))
+        }
+        ProviderKind::ModernTreasury => {
+            let cred: ModernTreasuryCredential = serde_json::from_value(credential.clone())
+                .map_err(|e| {
+                    AppError::BadRequest(format!("invalid modern_treasury credential: {e}"))
+                })?;
+            require_non_empty("modern_treasury.organization_id", &cred.organization_id)?;
+            require_non_empty("modern_treasury.api_key", &cred.api_key)?;
+            validate_environment("modern_treasury.environment", &cred.environment)?;
+            if let Some(api_base_url) = cred.api_base_url.as_deref() {
+                crate::providers::modern_treasury::validate_modern_treasury_api_base_url(
+                    api_base_url,
+                )?;
+            }
+            if let Some(originating_account_id) = cred.default_originating_account_id.as_deref() {
+                require_non_empty(
+                    "modern_treasury.default_originating_account_id",
+                    originating_account_id,
+                )?;
+            }
+            if let Some(webhook_secret) = cred.webhook_secret.as_deref() {
+                require_non_empty("modern_treasury.webhook_secret", webhook_secret)?;
+            }
+            Ok(Some(cred.organization_id))
+        }
+        ProviderKind::Dwolla => {
+            let cred: DwollaCredential = serde_json::from_value(credential.clone())
+                .map_err(|e| AppError::BadRequest(format!("invalid dwolla credential: {e}")))?;
+            require_non_empty("dwolla.access_token", &cred.access_token)?;
+            validate_environment("dwolla.environment", &cred.environment)?;
+            if let Some(api_base_url) = cred.api_base_url.as_deref() {
+                crate::providers::dwolla::validate_dwolla_api_base_url(api_base_url)?;
+            }
+            if let Some(account_id) = cred.account_id.as_deref() {
+                require_non_empty("dwolla.account_id", account_id)?;
+            }
+            if let Some(webhook_secret) = cred.webhook_secret.as_deref() {
+                require_non_empty("dwolla.webhook_secret", webhook_secret)?;
+            }
+            Ok(cred.account_id.clone())
+        }
+        ProviderKind::EthereumWallet => {
+            let cred: EthereumWalletCredential = serde_json::from_value(credential.clone())
+                .map_err(|e| {
+                    AppError::BadRequest(format!("invalid ethereum_wallet credential: {e}"))
+                })?;
+            crate::providers::ethereum::validate_ethereum_address(&cred.address)?;
+            crate::providers::ethereum::validate_ethereum_rpc_url(&cred.rpc_url)?;
+            if cred.chain_id == 0 {
+                return Err(AppError::BadRequest(
+                    "ethereum_wallet.chain_id must be non-zero".into(),
+                ));
+            }
+            if let Some(token) = cred.rpc_bearer_token.as_deref() {
+                require_non_empty("ethereum_wallet.rpc_bearer_token", token)?;
+            }
+            for asset in &cred.tracked_assets {
+                require_non_empty("ethereum_wallet.tracked_assets.symbol", &asset.symbol)?;
+                if let Some(contract_address) = asset.contract_address.as_deref() {
+                    crate::providers::ethereum::validate_ethereum_address(contract_address)?;
+                }
+            }
+            Ok(Some(cred.address.to_ascii_lowercase()))
         }
         ProviderKind::Robinhood => {
             let _cred: crate::providers::robinhood::RobinhoodCredential =
@@ -326,21 +514,64 @@ fn validate_api_key_credential(
             // Sanity-check that the PEM is a real RSA private key
             // before we seal it — catches paste errors at attach time
             // rather than at first signed-request time.
-            jsonwebtoken::EncodingKey::from_rsa_pem(cred.api_secret_pem.as_bytes())
-                .map_err(|e| AppError::BadRequest(
-                    format!("fireblocks.api_secret_pem is not a valid RSA PEM: {e}"),
-                ))?;
+            jsonwebtoken::EncodingKey::from_rsa_pem(cred.api_secret_pem.as_bytes()).map_err(
+                |e| {
+                    AppError::BadRequest(format!(
+                        "fireblocks.api_secret_pem is not a valid RSA PEM: {e}"
+                    ))
+                },
+            )?;
             validate_environment("fireblocks.environment", &cred.environment)?;
             Ok(Some(cred.api_key))
         }
         ProviderKind::Circle => {
             let cred: crate::providers::circle::CircleCredential =
-                serde_json::from_value(credential.clone()).map_err(|e| {
-                    AppError::BadRequest(format!("invalid circle credential: {e}"))
-                })?;
+                serde_json::from_value(credential.clone())
+                    .map_err(|e| AppError::BadRequest(format!("invalid circle credential: {e}")))?;
             require_non_empty("circle.api_key", &cred.api_key)?;
             validate_environment("circle.environment", &cred.environment)?;
             Ok(None)
+        }
+        ProviderKind::Adyen => {
+            let cred: AdyenCredential = serde_json::from_value(credential.clone())
+                .map_err(|e| AppError::BadRequest(format!("invalid adyen credential: {e}")))?;
+            require_non_empty("adyen.api_key", &cred.api_key)?;
+            require_non_empty("adyen.merchant_account", &cred.merchant_account)?;
+            validate_environment("adyen.environment", &cred.environment)?;
+            // Live traffic needs the per-merchant endpoint prefix; sandbox
+            // uses the shared host so the base is optional there.
+            if cred.is_production() {
+                require_non_empty_opt("adyen.api_base_url", cred.api_base_url.as_deref())?;
+            }
+            if let Some(hmac_key_hex) = cred.hmac_key_hex.as_deref() {
+                require_non_empty("adyen.hmac_key_hex", hmac_key_hex)?;
+                if hex::decode(hmac_key_hex.trim()).is_err() {
+                    return Err(AppError::BadRequest(
+                        "adyen.hmac_key_hex must be hex-encoded".into(),
+                    ));
+                }
+            }
+            // The merchant account is the natural webhook-routing key.
+            Ok(Some(cred.merchant_account))
+        }
+        ProviderKind::Square => {
+            let cred: SquareCredential = serde_json::from_value(credential.clone())
+                .map_err(|e| AppError::BadRequest(format!("invalid square credential: {e}")))?;
+            require_non_empty("square.access_token", &cred.access_token)?;
+            validate_environment("square.environment", &cred.environment)?;
+            if let Some(merchant_id) = cred.merchant_id.as_deref() {
+                require_non_empty("square.merchant_id", merchant_id)?;
+            }
+            // Square signs `url + body`; if a signature key is configured the
+            // notification URL must be too, or verification can never succeed.
+            if let Some(key) = cred.webhook_signature_key.as_deref() {
+                require_non_empty("square.webhook_signature_key", key)?;
+                require_non_empty_opt(
+                    "square.webhook_notification_url",
+                    cred.webhook_notification_url.as_deref(),
+                )?;
+            }
+            Ok(cred.merchant_id.clone())
         }
         ProviderKind::Stripe
         | ProviderKind::Paypal
@@ -350,6 +581,10 @@ fn validate_api_key_credential(
         | ProviderKind::AchDirect
         | ProviderKind::SolanaWallet => Ok(None),
     }
+}
+
+fn optional_trimmed(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|v| !v.is_empty())
 }
 
 fn require_non_empty(field: &str, value: &str) -> AppResult<()> {
@@ -373,6 +608,21 @@ fn validate_environment(field: &str, value: &str) -> AppResult<()> {
             "{field} must be production or sandbox, got {other}"
         ))),
     }
+}
+
+fn validate_language_tag(field: &str, value: &str) -> AppResult<()> {
+    let value = value.trim();
+    if value.len() < 2
+        || value.len() > 20
+        || !value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+    {
+        return Err(AppError::BadRequest(format!(
+            "{field} must be a compact BCP-47-style language tag"
+        )));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -429,6 +679,339 @@ mod tests {
         });
 
         let err = validate_api_key_credential(ProviderKind::Wise, &credential).unwrap_err();
+
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    #[test]
+    fn validates_moneygram_and_derives_partner_id() {
+        let credential = serde_json::json!({
+            "client_id": "mg_client",
+            "client_secret": "mg_secret",
+            "agent_partner_id": "agent_123",
+            "environment": "sandbox"
+        });
+
+        let derived = validate_api_key_credential(ProviderKind::MoneyGram, &credential).unwrap();
+
+        assert_eq!(derived.as_deref(), Some("agent_123"));
+    }
+
+    #[test]
+    fn rejects_bad_moneygram_language_tag() {
+        let credential = serde_json::json!({
+            "client_id": "mg_client",
+            "client_secret": "mg_secret",
+            "agent_partner_id": "agent_123",
+            "user_language": "en_US with spaces",
+            "environment": "sandbox"
+        });
+
+        let err = validate_api_key_credential(ProviderKind::MoneyGram, &credential).unwrap_err();
+
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    #[test]
+    fn rejects_partial_remitly_partner_api_config() {
+        let key_only = serde_json::json!({
+            "api_key": "remitly_key",
+            "environment": "sandbox"
+        });
+        let url_only = serde_json::json!({
+            "api_base_url": "https://partner.remitly.example",
+            "environment": "sandbox"
+        });
+
+        assert!(matches!(
+            validate_api_key_credential(ProviderKind::Remitly, &key_only),
+            Err(AppError::BadRequest(_))
+        ));
+        assert!(matches!(
+            validate_api_key_credential(ProviderKind::Remitly, &url_only),
+            Err(AppError::BadRequest(_))
+        ));
+    }
+
+    #[test]
+    fn rejects_remitly_partner_api_non_https_or_local_base_url() {
+        for api_base_url in [
+            "http://partner.remitly.example",
+            "https://localhost:8080",
+            "https://10.0.0.1",
+            "https://billing-service",
+        ] {
+            let credential = serde_json::json!({
+                "api_key": "remitly_key",
+                "api_base_url": api_base_url,
+                "environment": "sandbox"
+            });
+
+            let err = validate_api_key_credential(ProviderKind::Remitly, &credential).unwrap_err();
+
+            assert!(matches!(err, AppError::BadRequest(_)));
+        }
+    }
+
+    #[test]
+    fn validates_western_union_and_derives_client_id() {
+        let credential = serde_json::json!({
+            "client_id": "wu_client",
+            "environment": "production"
+        });
+
+        let derived = validate_api_key_credential(ProviderKind::WesternUnion, &credential).unwrap();
+
+        assert_eq!(derived.as_deref(), Some("wu_client"));
+    }
+
+    #[test]
+    fn rejects_incomplete_western_union_mtls_pair() {
+        let credential = serde_json::json!({
+            "client_id": "wu_client",
+            "environment": "sandbox",
+            "client_certificate_pem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"
+        });
+
+        let err = validate_api_key_credential(ProviderKind::WesternUnion, &credential).unwrap_err();
+
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    #[test]
+    fn rejects_invalid_western_union_mtls_pair() {
+        let credential = serde_json::json!({
+            "client_id": "wu_client",
+            "environment": "sandbox",
+            "client_certificate_pem": "not a cert",
+            "client_private_key_pem": "not a key"
+        });
+
+        let err = validate_api_key_credential(ProviderKind::WesternUnion, &credential).unwrap_err();
+
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    #[test]
+    fn validates_us_bank_zelle_and_derives_program_id() {
+        let credential = serde_json::json!({
+            "access_token": "usb_access",
+            "client_id": "usb_client",
+            "program_id": "program_123",
+            "api_base_url": "https://api.usbank.example",
+            "payments_path": "/payments",
+            "enrollment_path": "/enrollments",
+            "environment": "sandbox"
+        });
+
+        let derived = validate_api_key_credential(ProviderKind::UsBankZelle, &credential).unwrap();
+
+        assert_eq!(derived.as_deref(), Some("program_123"));
+    }
+
+    #[test]
+    fn rejects_zelle_http_or_local_runtime_base_url() {
+        for api_base_url in ["http://api.usbank.example", "https://localhost:8443"] {
+            let credential = serde_json::json!({
+                "access_token": "usb_access",
+                "client_id": "usb_client",
+                "program_id": "program_123",
+                "api_base_url": api_base_url,
+                "environment": "sandbox"
+            });
+
+            let err =
+                validate_api_key_credential(ProviderKind::UsBankZelle, &credential).unwrap_err();
+
+            assert!(matches!(err, AppError::BadRequest(_)));
+        }
+    }
+
+    #[test]
+    fn validates_jpmorgan_zelle_and_derives_debtor_account() {
+        let credential = serde_json::json!({
+            "access_token": "jpm_access",
+            "debtor_account_id": "acct_123",
+            "debtor_name": "Example Corp",
+            "debtor_bic": "CHASUS33",
+            "api_base_url": "https://payments.jpmorgan.example/tsapi/v1",
+            "environment": "production"
+        });
+
+        let derived =
+            validate_api_key_credential(ProviderKind::JpmorganZelle, &credential).unwrap();
+
+        assert_eq!(derived.as_deref(), Some("acct_123"));
+    }
+
+    #[test]
+    fn validates_bofa_cashpro_gdd_and_derives_company_id() {
+        let credential = serde_json::json!({
+            "client_id": "bofa_client",
+            "client_secret": "bofa_secret",
+            "cashpro_company_id": "company_123",
+            "access_token": "bofa_access",
+            "api_base_url": "https://cashpro-api.bankofamerica.example",
+            "disbursements_path": "/gdd/disbursements",
+            "environment": "production"
+        });
+
+        let derived =
+            validate_api_key_credential(ProviderKind::BofaCashProGdd, &credential).unwrap();
+
+        assert_eq!(derived.as_deref(), Some("company_123"));
+    }
+
+    #[test]
+    fn rejects_bofa_cashpro_gdd_non_root_relative_path() {
+        let credential = serde_json::json!({
+            "client_id": "bofa_client",
+            "client_secret": "bofa_secret",
+            "cashpro_company_id": "company_123",
+            "api_base_url": "https://cashpro-api.bankofamerica.example",
+            "disbursements_path": "https://evil.example/gdd",
+            "environment": "production"
+        });
+
+        let err =
+            validate_api_key_credential(ProviderKind::BofaCashProGdd, &credential).unwrap_err();
+
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    #[test]
+    fn validates_modern_treasury_and_derives_org_id() {
+        let credential = serde_json::json!({
+            "organization_id": "org_123",
+            "api_key": "mt_key",
+            "default_originating_account_id": "ia_123",
+            "api_base_url": "https://app.moderntreasury.example",
+            "environment": "production"
+        });
+
+        let derived =
+            validate_api_key_credential(ProviderKind::ModernTreasury, &credential).unwrap();
+
+        assert_eq!(derived.as_deref(), Some("org_123"));
+    }
+
+    #[test]
+    fn validates_dwolla_and_derives_account_id() {
+        let credential = serde_json::json!({
+            "access_token": "dwolla_access",
+            "account_id": "acct_123",
+            "api_base_url": "https://api.dwolla.example",
+            "environment": "sandbox"
+        });
+
+        let derived = validate_api_key_credential(ProviderKind::Dwolla, &credential).unwrap();
+
+        assert_eq!(derived.as_deref(), Some("acct_123"));
+    }
+
+    #[test]
+    fn rejects_dwolla_local_base_url() {
+        let credential = serde_json::json!({
+            "access_token": "dwolla_access",
+            "api_base_url": "https://127.0.0.1:8080",
+            "environment": "sandbox"
+        });
+
+        let err = validate_api_key_credential(ProviderKind::Dwolla, &credential).unwrap_err();
+
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    #[test]
+    fn validates_adyen_and_derives_merchant_account() {
+        let credential = serde_json::json!({
+            "api_key": "AQEyhmfx...",
+            "merchant_account": "AcmeCorpECOM",
+            "environment": "sandbox",
+            "hmac_key_hex": "deadbeefcafe"
+        });
+        let derived = validate_api_key_credential(ProviderKind::Adyen, &credential).unwrap();
+        assert_eq!(derived.as_deref(), Some("AcmeCorpECOM"));
+    }
+
+    #[test]
+    fn rejects_adyen_production_without_base_url() {
+        let credential = serde_json::json!({
+            "api_key": "AQEyhmfx...",
+            "merchant_account": "AcmeCorpECOM",
+            "environment": "production"
+        });
+        let err = validate_api_key_credential(ProviderKind::Adyen, &credential).unwrap_err();
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    #[test]
+    fn rejects_adyen_non_hex_hmac_key() {
+        let credential = serde_json::json!({
+            "api_key": "AQEyhmfx...",
+            "merchant_account": "AcmeCorpECOM",
+            "environment": "sandbox",
+            "hmac_key_hex": "nothex!!"
+        });
+        let err = validate_api_key_credential(ProviderKind::Adyen, &credential).unwrap_err();
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    #[test]
+    fn validates_square_and_derives_merchant_id() {
+        let credential = serde_json::json!({
+            "access_token": "EAAA...",
+            "environment": "production",
+            "merchant_id": "ML123"
+        });
+        let derived = validate_api_key_credential(ProviderKind::Square, &credential).unwrap();
+        assert_eq!(derived.as_deref(), Some("ML123"));
+    }
+
+    #[test]
+    fn rejects_square_signature_key_without_notification_url() {
+        let credential = serde_json::json!({
+            "access_token": "EAAA...",
+            "environment": "sandbox",
+            "webhook_signature_key": "sig_key"
+        });
+        let err = validate_api_key_credential(ProviderKind::Square, &credential).unwrap_err();
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    #[test]
+    fn validates_ethereum_wallet_and_derives_address() {
+        let credential = serde_json::json!({
+            "address": "0x1111111111111111111111111111111111111111",
+            "rpc_url": "https://eth-mainnet.example",
+            "chain_id": 1,
+            "rpc_bearer_token": "rpc_token",
+            "tracked_assets": [{
+                "symbol": "USDC",
+                "contract_address": "0x2222222222222222222222222222222222222222",
+                "decimals": 6
+            }]
+        });
+
+        let derived =
+            validate_api_key_credential(ProviderKind::EthereumWallet, &credential).unwrap();
+
+        assert_eq!(
+            derived.as_deref(),
+            Some("0x1111111111111111111111111111111111111111")
+        );
+    }
+
+    #[test]
+    fn rejects_ethereum_wallet_local_rpc_url() {
+        let credential = serde_json::json!({
+            "address": "0x1111111111111111111111111111111111111111",
+            "rpc_url": "https://192.168.1.10",
+            "chain_id": 1
+        });
+
+        let err =
+            validate_api_key_credential(ProviderKind::EthereumWallet, &credential).unwrap_err();
 
         assert!(matches!(err, AppError::BadRequest(_)));
     }

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile, readdir, stat } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -144,6 +145,9 @@ function extractDashboardJson(configMap: string, key: string): Record<string, un
 
 test("observability kustomization installs collector, metrics, logs, traces, and UI", async () => {
   const kustomization = await readRepoFile("remote/argocd/observability/kustomization.yaml");
+  const prometheusDeployment = await readRepoFile(
+    "remote/argocd/observability/prometheus.deployment.yaml",
+  );
 
   assert.match(kustomization, /otel-collector\.deployment\.yaml/);
   assert.match(kustomization, /prometheus\.deployment\.yaml/);
@@ -152,11 +156,19 @@ test("observability kustomization installs collector, metrics, logs, traces, and
   assert.match(kustomization, /promtail\.daemonset\.yaml/);
   assert.match(kustomization, /tempo\.deployment\.yaml/);
   assert.match(kustomization, /jaeger\.deployment\.yaml/);
+  assert.match(prometheusDeployment, /replicas:\s*1/);
+  assert.match(prometheusDeployment, /strategy:[\s\S]*type:\s*Recreate/);
 });
 
 test("otel collector scrapes all remote runtimes and exports traces", async () => {
   const collector = await readRepoFile(
     "remote/argocd/observability/otel-collector.configmap.yaml",
+  );
+  const collectorDeployment = await readRepoFile(
+    "remote/argocd/observability/otel-collector.deployment.yaml",
+  );
+  const collectorService = await readRepoFile(
+    "remote/argocd/observability/otel-collector.service.yaml",
   );
 
   assert.match(collector, /dd-dev-server-api\.default\.svc\.cluster\.local:8080/);
@@ -166,6 +178,7 @@ test("otel collector scrapes all remote runtimes and exports traces", async () =
   assert.match(collector, /dd-gleam-lambda-runner\.default\.svc\.cluster\.local:8083/);
   assert.match(collector, /dd-gleam-mcp-server\.default\.svc\.cluster\.local:8090/);
   assert.match(collector, /dd-webrtc-signaling\.default\.svc\.cluster\.local:8095/);
+  assert.match(collector, /dd-webrtc-media\.default\.svc\.cluster\.local:8125/);
   assert.match(collector, /dd-mdp-optimizer\.default\.svc\.cluster\.local:8096/);
   assert.match(collector, /dd-des-simulator\.default\.svc\.cluster\.local:8099/);
   assert.match(collector, /dd-contract-service\.default\.svc\.cluster\.local:8101/);
@@ -189,14 +202,27 @@ test("otel collector scrapes all remote runtimes and exports traces", async () =
   assert.match(collector, /dd-nats\.messaging\.svc\.cluster\.local:7777/);
   assert.match(collector, /job_name:\s*dd-promtail/);
   assert.match(collector, /__meta_kubernetes_pod_label_app[\s\S]*regex:\s*dd-promtail/);
+  assert.match(collector, /health_check:[\s\S]*endpoint:\s*0\.0\.0\.0:13133/);
+  assert.match(collector, /const_labels:[\s\S]*cluster:\s*dd-ec2/);
+  assert.match(collector, /telemetry:[\s\S]*metrics:[\s\S]*address:\s*0\.0\.0\.0:8888/);
   assert.match(collector, /endpoint:\s*dd-tempo\.observability\.svc\.cluster\.local:4317/);
   assert.match(collector, /endpoint:\s*dd-jaeger\.observability\.svc\.cluster\.local:4317/);
+  assert.match(collectorDeployment, /name:\s*self-metrics[\s\S]*containerPort:\s*8888/);
+  assert.match(collectorDeployment, /name:\s*health[\s\S]*containerPort:\s*13133/);
+  assert.match(collectorDeployment, /readinessProbe:[\s\S]*httpGet:[\s\S]*port:\s*13133/);
+  assert.match(collectorDeployment, /livenessProbe:[\s\S]*httpGet:[\s\S]*port:\s*13133/);
+  assert.match(collectorService, /name:\s*self-metrics[\s\S]*port:\s*8888[\s\S]*targetPort:\s*8888/);
+  assert.match(collectorService, /name:\s*health[\s\S]*port:\s*13133[\s\S]*targetPort:\s*13133/);
 });
 
 test("prometheus and loki ingest through the collector and promtail fan-in", async () => {
   const prometheus = await readRepoFile("remote/argocd/observability/prometheus.configmap.yaml");
   const promtail = await readRepoFile("remote/argocd/observability/promtail.configmap.yaml");
+  const loki = await readRepoFile("remote/argocd/observability/loki.configmap.yaml");
+  const lokiDeployment = await readRepoFile("remote/argocd/observability/loki.deployment.yaml");
 
+  assert.match(prometheus, /rule_files:[\s\S]*\/etc\/prometheus\/observability\.rules\.yml/);
+  assert.match(prometheus, /job_name:\s*otel-collector-self[\s\S]*dd-otel-collector\.observability\.svc\.cluster\.local:8888/);
   assert.match(prometheus, /dd-otel-collector\.observability\.svc\.cluster\.local:8889/);
   assert.match(
     prometheus,
@@ -208,13 +234,20 @@ test("prometheus and loki ingest through the collector and promtail fan-in", asy
   );
   assert.doesNotMatch(prometheus, /job_name:\s*observability-stack/);
   assert.match(prometheus, /dd-gleam-mcp-server\.default\.svc\.cluster\.local:8090/);
+  assert.match(prometheus, /dd-webrtc-media\.default\.svc\.cluster\.local:8125/);
   assert.match(prometheus, /dd-agent-worker-broker\.default\.svc\.cluster\.local:8098/);
   assert.match(prometheus, /dd-remote-auth\.default\.svc\.cluster\.local:8083/);
   assert.match(prometheus, /dd-billing-server\.default\.svc\.cluster\.local:80/);
   assert.match(prometheus, /dd-formal-methods-service\.default\.svc\.cluster\.local:8111/);
   assert.match(prometheus, /dd-lock-loadtest-trigger\.default\.svc\.cluster\.local:8110/);
   assert.match(prometheus, /gcs-router\.default\.svc\.cluster\.local:9100/);
+  assert.match(prometheus, /record:\s*dd:observability:target_up_ratio/);
+  assert.match(prometheus, /alert:\s*DDObservabilityTargetDown/);
+  assert.match(prometheus, /alert:\s*DDOtelCollectorRejectedTelemetry/);
   assert.match(promtail, /dd-loki\.observability\.svc\.cluster\.local:3100\/loki\/api\/v1\/push/);
+  assert.match(promtail, /batchwait:\s*1s/);
+  assert.match(promtail, /batchsize:\s*1048576/);
+  assert.match(promtail, /backoff_config:[\s\S]*max_retries:\s*10/);
   assert.match(promtail, /external_labels:[\s\S]*cluster:\s*dd-ec2/);
   assert.match(promtail, /__path__:\s*\/var\/log\/containers\/\*\.log/);
   assert.doesNotMatch(promtail, /^\s*kubernetes_sd_configs:/m);
@@ -226,6 +259,10 @@ test("prometheus and loki ingest through the collector and promtail fan-in", asy
   assert.match(promtail, /env:\s*prod[\s\S]*environment:\s*prod/);
   assert.match(promtail, /labeldrop:[\s\S]*-\s*filename/);
   assert.match(promtail, /- cri:\s*\{\}/);
+  assert.match(loki, /limits_config:[\s\S]*reject_old_samples:\s*true/);
+  assert.match(loki, /ingestion_rate_mb:\s*16/);
+  assert.match(loki, /max_global_streams_per_user:\s*5000/);
+  assert.match(lokiDeployment, /configmap\.reloader\.stakater\.com\/reload:\s*"dd-loki-config"/);
 });
 
 test("resource exporter and Grafana fleet dashboard cover every checked-in workload", async () => {
@@ -276,6 +313,31 @@ test("resource exporter and Grafana fleet dashboard cover every checked-in workl
   assert.match(dashboardText, /dd_k8s_workload_unavailable_replicas/);
   assert.match(dashboardText, /\{deployment=~\\\"\$\{workload:regex\}\\\"\}/);
   assert.match(dashboardText, /\{log_schema=\\\"dd\.log\.v1\\\",deployment=~\\\"\$\{workload:regex\}\\\"/);
+
+  const controlPlaneDashboard = extractDashboardJson(dashboards, "observability-control-plane.json");
+  const controlPlaneText = JSON.stringify(controlPlaneDashboard);
+  assert.equal(controlPlaneDashboard.title, "Observability Control Plane");
+  assert.equal(controlPlaneDashboard.uid, "dd-observability-control-plane");
+  assert.match(controlPlaneText, /dd:observability:target_up_ratio/);
+  assert.match(controlPlaneText, /otel-collector-self/);
+  assert.match(controlPlaneText, /promtail_read_lines_total/);
+  assert.match(controlPlaneText, /otelcol_receiver_refused_/);
+  assert.match(controlPlaneText, /\{namespace=\\\"observability\\\"\}/);
+});
+
+test("standalone observability coverage guardrail passes", async () => {
+  const result = spawnSync("node", ["remote/tools/check-observability-coverage.mjs"], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+
+  assert.equal(
+    result.status,
+    0,
+    `observability coverage check failed\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`,
+  );
+  assert.match(result.stdout, /observability coverage ok/);
+  assert.match(result.stdout, /source files avoid common monkey-patching patterns/);
 });
 
 test("promtail parses the shared structured stdio envelope without high-cardinality labels", async () => {
@@ -343,7 +405,7 @@ test("supporting runtime services expose prometheus metrics", async () => {
   assert.match(lockLoadtest, /dd_lock_loadtest_trigger_runs_started_total/);
   assert.match(agentWorkerDeployment, /dd\.dev\/telemetry-revision:\s*'2026-05-18-observability'/);
   assert.match(authDeployment, /dd\.dev\/telemetry-revision:\s*'2026-05-18-observability'/);
-  assert.match(billingDeployment, /dd\.dev\/telemetry-revision:\s*'2026-05-18-observability'/);
+  assert.match(billingDeployment, /dd\.dev\/telemetry-revision:\s*'2026-06-05-customer-snapshot-locks'/);
   assert.match(formalDeployment, /dd\.dev\/telemetry-revision:\s*'2026-05-18-observability'/);
   assert.match(lockDeployment, /dd\.dev\/telemetry-revision:\s*'2026-05-18-observability'/);
 });
@@ -459,4 +521,202 @@ test("grafana dashboard includes the Gleam MCP runtime metrics", async () => {
   assert.match(dashboard, /Gleam MCP Runtime/);
   assert.match(dashboard, /dd_gleam_mcp_http_requests_total/);
   assert.match(dashboard, /dd_gleam_mcp_rpc_requests_total/);
+});
+
+test("grafana exposes a dedicated fabrication planner dashboard", async () => {
+  const dashboards = await readRepoFile(
+    "remote/argocd/observability/grafana.dashboards.configmap.yaml",
+  );
+  const prometheus = await readRepoFile("remote/argocd/observability/prometheus.configmap.yaml");
+  const observabilityReadme = await readRepoFile("remote/argocd/observability/readme.md");
+  const gateway = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml",
+  );
+  const runtimeReadme = await readRepoFile("remote/argocd/dd-next-runtime/readme.md");
+  const webHome = await readRepoFile("remote/deployments/web-home-rs/src/main.rs");
+
+  const dashboard = extractDashboardJson(dashboards, "fabrication-planner.json");
+  const dashboardText = JSON.stringify(dashboard);
+
+  assert.equal(dashboard.title, "Fabrication Planner");
+  assert.equal(dashboard.uid, "dd-fabrication-planner");
+  assert.match(dashboardText, /dd_fabrication_server_plan_requests_total/);
+  assert.match(dashboardText, /dd_fabrication_server_analysis_requests_total/);
+  assert.match(dashboardText, /dd_fabrication_server_failure_boundaries_total/);
+  assert.match(dashboardText, /dd_fabrication_server_validation_findings_total/);
+  assert.match(dashboardText, /dd_fabrication_server_nats_results_published_total/);
+  assert.match(dashboardText, /dd_fabrication_server_mdp_published_total/);
+  assert.match(dashboardText, /Generated Programs, Artifacts, Learning Events, and Fetches/);
+  assert.match(dashboardText, /dd_fabrication_server_generated_programs_total/);
+  assert.match(dashboardText, /dd_fabrication_server_jobs_stored_total/);
+  assert.match(dashboardText, /dd_fabrication_server_artifacts_stored_total/);
+  assert.match(dashboardText, /dd_fabrication_server_learning_events_stored_total/);
+  assert.match(dashboardText, /dd_runtime_config_push_total/);
+  assert.match(dashboardText, /dd_k8s_hpa_current_at_max/);
+  assert.match(dashboardText, /dd_k8s_deployment_updated_replicas/);
+  assert.match(dashboardText, /dd_k8s_deployment_unavailable_replicas/);
+  assert.match(dashboardText, /Direct Pod Scrape Coverage/);
+  assert.match(dashboardText, /ready direct pod scrapes/);
+  assert.match(dashboardText, /scrape coverage gap/);
+  assert.match(dashboardText, /dd_k8s_deployment_desired_replicas/);
+  assert.match(dashboardText, /Machine Release Readiness and Learning Fanout/);
+  assert.match(dashboardText, /machine release blockers/);
+  assert.match(dashboardText, /draft generated programs/);
+  assert.match(dashboardText, /nats result fanout/);
+  assert.match(dashboardText, /mdp learning fanout/);
+  assert.match(dashboardText, /Runtime CPU and Memory Limit Headroom/);
+  assert.match(dashboardText, /dd_k8s_pod_container_cpu_usage_cores/);
+  assert.match(dashboardText, /dd_k8s_pod_container_memory_usage_bytes/);
+  assert.match(dashboardText, /Fabrication Gateway Access and Guardrail Logs/);
+  assert.match(dashboardText, /Fabrication Gateway Guardrail Rejections/);
+  assert.match(dashboardText, /Fabrication Gateway Edge Latency/);
+  assert.match(dashboardText, /Fabrication Gateway Upstream Latency/);
+  assert.match(dashboardText, /Fabrication Gateway Upstream Failures/);
+  assert.match(dashboardText, /Fabrication Gateway Request Size/);
+  assert.match(dashboardText, /Fabrication Gateway Response Size/);
+  assert.match(dashboardText, /count_over_time/);
+  assert.match(dashboardText, /quantile_over_time\(0\.95/);
+  assert.match(dashboardText, /max_over_time/);
+  assert.match(dashboardText, /unwrap request_time/);
+  assert.match(dashboardText, /unwrap upstream_response_time/);
+  assert.match(dashboardText, /unwrap request_length/);
+  assert.match(dashboardText, /unwrap body_bytes_sent/);
+  assert.match(dashboardText, /upstream_status/);
+  assert.match(dashboardText, /upstream p95/);
+  assert.match(dashboardText, /upstream max/);
+  assert.match(dashboardText, /request bytes p95/);
+  assert.match(dashboardText, /request bytes max/);
+  assert.match(dashboardText, /response bytes p95/);
+  assert.match(dashboardText, /response bytes max/);
+  assert.match(dashboardText, /upstream 500/);
+  assert.match(dashboardText, /upstream 502/);
+  assert.match(dashboardText, /upstream 503/);
+  assert.match(dashboardText, /upstream 504/);
+  assert.match(dashboardText, /401 auth/);
+  assert.match(dashboardText, /404 internal route/);
+  assert.match(dashboardText, /405 method/);
+  assert.match(dashboardText, /413 payload/);
+  assert.match(dashboardText, /429 rate limit/);
+  assert.match(dashboardText, /dd-remote-gateway/);
+  assert.match(dashboardText, /401\|404\|405\|413\|429/);
+  assert.match(observabilityReadme, /validation-finding and\s+machine-failure boundary rates/);
+  assert.match(
+    observabilityReadme,
+    /generated-program,\s+job\/artifact, learning-event, and artifact detail-request throughput/,
+  );
+  assert.match(observabilityReadme, /Loki-derived gateway guardrail rejection counters/);
+  assert.match(observabilityReadme, /auth\/internal-route\/method\/payload\/rate-limit failures/);
+  assert.match(observabilityReadme, /gateway edge-latency/);
+  assert.match(observabilityReadme, /access-log `request_time`/);
+  assert.match(observabilityReadme, /upstream p95\/max panels/);
+  assert.match(observabilityReadme, /upstream_response_time/);
+  assert.match(observabilityReadme, /upstream 500\/502\/503\/504 failure counters/);
+  assert.match(observabilityReadme, /upstream_status/);
+  assert.match(observabilityReadme, /request-size p95\/max panels/);
+  assert.match(observabilityReadme, /request_length/);
+  assert.match(observabilityReadme, /512k/);
+  assert.match(observabilityReadme, /direct pod scrape coverage/);
+  assert.match(observabilityReadme, /fewer ready direct pod scrapes than desired replicas/);
+  assert.match(observabilityReadme, /response-size p95\/max panels/);
+  assert.match(observabilityReadme, /body_bytes_sent/);
+  assert.match(gateway, /log_format dd_gateway_json escape=json/);
+  assert.match(gateway, /"schema":"dd\.gateway\.access\.v1"/);
+  assert.match(gateway, /"uri":"\$uri"/);
+  assert.match(gateway, /access_log \/dev\/stdout dd_gateway_json/);
+  const fabricationSecurityHeaderLocations = [
+    "location = /fabrication {",
+    "location = /fabrication/internal {",
+    "location ^~ /fabrication/internal/ {",
+    "location /fabrication/ {",
+    "location @fabrication_payload_too_large {",
+    "location @fabrication_rate_limited {",
+    "location @fabrication_redirect_method_not_allowed {",
+    "location @fabrication_method_not_allowed {",
+  ];
+  const fabricationSecurityHeaders = [
+    'add_header Strict-Transport-Security "max-age=15552000" always;',
+    'add_header Content-Security-Policy "upgrade-insecure-requests" always;',
+    'add_header X-Frame-Options "SAMEORIGIN" always;',
+    'add_header X-Content-Type-Options "nosniff" always;',
+    'add_header Referrer-Policy "strict-origin-when-cross-origin" always;',
+  ];
+  for (const locationMarker of fabricationSecurityHeaderLocations) {
+    const start = gateway.indexOf(locationMarker);
+    assert.notEqual(start, -1, `expected ${locationMarker} in gateway config`);
+    const end = gateway.indexOf("\n      }", start);
+    assert.notEqual(end, -1, `expected closing brace for ${locationMarker}`);
+    const block = gateway.slice(start, end);
+    for (const header of fabricationSecurityHeaders) {
+      assert.ok(block.includes(header), `expected ${locationMarker} to preserve ${header}`);
+    }
+  }
+  assert.match(
+    gateway,
+    /location = \/fabrication[\s\S]*error_page 405 = @fabrication_redirect_method_not_allowed/,
+  );
+  assert.match(
+    gateway,
+    /location @fabrication_redirect_method_not_allowed[\s\S]*add_header Allow "GET, HEAD" always/,
+  );
+  assert.match(
+    gateway,
+    /location @fabrication_method_not_allowed[\s\S]*add_header Allow "GET, HEAD, POST" always/,
+  );
+  assert.match(
+    gateway,
+    /location @fabrication_rate_limited[\s\S]*add_header Retry-After 60 always/,
+  );
+  assert.match(runtimeReadme, /GET, HEAD` for the canonical `\/fabrication` redirect/);
+  assert.match(runtimeReadme, /GET, HEAD, POST` for `\/fabrication\/`/);
+  assert.match(runtimeReadme, /explicitly preserve the gateway security header set/);
+  assert.match(runtimeReadme, /validation findings, machine-failure boundaries/);
+  assert.match(runtimeReadme, /X-Content-Type-Options/);
+  assert.match(runtimeReadme, /Retry-After: 60/);
+  assert.match(dashboardText, /Kubernetes Startup, Warning, and Termination Evidence/);
+  assert.match(dashboardText, /dd_k8s_pod_init_container_waiting/);
+  assert.match(dashboardText, /dd_k8s_pod_init_container_restarts_total/);
+  assert.match(dashboardText, /dd_k8s_event_count/);
+  assert.match(dashboardText, /dd_k8s_pod_container_last_terminated/);
+  assert.match(dashboardText, /dd_k8s_pod_init_container_last_terminated/);
+  assert.match(dashboardText, /dd_k8s_pod_container_waiting/);
+  assert.match(prometheus, /alert:\s*DDFabricationServerServingContainerWaiting/);
+  assert.match(prometheus, /alert:\s*DDFabricationServerRolloutUpdatedReplicasLagging/);
+  assert.match(prometheus, /alert:\s*DDFabricationServerPodScrapeCoverageBelowDesired/);
+  assert.match(prometheus, /alert:\s*DDFabricationServerCpuNearLimit/);
+  assert.match(prometheus, /alert:\s*DDFabricationServerMemoryNearLimit/);
+  assert.match(prometheus, /alert:\s*DDFabricationServerValidationFindingsIncreasing/);
+  assert.match(prometheus, /dd_fabrication_server_validation_findings_total\[10m\]/);
+  assert.match(
+    prometheus,
+    /dd_k8s_pod_container_waiting\{namespace="default",app="dd-fabrication-server",container="fabrication-server"\}/,
+  );
+  assert.match(
+    prometheus,
+    /dd_k8s_deployment_updated_replicas\{namespace="default",deployment="dd-fabrication-server",app="dd-fabrication-server"\}/,
+  );
+  assert.match(
+    prometheus,
+    /sum\(up\{job="dd-fabrication-server-pods"\} == bool 1\) < max\(dd_k8s_deployment_desired_replicas\{namespace="default",deployment="dd-fabrication-server",app="dd-fabrication-server"\}\)/,
+  );
+  assert.match(
+    prometheus,
+    /dd_k8s_pod_container_cpu_usage_cores\{namespace="default",app="dd-fabrication-server",container="fabrication-server"\}/,
+  );
+  assert.match(
+    prometheus,
+    /dd_k8s_pod_container_memory_usage_bytes\{namespace="default",app="dd-fabrication-server",container="fabrication-server"\}/,
+  );
+  assert.match(dashboardText, /Fabrication Gateway/);
+  assert.match(dashboardText, /\/fabrication\//);
+  assert.match(dashboardText, /Fabrication API Docs/);
+  assert.match(dashboardText, /\/fabrication\/docs\/api/);
+  assert.match(dashboardText, /Fabrication Jobs/);
+  assert.match(dashboardText, /\/fabrication\/jobs/);
+  assert.match(dashboardText, /Dashboard Shortcut/);
+  assert.match(dashboardText, /\/grafana\/fabrication/);
+  assert.match(dashboardText, /\/grafana\/depl\/dd-fabrication-server/);
+  assert.match(webHome, /async fn grafana_fabrication_redirect/);
+  assert.match(webHome, /\/telemetry\/d\/dd-fabrication-planner\/fabrication-planner\?orgId=1/);
+  assert.match(webHome, /\.route\("\/grafana\/fabrication", get\(grafana_fabrication_redirect\)\)/);
+  assert.match(webHome, /\.route\("\/grafana\/fabrication\/", get\(grafana_fabrication_redirect\)\)/);
 });

@@ -2,7 +2,7 @@ use std::{
     env,
     net::SocketAddr,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -23,10 +23,23 @@ use dd_shared_interfaces::AgentTaskQueueMessage;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+const MAX_HTTP_BODY_BYTES: usize = 4 * 1024 * 1024;
+const MAX_IDENTIFIER_LEN: usize = 200;
+const MAX_PROMPT_BYTES: usize = 1024 * 1024;
+
 #[derive(Clone)]
 struct AppState {
     config: Config,
     http: reqwest::Client,
+    // A single shared NATS client. Connected once at startup and reused for
+    // every dispatch; the previous code opened a fresh TCP connection per
+    // request, which is both slow and unauthenticated.
+    nats: async_nats::Client,
+    // Tracks whether the WorkQueue stream has been ensured, so the dispatch hot
+    // path skips a JetStream round-trip per request. Cleared on a publish
+    // failure so the next request re-ensures (covers a stream deleted at
+    // runtime).
+    stream_ensured: Arc<AtomicBool>,
     metrics: Arc<Metrics>,
 }
 
@@ -48,6 +61,7 @@ struct Config {
     direct_dispatch_enabled: bool,
     worker_health_timeout: Duration,
     worker_task_timeout: Duration,
+    nats_publish_timeout: Duration,
     server_auth_secret: Option<String>,
 }
 
@@ -205,8 +219,25 @@ fn config_from_env() -> Config {
         direct_dispatch_enabled: env_bool("DIRECT_DISPATCH_ENABLED", true),
         worker_health_timeout: Duration::from_millis(env_u64("WORKER_HEALTH_TIMEOUT_MS", 800)),
         worker_task_timeout: Duration::from_millis(env_u64("WORKER_TASK_TIMEOUT_MS", 30_000)),
+        nats_publish_timeout: Duration::from_millis(env_u64("NATS_PUBLISH_TIMEOUT_MS", 10_000)),
         server_auth_secret: first_env(&["REMOTE_DEV_SERVER_SECRET", "SERVER_AUTH_SECRET"]),
     }
+}
+
+/// Compare two secrets without leaking length-independent timing. A plain `==`
+/// short-circuits on the first differing byte, which is a (small) side channel
+/// on the shared auth secret.
+fn constant_time_equals(candidate: &str, expected: &str) -> bool {
+    let candidate = candidate.as_bytes();
+    let expected = expected.as_bytes();
+    if candidate.len() != expected.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (left, right) in candidate.iter().zip(expected.iter()) {
+        diff |= left ^ right;
+    }
+    diff == 0
 }
 
 fn request_is_authorized(headers: &HeaderMap, secret: &str) -> bool {
@@ -214,7 +245,42 @@ fn request_is_authorized(headers: &HeaderMap, secret: &str) -> bool {
         .get("x-server-auth")
         .or_else(|| headers.get("x-agent-auth"))
         .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value == secret)
+        .is_some_and(|value| constant_time_equals(value, secret))
+}
+
+/// Validate a `thread_id`/`task_id` against a strict allowlist. `thread_id` is
+/// interpolated **raw** into the NATS subject `dd.remote.thread.{id}.tasks`, so
+/// a value containing `.`, `*`, or `>` would inject extra subject tokens or
+/// wildcards and break per-thread isolation. Allow only ASCII alphanumerics,
+/// `-`, and `_` (UUIDs qualify); notably `.` is rejected because it is the NATS
+/// token separator.
+fn validate_identifier(value: &str, label: &str) -> Result<(), String> {
+    if value.is_empty() {
+        return Err(format!("{label} must not be empty"));
+    }
+    if value.len() > MAX_IDENTIFIER_LEN {
+        return Err(format!("{label} must be at most {MAX_IDENTIFIER_LEN} bytes"));
+    }
+    if let Some(bad) = value
+        .chars()
+        .find(|ch| !(ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_')))
+    {
+        return Err(format!(
+            "{label} must contain only ASCII alphanumerics, '-', or '_' (found {bad:?})"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_prompt(prompt: &str) -> Result<(), String> {
+    let trimmed = prompt.trim();
+    if trimmed.is_empty() {
+        return Err("prompt must not be empty".to_string());
+    }
+    if prompt.len() > MAX_PROMPT_BYTES {
+        return Err(format!("prompt must be at most {MAX_PROMPT_BYTES} bytes"));
+    }
+    Ok(())
 }
 
 async fn healthz(State(state): State<AppState>) -> impl IntoResponse {
@@ -273,6 +339,41 @@ async fn metrics(State(state): State<AppState>) -> Response {
         .into_response()
 }
 
+fn optional_env(key: &str) -> Option<String> {
+    first_env(&[key])
+}
+
+/// Build a hardened NATS client: stable name, ping, connect timeout, initial
+/// connect retry, and optional auth/TLS. Replaces a bare per-request
+/// `async_nats::connect(url)`.
+async fn connect_nats(config: &Config) -> Result<async_nats::Client, String> {
+    let mut options = async_nats::ConnectOptions::new()
+        .name("dd-agent-worker-broker")
+        .retry_on_initial_connect()
+        .ping_interval(Duration::from_secs(15))
+        .connection_timeout(Duration::from_secs(10));
+
+    if env_bool("NATS_REQUIRE_TLS", false) {
+        options = options.require_tls(true);
+    }
+
+    if let Some(path) = optional_env("NATS_CREDENTIALS_FILE") {
+        options = options
+            .credentials_file(&path)
+            .await
+            .map_err(|error| format!("failed to read NATS_CREDENTIALS_FILE {path}: {error}"))?;
+    } else if let Some(token) = optional_env("NATS_TOKEN") {
+        options = options.token(token);
+    } else if let Some(seed) = optional_env("NATS_NKEY") {
+        options = options.nkey(seed);
+    }
+
+    options
+        .connect(config.nats_url.clone())
+        .await
+        .map_err(|error| error.to_string())
+}
+
 async fn ensure_task_stream(config: &Config, client: async_nats::Client) -> Result<(), String> {
     let jetstream = async_nats::jetstream::new(client);
     jetstream
@@ -290,16 +391,22 @@ async fn ensure_task_stream(config: &Config, client: async_nats::Client) -> Resu
 }
 
 async fn publish_task_to_nats(
-    config: &Config,
+    state: &AppState,
     thread_id: &str,
     request: &DispatchTaskRequest,
     repo: &str,
     base_branch: &str,
 ) -> Result<NatsPublishResult, String> {
-    let client = async_nats::connect(config.nats_url.clone())
-        .await
-        .map_err(|error| error.to_string())?;
-    ensure_task_stream(config, client.clone()).await?;
+    let config = &state.config;
+    // Reuse the shared, already-authenticated client (no reconnect per call).
+    let client = state.nats.clone();
+    // Ensure the stream exists at most once on the hot path. The flag is
+    // cleared on a publish failure below, so a stream deleted at runtime is
+    // re-created on the next attempt.
+    if !state.stream_ensured.load(Ordering::Acquire) {
+        ensure_task_stream(config, client.clone()).await?;
+        state.stream_ensured.store(true, Ordering::Release);
+    }
 
     let subject = thread_tasks_subject(thread_id);
     let payload = serde_json::to_vec(&AgentTaskQueueMessage {
@@ -325,17 +432,26 @@ async fn publish_task_to_nats(
     .map_err(|error| error.to_string())?;
 
     let jetstream = async_nats::jetstream::new(client.clone());
-    jetstream
-        .publish(subject.clone(), payload.clone().into())
-        .await
-        .map_err(|error| error.to_string())?
-        .await
-        .map_err(|error| error.to_string())?;
-    client
-        .publish(config.nats_wakeup_subject.clone(), payload.into())
-        .await
-        .map_err(|error| error.to_string())?;
-    client.flush().await.map_err(|error| error.to_string())?;
+    let publish = async {
+        jetstream
+            .publish(subject.clone(), payload.clone().into())
+            .await
+            .map_err(|error| error.to_string())?
+            .await
+            .map_err(|error| error.to_string())?;
+        client
+            .publish(config.nats_wakeup_subject.clone(), payload.into())
+            .await
+            .map_err(|error| error.to_string())?;
+        client.flush().await.map_err(|error| error.to_string())?;
+        Ok::<(), String>(())
+    };
+    if let Err(error) = publish.await {
+        // Force a stream re-ensure next time in case the failure was a deleted
+        // stream, and surface the error to the caller.
+        state.stream_ensured.store(false, Ordering::Release);
+        return Err(error);
+    }
 
     Ok(NatsPublishResult {
         published: true,
@@ -515,6 +631,24 @@ async fn dispatch_task(
                 .into_response();
         }
     }
+    // Validate identifiers before they reach the NATS subject / worker URL.
+    // threadId in particular is interpolated into the task subject.
+    for (value, label) in [(&thread_id, "threadId"), (&request.task_id, "taskId")] {
+        if let Err(error) = validate_identifier(value, label) {
+            state
+                .metrics
+                .dispatch_failures_total
+                .fetch_add(1, Ordering::Relaxed);
+            return (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response();
+        }
+    }
+    if let Err(error) = validate_prompt(&request.prompt) {
+        state
+            .metrics
+            .dispatch_failures_total
+            .fetch_add(1, Ordering::Relaxed);
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response();
+    }
     let repo = match required_repo(&request) {
         Ok(value) => value,
         Err(error) => {
@@ -576,11 +710,11 @@ async fn dispatch_task(
             .into_response();
     }
 
-    let nats = match publish_task_to_nats(&state.config, &thread_id, &request, &repo, &base_branch)
-        .await
-    {
-        Ok(value) => value,
-        Err(error) => {
+    // Bound the whole NATS path so a half-dead broker can't hang the request.
+    let publish = publish_task_to_nats(&state, &thread_id, &request, &repo, &base_branch);
+    let nats = match tokio::time::timeout(state.config.nats_publish_timeout, publish).await {
+        Ok(Ok(value)) => value,
+        Ok(Err(error)) => {
             state
                 .metrics
                 .dispatch_failures_total
@@ -592,6 +726,24 @@ async fn dispatch_task(
             return (
                 StatusCode::BAD_GATEWAY,
                 Json(json!({ "error": "failed to publish agent task", "detail": error })),
+            )
+                .into_response();
+        }
+        Err(_elapsed) => {
+            // Timed out: re-ensure the stream next time and report a gateway
+            // timeout rather than blocking the caller indefinitely.
+            state.stream_ensured.store(false, Ordering::Release);
+            state
+                .metrics
+                .dispatch_failures_total
+                .fetch_add(1, Ordering::Relaxed);
+            state
+                .metrics
+                .nats_publish_failures_total
+                .fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::GATEWAY_TIMEOUT,
+                Json(json!({ "error": "timed out publishing agent task" })),
             )
                 .into_response();
         }
@@ -629,6 +781,8 @@ async fn api_docs_json() -> impl axum::response::IntoResponse {
 
 #[tokio::main]
 async fn main() {
+    let _otel = dd_telemetry::init("dd-agent-worker-broker");
+
     rustls::crypto::ring::default_provider()
         .install_default()
         .ok();
@@ -636,9 +790,37 @@ async fn main() {
     let config = config_from_env();
     let host = env_value("HOST", "0.0.0.0");
     let port = env_u64("PORT", 8098) as u16;
+
+    if config.server_auth_secret.is_none() {
+        tracing::warn!(
+            "no REMOTE_DEV_SERVER_SECRET/SERVER_AUTH_SECRET set; \
+             dispatch will reject all requests until one is configured"
+        );
+    }
+
+    // Connect once and reuse. retry_on_initial_connect means this returns even
+    // if the broker is briefly unreachable at boot; the stream ensure is then
+    // best-effort (the queue consumer also creates it).
+    let nats = match connect_nats(&config).await {
+        Ok(client) => client,
+        Err(error) => {
+            tracing::error!(%error, "failed to connect to NATS");
+            std::process::exit(1);
+        }
+    };
+    let stream_ensured = Arc::new(AtomicBool::new(false));
+    match ensure_task_stream(&config, nats.clone()).await {
+        Ok(()) => stream_ensured.store(true, Ordering::Release),
+        Err(error) => {
+            tracing::error!(%error, "could not ensure task stream at startup");
+        }
+    }
+
     let state = AppState {
         config,
         http: reqwest::Client::new(),
+        nats,
+        stream_ensured,
         metrics: Arc::new(Metrics::default()),
     };
 
@@ -652,15 +834,17 @@ async fn main() {
             "/api/agent-worker/threads/:thread_id/tasks",
             post(dispatch_task),
         )
+        .layer(axum::extract::DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
         .with_state(state)
-        .merge(dd_runtime_config_client::router());
+        .merge(dd_runtime_config_client::router())
+        .layer(dd_telemetry::http_trace_layer());
 
     tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     let address: SocketAddr = format!("{host}:{port}")
         .parse()
         .expect("failed to parse bind address");
-    println!("dd-agent-worker-broker listening on http://{address}");
+    tracing::info!(%address, "dd-agent-worker-broker listening");
 
     let listener = tokio::net::TcpListener::bind(address)
         .await
@@ -690,5 +874,57 @@ async fn shutdown_signal() {
     tokio::select! {
         _ = ctrl_c => {},
         _ = terminate => {},
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn identifier_validation_blocks_nats_subject_injection() {
+        // UUIDs and uuid-like ids are accepted.
+        assert!(validate_identifier("018f6b1e-4c2a-7b9d-9f3a-2b1c0d4e5f6a", "threadId").is_ok());
+        assert!(validate_identifier("task_123-abc", "taskId").is_ok());
+
+        // Empty and overlong are rejected.
+        assert!(validate_identifier("", "threadId").is_err());
+        assert!(validate_identifier(&"a".repeat(MAX_IDENTIFIER_LEN + 1), "threadId").is_err());
+
+        // NATS-significant characters must be rejected — `.` is the token
+        // separator, `*`/`>` are wildcards, and these would escape the
+        // `dd.remote.thread.{id}.tasks` subject.
+        assert!(validate_identifier("a.b", "threadId").is_err());
+        assert!(validate_identifier("a.tasks", "threadId").is_err());
+        assert!(validate_identifier("*", "threadId").is_err());
+        assert!(validate_identifier("a.>", "threadId").is_err());
+        assert!(validate_identifier("a b", "threadId").is_err());
+        assert!(validate_identifier("a/b", "threadId").is_err());
+    }
+
+    #[test]
+    fn constant_time_equals_matches_only_identical_secrets() {
+        assert!(constant_time_equals("s3cret", "s3cret"));
+        assert!(!constant_time_equals("s3cret", "s3creT"));
+        assert!(!constant_time_equals("short", "longer-secret"));
+        assert!(!constant_time_equals("", "x"));
+    }
+
+    #[test]
+    fn prompt_validation_rejects_empty_and_oversize() {
+        assert!(validate_prompt("do the thing").is_ok());
+        assert!(validate_prompt("   ").is_err());
+        assert!(validate_prompt("").is_err());
+        assert!(validate_prompt(&"x".repeat(MAX_PROMPT_BYTES + 1)).is_err());
+    }
+
+    #[test]
+    fn thread_resource_name_is_sanitized_and_bounded() {
+        let name = thread_resource_name("018f6b1e-4c2a-7b9d");
+        assert!(name.starts_with("dd-thread-"));
+        let short = name.trim_start_matches("dd-thread-");
+        assert!(short.len() <= 12);
+        assert!(short.chars().all(|c| c.is_ascii_alphanumeric()));
     }
 }

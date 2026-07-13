@@ -1,0 +1,120 @@
+[help]
+url = "https://github.com/ORESoftware/flags-2-env"
+
+[parse]
+allow_unknown = true
+errors_env = "FLAGS2ENV_PARSE_ERRORS"
+unknown_options_env = "FLAGS2ENV_UNKNOWN_OPTIONS"
+
+[flags.host]
+env = "HOST"
+aliases = ["host", "bind-host"]
+type = "string"
+default = "0.0.0.0"
+
+[flags.port]
+env = "PORT"
+aliases = ["port", "http-port"]
+short = "p"
+type = "integer"
+default = 8090
+
+[flags.rds_database_url]
+env = "RDS_DATABASE_URL"
+aliases = ["rds-database-url"]
+type = "string"
+
+[flags.agent_tasks_rds_database_url]
+env = "AGENT_TASKS_RDS_DATABASE_URL"
+aliases = ["agent-tasks-rds-database-url"]
+type = "string"
+
+[flags.prometheus_url]
+env = "MCP_PROMETHEUS_URL"
+aliases = ["mcp-prometheus-url", "prometheus-url"]
+type = "string"
+
+[flags.loki_url]
+env = "MCP_LOKI_URL"
+aliases = ["mcp-loki-url", "loki-url"]
+type = "string"
+
+[flags.grafana_url]
+env = "MCP_GRAFANA_URL"
+aliases = ["mcp-grafana-url", "grafana-url"]
+type = "string"
+
+[flags.tempo_url]
+env = "MCP_TEMPO_URL"
+aliases = ["mcp-tempo-url", "tempo-url"]
+type = "string"
+
+[flags.jaeger_url]
+env = "MCP_JAEGER_URL"
+aliases = ["mcp-jaeger-url", "jaeger-url"]
+type = "string"
+
+[flags.otel_collector_url]
+env = "MCP_OTEL_COLLECTOR_URL"
+aliases = ["mcp-otel-collector-url", "otel-collector-url"]
+type = "string"
+
+[flags.nats_monitor_url]
+env = "MCP_NATS_MONITOR_URL"
+aliases = ["mcp-nats-monitor-url", "nats-monitor-url"]
+type = "string"
+
+[flags.nats_metrics_url]
+env = "MCP_NATS_METRICS_URL"
+aliases = ["mcp-nats-metrics-url", "nats-metrics-url"]
+type = "string"
+
+[flags.observability_timeout_ms]
+env = "MCP_OBSERVABILITY_TIMEOUT_MS"
+aliases = ["mcp-observability-timeout-ms"]
+type = "integer"
+
+[flags.observability_body_limit_bytes]
+env = "MCP_OBSERVABILITY_BODY_LIMIT_BYTES"
+aliases = ["mcp-observability-body-limit-bytes"]
+type = "integer"
+
+[flags.kubernetes_timeout_ms]
+env = "MCP_KUBERNETES_TIMEOUT_MS"
+aliases = ["mcp-kubernetes-timeout-ms"]
+type = "integer"
+
+[flags.kubernetes_body_limit_bytes]
+env = "MCP_KUBERNETES_BODY_LIMIT_BYTES"
+aliases = ["mcp-kubernetes-body-limit-bytes"]
+type = "integer"
+
+[flags.kubernetes_inventory_body_limit_bytes]
+env = "MCP_KUBERNETES_INVENTORY_BODY_LIMIT_BYTES"
+aliases = ["mcp-kubernetes-inventory-body-limit-bytes"]
+type = "integer"
+
+[flags.runtime_config_service_name]
+env = "RUNTIME_CONFIG_SERVICE_NAME"
+aliases = ["runtime-config-service-name"]
+type = "string"
+
+[flags.runtime_config_scope]
+env = "RUNTIME_CONFIG_SCOPE"
+aliases = ["runtime-config-scope"]
+type = "string"
+
+[flags.runtime_config_env]
+env = "RUNTIME_CONFIG_ENV"
+aliases = ["runtime-config-env"]
+type = "string"
+
+[flags.runtime_config_register_url]
+env = "RUNTIME_CONFIG_REGISTER_URL"
+aliases = ["runtime-config-register-url"]
+type = "string"
+
+[flags.runtime_config_apply_url]
+env = "RUNTIME_CONFIG_APPLY_URL"
+aliases = ["runtime-config-apply-url"]
+type = "string"

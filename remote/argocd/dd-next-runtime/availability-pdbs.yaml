@@ -66,6 +66,19 @@ spec:
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
+  name: dd-escrow-rs
+  namespace: default
+  labels:
+    app: dd-escrow-rs
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dd-escrow-rs
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
   name: dd-mdp-optimizer
   namespace: default
   labels:
@@ -79,6 +92,22 @@ spec:
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
+  name: dd-fabrication-server
+  namespace: default
+  labels:
+    app: dd-fabrication-server
+    app.kubernetes.io/name: dd-fabrication-server
+    app.kubernetes.io/part-of: dd-next-runtime
+    app.kubernetes.io/component: fabrication-planner
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dd-fabrication-server
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
   name: dd-trading-server
   namespace: default
   labels:
@@ -88,6 +117,45 @@ spec:
   selector:
     matchLabels:
       app: dd-trading-server
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-economics-server
+  namespace: default
+  labels:
+    app: dd-economics-server
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dd-economics-server
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-public-data-server
+  namespace: default
+  labels:
+    app: dd-public-data-server
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dd-public-data-server
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-compliance-rs
+  namespace: default
+  labels:
+    app: dd-compliance-rs
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dd-compliance-rs
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -140,3 +208,19 @@ spec:
   selector:
     matchLabels:
       app: dd-rust-vapi-phone
+---
+# Five-voter Raft cluster: quorum is 3. Keep at least 3 pods available so a
+# voluntary disruption (drain, rolling update) can never drop the cluster below
+# quorum. With 5 replicas this allows at most 2 concurrent voluntary evictions.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-rust-network-mutex-raft
+  namespace: default
+  labels:
+    app: dd-rust-network-mutex-raft
+spec:
+  minAvailable: 3
+  selector:
+    matchLabels:
+      app: dd-rust-network-mutex-raft

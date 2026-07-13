@@ -72,3 +72,175 @@ principal must be rotated through CloudTrail lookup → IAM key rotation /
 `AWSRevokeOlderSessions` policy, depending on whether the session was issued
 from a long-lived IAM user key, an `AssumeRole` chain, or IAM Identity Center
 SSO.
+
+## GCS 40k/50k loadtest pipeline hardening — captured 2026-06-09
+
+From the agent session that drove the GCS WSS 40k/50k campaign on `dd-remote-k8s-1`
+(`i-0cc2461a55d491af6`, single-node r7i.4xlarge). The first ~5 dispatches failed
+*before any load* on host/pipeline state, not on gcs. Each item below is a
+separate, contained follow-up; items are append-only per the file convention.
+
+### A) Host / cluster operational fragility (blocked the loadtest before load)
+
+1. **Single-node host went `impaired` / SSM `ConnectionLost` twice**, driven by
+   ~100% CPU (post-reboot rebuild herd of build-on-startup services + co-located
+   ws-loadtest loaders). `aws ec2 reboot-instances` recovered it each time, but
+   recovery is manual and racey (SSM is reachable ~7 min post-boot, then CPU can
+   re-saturate). Fixes, in order of value: (a) keep loaders at `replicas=0`
+   between runs — the loadtest `cleanup()` EXIT trap scales them down, but
+   `restore_loadtest_apps` can re-raise them from Argo desired state, so confirm
+   the Argo desired replica count for `dd-*-ws-loadtest-*` is 0; (b) put CPU
+   limits on loader pods; (c) stop co-locating loaders on the gcs node (add a
+   node / nodeSelector) so a loadtest can't starve the control plane + SSM agent;
+   (d) raise gcs liveness/readiness `timeoutSeconds` so CPU spikes don't trigger
+   pod restarts mid-load.
+
+2. **Stale API endpoint after instance relaunch.** The `dd-ec2-runtime`
+   kubeconfig (and gateway docs) pointed at a dead IP (`54.91.17.58`) while the
+   relaunched instance had a fresh ephemeral IP (`3.91.81.98`); no EIP was
+   associated to the box for the k8s API (the gateway EIP `98.90.186.114` is a
+   separate concern). Fix: associate a stable EIP (or DNS/NLB) for the `:6443`
+   API endpoint and update the kubeconfig so relaunches don't strand operators.
+
+3. **Host checkout drift breaks the loadtest repo-sync** (cost 2 dispatches).
+   The sync block runs as `ec2-user` and does
+   `git merge --ff-only origin/dev` → on failure falls back to
+   `git archive origin/dev <operator paths> | tar -x -C "$repo"`, then
+   `git submodule update --init --recursive`. Three drift modes broke it:
+   - **root-owned files** in the repo tree block the ec2-user tar overlay
+     (`tar: … Operation not permitted` → exit 2). Root cause: a root-run process
+     wrote into the source tree (host-cron `install.sh` runs under `sudo`).
+     Self-heal (guarded, safe to add at the top of the sync block):
+     `sudo -n chown -R ec2-user:ec2-user "$repo" 2>/dev/null || true`.
+   - **stale moved-submodule registration** `remote/gcs/chat-vibe` (the old path;
+     the submodule moved to `remote/deployments/gcs/chat-vibe`) fatals
+     `git submodule update` (`No url found for submodule path … in .gitmodules`,
+     exit 128). Self-heal:
+     `git config --remove-section submodule.remote/gcs/chat-vibe 2>/dev/null || true`
+     then `git update-index --force-remove remote/gcs/chat-vibe 2>/dev/null || true`.
+   - **dirty tracked files** (e.g. `AGENTS.md`) keep `merge --ff-only` failing,
+     forcing the tar fallback every run. Keep the host checkout reconciled to
+     `origin/dev`.
+
+### B) GCS capacity / performance for 40-50k
+
+4. **chat.vibe deploy line is stale.** The k8s-cluster submodule tracks
+   `master` (`6fc1a418`), but chat.vibe's default branch is `dev4`, and the
+   gcs-router/server performance work lives on `dev4` /
+   `feature/gcs-hot-path-perf` ("reuse transport / cap active upstreams",
+   "Support max active connection cap in gcs-router"). The deployed `master`
+   binary lacks it. Decision needed: realign the submodule to `dev4`, or merge
+   the perf commits onto `master`. This is the likely real fix for item 5.
+
+5. **~35s p50 / ~66s p99 message latency at 40k even with gcs at 8 CPU.** With
+   the CPU bump (item 7) connections hold (`open=full, failed=0`, no restarts),
+   but message fan-out backs up ~35s and loaders wobble around the 13335/loader
+   sustain threshold — 40k-light is *marginal*, not a reliable pass (run #6: 2/3
+   loaders full, rust 13 receive_errors; run #7: all 3 ~1-3% short). Root-cause
+   with the CPU pprof the campaign collects (`loadtest_collect_pprof=true`) — gcs
+   hot path and broker (rabbitmq/kafka) fan-out. Most likely fixed by item 4.
+
+6. **gcs-router `--max-active-conns=60000` removed** from
+   `gcs-router.deployment.yaml` (commit on `dev`) because the deployed master
+   binary does not define the flag and crashlooped on it. Re-add the cap once a
+   gcs-router build that defines it is deployed (arrives with item 4).
+
+7. **gcs raised to 8 CPU / 12 Gi** (from 4 CPU / 8 Gi) on the 16-core node to
+   fix connection-churn/probe-restart under 40k. If staying on `master`, 50k may
+   need more headroom; revisit after item 4. (Requests are still 100m/512Mi —
+   fine for the single-node scheduler.)
+
+### C) Security (extends the 2026-05-23 items above)
+
+8. **Account ROOT access keys were pasted into chat twice** this session to
+   unblock cluster access. Rotate immediately (CloudTrail lookup → delete the
+   root access keys); root keys should never be used for CLI/automation.
+
+9. **New IAM user `my-cli-user` created with `AdministratorAccess`**, its access
+   key pasted in chat and stored in `~/.aws/credentials` (`[default]`,
+   `[dd-codex]`). Scope it to least privilege for this work — roughly
+   `ec2:RebootInstances`/`ec2:Describe*`, `ssm:SendCommand`/
+   `ssm:GetCommandInvocation`/`ssm:ListCommandInvocations`/
+   `ssm:DescribeInstanceInformation`, `cloudwatch:GetMetricStatistics` — and
+   rotate the pasted key.
+
+---
+
+## Multi-app subpath hosting on one machine (dd-next-1-js + future apps) — 2026-06-11
+
+**Goal:** serve N apps on the single EC2 cluster, each at its own *path*
+(`/dd-next-1`, `/app2`, …) — NOT each at `/` — **without editing application
+code** to add a path prefix. Keep dd-next-1 at `https://<host>/dd-next-1`.
+
+**The hard constraint (why this isn't a one-toggle infra feature):** a root-built
+SPA emits root-relative URLs (`/_next`, `fetch("/api")`). The browser sends those
+to the *domain root*, so a path-prefix proxy can't transparently serve it — infra
+would have to rewrite every URL in every response (fragile for JS-built URLs).
+The only robust prefix mechanism is the framework's `basePath`, which auto-prefixes
+links/assets/routing but NOT hand-written `fetch()`. Tried at the nginx gateway and
+proved unreliable: variable-upstream + `resolver` proxy_pass ignores a rewritten
+URI; `rewrite ... last` / `error_page` / static-upstream / concatenated-var
+proxy_pass all flapped or 400'd. Direct `/dd-next-1/*` is rock-solid; *adding* the
+prefix to root-relative calls at this gateway is not.
+
+**Chosen solution = `basePath` (deploy-time, NOT app code) + a Cloudflare Worker:**
+
+1. **Each app built with `basePath=/its-path`**, set at *deploy* via env
+   (`DD_BASE_PATH`, env-gated build sed in `dd-next-1-js.deployment.yaml`) — the
+   repo is untouched, no fetch calls edited. Handles links/assets/routing prefix.
+
+2. **One Cloudflare Worker** for all apps — path-routes pages, and Referer-routes
+   the leftover root-relative client calls to the owning app:
+   ```js
+   const ORIGIN = "https://98.90.186.114";              // gateway (Origin CA cert installed)
+   const APPS = ["/dd-next-1","/app2","/app3","/app4","/app5"]; // each app's basePath
+   const ROOT = ["/api/","/pub/","/data/"];                     // hand-written fetch roots
+   // headers a client must NOT be able to forge through us (gateway internal-trust + spoofable):
+   const STRIP = ["x-server-auth","x-forwarded-host","x-forwarded-server","x-original-url"];
+   export default { async fetch(req) {
+     const u = new URL(req.url); let path = u.pathname;
+     if (path.includes("..") || /[\x00-\x1f]/.test(path))      // reject traversal / control chars
+       return new Response("bad request", { status: 400 });
+     const isAppPath = APPS.some(a => path === a || path.startsWith(a + "/"));
+     if (!isAppPath && ROOT.some(p => path.startsWith(p))) {
+       let ref = ""; try { ref = new URL(req.headers.get("Referer") || "").pathname; } catch {}
+       const owner = APPS.find(a => ref === a || ref.startsWith(a + "/"));
+       if (owner) path = owner + path;            // /api/x -> /dd-next-1/api/x
+     }
+     // everything else passes through unchanged — the origin gateway still auth-gates its own
+     // protected paths (/agents, /api/lambdas, ...), so this is not an auth bypass.
+     const out = new Request(ORIGIN + path + u.search, req);
+     out.headers.set("Host", u.host);
+     for (const h of STRIP) out.headers.delete(h);
+     return fetch(out);
+   }};
+   ```
+
+3. **Cloudflare routes:** attach the Worker to `<zone>/dd-next-1*` … `/app5*`
+   PLUS `/api*`, `/pub*`, `/data*` (so root fetches reach it).
+
+4. **One-time:** install a **Cloudflare Origin CA cert** on the gateway so CF→origin
+   TLS validates (replaces the self-signed/IP cert).
+
+**Single dependency:** keys on `Referer` to attribute a root `fetch` to its app.
+The app sends `Referrer-Policy: strict-origin-when-cross-origin` → same-origin
+requests carry the full path, so it works. The only Referer-free alternative is
+`basePath`-aware fetches = app code change (ruled out).
+
+**Security notes for the Worker (internet-facing reverse proxy):** (a) reject `..`/control
+chars; (b) strip client-forgeable trust headers (`x-server-auth`, `x-forwarded-host`, ...) so
+the origin gateway's own auth can't be spoofed through the Worker; (c) it only *adds* a prefix —
+unmatched paths pass through unchanged and the gateway keeps auth-gating its protected routes, so
+the Worker is not an open proxy to internal services; (d) pin the origin to the gateway's Origin
+CA cert (don't disable TLS verification).
+
+**Cleanup owed on the cluster side (the nginx referer experiments are committed and
+should be reverted to a clean state):**
+- [ ] Revert `dd-remote-gateway.configmap.yaml` to: web-home at `location = /` and
+      catch-all `/`, plus the `/dd-next-1` location (32k proxy buffers) — and REMOVE
+      the referer map, `upstream ddn1_up`, `location /api/`, `location ~ ^/(pub|data)/`,
+      `@ddn1_proxy`, and the `sub_filter` injection. (Clean base = commit `e6e234c4`.)
+- [ ] Keep `dd-next-1-js.deployment.yaml` with `DD_BASE_PATH=/dd-next-1`, probes on
+      `/dd-next-1`, tcp liveness, and the `.built_sig` skip-rebuild cache.
+- [ ] Stand up the Cloudflare Worker + routes + Origin CA cert (Cloudflare account —
+      not doable from the cluster side).

@@ -1,0 +1,233 @@
+# =============================================================================
+# dd-image-builder — INTERNAL-ONLY image builder, split out of dd-remote-rest-api.
+#
+# Why this exists: dd-remote-rest-api is the public (gateway-fronted) API AND the
+# on-demand image builder, so it has to run `privileged: true` + mount the host
+# containerd socket + nerdctl/buildctl. That fuses node-root power into the
+# internet-facing surface. This deployment runs the SAME image with the build
+# capability, but is NOT routed through the public gateway and is restricted by
+# NetworkPolicy to in-cluster callers (primarily dd-remote-rest-api). After the
+# cutover (see dd-image-builder.README.md), the public dd-remote-rest-api drops
+# `privileged` + the socket and delegates builds here via IMAGE_BUILD_DELEGATE_URL.
+#
+# NOTE: intentionally NOT yet listed in kustomization.yaml. Wire it in as step 1
+# of the cutover so it does not deploy an idle privileged pod before it is used.
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-image-builder
+  namespace: default
+  labels:
+    app: dd-image-builder
+    dd.dev/role: image-builder
+spec:
+  replicas: 1
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: dd-image-builder
+  template:
+    metadata:
+      labels:
+        app: dd-image-builder
+        dd.dev/role: image-builder
+    spec:
+      serviceAccountName: dd-remote-rest-api
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: image-builder
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          # Keeps node-root build power (containerd socket + Bidirectional mounts)
+          # — but this pod is internal-only (no gateway route + NetworkPolicy).
+          securityContext:
+            privileged: true
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              cd /opt/dd-next-1/remote/deployments/rest-api-rs
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8082'
+            # Marks this instance as the builder role (no-op until the delegation
+            # code reads it; documentary today).
+            - name: DD_SERVICE_ROLE
+              value: image-builder
+            # This instance performs builds LOCALLY (no delegation): leave
+            # IMAGE_BUILD_DELEGATE_URL unset so the nerdctl/buildctl path runs here.
+            - name: NATS_URL
+              value: nats://dd-nats.messaging.svc.cluster.local:4222
+            - name: NATS_TASK_SUBJECT
+              value: dd.remote.thread.*.tasks
+            - name: NATS_TASK_STREAM
+              value: DD_REMOTE_TASKS
+            - name: REST_API_DEFAULT_DISPATCH_MODE
+              value: queued
+            - name: THREAD_RUNTIME_NAMESPACE
+              value: default
+            - name: THREAD_RUNTIME_CAPACITY_PRUNE_ENABLED
+              value: 'true'
+            - name: THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS
+              value: '4'
+            - name: LAMBDA_IMAGE_BUILD_ENABLED
+              value: 'true'
+            - name: LAMBDA_IMAGE_BUILD_ROOT
+              value: /var/lib/dd-lambdas
+            - name: LAMBDA_IMAGE_REPO_ROOT
+              value: /opt/dd-next-1
+            - name: LAMBDA_IMAGE_REPOSITORY
+              value: docker.io/library/dd-lambda-function
+            - name: LAMBDA_IMAGE_BUILD_NERDCTL
+              value: /usr/local/bin/nerdctl
+            - name: LAMBDA_IMAGE_BUILD_NAMESPACE
+              value: k8s.io
+            - name: LAMBDA_ALLOW_HOST_RUNTIMES
+              value: nodejs
+            - name: CONTAINER_POOL_IMAGE_BUILDS_ENABLED
+              value: 'true'
+            - name: CONTAINER_POOL_IMAGE_API_AUTH_REQUIRED
+              value: 'true'
+            - name: CONTAINER_POOL_IMAGE_CUSTOM_TEST_COMMANDS_ENABLED
+              value: 'false'
+            - name: CONTAINER_POOL_IMAGE_BUILD_ROOT
+              value: /var/lib/dd-container-pool-images
+            - name: CONTAINER_POOL_IMAGE_BUILD_NAMESPACE
+              value: k8s.io
+            - name: CONTAINER_POOL_IMAGE_BUILD_NERDCTL
+              value: /usr/local/bin/nerdctl
+            - name: CONTAINER_POOL_IMAGE_REPO_ROOT
+              value: /opt/dd-next-1
+            - name: CONTAINER_POOL_IMAGE_BUILD_TIMEOUT_SECONDS
+              value: '1200'
+            - name: CONTAINER_POOL_IMAGE_TEST_TIMEOUT_SECONDS
+              value: '120'
+            - name: RUNTIME_CONFIG_BASE_URL
+              value: http://dd-runtime-config.default.svc.cluster.local:8110
+            - name: RUNTIME_CONFIG_SERVICE_NAME
+              value: dd-image-builder
+            - name: RUNTIME_CONFIG_SCOPE
+              value: dd-image-builder
+            - name: RUNTIME_CONFIG_ENV
+              value: stage
+            - name: RUNTIME_CONFIG_REGISTER_URL
+              value: http://dd-runtime-config.default.svc.cluster.local:8110/subscribers
+            - name: RUNTIME_CONFIG_APPLY_URL
+              value: http://dd-image-builder.default.svc.cluster.local:8082/internal/update-runtime-config
+            - name: RUNTIME_CONFIG_SERVER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
+          envFrom:
+            - secretRef:
+                name: dd-agent-secrets
+                optional: true
+            - secretRef:
+                name: dd-remote-rest-api-secrets
+                optional: true
+          ports:
+            - name: http
+              containerPort: 8082
+          resources:
+            requests:
+              cpu: 25m
+              memory: 128Mi
+            limits:
+              cpu: '2'
+              memory: 2Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+            - name: lambda-image-builds
+              mountPath: /var/lib/dd-lambdas
+            - name: container-pool-image-builds
+              mountPath: /var/lib/dd-container-pool-images
+            - name: containerd-sock
+              mountPath: /run/containerd/containerd.sock
+            - name: containerd-root
+              mountPath: /var/lib/containerd
+              mountPropagation: Bidirectional
+            - name: nerdctl-bin
+              mountPath: /usr/local/bin/nerdctl
+              readOnly: true
+            - name: buildctl-bin
+              mountPath: /usr/local/bin/buildctl
+              readOnly: true
+            - name: buildkit-run
+              mountPath: /run/buildkit
+              readOnly: true
+            - name: nerdctl-state
+              mountPath: /var/lib/nerdctl
+              mountPropagation: Bidirectional
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
+        - name: lambda-image-builds
+          hostPath:
+            path: /var/lib/dd-lambdas
+            type: DirectoryOrCreate
+        - name: container-pool-image-builds
+          hostPath:
+            path: /var/lib/dd-container-pool-images
+            type: DirectoryOrCreate
+        - name: containerd-sock
+          hostPath:
+            path: /run/containerd/containerd.sock
+            type: Socket
+        - name: containerd-root
+          hostPath:
+            path: /var/lib/containerd
+            type: Directory
+        - name: nerdctl-bin
+          hostPath:
+            path: /usr/local/bin/nerdctl
+            type: File
+        - name: buildctl-bin
+          hostPath:
+            path: /usr/local/bin/buildctl
+            type: File
+        - name: buildkit-run
+          hostPath:
+            path: /run/buildkit
+            type: Directory
+        - name: nerdctl-state
+          hostPath:
+            path: /var/lib/nerdctl
+            type: DirectoryOrCreate

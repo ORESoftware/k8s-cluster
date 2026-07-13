@@ -1,0 +1,33 @@
+[package]
+name = "dd-document-rs"
+version = "0.1.0"
+edition = "2021"
+build = "build.rs"
+
+[features]
+# Both bridges on by default (what the Docker image builds):
+#   haskell-bridge -> links libdd-pandoc-bridge.so (Pandoc Haskell SDK)
+#   magick-bridge  -> compiles+links the Magick++ C++ shim (ImageMagick SDK)
+# Build with --no-default-features (optionally re-enabling one) to compile/run
+# without a given native toolchain; the matching endpoints then return 503.
+default = ["haskell-bridge", "magick-bridge"]
+haskell-bridge = []
+magick-bridge = []
+
+[dependencies]
+dd-telemetry = { path = "../../libs/telemetry-rs" }
+tracing = "0.1"
+async-nats = "=0.38.0"
+axum = { version = "0.7", features = ["macros"] }
+base64 = "0.22"
+dd-nats-subject-defs = { path = "../../libs/nats/subject-defs/generated/rust" }
+dd-runtime-config-client = { path = "../../libs/runtime-config-client-rs" }
+futures-util = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
+
+[build-dependencies]
+# Used only when the magick-bridge feature is on, to compile the C++ shim.
+cc = "1"

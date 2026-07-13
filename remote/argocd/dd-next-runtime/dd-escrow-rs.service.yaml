@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-escrow-rs
+  namespace: default
+  labels:
+    app: dd-escrow-rs
+spec:
+  selector:
+    app: dd-escrow-rs
+  ports:
+    - name: http
+      port: 8115
+      targetPort: http

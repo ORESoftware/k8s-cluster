@@ -105,6 +105,29 @@ values (
         "labels": ["runtime", "nodejs"]
       },
       {
+        "slug": "dd-document",
+        "displayName": "dd-document-rs warm workers (Pandoc + ImageMagick heavy conversions)",
+        "image": "docker.io/library/dd-document-rs:latest",
+        "command": [],
+        "env": {
+          "DOCUMENT_MAX_INPUT_BYTES": "67108864",
+          "DOCUMENT_MAX_OUTPUT_BYTES": "67108864",
+          "DOCUMENT_MAX_IMAGE_BYTES": "67108864",
+          "DOCUMENT_MAX_STREAM_BYTES": "134217728",
+          "DOCUMENT_IMAGE_CONCURRENCY": "4"
+        },
+        "requestPath": "/convert",
+        "healthPath": "/healthz",
+        "containerPort": 8122,
+        "minWarm": 1,
+        "maxWarm": 3,
+        "maxConcurrencyPerContainer": 4,
+        "requestTimeoutMs": 120000,
+        "idleTtlSeconds": 1800,
+        "natsSubject": "dd.remote.container_pool.dd-document.requests",
+        "labels": ["runtime", "rust", "documents", "images", "pandoc", "imagemagick"]
+      },
+      {
         "slug": "nodejs-chat-claude-live-mutex-dev",
         "displayName": "Node.js chat/Claude warm workers for ORESoftware/live-mutex dev",
         "image": "docker.io/library/dd-dev-server:dev",

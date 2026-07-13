@@ -75,6 +75,12 @@ Then run the bootstrap:
 bash remote/ec2/bootstrap-amazon-linux-2023-k8s.sh --all
 ```
 
+The bootstrap sets kubelet `maxPods` to `220` by default. This cluster is a
+single-node kubeadm/Cilium host with a `/24` node pod CIDR; Kubernetes' default
+`110` pod ceiling is too tight once Argo CD, observability, runtime services,
+AI/ML, and Airbyte are all installed. Override with `--kubelet-max-pods N` only
+when the pod CIDR sizing changes with it.
+
 For a small instance where you only want the machine prepared but not yet
 clustered:
 

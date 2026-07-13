@@ -13,9 +13,11 @@
 
 use chrono::Utc;
 use sqlx::{PgPool, Row};
+use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::error::AppResult;
+use crate::events::EventBus;
 
 use super::client::SolanaClient;
 use super::merkle::{merkle_root, posting_leaf_hash};
@@ -23,6 +25,7 @@ use super::merkle::{merkle_root, posting_leaf_hash};
 pub struct AnchorService {
     pool: PgPool,
     solana: SolanaClient,
+    events: Arc<EventBus>,
     pub max_batch: i64,
     pub max_age_seconds: i64,
 }
@@ -40,10 +43,11 @@ pub struct AnchorResult {
 }
 
 impl AnchorService {
-    pub fn new(pool: PgPool, solana: SolanaClient) -> Self {
+    pub fn new(pool: PgPool, solana: SolanaClient, events: Arc<EventBus>) -> Self {
         Self {
             pool,
             solana,
+            events,
             max_batch: 10_000,
             max_age_seconds: 60,
         }
@@ -154,7 +158,7 @@ impl AnchorService {
         .fetch_one(&self.pool)
         .await?;
 
-        Ok(Some(AnchorResult {
+        let result = AnchorResult {
             anchor_id,
             tenant_id,
             from_posting_id: from_id,
@@ -163,7 +167,24 @@ impl AnchorService {
             merkle_root_hex: root_hex,
             tx_signature,
             slot,
-        }))
+        };
+
+        // Best-effort tamper-evidence event. Carries only public notary data
+        // (root hash, slot, signature, posting range) — no posting contents.
+        self.events
+            .publish_anchor(
+                result.tenant_id,
+                result.anchor_id,
+                result.from_posting_id,
+                result.to_posting_id,
+                result.posting_count,
+                &result.merkle_root_hex,
+                result.tx_signature.as_deref(),
+                result.slot,
+            )
+            .await;
+
+        Ok(Some(result))
     }
 
     /// Run the anchor loop forever. Sleeps `max_age_seconds` between sweeps.

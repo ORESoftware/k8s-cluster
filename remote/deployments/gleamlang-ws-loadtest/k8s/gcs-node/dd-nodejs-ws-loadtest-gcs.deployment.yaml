@@ -50,6 +50,8 @@ spec:
               value: ws://gcs-router.default.svc.cluster.local:3001
             - name: LOAD_MODE
               value: "gcs"
+            - name: LOADTEST_CLIENT_NAME
+              value: nodejs-ws-loadtest
             - name: CLIENT_COUNT
               value: "2000"
             - name: GCS_CLIENTS_PER_CONV
@@ -59,6 +61,12 @@ spec:
               value: "0"
             - name: MESSAGES_PER_SECOND_PER_CLIENT
               value: "2.5"
+            - name: MESSAGE_ENCODINGS
+              value: "json,msgpack,protobuf,flatbuffers"
+            - name: GCS_MESSAGE_ENCODING
+              value: "protobuf"
+            - name: LOADTEST_TRANSPORTS
+              value: "http,tcp,websocket"
             - name: CONNECT_TIMEOUT_MS
               value: "30000"
             - name: RECONNECT_DELAY_MS
@@ -69,11 +77,11 @@ spec:
               value: "10"
           resources:
             requests:
-              cpu: "1"
-              memory: 2Gi
+              cpu: 1m
+              memory: 512Mi
             limits:
               cpu: "6"
-              memory: 12Gi
+              memory: 8Gi
           volumeMounts:
             - name: repo
               mountPath: /opt/dd-next-1

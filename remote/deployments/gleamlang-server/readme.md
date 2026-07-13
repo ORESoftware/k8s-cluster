@@ -66,7 +66,9 @@ Then open `http://localhost:8081/home`.
 ## Kubernetes Target
 
 - `k8s/ec2`: uses the EC2 host checkout at `/home/ec2-user/codes/dd/dd-next-1` and runs
-  `remote/deployments/gleamlang-ws-server` from source inside the `dd-gleamlang-server` pod.
+  `remote/deployments/gleamlang-ws-server` from a pod-local `emptyDir`. A higher-memory init
+  container copies the source, runs `gleam deps download && gleam build`, and the long-running
+  `gleamlang-server` container starts the generated BEAM modules directly under a 300Mi memory cap.
 
 ```bash
 kubectl apply -k remote/deployments/gleamlang-server/k8s/ec2

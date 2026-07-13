@@ -16,7 +16,7 @@
 //! - `GET /simulations` — the engine's full simulation catalogue.
 //! - `POST /simulate` — run sims by `name` (filter, or exact via `{"exact":true}`), in series.
 //! - `GET /simulations/:name/run` — convenience GET form (`?exact=1` for one entry).
-//! - `GET /models` — first-class model registry (mdp, pomdp, hybrid, studio) with example specs.
+//! - `GET /models` — first-class model registry with example specs.
 //! - `GET /models/:kind/run` — run a kind's example spec and render an interactive player (`?format=json` for the raw artifact).
 //! - `POST /models/:kind/run` — run a user-supplied JSON spec for a kind (renders a player; `?format=json` for the artifact).
 //! - `GET /streaming` — JSONL streaming-solver contracts (lp, milp, mdp, pomdp, soccer-planner).
@@ -24,6 +24,8 @@
 //! - `GET /soccer/planner` — interactive 11-a-side rotation planner UI.
 //! - `POST /soccer/planner/solve` — re-solve the planner request with the Rust IP/MIP solver.
 //! - `POST /soccer/planner/stream` — soccer planner JSONL stream alias.
+//! - `GET /soccer/live` — live 2D 11v11 soccer UI with soft-real-time controls.
+//! - `GET|POST /api/*` — live soccer bridge API used by `/soccer/live`.
 //! - `GET /music` — generative music production workbench UI.
 //! - `POST /music/sample-seed` — upload or link a 10-50s MP4 plus a prompt and render a WAV variation.
 //!   Public and authenticated social/media links are supported via direct HTTP
@@ -43,27 +45,39 @@
 //! `run_all_simulations` is likewise strictly serial).
 
 use std::{
+    collections::{BTreeMap, BTreeSet, HashMap},
     env, fs,
     net::{IpAddr, SocketAddr},
     panic::{catch_unwind, AssertUnwindSafe},
     path::{Path as StdPath, PathBuf},
     process::{Command, Stdio},
-    sync::Arc,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex as StdMutex,
+    },
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use axum::{
-    extract::{DefaultBodyLimit, Multipart, Path, Query, State},
-    http::{header, HeaderMap, HeaderName, HeaderValue, StatusCode},
+    body::{Body, Bytes},
+    extract::{
+        rejection::JsonRejection,
+        ws::{Message, WebSocket, WebSocketUpgrade},
+        DefaultBodyLimit, Multipart, Path, Query, State,
+    },
+    http::{header, HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri},
     response::{Html, IntoResponse, Redirect, Response},
-    routing::{get, post},
+    routing::{any, get, post},
     Json, Router,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
-use tokio::{io::AsyncWriteExt, sync::Mutex};
+use tokio::{io::AsyncWriteExt, sync::broadcast, sync::Mutex};
+use tokio_util::io::ReaderStream;
 
+use des_engine::des::bathrooms::render_default_bathrooms_html;
+use des_engine::des::two_bathrooms::render_default_two_bathrooms_html;
 use des_engine::des::fel::elevator::{
     elevator_mdp_spec, elevator_pomdp_spec, render_elevator_html, run_fel_elevator, ElevatorConfig,
 };
@@ -71,13 +85,17 @@ use des_engine::des::general::music_production::{
     analyze_music_sample_prompt, derive_music_sample_seed_from_mp4, generate_microtonal_song,
     song_spec_from_music_sample_seed_with_prompt, ArrangementSummary,
 };
+use soccer_engine::soccer::{
+    try_write_soccer_playback_artifacts, SoccerLiveHttpBridge, SoccerLiveHttpReply,
+    SoccerLiveServerConfig,
+};
 use des_engine::des::model::{with_builtins, CitizenError};
 use des_engine::des::service::{
     Capability, DesExtension, EndpointKind, EngineCatalogExtension, ServiceBuilder,
     ServiceDescriptor, ServiceInfo, DD_API_DOCS_HEADER,
 };
 use des_engine::des::simulations::{run_simulations_matching, simulation_catalogue, SimOutcome};
-use des_engine::des::soccer_planner::{
+use soccer_engine::soccer_planner::{
     planner_page_html, planner_response_to_json, solve_planner, PlannerRequest,
 };
 use des_engine::des::streaming::{run_named_jsonl, streaming_contracts, streaming_model_names};
@@ -102,6 +120,8 @@ const MAX_MUSIC_AUTH_HEADER_NAME_CHARS: usize = 64;
 const MAX_MUSIC_COOKIE_BYTES: usize = 512 * 1024;
 const MUSIC_DOWNLOAD_TIMEOUT_SECS: u64 = 180;
 const MAX_FILTER_LEN: usize = 96;
+const MAX_SIMULATE_MATCHES: usize = 8;
+const SOCCER_PLANNER_HTTP_SOLVE_BUDGET_MS: f64 = 90_000.0;
 
 /// Interactive landing page. All `fetch`/link URLs are RELATIVE so the page
 /// works both at `/` (local `cargo run`) and behind the gateway at `/des-rs/`
@@ -147,7 +167,9 @@ h2::before{content:"";width:4px;height:16px;border-radius:3px;background:linear-
 .sim .label{font-size:.92rem;text-transform:capitalize}
 .sim .name{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.78rem;color:#9ecbff;word-break:break-all}
 .sim .desc{font-size:.8rem;color:#8b949e;line-height:1.45;flex:1}
-.sim .row{display:flex;align-items:center;gap:8px;justify-content:flex-end;margin-top:2px}
+.sim .row{display:flex;align-items:center;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:2px}
+.sim .links{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.sim .links:empty{display:none}
 .sim .open{font:inherit;font-size:.82rem;cursor:pointer;border-radius:7px;padding:6px 14px;border:1px solid #1f6feb;background:#1f6feb;color:#fff;text-decoration:none}
 .sim .open:hover{background:#388bfd;border-color:#388bfd}
 .sim .json{font:inherit;font-size:.8rem;border-radius:7px;padding:6px 10px;border:1px solid #2b3344;background:#161b22;color:#9aa4b2;text-decoration:none}
@@ -159,7 +181,7 @@ h2::before{content:"";width:4px;height:16px;border-radius:3px;background:linear-
 .run{font:inherit;font-size:.82rem;cursor:pointer;border-radius:7px;padding:6px 14px;border:1px solid #238636;background:#238636;color:#fff}
 .run:hover{background:#2ea043}
 .run[disabled]{opacity:.55;cursor:default}
-.st{font-size:.8rem;color:#9aa4b2;min-height:1.1em}
+.st{font-size:.8rem;color:#9aa4b2;min-height:1.1em;flex:1;min-width:86px}
 .st.ok{color:#3fb950}.st.err{color:#f85149}
 .filterbar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 12px;padding:10px 0;background:linear-gradient(180deg,var(--bg) 70%,rgba(11,16,33,0))}
 #filter{font:inherit;font-size:.9rem;background:#0f1422;border:1px solid var(--line);border-radius:8px;color:var(--ink);padding:9px 12px;width:280px;max-width:60vw}
@@ -180,7 +202,7 @@ h2::before{content:"";width:4px;height:16px;border-radius:3px;background:linear-
   </div>
   <p class="sub">A Rust modeling &amp; simulation engine, imported here as a <strong>library</strong> (git submodule) and run <strong>in-process</strong>. Run a <strong>first-class model</strong> for an interactive player, stream commands to a <strong>solver</strong>, or run any catalogue <strong>simulation</strong> and open the rendered HTML/JSON.</p>
   <div class="actions">
-    <a class="btn primary" href="out/">View rendered results &rarr;</a>
+    <a class="btn primary" href="out/">All rendered results &rarr;</a>
     <a class="btn" href="docs/api">API docs</a>
     <a class="btn" href="info">Service info</a>
     <a class="btn" href="models">Models JSON</a>
@@ -210,13 +232,33 @@ h2::before{content:"";width:4px;height:16px;border-radius:3px;background:linear-
     <div class="row"><a class="open" href="elevator-pomdp" target="_blank" rel="noopener">Open player &#8599;</a></div>
   </div>
 </div>
+<h2>Household <span class="muted">— blocking-loss queueing as a Monte-Carlo DES</span></h2>
+<div class="grid">
+  <div class="sim">
+    <div class="label">Bathroom occupancy</div>
+    <div class="name">des::bathrooms &middot; finite-source loss</div>
+    <div class="desc">8 people share 2 bathrooms, each visiting 3&times;/day for 20 min at random times; if both are busy the arrival is rejected. A Monte-Carlo discrete-event sim recovers P(none / one / both occupied) and checks it against the closed-form binomial. Animated house, gantt scrubber, and convergence chart.</div>
+    <div class="row"><a class="open" href="bathrooms" target="_blank" rel="noopener">Open animation &#8599;</a></div>
+  </div>
+  <div class="sim">
+    <div class="label">Bathroom occupancy (framework build)</div>
+    <div class="name">des::two_bathrooms &middot; MovingEntity + visual blocks</div>
+    <div class="desc">The same 8-people / 2-bathrooms loss system, re-built on the engine's reusable frameworks: people are <code>MovingEntity</code> tokens flowing through <code>StationaryEntity</code> bathrooms, rendered as visual blocks through the shared animation player (the same one the elevator/traffic scenes use), with an occupancy time-series and the binomial-vs-simulated stats table.</div>
+    <div class="row"><a class="open" href="two-bathrooms" target="_blank" rel="noopener">Open animation &#8599;</a></div>
+  </div>
+</div>
 <h2>Soccer <span class="muted">— videogame, learning sim, rotation planner</span></h2>
 <div class="grid">
   <div class="sim feat">
     <div class="label">Soccer videogame</div>
-    <div class="name">out/soccer-sim.html</div>
+    <div class="name">out/soccer-sim.html &middot; json/jsonl</div>
     <div class="desc">Playable 2D 11v11 match artifact with MDP/POMDP player learning, ball physics, possession chains, shots, officials, and controller slots.</div>
-    <div class="row"><a class="open" href="out/soccer-sim.html" target="_blank" rel="noopener">Open game &#8599;</a></div>
+    <div class="row">
+      <a class="open" href="soccer/live" target="_blank" rel="noopener">Live game &#8599;</a>
+      <a class="open" href="out/soccer-sim.html" target="_blank" rel="noopener">Static game &#8599;</a>
+      <a class="open" href="out/soccer-sim.meta.json" target="_blank" rel="noopener">Metadata JSON &#8599;</a>
+      <a class="open" href="out/soccer-sim.frames.jsonl" target="_blank" rel="noopener">Frames JSONL &#8599;</a>
+    </div>
   </div>
   <div class="sim feat">
     <div class="label">Interactive planner</div>
@@ -251,7 +293,7 @@ h2::before{content:"";width:4px;height:16px;border-radius:3px;background:linear-
 </main>
 <div id="toast" class="toast"></div>
 <script>
-const FEATURED=[["main_build_site","Build site index"],["main_elevator_highrise","Elevator high-rise"],["main_factmachine_markets","FactMachine markets"],["main_two_disease","Two-disease epidemic"],["main_electric_circuit","Electric circuit"],["main_traffic","Traffic network"],["main_court_mdp","Court MDP"],["main_convolution","Convolution"]];
+const FEATURED=[["main_factory_floor_track3t","Track3t warehouse"],["main_build_site","Build site index"],["main_elevator_highrise","Elevator high-rise"],["main_factmachine_markets","FactMachine markets"],["main_two_disease","Two-disease epidemic"],["main_electric_circuit","Electric circuit"],["main_traffic","Traffic network"],["main_court_mdp","Court MDP"],["main_convolution","Convolution"]];
 const CONTROL=[
   ["main_shadow_eval","Shadow Gramians","Probe each plant as a black box: recover controllability/observability Gramians from perturbed shadow copies, cross-check against the analytic model, then re-ask via a nested MDP/POMDP of the motor's speed regimes."],
   ["main_observability_controllability_anim","Obs / ctrl (animated)","Kalman rank tests for controllability & observability of a state-space model, animated step by step."],
@@ -260,6 +302,24 @@ const CONTROL=[
   ["main_wind_mppt_anim","Wind MPPT","Maximum-power-point-tracking controller on a wind turbine, animated."]
 ];
 function toast(html){const t=document.getElementById('toast');t.innerHTML=html;t.classList.add('show');clearTimeout(window.__tt);window.__tt=setTimeout(function(){t.classList.remove('show');},6000);}
+function esc(s){return String(s||'').replace(/[<>&"]/g,function(ch){return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[ch];});}
+function shortName(href){return String(href||'').split('/').filter(Boolean).pop()||href;}
+function artifactAnchor(href,label,cls){return '<a class="'+cls+'" href="'+esc(href)+'" target="_blank" rel="noopener">'+esc(label)+' &#8599;</a>';}
+function artifactButtons(artifacts){
+  artifacts=artifacts||{};
+  const html=(artifacts.html||[]).slice(0,3);
+  const json=(artifacts.json||[]).slice(0,3);
+  const jsonl=(artifacts.jsonl||[]).slice(0,3);
+  const out=[];
+  html.forEach(function(h,i){out.push(artifactAnchor(h,i===0?'View results':shortName(h),'open'));});
+  json.forEach(function(h){out.push(artifactAnchor(h,'JSON','json'));});
+  jsonl.forEach(function(h){out.push(artifactAnchor(h,'JSONL','json'));});
+  return out.join('');
+}
+function setArtifactLinks(el,artifacts){
+  if(!el)return;
+  el.innerHTML=artifactButtons(artifacts);
+}
 function simCard(name,label,desc,feat){
   const card=document.createElement('div');card.className=feat?'sim feat':'sim';card.dataset.name=name;
   const lab=document.createElement('div');lab.className='label';lab.textContent=label||name;
@@ -268,19 +328,28 @@ function simCard(name,label,desc,feat){
   if(desc){const d=document.createElement('div');d.className='desc';d.textContent=desc;card.appendChild(d);}
   const row=document.createElement('div');row.className='row';
   const st=document.createElement('span');st.className='st';
+  const links=document.createElement('span');links.className='links';
   const btn=document.createElement('button');btn.className='run';btn.textContent='Run';
-  btn.onclick=function(){run(name,btn,st);};
-  row.appendChild(st);row.appendChild(btn);
+  btn.onclick=function(){run(name,btn,st,links);};
+  row.appendChild(st);row.appendChild(links);row.appendChild(btn);
   card.appendChild(row);
   return card;
 }
-async function run(name,btn,st){
+async function run(name,btn,st,links){
   btn.disabled=true;const old=btn.textContent;btn.textContent='Running…';st.className='st';st.textContent='running…';
+  setArtifactLinks(links,null);
   try{
     const r=await fetch('simulations/'+encodeURIComponent(name)+'/run?exact=1');
     const d=await r.json();
     const o=(d.ran&&d.ran[0])||{};
-    if(d.ok){st.className='st ok';st.textContent='\u2713 '+(o.millis!=null?o.millis+' ms':'done');toast('Ran <code>'+name+'</code> — <a href="out/">view results &rarr;</a>');}
+    if(d.ok){
+      const artifacts=o.artifacts||d.artifacts||{};
+      const primary=artifacts.primary||'out/';
+      setArtifactLinks(links,artifacts);
+      st.className='st ok';st.textContent='\u2713 '+(o.millis!=null?o.millis+' ms':'done');
+      const buttons=artifactButtons(artifacts)||('<a href="'+esc(primary)+'">view results &rarr;</a>');
+      toast('Ran <code>'+esc(name)+'</code> — '+buttons);
+    }
     else{st.className='st err';st.textContent='\u2717 '+(d.error||'failed');}
   }catch(e){st.className='st err';st.textContent='\u2717 '+e;}
   finally{btn.disabled=false;btn.textContent=old;}
@@ -463,7 +532,7 @@ pre{margin:0;white-space:pre-wrap;word-break:break-word;background:#080d14;borde
 	      </div>
 	      <div id="authPanel" class="auth-panel" hidden>
 	        <label for="authHeaderName">Source auth header name</label>
-	        <input id="authHeaderName" autocomplete="off" spellcheck="false" value="Auth">
+	        <input id="authHeaderName" autocomplete="off" spellcheck="false" value="Authorization">
 	        <label for="authHeader">Source auth header value</label>
 	        <input id="authHeader" type="password" autocomplete="off" spellcheck="false" placeholder="shared secret or bearer token">
 	        <label for="cookieHeader">Cookie header</label>
@@ -541,7 +610,7 @@ function sourceAccess(){return $("sourceAccess").value;}
 function sourcePlatform(){return $("sourcePlatform").value;}
 function authCredentials(){
   const cookieFile=$("sourceCookies").files&&$("sourceCookies").files[0];
-  const authHeaderName=($("authHeaderName").value.trim()||"Auth");
+  const authHeaderName=($("authHeaderName").value.trim()||"Authorization");
   const authHeader=$("authHeader").value.trim();
   const cookieHeader=$("cookieHeader").value.trim();
   return {
@@ -565,7 +634,7 @@ function command(){
     const prompt=promptText();
     const access=sourceAccess();
     const cookieFile=$("sourceCookies").files&&$("sourceCookies").files[0];
-    const authHeaderName=($("authHeaderName").value.trim()||"Auth");
+    const authHeaderName=($("authHeaderName").value.trim()||"Authorization");
     const authHeader=$("authHeader").value.trim();
     const promptPath="out/music-sample-seed-prompt.txt";
     const cookieFlag=access==="authenticated"?` --cookies "${cookieFile?cookieFile.name:"/absolute/path/to/cookies.txt"}"`:"";
@@ -673,7 +742,7 @@ async function renderSampleSeed(){
   if(url) fd.append("source_url",url);
   fd.append("source_auth_mode",access);
   fd.append("source_platform",sourcePlatform());
-  const authHeaderName=($("authHeaderName").value.trim()||"Auth");
+  const authHeaderName=($("authHeaderName").value.trim()||"Authorization");
   const authHeader=$("authHeader").value.trim();
   const cookieHeader=$("cookieHeader").value.trim();
   const cookieFile=$("sourceCookies").files&&$("sourceCookies").files[0];
@@ -687,9 +756,7 @@ async function renderSampleSeed(){
   result.className="result";
   result.textContent="rendering on des-rs...";
   try{
-    const headers={};
-    if(authHeader&&authHeaderName.toLowerCase()==="auth") headers.Auth=authHeader;
-    const r=await fetch("music/sample-seed",{method:"POST",body:fd,headers});
+    const r=await fetch("music/sample-seed",{method:"POST",body:fd});
     const d=await r.json();
     if(!r.ok||!d.ok){throw new Error(d.error||("HTTP "+r.status));}
     result.className="result ok";
@@ -728,8 +795,22 @@ struct AppState {
     elevator_fel_html: Arc<str>,
     elevator_mdp_html: Arc<str>,
     elevator_pomdp_html: Arc<str>,
+    /// Pre-rendered household bathroom occupancy Monte-Carlo animation. The
+    /// study is self-contained and deterministic (fixed seeds), so it is
+    /// rendered once at startup and served verbatim at `/bathrooms`.
+    bathrooms_html: Arc<str>,
+    /// Framework-based variant of the bathroom study (MovingEntity people,
+    /// StationaryEntity bathrooms, visual-block animation player), served at
+    /// `/two-bathrooms`. Also pre-rendered once at startup.
+    two_bathrooms_html: Arc<str>,
     /// Interactive 11-a-side rotation planner (roster constraints + re-solve).
     soccer_planner_html: Arc<str>,
+    /// Live 2D soccer gameplay bridge with its own shared session state.
+    soccer_live_bridge: Arc<SoccerLiveHttpBridge>,
+    /// WebSocket fan-out for `/api/ws`: per-game broadcast + single-driver
+    /// election so spectators receive pushed frames instead of each re-stepping
+    /// the shared session over HTTP. The HTTP `/api/*` path is unchanged.
+    soccer_live_ws: Arc<SoccerLiveWsHub>,
 }
 
 fn now_ms() -> u128 {
@@ -747,6 +828,13 @@ fn env_value(key: &str, fallback: &str) -> String {
         .unwrap_or_else(|| fallback.to_string())
 }
 
+fn env_value_or_empty(key: &str, fallback: &str) -> String {
+    env::var(key)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .unwrap_or_else(|| fallback.to_string())
+}
+
 /// All simulation names from the engine catalogue, in catalogue order.
 fn sim_names() -> Vec<&'static str> {
     simulation_catalogue()
@@ -755,10 +843,216 @@ fn sim_names() -> Vec<&'static str> {
         .collect()
 }
 
-fn outcome_json(outcomes: &[SimOutcome]) -> Vec<Value> {
+fn matching_sim_names(needle: &str, exact: bool) -> Vec<&'static str> {
+    simulation_catalogue()
+        .into_iter()
+        .filter(|(name, _)| {
+            if exact {
+                *name == needle
+            } else {
+                name.contains(needle)
+            }
+        })
+        .map(|(name, _)| name)
+        .collect()
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum SimMatchError {
+    NoMatches,
+    TooMany {
+        count: usize,
+        preview: Vec<&'static str>,
+    },
+}
+
+fn checked_sim_names(needle: &str, exact: bool) -> Result<Vec<&'static str>, SimMatchError> {
+    let matches = matching_sim_names(needle, exact);
+    if matches.is_empty() {
+        return Err(SimMatchError::NoMatches);
+    }
+    if !exact && matches.len() > MAX_SIMULATE_MATCHES {
+        return Err(SimMatchError::TooMany {
+            count: matches.len(),
+            preview: matches.into_iter().take(MAX_SIMULATE_MATCHES).collect(),
+        });
+    }
+    Ok(matches)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ArtifactFingerprint {
+    len: u64,
+    modified_ms: u128,
+}
+
+fn artifact_fingerprint(path: &StdPath) -> Option<ArtifactFingerprint> {
+    let meta = fs::metadata(path).ok()?;
+    let modified_ms = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_millis())
+        .unwrap_or_default();
+    Some(ArtifactFingerprint {
+        len: meta.len(),
+        modified_ms,
+    })
+}
+
+fn artifact_snapshot(base: &StdPath) -> BTreeMap<String, ArtifactFingerprint> {
+    let mut files = Vec::new();
+    collect_artifacts(base, base, &mut files);
+    files
+        .into_iter()
+        .filter_map(|rel| artifact_fingerprint(&base.join(&rel)).map(|fp| (rel, fp)))
+        .collect()
+}
+
+fn changed_artifacts(
+    before: &BTreeMap<String, ArtifactFingerprint>,
+    after: &BTreeMap<String, ArtifactFingerprint>,
+) -> Vec<String> {
+    after
+        .iter()
+        .filter(|(rel, fp)| before.get(*rel) != Some(*fp))
+        .map(|(rel, _)| rel.clone())
+        .collect()
+}
+
+fn simulation_output_candidates(name: &str) -> &'static [&'static str] {
+    match name {
+        "main_bathrooms" => &["bathrooms.html"],
+        "main_two_bathrooms" => &["two-bathrooms.html"],
+        "main_build_site" => &["index.html"],
+        "main_delivery_planner" => &["delivery-planner.html"],
+        "main_empirical_control_report" => &[
+            "empirical-control/report.html",
+            "empirical-control/player.html",
+            "empirical-control/player.frames.jsonl",
+        ],
+        "main_elevator_highrise" => &["elevator-highrise.html", "elevator-highrise-results.json"],
+        "main_factmachine_markets" => &[
+            "factmachine-markets.html",
+            "factmachine-markets-results.json",
+        ],
+        "main_factory_floor_track3t" => &[
+            "factory-floor-track3t.html",
+            "factory-floor-track3t.json",
+            "factory-floor-track3t.frames.jsonl",
+        ],
+        "main_shadow_eval" => &["shadow-eval/report.html", "shadow-eval/report.json"],
+        "main_soccer" => &[
+            "soccer-sim.html",
+            "soccer-sim.meta.json",
+            "soccer-sim.frames.jsonl",
+        ],
+        "main_soccer_planner" => &["soccer-planner.html"],
+        "main_soccer_rotation_anim" => &[
+            "soccer-IP-MIP-feasible.html",
+            "soccer-IP-MIP-feasible.frames.jsonl",
+            "soccer-IP-MIP-feasible-solver.html",
+            "soccer-IP-MIP-feasible-solver.frames.jsonl",
+        ],
+        "main_temp_control_anim" => &[
+            "temp-control/animation.html",
+            "temp-control/animation.frames.jsonl",
+            "temp-control/animation-heat-cool.html",
+            "temp-control/animation-heat-cool.frames.jsonl",
+        ],
+        "main_traffic" => &[
+            "traffic-flow-five-intersection.html",
+            "traffic-flow-five-intersection.frames.jsonl",
+            "smart-traffic-flow.html",
+            "smart-traffic-flow.frames.jsonl",
+        ],
+        "main_two_disease" => &[
+            "two-disease.html",
+            "two-disease.frames.jsonl",
+            "two-disease-framework.json",
+        ],
+        "main_wind_mppt_anim" => &[
+            "wind-mppt/animation-optimal-torque.html",
+            "wind-mppt/animation-optimal-torque.frames.jsonl",
+            "wind-mppt/animation-pi.html",
+            "wind-mppt/animation-pi.frames.jsonl",
+        ],
+        _ => &[],
+    }
+}
+
+fn fallback_artifacts(
+    after: &BTreeMap<String, ArtifactFingerprint>,
+    sim_names: &[&str],
+) -> Vec<String> {
+    let mut rels = BTreeSet::new();
+    for name in sim_names {
+        for rel in simulation_output_candidates(name) {
+            let lazy_soccer_trace = *name == "main_soccer"
+                && matches!(*rel, SOCCER_SIM_META_JSON | SOCCER_SIM_FRAMES_JSONL);
+            if after.contains_key(*rel) || lazy_soccer_trace {
+                rels.insert((*rel).to_string());
+            }
+        }
+    }
+    rels.into_iter().collect()
+}
+
+fn artifact_ext(rel: &str) -> Option<&str> {
+    StdPath::new(rel).extension().and_then(|ext| ext.to_str())
+}
+
+fn out_href(rel: &str) -> String {
+    format!("out/{rel}")
+}
+
+fn choose_primary_artifact(rels: &[String]) -> Option<String> {
+    rels.iter()
+        .find(|rel| artifact_ext(rel.as_str()) == Some("html") && rel.as_str() != "index.html")
+        .or_else(|| rels.iter().find(|rel| rel.as_str() == "index.html"))
+        .or_else(|| {
+            rels.iter()
+                .find(|rel| artifact_ext(rel.as_str()) == Some("json"))
+        })
+        .or_else(|| {
+            rels.iter()
+                .find(|rel| artifact_ext(rel.as_str()) == Some("jsonl"))
+        })
+        .or_else(|| rels.first())
+        .map(|rel| out_href(rel))
+}
+
+fn artifact_hrefs_for_ext(rels: &[String], ext: &str) -> Vec<String> {
+    rels.iter()
+        .filter(|rel| artifact_ext(rel.as_str()) == Some(ext))
+        .map(|rel| out_href(rel))
+        .collect()
+}
+
+fn artifact_summary(rels: Vec<String>) -> Value {
+    let mut rels = rels;
+    rels.sort();
+    rels.dedup();
+    json!({
+        "primary": choose_primary_artifact(&rels),
+        "html": artifact_hrefs_for_ext(&rels, "html"),
+        "json": artifact_hrefs_for_ext(&rels, "json"),
+        "jsonl": artifact_hrefs_for_ext(&rels, "jsonl"),
+        "paths": rels,
+    })
+}
+
+fn outcome_json(outcomes: &[SimOutcome], artifacts: &Value) -> Vec<Value> {
     outcomes
         .iter()
-        .map(|o| json!({ "name": o.name, "ok": o.ok, "millis": o.millis }))
+        .map(|o| {
+            json!({
+                "name": o.name,
+                "ok": o.ok,
+                "millis": o.millis,
+                "artifacts": artifacts,
+            })
+        })
         .collect()
 }
 
@@ -956,7 +1250,6 @@ fn sanitize_url_in_error(value: &str, raw_url: &str, redacted_url: &str) -> Stri
 
 async fn music_sample_seed_render(
     State(state): State<AppState>,
-    headers: HeaderMap,
     mut multipart: Multipart,
 ) -> Response {
     let mut sample_bytes: Option<Vec<u8>> = None;
@@ -1130,29 +1423,6 @@ async fn music_sample_seed_render(
             StatusCode::BAD_REQUEST,
             format!("title must be at most {MAX_MUSIC_TITLE_CHARS} characters"),
         );
-    }
-
-    if source_auth_header.is_none() {
-        let auth_header_name = HeaderName::from_static("auth");
-        if let Some(value) = headers.get(&auth_header_name) {
-            let value = match value.to_str() {
-                Ok(value) => value.to_string(),
-                Err(e) => {
-                    return json_error(
-                        StatusCode::BAD_REQUEST,
-                        format!("invalid Auth request header: {e}"),
-                    )
-                }
-            };
-            match clean_music_auth_field(value, "Auth request header") {
-                Ok(Some(value)) => {
-                    source_auth_header = Some(value);
-                    source_auth_header_name = Some(auth_header_name);
-                }
-                Ok(None) => {}
-                Err(e) => return json_error(StatusCode::BAD_REQUEST, e),
-            }
-        }
     }
 
     let now = now_ms();
@@ -1370,6 +1640,7 @@ async fn download_music_source_url(
     auth: &MusicSourceAuth,
 ) -> Result<String, String> {
     let url = validate_public_music_url(raw)?;
+    validate_public_music_url_dns(&url).await?;
     if prefers_ytdlp(&url) {
         match download_with_ytdlp(url.as_str().to_string(), path.to_path_buf(), auth).await {
             Ok(kind) => return Ok(format!("{kind}; access={}", auth.effective_mode().as_str())),
@@ -1408,6 +1679,48 @@ fn validate_public_music_url(raw: &str) -> Result<reqwest::Url, String> {
     let url = reqwest::Url::parse(raw.trim()).map_err(|e| format!("invalid source_url: {e}"))?;
     validate_public_music_url_parts(&url)?;
     Ok(url)
+}
+
+async fn validate_public_music_url_dns(url: &reqwest::Url) -> Result<(), String> {
+    let host = url
+        .host_str()
+        .ok_or_else(|| "source_url must include a public host".to_string())?;
+    if host.parse::<IpAddr>().is_ok() {
+        return Ok(());
+    }
+    let port = url
+        .port_or_known_default()
+        .ok_or_else(|| "source_url must use a URL scheme with a known port".to_string())?;
+    let addrs = tokio::net::lookup_host((host, port)).await.map_err(|e| {
+        format!(
+            "source_url host `{}` could not be resolved: {e}",
+            truncate_for_error(host, 120)
+        )
+    })?;
+    validate_music_resolved_addrs(host, addrs.map(|addr| addr.ip()))
+}
+
+fn validate_music_resolved_addrs<I>(host: &str, addrs: I) -> Result<(), String>
+where
+    I: IntoIterator<Item = IpAddr>,
+{
+    let mut saw_addr = false;
+    for ip in addrs {
+        saw_addr = true;
+        if is_blocked_music_ip(ip) {
+            return Err(format!(
+                "source_url host `{}` resolves to localhost/private network",
+                truncate_for_error(host, 120)
+            ));
+        }
+    }
+    if !saw_addr {
+        return Err(format!(
+            "source_url host `{}` resolved to no addresses",
+            truncate_for_error(host, 120)
+        ));
+    }
+    Ok(())
 }
 
 fn validate_public_music_url_parts(url: &reqwest::Url) -> Result<(), String> {
@@ -1793,7 +2106,9 @@ async fn info(State(state): State<AppState>) -> Response {
         "engineSimulations": sim_names().len(),
         "modelKinds": with_builtins().kinds(),
         "streamingSolvers": streaming_model_names(),
+        "build": full_stack_build_json(),
         "endpoints": {
+            "build": "GET /api/build  (release identity: git commit + timestamps for web server, soccer engine, des engine)",
             "landing": "GET /",
             "healthz": "GET /healthz",
             "simulations": "GET /simulations",
@@ -1805,6 +2120,10 @@ async fn info(State(state): State<AppState>) -> Response {
             "streamModel": "POST /streaming/:name  (JSONL in -> JSONL out)",
             "elevatorFel": "GET /elevator-fel  (new next-event elevator sim, animated)",
             "soccerVideogame": "GET /out/soccer-sim.html  (2D 11v11 soccer videogame / learning sim artifact)",
+            "soccerLive": "GET /soccer/live  (live 2D 11v11 soccer UI with soft-real-time controls)",
+            "soccerLiveApi": "GET/POST /api/state, /api/step, /api/reset, /api/input/*, /api/team-policy/*  (live soccer bridge)",
+            "soccerVideogameMetadata": "GET /out/soccer-sim.meta.json  (config, summary, events, run metadata)",
+            "soccerVideogameFrames": "GET /out/soccer-sim.frames.jsonl  (streamed frame records)",
             "soccerPlanner": "GET /soccer/planner  (11-a-side rotation planner UI)",
             "soccerPlannerSolve": "POST /soccer/planner/solve  (re-solve with constraints)",
             "soccerPlannerStream": "POST /soccer/planner/stream  (planner JSONL command stream)",
@@ -1872,25 +2191,50 @@ fn validate_filter(raw: &str) -> Result<String, String> {
 }
 
 async fn run_response(state: &AppState, needle: String, exact: bool) -> Response {
-    let outcomes = run_filter(state, needle.clone(), exact).await;
-    if outcomes.is_empty() {
-        let how = if exact { "named" } else { "matching" };
-        return (
-            StatusCode::NOT_FOUND,
-            Json(json!({
-                "ok": false,
-                "error": format!("no simulation {how} `{needle}`"),
-                "simulations": sim_names(),
-            })),
-        )
-            .into_response();
+    match checked_sim_names(&needle, exact) {
+        Ok(_) => {}
+        Err(SimMatchError::NoMatches) => {
+            let how = if exact { "named" } else { "matching" };
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({
+                    "ok": false,
+                    "error": format!("no simulation {how} `{needle}`"),
+                    "simulations": sim_names(),
+                })),
+            )
+                .into_response();
+        }
+        Err(SimMatchError::TooMany { count, preview }) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "ok": false,
+                    "error": format!(
+                        "simulation filter `{needle}` matches {count} simulations; refine the name or use exact=true for a single catalogue entry"
+                    ),
+                    "matchCount": count,
+                    "maxMatches": MAX_SIMULATE_MATCHES,
+                    "preview": preview,
+                })),
+            )
+                .into_response();
+        }
     }
+    let before = artifact_snapshot(state.out_dir.as_path());
+    let outcomes = run_filter(state, needle.clone(), exact).await;
+    let after = artifact_snapshot(state.out_dir.as_path());
+    let successful_names: Vec<&str> = outcomes.iter().filter(|o| o.ok).map(|o| o.name).collect();
+    let mut rels = changed_artifacts(&before, &after);
+    rels.extend(fallback_artifacts(&after, &successful_names));
+    let artifacts = artifact_summary(rels);
     let all_ok = outcomes.iter().all(|o| o.ok);
     Json(json!({
         "ok": all_ok,
         "filter": needle,
         "exact": exact,
-        "ran": outcome_json(&outcomes),
+        "ran": outcome_json(&outcomes, &artifacts),
+        "artifacts": artifacts,
         "outputIndex": "out/",
         "atMs": now_ms(),
     }))
@@ -2133,6 +2477,21 @@ async fn elevator_pomdp(State(state): State<AppState>) -> Html<String> {
     Html(state.elevator_pomdp_html.to_string())
 }
 
+/// `GET /bathrooms` — household bathroom occupancy Monte-Carlo, animated. A
+/// blocking-loss DES (8 people, 2 bathrooms, 3×20-min visits/day) whose
+/// time-weighted P(0)/P(1)/P(2)-occupied are checked against the closed-form
+/// binomial. Deterministic and pre-rendered at startup.
+async fn bathrooms(State(state): State<AppState>) -> Html<String> {
+    Html(state.bathrooms_html.to_string())
+}
+
+/// `GET /two-bathrooms` — the same study built on the engine's entity +
+/// animation frameworks (MovingEntity people, StationaryEntity bathrooms,
+/// visual-block player). Deterministic, pre-rendered at startup.
+async fn two_bathrooms(State(state): State<AppState>) -> Html<String> {
+    Html(state.two_bathrooms_html.to_string())
+}
+
 /// `GET /soccer/planner` — interactive 11-a-side rotation planner UI.
 async fn soccer_planner_page(State(state): State<AppState>) -> Html<String> {
     Html(state.soccer_planner_html.to_string())
@@ -2141,20 +2500,54 @@ async fn soccer_planner_page(State(state): State<AppState>) -> Html<String> {
 /// `POST /soccer/planner/solve` — re-solve with roster/constraints from the UI.
 async fn soccer_planner_solve(
     State(state): State<AppState>,
-    Json(req): Json<PlannerRequest>,
+    request: Result<Json<PlannerRequest>, JsonRejection>,
 ) -> Response {
-    let _guard = state.sim_lock.lock().await;
-    let result = tokio::task::spawn_blocking(move || solve_planner(&req)).await;
-    let resp = match result {
-        Ok(r) => r,
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "ok": false, "error": format!("solve task failed: {e}") })),
-            )
-                .into_response();
+    let Json(mut req) = match request {
+        Ok(req) => req,
+        Err(err) => {
+            return json_error(
+                StatusCode::BAD_REQUEST,
+                format!("invalid soccer planner request JSON: {err}"),
+            );
         }
     };
+    let requested_solver_time_limit_ms = req.solver_time_limit_ms;
+    let solver_time_was_capped = requested_solver_time_limit_ms.is_finite()
+        && requested_solver_time_limit_ms > SOCCER_PLANNER_HTTP_SOLVE_BUDGET_MS;
+    if solver_time_was_capped {
+        req.solver_time_limit_ms = SOCCER_PLANNER_HTTP_SOLVE_BUDGET_MS;
+    }
+
+    let _guard = state.sim_lock.lock().await;
+    let result =
+        tokio::task::spawn_blocking(move || catch_unwind(AssertUnwindSafe(|| solve_planner(&req))))
+            .await;
+    let mut resp = match result {
+        Ok(Ok(r)) => r,
+        Ok(Err(panic_payload)) => {
+            let error = panic_payload
+                .downcast_ref::<String>()
+                .cloned()
+                .or_else(|| panic_payload.downcast_ref::<&str>().map(|s| s.to_string()))
+                .unwrap_or_else(|| "soccer planner solve panicked".to_string());
+            return json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("soccer planner solve panicked: {error}"),
+            );
+        }
+        Err(e) => {
+            return json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("soccer planner solve task failed: {e}"),
+            );
+        }
+    };
+    if solver_time_was_capped {
+        resp.solver_notes.push(format!(
+            "Server capped solverTimeLimitMs from {:.0}ms to {:.0}ms so the HTTP endpoint returns JSON before the gateway timeout.",
+            requested_solver_time_limit_ms, SOCCER_PLANNER_HTTP_SOLVE_BUDGET_MS
+        ));
+    }
     let status = if resp.ok {
         StatusCode::OK
     } else {
@@ -2167,6 +2560,359 @@ async fn soccer_planner_solve(
 /// `streaming/soccer-planner` JSONL endpoint.
 async fn soccer_planner_stream(State(state): State<AppState>, body: String) -> Response {
     run_streaming_model(state, "soccer-planner".to_string(), body).await
+}
+
+/// This web server's own release identity, in the same `BuildInfo` shape the
+/// engines use (`build.rs` bakes in the `DD_DES_RS_*` values at compile time).
+fn web_server_build_info() -> des_engine::BuildInfo {
+    des_engine::BuildInfo::new(
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION"),
+        env!("DD_DES_RS_GIT_COMMIT"),
+        env!("DD_DES_RS_GIT_COMMIT_DATE"),
+        env!("DD_DES_RS_BUILD_TIMESTAMP"),
+    )
+}
+
+/// Full running-stack release identity: this web server plus the soccer + des
+/// engines it embeds. Same payload `GET /api/build` returns (web layer merged
+/// in), reused by `GET /info`.
+fn full_stack_build_json() -> Value {
+    // soccer_engine no longer exposes `live_build_info_json()` on `main` — the
+    // build_info module + build.rs were dropped in a parallel-history sync. Report
+    // this web server's release identity here; the soccer + des engine layers are
+    // still surfaced by the soccer bridge's own `GET /api/build`
+    // (merge_web_server_build_layer folds the web layer into that reply).
+    serde_json::json!({ "web_server": web_server_build_info() })
+}
+
+/// The soccer bridge's `GET /api/build` returns the soccer + des engine layers
+/// (all it can see from inside the engine). As the host, fold in our own
+/// `web_server` layer so the live UI shows the full running stack.
+fn merge_web_server_build_layer(reply: SoccerLiveHttpReply) -> SoccerLiveHttpReply {
+    if reply.status != 200 || !reply.content_type.starts_with("application/json") {
+        return reply;
+    }
+    let mut value: Value = match serde_json::from_str(&reply.body) {
+        Ok(value @ Value::Object(_)) => value,
+        _ => return reply,
+    };
+    if let (Value::Object(map), Ok(ws)) =
+        (&mut value, serde_json::to_value(web_server_build_info()))
+    {
+        map.insert("web_server".to_string(), ws);
+    }
+    match serde_json::to_string(&value) {
+        Ok(body) => SoccerLiveHttpReply { body, ..reply },
+        Err(_) => reply,
+    }
+}
+
+fn soccer_live_reply_response(reply: SoccerLiveHttpReply) -> Response {
+    let status = StatusCode::from_u16(reply.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    let mut response = (status, reply.body).into_response();
+    let content_type = HeaderValue::from_str(&reply.content_type)
+        .unwrap_or_else(|_| HeaderValue::from_static("text/plain; charset=utf-8"));
+    response
+        .headers_mut()
+        .insert(header::CONTENT_TYPE, content_type);
+    response
+}
+
+async fn soccer_live_bridge_request(
+    State(state): State<AppState>,
+    method: Method,
+    uri: Uri,
+    body: Bytes,
+) -> Response {
+    let body = String::from_utf8_lossy(&body).into_owned();
+    let path = uri.path();
+    let reply = state
+        .soccer_live_bridge
+        .handle_request(method.as_str(), path, &body);
+    let reply = if method == Method::GET
+        && (path.ends_with("/api/build") || path.ends_with("/api/version"))
+    {
+        merge_web_server_build_layer(reply)
+    } else {
+        reply
+    };
+    soccer_live_reply_response(reply)
+}
+
+// ---------------------------------------------------------------------------
+// Live soccer WebSocket: an OPTIONAL push channel layered over the SAME
+// `soccer_live_bridge`. The HTTP `/api/*` routes above are untouched and remain
+// the fallback. Goal: stop every viewer of one `?game=` from independently
+// POST-stepping the shared session. Exactly one connection per game is elected
+// `driver` (it may "pull": send RPCs that advance the sim); all others are
+// `follower`s that only receive the driver's frames pushed to them. Messages
+// are a thin RPC envelope so the socket reuses `bridge.handle_request` verbatim.
+// ---------------------------------------------------------------------------
+
+/// One broadcast item delivered to every subscriber of a game. `src` is the
+/// connection that produced it, so a connection can skip echoes of its own
+/// frames (`u64::MAX` is a sentinel meaning "deliver to everyone").
+#[derive(Clone)]
+struct WsBroadcast {
+    src: u64,
+    text: String,
+}
+
+/// Per-game fan-out: a broadcast channel plus the elected driver connection id.
+struct WsGameRoom {
+    tx: broadcast::Sender<WsBroadcast>,
+    driver: StdMutex<Option<u64>>,
+}
+
+impl WsGameRoom {
+    /// Claim the driver slot if it is free (or already ours). Returns whether
+    /// this connection is the driver afterwards.
+    fn try_claim(&self, conn_id: u64) -> bool {
+        let mut driver = self.driver.lock().unwrap_or_else(|e| e.into_inner());
+        match *driver {
+            None => {
+                *driver = Some(conn_id);
+                true
+            }
+            Some(current) => current == conn_id,
+        }
+    }
+
+    fn is_driver(&self, conn_id: u64) -> bool {
+        *self.driver.lock().unwrap_or_else(|e| e.into_inner()) == Some(conn_id)
+    }
+
+    /// Release the driver slot if held by `conn_id`. Returns whether we held it.
+    fn release(&self, conn_id: u64) -> bool {
+        let mut driver = self.driver.lock().unwrap_or_else(|e| e.into_inner());
+        if *driver == Some(conn_id) {
+            *driver = None;
+            true
+        } else {
+            false
+        }
+    }
+}
+
+/// Registry of per-game rooms plus a monotonic connection-id source.
+#[derive(Default)]
+struct SoccerLiveWsHub {
+    rooms: StdMutex<HashMap<String, Arc<WsGameRoom>>>,
+    next_conn_id: AtomicU64,
+}
+
+impl SoccerLiveWsHub {
+    fn room(&self, game_id: &str) -> Arc<WsGameRoom> {
+        let mut rooms = self.rooms.lock().unwrap_or_else(|e| e.into_inner());
+        Arc::clone(rooms.entry(game_id.to_string()).or_insert_with(|| {
+            Arc::new(WsGameRoom {
+                tx: broadcast::channel(64).0,
+                driver: StdMutex::new(None),
+            })
+        }))
+    }
+
+    fn next_id(&self) -> u64 {
+        self.next_conn_id.fetch_add(1, Ordering::Relaxed)
+    }
+
+    /// Drop a room once nobody is subscribed, so a churn of distinct `?game=`
+    /// ids cannot grow the map without bound.
+    fn retire_if_idle(&self, game_id: &str, room: &Arc<WsGameRoom>) {
+        if room.tx.receiver_count() == 0 {
+            let mut rooms = self.rooms.lock().unwrap_or_else(|e| e.into_inner());
+            // Re-check under the lock and confirm it is still the same room with
+            // no late subscriber, so we never evict a room a new client just took.
+            if let Some(existing) = rooms.get(game_id) {
+                if Arc::ptr_eq(existing, room) && existing.tx.receiver_count() == 0 {
+                    rooms.remove(game_id);
+                }
+            }
+        }
+    }
+}
+
+/// Mirror the engine's `?game=` sanitizer: lowercase, `[a-z0-9-]`, max 64.
+fn sanitize_ws_game_id(raw: &str) -> String {
+    let cleaned: String = raw
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == '-')
+        .take(64)
+        .collect();
+    if cleaned.is_empty() {
+        "default".to_string()
+    } else {
+        cleaned
+    }
+}
+
+fn ws_game_id_from_uri(uri: &Uri) -> String {
+    let raw = uri.query().and_then(|q| {
+        q.split('&').find_map(|kv| {
+            let mut it = kv.splitn(2, '=');
+            match it.next() {
+                Some("game") => it.next(),
+                _ => None,
+            }
+        })
+    });
+    sanitize_ws_game_id(raw.unwrap_or(""))
+}
+
+/// `GET /api/ws?game=<id>` — upgrade to the live soccer push socket. Coexists
+/// with the `/api/*path` catch-all exactly as `/api/docs` already does.
+async fn soccer_live_ws(
+    State(state): State<AppState>,
+    uri: Uri,
+    ws: WebSocketUpgrade,
+) -> Response {
+    let game_id = ws_game_id_from_uri(&uri);
+    ws.on_upgrade(move |socket| soccer_live_ws_session(socket, state, game_id))
+}
+
+fn ws_hello(driver: bool) -> String {
+    json!({ "t": "hello", "driver": driver, "protocol": 1 }).to_string()
+}
+
+fn ws_reply(id: &Value, status: u16, body: &str) -> String {
+    json!({ "t": "reply", "id": id, "status": status, "body": body }).to_string()
+}
+
+/// Drive one upgraded connection: pump client RPCs into the bridge and pushed
+/// frames out to the socket, until either side closes.
+async fn soccer_live_ws_session(mut socket: WebSocket, state: AppState, game_id: String) {
+    let hub = Arc::clone(&state.soccer_live_ws);
+    let room = hub.room(&game_id);
+    let conn_id = hub.next_id();
+    let mut rx = room.tx.subscribe();
+    let is_driver = room.try_claim(conn_id);
+
+    if socket
+        .send(Message::Text(ws_hello(is_driver)))
+        .await
+        .is_err()
+    {
+        room.release(conn_id);
+        drop(rx);
+        hub.retire_if_idle(&game_id, &room);
+        return;
+    }
+
+    loop {
+        tokio::select! {
+            incoming = socket.recv() => {
+                let msg = match incoming {
+                    Some(Ok(msg)) => msg,
+                    _ => break,
+                };
+                match msg {
+                    Message::Text(text) => {
+                        if let Some(out) =
+                            soccer_live_ws_handle_text(&state, &room, conn_id, &text).await
+                        {
+                            if socket.send(Message::Text(out)).await.is_err() {
+                                break;
+                            }
+                        }
+                    }
+                    Message::Ping(payload) => {
+                        if socket.send(Message::Pong(payload)).await.is_err() {
+                            break;
+                        }
+                    }
+                    Message::Close(_) => break,
+                    _ => {}
+                }
+            }
+            pushed = rx.recv() => {
+                match pushed {
+                    // Skip echoes of our own frames; the driver already saw them
+                    // as the direct reply to its own step RPC.
+                    Ok(item) if item.src == conn_id => {}
+                    Ok(item) => {
+                        if socket.send(Message::Text(item.text)).await.is_err() {
+                            break;
+                        }
+                    }
+                    // We fell behind the driver; the next frame supersedes the
+                    // dropped ones, so just keep going (latest-wins for frames).
+                    Err(broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        }
+    }
+
+    // On the driver leaving, open the slot and tell followers so one of them can
+    // promote itself (it sends `{"t":"claim"}`).
+    if room.release(conn_id) {
+        let _ = room.tx.send(WsBroadcast {
+            src: u64::MAX,
+            text: json!({ "t": "driver-open" }).to_string(),
+        });
+    }
+    drop(rx);
+    hub.retire_if_idle(&game_id, &room);
+}
+
+/// Handle one inbound text frame; returns an optional direct reply for the
+/// sender. Step RPCs additionally broadcast their resulting frame to followers.
+async fn soccer_live_ws_handle_text(
+    state: &AppState,
+    room: &Arc<WsGameRoom>,
+    conn_id: u64,
+    text: &str,
+) -> Option<String> {
+    let value: Value = serde_json::from_str(text).ok()?;
+    match value.get("t").and_then(Value::as_str)? {
+        "rpc" => {
+            let id = value.get("id").cloned().unwrap_or(Value::Null);
+            let method = value
+                .get("method")
+                .and_then(Value::as_str)
+                .unwrap_or("GET")
+                .to_string();
+            let path = value
+                .get("path")
+                .and_then(Value::as_str)
+                .unwrap_or("/")
+                .to_string();
+            let body = value
+                .get("body")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            // A "step" advances the shared session, so only the driver may issue
+            // it; followers are told to stand down and follow the pushed frames.
+            let is_step = path.contains("/api/step");
+            if is_step && !room.is_driver(conn_id) {
+                return Some(ws_reply(&id, 409, "{\"error\":\"not driver\"}"));
+            }
+            let bridge = Arc::clone(&state.soccer_live_bridge);
+            let reply = tokio::task::spawn_blocking(move || {
+                bridge.handle_request(&method, &path, &body)
+            })
+            .await;
+            let reply = match reply {
+                Ok(reply) => reply,
+                Err(_) => return Some(ws_reply(&id, 500, "{\"error\":\"bridge panicked\"}")),
+            };
+            if is_step && reply.status < 400 {
+                // Fan the fresh frame out to every follower of this game.
+                let push = json!({ "t": "push", "body": reply.body }).to_string();
+                let _ = room.tx.send(WsBroadcast {
+                    src: conn_id,
+                    text: push,
+                });
+            }
+            Some(ws_reply(&id, reply.status, &reply.body))
+        }
+        // A follower bidding for the (now empty) driver slot.
+        "claim" => Some(ws_hello(room.try_claim(conn_id))),
+        _ => None,
+    }
 }
 
 /// Render the elevator MDP/POMDP players at startup, degrading to a small error
@@ -2222,17 +2968,208 @@ fn resolve_within(base: &StdPath, requested: &StdPath) -> Option<PathBuf> {
     canon_req.starts_with(&canon_base).then_some(canon_req)
 }
 
-fn serve_file(path: &StdPath) -> Response {
-    match std::fs::read(path) {
-        Ok(bytes) => (
-            [
-                ("content-type", content_type(path)),
-                ("x-content-type-options", "nosniff"),
-                ("cache-control", "public, max-age=30"),
-            ],
-            bytes,
-        )
-            .into_response(),
+fn path_to_output_rel(base: &StdPath, target: &StdPath) -> String {
+    target
+        .strip_prefix(base)
+        .unwrap_or(target)
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+fn output_index_href(from_rel: &str) -> String {
+    let depth = from_rel.split('/').filter(|part| !part.is_empty()).count();
+    let parent_depth = depth.saturating_sub(1);
+    if parent_depth == 0 {
+        "./".to_string()
+    } else {
+        "../".repeat(parent_depth)
+    }
+}
+
+fn relative_output_href(from_rel: &str, to_rel: &str) -> String {
+    let mut from_parts: Vec<&str> = from_rel
+        .split('/')
+        .filter(|part| !part.is_empty())
+        .collect();
+    if !from_parts.is_empty() {
+        from_parts.pop();
+    }
+    let to_parts: Vec<&str> = to_rel.split('/').filter(|part| !part.is_empty()).collect();
+    let mut common = 0;
+    while common < from_parts.len()
+        && common < to_parts.len()
+        && from_parts[common] == to_parts[common]
+    {
+        common += 1;
+    }
+    let mut parts: Vec<String> = Vec::new();
+    for _ in common..from_parts.len() {
+        parts.push("..".to_string());
+    }
+    for part in &to_parts[common..] {
+        parts.push((*part).to_string());
+    }
+    if parts.is_empty() {
+        "./".to_string()
+    } else {
+        parts.join("/")
+    }
+}
+
+fn related_data_artifacts(base: &StdPath, current_rel: &str) -> Vec<String> {
+    let current = StdPath::new(current_rel);
+    if artifact_ext(current_rel) != Some("html") || current_rel == "index.html" {
+        return Vec::new();
+    }
+    if current_rel == "soccer-sim.html" {
+        return vec![
+            SOCCER_SIM_META_JSON.to_string(),
+            SOCCER_SIM_FRAMES_JSONL.to_string(),
+        ];
+    }
+    let Some(stem) = current.file_stem().and_then(|s| s.to_str()) else {
+        return Vec::new();
+    };
+    let parent = current
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .map(|p| p.to_path_buf());
+    let dir = parent
+        .as_ref()
+        .map(|p| base.join(p))
+        .unwrap_or_else(|| base.to_path_buf());
+    let Ok(entries) = fs::read_dir(&dir) else {
+        return Vec::new();
+    };
+
+    let mut exact = Vec::new();
+    let mut fallback = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let ext = path.extension().and_then(|e| e.to_str());
+        if !matches!(ext, Some("json" | "jsonl")) {
+            continue;
+        }
+        let Some(file_name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        let rel = parent
+            .as_ref()
+            .map(|p| p.join(file_name))
+            .unwrap_or_else(|| PathBuf::from(file_name))
+            .to_string_lossy()
+            .replace('\\', "/");
+        if file_name.starts_with(stem) {
+            exact.push(rel);
+        } else if parent.is_some() {
+            fallback.push(rel);
+        }
+    }
+    exact.sort();
+    fallback.sort();
+    if exact.is_empty() {
+        fallback
+    } else {
+        exact
+    }
+}
+
+fn output_toolbar_html(base: &StdPath, current_rel: &str) -> String {
+    if artifact_ext(current_rel) != Some("html") || current_rel == "index.html" {
+        return String::new();
+    }
+    let mut links = vec![format!(
+        "<a href=\"{}\">Output index</a>",
+        html_escape(&output_index_href(current_rel))
+    )];
+    for rel in related_data_artifacts(base, current_rel) {
+        let label = match artifact_ext(&rel) {
+            Some("jsonl") => "JSONL",
+            Some("json") => "JSON",
+            _ => "Artifact",
+        };
+        links.push(format!(
+            "<a href=\"{}\" target=\"_blank\" rel=\"noopener\">{}</a>",
+            html_escape(&relative_output_href(current_rel, &rel)),
+            label
+        ));
+    }
+    format!(
+        "<style>\
+         .dd-des-artifacts{{position:fixed;right:16px;bottom:16px;z-index:2147483647;\
+         display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:8px;\
+         border:1px solid rgba(139,148,158,.35);border-radius:8px;\
+         background:rgba(13,17,23,.94);box-shadow:0 8px 28px rgba(0,0,0,.35);\
+         font:13px system-ui,-apple-system,Segoe UI,sans-serif}}\
+         .dd-des-artifacts a{{color:#e6edf3;text-decoration:none;border:1px solid #30363d;\
+         border-radius:7px;padding:6px 9px;background:#161b22}}\
+         .dd-des-artifacts a:hover{{border-color:#58a6ff;color:#fff}}\
+         </style><nav class=\"dd-des-artifacts\" aria-label=\"Result artifacts\">{}</nav>",
+        links.join("")
+    )
+}
+
+fn rfind_ascii_case_insensitive(haystack: &str, needle: &str) -> Option<usize> {
+    haystack
+        .as_bytes()
+        .windows(needle.len())
+        .rposition(|window| window.eq_ignore_ascii_case(needle.as_bytes()))
+}
+
+fn inject_before_body(mut html: String, fragment: &str) -> String {
+    if let Some(idx) = rfind_ascii_case_insensitive(&html, "</body>") {
+        html.insert_str(idx, fragment);
+    } else {
+        html.push_str(fragment);
+    }
+    html
+}
+
+fn apply_output_headers(headers: &mut HeaderMap, path: &StdPath, content_length: Option<u64>) {
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static(content_type(path)),
+    );
+    headers.insert(
+        HeaderName::from_static("x-content-type-options"),
+        HeaderValue::from_static("nosniff"),
+    );
+    headers.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=30"),
+    );
+    if let Some(len) = content_length {
+        if let Ok(value) = HeaderValue::from_str(&len.to_string()) {
+            headers.insert(header::CONTENT_LENGTH, value);
+        }
+    }
+}
+
+async fn serve_output_file(base: &StdPath, rel_path: &str, path: &StdPath) -> Response {
+    if content_type(path).starts_with("text/html") {
+        return match tokio::fs::read_to_string(path).await {
+            Ok(html) => {
+                let body = inject_before_body(html, &output_toolbar_html(base, rel_path));
+                let len = body.len() as u64;
+                let mut res = Body::from(body).into_response();
+                apply_output_headers(res.headers_mut(), path, Some(len));
+                res
+            }
+            Err(_) => (StatusCode::NOT_FOUND, "not found").into_response(),
+        };
+    }
+
+    match tokio::fs::File::open(path).await {
+        Ok(file) => {
+            let len = file.metadata().await.ok().map(|m| m.len());
+            let stream = ReaderStream::new(file);
+            let mut res = Body::from_stream(stream).into_response();
+            apply_output_headers(res.headers_mut(), path, len);
+            res
+        }
         Err(_) => (StatusCode::NOT_FOUND, "not found").into_response(),
     }
 }
@@ -2356,7 +3293,43 @@ async fn out_index(State(state): State<AppState>) -> Response {
     Html(body).into_response()
 }
 
+const SOCCER_SIM_META_JSON: &str = "soccer-sim.meta.json";
+const SOCCER_SIM_FRAMES_JSONL: &str = "soccer-sim.frames.jsonl";
+
+async fn ensure_soccer_playback_artifacts(state: &AppState) -> Result<(), String> {
+    let html_path = state.out_dir.join("soccer-sim.html");
+    let meta_path = state.out_dir.join(SOCCER_SIM_META_JSON);
+    let frames_path = state.out_dir.join(SOCCER_SIM_FRAMES_JSONL);
+    if html_path.is_file() && meta_path.is_file() && frames_path.is_file() {
+        return Ok(());
+    }
+
+    let _guard = state.sim_lock.lock().await;
+    if html_path.is_file() && meta_path.is_file() && frames_path.is_file() {
+        return Ok(());
+    }
+
+    std::fs::create_dir_all(state.out_dir.as_path())
+        .map_err(|e| format!("create output dir: {e}"))?;
+    try_write_soccer_playback_artifacts().map_err(|e| format!("write soccer playback: {e}"))?;
+    Ok(())
+}
+
 async fn out_file(State(state): State<AppState>, Path(rel_path): Path<String>) -> Response {
+    if matches!(
+        rel_path.as_str(),
+        "soccer-sim.html" | SOCCER_SIM_META_JSON | SOCCER_SIM_FRAMES_JSONL
+    ) {
+        if let Err(err) = ensure_soccer_playback_artifacts(&state).await {
+            tracing::error!("[dd-des-rs] soccer playback render failed: {err}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "soccer playback render failed",
+            )
+                .into_response();
+        }
+    }
+
     let base: &StdPath = state.out_dir.as_path();
 
     let Some(target) = resolve_within(base, &base.join(&rel_path)) else {
@@ -2366,7 +3339,8 @@ async fn out_file(State(state): State<AppState>, Path(rel_path): Path<String>) -
     if target.is_dir() {
         if let Some(index) = resolve_within(base, &target.join("index.html")) {
             if index.is_file() {
-                return serve_file(&index);
+                let rel = path_to_output_rel(base, &index);
+                return serve_output_file(base, &rel, &index).await;
             }
         }
         return (StatusCode::NOT_FOUND, "not found").into_response();
@@ -2376,7 +3350,8 @@ async fn out_file(State(state): State<AppState>, Path(rel_path): Path<String>) -
         return (StatusCode::NOT_FOUND, "not found").into_response();
     }
 
-    serve_file(&target)
+    let rel = path_to_output_rel(base, &target);
+    serve_output_file(base, &rel, &target).await
 }
 
 // =============================================================================
@@ -2496,7 +3471,7 @@ fn build_descriptor() -> ServiceDescriptor {
         .endpoint(
             "GET",
             "/models",
-            "First-class model registry (mdp, pomdp, hybrid, studio) with example specs.",
+            "First-class model registry with example specs.",
             EndpointKind::Service,
         )
         .endpoint(
@@ -2545,6 +3520,36 @@ fn build_descriptor() -> ServiceDescriptor {
             "GET",
             "/out/soccer-sim.html",
             "Rendered 2D 11v11 soccer videogame / learning simulation artifact.",
+            EndpointKind::Service,
+        )
+        .endpoint(
+            "GET",
+            "/soccer/live",
+            "Live 2D 11v11 soccer UI with soft-real-time controls and live learning state.",
+            EndpointKind::Service,
+        )
+        .endpoint(
+            "GET/POST",
+            "/api/state|step|reset|input/*|team-policy/*",
+            "Live soccer bridge API used by /soccer/live.",
+            EndpointKind::Action,
+        )
+        .endpoint(
+            "GET",
+            "/api/build",
+            "Release identity (git commit + commit date + build timestamp) for the web server, soccer engine, and des engine.",
+            EndpointKind::Service,
+        )
+        .endpoint(
+            "GET",
+            "/out/soccer-sim.meta.json",
+            "Rendered soccer game metadata JSON with config, summary, events, and run metadata.",
+            EndpointKind::Service,
+        )
+        .endpoint(
+            "GET",
+            "/out/soccer-sim.frames.jsonl",
+            "Rendered soccer game JSONL stream with header, frame, event, and summary records.",
             EndpointKind::Service,
         )
         .endpoint(
@@ -2759,6 +3764,15 @@ fn work_dir() -> PathBuf {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Plain stdout tracing subscriber (see Cargo.toml: dd-telemetry lives in a
+    // private submodule the in-pod build cannot fetch). Mirrors dd-soccer-rs.
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .init();
+
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8112").parse::<u16>()?;
 
@@ -2792,6 +3806,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let elevator_pomdp_html: Arc<str> =
         Arc::from(render_model_player("pomdp", &elevator_pomdp_spec()));
     let soccer_planner_html: Arc<str> = Arc::from(planner_page_html());
+    // Household bathroom occupancy study (8 people, 2 bathrooms) — a blocking
+    // Monte-Carlo DES with a self-contained animation. Deterministic, so render
+    // once at startup like the elevator artifacts.
+    let bathrooms_html: Arc<str> = Arc::from(render_default_bathrooms_html());
+    // Framework-based variant: entity/visual-block animation player.
+    let two_bathrooms_html: Arc<str> = Arc::from(render_default_two_bathrooms_html());
+    let soccer_live_bridge = Arc::new(SoccerLiveHttpBridge::new(SoccerLiveServerConfig::default()));
 
     let state = AppState {
         out_dir: Arc::new(out_dir),
@@ -2803,12 +3824,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         elevator_fel_html,
         elevator_mdp_html,
         elevator_pomdp_html,
+        bathrooms_html,
+        two_bathrooms_html,
         soccer_planner_html,
+        soccer_live_bridge,
+        soccer_live_ws: Arc::new(SoccerLiveWsHub::default()),
     };
 
     // Populate `out/` in the background so /healthz comes up immediately while
     // the startup catalogue renders.
-    let startup = env_value("DES_STARTUP_SIMS", DEFAULT_STARTUP_SIMS);
+    let startup = env_value_or_empty("DES_STARTUP_SIMS", DEFAULT_STARTUP_SIMS);
     if !startup.is_empty() {
         let startup_state = state.clone();
         tokio::spawn(async move {
@@ -2817,13 +3842,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
             {
+                if let Err(SimMatchError::TooMany { count, .. }) = checked_sim_names(&needle, false)
+                {
+                    tracing::error!(
+                        "[dd-des-rs] startup `{needle}` skipped: filter matches {count} sim(s); use narrower DES_STARTUP_SIMS entries"
+                    );
+                    continue;
+                }
                 let outcomes = run_filter(&startup_state, needle.clone(), false).await;
-                println!(
+                tracing::info!(
                     "[dd-des-rs] startup `{needle}`: ran {} sim(s)",
                     outcomes.len()
                 );
             }
-            println!("[dd-des-rs] startup catalogue complete");
+            tracing::info!("[dd-des-rs] startup catalogue complete");
         });
     }
 
@@ -2844,9 +3876,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .route("/elevator-fel", get(elevator_fel))
         .route("/elevator-mdp", get(elevator_mdp))
         .route("/elevator-pomdp", get(elevator_pomdp))
+        .route("/bathrooms", get(bathrooms))
+        .route("/two-bathrooms", get(two_bathrooms))
         .route("/soccer/planner", get(soccer_planner_page))
         .route("/soccer/planner/solve", post(soccer_planner_solve))
         .route("/soccer/planner/stream", post(soccer_planner_stream))
+        .route("/api/ws", get(soccer_live_ws))
+        .route("/soccer/live", any(soccer_live_bridge_request))
+        .route("/soccer/live/*path", any(soccer_live_bridge_request))
+        .route("/fresh", any(soccer_live_bridge_request))
+        .route("/new-match", any(soccer_live_bridge_request))
+        .route("/new_match", any(soccer_live_bridge_request))
+        .route("/reset", any(soccer_live_bridge_request))
+        .route("/api/*path", any(soccer_live_bridge_request))
         .route("/music", get(music_production_page))
         .route(
             "/music/sample-seed",
@@ -2864,7 +3906,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .with_state(state);
 
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
-    println!(
+    tracing::info!(
         "dd-des-rs listening on http://{addr} (out dir: {})",
         work.join("out").display()
     );
@@ -2888,6 +3930,14 @@ mod tests {
         assert!(names.len() >= 56, "expected the full engine catalogue");
         assert!(names.contains(&"main_build_site"));
         assert!(names.contains(&"main_electric_circuit"));
+    }
+
+    #[test]
+    fn landing_page_links_live_soccer_simulation() {
+        assert!(LANDING_HTML.contains("href=\"soccer/live\""));
+        assert!(LANDING_HTML.contains("Live game"));
+        assert!(LANDING_HTML.contains("href=\"out/soccer-sim.html\""));
+        assert!(LANDING_HTML.contains("Static game"));
     }
 
     #[test]
@@ -2923,6 +3973,11 @@ mod tests {
         assert!(paths.contains(&"/soccer/planner"));
         assert!(paths.contains(&"/soccer/planner/solve"));
         assert!(paths.contains(&"/soccer/planner/stream"));
+        assert!(paths.contains(&"/soccer/live"));
+        assert!(paths.contains(&"/api/state|step|reset|input/*|team-policy/*"));
+        assert!(paths.contains(&"/out/soccer-sim.html"));
+        assert!(paths.contains(&"/out/soccer-sim.meta.json"));
+        assert!(paths.contains(&"/out/soccer-sim.frames.jsonl"));
         // The model-registry extension contributes `model:<kind>` capabilities.
         assert!(descriptor
             .capabilities
@@ -2961,6 +4016,18 @@ mod tests {
     }
 
     #[test]
+    fn broad_simulation_filters_are_capped_before_running() {
+        assert!(matches!(
+            checked_sim_names("main", false),
+            Err(SimMatchError::TooMany { count, .. }) if count > MAX_SIMULATE_MATCHES
+        ));
+        assert_eq!(
+            checked_sim_names("main_electric_circuit", true).unwrap(),
+            vec!["main_electric_circuit"]
+        );
+    }
+
+    #[test]
     fn music_source_url_validation_blocks_private_and_secret_bearing_urls() {
         for raw in [
             "ftp://example.com/seed.mp4",
@@ -2983,6 +4050,26 @@ mod tests {
         }
 
         assert!(validate_public_music_url("https://example.com/path/seed.mp4").is_ok());
+    }
+
+    #[test]
+    fn music_source_dns_validation_blocks_private_resolutions() {
+        assert!(validate_music_resolved_addrs(
+            "media.example",
+            ["93.184.216.34".parse::<IpAddr>().unwrap()]
+        )
+        .is_ok());
+        assert!(validate_music_resolved_addrs(
+            "media.example",
+            [
+                "93.184.216.34".parse::<IpAddr>().unwrap(),
+                "10.1.2.3".parse::<IpAddr>().unwrap()
+            ]
+        )
+        .is_err());
+        assert!(
+            validate_music_resolved_addrs("media.example", std::iter::empty::<IpAddr>()).is_err()
+        );
     }
 
     #[test]
@@ -3023,8 +4110,96 @@ mod tests {
             "application/json; charset=utf-8"
         );
         assert_eq!(
+            content_type(StdPath::new("a.frames.jsonl")),
+            "application/x-ndjson; charset=utf-8"
+        );
+        assert_eq!(
             content_type(StdPath::new("a.bin")),
             "application/octet-stream"
+        );
+    }
+
+    #[test]
+    fn artifact_summary_prefers_html_and_exposes_data_links() {
+        let summary = artifact_summary(vec![
+            "shadow-eval/report.json".to_string(),
+            "shadow-eval/report.html".to_string(),
+            "shadow-eval/report.frames.jsonl".to_string(),
+        ]);
+
+        assert_eq!(
+            summary["primary"].as_str(),
+            Some("out/shadow-eval/report.html")
+        );
+        assert_eq!(
+            summary["html"].as_array().unwrap()[0].as_str(),
+            Some("out/shadow-eval/report.html")
+        );
+        assert_eq!(
+            summary["json"].as_array().unwrap()[0].as_str(),
+            Some("out/shadow-eval/report.json")
+        );
+        assert_eq!(
+            summary["jsonl"].as_array().unwrap()[0].as_str(),
+            Some("out/shadow-eval/report.frames.jsonl")
+        );
+    }
+
+    #[test]
+    fn output_toolbar_links_are_relative_to_the_current_page() {
+        assert_eq!(
+            relative_output_href("shadow-eval/report.html", "shadow-eval/report.json"),
+            "report.json"
+        );
+        assert_eq!(
+            relative_output_href("shadow-eval/report.html", "two-disease.frames.jsonl"),
+            "../two-disease.frames.jsonl"
+        );
+        assert_eq!(output_index_href("shadow-eval/report.html"), "../");
+        assert_eq!(output_index_href("two-disease.html"), "./");
+    }
+
+    #[test]
+    fn related_data_artifacts_find_sibling_json_and_jsonl() {
+        let root = std::env::temp_dir().join(format!(
+            "des-rs-artifact-links-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        let base = root.join("out");
+        let dir = base.join("shadow-eval");
+        std::fs::create_dir_all(&dir).expect("create output dir");
+        std::fs::write(dir.join("report.html"), b"<html><body>report</body></html>")
+            .expect("write html");
+        std::fs::write(dir.join("report.json"), b"{}").expect("write json");
+        std::fs::write(dir.join("report.frames.jsonl"), b"{}\n").expect("write jsonl");
+        std::fs::write(dir.join("other.json"), b"{}").expect("write unrelated json");
+
+        let rels = related_data_artifacts(&base, "shadow-eval/report.html");
+        assert_eq!(
+            rels,
+            vec![
+                "shadow-eval/report.frames.jsonl".to_string(),
+                "shadow-eval/report.json".to_string()
+            ]
+        );
+
+        let toolbar = output_toolbar_html(&base, "shadow-eval/report.html");
+        assert!(toolbar.contains("href=\"../\""));
+        assert!(toolbar.contains("href=\"report.json\""));
+        assert!(toolbar.contains("href=\"report.frames.jsonl\""));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn soccer_toolbar_links_lazy_trace_artifacts() {
+        assert_eq!(
+            related_data_artifacts(StdPath::new("/unused"), "soccer-sim.html"),
+            vec![
+                SOCCER_SIM_META_JSON.to_string(),
+                SOCCER_SIM_FRAMES_JSONL.to_string()
+            ]
         );
     }
 

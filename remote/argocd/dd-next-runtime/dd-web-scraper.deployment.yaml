@@ -6,7 +6,7 @@ metadata:
   labels:
     app: dd-web-scraper
 spec:
-  replicas: 2
+  replicas: 0
   minReadySeconds: 5
   progressDeadlineSeconds: 1800
   strategy:
@@ -93,6 +93,8 @@ spec:
               value: '128'
             - name: SCRAPER_MAX_TIMEOUT_MS
               value: '60000'
+            - name: SCRAPER_DNS_TIMEOUT_MS
+              value: '5000'
             - name: SCRAPER_MAX_REDIRECTS
               value: '5'
             - name: SCRAPER_MAX_HTML_CHARS
@@ -105,6 +107,43 @@ spec:
               value: 'false'
             - name: SCRAPER_AUTO_BROWSERLESS
               value: 'false'
+            # Proxy rotation. Pool is sourced from a secret (comma/newline list of
+            # proxy URLs); empty secret = direct egress. `sticky` keeps one egress
+            # IP per target host; failures cool a proxy out for the window below.
+            - name: SCRAPER_PROXY_ROTATION
+              value: sticky
+            - name: SCRAPER_PROXY_COOLDOWN_MS
+              value: '60000'
+            - name: SCRAPER_ALLOW_REQUEST_PROXY
+              value: 'true'
+            - name: SCRAPER_PROXIES
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SCRAPER_PROXIES
+                  optional: true
+            # CAPTCHA orchestration. Detection is always on and reported in the
+            # response; auto-solve stays off until a solver key is present.
+            - name: SCRAPER_DETECT_CAPTCHAS
+              value: 'true'
+            - name: SCRAPER_CAPTCHA_AUTOSOLVE
+              value: 'false'
+            - name: SCRAPER_CAPTCHA_PROVIDER_URL
+              value: https://2captcha.com
+            - name: SCRAPER_CAPTCHA_POLL_INTERVAL_MS
+              value: '5000'
+            - name: SCRAPER_CAPTCHA_TIMEOUT_MS
+              value: '120000'
+            - name: SCRAPER_CAPTCHA_MAX_ATTEMPTS
+              value: '2'
+            - name: SCRAPER_CAPTCHA_MAX_CONCURRENT
+              value: '2'
+            - name: SCRAPER_CAPTCHA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SCRAPER_CAPTCHA_API_KEY
+                  optional: true
             - name: SERVER_AUTH_SECRET
               valueFrom:
                 secretKeyRef:
@@ -121,7 +160,7 @@ spec:
               containerPort: 8097
           resources:
             requests:
-              cpu: 250m
+              cpu: 25m
               memory: 512Mi
             limits:
               cpu: '2'

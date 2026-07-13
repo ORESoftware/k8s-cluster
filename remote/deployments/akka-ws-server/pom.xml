@@ -59,6 +59,17 @@
         <slf4j.version>2.0.13</slf4j.version>
         <junit.version>5.10.3</junit.version>
 
+        <!--
+          OpenTelemetry tracing is wired explicitly via the SDK in
+          Telemetry.java + WsRoutes.java (no -javaagent, no bytecode rewriting).
+          opentelemetry-bom pins the core SDK + OTLP exporter + autoconfigure
+          to one coherent line; opentelemetry-semconv is versioned separately
+          (it was relocated to the io.opentelemetry.semconv groupId and is not
+          part of the core BOM), so it carries its own pinned version.
+        -->
+        <opentelemetry.version>1.46.0</opentelemetry.version>
+        <opentelemetry-semconv.version>1.30.0</opentelemetry-semconv.version>
+
         <main.class>com.oresoftware.dd.akkaws.App</main.class>
     </properties>
 
@@ -68,6 +79,13 @@
                 <groupId>com.typesafe.akka</groupId>
                 <artifactId>akka-bom_${scala.binary.version}</artifactId>
                 <version>${akka.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>io.opentelemetry</groupId>
+                <artifactId>opentelemetry-bom</artifactId>
+                <version>${opentelemetry.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -103,6 +121,31 @@
         <dependency>
             <groupId>com.typesafe.akka</groupId>
             <artifactId>akka-slf4j_${scala.binary.version}</artifactId>
+        </dependency>
+
+        <!--
+          OpenTelemetry: explicit SDK wiring only (Telemetry.java builds an
+          SdkTracerProvider with an OTLP/HTTP exporter + BatchSpanProcessor;
+          WsRoutes.java opens one SERVER span per route). No -javaagent.
+          Versions for sdk / exporter / autoconfigure come from the
+          opentelemetry-bom imported above; semconv is pinned explicitly.
+        -->
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-sdk</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-exporter-otlp</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-sdk-extension-autoconfigure</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry.semconv</groupId>
+            <artifactId>opentelemetry-semconv</artifactId>
+            <version>${opentelemetry-semconv.version}</version>
         </dependency>
 
         <!--

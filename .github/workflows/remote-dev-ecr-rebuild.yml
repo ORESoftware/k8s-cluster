@@ -1,3 +1,21 @@
+# Canonical dd-dev-server image rebuild: builds remote/deployments/dev-server
+# from dd-next-1@dev and pushes to ECR on a 3-day 4am-Eastern cadence (or via
+# workflow_dispatch).
+#
+# NOTE (2026-07): this workflow replaced three near-duplicates that built the
+# same image with different secret names. The retired workflows and their
+# now-unused repo secrets (candidates for removal in repo settings):
+#   - cron-rebuild-dev-server-image.yml: AWS_OIDC_ROLE_ARN, DD_DEPLOY_KEY
+#   - rebuild-dev-server-image.yml:      AWS_ECR_ROLE_ARN, GH_DEPLOY_KEY
+#   - remote-dev-server-ecr.yml:         REMOTE_DEV_AWS_ROLE_TO_ASSUME,
+#                                        REMOTE_DEV_GITHUB_DEPLOY_KEY
+# Before deleting, note that AWS_OIDC_ROLE_ARN, AWS_ECR_ROLE_ARN, and
+# REMOTE_DEV_AWS_ROLE_TO_ASSUME are still referenced as fallbacks in the
+# `role-to-assume` chains of remote-k8s-maintenance.yml,
+# container-pool-config-e2e.yml, and refresh-remote-web-home-local-image.yml.
+# This workflow keeps using: AWS_ROLE_TO_ASSUME, DD_REPO_DEPLOY_KEY,
+# vars.AWS_REGION, vars.REMOTE_DEV_ECR_REPOSITORY.
+
 name: remote-dev ECR rebuild
 
 on:
@@ -19,6 +37,7 @@ concurrency:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Gate every third Eastern day
         id: cadence
@@ -78,3 +97,5 @@ jobs:
           tags: |
             ${{ steps.ecr.outputs.registry }}/${{ vars.REMOTE_DEV_ECR_REPOSITORY }}:latest
             ${{ steps.ecr.outputs.registry }}/${{ vars.REMOTE_DEV_ECR_REPOSITORY }}:dev-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

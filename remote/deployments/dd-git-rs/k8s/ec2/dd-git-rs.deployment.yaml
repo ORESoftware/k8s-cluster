@@ -1,0 +1,174 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-git-rs
+  namespace: default
+  labels:
+    app: dd-git-rs
+spec:
+  replicas: 1
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
+  # Recreate: the pod owns a single hostPath repo-storage volume, so two pods
+  # must never run concurrently against it.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-git-rs
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-06-10-git-rs-image'
+      labels:
+        app: dd-git-rs
+        dd.dev/redis-cache-client: 'true'
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        # Prebuilt from deployments/dd-git-rs/Dockerfile (built from the repo's
+        # remote/ dir). The image bakes in git/mercurial/subversion/fossil, so —
+        # unlike the cargo-run-from-hostPath dd-*-rs services — this runs as a
+        # non-root user on a read-only root filesystem with no runtime apt step.
+        - name: git-rs
+          image: dd-git-rs:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          env:
+            - name: HOME
+              value: /tmp
+            - name: GIT_RS_HOST
+              value: 0.0.0.0
+            - name: GIT_RS_PORT
+              value: '8137'
+            - name: GIT_RS_LOG_FORMAT
+              value: json
+            - name: RUST_LOG
+              value: dd_git_rs=info,tower_http=info
+            - name: GIT_RS_STORAGE_ROOT
+              value: /var/lib/dd-git-rs/repos
+            - name: GIT_RS_REDIS_URL
+              value: redis://dd-redis-cache.default.svc.cluster.local:6379/0
+            - name: GIT_RS_REDIS_PREFIX
+              value: dd:git
+            - name: GIT_RS_MIRROR_TIMEOUT_SECONDS
+              value: '600'
+            - name: GIT_RS_READ_TIMEOUT_SECONDS
+              value: '120'
+            - name: GIT_RS_ALLOW_UNAUTHENTICATED
+              value: 'false'
+            # Bound concurrent VCS subprocesses so a read-endpoint flood can't
+            # fan out into unbounded clones/diffs.
+            - name: GIT_RS_MAX_CONCURRENT_OPS
+              value: '4'
+            - name: GIT_RS_MAX_BODY_BYTES
+              value: '65536'
+            # Cap concurrent Postgres connections so an endpoint flood can't
+            # exhaust the shared RDS connection pool.
+            - name: GIT_RS_MAX_DB_CONNECTIONS
+              value: '16'
+            # Per-repo disk budget; a mirror that overflows it is deleted and
+            # marked failed so one repo can't fill the node storage volume.
+            - name: GIT_RS_MAX_REPO_BYTES
+              value: '5368709120'
+            # SSRF posture: never allow file:// remotes; loopback/link-local/
+            # metadata hosts are always blocked. Flip this on to also reject
+            # private-network remotes (no in-cluster/internal mirroring).
+            - name: GIT_RS_ALLOW_FILE_URLS
+              value: 'false'
+            - name: GIT_RS_BLOCK_PRIVATE_REMOTES
+              value: 'false'
+            # Untrusted-content posture: git's ext:: transport (arbitrary command
+            # execution) is always disabled; object integrity (fsck) on
+            # clone/fetch is on by default. Set 'false' only if a legitimate but
+            # malformed legacy repo is rejected.
+            - name: GIT_RS_GIT_FSCK_OBJECTS
+              value: 'true'
+            - name: NATS_URL
+              value: nats://dd-nats.messaging.svc.cluster.local:4222
+            - name: NATS_CRITICAL_EVENT_SUBJECT
+              value: dd.remote.events.critical
+            - name: DD_GIT_RDS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-git-rs-secrets
+                  key: database_url
+                  optional: true
+            - name: RDS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-remote-rest-api-secrets
+                  key: RDS_DATABASE_URL
+                  optional: true
+            - name: GIT_RS_SERVER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-git-rs-secrets
+                  key: server_auth_secret
+                  optional: true
+            - name: SERVER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
+          ports:
+            - name: http
+              containerPort: 8137
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: '2'
+              memory: 2Gi
+          volumeMounts:
+            - name: repo-storage
+              mountPath: /var/lib/dd-git-rs
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: repo-storage
+          hostPath:
+            path: /var/lib/dd-git-rs
+            type: DirectoryOrCreate
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi

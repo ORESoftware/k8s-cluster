@@ -55,7 +55,8 @@ Thumbs.db
 *.swp
 *.swo
 *~
-.vscode/
+.vscode/*
+!.vscode/mcp.json
 .idea/
 
 # ──────────────────────────────────────────────
@@ -69,6 +70,8 @@ Thumbs.db
 # K8s Secrets (filled-in templates)
 # ──────────────────────────────────────────────
 **/k8s/02-secrets.yaml
+# Filled-in storage secrets (keep the *.template.yaml; ignore the real one).
+**/k8s/storage/*.secret.yaml
 kubeconfig
 kubeconfig.*
 !kubeconfig.example
@@ -113,3 +116,9 @@ temp
 
 # Local cluster-test runtime artifacts (Gleam presence server etc.)
 **/.cluster-local/
+
+# Local Maven cache accidentally created by spark-pipeline-server builds.
+remote/deployments/spark-pipeline-server/?/
+
+# Generated soccer-live policy snapshots (large runtime artifacts, regenerated at runtime)
+remote/deployments/soccer-rs/out/

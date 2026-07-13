@@ -12,9 +12,7 @@
 
 import gleam/dict.{type Dict}
 import gleam/erlang/atom.{type Atom}
-import gleam/erlang/process.{
-  type Name, type Pid, type Subject, ProcessDown,
-}
+import gleam/erlang/process.{type Name, type Pid, type Subject, ProcessDown}
 import gleam/list
 import gleam/otp/actor
 import gleam/otp/supervision
@@ -23,10 +21,7 @@ import gleam/result
 pub type Table
 
 pub type Registry(msg, group) {
-  Registry(
-    name: Name(Message(msg, group)),
-    table: Table,
-  )
+  Registry(name: Name(Message(msg, group)), table: Table)
 }
 
 pub opaque type Message(msg, group) {
@@ -143,9 +138,7 @@ pub fn dispatch_group(
 
 /// Look up the registry actor's current pid by name. Used by connections to
 /// set up a monitor; if the registry restarts, the connection re-registers.
-pub fn whereis(
-  registry: Registry(msg, group),
-) -> Result(Pid, Nil) {
+pub fn whereis(registry: Registry(msg, group)) -> Result(Pid, Nil) {
   process.subject_owner(process.named_subject(registry.name))
 }
 

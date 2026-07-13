@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-data-viz-rs
+  namespace: default
+  labels:
+    app: dd-data-viz-rs
+spec:
+  selector:
+    app: dd-data-viz-rs
+  ports:
+    - name: http
+      port: 8126
+      targetPort: http

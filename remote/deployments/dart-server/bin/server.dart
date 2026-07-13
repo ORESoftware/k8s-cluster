@@ -68,6 +68,7 @@ import 'package:dd_dart_server/server/hot_reloader.dart';
 import 'package:dd_dart_server/server/http_isolate.dart';
 import 'package:dd_dart_server/server/metrics.dart';
 import 'package:dd_dart_server/server/optimizer_client.dart';
+import 'package:dd_dart_server/server/otel.dart';
 import 'package:dd_dart_server/server/pool_autotuner.dart';
 import 'package:dd_dart_server/server/pool_shield.dart';
 import 'package:dd_dart_server/server/postgres.dart';
@@ -154,6 +155,10 @@ List<int> _parseIntLevels(String? raw, List<int> fallback) {
 double _envDouble(String name, double fallback) =>
     double.tryParse(Platform.environment[name] ?? '') ?? fallback;
 
+/// Coerce a possibly-NaN/Infinity/negative metric reading into a finite,
+/// non-negative double so it can't poison the MDP learner's reward math.
+double _finiteNonNeg(double v) => (v.isFinite && v > 0) ? v : 0.0;
+
 Future<void> main(List<String> args) async {
   final host = Platform.environment['HTTP_HOST'] ?? '0.0.0.0';
   final wsPort = int.tryParse(Platform.environment['HTTP_PORT'] ?? '') ?? 8089;
@@ -216,6 +221,16 @@ Future<void> main(List<String> args) async {
       25;
   final wsBenchmarkMode =
       Platform.environment['WS_BENCHMARK_MODE']?.toLowerCase() == 'true';
+  // Optional WebSocket Origin allowlist (CSWSH defence). Comma-separated
+  // exact scheme+host[:port] values; empty/unset accepts any origin (current
+  // behaviour, so load tests / same-origin demos are unaffected). A request
+  // with no Origin header (non-browser clients) is always allowed; the check
+  // only rejects a *present, non-matching* browser Origin.
+  final wsAllowedOrigins = (Platform.environment['WS_ALLOWED_ORIGINS'] ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .where((s) => s.isNotEmpty)
+      .toList(growable: false);
   // Chaos / fault-injection switch. OFF by default. When enabled, the
   // admin port exposes `POST /dart/admin/debug/crash-host`, which forces a
   // shard to hard-kill one session-host isolate so the supervisor teardown
@@ -223,6 +238,14 @@ Future<void> main(List<String> args) async {
   // AGENTS.md access posture); never enable on an Internet-exposed path.
   final wsDebugCrash = const {'1', 'true'}.contains(
       Platform.environment['WS_DEBUG_CRASH']?.toLowerCase().trim());
+  // Optional shared-secret gate on the mutating/sensitive admin surface
+  // (`/dart/admin/*`, incl. the debug crash-host hook). Defense-in-depth on
+  // top of the "admin port is not routed publicly" posture. Unset/empty
+  // disables the check (current behaviour). Probes (`/healthz`, `/readyz`)
+  // and `/metrics` are intentionally NOT gated so Prometheus keeps scraping
+  // without credentials. Callers present the token as `Authorization: Bearer
+  // <token>` or `X-Admin-Token: <token>`.
+  final adminAuthToken = Platform.environment['ADMIN_AUTH_TOKEN']?.trim();
 
   // ---- MDP isolate-pool autotuner config --------------------------------
   final mdpMode = _parseMdpMode(Platform.environment['WS_MDP_MODE']);
@@ -307,6 +330,17 @@ Future<void> main(List<String> args) async {
       .toList();
 
   final metrics = Metrics();
+
+  // Explicit OpenTelemetry tracing (hand-rolled OTLP/HTTP exporter; no runtime
+  // patching). Spans for the coordinator's admin/probe/metrics surface are
+  // created by the `traced(...)` wrapper in the admin request loop below.
+  final telemetry = Telemetry.fromEnv();
+  // ignore: avoid_print
+  print(jsonEncode({
+    'event': 'otel_init',
+    'enabled': telemetry.enabled,
+    'service_name': telemetry.serviceName,
+  }));
 
   pg_contract.assertPgContract();
 
@@ -410,6 +444,7 @@ Future<void> main(List<String> args) async {
           clockIntervalSeconds: wsClockIntervalSeconds,
           benchmarkMode: wsBenchmarkMode,
           gaugeReportIntervalMs: gaugeReportIntervalMs,
+          allowedOrigins: wsAllowedOrigins,
           poolControllerEnabled: mdpEnabled,
           poolMinWarmHosts: poolMinWarmHosts,
           poolMaxHosts: poolMaxHostsPerShard,
@@ -499,6 +534,8 @@ Future<void> main(List<String> args) async {
     'ws_age_based_idle_seconds': wsAgeBasedIdleSeconds,
     'ws_clock_interval_seconds': wsClockIntervalSeconds,
     'ws_benchmark_mode': wsBenchmarkMode,
+    'ws_allowed_origins':
+        wsAllowedOrigins.isEmpty ? 'any' : wsAllowedOrigins,
   }));
 
   // ---- Coordinator gauges ------------------------------------------------
@@ -657,12 +694,18 @@ Future<void> main(List<String> args) async {
           (coldStartsTotal - mdpPrevColdStarts).clamp(0, 1 << 30).toInt();
       final refusals =
           (refusalsTotal - mdpPrevRefusals).clamp(0, 1 << 30).toInt();
-      final p99Adopt =
-          metrics.histogramQuantile('dart_ws_adopt_latency_seconds', 0.99);
-      final p99FirstFrame = metrics.histogramQuantile(
+      // Sanitise the latency quantiles before they feed the policy. An empty
+      // histogram (no samples yet, or right after a reset) can yield NaN /
+      // Infinity from `histogramQuantile`; an un-guarded NaN would flow into
+      // the Q-learner's reward and EMA and poison every subsequent decision
+      // (NaN propagates and never recovers). Clamp to a finite, non-negative
+      // second value.
+      final p99Adopt = _finiteNonNeg(
+          metrics.histogramQuantile('dart_ws_adopt_latency_seconds', 0.99));
+      final p99FirstFrame = _finiteNonNeg(metrics.histogramQuantile(
         'dart_ws_first_frame_latency_seconds',
         0.99,
-      );
+      ));
 
       var targetGlobal = mdpLastTargetGlobal;
       var targetDensity = mdpLastDensity;
@@ -885,48 +928,64 @@ Future<void> main(List<String> args) async {
   // ---- Admin request loop ------------------------------------------------
   await for (final req in adminServer) {
     metrics.inc('dart_admin_requests_total');
-    // Chaos probe (only mounted when WS_DEBUG_CRASH is set): pick the live
-    // shard carrying the most sessions and tell it to hard-kill one host
-    // isolate, simulating a crash so we can measure the real blast radius.
-    if (wsDebugCrash &&
-        req.method.toUpperCase() == 'POST' &&
-        req.uri.path == '/dart/admin/debug/crash-host') {
-      _GatewayShardHandle? target;
-      var bestLive = -1.0;
-      for (final s in shards) {
-        if (s.dead) continue;
-        final live =
-            (perShardGauges[s.shardId]?['dart_sessions_live'] ?? 0).toDouble();
-        if (target == null || live > bestLive) {
-          target = s;
-          bestLive = live;
+    // One SERVER span per admin/probe/metrics request. `traced` continues any
+    // inbound W3C traceparent, records the response status, and ends the span
+    // in a finally. The per-request work is awaited inside the span so the
+    // span's duration + status reflect the response actually produced.
+    await traced(telemetry, req, () async {
+      // Gate the admin surface behind the shared secret when configured. Only
+      // `/dart/admin/*` is protected; probes + `/metrics` fall through so the
+      // kubelet and Prometheus keep working uncredentialed.
+      if (req.uri.path.startsWith('/dart/admin') &&
+          !_adminAuthorized(req, adminAuthToken)) {
+        metrics.inc('dart_admin_auth_rejected_total');
+        await _plain(req, 'unauthorized\n',
+            status: HttpStatus.unauthorized);
+        return;
+      }
+      // Chaos probe (only mounted when WS_DEBUG_CRASH is set): pick the live
+      // shard carrying the most sessions and tell it to hard-kill one host
+      // isolate, simulating a crash so we can measure the real blast radius.
+      if (wsDebugCrash &&
+          req.method.toUpperCase() == 'POST' &&
+          req.uri.path == '/dart/admin/debug/crash-host') {
+        _GatewayShardHandle? target;
+        var bestLive = -1.0;
+        for (final s in shards) {
+          if (s.dead) continue;
+          final live =
+              (perShardGauges[s.shardId]?['dart_sessions_live'] ?? 0).toDouble();
+          if (target == null || live > bestLive) {
+            target = s;
+            bestLive = live;
+          }
         }
+        if (target != null) {
+          try {
+            target.control.send(const ShardDebugCrashHost());
+          } catch (_) {/* swallow */}
+          metrics.inc('dart_debug_crash_host_requests_total');
+        }
+        await _plain(
+          req,
+          jsonEncode({
+            'ok': target != null,
+            'shard': target?.shardId,
+            'shard_sessions_live': bestLive < 0 ? 0 : bestLive.toInt(),
+          }),
+          contentType: 'application/json',
+        );
+        return;
       }
-      if (target != null) {
-        try {
-          target.control.send(const ShardDebugCrashHost());
-        } catch (_) {/* swallow */}
-        metrics.inc('dart_debug_crash_host_requests_total');
-      }
-      await _plain(
+      await _routeAdmin(
         req,
-        jsonEncode({
-          'ok': target != null,
-          'shard': target?.shardId,
-          'shard_sessions_live': bestLive < 0 ? 0 : bestLive.toInt(),
-        }),
-        contentType: 'application/json',
+        metrics: metrics,
+        ready: ready,
+        hotReloader: hotReloader,
+        pgPool: pgPool,
+        presenceConvsRepo: presenceConvsRepo,
       );
-      continue;
-    }
-    unawaited(_routeAdmin(
-      req,
-      metrics: metrics,
-      ready: ready,
-      hotReloader: hotReloader,
-      pgPool: pgPool,
-      presenceConvsRepo: presenceConvsRepo,
-    ));
+    });
   }
 
   final shutdown = shuttingDown;
@@ -947,6 +1006,7 @@ Future<void> main(List<String> args) async {
   metricsInbox.close();
   await pgPool?.close();
   await metrics.close();
+  telemetry.close();
 }
 
 /// Per-shard handle the coordinator keeps so it can monitor and tear
@@ -1122,6 +1182,31 @@ Future<void> _routeAdmin(
 
   metrics.inc('dart_http_404_total');
   await _plain(req, 'not_found\n', status: HttpStatus.notFound);
+}
+
+/// True when [req] may touch the admin surface. Auth is disabled (always
+/// true) when [token] is null/empty. Otherwise the request must present the
+/// token as `Authorization: Bearer <token>` or `X-Admin-Token: <token>`.
+/// Comparison is length-then-constant-time to avoid leaking the token via
+/// response timing on the (already non-public) admin port.
+bool _adminAuthorized(HttpRequest req, String? token) {
+  if (token == null || token.isEmpty) return true;
+  final bearer = req.headers.value('authorization');
+  final presented = (bearer != null && bearer.startsWith('Bearer '))
+      ? bearer.substring(7).trim()
+      : req.headers.value('x-admin-token')?.trim();
+  if (presented == null) return false;
+  return _constantTimeEquals(presented, token);
+}
+
+/// Constant-time string compare (length-independent short-circuit only).
+bool _constantTimeEquals(String a, String b) {
+  if (a.length != b.length) return false;
+  var diff = 0;
+  for (var i = 0; i < a.length; i++) {
+    diff |= a.codeUnitAt(i) ^ b.codeUnitAt(i);
+  }
+  return diff == 0;
 }
 
 Future<void> _plain(

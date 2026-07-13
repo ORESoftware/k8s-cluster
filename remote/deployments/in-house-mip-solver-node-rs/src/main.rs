@@ -1422,7 +1422,7 @@ async fn build_jetstream_consumer(
 
 async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> {
     let Some(nats) = state.nats.clone() else {
-        eprintln!("slave role requires NATS_URL");
+        tracing::error!("slave role requires NATS_URL");
         return Ok(());
     };
     let consumer_name = env_value("MIP_SOLVER_NATS_CONSUMER", MIP_SOLVER_WORKERS_QUEUE_GROUP);
@@ -1442,14 +1442,14 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
         let message = match message {
             Ok(message) => message,
             Err(error) => {
-                eprintln!("mip solver worker message fetch failed: {error}");
+                tracing::error!("mip solver worker message fetch failed: {error}");
                 continue;
             }
         };
         let job = match serde_json::from_slice::<SubproblemJob>(&message.payload) {
             Ok(job) => job,
             Err(error) => {
-                eprintln!("invalid mip solver job payload: {error}");
+                tracing::error!("invalid mip solver job payload: {error}");
                 let _ = message.ack().await;
                 continue;
             }
@@ -1459,7 +1459,7 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
             match tokio::task::spawn_blocking(move || solve_subproblem(job, worker_node)).await {
                 Ok(result) => result,
                 Err(error) => {
-                    eprintln!("mip solver worker task failed: {error}");
+                    tracing::error!("mip solver worker task failed: {error}");
                     let _ = message
                         .ack_with(async_nats::jetstream::AckKind::Nak(Some(
                             Duration::from_secs(5),
@@ -1476,7 +1476,7 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
             .slave_jobs_processed_total
             .fetch_add(1, Ordering::Relaxed);
         if let Err(error) = message.ack().await {
-            eprintln!("mip solver job ack failed: {error}");
+            tracing::error!("mip solver job ack failed: {error}");
         }
     }
     Ok(())
@@ -1487,7 +1487,7 @@ async fn connect_nats() -> Option<async_nats::Client> {
     match async_nats::connect(url.clone()).await {
         Ok(client) => Some(client),
         Err(error) => {
-            eprintln!("failed to connect to NATS at {url}: {error}");
+            tracing::error!("failed to connect to NATS at {url}: {error}");
             None
         }
     }
@@ -1495,6 +1495,8 @@ async fn connect_nats() -> Option<async_nats::Client> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let _otel = dd_telemetry::init("dd-in-house-mip-solver-node");
+
     let role = NodeRole::from_env();
     let node_id = env::var("POD_NAME")
         .or_else(|_| env::var("HOSTNAME"))
@@ -1515,7 +1517,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         let worker_state = state.clone();
         tokio::spawn(async move {
             if let Err(error) = run_slave(worker_state).await {
-                eprintln!("mip solver slave loop stopped: {error}");
+                tracing::error!("mip solver slave loop stopped: {error}");
             }
         });
     }
@@ -1537,8 +1539,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let port = env_value("PORT", "8097");
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    println!("{SERVICE_NAME} listening on {addr}");
-    axum::serve(listener, app)
+    tracing::info!("{SERVICE_NAME} listening on {addr}");
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
         })

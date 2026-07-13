@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use crate::config::Config;
 use crate::error::{AppError, AppResult};
+use crate::events::EventBus;
 use crate::ledger::LedgerService;
 use crate::locks::{AcquireRequest, LockService, ReleaseRequest};
 use crate::providers::connection::{ConnectionService, ProviderConnection};
@@ -38,6 +39,7 @@ pub struct SyncCtx<'a> {
     pub cfg: &'a Config,
     pub ledger: &'a LedgerService,
     pub connections: &'a ConnectionService,
+    pub events: &'a EventBus,
     pub tenant_id: Uuid,
     pub region: Region,
 }
@@ -48,6 +50,7 @@ pub struct ConnectionSyncJob {
     ledger: LedgerService,
     locks: LockService,
     connections: ConnectionService,
+    events: Arc<EventBus>,
     rate_limiter: ProviderRateLimiter,
     solana: SolanaClient,
 }
@@ -59,6 +62,7 @@ impl ConnectionSyncJob {
         ledger: LedgerService,
         locks: LockService,
         connections: ConnectionService,
+        events: Arc<EventBus>,
         solana: SolanaClient,
     ) -> Self {
         let rate_limiter = ProviderRateLimiter::new(pool.clone());
@@ -68,6 +72,7 @@ impl ConnectionSyncJob {
             ledger,
             locks,
             connections,
+            events,
             rate_limiter,
             solana,
         }
@@ -145,6 +150,7 @@ impl JobHandler for ConnectionSyncJob {
                 cfg: &self.cfg,
                 ledger: &self.ledger,
                 connections: &self.connections,
+                events: &self.events,
                 tenant_id,
                 region,
             };
@@ -170,6 +176,8 @@ impl JobHandler for ConnectionSyncJob {
                 ProviderKind::PlaidBank => plaid_sync::sync_plaid(&sctx, &conn, cursor).await,
                 ProviderKind::SwiftWire => not_implemented(&conn).await,
                 ProviderKind::AchDirect => not_implemented(&conn).await,
+                ProviderKind::Adyen => not_implemented(&conn).await,
+                ProviderKind::Square => not_implemented(&conn).await,
                 ProviderKind::Wise => wise_sync::sync_wise(&sctx, &conn, cursor).await,
                 ProviderKind::SolanaWallet => sync_solana(&self.solana, &conn, cursor).await,
                 ProviderKind::Mercury => mercury_sync::sync_mercury(&sctx, &conn, cursor).await,
@@ -181,7 +189,16 @@ impl JobHandler for ConnectionSyncJob {
                     fireblocks_sync::sync_fireblocks(&sctx, &conn, cursor).await
                 }
                 ProviderKind::Circle => circle_sync::sync_circle(&sctx, &conn, cursor).await,
-                ProviderKind::Remitly | ProviderKind::Robinhood => limited_fit(&conn).await,
+                ProviderKind::Remitly
+                | ProviderKind::Robinhood
+                | ProviderKind::MoneyGram
+                | ProviderKind::WesternUnion
+                | ProviderKind::UsBankZelle
+                | ProviderKind::JpmorganZelle
+                | ProviderKind::BofaCashProGdd
+                | ProviderKind::ModernTreasury
+                | ProviderKind::Dwolla
+                | ProviderKind::EthereumWallet => limited_fit(&conn).await,
             }
         }
         .await;
@@ -324,11 +341,10 @@ async fn not_implemented(conn: &ProviderConnection) -> AppResult<SyncSummary> {
     })
 }
 
-/// Sync stub for providers we accept but that don't have a usable
-/// programmatic surface today (Remitly, Robinhood). Returns Ok with a
-/// zero-summary so the connection is marked synced + healthy rather
-/// than escalating as a job failure — these providers are intentionally
-/// observation-only with no expected events.
+/// Sync stub for providers we accept but that are contract-specific,
+/// observer-only, or not yet mapped into canonical postings. Returns Ok with
+/// a zero-summary so the connection is marked synced + healthy rather than
+/// escalating as a job failure.
 async fn limited_fit(conn: &ProviderConnection) -> AppResult<SyncSummary> {
     Ok(SyncSummary {
         new_postings: 0,

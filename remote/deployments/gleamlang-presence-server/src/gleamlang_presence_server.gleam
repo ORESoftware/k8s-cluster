@@ -29,6 +29,8 @@
 ////
 //// Each layer dedupes against the others so duplicate deliveries collapse.
 
+import dd_cli_config_client
+import dd_otel_client
 import dd_runtime_config_client
 import gleam/erlang/atom
 import gleam/erlang/process
@@ -60,6 +62,9 @@ fn env(name: String) -> Result(String, Nil)
 fn pg_start_link_raw(scope: atom.Atom) -> Result(process.Pid, anything)
 
 pub fn main() {
+  let _ = dd_cli_config_client.load_once()
+  // Start the OpenTelemetry SDK + OTLP exporter before the HTTP supervisor.
+  let _ = dd_otel_client.init("dd-gleamlang-presence-server")
   let port =
     env("PORT")
     |> result.try(int.parse)
@@ -299,7 +304,10 @@ fn start_nats(
   }
   case nats_transport.start(url, on_msg) {
     Ok(started) -> {
-      nats_transport.subscribe(started.data, nats_transport.broadcast_conv_wildcard)
+      nats_transport.subscribe(
+        started.data,
+        nats_transport.broadcast_conv_wildcard,
+      )
       io.println(
         "presence: nats transport started, subscribed to "
         <> nats_transport.broadcast_conv_wildcard,

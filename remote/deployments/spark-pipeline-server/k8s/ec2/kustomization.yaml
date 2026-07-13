@@ -5,3 +5,4 @@ resources:
   - dd-spark-pipeline-server.deployment.yaml
   - dd-spark-pipeline-server.service.yaml
   - dd-spark-pipeline-server.networkpolicy.yaml
+  - dd-spark-pipeline-server.pdb.yaml

@@ -40,6 +40,19 @@
       ]
     },
     {
+      "service": "apostille-services-server-rs",
+      "language": "rust",
+      "routeCount": 23,
+      "routeTypeCounts": {
+        "service": 7,
+        "user-generated": 16
+      },
+      "generated": [
+        "remote/deployments/apostille-services-server-rs/generated/api-docs.json",
+        "remote/deployments/apostille-services-server-rs/generated/api-docs.html"
+      ]
+    },
+    {
       "service": "auth-server-rs",
       "language": "rust",
       "routeCount": 11,
@@ -70,10 +83,10 @@
     {
       "service": "billing-server-rs",
       "language": "rust",
-      "routeCount": 45,
+      "routeCount": 49,
       "routeTypeCounts": {
         "service": 6,
-        "user-generated": 39
+        "user-generated": 43
       },
       "generated": [
         "remote/deployments/billing-server-rs/generated/api-docs.json",
@@ -108,6 +121,20 @@
       ]
     },
     {
+      "service": "cluster-mcp-rs",
+      "language": "rust",
+      "routeCount": 13,
+      "routeTypeCounts": {
+        "service": 7,
+        "user-generated": 3,
+        "runtime-config": 3
+      },
+      "generated": [
+        "remote/deployments/cluster-mcp-rs/generated/api-docs.json",
+        "remote/deployments/cluster-mcp-rs/generated/api-docs.html"
+      ]
+    },
+    {
       "service": "container-pool-rs",
       "language": "rust",
       "routeCount": 12,
@@ -124,10 +151,10 @@
     {
       "service": "contract-service-rs",
       "language": "rust",
-      "routeCount": 15,
+      "routeCount": 52,
       "routeTypeCounts": {
         "service": 6,
-        "user-generated": 6,
+        "user-generated": 43,
         "runtime-config": 3
       },
       "generated": [
@@ -146,6 +173,127 @@
       "generated": [
         "remote/deployments/dart-server/generated/api-docs.json",
         "remote/deployments/dart-server/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "dataset-labeling-rs",
+      "language": "rust",
+      "routeCount": 17,
+      "routeTypeCounts": {
+        "service": 7,
+        "user-generated": 10
+      },
+      "generated": [
+        "remote/deployments/dataset-labeling-rs/generated/api-docs.json",
+        "remote/deployments/dataset-labeling-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "dd-benefactor-marketing-rs",
+      "language": "rust",
+      "routeCount": 64,
+      "routeTypeCounts": {
+        "service": 7,
+        "user-generated": 57
+      },
+      "generated": [
+        "remote/deployments/dd-benefactor-marketing-rs/generated/api-docs.json",
+        "remote/deployments/dd-benefactor-marketing-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "dd-compliance-rs",
+      "language": "rust",
+      "routeCount": 36,
+      "routeTypeCounts": {
+        "service": 7,
+        "user-generated": 26,
+        "runtime-config": 3
+      },
+      "generated": [
+        "remote/deployments/dd-compliance-rs/generated/api-docs.json",
+        "remote/deployments/dd-compliance-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "dd-document-rs",
+      "language": "rust",
+      "routeCount": 26,
+      "routeTypeCounts": {
+        "service": 6,
+        "user-generated": 17,
+        "runtime-config": 3
+      },
+      "generated": [
+        "remote/deployments/dd-document-rs/generated/api-docs.json",
+        "remote/deployments/dd-document-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "dd-escrow-rs",
+      "language": "rust",
+      "routeCount": 19,
+      "routeTypeCounts": {
+        "service": 6,
+        "user-generated": 10,
+        "runtime-config": 3
+      },
+      "generated": [
+        "remote/deployments/dd-escrow-rs/generated/api-docs.json",
+        "remote/deployments/dd-escrow-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "dd-git-rs",
+      "language": "rust",
+      "routeCount": 15,
+      "routeTypeCounts": {
+        "service": 7,
+        "user-generated": 8
+      },
+      "generated": [
+        "remote/deployments/dd-git-rs/generated/api-docs.json",
+        "remote/deployments/dd-git-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "dd-music-rs",
+      "language": "rust",
+      "routeCount": 13,
+      "routeTypeCounts": {
+        "service": 7,
+        "user-generated": 6
+      },
+      "generated": [
+        "remote/deployments/dd-music-rs/generated/api-docs.json",
+        "remote/deployments/dd-music-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "dd-ocr-rs",
+      "language": "rust",
+      "routeCount": 15,
+      "routeTypeCounts": {
+        "service": 6,
+        "user-generated": 6,
+        "runtime-config": 3
+      },
+      "generated": [
+        "remote/deployments/dd-ocr-rs/generated/api-docs.json",
+        "remote/deployments/dd-ocr-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "dd-sound-recorder-rs",
+      "language": "rust",
+      "routeCount": 30,
+      "routeTypeCounts": {
+        "service": 7,
+        "user-generated": 23
+      },
+      "generated": [
+        "remote/deployments/dd-sound-recorder-rs/generated/api-docs.json",
+        "remote/deployments/dd-sound-recorder-rs/generated/api-docs.html"
       ]
     },
     {
@@ -174,6 +322,47 @@
       "generated": [
         "remote/deployments/dev-server/generated/api-docs.json",
         "remote/deployments/dev-server/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "economics-server-rs",
+      "language": "rust",
+      "routeCount": 32,
+      "routeTypeCounts": {
+        "service": 7,
+        "user-generated": 22,
+        "runtime-config": 3
+      },
+      "generated": [
+        "remote/deployments/economics-server-rs/generated/api-docs.json",
+        "remote/deployments/economics-server-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "fabrication-server-rs",
+      "language": "rust",
+      "routeCount": 511,
+      "routeTypeCounts": {
+        "service": 7,
+        "user-generated": 501,
+        "runtime-config": 3
+      },
+      "generated": [
+        "remote/deployments/fabrication-server-rs/generated/api-docs.json",
+        "remote/deployments/fabrication-server-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "fiducia-customer.rs",
+      "language": "rust",
+      "routeCount": 7,
+      "routeTypeCounts": {
+        "service": 4,
+        "user-generated": 3
+      },
+      "generated": [
+        "remote/deployments/fiducia-customer.rs/generated/api-docs.json",
+        "remote/deployments/fiducia-customer.rs/generated/api-docs.html"
       ]
     },
     {
@@ -220,10 +409,10 @@
     {
       "service": "gleam-lambda-runner",
       "language": "gleam",
-      "routeCount": 13,
+      "routeCount": 18,
       "routeTypeCounts": {
         "service": 6,
-        "user-generated": 4,
+        "user-generated": 9,
         "runtime-config": 3
       },
       "generated": [
@@ -301,6 +490,19 @@
       ]
     },
     {
+      "service": "knowledge-graph-builder-rs",
+      "language": "rust",
+      "routeCount": 18,
+      "routeTypeCounts": {
+        "service": 7,
+        "user-generated": 11
+      },
+      "generated": [
+        "remote/deployments/knowledge-graph-builder-rs/generated/api-docs.json",
+        "remote/deployments/knowledge-graph-builder-rs/generated/api-docs.html"
+      ]
+    },
+    {
       "service": "mdp-optimizer-rs",
       "language": "rust",
       "routeCount": 11,
@@ -315,12 +517,39 @@
       ]
     },
     {
+      "service": "patent-filing-rs",
+      "language": "rust",
+      "routeCount": 24,
+      "routeTypeCounts": {
+        "service": 7,
+        "user-generated": 14,
+        "runtime-config": 3
+      },
+      "generated": [
+        "remote/deployments/patent-filing-rs/generated/api-docs.json",
+        "remote/deployments/patent-filing-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "public-data-server-rs",
+      "language": "rust",
+      "routeCount": 26,
+      "routeTypeCounts": {
+        "service": 7,
+        "user-generated": 19
+      },
+      "generated": [
+        "remote/deployments/public-data-server-rs/generated/api-docs.json",
+        "remote/deployments/public-data-server-rs/generated/api-docs.html"
+      ]
+    },
+    {
       "service": "rest-api-rs",
       "language": "rust",
-      "routeCount": 41,
+      "routeCount": 45,
       "routeTypeCounts": {
-        "user-generated": 23,
-        "service": 5,
+        "user-generated": 25,
+        "service": 7,
         "internal-db": 10,
         "runtime-config": 3
       },
@@ -345,15 +574,28 @@
     {
       "service": "rust-vapi-phone-rs",
       "language": "rust",
-      "routeCount": 13,
+      "routeCount": 15,
       "routeTypeCounts": {
         "service": 6,
-        "user-generated": 4,
+        "user-generated": 6,
         "runtime-config": 3
       },
       "generated": [
         "remote/deployments/rust-vapi-phone-rs/generated/api-docs.json",
         "remote/deployments/rust-vapi-phone-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "spark-pipeline-server",
+      "language": "java",
+      "routeCount": 9,
+      "routeTypeCounts": {
+        "service": 6,
+        "user-generated": 3
+      },
+      "generated": [
+        "remote/deployments/spark-pipeline-server/generated/api-docs.json",
+        "remote/deployments/spark-pipeline-server/generated/api-docs.html"
       ]
     },
     {
@@ -368,6 +610,19 @@
       "generated": [
         "remote/deployments/trading-server-rs/generated/api-docs.json",
         "remote/deployments/trading-server-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "usacc-rest-api-backend-rs",
+      "language": "rust",
+      "routeCount": 21,
+      "routeTypeCounts": {
+        "service": 6,
+        "user-generated": 15
+      },
+      "generated": [
+        "remote/deployments/usacc-rest-api-backend-rs/generated/api-docs.json",
+        "remote/deployments/usacc-rest-api-backend-rs/generated/api-docs.html"
       ]
     },
     {
@@ -386,10 +641,10 @@
     {
       "service": "web-home-rs",
       "language": "rust",
-      "routeCount": 37,
+      "routeCount": 48,
       "routeTypeCounts": {
         "service": 10,
-        "user-generated": 24,
+        "user-generated": 35,
         "runtime-config": 3
       },
       "generated": [
@@ -408,6 +663,20 @@
       "generated": [
         "remote/deployments/web-scraper-service/generated/api-docs.json",
         "remote/deployments/web-scraper-service/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "webrtc-media-rs",
+      "language": "rust",
+      "routeCount": 21,
+      "routeTypeCounts": {
+        "service": 9,
+        "user-generated": 9,
+        "runtime-config": 3
+      },
+      "generated": [
+        "remote/deployments/webrtc-media-rs/generated/api-docs.json",
+        "remote/deployments/webrtc-media-rs/generated/api-docs.html"
       ]
     },
     {

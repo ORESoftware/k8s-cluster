@@ -44,10 +44,24 @@ Run runtime split checks (Rust `/home` web + Node API + gateway path map):
 pnpm --dir remote/tests run test:cli:runtime-split-config
 ```
 
+Run fabrication CAD/source intake checks (native CAD packages, neutral STEP/STL/3MF/DXF exports,
+and machine-ready conversion evidence):
+
+```bash
+pnpm --dir remote/tests run test:cli:fabrication-cad-source-intake
+```
+
 Run observability stack checks (collector + Prometheus + Grafana + Loki + Tempo + Jaeger):
 
 ```bash
 pnpm --dir remote/tests run test:cli:observability-config
+```
+
+Run the standalone observability coverage guardrail (workload watchlist, Grafana drilldown route,
+and no auto-instrumentation/monkey-patching packages):
+
+```bash
+pnpm --dir remote/tests run check:observability-coverage
 ```
 
 Run NATS messaging checks (NATS deployment + exporter scrape + Grafana panels):

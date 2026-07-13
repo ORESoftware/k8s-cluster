@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-chaos
+  namespace: ai-ml
+  labels:
+    app: dd-chaos
+    app.kubernetes.io/component: chaos
+spec:
+  type: ClusterIP
+  selector:
+    app: dd-chaos
+  ports:
+    - name: http
+      port: 8133
+      targetPort: http

@@ -359,16 +359,26 @@ data:
           "targets": [
             {
               "expr": "rate(dd_gleam_mcp_http_requests_total[1m])",
-              "legendFormat": "http",
+              "legendFormat": "gleam http",
               "refId": "A"
             },
             {
               "expr": "sum(rate(dd_gleam_mcp_rpc_requests_total{method!=\"all\"}[1m])) by (method)",
-              "legendFormat": "{{method}}",
+              "legendFormat": "gleam {{method}}",
               "refId": "B"
+            },
+            {
+              "expr": "rate(dd_cluster_mcp_rs_http_requests_total[1m])",
+              "legendFormat": "rust http",
+              "refId": "C"
+            },
+            {
+              "expr": "sum(rate(dd_cluster_mcp_rs_rpc_requests_by_method_total[1m])) by (method)",
+              "legendFormat": "rust {{method}}",
+              "refId": "D"
             }
           ],
-          "title": "Gleam MCP Runtime",
+          "title": "Cluster MCP Runtime",
           "type": "timeseries"
         },
         {
@@ -661,6 +671,804 @@ data:
       "timezone": "browser",
       "title": "Remote Dev Runtime Overview",
       "uid": "dd-remote-dev-runtime",
+      "version": 1,
+      "weekStart": ""
+    }
+  fabrication-planner.json: |
+    {
+      "annotations": {
+        "list": [
+          {
+            "builtIn": 1,
+            "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+            "enable": true,
+            "hide": true,
+            "iconColor": "rgba(0, 211, 255, 1)",
+            "name": "Annotations & Alerts",
+            "type": "dashboard"
+          }
+        ]
+      },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "links": [
+        { "title": "Fabrication Gateway", "type": "link", "url": "/fabrication/" },
+        { "title": "Fabrication API Docs", "type": "link", "url": "/fabrication/docs/api" },
+        { "title": "Fabrication Jobs", "type": "link", "url": "/fabrication/jobs" },
+        { "title": "Dashboard Shortcut", "type": "link", "url": "/grafana/fabrication" },
+        { "title": "Deployment Drilldown", "type": "link", "url": "/grafana/depl/dd-fabrication-server" }
+      ],
+      "liveNow": false,
+      "panels": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] } }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+          "id": 1,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "up{job=\"dd-fabrication-server\"}", "refId": "A" } ],
+          "title": "Service Scrape Up",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] } }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+          "id": 2,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "sum(up{job=\"dd-fabrication-server-pods\"} == bool 0) or vector(0)", "refId": "A" } ],
+          "title": "Pod Scrape Targets Down",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 1 } ] } }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+          "id": 3,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "sum(ALERTS{alertstate=\"firing\",service=\"dd-fabrication-server\"}) or vector(0)", "refId": "A" } ],
+          "title": "Firing Fabrication Alerts",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 1 } ] } }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+          "id": 4,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "max(dd_k8s_hpa_current_at_max{namespace=\"default\",app=\"dd-fabrication-server\",hpa=\"dd-fabrication-server\"}) or vector(0)", "refId": "A" } ],
+          "title": "HPA At Max",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 12, "x": 0, "y": 4 },
+          "id": 5,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum by (namespace, kind, workload) (dd_k8s_workload_desired_replicas{workload=\"dd-fabrication-server\"})", "legendFormat": "desired {{namespace}}/{{kind}}/{{workload}}", "refId": "A" },
+            { "expr": "sum by (namespace, kind, workload) (dd_k8s_workload_available_replicas{workload=\"dd-fabrication-server\"})", "legendFormat": "available {{namespace}}/{{kind}}/{{workload}}", "refId": "B" },
+            { "expr": "sum by (namespace, hpa, target) (dd_k8s_hpa_current_replicas{target=\"dd-fabrication-server\"})", "legendFormat": "hpa current {{namespace}}/{{hpa}}", "refId": "C" },
+            { "expr": "sum by (namespace, hpa, target) (dd_k8s_hpa_desired_replicas{target=\"dd-fabrication-server\"})", "legendFormat": "hpa desired {{namespace}}/{{hpa}}", "refId": "D" },
+            { "expr": "sum by (namespace, hpa, target) (dd_k8s_hpa_max_replicas{target=\"dd-fabrication-server\"})", "legendFormat": "hpa max {{namespace}}/{{hpa}}", "refId": "E" },
+            { "expr": "sum by (namespace, deployment, app) (dd_k8s_deployment_updated_replicas{namespace=\"default\",deployment=\"dd-fabrication-server\",app=\"dd-fabrication-server\"})", "legendFormat": "updated {{namespace}}/{{deployment}}", "refId": "F" },
+            { "expr": "sum by (namespace, deployment, app) (dd_k8s_deployment_unavailable_replicas{namespace=\"default\",deployment=\"dd-fabrication-server\",app=\"dd-fabrication-server\"})", "legendFormat": "unavailable {{namespace}}/{{deployment}}", "refId": "G" }
+          ],
+          "title": "Replica and Autoscaler State",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "reqps" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 12, "x": 12, "y": 4 },
+          "id": 6,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(rate(dd_fabrication_server_plan_requests_total[5m]))", "legendFormat": "plan", "refId": "A" },
+            { "expr": "sum(rate(dd_fabrication_server_analysis_requests_total[5m]))", "legendFormat": "analysis", "refId": "B" },
+            { "expr": "sum(rate(dd_fabrication_server_learning_requests_total[5m]))", "legendFormat": "learning", "refId": "C" }
+          ],
+          "title": "Request Intake",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "ops" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 12, "x": 0, "y": 11 },
+          "id": 7,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(rate(dd_fabrication_server_failure_boundaries_total[10m]))", "legendFormat": "machine-failure boundaries", "refId": "A" },
+            { "expr": "sum(rate(dd_fabrication_server_validation_findings_total[10m]))", "legendFormat": "validation findings", "refId": "B" },
+            { "expr": "sum(rate(dd_fabrication_server_errors_total[5m]))", "legendFormat": "server errors", "refId": "C" },
+            { "expr": "sum(rate(dd_fabrication_server_operator_actions_total[10m]))", "legendFormat": "operator actions", "refId": "D" },
+            { "expr": "sum(rate(dd_fabrication_server_fixture_release_blockers_total[10m]))", "legendFormat": "fixture/setup blockers", "refId": "E" },
+            { "expr": "sum(rate(dd_fabrication_server_split_combine_reviews_total[10m]))", "legendFormat": "split/combine reviews", "refId": "F" },
+            { "expr": "sum(rate(dd_fabrication_server_failure_boundaries_total[10m])) + sum(rate(dd_fabrication_server_operator_actions_total[10m])) + sum(rate(dd_fabrication_server_fixture_release_blockers_total[10m])) + sum(rate(dd_fabrication_server_split_combine_reviews_total[10m]))", "legendFormat": "release-readiness blockers", "refId": "G" },
+            { "expr": "sum(rate(dd_fabrication_server_operator_actions_total[10m])) + sum(rate(dd_fabrication_server_split_combine_reviews_total[10m]))", "legendFormat": "intervention/automation reviews", "refId": "H" }
+          ],
+          "title": "Failure, Intervention, and Setup Pressure",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "ops" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 12, "x": 12, "y": 11 },
+          "id": 8,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(rate(dd_fabrication_server_nats_results_published_total[5m]))", "legendFormat": "fabrication results", "refId": "A" },
+            { "expr": "sum(rate(dd_fabrication_server_mdp_published_total[5m]))", "legendFormat": "mdp optimize jobs", "refId": "B" },
+            { "expr": "sum(rate(dd_fabrication_server_learning_requests_total[5m]))", "legendFormat": "learning outcome submissions", "refId": "C" },
+            { "expr": "sum(rate(dd_fabrication_server_learning_events_stored_total[5m]))", "legendFormat": "learning events stored", "refId": "D" },
+            { "expr": "sum(rate(dd_fabrication_server_costing_result_reviews_total[5m]))", "legendFormat": "costing result reviews", "refId": "E" }
+          ],
+          "title": "Result, Learning, and Outcome Fanout",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 12, "x": 0, "y": 18 },
+          "id": 9,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "max(dd_fabrication_server_current_jobs)", "legendFormat": "retained jobs", "refId": "A" },
+            { "expr": "max(dd_fabrication_server_current_artifacts)", "legendFormat": "retained artifacts", "refId": "B" },
+            { "expr": "max(dd_fabrication_server_current_learning_outcomes)", "legendFormat": "learning outcomes", "refId": "C" }
+          ],
+          "title": "In-Memory Evidence Ledgers",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 12, "x": 12, "y": 18 },
+          "id": 10,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "up{job=~\"dd-fabrication-server|dd-fabrication-server-pods|dd-nats|dd-mdp-optimizer|dd-runtime-config\"}", "legendFormat": "{{job}} {{instance}}", "refId": "A" }
+          ],
+          "title": "Service, Pod, and Dependency Scrapes",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "ops" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 12, "x": 0, "y": 25 },
+          "id": 11,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(rate(dd_runtime_config_push_total{env=\"stage\",subscriber=\"dd-fabrication-server\",result=~\"transport_error|http_error\"}[10m]))", "legendFormat": "fabrication push errors", "refId": "A" },
+            { "expr": "sum(rate(dd_runtime_config_push_total{env=\"stage\",subscriber=\"dd-fabrication-server\",result=\"success\"}[10m]))", "legendFormat": "fabrication push success", "refId": "B" }
+          ],
+          "title": "Runtime Config Push Delivery",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "gridPos": { "h": 7, "w": 12, "x": 12, "y": 25 },
+          "id": 12,
+          "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+          "targets": [ { "expr": "{deployment=\"dd-fabrication-server\"} |~ \"(?i)(warn|error|fatal|panic|failed|boundary|timeout|unavailable)\"", "refId": "A" } ],
+          "title": "Recent Fabrication Warning and Error Logs",
+          "type": "logs"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 32 },
+          "id": 13,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum by (namespace, init_container, reason) (dd_k8s_pod_init_container_waiting{namespace=\"default\",app=\"dd-fabrication-server\"})", "legendFormat": "init waiting {{namespace}}/{{init_container}} {{reason}}", "refId": "A" },
+            { "expr": "sum by (namespace, init_container) (increase(dd_k8s_pod_init_container_restarts_total{namespace=\"default\",app=\"dd-fabrication-server\"}[15m]))", "legendFormat": "init restarts {{namespace}}/{{init_container}}", "refId": "B" },
+            { "expr": "sum by (namespace, app, involved_kind, type, reason) (dd_k8s_event_count{namespace=\"default\",app=\"dd-fabrication-server\",type=\"Warning\"})", "legendFormat": "warning {{namespace}}/{{app}} {{reason}}", "refId": "C" },
+            { "expr": "sum by (namespace, app, container, reason, exit_code) (dd_k8s_pod_container_last_terminated{namespace=\"default\",app=\"dd-fabrication-server\"})", "legendFormat": "last terminated {{namespace}}/{{container}} {{reason}} {{exit_code}}", "refId": "D" },
+            { "expr": "sum by (namespace, app, init_container, reason, exit_code) (dd_k8s_pod_init_container_last_terminated{namespace=\"default\",app=\"dd-fabrication-server\"})", "legendFormat": "init last terminated {{namespace}}/{{init_container}} {{reason}} {{exit_code}}", "refId": "E" },
+            { "expr": "sum by (namespace, app, container, reason) (dd_k8s_pod_container_waiting{namespace=\"default\",app=\"dd-fabrication-server\",container=\"fabrication-server\"})", "legendFormat": "serving waiting {{namespace}}/{{container}} {{reason}}", "refId": "F" }
+          ],
+          "title": "Kubernetes Startup, Warning, and Termination Evidence",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "percentunit" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 39 },
+          "id": 14,
+          "options": { "legend": { "calcs": [ "lastNotNull", "max" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "max(dd_k8s_pod_container_cpu_usage_cores{namespace=\"default\",app=\"dd-fabrication-server\",container=\"fabrication-server\"}) / max(dd_k8s_pod_container_cpu_limit_cores{namespace=\"default\",app=\"dd-fabrication-server\",container=\"fabrication-server\"})", "legendFormat": "cpu / limit", "refId": "A" },
+            { "expr": "max(dd_k8s_pod_container_memory_usage_bytes{namespace=\"default\",app=\"dd-fabrication-server\",container=\"fabrication-server\"}) / max(dd_k8s_pod_container_memory_limit_bytes{namespace=\"default\",app=\"dd-fabrication-server\",container=\"fabrication-server\"})", "legendFormat": "memory / limit", "refId": "B" }
+          ],
+          "title": "Runtime CPU and Memory Limit Headroom",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 46 },
+          "id": 15,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" |= \"\\\"status\\\":401\" [$__interval]))", "legendFormat": "401 auth", "refId": "A" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/internal\" |= \"\\\"status\\\":404\" [$__interval]))", "legendFormat": "404 internal route", "refId": "B" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" |= \"\\\"status\\\":405\" [$__interval]))", "legendFormat": "405 method", "refId": "C" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" |= \"\\\"status\\\":413\" [$__interval]))", "legendFormat": "413 payload", "refId": "D" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" |= \"\\\"status\\\":429\" [$__interval]))", "legendFormat": "429 rate limit", "refId": "E" }
+          ],
+          "title": "Fabrication Gateway Guardrail Rejections",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 53 },
+          "id": 16,
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "s" }, "overrides": [] },
+          "options": { "legend": { "calcs": [ "lastNotNull", "max" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "quantile_over_time(0.95, {deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" | json | unwrap request_time | __error__=\"\" [$__interval])", "legendFormat": "request p95", "refId": "A" },
+            { "expr": "max_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" | json | unwrap request_time | __error__=\"\" [$__interval])", "legendFormat": "request max", "refId": "B" }
+          ],
+          "title": "Fabrication Gateway Edge Latency",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 60 },
+          "id": 17,
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "s" }, "overrides": [] },
+          "options": { "legend": { "calcs": [ "lastNotNull", "max" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "quantile_over_time(0.95, {deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" | json | unwrap upstream_response_time | __error__=\"\" [$__interval])", "legendFormat": "upstream p95", "refId": "A" },
+            { "expr": "max_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" | json | unwrap upstream_response_time | __error__=\"\" [$__interval])", "legendFormat": "upstream max", "refId": "B" }
+          ],
+          "title": "Fabrication Gateway Upstream Latency",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 67 },
+          "id": 18,
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" |= \"\\\"upstream_status\\\":\\\"500\\\"\" [$__interval]))", "legendFormat": "upstream 500", "refId": "A" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" |= \"\\\"upstream_status\\\":\\\"502\\\"\" [$__interval]))", "legendFormat": "upstream 502", "refId": "B" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" |= \"\\\"upstream_status\\\":\\\"503\\\"\" [$__interval]))", "legendFormat": "upstream 503", "refId": "C" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" |= \"\\\"upstream_status\\\":\\\"504\\\"\" [$__interval]))", "legendFormat": "upstream 504", "refId": "D" }
+          ],
+          "title": "Fabrication Gateway Upstream Failures",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 74 },
+          "id": 19,
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "bytes" }, "overrides": [] },
+          "options": { "legend": { "calcs": [ "lastNotNull", "max" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "quantile_over_time(0.95, {deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" | json | unwrap request_length | __error__=\"\" [$__interval])", "legendFormat": "request bytes p95", "refId": "A" },
+            { "expr": "max_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" | json | unwrap request_length | __error__=\"\" [$__interval])", "legendFormat": "request bytes max", "refId": "B" }
+          ],
+          "title": "Fabrication Gateway Request Size",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 81 },
+          "id": 20,
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "bytes" }, "overrides": [] },
+          "options": { "legend": { "calcs": [ "lastNotNull", "max" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "quantile_over_time(0.95, {deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" | json | unwrap body_bytes_sent | __error__=\"\" [$__interval])", "legendFormat": "response bytes p95", "refId": "A" },
+            { "expr": "max_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" | json | unwrap body_bytes_sent | __error__=\"\" [$__interval])", "legendFormat": "response bytes max", "refId": "B" }
+          ],
+          "title": "Fabrication Gateway Response Size",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 88 },
+          "id": 21,
+          "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+          "targets": [ { "expr": "{deployment=\"dd-remote-gateway\"} |= \"/fabrication\" |~ \"(?i)(401|404|405|413|429|limit|too large|unauthorized|method|internal)\"", "refId": "A" } ],
+          "title": "Fabrication Gateway Access and Guardrail Logs",
+          "type": "logs"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "ops" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 95 },
+          "id": 22,
+          "options": { "legend": { "calcs": [ "lastNotNull", "max" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(rate(dd_fabrication_server_generated_programs_total[5m]))", "legendFormat": "generated programs", "refId": "A" },
+            { "expr": "sum(rate(dd_fabrication_server_jobs_stored_total[5m]))", "legendFormat": "jobs stored", "refId": "B" },
+            { "expr": "sum(rate(dd_fabrication_server_artifacts_stored_total[5m]))", "legendFormat": "artifacts stored", "refId": "C" },
+            { "expr": "sum(rate(dd_fabrication_server_learning_events_stored_total[5m]))", "legendFormat": "learning events stored", "refId": "D" },
+            { "expr": "sum(rate(dd_fabrication_server_artifact_requests_total[5m]))", "legendFormat": "artifact detail requests", "refId": "E" }
+          ],
+          "title": "Generated Programs, Artifacts, Learning Events, and Fetches",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "ops" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 102 },
+          "id": 23,
+          "options": { "legend": { "calcs": [ "lastNotNull", "max" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(rate(dd_fabrication_server_nats_messages_total[5m]))", "legendFormat": "nats queued requests in", "refId": "A" },
+            { "expr": "sum(rate(dd_fabrication_server_nats_published_total[5m]))", "legendFormat": "all nats publishes", "refId": "B" },
+            { "expr": "sum(rate(dd_fabrication_server_nats_results_published_total[5m]))", "legendFormat": "result publishes", "refId": "C" }
+          ],
+          "title": "NATS Queue Ingest and Publish Attempts",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 109 },
+          "id": 24,
+          "options": { "legend": { "calcs": [ "lastNotNull", "max" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(up{job=\"dd-fabrication-server-pods\"} == bool 1) or vector(0)", "legendFormat": "ready direct pod scrapes", "refId": "A" },
+            { "expr": "max(dd_k8s_deployment_desired_replicas{namespace=\"default\",deployment=\"dd-fabrication-server\",app=\"dd-fabrication-server\"})", "legendFormat": "desired replicas", "refId": "B" },
+            { "expr": "max(dd_k8s_deployment_desired_replicas{namespace=\"default\",deployment=\"dd-fabrication-server\",app=\"dd-fabrication-server\"}) - (sum(up{job=\"dd-fabrication-server-pods\"} == bool 1) or vector(0))", "legendFormat": "scrape coverage gap", "refId": "C" }
+          ],
+          "title": "Direct Pod Scrape Coverage",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "ops" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 116 },
+          "id": 25,
+          "options": { "legend": { "calcs": [ "lastNotNull", "max" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(rate(dd_fabrication_server_failure_boundaries_total[10m])) + sum(rate(dd_fabrication_server_operator_actions_total[10m])) + sum(rate(dd_fabrication_server_fixture_release_blockers_total[10m])) + sum(rate(dd_fabrication_server_split_combine_reviews_total[10m]))", "legendFormat": "machine release blockers", "refId": "A" },
+            { "expr": "sum(rate(dd_fabrication_server_generated_programs_total[10m]))", "legendFormat": "draft generated programs", "refId": "B" },
+            { "expr": "sum(rate(dd_fabrication_server_nats_results_published_total[10m]))", "legendFormat": "nats result fanout", "refId": "C" },
+            { "expr": "sum(rate(dd_fabrication_server_mdp_published_total[10m]))", "legendFormat": "mdp learning fanout", "refId": "D" },
+            { "expr": "sum(rate(dd_fabrication_server_errors_total[5m]))", "legendFormat": "server errors", "refId": "E" }
+          ],
+          "title": "Machine Release Readiness and Learning Fanout",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "ops" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 123 },
+          "id": 26,
+          "options": { "legend": { "calcs": [ "lastNotNull", "max" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/capabilities\" [$__interval]))", "legendFormat": "capabilities discovery", "refId": "CAP" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/objective/coverage\" [$__interval]))", "legendFormat": "objective coverage discovery", "refId": "OBJ" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication\" [$__interval]))", "legendFormat": "landing root", "refId": "LANDROOT" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/landing\" [$__interval]))", "legendFormat": "landing page", "refId": "LAND" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/how-it-works\" [$__interval]))", "legendFormat": "how it works", "refId": "HOW" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/schema\" [$__interval]))", "legendFormat": "schema discovery", "refId": "SCH" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/examples\" [$__interval]))", "legendFormat": "example discovery", "refId": "EX" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/intake/catalog\" [$__interval]))", "legendFormat": "intake catalog", "refId": "INTAKE" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/templates/catalog\" [$__interval]))", "legendFormat": "request templates catalog", "refId": "TMPL" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/design/formats\" [$__interval]))", "legendFormat": "design format catalog", "refId": "A" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/formats/catalog\" [$__interval]))", "legendFormat": "format import catalog", "refId": "FMT" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/slicers/catalog\" [$__interval]))", "legendFormat": "slicer catalog", "refId": "CA" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/slicers/plan\" [$__interval]))", "legendFormat": "slicer planning", "refId": "SPP" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/slicers/result\" [$__interval]))", "legendFormat": "slicer profile result review", "refId": "SPR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/mesh-repair/catalog\" [$__interval]))", "legendFormat": "mesh repair catalog", "refId": "CB" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/mesh-repair/result\" [$__interval]))", "legendFormat": "mesh repair result review", "refId": "MRR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/machines/catalog\" [$__interval]))", "legendFormat": "machine catalog", "refId": "AO" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/printers/catalog\" [$__interval]))", "legendFormat": "printer catalog", "refId": "PRN" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/fdm-printer/catalog\" [$__interval]))", "legendFormat": "FDM printer catalog", "refId": "FDM" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/resin-printer/catalog\" [$__interval]))", "legendFormat": "resin printer catalog", "refId": "RPN" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/material-jetting/catalog\" [$__interval]))", "legendFormat": "material-jetting catalog", "refId": "MJT" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/pellet-fgf/catalog\" [$__interval]))", "legendFormat": "pellet-FGF catalog", "refId": "FGF" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/robotic-additive/catalog\" [$__interval]))", "legendFormat": "robotic-additive catalog", "refId": "RAC" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/sheet-lamination/catalog\" [$__interval]))", "legendFormat": "sheet-lamination catalog", "refId": "SLM" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/directed-energy-deposition/catalog\" [$__interval]))", "legendFormat": "DED/WAAM catalog", "refId": "DED" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/composite-fiber/catalog\" [$__interval]))", "legendFormat": "composite-fiber catalog", "refId": "CFB" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/composite-layup/catalog\" [$__interval]))", "legendFormat": "composite-layup catalog", "refId": "CLY" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/powder-bed/catalog\" [$__interval]))", "legendFormat": "powder-bed catalog", "refId": "PWB" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/hot-wire-foam/catalog\" [$__interval]))", "legendFormat": "hot-wire foam catalog", "refId": "HWF" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/printers/preflight/catalog\" [$__interval]))", "legendFormat": "printer preflight catalog", "refId": "PPF" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/subtractive/catalog\" [$__interval]))", "legendFormat": "subtractive catalog", "refId": "SUB" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/subtractive/preflight/catalog\" [$__interval]))", "legendFormat": "subtractive preflight catalog", "refId": "SPF" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/mill-router/catalog\" [$__interval]))", "legendFormat": "mill/router catalog", "refId": "MRC" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/vertical-mill/catalog\" [$__interval]))", "legendFormat": "vertical-mill catalog", "refId": "VMC" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/horizontal-mill/catalog\" [$__interval]))", "legendFormat": "horizontal-mill catalog", "refId": "HMC" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/sheet-cutting/catalog\" [$__interval]))", "legendFormat": "sheet-cutting catalog", "refId": "SHC" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/sheet-forming/catalog\" [$__interval]))", "legendFormat": "sheet-forming catalog", "refId": "SFM" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/gear-cutting/catalog\" [$__interval]))", "legendFormat": "gear-cutting catalog", "refId": "GCT" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/precision-grinding/catalog\" [$__interval]))", "legendFormat": "precision-grinding catalog", "refId": "GRD" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/dimensional-inspection/catalog\" [$__interval]))", "legendFormat": "dimensional-inspection catalog", "refId": "DIC" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/thermal-postprocess/catalog\" [$__interval]))", "legendFormat": "thermal-postprocess catalog", "refId": "THP" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/surface-finishing/catalog\" [$__interval]))", "legendFormat": "surface-finishing catalog", "refId": "SFC" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/metal-joining/catalog\" [$__interval]))", "legendFormat": "metal-joining catalog", "refId": "MTJ" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/molding-casting/catalog\" [$__interval]))", "legendFormat": "molding-casting catalog", "refId": "MDC" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/pcb-electronics/catalog\" [$__interval]))", "legendFormat": "PCB electronics catalog", "refId": "PCE" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/joining/catalog\" [$__interval]))", "legendFormat": "joining catalog", "refId": "JNC" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/bonding-joining/catalog\" [$__interval]))", "legendFormat": "bonding-joining catalog", "refId": "BDJ" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/fixture-adaptive/catalog\" [$__interval]))", "legendFormat": "fixture-adaptive catalog", "refId": "FXA" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/mechanical-installation/catalog\" [$__interval]))", "legendFormat": "mechanical-installation catalog", "refId": "MCI" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/balancing-marking/catalog\" [$__interval]))", "legendFormat": "balancing-marking catalog", "refId": "BLM" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/packaging-labeling/catalog\" [$__interval]))", "legendFormat": "packaging-labeling catalog", "refId": "PKL" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/part-separation/catalog\" [$__interval]))", "legendFormat": "part-separation catalog", "refId": "PSC" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/edm/catalog\" [$__interval]))", "legendFormat": "EDM catalog", "refId": "EDM" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/turning/catalog\" [$__interval]))", "legendFormat": "turning catalog", "refId": "TUR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/lathe/catalog\" [$__interval]))", "legendFormat": "lathe catalog", "refId": "LAT" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/turning/preflight/catalog\" [$__interval]))", "legendFormat": "turning preflight catalog", "refId": "TPF" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/cleanliness/catalog\" [$__interval]))", "legendFormat": "cleanliness catalog", "refId": "CLC" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/cleanliness/preflight/catalog\" [$__interval]))", "legendFormat": "cleanliness preflight catalog", "refId": "CLN" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/interfaces/catalog\" [$__interval]))", "legendFormat": "interface catalog", "refId": "IFC" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/interfaces/preflight/catalog\" [$__interval]))", "legendFormat": "interface preflight catalog", "refId": "IFP" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/interfaces/result\" [$__interval]))", "legendFormat": "interface result review", "refId": "IFR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/joining/result\" [$__interval]))", "legendFormat": "joining result review", "refId": "JNR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/cnc/catalog\" [$__interval]))", "legendFormat": "CNC intake catalog", "refId": "CNC" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/hybrid/catalog\" [$__interval]))", "legendFormat": "hybrid catalog", "refId": "HYB" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/hybrid/plan\" [$__interval]))", "legendFormat": "hybrid planning", "refId": "HYP" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/cells/catalog\" [$__interval]))", "legendFormat": "cell catalog", "refId": "CELL" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/machines/select\" [$__interval]))", "legendFormat": "machine selection", "refId": "B" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/controllers/catalog\" [$__interval]))", "legendFormat": "controller catalog", "refId": "AP" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/controllers/preflight/catalog\" [$__interval]))", "legendFormat": "controller preflight catalog", "refId": "CPF" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/controllers/plan\" [$__interval]))", "legendFormat": "controller planning", "refId": "CPL" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/controllers/result\" [$__interval]))", "legendFormat": "controller postprocessor result review", "refId": "CPR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/materials/catalog\" [$__interval]))", "legendFormat": "material catalog", "refId": "AQ" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/materials/plan\" [$__interval]))", "legendFormat": "material planning", "refId": "C" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/materials/result\" [$__interval]))", "legendFormat": "material result review", "refId": "BF" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/design/import/catalog\" [$__interval]))", "legendFormat": "design import catalog", "refId": "D" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/design/preflight/catalog\" [$__interval]))", "legendFormat": "design preflight catalog", "refId": "DPF" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/design/import/review\" [$__interval]))", "legendFormat": "design import review", "refId": "E" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/design/import/result\" [$__interval]))", "legendFormat": "design import result review", "refId": "DIR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/design/convert/plan\" [$__interval]))", "legendFormat": "design conversion planning", "refId": "AC" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/design/convert/result\" [$__interval]))", "legendFormat": "design conversion result review", "refId": "BH" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/design/generation/catalog\" [$__interval]))", "legendFormat": "design generation catalog", "refId": "F" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/design/generate\" [$__interval]))", "legendFormat": "design generation", "refId": "M" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/design/synthesis/result\" [$__interval]))", "legendFormat": "design synthesis result review", "refId": "BI" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/plan\" [$__interval]))", "legendFormat": "fabrication planning", "refId": "AH" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/workflow/catalog\" [$__interval]))", "legendFormat": "workflow catalog", "refId": "CD" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/workflow/plan\" [$__interval]))", "legendFormat": "workflow planning", "refId": "CC" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/handoff/catalog\" [$__interval]))", "legendFormat": "handoff catalog", "refId": "G" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/handoff/result\" [$__interval]))", "legendFormat": "handoff result review", "refId": "HFR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/subjects/catalog\" [$__interval]))", "legendFormat": "subject catalog", "refId": "BZ" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/workers/catalog\" [$__interval]))", "legendFormat": "worker catalog", "refId": "WC" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/results/catalog\" [$__interval]))", "legendFormat": "result review catalog", "refId": "RRC" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/assembly/catalog\" [$__interval]))", "legendFormat": "assembly catalog", "refId": "H" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/assembly/preflight/catalog\" [$__interval]))", "legendFormat": "assembly preflight catalog", "refId": "APF" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/calibration/catalog\" [$__interval]))", "legendFormat": "calibration catalog", "refId": "CAL" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/calibration/plan\" [$__interval]))", "legendFormat": "calibration planning", "refId": "I" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/calibration/result\" [$__interval]))", "legendFormat": "calibration result review", "refId": "BS" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/instructions/generation/catalog\" [$__interval]))", "legendFormat": "instruction generation catalog", "refId": "J" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/instructions/generation/preflight/catalog\" [$__interval]))", "legendFormat": "instruction generation preflight catalog", "refId": "IGP" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/instructions/languages\" [$__interval]))", "legendFormat": "instruction language catalog", "refId": "AR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/instructions/review-pipeline/catalog\" [$__interval]))", "legendFormat": "instruction review pipeline catalog", "refId": "IRP" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/instructions/import/catalog\" [$__interval]))", "legendFormat": "instruction import catalog", "refId": "IIC" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/instructions/import/preflight/catalog\" [$__interval]))", "legendFormat": "instruction import preflight catalog", "refId": "IIP" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/instructions/import/review\" [$__interval]))", "legendFormat": "instruction import review", "refId": "IIR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/instructions/validation/catalog\" [$__interval]))", "legendFormat": "instruction validation catalog", "refId": "BX" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/instructions/validation/preflight/catalog\" [$__interval]))", "legendFormat": "instruction validation preflight catalog", "refId": "IVP" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/instructions/generate\" [$__interval]))", "legendFormat": "instruction generation", "refId": "Y" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/instructions/generation/result\" [$__interval]))", "legendFormat": "instruction generation result review", "refId": "BJ" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/instructions/review/result\" [$__interval]))", "legendFormat": "instruction review result review", "refId": "BK" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/instructions/validation/result\" [$__interval]))", "legendFormat": "instruction validation result review", "refId": "BZ" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/instructions/improvement/result\" [$__interval]))", "legendFormat": "instruction improvement result review", "refId": "IIRR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/machine-code/catalog\" [$__interval]))", "legendFormat": "machine-code catalog", "refId": "BT" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/machine-code/preflight/catalog\" [$__interval]))", "legendFormat": "machine-code preflight catalog", "refId": "MCPF" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/machine-code/generate\" [$__interval]))", "legendFormat": "machine-code generation", "refId": "N" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/machine-code/result\" [$__interval]))", "legendFormat": "machine-code result review", "refId": "BW" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/toolpaths/catalog\" [$__interval]))", "legendFormat": "toolpath catalog", "refId": "TPC" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/toolpaths/plan\" [$__interval]))", "legendFormat": "toolpath planning", "refId": "P" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/toolpaths/result\" [$__interval]))", "legendFormat": "toolpath result review", "refId": "BL" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/improvements/catalog\" [$__interval]))", "legendFormat": "improvement catalog", "refId": "AS" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/improvements/preflight/catalog\" [$__interval]))", "legendFormat": "improvement preflight catalog", "refId": "IPF" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/boundaries/catalog\" [$__interval]))", "legendFormat": "boundary catalog", "refId": "AT" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/boundaries/preflight/catalog\" [$__interval]))", "legendFormat": "boundary preflight catalog", "refId": "BPF" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/boundaries/result\" [$__interval]))", "legendFormat": "boundary result review", "refId": "BAR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/remediation/catalog\" [$__interval]))", "legendFormat": "remediation catalog", "refId": "BY" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/remediation/plan\" [$__interval]))", "legendFormat": "remediation planning", "refId": "CA" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/remediation/result\" [$__interval]))", "legendFormat": "remediation result review", "refId": "CB" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/decomposition/catalog\" [$__interval]))", "legendFormat": "decomposition catalog", "refId": "AU" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/recomposition/catalog\" [$__interval]))", "legendFormat": "recomposition catalog", "refId": "RCP" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/decomposition/plan\" [$__interval]))", "legendFormat": "decomposition planning", "refId": "Q" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/decomposition/result\" [$__interval]))", "legendFormat": "decomposition result review", "refId": "BM" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/assembly/plan\" [$__interval]))", "legendFormat": "assembly planning", "refId": "R" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/assembly/result\" [$__interval]))", "legendFormat": "assembly result review", "refId": "BN" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/release/catalog\" [$__interval]))", "legendFormat": "release catalog", "refId": "AV" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/release/gates/catalog\" [$__interval]))", "legendFormat": "release gates catalog", "refId": "RGC" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/release/preflight/catalog\" [$__interval]))", "legendFormat": "release preflight catalog", "refId": "RPF" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/schedule/catalog\" [$__interval]))", "legendFormat": "schedule catalog", "refId": "AW" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/schedule/result\" [$__interval]))", "legendFormat": "schedule result review", "refId": "BG" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/execution/preflight/catalog\" [$__interval]))", "legendFormat": "execution preflight catalog", "refId": "EPF" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/execution/plan\" [$__interval]))", "legendFormat": "execution planning", "refId": "S" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/execution/result\" [$__interval]))", "legendFormat": "execution result review", "refId": "BP" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/simulation/catalog\" [$__interval]))", "legendFormat": "simulation catalog", "refId": "AX" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/simulation/preflight/catalog\" [$__interval]))", "legendFormat": "simulation preflight catalog", "refId": "SPF" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/simulation/run\" [$__interval]))", "legendFormat": "simulation run", "refId": "T" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/simulation/result\" [$__interval]))", "legendFormat": "simulation result review", "refId": "BQ" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/quality/catalog\" [$__interval]))", "legendFormat": "quality catalog", "refId": "AY" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/quality/preflight/catalog\" [$__interval]))", "legendFormat": "quality preflight catalog", "refId": "QPF" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/dispositions/catalog\" [$__interval]))", "legendFormat": "disposition catalog", "refId": "DISP" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/dispositions/result\" [$__interval]))", "legendFormat": "disposition result review", "refId": "DSR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/costing/catalog\" [$__interval]))", "legendFormat": "costing catalog", "refId": "COST" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/costing/result\" [$__interval]))", "legendFormat": "costing result review", "refId": "CTR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/utilities/catalog\" [$__interval]))", "legendFormat": "utilities catalog", "refId": "UTIL" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/energy/catalog\" [$__interval]))", "legendFormat": "energy catalog", "refId": "ENG" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/energy/result\" [$__interval]))", "legendFormat": "energy result review", "refId": "ENR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/utilities/result\" [$__interval]))", "legendFormat": "utilities result review", "refId": "UTR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/telemetry/catalog\" [$__interval]))", "legendFormat": "telemetry catalog", "refId": "TEL" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/availability/catalog\" [$__interval]))", "legendFormat": "availability catalog", "refId": "AVL" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/availability/result\" [$__interval]))", "legendFormat": "availability result review", "refId": "AVR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/maintenance/catalog\" [$__interval]))", "legendFormat": "maintenance catalog", "refId": "MNT" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/maintenance/result\" [$__interval]))", "legendFormat": "maintenance result review", "refId": "MNR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/telemetry/result\" [$__interval]))", "legendFormat": "telemetry result review", "refId": "TLR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/quality/plan\" [$__interval]))", "legendFormat": "quality planning", "refId": "U" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/quality/result\" [$__interval]))", "legendFormat": "quality result review", "refId": "BR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/manufacturability/result\" [$__interval]))", "legendFormat": "manufacturability result review", "refId": "MR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/interventions/catalog\" [$__interval]))", "legendFormat": "intervention catalog", "refId": "AZ" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/interventions/result\" [$__interval]))", "legendFormat": "intervention result review", "refId": "INR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/setup/catalog\" [$__interval]))", "legendFormat": "setup catalog", "refId": "BA" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/tooling/catalog\" [$__interval]))", "legendFormat": "tooling catalog", "refId": "BO" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/tooling/result\" [$__interval]))", "legendFormat": "tooling result review", "refId": "TRR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/consumables/catalog\" [$__interval]))", "legendFormat": "consumables catalog", "refId": "CON" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/consumables/result\" [$__interval]))", "legendFormat": "consumables result review", "refId": "CNR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/workholding/catalog\" [$__interval]))", "legendFormat": "workholding catalog", "refId": "WH" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/workholding/preflight/catalog\" [$__interval]))", "legendFormat": "workholding preflight catalog", "refId": "WHP" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/workholding/plan\" [$__interval]))", "legendFormat": "workholding planning", "refId": "WHL" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/workholding/result\" [$__interval]))", "legendFormat": "workholding result review", "refId": "WHR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/nesting/catalog\" [$__interval]))", "legendFormat": "nesting catalog", "refId": "NST" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/nesting/result\" [$__interval]))", "legendFormat": "nesting result review", "refId": "NSR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/support-strategies/catalog\" [$__interval]))", "legendFormat": "support strategy catalog", "refId": "SS" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/support-strategies/result\" [$__interval]))", "legendFormat": "support strategy result review", "refId": "SSR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/process-recipes/catalog\" [$__interval]))", "legendFormat": "process recipe catalog", "refId": "BX" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/process-recipes/result\" [$__interval]))", "legendFormat": "process recipe result review", "refId": "PRR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/kinematics/catalog\" [$__interval]))", "legendFormat": "kinematics catalog", "refId": "KIN" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/kinematics/result\" [$__interval]))", "legendFormat": "kinematics result review", "refId": "KIR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/tolerances/catalog\" [$__interval]))", "legendFormat": "tolerance catalog", "refId": "TOL" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/tolerances/plan\" [$__interval]))", "legendFormat": "tolerance planning", "refId": "TLP" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/tolerances/result\" [$__interval]))", "legendFormat": "tolerance result review", "refId": "TLR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/process-capabilities/catalog\" [$__interval]))", "legendFormat": "process capability catalog", "refId": "PC" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/process-capabilities/plan\" [$__interval]))", "legendFormat": "process capability planning", "refId": "PCP" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/process-capabilities/result\" [$__interval]))", "legendFormat": "process capability result review", "refId": "PCR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/manufacturability/catalog\" [$__interval]))", "legendFormat": "manufacturability catalog", "refId": "DFM" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/manufacturability/plan\" [$__interval]))", "legendFormat": "manufacturability planning", "refId": "DFMP" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/failure-modes/catalog\" [$__interval]))", "legendFormat": "failure mode catalog", "refId": "FM" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/failure-modes/plan\" [$__interval]))", "legendFormat": "failure mode planning", "refId": "FMP" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/failure-modes/result\" [$__interval]))", "legendFormat": "failure mode result review", "refId": "FMR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/safety/catalog\" [$__interval]))", "legendFormat": "safety catalog", "refId": "SAFE" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/safety/plan\" [$__interval]))", "legendFormat": "safety planning", "refId": "SAFP" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/safety/result\" [$__interval]))", "legendFormat": "safety result review", "refId": "SFR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/environment/catalog\" [$__interval]))", "legendFormat": "environment catalog", "refId": "ENV" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/environment/plan\" [$__interval]))", "legendFormat": "environment planning", "refId": "ENVP" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/environment/result\" [$__interval]))", "legendFormat": "environment result review", "refId": "ENR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/provenance/catalog\" [$__interval]))", "legendFormat": "provenance catalog", "refId": "PROV" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/provenance/plan\" [$__interval]))", "legendFormat": "provenance planning", "refId": "PRVP" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/as-built/catalog\" [$__interval]))", "legendFormat": "as-built catalog", "refId": "ABC" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/as-built/plan\" [$__interval]))", "legendFormat": "as-built planning", "refId": "ABP" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/as-built/result\" [$__interval]))", "legendFormat": "as-built result review", "refId": "ABR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/provenance/result\" [$__interval]))", "legendFormat": "provenance result review", "refId": "PVR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/setup/plan\" [$__interval]))", "legendFormat": "setup planning", "refId": "V" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/setup/result\" [$__interval]))", "legendFormat": "setup result review", "refId": "BT" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/monitoring/catalog\" [$__interval]))", "legendFormat": "monitoring catalog", "refId": "BB" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/monitoring/plan\" [$__interval]))", "legendFormat": "monitoring planning", "refId": "W" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/monitoring/result\" [$__interval]))", "legendFormat": "monitoring result review", "refId": "BU" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/postprocess/catalog\" [$__interval]))", "legendFormat": "postprocess catalog", "refId": "BC" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/postprocess/plan\" [$__interval]))", "legendFormat": "postprocess planning", "refId": "X" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/postprocess/result\" [$__interval]))", "legendFormat": "postprocess result review", "refId": "BV" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/release/preview\" [$__interval]))", "legendFormat": "release preview", "refId": "Z" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/release/result\" [$__interval]))", "legendFormat": "release result review", "refId": "BO" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/evidence/catalog\" [$__interval]))", "legendFormat": "evidence catalog", "refId": "EVC" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/methods/catalog\" [$__interval]))", "legendFormat": "method catalog", "refId": "BY" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/process/catalog\" [$__interval]))", "legendFormat": "process catalog", "refId": "PCAT" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/packages/catalog\" [$__interval]))", "legendFormat": "package catalog", "refId": "PKG" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/packages/plan\" [$__interval]))", "legendFormat": "package planning", "refId": "PKGP" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/strategy/catalog\" [$__interval]))", "legendFormat": "strategy catalog", "refId": "SCAT" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/strategy/recommend\" [$__interval]))", "legendFormat": "strategy recommendation", "refId": "AA" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/strategy/result\" [$__interval]))", "legendFormat": "strategy result review", "refId": "SR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/artifacts/catalog\" [$__interval]))", "legendFormat": "artifact catalog", "refId": "AJ" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/jobs/catalog\" [$__interval]))", "legendFormat": "job evidence catalog", "refId": "AN" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/jobs\\\"\" [$__interval]))", "legendFormat": "job list", "refId": "AK" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/jobs/\" != \"/catalog\" != \"/release-bundle\" != \"/artifacts/\" [$__interval]))", "legendFormat": "job detail", "refId": "AL" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/jobs/\" |= \"/release-bundle\" [$__interval]))", "legendFormat": "release bundle fetch", "refId": "O" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/jobs/\" |= \"/artifacts/\" [$__interval]))", "legendFormat": "artifact detail fetch", "refId": "AM" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/learning/capabilities\" [$__interval]))", "legendFormat": "learning capabilities", "refId": "AD" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/learning/engines/catalog\" [$__interval]))", "legendFormat": "learning engine catalog", "refId": "LE" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/learning/preflight/catalog\" [$__interval]))", "legendFormat": "learning preflight catalog", "refId": "LPF" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/learning/features/catalog\" [$__interval]))", "legendFormat": "learning feature catalog", "refId": "LFC" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/learning/rewards/catalog\" [$__interval]))", "legendFormat": "learning reward catalog", "refId": "LR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/learning/models/catalog\" [$__interval]))", "legendFormat": "learning model catalog", "refId": "LM" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/learning/replay/catalog\" [$__interval]))", "legendFormat": "learning replay catalog", "refId": "LRC" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/learning/scenarios/catalog\" [$__interval]))", "legendFormat": "learning scenario catalog", "refId": "LSC" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/learning/beliefs/catalog\" [$__interval]))", "legendFormat": "learning POMDP belief catalog", "refId": "LB" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/learning/optimizers/catalog\" [$__interval]))", "legendFormat": "learning optimizer catalog", "refId": "LOC" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/learning/models/result\" [$__interval]))", "legendFormat": "learning model result review", "refId": "LMR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/learning/optimizers/result\" [$__interval]))", "legendFormat": "learning optimizer result review", "refId": "LOR" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/learning/policy\" [$__interval]))", "legendFormat": "learning policy snapshot", "refId": "AE" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/learning/corpus\" [$__interval]))", "legendFormat": "learning corpus", "refId": "LC" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/learning/observe\" [$__interval]))", "legendFormat": "learning observations", "refId": "AF" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/learning/outcomes\" [$__interval]))", "legendFormat": "learning outcomes", "refId": "AG" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/instructions/analyze\" [$__interval]))", "legendFormat": "instruction analysis", "refId": "AI" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/instructions/validate\" [$__interval]))", "legendFormat": "instruction validation", "refId": "AB" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/instructions/improve\" [$__interval]))", "legendFormat": "instruction improvement review", "refId": "K" },
+            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/instructions/boundaries/review\" [$__interval]))", "legendFormat": "instruction boundary review", "refId": "L" }
+          ],
+          "title": "Catalog Discovery, CAD Intake, Design Export, and Instruction Review / Worker Result Review",
+          "type": "timeseries"
+        }
+      ],
+      "refresh": "10s",
+      "schemaVersion": 39,
+      "tags": [ "fabrication", "rust", "planner", "mdp", "nats" ],
+      "templating": { "list": [] },
+      "time": { "from": "now-30m", "to": "now" },
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "Fabrication Planner",
+      "uid": "dd-fabrication-planner",
+      "version": 1,
+      "weekStart": ""
+    }
+  economics-server.json: |
+    {
+      "annotations": {
+        "list": [
+          {
+            "builtIn": 1,
+            "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+            "enable": true,
+            "hide": true,
+            "iconColor": "rgba(0, 211, 255, 1)",
+            "name": "Annotations & Alerts",
+            "type": "dashboard"
+          }
+        ]
+      },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "links": [
+        { "title": "Economics Dashboard", "type": "link", "url": "/economics/" },
+        { "title": "Observability JSON", "type": "link", "url": "/economics/observability" },
+        { "title": "Deployment Drilldown", "type": "link", "url": "/grafana/depl/dd-economics-server" }
+      ],
+      "liveNow": false,
+      "panels": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] } }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+          "id": 1,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "up{job=\"dd-economics-server\"}", "refId": "A" } ],
+          "title": "Service Scrape Up",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 1 } ] } }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+          "id": 2,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "sum(ALERTS{alertstate=\"firing\",service=\"dd-economics-server\"}) or vector(0)", "refId": "A" } ],
+          "title": "Firing Economics Alerts",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "unit": "s", "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 86400 }, { "color": "red", "value": 172800 } ] } }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+          "id": 3,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "time() - max(dd_economics_server_source_pull_last_success_unix_seconds)", "refId": "A" } ],
+          "title": "Seconds Since Source Success",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "unit": "short", "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] } }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+          "id": 4,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "sum(dd_economics_server_source_pull_stored_points_total)", "refId": "A" } ],
+          "title": "Stored Source Points",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "ops" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 12, "x": 0, "y": 4 },
+          "id": 5,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(rate(dd_economics_server_forecasts_total[5m]))", "legendFormat": "forecasts", "refId": "A" },
+            { "expr": "sum(rate(dd_economics_server_recommendation_requests_total[5m]))", "legendFormat": "recommendations", "refId": "B" },
+            { "expr": "sum(rate(dd_economics_server_sentiment_requests_total[5m]))", "legendFormat": "sentiment", "refId": "C" },
+            { "expr": "sum(rate(dd_economics_server_pipeline_plan_requests_total[5m]))", "legendFormat": "pipeline plans", "refId": "D" },
+            { "expr": "sum(rate(dd_economics_server_pipeline_submit_requests_total[5m]))", "legendFormat": "pipeline submit requests", "refId": "E" },
+            { "expr": "sum(rate(dd_economics_server_integration_health_requests_total[5m]))", "legendFormat": "integration health", "refId": "F" }
+          ],
+          "title": "Model and Decision Requests",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "ops" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 12, "x": 12, "y": 4 },
+          "id": 6,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(rate(dd_economics_server_source_pull_success_total[10m]))", "legendFormat": "source pull success", "refId": "A" },
+            { "expr": "sum(rate(dd_economics_server_source_pull_failure_total[10m]))", "legendFormat": "source pull failure", "refId": "B" },
+            { "expr": "sum(rate(dd_economics_server_source_pull_bytes_total[10m]))", "legendFormat": "source bytes", "refId": "C" },
+            { "expr": "sum(rate(dd_economics_server_source_pull_stored_points_total[10m]))", "legendFormat": "stored points", "refId": "D" }
+          ],
+          "title": "External Source Pull Health",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "ops" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 12, "x": 0, "y": 11 },
+          "id": 7,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(rate(dd_economics_server_errors_total[5m]))", "legendFormat": "errors", "refId": "A" },
+            { "expr": "sum(rate(dd_economics_server_auth_failures_total[5m]))", "legendFormat": "auth failures", "refId": "B" },
+            { "expr": "sum(rate(dd_economics_server_nats_messages_total[5m]))", "legendFormat": "nats requests", "refId": "C" },
+            { "expr": "sum(rate(dd_economics_server_nats_published_total[5m]))", "legendFormat": "nats published", "refId": "D" },
+            { "expr": "sum(rate(dd_economics_server_pipeline_publish_success_total[5m]))", "legendFormat": "pipeline publish success", "refId": "E" },
+            { "expr": "sum(rate(dd_economics_server_pipeline_publish_failure_total[5m]))", "legendFormat": "pipeline publish failure", "refId": "F" },
+            { "expr": "sum(rate(dd_economics_server_pipeline_submit_success_total[5m]))", "legendFormat": "pipeline submit success", "refId": "G" },
+            { "expr": "sum(rate(dd_economics_server_pipeline_submit_failure_total[5m]))", "legendFormat": "pipeline submit failure", "refId": "H" }
+          ],
+          "title": "Errors, Auth, and NATS",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 12, "x": 12, "y": 11 },
+          "id": 8,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum by (namespace, kind, workload) (dd_k8s_workload_desired_replicas{workload=\"dd-economics-server\"})", "legendFormat": "desired {{namespace}}/{{kind}}/{{workload}}", "refId": "A" },
+            { "expr": "sum by (namespace, kind, workload) (dd_k8s_workload_available_replicas{workload=\"dd-economics-server\"})", "legendFormat": "available {{namespace}}/{{kind}}/{{workload}}", "refId": "B" },
+            { "expr": "sum by (namespace, deployment, app) (dd_k8s_deployment_unavailable_replicas{namespace=\"default\",deployment=\"dd-economics-server\",app=\"dd-economics-server\"})", "legendFormat": "unavailable {{namespace}}/{{deployment}}", "refId": "C" }
+          ],
+          "title": "Kubernetes Workload State",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 18 },
+          "id": 9,
+          "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+          "targets": [ { "expr": "{deployment=\"dd-economics-server\"} |~ \"(?i)(warn|error|fatal|panic|failed|source_pull|auth|nats|pipeline)\"", "refId": "A" } ],
+          "title": "Recent Economics Logs",
+          "type": "logs"
+        }
+      ],
+      "refresh": "10s",
+      "schemaVersion": 39,
+      "tags": [ "economics", "rust", "forecast", "markets", "observability" ],
+      "templating": { "list": [] },
+      "time": { "from": "now-6h", "to": "now" },
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "Economics Server",
+      "uid": "dd-economics-server",
       "version": 1,
       "weekStart": ""
     }
@@ -1120,6 +1928,233 @@ data:
       "version": 1,
       "weekStart": ""
     }
+  deployment-drilldown.json: |
+    {
+      "annotations": {
+        "list": [
+          {
+            "builtIn": 1,
+            "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+            "enable": true,
+            "hide": true,
+            "iconColor": "rgba(0, 211, 255, 1)",
+            "name": "Annotations & Alerts",
+            "type": "dashboard"
+          }
+        ]
+      },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "links": [
+        {
+          "asDropdown": false,
+          "icon": "external link",
+          "includeVars": true,
+          "keepTime": true,
+          "targetBlank": false,
+          "title": "Workload Fleet",
+          "tooltip": "Open the fleet dashboard with the same selected deployment.",
+          "type": "link",
+          "url": "/telemetry/d/dd-kubernetes-workload-fleet/kubernetes-workload-fleet?var-workload=${deployment}"
+        }
+      ],
+      "liveNow": false,
+      "panels": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+          "id": 1,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [
+            { "expr": "sum(dd_k8s_workload_available_replicas{workload=\"$deployment\"})", "legendFormat": "available", "refId": "A" },
+            { "expr": "sum(dd_k8s_workload_desired_replicas{workload=\"$deployment\"})", "legendFormat": "desired", "refId": "B" }
+          ],
+          "title": "Available / Desired",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+          "id": 2,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "sum(dd_k8s_workload_unavailable_replicas{workload=\"$deployment\"})", "refId": "A" } ],
+          "title": "Unavailable Replicas",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 5 } ] }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+          "id": 3,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "sum(dd_k8s_event_count{app=\"$deployment\",type=\"Warning\"})", "refId": "A" } ],
+          "title": "Warning Events",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+          "id": 4,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "sum(up{job=\"$deployment\"})", "refId": "A" } ],
+          "title": "Direct Scrape Up",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "custom": { "align": "auto", "cellOptions": { "type": "auto" }, "inspect": false }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] } }, "overrides": [] },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 4 },
+          "id": 5,
+          "options": { "cellHeight": "sm", "footer": { "countRows": false, "fields": "", "reducer": [ "sum" ], "show": false }, "showHeader": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "dd_k8s_workload_desired_replicas{workload=\"$deployment\"}", "format": "table", "instant": true, "refId": "A" } ],
+          "title": "Workload Inventory",
+          "type": "table"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 11 },
+          "id": 6,
+          "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum by (namespace, kind, workload) (dd_k8s_workload_desired_replicas{workload=\"$deployment\"})", "legendFormat": "desired {{namespace}}/{{kind}}/{{workload}}", "refId": "A" },
+            { "expr": "sum by (namespace, kind, workload) (dd_k8s_workload_available_replicas{workload=\"$deployment\"})", "legendFormat": "available {{namespace}}/{{kind}}/{{workload}}", "refId": "B" },
+            { "expr": "sum by (namespace, kind, workload) (dd_k8s_workload_ready_replicas{workload=\"$deployment\"})", "legendFormat": "ready {{namespace}}/{{kind}}/{{workload}}", "refId": "C" },
+            { "expr": "sum by (namespace, hpa, target) (dd_k8s_hpa_current_replicas{target=\"$deployment\"})", "legendFormat": "hpa current {{namespace}}/{{hpa}} -> {{target}}", "refId": "D" },
+            { "expr": "sum by (namespace, hpa, target) (dd_k8s_hpa_desired_replicas{target=\"$deployment\"})", "legendFormat": "hpa desired {{namespace}}/{{hpa}} -> {{target}}", "refId": "E" },
+            { "expr": "sum by (namespace, hpa, target) (dd_k8s_hpa_max_replicas{target=\"$deployment\"})", "legendFormat": "hpa max {{namespace}}/{{hpa}} -> {{target}}", "refId": "F" }
+          ],
+          "title": "Workload and HPA Replicas",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 11 },
+          "id": 7,
+          "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum by (namespace, app, container) (dd_k8s_pod_container_restarts_total{app=\"$deployment\"})", "legendFormat": "restarts {{namespace}}/{{app}}/{{container}}", "refId": "A" },
+            { "expr": "sum by (namespace, app, container, reason) (dd_k8s_pod_container_waiting{app=\"$deployment\"})", "legendFormat": "waiting {{namespace}}/{{app}}/{{container}} {{reason}}", "refId": "B" }
+          ],
+          "title": "Restarts and Waiting Containers",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "cores" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 19 },
+          "id": 8,
+          "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum by (namespace, app, container) (dd_k8s_pod_container_cpu_usage_cores{app=\"$deployment\"})", "legendFormat": "usage {{namespace}}/{{app}}/{{container}}", "refId": "A" },
+            { "expr": "sum by (namespace, app, container) (dd_k8s_pod_container_cpu_limit_cores{app=\"$deployment\"})", "legendFormat": "limit {{namespace}}/{{app}}/{{container}}", "refId": "B" }
+          ],
+          "title": "CPU Usage vs Limit",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "bytes" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 19 },
+          "id": 9,
+          "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum by (namespace, app, container) (dd_k8s_pod_container_memory_usage_bytes{app=\"$deployment\"})", "legendFormat": "usage {{namespace}}/{{app}}/{{container}}", "refId": "A" },
+            { "expr": "sum by (namespace, app, container) (dd_k8s_pod_container_memory_limit_bytes{app=\"$deployment\"})", "legendFormat": "limit {{namespace}}/{{app}}/{{container}}", "refId": "B" }
+          ],
+          "title": "Memory Usage vs Limit",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 27 },
+          "id": 10,
+          "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum by (namespace, pod) (dd_k8s_pod_condition{app=\"$deployment\",condition=\"Ready\"})", "legendFormat": "ready {{namespace}}/{{pod}}", "refId": "A" },
+            { "expr": "sum by (namespace, pod, phase) (dd_k8s_pod_phase{app=\"$deployment\"})", "legendFormat": "{{namespace}}/{{pod}} {{phase}}", "refId": "B" }
+          ],
+          "title": "Pod Ready State and Phase",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 27 },
+          "id": 11,
+          "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum by (namespace, app, involved_kind, type, reason) (dd_k8s_event_count{app=\"$deployment\"})", "legendFormat": "{{namespace}}/{{app}} {{type}} {{reason}}", "refId": "A" },
+            { "expr": "sum by (namespace, app, container, reason, exit_code) (dd_k8s_pod_container_last_terminated{app=\"$deployment\"})", "legendFormat": "last terminated {{namespace}}/{{app}}/{{container}} {{reason}} {{exit_code}}", "refId": "B" }
+          ],
+          "title": "Kubernetes Events and Last Terminations",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "gridPos": { "h": 9, "w": 12, "x": 0, "y": 35 },
+          "id": 12,
+          "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+          "targets": [ { "expr": "{deployment=\"$deployment\"}", "refId": "A" } ],
+          "title": "Recent Logs",
+          "type": "logs"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "gridPos": { "h": 9, "w": 12, "x": 12, "y": 35 },
+          "id": 13,
+          "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+          "targets": [
+            { "expr": "{deployment=\"$deployment\"} |~ \"(?i)(critical|fatal|panic|error|oom|killed|timeout|refused|reset)\"", "refId": "A" },
+            { "expr": "{log_schema=\"dd.log.v1\",deployment=\"$deployment\",severity=~\"WARN|ERROR|FATAL\"}", "refId": "B" }
+          ],
+          "title": "Warning and Error Logs",
+          "type": "logs"
+        }
+      ],
+      "refresh": "10s",
+      "schemaVersion": 39,
+      "tags": [ "kubernetes", "deployment", "loki", "prometheus" ],
+      "templating": {
+        "list": [
+          {
+            "current": { "selected": true, "text": "dd-remote-web-home", "value": "dd-remote-web-home" },
+            "datasource": { "type": "prometheus", "uid": "Prometheus" },
+            "definition": "label_values(dd_k8s_workload_desired_replicas, workload)",
+            "hide": 0,
+            "includeAll": false,
+            "multi": false,
+            "name": "deployment",
+            "options": [],
+            "query": "label_values(dd_k8s_workload_desired_replicas, workload)",
+            "refresh": 1,
+            "regex": "",
+            "skipUrlSync": false,
+            "sort": 1,
+            "type": "query"
+          }
+        ]
+      },
+      "time": { "from": "now-30m", "to": "now" },
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "Deployment Drilldown",
+      "uid": "dd-deployment-drilldown",
+      "version": 1,
+      "weekStart": ""
+    }
   kubernetes-workload-fleet.json: |
     {
       "annotations": {
@@ -1204,9 +2239,12 @@ data:
           "targets": [
             { "expr": "sum by (namespace, kind, workload) (dd_k8s_workload_desired_replicas{workload=~\"${workload:regex}\"})", "legendFormat": "desired {{namespace}}/{{kind}}/{{workload}}", "refId": "A" },
             { "expr": "sum by (namespace, kind, workload) (dd_k8s_workload_available_replicas{workload=~\"${workload:regex}\"})", "legendFormat": "available {{namespace}}/{{kind}}/{{workload}}", "refId": "B" },
-            { "expr": "sum by (namespace, kind, workload) (dd_k8s_workload_ready_replicas{workload=~\"${workload:regex}\"})", "legendFormat": "ready {{namespace}}/{{kind}}/{{workload}}", "refId": "C" }
+            { "expr": "sum by (namespace, kind, workload) (dd_k8s_workload_ready_replicas{workload=~\"${workload:regex}\"})", "legendFormat": "ready {{namespace}}/{{kind}}/{{workload}}", "refId": "C" },
+            { "expr": "sum by (namespace, hpa, target) (dd_k8s_hpa_current_replicas{target=~\"${workload:regex}\"})", "legendFormat": "hpa current {{namespace}}/{{hpa}} -> {{target}}", "refId": "D" },
+            { "expr": "sum by (namespace, hpa, target) (dd_k8s_hpa_desired_replicas{target=~\"${workload:regex}\"})", "legendFormat": "hpa desired {{namespace}}/{{hpa}} -> {{target}}", "refId": "E" },
+            { "expr": "sum by (namespace, hpa, target) (dd_k8s_hpa_max_replicas{target=~\"${workload:regex}\"})", "legendFormat": "hpa max {{namespace}}/{{hpa}} -> {{target}}", "refId": "F" }
           ],
-          "title": "Desired, Available, Ready",
+          "title": "Workload and HPA Replicas",
           "type": "timeseries"
         },
         {
@@ -1218,9 +2256,10 @@ data:
           "targets": [
             { "expr": "sum by (namespace, kind, workload) (dd_k8s_workload_unavailable_replicas{workload=~\"${workload:regex}\"})", "legendFormat": "unavailable {{namespace}}/{{kind}}/{{workload}}", "refId": "A" },
             { "expr": "sum by (namespace, app, container) (dd_k8s_pod_container_restarts_total{app=~\"${workload:regex}\"})", "legendFormat": "restarts {{namespace}}/{{app}}/{{container}}", "refId": "B" },
-            { "expr": "sum by (namespace, app, container, reason) (dd_k8s_pod_container_waiting{app=~\"${workload:regex}\"})", "legendFormat": "waiting {{namespace}}/{{app}}/{{container}} {{reason}}", "refId": "C" }
+            { "expr": "sum by (namespace, app, container, reason) (dd_k8s_pod_container_waiting{app=~\"${workload:regex}\"})", "legendFormat": "waiting {{namespace}}/{{app}}/{{container}} {{reason}}", "refId": "C" },
+            { "expr": "max by (namespace, hpa, target) (dd_k8s_hpa_current_at_max{target=~\"${workload:regex}\"})", "legendFormat": "hpa at max {{namespace}}/{{hpa}} -> {{target}}", "refId": "D" }
           ],
-          "title": "Unavailable, Restarts, Waiting",
+          "title": "Unavailable, Restarts, Waiting, HPA Ceiling",
           "type": "timeseries"
         },
         {
@@ -1323,6 +2362,158 @@ data:
       "timezone": "browser",
       "title": "Kubernetes Workload Fleet",
       "uid": "dd-kubernetes-workload-fleet",
+      "version": 1,
+      "weekStart": ""
+    }
+  observability-control-plane.json: |
+    {
+      "annotations": {
+        "list": [
+          {
+            "builtIn": 1,
+            "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+            "enable": true,
+            "hide": true,
+            "iconColor": "rgba(0, 211, 255, 1)",
+            "name": "Annotations & Alerts",
+            "type": "dashboard"
+          }
+        ]
+      },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "links": [],
+      "liveNow": false,
+      "panels": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "orange", "value": 0.9 }, { "color": "green", "value": 1 } ] }, "unit": "percentunit" }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+          "id": 1,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "dd:observability:target_up_ratio", "refId": "A" } ],
+          "title": "Observability Target Up Ratio",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+          "id": 2,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "sum(up{job=~\"prometheus|otel-collector-self|otel-collector|dd-grafana|dd-loki|dd-k8s-resource-exporter|dd-promtail\"} == bool 0) or vector(0)", "refId": "A" } ],
+          "title": "Down Observability Targets",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 1 } ] }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+          "id": 3,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "sum(ALERTS{alertstate=\"firing\",alertname=~\"DD.*\"}) or vector(0)", "refId": "A" } ],
+          "title": "Firing DD Alerts",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+          "id": 4,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "dd_k8s_resource_exporter_up", "refId": "A" } ],
+          "title": "Resource Exporter Up",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+          "id": 5,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "up{job=~\"prometheus|otel-collector-self|otel-collector|dd-grafana|dd-loki|dd-k8s-resource-exporter|dd-promtail\"}", "legendFormat": "{{job}} {{instance}}", "refId": "A" }
+          ],
+          "title": "Scrape Target Health",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "percentunit" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+          "id": 6,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "dd:k8s_workload:available_ratio", "legendFormat": "{{namespace}}/{{kind}}/{{workload}}", "refId": "A" }
+          ],
+          "title": "Watched Workload Availability Ratio",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "ops" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+          "id": 7,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(rate({__name__=~\"otelcol_receiver_accepted_(spans|metric_points|log_records)\"}[5m])) by (__name__, receiver, transport)", "legendFormat": "{{__name__}} {{receiver}}/{{transport}}", "refId": "A" },
+            { "expr": "sum(rate({__name__=~\"otelcol_receiver_refused_(spans|metric_points|log_records)\"}[5m])) by (__name__, receiver, transport)", "legendFormat": "refused {{__name__}} {{receiver}}/{{transport}}", "refId": "B" },
+            { "expr": "sum(rate({__name__=~\"otelcol_exporter_send_failed_(spans|metric_points|log_records)\"}[5m])) by (__name__, exporter)", "legendFormat": "failed {{__name__}} {{exporter}}", "refId": "C" }
+          ],
+          "title": "OTel Collector Telemetry Flow",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "logs/sec" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+          "id": 8,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(rate(promtail_read_lines_total[5m])) by (pod)", "legendFormat": "promtail read {{pod}}", "refId": "A" },
+            { "expr": "sum(rate(promtail_dropped_lines_total[5m])) by (pod)", "legendFormat": "promtail dropped {{pod}}", "refId": "B" },
+            { "expr": "sum(rate(loki_distributor_lines_received_total[5m]))", "legendFormat": "loki received", "refId": "C" }
+          ],
+          "title": "Loki and Promtail Log Flow",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "s" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+          "id": 9,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "max by (job) (scrape_duration_seconds{job=~\"prometheus|otel-collector-self|otel-collector|dd-grafana|dd-loki|dd-k8s-resource-exporter|dd-promtail\"})", "legendFormat": "{{job}}", "refId": "A" }
+          ],
+          "title": "Scrape Duration",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+          "id": 10,
+          "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+          "targets": [ { "expr": "{namespace=\"observability\"} |~ \"(?i)(critical|fatal|panic|error|oom|timeout|refused|failed|unavailable)\"", "refId": "A" } ],
+          "title": "Observability Warning and Error Logs",
+          "type": "logs"
+        }
+      ],
+      "refresh": "10s",
+      "schemaVersion": 39,
+      "tags": [ "observability", "prometheus", "loki", "otel", "grafana" ],
+      "templating": { "list": [] },
+      "time": { "from": "now-30m", "to": "now" },
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "Observability Control Plane",
+      "uid": "dd-observability-control-plane",
       "version": 1,
       "weekStart": ""
     }

@@ -50,9 +50,56 @@ struct AppState {
     metrics: Arc<Metrics>,
 }
 
+// Docker-UX container engines we drive with a shared `run -d`/`rm`/`ps`/`inspect`
+// flag surface. nerdctl scopes to a containerd namespace via the global `-n`;
+// docker and podman do not. Lower-level OCI runtimes (runc, crun, Kata, gVisor)
+// are selected under any of these engines via `--runtime` (see `oci_runtime`),
+// not as a separate engine. LXD (system containers) and CRI-O (crictl + pod
+// sandbox config) use different command models and are intentionally not driven
+// here.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EngineKind {
+    Nerdctl,
+    Docker,
+    Podman,
+}
+
+impl EngineKind {
+    fn parse(value: &str) -> Self {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "docker" => EngineKind::Docker,
+            "podman" => EngineKind::Podman,
+            _ => EngineKind::Nerdctl,
+        }
+    }
+
+    fn default_bin(self) -> &'static str {
+        match self {
+            EngineKind::Docker => "/usr/bin/docker",
+            EngineKind::Podman => "/usr/bin/podman",
+            EngineKind::Nerdctl => "/usr/local/bin/nerdctl",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            EngineKind::Docker => "docker",
+            EngineKind::Podman => "podman",
+            EngineKind::Nerdctl => "nerdctl",
+        }
+    }
+
+    // Only nerdctl carries the containerd namespace as a global pre-subcommand flag.
+    fn uses_namespace(self) -> bool {
+        matches!(self, EngineKind::Nerdctl)
+    }
+}
+
 #[derive(Clone)]
 struct ServiceConfig {
-    nerdctl_bin: String,
+    engine: EngineKind,
+    engine_bin: String,
+    oci_runtime: Option<String>,
     containerd_namespace: String,
     network: String,
     pull_policy: Option<String>,
@@ -90,6 +137,8 @@ struct ServiceConfig {
     nofile_limit: u64,
     cap_drop_all: bool,
     no_new_privileges: bool,
+    mount_source_allowlist: Vec<String>,
+    allow_writable_mounts: bool,
 }
 
 #[derive(Default)]
@@ -119,6 +168,17 @@ struct PoolRegistry {
     last_config_refresh_ms: Option<u128>,
 }
 
+/// A volume/bind mount for warm containers. Used to share code or compiled
+/// binaries into a generic runtime image (zero-copy) instead of baking a
+/// per-language image: the image supplies the runtime/libc, the mount supplies
+/// the code, and `command`/`env` are the per-pool flags. Defaults to read-only.
+#[derive(Debug, Clone)]
+struct Mount {
+    source: String,
+    target: String,
+    read_only: bool,
+}
+
 #[derive(Debug, Clone)]
 struct PoolConfig {
     id: String,
@@ -139,6 +199,11 @@ struct PoolConfig {
     read_only: bool,
     user: String,
     labels: Value,
+    mounts: Vec<Mount>,
+    // Opt out of the automatic cap-drop/no-new-privileges applied to pools that
+    // mount external code. Does NOT grant `--privileged` or add capabilities; it
+    // only falls back to the service-level security flags.
+    unconfined: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -240,6 +305,7 @@ struct PoolSummary {
     idle_ttl_seconds: u64,
     nats_subject: Option<String>,
     env_keys: Vec<String>,
+    mounts: Vec<String>,
     labels: Value,
     active_containers: usize,
     idle_containers: usize,
@@ -526,8 +592,30 @@ fn service_config_from_env() -> ServiceConfig {
     let port_start = env_u16("CONTAINER_POOL_PORT_START", 12_000);
     let port_end = env_u16("CONTAINER_POOL_PORT_END", 12_999).max(port_start);
     let network = env_value("CONTAINER_POOL_NETWORK", "host");
+    let engine_raw = env_value("CONTAINER_POOL_ENGINE", "nerdctl");
+    let engine = EngineKind::parse(&engine_raw);
+    if !engine_raw.trim().is_empty() && !engine_value_recognized(&engine_raw) {
+        tracing::error!(
+            "{SERVICE_NAME} warning: unrecognized CONTAINER_POOL_ENGINE={engine_raw:?}; defaulting to nerdctl"
+        );
+    }
+    let oci_runtime = match classify_oci_runtime(first_env(&["CONTAINER_POOL_OCI_RUNTIME"]).as_deref())
+    {
+        Ok(value) => value,
+        Err(message) => {
+            tracing::error!(
+                "{SERVICE_NAME} warning: {message}; containers will use the engine default OCI \
+                 runtime (no --runtime) — this may be weaker isolation than intended"
+            );
+            None
+        }
+    };
     ServiceConfig {
-        nerdctl_bin: env_value("CONTAINER_POOL_NERDCTL_BIN", "/usr/local/bin/nerdctl"),
+        engine,
+        engine_bin: first_env(&["CONTAINER_POOL_ENGINE_BIN", "CONTAINER_POOL_NERDCTL_BIN"])
+            .filter(|bin| !bin.trim().is_empty())
+            .unwrap_or_else(|| engine.default_bin().to_string()),
+        oci_runtime,
         containerd_namespace: env_value("CONTAINER_POOL_CONTAINERD_NAMESPACE", "k8s.io"),
         network: if safe_network_name(&network) {
             network
@@ -624,7 +712,21 @@ fn service_config_from_env() -> ServiceConfig {
         nofile_limit: env_u64("CONTAINER_POOL_NOFILE_LIMIT", 65536).clamp(32, 262144),
         cap_drop_all: env_bool("CONTAINER_POOL_CAP_DROP_ALL", false),
         no_new_privileges: env_bool("CONTAINER_POOL_NO_NEW_PRIVILEGES", false),
+        mount_source_allowlist: mount_source_allowlist(),
+        allow_writable_mounts: env_bool("CONTAINER_POOL_ALLOW_WRITABLE_MOUNTS", false),
     }
+}
+
+// Absolute host-path prefixes under which pools may bind-mount code/binaries.
+// Empty by default: only named volumes are permitted unless an operator opts in.
+fn mount_source_allowlist() -> Vec<String> {
+    first_env(&["CONTAINER_POOL_MOUNT_SOURCE_ALLOWLIST"])
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|prefix| prefix.starts_with('/') && safe_local_path(prefix))
+        .map(str::to_string)
+        .collect()
 }
 
 fn forwarded_worker_env_keys() -> Vec<String> {
@@ -906,6 +1008,8 @@ fn pool_config_from_json(value: &Value) -> Result<PoolConfig, String> {
             })
             .unwrap_or_else(|| "10001:10001".to_string()),
         labels: value.get("labels").cloned().unwrap_or_else(|| json!([])),
+        mounts: mounts_from_json(value, &slug)?,
+        unconfined: json_bool_field(value, "unconfined", "unconfined").unwrap_or(false),
     })
 }
 
@@ -936,6 +1040,180 @@ fn env_map_from_json(value: Value) -> BTreeMap<String, String> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+// Parse the optional `mounts` (alias `volumes`) array from a pool config. Each
+// entry is `{source|volume, target|mountPath, readOnly?}`. Shape is validated
+// here; host-path/writable *policy* is enforced at container start where the
+// service config is available (`enforce_mount_policy`).
+fn mounts_from_json(value: &Value, slug: &str) -> Result<Vec<Mount>, String> {
+    let Some(items) = value.get("mounts").or_else(|| value.get("volumes")) else {
+        return Ok(Vec::new());
+    };
+    if items.is_null() {
+        return Ok(Vec::new());
+    }
+    let array = items
+        .as_array()
+        .ok_or_else(|| format!("container pool {slug} mounts must be an array"))?;
+    if array.len() > 16 {
+        return Err(format!("container pool {slug} has too many mounts (max 16)"));
+    }
+    let mut mounts = Vec::with_capacity(array.len());
+    for item in array {
+        let source = json_string_field(item, "source", "source")
+            .or_else(|| json_string_field(item, "volume", "volume"))
+            .ok_or_else(|| format!("container pool {slug} mount is missing source"))?;
+        let target = json_string_field(item, "target", "target")
+            .or_else(|| json_string_field(item, "mountPath", "mount_path"))
+            .ok_or_else(|| format!("container pool {slug} mount is missing target"))?;
+        if !safe_mount_source(&source) {
+            return Err(format!(
+                "container pool {slug} has invalid mount source: {source}"
+            ));
+        }
+        if !safe_mount_target(&target) {
+            return Err(format!(
+                "container pool {slug} has invalid mount target: {target}"
+            ));
+        }
+        if is_reserved_mount_target(&target) {
+            return Err(format!(
+                "container pool {slug} mount target {target} is reserved"
+            ));
+        }
+        if mounts.iter().any(|existing: &Mount| existing.target == target) {
+            return Err(format!(
+                "container pool {slug} has duplicate mount target {target}"
+            ));
+        }
+        // Shared code/binaries default to read-only; writable needs an explicit
+        // opt-in here and a service-level enable at start.
+        let read_only = json_bool_field(item, "readOnly", "read_only").unwrap_or(true);
+        mounts.push(Mount {
+            source,
+            target,
+            read_only,
+        });
+    }
+    Ok(mounts)
+}
+
+// A mount source is either a nerdctl/docker named volume or an absolute host
+// path. ':' and ',' are excluded so the `-v src:dst:mode` argv element stays
+// unambiguous; control chars / whitespace / backslash are rejected too.
+fn safe_mount_source(input: &str) -> bool {
+    if input.is_empty() || input.len() > 256 {
+        return false;
+    }
+    if input
+        .bytes()
+        .any(|byte| byte <= 0x20 || byte == 0x7f || matches!(byte, b':' | b',' | b'\\'))
+    {
+        return false;
+    }
+    if input.starts_with('/') {
+        // Require a canonical absolute path (no `//`) so allowlist prefix
+        // matching is exact.
+        safe_local_path(input) && !input.contains("//")
+    } else {
+        let bytes = input.as_bytes();
+        bytes[0].is_ascii_alphanumeric()
+            && bytes
+                .iter()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+    }
+}
+
+fn safe_mount_target(input: &str) -> bool {
+    safe_local_path(input) && !input.contains("//") && !input.contains(':') && !input.contains(',')
+}
+
+// Refuse to overmount the container root or the kernel pseudo-filesystems:
+// these are never legitimate code-mount points and overmounting them can
+// subvert isolation/observability inside the container.
+fn is_reserved_mount_target(target: &str) -> bool {
+    target == "/"
+        || ["/proc", "/sys", "/dev"]
+            .iter()
+            .any(|reserved| path_has_prefix(target, reserved))
+}
+
+// Enforced at container start (has the service config). Named volumes are always
+// allowed; absolute host paths must sit under an allowlisted prefix; writable
+// mounts require the global opt-in. Fails closed with a clear operator message.
+fn enforce_mount_policy(
+    allowlist: &[String],
+    allow_writable: bool,
+    slug: &str,
+    mount: &Mount,
+) -> Result<(), String> {
+    if !mount.read_only && !allow_writable {
+        return Err(format!(
+            "container pool {slug} requests writable mount {}; set \
+             CONTAINER_POOL_ALLOW_WRITABLE_MOUNTS=true to permit",
+            mount.target
+        ));
+    }
+    if mount.source.starts_with('/') {
+        let allowed = allowlist
+            .iter()
+            .any(|prefix| path_has_prefix(&mount.source, prefix));
+        if !allowed {
+            return Err(format!(
+                "container pool {slug} host-path mount {} is not under any \
+                 CONTAINER_POOL_MOUNT_SOURCE_ALLOWLIST prefix",
+                mount.source
+            ));
+        }
+    }
+    Ok(())
+}
+
+// Prefix match on a path boundary so `/data` does not authorize `/database`.
+fn path_has_prefix(path: &str, prefix: &str) -> bool {
+    let prefix = prefix.trim_end_matches('/');
+    path == prefix || path.starts_with(&format!("{prefix}/"))
+}
+
+// Global flags that precede every subcommand. Only nerdctl needs the containerd
+// namespace; docker/podman take none.
+fn engine_global_args(engine: EngineKind, namespace: &str) -> Vec<String> {
+    if engine.uses_namespace() {
+        vec!["-n".to_string(), namespace.to_string()]
+    } else {
+        Vec::new()
+    }
+}
+
+// An OCI runtime handler for `--runtime`: a short name (runc, crun, runsc), a
+// containerd handler (io.containerd.kata.v2, io.containerd.runsc.v1), or an
+// absolute path to a runtime binary. No whitespace / shell metacharacters.
+fn safe_oci_runtime(input: &str) -> bool {
+    let bytes = input.as_bytes();
+    !bytes.is_empty()
+        && bytes.len() <= 128
+        && (bytes[0].is_ascii_alphanumeric() || bytes[0] == b'/')
+        && bytes
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'/'))
+}
+
+// Resolve CONTAINER_POOL_OCI_RUNTIME. Absent/empty -> None (engine default
+// runtime). Valid -> Some. Set-but-invalid -> Err, so the caller warns loudly
+// instead of silently dropping the operator's chosen runtime — for sandbox
+// runtimes (gVisor/Kata) a silent fallback to runc is an isolation downgrade.
+fn classify_oci_runtime(raw: Option<&str>) -> Result<Option<String>, String> {
+    match raw {
+        None => Ok(None),
+        Some(value) if value.trim().is_empty() => Ok(None),
+        Some(value) if safe_oci_runtime(value) => Ok(Some(value.to_string())),
+        Some(value) => Err(format!("ignoring invalid CONTAINER_POOL_OCI_RUNTIME={value:?}")),
+    }
+}
+
+fn engine_value_recognized(raw: &str) -> bool {
+    matches!(raw.trim().to_ascii_lowercase().as_str(), "nerdctl" | "docker" | "podman")
 }
 
 fn row_string(row: &tokio_postgres::Row, column: &str) -> String {
@@ -1025,6 +1303,10 @@ fn row_to_pool_config(row: &tokio_postgres::Row) -> Result<PoolConfig, String> {
         }
     }
 
+    // `mounts` column is optional; row_value falls back to `[]` if absent (no
+    // migration required for the fallback table).
+    let mounts = mounts_from_json(&row_value(row, "mounts", json!([])), &slug)?;
+
     Ok(PoolConfig {
         id,
         slug,
@@ -1044,6 +1326,8 @@ fn row_to_pool_config(row: &tokio_postgres::Row) -> Result<PoolConfig, String> {
         read_only: true,
         user: "10001:10001".to_string(),
         labels: row_value(row, "labels", json!([])),
+        mounts,
+        unconfined: false,
     })
 }
 
@@ -1065,7 +1349,7 @@ async fn connect_postgres(config: &ServiceConfig) -> Result<tokio_postgres::Clie
 
     tokio::spawn(async move {
         if let Err(error) = connection.await {
-            eprintln!("container pool postgres connection error: {error}");
+            tracing::error!("container pool postgres connection error: {error}");
         }
     });
     Ok(client)
@@ -1079,7 +1363,7 @@ async fn fetch_pool_configs_from_postgres(
         Ok(Some(configs)) => return Ok(configs),
         Ok(None) => {}
         Err(error) => {
-            eprintln!(
+            tracing::error!(
                 "container pool app_config lookup failed, falling back to container_pool_configs: {error}"
             );
         }
@@ -1221,7 +1505,7 @@ async fn refresh_pool_configs(state: &AppState) -> Result<(), String> {
         .fetch_add(1, Ordering::Relaxed);
     for name in removed_names {
         if let Err(error) = remove_container(state, &name).await {
-            eprintln!("failed to remove container for deleted pool {name}: {error}");
+            tracing::error!("failed to remove container for deleted pool {name}: {error}");
         }
     }
     Ok(())
@@ -1312,15 +1596,29 @@ async fn allocate_container_slot(
     Ok((pool, container))
 }
 
-async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmContainer, String> {
-    let (pool, mut container) = allocate_container_slot(state, pool_id).await?;
-    let mut args = vec![
-        "-n".to_string(),
-        state.config.containerd_namespace.clone(),
-        "run".to_string(),
-        "-d".to_string(),
+// Pure builder for the engine `run -d` argv (everything after the engine binary),
+// extracted so it can be unit-tested across engines/runtimes/languages without a
+// live daemon. Network/env are resolved by the caller and passed in; mount policy
+// is enforced here so a disallowed mount fails the start with a clear error.
+#[allow(clippy::too_many_arguments)]
+fn build_run_args(
+    config: &ServiceConfig,
+    pool: &PoolConfig,
+    container_name: &str,
+    host_port: u16,
+    container_env: &BTreeMap<String, String>,
+) -> Result<Vec<String>, String> {
+    let mut args = engine_global_args(config.engine, &config.containerd_namespace);
+    args.push("run".to_string());
+    args.push("-d".to_string());
+    // Lower-level OCI runtime (runc/crun/Kata/gVisor) selection, engine-agnostic.
+    if let Some(runtime) = config.oci_runtime.as_deref() {
+        args.push("--runtime".to_string());
+        args.push(runtime.to_string());
+    }
+    args.extend([
         "--name".to_string(),
-        container.name.clone(),
+        container_name.to_string(),
         "--label".to_string(),
         "dd.container-pool.managed=true".to_string(),
         "--label".to_string(),
@@ -1332,15 +1630,21 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
         "--user".to_string(),
         pool.user.clone(),
         "--pids-limit".to_string(),
-        state.config.pids_limit.to_string(),
+        config.pids_limit.to_string(),
         "--ulimit".to_string(),
-        format!("nofile={limit}:{limit}", limit = state.config.nofile_limit),
-    ];
-    if state.config.cap_drop_all {
+        format!("nofile={limit}:{limit}", limit = config.nofile_limit),
+    ]);
+    // Pools that mount external code (the generic shared-volume case) are confined
+    // by default — `--cap-drop ALL` + no-new-privileges — even when the service
+    // defaults leave them off, since they run code the image did not bake in. A
+    // pool can opt out with `unconfined: true` (falls back to the service flags;
+    // does not grant extra privileges). Mount-less pools keep prior behavior.
+    let mount_hardened = !pool.mounts.is_empty() && !pool.unconfined;
+    if config.cap_drop_all || mount_hardened {
         args.push("--cap-drop".to_string());
         args.push("ALL".to_string());
     }
-    if state.config.no_new_privileges {
+    if config.no_new_privileges || mount_hardened {
         args.push("--security-opt".to_string());
         args.push("no-new-privileges".to_string());
     }
@@ -1349,35 +1653,58 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
         args.push("--tmpfs".to_string());
         args.push("/tmp:rw,noexec,nosuid,size=64m".to_string());
     }
-    if let Some(memory) = state.config.container_memory.as_deref() {
+    if let Some(memory) = config.container_memory.as_deref() {
         args.push("--memory".to_string());
         args.push(memory.to_string());
     }
-    if let Some(cpus) = state.config.container_cpus.as_deref() {
+    if let Some(cpus) = config.container_cpus.as_deref() {
         args.push("--cpus".to_string());
         args.push(cpus.to_string());
     }
-    if let Some(pull_policy) = state.config.pull_policy.as_deref() {
+    if let Some(pull_policy) = config.pull_policy.as_deref() {
         args.push("--pull".to_string());
         args.push(pull_policy.to_string());
     }
 
-    if state.config.network == "host" {
+    // Share code/binaries into the warm container (zero-copy) from a named volume
+    // or allowlisted host path. Read-only by default; policy is enforced here.
+    for mount in &pool.mounts {
+        enforce_mount_policy(
+            &config.mount_source_allowlist,
+            config.allow_writable_mounts,
+            &pool.slug,
+            mount,
+        )?;
+        let mode = if mount.read_only { "ro" } else { "rw" };
+        args.push("--volume".to_string());
+        args.push(format!("{}:{}:{}", mount.source, mount.target, mode));
+    }
+
+    if config.network == "host" {
         args.push("--network".to_string());
         args.push("host".to_string());
         args.push("--env".to_string());
-        args.push(format!("PORT={}", container.port));
+        args.push(format!("PORT={host_port}"));
     } else {
         args.push("--network".to_string());
-        args.push(state.config.network.clone());
+        args.push(config.network.clone());
         args.push("--publish".to_string());
-        args.push(format!(
-            "127.0.0.1:{}:{}",
-            container.port, pool.container_port
-        ));
+        args.push(format!("127.0.0.1:{}:{}", host_port, pool.container_port));
         args.push("--env".to_string());
         args.push(format!("PORT={}", pool.container_port));
     }
+
+    for (key, value) in container_env {
+        args.push("--env".to_string());
+        args.push(format!("{key}={value}"));
+    }
+    args.push(pool.image.clone());
+    args.extend(pool.command.clone());
+    Ok(args)
+}
+
+async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmContainer, String> {
+    let (pool, mut container) = allocate_container_slot(state, pool_id).await?;
 
     let mut container_env = pool.env.clone();
     container_env
@@ -1429,12 +1756,7 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
         }
     }
 
-    for (key, value) in &container_env {
-        args.push("--env".to_string());
-        args.push(format!("{key}={value}"));
-    }
-    args.push(pool.image.clone());
-    args.extend(pool.command.clone());
+    let args = build_run_args(&state.config, &pool, &container.name, container.port, &container_env)?;
 
     let container_run_timeout = state.config.nerdctl_run_timeout;
     let scrubbed_args = args
@@ -1467,10 +1789,11 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
             }
         })
         .collect::<Vec<_>>();
-    eprintln!(
-        "dd-container-pool nerdctl run for {name}: {bin} {scrubbed_args:?}",
+    tracing::error!(
+        "dd-container-pool {engine} run for {name}: {bin} {scrubbed_args:?}",
+        engine = state.config.engine.label(),
         name = container.name,
-        bin = state.config.nerdctl_bin,
+        bin = state.config.engine_bin,
     );
     // Surface the *names* (not values) of the env keys that end up forwarded
     // into the warm worker. This makes silent-misconfig regressions obvious in
@@ -1485,7 +1808,7 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
     let worker_fanout_secret_present = container_env.contains_key("WORKER_FANOUT_WS_SECRET")
         || container_env.contains_key("GLEAM_WORKER_WS_SECRET")
         || container_env.contains_key("GLEAM_BROADCAST_SECRET");
-    eprintln!(
+    tracing::error!(
         "dd-container-pool worker env for {name}: keys={env_keys:?} \
          event_ingest_url={event_ingest_url_present} \
          event_ingest_secret={event_ingest_secret_present} \
@@ -1493,12 +1816,13 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
          worker_fanout_secret={worker_fanout_secret_present}",
         name = container.name,
     );
-    match run_command(&state.config.nerdctl_bin, &args, container_run_timeout).await {
+    match run_command(&state.config.engine_bin, &args, container_run_timeout).await {
         Ok(output) => {
             let trimmed = output.trim();
             if !trimmed.is_empty() {
-                eprintln!(
-                    "dd-container-pool nerdctl run -d output for {name}: {trimmed}",
+                tracing::error!(
+                    "dd-container-pool {engine} run -d output for {name}: {trimmed}",
+                    engine = state.config.engine.label(),
                     name = container.name
                 );
             }
@@ -1508,7 +1832,7 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
                 remove_affinity_for_container(&mut registry, &container.name);
                 drop(registry);
                 if let Err(remove_error) = remove_container(state, &container.name).await {
-                    eprintln!(
+                    tracing::error!(
                         "failed to remove unready warm container {}: {remove_error}",
                         container.name
                     );
@@ -1568,19 +1892,9 @@ async fn wait_container_ready(
 }
 
 async fn remove_container(state: &AppState, name: &str) -> Result<(), String> {
-    let args = vec![
-        "-n".to_string(),
-        state.config.containerd_namespace.clone(),
-        "rm".to_string(),
-        "-f".to_string(),
-        name.to_string(),
-    ];
-    run_command(
-        &state.config.nerdctl_bin,
-        &args,
-        state.config.command_timeout,
-    )
-    .await?;
+    let mut args = engine_global_args(state.config.engine, &state.config.containerd_namespace);
+    args.extend(["rm".to_string(), "-f".to_string(), name.to_string()]);
+    run_command(&state.config.engine_bin, &args, state.config.command_timeout).await?;
     state
         .metrics
         .containers_removed_total
@@ -1592,17 +1906,16 @@ async fn cleanup_managed_containers_on_start(state: &AppState) -> Result<(), Str
     if !state.config.cleanup_on_start {
         return Ok(());
     }
-    let list_args = vec![
-        "-n".to_string(),
-        state.config.containerd_namespace.clone(),
+    let mut list_args = engine_global_args(state.config.engine, &state.config.containerd_namespace);
+    list_args.extend([
         "ps".to_string(),
         "-a".to_string(),
         "-q".to_string(),
         "--filter".to_string(),
         "label=dd.container-pool.managed=true".to_string(),
-    ];
+    ]);
     let output = run_command(
-        &state.config.nerdctl_bin,
+        &state.config.engine_bin,
         &list_args,
         state.config.command_timeout,
     )
@@ -1613,7 +1926,7 @@ async fn cleanup_managed_containers_on_start(state: &AppState) -> Result<(), Str
         .filter(|line| !line.is_empty())
     {
         if let Err(error) = remove_container(state, id).await {
-            eprintln!("failed to remove stale managed container {id}: {error}");
+            tracing::error!("failed to remove stale managed container {id}: {error}");
         }
     }
     Ok(())
@@ -1632,7 +1945,7 @@ async fn run_command(
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stderr_trimmed = stderr.trim();
         if !stderr_trimmed.is_empty() && args.iter().any(|arg| arg == "run" || arg == "inspect") {
-            eprintln!(
+            tracing::error!(
                 "{program} stderr (exit 0, args={args:?}): {}",
                 stderr_trimmed.chars().take(1500).collect::<String>()
             );
@@ -1651,13 +1964,9 @@ async fn run_command(
 
 async fn inspect_container_running(state: &AppState, name: &str) -> Result<bool, String> {
     let inspect_timeout = state.config.command_timeout.min(Duration::from_secs(15));
-    let args = vec![
-        "-n".to_string(),
-        state.config.containerd_namespace.clone(),
-        "inspect".to_string(),
-        name.to_string(),
-    ];
-    let output = match run_command(&state.config.nerdctl_bin, &args, inspect_timeout).await {
+    let mut args = engine_global_args(state.config.engine, &state.config.containerd_namespace);
+    args.extend(["inspect".to_string(), name.to_string()]);
+    let output = match run_command(&state.config.engine_bin, &args, inspect_timeout).await {
         Ok(output) => output,
         Err(error) => {
             let lower = error.to_ascii_lowercase();
@@ -1715,7 +2024,7 @@ async fn retire_stale_starting_containers(state: &AppState, pool_id: Option<&str
             }
             Ok(true) => {}
             Err(error) => {
-                eprintln!("failed to inspect starting warm container {name}: {error}");
+                tracing::error!("failed to inspect starting warm container {name}: {error}");
             }
         }
     }
@@ -1770,7 +2079,7 @@ async fn retire_container(state: &AppState, name: &str, reason: &str) {
             .containers_unhealthy_total
             .fetch_add(1, Ordering::Relaxed);
         if let Err(error) = remove_container(state, name).await {
-            eprintln!("failed to remove unhealthy warm container {name}: {error}");
+            tracing::error!("failed to remove unhealthy warm container {name}: {error}");
         }
     }
 }
@@ -1901,7 +2210,7 @@ async fn reconcile_all(state: &AppState) {
     };
     for pool_id in pool_ids {
         if let Err(error) = reconcile_pool(state, &pool_id).await {
-            eprintln!("container pool reconcile failed for {pool_id}: {error}");
+            tracing::error!("container pool reconcile failed for {pool_id}: {error}");
         }
     }
 
@@ -1946,7 +2255,7 @@ async fn reconcile_all(state: &AppState) {
     };
     for name in stale {
         if let Err(error) = remove_container(state, &name).await {
-            eprintln!("failed to remove stale warm container {name}: {error}");
+            tracing::error!("failed to remove stale warm container {name}: {error}");
         }
     }
 }
@@ -2344,7 +2653,7 @@ async fn dispatch_to_pool(
         dispatch_to_pool_inner(state, selector, request, affinity_key, fresh_affinity).await;
     if let Some(lock_guard) = lock_guard {
         if let Err(error) = lock_guard.release().await {
-            eprintln!("container pool redis affinity lock release failed: {error}");
+            tracing::error!("container pool redis affinity lock release failed: {error}");
         }
     }
     result
@@ -2385,7 +2694,7 @@ async fn dispatch_to_pool_inner(
     let backfill_pool_id = lease.pool.id.clone();
     tokio::spawn(async move {
         if let Err(error) = reconcile_pool(&backfill_state, &backfill_pool_id).await {
-            eprintln!("container pool backfill failed for {backfill_pool_id}: {error}");
+            tracing::error!("container pool backfill failed for {backfill_pool_id}: {error}");
         }
     });
 
@@ -2465,7 +2774,7 @@ async fn dispatch_to_pool_inner(
         let refill_pool_id = lease.pool.id.clone();
         tokio::spawn(async move {
             if let Err(error) = reconcile_pool(&refill_state, &refill_pool_id).await {
-                eprintln!("container pool refill failed for {refill_pool_id}: {error}");
+                tracing::error!("container pool refill failed for {refill_pool_id}: {error}");
             }
         });
     }
@@ -2521,6 +2830,18 @@ fn pool_summary(config: &PoolConfig, containers: Vec<WarmContainer>) -> PoolSumm
         idle_ttl_seconds: config.idle_ttl.as_secs(),
         nats_subject: config.nats_subject.clone(),
         env_keys: config.env.keys().cloned().collect(),
+        mounts: config
+            .mounts
+            .iter()
+            .map(|mount| {
+                format!(
+                    "{}:{}:{}",
+                    mount.source,
+                    mount.target,
+                    if mount.read_only { "ro" } else { "rw" }
+                )
+            })
+            .collect(),
         labels: config.labels.clone(),
         active_containers: containers.len(),
         idle_containers,
@@ -2754,7 +3075,7 @@ async fn dispatch_pool(
 async fn run_config_refresh_loop(state: AppState) {
     loop {
         if let Err(error) = refresh_pool_configs(&state).await {
-            eprintln!("container pool config refresh failed: {error}");
+            tracing::error!("container pool config refresh failed: {error}");
             record_config_error(&state, error).await;
         }
         reconcile_all(&state).await;
@@ -2783,7 +3104,7 @@ async fn run_reconcile_loop(state: AppState) {
 /// to O(WAL gateway poll interval) ≈ a few hundred ms.
 async fn run_cdc_refresh_subscription(state: AppState) {
     let Some(nats) = state.nats.clone() else {
-        println!("container pool cdc subscription disabled: no NATS_URL configured");
+        tracing::info!("container pool cdc subscription disabled: no NATS_URL configured");
         return;
     };
     let jetstream = async_nats::jetstream::new(nats);
@@ -2845,7 +3166,7 @@ async fn run_cdc_refresh_subscription(state: AppState) {
 
 async fn cdc_trigger_refresh(state: &AppState, source: &str) {
     if let Err(error) = refresh_pool_configs(state).await {
-        eprintln!("container pool CDC-driven refresh failed ({source}): {error}");
+        tracing::error!("container pool CDC-driven refresh failed ({source}): {error}");
         record_config_error(state, error).await;
         return;
     }
@@ -2870,12 +3191,12 @@ fn log_cdc_subscription_result(
 ) {
     match result {
         Ok(_join) => {
-            println!(
+            tracing::info!(
                 "container pool cdc subscription started: durable={durable} subject={subject}"
             );
         }
         Err(error) => {
-            eprintln!(
+            tracing::error!(
                 "container pool cdc subscription failed to start ({error}); \
                  falling back to poll-only refresh for {subject}"
             );
@@ -2887,71 +3208,79 @@ async fn run_nats_loop(state: AppState) {
     let Some(client) = state.nats.clone() else {
         return;
     };
-    let mut subscriber = match client.subscribe(state.config.nats_subject.clone()).await {
-        Ok(subscriber) => subscriber,
-        Err(error) => {
-            eprintln!("container pool nats subscribe failed: {error}");
-            return;
-        }
-    };
-    while let Some(message) = subscriber.next().await {
-        state
-            .metrics
-            .nats_messages_total
-            .fetch_add(1, Ordering::Relaxed);
-        if message.payload.len() > state.config.nats_max_payload_bytes {
+    loop {
+        let mut subscriber = match client.subscribe(state.config.nats_subject.clone()).await {
+            Ok(subscriber) => subscriber,
+            Err(error) => {
+                tracing::error!("container pool nats subscribe failed: {error}; retrying in 5s");
+                sleep(Duration::from_secs(5)).await;
+                continue;
+            }
+        };
+        while let Some(message) = subscriber.next().await {
             state
                 .metrics
-                .nats_failures_total
+                .nats_messages_total
                 .fetch_add(1, Ordering::Relaxed);
-            continue;
-        }
-        let request = match serde_json::from_slice::<DispatchRequest>(&message.payload) {
-            Ok(request) => request,
-            Err(error) => {
-                eprintln!("container pool invalid nats request: {error}");
+            if message.payload.len() > state.config.nats_max_payload_bytes {
                 state
                     .metrics
                     .nats_failures_total
                     .fetch_add(1, Ordering::Relaxed);
                 continue;
             }
-        };
-        let selector = {
-            let registry = state.registry.lock().await;
-            pool_selector_from_request(&request, Some(message.subject.as_ref()), &registry)
-        };
-        let Some(selector) = selector else {
-            eprintln!("container pool nats request missing pool selector");
-            state
-                .metrics
-                .nats_failures_total
-                .fetch_add(1, Ordering::Relaxed);
-            continue;
-        };
-        let response = match dispatch_to_pool(&state, &selector, request).await {
-            Ok(response) => json!(response),
-            Err(error) => {
+            let request = match serde_json::from_slice::<DispatchRequest>(&message.payload) {
+                Ok(request) => request,
+                Err(error) => {
+                    tracing::error!("container pool invalid nats request: {error}");
+                    state
+                        .metrics
+                        .nats_failures_total
+                        .fetch_add(1, Ordering::Relaxed);
+                    continue;
+                }
+            };
+            let selector = {
+                let registry = state.registry.lock().await;
+                pool_selector_from_request(&request, Some(message.subject.as_ref()), &registry)
+            };
+            let Some(selector) = selector else {
+                tracing::error!("container pool nats request missing pool selector");
                 state
                     .metrics
                     .nats_failures_total
                     .fetch_add(1, Ordering::Relaxed);
-                json!({ "ok": false, "error": error, "generatedAtMs": now_ms() })
+                continue;
+            };
+            let response = match dispatch_to_pool(&state, &selector, request).await {
+                Ok(response) => json!(response),
+                Err(error) => {
+                    state
+                        .metrics
+                        .nats_failures_total
+                        .fetch_add(1, Ordering::Relaxed);
+                    json!({ "ok": false, "error": error, "generatedAtMs": now_ms() })
+                }
+            };
+            let Ok(payload) = serde_json::to_vec(&response) else {
+                continue;
+            };
+            if let Some(reply) = message.reply {
+                if let Err(error) = client.publish(reply, payload.into()).await {
+                    tracing::error!("container pool nats reply failed: {error}");
+                }
+            } else if let Err(error) = client
+                .publish(state.config.nats_result_subject.clone(), payload.into())
+                .await
+            {
+                tracing::error!("container pool nats result publish failed: {error}");
             }
-        };
-        let Ok(payload) = serde_json::to_vec(&response) else {
-            continue;
-        };
-        if let Some(reply) = message.reply {
-            if let Err(error) = client.publish(reply, payload.into()).await {
-                eprintln!("container pool nats reply failed: {error}");
-            }
-        } else if let Err(error) = client
-            .publish(state.config.nats_result_subject.clone(), payload.into())
-            .await
-        {
-            eprintln!("container pool nats result publish failed: {error}");
         }
+        tracing::error!(
+            "container pool nats subscription ended (subject={}); re-subscribing in 5s",
+            state.config.nats_subject
+        );
+        sleep(Duration::from_secs(5)).await;
     }
 }
 
@@ -2968,6 +3297,8 @@ async fn api_docs_json() -> impl axum::response::IntoResponse {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let _otel = dd_telemetry::init("dd-container-pool");
+
     let config = Arc::new(service_config_from_env());
     let registry = Arc::new(Mutex::new(PoolRegistry {
         next_port: config.port_start,
@@ -2980,7 +3311,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Some(url) => match async_nats::connect(url).await {
             Ok(client) => Some(client),
             Err(error) => {
-                eprintln!("container pool nats connect failed: {error}");
+                tracing::error!("container pool nats connect failed: {error}");
                 None
             }
         },
@@ -3006,10 +3337,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         metrics: Arc::new(Metrics::default()),
     };
 
-    println!(
-        "{SERVICE_NAME} starting: nerdctl={} namespace={} network={} db_configured={} nats_subject={} redis_locks={}",
-        state.config.nerdctl_bin,
+    tracing::info!(
+        "{SERVICE_NAME} starting: engine={} bin={} namespace={} oci_runtime={} network={} db_configured={} nats_subject={} redis_locks={}",
+        state.config.engine.label(),
+        state.config.engine_bin,
         state.config.containerd_namespace,
+        state.config.oci_runtime.as_deref().unwrap_or("(default)"),
         state.config.network,
         state.config.database_url.is_some(),
         state.config.nats_subject,
@@ -3017,10 +3350,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     );
 
     if let Err(error) = cleanup_managed_containers_on_start(&state).await {
-        eprintln!("container pool startup cleanup failed: {error}");
+        tracing::error!("container pool startup cleanup failed: {error}");
     }
     if let Err(error) = refresh_pool_configs(&state).await {
-        eprintln!("container pool initial config refresh failed: {error}");
+        tracing::error!("container pool initial config refresh failed: {error}");
         record_config_error(&state, error).await;
     }
     let initial_reconcile_state = state.clone();
@@ -3053,11 +3386,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let port = env_u16("PORT", DEFAULT_PORT);
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    println!("{SERVICE_NAME} listening on {addr}");
-    axum::serve(listener, app)
+    tracing::info!("{SERVICE_NAME} listening on {addr}");
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(async {
             if let Err(error) = tokio::signal::ctrl_c().await {
-                eprintln!("shutdown signal error: {error}");
+                tracing::error!("shutdown signal error: {error}");
             }
         })
         .await?;
@@ -3133,5 +3466,352 @@ mod tests {
             new_thread,
             false
         ));
+    }
+
+    #[test]
+    fn mount_source_accepts_named_volumes_and_rejects_path_smuggling() {
+        assert!(safe_mount_source("dd-code"));
+        assert!(safe_mount_source("dd_code.v1-2"));
+        assert!(safe_mount_source("/srv/lambda-bin"));
+        // Path-classification escapes and `-v` delimiter smuggling.
+        assert!(!safe_mount_source("../etc"));
+        assert!(!safe_mount_source("./code"));
+        assert!(!safe_mount_source("/srv/../etc"));
+        assert!(!safe_mount_source("/srv//code"));
+        assert!(!safe_mount_source("vol:/etc"));
+        assert!(!safe_mount_source("vol,extra"));
+        assert!(!safe_mount_source("bad name"));
+        assert!(!safe_mount_source(""));
+    }
+
+    #[test]
+    fn mount_target_must_be_safe_and_unreserved() {
+        assert!(safe_mount_target("/opt/code"));
+        assert!(!safe_mount_target("/opt/../etc"));
+        assert!(!safe_mount_target("relative"));
+        assert!(!safe_mount_target("/opt:/code"));
+        assert!(is_reserved_mount_target("/"));
+        assert!(is_reserved_mount_target("/proc"));
+        assert!(is_reserved_mount_target("/proc/sys"));
+        assert!(is_reserved_mount_target("/dev/shm"));
+        assert!(!is_reserved_mount_target("/opt/code"));
+        // Boundary: /devices is not under /dev.
+        assert!(!is_reserved_mount_target("/devices"));
+    }
+
+    #[test]
+    fn path_prefix_matches_on_boundary() {
+        assert!(path_has_prefix("/srv/code", "/srv/code"));
+        assert!(path_has_prefix("/srv/code/bin", "/srv/code/"));
+        assert!(!path_has_prefix("/srv/codex", "/srv/code"));
+        assert!(!path_has_prefix("/srv", "/srv/code"));
+    }
+
+    #[test]
+    fn mounts_from_json_parses_validates_and_defaults_read_only() {
+        let value = json!({
+            "mounts": [
+                { "source": "dd-code", "target": "/opt/code" },
+                { "volume": "dd-bin", "mountPath": "/opt/bin", "readOnly": false }
+            ]
+        });
+        let mounts = mounts_from_json(&value, "svc").expect("valid mounts");
+        assert_eq!(mounts.len(), 2);
+        assert_eq!(mounts[0].target, "/opt/code");
+        assert!(mounts[0].read_only, "defaults to read-only");
+        assert!(!mounts[1].read_only);
+
+        assert!(mounts_from_json(&json!({}), "svc").unwrap().is_empty());
+        assert!(mounts_from_json(&json!({ "mounts": null }), "svc").unwrap().is_empty());
+        assert!(mounts_from_json(&json!({ "mounts": "x" }), "svc").is_err());
+        assert!(
+            mounts_from_json(
+                &json!({ "mounts": [
+                    { "source": "a", "target": "/opt/code" },
+                    { "source": "b", "target": "/opt/code" }
+                ] }),
+                "svc"
+            )
+            .is_err(),
+            "duplicate target must be rejected"
+        );
+        assert!(
+            mounts_from_json(&json!({ "mounts": [{ "source": "a", "target": "/proc" }] }), "svc")
+                .is_err(),
+            "reserved target must be rejected"
+        );
+    }
+
+    #[test]
+    fn enforce_mount_policy_gates_host_paths_and_writes() {
+        let allowlist = vec!["/srv/code".to_string()];
+
+        let named_ro = Mount { source: "dd-code".into(), target: "/opt/code".into(), read_only: true };
+        assert!(enforce_mount_policy(&allowlist, false, "svc", &named_ro).is_ok());
+
+        let host_allowed = Mount { source: "/srv/code/bin".into(), target: "/opt/bin".into(), read_only: true };
+        assert!(enforce_mount_policy(&allowlist, false, "svc", &host_allowed).is_ok());
+
+        // Host path outside the allowlist is rejected.
+        let host_denied = Mount { source: "/etc".into(), target: "/opt/etc".into(), read_only: true };
+        assert!(enforce_mount_policy(&allowlist, false, "svc", &host_denied).is_err());
+        // ...and rejected outright when no allowlist is configured.
+        assert!(enforce_mount_policy(&[], false, "svc", &host_allowed).is_err());
+
+        // Writable needs the explicit opt-in.
+        let writable = Mount { source: "dd-code".into(), target: "/opt/code".into(), read_only: false };
+        assert!(enforce_mount_policy(&allowlist, false, "svc", &writable).is_err());
+        assert!(enforce_mount_policy(&allowlist, true, "svc", &writable).is_ok());
+    }
+
+    fn test_service_config() -> ServiceConfig {
+        ServiceConfig {
+            engine: EngineKind::Nerdctl,
+            engine_bin: "/usr/local/bin/nerdctl".to_string(),
+            oci_runtime: None,
+            containerd_namespace: "k8s.io".to_string(),
+            network: "host".to_string(),
+            pull_policy: Some("never".to_string()),
+            database_url: None,
+            app_config_key: "container-pool.runtime-pools.v1".to_string(),
+            app_config_scope: "default".to_string(),
+            nats_url: None,
+            nats_subject: "dd.remote.container_pool.requests".to_string(),
+            nats_result_subject: "dd.remote.container_pool.results".to_string(),
+            nats_max_payload_bytes: 1024,
+            redis_url: None,
+            redis_lock_prefix: "lock".to_string(),
+            redis_lock_ttl: Duration::from_secs(1),
+            redis_lock_wait_timeout: Duration::from_secs(1),
+            redis_lock_retry_delay: Duration::from_millis(10),
+            redis_lock_request_timeout: Duration::from_secs(1),
+            worker_response_max_bytes: 1024,
+            config_refresh: Duration::from_secs(1),
+            reconcile_interval: Duration::from_secs(1),
+            command_timeout: Duration::from_secs(1),
+            nerdctl_run_timeout: Duration::from_secs(1),
+            container_start_timeout: Duration::from_secs(1),
+            health_check_interval: Duration::from_secs(1),
+            health_check_timeout: Duration::from_millis(100),
+            unhealthy_grace: Duration::from_secs(1),
+            unhealthy_failure_threshold: 2,
+            port_start: 12_000,
+            port_end: 12_999,
+            cleanup_on_start: false,
+            server_auth_secret: None,
+            container_memory: Some("256m".to_string()),
+            container_cpus: Some("0.50".to_string()),
+            forward_env_keys: Vec::new(),
+            pids_limit: 4096,
+            nofile_limit: 65536,
+            cap_drop_all: true,
+            no_new_privileges: true,
+            mount_source_allowlist: Vec::new(),
+            allow_writable_mounts: false,
+        }
+    }
+
+    fn code_pool(slug: &str, image: &str, command: &[&str]) -> PoolConfig {
+        let value = json!({
+            "slug": slug,
+            "image": image,
+            "mounts": [{ "source": "dd-code", "target": "/opt/code", "readOnly": true }],
+            "command": command,
+        });
+        pool_config_from_json(&value).expect("valid pool config")
+    }
+
+    fn contains_pair(args: &[String], a: &str, b: &str) -> bool {
+        args.windows(2).any(|w| w[0] == a && w[1] == b)
+    }
+
+    fn tail_is(args: &[String], tail: &[&str]) -> bool {
+        args.len() >= tail.len()
+            && args[args.len() - tail.len()..]
+                .iter()
+                .zip(tail)
+                .all(|(got, want)| got == want)
+    }
+
+    #[test]
+    fn shared_volume_code_runs_eight_runtimes_zero_copy() {
+        let config = test_service_config();
+        // Code (not data) is shared read-only from one volume; the image only
+        // supplies the runtime/libc. Covers multi-file trees (erlang ebin, java
+        // classpath, node/python/ruby/bash sources) and single compiled binaries
+        // (go, rust) — all zero-copy, no per-function image build.
+        let runtimes: [(&str, &str, &[&str]); 8] = [
+            ("nodejs-fn", "docker.io/library/dd-cp-nodejs:dev", &["node", "/opt/code/server.mjs"]),
+            ("python-fn", "docker.io/library/dd-cp-python3:dev", &["python3", "/opt/code/app.py"]),
+            ("ruby-fn", "docker.io/library/dd-cp-ruby:dev", &["ruby", "/opt/code/app.rb"]),
+            ("bash-fn", "docker.io/library/dd-cp-bash:dev", &["bash", "/opt/code/run.sh"]),
+            (
+                "erlang-fn",
+                "docker.io/library/dd-cp-erlang:dev",
+                &["erl", "-noshell", "-pa", "/opt/code/ebin", "-s", "myapp", "start"],
+            ),
+            ("golang-fn", "docker.io/library/dd-cp-golang:dev", &["/opt/code/bin/server"]),
+            ("rust-fn", "docker.io/library/dd-cp-rust:dev", &["/opt/code/bin/svc"]),
+            ("java-fn", "docker.io/library/dd-cp-java:dev", &["java", "-cp", "/opt/code/classes", "Main"]),
+        ];
+        for (slug, image, command) in runtimes {
+            let pool = code_pool(slug, image, command);
+            let args = build_run_args(&config, &pool, "c1", 12_345, &BTreeMap::new())
+                .unwrap_or_else(|error| panic!("{slug}: {error}"));
+            assert!(
+                contains_pair(&args, "--volume", "dd-code:/opt/code:ro"),
+                "{slug} shared-volume mount missing: {args:?}"
+            );
+            let mut tail = vec![image];
+            tail.extend_from_slice(command);
+            assert!(tail_is(&args, &tail), "{slug} image+command tail wrong: {args:?}");
+            // Hardening still applies uniformly across runtimes.
+            assert!(contains_pair(&args, "--cap-drop", "ALL"), "{slug} cap-drop");
+            assert!(args.iter().any(|arg| arg == "--read-only"), "{slug} read-only");
+        }
+    }
+
+    #[test]
+    fn engine_kind_controls_namespace_flag() {
+        let pool = code_pool("nodejs-fn", "docker.io/library/x:dev", &["node", "/opt/code/s.mjs"]);
+
+        let nerd = test_service_config();
+        let args = build_run_args(&nerd, &pool, "c1", 1, &BTreeMap::new()).unwrap();
+        assert_eq!(&args[0..4], &["-n", "k8s.io", "run", "-d"], "nerdctl scopes to a namespace");
+
+        for engine in [EngineKind::Docker, EngineKind::Podman] {
+            let mut config = test_service_config();
+            config.engine = engine;
+            let args = build_run_args(&config, &pool, "c1", 1, &BTreeMap::new()).unwrap();
+            assert_eq!(&args[0..2], &["run", "-d"], "{engine:?} omits namespace");
+            assert!(!args.iter().any(|arg| arg == "-n"), "{engine:?} has no -n");
+        }
+    }
+
+    #[test]
+    fn oci_runtime_passthrough_and_validation() {
+        let pool = code_pool("svc", "docker.io/library/x:dev", &["/opt/code/bin/app"]);
+        // runc/crun and the containerd Kata/gVisor handlers all flow through
+        // --runtime under any engine.
+        for runtime in ["runc", "crun", "runsc", "io.containerd.kata.v2", "io.containerd.runsc.v1"] {
+            let mut config = test_service_config();
+            config.engine = EngineKind::Docker;
+            config.oci_runtime = Some(runtime.to_string());
+            let args = build_run_args(&config, &pool, "c1", 1, &BTreeMap::new()).unwrap();
+            assert!(contains_pair(&args, "--runtime", runtime), "{runtime}: {args:?}");
+        }
+        let config = test_service_config();
+        let args = build_run_args(&config, &pool, "c1", 1, &BTreeMap::new()).unwrap();
+        assert!(!args.iter().any(|arg| arg == "--runtime"), "no --runtime when unset");
+
+        assert!(safe_oci_runtime("crun"));
+        assert!(safe_oci_runtime("io.containerd.kata.v2"));
+        assert!(safe_oci_runtime("/usr/local/bin/crun"));
+        assert!(!safe_oci_runtime("runc; rm -rf /"));
+        assert!(!safe_oci_runtime("two words"));
+        assert!(!safe_oci_runtime(""));
+    }
+
+    #[test]
+    fn oci_runtime_set_but_invalid_is_an_error_not_a_silent_downgrade() {
+        // Absent / empty => engine default (None), no warning path.
+        assert_eq!(classify_oci_runtime(None), Ok(None));
+        assert_eq!(classify_oci_runtime(Some("")), Ok(None));
+        assert_eq!(classify_oci_runtime(Some("   ")), Ok(None));
+        // Valid handlers pass through.
+        assert_eq!(classify_oci_runtime(Some("runsc")), Ok(Some("runsc".to_string())));
+        assert_eq!(
+            classify_oci_runtime(Some("io.containerd.kata.v2")),
+            Ok(Some("io.containerd.kata.v2".to_string()))
+        );
+        // Set-but-invalid must surface as an error so the caller warns instead of
+        // silently running under the (weaker) default runtime.
+        assert!(classify_oci_runtime(Some("runc; rm -rf /")).is_err());
+        assert!(classify_oci_runtime(Some("two words")).is_err());
+    }
+
+    #[test]
+    fn engine_value_recognition() {
+        for ok in ["nerdctl", "Docker", " podman "] {
+            assert!(engine_value_recognized(ok), "{ok} should be recognized");
+        }
+        for bad in ["dcoker", "lxd", "crio", "containerd-shim"] {
+            assert!(!engine_value_recognized(bad), "{bad} should not be recognized");
+        }
+        // Parser still falls back to nerdctl for unknown values.
+        assert_eq!(EngineKind::parse("dcoker"), EngineKind::Nerdctl);
+        assert_eq!(EngineKind::parse("podman"), EngineKind::Podman);
+    }
+
+    #[test]
+    fn mounted_code_pools_are_confined_even_when_service_defaults_are_off() {
+        // Service leaves the strict flags off (the current default).
+        let mut config = test_service_config();
+        config.cap_drop_all = false;
+        config.no_new_privileges = false;
+
+        // A pool that mounts external code must still be confined.
+        let pool = code_pool("svc", "docker.io/library/x:dev", &["/opt/code/app"]);
+        let args = build_run_args(&config, &pool, "c1", 1, &BTreeMap::new()).unwrap();
+        assert!(contains_pair(&args, "--cap-drop", "ALL"), "mounted pool must drop caps: {args:?}");
+        assert!(
+            contains_pair(&args, "--security-opt", "no-new-privileges"),
+            "mounted pool must set no-new-privileges: {args:?}"
+        );
+    }
+
+    #[test]
+    fn unconfined_pool_opts_out_of_mount_hardening() {
+        let mut config = test_service_config();
+        config.cap_drop_all = false;
+        config.no_new_privileges = false;
+
+        let pool = pool_config_from_json(&json!({
+            "slug": "svc",
+            "image": "docker.io/library/x:dev",
+            "mounts": [{ "source": "dd-code", "target": "/opt/code" }],
+            "unconfined": true,
+            "command": ["/opt/code/app"],
+        }))
+        .unwrap();
+        let args = build_run_args(&config, &pool, "c1", 1, &BTreeMap::new()).unwrap();
+        assert!(!args.iter().any(|a| a == "--cap-drop"), "unconfined opts out of cap-drop: {args:?}");
+        assert!(
+            !args.iter().any(|a| a == "--security-opt"),
+            "unconfined opts out of no-new-privileges: {args:?}"
+        );
+    }
+
+    #[test]
+    fn mountless_pools_follow_service_security_defaults() {
+        let mountless = pool_config_from_json(&json!({
+            "slug": "svc",
+            "image": "docker.io/library/x:dev",
+            "command": ["/app"],
+        }))
+        .unwrap();
+
+        // Service flags off => no strict flags (unchanged prior behavior).
+        let mut off = test_service_config();
+        off.cap_drop_all = false;
+        off.no_new_privileges = false;
+        let args = build_run_args(&off, &mountless, "c1", 1, &BTreeMap::new()).unwrap();
+        assert!(!args.iter().any(|a| a == "--cap-drop"));
+        assert!(!args.iter().any(|a| a == "--security-opt"));
+
+        // Service flags on => strict flags, exactly as before.
+        let args = build_run_args(&test_service_config(), &mountless, "c1", 1, &BTreeMap::new()).unwrap();
+        assert!(contains_pair(&args, "--cap-drop", "ALL"));
+        assert!(contains_pair(&args, "--security-opt", "no-new-privileges"));
+    }
+
+    #[test]
+    fn bridge_network_publishes_host_port() {
+        let pool = code_pool("svc", "docker.io/library/x:dev", &["/opt/code/app"]);
+        let mut config = test_service_config();
+        config.network = "bridge".to_string();
+        let args = build_run_args(&config, &pool, "c1", 23_456, &BTreeMap::new()).unwrap();
+        assert!(contains_pair(&args, "--network", "bridge"));
+        assert!(contains_pair(&args, "--publish", "127.0.0.1:23456:8080"));
     }
 }

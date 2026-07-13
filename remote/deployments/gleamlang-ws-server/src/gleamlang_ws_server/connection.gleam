@@ -30,19 +30,19 @@ import gleam/erlang/atom
 import gleam/erlang/process.{type Selector, type Subject}
 import gleam/option.{type Option, None, Some}
 import gleam/string
-import mist.{
-  type WebsocketConnection, type WebsocketMessage, Binary, Closed, Custom,
-  Shutdown, Text,
-}
 import gleamlang_ws_server/conversations.{type Conversations}
 import gleamlang_ws_server/groups.{
-  type ConnGroup, type ConnMsg, type ConvId, type DeviceId, type UserId,
-  ByConv, ByUser, ByUserConv, ByUserDevice, Kick, MembershipChanged, Outbound,
+  type ConnGroup, type ConnMsg, type ConvId, type DeviceId, type UserId, ByConv,
+  ByUser, ByUserConv, ByUserDevice, Kick, MembershipChanged, Outbound,
   ReRegister,
 }
 import gleamlang_ws_server/pg_groups
 import gleamlang_ws_server/registry.{type Registry}
 import gleamlang_ws_server/wire
+import mist.{
+  type WebsocketConnection, type WebsocketMessage, Binary, Closed, Custom,
+  Shutdown, Text,
+}
 
 @external(erlang, "erlang", "node")
 fn erlang_node() -> atom.Atom
@@ -211,9 +211,7 @@ pub fn handle(
           let _ =
             mist.send_text_frame(
               ws_conn,
-              "{\"ok\":true,\"result\":{\"id\":\""
-                <> json_escape(id)
-                <> "\"}}",
+              "{\"ok\":true,\"result\":{\"id\":\"" <> json_escape(id) <> "\"}}",
             )
           mist.continue(state)
         }
@@ -327,8 +325,7 @@ fn handle_custom(
 fn scope_label(scope: ConnScope) -> String {
   case scope {
     UserScope(user_id, _) -> "user=" <> user_id
-    ConvScope(user_id, conv_id, _) ->
-      "user=" <> user_id <> ",conv=" <> conv_id
+    ConvScope(user_id, conv_id, _) -> "user=" <> user_id <> ",conv=" <> conv_id
   }
 }
 

@@ -1,0 +1,116 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dd-git-rs
+  namespace: default
+  labels:
+    app: dd-git-rs
+spec:
+  podSelector:
+    matchLabels:
+      app: dd-git-rs
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: dd-remote-gateway
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - dd-prometheus
+                  - dd-otel-collector
+      ports:
+        - protocol: TCP
+          port: 8137
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dd-redis-cache
+      ports:
+        - protocol: TCP
+          port: 6379
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: messaging
+          podSelector:
+            matchLabels:
+              app: dd-nats
+      ports:
+        - protocol: TCP
+          port: 4222
+    # Outbound to the public internet on the VCS/package ports only (apt mirrors,
+    # crates.io, and git/hg/svn/fossil over https/http and git:// 9418) — but
+    # never the cluster, host, link-local, or cloud-metadata ranges. This is the
+    # network-layer SSRF backstop: even if a remote URL is steered at an internal
+    # address via DNS rebinding (which the app cannot IP-pin once it hands off to
+    # the VCS CLI), the kernel drops the packet. The except list mirrors the
+    # private/reserved ranges the app's host guard rejects. RDS still reaches the
+    # private 5432 rule below, which is evaluated independently.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 0.0.0.0/8
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.0.0.0/24
+              - 192.168.0.0/16
+              - 198.18.0.0/15
+              - 224.0.0.0/4
+              - 240.0.0.0/4
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 9418
+    - to:
+        - ipBlock:
+            cidr: ::/0
+            except:
+              - ::1/128
+              - fc00::/7
+              - fe80::/10
+              - ff00::/8
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 9418
+    # RDS Postgres on private networks (evaluated independently of the internet
+    # rule above, so private 5432 stays reachable while private 80/443 do not).
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+        - ipBlock:
+            cidr: 172.16.0.0/12
+        - ipBlock:
+            cidr: 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 5432

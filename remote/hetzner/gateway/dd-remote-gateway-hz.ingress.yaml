@@ -1,0 +1,34 @@
+# Public entry Ingress for the Hetzner cluster: ingress-nginx (TLS) -> gateway.
+#
+# The host is derived from the control-plane public IP via sslip.io and so
+# CHANGES whenever Hetzner reassigns the node IP (e.g. a rebuild). Do NOT hard-
+# code it here — it is substituted at apply time from ${HETZNER_INGRESS_HOST}.
+# apply-gateway.sh / ingress-tls.sh resolve the current CP IP and envsubst this.
+#
+#   HETZNER_INGRESS_HOST=hello.<cp-ip-dashed>.sslip.io envsubst < this | kubectl apply -f -
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hello-world
+  namespace: default
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/backend-protocol: HTTPS
+    nginx.ingress.kubernetes.io/proxy-buffer-size: 16k
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - ${HETZNER_INGRESS_HOST}
+      secretName: hello-world-tls
+  rules:
+    - host: ${HETZNER_INGRESS_HOST}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: dd-remote-gateway-hz
+                port:
+                  number: 443

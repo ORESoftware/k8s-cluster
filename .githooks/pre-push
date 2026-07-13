@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Runs before `git push` of THIS superproject. Refuses the push if it would
+# publish a submodule gitlink whose commit is not reachable on the submodule's
+# own remote (the "not our ref" breakage). Unlike the post-* hooks this one
+# GUARDS — it can fail the push — because push is the last point before a broken
+# pointer becomes everyone else's `git pull` failure.
+#
+# git passes: $1 = remote name, $2 = remote url, and the ref list on stdin.
+# `exec` preserves both for the guard script.
+exec "$(git rev-parse --show-toplevel)/.githooks/submodule-push-guard.sh" "$@"

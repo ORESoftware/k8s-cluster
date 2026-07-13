@@ -3,6 +3,8 @@ kind: Application
 metadata:
   name: dd-mlflow
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
 spec:
   project: dd-ai-ml-platform
   source:
@@ -15,6 +17,8 @@ spec:
         replicaCount: 1
         serviceAccount:
           automount: false
+        extraPodLabels:
+          dd-mlflow-postgresql-client: 'true'
         podSecurityContext:
           seccompProfile:
             type: RuntimeDefault
@@ -24,6 +28,7 @@ spec:
             drop:
               - ALL
           runAsNonRoot: true
+          readOnlyRootFilesystem: true
           runAsUser: 1000
           runAsGroup: 1000
           seccompProfile:
@@ -43,24 +48,34 @@ spec:
               name: dd-mlflow-postgresql
               usernameKey: username
               passwordKey: password
-        postgresql:
-          enabled: true
-          image:
-            tag: 17.6.0-debian-12-r4
-          auth:
-            username: mlflow
+        backendStore:
+          postgres:
+            enabled: true
+            host: dd-mlflow-postgresql
+            port: 5432
             database: mlflow
-            existingSecret: dd-mlflow-postgresql
-            secretKeys:
-              adminPasswordKey: postgres-password
-              userPasswordKey: password
+          existingDatabaseSecret:
+            name: dd-mlflow-postgresql
+            usernameKey: username
+            passwordKey: password
+        postgresql:
+          enabled: false
         artifactRoot:
           defaultArtifactsDestination: /mlflow/artifacts
+        extraEnvVars:
+          HOME: /tmp/mlflow-home
+          XDG_CACHE_HOME: /tmp/mlflow-cache
+          TMPDIR: /tmp
         extraVolumes:
+          - name: mlflow-tmp
+            emptyDir:
+              sizeLimit: 1Gi
           - name: mlflow-artifacts
             persistentVolumeClaim:
               claimName: dd-mlflow-artifacts
         extraVolumeMounts:
+          - name: mlflow-tmp
+            mountPath: /tmp
           - name: mlflow-artifacts
             mountPath: /mlflow/artifacts
         resources:

@@ -1,0 +1,22 @@
+[package]
+name = "dd-evolution-optimizer"
+version = "0.1.0"
+edition = "2021"
+description = "Distributed island-model genetic-algorithm optimizer. A master orchestrates epochs over NATS JetStream; island worker pods evolve subpopulations and elite individuals migrate around a ring between epochs."
+
+[[bin]]
+name = "dd-evolution-optimizer"
+path = "src/main.rs"
+
+[dependencies]
+dd-telemetry = { path = "../../libs/telemetry-rs" }
+tracing = "0.1"
+async-nats = "=0.38.0"
+axum = { version = "0.7", features = ["macros"] }
+# Source-of-truth NATS subject constants for distributed GA jobs/results/migrants/events.
+dd-nats-subject-defs = { path = "../../libs/nats/subject-defs/generated/rust" }
+futures-util = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+uuid = { version = "1", features = ["v4"] }

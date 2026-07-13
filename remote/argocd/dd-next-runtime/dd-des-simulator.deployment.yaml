@@ -6,7 +6,7 @@ metadata:
   labels:
     app: dd-des-simulator
 spec:
-  replicas: 1
+  replicas: 0
   strategy:
     type: Recreate
   selector:
@@ -94,7 +94,7 @@ spec:
               containerPort: 8099
           resources:
             requests:
-              cpu: 50m
+              cpu: 25m
               memory: 128Mi
             limits:
               cpu: '1'

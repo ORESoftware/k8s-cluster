@@ -26,6 +26,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'dart:isolate';
 
 import 'package:jaspr/jaspr.dart';
@@ -44,6 +45,100 @@ const String _lobbyTopic = 'lobby';
 /// boot so they see identity churn + conversation directory mutations.
 const String _presenceTopic = 'presence';
 const String _convListTopic = 'conv-list';
+
+/// Hard caps on the number of rows a session retains in its per-session
+/// lobby / echo buffers. The render pipelines only ever show the last
+/// 16 / 8 rows, but the *stored* `BehaviorSubject` list was append-only —
+/// so a long-lived session on a busy lobby grew its in-memory buffer without
+/// bound (a slow per-session leak). We trim at store time to a small multiple
+/// of the render window; output is unchanged, memory is bounded.
+const int _maxLobbyRows = 64;
+const int _maxHistoryRows = 64;
+
+/// Trim [rows] to at most [max] newest entries (keeps the tail).
+List<T> _trimTail<T>(List<T> rows, int max) =>
+    rows.length <= max ? rows : rows.sublist(rows.length - max);
+
+// ---------------------------------------------------------------------------
+// Shared clock-render cache (perf A/B: WS_CLOCK_SHARED_RENDER).
+// ---------------------------------------------------------------------------
+//
+// The 1 Hz `Clock` fragment is the only steady-state emitter, and its HTML is
+// a pure function of the (second-granularity) UTC timestamp — identical for
+// every session. The original code re-ran a full Jaspr render per session per
+// tick, which is the dominant idle-CPU cost at scale (≈one render × live
+// sessions every `clockIntervalSeconds`). This module-level cache, shared by
+// every session on a host isolate, collapses that to ONE render per distinct
+// second across the whole host: the first session to want a given second
+// kicks off the render Future and all others await the same Future. Gated by
+// `WS_CLOCK_SHARED_RENDER` (default on) so the per-session-render arm can be
+// A/B'd; `dart_clock_renders_total` vs `dart_clock_render_cache_hits_total`
+// quantify the win.
+
+/// Whether sessions share the cached clock render. Read once per host isolate.
+final bool _clockSharedRender =
+    (Platform.environment['WS_CLOCK_SHARED_RENDER']?.toLowerCase().trim() ??
+            'true') !=
+        'false';
+
+/// Perf A/B: when true, one timer per host isolate drives every session's 1 Hz
+/// tick (see `_runHost`) instead of one `Timer.periodic` per session. Off by
+/// default (the proven per-session-timer arm). Read once per host isolate.
+final bool _hostLevelTicker =
+    Platform.environment['WS_HOST_LEVEL_TICKER']?.toLowerCase().trim() ==
+        'true';
+
+/// Round-robin counter used to assign each session a clock-emit phase in the
+/// host-level-ticker arm, so the per-second clock fan-out is spread evenly
+/// across the `clockIntervalSeconds` window rather than bursting from one
+/// shared timer firing. Host-isolate-local (each host has its own counter).
+int _hostClockPhaseCounter = 0;
+
+/// Phase in `[0, clockInterval)` at which a session emits its clock fragment.
+/// 0 in the per-session-timer arm (each timer is already phase-spread by its
+/// independent start time, preserving the original cadence exactly); spread
+/// round-robin in the host-level-ticker arm so a single host timer doesn't
+/// fire 1000 clock emits in one event-loop turn.
+int _assignClockPhase(int clockInterval) {
+  if (!_hostLevelTicker || clockInterval <= 0) return 0;
+  return _hostClockPhaseCounter++ % clockInterval;
+}
+
+/// iso-second → in-flight/settled render. Bounded to a few entries: across
+/// phase-spread tickers at most ~2 distinct seconds are live at any boundary.
+final _clockRenderCache = <String, Future<String>>{};
+
+void _clockCachePut(String iso, Future<String> html) {
+  if (_clockRenderCache.length >= 4) {
+    _clockRenderCache.remove(_clockRenderCache.keys.first);
+  }
+  _clockRenderCache[iso] = html;
+}
+
+/// UTC ISO-8601 timestamp truncated to whole seconds. Stable within a
+/// 1-second window so every session ticking in the same second produces the
+/// same cache key (`toIso8601String()` would otherwise include milliseconds
+/// and defeat the cache). Pure + top-level so it can be unit-tested.
+String clockIsoForSecond(DateTime now) {
+  final u = now.toUtc();
+  return DateTime.utc(u.year, u.month, u.day, u.hour, u.minute, u.second)
+      .toIso8601String();
+}
+
+/// Hard length caps on client-supplied text fields accepted from an HTMX
+/// trigger. Inbound frames are already byte-capped (`WS_MAX_INBOUND_BYTES`,
+/// 64 KiB by default) but that limit is per-frame: without a per-field cap a
+/// single 64 KiB display name / conversation id / chat line would still be
+/// (a) stored verbatim as a map key/value in the shard's Presence /
+/// ConversationRegistry / EventBus state, and (b) fanned out to *every*
+/// joined session on the shard — a cheap amplification vector. We truncate
+/// rather than reject so the demo stays forgiving; identifiers get a short
+/// cap, free-text chat a larger one.
+const int _maxIdentLen = 128;
+const int _maxTextLen = 2000;
+
+/// Truncate [s] to at most [max] code units. Trim first at the call site.
+String _cap(String s, int max) => s.length <= max ? s : s.substring(0, max);
 
 /// Entry point for a session-host isolate. Receives a one-time handshake
 /// SendPort, replies with its own mailbox, then loops forever multiplexing
@@ -83,38 +178,67 @@ Future<void> _runHost(SendPort handshakePort) async {
 
   final sessions = <String, Session>{};
 
-  await for (final raw in mailbox) {
-    try {
-      if (raw is AttachSession) {
-        final session = Session(raw.boot);
-        sessions[raw.boot.sessionId] = session;
-        unawaited(() async {
-          try {
-            await session.run();
-          } catch (_) {
-            // Session-level error — already logged via the outbound
-            // MetricEvent path inside Session. Swallow to keep the host
-            // alive for sibling sessions.
-          } finally {
-            sessions.remove(raw.boot.sessionId);
-          }
-        }());
-      } else if (raw is RouteToSession) {
-        sessions[raw.sessionId]?.deliver(raw.event);
-      } else if (raw is DetachSession) {
-        final s = sessions.remove(raw.sessionId);
-        s?.requestShutdown();
-      } else if (raw == _hostShutdownSentinel) {
-        for (final s in sessions.values) {
-          s.requestShutdown();
+  // Coalesced host-level ticker (perf A/B: WS_HOST_LEVEL_TICKER). One timer
+  // per host isolate drives the 1 Hz lifecycle gate + clock emit for every
+  // session it owns, instead of one Timer.periodic per session — at
+  // 1000 sessions/host that's 1 timer replacing 1000. Clock emits are
+  // phase-spread per session (see `_assignClockPhase`) so the coalesced work
+  // doesn't arrive as a single per-second burst. Off by default; the
+  // per-session timer arm is preserved verbatim when this is unset.
+  Timer? hostTicker;
+  if (_hostLevelTicker) {
+    var hostTick = 0;
+    hostTicker = Timer.periodic(const Duration(seconds: 1), (_) {
+      hostTick++;
+      // Snapshot so a tick that triggers a session teardown (idle/age close)
+      // can't mutate the map mid-iteration.
+      for (final s in sessions.values.toList(growable: false)) {
+        try {
+          s.onHostTick(hostTick);
+        } catch (_) {
+          // Contained: the session counts its own tick errors. One bad
+          // session must not stop the host ticking its siblings.
         }
-        sessions.clear();
-        mailbox.close();
-        return;
       }
-    } catch (_) {
-      // Defensive: never let a malformed frame from main kill the host.
+    });
+  }
+
+  try {
+    await for (final raw in mailbox) {
+      try {
+        if (raw is AttachSession) {
+          final session = Session(raw.boot);
+          sessions[raw.boot.sessionId] = session;
+          unawaited(() async {
+            try {
+              await session.run();
+            } catch (_) {
+              // Session-level error — already logged via the outbound
+              // MetricEvent path inside Session. Swallow to keep the host
+              // alive for sibling sessions.
+            } finally {
+              sessions.remove(raw.boot.sessionId);
+            }
+          }());
+        } else if (raw is RouteToSession) {
+          sessions[raw.sessionId]?.deliver(raw.event);
+        } else if (raw is DetachSession) {
+          final s = sessions.remove(raw.sessionId);
+          s?.requestShutdown();
+        } else if (raw == _hostShutdownSentinel) {
+          for (final s in sessions.values) {
+            s.requestShutdown();
+          }
+          sessions.clear();
+          mailbox.close();
+          return;
+        }
+      } catch (_) {
+        // Defensive: never let a malformed frame from main kill the host.
+      }
     }
+  } finally {
+    hostTicker?.cancel();
   }
 }
 
@@ -213,7 +337,19 @@ class Session {
   final _convDirectory =
       BehaviorSubject<Map<String, ConvSummary>>.seeded(const {});
 
+  /// Per-session 1 Hz timer (per-session-ticker arm only — null when the
+  /// host-level ticker drives this session, see [onHostTick]).
   Timer? _ticker;
+
+  /// Tick counter for the per-session-ticker arm (the host-level arm passes
+  /// the host's shared counter into [_runTick] instead).
+  int _localTick = 0;
+
+  /// Clock-emit phase in `[0, clockInterval)`. 0 in the per-session arm
+  /// (preserving the original cadence exactly); round-robin-spread in the
+  /// host-level arm so one shared timer doesn't burst every clock at once.
+  late final int _clockPhase = _assignClockPhase(_boot.clockIntervalSeconds);
+
   final _subs = <StreamSubscription<dynamic>>[];
   bool _disposed = false;
 
@@ -350,29 +486,49 @@ class Session {
       onError: _onRenderError,
     ));
 
-    // Server-driven 1Hz tick. The idle-disconnect check fires on
-    // every tick (it's cheap — just two int subtractions + a metric
-    // emit on the rare timeout path). The Clock OOB fragment fires
-    // every `clockIntervalSeconds` ticks so a benchmark profile can
-    // dial the per-session jaspr render rate way down without losing
-    // the lifecycle gates.
-    var tickCount = 0;
-    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-      // A throw here would otherwise be an uncaught error on the host's
-      // event loop (no surrounding await) — contain it to this session.
-      try {
-        tickCount++;
-        final clockInterval = _boot.clockIntervalSeconds;
-        if (clockInterval > 0 && tickCount % clockInterval == 0) {
-          unawaited(_emitFragment(
-            Clock(DateTime.now().toUtc().toIso8601String()),
-          ));
-        }
-        _checkIdle();
-      } catch (_) {
-        _send(const MetricEvent('dart_session_tick_errors_total'));
+    // Server-driven 1 Hz tick. The idle-disconnect check fires on every tick
+    // (cheap — two int subtractions + a rare metric emit). The Clock OOB
+    // fragment fires every `clockIntervalSeconds` ticks so a benchmark profile
+    // can dial the per-session jaspr render rate down without losing the
+    // lifecycle gates.
+    //
+    // Two arms (WS_HOST_LEVEL_TICKER, perf A/B): by default each session owns
+    // its own `Timer.periodic` — proven, but 30K sessions means 30K timers
+    // firing every second. When the host-level ticker is on, the host isolate
+    // drives `onHostTick` for all its sessions from ONE timer and this
+    // per-session timer is not created; clock emits are phase-spread so the
+    // coalesced work doesn't arrive as a single burst.
+    if (!_hostLevelTicker) {
+      _ticker = Timer.periodic(
+        const Duration(seconds: 1),
+        (_) => _runTick(++_localTick),
+      );
+    }
+  }
+
+  /// One 1 Hz lifecycle step for this session: emit the clock fragment on the
+  /// session's phase and run the idle/age gate. Called either by this
+  /// session's own [Timer] (per-session arm) or by the host isolate's shared
+  /// ticker (host-level arm). A throw here would otherwise be an uncaught
+  /// error on the host event loop, so it's contained + counted.
+  void _runTick(int tickCount) {
+    try {
+      final clockInterval = _boot.clockIntervalSeconds;
+      if (clockInterval > 0 && tickCount % clockInterval == _clockPhase) {
+        unawaited(_emitClock());
       }
-    });
+      _checkIdle();
+    } catch (_) {
+      _send(const MetricEvent('dart_session_tick_errors_total'));
+    }
+  }
+
+  /// Entry point the host-level ticker calls once per second per session.
+  /// No-op once disposed (the host drops the session from its map on dispose,
+  /// so this is belt-and-braces).
+  void onHostTick(int hostTick) {
+    if (_disposed) return;
+    _runTick(hostTick);
   }
 
   /// `onError` for every per-session render pipeline. A render/pipeline
@@ -565,6 +721,36 @@ class Session {
     }
   }
 
+  /// Emit the 1 Hz clock fragment, sharing one Jaspr render per second across
+  /// every session on this host when `WS_CLOCK_SHARED_RENDER` is on (the
+  /// default). See the cache notes at the top of this file. Errors are
+  /// swallowed + counted exactly like [_emitFragment] so a render failure
+  /// drops one clock frame instead of escaping to the host loop.
+  Future<void> _emitClock() async {
+    try {
+      final iso = clockIsoForSecond(DateTime.now());
+      final String html;
+      if (_clockSharedRender) {
+        final pending = _clockRenderCache[iso];
+        if (pending != null) {
+          _send(const MetricEvent('dart_clock_render_cache_hits_total'));
+          html = await pending;
+        } else {
+          final fut = renderFragment(Clock(iso));
+          _clockCachePut(iso, fut);
+          _send(const MetricEvent('dart_clock_renders_total'));
+          html = await fut;
+        }
+      } else {
+        _send(const MetricEvent('dart_clock_renders_total'));
+        html = await renderFragment(Clock(iso));
+      }
+      _emitText(html);
+    } catch (_) {
+      _send(const MetricEvent('dart_session_render_errors_total'));
+    }
+  }
+
   // ---- HTMX trigger handling ---------------------------------------------
 
   void _handleHtmxTrigger(HtmxInbound msg) {
@@ -576,12 +762,12 @@ class Session {
         _counter.add(0);
         _send(const MetricEvent('dart_session_resets_total'));
       case 'echo':
-        final text = msg.stringField('message').trim();
+        final text = _cap(msg.stringField('message').trim(), _maxTextLen);
         if (text.isEmpty) return;
-        _history.add([..._history.value, text]);
+        _history.add(_trimTail([..._history.value, text], _maxHistoryRows));
         _send(const MetricEvent('dart_session_echoes_total'));
       case 'say':
-        final text = msg.stringField('text').trim();
+        final text = _cap(msg.stringField('text').trim(), _maxTextLen);
         if (text.isEmpty) return;
         _send(BusPublish(
           topic: _lobbyTopic,
@@ -594,8 +780,9 @@ class Session {
         ));
         _send(const MetricEvent('dart_session_says_total'));
       case 'identify':
-        final userId = msg.stringField('user_id').trim();
-        final displayName = msg.stringField('display_name').trim();
+        final userId = _cap(msg.stringField('user_id').trim(), _maxIdentLen);
+        final displayName =
+            _cap(msg.stringField('display_name').trim(), _maxIdentLen);
         if (userId.isEmpty) {
           unawaited(_emitFragment(
             const StatusPill('user_id required to identify'),
@@ -605,21 +792,24 @@ class Session {
         _identity.add((userId: userId, displayName: displayName));
         _send(Identify(userId: userId, displayName: displayName));
       case 'open-conv':
-        final convId = msg.stringField('conversation_id').trim();
-        final title = msg.stringField('title').trim();
+        final convId =
+            _cap(msg.stringField('conversation_id').trim(), _maxIdentLen);
+        final title = _cap(msg.stringField('title').trim(), _maxIdentLen);
         if (convId.isEmpty) return;
         _send(ConversationOpen(
           conversationId: convId,
           title: title,
-          kind: msg.stringField('kind', 'chat'),
+          kind: _cap(msg.stringField('kind', 'chat'), _maxIdentLen),
         ));
       case 'join-conv':
-        final convId = msg.stringField('conversation_id').trim();
+        final convId =
+            _cap(msg.stringField('conversation_id').trim(), _maxIdentLen);
         if (convId.isEmpty) return;
         _activeConv.add(convId);
         _send(ConversationJoin(convId));
       case 'leave-conv':
-        final convId = msg.stringField('conversation_id').trim();
+        final convId =
+            _cap(msg.stringField('conversation_id').trim(), _maxIdentLen);
         if (convId.isEmpty) return;
         if (_activeConv.value == convId) _activeConv.add('');
         _send(ConversationLeave(
@@ -627,17 +817,20 @@ class Session {
           dropMembership: msg.stringField('drop') == '1',
         ));
       case 'say-conv':
-        final convId = msg.stringField('conversation_id').trim();
-        final text = msg.stringField('text').trim();
+        final convId =
+            _cap(msg.stringField('conversation_id').trim(), _maxIdentLen);
+        final text = _cap(msg.stringField('text').trim(), _maxTextLen);
         if (convId.isEmpty || text.isEmpty) return;
         _send(ConversationSay(conversationId: convId, text: text));
       case 'switch-conv':
         // Sets which conversation the local panel renders. No supervisor
         // round-trip needed; the bus deliveries already populate
         // `_convMessages` for any topic this session is bus-joined to.
-        _activeConv.add(msg.stringField('conversation_id').trim());
+        _activeConv.add(
+            _cap(msg.stringField('conversation_id').trim(), _maxIdentLen));
       case 'delete-conv':
-        final convId = msg.stringField('conversation_id').trim();
+        final convId =
+            _cap(msg.stringField('conversation_id').trim(), _maxIdentLen);
         if (convId.isEmpty) return;
         _send(ConversationDelete(convId));
       default:
@@ -653,7 +846,7 @@ class Session {
     if (delivery.topic == _lobbyTopic && delivery.kind == 'chat.say') {
       final text = delivery.data['text'] as String? ?? '';
       if (text.isEmpty) return;
-      _lobby.add([
+      _lobby.add(_trimTail([
         ..._lobby.value,
         LobbyRow(
           name: (delivery.data['displayName'] as String?) ??
@@ -662,7 +855,7 @@ class Session {
           text: text,
           self: delivery.fromSessionId == _boot.sessionId,
         ),
-      ]);
+      ], _maxLobbyRows));
       _send(const MetricEvent('dart_session_lobby_deliveries_total'));
       return;
     }

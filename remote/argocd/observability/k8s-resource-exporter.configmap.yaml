@@ -25,30 +25,33 @@ data:
     PORT = os.environ.get("KUBERNETES_SERVICE_PORT", "443")
     BASE_URL = "https://%s:%s" % (HOST, PORT)
     SCRAPE_TIMEOUT = float(os.environ.get("SCRAPE_TIMEOUT_SECONDS", "5"))
-    DEFAULT_WATCH_NAMESPACES = "ai-ml,airbyte,default,headlamp,kafka,messaging,observability,presence,spark,vpn"
+    DEFAULT_WATCH_NAMESPACES = "ai-ml,airbyte,big-data,default,headlamp,kafka,messaging,observability,presence,spark,vpn"
     DEFAULT_WATCH_APPS = (
-        "dd-agent-worker-broker,dd-ai-ml-pipeline,dd-akka-ws-server,dd-bastion,"
+        "dd-agent-worker-broker,dd-ai-ml-pipeline,dd-akka-ws-server,dd-apostille-services-server,dd-bastion,"
         "dd-airbyte-postgresql,dd-billing-server,dd-browser-job-runner,dd-browser-test-server,dd-build-server,"
-        "dd-container-pool,dd-contract-service,dd-dart-server,dd-des-rs,dd-des-simulator,"
-        "dd-dev-server-api,dd-formal-methods-server,dd-formal-methods-service,"
+        "dd-cluster-mcp-rs,dd-compliance-rs,dd-container-pool,dd-contract-service,dd-dagster-postgresql,dd-dart-server,dd-des-rs,dd-des-simulator,"
+        "dd-dev-server-api,dd-economics-server,dd-escrow-rs,dd-fabrication-server,dd-formal-methods-server,dd-formal-methods-service,"
         "dd-fsharp-ws-server,dd-gleam-lambda-runner,dd-gleam-mcp-server,"
         "dd-gleamlang-server,dd-gleamlang-ws-loadtest,"
         "dd-gleamlang-ws-loadtest-akkaws-akkastreams,"
         "dd-gleamlang-ws-loadtest-akkaws-asyncjava,dd-gleamlang-ws-loadtest-dart,"
         "dd-gleamlang-ws-loadtest-gcs,dd-gleamlang-ws-server,dd-go-wss-server,"
-        "dd-grafana,dd-idle-reaper,dd-jaeger,dd-k8s-resource-exporter,dd-live-mutex,"
+        "dd-grafana,dd-idle-reaper,dd-in-house-mip-solver-node-master,"
+        "dd-in-house-mip-solver-node-slave,dd-jaeger,dd-k8s-resource-exporter,dd-live-mutex,dd-live-mutex-distributed,"
         "dd-live-mutex-submodule,dd-lock-loadtest-gleam,dd-lock-loadtest-rs,"
-        "dd-lock-loadtest-trigger,dd-loki,dd-mdp-optimizer,dd-nats,"
-        "dd-nodejs-ws-loadtest-gcs,dd-otel-collector,dd-prometheus,dd-promtail,"
+        "dd-lock-loadtest-trigger,dd-loki,dd-mdp-optimizer,dd-mlflow-postgresql,dd-music-rs,dd-nats,"
+        "dd-nodejs-ws-loadtest-gcs,dd-otel-collector,dd-patent-filing-rs,dd-prometheus,dd-promtail,dd-public-data-server,"
         "dd-redis-cache,dd-remote-auth,dd-remote-gateway,dd-remote-queue-consumer,"
-        "dd-remote-rest-api,dd-remote-web-home,dd-runtime-config,dd-rust-network-mutex,"
-        "dd-rust-vapi-phone,dd-rust-wss-server,dd-selenium-server,dd-spark-pipeline-server,"
+        "dd-remote-rest-api,dd-remote-web-home,dd-runtime-config,dd-rust-network-mutex,dd-rust-network-mutex-mills,"
+        "dd-rust-network-mutex-raft,"
+        "dd-rust-vapi-phone,dd-rust-wss-server,dd-selenium-server,dd-sound-recorder-rs,dd-spark-pipeline-server,"
         "dd-tempo,dd-thread-fleet-exporter,dd-thread-operator,dd-trading-server,dd-vpn,"
-        "dd-web-scraper,dd-webrtc-signaling,dd-ws-loadtest-rs,"
+        "dd-web-scraper,dd-webrtc-media,dd-webrtc-signaling,dd-ws-loadtest-rs,"
         "dd-ws-loadtest-rs-akkaws-akkastreams,dd-ws-loadtest-rs-akkaws-asyncjava,"
         "dd-ws-loadtest-rs-dart,dd-ws-loadtest-rs-fsharp-rx,dd-ws-loadtest-rs-gcs,"
         "dd-ws-loadtest-rs-go-wss,dd-ws-loadtest-rs-rust-wss,gcs,gcs-kafka,"
-        "gcs-mongodb,gcs-rabbitmq,gcs-router,headlamp,presence,reloader"
+        "gcs-mongodb,gcs-rabbitmq,gcs-router,headlamp,minio,presence,reloader,"
+        "spark,spark-master,spark-worker,airflow"
     )
     WATCH_NAMESPACES = [v.strip() for v in os.environ.get("WATCH_NAMESPACES", DEFAULT_WATCH_NAMESPACES).split(",") if v.strip()]
     WATCH_APPS = set(v.strip() for v in os.environ.get("WATCH_APPS", DEFAULT_WATCH_APPS).split(",") if v.strip())
@@ -375,6 +378,37 @@ data:
             emit_workload_replicas(lines, ns, "DaemonSet", name, app, values)
 
 
+    def collect_hpas(lines, ns):
+        data = api_get("/apis/autoscaling/v2/namespaces/%s/horizontalpodautoscalers" % ns)
+        for hpa in data.get("items", []):
+            meta = hpa.get("metadata", {})
+            name = meta.get("name", "")
+            spec = hpa.get("spec", {})
+            status = hpa.get("status", {})
+            target = spec.get("scaleTargetRef", {})
+            target_kind = target.get("kind", "")
+            target_name = target.get("name", "")
+            meta_labels = meta.get("labels", {})
+            app = meta_labels.get("app") or meta_labels.get("app.kubernetes.io/name") or target_name
+            if not is_watched_workload(target_name or name, app):
+                continue
+            current = status.get("currentReplicas", 0)
+            desired = status.get("desiredReplicas", 0)
+            min_replicas = spec.get("minReplicas", 1)
+            max_replicas = spec.get("maxReplicas", 0)
+            base = {"namespace": ns, "hpa": name, "target_kind": target_kind, "target": target_name, "app": app}
+            emit(lines, "dd_k8s_hpa_min_replicas", "Watched HorizontalPodAutoscaler minimum replicas.", "gauge", min_replicas, base)
+            emit(lines, "dd_k8s_hpa_max_replicas", "Watched HorizontalPodAutoscaler maximum replicas.", "gauge", max_replicas, base)
+            emit(lines, "dd_k8s_hpa_current_replicas", "Watched HorizontalPodAutoscaler current replicas.", "gauge", current, base)
+            emit(lines, "dd_k8s_hpa_desired_replicas", "Watched HorizontalPodAutoscaler desired replicas.", "gauge", desired, base)
+            emit(lines, "dd_k8s_hpa_current_at_max", "Watched HorizontalPodAutoscaler current replicas at max replicas.", "gauge", 1 if max_replicas > 0 and current >= max_replicas else 0, base)
+            for condition in status.get("conditions", []):
+                condition_type = condition.get("type", "Unknown")
+                condition_status = 1 if condition.get("status") == "True" else 0
+                reason = safe_reason(condition.get("reason"))
+                emit(lines, "dd_k8s_hpa_condition", "Watched HorizontalPodAutoscaler condition status.", "gauge", condition_status, {**base, "condition": condition_type, "reason": reason})
+
+
     def collect_pods(lines, ns):
         data = api_get("/api/v1/namespaces/%s/pods" % ns)
         watched = {}
@@ -421,6 +455,23 @@ data:
                     parts = {**cbase, "reason": safe_reason(last_terminated.get("reason")), "exit_code": last_terminated.get("exitCode", 0)}
                     emit(lines, "dd_k8s_pod_container_last_terminated", "Watched container last termination reason.", "gauge", 1, parts)
                     emit(lines, "dd_k8s_pod_container_last_terminated_timestamp_seconds", "Watched container last termination finish time.", "gauge", parse_time(last_terminated.get("finishedAt")), parts)
+            for cs in status.get("initContainerStatuses", []):
+                cname = cs.get("name", "")
+                cbase = {**base, "init_container": cname}
+                emit(lines, "dd_k8s_pod_init_container_ready", "Watched init container ready state.", "gauge", 1 if cs.get("ready") else 0, cbase)
+                emit(lines, "dd_k8s_pod_init_container_restarts_total", "Watched init container restart count.", "counter", cs.get("restartCount", 0), cbase)
+                state = cs.get("state", {})
+                waiting = state.get("waiting")
+                if waiting:
+                    emit(lines, "dd_k8s_pod_init_container_waiting", "Watched init container waiting reason.", "gauge", 1, {**cbase, "reason": safe_reason(waiting.get("reason"))})
+                terminated = state.get("terminated")
+                if terminated:
+                    emit(lines, "dd_k8s_pod_init_container_terminated", "Watched init container current termination reason.", "gauge", 1, {**cbase, "reason": safe_reason(terminated.get("reason")), "exit_code": terminated.get("exitCode", 0)})
+                last_terminated = cs.get("lastState", {}).get("terminated")
+                if last_terminated:
+                    parts = {**cbase, "reason": safe_reason(last_terminated.get("reason")), "exit_code": last_terminated.get("exitCode", 0)}
+                    emit(lines, "dd_k8s_pod_init_container_last_terminated", "Watched init container last termination reason.", "gauge", 1, parts)
+                    emit(lines, "dd_k8s_pod_init_container_last_terminated_timestamp_seconds", "Watched init container last termination finish time.", "gauge", parse_time(last_terminated.get("finishedAt")), parts)
         return watched
 
 
@@ -507,6 +558,7 @@ data:
             collect_deployments(lines, ns)
             collect_statefulsets(lines, ns)
             collect_daemonsets(lines, ns)
+            collect_hpas(lines, ns)
             watched = collect_pods(lines, ns)
             collect_pod_metrics(lines, ns, watched)
             collect_events(lines, ns, watched)

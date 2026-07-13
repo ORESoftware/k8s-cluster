@@ -1,0 +1,115 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fiducia-auth
+  namespace: fiducia
+  labels:
+    app: fiducia-auth
+spec:
+  replicas: 1
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }
+  selector:
+    matchLabels:
+      app: fiducia-auth
+  template:
+    metadata:
+      labels:
+        app: fiducia-auth
+      annotations:
+        dd.dev/fiducia-source: 'fiducia-cloud/fiducia-monorepo@main (apps/fiducia-auth.rs)'
+        # Real ES256 JWT minting + JWKS + KV-backed keys; wire signing key + KV.
+        dd.dev/fiducia-build: '2026-06-28-auth-jwt-kv'
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: fiducia-auth
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities: { drop: [ALL] }
+            seccompProfile: { type: RuntimeDefault }
+          command: [/bin/bash, -lc]
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              # Clone PUBLIC app repos as siblings (the monorepo is private).
+              rm -rf /tmp/src && mkdir -p /tmp/src && cd /tmp/src
+              for repo in fiducia-auth.rs fiducia-interfaces; do git clone --depth 1 --branch main "https://github.com/fiducia-cloud/${repo}.git"; done
+              cd /tmp/src/fiducia-auth.rs
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - { name: PORT, value: '8097' }
+            - { name: RUST_LOG, value: info }
+            # Shared ES256 signing key (same across all replicas + both clusters,
+            # so a JWT minted anywhere verifies everywhere) + the internal-only
+            # introspect guard. Secret created out-of-band (kubectl), not in git.
+            # optional: a cluster without the secret yet degrades to an ephemeral
+            # signing key (auth logs a warning) instead of crash-looping; apply the
+            # shared secret + restart to get cross-cluster JWT consistency.
+            - name: FIDUCIA_JWT_SIGNING_KEY
+              valueFrom:
+                secretKeyRef: { name: fiducia-auth-secrets, key: jwt-signing-key, optional: true }
+            - name: FIDUCIA_INTROSPECT_SECRET
+              valueFrom:
+                secretKeyRef: { name: fiducia-auth-secrets, key: introspect-secret, optional: true }
+            # Durable API-key storage via fiducia's own KV — through the LB so KV
+            # writes reach the shard leader (the LB follows the NotLeader redirect).
+            - { name: FIDUCIA_KV_URL, value: 'http://fiducia-load-balance.fiducia.svc.cluster.local:8088' }
+            - { name: HOME, value: /tmp }
+            - { name: CARGO_HOME, value: /tmp/cargo }
+            - { name: CARGO_TARGET_DIR, value: /tmp/target }
+            - { name: CARGO_BUILD_JOBS, value: '1' }
+          ports:
+            - { name: http, containerPort: 8097 }
+          resources:
+            requests: { memory: 768Mi }
+            limits: { memory: 3Gi }
+          startupProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 5
+            failureThreshold: 240
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 8Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-auth
+  namespace: fiducia
+  labels:
+    app: fiducia-auth
+spec:
+  type: ClusterIP
+  selector:
+    app: fiducia-auth
+  ports:
+    - { name: http, port: 8097, targetPort: http }

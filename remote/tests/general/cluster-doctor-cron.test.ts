@@ -141,6 +141,37 @@ test('argocd runtime exposes a native headlamp cron sentinel', async () => {
   assert.match(runtimeReadme, /Headlamp's Jobs and Cron Jobs workload cards/);
 });
 
+test('argocd runtime schedules the soccer tournament without compile or worker OOM spikes', async () => {
+  const kustomization = await readRepoFile('remote/argocd/dd-next-runtime/kustomization.yaml');
+  const cron = await readRepoFile(
+    'remote/argocd/dd-next-runtime/dd-soccer-tournament-nightly.cronjob.yaml',
+  );
+  const runtimeReadme = await readRepoFile('remote/argocd/dd-next-runtime/readme.md');
+
+  assert.match(kustomization, /dd-soccer-tournament-nightly\.cronjob\.yaml/);
+  assert.match(cron, /kind:\s*CronJob/);
+  assert.match(cron, /name:\s*dd-soccer-tournament-nightly/);
+  assert.match(cron, /namespace:\s*default/);
+  assert.match(cron, /schedule:\s*["']0 2 \* \* \*["']/);
+  assert.match(cron, /timeZone:\s*America\/Chicago/);
+  assert.match(cron, /concurrencyPolicy:\s*Forbid/);
+  assert.match(cron, /activeDeadlineSeconds:\s*28800/);
+  assert.match(cron, /automountServiceAccountToken:\s*false/);
+  assert.match(cron, /enableServiceLinks:\s*false/);
+  assert.match(cron, /CARGO_BUILD_JOBS[\s\S]*value:\s*["']1["']/);
+  assert.match(cron, /SOCCER_TOURNAMENT_THREADS[\s\S]*value:\s*["']2["']/);
+  assert.match(cron, /SOCCER_TOURNAMENT_SOFT_DEADLINE_SECONDS[\s\S]*value:\s*["']25200["']/);
+  assert.match(cron, /SOCCER_TOURNAMENT_LOCK_KEY[\s\S]*value:\s*soccer-nightly-tournament/);
+  assert.match(cron, /limits:[\s\S]*cpu:\s*["']2["'][\s\S]*memory:\s*14Gi/);
+  assert.match(cron, /requests:[\s\S]*cpu:\s*250m[\s\S]*memory:\s*4Gi/);
+  assert.match(cron, /emptyDir:[\s\S]*sizeLimit:\s*20Gi/);
+  assert.match(cron, /git -C "\$\{dir\}" switch --detach FETCH_HEAD/);
+  assert.doesNotMatch(cron, /\bgit checkout\b/);
+  assert.doesNotMatch(cron, /rm -rf/);
+  assert.match(runtimeReadme, /dd-soccer-tournament-nightly/);
+  assert.match(runtimeReadme, /AWS\/Hetzner runner/);
+});
+
 test('reaper nats watchdog backstops worker prepare and websocket fanout', async () => {
   const reaper = await readRepoFile('remote/deployments/idle-reaper-rs/src/main.rs');
   const cargo = await readRepoFile('remote/deployments/idle-reaper-rs/Cargo.toml');
@@ -213,8 +244,8 @@ test('external secrets rollout stays aligned with runtime secret consumers', asy
   const operatorApp = await readRepoFile(
     'remote/argocd/apps/external-secrets-operator.application.yaml',
   );
-  const secretStore = await readRepoFile('remote/argocd/secrets/aws-secret-store.yaml');
-  const secrets = await readRepoFile('remote/argocd/secrets/external-secrets.yaml');
+  const secretStore = await readRepoFile('remote/argocd/secrets/providers/aws/secret-store.yaml');
+  const secrets = await readRepoFile('remote/argocd/secrets/common/external-secrets.yaml');
   const kustomization = await readRepoFile('remote/argocd/secrets/kustomization.yaml');
   const secretsReadme = await readRepoFile('remote/argocd/secrets/readme.md');
   const restDeployment = await readRepoFile(
@@ -230,13 +261,13 @@ test('external secrets rollout stays aligned with runtime secret consumers', asy
   assert.match(operatorApp, /hostNetwork:\s*true/);
   assert.match(operatorApp, /dnsPolicy:\s*ClusterFirstWithHostNet/);
   assert.match(secretStore, /kind:\s*ClusterSecretStore/);
-  assert.match(secretStore, /name:\s*dd-aws-secrets-manager/);
+  assert.match(secretStore, /name:\s*dd-cluster-secrets/);
   assert.match(secretStore, /argocd\.argoproj\.io\/sync-options:\s*Replace=true/);
   assert.match(secretStore, /service:\s*SecretsManager/);
   assert.match(secretStore, /region:\s*us-east-1/);
   assert.doesNotMatch(secretStore, /accessKeyIDSecretRef/);
-  assert.match(kustomization, /- aws-secret-store\.yaml/);
-  assert.match(kustomization, /- external-secrets\.yaml/);
+  assert.match(kustomization, /- providers\/aws/);
+  assert.match(kustomization, /- common/);
   assert.match(secrets, /name:\s*dd-agent-secrets/);
   assert.match(secrets, /key:\s*dd\/remote-dev\/agent-secrets/);
   assert.match(secrets, /name:\s*dd-remote-rest-api-secrets/);

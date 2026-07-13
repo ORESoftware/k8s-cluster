@@ -1,0 +1,19 @@
+[package]
+name = "dd-quantum-compute-rs"
+version = "0.1.0"
+edition = "2021"
+description = "Pure-Rust state-vector quantum circuit simulator. Runs arbitrary gate circuits (H/X/Y/Z/S/T/RX/RY/RZ/phase/CX/CZ/SWAP/CCX/U) with measurement sampling, and three textbook quantum algorithms end-to-end: Grover's amplitude-amplification search, QAOA for MaxCut, and a variational quantum eigensolver (VQE) for a Pauli-sum Hamiltonian. Deterministic from a seed; no quantum hardware and no external math crates."
+
+[dependencies]
+dd-telemetry = { path = "../../libs/telemetry-rs" }
+tracing = "0.1"
+async-nats = "=0.38.0"
+axum = { version = "0.7", features = ["macros"] }
+# Source-of-truth NATS subject constants for the solve request/result lane and
+# the shared runtime-events publish default.
+dd-nats-subject-defs = { path = "../../libs/nats/subject-defs/generated/rust" }
+dd-runtime-config-client = { path = "../../libs/runtime-config-client-rs" }
+futures-util = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }

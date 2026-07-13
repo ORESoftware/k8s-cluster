@@ -129,3 +129,73 @@ test('rust solana contract service is deployed, scraped, and guarded', async () 
   assert.match(runtimeReadme, /`dd-contract-service`/);
   assert.match(runtimeReadme, /\/contracts\/schema/);
 });
+
+test('blockchain feature suite is wired in, keyless, and off by default', async () => {
+  const cargo = await readRepoFile('remote/deployments/contract-service-rs/Cargo.toml');
+  const main = await readRepoFile('remote/deployments/contract-service-rs/src/main.rs');
+  const mod = await readRepoFile('remote/deployments/contract-service-rs/src/blockchain/mod.rs');
+  const evm = await readRepoFile('remote/deployments/contract-service-rs/src/blockchain/evm.rs');
+  const readme = await readRepoFile('remote/deployments/contract-service-rs/readme.md');
+  const deployment = await readRepoFile(
+    'remote/argocd/dd-next-runtime/dd-contract-service.deployment.yaml',
+  );
+  const contractsSchema = await readRepoFile(
+    'remote/libs/nats/subject-defs/schema/contracts.schema.json',
+  );
+  const generatedRust = await readRepoFile(
+    'remote/libs/nats/subject-defs/generated/rust/src/lib.rs',
+  );
+
+  // keccak dependency for EVM EIP-55 checksums; module is mounted + merged.
+  assert.match(cargo, /sha3 = "0\.10"/);
+  assert.match(main, /mod blockchain;/);
+  assert.match(main, /\.merge\(blockchain::router\(\)\)/);
+  assert.match(main, /blockchain::BlockchainState::from_env/);
+  assert.match(main, /pub\(crate\) async fn publish_blockchain_event/);
+
+  // Keyless, custody-ready seam: only an External signer exists.
+  assert.match(mod, /enum SignerBackend \{\s*External,?\s*\}/);
+  assert.match(mod, /CONTRACT_BLOCKCHAIN_AUTH_SECRET/);
+  assert.match(mod, /CONTRACT_BLOCKCHAIN_MAINNET_ENABLED/);
+  // Startup gate refuses execute/broadcast without the secret / mainnet flag.
+  assert.match(mod, /requires CONTRACT_BLOCKCHAIN_AUTH_SECRET/);
+  assert.match(mod, /requires CONTRACT_BLOCKCHAIN_MAINNET_ENABLED=true/);
+  // EVM client is keyless read/relay only (no key material).
+  assert.match(evm, /fn validate_evm_address/);
+  assert.match(evm, /fn evm_rpc/);
+
+  // Every feature flag is present in the deployment and defaults to false.
+  for (const flag of [
+    'BLOCKCHAIN_WALLET_ENABLED',
+    'BLOCKCHAIN_EXECUTOR_ENABLED',
+    'BLOCKCHAIN_EXECUTOR_EXECUTE_ENABLED',
+    'BLOCKCHAIN_RELAYER_ENABLED',
+    'BLOCKCHAIN_RELAYER_BROADCAST_ENABLED',
+    'BLOCKCHAIN_MULTISIG_ENABLED',
+    'BLOCKCHAIN_INDEXER_ENABLED',
+    'BLOCKCHAIN_MEV_ENABLED',
+    'BLOCKCHAIN_NFT_ENABLED',
+    'BLOCKCHAIN_STAKING_ENABLED',
+    'BLOCKCHAIN_STAKING_EXECUTE_ENABLED',
+    'BLOCKCHAIN_BRIDGE_ENABLED',
+    'BLOCKCHAIN_BRIDGE_BROADCAST_ENABLED',
+    'CONTRACT_BLOCKCHAIN_MAINNET_ENABLED',
+  ]) {
+    assert.match(deployment, new RegExp(`${flag}[\\s\\S]*?value:\\s*'false'`));
+  }
+  assert.match(deployment, /CONTRACT_BLOCKCHAIN_AUTH_SECRET[\s\S]*?secretKeyRef/);
+  assert.match(deployment, /EVM_RPC_URL/);
+
+  // Publish-only subjects exist in the schema and generated constants.
+  assert.match(contractsSchema, /dd\.remote\.blockchain\.index\.events/);
+  assert.match(contractsSchema, /dd\.remote\.blockchain\.mev\.alerts/);
+  assert.match(contractsSchema, /dd\.remote\.blockchain\.bridge\.attestations/);
+  assert.match(generatedRust, /BLOCKCHAIN_INDEX_EVENTS_SUBJECT/);
+  assert.match(generatedRust, /BLOCKCHAIN_MEV_ALERTS_SUBJECT/);
+  assert.match(generatedRust, /BLOCKCHAIN_BRIDGE_ATTESTATIONS_SUBJECT/);
+
+  // Readme documents the keyless stance and the MEV monitoring-only posture.
+  assert.match(readme, /Blockchain Feature Suite/);
+  assert.match(readme, /no private keys are stored/);
+  assert.match(readme, /monitoring-only/);
+});

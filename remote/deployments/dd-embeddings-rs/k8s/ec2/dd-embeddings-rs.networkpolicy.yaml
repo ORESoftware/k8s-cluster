@@ -1,0 +1,95 @@
+# Default-deny posture for dd-embeddings-rs, scoped to this app's pods.
+#
+# Ingress: only the gateway (dd-remote-gateway) may reach the listener, plus
+# the observability scrapers. Egress: DNS, the in-namespace cargo build needs
+# nothing internal, the vector store + self-hosted inference live in `ai-ml`,
+# and provider APIs + crates.io are on the public internet over 443.
+#
+# The internet egress rule deliberately `except`s RFC-1918 private ranges and
+# the link-local block (169.254.0.0/16). That last one is the cloud instance
+# metadata service (169.254.169.254): blocking it means even a hypothetical
+# SSRF in this service cannot pivot to steal the node's IAM credentials.
+# In-cluster destinations are reached via the explicit namespaceSelector rules
+# below, not the internet rule.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dd-embeddings-rs
+  namespace: default
+  labels:
+    app: dd-embeddings-rs
+spec:
+  podSelector:
+    matchLabels:
+      app: dd-embeddings-rs
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: dd-remote-gateway
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - dd-prometheus
+                  - dd-otel-collector
+      ports:
+        - protocol: TCP
+          port: 8090
+  egress:
+    # DNS.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Vector store + self-hosted inference in the ai-ml namespace
+    # (Qdrant 6333, HF TEI 80, Ollama 11434).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ai-ml
+      ports:
+        - protocol: TCP
+          port: 6333
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 11434
+    # Provider embedding APIs + crates.io (in-cluster release build), HTTPS
+    # only, public internet only — private/link-local ranges are excluded so
+    # this rule can't reach internal services or the node metadata endpoint.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+    # RDS Postgres (search subsystem) on the private network. The internet rule
+    # above deliberately excludes private ranges, so the DB needs its own rule.
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+        - ipBlock:
+            cidr: 172.16.0.0/12
+        - ipBlock:
+            cidr: 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 5432

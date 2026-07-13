@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-rust-network-mutex-mills
+  namespace: default
+  labels:
+    app: dd-rust-network-mutex-mills
+    role: live-mutex-broker
+    variant: mills-quorum-rs
+spec:
+  # Cluster-internal entry point. The mills `lmxd` peers are symmetric (no
+  # leader), so this ClusterIP can round-robin any healthy node.
+  type: ClusterIP
+  selector:
+    app: dd-rust-network-mutex-mills
+  ports:
+    - name: peer
+      port: 7990
+      targetPort: peer
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-rust-network-mutex-mills-peer
+  namespace: default
+  labels:
+    app: dd-rust-network-mutex-mills
+    role: live-mutex-broker
+    variant: mills-quorum-rs
+spec:
+  # Headless service: gives each pod a stable DNS name
+  # (dd-rust-network-mutex-mills-N.dd-rust-network-mutex-mills-peer...) for the
+  # FIFO peer mesh. publishNotReadyAddresses so peers resolve during bring-up.
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app: dd-rust-network-mutex-mills
+  ports:
+    - name: peer
+      port: 7990
+      targetPort: peer

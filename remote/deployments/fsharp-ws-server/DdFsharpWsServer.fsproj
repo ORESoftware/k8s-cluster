@@ -88,6 +88,20 @@
       lift into `IObservable<NatsMsg>` for the Rx fan-in graph.
     -->
     <PackageReference Include="NATS.Client.Core" Version="2.7.3" />
+    <!--
+      OpenTelemetry tracing, wired explicitly through the SDK in Program.fs
+      (no auto-instrumentation profiler / CLR startup hook). The two
+      Instrumentation.* packages are DiagnosticSource-based opt-in listeners
+      (`ActivitySource` / `System.Diagnostics.Activity`), not bytecode/IL
+      rewriting — they only subscribe to the events ASP.NET Core and
+      HttpClient already emit. Versions pinned to the 1.15.x line so the core
+      SDK (Hosting + OTLP exporter) and the two instrumentation packages share
+      a compatible ABI.
+    -->
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.15.3" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.3" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.2" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.15.1" />
   </ItemGroup>
 
 </Project>

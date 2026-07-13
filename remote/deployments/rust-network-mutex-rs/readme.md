@@ -10,11 +10,14 @@ Rust source, no Cargo manifest.
 ## Where the canonical YAML lives
 
 The `argocd` app for `dd-next-runtime` is the source of truth for the
-running broker, so the deployment + service manifests sit under that
-overlay:
+running brokers, so the Broker deployment/service and BrokerRaft
+config/service/StatefulSet manifests sit under that overlay:
 
 - [`remote/argocd/dd-next-runtime/dd-rust-network-mutex.deployment.yaml`](../../argocd/dd-next-runtime/dd-rust-network-mutex.deployment.yaml)
 - [`remote/argocd/dd-next-runtime/dd-rust-network-mutex.service.yaml`](../../argocd/dd-next-runtime/dd-rust-network-mutex.service.yaml)
+- [`remote/argocd/dd-next-runtime/dd-rust-network-mutex-raft.configmap.yaml`](../../argocd/dd-next-runtime/dd-rust-network-mutex-raft.configmap.yaml)
+- [`remote/argocd/dd-next-runtime/dd-rust-network-mutex-raft.service.yaml`](../../argocd/dd-next-runtime/dd-rust-network-mutex-raft.service.yaml)
+- [`remote/argocd/dd-next-runtime/dd-rust-network-mutex-raft.statefulset.yaml`](../../argocd/dd-next-runtime/dd-rust-network-mutex-raft.statefulset.yaml)
 
 Those files are referenced from
 [`remote/argocd/dd-next-runtime/kustomization.yaml`](../../argocd/dd-next-runtime/kustomization.yaml)
@@ -28,8 +31,8 @@ manifests via `kustomize` so an operator can run
 # by default; the --load-restrictor flag opts into the cross-directory
 # reference. We deliberately keep the YAML at the argocd path so there
 # is exactly one source of truth.
-kubectl apply -k remote/deployments/rust-network-mutex-rs/k8s/ec2 \
-    --load-restrictor LoadRestrictionsNone
+kubectl kustomize --load-restrictor LoadRestrictionsNone \
+    remote/deployments/rust-network-mutex-rs/k8s/ec2 | kubectl apply -f -
 ```
 
 against an ad-hoc cluster (or `kubectl diff -k …` for review) without

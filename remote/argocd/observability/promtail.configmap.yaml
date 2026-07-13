@@ -14,6 +14,13 @@ data:
 
     clients:
       - url: http://dd-loki.observability.svc.cluster.local:3100/loki/api/v1/push
+        batchwait: 1s
+        batchsize: 1048576
+        timeout: 10s
+        backoff_config:
+          min_period: 500ms
+          max_period: 5s
+          max_retries: 10
         # `cluster` identifies this single self-managed EC2 cluster. We use a
         # literal value (NOT env-var templating): promtail is deliberately run
         # WITHOUT -config.expand-env, because that expander collides with the

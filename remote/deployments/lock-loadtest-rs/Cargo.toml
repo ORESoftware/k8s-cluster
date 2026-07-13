@@ -16,6 +16,7 @@ path = "src/main.rs"
 # `live-mutex-client` is unpublished anyway).
 live-mutex-client = { path = "../../submodules/live-mutex/clients/rust" }
 
+dd-telemetry = { path = "../../libs/telemetry-rs" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync", "signal", "io-util"] }
 axum = { version = "0.7", default-features = false, features = ["http1", "json", "tokio"] }
 serde = { version = "1", features = ["derive"] }

@@ -1,0 +1,77 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# fiducia.cloud on the Hetzner dd-cluster — same stack as AWS, but spread across
+# SEPARATE MACHINES (truer to the sharded-multi-Raft design: each Raft member in
+# its own failure domain). Hetzner has 5 schedulable nodes across 3 datacenters
+# (Falkenstein / Helsinki / Nuremberg), so the 3 fiducia-node Raft members get a
+# HARD one-pod-per-host anti-affinity, and the 3 control-plane (brain) replicas a
+# soft spread.
+#
+# This overlay just re-uses the AWS base (../fiducia) and layers the scheduling
+# constraints on top — the build/runtime config is identical (in-pod source build
+# from each app repo's main, 1 shard, RF3). Wired via
+# remote/argocd/clusters/hetzner/applications.yaml (the `fiducia` Application).
+
+namespace: fiducia
+
+resources:
+  - ../fiducia
+
+patches:
+  # The 3 Raft data-plane members MUST land on 3 distinct machines — a real
+  # quorum that tolerates a single-node (single-datacenter) loss.
+  - target:
+      kind: StatefulSet
+      name: fiducia-node
+    patch: |-
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: fiducia-node
+      spec:
+        template:
+          spec:
+            # Tolerate the (stale) cilium agent-not-ready taint so a Raft member
+            # can use the Helsinki control-plane node: cilium is actually 1/1
+            # Running there and the node reports NetworkUnavailable=False, but the
+            # startup taint never cleared. Without this, all 3 members would be
+            # forced onto the two non-tainted big nodes' leftovers + the full 8GB
+            # workers — and the hard anti-affinity can't place the 3rd.
+            tolerations:
+              - key: node.cilium.io/agent-not-ready
+                operator: Exists
+                effect: NoSchedule
+            affinity:
+              podAntiAffinity:
+                requiredDuringSchedulingIgnoredDuringExecution:
+                  - labelSelector:
+                      matchLabels:
+                        app: fiducia-node
+                    topologyKey: kubernetes.io/hostname
+  # Control-plane replicas prefer distinct machines too, but stay schedulable even
+  # if the scheduler has to double up (soft constraint).
+  - target:
+      kind: Deployment
+      name: fiducia-brain
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: fiducia-brain
+      spec:
+        template:
+          spec:
+            tolerations:
+              - key: node.cilium.io/agent-not-ready
+                operator: Exists
+                effect: NoSchedule
+            affinity:
+              podAntiAffinity:
+                preferredDuringSchedulingIgnoredDuringExecution:
+                  - weight: 100
+                    podAffinityTerm:
+                      labelSelector:
+                        matchLabels:
+                          app: fiducia-brain
+                      topologyKey: kubernetes.io/hostname

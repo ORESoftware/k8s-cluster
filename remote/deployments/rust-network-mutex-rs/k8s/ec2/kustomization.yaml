@@ -9,3 +9,6 @@ kind: Kustomization
 resources:
   - ../../../../argocd/dd-next-runtime/dd-rust-network-mutex.deployment.yaml
   - ../../../../argocd/dd-next-runtime/dd-rust-network-mutex.service.yaml
+  - ../../../../argocd/dd-next-runtime/dd-rust-network-mutex-raft.configmap.yaml
+  - ../../../../argocd/dd-next-runtime/dd-rust-network-mutex-raft.service.yaml
+  - ../../../../argocd/dd-next-runtime/dd-rust-network-mutex-raft.statefulset.yaml

@@ -1,0 +1,77 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dd-escrow-rs
+  namespace: default
+  labels:
+    app: dd-escrow-rs
+spec:
+  podSelector:
+    matchLabels:
+      app: dd-escrow-rs
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: dd-remote-gateway
+        - podSelector:
+            matchLabels:
+              app: dd-runtime-config
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 8115
+  egress:
+    # Allow OTLP trace export to the in-cluster OpenTelemetry collector.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: messaging
+          podSelector:
+            matchLabels:
+              app: dd-nats
+      ports:
+        - protocol: TCP
+          port: 4222
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dd-runtime-config
+      ports:
+        - protocol: TCP
+          port: 8110
+    # On-chain work is delegated to the dd-contract-service gateway, which is the
+    # sole Solana egress point in the cluster. This pod has NO public-internet
+    # egress: simulate/settle go to dd-contract-service, and /status probes its
+    # health rather than Solana RPC directly. The solana-rpc fallback backend is
+    # therefore inert here unless a public 443 egress rule is re-added.
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dd-contract-service
+      ports:
+        - protocol: TCP
+          port: 8101

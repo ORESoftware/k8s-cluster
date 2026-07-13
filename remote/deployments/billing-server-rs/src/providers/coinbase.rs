@@ -52,6 +52,7 @@ pub enum CoinbaseVariant {
 pub struct CoinbaseCommerceApi {
     cred: CoinbaseCredential,
     http: reqwest::Client,
+    base_url: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -112,7 +113,21 @@ impl CoinbaseCommerceApi {
         Self {
             cred,
             http: reqwest::Client::new(),
+            base_url: COMMERCE_BASE.to_string(),
         }
+    }
+
+    #[cfg(test)]
+    pub fn with_base_url_for_tests(cred: CoinbaseCredential, base_url: String) -> Self {
+        Self {
+            cred,
+            http: reqwest::Client::new(),
+            base_url,
+        }
+    }
+
+    fn base_url(&self) -> &str {
+        &self.base_url
     }
 
     /// `GET /charges?limit=N&starting_after=<id>` — returns (charges, cursor_next).
@@ -121,10 +136,8 @@ impl CoinbaseCommerceApi {
         limit: u32,
         starting_after: Option<&str>,
     ) -> AppResult<(Vec<CoinbaseCharge>, Option<String>)> {
-        let mut params: Vec<(&str, String)> = vec![
-            ("limit", limit.to_string()),
-            ("order", "asc".to_string()),
-        ];
+        let mut params: Vec<(&str, String)> =
+            vec![("limit", limit.to_string()), ("order", "asc".to_string())];
         if let Some(c) = starting_after {
             params.push(("starting_after", c.to_string()));
         }
@@ -132,7 +145,7 @@ impl CoinbaseCommerceApi {
             provider: "coinbase_commerce".into(),
             message: format!("encode query: {e}"),
         })?;
-        let url = format!("{COMMERCE_BASE}/charges?{qs}");
+        let url = format!("{}/charges?{qs}", self.base_url());
 
         let resp = self
             .http
@@ -153,17 +166,13 @@ impl CoinbaseCommerceApi {
         if !status.is_success() {
             return Err(AppError::Provider {
                 provider: "coinbase_commerce".into(),
-                message: format!(
-                    "charges {status}: {}",
-                    String::from_utf8_lossy(&bytes)
-                ),
+                message: format!("charges {status}: {}", String::from_utf8_lossy(&bytes)),
             });
         }
-        let page: ChargesPage =
-            serde_json::from_slice(&bytes).map_err(|e| AppError::Provider {
-                provider: "coinbase_commerce".into(),
-                message: format!("charges decode: {e}"),
-            })?;
+        let page: ChargesPage = serde_json::from_slice(&bytes).map_err(|e| AppError::Provider {
+            provider: "coinbase_commerce".into(),
+            message: format!("charges decode: {e}"),
+        })?;
 
         let next = page.pagination.as_ref().and_then(|p| {
             p.cursor_range
@@ -309,9 +318,7 @@ fn parse_to_minor(amount: &str, currency: &str) -> AppResult<i128> {
     if !is_fiat_like(currency) {
         return Err(AppError::Provider {
             provider: "coinbase_commerce".into(),
-            message: format!(
-                "{currency} is not fiat; charge skipped for ledger posting"
-            ),
+            message: format!("{currency} is not fiat; charge skipped for ledger posting"),
         });
     }
     let cleaned = amount.replace([',', '_'], "");
@@ -330,7 +337,7 @@ fn parse_to_minor(amount: &str, currency: &str) -> AppResult<i128> {
             return Err(AppError::Provider {
                 provider: "coinbase_commerce".into(),
                 message: format!("malformed amount {amount}"),
-            })
+            });
         }
     };
     let whole_i: i128 = whole.parse().map_err(|e| AppError::Provider {
@@ -409,6 +416,7 @@ const PRIME_BASE: &str = "https://api.prime.coinbase.com";
 pub struct CoinbasePrimeApi {
     cred: CoinbaseCredential,
     http: reqwest::Client,
+    base_url: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -456,7 +464,26 @@ impl CoinbasePrimeApi {
         Ok(Self {
             cred,
             http: reqwest::Client::new(),
+            base_url: PRIME_BASE.to_string(),
         })
+    }
+
+    #[cfg(test)]
+    pub fn with_base_url_for_tests(cred: CoinbaseCredential, base_url: String) -> AppResult<Self> {
+        if cred.variant != CoinbaseVariant::Prime {
+            return Err(AppError::BadRequest(
+                "CoinbasePrimeApi requires variant=Prime".into(),
+            ));
+        }
+        Ok(Self {
+            cred,
+            http: reqwest::Client::new(),
+            base_url,
+        })
+    }
+
+    fn base_url(&self) -> &str {
+        &self.base_url
     }
 
     pub fn portfolio_id(&self) -> AppResult<&str> {
@@ -467,22 +494,23 @@ impl CoinbasePrimeApi {
     }
 
     /// Sign + execute a GET against Coinbase Prime.
-    async fn signed_get(
-        &self,
-        path_with_query: &str,
-    ) -> AppResult<Vec<u8>> {
-        let api_secret_b64 = self.cred.api_secret.as_deref().ok_or_else(|| {
-            AppError::BadRequest("coinbase prime api_secret missing".into())
-        })?;
-        let passphrase = self.cred.passphrase.as_deref().ok_or_else(|| {
-            AppError::BadRequest("coinbase prime passphrase missing".into())
-        })?;
+    async fn signed_get(&self, path_with_query: &str) -> AppResult<Vec<u8>> {
+        let api_secret_b64 = self
+            .cred
+            .api_secret
+            .as_deref()
+            .ok_or_else(|| AppError::BadRequest("coinbase prime api_secret missing".into()))?;
+        let passphrase = self
+            .cred
+            .passphrase
+            .as_deref()
+            .ok_or_else(|| AppError::BadRequest("coinbase prime passphrase missing".into()))?;
 
         let timestamp = Utc::now().timestamp().to_string();
         let signature =
             prime_request_signature(api_secret_b64, &timestamp, "GET", path_with_query, b"")?;
 
-        let url = format!("{PRIME_BASE}{path_with_query}");
+        let url = format!("{}{}", self.base_url(), path_with_query);
         let resp = self
             .http
             .get(&url)
@@ -522,9 +550,7 @@ impl CoinbasePrimeApi {
         limit: u32,
     ) -> AppResult<PrimeTransactionsPage> {
         let portfolio_id = self.portfolio_id()?.to_string();
-        let mut path = format!(
-            "/v1/portfolios/{portfolio_id}/transactions?limit={limit}"
-        );
+        let mut path = format!("/v1/portfolios/{portfolio_id}/transactions?limit={limit}");
         if let Some(c) = cursor {
             path.push_str(&format!("&cursor={c}"));
         }
@@ -569,7 +595,11 @@ mod tests {
         assert_eq!(s1, s2);
         // Output is base64.
         use base64::Engine as _;
-        assert!(base64::engine::general_purpose::STANDARD.decode(&s1).is_ok());
+        assert!(
+            base64::engine::general_purpose::STANDARD
+                .decode(&s1)
+                .is_ok()
+        );
     }
 
     #[test]
@@ -579,8 +609,7 @@ mod tests {
         let diff_ts = prime_request_signature(secret, "101", "GET", "/v1/x", b"").unwrap();
         let diff_method = prime_request_signature(secret, "100", "POST", "/v1/x", b"").unwrap();
         let diff_path = prime_request_signature(secret, "100", "GET", "/v1/y", b"").unwrap();
-        let diff_body =
-            prime_request_signature(secret, "100", "GET", "/v1/x", b"{}").unwrap();
+        let diff_body = prime_request_signature(secret, "100", "GET", "/v1/x", b"{}").unwrap();
         assert_ne!(base, diff_ts);
         assert_ne!(base, diff_method);
         assert_ne!(base, diff_path);

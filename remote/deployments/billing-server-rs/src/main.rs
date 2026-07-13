@@ -10,9 +10,11 @@ mod api;
 mod cdc;
 mod config;
 mod crypto;
+mod customer_locks;
 mod customers;
 mod db;
 mod error;
+mod events;
 mod jobs;
 mod ledger;
 mod locks;
@@ -31,7 +33,6 @@ mod vendors;
 use std::sync::Arc;
 use tower::Layer;
 use tower_http::normalize_path::NormalizePathLayer;
-use tracing_subscriber::EnvFilter;
 
 use crate::config::Config;
 use crate::crypto::Sealer;
@@ -39,7 +40,7 @@ use crate::state::AppState;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    init_tracing();
+    let _otel = dd_telemetry::init("billing-server-rs");
 
     // Fail fast at startup if the vendored htmx bytes drifted from the
     // pinned SRI hash. Browsers would otherwise refuse to execute the
@@ -52,7 +53,13 @@ async fn main() -> anyhow::Result<()> {
     let pool = db::connect(&cfg).await?;
     let sealer = Arc::new(Sealer::from_b64_key(&cfg.master_seal_key_b64)?);
 
-    let state = AppState::new(cfg.clone(), pool, sealer);
+    // Optional NATS event bus (publish redacted domain events + listen for
+    // inbound sync commands). Disabled unless BILLING_NATS_PUBLISH_ENABLED is
+    // set and a URL resolves; a broker outage at boot degrades to a no-op
+    // rather than blocking startup. See src/events.rs.
+    let events = Arc::new(build_event_bus(&cfg).await);
+
+    let state = AppState::new(cfg.clone(), pool, sealer, events);
 
     // Seed the built-in system jobs (idempotent) and start the scheduler.
     if let Err(e) = jobs::seed_system_jobs(&state.scheduler).await {
@@ -72,7 +79,15 @@ async fn main() -> anyhow::Result<()> {
     // BILLING_CDC_NATS_URL is set — see src/cdc.rs).
     cdc::spawn();
 
-    let app = api::build_router(state);
+    // Inbound NATS sync-command subscriber (silent no-op when the event bus
+    // is disabled). Turns dd.remote.billing.commands.sync messages into the
+    // same one-shot sync.connection jobs the HTTP "Sync now" path enqueues.
+    {
+        let s = state.clone();
+        tokio::spawn(async move { events::run_sync_command_loop(s).await });
+    }
+
+    let app = api::build_router(state).layer(dd_telemetry::http_trace_layer());
     // Strip trailing slashes before routing so `/admin/` matches the same
     // handler as `/admin` (which `Router::nest` does not provide on its own).
     // Applied to the entire surface — JSON routes do not use trailing
@@ -93,22 +108,19 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn init_tracing() {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info,sqlx=warn,hyper=warn,tower_http=info"));
-
-    let want_json = std::env::var("BILLING_LOG_FORMAT")
-        .map(|s| s.eq_ignore_ascii_case("json"))
-        .unwrap_or(false);
-
-    if want_json {
-        tracing_subscriber::fmt()
-            .with_env_filter(filter)
-            .json()
-            .init();
-    } else {
-        tracing_subscriber::fmt().with_env_filter(filter).init();
+/// Build the NATS event bus from config. Off unless
+/// `BILLING_NATS_PUBLISH_ENABLED` is set and a URL resolves; a failed
+/// connection degrades to a no-op bus (logged) rather than aborting boot.
+async fn build_event_bus(cfg: &Config) -> events::EventBus {
+    if cfg.nats_publish_enabled {
+        if let Some(url) = &cfg.nats_url {
+            return events::EventBus::connect(url, cfg.nats_max_payload_bytes).await;
+        }
+        tracing::warn!(
+            "BILLING_NATS_PUBLISH_ENABLED=true but no BILLING_NATS_URL/NATS_URL set; event bus disabled"
+        );
     }
+    events::EventBus::disabled()
 }
 
 async fn shutdown_signal() {

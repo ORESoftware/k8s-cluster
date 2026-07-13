@@ -11,6 +11,7 @@ GitOps manifests for the baseline runtime that should always be visible in Argo:
 - `dd-gleam-lambda-runner` (Gleam child-process runner for user-defined lambda invocations)
 - `dd-remote-queue-consumer` (Rust NATS queue consumer for UUID-bound workers and explicit pool dispatch)
 - `dd-webrtc-signaling` (Rust WebRTC room signaling over WebSocket)
+- `dd-webrtc-media` (Rust WebRTC ICE/TURN/SFU/media-relay configuration surface)
 - `dd-web-scraper` (Node.js/Fastify scraping worker with browser and DOM strategies)
 - `dd-browser-test-server` (Node.js/Fastify on-demand Playwright + Puppeteer + Selenium runner)
 - `dd-selenium-server` (Java/Vert.x + selenium-java API driving an in-pod Selenium Grid over RemoteWebDriver)
@@ -18,13 +19,23 @@ GitOps manifests for the baseline runtime that should always be visible in Argo:
 - `dd-live-mutex` (single-broker Live-Mutex TCP service for cluster-local locking)
 - `dd-ai-ml-pipeline` (Python3 online telemetry feature pipeline in the `ai-ml` namespace)
 - `dd-des-simulator` (Rust asynchronous discrete event simulation service with `des.v1` model validation)
+- `dd-fabrication-server` (Rust fabrication planner and instruction validator for printers, mills, routers, and lathes)
 - `dd-contract-service` (Rust Solana contract gateway for `solana.contract.v1` validation)
+- `usacc-rest-api-backend-rs` (Rust/Axum USACC simulations, voting, accounting, and contract-backed REST API)
+- `dd-escrow-rs` (Rust Solana escrow gateway for `solana.escrow.v1` validation and settlement)
 - `dd-trading-server` (Rust trading decision service for `trading.decision.v1` risk-gated order intents)
+- `dd-patent-filing-rs` (Rust/Axum patent filing preparation workbench with htmx intake and package generation)
+- `dd-compliance-rs` (Rust/Axum compliance readiness job server for artifact, codebase, network,
+  and system evidence audits across global security, privacy, payments, healthcare, government,
+  AI, quality, and sustainability frameworks)
+- `dd-economics-server` (Rust economics dashboard and `economics.forecast.v1` theory/data projection service)
 - `dd-dev-server-api` (bootstrap Node.js coding-agent task manager for `/tasks`, `/stream`,
   `/status`, `/agents`, `/healthz`)
 - `dd-redis-cache` (cluster-local Redis cache for low-latency ephemeral runtime state)
 - `dd-remote-gateway` (public k8s path splitter on host ports 80 and 443)
 - `dd-idle-reaper` (Rust scheduler for idle sweeps and the 90-minute cluster doctor task)
+- `dd-soccer-tournament-nightly` (cross-cluster 128-team learning tournament CronJob; Postgres
+  advisory locking allows only one AWS/Hetzner runner to play matches each night)
 
 The ArgoCD application for this bundle is
 `remote/argocd/apps/dd-next-runtime.application.yaml`. Keep Kubernetes object changes in Git and
@@ -62,6 +73,7 @@ blocks administrative, dangerous, scripting, module, persistence, and bulk-key c
 Gateway path map:
 
 - `/`, `/home` -> `dd-remote-web-home:8080`
+- `/sonus-auris`, `/sonus-auris/` -> `dd-sonus-auris-site:8080`
 - `/auth` -> `dd-remote-auth:8083`
 - `/agents/tasks` -> `dd-remote-web-home:8080`
 - `/api/agents/*` -> `dd-remote-rest-api:8082` (gateway auth required)
@@ -78,6 +90,8 @@ Gateway path map:
 - `POST /lambdas/invoke/<function-id>` -> `dd-gleam-lambda-runner:8083` directly
 - `/webrtc/`, `/webrtc/healthz`, `/webrtc/metrics`, `/webrtc/signal` ->
   `dd-webrtc-signaling:8095` (gateway auth required)
+- `/webrtc-media/`, `/webrtc-media/config`, `/webrtc-media/ice`, `/webrtc-media/metrics` ->
+  `dd-webrtc-media:8125` (gateway auth required; HTTP config only, no UDP media gatewaying)
 - `/presence/`, `/presence/healthz`, `/presence/ws`, `/presence/conv/*`, `/presence/user/*` ->
   `presence-svc.presence:8081` (gateway auth required)
 - `/fsws/`, `/fsws/healthz`, `/fsws/livez`, `/fsws/ws/*` -> `dd-fsharp-ws-server:8087`
@@ -89,13 +103,209 @@ Gateway path map:
   (gateway auth required)
 - `/mdp/`, `/mdp/healthz`, `/mdp/metrics`, `POST /mdp/optimize`,
   `POST /mdp/telemetry/learn` -> `dd-mdp-optimizer:8096` (gateway auth required)
+- `/fabrication/`, `/fabrication`, `/fabrication/landing`,
+  `/fabrication/how-it-works`, `/fabrication/healthz`, `/fabrication/metrics`,
+  `/fabrication/docs/api`, `/fabrication/capabilities`, `/fabrication/schema`, `/fabrication/examples`,
+  `/fabrication/machines/catalog`, `/fabrication/printers/catalog`,
+  `/fabrication/fdm-printer/catalog`, `/fabrication/resin-printer/catalog`,
+  `/fabrication/material-jetting/catalog`, `/fabrication/pellet-fgf/catalog`,
+  `/fabrication/robotic-additive/catalog`, `/fabrication/sheet-lamination/catalog`,
+  `/fabrication/directed-energy-deposition/catalog`,
+  `/fabrication/composite-fiber/catalog`,
+  `/fabrication/composite-layup/catalog`, `/fabrication/powder-bed/catalog`,
+  `/fabrication/hot-wire-foam/catalog`,
+  `/fabrication/subtractive/catalog`, `/fabrication/subtractive/preflight/catalog`,
+  `/fabrication/mill-router/catalog`, `/fabrication/vertical-mill/catalog`,
+  `/fabrication/horizontal-mill/catalog`,
+  `/fabrication/sheet-cutting/catalog`,
+  `/fabrication/sheet-forming/catalog`,
+  `/fabrication/gear-cutting/catalog`,
+  `/fabrication/precision-grinding/catalog`,
+  `/fabrication/dimensional-inspection/catalog`,
+  `/fabrication/thermal-postprocess/catalog`,
+  `/fabrication/surface-finishing/catalog`,
+  `/fabrication/metal-joining/catalog`,
+  `/fabrication/molding-casting/catalog`,
+  `/fabrication/pcb-electronics/catalog`,
+  `/fabrication/joining/catalog`,
+  `/fabrication/bonding-joining/catalog`,
+  `/fabrication/fixture-adaptive/catalog`,
+  `/fabrication/mechanical-installation/catalog`,
+  `/fabrication/balancing-marking/catalog`,
+  `/fabrication/packaging-labeling/catalog`,
+  `/fabrication/part-separation/catalog`,
+  `/fabrication/edm/catalog`, `/fabrication/turning/catalog`,
+  `/fabrication/lathe/catalog`,
+  `/fabrication/turning/preflight/catalog`,
+  `/fabrication/cleanliness/catalog`,
+  `/fabrication/cleanliness/preflight/catalog`,
+  `/fabrication/interfaces/catalog`,
+  `/fabrication/interfaces/preflight/catalog`,
+  `/fabrication/cnc/catalog`, `/fabrication/hybrid/catalog`,
+  `POST /fabrication/hybrid/plan`,
+  `/fabrication/cells/catalog`,
+  `POST /fabrication/machines/select`,
+  `/fabrication/controllers/catalog`, `POST /fabrication/controllers/plan`,
+  `POST /fabrication/controllers/result`,
+  `/fabrication/materials/catalog`, `POST /fabrication/materials/plan`,
+  `POST /fabrication/materials/result`,
+  `/fabrication/design/formats`, `/fabrication/slicers/catalog`,
+  `POST /fabrication/slicers/plan`, `POST /fabrication/slicers/result`,
+  `/fabrication/mesh-repair/catalog`, `POST /fabrication/mesh-repair/result`,
+  `/fabrication/design/import/catalog`,
+  `/fabrication/design/preflight/catalog`,
+  `POST /fabrication/design/import/review`,
+  `POST /fabrication/design/import/result`,
+  `POST /fabrication/design/convert/plan`, `POST /fabrication/design/convert/result`,
+  `/fabrication/design/generation/catalog`, `POST /fabrication/design/generate`,
+  `POST /fabrication/design/synthesis/result`,
+  `/fabrication/handoff/catalog`, `POST /fabrication/handoff/result`,
+  `/fabrication/subjects/catalog`, `/fabrication/workers/catalog`,
+  `/fabrication/results/catalog`,
+  `/fabrication/instructions/languages`, `/fabrication/instructions/import/catalog`,
+  `/fabrication/instructions/import/preflight/catalog`,
+  `/fabrication/instructions/validation/catalog`,
+  `/fabrication/instructions/validation/preflight/catalog`,
+  `/fabrication/instructions/generation/catalog`,
+  `/fabrication/instructions/generation/preflight/catalog`,
+  `POST /fabrication/instructions/generate`,
+  `POST /fabrication/instructions/generation/result`,
+  `POST /fabrication/instructions/review/result`,
+  `POST /fabrication/instructions/validation/result`,
+  `POST /fabrication/instructions/improvement/result`,
+  `/fabrication/machine-code/catalog`,
+  `/fabrication/machine-code/preflight/catalog`,
+  `POST /fabrication/machine-code/generate`,
+  `POST /fabrication/machine-code/result`, `/fabrication/toolpaths/catalog`,
+  `POST /fabrication/toolpaths/plan`,
+  `POST /fabrication/toolpaths/result`,
+  `/fabrication/improvements/catalog`, `/fabrication/improvements/preflight/catalog`,
+  `/fabrication/boundaries/catalog`, `/fabrication/boundaries/preflight/catalog`,
+  `POST /fabrication/boundaries/result`,
+  `/fabrication/remediation/catalog`,
+  `POST /fabrication/remediation/plan`, `POST /fabrication/remediation/result`,
+  `/fabrication/decomposition/catalog`,
+  `/fabrication/recomposition/catalog`,
+  `POST /fabrication/decomposition/plan`, `POST /fabrication/decomposition/result`,
+  `/fabrication/assembly/catalog`, `/fabrication/assembly/preflight/catalog`,
+  `POST /fabrication/interfaces/result`,
+  `POST /fabrication/joining/result`,
+  `POST /fabrication/assembly/plan`,
+  `POST /fabrication/assembly/result`,
+  `/fabrication/release/catalog`, `/fabrication/release/preflight/catalog`,
+  `POST /fabrication/release/preview`,
+  `POST /fabrication/release/result`,
+  `/fabrication/evidence/catalog`,
+  `/fabrication/strategy/catalog`, `/fabrication/methods/catalog`,
+  `/fabrication/process/catalog`, `/fabrication/packages/catalog`,
+  `POST /fabrication/packages/plan`,
+  `POST /fabrication/strategy/recommend`, `POST /fabrication/strategy/result`,
+  `/fabrication/schedule/catalog`, `POST /fabrication/schedule/result`,
+  `/fabrication/execution/preflight/catalog`,
+  `POST /fabrication/execution/plan`, `POST /fabrication/execution/result`,
+  `/fabrication/simulation/catalog`, `/fabrication/simulation/preflight/catalog`,
+  `POST /fabrication/simulation/run`,
+  `POST /fabrication/simulation/result`,
+  `/fabrication/quality/catalog`, `/fabrication/quality/preflight/catalog`,
+  `/fabrication/dispositions/catalog`,
+  `POST /fabrication/dispositions/result`, `/fabrication/costing/catalog`,
+  `POST /fabrication/costing/result`, `/fabrication/utilities/catalog`,
+  `/fabrication/energy/catalog`, `POST /fabrication/energy/result`,
+  `POST /fabrication/utilities/result`,
+  `/fabrication/telemetry/catalog`, `/fabrication/availability/catalog`,
+  `POST /fabrication/availability/result`, `/fabrication/maintenance/catalog`,
+  `POST /fabrication/maintenance/result`,
+  `POST /fabrication/telemetry/result`,
+  `POST /fabrication/quality/plan`,
+  `POST /fabrication/quality/result`, `POST /fabrication/manufacturability/result`,
+  `POST /fabrication/manufacturability/plan`,
+  `/fabrication/calibration/catalog`, `POST /fabrication/calibration/plan`,
+  `POST /fabrication/calibration/result`,
+  `/fabrication/interventions/catalog`, `POST /fabrication/interventions/result`,
+  `/fabrication/setup/catalog`,
+  `/fabrication/tooling/catalog`, `POST /fabrication/tooling/result`,
+  `/fabrication/consumables/catalog`,
+  `POST /fabrication/consumables/result`,
+  `/fabrication/workholding/catalog`,
+  `/fabrication/workholding/preflight/catalog`,
+  `POST /fabrication/workholding/plan`,
+  `POST /fabrication/workholding/result`,
+  `/fabrication/nesting/catalog`, `POST /fabrication/nesting/result`,
+  `/fabrication/support-strategies/catalog`, `POST /fabrication/support-strategies/result`,
+  `/fabrication/process-recipes/catalog`, `POST /fabrication/process-recipes/result`,
+  `/fabrication/kinematics/catalog`, `POST /fabrication/kinematics/result`,
+  `/fabrication/tolerances/catalog`, `POST /fabrication/tolerances/plan`,
+  `POST /fabrication/tolerances/result`,
+  `/fabrication/process-capabilities/catalog`, `POST /fabrication/process-capabilities/plan`,
+  `POST /fabrication/process-capabilities/result`,
+  `/fabrication/manufacturability/catalog`, `POST /fabrication/manufacturability/plan`,
+  `/fabrication/failure-modes/catalog`, `POST /fabrication/failure-modes/plan`,
+  `POST /fabrication/failure-modes/result`,
+  `/fabrication/safety/catalog`, `POST /fabrication/safety/plan`,
+  `POST /fabrication/safety/result`,
+  `/fabrication/environment/catalog`, `POST /fabrication/environment/plan`,
+  `POST /fabrication/environment/result`,
+  `/fabrication/provenance/catalog`, `POST /fabrication/provenance/plan`,
+  `/fabrication/as-built/catalog`, `POST /fabrication/as-built/plan`,
+  `POST /fabrication/as-built/result`, `POST /fabrication/provenance/result`,
+  `POST /fabrication/setup/plan`,
+  `POST /fabrication/setup/result`,
+  `/fabrication/monitoring/catalog`, `POST /fabrication/monitoring/plan`,
+  `POST /fabrication/monitoring/result`,
+  `/fabrication/postprocess/catalog`, `POST /fabrication/postprocess/plan`,
+  `POST /fabrication/postprocess/result`,
+  `/fabrication/artifacts/catalog`, `/fabrication/jobs/catalog`,
+  `/fabrication/learning/capabilities`, `/fabrication/learning/engines/catalog`,
+  `/fabrication/learning/preflight/catalog`, `/fabrication/learning/rewards/catalog`,
+  `/fabrication/learning/models/catalog`, `/fabrication/learning/replay/catalog`,
+  `/fabrication/learning/scenarios/catalog`,
+  `/fabrication/learning/optimizers/catalog`, `POST /fabrication/learning/models/result`,
+  `POST /fabrication/learning/optimizers/result`,
+  `/fabrication/jobs`, `/fabrication/jobs/<jobId>`,
+  `/fabrication/jobs/<jobId>/release-bundle`,
+  `/fabrication/jobs/<jobId>/artifacts/<artifactId>`, `/fabrication/learning/policy`,
+  `/fabrication/learning/corpus`, `GET /fabrication/learning/outcomes`, `POST /fabrication/learning/observe`,
+  `POST /fabrication/learning/outcomes`, `POST /fabrication/plan`,
+  `/fabrication/workflow/catalog`, `POST /fabrication/workflow/plan`,
+  `POST /fabrication/instructions/analyze`, `POST /fabrication/instructions/validate`,
+  `POST /fabrication/instructions/improve`,
+  `POST /fabrication/instructions/boundaries/review`,
+  `POST /fabrication/remediation/plan`, `POST /fabrication/remediation/result` ->
+  `dd-fabrication-server:8113` (gateway auth required)
+- `/grafana/fabrication` -> `dd-remote-web-home:8080` redirect to the
+  `dd-fabrication-planner` Grafana dashboard
 - `/contracts/`, `/contracts/schema`, `/contracts/example`, `POST /contracts/validate`,
   `POST /contracts/simulate`, `POST /contracts/send` -> `dd-contract-service:8101`
+  (internal auth required)
+- `/api/usacc`, `/api/usacc/*`, `/usacc/app`, `/usacc/app/*`, `/usacc/healthz`,
+  `/usacc/metrics`, `/usacc/docs/api`, `/usacc/api/docs`, `/usacc/api/docs.json` ->
+  `usacc-rest-api-backend-rs:8121` (gateway auth required)
+- `/escrow/`, `/escrow/types`, `/escrow/capabilities`, `/escrow/schema`, `/escrow/example`,
+  `POST /escrow/validate`, `POST /escrow/audit`, `POST /escrow/simulate-settlement`,
+  `POST /escrow/settle` -> `dd-escrow-rs:8115`
   (internal auth required)
 - `/ml/`, `/ml/healthz`, `/ml/metrics`, `/ml/status`, `POST /ml/analyze`, `POST /ml/ingest` ->
   `dd-ai-ml-pipeline.ai-ml:8099` (internal auth required)
 - `/trading/`, `/trading/schema`, `/trading/example`, `POST /trading/decide` ->
   `dd-trading-server:8103` (internal auth required)
+- `/patents/`, `/patents/schema`, `/patents/example`, `POST /patents/packages/provisional`,
+  `POST /patents/ui/packages`, `POST /patents/readiness`, `POST /patents/search/plan` ->
+  `dd-patent-filing-rs:8116` (internal auth required)
+- `/compliance/`, `/compliance/schema`, `/compliance/example`, `/compliance/standards`,
+  `/compliance/controls`, `/compliance/audits`, `/compliance/audits/<jobId>`,
+  `POST /compliance/audits`, `POST /compliance/audit-sync`, `/compliance/docs/api`,
+  `/compliance/api/docs`, `/compliance/api/docs.json` -> `dd-compliance-rs:8118`
+  (internal auth required)
+- `/economics/`, `/economics/healthz`, `/economics/readyz`, `/economics/metrics`,
+  `/economics/observability`, `/economics/integrations/health`, `/economics/dashboard.json`,
+  `/economics/model/equations`, `/economics/sources`, `/economics/sources/public`,
+  `POST /economics/forecast`,
+  `POST /economics/ingest`, `POST /economics/sources/pull`, `/economics/sentiment/sources`,
+  `POST /economics/sentiment/analyze`, `/economics/macro/indicators`,
+  `/economics/vc/investment`, `POST /economics/recommendations`,
+  `/economics/audit/hardening`, `/economics/pipelines/catalog`,
+  `POST /economics/pipelines/plan`, `POST /economics/pipelines/submit` ->
+  `dd-economics-server:8114` (internal auth required)
 - `/scrape`, `/scrape/strategies`, `/scrape/healthz`, `/scrape/metrics` -> `dd-web-scraper:8097`
   (internal auth required)
 - `/browser-test`, `/browser-test/healthz`, `/browser-test/metrics`, `/browser-test/status`,
@@ -116,21 +326,104 @@ Gateway path map:
 
 Availability guardrail for gateway-backed HTTP services: request-serving deployments that are safe
 to run in parallel should keep `replicas: 2`, `minReadySeconds: 5`, `progressDeadlineSeconds: 1800`,
-rolling updates with `maxUnavailable: 0` / `maxSurge: 1`, readiness probes, and a
-`PodDisruptionBudget` with `minAvailable: 1`. This covers the public/auth/API surface where normal
-rollouts previously caused intermittent gateway `502`s: `dd-remote-web-home`, `dd-remote-auth`,
+rolling updates with `maxUnavailable: 1` / `maxSurge: 0`, readiness probes, and a
+`PodDisruptionBudget` with `minAvailable: 1`. HostPath source-build services that should not overlap
+use `Recreate` and the same PDB floor. This covers the public/auth/API surface where normal
+rollouts previously caused intermittent gateway `502`s or single-node scheduling stalls: `dd-remote-web-home`, `dd-remote-auth`,
 `dd-remote-rest-api`, `dd-agent-worker-broker`, `dd-des-rs`, `dd-contract-service`,
-`dd-mdp-optimizer`, `dd-trading-server`, `dd-web-scraper`, `dd-browser-test-server`,
-`dd-selenium-server`, and `dd-rust-vapi-phone`. `dd-des-rs` uses `/out/delivery-planner.html` as
-its readiness path so the Service does not route delivery-planner traffic to a pod before the
-startup render has produced the artifact.
+`dd-escrow-rs`, `dd-mdp-optimizer`, `dd-fabrication-server`, `dd-trading-server`, `dd-economics-server`, `dd-public-data-server`, `dd-web-scraper`, `dd-browser-test-server`,
+`dd-selenium-server`, and `dd-rust-vapi-phone`. `dd-des-rs` also has a small HPA with
+`minReplicas: 2` and a long scale-down stabilization window. That service cold-builds the Rust
+server and DES engine inside the pod, so scale-to-zero drift creates a multi-minute no-endpoint
+window and shows up at the gateway as `/des-rs/` `502`s.
+
+`dd-fabrication-server` also carries explicit runtime hardening because fabrication planning can
+fan out to NATS, runtime-config, MDP optimization, and external design/instruction references. Its
+Service is an explicit cluster-local TCP `ClusterIP` with `appProtocol: http`, not-ready endpoints
+unpublished, and three-hour `ClientIP` affinity so gateway follow-up reads for in-process job and
+artifact records tend to land on the pod that accepted the original planning request. The Deployment uses
+explicit HTTP startup/liveness probes on `/healthz`, HTTP `/readyz` readiness, revision history, host and zone topology spread, soft pod anti-affinity,
+explicit non-host network/PID/IPC namespaces with pod process-namespace sharing disabled, pod/container non-root UID/GID `1000` defaults, dropped Linux capabilities, `RuntimeDefault` seccomp, a short `preStop` drain, and a named no-RBAC ServiceAccount with token automount disabled. The Deployment, pod template, Service, ServiceAccount, HPA, PDB, and NetworkPolicy also carry Kubernetes app metadata for name, component, and `dd-next-runtime` ownership so operator queries can target the fabrication planner without changing immutable selectors. It runs
+with a read-only root filesystem and read-only source mounts limited to the fabrication crate plus
+the local NATS subject, runtime-config client, and shared-interface dependency crates Cargo needs;
+an init container checks that source layout before the release build starts and verifies the
+generated API docs still include the public plan, instruction analysis, job/artifact retrieval, and
+learning routes. It also checks the fabrication crate's local Cargo dependency paths for
+`des_engine`, generated NATS subject defs, and the runtime-config client before the locked build
+can start, then checks the mounted generated Rust NATS subject constants for fabrication
+requests/results, CAD design-conversion request/queue/result handoffs, runtime events, and MDP
+optimization fan-out, so missing hostPath dependencies, stale docs, or stale subject definitions fail with a clear startup log and tiny CPU/memory/ephemeral-storage bounds. Cargo cache/target output stays on pod-local `emptyDir` storage with explicit `4Gi`/`8Gi` ephemeral-storage request/limit settings plus
+per-volume `sizeLimit` caps; a dedicated release-build init container performs the single-job
+locked Cargo build into that shared target directory, then the serving container remounts that cache
+read-only and starts the compiled server binary directly. Incremental compilation stays disabled for predictable cold-start memory and disk use. The pod reserves `100m` CPU and `512Mi` memory for
+cold builds and planning bursts while the `2` CPU / `2Gi` memory limits still cap runaway work. Pod
+DNS sets `ndots: 2` so NATS/runtime-config service lookups prefer the intended cluster FQDN before
+trying extra search-domain expansions. Runtime-config pushes are explicitly fail-closed:
+`RUNTIME_CONFIG_ALLOW_UNAUTHENTICATED=false`, so `/internal/update-runtime-config` requires the
+shared `SERVER_AUTH_SECRET` via `X-Server-Auth` when runtime-config delivers a snapshot.
+Cargo registry fetches use the sparse protocol plus bounded retry/timeout settings, the Deployment
+progress deadline gives a cold locked release build room to finish before a rollout is marked stalled, and the startup probe
+now gives the compiled server up to about five minutes to become healthy after the binary starts.
+Pods require two consecutive `/readyz` successes before the Service routes fabrication traffic.
+Source validation, release-build, and serving startup failures fall back to recent container logs in
+the termination message, and pod annotations make the serving container the default for `kubectl`
+logs/exec while init-container logs remain addressable by name. During pod termination, the
+60-second grace window gives the serving entrypoint time to forward SIGTERM/SIGINT into the compiled
+Rust server's graceful-shutdown path before the pod exits. The HPA keeps 2 replicas on the current single-node cluster, and the
+scale-up policy is ready to grow one pod at a time after the max is raised for a larger node pool while scale-down remains
+one-pod-at-a-time after a five-minute stabilization window. The Kubernetes resource exporter also
+publishes HPA current/desired/min/max replica state and an at-max signal so Prometheus can alert
+when fabrication planning demand holds the autoscaler at its ceiling. The dedicated NetworkPolicy permits
+only gateway, runtime-config, and observability ingress plus DNS, NATS, runtime-config, in-cluster
+MDP optimizer HTTP, and public IPv4/IPv6 HTTP/S egress that excludes private and reserved ranges. The gateway keeps
+`/fabrication/` uploads bounded at `512k` to match the Rust HTTP/NATS payload caps, disables
+request buffering so submitted instruction payloads stream to the Rust service, and uses explicit
+upload/connect plus 900-second upstream read/send timeouts for longer planning and analysis responses. It forwards the NGINX `X-Request-ID`, `X-Forwarded-For`, `X-Forwarded-Host`, `X-Forwarded-Port`, `X-Forwarded-Prefix: /fabrication`, `X-Forwarded-Proto`, `X-Original-URI`, and `X-Real-IP` values to the Rust service so edge failures and downstream job evidence can be correlated even before a payload-level `requestId` is parsed and after the public route prefix is stripped. It also disables upstream retries for `/fabrication/` so non-idempotent planning or instruction-submission requests are not replayed after an upstream failure. Public `/fabrication/internal` and `/fabrication/internal/*` paths return 404 at the gateway so service-local runtime-control routes stay off the Internet-facing surface. The canonical `/fabrication` redirect is read-only (`GET`/`HEAD`); the public `/fabrication/` gateway surface allows only `GET`, `HEAD`, and `POST`, returning 405 for other methods before they reach the Rust service. Fabrication `POST` traffic also has a gateway burst guard of `12r/m` per remote address with a burst of `6`, returning 429 before expensive planning, instruction analysis, NATS fan-out, or MDP publishing can pile up.
+The gateway emits redacted JSON access logs with schema `dd.gateway.access.v1`, request IDs, statuses, upstream status/timing, and path-only `uri` values so fabrication guardrail decisions can be correlated in Loki without writing `Auth` headers, cookies, or query strings. Gateway-generated `/fabrication` redirects, internal-route 404s, auth failures, method denials, payload rejections, and rate-limit responses also return `X-Request-ID` so operators can match a client-visible edge failure to the gateway access log before the request reaches Rust. Because those fabrication-specific locations define their own headers, they explicitly preserve the gateway security header set (`Strict-Transport-Security`, `Content-Security-Policy`, `X-Frame-Options`, `X-Content-Type-Options`, and `Referrer-Policy`) alongside `X-Request-ID` instead of relying on NGINX inheritance. Private internal-route probes return JSON `not_found` 404 responses, unsupported methods return JSON `method_not_allowed` 405 responses with exact `Allow` recovery hints (`GET, HEAD` for the canonical `/fabrication` redirect and `GET, HEAD, POST` for `/fabrication/`), oversized fabrication submissions return a JSON `payload_too_large` 413, and burst-guarded writes return a JSON `rate_limited` 429 with `Retry-After: 60`, so clients can distinguish gateway request-envelope failures from Rust planner validation failures.
+Prometheus and OTel keep static scrape jobs for `/metrics`; the Service also carries Prometheus
+scrape annotations with an explicit HTTP scheme so future discovery-based scrapers can find the
+same endpoint. OTel also discovers ready `dd-fabrication-server` pods directly as
+`dd-fabrication-server-pods`, preserving replica-local job/artifact ledgers, learning memory,
+failure-boundary counters, and NATS/MDP fan-out counters that Service-level scrapes can hide.
+Prometheus alerts if those direct pod scrape targets disappear or go down while the service-level
+scrape still looks healthy. Operators can open `/grafana/fabrication` from the web-home service
+directory to land on the dedicated `dd-fabrication-planner` dashboard for request intake,
+validation findings, machine-failure boundaries, required operator actions, fixture/setup
+blockers, split/combine reviews, capabilities/schema/example discovery, CAD/design format
+discovery, format-import catalog discovery, design-import review, design-import result review,
+instruction import preflight discovery, design-generation catalog discovery, strategy and calibration catalog discovery, validation-result and
+worker result-review route traffic, instruction-improvement review, instruction-boundary review,
+NATS/MDP fan-out, runtime-config delivery, HPA pressure, and logs.
+The observability stack also scrapes `dd-runtime-config` metrics so missed subscriber registration,
+configuration-entry, or push-delivery changes are visible alongside the fabrication planner, NATS,
+and MDP optimizer dependency metrics, and alerts when runtime-config is down, has no stage
+subscribers, records stage push errors, or fails to push stage snapshots specifically to the
+`dd-fabrication-server` subscriber. Prometheus also alerts when the NATS or MDP optimizer dependency
+scrape targets are down, covering the queue/result/event path and fabrication policy optimization
+fan-out path separately from the Rust service's own health.
+Prometheus alerts when the fabrication scrape target is down or
+`dd_fabrication_server_errors_total` starts increasing. It also alerts when machine-failure boundary
+findings, required operator actions, fixture/setup blockers, or split/combine reviews are
+increasing, successful requests or queued NATS intake are not producing fabrication result or
+MDP-learning fan-out, the bounded in-process job/artifact/learning ledgers approach eviction or
+artifact evidence high-watermarks, or the Deployment has
+unavailable replicas during a cold build, scheduling, or readiness problem. It also alerts on
+serving-container restarts because retained job/artifact evidence, learning memory, NATS
+subscriptions, and active planning work are in-process. Init-container waiting and restart alerts
+separate source-layout validation or release-build startup failures from running-service failures.
+`RUST_LOG=info` plus plain-text Cargo output keep stdout/stderr logs at a predictable runtime level. The init
+containers and serving entrypoint emit explicit source-check, release-build, server-start, and
+shutdown-forwarding markers so pod logs show whether a startup delay is source validation, Cargo
+compilation, or the running Rust service. Those markers include downward-API pod name, pod UID,
+namespace, and node identity so cold-build logs can be tied back to the exact runtime placement and
+recreated pods are not confused with earlier rollout attempts.
 
 Single-owner workloads stay intentionally one-replica/`Recreate`: the host-port gateway, Redis,
 mutex brokers, the bootstrap workspace worker, containerd/build managers, the runtime-config push
 controller, benchmark WebSocket pods, and in-memory signaling/job-state services. The
 `dd-remote-queue-consumer` remains one replica at rest because KEDA owns burst scaling, but it uses
-rolling updates with `maxUnavailable: 0` so a rollout brings up the replacement consumer before
-terminating the old one. The gateway also retries transient upstream `502`/`503`/`504` failures
+rolling updates with `maxUnavailable: 1` / `maxSurge: 0` so a rollout does not require spare CPU for
+a temporary replacement consumer. The gateway also retries transient upstream `502`/`503`/`504` failures
 before surfacing them to the browser. Do not scale `dd-remote-gateway` above one pod on the current
 single-node `hostPort` deployment; gateway HA needs either multiple nodes with a DaemonSet/load
 balancer shape or an external load balancer in front of multiple gateway instances. Canary or
@@ -228,6 +521,8 @@ Use `dd-agent-secrets` for shared remote runtime values:
 - GitHub credentials used by the remote dev worker entrypoint and PR creation path:
   `GH_DEPLOY_KEY`, optional `GH_DEPLOY_KEY_PUBLIC`, and optional `GH_PAT`
 - `AKKA_LICENSE_KEY` for the optional Akka WebSocket comparison workload
+- `MUSIC_VOTE_HASH_SALT` for anonymous music vote identity hashing when it should be separate from
+  `SERVER_AUTH_SECRET`
 
 GitHub deploy keys must stay in Kubernetes/AWS secrets and must never be baked into
 `dd-dev-server` or any container-pool image. The worker entrypoint writes `GH_DEPLOY_KEY` to
@@ -242,6 +537,7 @@ clone/fetch/push. A safe AWS Secrets Manager value for `dd/remote-dev/agent-secr
   "GH_DEPLOY_KEY": "-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----",
   "GH_DEPLOY_KEY_PUBLIC": "ssh-ed25519 ... comment",
   "GH_PAT": "optional-fine-grained-token-for-gh-cli-prs",
+  "MUSIC_VOTE_HASH_SALT": "optional-long-random-music-vote-salt",
   "AKKA_LICENSE_KEY": "optional-official-akka-license-key",
   "ANTHROPIC_API_KEY": "replace-me",
   "OPENCODE_API_KEY": "replace-me",
@@ -445,6 +741,12 @@ queue-subscribes to `dd.remote.mdp.optimize` for explicit optimization jobs and
 `dd.remote.telemetry.mdp` for app/infra telemetry snapshots, then publishes results to
 `dd.remote.mdp.results` plus compact runtime events on `dd.remote.events`.
 
+`dd-fabrication-server` is one producer of those explicit optimization jobs:
+`POST /fabrication/plan` and `POST /fabrication/workflow/plan` build fabrication
+learning contracts, and the deployment can publish an optimizer-shaped MDP request to
+`dd.remote.mdp.optimize` when
+`FABRICATION_MDP_AUTOPUBLISH=true`.
+
 ## Solana contract service
 
 `dd-contract-service` runs `remote/deployments/contract-service-rs` as a Rust Solana contract gateway. It serves
@@ -459,7 +761,101 @@ requires `SOLANA_ALLOW_SKIP_PREFLIGHT=true`.
 
 The deployment queue-subscribes to `dd.remote.contracts.solana.validate` with queue group
 `dd-contract-service`, publishes validation results to `dd.remote.contracts.solana.results`, and
-emits compact lifecycle events on `dd.remote.events`.
+emits compact lifecycle events on `dd.remote.events`. Invalid or oversized NATS validation messages
+and result-publish failures also emit `dd.log.v1` stderr records and compact critical events on
+`dd.remote.events.critical` when NATS is reachable. `/contracts/metrics` includes fixed-label
+Prometheus counters for validation, Solana RPC method outcomes, NATS publish outcomes, send-auth
+failures, and policy rejections; the service is scraped by both `dd-otel-collector` and
+`dd-prometheus`, with Loki/Grafana coverage through the shared observability stack.
+
+The pod runs as non-root with a read-only root filesystem, no mounted service-account token, and a
+NetworkPolicy that keeps ingress to the gateway, runtime-config, and observability, while limiting
+egress to DNS, NATS, runtime-config, and public HTTPS Solana RPC.
+
+## USACC REST API backend
+
+`usacc-rest-api-backend-rs` runs `remote/deployments/usacc-rest-api-backend-rs` as a Rust/Axum
+backend for the US Anti-Corruption Court project. The public gateway exposes domain routes
+under `/api/usacc/*` for users, cases, stages, elections, votes, ledger entries, contract validation,
+contract simulation, and discrete-event simulation runs. A server-rendered HTMX operator console is
+exposed at `/usacc/app` (the backend serves it under `/app`; `USACC_APP_BASE_PATH=/usacc` makes its
+links resolve through the prefix-stripping gateway). Operator docs and health are available at
+`/usacc/docs/api`, `/usacc/api/docs`, `/usacc/api/docs.json`, `/usacc/healthz`, and
+`/usacc/metrics`.
+
+The pod reads `USACC_DATABASE_URL` from `dd-remote-rest-api-secrets` first, then falls back to the
+shared RDS URL envs understood by the service. It imports the shared Rust discrete-event-system
+submodule for deterministic simulation runs, calls `dd-contract-service` for Solana envelope
+validation/simulation, and uses generated `remote/libs/pg-defs` Rust adapters against the manually
+maintained `usacc_*` Postgres contract tables.
+
+## Solana escrow service
+
+`dd-escrow-rs` runs `remote/deployments/dd-escrow-rs` as a Rust Solana escrow intent gateway. It
+serves `/escrow/healthz`, `/escrow/metrics`, `/escrow/status`, `/escrow/types`,
+`/escrow/capabilities`, `/escrow/schema`, `/escrow/example`, `POST /escrow/validate`,
+`POST /escrow/audit`, `POST /escrow/simulate-settlement`, and `POST /escrow/settle`. The service
+validates `solana.escrow.v1` intents for ten escrow shapes: marketplace order, milestone, freelance
+contract, digital delivery, OTC trade, rental deposit, bounty, subscription release, group buy, and
+dispute resolution.
+
+The service does not hold private keys or sign transactions. Settlement callers submit a signed
+Solana transaction; `POST /escrow/simulate-settlement` calls `simulateTransaction`, while
+`POST /escrow/settle` calls `sendTransaction` only when `SOLANA_SETTLEMENT_ENABLED=true` plus
+`ESCROW_SETTLEMENT_AUTH_SECRET` are configured and the request includes `x-escrow-settlement-auth`.
+Live settlement also requires an attached validated `intent` by default
+(`ESCROW_SETTLEMENT_REQUIRE_INTENT=true`), mainnet settlement has a second
+`SOLANA_MAINNET_SETTLEMENT_ENABLED=true` gate, and `ESCROW_ALLOWED_PROGRAM_IDS` can restrict
+`settlementPlan.programId` to an operator-reviewed allowlist. Request `cluster` must match
+`SOLANA_CLUSTER`, private RPC URLs require `SOLANA_ALLOW_PRIVATE_RPC=true`, and `skipPreflight`
+requires `SOLANA_ALLOW_SKIP_PREFLIGHT=true`.
+
+The deployment queue-subscribes to `dd.remote.escrow.solana.validate` with queue group
+`dd-escrow-rs`, publishes validation results to `dd.remote.escrow.solana.results`, and emits compact
+lifecycle events on `dd.remote.events`. Invalid or oversized NATS messages and settlement send
+failures emit `dd.log.v1` stderr records and compact critical events on `dd.remote.events.critical`
+when NATS is reachable. `/escrow/metrics` includes fixed-label Prometheus counters for intent
+validation, settlement simulation/sending, Solana RPC outcomes, NATS publish outcomes,
+settlement-auth failures, and policy rejections; the service is scraped by both `dd-otel-collector`
+and `dd-prometheus`.
+
+The pod runs as non-root with a read-only root filesystem, no mounted service-account token, and a
+NetworkPolicy that keeps ingress to the gateway, runtime-config, and observability, while limiting
+egress to DNS, NATS, runtime-config, and public HTTPS Solana RPC.
+
+## Compliance readiness service
+
+`dd-compliance-rs` runs `remote/deployments/dd-compliance-rs` as an authenticated Rust compliance
+readiness job server. It serves `/compliance/healthz`, `/compliance/metrics`,
+`/compliance/standards`, `/compliance/controls`, `/compliance/schema`, `/compliance/example`,
+`POST /compliance/audits`, `GET /compliance/audits`, `GET /compliance/audits/<jobId>`,
+`POST /compliance/audit-sync`, `POST /compliance/diagrams/infrastructure`,
+`POST /compliance/reports/system`, and `POST /compliance/vulnerability-scan`. The registry
+currently covers HIPAA, SOC 2, FedRAMP, NIST CSF,
+NIST SP 800-53, GDPR, ISO/IEC 27001/27017/27018/27701, CIS Controls, Cyber Essentials, Essential
+Eight, TISAX, CMMC, CCPA/CPRA, LGPD, PIPEDA, Singapore and Thailand PDPA, Privacy Act 1988, UK
+GDPR, Data Protection Act 2018, PCI DSS, SWIFT CSP, PSD2, SOX, GLBA, Basel III, HITECH, HITRUST
+CSF, FDA 21 CFR Part 11, MDR, NIS2, FISMA, CJIS, ITAR, EAR, EU AI Act, ISO/IEC 42001, NIST AI RMF,
+ISO 9001/22301/31000/20000/14001, CSRD, TCFD, and GRI Standards.
+
+The service scores evidence against reusable control families instead of claiming formal
+certification. External artifact fetch and repository clone support exist in the code path, but the
+cluster deployment keeps both disabled by default with `COMPLIANCE_ALLOW_EXTERNAL_FETCH=false` and
+`COMPLIANCE_ALLOW_REPO_CLONE=false`; operators can still submit inline evidence or explicitly
+enable bounded collection for trusted use.
+
+For production parity, the deployment runs one `Recreate` replica with durable hostPath-backed job
+records under `/var/lib/dd-compliance-rs/jobs`, a startup init step that prepares permissions for
+the non-root server container, `COMPLIANCE_MAX_CONCURRENT_JOBS=2` backpressure, and a dedicated
+NetworkPolicy that limits ingress to the gateway, runtime-config, and observability while keeping
+egress to DNS, runtime-config, and bounded public HTTP(S).
+`/compliance/readyz` verifies the job store is writable. Infrastructure diagram requests compare
+submitted Terraform/GitOps desired-state evidence with submitted live inventory evidence and return a
+local Mermaid diagram. System reports can
+return Markdown and base64 PDF output, and the vulnerability scan route performs bounded static
+checks for secrets, public exposure, privileged Kubernetes settings, weak workload hardening, and
+insecure transport markers. `/compliance/metrics` is scraped by Prometheus and the OpenTelemetry
+Collector, and stdout/stderr emits `dd.log.v1` records for job lifecycle events.
 
 ## AI/ML feature pipeline
 

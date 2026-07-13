@@ -22,11 +22,14 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-04-soccer-learning-k8s-engine-9ce9838'
-        dd.dev/des-engine-revision: '9ce98383669d11bcc0ebfb0984d3df39bfe180c7'
+        dd.dev/telemetry-revision: '2026-06-13-stdout-subscriber-drop-telemetry-and-soccer-buildinfo'
+        dd.dev/des-server-revision: 'streamed-out-artifacts'
+        dd.dev/des-engine-revision: 'f694d98170a3efb4459c6c92778a9715d1e61c50'
+        dd.dev/soccer-engine-revision: 'soccer-sim-game-engine.rs@15bd673830bcbfceeadbbb1533fdc2739c7de35a'
       labels:
         app: dd-des-rs
     spec:
+      priorityClassName: system-cluster-critical
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 20
       securityContext:
@@ -86,12 +89,20 @@ spec:
               # node can lag Git after an Argo-only sync, so prefer a fresh clone
               # of this k8s repo and fall back to the mount only if GitHub is
               # unavailable.
+              build_root="$(mktemp -d /tmp/dd-des-rs-build.XXXXXX)"
+              copy_source_tree() {
+                src="$1"
+                dst="$2"
+                mkdir -p "${dst}"
+                tar -C "${src}" --exclude=./.git --exclude=./target -cf - . | tar -C "${dst}" -xf -
+              }
+
               server_src="/opt/dd-next-1/remote/deployments/des-rs"
+              server_clone="${build_root}/k8s-source"
               if [ -n "${DES_SERVER_GIT_URL:-}" ]; then
-                rm -rf /tmp/k8s-source
-                if git clone --depth 1 --branch "${DES_SERVER_GIT_REF:-dev}" "${DES_SERVER_GIT_URL}" /tmp/k8s-source; then
-                  server_src=/tmp/k8s-source/remote/deployments/des-rs
-                  echo "[dd-des-rs] server: cloned ${DES_SERVER_GIT_URL}@${DES_SERVER_GIT_REF:-dev} ($(git -C /tmp/k8s-source rev-parse --short HEAD))"
+                if git clone --depth 1 --branch "${DES_SERVER_GIT_REF:-dev}" "${DES_SERVER_GIT_URL}" "${server_clone}"; then
+                  server_src="${server_clone}/remote/deployments/des-rs"
+                  echo "[dd-des-rs] server: cloned ${DES_SERVER_GIT_URL}@${DES_SERVER_GIT_REF:-dev} ($(git -C "${server_clone}" rev-parse --short HEAD))"
                 else
                   echo "[dd-des-rs] server clone failed; using mounted source at ${server_src}" >&2
                 fi
@@ -103,25 +114,42 @@ spec:
               # fails — or DES_ENGINE_GIT_URL is set empty — we fall back to the
               # pinned submodule in the read-only repo mount.
               engine_src="/opt/dd-next-1/remote/submodules/discrete-event-system.rs"
+              engine_clone="${build_root}/engine-source"
               if [ -n "${DES_ENGINE_GIT_URL:-}" ]; then
-                rm -rf /tmp/engine
-                if git clone --depth 1 --no-checkout "${DES_ENGINE_GIT_URL}" /tmp/engine \
-                  && git -C /tmp/engine fetch --depth 1 origin "${DES_ENGINE_GIT_REF:-main}" \
-                  && git -C /tmp/engine switch --detach FETCH_HEAD; then
-                  engine_src=/tmp/engine
-                  echo "[dd-des-rs] engine: cloned ${DES_ENGINE_GIT_URL}@${DES_ENGINE_GIT_REF:-main} ($(git -C /tmp/engine rev-parse --short HEAD))"
+                if git clone --depth 1 --no-checkout "${DES_ENGINE_GIT_URL}" "${engine_clone}" \
+                  && git -C "${engine_clone}" fetch --depth 1 origin "${DES_ENGINE_GIT_REF:-main}" \
+                  && git -C "${engine_clone}" switch --detach FETCH_HEAD; then
+                  engine_src="${engine_clone}"
+                  echo "[dd-des-rs] engine: cloned ${DES_ENGINE_GIT_URL}@${DES_ENGINE_GIT_REF:-main} ($(git -C "${engine_clone}" rev-parse --short HEAD))"
                 else
                   echo "[dd-des-rs] engine clone failed; using pinned submodule at ${engine_src}" >&2
                 fi
               fi
+              # Resolve the soccer_engine source (soccer-sim-game-engine.rs),
+              # extracted out of des_engine. Same clone-or-fallback pattern; its
+              # own `des_engine = { path = "../discrete-event-system.rs" }`
+              # resolves to the engine copy placed beside it under submodules/.
+              soccer_src="/opt/dd-next-1/remote/submodules/soccer-sim-game-engine.rs"
+              soccer_clone="${build_root}/soccer-engine-source"
+              if [ -n "${SOCCER_ENGINE_GIT_URL:-}" ]; then
+                if git clone --depth 1 --no-checkout "${SOCCER_ENGINE_GIT_URL}" "${soccer_clone}" \
+                  && git -C "${soccer_clone}" fetch --depth 1 origin "${SOCCER_ENGINE_GIT_REF:-main}" \
+                  && git -C "${soccer_clone}" switch --detach FETCH_HEAD; then
+                  soccer_src="${soccer_clone}"
+                  echo "[dd-des-rs] soccer_engine: cloned ${SOCCER_ENGINE_GIT_URL}@${SOCCER_ENGINE_GIT_REF:-main} ($(git -C "${soccer_clone}" rev-parse --short HEAD))"
+                else
+                  echo "[dd-des-rs] soccer_engine clone failed; using pinned submodule at ${soccer_src}" >&2
+                fi
+              fi
               # Build from a writable copy so the engine path dependency can be
-              # repointed and Cargo.lock stays writable under the read-only root fs.
-              rm -rf /tmp/des-rs
-              mkdir -p /tmp/des-rs
-              cp -a "${server_src}/." /tmp/des-rs/
-              rm -rf /tmp/des-rs/target
-              cd /tmp/des-rs
-              sed -i "s#path = \"../../submodules/discrete-event-system.rs\"#path = \"${engine_src}\"#" Cargo.toml
+              # resolved and Cargo.lock stays writable under the read-only root fs.
+              build_src="${build_root}/remote/deployments/des-rs"
+              build_engine="${build_root}/remote/submodules/discrete-event-system.rs"
+              build_soccer="${build_root}/remote/submodules/soccer-sim-game-engine.rs"
+              copy_source_tree "${server_src}" "${build_src}"
+              copy_source_tree "${engine_src}" "${build_engine}"
+              copy_source_tree "${soccer_src}" "${build_soccer}"
+              cd "${build_src}"
               exec /usr/local/cargo/bin/cargo run --release
           env:
             - name: HOST
@@ -141,7 +169,14 @@ spec:
             - name: DES_ENGINE_GIT_URL
               value: https://github.com/ORESoftware/discrete-event-system.rs.git
             - name: DES_ENGINE_GIT_REF
-              value: codex/soccer-learning-k8s
+              value: main
+            # Soccer engine source: soccer was extracted out of des_engine into
+            # the soccer_engine crate. Cloned at pod start the same way; pinned to
+            # a tested engine SHA. Set URL to "" to use the submodule.
+            - name: SOCCER_ENGINE_GIT_URL
+              value: https://github.com/ORESoftware/soccer-sim-game-engine.rs.git
+            - name: SOCCER_ENGINE_GIT_REF
+              value: 15bd673830bcbfceeadbbb1533fdc2739c7de35a
             - name: HOME
               value: /tmp
             - name: CARGO_HOME
@@ -172,29 +207,35 @@ spec:
             # (NUM_PLAYERS, NUM_PERIODS, MINUTES_PER_PERIOD, MAX_CONSEC_ON_FIELD,
             # POLICY) can still be overridden via env if desired.
             - name: DES_STARTUP_SIMS
-              value: main_shadow_eval,main_empirical_control_report,main_observability_controllability_anim,main_elevator_highrise,main_two_disease,main_soccer_rotation_anim,main_soccer_planner,main_delivery_planner,main_build_site
+              value: main_shadow_eval,main_empirical_control_report,main_observability_controllability_anim,main_elevator_highrise,main_factory_floor_track3t,main_two_disease,main_soccer_rotation_anim,main_soccer_planner,main_delivery_planner,main_build_site
           ports:
             - name: http
               containerPort: 8112
           resources:
             requests:
-              cpu: 50m
-              memory: 2Gi
+              # Guarantee a full core so the live soccer step loop sustains its
+              # ~10Hz tick under node contention (the UI animates one tick per
+              # server step; a starved/throttled server = slow-motion playback).
+              cpu: '1'
+              memory: 4Gi
             limits:
-              cpu: '2'
+              # Burst ceiling raised 2 -> 6: the per-tick sim + tokio workers
+              # briefly exceeded a 2-core cgroup quota, causing CFS throttle
+              # stalls (~300ms tick spikes). The 16-core nodes have ample room.
+              cpu: '6'
               # Headroom for the cold release build: the pod recompiles the full
               # des_engine crate (plus axum/tokio) from an empty /tmp on every
               # (re)start, which peaks higher than des-simulator's smaller build.
-              memory: 8Gi
+              memory: 12Gi
           startupProbe:
             httpGet:
               path: /healthz
               port: http
             # Cold release build of the engine + server from an empty /tmp can
-            # take several minutes on the 2-CPU node, so allow up to ~15 min
-            # before the startup probe gives up (5s * 180).
+            # take several minutes on the 2-CPU node, so allow up to ~50 min
+            # before the startup probe gives up (5s * 600).
             periodSeconds: 5
-            failureThreshold: 180
+            failureThreshold: 600
           # The landing page is available as soon as the server binds; rendered
           # /out artifacts warm in the background and should not remove routing.
           readinessProbe:
@@ -224,8 +265,10 @@ spec:
         - name: repo
           hostPath:
             path: /home/ec2-user/codes/dd/dd-next-1
-            type: Directory
+            type: DirectoryOrCreate
         - name: tmp
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: 16Gi
         - name: tools
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: 512Mi

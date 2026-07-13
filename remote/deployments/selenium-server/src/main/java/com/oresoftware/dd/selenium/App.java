@@ -6,6 +6,7 @@ import io.vertx.core.VertxOptions;
 import io.vertx.core.WorkerExecutor;
 import io.vertx.micrometer.MicrometerMetricsOptions;
 import io.vertx.micrometer.VertxPrometheusOptions;
+import io.vertx.tracing.opentelemetry.OpenTelemetryOptions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,8 +33,13 @@ public final class App {
         .setPrometheusOptions(new VertxPrometheusOptions().setEnabled(true))
         .setEnabled(true);
 
+    // Explicit OpenTelemetry SDK (no -javaagent), handed to Vert.x's native tracer so every HTTP
+    // request gets a SERVER span and W3C traceparent propagation, on the event loop.
+    final Telemetry telemetry = Telemetry.init();
+
     final VertxOptions vertxOptions = new VertxOptions()
-        .setMetricsOptions(metricsOptions);
+        .setMetricsOptions(metricsOptions)
+        .setTracingOptions(new OpenTelemetryOptions(telemetry.openTelemetry()));
 
     final Vertx vertx = Vertx.vertx(vertxOptions);
     final Config config = Config.fromEnv();
@@ -62,6 +68,7 @@ public final class App {
       log.info("dd-selenium-server shutting down");
       seleniumExecutor.close();
       vertx.close();
+      telemetry.close();
     }, "shutdown-hook"));
   }
 }

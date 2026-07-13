@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "gleam-lambda-runner",
   "language": "gleam",
-  "routeCount": 13,
+  "routeCount": 18,
   "routeTypeCounts": {
     "service": 6,
-    "user-generated": 4,
+    "user-generated": 9,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -210,6 +210,81 @@
       "implementation": "service",
       "auth": "public",
       "purpose": "Prometheus metrics.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/workflows/runs",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/workflows/runs/:run_id",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/workflows/runs/:run_id/cancel",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/workflows/runs/:run_id/signal",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/workflows/start",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
       "handlers": [],
       "sourceFiles": [
         "remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam"

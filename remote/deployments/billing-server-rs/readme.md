@@ -17,18 +17,28 @@ This service answers the two questions from
   Tenants connect their own Stripe / PayPal / Braintree / Plaid / bank
   accounts via OAuth (where supported) or sealed API keys. We read, ledger,
   and reconcile; tenants initiate payments in their own provider dashboards.
-- **Crypto is read-only too.** Tenants connect a Solana wallet pubkey via
-  wallet-adapter signing. We watch the chain; we never request delegated
-  spend authority and never hold private keys.
+- **Crypto is read-only too.** Tenants connect Solana and Ethereum/EVM wallet
+  addresses via wallet signing or explicit metadata. We watch the chain; we
+  never request delegated spend authority and never hold private keys.
 - **Solana is used for two things:** periodic Merkle-root anchoring of the
   ledger (tamper-evidence) and read-only ingestion of on-chain transfers
-  into the same per-entity ledger as fiat.
+  into the same per-entity ledger as fiat. Ethereum/EVM support is observer
+  mode only: native balance, ERC-20 balance, and receipt reads through JSON-RPC.
 
 ## Source of truth
 
 Postgres. Always. The `postings` table is append-only (UPDATE/DELETE are
 forbidden by trigger), and every transaction's postings must sum to zero per
 currency (enforced by a deferred constraint trigger).
+
+Customer billing-state snapshots additionally serialize through the external
+live-mutex-rs broker when `BILLING_CUSTOMER_SNAPSHOT_LOCK_ENABLED=true`. The
+read path locks `billing:customer:<tenant_id>:<customer_id>` before rolling up
+customer accounts, and `LedgerService::post_transaction` locks the same broker
+key for every customer account code it mutates (`ar/<id>`,
+`unallocated_cash/<id>`, `credit_memo(s)/<id>`, `customer/<id>/...`). This is
+what makes the snapshot true across pods: provider sync jobs, API writes, and
+the billing-state read all contend on the same external customer id.
 
 The `anchors` table records Merkle roots committed to Solana so any third
 party can independently verify a posting was present at a given on-chain
@@ -43,6 +53,43 @@ because data-residency requirements often demand a tenant's ledger never
 leave a given jurisdiction. The first physical shard is single-region; the
 sharding abstraction is in place from day 1 so adding additional database
 clusters per region requires no schema change.
+
+## Event bus (NATS)
+
+The server publishes **redacted** domain events and listens for inbound sync
+commands over NATS, using the shared cross-language subject registry at
+`remote/libs/nats/subject-defs` (crate `dd-nats-subject-defs`). It is **off by
+default** — set `BILLING_NATS_PUBLISH_ENABLED=true` and a URL
+(`BILLING_NATS_URL`, falling back to `NATS_URL`) to turn it on. A broker outage
+at boot degrades to a silent no-op rather than blocking the ledger; publishing
+is always best-effort and never on a transaction's critical path. See
+`src/events.rs`.
+
+Published (`dd.remote.billing.*`):
+
+| subject | when |
+|---------|------|
+| `…ledger.postings` | a double-entry transaction commits (per-currency totals, no posting detail) |
+| `…reconciliation.breaks` | a reconciliation break opens during provider sync |
+| `…anchors` | a Merkle root is anchored to Solana |
+| `…webhooks.receipts` | a provider webhook is recorded — **hash only, never the body** |
+| `…connections.events` | a provider connection is created / attached |
+
+Subscribed: `dd.remote.billing.commands.sync` (queue group `dd-billing-server`)
+— a `{tenantId, connectionId}` command is turned into the same one-shot
+`sync.connection` job the HTTP "Sync now" path enqueues, so one replica handles
+each command and all the lease / rate-limit / dispatch logic is reused.
+
+Envelopes are `{schemaVersion, source, emittedAt, …fields}`; payloads carry no
+secrets, raw bodies, or sealed credentials. Publish counters are exposed on
+`/metrics` (`dd_billing_server_nats_*`). Tune the size ceiling with
+`BILLING_NATS_MAX_PAYLOAD_BYTES` (default 1 MiB) and the inbound queue group
+with `BILLING_NATS_QUEUE_GROUP`.
+
+Editing the subject set means editing
+`remote/libs/nats/subject-defs/schema/billing.schema.json` and regenerating
+(`node src/generate.mjs` in that package); a staleness test guards the
+committed outputs.
 
 ## Layout
 
@@ -104,6 +151,8 @@ export STRIPE_API_KEY=...
 # Provider webhook secrets are optional locally; set strict mode in shared envs.
 export STRIPE_WEBHOOK_SECRET=whsec_...
 export BILLING_REQUIRE_WEBHOOK_SIGNATURES=false
+export BILLING_CUSTOMER_SNAPSHOT_LOCK_ENABLED=false # set true with live-mutex-rs available
+export BILLING_LIVE_MUTEX_ADDR=127.0.0.1:6970
 export RUST_LOG=info,sqlx=warn
 
 # 3. Run
@@ -112,6 +161,15 @@ cargo run --release
 
 The server listens on `:8087` by default. Migrations run automatically on
 boot unless `BILLING_RUN_MIGRATIONS=false`.
+
+## Provider API tests
+
+Provider polling/OAuth clients should be tested against the in-process mock
+server in `src/providers/mock_http.rs`, not by calling live provider sandboxes.
+The mock asserts method, path, query, headers, and JSON bodies while returning
+provider-shaped JSON that deserializes through the same Rust DTOs used in
+production. Dedicated API structs expose `with_base_url_for_tests(...)`; inline
+Config-driven clients use the `BILLING_*_API_BASE` test/operator overrides.
 
 ## End-to-end smoke flow
 
@@ -169,10 +227,38 @@ validates the known API-key providers before sealing credentials:
 - `coinflow`: `{ "api_key", "merchant_id", "environment", "webhook_validation_key" }`
 - `coinbase_commerce` / `coinbase_prime`: `{ "api_key", "webhook_secret", "variant" }`
 - `wise`: `{ "api_token", "profile_id", "environment" }`
+- `remitly`: optional limited-fit partner export fields
+  `{ "api_key", "partner_id", "api_base_url", "watched_recipients", "environment", "notes" }`
+- `moneygram`: `{ "client_id", "client_secret", "agent_partner_id", "user_language", "environment", "webhook_secret" }`
+- `western_union`: `{ "client_id", "environment", "client_certificate_pem", "client_private_key_pem", "notes" }`
+- `us_bank_zelle`: `{ "access_token", "client_id", "program_id", "api_base_url", "payments_path", "enrollment_path", "environment" }`
+- `jpmorgan_zelle`: `{ "access_token", "debtor_account_id", "debtor_name", "debtor_bic", "api_base_url", "environment" }`
+- `bofa_cashpro_gdd`: `{ "client_id", "client_secret", "cashpro_company_id", "access_token", "api_base_url", "disbursements_path", "environment" }`
+- `modern_treasury`: `{ "organization_id", "api_key", "default_originating_account_id", "api_base_url", "environment", "webhook_secret" }`
+- `dwolla`: `{ "access_token", "account_id", "api_base_url", "environment", "webhook_secret" }`
+- `ethereum_wallet`: `{ "address", "rpc_url", "chain_id", "rpc_bearer_token", "tracked_assets" }`
+- `adyen`: `{ "api_key", "merchant_account", "environment", "api_base_url", "hmac_key_hex" }`
+- `square`: `{ "access_token", "environment", "merchant_id", "webhook_signature_key", "webhook_notification_url" }`
 
-`environment` is `production` or `sandbox`. For Coinflow and Wise the server
-derives `external_account_id` from the credential payload when the caller does
-not provide it.
+`environment` is `production` or `sandbox`. For Coinflow, Wise, Remitly,
+MoneyGram, Western Union, bank-sponsored Zelle providers, Modern Treasury, and
+Dwolla the server derives `external_account_id` from the credential payload when
+the caller does not provide it. Remitly, MoneyGram, Western Union, Zelle,
+Modern Treasury, Dwolla, and Ethereum wallet support are accepted as
+`limited_fit`: typed provider DTOs and mock tests exist, but automatic ledger
+sync and public money movement are intentionally disabled until a tenant's
+contract maps cleanly to postings.
+
+Remitly partner-export credentials are all-or-nothing: `api_key` and
+`api_base_url` must be provided together, and the base URL must be an HTTPS
+public provider hostname with no URL credentials, query, or fragment. Western
+Union mTLS certificate/key PEMs are accepted only as a pair and validated before
+the credential payload is sealed.
+
+Bank-sponsored Zelle, Modern Treasury, Dwolla, and tenant-supplied Ethereum RPC
+base URLs must be HTTPS public provider hostnames with no URL credentials,
+query, or fragment. Localhost/private addresses are accepted only through
+test-only mock constructors.
 
 ## Webhook posture
 
@@ -205,6 +291,25 @@ Implemented verification:
   sealed credential.
 - Revolut, GoCardless, Mercury, Circle: HMAC-SHA256 with per-connection
   secret (falls back to env secret only in non-strict mode).
+- Modern Treasury (`X-Signature`) and Dwolla (`X-Request-Signature-SHA-256`):
+  HMAC-SHA256 (hex) over the raw body with the per-connection webhook secret.
+  Dwolla deliveries bind to their connection via the account/customer id in
+  `_links`. Modern Treasury event bodies carry no stable routing key, so in
+  strict mode MT webhooks cannot bind to a connection and are recorded but
+  rejected (a dedicated per-connection webhook path/secret-id is the
+  follow-up); the verifier is reachable once a routing key is wired.
+- Square `x-square-hmacsha256-signature`: HMAC-SHA256 over
+  `notification_url + body` (base64), keyed by the per-connection signature
+  key — the registered notification URL is stored alongside the credential
+  because it participates in the signature.
+- Adyen: HMAC-SHA256 (base64) over the `:`-joined NotificationRequestItem
+  field string, keyed by the merchant HMAC key (hex). The signature travels
+  inside the payload (`additionalData.hmacSignature`), not a header.
+
+**Payloads are encrypted at rest.** Inbound bodies are sealed with the master
+AES-256-GCM key (`src/crypto.rs`) into `webhook_events.payload_sealed`; the
+plaintext `payload` column is no longer written. The clear-text
+`payload_sha256` is retained for dedup/correlation.
 
 ## Auth posture (2026-05-23 hardening)
 
@@ -274,8 +379,6 @@ via SealedSecrets / ExternalSecrets.
   exists at the slot without comparing roots).
 - Scheduler exactly-once via `(job_id, scheduled_for)` dedup index; the
   runner is at-least-once today.
-- Webhook payloads stored unencrypted at rest in
-  `webhook_events.payload`.
 
 ## Admin UI
 

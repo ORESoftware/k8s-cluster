@@ -260,7 +260,16 @@ const MANAGED_DEPLOYMENTS: &[ManagedDeployment] = &[
         deployment: "dd-gleam-mcp-server",
         service: "dd-gleam-mcp-server.default.svc.cluster.local:8090",
         access: "server auth",
-        notes: "Read-only JSON-RPC MCP runtime tools, metrics, and log surface.",
+        notes: "Legacy read-only JSON-RPC MCP runtime tools, metrics, and log surface.",
+    },
+    ManagedDeployment {
+        slug: "cluster-mcp-rs",
+        title: "Rust cluster MCP server",
+        namespace: "default",
+        deployment: "dd-cluster-mcp-rs",
+        service: "dd-cluster-mcp-rs.default.svc.cluster.local:8091",
+        access: "server auth",
+        notes: "Read-only Rust MCP runtime tools for cluster inventory, service wiring, Prometheus/Loki/Grafana/NATS, and OTLP trace health.",
     },
     ManagedDeployment {
         slug: "webrtc-signaling",
@@ -270,6 +279,15 @@ const MANAGED_DEPLOYMENTS: &[ManagedDeployment] = &[
         service: "dd-webrtc-signaling.default.svc.cluster.local:8095",
         access: "public",
         notes: "Rust WebSocket signaling service and admin runtime event relay.",
+    },
+    ManagedDeployment {
+        slug: "webrtc-media",
+        title: "Rust WebRTC media config",
+        namespace: "default",
+        deployment: "dd-webrtc-media",
+        service: "dd-webrtc-media.default.svc.cluster.local:8125",
+        access: "public",
+        notes: "HTTP ICE/TURN/SFU/media-relay configuration surface; UDP media paths require a separate data plane.",
     },
     ManagedDeployment {
         slug: "mdp-optimizer",
@@ -319,9 +337,9 @@ const MANAGED_DEPLOYMENTS: &[ManagedDeployment] = &[
     ManagedDeployment {
         slug: "spark-pipeline",
         title: "Spark pipeline server",
-        namespace: "default",
+        namespace: "ai-ml",
         deployment: "dd-spark-pipeline-server",
-        service: "dd-spark-pipeline-server.default.svc.cluster.local:8085",
+        service: "dd-spark-pipeline-server.ai-ml.svc.cluster.local:8085",
         access: "internal",
         notes: "Java/Spark batch and stream coordination service.",
     },
@@ -2007,6 +2025,8 @@ async fn api_docs_json() -> impl axum::response::IntoResponse {
 
 #[tokio::main]
 async fn main() {
+    let _otel = dd_telemetry::init("dd-bastion");
+
     let host = env_value("HOST", "0.0.0.0");
     let port = first_env(&["PORT", "BASTION_PORT"])
         .and_then(|value| value.parse::<u16>().ok())
@@ -2036,11 +2056,11 @@ async fn main() {
 
     tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
-    println!("{SERVICE_NAME} listening on {addr}");
+    tracing::info!("{SERVICE_NAME} listening on {addr}");
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .expect("failed to bind bastion listener");
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(async {
             let _ = signal::ctrl_c().await;
         })

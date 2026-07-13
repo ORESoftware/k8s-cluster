@@ -33,6 +33,7 @@ import (
 	"syscall"
 	"time"
 
+	telemetry "github.com/oresoftware/dd/libs/telemetry-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	appsv1 "k8s.io/api/apps/v1"
@@ -156,6 +157,12 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	if shutdown, terr := telemetry.Init(ctx, "dd-thread-fleet-exporter"); terr != nil {
+		fmt.Fprintf(os.Stderr, "telemetry init failed (continuing without traces): %v\n", terr)
+	} else {
+		defer func() { _ = shutdown(context.Background()) }()
+	}
+
 	// Initial scrape so /metrics has data before the first tick.
 	if err := scrapeOnce(ctx, cs, cfg, m); err != nil {
 		fmt.Fprintf(os.Stderr, "initial scrape: %v\n", err)
@@ -170,7 +177,7 @@ func main() {
 		_, _ = w.Write([]byte("ok"))
 	})
 
-	srv := &http.Server{Addr: cfg.listenAddr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	srv := &http.Server{Addr: cfg.listenAddr, Handler: telemetry.Handler(mux, "dd-thread-fleet-exporter"), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		fmt.Fprintf(os.Stderr, "listening on %s\n", cfg.listenAddr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

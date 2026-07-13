@@ -7,15 +7,219 @@ namespace="${MIP_SOLVER_NAMESPACE:-ai-ml}"
 app_name="${MIP_SOLVER_ARGO_APP:-dd-in-house-mip-solver-node}"
 master_deployment="${MIP_SOLVER_MASTER_DEPLOYMENT:-dd-in-house-mip-solver-node-master}"
 slave_deployment="${MIP_SOLVER_SLAVE_DEPLOYMENT:-dd-in-house-mip-solver-node-slave}"
+slave_scaledobject="${MIP_SOLVER_SLAVE_SCALEDOBJECT:-dd-in-house-mip-solver-node-slave-nats-jetstream}"
 service_name="${MIP_SOLVER_SERVICE:-dd-in-house-mip-solver-node}"
 local_port="${MIP_SOLVER_LOCAL_PORT:-18117}"
+port_forward_pid=""
+restore_argo_selfheal=false
+restore_slave_keda_pause=false
+restore_capacity_apps=false
+
+mip_capacity_apps="${MIP_SOLVER_CAPACITY_ARGO_APPS:-gcs dd-next-runtime dd-akka-ws-server dd-dart-server dd-fsharp-ws-server dd-gleamlang-server dd-ws-loadtest-gleam dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs}"
+mip_capacity_targets="${MIP_SOLVER_CAPACITY_TARGETS:-gcs gcs-router dd-akka-ws-server dd-go-wss-server dd-rust-wss-server dd-gleamlang-ws-loadtest dd-dart-server dd-fsharp-ws-server dd-gleamlang-server dd-ws-loadtest-rs-gcs dd-nodejs-ws-loadtest-gcs dd-gleamlang-ws-loadtest-gcs}"
+mip_capacity_app_manifests="${MIP_SOLVER_CAPACITY_APP_MANIFESTS:-remote/argocd/apps/gcs.application.yaml remote/argocd/apps/dd-next-runtime.application.yaml remote/argocd/apps/dd-akka-ws-server.application.yaml remote/argocd/apps/dd-dart-server.application.yaml remote/argocd/apps/dd-fsharp-ws-server.application.yaml remote/argocd/apps/dd-gleamlang-server.application.yaml remote/argocd/apps/dd-ws-loadtest-gleam.application.yaml remote/argocd/apps/dd-ws-loadtest-rs-gcs.application.yaml remote/argocd/apps/dd-gleamlang-ws-loadtest-gcs.application.yaml remote/argocd/apps/dd-nodejs-ws-loadtest-gcs.application.yaml}"
+
+pod_count_for_phase() {
+  local phase="$1"
+  kubectl get pods -A --field-selector="status.phase=${phase}" --no-headers 2>/dev/null \
+    | awk 'END {print NR + 0}'
+}
+
+print_cluster_pod_pressure() {
+  echo "=== cluster pod pressure: ${1:-snapshot} ==="
+  kubectl get nodes -o json 2>/dev/null \
+    | jq -r '
+        .items[]
+        | "node=\(.metadata.name) alloc_cpu=\(.status.allocatable.cpu) alloc_mem=\(.status.allocatable.memory) alloc_pods=\(.status.allocatable.pods) cap_cpu=\(.status.capacity.cpu) cap_mem=\(.status.capacity.memory) cap_pods=\(.status.capacity.pods)"
+      ' || true
+  echo "running_pods=$(pod_count_for_phase Running) pending_pods=$(pod_count_for_phase Pending) succeeded_pods=$(pod_count_for_phase Succeeded) failed_pods=$(pod_count_for_phase Failed)"
+}
+
+restore_capacity_app_manifests() {
+  if [ "${restore_capacity_apps}" != true ]; then
+    return 0
+  fi
+
+  echo "=== restore temporary MIP capacity Argo apps ==="
+  for manifest in ${mip_capacity_app_manifests}; do
+    if [ -f "${manifest}" ]; then
+      kubectl apply -f "${manifest}" >/dev/null 2>&1 || true
+    fi
+  done
+  for app in ${mip_capacity_apps}; do
+    kubectl -n argocd annotate "application/${app}" \
+      argocd.argoproj.io/refresh=hard \
+      --overwrite >/dev/null 2>&1 || true
+  done
+}
+
+cleanup() {
+  if [ -n "${port_forward_pid}" ]; then
+    kill "${port_forward_pid}" >/dev/null 2>&1 || true
+  fi
+  restore_capacity_app_manifests
+  if [ "${restore_slave_keda_pause}" = true ]; then
+    kubectl -n "${namespace}" annotate "scaledobject/${slave_scaledobject}" \
+      autoscaling.keda.sh/paused-replicas- \
+      autoscaling.keda.sh/paused- \
+      --overwrite >/dev/null 2>&1 || true
+    kubectl -n "${namespace}" scale "deployment/${slave_deployment}" --replicas=1 >/dev/null 2>&1 || true
+  fi
+  if [ "${restore_argo_selfheal}" = true ]; then
+    kubectl -n argocd patch "application/${app_name}" --type merge \
+      -p '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":true}}}}' >/dev/null 2>&1 || true
+  fi
+}
+
+trap cleanup EXIT
+
+free_cluster_pod_slots_for_mip() {
+  local desired_running="${MIP_SOLVER_POD_CAPACITY_TARGET:-102}"
+  case "${desired_running}" in
+    ''|*[!0-9]*) desired_running=102 ;;
+  esac
+
+  print_cluster_pod_pressure "before MIP capacity preflight"
+  echo "=== disable Argo auto-sync for temporary MIP capacity owners ==="
+  for app in ${mip_capacity_apps}; do
+    kubectl -n argocd patch "application/${app}" --type json \
+      -p '[{"op":"remove","path":"/spec/syncPolicy/automated"}]' >/dev/null 2>&1 || true
+    kubectl -n argocd get "application/${app}" \
+      -o jsonpath='{.metadata.name} automated={.spec.syncPolicy.automated}{"\n"}' 2>/dev/null || true
+  done
+  restore_capacity_apps=true
+
+  echo "=== scale temporary MIP capacity targets to zero ==="
+  kubectl -n default get deploy ${mip_capacity_targets} -o wide 2>/dev/null || true
+  for target in ${mip_capacity_targets}; do
+    kubectl -n default scale "deployment/${target}" --replicas=0 >/dev/null 2>&1 || true
+  done
+
+  echo "=== clean terminal pods for pod-slot headroom ==="
+  kubectl delete pod -A --field-selector=status.phase=Succeeded --wait=false >/dev/null 2>&1 || true
+  kubectl delete pod -A --field-selector=status.phase=Failed --wait=false >/dev/null 2>&1 || true
+  kubectl -n "${namespace}" delete pod \
+    -l "app in (${master_deployment},${slave_deployment})" \
+    --field-selector=status.phase=Pending \
+    --wait=false >/dev/null 2>&1 || true
+
+  for attempt in $(seq 1 90); do
+    local running pending
+    for target in ${mip_capacity_targets}; do
+      kubectl -n default scale "deployment/${target}" --replicas=0 >/dev/null 2>&1 || true
+    done
+    running="$(pod_count_for_phase Running)"
+    pending="$(pod_count_for_phase Pending)"
+    if [ "${running}" -le "${desired_running}" ]; then
+      echo "MIP pod-slot preflight passed running_pods=${running} pending_pods=${pending} target_running<=${desired_running}"
+      print_cluster_pod_pressure "after MIP capacity preflight"
+      return 0
+    fi
+    if [ "${attempt}" -le 5 ] || [ $((attempt % 12)) -eq 0 ]; then
+      echo "waiting for pod-slot headroom running_pods=${running} pending_pods=${pending} target_running<=${desired_running} attempt=${attempt}/90"
+      kubectl -n default get deploy ${mip_capacity_targets} -o wide 2>/dev/null || true
+    fi
+    sleep 5
+  done
+
+  echo "MIP pod-slot preflight did not reach target_running<=${desired_running}" >&2
+  print_cluster_pod_pressure "failed MIP capacity preflight"
+  kubectl get pods -A -o wide | tail -160 || true
+  exit 1
+}
 
 dump_rollout_state() {
   echo "=== MIP solver rollout diagnostics ==="
+  echo "=== compact MIP solver deployment status ==="
+  for deployment in "${master_deployment}" "${slave_deployment}"; do
+    echo "--- deployment/${deployment} status ---"
+    kubectl -n "${namespace}" get "deployment/${deployment}" -o json 2>/dev/null \
+      | jq -c '
+          {
+            name: .metadata.name,
+            generation: .metadata.generation,
+            observedGeneration: .status.observedGeneration,
+            paused: (.spec.paused // false),
+            replicas: .spec.replicas,
+            selector: .spec.selector.matchLabels,
+            status: {
+              replicas: (.status.replicas // 0),
+              updatedReplicas: (.status.updatedReplicas // 0),
+              readyReplicas: (.status.readyReplicas // 0),
+              availableReplicas: (.status.availableReplicas // 0),
+              unavailableReplicas: (.status.unavailableReplicas // 0),
+              collisionCount: (.status.collisionCount // 0)
+            },
+            conditions: [
+              .status.conditions[]? | {
+                type,
+                status,
+                reason,
+                message,
+                lastUpdateTime,
+                lastTransitionTime
+              }
+            ]
+          }
+        ' || true
+  done
+  echo "=== compact MIP solver replica sets ==="
+  kubectl -n "${namespace}" get rs \
+    -l app.kubernetes.io/name=dd-in-house-mip-solver-node \
+    -o json 2>/dev/null \
+    | jq -c '
+        .items[]
+        | {
+            name: .metadata.name,
+            ownerReferences: (.metadata.ownerReferences // []),
+            labels: .metadata.labels,
+            replicas: .spec.replicas,
+            status: {
+              replicas: (.status.replicas // 0),
+              fullyLabeledReplicas: (.status.fullyLabeledReplicas // 0),
+              readyReplicas: (.status.readyReplicas // 0),
+              availableReplicas: (.status.availableReplicas // 0),
+              observedGeneration: (.status.observedGeneration // 0)
+            },
+            conditions: [
+              .status.conditions[]? | {
+                type,
+                status,
+                reason,
+                message,
+                lastTransitionTime
+              }
+            ]
+          }
+      ' || true
+  echo "=== MIP solver deployment and replica set events ==="
+  for object_name in "${master_deployment}" "${slave_deployment}" $(kubectl -n "${namespace}" get rs -l app.kubernetes.io/name=dd-in-house-mip-solver-node -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
+    echo "--- events for ${object_name} ---"
+    kubectl -n "${namespace}" get events \
+      --field-selector "involvedObject.name=${object_name}" \
+      --sort-by=.lastTimestamp || true
+  done
   echo "=== compact MIP solver pod state ==="
   kubectl -n "${namespace}" get pods \
     -l "app in (${master_deployment},${slave_deployment})" \
     -o wide || true
+  echo "=== node allocatable and pod pressure ==="
+  kubectl get nodes -o json 2>/dev/null \
+    | jq -r '
+        .items[]
+        | "node=\(.metadata.name) alloc_cpu=\(.status.allocatable.cpu) alloc_mem=\(.status.allocatable.memory) alloc_pods=\(.status.allocatable.pods) cap_cpu=\(.status.capacity.cpu) cap_mem=\(.status.capacity.memory) cap_pods=\(.status.capacity.pods)"
+      ' || true
+  kubectl get pods -A --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l || true
+  echo "=== pod-specific scheduler events ==="
+  for pod in $(kubectl -n "${namespace}" get pods -l "app in (${master_deployment},${slave_deployment})" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
+    echo "--- events for pod/${pod} ---"
+    kubectl -n "${namespace}" get events --field-selector "involvedObject.name=${pod}" --sort-by=.lastTimestamp || true
+  done
+  echo "=== solver pod describes ==="
+  for pod in $(kubectl -n "${namespace}" get pods -l "app in (${master_deployment},${slave_deployment})" -o name 2>/dev/null || true); do
+    echo "=== DESCRIBE ${pod} ==="
+    kubectl -n "${namespace}" describe "${pod}" | tail -140 || true
+  done
   kubectl -n "${namespace}" get pods \
     -l "app in (${master_deployment},${slave_deployment})" \
     -o json 2>/dev/null \
@@ -33,16 +237,12 @@ dump_rollout_state() {
           }
         | @json
       ' || true
-  kubectl -n "${namespace}" get deploy,rs,pods,svc,scaledobject,hpa \
+  kubectl -n "${namespace}" get deploy,pods,svc,scaledobject,hpa \
     -l app.kubernetes.io/name=dd-in-house-mip-solver-node \
     -o wide || true
   kubectl -n "${namespace}" describe "deployment/${master_deployment}" | tail -140 || true
   kubectl -n "${namespace}" describe "deployment/${slave_deployment}" | tail -140 || true
   kubectl get events -n "${namespace}" --sort-by=.lastTimestamp | tail -160 || true
-  for pod in $(kubectl -n "${namespace}" get pods -l "app in (${master_deployment},${slave_deployment})" -o name 2>/dev/null || true); do
-    echo "=== DESCRIBE ${pod} ==="
-    kubectl -n "${namespace}" describe "${pod}" | tail -100 || true
-  done
   for pod in $(kubectl -n "${namespace}" get pods -l "app in (${master_deployment},${slave_deployment})" -o name 2>/dev/null || true); do
     echo "=== LOGS ${pod} ==="
     kubectl -n "${namespace}" logs "${pod}" --all-containers --tail=40 || true
@@ -111,9 +311,27 @@ git submodule update --init --recursive \
 git rev-parse --short HEAD
 git -C remote/deployments/mip-solver-node.rs rev-parse --short HEAD
 
+echo "=== free pod slots for MIP solver verifier ==="
+free_cluster_pod_slots_for_mip
+
 echo "=== render MIP solver manifests ==="
 kubectl kustomize remote/deployments/mip-solver-node.rs/k8s >/tmp/dd-mip-solver-render.yaml
 wc -l /tmp/dd-mip-solver-render.yaml
+echo "=== Redis coordination access policy ==="
+kubectl -n default get networkpolicy/dd-redis-cache -o json 2>/dev/null \
+  | jq -c '{
+      name: .metadata.name,
+      namespace: .metadata.namespace,
+      podSelector: .spec.podSelector,
+      ingress: .spec.ingress
+    }' || true
+if command -v rg >/dev/null 2>&1; then
+  rg -n "dd.dev/redis-cache-client|REDIS_URL|MIP_SOLVER_COORDINATION_BACKENDS" \
+    /tmp/dd-mip-solver-render.yaml || true
+else
+  grep -nE "dd.dev/redis-cache-client|REDIS_URL|MIP_SOLVER_COORDINATION_BACKENDS" \
+    /tmp/dd-mip-solver-render.yaml || true
+fi
 
 echo "=== apply and force Argo CD sync ==="
 pre_sync_phase="$(kubectl -n argocd get "application/${app_name}" -o jsonpath='{.status.operationState.phase}' 2>/dev/null || true)"
@@ -127,6 +345,7 @@ kubectl -n argocd annotate "application/${app_name}" \
 kubectl -n argocd patch "application/${app_name}" --type merge -p \
   '{"operation":{"initiatedBy":{"username":"verify-mip-solver-node"},"info":[{"name":"reason","value":"verify-mip-solver-node"}],"sync":{"revision":"HEAD","prune":true}}}' || true
 
+argo_sync_ready=false
 for attempt in $(seq 1 90); do
   phase="$(kubectl -n argocd get "application/${app_name}" -o jsonpath='{.status.operationState.phase}' 2>/dev/null || true)"
   started_at="$(kubectl -n argocd get "application/${app_name}" -o jsonpath='{.status.operationState.startedAt}' 2>/dev/null || true)"
@@ -138,7 +357,10 @@ for attempt in $(seq 1 90); do
   echo "argo wait ${attempt}/90 phase=${phase:-unknown} sync=${sync_status:-unknown} health=${health_status:-unknown} revision=${revision:-unknown} started=${started_at:-unknown} finished=${finished_at:-unknown}"
   case "${phase}" in
     Succeeded)
-      break
+      if [ "${sync_status:-}" = "Synced" ]; then
+        argo_sync_ready=true
+        break
+      fi
       ;;
     Failed|Error)
       if [ "${operation_fingerprint}" = "${pre_sync_fingerprint}" ] && [ "${attempt}" -lt 12 ]; then
@@ -152,13 +374,36 @@ for attempt in $(seq 1 90); do
   esac
   sleep 5
 done
+if [ "${argo_sync_ready}" != "true" ]; then
+  echo "Argo application/${app_name} did not reach sync=Synced" >&2
+  kubectl -n argocd get "application/${app_name}" -o yaml | tail -160 || true
+  exit 1
+fi
+if [ "${health_status:-}" = "Degraded" ]; then
+  echo "Argo application/${app_name} is Degraded after sync; rollout restart will attempt to recover it"
+  kubectl -n argocd get "application/${app_name}" -o json 2>/dev/null \
+    | jq -c '{sync: .status.sync, health: .status.health, conditions: (.status.conditions // []), resources: (.status.resources // [])}' || true
+fi
 
 echo "=== wait for master/slave rollouts ==="
+kubectl -n "${namespace}" rollout resume "deployment/${master_deployment}" || true
+kubectl -n "${namespace}" rollout resume "deployment/${slave_deployment}" || true
+kubectl -n "${namespace}" patch "deployment/${master_deployment}" --type merge -p '{"spec":{"paused":false}}' || true
+kubectl -n "${namespace}" patch "deployment/${slave_deployment}" --type merge -p '{"spec":{"paused":false}}' || true
 kubectl -n "${namespace}" rollout restart "deployment/${master_deployment}" "deployment/${slave_deployment}"
 wait_for_rollout "${master_deployment}"
 wait_for_rollout "${slave_deployment}"
 
 echo "=== scale slaves to 3 for distributed smoke ==="
+# Pause KEDA during the forced 3-slave smoke; otherwise zero lag reconciles the
+# deployment back to minReplicaCount=1 before the worker proof can run.
+kubectl -n argocd patch "application/${app_name}" --type merge \
+  -p '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":false}}}}'
+restore_argo_selfheal=true
+kubectl -n "${namespace}" annotate "scaledobject/${slave_scaledobject}" \
+  autoscaling.keda.sh/paused-replicas="3" \
+  --overwrite
+restore_slave_keda_pause=true
 kubectl -n "${namespace}" scale "deployment/${slave_deployment}" --replicas=3
 wait_for_rollout "${slave_deployment}"
 wait_for_ready_replicas "${master_deployment}" 1
@@ -172,13 +417,9 @@ kubectl -n "${namespace}" get pods \
 
 echo "=== port-forward master service ==="
 port_forward_log="/tmp/dd-mip-solver-port-forward.log"
-rm -f "${port_forward_log}"
-kubectl -n "${namespace}" port-forward "svc/${service_name}" "127.0.0.1:${local_port}:8117" >"${port_forward_log}" 2>&1 &
+: >"${port_forward_log}"
+kubectl -n "${namespace}" port-forward --address 127.0.0.1 "svc/${service_name}" "${local_port}:8117" >"${port_forward_log}" 2>&1 &
 port_forward_pid="$!"
-cleanup() {
-  kill "${port_forward_pid}" >/dev/null 2>&1 || true
-}
-trap cleanup EXIT
 
 for attempt in $(seq 1 120); do
   if curl -fsS "http://127.0.0.1:${local_port}/healthz" >/tmp/dd-mip-solver-health.json 2>/tmp/dd-mip-solver-health.err; then
@@ -233,40 +474,43 @@ else:
     raise SystemExit(1)
 PY
 
-echo "=== generate 100 variable / 200 constraint MIP payload ==="
-python3 - <<'PY' >/tmp/dd-mip-solver-100x200.json
+echo "=== generate 100 variable / 150 constraint dispatch MIP payload ==="
+python3 - <<'PY' >/tmp/dd-mip-solver-100x150.json
 import json
 
 n = 100
 c = [0.0] * n
-c[0] = c[1] = c[2] = 1.0
+for pair in range(50):
+    c[2 * pair] = 1000.0 - pair
+    c[2 * pair + 1] = 25.0 + pair
+
 a = []
 b = []
 con_names = []
 
-knapsack = [0.0] * n
-knapsack[0] = knapsack[1] = knapsack[2] = 2.0
-a.append(knapsack)
-b.append(5.0)
-con_names.append("three_item_capacity")
+fleet_budget = [2.0] * n
+a.append(fleet_budget)
+b.append(99.0)
+con_names.append("fleet_budget_allows_49_full_dispatches")
+
+for pair in range(50):
+    row = [0.0] * n
+    row[2 * pair] = 1.0
+    row[2 * pair + 1] = 1.0
+    a.append(row)
+    b.append(1.0)
+    con_names.append(f"route_pair_{pair}_choose_at_most_one")
 
 for var in range(99):
     row = [0.0] * n
     row[var] = 1.0
     a.append(row)
     b.append(1.0)
-    con_names.append(f"x{var}_upper")
+    con_names.append(f"dispatch_{var}_capacity")
 
-for var in range(n):
-    row = [0.0] * n
-    row[var] = -1.0
-    a.append(row)
-    b.append(0.0)
-    con_names.append(f"x{var}_lower")
-
-assert len(a) == 200
+assert len(a) == 150
 payload = {
-    "requestId": "remote-100x200-three-slave-smoke",
+    "requestId": "remote-100x150-three-slave-dispatch-smoke",
     "problem": {
         "sense": "max",
         "c": c,
@@ -274,14 +518,15 @@ payload = {
         "b": b,
         "integerVars": [True] * n,
         "ub": [1.0] * n,
-        "varNames": [f"x{i}" for i in range(n)],
+        "varNames": [f"dispatch_{i}" for i in range(n)],
         "conNames": con_names,
     },
     "options": {
         "splitDepth": 2,
         "maxSubproblems": 8,
-        "maxNodes": 10000,
-        "maxTicks": 10000,
+        "maxNodes": 20000,
+        "maxTicks": 20000,
+        "lpMaxIters": 10000,
         "timeoutMs": 600000,
     },
 }
@@ -293,10 +538,11 @@ python3 - <<PY
 import json
 import math
 import sys
+import urllib.error
 import urllib.request
 
 port = "${local_port}"
-with open("/tmp/dd-mip-solver-100x200.json", "rb") as handle:
+with open("/tmp/dd-mip-solver-100x150.json", "rb") as handle:
     payload = handle.read()
 
 request = urllib.request.Request(
@@ -305,8 +551,44 @@ request = urllib.request.Request(
     headers={"content-type": "application/json"},
     method="POST",
 )
-with urllib.request.urlopen(request, timeout=900) as response:
-    body = json.loads(response.read().decode("utf-8"))
+try:
+    with urllib.request.urlopen(request, timeout=900) as response:
+        body = json.loads(response.read().decode("utf-8"))
+except urllib.error.HTTPError as error:
+    error_body = error.read().decode("utf-8", errors="replace")
+    print(
+        json.dumps(
+            {
+                "event": "remote_solve_http_error",
+                "status": error.code,
+                "reason": error.reason,
+                "body": error_body[:5000],
+            },
+            sort_keys=True,
+        ),
+        file=sys.stderr,
+    )
+    for path in ("/mip-solver-cluster/workers", "/mip-solver-cluster/solves"):
+        try:
+            with urllib.request.urlopen(
+                f"http://127.0.0.1:{port}{path}",
+                timeout=10,
+            ) as response:
+                snapshot = response.read().decode("utf-8", errors="replace")
+        except Exception as snapshot_error:
+            snapshot = json.dumps({"error": str(snapshot_error)})
+        print(
+            json.dumps(
+                {
+                    "event": "remote_solve_failure_snapshot",
+                    "path": path,
+                    "body": snapshot[:5000],
+                },
+                sort_keys=True,
+            ),
+            file=sys.stderr,
+        )
+    raise SystemExit(1)
 
 print(json.dumps({
     "ok": body.get("ok"),
@@ -334,12 +616,19 @@ if body.get("jobsExpected") != body.get("jobsCompleted"):
     errors.append("not every expected subproblem completed")
 if (body.get("jobsPublished") or 0) < 3:
     errors.append("fewer than 3 jobs were published")
-if not math.isclose(float(body.get("z") or 0.0), 2.0, rel_tol=0.0, abs_tol=1e-6):
-    errors.append(f"objective {body.get('z')!r} != 2.0")
-if len(body.get("x") or []) != 100:
+expected_objective = 47824.0
+if not math.isclose(float(body.get("z") or 0.0), expected_objective, rel_tol=0.0, abs_tol=1e-6):
+    errors.append(f"objective {body.get('z')!r} != {expected_objective}")
+x = [float(value) for value in (body.get("x") or [])]
+if len(x) != 100:
     errors.append("solution vector does not have 100 variables")
-if sum(1 for value in (body.get("x") or [])[:3] if float(value) > 0.5) != 2:
-    errors.append("expected exactly two selected variables among x0,x1,x2")
+else:
+    selected = [index for index, value in enumerate(x) if value > 0.5]
+    expected_selected = list(range(0, 98, 2))
+    if selected != expected_selected:
+        errors.append(f"selected dispatch indexes {selected!r} != {expected_selected!r}")
+    if sum(x) > 49.0 + 1e-6:
+        errors.append(f"selected dispatch count {sum(x)!r} exceeds fleet budget")
 
 if errors:
     print("remote MIP smoke failed:", file=sys.stderr)
@@ -348,7 +637,7 @@ if errors:
     print(json.dumps(body, sort_keys=True)[:5000], file=sys.stderr)
     raise SystemExit(1)
 
-print("PROOF remote_mip_solver_100x200_three_slave_smoke=passed")
+print("PROOF remote_mip_solver_100x150_three_slave_dispatch_smoke=passed")
 PY
 
 echo "=== master observed workers and solve registry ==="

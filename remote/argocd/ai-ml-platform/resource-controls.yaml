@@ -1,0 +1,167 @@
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: dd-ai-ml-resource-quota
+  namespace: ai-ml
+spec:
+  hard:
+    requests.cpu: "8"
+    requests.memory: 24Gi
+    requests.ephemeral-storage: 20Gi
+    limits.cpu: "24"
+    limits.memory: 64Gi
+    limits.ephemeral-storage: 40Gi
+    requests.storage: 80Gi
+    persistentvolumeclaims: "20"
+    pods: "80"
+    services: "30"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: dd-ai-ml-limit-range
+  namespace: ai-ml
+spec:
+  limits:
+    - type: Container
+      defaultRequest:
+        cpu: 100m
+        memory: 256Mi
+        ephemeral-storage: 256Mi
+      default:
+        cpu: "2"
+        memory: 4Gi
+        ephemeral-storage: 1Gi
+      min:
+        cpu: 25m
+        memory: 64Mi
+      max:
+        cpu: "8"
+        memory: 16Gi
+        ephemeral-storage: 8Gi
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: dd-airbyte-resource-quota
+  namespace: airbyte
+spec:
+  hard:
+    requests.cpu: "8"
+    requests.memory: 32Gi
+    requests.ephemeral-storage: 20Gi
+    limits.cpu: "24"
+    limits.memory: 64Gi
+    limits.ephemeral-storage: 40Gi
+    requests.storage: 80Gi
+    persistentvolumeclaims: "20"
+    pods: "80"
+    services: "30"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: dd-airbyte-limit-range
+  namespace: airbyte
+spec:
+  limits:
+    - type: Container
+      defaultRequest:
+        cpu: 100m
+        memory: 256Mi
+        ephemeral-storage: 256Mi
+      default:
+        cpu: "2"
+        memory: 4Gi
+        ephemeral-storage: 1Gi
+      min:
+        cpu: 25m
+        memory: 64Mi
+      max:
+        cpu: "8"
+        memory: 16Gi
+        ephemeral-storage: 8Gi
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: dd-kafka-resource-quota
+  namespace: kafka
+spec:
+  hard:
+    requests.cpu: "8"
+    requests.memory: 24Gi
+    requests.ephemeral-storage: 20Gi
+    limits.cpu: "24"
+    limits.memory: 64Gi
+    limits.ephemeral-storage: 40Gi
+    requests.storage: 120Gi
+    persistentvolumeclaims: "24"
+    pods: "60"
+    services: "30"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: dd-kafka-limit-range
+  namespace: kafka
+spec:
+  limits:
+    - type: Container
+      defaultRequest:
+        cpu: 100m
+        memory: 256Mi
+        ephemeral-storage: 256Mi
+      default:
+        cpu: "2"
+        memory: 4Gi
+        ephemeral-storage: 1Gi
+      min:
+        cpu: 25m
+        memory: 64Mi
+      max:
+        cpu: "8"
+        memory: 16Gi
+        ephemeral-storage: 8Gi
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: dd-spark-resource-quota
+  namespace: spark
+spec:
+  hard:
+    requests.cpu: "16"
+    requests.memory: 48Gi
+    requests.ephemeral-storage: 40Gi
+    limits.cpu: "48"
+    limits.memory: 128Gi
+    limits.ephemeral-storage: 80Gi
+    requests.storage: 120Gi
+    persistentvolumeclaims: "24"
+    pods: "120"
+    services: "40"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: dd-spark-limit-range
+  namespace: spark
+spec:
+  limits:
+    - type: Container
+      defaultRequest:
+        cpu: 100m
+        memory: 256Mi
+        ephemeral-storage: 256Mi
+      default:
+        cpu: "2"
+        memory: 4Gi
+        ephemeral-storage: 2Gi
+      min:
+        cpu: 25m
+        memory: 64Mi
+      max:
+        cpu: "16"
+        memory: 32Gi
+        ephemeral-storage: 16Gi

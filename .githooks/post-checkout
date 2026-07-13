@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Runs after `git checkout` / `git switch`. Args: <prev-HEAD> <new-HEAD> <flag>
+# where flag=1 is a branch checkout (HEAD moved) and flag=0 is a file checkout.
+# Only branch checkouts can change submodule pointers, so skip the noisy
+# file-checkout case.
+[ "${3:-0}" = "1" ] || exit 0
+exec "$(git rev-parse --show-toplevel)/.githooks/submodule-sync-reminder.sh"

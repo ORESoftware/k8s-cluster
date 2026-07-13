@@ -3,6 +3,8 @@ kind: Application
 metadata:
   name: dd-airflow
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
 spec:
   project: dd-ai-ml-platform
   source:
@@ -29,12 +31,25 @@ spec:
             runAsNonRoot: true
             runAsUser: 50000
             runAsGroup: 0
+            readOnlyRootFilesystem: true
             seccompProfile:
               type: RuntimeDefault
+        volumes:
+          - name: airflow-tmp
+            emptyDir:
+              sizeLimit: 1Gi
+        volumeMounts:
+          - name: airflow-tmp
+            mountPath: /tmp
         fernetKeySecretName: dd-airflow-secrets
         apiSecretKeySecretName: dd-airflow-secrets
         jwtSecretName: dd-airflow-secrets
         webserverSecretKeySecretName: dd-airflow-secrets
+        data:
+          metadataSecretName: dd-airflow-secrets
+          brokerUrlSecretName: dd-airflow-secrets
+        enableBuiltInSecretEnvVars:
+          AIRFLOW__CELERY__BROKER_URL: false
         createUserJob:
           enabled: false
           serviceAccount:
@@ -63,6 +78,13 @@ spec:
         apiServer:
           serviceAccount:
             automountServiceAccountToken: false
+          extraVolumeMounts:
+            - name: api-server-logs
+              mountPath: /opt/airflow/logs
+          extraVolumes:
+            - name: api-server-logs
+              emptyDir:
+                sizeLimit: 1Gi
           resources:
             requests:
               cpu: 100m
@@ -74,6 +96,14 @@ spec:
           replicas: 1
           serviceAccount:
             automountServiceAccountToken: false
+          logGroomerSidecar:
+            resources:
+              requests:
+                cpu: 25m
+                memory: 64Mi
+              limits:
+                cpu: 100m
+                memory: 128Mi
           resources:
             requests:
               cpu: 100m
@@ -84,6 +114,14 @@ spec:
         dagProcessor:
           serviceAccount:
             automountServiceAccountToken: false
+          logGroomerSidecar:
+            resources:
+              requests:
+                cpu: 25m
+                memory: 64Mi
+              limits:
+                cpu: 100m
+                memory: 128Mi
           resources:
             requests:
               cpu: 100m
@@ -105,6 +143,7 @@ spec:
                   - ALL
               runAsNonRoot: true
               runAsUser: 65534
+              readOnlyRootFilesystem: true
               seccompProfile:
                 type: RuntimeDefault
           resources:
@@ -114,10 +153,36 @@ spec:
             limits:
               cpu: 250m
               memory: 256Mi
+        migrateDatabaseJob:
+          extraVolumeMounts:
+            - name: airflow-migration-logs
+              mountPath: /opt/airflow/logs
+          extraVolumes:
+            - name: airflow-migration-logs
+              emptyDir:
+                sizeLimit: 1Gi
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 512Mi
+        logs:
+          emptyDirConfig:
+            sizeLimit: 1Gi
         triggerer:
           replicas: 1
           serviceAccount:
             automountServiceAccountToken: false
+          logGroomerSidecar:
+            resources:
+              requests:
+                cpu: 25m
+                memory: 64Mi
+              limits:
+                cpu: 100m
+                memory: 128Mi
           persistence:
             enabled: true
             size: 10Gi
@@ -135,10 +200,61 @@ spec:
         postgresql:
           enabled: true
           auth:
+            username: airflow
+            database: airflow
             existingSecret: dd-airflow-secrets
             secretKeys:
               adminPasswordKey: postgres-password
               userPasswordKey: password
+          serviceAccount:
+            create: true
+            automountServiceAccountToken: false
+          primary:
+            resources:
+              requests:
+                cpu: 100m
+                memory: 256Mi
+              limits:
+                cpu: 500m
+                memory: 1Gi
+            persistence:
+              enabled: true
+              size: 10Gi
+            podSecurityContext:
+              enabled: true
+              fsGroup: 1001
+              seccompProfile:
+                type: RuntimeDefault
+            containerSecurityContext:
+              enabled: true
+              runAsUser: 1001
+              runAsNonRoot: true
+              privileged: false
+              readOnlyRootFilesystem: true
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                  - ALL
+              seccompProfile:
+                type: RuntimeDefault
+            extraVolumeMounts:
+              - name: postgresql-tmp
+                mountPath: /tmp
+            extraVolumes:
+              - name: postgresql-tmp
+                emptyDir:
+                  sizeLimit: 1Gi
+          shmVolume:
+            enabled: true
+            sizeLimit: 256Mi
+          networkPolicy:
+            enabled: true
+            ingressRules:
+              primaryAccessOnlyFrom:
+                enabled: true
+                namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: ai-ml
         dags:
           persistence:
             enabled: false

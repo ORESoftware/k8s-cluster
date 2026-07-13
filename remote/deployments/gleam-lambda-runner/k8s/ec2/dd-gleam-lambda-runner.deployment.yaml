@@ -170,11 +170,11 @@ spec:
             failureThreshold: 3
           resources:
             requests:
-              cpu: 250m
+              cpu: 25m
               memory: 512Mi
             limits:
               cpu: '2'
-              memory: 4Gi
+              memory: 2560Mi
           volumeMounts:
             - name: repo
               mountPath: /opt/dd-next-1

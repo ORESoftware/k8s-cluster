@@ -3,6 +3,8 @@ kind: Application
 metadata:
   name: dd-dagster
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
 spec:
   project: dd-ai-ml-platform
   source:
@@ -14,8 +16,11 @@ spec:
       values: |
         global:
           postgresqlSecretName: dd-dagster-postgresql
+        generatePostgresqlPasswordSecret: false
         dagsterDaemon:
           enabled: true
+          labels:
+            dd-dagster-postgresql-client: 'true'
           podSecurityContext:
             fsGroup: 1000
             seccompProfile:
@@ -25,11 +30,19 @@ spec:
             capabilities:
               drop:
                 - ALL
+            readOnlyRootFilesystem: true
             runAsNonRoot: true
             runAsUser: 1000
             runAsGroup: 1000
             seccompProfile:
               type: RuntimeDefault
+          volumeMounts:
+            - name: dagster-daemon-tmp
+              mountPath: /tmp
+          volumes:
+            - name: dagster-daemon-tmp
+              emptyDir:
+                sizeLimit: 1Gi
           resources:
             requests:
               cpu: 100m
@@ -37,8 +50,17 @@ spec:
             limits:
               cpu: '1'
               memory: 2Gi
+          initContainerResources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
         dagsterWebserver:
           replicaCount: 1
+          labels:
+            dd-dagster-postgresql-client: 'true'
           podSecurityContext:
             fsGroup: 1000
             seccompProfile:
@@ -48,11 +70,19 @@ spec:
             capabilities:
               drop:
                 - ALL
+            readOnlyRootFilesystem: true
             runAsNonRoot: true
             runAsUser: 1000
             runAsGroup: 1000
             seccompProfile:
               type: RuntimeDefault
+          volumeMounts:
+            - name: dagster-webserver-tmp
+              mountPath: /tmp
+          volumes:
+            - name: dagster-webserver-tmp
+              emptyDir:
+                sizeLimit: 1Gi
           resources:
             requests:
               cpu: 100m
@@ -60,16 +90,60 @@ spec:
             limits:
               cpu: '1'
               memory: 2Gi
+          initContainerResources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+        runLauncher:
+          config:
+            k8sRunLauncher:
+              labels:
+                dd-dagster-postgresql-client: 'true'
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  cpu: '1'
+                  memory: 1Gi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                runAsNonRoot: true
+                runAsUser: 1000
+                runAsGroup: 1000
+                seccompProfile:
+                  type: RuntimeDefault
+              runK8sConfig:
+                podSpecConfig:
+                  automountServiceAccountToken: false
+                  securityContext:
+                    runAsNonRoot: true
+                    seccompProfile:
+                      type: RuntimeDefault
         dagster-user-deployments:
           enabled: false
           enableSubchart: false
         serviceAccount:
           create: true
         postgresql:
-          enabled: true
+          enabled: false
+          postgresqlHost: dd-dagster-postgresql
           postgresqlUsername: dagster
           postgresqlDatabase: dagster
-          existingSecret: dd-dagster-postgresql
+          postgresqlPassword: ''
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
   destination:
     server: https://kubernetes.default.svc
     namespace: ai-ml

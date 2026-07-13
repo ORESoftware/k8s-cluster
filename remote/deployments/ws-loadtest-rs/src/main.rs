@@ -11,6 +11,8 @@ use tokio::time::{sleep, timeout, Duration, Instant};
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
 const DEFAULT_WS_URL: &str = "ws://dd-gleamlang-server.default.svc.cluster.local:8081/ws";
+const DEFAULT_MESSAGE_ENCODINGS: &str = "json";
+const DEFAULT_LOADTEST_TRANSPORTS: &str = "http,tcp,websocket";
 
 /// LOAD_MODE values.
 const LOAD_MODE_HOLD: &str = "hold";
@@ -19,6 +21,37 @@ const LOAD_MODE_PIPELINE: &str = "pipeline";
 /// real chat protocol rather than the akka-style echo frames. See the
 /// `run_gcs_client` block below for the wire format.
 const LOAD_MODE_GCS: &str = "gcs";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MessageEncoding {
+    Json,
+    MessagePack,
+    Protobuf,
+    FlatBuffers,
+}
+
+impl MessageEncoding {
+    fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "json" => Some(Self::Json),
+            "msgpack" | "messagepack" | "message-pack" => Some(Self::MessagePack),
+            "protobuf" | "proto" | "protocol-buffers" | "protocol_buffers" => Some(Self::Protobuf),
+            "flatbuffers" | "flatbuffer" | "flat-buffers" | "flat_buffers" => {
+                Some(Self::FlatBuffers)
+            }
+            _ => None,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Json => "json",
+            Self::MessagePack => "msgpack",
+            Self::Protobuf => "protobuf",
+            Self::FlatBuffers => "flatbuffers",
+        }
+    }
+}
 
 #[derive(Debug, Default)]
 struct Stats {
@@ -69,6 +102,11 @@ struct Config {
     messages_per_second_per_client: f64,
     /// Pipeline-mode: per-message payload string. Defaults to a short sample.
     message_payload: String,
+    /// Pipeline-mode: one or more encodings to round-robin over for the
+    /// `{id, payload}` message model.
+    message_encodings: Vec<MessageEncoding>,
+    /// Advertised protocol coverage for deployment/runbook automation.
+    loadtest_transports: String,
     /// Pipeline-mode: drop unmatched-request entries older than this (memory bound on
     /// pending-request map).
     correlation_timeout_seconds: u64,
@@ -77,6 +115,8 @@ struct Config {
     gcs_clients_per_conv: usize,
     /// gcs-mode: how many clients per conversation actually send (0 => all send).
     gcs_senders_per_conv: usize,
+    /// gcs-mode: hot-path wire format for MongoChatMessage frames.
+    gcs_message_encoding: MessageEncoding,
 }
 
 fn env_usize(name: &str, default_value: usize) -> usize {
@@ -103,6 +143,49 @@ fn env_f64(name: &str, default_value: f64) -> f64 {
         .unwrap_or(default_value)
 }
 
+fn env_csv(name: &str, default_value: &str) -> String {
+    env::var(name)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| default_value.to_string())
+}
+
+fn parse_message_encodings() -> Vec<MessageEncoding> {
+    let raw = env::var("MESSAGE_ENCODINGS")
+        .ok()
+        .or_else(|| env::var("MESSAGE_ENCODING").ok())
+        .unwrap_or_else(|| DEFAULT_MESSAGE_ENCODINGS.to_string());
+    let mut encodings = Vec::new();
+    for part in raw.split(',') {
+        if let Some(encoding) = MessageEncoding::parse(part) {
+            if !encodings.contains(&encoding) {
+                encodings.push(encoding);
+            }
+        }
+    }
+    if encodings.is_empty() {
+        encodings.push(MessageEncoding::Json);
+    }
+    encodings
+}
+
+fn parse_gcs_message_encoding() -> MessageEncoding {
+    env::var("GCS_MESSAGE_ENCODING")
+        .ok()
+        .or_else(|| env::var("MESSAGE_ENCODING").ok())
+        .and_then(|value| MessageEncoding::parse(&value))
+        .filter(|encoding| matches!(encoding, MessageEncoding::Json | MessageEncoding::Protobuf))
+        .unwrap_or(MessageEncoding::Json)
+}
+
+fn format_message_encodings(encodings: &[MessageEncoding]) -> String {
+    encodings
+        .iter()
+        .map(|encoding| encoding.as_str())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 fn load_config() -> Config {
     Config {
         target_ws_url: env::var("TARGET_WS_URL").unwrap_or_else(|_| DEFAULT_WS_URL.to_string()),
@@ -117,6 +200,8 @@ fn load_config() -> Config {
         messages_per_second_per_client: env_f64("MESSAGES_PER_SECOND_PER_CLIENT", 10.0),
         message_payload: env::var("MESSAGE_PAYLOAD")
             .unwrap_or_else(|_| "a benchmark message body".to_string()),
+        message_encodings: parse_message_encodings(),
+        loadtest_transports: env_csv("LOADTEST_TRANSPORTS", DEFAULT_LOADTEST_TRANSPORTS),
         correlation_timeout_seconds: env_u64("CORRELATION_TIMEOUT_SECONDS", 10),
         gcs_clients_per_conv: env_usize("GCS_CLIENTS_PER_CONV", 5),
         // env_usize filters out 0, so an unset/zero value falls through to this
@@ -125,6 +210,7 @@ fn load_config() -> Config {
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
             .unwrap_or(0),
+        gcs_message_encoding: parse_gcs_message_encoding(),
     }
 }
 
@@ -164,7 +250,7 @@ async fn run_container_pool_smoke() -> Result<(), String> {
     };
     let echo_key = env::var("CONTAINER_POOL_ECHO_KEY").unwrap_or_else(|_| smoke_key());
     let timeout_seconds = env_u64("CONTAINER_POOL_TIMEOUT_SECONDS", 30);
-    println!(
+    tracing::info!(
         "ws-loadtest-rs container-pool-smoke starting url={} echo_key={} timeout_seconds={}",
         url, echo_key, timeout_seconds
     );
@@ -201,13 +287,13 @@ async fn run_container_pool_smoke() -> Result<(), String> {
             status, returned_key, body
         ));
     }
-    println!(
+    tracing::info!(
         "ws-loadtest-rs container-pool-smoke ok pool={} container={} echo_key={}",
         body.pointer("/poolSlug")
-            .and_then(Value::as_str)
+            .and_then(serde_json::Value::as_str)
             .unwrap_or(""),
         body.pointer("/containerName")
-            .and_then(Value::as_str)
+            .and_then(serde_json::Value::as_str)
             .unwrap_or(""),
         returned_key
     );
@@ -234,6 +320,7 @@ async fn run_pipeline_client(
         Duration::from_nanos((1_000_000_000.0 / config.messages_per_second_per_client) as u64);
 
     let payload = config.message_payload.clone();
+    let encodings = config.message_encodings.clone();
 
     loop {
         stats.attempted.fetch_add(1, Ordering::Relaxed);
@@ -253,6 +340,7 @@ async fn run_pipeline_client(
                 let send_pending = Arc::clone(&pending);
                 let send_stats = Arc::clone(&stats);
                 let send_payload = payload.clone();
+                let send_encodings = encodings.clone();
                 let sender = tokio::spawn(async move {
                     let mut seq: u64 = 0;
                     let mut ticker = tokio::time::interval(send_interval);
@@ -262,16 +350,13 @@ async fn run_pipeline_client(
                         ticker.tick().await;
                         seq = seq.wrapping_add(1);
                         let id = format!("c{client_id}-{seq}");
-                        let frame = format!(
-                            r#"{{"id":"{}","payload":"{}"}}"#,
-                            id,
-                            json_escape(&send_payload)
-                        );
+                        let encoding = send_encodings[(seq as usize - 1) % send_encodings.len()];
+                        let frame = encode_pipeline_message(&id, &send_payload, encoding);
                         if let Ok(mut map) = send_pending.lock() {
                             map.insert(id.clone(), Instant::now());
                             send_stats.in_flight.store(map.len(), Ordering::Relaxed);
                         }
-                        if writer.send(Message::Text(frame)).await.is_err() {
+                        if writer.send(frame).await.is_err() {
                             break;
                         }
                         send_stats.sent.fetch_add(1, Ordering::Relaxed);
@@ -281,9 +366,9 @@ async fn run_pipeline_client(
                 // Receiver task: parses each frame, extracts `id`, matches against pending map.
                 while let Some(message) = reader.next().await {
                     match message {
-                        Ok(Message::Text(text)) => {
+                        Ok(message) => {
                             stats.messages.fetch_add(1, Ordering::Relaxed);
-                            if let Some(id) = extract_id(&text) {
+                            if let Some(id) = extract_id_from_message(&message) {
                                 let sent_at_opt = pending.lock().ok().and_then(|mut map| {
                                     let v = map.remove(&id);
                                     stats.in_flight.store(map.len(), Ordering::Relaxed);
@@ -296,9 +381,6 @@ async fn run_pipeline_client(
                                     stats.correlation_misses.fetch_add(1, Ordering::Relaxed);
                                 }
                             }
-                        }
-                        Ok(_) => {
-                            // Ignore ping/pong/binary frames.
                         }
                         Err(_) => {
                             stats.receive_errors.fetch_add(1, Ordering::Relaxed);
@@ -318,13 +400,13 @@ async fn run_pipeline_client(
             Ok(Err(error)) => {
                 stats.failed.fetch_add(1, Ordering::Relaxed);
                 if stats.should_log_connect_error() {
-                    eprintln!("connect failed client={} error={}", client_id, error);
+                    tracing::error!("connect failed client={} error={}", client_id, error);
                 }
             }
             Err(_elapsed) => {
                 stats.failed.fetch_add(1, Ordering::Relaxed);
                 if stats.should_log_connect_error() {
-                    eprintln!("connect timeout client={}", client_id);
+                    tracing::error!("connect timeout client={}", client_id);
                 }
             }
         }
@@ -346,6 +428,325 @@ fn extract_id(frame: &str) -> Option<String> {
 
 fn json_escape(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn encode_pipeline_message(id: &str, payload: &str, encoding: MessageEncoding) -> Message {
+    match encoding {
+        MessageEncoding::Json => Message::Text(format!(
+            r#"{{"id":"{}","payload":"{}"}}"#,
+            json_escape(id),
+            json_escape(payload)
+        )),
+        MessageEncoding::MessagePack => {
+            Message::Binary(encode_msgpack_pipeline_message(id, payload))
+        }
+        MessageEncoding::Protobuf => Message::Binary(encode_protobuf_pipeline_message(id, payload)),
+        MessageEncoding::FlatBuffers => {
+            Message::Binary(encode_flatbuffers_pipeline_message(id, payload))
+        }
+    }
+}
+
+fn extract_id_from_message(message: &Message) -> Option<String> {
+    match message {
+        Message::Text(text) => extract_id(text),
+        Message::Binary(bytes) => extract_id_from_binary(bytes)
+            .or_else(|| std::str::from_utf8(bytes).ok().and_then(extract_id)),
+        _ => None,
+    }
+}
+
+fn extract_id_from_binary(bytes: &[u8]) -> Option<String> {
+    extract_id_msgpack(bytes)
+        .or_else(|| extract_id_protobuf(bytes))
+        .or_else(|| extract_id_flatbuffers(bytes))
+}
+
+fn encode_msgpack_pipeline_message(id: &str, payload: &str) -> Vec<u8> {
+    let mut out = Vec::with_capacity(id.len() + payload.len() + 16);
+    out.push(0x82);
+    push_msgpack_str(&mut out, "id");
+    push_msgpack_str(&mut out, id);
+    push_msgpack_str(&mut out, "payload");
+    push_msgpack_str(&mut out, payload);
+    out
+}
+
+fn push_msgpack_str(out: &mut Vec<u8>, value: &str) {
+    let len = value.len();
+    if len <= 31 {
+        out.push(0xa0 | len as u8);
+    } else if len <= u8::MAX as usize {
+        out.extend_from_slice(&[0xd9, len as u8]);
+    } else if len <= u16::MAX as usize {
+        out.push(0xda);
+        out.extend_from_slice(&(len as u16).to_be_bytes());
+    } else {
+        out.push(0xdb);
+        out.extend_from_slice(&(len as u32).to_be_bytes());
+    }
+    out.extend_from_slice(value.as_bytes());
+}
+
+fn read_msgpack_str(bytes: &[u8], index: &mut usize) -> Option<String> {
+    let tag = *bytes.get(*index)?;
+    *index += 1;
+    let len = match tag {
+        0xa0..=0xbf => (tag & 0x1f) as usize,
+        0xd9 => {
+            let len = *bytes.get(*index)? as usize;
+            *index += 1;
+            len
+        }
+        0xda => {
+            let len = u16::from_be_bytes([*bytes.get(*index)?, *bytes.get(*index + 1)?]) as usize;
+            *index += 2;
+            len
+        }
+        0xdb => {
+            let len = u32::from_be_bytes([
+                *bytes.get(*index)?,
+                *bytes.get(*index + 1)?,
+                *bytes.get(*index + 2)?,
+                *bytes.get(*index + 3)?,
+            ]) as usize;
+            *index += 4;
+            len
+        }
+        _ => return None,
+    };
+    let end = index.checked_add(len)?;
+    let value = std::str::from_utf8(bytes.get(*index..end)?)
+        .ok()?
+        .to_string();
+    *index = end;
+    Some(value)
+}
+
+fn extract_id_msgpack(bytes: &[u8]) -> Option<String> {
+    let mut index = 0usize;
+    let tag = *bytes.get(index)?;
+    index += 1;
+    let pairs = match tag {
+        0x80..=0x8f => (tag & 0x0f) as usize,
+        0xde => {
+            let len = u16::from_be_bytes([*bytes.get(index)?, *bytes.get(index + 1)?]) as usize;
+            index += 2;
+            len
+        }
+        0xdf => {
+            let len = u32::from_be_bytes([
+                *bytes.get(index)?,
+                *bytes.get(index + 1)?,
+                *bytes.get(index + 2)?,
+                *bytes.get(index + 3)?,
+            ]) as usize;
+            index += 4;
+            len
+        }
+        _ => return None,
+    };
+
+    for _ in 0..pairs {
+        let key = read_msgpack_str(bytes, &mut index)?;
+        let value = read_msgpack_str(bytes, &mut index)?;
+        if key == "id" {
+            return Some(value);
+        }
+    }
+    None
+}
+
+fn encode_protobuf_pipeline_message(id: &str, payload: &str) -> Vec<u8> {
+    let mut out = Vec::with_capacity(id.len() + payload.len() + 8);
+    push_protobuf_string_field(&mut out, 1, id);
+    push_protobuf_string_field(&mut out, 2, payload);
+    out
+}
+
+fn push_protobuf_string_field(out: &mut Vec<u8>, field_number: u64, value: &str) {
+    push_varint(out, (field_number << 3) | 2);
+    push_varint(out, value.len() as u64);
+    out.extend_from_slice(value.as_bytes());
+}
+
+fn push_protobuf_bytes_field(out: &mut Vec<u8>, field_number: u64, value: &[u8]) {
+    push_varint(out, (field_number << 3) | 2);
+    push_varint(out, value.len() as u64);
+    out.extend_from_slice(value);
+}
+
+fn push_protobuf_varint_field(out: &mut Vec<u8>, field_number: u64, value: u64) {
+    if value == 0 {
+        return;
+    }
+    push_varint(out, field_number << 3);
+    push_varint(out, value);
+}
+
+fn push_protobuf_bool_field(out: &mut Vec<u8>, field_number: u64, value: bool) {
+    if !value {
+        return;
+    }
+    push_protobuf_varint_field(out, field_number, 1);
+}
+
+fn push_varint(out: &mut Vec<u8>, mut value: u64) {
+    while value >= 0x80 {
+        out.push((value as u8) | 0x80);
+        value >>= 7;
+    }
+    out.push(value as u8);
+}
+
+fn read_varint(bytes: &[u8], index: &mut usize) -> Option<u64> {
+    let mut value = 0u64;
+    let mut shift = 0u32;
+    loop {
+        let byte = *bytes.get(*index)?;
+        *index += 1;
+        value |= ((byte & 0x7f) as u64) << shift;
+        if byte & 0x80 == 0 {
+            return Some(value);
+        }
+        shift += 7;
+        if shift > 63 {
+            return None;
+        }
+    }
+}
+
+fn extract_id_protobuf(bytes: &[u8]) -> Option<String> {
+    let mut index = 0usize;
+    while index < bytes.len() {
+        let key = read_varint(bytes, &mut index)?;
+        let field_number = key >> 3;
+        let wire_type = key & 0x07;
+        match wire_type {
+            0 => {
+                let _ = read_varint(bytes, &mut index)?;
+            }
+            1 => {
+                index = index.checked_add(8)?;
+            }
+            2 => {
+                let len = read_varint(bytes, &mut index)? as usize;
+                let end = index.checked_add(len)?;
+                let value = bytes.get(index..end)?;
+                if field_number == 1 {
+                    return Some(std::str::from_utf8(value).ok()?.to_string());
+                }
+                index = end;
+            }
+            5 => {
+                index = index.checked_add(4)?;
+            }
+            _ => return None,
+        }
+    }
+    None
+}
+
+fn encode_flatbuffers_pipeline_message(id: &str, payload: &str) -> Vec<u8> {
+    let mut out = vec![0u8; 24];
+    write_u32_le(&mut out, 0, 12);
+    write_u16_le(&mut out, 4, 8);
+    write_u16_le(&mut out, 6, 12);
+    write_u16_le(&mut out, 8, 4);
+    write_u16_le(&mut out, 10, 8);
+    write_i32_le(&mut out, 12, 8);
+
+    let id_start = append_flatbuffers_string(&mut out, id);
+    write_u32_le(&mut out, 16, (id_start - 16) as u32);
+    let payload_start = append_flatbuffers_string(&mut out, payload);
+    write_u32_le(&mut out, 20, (payload_start - 20) as u32);
+    out
+}
+
+fn append_flatbuffers_string(out: &mut Vec<u8>, value: &str) -> usize {
+    let start = out.len();
+    out.extend_from_slice(&(value.len() as u32).to_le_bytes());
+    out.extend_from_slice(value.as_bytes());
+    out.push(0);
+    while out.len() % 4 != 0 {
+        out.push(0);
+    }
+    start
+}
+
+fn write_u16_le(out: &mut [u8], offset: usize, value: u16) {
+    out[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+}
+
+fn write_u32_le(out: &mut [u8], offset: usize, value: u32) {
+    out[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+}
+
+fn write_i32_le(out: &mut [u8], offset: usize, value: i32) {
+    out[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+}
+
+fn read_u16_le(bytes: &[u8], offset: usize) -> Option<u16> {
+    Some(u16::from_le_bytes([
+        *bytes.get(offset)?,
+        *bytes.get(offset + 1)?,
+    ]))
+}
+
+fn read_u32_le(bytes: &[u8], offset: usize) -> Option<u32> {
+    Some(u32::from_le_bytes([
+        *bytes.get(offset)?,
+        *bytes.get(offset + 1)?,
+        *bytes.get(offset + 2)?,
+        *bytes.get(offset + 3)?,
+    ]))
+}
+
+fn read_i32_le(bytes: &[u8], offset: usize) -> Option<i32> {
+    Some(i32::from_le_bytes([
+        *bytes.get(offset)?,
+        *bytes.get(offset + 1)?,
+        *bytes.get(offset + 2)?,
+        *bytes.get(offset + 3)?,
+    ]))
+}
+
+fn read_flatbuffers_string(
+    bytes: &[u8],
+    table: usize,
+    vtable: usize,
+    field: usize,
+) -> Option<String> {
+    let vtable_len = read_u16_le(bytes, vtable)? as usize;
+    let field_offset_pos = vtable.checked_add(4 + field * 2)?;
+    if field_offset_pos + 2 > vtable + vtable_len {
+        return None;
+    }
+    let field_offset = read_u16_le(bytes, field_offset_pos)? as usize;
+    if field_offset == 0 {
+        return None;
+    }
+    let slot = table.checked_add(field_offset)?;
+    let string_start = slot.checked_add(read_u32_le(bytes, slot)? as usize)?;
+    let len = read_u32_le(bytes, string_start)? as usize;
+    let data_start = string_start.checked_add(4)?;
+    let data_end = data_start.checked_add(len)?;
+    Some(
+        std::str::from_utf8(bytes.get(data_start..data_end)?)
+            .ok()?
+            .to_string(),
+    )
+}
+
+fn extract_id_flatbuffers(bytes: &[u8]) -> Option<String> {
+    let table = read_u32_le(bytes, 0)? as usize;
+    let vtable_offset = read_i32_le(bytes, table)?;
+    let vtable = if vtable_offset >= 0 {
+        table.checked_sub(vtable_offset as usize)?
+    } else {
+        table.checked_add((-vtable_offset) as usize)?
+    };
+    read_flatbuffers_string(bytes, table, vtable, 0)
 }
 
 // ---------------------------------------------------------------------------
@@ -374,6 +775,13 @@ fn now_micros() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_micros() as u64
+}
+
+fn now_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
 }
 
 /// 24-hex-char value shaped like a Mongo ObjectId (8 hex seconds + 16 hex of
@@ -437,20 +845,44 @@ fn url_encode(s: &str) -> String {
     out
 }
 
-fn gcs_connect_url(base: &str, user_id: &str, device_id: &str, conv_id: &str) -> String {
+fn gcs_connect_url(
+    base: &str,
+    user_id: &str,
+    device_id: &str,
+    conv_id: &str,
+    encoding: MessageEncoding,
+) -> String {
     let conv_ids_json = format!("[\"{}\"]", conv_id);
+    let wire = if encoding == MessageEncoding::Protobuf {
+        "&wire=protobuf"
+    } else {
+        ""
+    };
     format!(
-        "{}/gcs/ws/?userId={}&deviceId={}&conversationIds={}",
+        "{}/gcs/ws/?userId={}&deviceId={}&conversationIds={}{}",
         base.trim_end_matches('/'),
         user_id,
         device_id,
-        url_encode(&conv_ids_json)
+        url_encode(&conv_ids_json),
+        wire
     )
 }
 
 /// Build the outer envelope carrying one MongoChatMessage. `marker` goes into
 /// `Messages[0]` and is the latency beacon receivers parse.
-fn build_gcs_chat_frame(conv_id: &str, user_id: &str, members: &[String], marker: &str) -> String {
+fn build_gcs_chat_frame(
+    conv_id: &str,
+    user_id: &str,
+    members: &[String],
+    marker: &str,
+    encoding: MessageEncoding,
+) -> Message {
+    if encoding == MessageEncoding::Protobuf {
+        return Message::Binary(encode_gcs_protobuf_chat_frame(
+            conv_id, user_id, members, marker,
+        ));
+    }
+
     let now = rfc3339_now();
     let priority = members
         .iter()
@@ -467,37 +899,120 @@ fn build_gcs_chat_frame(conv_id: &str, user_id: &str, members: &[String], marker
         conv = conv_id,
         marker = marker
     );
-    format!(
+    Message::Text(format!(
         r#"{{"Meta":{{}},"List":[{{"@vibe-meta":{{}},"@vibe-type":"MongoChatMessage","@vibe-data":"{}"}}]}}"#,
         json_escape(&inner)
-    )
+    ))
+}
+
+fn encode_gcs_protobuf_chat_frame(
+    conv_id: &str,
+    user_id: &str,
+    members: &[String],
+    marker: &str,
+) -> Vec<u8> {
+    let now_ms = now_millis();
+    let mut message = Vec::with_capacity(256 + marker.len() + members.len() * 28);
+    push_protobuf_string_field(&mut message, 1, &object_id());
+    push_protobuf_string_field(&mut message, 3, user_id);
+    push_protobuf_string_field(&mut message, 4, conv_id);
+    for member in members {
+        push_protobuf_string_field(&mut message, 5, member);
+    }
+    push_protobuf_bool_field(&mut message, 7, members.len() > 2);
+    push_protobuf_varint_field(&mut message, 9, members.len() as u64);
+    push_protobuf_string_field(&mut message, 10, marker);
+    push_protobuf_varint_field(&mut message, 15, now_ms);
+    push_protobuf_varint_field(&mut message, 16, now_ms);
+    push_protobuf_string_field(&mut message, 23, user_id);
+    push_protobuf_varint_field(&mut message, 25, now_ms);
+
+    let mut frame = Vec::with_capacity(message.len() + 32);
+    push_protobuf_string_field(&mut frame, 1, "MongoChatMessage");
+    push_protobuf_bytes_field(&mut frame, 2, &message);
+    frame
 }
 
 /// Scan a received frame for our `gcsrt-<client>-<seq>-<sendMicros>` markers,
 /// pushing an end-to-end latency (µs) for each one found.
 fn parse_gcs_markers(text: &str, out: &mut Vec<u64>) {
+    parse_gcs_marker_bytes(text.as_bytes(), out);
+}
+
+fn parse_gcs_marker_bytes(bytes: &[u8], out: &mut Vec<u64>) {
     let needle = "gcsrt-";
     let mut idx = 0usize;
-    while let Some(pos) = text[idx..].find(needle) {
+    while let Some(pos) = find_bytes(&bytes[idx..], needle.as_bytes()) {
         let start = idx + pos;
-        let rest = &text[start..];
-        // The marker is `gcsrt-<client>-<seq>-<micros>`; every char is in
-        // [0-9a-zA-Z-]. Stop at the first byte outside that set so we don't pick
-        // up a trailing quote or escape character regardless of how the frame is
-        // (re)serialized.
-        let marker_len = rest
-            .bytes()
-            .take_while(|b| b.is_ascii_alphanumeric() || *b == b'-')
-            .count();
-        let marker = &rest[..marker_len];
-        if let Some(send_us) = marker
-            .rsplit('-')
-            .next()
-            .and_then(|s| s.parse::<u64>().ok())
-        {
+        let rest = &bytes[start..];
+        if let Some((marker_len, send_us)) = parse_gcs_marker_send_us(rest) {
             out.push(now_micros().saturating_sub(send_us));
+            idx = start + marker_len;
+        } else {
+            idx = start + needle.len();
         }
-        idx = start + marker_len.max(needle.len());
+    }
+}
+
+fn parse_gcs_marker_send_us(bytes: &[u8]) -> Option<(usize, u64)> {
+    let prefix = b"gcsrt-";
+    if !bytes.starts_with(prefix) {
+        return None;
+    }
+
+    let mut idx = prefix.len();
+    idx = consume_ascii_digits(bytes, idx)?;
+    if *bytes.get(idx)? != b'-' {
+        return None;
+    }
+    idx += 1;
+    idx = consume_ascii_digits(bytes, idx)?;
+    if *bytes.get(idx)? != b'-' {
+        return None;
+    }
+    idx += 1;
+
+    let micros_start = idx;
+    idx = consume_ascii_digits(bytes, idx)?;
+    let send_us = parse_ascii_u64(&bytes[micros_start..idx])?;
+    Some((idx, send_us))
+}
+
+fn consume_ascii_digits(bytes: &[u8], mut idx: usize) -> Option<usize> {
+    let start = idx;
+    while matches!(bytes.get(idx), Some(b'0'..=b'9')) {
+        idx += 1;
+    }
+    if idx == start {
+        None
+    } else {
+        Some(idx)
+    }
+}
+
+fn parse_ascii_u64(bytes: &[u8]) -> Option<u64> {
+    let mut value = 0u64;
+    for &b in bytes {
+        let digit = (b as char).to_digit(10)? as u64;
+        value = value.checked_mul(10)?.checked_add(digit)?;
+    }
+    Some(value)
+}
+
+fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() {
+        return Some(0);
+    }
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
+fn reported_received_count(load_mode: &str, messages: usize, latency_samples: usize) -> usize {
+    if load_mode == LOAD_MODE_GCS {
+        messages
+    } else {
+        latency_samples
     }
 }
 
@@ -557,6 +1072,14 @@ where
                     stats.record_latency_us(latency_us, latencies);
                 }
             }
+            Ok(Message::Binary(bytes)) => {
+                stats.messages.fetch_add(1, Ordering::Relaxed);
+                lat_buf.clear();
+                parse_gcs_marker_bytes(&bytes, &mut lat_buf);
+                for latency_us in lat_buf.drain(..) {
+                    stats.record_latency_us(latency_us, latencies);
+                }
+            }
             Ok(_) => {}
             Err(_) => {
                 stats.receive_errors.fetch_add(1, Ordering::Relaxed);
@@ -582,6 +1105,7 @@ async fn run_gcs_client(
         &assignment.user_id,
         &assignment.device_id,
         &assignment.conv_id,
+        config.gcs_message_encoding,
     );
 
     loop {
@@ -597,6 +1121,7 @@ async fn run_gcs_client(
                     let conv = assignment.conv_id.clone();
                     let user = assignment.user_id.clone();
                     let members = Arc::clone(&assignment.members);
+                    let encoding = config.gcs_message_encoding;
                     let sender = tokio::spawn(async move {
                         let mut seq: u64 = 0;
                         let mut ticker = tokio::time::interval(send_interval);
@@ -605,8 +1130,9 @@ async fn run_gcs_client(
                             ticker.tick().await;
                             seq = seq.wrapping_add(1);
                             let marker = format!("gcsrt-{}-{}-{}", client_id, seq, now_micros());
-                            let frame = build_gcs_chat_frame(&conv, &user, &members, &marker);
-                            if writer.send(Message::Text(frame)).await.is_err() {
+                            let frame =
+                                build_gcs_chat_frame(&conv, &user, &members, &marker, encoding);
+                            if writer.send(frame).await.is_err() {
                                 break;
                             }
                             send_stats.sent.fetch_add(1, Ordering::Relaxed);
@@ -623,13 +1149,13 @@ async fn run_gcs_client(
             Ok(Err(error)) => {
                 stats.failed.fetch_add(1, Ordering::Relaxed);
                 if stats.should_log_connect_error() {
-                    eprintln!("gcs connect failed client={} error={}", client_id, error);
+                    tracing::error!("gcs connect failed client={} error={}", client_id, error);
                 }
             }
             Err(_elapsed) => {
                 stats.failed.fetch_add(1, Ordering::Relaxed);
                 if stats.should_log_connect_error() {
-                    eprintln!("gcs connect timeout client={}", client_id);
+                    tracing::error!("gcs connect timeout client={}", client_id);
                 }
             }
         }
@@ -677,13 +1203,13 @@ async fn run_client(client_id: usize, config: Arc<Config>, stats: Arc<Stats>) ->
             Ok(Err(error)) => {
                 stats.failed.fetch_add(1, Ordering::Relaxed);
                 if stats.should_log_connect_error() {
-                    eprintln!("connect failed client={} error={}", client_id, error);
+                    tracing::error!("connect failed client={} error={}", client_id, error);
                 }
             }
             Err(_elapsed) => {
                 stats.failed.fetch_add(1, Ordering::Relaxed);
                 if stats.should_log_connect_error() {
-                    eprintln!("connect timeout client={}", client_id);
+                    tracing::error!("connect timeout client={}", client_id);
                 }
             }
         }
@@ -724,23 +1250,26 @@ async fn report_stats(
                 Err(_) => (0, 0, 0, 0, 0, 0.0),
             };
             let sent = stats.sent.load(Ordering::Relaxed);
-            let received = stats.received.load(Ordering::Relaxed);
+            let latency_samples = stats.received.load(Ordering::Relaxed);
+            let received = reported_received_count(&config.load_mode, messages, latency_samples);
             let receive_errors = stats.receive_errors.load(Ordering::Relaxed);
             let correlation_misses = stats.correlation_misses.load(Ordering::Relaxed);
             let in_flight = stats.in_flight.load(Ordering::Relaxed);
 
             // received/sent ratio approximates conversation fan-out in gcs mode.
-            println!(
-                "ws-loadtest-rs {}-report attempted={} connected={} failed={} open={} \
-                 sent={} received={} in_flight={} correlation_misses={} receive_errors={} \
+            tracing::info!(
+                "ws-loadtest-rs {}-report attempted={} connected={} failed={} open={} messages={} \
+                 sent={} received={} latency_samples={} in_flight={} correlation_misses={} receive_errors={} \
                  p50_us={} p95_us={} p99_us={} max_us={} mean_us={:.0} sample={}",
                 config.load_mode,
                 attempted,
                 connected,
                 failed,
                 open,
+                messages,
                 sent,
                 received,
+                latency_samples,
                 in_flight,
                 correlation_misses,
                 receive_errors,
@@ -752,7 +1281,7 @@ async fn report_stats(
                 sample_count
             );
         } else {
-            println!(
+            tracing::info!(
                 "ws-loadtest-rs report attempted={} connected={} failed={} open={} messages={}",
                 attempted, connected, failed, open, messages
             );
@@ -762,9 +1291,11 @@ async fn report_stats(
 
 #[tokio::main]
 async fn main() {
+    let _otel = dd_telemetry::init("ws-loadtest-rs");
+
     if env::var("CONTAINER_POOL_URL").is_ok() {
         if let Err(error) = run_container_pool_smoke().await {
-            eprintln!("ws-loadtest-rs container-pool-smoke failed: {error}");
+            tracing::error!("ws-loadtest-rs container-pool-smoke failed: {error}");
             std::process::exit(1);
         }
         return;
@@ -779,11 +1310,12 @@ async fn main() {
         Histogram::<u64>::new_with_bounds(1, 60_000_000, 3).expect("hdrhistogram bounds"),
     ));
 
-    println!(
+    tracing::info!(
         "ws-loadtest-rs starting target_ws_url={} client_count={} load_mode={} hold_seconds={} \
          connect_timeout_seconds={} receive_timeout_seconds={} reconnect_delay_ms={} \
          ramp_delay_ms={} report_interval_seconds={} messages_per_second_per_client={} \
-         message_payload={:?} correlation_timeout_seconds={}",
+         message_payload={:?} message_encodings={} gcs_message_encoding={} loadtest_transports={} \
+         correlation_timeout_seconds={}",
         config.target_ws_url,
         config.client_count,
         config.load_mode,
@@ -795,6 +1327,9 @@ async fn main() {
         config.report_interval_seconds,
         config.messages_per_second_per_client,
         config.message_payload,
+        format_message_encodings(&config.message_encodings),
+        config.gcs_message_encoding.as_str(),
+        config.loadtest_transports,
         config.correlation_timeout_seconds
     );
 
@@ -812,7 +1347,7 @@ async fn main() {
         let assignments = build_gcs_assignments(&config);
         let cpc = config.gcs_clients_per_conv.max(1);
         let convs = (config.client_count + cpc - 1) / cpc;
-        println!(
+        tracing::info!(
             "ws-loadtest-rs gcs-setup conversations={} clients_per_conv={} senders_per_conv={}",
             convs,
             config.gcs_clients_per_conv,
@@ -856,5 +1391,50 @@ async fn main() {
 
     loop {
         sleep(Duration::from_secs(60)).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gcs_marker_parser_handles_text_delimiter() {
+        let send_us = now_micros().saturating_sub(1_000);
+        let frame = format!(r#"{{"Messages":["gcsrt-12-34-{send_us}"]}}"#);
+        let mut latencies = Vec::new();
+
+        parse_gcs_markers(&frame, &mut latencies);
+
+        assert_eq!(latencies.len(), 1);
+        assert!(latencies[0] >= 1_000);
+    }
+
+    #[test]
+    fn gcs_marker_parser_stops_before_following_protobuf_field_key() {
+        let send_us = now_micros().saturating_sub(1_000);
+        let mut frame = format!("prefix-gcsrt-12-34-{send_us}").into_bytes();
+        frame.extend_from_slice(&[0x78, 0x80, 0x81, 0x01]);
+        let mut latencies = Vec::new();
+
+        parse_gcs_marker_bytes(&frame, &mut latencies);
+
+        assert_eq!(latencies.len(), 1);
+        assert!(latencies[0] >= 1_000);
+    }
+
+    #[test]
+    fn gcs_marker_parser_skips_malformed_marker() {
+        let mut latencies = Vec::new();
+
+        parse_gcs_marker_bytes(b"gcsrt-12-nope-123 gcsrt-12-34-", &mut latencies);
+
+        assert!(latencies.is_empty());
+    }
+
+    #[test]
+    fn gcs_report_received_counts_frames_not_latency_samples() {
+        assert_eq!(reported_received_count(LOAD_MODE_GCS, 42, 0), 42);
+        assert_eq!(reported_received_count(LOAD_MODE_PIPELINE, 42, 7), 7);
     }
 }

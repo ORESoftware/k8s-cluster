@@ -1,0 +1,411 @@
+{
+  "ok": true,
+  "generatedBy": "remote/tools/generate-api-docs.mjs",
+  "service": "apostille-services-server-rs",
+  "language": "rust",
+  "routeCount": 23,
+  "routeTypeCounts": {
+    "service": 7,
+    "user-generated": 16
+  },
+  "standardDocsRoutes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ],
+  "routes": [
+    {
+      "path": "/",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Service descriptor, home redirect, or root RPC endpoint.",
+      "handlers": [
+        "home"
+      ],
+      "sourceFiles": [
+        "remote/deployments/apostille-services-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/docs",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [
+        "api_docs_html"
+      ],
+      "sourceFiles": [
+        "remote/deployments/apostille-services-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/docs.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Machine-readable generated API route metadata.",
+      "handlers": [
+        "api_docs_json"
+      ],
+      "sourceFiles": [
+        "remote/deployments/apostille-services-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/cases",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "create_case",
+        "list_cases"
+      ],
+      "sourceFiles": [
+        "remote/deployments/apostille-services-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/cases/:case_id",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "get_case"
+      ],
+      "sourceFiles": [
+        "remote/deployments/apostille-services-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/cases/:case_id/submit",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "submit_case"
+      ],
+      "sourceFiles": [
+        "remote/deployments/apostille-services-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/descriptor",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "descriptor"
+      ],
+      "sourceFiles": [
+        "remote/deployments/apostille-services-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/docs/api",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [
+        "api_docs_html"
+      ],
+      "sourceFiles": [
+        "remote/deployments/apostille-services-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/example",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "example"
+      ],
+      "sourceFiles": [
+        "remote/deployments/apostille-services-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/healthz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Health check.",
+      "handlers": [
+        "healthz"
+      ],
+      "sourceFiles": [
+        "remote/deployments/apostille-services-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/home",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "home"
+      ],
+      "sourceFiles": [
+        "remote/deployments/apostille-services-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/home/examples",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "home_examples_fragment"
+      ],
+      "sourceFiles": [
+        "remote/deployments/apostille-services-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/home/flow",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "home_flow_fragment"
+      ],
+      "sourceFiles": [
+        "remote/deployments/apostille-services-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/home/jurisdictions",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "home_jurisdictions_fragment"
+      ],
+      "sourceFiles": [
+        "remote/deployments/apostille-services-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/home/webhooks",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "home_webhooks_fragment"
+      ],
+      "sourceFiles": [
+        "remote/deployments/apostille-services-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/jurisdictions",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "jurisdictions"
+      ],
+      "sourceFiles": [
+        "remote/deployments/apostille-services-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/metrics",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Prometheus metrics.",
+      "handlers": [
+        "metrics"
+      ],
+      "sourceFiles": [
+        "remote/deployments/apostille-services-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/readyz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Readiness check.",
+      "handlers": [
+        "readyz"
+      ],
+      "sourceFiles": [
+        "remote/deployments/apostille-services-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/schema",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "schema"
+      ],
+      "sourceFiles": [
+        "remote/deployments/apostille-services-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/services",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "services"
+      ],
+      "sourceFiles": [
+        "remote/deployments/apostille-services-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/translate",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "translate"
+      ],
+      "sourceFiles": [
+        "remote/deployments/apostille-services-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/webhooks/government",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "webhook signature",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "government_webhook_default"
+      ],
+      "sourceFiles": [
+        "remote/deployments/apostille-services-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/webhooks/government/:jurisdiction",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "webhook signature",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "government_webhook_for_jurisdiction"
+      ],
+      "sourceFiles": [
+        "remote/deployments/apostille-services-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    }
+  ]
+}

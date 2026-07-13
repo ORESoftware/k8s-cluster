@@ -206,7 +206,7 @@ async fn open_modified_break(
     conn: &ProviderConnection,
     tx: &PlaidTransaction,
 ) -> AppResult<()> {
-    let _ = sqlx::query(
+    let inserted = sqlx::query(
         r#"
         INSERT INTO reconciliation_breaks
             (tenant_id, shard_key, provider, connection_id, break_type,
@@ -228,7 +228,27 @@ async fn open_modified_break(
                    manual reconciliation needed (we do not auto-reverse)",
     }))
     .execute(ctx.pool)
-    .await;
+    .await
+    .map(|r| r.rows_affected() > 0)
+    .unwrap_or(false);
+
+    // Only emit on a genuinely-new break; ON CONFLICT means a re-sync that
+    // re-encounters the same modified tx inserts nothing, and must not
+    // re-publish the event every cycle.
+    if inserted {
+        ctx.events
+            .publish_reconciliation_break(
+                ctx.tenant_id,
+                conn.provider.tag(),
+                Some(conn.id),
+                "modified_transaction",
+                tx.iso_currency_code.as_deref().unwrap_or("USD"),
+                &tx.transaction_id,
+                None,
+                None,
+            )
+            .await;
+    }
     Ok(())
 }
 
@@ -237,7 +257,7 @@ async fn open_removed_break(
     conn: &ProviderConnection,
     tx: &crate::providers::plaid::PlaidRemovedTx,
 ) -> AppResult<()> {
-    let _ = sqlx::query(
+    let inserted = sqlx::query(
         r#"
         INSERT INTO reconciliation_breaks
             (tenant_id, shard_key, provider, connection_id, break_type,
@@ -259,7 +279,24 @@ async fn open_removed_break(
                    manual reconciliation needed",
     }))
     .execute(ctx.pool)
-    .await;
+    .await
+    .map(|r| r.rows_affected() > 0)
+    .unwrap_or(false);
+
+    if inserted {
+        ctx.events
+            .publish_reconciliation_break(
+                ctx.tenant_id,
+                conn.provider.tag(),
+                Some(conn.id),
+                "removed_transaction",
+                "USD",
+                &tx.transaction_id,
+                None,
+                None,
+            )
+            .await;
+    }
     Ok(())
 }
 

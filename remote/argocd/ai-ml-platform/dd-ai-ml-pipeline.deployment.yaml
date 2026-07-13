@@ -8,7 +8,12 @@ metadata:
 spec:
   replicas: 1
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      # The EC2 cluster is single-node and pod-slot constrained, so roll
+      # this singleton in-place instead of requiring a surge pod.
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: dd-ai-ml-pipeline
@@ -22,25 +27,25 @@ spec:
       automountServiceAccountToken: false
       serviceAccountName: dd-ai-ml-pipeline
       securityContext:
-        fsGroup: 1000
+        fsGroup: 10001
         fsGroupChangePolicy: OnRootMismatch
-        runAsGroup: 1000
+        runAsGroup: 10001
         runAsNonRoot: true
-        runAsUser: 1000
+        runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
       terminationGracePeriodSeconds: 20
       containers:
         - name: ai-ml-pipeline
-          image: docker.io/library/python:3.12-slim
+          image: docker.io/library/python:3.12-slim@sha256:090ba77e2958f6af52a5341f788b50b032dd4ca28377d2893dcf1ecbdfdfe203
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
             privileged: false
             readOnlyRootFilesystem: true
             runAsNonRoot: true
-            runAsUser: 1000
-            runAsGroup: 1000
+            runAsUser: 10001
+            runAsGroup: 10001
             capabilities:
               drop:
                 - ALL
@@ -156,4 +161,5 @@ spec:
             path: /home/ec2-user/codes/dd/dd-next-1
             type: Directory
         - name: tmp
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: 512Mi

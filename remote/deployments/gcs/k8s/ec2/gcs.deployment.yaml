@@ -6,14 +6,10 @@ metadata:
   labels:
     app: gcs
 spec:
-  # 3 replicas to exercise consistent-hash routing across a wider
-  # ring in gcs-router and to give the chat-vibe load tests something
-  # real to fan-out across. CPU request was lowered to 100m in commit
-  # a84e6c1 specifically so the router can spread hot conversations
-  # across multiple pods on the single-node EC2 cluster. Four replicas
-  # keeps 30k WSS soak-test fanout below the per-pod latency knee while
-  # staying light on scheduler requests.
-  replicas: 4
+  # Single-pod 30k WSS medium-load target. gcs-router may still run
+  # multiple stateless frontends, but all websocket connections must land
+  # on this one backend pod for the per-pod capacity proof.
+  replicas: 1
   strategy:
     # On the single-node EC2 cluster we are CPU-bound; a surge pod
     # cannot be scheduled (Insufficient cpu) and rollouts get stuck.
@@ -32,8 +28,8 @@ spec:
     metadata:
       annotations:
         dd.dev/telemetry-revision: "2026-06-03-router-capacity-1"
-        dd.dev/chat-vibe-revision: "cafd8f0-hot-dispatch"
-        dd.dev/gcs-capacity-profile: "2026-06-03-30k-4pods"
+        dd.dev/chat-vibe-revision: "d1ab694-pressure-shed"
+        dd.dev/gcs-capacity-profile: "2026-06-05-30k-1pod"
       labels:
         app: gcs
         dd.dev/redis-cache-client: 'true'
@@ -82,8 +78,8 @@ spec:
                 grep -vE '^replace[[:space:]].*=>[[:space:]]*\.\.?/' go.mod > go.mod.tmp
                 mv go.mod.tmp go.mod
                 /usr/local/go/bin/go mod download
-                /usr/local/go/bin/go get -v github.com/oresoftware/json-logging@master
-                /usr/local/go/bin/go get -v github.com/oresoftware/cmd-line-parser@main
+                /usr/local/go/bin/go get -v github.com/oresoftware/json-logging@v0.0.0-20240407193631-b7d2b363e2de
+                /usr/local/go/bin/go get -v github.com/oresoftware/cmd-line-parser@v0.1.0
                 /usr/local/go/bin/go build -p "$(nproc)" -o "$BIN" "$PWD/src/main"
               fi
 
@@ -119,15 +115,25 @@ spec:
             - name: GCS_DIAG_LOGS
               value: 'true'
             - name: GOMEMLIMIT
-              value: 1800MiB
+              value: 7168MiB
+            - name: GOMAXPROCS
+              value: '6'
             - name: GOGC
-              value: '50'
+              value: '300'
+            - name: GCS_PPROF_ENABLED
+              value: 'true'
+            - name: GCS_PPROF_BLOCK_RATE
+              value: '1000000'
+            - name: GCS_PPROF_MUTEX_FRACTION
+              value: '10'
+            - name: GCS_STARTUP_CPU_PROFILE
+              value: 'false'
             - name: GCS_WS_SHED_ENABLED
               value: 'true'
             # The router pins hot conversations to one pod, so keep the active
             # connection shed threshold per pod rather than dividing by replicas.
             - name: GCS_WS_SHED_ACTIVE_CONN_THRESHOLD
-              value: '30000'
+              value: '60000'
             - name: GCS_WS_SHED_OLD_CONN_AGE
               value: '3h'
             - name: GCS_WS_SHED_INTERVAL
@@ -137,24 +143,56 @@ spec:
             - name: GCS_WS_SHED_WARN_GRACE
               value: '500ms'
             - name: GCS_WS_SHED_HEAP_BYTES
-              value: '1342177280'
+              value: '6442450944'
             # RSS pressure is the cgroup OOM guard; heap telemetry can miss spikes.
             - name: GCS_WS_SHED_RSS_BYTES
-              value: '2684354560'
+              value: '7516192768'
             - name: GCS_WS_SHED_GOROUTINES
-              value: '500000'
+              value: '120000'
             - name: GCS_WS_SHED_MESSAGE_LATENCY
-              value: '180s'
+              value: '10s'
+            - name: GCS_WS_SHED_FANOUT_LATENCY
+              value: '8s'
+            - name: GCS_WS_SHED_FANOUT_PENDING_PERCENT
+              value: '95'
             - name: GCS_WS_SHED_LATENCY_SAMPLE_MAX_AGE
               value: '30s'
+            - name: GCS_WS_WRITE_TIMEOUT
+              value: '5s'
             - name: GCS_WS_SIDE_EFFECT_MAX_IN_FLIGHT
               value: '512'
+            - name: GCS_WS_SIDE_EFFECT_LOCAL_PRESSURE_SHED
+              value: 'true'
+            - name: GCS_WS_SIDE_EFFECT_SHED_MONGO_AFTER_LOCAL_FANOUT
+              value: 'true'
+            - name: GCS_WS_SIDE_EFFECT_SHED_IN_FLIGHT_PERCENT
+              value: '50'
+            - name: GCS_WS_SIDE_EFFECT_SHED_GOROUTINES
+              value: '80000'
+            - name: GCS_WS_SIDE_EFFECT_SHED_HEAP_BYTES
+              value: '4294967296'
             # The router pins a conversation to one GCS pod, so local fanout covers
             # hot-path conversation delivery without one RMQ subscriber per socket.
             - name: GCS_WS_ENABLE_RMQ_SUBSCRIPTIONS
               value: 'false'
+            - name: GCS_WS_SKIP_BROKER_SIDE_EFFECTS_AFTER_LOCAL_FANOUT
+              value: 'true'
             - name: GCS_WS_ENABLE_CHAT_MAP_SIDE_EFFECT
               value: 'false'
+            - name: GCS_WS_CONV_FANOUT_BATCH_ENABLED
+              value: 'true'
+            - name: GCS_WS_CONV_FANOUT_BATCH_MS
+              value: '200'
+            - name: GCS_WS_CONV_FANOUT_BATCH_MAX
+              value: '256'
+            - name: GCS_WS_CONV_FANOUT_PENDING_MAX
+              value: '2048'
+            - name: GCS_WS_CONV_FANOUT_GLOBAL_PENDING_MAX
+              value: '524288'
+            - name: GCS_WS_CONV_FANOUT_FLUSH_WORKERS
+              value: '64'
+            - name: GCS_WS_CONV_FANOUT_FLUSH_QUEUE
+              value: '65536'
             - name: vibe_api_server_protocol
               value: http
             - name: vibe_api_server_host
@@ -179,6 +217,22 @@ spec:
               value: ''
             - name: vibe_mongo_db_name
               value: virl_gcs
+            - name: GCS_MONGO_MIN_POOL_SIZE
+              value: '32'
+            - name: GCS_MONGO_MAX_POOL_SIZE
+              value: '128'
+            - name: GCS_WS_MONGO_BATCH_SIZE
+              value: '1024'
+            - name: GCS_WS_MONGO_BATCH_QUEUE_SIZE
+              value: '32768'
+            - name: GCS_WS_MONGO_BATCH_PRESSURE_PERCENT
+              value: '5'
+            - name: GCS_WS_MONGO_BATCH_WORKERS
+              value: '64'
+            - name: GCS_WS_MONGO_BATCH_FLUSH_MS
+              value: '2'
+            - name: GCS_WS_MONGO_BATCH_TIMEOUT_MS
+              value: '10000'
             - name: vibe_rabbit_protocol
               value: amqp
             - name: vibe_rabbit_host
@@ -221,7 +275,7 @@ spec:
               memory: 512Mi
             limits:
               cpu: '6'
-              memory: 3Gi
+              memory: 8Gi
           startupProbe:
             httpGet:
               path: /chat/v1/health/3000

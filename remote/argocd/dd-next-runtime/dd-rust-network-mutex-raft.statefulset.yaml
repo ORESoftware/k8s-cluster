@@ -1,0 +1,212 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: dd-rust-network-mutex-raft
+  namespace: default
+  labels:
+    app: dd-rust-network-mutex-raft
+spec:
+  serviceName: dd-rust-network-mutex-raft-peer
+  # Five voters: quorum is 3, so the cluster tolerates 2 node failures. Keep this
+  # odd and in sync with the peer list in dd-rust-network-mutex-raft.configmap.yaml.
+  replicas: 5
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app: dd-rust-network-mutex-raft
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-06-04-rust-network-mutex-raft'
+      labels:
+        app: dd-rust-network-mutex-raft
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      initContainers:
+        - name: prepare-raft-data
+          image: docker.io/library/busybox:1.36
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsUser: 0
+            runAsGroup: 0
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              add:
+                - CHOWN
+              drop:
+                - ALL
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - mkdir -p "/raft/${POD_NAME}" && chown -R 1000:1000 "/raft/${POD_NAME}"
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          volumeMounts:
+            - name: raft-data
+              mountPath: /raft
+      containers:
+        - name: rust-network-mutex-raft
+          # Mirrors dd-rust-network-mutex's source-build bootstrap until a
+          # published Dockerfile.raft image is available for this exact ref.
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+                - ALL
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              source_src="/opt/dd-next-1/remote/submodules/rust-network-mutex-rs"
+              if [ -n "${LMX_RS_GIT_URL:-}" ]; then
+                rm -rf /tmp/live-mutex-rs-source
+                if git clone --depth 1 --no-checkout "${LMX_RS_GIT_URL}" /tmp/live-mutex-rs-source \
+                  && git -C /tmp/live-mutex-rs-source fetch --depth 1 origin "${LMX_RS_GIT_REF:-dev}" \
+                  && git -C /tmp/live-mutex-rs-source switch --detach FETCH_HEAD; then
+                  source_src=/tmp/live-mutex-rs-source
+                  echo "[dd-rust-network-mutex-raft] cloned ${LMX_RS_GIT_URL}@${LMX_RS_GIT_REF:-dev} ($(git -C /tmp/live-mutex-rs-source rev-parse --short HEAD))"
+                else
+                  echo "[dd-rust-network-mutex-raft] source clone failed; using mounted source at ${source_src}" >&2
+                fi
+              fi
+              if [[ "${LMX_RS_GIT_REF:-}" =~ ^[0-9a-fA-F]{40}$ ]]; then
+                actual_ref="$(git -C "${source_src}" rev-parse HEAD 2>/dev/null || true)"
+                if [ "${actual_ref}" != "${LMX_RS_GIT_REF}" ]; then
+                  echo "[dd-rust-network-mutex-raft] source ref mismatch: expected=${LMX_RS_GIT_REF} actual=${actual_ref:-unknown} source=${source_src}" >&2
+                  exit 1
+                fi
+              fi
+              rm -rf /tmp/live-mutex-rs-build
+              mkdir -p /tmp/live-mutex-rs-build
+              cp -a "${source_src}/." /tmp/live-mutex-rs-build/
+              rm -rf /tmp/live-mutex-rs-build/target
+              cd /tmp/live-mutex-rs-build
+              exec /usr/local/cargo/bin/cargo run --release --no-default-features --bin dd-rust-network-mutex
+          env:
+            - name: LMX_RS_GIT_URL
+              value: https://github.com/ORESoftware/live-mutex-rs.git
+            - name: LMX_RS_GIT_REF
+              value: dev
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /tmp/cargo
+            - name: CARGO_TARGET_DIR
+              value: /tmp/live-mutex-rs-target
+            - name: CARGO_BUILD_JOBS
+              value: '1'
+            - name: LMX_CONFIG
+              value: /etc/dd-rust-network-mutex/lmx-raft.toml
+            - name: LMX_RAFT_ENABLED
+              value: 'true'
+            - name: LMX_RAFT_NODE_ID
+              value: $(POD_NAME)
+            - name: LMX_RAFT_BIND_ADDR
+              value: 0.0.0.0:7980
+            - name: LMX_RAFT_ADVERTISE_ADDR
+              value: $(POD_NAME).dd-rust-network-mutex-raft-peer.default.svc.cluster.local:7980
+            - name: LMX_RAFT_DATA_DIR
+              value: /var/lib/dd-rust-network-mutex/raft/$(POD_NAME)
+            - name: LMX_LOG_FORMAT
+              value: text
+            - name: RUST_LOG
+              value: info,lmx=info
+            - name: LMX_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: LMX_AUTH_TOKEN
+                  optional: true
+            # Gateway/operator auth token. The broker prefers ALL_DOGS and, when
+            # set, requires it as the `Auth` header (also accepts Bearer /
+            # X-LMX-Auth). optional:true so auth stays off until the secret key
+            # exists — populate dd-agent-secrets.ALL_DOGS to switch auth on.
+            - name: ALL_DOGS
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ALL_DOGS
+                  optional: true
+          ports:
+            - name: http
+              containerPort: 6971
+            - name: raft-rpc
+              containerPort: 7980
+          resources:
+            requests:
+              cpu: 25m
+              memory: 1Gi
+            limits:
+              cpu: '2'
+              memory: 4Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 180
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            - name: raft-config
+              mountPath: /etc/dd-rust-network-mutex
+              readOnly: true
+            - name: raft-data
+              mountPath: /var/lib/dd-rust-network-mutex/raft
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
+        - name: tmp
+          emptyDir: {}
+        - name: raft-config
+          configMap:
+            name: dd-rust-network-mutex-raft-config
+        - name: raft-data
+          hostPath:
+            path: /var/lib/dd-rust-network-mutex-raft
+            type: DirectoryOrCreate

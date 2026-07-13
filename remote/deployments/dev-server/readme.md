@@ -94,7 +94,8 @@ Runtime split in the baseline Argo app:
 - `dd-prometheus` at `/prometheus/`
 - `dd-nats` monitor/exporter at `/nats/` and `/nats-metrics/metrics`
 - `dd-gleamlang-server` at `/gleam/home`, `/gleam/healthz`, and `/gleam/ws`
-- `dd-gleam-mcp-server` at `/mcp`, `/mcp/home`, `/mcp/healthz`, and `/mcp/metrics`
+- `dd-cluster-mcp-rs` at `/cluster-mcp`, `/cluster-mcp/home`, `/cluster-mcp/healthz`, and `/cluster-mcp/metrics`
+- legacy `dd-gleam-mcp-server` at `/mcp`, `/mcp/home`, `/mcp/healthz`, and `/mcp/metrics`
 - reaper/cron status surfaces at `/reaper/` and `/cron/`
 
 `/healthz` is the only unauthenticated route on the Node API. Everything else requires either
@@ -223,7 +224,7 @@ such as `make a pr`, are handled by deterministic paths before provider fallback
 | `THREAD_CONTEXT_MAX_CHARS` | Optional. Defaults to `48000` characters injected into the prompt.                                                   |
 | `REPO_CONTEXT_MAX_CHARS` | Optional. Defaults to `24000` characters from `AGENTS.md`, `agents/*.md`, and `docs/*.md`.                            |
 | `AGENT_OPTIMISTIC_MODE` | Optional. Defaults to enabled. Set to `false` only when agents should pause for clarification instead of making scoped assumptions. |
-| `AGENT_MCP_URL` | Optional. In-cluster MCP endpoint passed to SDK runners, defaulting in Kubernetes to `http://dd-gleam-mcp-server.default.svc.cluster.local:8090/mcp`. |
+| `AGENT_MCP_URL` | Optional. In-cluster MCP endpoint passed to SDK runners, defaulting in Kubernetes to `http://dd-cluster-mcp-rs.default.svc.cluster.local:8091/mcp`. |
 | `AGENT_MCP_CONNECT_TIMEOUT_MS` | Optional. MCP connect timeout for SDK runners. Defaults to `3000`; clamped by the runner. |
 | `AGENT_MCP_ENABLED` | Optional. Set to `false` to suppress MCP prompt context and runner MCP connection attempts. |
 

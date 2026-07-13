@@ -89,6 +89,7 @@ test('rust homepage lists public pages and protected ops/data paths', async () =
     '/mcp',
     '/gcs/',
     '/webrtc/',
+    '/webrtc-media/',
     '/fsws/',
     '/mdp/',
     '/des/',
@@ -186,6 +187,9 @@ test('rust homepage lists public pages and protected ops/data paths', async () =
   assert.match(home, /dd-gleam-lambda-runner deployment \+ Rust REST API/);
   assert.match(home, /Gleam child-process runner/);
   assertPathEntry(home, '/auth', '/auth?return=/home');
+  assertPathEntry(home, '/auth/status', '/auth/status');
+  assert.doesNotMatch(home, /PathEntry \{ label: "\/auth\/login"/);
+  assert.doesNotMatch(home, /PathEntry \{ label: "\/auth\/logout"/);
   assert.match(home, /Rust PIN auth service/);
   assert.match(home, /dd_auth/);
   assertPathEntry(home, '/bastion/runtime/deployments', '/bastion/runtime/deployments');
@@ -209,9 +213,23 @@ test('rust homepage lists public pages and protected ops/data paths', async () =
   assertPathEntry(home, '/gleam/home', '/gleam/home');
   assertPathEntry(home, '/gleam/healthz', '/gleam/healthz');
   assertPathEntry(home, '/gleam/metrics', '/gleam/metrics');
-  assertPathEntry(home, '/presence/healthz', '/presence/healthz');
+  assertPathEntry(home, '/presence-test', '/presence-test?user=alice&device=d1');
+  assert.doesNotMatch(home, /\/presence-test\?user=alice&device=d1&autoconnect=1/);
+  assertPathEntry(home, '/presence/healthz');
+  assert.doesNotMatch(home, /PathEntry \{ label: "\/presence\/healthz", href: Some/);
   assertPathEntry(home, '/presence/ws');
   assertPathEntry(home, '/presence/user/<id>/broadcast');
+  assert.match(home, /<input id="presence" value="\/presence"/);
+  assert.doesNotMatch(home, /value="http:\/\/localhost:8081"/);
+  assert.match(home, /function isLoopbackHost\(hostname\)/);
+  assert.match(home, /refusing loopback presence base from remote page/);
+  assert.match(home, /async function ensurePresenceReady\(panelLog\)/);
+  assert.match(home, /presence gateway auth required/);
+  assert.match(home, /async function openUserWs\(skipPreflight = false\)/);
+  assert.match(home, /async function openConvWs\(convId, skipPreflight = false\)/);
+  assert.match(home, /if \(!\(await ensurePresenceReady\(\$\("user-log"\)\)\)\) return;/);
+  assert.match(home, /credentials: "same-origin"/);
+  assert.match(home, /cache: "no-store"/);
   assertPathEntry(home, '?preset=gleam', '/wss-test?preset=gleam');
   assertPathEntry(home, '?preset=webrtc', '/wss-test?preset=webrtc');
   assertPathEntry(home, '?preset=gcs', '/wss-test?preset=gcs');
@@ -235,6 +253,13 @@ test('rust homepage lists public pages and protected ops/data paths', async () =
   assert.match(home, /target: "Rust WebRTC signaling service", access: SERVER_AUTH/);
   assert.match(home, /Rust WebRTC signaling service/);
   assert.match(home, /Media and data channels stay peer-to-peer/);
+  assertPathEntry(home, '/webrtc-media/', '/webrtc-media/');
+  assertPathEntry(home, '/webrtc-media/config', '/webrtc-media/config');
+  assertPathEntry(home, '/webrtc-media/ice', '/webrtc-media/ice');
+  assertPathEntry(home, '/webrtc-media/metrics', '/webrtc-media/metrics');
+  assert.match(home, /target: "Rust WebRTC media config service", access: SERVER_AUTH/);
+  assert.match(home, /dd-webrtc-media:8125/);
+  assert.match(home, /media UDP\/TCP paths require a separate public data-plane route/);
   assert.match(home, /target: "Rust MDP\/POMDP optimizer", access: SERVER_AUTH/);
   assert.match(home, /target: "Rust discrete event simulator", access: SERVER_AUTH/);
   assert.match(home, /target: "dd-fsharp-ws-server", access: SERVER_AUTH/);
@@ -251,6 +276,21 @@ test('rust homepage lists public pages and protected ops/data paths', async () =
   assert.match(
     home,
     /Today: the public gateway keeps ops paths behind temporary internal access while bootstrap work is still in flight\./,
+  );
+});
+
+test('gateway regex locations with nginx quantifiers are quoted', async () => {
+  const gateway = await readRepoFile(
+    'remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml',
+  );
+  const unsafeLocations = gateway
+    .split('\n')
+    .filter((line) => /^\s*location\s+~\s+[^"]/.test(line) && /\{\d+(?:,\d*)?\}/.test(line));
+
+  assert.deepEqual(
+    unsafeLocations,
+    [],
+    'nginx parses unquoted regex quantifier braces as config blocks',
   );
 });
 
@@ -274,6 +314,12 @@ test('gateway exposes public task pages and protects ops/data paths behind tempo
   );
   const webrtcService = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-webrtc-signaling.service.yaml',
+  );
+  const webrtcMediaDeployment = await readRepoFile(
+    'remote/argocd/dd-next-runtime/dd-webrtc-media.deployment.yaml',
+  );
+  const webrtcMediaService = await readRepoFile(
+    'remote/argocd/dd-next-runtime/dd-webrtc-media.service.yaml',
   );
   const scraperDeployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-web-scraper.deployment.yaml',
@@ -318,6 +364,16 @@ test('gateway exposes public task pages and protects ops/data paths behind tempo
   assert.match(
     gateway,
     /location = \/auth[\s\S]*dd-remote-auth\.default\.svc\.cluster\.local:8083/,
+  );
+  assert.match(gateway, /location = \/auth\/login[\s\S]*return 302 \/auth\?return=\/home/);
+  assert.match(gateway, /location = \/auth\/logout[\s\S]*return 302 \/auth\?return=\/home/);
+  assert.match(
+    gateway,
+    /location = \/jello[\s\S]*dd-remote-web-home\.default\.svc\.cluster\.local:8080/,
+  );
+  assert.match(
+    gateway,
+    /location = \/jello\/sample[\s\S]*dd-remote-web-home\.default\.svc\.cluster\.local:8080/,
   );
   assert.match(gateway, /location @auth_required/);
   assert.match(gateway, /return 302 \/auth\?return=\$request_uri/);
@@ -409,11 +465,21 @@ test('gateway exposes public task pages and protects ops/data paths behind tempo
     gateway,
     /location\s+\/telemetry\/[\s\S]*dd-grafana\.observability\.svc\.cluster\.local:3000/,
   );
+  assert.ok(
+    gateway.includes(
+      'location ~ "^/grafana/depl/(?<dd_grafana_deployment>[A-Za-z0-9][A-Za-z0-9._-]{0,126})/?$"',
+    ),
+  );
+  assert.match(
+    gateway,
+    /return 302 \/telemetry\/d\/dd-deployment-drilldown\/deployment-drilldown\?orgId=1&var-deployment=\$dd_grafana_deployment/,
+  );
   assert.match(gateway, /location = \/prometheus[\s\S]*return 302 \/prometheus\//);
   assert.match(
     gateway,
     /location\s+\/prometheus\/[\s\S]*dd-prometheus\.observability\.svc\.cluster\.local:9090\//,
   );
+  assert.match(gateway, /location = \/des\/music[\s\S]*return 302 \/des-rs\/music/);
   assert.match(gateway, /location = \/nats[\s\S]*return 302 \/nats\//);
   assert.match(
     gateway,
@@ -454,6 +520,8 @@ test('gateway exposes public task pages and protects ops/data paths behind tempo
     /location \/gcs\/ws\/[\s\S]*?\n      \}/,
     /location = \/webrtc[\s\S]*?\n      \}/,
     /location \/webrtc\/[\s\S]*?\n      \}/,
+    /location = \/webrtc-media[\s\S]*?\n      \}/,
+    /location \/webrtc-media\/[\s\S]*?\n      \}/,
     /location = \/mdp[\s\S]*?\n      \}/,
     /location \/mdp\/[\s\S]*?\n      \}/,
     /location = \/des[\s\S]*?\n      \}/,
@@ -465,6 +533,28 @@ test('gateway exposes public task pages and protects ops/data paths behind tempo
   assert.match(
     gateway,
     /location\s+\/webrtc\/[\s\S]*proxy_set_header Upgrade \$http_upgrade[\s\S]*dd-webrtc-signaling\.default\.svc\.cluster\.local:8095/,
+  );
+  assert.match(gateway, /location = \/webrtc-media[\s\S]*return 302 \/webrtc-media\//);
+  assert.match(
+    gateway,
+    /location\s+\/webrtc-media\/[\s\S]*dd-webrtc-media\.default\.svc\.cluster\.local:8125/,
+  );
+  assert.match(gateway, /location = \/sound-recorder[\s\S]*return 302 \/sound-recorder\//);
+  assert.match(
+    gateway,
+    /location \/sound-recorder\/internal\/[\s\S]*if \(\$dd_gateway_auth_ok = 0\)[\s\S]*proxy_set_header X-Server-Auth "\$\{DD_REMOTE_DEV_SERVER_AUTH_VALUE\}"[\s\S]*dd-sound-recorder-rs\.default\.svc\.cluster\.local:8126/,
+  );
+  assert.match(
+    gateway,
+    /location ~ \^\/sound-recorder\/\(healthz\|readyz\|metrics\|docs\/api\|api\/docs\|api\/docs\\\.json\)\$[\s\S]*if \(\$dd_gateway_auth_ok = 0\)[\s\S]*dd-sound-recorder-rs\.default\.svc\.cluster\.local:8126/,
+  );
+  assert.match(
+    gateway,
+    /location \/sound-recorder\/api\/mobile\/[\s\S]*limit_req zone=dd_sound_recorder_mobile_write[\s\S]*proxy_set_header Auth ""[\s\S]*dd-sound-recorder-rs\.default\.svc\.cluster\.local:8126/,
+  );
+  assert.match(
+    gateway,
+    /location \/sound-recorder\/[\s\S]*proxy_set_header Auth ""[\s\S]*dd-sound-recorder-rs\.default\.svc\.cluster\.local:8126\//,
   );
   assert.match(
     gateway,
@@ -508,6 +598,8 @@ test('gateway exposes public task pages and protects ops/data paths behind tempo
   assert.match(kustomization, /dd-remote-auth\.service\.yaml/);
   assert.match(kustomization, /dd-webrtc-signaling\.deployment\.yaml/);
   assert.match(kustomization, /dd-webrtc-signaling\.service\.yaml/);
+  assert.match(kustomization, /dd-webrtc-media\.deployment\.yaml/);
+  assert.match(kustomization, /dd-webrtc-media\.service\.yaml/);
   assert.match(kustomization, /dd-web-scraper\.deployment\.yaml/);
   assert.match(kustomization, /dd-web-scraper\.service\.yaml/);
   assert.match(kustomization, /dd-build-server-rbac\.yaml/);
@@ -519,6 +611,12 @@ test('gateway exposes public task pages and protects ops/data paths behind tempo
   assert.match(webrtcDeployment, /containerPort:\s*8095/);
   assert.match(webrtcService, /name:\s*dd-webrtc-signaling/);
   assert.match(webrtcService, /port:\s*8095/);
+  assert.match(webrtcMediaDeployment, /name:\s*dd-webrtc-media/);
+  assert.match(webrtcMediaDeployment, /cd \/opt\/dd-next-1\/remote\/deployments\/webrtc-media-rs/);
+  assert.match(webrtcMediaDeployment, /WEBRTC_MEDIA_MODE[\s\S]*value:\s*disabled/);
+  assert.match(webrtcMediaDeployment, /containerPort:\s*8125/);
+  assert.match(webrtcMediaService, /name:\s*dd-webrtc-media/);
+  assert.match(webrtcMediaService, /port:\s*8125/);
   assert.match(scraperDeployment, /name:\s*dd-web-scraper/);
   assert.match(scraperDeployment, /cd \/opt\/dd-next-1\/remote\/deployments\/web-scraper-service/);
   assert.match(scraperDeployment, /containerPort:\s*8097/);
@@ -1511,6 +1609,11 @@ test('node worker image is baked with git/ssh and runs as the node user', async 
     'remote/argocd/dd-next-runtime/dd-dev-server-home.deployment.yaml',
   );
   const restServer = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
+  const threadRuntimeBlock = restServer.match(
+    /fn thread_runtime_image\(\) -> String[\s\S]*?async fn scale_thread_runtime/,
+  );
+  assert.ok(threadRuntimeBlock, 'expected thread runtime deployment renderer block');
+  const threadRuntime = threadRuntimeBlock?.[0] ?? '';
 
   assert.match(dockerfile, /apt-get install -y --no-install-recommends[\s\S]*git openssh-client/);
   assert.match(dockerfile, /USER node/);
@@ -1528,11 +1631,11 @@ test('node worker image is baked with git/ssh and runs as the node user', async 
   assert.doesNotMatch(bootstrapDeployment, /\/opt\/dd-next-1/);
   assert.match(restServer, /fn thread_runtime_image\(\) -> String/);
   assert.match(restServer, /docker\.io\/library\/dd-dev-server:dev/);
-  assert.match(restServer, /"initContainers"/);
-  assert.match(restServer, /"runAsUser": 1000/);
-  assert.match(restServer, /"IDLE_TIMEOUT_MS", "value": "0"/);
+  assert.match(threadRuntime, /"initContainers"/);
+  assert.match(threadRuntime, /"runAsUser": 1000/);
+  assert.match(threadRuntime, /"IDLE_TIMEOUT_MS", "value": "0"/);
   assert.match(
-    restServer,
+    threadRuntime,
     /"EVENT_INGEST_URL", "value": "http:\/\/dd-remote-rest-api\.default\.svc\.cluster\.local:8082\/api\/agents\/events"/,
   );
   assert.match(restServer, /struct AgentEventIngestRequest/);
@@ -1541,9 +1644,9 @@ test('node worker image is baked with git/ssh and runs as the node user', async 
   assert.match(restServer, /if !authorized_internal_request\(&headers\) \{/);
   assert.match(restServer, /Json\(json!\(\{ "error": "event\.kind is required" \}\)\)/);
   assert.match(restServer, /persist_agent_event_to_postgres/);
-  assert.doesNotMatch(restServer, /apt-get update/);
-  assert.doesNotMatch(restServer, /node:22-bookworm-slim/);
-  assert.doesNotMatch(restServer, /\/root\/\.ssh/);
+  assert.doesNotMatch(threadRuntime, /apt-get update/);
+  assert.doesNotMatch(threadRuntime, /node:22-bookworm-slim/);
+  assert.doesNotMatch(threadRuntime, /\/root\/\.ssh/);
   assert.match(restServer, /Some\(json!\(\{ "spec": deployment\["spec"\]\.clone\(\) \}\)\)/);
 });
 

@@ -32,6 +32,9 @@ spec:
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
             seccompProfile:
               type: RuntimeDefault
           command:
@@ -61,6 +64,19 @@ spec:
               value: 'false'
             - name: TRADING_ALLOW_SHORT
               value: 'false'
+            # Operator kill switch. Flip to 'true' (and roll/restart, or wait
+            # for the next config read) to force every decision to hold without
+            # taking the pod down. Belt-and-braces on top of paper mode.
+            - name: TRADING_HALT
+              value: 'false'
+            # Caps concurrent decision evaluations off the NATS signal stream
+            # so a signal flood can't spawn unbounded tasks.
+            - name: TRADING_MAX_INFLIGHT
+              value: '256'
+            # Require TLS to the NATS broker. Left 'false' for the in-cluster
+            # plaintext listener; set 'true' once a TLS listener/creds exist.
+            - name: NATS_REQUIRE_TLS
+              value: 'false'
             - name: TRADING_APP_CONFIG_SCOPE
               value: default
             - name: TRADING_APP_CONFIG_KEY
@@ -77,6 +93,11 @@ spec:
               value: '0.55'
             - name: TRADING_MAX_RISK_SCORE
               value: '0.72'
+            # Max age (ms) of a timestamped market snapshot before the
+            # marketDataFresh gate forces a hold. Only enforced when a request
+            # supplies market.asOfMs. Default 5 minutes.
+            - name: TRADING_MAX_PRICE_AGE_MS
+              value: '300000'
             - name: NATS_URL
               value: nats://dd-nats.messaging.svc.cluster.local:4222
             - name: SCRAPER_BASE_URL
@@ -126,7 +147,7 @@ spec:
               containerPort: 8103
           resources:
             requests:
-              cpu: 100m
+              cpu: 25m
               memory: 128Mi
             limits:
               cpu: '1'

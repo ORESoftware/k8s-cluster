@@ -108,8 +108,22 @@ class Metrics {
 
     final gaugeNames = _gauges.keys.toList()..sort();
     for (final name in gaugeNames) {
+      num value;
+      try {
+        value = _gauges[name]!();
+      } catch (_) {
+        // A faulty gauge closure must not throw out of render() and take the
+        // whole /metrics scrape down with it (the raw providers below are
+        // already guarded; gauges were not). Skip the bad gauge.
+        continue;
+      }
+      // Prometheus exposition can't parse Dart's `Infinity` / `NaN` spellings
+      // (it wants `+Inf` / `-Inf` / `NaN`), so a non-finite reading would make
+      // the line unparseable and break the scrape for the whole endpoint.
+      // Coerce to 0 — these gauges should always be finite anyway.
+      if (value is double && !value.isFinite) value = 0;
       sb.writeln('# TYPE $name gauge');
-      sb.writeln('$name ${_gauges[name]!()}');
+      sb.writeln('$name $value');
     }
 
     final histNames = _histograms.keys.toList()..sort();

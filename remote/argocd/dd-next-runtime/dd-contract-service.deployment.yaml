@@ -20,12 +20,18 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-05-17-contract-service'
+        dd.dev/telemetry-revision: '2026-06-10-blockchain-suite-scaffold'
       labels:
         app: dd-contract-service
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
       containers:
         - name: contract-service
           image: docker.io/library/rust:1.90-bookworm
@@ -54,6 +60,8 @@ spec:
               value: 0.0.0.0
             - name: PORT
               value: '8101'
+            - name: HOME
+              value: /tmp
             - name: SOLANA_CLUSTER
               value: devnet
             - name: SOLANA_RPC_URL
@@ -66,6 +74,94 @@ spec:
               value: 'false'
             - name: SOLANA_ALLOW_SKIP_PREFLIGHT
               value: 'false'
+            # Settlement + dispute-resolution surface. Off by default; enabling
+            # either /settle or /resolve requires CONTRACT_SETTLEMENT_AUTH_SECRET.
+            - name: SOLANA_SETTLEMENT_ENABLED
+              value: 'false'
+            - name: SOLANA_RESOLUTION_ENABLED
+              value: 'false'
+            # Second gate: refuses to start if any broadcast capability is enabled
+            # against mainnet-beta without this set true. Mirrors dd-escrow-rs.
+            - name: SOLANA_MAINNET_SETTLEMENT_ENABLED
+              value: 'false'
+            # NATS-initiated settle/resolve messages carry no auth header, so
+            # broadcast over NATS stays off unless explicitly enabled (and it
+            # also requires SOLANA_SEND_ENABLED=true). Otherwise the settle/
+            # resolve subjects only validate, simulate, and confirm.
+            - name: CONTRACT_NATS_SETTLEMENT_ENABLED
+              value: 'false'
+            # Required acknowledgement before NATS-initiated broadcast can be
+            # enabled: the shared NATS bus has no per-subject authz, so any pod
+            # reaching it could publish to settle/resolve. Lock the bus down
+            # (subject authz + messaging NetworkPolicy) before setting this true.
+            - name: CONTRACT_NATS_SETTLEMENT_ACK_UNAUTHENTICATED_BUS
+              value: 'false'
+            # Executor/verifier surface: confirm escrow settlement signatures to
+            # finality and publish confirmations. Off by default.
+            - name: CONTRACT_ESCROW_CONFIRM_ENABLED
+              value: 'false'
+            - name: CONTRACT_SETTLEMENT_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: CONTRACT_SETTLEMENT_AUTH_SECRET
+                  optional: true
+            # ----------------------------------------------------------------
+            # Blockchain feature suite (keyless, custody-ready). All features are
+            # OFF by default; the service holds no keys and never signs. Read/
+            # coordination paths only need the *_ENABLED flag; execute/broadcast
+            # paths additionally require CONTRACT_BLOCKCHAIN_AUTH_SECRET and, for
+            # a mainnet target, CONTRACT_BLOCKCHAIN_MAINNET_ENABLED=true.
+            # ----------------------------------------------------------------
+            # Optional EVM read/relay surface (Solana stays the primary chain).
+            # EVM_RPC_URL must be https (SSRF-guarded like SOLANA_RPC_URL) and is
+            # reached over the existing public-443 egress rule.
+            - name: EVM_RPC_URL
+              value: ''
+            - name: EVM_CHAIN_ID
+              value: '0'
+            - name: EVM_NETWORK
+              value: sepolia
+            - name: EVM_ALLOW_PRIVATE_RPC
+              value: 'false'
+            # Read/coordination features (no signing, no broadcast).
+            - name: BLOCKCHAIN_WALLET_ENABLED
+              value: 'false'
+            - name: BLOCKCHAIN_EXECUTOR_ENABLED
+              value: 'false'
+            - name: BLOCKCHAIN_RELAYER_ENABLED
+              value: 'false'
+            - name: BLOCKCHAIN_MULTISIG_ENABLED
+              value: 'false'
+            - name: BLOCKCHAIN_INDEXER_ENABLED
+              value: 'false'
+            - name: BLOCKCHAIN_MEV_ENABLED
+              value: 'false'
+            - name: BLOCKCHAIN_NFT_ENABLED
+              value: 'false'
+            - name: BLOCKCHAIN_STAKING_ENABLED
+              value: 'false'
+            - name: BLOCKCHAIN_BRIDGE_ENABLED
+              value: 'false'
+            # Gated execute/broadcast paths: each relays an externally-signed raw
+            # transaction. Enabling any of these requires CONTRACT_BLOCKCHAIN_AUTH_SECRET.
+            - name: BLOCKCHAIN_EXECUTOR_EXECUTE_ENABLED
+              value: 'false'
+            - name: BLOCKCHAIN_RELAYER_BROADCAST_ENABLED
+              value: 'false'
+            - name: BLOCKCHAIN_STAKING_EXECUTE_ENABLED
+              value: 'false'
+            - name: BLOCKCHAIN_BRIDGE_BROADCAST_ENABLED
+              value: 'false'
+            # Mainnet second gate for any blockchain execute/broadcast capability.
+            - name: CONTRACT_BLOCKCHAIN_MAINNET_ENABLED
+              value: 'false'
+            - name: CONTRACT_BLOCKCHAIN_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: CONTRACT_BLOCKCHAIN_AUTH_SECRET
+                  optional: true
             - name: NATS_URL
               value: nats://dd-nats.messaging.svc.cluster.local:4222
             - name: CONTRACT_VALIDATE_SUBJECT
@@ -74,8 +170,18 @@ spec:
               value: dd-contract-service
             - name: CONTRACT_RESULT_SUBJECT
               value: dd.remote.contracts.solana.results
+            - name: CONTRACT_SETTLE_SUBJECT
+              value: dd.remote.contracts.solana.settle
+            - name: CONTRACT_RESOLVE_SUBJECT
+              value: dd.remote.contracts.solana.resolve
+            - name: CONTRACT_SETTLEMENT_RESULT_SUBJECT
+              value: dd.remote.contracts.solana.settlement.results
+            - name: CONTRACT_ESCROW_RESULT_SUBJECT
+              value: dd.remote.escrow.solana.results
             - name: CONTRACT_EVENT_SUBJECT
               value: dd.remote.events
+            - name: NATS_CRITICAL_EVENT_SUBJECT
+              value: dd.remote.events.critical
             # runtime-config wiring: registers this pod with the control plane
             # so it receives /internal/update-runtime-config pushes every 5 min
             # plus on-demand admin pushes.
@@ -100,7 +206,7 @@ spec:
               containerPort: 8101
           resources:
             requests:
-              cpu: 50m
+              cpu: 25m
               memory: 128Mi
             limits:
               cpu: '1'

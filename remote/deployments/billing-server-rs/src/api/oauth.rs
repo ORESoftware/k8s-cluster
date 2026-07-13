@@ -289,11 +289,7 @@ async fn persist_and_schedule(
     if !exchanged.external_account_id.is_empty() && exchanged.external_account_id != "pending" {
         let _ = state
             .connections
-            .set_external_account(
-                tenant_id,
-                conn.id,
-                &exchanged.external_account_id,
-            )
+            .set_external_account(tenant_id, conn.id, &exchanged.external_account_id)
             .await;
     }
 
@@ -345,6 +341,14 @@ fn parse_provider(s: &str) -> AppResult<ProviderKind> {
         "solana_wallet" => Ok(ProviderKind::SolanaWallet),
         "revolut" => Ok(ProviderKind::Revolut),
         "remitly" => Ok(ProviderKind::Remitly),
+        "moneygram" => Ok(ProviderKind::MoneyGram),
+        "western_union" => Ok(ProviderKind::WesternUnion),
+        "us_bank_zelle" => Ok(ProviderKind::UsBankZelle),
+        "jpmorgan_zelle" => Ok(ProviderKind::JpmorganZelle),
+        "bofa_cashpro_gdd" => Ok(ProviderKind::BofaCashProGdd),
+        "modern_treasury" => Ok(ProviderKind::ModernTreasury),
+        "dwolla" => Ok(ProviderKind::Dwolla),
+        "ethereum_wallet" => Ok(ProviderKind::EthereumWallet),
         "robinhood" => Ok(ProviderKind::Robinhood),
         "mercury" => Ok(ProviderKind::Mercury),
         "bridge" => Ok(ProviderKind::Bridge),
@@ -397,18 +401,14 @@ fn validate_return_to(state: &AppState, return_to: Option<&str>) -> AppResult<Op
 mod tests {
     fn mk_cfg(allowed: Vec<&str>) -> std::sync::Arc<crate::config::Config> {
         let mut cfg = crate::config::Config::for_tests();
-        cfg.oauth_return_to_allowed_prefixes =
-            allowed.into_iter().map(str::to_string).collect();
+        cfg.oauth_return_to_allowed_prefixes = allowed.into_iter().map(str::to_string).collect();
         std::sync::Arc::new(cfg)
     }
 
     // We can't construct a full AppState without DB, but
     // validate_return_to only reads cfg.oauth_return_to_allowed_prefixes.
     // Re-implement the call with a stub.
-    fn check(
-        prefixes: &[&str],
-        input: Option<&str>,
-    ) -> Result<Option<String>, String> {
+    fn check(prefixes: &[&str], input: Option<&str>) -> Result<Option<String>, String> {
         let allowed: Vec<String> = prefixes.iter().map(|s| s.to_string()).collect();
         let Some(rt) = input.map(str::trim).filter(|s| !s.is_empty()) else {
             return Ok(None);
@@ -454,12 +454,9 @@ mod tests {
     #[test]
     fn absolute_url_allowed_only_via_allowlist() {
         assert!(check(&[], Some("https://app.example/done")).is_err());
-        let r = check(
-            &["https://app.example/"],
-            Some("https://app.example/done"),
-        )
-        .unwrap()
-        .unwrap();
+        let r = check(&["https://app.example/"], Some("https://app.example/done"))
+            .unwrap()
+            .unwrap();
         assert_eq!(r, "https://app.example/done");
     }
 

@@ -1,0 +1,185 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-canonical-cloud
+  namespace: default
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+  labels:
+    app: dd-canonical-cloud
+spec:
+  replicas: 1
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
+  strategy:
+    # Builds the Astro site (node) and the axum backend (cargo) from source at
+    # pod start. Recreate avoids surge build pods on the single-node EC2 runtime.
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-canonical-cloud
+  template:
+    metadata:
+      annotations:
+        dd.dev/canonical-cloud-revision: 'canonical-cloud@main'
+      labels:
+        app: dd-canonical-cloud
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        # 1) Clone the canonical.cloud monorepo and build the Astro frontend with
+        # the gateway prefix baked in (--base /canonical) so asset URLs resolve
+        # behind /canonical/. The built dist and the backend source are handed to
+        # the main container via shared emptyDir volumes.
+        - name: build-frontend
+          image: docker.io/library/node:22-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsUser: 0
+            runAsGroup: 0
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              if ! command -v git >/dev/null 2>&1; then
+                apt-get update
+                apt-get install -y --no-install-recommends git ca-certificates
+              fi
+              git clone --depth 1 --branch "${CANONICAL_GIT_REF}" "${CANONICAL_GIT_URL}" /source
+              echo "[dd-canonical-cloud] source: ${CANONICAL_GIT_URL}@${CANONICAL_GIT_REF} ($(git -C /source rev-parse --short HEAD))"
+              cd /source/canonical-frontend
+              npm ci --no-audit --no-fund
+              npm run build -- --base /canonical
+              cp -R dist/. /site-dist/
+              # World-readable so the non-root backend (uid 1000) can serve/build.
+              chmod -R a+rX /site-dist /source
+          env:
+            - name: CANONICAL_GIT_URL
+              value: https://github.com/canonical-cloud/canonical.cloud.git
+            - name: CANONICAL_GIT_REF
+              value: main
+            - name: npm_config_cache
+              value: /work/npm-cache
+            - name: HOME
+              value: /work
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: '1'
+              memory: 2Gi
+          volumeMounts:
+            - name: source
+              mountPath: /source
+            - name: site-dist
+              mountPath: /site-dist
+            - name: build-work
+              mountPath: /work
+      containers:
+        # 2) Build and run the axum backend, serving the built site from the
+        # shared site-dist volume (STATIC_DIR) plus /healthz and /api/*.
+        - name: canonical-backend
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              # Build from a writable copy; the source mount is read-only.
+              build=/tmp/build
+              mkdir -p "${build}"
+              cp -R /source/canonical-backend.rs/. "${build}/"
+              cd "${build}"
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8119'
+            - name: STATIC_DIR
+              value: /site-dist
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /tmp/cargo
+            - name: CARGO_TARGET_DIR
+              value: /tmp/target
+            # Keep rustc memory predictable during the cold in-pod release build.
+            - name: CARGO_BUILD_JOBS
+              value: '1'
+          ports:
+            - name: http
+              containerPort: 8119
+          resources:
+            requests:
+              cpu: 25m
+              memory: 1Gi
+            limits:
+              cpu: '2'
+              memory: 4Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            # Cold release build from an empty /tmp can take several minutes on
+            # the 2-CPU node; allow ~20 min (5s * 240).
+            periodSeconds: 5
+            failureThreshold: 240
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: source
+              mountPath: /source
+              readOnly: true
+            - name: site-dist
+              mountPath: /site-dist
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: source
+          emptyDir: {}
+        - name: site-dist
+          emptyDir: {}
+        - name: build-work
+          emptyDir: {}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 6Gi

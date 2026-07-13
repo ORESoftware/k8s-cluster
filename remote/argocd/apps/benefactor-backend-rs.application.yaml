@@ -1,0 +1,23 @@
+# ArgoCD tracks the backend repo directly because repo-server has submodule
+# loading disabled. The same repo is also present as a k8s-cluster submodule at
+# remote/deployments/benefactor-backend-rs for local operator workflows.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: benefactor-backend-rs
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/benefactor-cc/backend.rs.git
+    targetRevision: main
+    path: k8s/ec2
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

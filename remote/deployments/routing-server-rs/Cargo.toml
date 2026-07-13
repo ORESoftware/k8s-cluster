@@ -1,0 +1,22 @@
+[package]
+name = "dd-routing-server"
+version = "0.1.0"
+edition = "2021"
+description = "Distributed VRP/TSP solver. A master fans out multi-start construction + 2-opt restarts over NATS JetStream, tracks a live incumbent, and serves a canvas dashboard that watches tours improve in real time."
+
+[[bin]]
+name = "dd-routing-server"
+path = "src/main.rs"
+
+[dependencies]
+dd-telemetry = { path = "../../libs/telemetry-rs" }
+tracing = "0.1"
+async-nats = "=0.38.0"
+axum = { version = "0.7", features = ["macros"] }
+# Source-of-truth NATS subject constants for distributed routing jobs/results/events.
+dd-nats-subject-defs = { path = "../../libs/nats/subject-defs/generated/rust" }
+futures-util = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+uuid = { version = "1", features = ["v4"] }

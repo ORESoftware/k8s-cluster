@@ -72,11 +72,7 @@ pub type Inbound {
 }
 
 type State {
-  State(
-    client_pid: Pid,
-    on_msg: fn(Inbound) -> Nil,
-    self_node: String,
-  )
+  State(client_pid: Pid, on_msg: fn(Inbound) -> Nil, self_node: String)
 }
 
 // ── FFI ──────────────────────────────────────────────────────────────────
@@ -243,10 +239,7 @@ pub fn dispatch_inbound_default(
 fn handle(state: State, msg: Message) -> actor.Next(State, Message) {
   case msg {
     Publish(subject, payload, headers) -> {
-      let headers_with_source = [
-        #("Source-Node", state.self_node),
-        ..headers
-      ]
+      let headers_with_source = [#("Source-Node", state.self_node), ..headers]
       let subj_bin = bit_array.from_string(subject)
       let hdr_bins =
         list.map(headers_with_source, fn(kv) {

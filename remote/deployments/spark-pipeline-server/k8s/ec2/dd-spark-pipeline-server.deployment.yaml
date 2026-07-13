@@ -7,12 +7,11 @@ metadata:
     app: dd-spark-pipeline-server
 spec:
   replicas: 1
-  # Zero-surge rollout: don't start a new pod until the old one is fully gone. The single-node
-  # cluster doesn't have headroom to run two replicas during a deploy. Same shape as the
-  # gcs-router fix in commit 98f9ada.
   strategy:
     type: RollingUpdate
     rollingUpdate:
+      # The EC2 cluster is single-node and pod-slot constrained, so roll
+      # this singleton in-place instead of requiring a surge pod.
       maxSurge: 0
       maxUnavailable: 1
   selector:
@@ -25,11 +24,11 @@ spec:
     spec:
       automountServiceAccountToken: false
       securityContext:
-        fsGroup: 1000
+        fsGroup: 10001
         fsGroupChangePolicy: OnRootMismatch
-        runAsGroup: 1000
+        runAsGroup: 10001
         runAsNonRoot: true
-        runAsUser: 1000
+        runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
       terminationGracePeriodSeconds: 30
@@ -41,16 +40,14 @@ spec:
             allowPrivilegeEscalation: false
             privileged: false
             readOnlyRootFilesystem: true
-            runAsGroup: 1000
+            runAsGroup: 10001
             runAsNonRoot: true
-            runAsUser: 1000
+            runAsUser: 10001
             capabilities:
               drop:
                 - ALL
             seccompProfile:
               type: RuntimeDefault
-          # `set -o pipefail` is bash-only. The maven base image ships dash as /bin/sh, which
-          # rejects it (see commit b7b3c1b for the same fix on fsharp-ws-server).
           command:
             - /bin/bash
             - -lc
@@ -155,4 +152,5 @@ spec:
         - name: workspace
           emptyDir: {}
         - name: tmp
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: 512Mi

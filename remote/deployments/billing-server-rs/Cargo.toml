@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+dd-telemetry = { path = "../../libs/telemetry-rs" }
 aes-gcm = { version = "0.10.3", features = ["aes"] }
 anyhow = "1.0.102"
 async-nats = "=0.38.0"
@@ -15,6 +16,11 @@ axum = { version = "0.8.9", features = ["macros"] }
 # need it. When wired up it provides a structured audit/event feed for
 # any table the gateway is publishing.
 dd-wal-consumer = { path = "../../libs/wal-consumer-rs", features = ["tracing"] }
+# Generated cross-language NATS subject constants (schema lives in
+# remote/libs/nats/subject-defs/schema/billing.schema.json). The billing
+# server publishes redacted domain events and subscribes to inbound sync
+# commands using these consts — see src/events.rs.
+dd-nats-subject-defs = { path = "../../libs/nats/subject-defs/generated/rust" }
 base64 = "0.22.1"
 bs58 = "0.5.1"
 chrono = { version = "0.4.44", features = ["serde"] }
@@ -22,6 +28,9 @@ chrono-tz = "0.10.4"
 cron = "0.16.0"
 dotenvy = "0.15.7"
 ed25519-dalek = "2.2.0"
+# StreamExt for the inbound NATS sync-command subscription (src/events.rs),
+# matching the sibling trading-server-rs consumer.
+futures-util = "0.3"
 hex = "0.4.3"
 hmac = "0.13.0"
 rand = "0.10.1"
@@ -43,6 +52,10 @@ rsa = { version = "0.9", default-features = false, features = ["pem", "sha2"] }
 jsonwebtoken = "9"
 # Parse + classify tenant-supplied outbound URLs (SSRF guard).
 url = "2"
+# External live-mutex TCP broker client. Used for customer snapshot locks so
+# read roll-ups and customer-affecting ledger writes serialize on the same
+# broker key across pods.
+live-mutex-client = { path = "../../submodules/live-mutex/clients/rust" }
 # Compile-time HTML templates for the optional /admin HTMX surface.
 # Enabling the `axum` feature gives us `IntoResponse` for `Markup`.
 maud = { version = "0.27", features = ["axum"] }

@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-routing-server
+  namespace: ai-ml
+  labels:
+    app: dd-routing-server-master
+    app.kubernetes.io/component: master
+spec:
+  type: ClusterIP
+  selector:
+    app: dd-routing-server-master
+  ports:
+    - name: http
+      port: 8132
+      targetPort: http

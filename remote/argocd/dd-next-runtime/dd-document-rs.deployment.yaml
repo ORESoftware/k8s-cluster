@@ -1,0 +1,132 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-document-rs
+  namespace: default
+  labels:
+    app: dd-document-rs
+spec:
+  replicas: 0
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: dd-document-rs
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-06-09-document-rs-bootstrap'
+      labels:
+        app: dd-document-rs
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        # Unlike the cargo-run-from-hostPath dd-*-rs services, dd-document-rs runs
+        # the prebuilt image from deployments/dd-document-rs/Dockerfile because it
+        # links the Pandoc Haskell bridge (libdd-pandoc-bridge.so) at build time.
+        - name: document-rs
+          image: dd-document-rs:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8122'
+            - name: HOME
+              value: /tmp
+            - name: DOCUMENT_MAX_INPUT_BYTES
+              value: '4194304'
+            # Pin concurrency to the pod's CPU budget; available_parallelism()
+            # can otherwise see the node's core count, not the cgroup limit, and
+            # oversubscribe memory.
+            - name: DOCUMENT_CONVERT_CONCURRENCY
+              value: '2'
+            - name: DOCUMENT_IMAGE_CONCURRENCY
+              value: '2'
+            - name: NATS_URL
+              value: nats://dd-nats.messaging.svc.cluster.local:4222
+            - name: DOCUMENT_CONVERT_SUBJECT
+              value: dd.remote.document.convert
+            - name: DOCUMENT_RESULT_SUBJECT
+              value: dd.remote.document.results
+            - name: DOCUMENT_EVENT_SUBJECT
+              value: dd.remote.events
+            - name: NATS_CRITICAL_EVENT_SUBJECT
+              value: dd.remote.events.critical
+            - name: RUNTIME_CONFIG_SERVICE_NAME
+              value: dd-document-rs
+            - name: RUNTIME_CONFIG_SCOPE
+              value: dd-document-rs
+            - name: RUNTIME_CONFIG_ENV
+              value: stage
+            - name: RUNTIME_CONFIG_REGISTER_URL
+              value: http://dd-runtime-config.default.svc.cluster.local:8110/subscribers
+            - name: RUNTIME_CONFIG_APPLY_URL
+              value: http://dd-document-rs.default.svc.cluster.local:8122/internal/update-runtime-config
+            - name: RUNTIME_CONFIG_SERVER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
+          ports:
+            - name: http
+              containerPort: 8122
+          resources:
+            requests:
+              cpu: 25m
+              memory: 512Mi
+            limits:
+              cpu: '1'
+              # Headroom for the ~234MB resident pandoc .so plus concurrent
+              # conversions/image ops.
+              memory: 2Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            # Bound scratch (Magick disk cache + typst temp) so a hostile
+            # conversion can't fill node ephemeral storage.
+            sizeLimit: 2Gi

@@ -33,6 +33,114 @@ Fastify and browser orchestration.
 - `browserless`: Browserless Content API, configured with `BROWSERLESS_TOKEN` or a
   `BROWSERLESS_CONTENT_URL` that already includes a token.
 
+## Proxy rotation
+
+Outbound requests can rotate across a pool of proxies. The pool is configured with
+`SCRAPER_PROXIES` — a comma/newline/whitespace-separated list of proxy URLs
+(`http`, `https`, `socks4`, `socks5`; bare `host:port` and `user:pass@host:port`
+are assumed `http`). An empty list means direct egress.
+
+`SCRAPER_PROXY_ROTATION` selects the strategy:
+
+- `sticky` (default): one egress proxy per target host, so a host keeps the same
+  IP across requests and sessions don't break mid-crawl.
+- `round-robin`: walk the pool in order.
+- `random`: pick uniformly at random.
+
+A proxy that fails a request is put on a `SCRAPER_PROXY_COOLDOWN_MS` cooldown and
+skipped until it expires (if every proxy is cooling down, the pool degrades to
+reusing one rather than dropping the scrape). Proxy applies to `native-fetch`,
+`cheerio`, `jsdom`, `linkedom` (via an undici `ProxyAgent`, HTTP/HTTPS only),
+`playwright`, and `puppeteer` (which also accept SOCKS). `browserless` manages its
+own egress and is left untouched.
+
+Per request:
+
+- `"proxy": "http://user:pass@host:port"` forces a specific proxy (gated by
+  `SCRAPER_ALLOW_REQUEST_PROXY`, default on; the host is re-checked against the
+  same private-network policy as targets).
+- `"useProxy": false` bypasses the pool for that request.
+
+The chosen proxy is reported back as `response.proxy` (label has credentials
+stripped). Prometheus exposes `dd_web_scraper_proxy_pool_size`,
+`dd_web_scraper_proxy_pool_available`, `dd_web_scraper_proxy_selections_total`,
+and `dd_web_scraper_proxy_failures_total`.
+
+## CAPTCHA solving orchestration
+
+For every scrape the fetched page is scanned for a challenge — reCAPTCHA v2/v3,
+hCaptcha, Cloudflare Turnstile, and Cloudflare interstitial ("Just a moment") —
+and the result is reported as `response.captcha` (`detected`, `type`, `sitekey`,
+`signals`). Detection is on by default (`SCRAPER_DETECT_CAPTCHAS`); a request may
+override with `"detectCaptcha": false`.
+
+On the browser strategies (`playwright`/`puppeteer`) the service can also solve
+the challenge: when `SCRAPER_CAPTCHA_AUTOSOLVE=true` (or a request sets
+`"solveCaptcha": true`) and a solver API key is present, it submits the sitekey to
+the provider, injects the returned token into the page's response field, fires the
+widget callback, and continues to extraction. `solved: true` means a token was
+obtained and applied. Static strategies report detection only — they have no page
+to inject into, so retry through a browser strategy.
+
+The solver client speaks the 2captcha `in.php`/`res.php` protocol, which CapSolver,
+CapMonster, and Anti-Captcha expose a compatible surface for, so the vendor is
+swappable via `SCRAPER_CAPTCHA_PROVIDER_URL`. Config: `SCRAPER_CAPTCHA_API_KEY`
+(enables solving), `SCRAPER_CAPTCHA_POLL_INTERVAL_MS`, `SCRAPER_CAPTCHA_TIMEOUT_MS`,
+`SCRAPER_CAPTCHA_MAX_ATTEMPTS`, `SCRAPER_CAPTCHA_MAX_CONCURRENT`. Prometheus exposes
+`dd_web_scraper_captcha_total` labelled by `event` (`detected`/`solved`/`failed`)
+and `type`.
+
+### Hardening notes
+
+- **Cost amplification.** A solve holds the in-flight slot and the browser page
+  for up to `SCRAPER_CAPTCHA_TIMEOUT_MS` (longer than the request timeout) and
+  costs money per solve. A hostile target can serve a fake sitekey to trigger
+  this. Auto-solve is therefore off by default, and `SCRAPER_CAPTCHA_MAX_CONCURRENT`
+  caps simultaneous solves — excess challenges are reported as detected-only
+  (`captcha.error = "captcha solver concurrency limit reached"`) rather than
+  queued. Keep auto-solve scoped to trusted target sets.
+- **Per-request proxy.** `"proxy"` lets an authenticated caller route through an
+  arbitrary proxy; the proxy host is re-resolved and rejected if it lands on a
+  private/cluster address (unless `SCRAPER_ALLOW_PRIVATE_NETWORKS=true`). Set
+  `SCRAPER_ALLOW_REQUEST_PROXY=false` to forbid it entirely and pin egress to the
+  operator-configured pool.
+- **Proxy health.** A pooled proxy whose response is `407`/`403`/`429` or carries
+  a detected challenge is treated as unhealthy and cooled out of rotation; the
+  next request tries a different egress IP.
+- **Detection is linear.** CAPTCHA detection runs on every scrape over HTML up to
+  `SCRAPER_MAX_HTML_CHARS`; each pattern is gated behind a substring check so a
+  large non-matching document can't drive quadratic regex backtracking.
+- **DNS-rebinding.** Native-fetch strategies connect through an undici agent whose
+  DNS lookup re-checks the resolved address against the private-network policy
+  *at connect time*, so a host that passes the pre-flight check but rebinds to a
+  private/link-local/cloud-metadata address (e.g. `169.254.169.254`) is still
+  refused. (Browser strategies retain the per-subresource pre-flight route guard;
+  Chromium-level IP pinning is out of scope.)
+- **Input bounds.** `userAgent` and outbound header values reject control
+  characters (no header smuggling through the browser strategies, which bypass the
+  fetch header guard); `selectors` is capped at 50 entries; request bodies are
+  capped at 1 MiB.
+- **Parser isolation.** HTML extraction runs in `worker_threads` with memory and
+  time limits. The DOM parsers are inert by construction: jsdom and linkedom are
+  invoked without script execution or subresource loading, so untrusted HTML
+  cannot run JS or fetch URLs out of the parser.
+- **Network-layer egress lockdown.** `dd-web-scraper.networkpolicy.yaml` is the
+  authoritative backstop: it denies all ingress except the gateway and the
+  observability scrapers, and restricts egress to cluster DNS plus the public
+  internet on any port *except* the private/link-local/cloud-metadata ranges. This
+  is what protects the browser strategies — which the app cannot IP-pin — against
+  DNS-rebinding to internal services or `169.254.169.254`, since the kernel drops
+  the packet regardless of what Chromium resolves. The in-app `isPrivateIp` guard
+  and the connect-time DNS check are the first two layers; this is the third.
+- **Solver response is bounded.** The CAPTCHA solver client caps the provider
+  response body (64 KiB) so a compromised or misconfigured `SCRAPER_CAPTCHA_PROVIDER_URL`
+  can't stream an unbounded body into memory.
+- **Bounded DNS resolution.** The pre-flight SSRF checks resolve the target and
+  proxy hostnames before any fetch timeout applies. That lookup is raced against
+  `SCRAPER_DNS_TIMEOUT_MS` (default 5 s) so a hostname whose authoritative server
+  deliberately stalls can't pin an in-flight slot for the full `getaddrinfo`
+  timeout — bounding an otherwise un-timed phase of the request.
+
 ## Browser mode and failure screenshots
 
 Playwright and Puppeteer launch Chromium with `SCRAPER_BROWSER_HEADLESS=true` by default. The

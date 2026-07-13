@@ -209,7 +209,11 @@ class PoolAutotuner {
   /// Returns the chosen pod-wide host-isolate target AND per-host density.
   AutotunerDecision decide(AutotunerObservation obs) {
     final state = _encodeState(obs);
-    final reward = _reward(obs);
+    // Guard against a non-finite reward (e.g. an Infinity/NaN latency reading
+    // slipping through). A single NaN here would propagate through the EMA and
+    // every Q-table entry it touches and never recover, freezing the learner.
+    var reward = _reward(obs);
+    if (!reward.isFinite) reward = 0.0;
     _lastReward = reward;
     _rewardEma = _emaSeeded ? (_rewardEma * 0.9 + reward * 0.1) : reward;
     _emaSeeded = true;

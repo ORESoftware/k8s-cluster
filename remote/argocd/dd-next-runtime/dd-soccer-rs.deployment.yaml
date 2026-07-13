@@ -1,0 +1,276 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-soccer-rs
+  namespace: default
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+  labels:
+    app: dd-soccer-rs
+spec:
+  replicas: 1
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: dd-soccer-rs
+  template:
+    metadata:
+      annotations:
+        dd.dev/soccer-server-revision: 'full-live-canvas-ui+lazy-uuid-games+mermaid-docs+flowchart-doc+ws-push+server-push'
+        dd.dev/soccer-engine-revision: 'akrion-soccer-engine-rs@main'
+        dd.dev/des-engine-revision: 'discrete-event-system.rs@main'
+      labels:
+        app: dd-soccer-rs
+    spec:
+      priorityClassName: system-cluster-critical
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        - name: soccer-rs
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              # dd-soccer-rs depends on soccer_engine (soccer-sim-game-engine.rs),
+              # which in turn depends on des_engine (discrete-event-system.rs) via
+              # a sibling path dep. We assemble all THREE trees adjacent under one
+              # writable build root mirroring the repo layout so the chained
+              # `path = "../../submodules/…"` / `path = "../discrete-event-system.rs"`
+              # deps resolve, and build from there (the repo mount is read-only).
+              build_root="$(mktemp -d /tmp/dd-soccer-rs-build.XXXXXX)"
+              copy_source_tree() {
+                src="$1"; dst="$2"
+                mkdir -p "${dst}"
+                tar -C "${src}" --exclude=./.git --exclude=./target -cf - . | tar -C "${dst}" -xf -
+              }
+              fetch_git_ref() {
+                # fetch_git_ref <url> <ref> <dest> ; echo dest on success, empty on fail
+                url="$1"; ref="$2"; dest="$3"
+                if git "${git_auth_args[@]}" clone --depth 1 --no-checkout "${url}" "${dest}" \
+                  && git -C "${dest}" "${git_auth_args[@]}" fetch --depth 1 origin "${ref}" \
+                  && git -C "${dest}" switch --detach FETCH_HEAD; then
+                  echo "${dest}"
+                fi
+              }
+
+              # GH_PAT (dd-git-clone-token) authenticates the private backend fetch
+              # via an HTTP header instead of a URL, so an auth failure cannot print
+              # the token; insteadOf rewrites the .gitmodules SSH URL to HTTPS in-pod.
+              git_auth_args=()
+              if [ -n "${GH_PAT:-}" ]; then
+                authhdr="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_PAT" | base64 | tr -d '\n')"
+                git_auth_args=(-c "http.https://github.com/.extraheader=${authhdr}")
+                git config --global url."https://github.com/".insteadOf "git@github.com:"
+              fi
+
+              # 1) Server source: the soccer-rs backend now lives in its own private
+              # repo (akrion-sim/akrion-backend.rs), wired as a git submodule at
+              # remote/deployments/soccer-rs (mirrors sonus-auris-backend.rs ->
+              # remote/deployments/dd-sound-recorder-rs). Prefer mounted source when
+              # the node has it; otherwise clone the superproject and initialize ONLY
+              # this backend submodule so unrelated private submodules cannot block
+              # startup.
+              server_src="/opt/dd-next-1/remote/deployments/soccer-rs"
+              server_clone="${build_root}/k8s-source"
+              if [ -f "${server_src}/Cargo.toml" ]; then
+                echo "[dd-soccer-rs] server: using mounted backend at ${server_src}"
+              elif [ -n "${SOCCER_SERVER_GIT_URL:-}" ]; then
+                if git clone --depth 1 --branch "${SOCCER_SERVER_GIT_REF:-dev}" "${SOCCER_SERVER_GIT_URL}" "${server_clone}" \
+                   && git -C "${server_clone}" submodule init remote/deployments/soccer-rs \
+                   && git -C "${server_clone}" config "submodule.remote/deployments/soccer-rs.url" "https://github.com/akrion-sim/akrion-backend.rs.git" \
+                   && git -C "${server_clone}" "${git_auth_args[@]}" submodule update --depth 1 remote/deployments/soccer-rs; then
+                  server_src="${server_clone}/remote/deployments/soccer-rs"
+                  echo "[dd-soccer-rs] server: cloned ${SOCCER_SERVER_GIT_URL}@${SOCCER_SERVER_GIT_REF:-dev}; backend submodule ($(git -C "${server_src}" rev-parse --short HEAD 2>/dev/null || echo '?'))"
+                else
+                  echo "[dd-soccer-rs] server clone/submodule failed; using mounted source at ${server_src}" >&2
+                fi
+              fi
+              # Fail loudly if the backend submodule never populated (bad/missing GH_PAT,
+              # or a mounted superproject whose host never ran `git submodule update
+              # --init remote/deployments/soccer-rs`) instead of a confusing cargo error.
+              if [ ! -f "${server_src}/Cargo.toml" ]; then
+                echo "[dd-soccer-rs] FATAL: backend submodule not populated at ${server_src}. Set GH_PAT (private-repo read) or run 'git submodule update --init remote/deployments/soccer-rs' on the host." >&2
+                exit 1
+              fi
+
+              # 2) soccer_engine source (soccer-sim-game-engine.rs at the pinned ref).
+              soccer_src="/opt/dd-next-1/remote/submodules/soccer-sim-game-engine.rs"
+              if [ -n "${SOCCER_ENGINE_GIT_URL:-}" ]; then
+                if out="$(fetch_git_ref "${SOCCER_ENGINE_GIT_URL}" "${SOCCER_ENGINE_GIT_REF:-main}" "${build_root}/soccer-engine-source")" && [ -n "${out}" ]; then
+                  soccer_src="${out}"
+                  echo "[dd-soccer-rs] soccer engine: cloned ${SOCCER_ENGINE_GIT_URL}@${SOCCER_ENGINE_GIT_REF:-main} ($(git -C "${soccer_src}" rev-parse --short HEAD))"
+                else
+                  echo "[dd-soccer-rs] soccer engine clone failed; using pinned submodule at ${soccer_src}" >&2
+                fi
+              fi
+
+              # 3) des_engine source (discrete-event-system.rs @ main).
+              engine_src="/opt/dd-next-1/remote/submodules/discrete-event-system.rs"
+              if [ -n "${DES_ENGINE_GIT_URL:-}" ]; then
+                if out="$(fetch_git_ref "${DES_ENGINE_GIT_URL}" "${DES_ENGINE_GIT_REF:-main}" "${build_root}/engine-source")" && [ -n "${out}" ]; then
+                  engine_src="${out}"
+                  echo "[dd-soccer-rs] des engine: cloned ${DES_ENGINE_GIT_URL}@${DES_ENGINE_GIT_REF:-main} ($(git -C "${engine_src}" rev-parse --short HEAD))"
+                else
+                  echo "[dd-soccer-rs] des engine clone failed; using pinned submodule at ${engine_src}" >&2
+                fi
+              fi
+
+              # Assemble the adjacent layout and build.
+              build_src="${build_root}/remote/deployments/soccer-rs"
+              build_soccer="${build_root}/remote/submodules/soccer-sim-game-engine.rs"
+              build_engine="${build_root}/remote/submodules/discrete-event-system.rs"
+              copy_source_tree "${server_src}" "${build_src}"
+              copy_source_tree "${soccer_src}" "${build_soccer}"
+              copy_source_tree "${engine_src}" "${build_engine}"
+              cd "${build_src}"
+              # `soccer_engine/postgres-persistence` turns ON the engine's Postgres
+              # policy-load path (compiled out by default). With the SOCCER_DATABASE_URL
+              # + SOCCER_EXPERIMENT_SLUG env below, the live server loads the latest
+              # ACTIVE learned policy for that experiment from RDS on the first game
+              # session (in-VPC → fast; warm-cached for subsequent games) instead of
+              # playing a cold, unlearned policy. Same feature the learning cronjobs
+              # build, proven on this rust:1.90-bookworm image.
+              exec /usr/local/cargo/bin/cargo run --release --features soccer_engine/postgres-persistence
+          envFrom:
+            - configMapRef:
+                name: dd-soccer-feature-gates
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8113'
+            - name: SOCCER_SERVER_GIT_URL
+              value: https://github.com/ORESoftware/k8s-cluster.git
+            - name: SOCCER_SERVER_GIT_REF
+              value: dev
+            # Read access for the private backend submodule
+            # (akrion-sim/akrion-backend.rs), fetched via the http extraheader above.
+            - name: GH_PAT
+              valueFrom:
+                secretKeyRef:
+                  name: dd-git-clone-token
+                  key: token
+            - name: SOCCER_ENGINE_GIT_URL
+              value: https://github.com/akrion-sim/akrion-soccer-engine-rs.git
+            - name: SOCCER_ENGINE_GIT_REF
+              value: main
+            - name: DES_ENGINE_GIT_URL
+              value: https://github.com/ORESoftware/discrete-event-system.rs.git
+            - name: DES_ENGINE_GIT_REF
+              value: main
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /tmp/cargo
+            - name: CARGO_TARGET_DIR
+              value: /tmp/soccer-rs-target
+            # Keep rustc memory predictable during the cold in-pod release build —
+            # soccer_engine (the 115k-line soccer.rs) + des_engine + axum/tokio is a
+            # large build; serialize crate jobs so the pod does not OOM before the
+            # server binds.
+            - name: CARGO_BUILD_JOBS
+              value: '1'
+            # --- Load the learned policy from RDS (the in-VPC pod reaches it fast,
+            # unlike a laptop). Mirrors the dd-soccer-learning-queue cronjob's PG
+            # wiring. The live server loads the latest ACTIVE policy for this
+            # experiment on the first game session, then serves it. ---
+            - name: SOCCER_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-remote-rest-api-secrets
+                  key: RDS_DATABASE_URL
+            - name: SOCCER_PG_TLS_INSECURE
+              value: '1'
+            # The continuous overnight self-play learner's experiment (gen 290+,
+            # ~1.3M tabular Q-entries). Switch this slug to serve a different run.
+            - name: SOCCER_EXPERIMENT_SLUG
+              value: soccer-self-play-k8s-overnight
+            # REQUIRED here: the engine's default "bind-first" path DEFERS the PG
+            # load to a background refresher that only runs inside
+            # SoccerLiveServer::run() — but this backend drives the engine through
+            # SoccerLiveHttpBridge::new() -> SoccerLiveServer::new() and never calls
+            # run(), so the refresher never starts and the policy would never load.
+            # Forcing the blocking startup load makes new() load synchronously: the
+            # first game session pays the ~1.3M-entry RDS load (in-VPC, ~1-2 min)
+            # and warm-caches it for every subsequent game.
+            - name: SOCCER_LIVE_POLICY_BLOCKING_STARTUP_LOAD
+              value: '1'
+          ports:
+            - name: http
+              containerPort: 8113
+          resources:
+            requests:
+              # Guarantee a full core so the live soccer step loop sustains its
+              # ~10Hz tick under node contention (the UI animates one tick per
+              # server step; a starved/throttled server = slow-motion playback).
+              cpu: '25m'
+              memory: 4Gi
+            limits:
+              # Burst ceiling raised 2 -> 6: the per-tick sim + tokio workers
+              # briefly exceeded a 2-core cgroup quota, causing CFS throttle
+              # stalls. The 16-core nodes have ample room.
+              cpu: '6'
+              # Soccer_engine recompiles the full 115k-line soccer.rs plus des_engine
+              # from an empty /tmp on every (re)start, peaking higher than des-rs.
+              memory: 14Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            # Cold release build of two engines + the server from an empty /tmp can
+            # take several minutes on the 2-CPU node; allow ~50 min (5s * 600).
+            periodSeconds: 5
+            failureThreshold: 600
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: DirectoryOrCreate
+        - name: tmp
+          emptyDir:
+            sizeLimit: 20Gi

@@ -16,6 +16,8 @@ edition = "2021"
 # side bounds both to one slot (or N for HA, leader-elected).
 
 [dependencies]
+dd-telemetry = { path = "../../libs/telemetry-rs" }
+tracing = "0.1"
 async-nats = "=0.38.0"
 axum = { version = "0.7", features = ["macros"] }
 # Source-of-truth NATS subject names, wildcards, queue groups, and stream

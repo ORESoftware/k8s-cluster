@@ -64,11 +64,20 @@ pub struct CreateConnection {
 pub struct ConnectionService {
     pool: PgPool,
     sealer: std::sync::Arc<Sealer>,
+    events: std::sync::Arc<crate::events::EventBus>,
 }
 
 impl ConnectionService {
-    pub fn new(pool: PgPool, sealer: std::sync::Arc<Sealer>) -> Self {
-        Self { pool, sealer }
+    pub fn new(
+        pool: PgPool,
+        sealer: std::sync::Arc<Sealer>,
+        events: std::sync::Arc<crate::events::EventBus>,
+    ) -> Self {
+        Self {
+            pool,
+            sealer,
+            events,
+        }
     }
 
     /// Create a fresh pending connection (status = pending; no credential yet).
@@ -106,7 +115,11 @@ impl ConnectionService {
         .fetch_one(&self.pool)
         .await?;
 
-        row_to_connection(&row)
+        let conn = row_to_connection(&row)?;
+        self.events
+            .publish_connection_event(conn.tenant_id, conn.id, conn.provider.tag(), "created")
+            .await;
+        Ok(conn)
     }
 
     /// Seal + persist credential material for an existing connection and flip
@@ -161,7 +174,11 @@ impl ConnectionService {
         .fetch_one(&self.pool)
         .await?;
 
-        row_to_connection(&row)
+        let conn = row_to_connection(&row)?;
+        self.events
+            .publish_connection_event(conn.tenant_id, conn.id, conn.provider.tag(), "attached")
+            .await;
+        Ok(conn)
     }
 
     /// Decrypt the credential for an active connection. Returns plaintext bytes

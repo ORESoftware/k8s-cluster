@@ -6,7 +6,9 @@ metadata:
   labels:
     app: dd-lock-loadtest-trigger
 spec:
-  replicas: 1
+  # Default replicas: 0 - operators scale to 1 for the duration of a load
+  # test and back to 0 afterwards.
+  replicas: 0
   selector:
     matchLabels:
       app: dd-lock-loadtest-trigger

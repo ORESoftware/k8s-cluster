@@ -1,0 +1,127 @@
+#cloud-config
+# =============================================================================
+# Hetzner Cloud NODE prereqs for a WireGuard-meshed single K8s cluster.
+#
+# This only prepares the host (container runtime, kube* binaries, WireGuard +
+# keypair). It does NOT init/join the cluster — that's orchestrated across all
+# three nodes by setup-cluster.sh once every box has finished these prereqs.
+#
+# Marker on success: /opt/dd/prereqs-complete
+# WireGuard public key (read by the orchestrator): /opt/dd/wg-pubkey
+# Log: /var/log/dd-prereqs.log
+# =============================================================================
+package_update: true
+packages:
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - gnupg
+  - jq
+  - socat
+  - conntrack
+  - ethtool
+  - tar
+  - gzip
+  - wireguard
+  - wireguard-tools
+
+write_files:
+  - path: /opt/dd/node-prereqs.sh
+    permissions: '0755'
+    owner: root:root
+    content: |
+      #!/usr/bin/env bash
+      set -euxo pipefail
+      exec > >(tee -a /var/log/dd-prereqs.log) 2>&1
+      echo "==> DD Hetzner node prereqs starting $(date -u)"
+
+      # Hetzner servers prefer IPv6, but pkgs.k8s.io returns HTTP 403 over IPv6
+      # (302/OK over IPv4), which breaks the kubeadm/kubelet apt install. Force
+      # IPv4 for getaddrinfo (curl) and apt before any downloads.
+      grep -q "^precedence ::ffff:0:0/96  100$" /etc/gai.conf 2>/dev/null || echo "precedence ::ffff:0:0/96  100" >> /etc/gai.conf
+      echo 'Acquire::ForceIPv4 "true";' > /etc/apt/apt.conf.d/99force-ipv4
+
+      ARCH=amd64
+      K8S_VERSION="${K8S_VERSION:-1.31}"
+      CONTAINERD_VERSION="${CONTAINERD_VERSION:-1.7.24}"
+      RUNC_VERSION="${RUNC_VERSION:-1.2.3}"
+      export DEBIAN_FRONTEND=noninteractive
+
+      # ---- kernel modules + sysctl (incl. ip_forward for WG routing) ----
+      cat >/etc/modules-load.d/dd-k8s.conf <<'MODS'
+      overlay
+      br_netfilter
+      MODS
+      modprobe overlay
+      modprobe br_netfilter
+      cat >/etc/sysctl.d/99-dd-k8s.conf <<'SYS'
+      net.bridge.bridge-nf-call-iptables  = 1
+      net.bridge.bridge-nf-call-ip6tables = 1
+      net.ipv4.ip_forward                 = 1
+      fs.inotify.max_user_watches         = 524288
+      fs.inotify.max_user_instances       = 8192
+      fs.file-max                         = 2097152
+      SYS
+      sysctl --system
+      swapoff -a || true
+      sed -ri 's/^([^#].*[[:space:]]swap[[:space:]])/# \1/' /etc/fstab || true
+
+      # ---- containerd + runc + CNI plugins ----
+      curl -fsSL "https://github.com/containerd/containerd/releases/download/v${CONTAINERD_VERSION}/containerd-${CONTAINERD_VERSION}-linux-${ARCH}.tar.gz" | tar -xzC /usr/local
+      mkdir -p /usr/local/lib/systemd/system
+      curl -fsSL "https://raw.githubusercontent.com/containerd/containerd/v${CONTAINERD_VERSION}/containerd.service" -o /usr/local/lib/systemd/system/containerd.service
+      mkdir -p /etc/containerd
+      containerd config default >/etc/containerd/config.toml
+      sed -ri 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+      curl -fsSL "https://github.com/opencontainers/runc/releases/download/v${RUNC_VERSION}/runc.${ARCH}" -o /usr/local/sbin/runc
+      chmod 0755 /usr/local/sbin/runc
+      mkdir -p /opt/cni/bin
+      CNI_TAG="$(curl -fsSL https://api.github.com/repos/containernetworking/plugins/releases/latest | jq -r .tag_name)"
+      curl -fsSL "https://github.com/containernetworking/plugins/releases/download/${CNI_TAG}/cni-plugins-linux-${ARCH}-${CNI_TAG}.tgz" | tar -xzC /opt/cni/bin
+      systemctl daemon-reload
+      systemctl enable --now containerd
+
+      # ---- kubeadm / kubelet / kubectl (apt) ----
+      mkdir -p /etc/apt/keyrings
+      curl -fsSL "https://pkgs.k8s.io/core:/stable:/v${K8S_VERSION}/deb/Release.key" | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+      echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${K8S_VERSION}/deb/ /" >/etc/apt/sources.list.d/kubernetes.list
+      apt-get update -y
+      apt-get install -y kubelet kubeadm kubectl
+      apt-mark hold kubelet kubeadm kubectl
+      systemctl enable kubelet
+
+      # ---- helm, cilium CLI, argocd CLI ----
+      HELM_TAG="$(curl -fsSL https://api.github.com/repos/helm/helm/releases/latest | jq -r .tag_name)"; HELM_VERSION="${HELM_TAG#v}"
+      curl -fsSL "https://get.helm.sh/helm-v${HELM_VERSION}-linux-${ARCH}.tar.gz" | tar -xzC /tmp
+      install -m 0755 "/tmp/linux-${ARCH}/helm" /usr/local/bin/helm
+      CILIUM_TAG="$(curl -fsSL https://api.github.com/repos/cilium/cilium-cli/releases/latest | jq -r .tag_name)"
+      curl -fsSL "https://github.com/cilium/cilium-cli/releases/download/${CILIUM_TAG}/cilium-linux-${ARCH}.tar.gz" | tar -xzC /usr/local/bin
+      ARGOCD_TAG="$(curl -fsSL https://api.github.com/repos/argoproj/argo-cd/releases/latest | jq -r .tag_name)"
+      curl -fsSL "https://github.com/argoproj/argo-cd/releases/download/${ARGOCD_TAG}/argocd-linux-${ARCH}" -o /usr/local/bin/argocd
+      chmod 0755 /usr/local/bin/argocd
+
+      # ---- host hardening: key-only SSH + unattended security upgrades ----
+      cat >/etc/ssh/sshd_config.d/99-dd-hardening.conf <<'SSHD'
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitRootLogin prohibit-password
+      X11Forwarding no
+      SSHD
+      sshd -t && systemctl reload ssh || true
+      apt-get install -y unattended-upgrades >/dev/null 2>&1 || true
+      systemctl enable --now unattended-upgrades >/dev/null 2>&1 || true
+
+      # ---- WireGuard keypair (private stays here; public is read by orchestrator) ----
+      install -d -m 0700 /etc/wireguard
+      if [ ! -f /etc/wireguard/privatekey ]; then
+        wg genkey | tee /etc/wireguard/privatekey | wg pubkey > /etc/wireguard/publickey
+        chmod 600 /etc/wireguard/privatekey
+      fi
+      install -d /opt/dd
+      cp /etc/wireguard/publickey /opt/dd/wg-pubkey
+
+      touch /opt/dd/prereqs-complete
+      echo "==> DD Hetzner node prereqs complete $(date -u)"
+
+runcmd:
+  - [ bash, -lc, "mkdir -p /opt/dd && bash /opt/dd/node-prereqs.sh" ]

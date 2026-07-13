@@ -1,0 +1,296 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-compliance-rs
+  namespace: default
+  labels:
+    app: dd-compliance-rs
+spec:
+  replicas: 1
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
+  strategy:
+    # This service builds from the hostPath source checkout at pod start.
+    # Recreate avoids surge build pods on the single-node EC2 runtime.
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-compliance-rs
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-06-08-compliance-rs'
+      labels:
+        app: dd-compliance-rs
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: prepare-job-data
+          image: docker.io/library/busybox:1.36
+          imagePullPolicy: IfNotPresent
+          terminationMessagePolicy: FallbackToLogsOnError
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: false
+            runAsUser: 0
+            runAsGroup: 0
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - |
+              set -eu
+              mkdir -p /var/lib/dd-compliance-rs/jobs
+              chown -R 1000:1000 /var/lib/dd-compliance-rs
+              chmod 0750 /var/lib/dd-compliance-rs /var/lib/dd-compliance-rs/jobs
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          volumeMounts:
+            - name: job-data
+              mountPath: /var/lib/dd-compliance-rs
+        - name: release-build
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          terminationMessagePolicy: FallbackToLogsOnError
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              export HOME=/tmp
+              export CARGO_HOME=/var/cache/dd-compliance-rs/cargo
+              export CARGO_TARGET_DIR=/var/cache/dd-compliance-rs/target
+              export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}"
+              export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-0}"
+              export CARGO_TERM_COLOR="${CARGO_TERM_COLOR:-never}"
+              export CARGO_REGISTRIES_CRATES_IO_PROTOCOL="${CARGO_REGISTRIES_CRATES_IO_PROTOCOL:-sparse}"
+              mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR"
+              cd /opt/dd-next-1/remote/deployments/dd-compliance-rs
+              echo "dd-compliance-rs release build starting pod=${POD_NAME} namespace=${POD_NAMESPACE} node=${NODE_NAME}"
+              /usr/local/cargo/bin/cargo build --release --locked
+              if [ ! -x "$CARGO_TARGET_DIR/release/dd-compliance-rs" ]; then
+                echo "dd-compliance-rs release build failed: compiled binary missing" >&2
+                exit 78
+              fi
+              echo "dd-compliance-rs release build completed pod=${POD_NAME} namespace=${POD_NAMESPACE} node=${NODE_NAME}"
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: CARGO_BUILD_JOBS
+              value: '1'
+            - name: CARGO_INCREMENTAL
+              value: '0'
+            - name: CARGO_TERM_COLOR
+              value: never
+            - name: CARGO_NET_RETRY
+              value: '5'
+            - name: CARGO_HTTP_TIMEOUT
+              value: '120'
+            - name: CARGO_REGISTRIES_CRATES_IO_PROTOCOL
+              value: sparse
+          resources:
+            requests:
+              cpu: 100m
+              memory: 1Gi
+              ephemeral-storage: 3Gi
+            limits:
+              cpu: '2'
+              memory: 4Gi
+              ephemeral-storage: 6Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: build-cache
+              mountPath: /var/cache/dd-compliance-rs
+            - name: tmp
+              mountPath: /tmp
+      containers:
+        - name: compliance-rs
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              export HOME=/tmp
+              export CARGO_TARGET_DIR=/var/cache/dd-compliance-rs/target
+              cd /opt/dd-next-1/remote/deployments/dd-compliance-rs
+              if [ ! -x "$CARGO_TARGET_DIR/release/dd-compliance-rs" ]; then
+                echo "dd-compliance-rs startup failed: compiled binary missing" >&2
+                exit 78
+              fi
+              exec "$CARGO_TARGET_DIR/release/dd-compliance-rs"
+          env:
+            - name: HOME
+              value: /tmp
+            - name: CARGO_TARGET_DIR
+              value: /var/cache/dd-compliance-rs/target
+            - name: RUST_LOG
+              value: info
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8118'
+            - name: SERVER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+            - name: COMPLIANCE_WORK_ROOT
+              value: /var/lib/dd-compliance-rs/jobs
+            - name: COMPLIANCE_ALLOW_UNAUTHENTICATED
+              value: 'false'
+            - name: COMPLIANCE_ALLOW_EXTERNAL_FETCH
+              value: 'false'
+            - name: COMPLIANCE_ALLOW_REPO_CLONE
+              value: 'false'
+            - name: COMPLIANCE_ALLOW_PRIVATE_TARGETS
+              value: 'false'
+            - name: COMPLIANCE_MAX_JOBS
+              value: '200'
+            - name: COMPLIANCE_MAX_CONCURRENT_JOBS
+              value: '2'
+            - name: COMPLIANCE_MAX_CONCURRENT_ANALYSES
+              value: '8'
+            - name: COMPLIANCE_MAX_ARTIFACT_BYTES
+              value: '524288'
+            - name: COMPLIANCE_MAX_FILES
+              value: '1200'
+            - name: COMPLIANCE_MAX_FILE_BYTES
+              value: '262144'
+            - name: COMPLIANCE_JOB_TIMEOUT_SECONDS
+              value: '900'
+            - name: RUNTIME_CONFIG_SERVICE_NAME
+              value: dd-compliance-rs
+            - name: RUNTIME_CONFIG_SCOPE
+              value: dd-compliance-rs
+            - name: RUNTIME_CONFIG_ENV
+              value: stage
+            - name: RUNTIME_CONFIG_REGISTER_URL
+              value: http://dd-runtime-config.default.svc.cluster.local:8110/subscribers
+            - name: RUNTIME_CONFIG_APPLY_URL
+              value: http://dd-compliance-rs.default.svc.cluster.local:8118/internal/update-runtime-config
+            - name: RUNTIME_CONFIG_SERVER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
+          envFrom:
+            - secretRef:
+                name: dd-agent-secrets
+                optional: true
+          ports:
+            - name: http
+              containerPort: 8118
+          resources:
+            requests:
+              cpu: 25m
+              memory: 384Mi
+            limits:
+              cpu: '1'
+              memory: 1Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 120
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: build-cache
+              mountPath: /var/cache/dd-compliance-rs
+            - name: job-data
+              mountPath: /var/lib/dd-compliance-rs
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
+        - name: build-cache
+          emptyDir:
+            sizeLimit: 6Gi
+        - name: job-data
+          hostPath:
+            path: /var/lib/dd-compliance-rs
+            type: DirectoryOrCreate
+        - name: tmp
+          emptyDir:
+            sizeLimit: 512Mi

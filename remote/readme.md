@@ -14,6 +14,12 @@ Today there are several key runtime services:
   and controlled Kubernetes deploys
 - [`deployments/contract-service-rs/`](./deployments/contract-service-rs/) — Rust Solana contract gateway for validated
   instruction envelopes, signed transaction simulation, and NATS validation results.
+- [`deployments/usacc-rest-api-backend-rs/`](./deployments/usacc-rest-api-backend-rs/) — Rust/Axum REST API
+  for US Anti-Corruption Court simulations, voting, accounting ledgers, Solana contract validation,
+  and Postgres-backed CRUD data.
+- [`deployments/dd-escrow-rs/`](./deployments/dd-escrow-rs/) — Rust Solana escrow gateway for ten
+  escrow intent shapes, signed settlement simulation, gated on-chain settlement, and NATS validation
+  results.
 - [`deployments/rust-vapi-phone-rs/`](./deployments/rust-vapi-phone-rs/) — Rust Vapi.ai AI phone-tree call screener. It
   provisions a Vapi phone number + assistant through the Vapi REST API and serves the Vapi server webhook that screens
   inbound callers, warm-transferring verified humans to a personal forwarding number and declining scammers/spammers.
@@ -22,6 +28,27 @@ Today there are several key runtime services:
 - [`deployments/trading-server-rs/`](./deployments/trading-server-rs/) — Rust trading decision service that turns scraper,
   AI/ML, market, and MDP/POMDP inputs into risk-gated NATS order intents. Broker metadata is seeded
   through [`databases/pg/seeds/trading-platform-app-config.sql`](./databases/pg/seeds/trading-platform-app-config.sql).
+- [`deployments/patent-filing-rs/`](./deployments/patent-filing-rs/) — Rust/Axum patent filing
+  workbench with an htmx home page, invention intake, readiness scoring, provisional draft package
+  generation, prior-art search planning, and Patent Center handoff checklists.
+- [`deployments/dd-compliance-rs/`](./deployments/dd-compliance-rs/) — Rust/Axum compliance
+  readiness job server for artifacts, codebases, networks, and systems. It keeps a modular registry
+  for SOC 2, ISO, GDPR, PCI DSS, HIPAA, FedRAMP, CMMC, NIST, AI, quality, and ESG frameworks,
+  scores mapped evidence against required control families, and exposes generated docs at the
+  standard `/docs/api`, `/api/docs`, and `/api/docs.json` routes.
+- [`deployments/economics-server-rs/`](./deployments/economics-server-rs/) — Rust economics dashboard, projection,
+  recommendation, hardening-audit, public-source template, big-data pipeline-intent, and observability service that
+  blends public/private market history, fiscal/labor/VC context, social/news sentiment placeholders, source quality
+  reports, and transparent theory priors from accepted macro, asset-pricing, commodity, FX, bond, and
+  stochastic-process equations.
+- [`deployments/apostille-services-server-rs/`](./deployments/apostille-services-server-rs/) — Rust Axum service for
+  apostille/legalization, notary, immigration, English translation handoff, configured government-provider submissions,
+  inbound status webhooks, and an HTMX landing page for operators and integrators.
+- [`deployments/dd-data-viz-rs/`](./deployments/dd-data-viz-rs/) — Rust columnar analytics and evolutionary data
+  visualization server. It ingests JSON records into an in-memory column store, translates SQL, GraphQL, PromQL,
+  Flux, InfluxQL, LogQL, Cypher, Gremlin, Mongo, JMESPath, Lucene, and SPL subsets into a unified logical plan,
+  synthesizes 2D/3D/4D/5D/XD visualization specs, runs mutation/scoring loops with optional AI evaluator feedback,
+  and emits PowerPoint/OpenXML, Google Slides, Reveal, and final JSON presentation layers.
 - [`deployments/runtime-config-rs/`](./deployments/runtime-config-rs/) — Rust runtime-config control plane. Redis-backed
   source of truth for per-env (`stage`/`prod`) key/value config; every 5 min the cron loop POSTs the
   current snapshot to every registered subscriber's `/internal/update-runtime-config` endpoint, and
@@ -42,6 +69,11 @@ There are also runtime siblings for queueing, scheduling, and optimization:
   doctor prompts, NATS watchdog work, and the daily 4am Eastern worker-image build.
 - [`deployments/mdp-optimizer-rs/`](./deployments/mdp-optimizer-rs/) — Rust MDP/POMDP/RL optimizer that consumes NATS jobs
   and publishes optimization results.
+- [`deployments/fabrication-server-rs/`](./deployments/fabrication-server-rs/) — Rust fabrication
+  planner and instruction validator for hybrid 3D-printing, CNC milling, routing, lathe, and
+  assembly workflows. Native CAD/source package intake rules for SOLIDWORKS, Creo/Pro/Engineer,
+  NX, CATIA, Fusion, Onshape, FreeCAD, OpenSCAD, Blender, ZBrush, and neutral STEP/STL/3MF/DXF
+  exports are captured in [`../docs/fabrication-cad-source-intake.md`](../docs/fabrication-cad-source-intake.md).
 - [`deployments/thread-operator-go/`](./deployments/thread-operator-go/) — Go Kubernetes operator that owns the
   per-thread workspace lifecycle as a `Thread` CRD (`dd.dev/v1alpha1`). Strictly opt-in: only
   reconciles `Thread` CRs and refuses to adopt resources that lack the
@@ -64,12 +96,14 @@ The baseline Kubernetes runtime bundle lives in
 when bootstrapping Argo, then let Git + Argo own runtime Deployment, Service, ConfigMap, and gateway
 changes.
 
-There are also two Gleam/OTP services with their own ArgoCD Application manifests for the EC2 k8s
-runtime. The live MCP and agent cluster-context path is EC2:
+There are also MCP/WebSocket runtime services with their own ArgoCD Application manifests for the
+EC2 k8s runtime. The live MCP and agent cluster-context path is EC2:
 
+- [`deployments/cluster-mcp-rs/`](./deployments/cluster-mcp-rs/) — primary Rust MCP JSON-RPC service
+  with read-only Kubernetes inventory, service-directory, and observability tools for AI agents.
 - [`deployments/gleamlang-server/`](./deployments/gleamlang-server/) — WebSocket streaming service.
-- [`deployments/gleam-mcp-server/`](./deployments/gleam-mcp-server/) — MCP JSON-RPC service with read-only runtime tools
-  and Prometheus metrics.
+- [`deployments/gleam-mcp-server/`](./deployments/gleam-mcp-server/) — legacy Gleam MCP JSON-RPC
+  service with read-only runtime tools and Prometheus metrics.
 
 The cluster observability stack lives in [`argocd/observability/`](./argocd/observability/) and is
 managed by the `dd-observability` ArgoCD Application. It installs Prometheus, Grafana,
@@ -166,8 +200,10 @@ being tuned:
   - `http://54.91.17.58/nats-metrics/metrics` (NATS exporter, requires `Auth`)
   - `http://54.91.17.58/gleam/home` and `wss://54.91.17.58/gleam/ws` (Gleam WebSocket service,
     requires `Auth`)
+  - `http://54.91.17.58/cluster-mcp`, `http://54.91.17.58/cluster-mcp/home`, and
+    `http://54.91.17.58/cluster-mcp/metrics` (Rust cluster MCP service, requires `Auth`)
   - `http://54.91.17.58/mcp`, `http://54.91.17.58/mcp/home`, and `http://54.91.17.58/mcp/metrics`
-    (Gleam MCP service, requires `Auth`)
+    (legacy Gleam MCP service, requires `Auth`)
   - `http://54.91.17.58/reaper/` and `http://54.91.17.58/cron/` (runtime service status surfaces,
     require `Auth`)
 - `curl http://127.0.0.1/` -> `302` redirect to `/home`
@@ -420,14 +456,18 @@ Runtime telemetry is deliberately explicit:
 - Rust `remote/deployments/web-home-rs` uses Prometheus counters/gauges and exposes `/metrics`.
 - Rust `remote/deployments/rest-api-rs` uses Prometheus counters/gauges and exposes `/metrics`; the
   OpenTelemetry Collector scrapes it as `dd-remote-rest-api`.
+- Rust `remote/deployments/economics-server-rs` exposes `/metrics`, `/observability`, and
+  `/integrations/health`, writes `dd.log.v1` JSON stdout/stderr records for Loki, and is scraped by
+  Prometheus and the collector as `dd-economics-server` without runtime auto-instrumentation.
 - Gleam `remote/deployments/gleamlang-server` reports actor-backed WebSocket connection, tick, HTTP, and
   message counters at `/metrics`.
 - Gleam `remote/deployments/gleam-mcp-server` reports HTTP and JSON-RPC method counters at `/metrics`; the
   OpenTelemetry Collector scrapes it as `dd-gleam-mcp-server`.
 
-Grafana starts with the provisioned dashboard `Remote Dev Runtime Overview`, which tracks request
-rates, Node worker events, NATS connections/throughput/resources, the Gleam MCP runtime, and the
-10k WebSocket load-test connection count.
+Grafana starts with the provisioned dashboard `Remote Dev Runtime Overview`, plus dedicated
+service dashboards such as `Economics Server` for source-pull health, integration-health status,
+pipeline publish/submit telemetry, forecast/recommendation traffic, auth/errors, Kubernetes state,
+and Loki service logs.
 
 ## Messaging
 
@@ -661,6 +701,9 @@ push/open the PR.
 The same `dd-idle-reaper` deployment owns the daily worker image cron. At 4am America/New_York it
 fast-forwards the EC2 checkout and rebuilds `docker.io/library/dd-dev-server:dev` with
 `nerdctl -n k8s.io build`, so future thread pods pick up a fresh local image based on latest `dev`.
+It also runs a host/containerd backstop for `dd-pool` warm workers: every 5 minutes it removes only
+labeled managed containers that are stopped, orphaned, or surplus idle past the pool's TTL plus
+grace, while preserving each pool's `min_warm` idle floor.
 
 ## Per-user channel security
 

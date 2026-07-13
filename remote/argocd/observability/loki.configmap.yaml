@@ -37,3 +37,26 @@ data:
           embedded_cache:
             enabled: true
             max_size_mb: 100
+
+    compactor:
+      working_directory: /loki/compactor
+      retention_enabled: true
+      delete_request_store: filesystem
+      compaction_interval: 10m
+      retention_delete_delay: 1h
+
+    limits_config:
+      # Keep 3 days of logs, then the compactor deletes them — without this Loki
+      # grows unbounded in its emptyDir and fills the node root disk (was ~260G,
+      # tripping node disk-pressure and stranding the soccer learner).
+      retention_period: 72h
+      reject_old_samples: true
+      reject_old_samples_max_age: 168h
+      ingestion_rate_mb: 16
+      ingestion_burst_size_mb: 32
+      max_global_streams_per_user: 5000
+      max_label_names_per_series: 30
+      max_label_name_length: 1024
+      max_label_value_length: 2048
+      split_queries_by_interval: 15m
+      max_query_parallelism: 16

@@ -683,6 +683,11 @@ prefixed `dart_*`:
 | `dart_mobile_requests_total`                | counter | `/dart/mobile/*` requests                  |
 | `dart_assets_requests_total`                | counter | `/dart/assets/*` requests                  |
 | `dart_wss_upgrade_total`                    | counter | WS upgrade requests                        |
+| `dart_wss_upgrade_rejected_origin_total`    | counter | WS upgrades refused by the `WS_ALLOWED_ORIGINS` allowlist (CSWSH) |
+| `dart_conv_create_refused_total`            | counter | conversation creation refused at `kMaxConversationsPerShard` |
+| `dart_admin_auth_rejected_total`            | counter | `/dart/admin/*` requests rejected by the `ADMIN_AUTH_TOKEN` gate |
+| `dart_clock_renders_total`                  | counter | clock fragments actually Jaspr-rendered (shared-render cache misses) |
+| `dart_clock_render_cache_hits_total`        | counter | clock fragments served from the shared per-host render cache |
 | `dart_sessions_spawned_total`               | counter | isolates ever spawned                      |
 | `dart_sessions_opened_total`                | counter | isolates that completed boot               |
 | `dart_sessions_closed_total`                | counter | clean session shutdown                     |
@@ -830,6 +835,127 @@ to contain errors instead of propagating them to the VM:
 its session-host isolates. Use it under load to confirm empirically that only
 that host's ≤ `sessionsPerHost` sockets close (cleanly, 1000) and reconnect,
 while the shard, its sibling hosts, and the pod keep running. Off by default.
+
+### Abuse-resistance posture
+
+The `/dart/wss` endpoint is unauthenticated by design (anon-by-default demo),
+so every accepted peer is treated as hostile input and bounded:
+
+* **Frame size** — inbound frames over `WS_MAX_INBOUND_BYTES` (64 KiB) get a
+  1009 close.
+* **Per-field length** — every client-supplied text field (user id, display
+  name, conversation id/title, chat text) is truncated before it enters shard
+  state or fans out: identifiers to 128 chars, free-text to 2000
+  (`_maxIdentLen` / `_maxTextLen` in `isolate_session.dart`). Without this a
+  single 64 KiB display name would be stored verbatim and broadcast to every
+  joined session — a cheap amplification vector.
+* **Outbound rate** — a session emitting over `WS_MAX_OUTBOUND_RATE_PER_SECOND`
+  frames for `WS_SLOW_CLIENT_WINDOWS` consecutive seconds is force-closed.
+* **No decompression bomb** — WebSocket permessage-deflate is **off by
+  default** (`WS_PERMESSAGE_DEFLATE`): the WS layer inflates an inbound frame
+  *before* the `WS_MAX_INBOUND_BYTES` check sees it, so a small compressible
+  frame could otherwise decompress into a large buffer. Off also saves CPU at
+  the CPU-bound operating point.
+* **No needless header copy** — request headers (attacker-controlled, unused
+  by the session runtime) are no longer copied into the per-connection boot
+  message that crosses the isolate boundary.
+* **Collision-free, unguessable session ids** — ids are
+  `<shardHex>-<perShardSeq>-<secureRandom>`: a per-shard monotonic sequence
+  makes them collision-free (the old scheme hashed only the microsecond clock,
+  so two same-microsecond accepts on one shard produced identical ids and
+  cross-wired the presence/bus/supervisor maps — session confusion), and a
+  `Random.secure()` tail makes them unpredictable from the accept time.
+* **Scrape-safe `/metrics`** — a gauge closure that throws no longer takes the
+  whole exposition down (it is skipped), and a non-finite gauge value is
+  coerced to `0` instead of emitting Dart's `Infinity`/`NaN` spelling, which
+  Prometheus can't parse and which would otherwise break the entire scrape.
+* **Bounded server state** — the conversation registry caps distinct
+  conversations per shard (`kMaxConversationsPerShard`, 100K →
+  `dart_conv_create_refused_total`) and members per conversation
+  (`maxMembersPerConversation`, 10K); `Presence` releases a user's
+  display-name entry once their last session disconnects so `_displayNames`
+  can't leak one row per connection; and each session trims its lobby / echo
+  buffers at store time (`_maxLobbyRows` / `_maxHistoryRows`, 64) so a
+  long-lived peer on a busy lobby can't grow its in-memory buffer unbounded
+  (only the last 16 / 8 are ever rendered).
+* **Admin auth (defense-in-depth)** — set `ADMIN_AUTH_TOKEN` to require
+  `Authorization: Bearer <token>` (or `X-Admin-Token`) on every `/dart/admin/*`
+  route, including the chaos crash-host hook; rejects count as
+  `dart_admin_auth_rejected_total`. Probes and `/metrics` stay open so the
+  kubelet and Prometheus scrape uncredentialed. Unset = open (current
+  behaviour), so it's safe to enable incrementally.
+* **Origin allowlist (CSWSH)** — the same-origin policy does *not* block
+  cross-origin WebSocket handshakes, so a browser page on any site could
+  otherwise open `/dart/wss` and drive the protocol as the victim. Set
+  `WS_ALLOWED_ORIGINS` (comma-separated, exact scheme+host[:port]) to reject a
+  present-but-unlisted browser `Origin` with a 403
+  (`dart_wss_upgrade_rejected_origin_total`). Empty/unset accepts any origin,
+  and a request with *no* `Origin` (non-browser clients, load testers) is
+  always allowed — so enabling it is safe for server-to-server traffic.
+
+Not yet covered (operator-owned): per-IP connection-rate limiting and end-user
+authn belong at the ingress / reverse proxy. The admin port (`8088`) can now
+carry a shared secret (`ADMIN_AUTH_TOKEN`) but still relies on not being routed
+publicly as its primary control (see the access posture in `AGENTS.md`).
+`Identify` trusts the client-supplied user id — fine for the anon demo, but
+attribution is forgeable until a real auth token gates it.
+
+### Perf A/B: shared clock render (`WS_CLOCK_SHARED_RENDER`)
+
+The 1 Hz `Clock` OOB fragment is the only steady-state emitter, and its HTML is
+a pure function of the second-granularity UTC timestamp — **identical for every
+connected session**. The original path re-ran a full Jaspr render per session
+per tick, so steady-state idle CPU scaled as `live_sessions ÷
+WS_CLOCK_INTERVAL_SECONDS` renders/s (the readme's "~20 cores at 1 Hz, 20K
+conns"). At a 30K-connection, 5 s-clock operating point that is ~6K Jaspr
+renders/s doing identical work.
+
+The tweak: a per-host-isolate cache keyed by the iso-second. The first session
+on a host to want a given second kicks off **one** render Future; every other
+session ticking in that second `await`s the same Future. Net effect:
+≈ `hosts × distinct_seconds` renders instead of `sessions × ticks` — at 1000
+sessions/host that's ~1 render replacing ~1000.
+
+* **Flag** — `WS_CLOCK_SHARED_RENDER` (default `true`). Set `false` to restore
+  per-session rendering for the control arm.
+* **Measure** — compare `rate(dart_clock_renders_total)` (actual renders) vs
+  `rate(dart_clock_render_cache_hits_total)` (shared) and the pod CPU. With the
+  cache on, the hit ratio should approach `1 − hosts/sessions`; with it off,
+  `dart_clock_render_cache_hits_total` stays flat and renders track session
+  count. Output bytes on the wire are identical in both arms, so any CPU /
+  p99-adopt delta is attributable to the render sharing.
+
+Run it as a two-config A/B: one pod (or rollout) with the flag on, one off, same
+offered load, and diff the two counters + `container_cpu_usage`. Because the
+fragment is session-independent the cache is always safe; the flag exists purely
+to quantify the win.
+
+### Perf A/B: host-level ticker (`WS_HOST_LEVEL_TICKER`, prototype)
+
+The second steady-state cost after the clock *render* is the clock *timer*
+itself: each session owns a `Timer.periodic(1s)`, so 30K connections means 30K
+timer callbacks firing every second plus their event-loop scheduling overhead.
+
+The prototype coalesces them: when `WS_HOST_LEVEL_TICKER=true`, each
+session-host isolate runs **one** timer that walks its live sessions and calls
+`onHostTick` on each — at 1000 sessions/host that's 1 timer replacing 1000. The
+1 Hz lifecycle gate (idle/age eviction) and the clock emit run identically; the
+only structural change is who owns the timer. Clock emits are phase-spread per
+session (`_assignClockPhase`) so a single host timer firing doesn't push 1000
+clock fragments in one event-loop turn — the per-second fan-out stays smooth.
+
+* **Flag** — `WS_HOST_LEVEL_TICKER` (default `false`, the proven
+  per-session-timer arm; the per-session path is preserved verbatim).
+* **Measure** — at fixed load, compare pod CPU and `dart_ws_adopt`/
+  `first_frame` p99 between the two arms. The win grows with sessions/host
+  (density), so pair this A/B with a high `WS_HOST_DENSITY_LEVELS` setting.
+* **Compose** — it stacks with the shared clock render: render-sharing cuts the
+  *render* cost, the host ticker cuts the *timer* cost. Run all four
+  combinations to attribute each independently.
+
+Both A/B knobs are output-equivalent to their control arm (identical bytes on
+the wire), so any CPU / latency delta is attributable purely to the mechanism
+under test.
 
 ---
 

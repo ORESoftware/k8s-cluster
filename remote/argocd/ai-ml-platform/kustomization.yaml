@@ -6,7 +6,12 @@ resources:
   - airbyte.namespace.yaml
   - kafka.namespace.yaml
   - spark.namespace.yaml
+  - local-persistentvolumes.yaml
+  - resource-controls.yaml
+  - availability-controls.yaml
   - dd-airbyte-postgresql.statefulset.yaml
+  - dd-dagster-postgresql.statefulset.yaml
+  - dd-mlflow-postgresql.statefulset.yaml
   - dd-airbyte.networkpolicy.yaml
   - dd-ai-ml-namespace-boundary.networkpolicy.yaml
   - dd-kafka-namespace-boundary.networkpolicy.yaml

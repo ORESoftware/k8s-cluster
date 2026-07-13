@@ -112,16 +112,18 @@ fn provider_budget(provider: ProviderKind) -> ProviderBudget {
             window_seconds: 60,
             request_limit: 240,
         },
+        ProviderKind::EthereumWallet => ProviderBudget {
+            window_seconds: 60,
+            request_limit: 120,
+        },
         ProviderKind::Revolut => ProviderBudget {
             window_seconds: 60,
             request_limit: 240,
         },
-        ProviderKind::Mercury | ProviderKind::Bridge | ProviderKind::GoCardless => {
-            ProviderBudget {
-                window_seconds: 60,
-                request_limit: 120,
-            }
-        }
+        ProviderKind::Mercury | ProviderKind::Bridge | ProviderKind::GoCardless => ProviderBudget {
+            window_seconds: 60,
+            request_limit: 120,
+        },
         // Fireblocks publishes a default 60 requests/minute soft limit
         // for read endpoints; Circle's documented limit is 120/min.
         ProviderKind::Fireblocks => ProviderBudget {
@@ -132,9 +134,19 @@ fn provider_budget(provider: ProviderKind) -> ProviderBudget {
             window_seconds: 60,
             request_limit: 120,
         },
-        ProviderKind::Remitly | ProviderKind::Robinhood => ProviderBudget {
-            // Limited-fit providers shouldn't be hammered; this also caps
-            // accidental polling cost if a future stub is wired up.
+        ProviderKind::Remitly
+        | ProviderKind::Robinhood
+        | ProviderKind::MoneyGram
+        | ProviderKind::WesternUnion
+        | ProviderKind::UsBankZelle
+        | ProviderKind::JpmorganZelle
+        | ProviderKind::BofaCashProGdd
+        | ProviderKind::ModernTreasury
+        | ProviderKind::Dwolla
+        | ProviderKind::Adyen
+        | ProviderKind::Square => ProviderBudget {
+            // Limited-fit / stub providers shouldn't be hammered; this also
+            // caps accidental polling cost if a future stub is wired up.
             window_seconds: 60,
             request_limit: 30,
         },

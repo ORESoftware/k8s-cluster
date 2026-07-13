@@ -54,6 +54,7 @@ test('rust bastion serves authenticated vpn cluster access profile and kubeconfi
   assert.match(source, /dd-container-pool/);
   assert.match(source, /dd-gleamlang-server/);
   assert.match(source, /dd-webrtc-signaling/);
+  assert.match(source, /dd-webrtc-media/);
   assert.match(source, /dd-fsharp-ws-server/);
   assert.match(source, /dd-ws-loadtest-rs/);
   assert.match(source, /dd-gleamlang-ws-loadtest/);

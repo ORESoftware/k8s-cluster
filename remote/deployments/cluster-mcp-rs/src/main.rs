@@ -1,0 +1,4276 @@
+use std::{
+    borrow::Cow,
+    collections::BTreeMap,
+    env,
+    net::SocketAddr,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex,
+    },
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
+
+use axum::{
+    body::Bytes,
+    extract::{ConnectInfo, DefaultBodyLimit, State},
+    http::{header, HeaderMap, HeaderValue, StatusCode},
+    response::{Html, IntoResponse, Response},
+    routing::get,
+    Json, Router,
+};
+use futures_util::{stream::FuturesUnordered, StreamExt};
+use rand::RngCore;
+use reqwest::Certificate;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Map, Value};
+use subtle::ConstantTimeEq;
+
+const SERVICE_NAME: &str = "dd-cluster-mcp-rs";
+const SERVICE_NAMESPACE: &str = "default";
+const SERVICE_VERSION: &str = "0.1.0";
+const SERVICE_SCOPE: &str = "cluster-mcp-rs";
+const RESOURCE_NAMESPACE: &str = "remote-dev";
+const PROTOCOL_VERSION: &str = "2025-11-25";
+// Newest first. `initialize` echoes the client's requested protocolVersion
+// when it is one of these; anything else gets the newest supported version.
+const SUPPORTED_PROTOCOL_VERSIONS: &[&str] = &["2025-11-25", "2025-06-18", "2025-03-26"];
+const DEFAULT_PORT: u16 = 8091;
+const MAX_RPC_BODY_BYTES: usize = 1_000_000;
+const MAX_TIMEOUT_MS: u64 = 5_000;
+const MAX_KUBERNETES_BODY_LIMIT_BYTES: usize = 262_144;
+const MAX_KUBERNETES_ITEMS_LIMIT: usize = 500;
+const MAX_OBSERVABILITY_BODY_LIMIT_BYTES: usize = 262_144;
+const REDACTED: &str = "<redacted>";
+
+const TOOL_NAMES: &[&str] = &[
+    "cluster_status",
+    "service_directory",
+    "kubernetes_inventory",
+    "kubernetes_deployments",
+    "kubernetes_ingress_endpoints",
+    "deployment_rollout_status",
+    "kubernetes_events_warnings",
+    "human_access_policy",
+    "telemetry_targets",
+    "telemetry_summary",
+    "observability_health",
+    "prometheus_up",
+    "loki_labels",
+    "grafana_inventory",
+    "nats_metrics",
+    "trace_backends",
+    "cloudflare_zones",
+    "cloudflare_dns_records",
+    "domain_registration",
+    "domain_dns_wiring",
+];
+
+// Hard caps for the external read-only integrations (Cloudflare API, RDAP,
+// DNS-over-HTTPS). All are bounded regardless of upstream paging metadata.
+const MAX_CLOUDFLARE_ZONE_PAGES: usize = 3;
+const CLOUDFLARE_ZONES_PER_PAGE: usize = 50;
+const MAX_CLOUDFLARE_DNS_ZONES: usize = 20;
+const MAX_CLOUDFLARE_DNS_RECORDS: usize = 500;
+const MAX_CONFIGURED_DOMAINS: usize = 16;
+const MAX_WARNING_EVENTS: usize = 100;
+const MAX_EXTERNAL_TIMEOUT_MS: u64 = 5_000;
+const MAX_EXTERNAL_BODY_LIMIT_BYTES: usize = 262_144;
+const MAX_KUBERNETES_FULL_BODY_LIMIT_BYTES: usize = 4_194_304;
+
+#[derive(Clone)]
+struct AppState {
+    config: Arc<Config>,
+    http: reqwest::Client,
+    k8s_http: reqwest::Client,
+    external_http: reqwest::Client,
+    metrics: Arc<Metrics>,
+}
+
+#[derive(Clone)]
+struct Config {
+    host: String,
+    port: u16,
+    kubernetes_api_url: String,
+    kubernetes_token_path: String,
+    kubernetes_ca_path: String,
+    kubernetes_timeout: Duration,
+    kubernetes_body_limit_bytes: usize,
+    kubernetes_inventory_body_limit_bytes: usize,
+    kubernetes_items_limit: usize,
+    prometheus_url: String,
+    loki_url: String,
+    grafana_url: String,
+    tempo_url: String,
+    jaeger_url: String,
+    otel_collector_metrics_url: String,
+    nats_monitor_url: String,
+    nats_metrics_url: String,
+    observability_timeout: Duration,
+    observability_body_limit_bytes: usize,
+    otlp_endpoint: Option<String>,
+    otlp_timeout: Duration,
+    require_auth: bool,
+    auth_secret: Option<String>,
+    kubernetes_full_body_limit_bytes: usize,
+    cloudflare_api_url: String,
+    cloudflare_api_token: Option<String>,
+    rdap_url: String,
+    doh_url: String,
+    domains: Vec<String>,
+    expected_ingress_ips: Vec<String>,
+    external_timeout: Duration,
+    external_body_limit_bytes: usize,
+}
+
+#[derive(Default)]
+struct Metrics {
+    http_requests_total: AtomicU64,
+    rpc_requests_total: AtomicU64,
+    rpc_errors_total: AtomicU64,
+    tool_calls_total: AtomicU64,
+    tool_failures_total: AtomicU64,
+    k8s_requests_total: AtomicU64,
+    observability_requests_total: AtomicU64,
+    external_requests_total: AtomicU64,
+    otlp_spans_total: AtomicU64,
+    otlp_failures_total: AtomicU64,
+    rpc_by_method: Mutex<BTreeMap<String, u64>>,
+    tool_by_name: Mutex<BTreeMap<String, u64>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct JsonRpcRequest {
+    jsonrpc: Option<String>,
+    id: Option<Value>,
+    method: String,
+    params: Option<Value>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ResourceTarget {
+    name: &'static str,
+    scope: &'static str,
+    path: &'static str,
+}
+
+#[derive(Debug, Clone)]
+struct TraceContext {
+    trace_id: String,
+    span_id: String,
+    start_unix_nano: u128,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HealthResponse {
+    ok: bool,
+    service: &'static str,
+    namespace: &'static str,
+    protocol_version: &'static str,
+    tools: &'static [&'static str],
+    otlp_enabled: bool,
+}
+
+fn env_string(key: &str, fallback: &str) -> String {
+    env::var(key)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| fallback.to_string())
+}
+
+fn env_bool(key: &str, fallback: bool) -> bool {
+    env::var(key)
+        .ok()
+        .map(|value| {
+            matches!(
+                value.as_str(),
+                "1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON"
+            )
+        })
+        .unwrap_or(fallback)
+}
+
+fn env_u64_bounded(key: &str, fallback: u64, min: u64, max: u64) -> u64 {
+    env::var(key)
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .filter(|value| *value >= min && *value <= max)
+        .unwrap_or(fallback)
+}
+
+fn env_usize_bounded(key: &str, fallback: usize, min: usize, max: usize) -> usize {
+    env::var(key)
+        .ok()
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .filter(|value| *value >= min && *value <= max)
+        .unwrap_or(fallback)
+}
+
+// Comma-separated env list, bounded, trimmed, lowercased, trailing dots
+// dropped (DNS names compare canonically).
+fn env_csv_bounded(key: &str, fallback: &str, max: usize) -> Vec<String> {
+    env_string(key, fallback)
+        .split(',')
+        .map(|item| item.trim().trim_end_matches('.').to_ascii_lowercase())
+        .filter(|item| !item.is_empty())
+        .take(max)
+        .collect()
+}
+
+fn env_mcp_base_url(key: &str, fallback: &str, allow_external: bool) -> String {
+    let value = env_string(key, fallback);
+    if allow_external || allowed_mcp_base_url(&value) {
+        value
+    } else {
+        fallback.to_string()
+    }
+}
+
+fn allowed_mcp_base_url(raw: &str) -> bool {
+    let Ok(url) = reqwest::Url::parse(raw) else {
+        return false;
+    };
+    if !matches!(url.scheme(), "http" | "https") {
+        return false;
+    }
+    if !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return false;
+    }
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    if matches!(host.as_str(), "localhost" | "127.0.0.1" | "::1") {
+        return true;
+    }
+    host == "kubernetes.default.svc"
+        || host.ends_with(".svc")
+        || host.ends_with(".svc.cluster.local")
+}
+
+fn config_from_env() -> Config {
+    let allow_external_mcp_urls = env_bool("MCP_ALLOW_EXTERNAL_URLS", false);
+    let otlp_endpoint = if env_bool("OTEL_TRACES_ENABLED", true) {
+        env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .map(|value| {
+                if value.ends_with("/v1/traces") {
+                    value
+                } else {
+                    format!("{}/v1/traces", value.trim_end_matches('/'))
+                }
+            })
+    } else {
+        None
+    };
+
+    Config {
+        host: env_string("HOST", "0.0.0.0"),
+        port: env_u64_bounded("PORT", DEFAULT_PORT as u64, 1, u16::MAX as u64) as u16,
+        kubernetes_api_url: env_mcp_base_url(
+            "MCP_KUBERNETES_API_URL",
+            "https://kubernetes.default.svc",
+            allow_external_mcp_urls,
+        ),
+        kubernetes_token_path: env_string(
+            "MCP_KUBERNETES_TOKEN_PATH",
+            "/var/run/secrets/kubernetes.io/serviceaccount/token",
+        ),
+        kubernetes_ca_path: env_string(
+            "MCP_KUBERNETES_CA_PATH",
+            "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt",
+        ),
+        kubernetes_timeout: Duration::from_millis(env_u64_bounded(
+            "MCP_KUBERNETES_TIMEOUT_MS",
+            1500,
+            100,
+            MAX_TIMEOUT_MS,
+        )),
+        kubernetes_body_limit_bytes: env_usize_bounded(
+            "MCP_KUBERNETES_BODY_LIMIT_BYTES",
+            262_144,
+            1024,
+            MAX_KUBERNETES_BODY_LIMIT_BYTES,
+        ),
+        kubernetes_inventory_body_limit_bytes: env_usize_bounded(
+            "MCP_KUBERNETES_INVENTORY_BODY_LIMIT_BYTES",
+            32_768,
+            1024,
+            MAX_KUBERNETES_BODY_LIMIT_BYTES,
+        ),
+        kubernetes_items_limit: env_usize_bounded(
+            "MCP_KUBERNETES_ITEMS_LIMIT",
+            200,
+            1,
+            MAX_KUBERNETES_ITEMS_LIMIT,
+        ),
+        prometheus_url: env_mcp_base_url(
+            "MCP_PROMETHEUS_URL",
+            "http://dd-prometheus.observability.svc.cluster.local:9090",
+            allow_external_mcp_urls,
+        ),
+        loki_url: env_mcp_base_url(
+            "MCP_LOKI_URL",
+            "http://dd-loki.observability.svc.cluster.local:3100",
+            allow_external_mcp_urls,
+        ),
+        grafana_url: env_mcp_base_url(
+            "MCP_GRAFANA_URL",
+            "http://dd-grafana.observability.svc.cluster.local:3000",
+            allow_external_mcp_urls,
+        ),
+        tempo_url: env_mcp_base_url(
+            "MCP_TEMPO_URL",
+            "http://dd-tempo.observability.svc.cluster.local:3200",
+            allow_external_mcp_urls,
+        ),
+        jaeger_url: env_mcp_base_url(
+            "MCP_JAEGER_URL",
+            "http://dd-jaeger.observability.svc.cluster.local:16686",
+            allow_external_mcp_urls,
+        ),
+        otel_collector_metrics_url: env_mcp_base_url(
+            "MCP_OTEL_COLLECTOR_URL",
+            "http://dd-otel-collector.observability.svc.cluster.local:8889",
+            allow_external_mcp_urls,
+        ),
+        nats_monitor_url: env_mcp_base_url(
+            "MCP_NATS_MONITOR_URL",
+            "http://dd-nats.messaging.svc.cluster.local:8222",
+            allow_external_mcp_urls,
+        ),
+        nats_metrics_url: env_mcp_base_url(
+            "MCP_NATS_METRICS_URL",
+            "http://dd-nats.messaging.svc.cluster.local:7777",
+            allow_external_mcp_urls,
+        ),
+        observability_timeout: Duration::from_millis(env_u64_bounded(
+            "MCP_OBSERVABILITY_TIMEOUT_MS",
+            1200,
+            100,
+            MAX_TIMEOUT_MS,
+        )),
+        observability_body_limit_bytes: env_usize_bounded(
+            "MCP_OBSERVABILITY_BODY_LIMIT_BYTES",
+            32_768,
+            1024,
+            MAX_OBSERVABILITY_BODY_LIMIT_BYTES,
+        ),
+        otlp_endpoint,
+        otlp_timeout: Duration::from_millis(env_u64_bounded(
+            "OTEL_EXPORT_TIMEOUT_MS",
+            800,
+            100,
+            MAX_TIMEOUT_MS,
+        )),
+        require_auth: env_bool("MCP_REQUIRE_AUTH", false),
+        auth_secret: env::var("MCP_AUTH_SECRET")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty()),
+        // Full (non-metadata-only) Kubernetes list bodies carry managedFields
+        // and full specs, so they need a larger parse guard than the clipped
+        // sample paths. Still hard-capped at 4 MiB.
+        kubernetes_full_body_limit_bytes: env_usize_bounded(
+            "MCP_KUBERNETES_FULL_BODY_LIMIT_BYTES",
+            1_048_576,
+            4096,
+            MAX_KUBERNETES_FULL_BODY_LIMIT_BYTES,
+        ),
+        // External read-only integrations. The default bases are inherently
+        // external, so they are the fallbacks; overrides still go through the
+        // MCP_ALLOW_EXTERNAL_URLS allowlist (loopback / *.svc), which keeps
+        // test/dev overrides possible without opening arbitrary retargeting.
+        cloudflare_api_url: env_mcp_base_url(
+            "MCP_CLOUDFLARE_API_URL",
+            "https://api.cloudflare.com/client/v4",
+            allow_external_mcp_urls,
+        ),
+        cloudflare_api_token: env::var("CLOUDFLARE_API_TOKEN")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty()),
+        rdap_url: env_mcp_base_url(
+            "DD_MCP_RDAP_URL",
+            "https://rdap.org",
+            allow_external_mcp_urls,
+        ),
+        doh_url: env_mcp_base_url(
+            "DD_MCP_DOH_URL",
+            "https://cloudflare-dns.com/dns-query",
+            allow_external_mcp_urls,
+        ),
+        // Default domain set derived from the dd-remote-gateway vhosts
+        // (app./admin.fiducia.cloud server_name blocks) plus the public
+        // marketing apexes (fiducia.cloud, canonical.cloud) it fronts.
+        domains: env_csv_bounded(
+            "DD_MCP_DOMAINS",
+            "fiducia.cloud,app.fiducia.cloud,admin.fiducia.cloud,canonical.cloud",
+            MAX_CONFIGURED_DOMAINS,
+        ),
+        expected_ingress_ips: env_csv_bounded(
+            "DD_MCP_EXPECTED_INGRESS_IPS",
+            "",
+            MAX_CONFIGURED_DOMAINS,
+        ),
+        external_timeout: Duration::from_millis(env_u64_bounded(
+            "DD_MCP_EXTERNAL_TIMEOUT_MS",
+            2500,
+            100,
+            MAX_EXTERNAL_TIMEOUT_MS,
+        )),
+        external_body_limit_bytes: env_usize_bounded(
+            "DD_MCP_EXTERNAL_BODY_LIMIT_BYTES",
+            65_536,
+            1024,
+            MAX_EXTERNAL_BODY_LIMIT_BYTES,
+        ),
+    }
+}
+
+// Optional bearer gate on POST /mcp, mirroring the Gleam server. Off by default
+// so the gateway-enforced auth model is unchanged; when MCP_REQUIRE_AUTH is set
+// the pod also requires `Authorization: Bearer <MCP_AUTH_SECRET>` or
+// `X-Server-Auth: <secret>`, which lets an operator close the unauthenticated
+// in-VPC ingress path without rewriting the NetworkPolicy. Fails closed if
+// required but no secret is configured.
+fn request_authorized(config: &Config, headers: &HeaderMap) -> bool {
+    header_secret_ok(config.auth_secret.as_deref(), headers)
+}
+
+fn header_secret_ok(secret: Option<&str>, headers: &HeaderMap) -> bool {
+    let Some(secret) = secret.filter(|value| !value.is_empty()) else {
+        return false;
+    };
+    let bearer_ok = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .is_some_and(|value| constant_time_secret_eq(secret, value));
+    let header_ok = headers
+        .get("x-server-auth")
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| constant_time_secret_eq(secret, value));
+    bearer_ok || header_ok
+}
+
+// Constant-time secret comparison so response timing does not reveal how much
+// of a guessed secret matched. `subtle` is already in the dependency tree via
+// rustls; its slice ct_eq compares every byte of equal-length inputs without
+// data-dependent branches (length itself is not secret).
+fn constant_time_secret_eq(expected: &str, provided: &str) -> bool {
+    expected.as_bytes().ct_eq(provided.as_bytes()).into()
+}
+
+// When the bearer gate is on it must also cover the read-only GET surfaces
+// that leak cluster state without a tool call: /observability returns the full
+// telemetry_summary tool output, /metrics exposes internal counters, and the
+// generated API docs describe the deployment. /healthz and /readyz stay open
+// so kubelet probes keep working without a secret mount.
+fn gated_unauthorized_response(state: &AppState, headers: &HeaderMap) -> Option<Response> {
+    if !state.config.require_auth || request_authorized(&state.config, headers) {
+        return None;
+    }
+    let mut response = json_response(
+        StatusCode::UNAUTHORIZED,
+        json!({ "ok": false, "error": "unauthorized" }),
+    );
+    response.headers_mut().insert(
+        header::WWW_AUTHENTICATE,
+        HeaderValue::from_static("Bearer realm=\"dd-cluster-mcp-rs\""),
+    );
+    Some(response)
+}
+
+fn build_k8s_client(config: &Config) -> reqwest::Client {
+    // The SA bearer token is sent on these requests, so trust is pinned to the
+    // in-cluster CA only (tls_built_in_root_certs(false) drops the public webpki
+    // roots — no public CA should be able to vouch for kubernetes.default.svc),
+    // and redirects are disabled so a 3xx cannot retarget a token-bearing call
+    // to another host. A missing/invalid CA fails closed (TLS rejects), but we
+    // log it because the failure is otherwise opaque.
+    let mut builder = reqwest::Client::builder()
+        .user_agent(format!("{SERVICE_NAME}/{SERVICE_VERSION}"))
+        .timeout(config.kubernetes_timeout)
+        .redirect(reqwest::redirect::Policy::none())
+        .tls_built_in_root_certs(false);
+    match std::fs::read(&config.kubernetes_ca_path) {
+        Ok(bytes) => match Certificate::from_pem(&bytes) {
+            Ok(cert) => builder = builder.add_root_certificate(cert),
+            Err(error) => log_dd_event(
+                "WARN",
+                13,
+                "failed to parse Kubernetes service-account CA; k8s tools will fail TLS",
+                "cluster_mcp.k8s.ca_parse_failed",
+                json!({ "error": error.to_string(), "path": config.kubernetes_ca_path }),
+                None,
+            ),
+        },
+        Err(error) => log_dd_event(
+            "WARN",
+            13,
+            "failed to read Kubernetes service-account CA; k8s tools will fail TLS",
+            "cluster_mcp.k8s.ca_read_failed",
+            json!({ "error": error.to_string(), "path": config.kubernetes_ca_path }),
+            None,
+        ),
+    }
+    builder.build().expect("failed to build k8s http client")
+}
+
+fn build_http_client(config: &Config) -> reqwest::Client {
+    // Observability/OTLP fan-out. Redirects disabled so a compromised in-cluster
+    // backend cannot bounce a read to an arbitrary host (SSRF amplifier).
+    reqwest::Client::builder()
+        .user_agent(format!("{SERVICE_NAME}/{SERVICE_VERSION}"))
+        .timeout(config.observability_timeout)
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("failed to build http client")
+}
+
+fn build_external_client(config: &Config) -> reqwest::Client {
+    // RDAP + DNS-over-HTTPS reads. This is the one client that follows
+    // redirects (bounded): rdap.org is a bootstrap redirector to the
+    // registry's RDAP server, so redirects are the protocol. Safe here because
+    // these requests carry no credentials (the Cloudflare token rides the
+    // redirect-disabled `http` client instead) and responses go through the
+    // same bounded-read + redaction pipeline.
+    reqwest::Client::builder()
+        .user_agent(format!("{SERVICE_NAME}/{SERVICE_VERSION}"))
+        .timeout(config.external_timeout)
+        .redirect(reqwest::redirect::Policy::limited(5))
+        .build()
+        .expect("failed to build external http client")
+}
+
+fn now_unix_nano() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos()
+}
+
+fn elapsed_ms(started: Instant) -> u128 {
+    started.elapsed().as_millis()
+}
+
+fn random_hex(bytes_len: usize) -> String {
+    let mut bytes = vec![0u8; bytes_len];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    if bytes.iter().all(|byte| *byte == 0) {
+        bytes[0] = 1;
+    }
+    hex::encode(bytes)
+}
+
+fn new_trace_context() -> TraceContext {
+    TraceContext {
+        trace_id: random_hex(16),
+        span_id: random_hex(8),
+        start_unix_nano: now_unix_nano(),
+    }
+}
+
+// Source attribution for rpc/tool log events so unauthenticated in-VPC calls
+// are traceable to a peer. The socket peer address is ground truth;
+// X-Forwarded-For is caller-controlled, so it is logged only as a separate,
+// clearly-labelled field (clipped and sanitized, never trusted).
+fn client_attrs(attributes: Value, peer: SocketAddr, headers: &HeaderMap) -> Value {
+    let mut map = match attributes {
+        Value::Object(map) => map,
+        other => {
+            let mut map = Map::new();
+            map.insert("attributes".to_string(), other);
+            map
+        }
+    };
+    map.insert("client.ip".to_string(), json!(peer.ip().to_string()));
+    if let Some(forwarded) = headers
+        .get("x-forwarded-for")
+        .and_then(|value| value.to_str().ok())
+        .map(|value| sanitize_text(&clip_string(value.trim(), 256)))
+        .filter(|value| !value.is_empty())
+    {
+        map.insert("client.forwarded_for".to_string(), json!(forwarded));
+    }
+    Value::Object(map)
+}
+
+const KNOWN_METHODS: &[&str] = &[
+    "initialize",
+    "notifications/initialized",
+    "ping",
+    "tools/list",
+    "tools/call",
+];
+
+// The per-method / per-tool metric maps are labelled by request-supplied
+// strings. Recording them verbatim would let any caller (including the
+// unauthenticated in-VPC ingress path) grow the maps without bound — a memory
+// exhaustion + /metrics blow-up DoS, and unbounded Prometheus label
+// cardinality. Bucket anything outside the fixed known set under "other".
+fn bounded_method_label(method: &str) -> &str {
+    if KNOWN_METHODS.contains(&method) {
+        method
+    } else {
+        "other"
+    }
+}
+
+fn bounded_tool_label(tool: &str) -> &str {
+    if TOOL_NAMES.contains(&tool) {
+        tool
+    } else {
+        "other"
+    }
+}
+
+impl Metrics {
+    fn record_rpc(&self, method: &str) {
+        self.rpc_requests_total.fetch_add(1, Ordering::Relaxed);
+        increment_map(&self.rpc_by_method, bounded_method_label(method));
+    }
+
+    fn record_tool(&self, tool: &str) {
+        self.tool_calls_total.fetch_add(1, Ordering::Relaxed);
+        increment_map(&self.tool_by_name, bounded_tool_label(tool));
+    }
+}
+
+fn increment_map(map: &Mutex<BTreeMap<String, u64>>, key: &str) {
+    if let Ok(mut guard) = map.lock() {
+        *guard.entry(key.to_string()).or_insert(0) += 1;
+    }
+}
+
+fn log_dd_event(
+    severity_text: &str,
+    severity_number: u8,
+    body: &str,
+    event_name: &str,
+    attributes: Value,
+    trace: Option<&TraceContext>,
+) {
+    let mut record = Map::new();
+    record.insert("schema".to_string(), json!("dd.log.v1"));
+    record.insert(
+        "time_unix_nano".to_string(),
+        json!(now_unix_nano().to_string()),
+    );
+    record.insert("severity_text".to_string(), json!(severity_text));
+    record.insert("severity_number".to_string(), json!(severity_number));
+    record.insert("body".to_string(), json!(body));
+    record.insert("resource_service_name".to_string(), json!(SERVICE_NAME));
+    record.insert(
+        "resource_service_namespace".to_string(),
+        json!(RESOURCE_NAMESPACE),
+    );
+    record.insert("scope_name".to_string(), json!(SERVICE_SCOPE));
+    record.insert("event_name".to_string(), json!(event_name));
+    if let Some(trace) = trace {
+        record.insert("trace_id".to_string(), json!(trace.trace_id));
+        record.insert("span_id".to_string(), json!(trace.span_id));
+    }
+    record.insert("attributes".to_string(), attributes);
+    // This function IS the structured-log emitter: it prints an OTLP-style JSON
+    // record (already trace-correlated) straight to stdout for promtail/Loki.
+    // Keep it as a raw stdout write — routing it through `tracing` would nest
+    // JSON inside a tracing message field.
+    println!("{}", Value::Object(record));
+}
+
+fn finish_span(
+    state: AppState,
+    trace: TraceContext,
+    name: &'static str,
+    ok: bool,
+    attributes: Value,
+) {
+    let end_unix_nano = now_unix_nano();
+    tokio::spawn(async move {
+        emit_otlp_span(&state, &trace, name, ok, attributes, end_unix_nano).await;
+    });
+}
+
+async fn emit_otlp_span(
+    state: &AppState,
+    trace: &TraceContext,
+    name: &str,
+    ok: bool,
+    attributes: Value,
+    end_unix_nano: u128,
+) {
+    let Some(endpoint) = state.config.otlp_endpoint.as_deref() else {
+        return;
+    };
+    state
+        .metrics
+        .otlp_spans_total
+        .fetch_add(1, Ordering::Relaxed);
+    let attrs = otlp_attributes(attributes);
+    let payload = json!({
+        "resourceSpans": [{
+            "resource": {
+                "attributes": [
+                    otlp_attr("service.name", SERVICE_NAME),
+                    otlp_attr("service.namespace", RESOURCE_NAMESPACE),
+                    otlp_attr("service.version", SERVICE_VERSION),
+                    otlp_attr("deployment.environment.name", "stage")
+                ]
+            },
+            "scopeSpans": [{
+                "scope": { "name": SERVICE_SCOPE, "version": SERVICE_VERSION },
+                "spans": [{
+                    "traceId": trace.trace_id,
+                    "spanId": trace.span_id,
+                    "name": name,
+                    "kind": 2,
+                    "startTimeUnixNano": trace.start_unix_nano.to_string(),
+                    "endTimeUnixNano": end_unix_nano.to_string(),
+                    "attributes": attrs,
+                    "status": { "code": if ok { 1 } else { 2 } }
+                }]
+            }]
+        }]
+    });
+    let result = state
+        .http
+        .post(endpoint)
+        .timeout(state.config.otlp_timeout)
+        .header(header::CONTENT_TYPE, "application/json")
+        .json(&payload)
+        .send()
+        .await;
+    match result {
+        Ok(response) if response.status().is_success() => {}
+        Ok(response) => {
+            state
+                .metrics
+                .otlp_failures_total
+                .fetch_add(1, Ordering::Relaxed);
+            log_dd_event(
+                "WARN",
+                13,
+                "OTLP span export returned non-success",
+                "cluster_mcp.otlp.export_failed",
+                json!({ "status": response.status().as_u16() }),
+                Some(trace),
+            );
+        }
+        Err(error) => {
+            state
+                .metrics
+                .otlp_failures_total
+                .fetch_add(1, Ordering::Relaxed);
+            log_dd_event(
+                "WARN",
+                13,
+                "OTLP span export failed",
+                "cluster_mcp.otlp.export_failed",
+                json!({ "error": error.to_string() }),
+                Some(trace),
+            );
+        }
+    }
+}
+
+fn otlp_attr(key: &str, value: &str) -> Value {
+    json!({ "key": key, "value": { "stringValue": value } })
+}
+
+fn otlp_attributes(attributes: Value) -> Vec<Value> {
+    let mut output = Vec::new();
+    if let Value::Object(map) = attributes {
+        for (key, value) in map {
+            let otlp_value = match value {
+                Value::Bool(value) => json!({ "boolValue": value }),
+                Value::Number(number) => {
+                    if let Some(value) = number.as_i64() {
+                        json!({ "intValue": value.to_string() })
+                    } else if let Some(value) = number.as_u64() {
+                        json!({ "intValue": value.to_string() })
+                    } else if let Some(value) = number.as_f64() {
+                        json!({ "doubleValue": value })
+                    } else {
+                        json!({ "stringValue": number.to_string() })
+                    }
+                }
+                Value::String(value) => json!({ "stringValue": value }),
+                other => json!({ "stringValue": other.to_string() }),
+            };
+            output.push(json!({ "key": key, "value": otlp_value }));
+        }
+    }
+    output
+}
+
+fn id_value(request: &JsonRpcRequest) -> Value {
+    sanitize_rpc_id(request.id.as_ref())
+}
+
+fn sanitize_rpc_id(id: Option<&Value>) -> Value {
+    match id {
+        Some(Value::String(_)) | Some(Value::Number(_)) | Some(Value::Null) => {
+            id.cloned().unwrap_or(Value::Null)
+        }
+        _ => Value::Null,
+    }
+}
+
+fn json_response(status: StatusCode, payload: Value) -> Response {
+    let mut response = (status, Json(payload)).into_response();
+    response.headers_mut().insert(
+        "mcp-protocol-version",
+        HeaderValue::from_static(PROTOCOL_VERSION),
+    );
+    response
+}
+
+fn empty_response(status: StatusCode) -> Response {
+    let mut response = status.into_response();
+    response.headers_mut().insert(
+        "mcp-protocol-version",
+        HeaderValue::from_static(PROTOCOL_VERSION),
+    );
+    response
+}
+
+fn rpc_error(id: Value, code: i64, message: &str) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "error": {
+            "code": code,
+            "message": message
+        }
+    })
+}
+
+async fn root() -> Response {
+    (
+        StatusCode::FOUND,
+        [(header::LOCATION, HeaderValue::from_static("/home"))],
+    )
+        .into_response()
+}
+
+async fn home() -> Html<&'static str> {
+    Html(
+        r#"<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>dd cluster MCP Rust server</title>
+    <style>
+      body { margin: 24px; max-width: 880px; font-family: system-ui, sans-serif; line-height: 1.5; color: #142026; }
+      code, pre { background: #0f1720; color: #d7fbf4; border-radius: 6px; }
+      code { padding: 2px 5px; }
+      pre { padding: 12px; overflow: auto; }
+      a { color: #047857; }
+    </style>
+  </head>
+  <body>
+    <h1>dd cluster MCP Rust server</h1>
+    <p>Read-only MCP endpoint for Kubernetes inventory, service discovery, and observability.</p>
+    <ul>
+      <li>JSON-RPC endpoint: <code>/mcp</code></li>
+      <li>Health: <code>/healthz</code></li>
+      <li>Prometheus metrics: <code>/metrics</code></li>
+      <li>Telemetry summary: <code>/observability</code></li>
+    </ul>
+    <pre>{"jsonrpc":"2.0","id":1,"method":"tools/list"}</pre>
+  </body>
+</html>"#,
+    )
+}
+
+async fn healthz(State(state): State<AppState>) -> impl IntoResponse {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    Json(HealthResponse {
+        ok: true,
+        service: SERVICE_NAME,
+        namespace: SERVICE_NAMESPACE,
+        protocol_version: PROTOCOL_VERSION,
+        tools: TOOL_NAMES,
+        otlp_enabled: state.config.otlp_endpoint.is_some(),
+    })
+}
+
+async fn metrics(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    if let Some(response) = gated_unauthorized_response(&state, &headers) {
+        return response;
+    }
+    let mut body = format!(
+        concat!(
+            "# HELP dd_cluster_mcp_rs_build_info Cluster MCP Rust build metadata.\n",
+            "# TYPE dd_cluster_mcp_rs_build_info gauge\n",
+            "dd_cluster_mcp_rs_build_info{{service=\"{service}\",version=\"{version}\"}} 1\n",
+            "# HELP dd_cluster_mcp_rs_http_requests_total HTTP requests handled by the Rust MCP server.\n",
+            "# TYPE dd_cluster_mcp_rs_http_requests_total counter\n",
+            "dd_cluster_mcp_rs_http_requests_total {http}\n",
+            "# HELP dd_cluster_mcp_rs_rpc_requests_total JSON-RPC requests handled by the Rust MCP server.\n",
+            "# TYPE dd_cluster_mcp_rs_rpc_requests_total counter\n",
+            "dd_cluster_mcp_rs_rpc_requests_total {rpc}\n",
+            "# HELP dd_cluster_mcp_rs_rpc_errors_total JSON-RPC errors returned by the Rust MCP server.\n",
+            "# TYPE dd_cluster_mcp_rs_rpc_errors_total counter\n",
+            "dd_cluster_mcp_rs_rpc_errors_total {rpc_errors}\n",
+            "# HELP dd_cluster_mcp_rs_tool_calls_total MCP tool calls handled by the Rust MCP server.\n",
+            "# TYPE dd_cluster_mcp_rs_tool_calls_total counter\n",
+            "dd_cluster_mcp_rs_tool_calls_total {tools}\n",
+            "# HELP dd_cluster_mcp_rs_tool_failures_total MCP tool calls that failed before producing a result.\n",
+            "# TYPE dd_cluster_mcp_rs_tool_failures_total counter\n",
+            "dd_cluster_mcp_rs_tool_failures_total {tool_failures}\n",
+            "# HELP dd_cluster_mcp_rs_k8s_requests_total Kubernetes API reads attempted by the Rust MCP server.\n",
+            "# TYPE dd_cluster_mcp_rs_k8s_requests_total counter\n",
+            "dd_cluster_mcp_rs_k8s_requests_total {k8s}\n",
+            "# HELP dd_cluster_mcp_rs_observability_requests_total Observability HTTP reads attempted by the Rust MCP server.\n",
+            "# TYPE dd_cluster_mcp_rs_observability_requests_total counter\n",
+            "dd_cluster_mcp_rs_observability_requests_total {obs}\n",
+            "# HELP dd_cluster_mcp_rs_external_requests_total External read-only HTTP calls (Cloudflare API, RDAP, DoH) attempted by the Rust MCP server.\n",
+            "# TYPE dd_cluster_mcp_rs_external_requests_total counter\n",
+            "dd_cluster_mcp_rs_external_requests_total {external}\n",
+            "# HELP dd_cluster_mcp_rs_otlp_spans_total OTLP spans attempted by the Rust MCP server.\n",
+            "# TYPE dd_cluster_mcp_rs_otlp_spans_total counter\n",
+            "dd_cluster_mcp_rs_otlp_spans_total {otlp}\n",
+            "# HELP dd_cluster_mcp_rs_otlp_failures_total OTLP span exports that failed.\n",
+            "# TYPE dd_cluster_mcp_rs_otlp_failures_total counter\n",
+            "dd_cluster_mcp_rs_otlp_failures_total {otlp_failures}\n"
+        ),
+        service = SERVICE_NAME,
+        version = SERVICE_VERSION,
+        http = state.metrics.http_requests_total.load(Ordering::Relaxed),
+        rpc = state.metrics.rpc_requests_total.load(Ordering::Relaxed),
+        rpc_errors = state.metrics.rpc_errors_total.load(Ordering::Relaxed),
+        tools = state.metrics.tool_calls_total.load(Ordering::Relaxed),
+        tool_failures = state.metrics.tool_failures_total.load(Ordering::Relaxed),
+        k8s = state.metrics.k8s_requests_total.load(Ordering::Relaxed),
+        obs = state
+            .metrics
+            .observability_requests_total
+            .load(Ordering::Relaxed),
+        external = state
+            .metrics
+            .external_requests_total
+            .load(Ordering::Relaxed),
+        otlp = state.metrics.otlp_spans_total.load(Ordering::Relaxed),
+        otlp_failures = state.metrics.otlp_failures_total.load(Ordering::Relaxed)
+    );
+
+    if let Ok(map) = state.metrics.rpc_by_method.lock() {
+        body.push_str(
+            "# HELP dd_cluster_mcp_rs_rpc_requests_by_method_total JSON-RPC requests by method.\n",
+        );
+        body.push_str("# TYPE dd_cluster_mcp_rs_rpc_requests_by_method_total counter\n");
+        for (method, value) in map.iter() {
+            body.push_str(&format!(
+                "dd_cluster_mcp_rs_rpc_requests_by_method_total{{method=\"{}\"}} {}\n",
+                prometheus_escape(method),
+                value
+            ));
+        }
+    }
+    if let Ok(map) = state.metrics.tool_by_name.lock() {
+        body.push_str(
+            "# HELP dd_cluster_mcp_rs_tool_calls_by_name_total MCP tool calls by tool name.\n",
+        );
+        body.push_str("# TYPE dd_cluster_mcp_rs_tool_calls_by_name_total counter\n");
+        for (tool, value) in map.iter() {
+            body.push_str(&format!(
+                "dd_cluster_mcp_rs_tool_calls_by_name_total{{tool=\"{}\"}} {}\n",
+                prometheus_escape(tool),
+                value
+            ));
+        }
+    }
+
+    (
+        StatusCode::OK,
+        [(
+            header::CONTENT_TYPE,
+            "text/plain; version=0.0.4; charset=utf-8",
+        )],
+        body,
+    )
+        .into_response()
+}
+
+fn prometheus_escape(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+async fn mcp_get(headers: HeaderMap) -> Response {
+    if headers
+        .get(header::ACCEPT)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.to_ascii_lowercase().contains("text/event-stream"))
+    {
+        return empty_response(StatusCode::METHOD_NOT_ALLOWED);
+    }
+
+    json_response(
+        StatusCode::OK,
+        json!({
+            "ok": true,
+            "service": SERVICE_NAME,
+            "protocolVersion": PROTOCOL_VERSION,
+            "endpoint": "POST /mcp",
+            "tools": TOOL_NAMES
+        }),
+    )
+}
+
+async fn observability(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    if let Some(response) = gated_unauthorized_response(&state, &headers) {
+        return response;
+    }
+    json_response(StatusCode::OK, telemetry_summary_json(&state).await)
+}
+
+async fn rpc(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    if state.config.require_auth && !request_authorized(&state.config, &headers) {
+        state
+            .metrics
+            .rpc_errors_total
+            .fetch_add(1, Ordering::Relaxed);
+        let mut response = json_response(
+            StatusCode::UNAUTHORIZED,
+            rpc_error(Value::Null, -32001, "unauthorized"),
+        );
+        response.headers_mut().insert(
+            header::WWW_AUTHENTICATE,
+            HeaderValue::from_static("Bearer realm=\"dd-cluster-mcp-rs\""),
+        );
+        return response;
+    }
+    if body.len() > MAX_RPC_BODY_BYTES {
+        state
+            .metrics
+            .rpc_errors_total
+            .fetch_add(1, Ordering::Relaxed);
+        return json_response(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            rpc_error(Value::Null, -32600, "request body too large"),
+        );
+    }
+
+    let trace = new_trace_context();
+    let request = match serde_json::from_slice::<JsonRpcRequest>(&body) {
+        Ok(request) => request,
+        Err(error) => {
+            state
+                .metrics
+                .rpc_errors_total
+                .fetch_add(1, Ordering::Relaxed);
+            log_dd_event(
+                "WARN",
+                13,
+                "MCP JSON-RPC parse error",
+                "cluster_mcp.rpc.parse_error",
+                client_attrs(json!({ "error": error.to_string() }), peer, &headers),
+                Some(&trace),
+            );
+            finish_span(
+                state.clone(),
+                trace,
+                "mcp.rpc.parse_error",
+                false,
+                json!({ "rpc.method": "parse_error" }),
+            );
+            return json_response(
+                StatusCode::BAD_REQUEST,
+                rpc_error(Value::Null, -32700, "parse error"),
+            );
+        }
+    };
+
+    let id = id_value(&request);
+    if request.jsonrpc.as_deref() != Some("2.0") || request.method.trim().is_empty() {
+        state
+            .metrics
+            .rpc_errors_total
+            .fetch_add(1, Ordering::Relaxed);
+        log_dd_event(
+            "WARN",
+            13,
+            "MCP JSON-RPC invalid request",
+            "cluster_mcp.rpc.invalid_request",
+            client_attrs(
+                json!({ "rpc.method": sanitize_text(&request.method) }),
+                peer,
+                &headers,
+            ),
+            Some(&trace),
+        );
+        finish_span(
+            state,
+            trace,
+            "mcp.rpc.invalid_request",
+            false,
+            json!({ "rpc.method": sanitize_text(&request.method) }),
+        );
+        return json_response(
+            StatusCode::BAD_REQUEST,
+            rpc_error(id, -32600, "invalid request"),
+        );
+    }
+
+    let method = request.method.trim().to_string();
+    state.metrics.record_rpc(&method);
+    log_dd_event(
+        "INFO",
+        9,
+        "MCP JSON-RPC request",
+        "cluster_mcp.rpc.request",
+        client_attrs(json!({ "rpc.method": method }), peer, &headers),
+        Some(&trace),
+    );
+
+    if method == "notifications/initialized" {
+        finish_span(
+            state,
+            trace,
+            "mcp.rpc.notifications_initialized",
+            true,
+            json!({ "rpc.method": method }),
+        );
+        return empty_response(StatusCode::ACCEPTED);
+    }
+
+    let response = match method.as_str() {
+        "initialize" => initialize_result(id, request.params.as_ref()),
+        "ping" => json!({ "jsonrpc": "2.0", "id": id, "result": {} }),
+        "tools/list" => tools_list_result(id),
+        "tools/call" => {
+            tools_call_result(&state, id, request.params.as_ref(), peer, &headers).await
+        }
+        _ => {
+            state
+                .metrics
+                .rpc_errors_total
+                .fetch_add(1, Ordering::Relaxed);
+            rpc_error(id, -32601, "method not found")
+        }
+    };
+    let ok = response.get("error").is_none();
+    finish_span(
+        state,
+        trace,
+        "mcp.rpc.request",
+        ok,
+        json!({ "rpc.method": method }),
+    );
+    json_response(StatusCode::OK, response)
+}
+
+// Echo the client's requested protocolVersion when the server supports it,
+// otherwise answer the newest supported version (per MCP version negotiation).
+fn negotiated_protocol_version(params: Option<&Value>) -> &'static str {
+    params
+        .and_then(|params| params.get("protocolVersion"))
+        .and_then(Value::as_str)
+        .and_then(|requested| {
+            SUPPORTED_PROTOCOL_VERSIONS
+                .iter()
+                .copied()
+                .find(|version| *version == requested)
+        })
+        .unwrap_or(PROTOCOL_VERSION)
+}
+
+fn initialize_result(id: Value, params: Option<&Value>) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "result": {
+            "protocolVersion": negotiated_protocol_version(params),
+            "capabilities": {
+                "tools": { "listChanged": false }
+            },
+            "serverInfo": {
+                "name": SERVICE_NAME,
+                "title": "DD Cluster MCP Rust Server",
+                "version": SERVICE_VERSION,
+                "description": "Rust MCP endpoint for the DD remote Kubernetes runtime"
+            },
+            "instructions": "Use tools/list to inspect read-only cluster runtime helpers. This server exposes Prometheus metrics at /metrics, dd.log.v1 stdout events for Loki, and explicit OTLP spans when configured."
+        }
+    })
+}
+
+fn tools_list_result(id: Value) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "result": {
+            "tools": [
+                tool_def("cluster_status", "Cluster status", "Return service, gateway, and telemetry wiring for the DD remote Kubernetes runtime."),
+                tool_def("service_directory", "Service directory", "List public and internal service paths plus live Kubernetes Service metadata visible to the read-only MCP service account."),
+                tool_def("kubernetes_inventory", "Kubernetes inventory", "Read bounded metadata inventory for namespaces, nodes, workloads, pods, services, ingress, events, storage, autoscaling, and CRDs. Excludes Secrets, configmap data, pod logs, exec, and mutations."),
+                tool_def("kubernetes_deployments", "Kubernetes deployments", "Read deployment metadata across namespaces from the in-cluster Kubernetes API using the MCP service account."),
+                tool_def("kubernetes_ingress_endpoints", "Kubernetes ingress endpoints", "List Ingress hosts/rules and LoadBalancer Service external endpoints so agents can see where cluster traffic enters."),
+                tool_def("deployment_rollout_status", "Deployment rollout status", "Read per-deployment ready/updated/available replica counts and Available/Progressing conditions across namespaces."),
+                tool_def("kubernetes_events_warnings", "Kubernetes warning events", "Read recent non-Normal (warning) events with involved object, reason, count, and redacted message."),
+                tool_def("human_access_policy", "Human access policy", "Explain the human-authenticated gateway, VPN, and bastion access model for sensitive operations. This tool never returns secrets or grants elevated access."),
+                tool_def("telemetry_targets", "Telemetry targets", "List in-cluster observability endpoints, safe queries, and dashboard paths for this runtime."),
+                tool_def("telemetry_summary", "Telemetry summary", "Read a bounded parallel summary from Prometheus, Loki, Grafana, Tempo, Jaeger, the OTel collector, and NATS metrics endpoints."),
+                tool_def("observability_health", "Observability health", "Read live health from Prometheus, Loki, Grafana, Tempo, Jaeger, the OTel collector, and NATS through bounded in-cluster HTTP calls."),
+                tool_def("prometheus_up", "Prometheus up query", "Run the safe Prometheus instant query `up` so agents can see which scrape targets are reachable."),
+                tool_def("loki_labels", "Loki labels", "Read Loki label names to confirm container logs are flowing through promtail."),
+                tool_def("grafana_inventory", "Grafana inventory", "Read Grafana datasource and dashboard inventory so agents can discover available observability views."),
+                tool_def("nats_metrics", "NATS metrics", "Read NATS server /varz and the Prometheus exporter /metrics endpoint for messaging telemetry."),
+                tool_def("trace_backends", "Trace backends", "Read Tempo readiness and Jaeger service discovery to confirm OTLP trace export/query wiring."),
+                tool_def("cloudflare_zones", "Cloudflare zones", "List Cloudflare zones (name, status, plan, nameservers) via the Cloudflare API using the read-only CLOUDFLARE_API_TOKEN. Reports not-configured when no token is set."),
+                tool_def("cloudflare_dns_records", "Cloudflare DNS records", "List bounded DNS records per Cloudflare zone (type, name, redacted content, proxied, ttl) using the read-only CLOUDFLARE_API_TOKEN."),
+                tool_def("domain_registration", "Domain registration", "Registrar-neutral RDAP lookup for the configured domains: registrar, status, registration/expiration dates, days until expiry, nameservers. Covers registrars without a public API (e.g. Squarespace)."),
+                tool_def("domain_dns_wiring", "Domain DNS wiring", "Resolve the configured domains over DNS-over-HTTPS (A/AAAA/CNAME/NS) and correlate against expected ingress IPs and live Kubernetes LoadBalancer/Ingress endpoints.")
+            ]
+        }
+    })
+}
+
+fn tool_def(name: &str, title: &str, description: &str) -> Value {
+    json!({
+        "name": name,
+        "title": title,
+        "description": description,
+        "inputSchema": { "type": "object", "properties": {} },
+        "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+        }
+    })
+}
+
+async fn tools_call_result(
+    state: &AppState,
+    id: Value,
+    params: Option<&Value>,
+    peer: SocketAddr,
+    headers: &HeaderMap,
+) -> Value {
+    let tool = params
+        .and_then(|params| params.get("name"))
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    state.metrics.record_tool(tool);
+    let trace = new_trace_context();
+    log_dd_event(
+        "INFO",
+        9,
+        "MCP tool call",
+        "cluster_mcp.tool.call",
+        client_attrs(json!({ "mcp.tool": tool }), peer, headers),
+        Some(&trace),
+    );
+
+    let result = match tool {
+        "cluster_status" => tool_json_result(
+            id,
+            tool,
+            "DD remote Kubernetes runtime MCP status.",
+            cluster_status_json(state),
+        ),
+        "service_directory" => tool_json_result(
+            id,
+            tool,
+            "Gateway, observability, and live Kubernetes service directory.",
+            service_directory_json(state).await,
+        ),
+        "kubernetes_inventory" => tool_json_result(
+            id,
+            tool,
+            "Bounded Kubernetes cluster inventory metadata visible to the read-only MCP service account.",
+            kubernetes_inventory_json(state).await,
+        ),
+        "kubernetes_deployments" => tool_json_result(
+            id,
+            tool,
+            "Kubernetes deployment metadata visible to the read-only MCP service account.",
+            kubernetes_deployments_json(state).await,
+        ),
+        "kubernetes_ingress_endpoints" => tool_json_result(
+            id,
+            tool,
+            "Ingress hosts and LoadBalancer Service external endpoints from the in-cluster Kubernetes API.",
+            kubernetes_ingress_endpoints_json(state).await,
+        ),
+        "deployment_rollout_status" => tool_json_result(
+            id,
+            tool,
+            "Deployment rollout status (replica counts and conditions) from the in-cluster Kubernetes API.",
+            deployment_rollout_status_json(state).await,
+        ),
+        "kubernetes_events_warnings" => tool_json_result(
+            id,
+            tool,
+            "Recent non-Normal Kubernetes events summarized with redacted messages.",
+            kubernetes_events_warnings_json(state).await,
+        ),
+        "cloudflare_zones" => tool_json_result(
+            id,
+            tool,
+            "Cloudflare zone inventory from the Cloudflare v4 API.",
+            cloudflare_zones_json(state).await,
+        ),
+        "cloudflare_dns_records" => tool_json_result(
+            id,
+            tool,
+            "Bounded Cloudflare DNS record inventory with redacted record content.",
+            cloudflare_dns_records_json(state).await,
+        ),
+        "domain_registration" => tool_json_result(
+            id,
+            tool,
+            "RDAP registration summary (registrar, status, expiry, nameservers) for the configured domains.",
+            domain_registration_json(state).await,
+        ),
+        "domain_dns_wiring" => tool_json_result(
+            id,
+            tool,
+            "DNS-over-HTTPS resolution for the configured domains correlated against expected cluster ingress endpoints.",
+            domain_dns_wiring_json(state).await,
+        ),
+        "human_access_policy" => tool_json_result(
+            id,
+            tool,
+            "Human-authenticated access policy for the DD runtime gateway, MCP, VPN, and bastion.",
+            human_access_policy_json(),
+        ),
+        "telemetry_targets" => tool_json_result(
+            id,
+            tool,
+            "In-cluster observability endpoints and safe read-only queries.",
+            telemetry_targets_json(state),
+        ),
+        "telemetry_summary" => tool_json_result(
+            id,
+            tool,
+            "Bounded parallel telemetry summary from the in-cluster observability and NATS endpoints.",
+            telemetry_summary_json(state).await,
+        ),
+        "observability_health" => tool_json_result(
+            id,
+            tool,
+            "Live bounded health checks for Prometheus, Loki, Grafana, Tempo, Jaeger, the OTel collector, and NATS.",
+            observability_health_json(state).await,
+        ),
+        "prometheus_up" => tool_json_result(
+            id,
+            tool,
+            "Prometheus instant query `up` returned from the in-cluster Prometheus API.",
+            prometheus_up_json(state).await,
+        ),
+        "loki_labels" => tool_json_result(
+            id,
+            tool,
+            "Loki label names returned from the in-cluster Loki API.",
+            loki_labels_json(state).await,
+        ),
+        "grafana_inventory" => tool_json_result(
+            id,
+            tool,
+            "Grafana datasource and dashboard inventory returned from the in-cluster Grafana API.",
+            grafana_inventory_json(state).await,
+        ),
+        "nats_metrics" => tool_json_result(
+            id,
+            tool,
+            "NATS /varz and Prometheus exporter metrics returned from the in-cluster messaging service.",
+            nats_metrics_json(state).await,
+        ),
+        "trace_backends" => tool_json_result(
+            id,
+            tool,
+            "Tempo readiness and Jaeger service discovery returned from in-cluster trace backends.",
+            trace_backends_json(state).await,
+        ),
+        _ => {
+            state.metrics.rpc_errors_total.fetch_add(1, Ordering::Relaxed);
+            state.metrics.tool_failures_total.fetch_add(1, Ordering::Relaxed);
+            rpc_error(id, -32602, "unknown tool")
+        }
+    };
+
+    finish_span(
+        state.clone(),
+        trace,
+        "mcp.tool.call",
+        result.get("error").is_none(),
+        json!({ "mcp.tool": tool }),
+    );
+    result
+}
+
+fn tool_json_result(id: Value, tool: &str, text: &str, structured_content: Value) -> Value {
+    // Spec-minimal MCP clients only read `content`, so serialize the (already
+    // bounded + redacted) structured payload into the text block instead of
+    // shipping just a static blurb. isError reflects the ok:false shape: set
+    // only when the tool made upstream calls and every one of them failed.
+    let is_error = all_upstream_calls_failed(&structured_content);
+    let rendered = format!("{text}\n{structured_content}");
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "result": {
+            "content": [{ "type": "text", "text": rendered }],
+            "structuredContent": structured_content,
+            "isError": is_error,
+            "_meta": { "tool": tool }
+        }
+    })
+}
+
+fn all_upstream_calls_failed(value: &Value) -> bool {
+    let (total, failed) = count_ok_fields(value);
+    total > 0 && failed == total
+}
+
+// Count the boolean "ok" fields the upstream helpers (kubernetes_get,
+// http_result) embed in tool payloads. Static tools have none, so they can
+// never be flagged as errors.
+fn count_ok_fields(value: &Value) -> (usize, usize) {
+    match value {
+        Value::Object(map) => {
+            let mut total = 0usize;
+            let mut failed = 0usize;
+            if let Some(Value::Bool(ok)) = map.get("ok") {
+                total += 1;
+                if !*ok {
+                    failed += 1;
+                }
+            }
+            for child in map.values() {
+                let (child_total, child_failed) = count_ok_fields(child);
+                total += child_total;
+                failed += child_failed;
+            }
+            (total, failed)
+        }
+        Value::Array(items) => items.iter().map(count_ok_fields).fold(
+            (0, 0),
+            |(total, failed), (child_total, child_failed)| {
+                (total + child_total, failed + child_failed)
+            },
+        ),
+        _ => (0, 0),
+    }
+}
+
+fn cluster_status_json(state: &AppState) -> Value {
+    json!({
+        "service": SERVICE_NAME,
+        "namespace": SERVICE_NAMESPACE,
+        "language": "rust",
+        "runtime": "tokio-axum",
+        "protocolVersion": PROTOCOL_VERSION,
+        "gatewayPath": "/cluster-mcp",
+        "mcpPath": "/cluster-mcp",
+        "metricsPath": "/cluster-mcp/metrics",
+        "internalMcpUrl": "http://dd-cluster-mcp-rs.default.svc.cluster.local:8091/mcp",
+        "readOnly": true,
+        "telemetry": {
+            "prometheusMetrics": "/metrics",
+            "structuredLogs": "dd.log.v1 stdout collected by promtail",
+            "otlpTraces": state
+                .config
+                .otlp_endpoint
+                .as_deref()
+                .map(sanitize_url_for_output)
+                .unwrap_or_else(|| "disabled".to_string())
+        },
+        "observability": {
+            "grafana": "/telemetry/",
+            "prometheus": "/prometheus/",
+            "loki": sanitize_url_for_output(&state.config.loki_url),
+            "tempo": sanitize_url_for_output(&state.config.tempo_url),
+            "jaeger": sanitize_url_for_output(&state.config.jaeger_url),
+            "otelCollectorMetrics": sanitize_url_for_output(&state.config.otel_collector_metrics_url),
+            "natsMonitor": sanitize_url_for_output(&state.config.nats_monitor_url),
+            "natsMetrics": sanitize_url_for_output(&state.config.nats_metrics_url)
+        }
+    })
+}
+
+async fn service_directory_json(state: &AppState) -> Value {
+    let services = kubernetes_services_summary(state).await;
+    let deployments = kubernetes_resource_entry(
+        state,
+        ResourceTarget {
+            name: "deployments",
+            scope: "all-namespaces",
+            path: "/apis/apps/v1/deployments?limit=500",
+        },
+        state.config.kubernetes_inventory_body_limit_bytes,
+        true,
+    )
+    .await;
+
+    json!({
+        "service": SERVICE_NAME,
+        "mode": "read-only service directory",
+        "public": [
+            "/cluster-mcp",
+            "/cluster-mcp/home",
+            "/cluster-mcp/healthz",
+            "/cluster-mcp/metrics",
+            "/telemetry/",
+            "/prometheus/",
+            "/nats/",
+            "/nats-metrics/metrics"
+        ],
+        "legacy": [
+            "/mcp",
+            "/mcp/home",
+            "/mcp/healthz",
+            "/mcp/metrics"
+        ],
+        "internal": [
+            "dd-cluster-mcp-rs.default.svc.cluster.local:8091",
+            "dd-gleam-mcp-server.default.svc.cluster.local:8090",
+            "dd-prometheus.observability.svc.cluster.local:9090",
+            "dd-loki.observability.svc.cluster.local:3100",
+            "dd-grafana.observability.svc.cluster.local:3000",
+            "dd-tempo.observability.svc.cluster.local:3200",
+            "dd-jaeger.observability.svc.cluster.local:16686",
+            "dd-otel-collector.observability.svc.cluster.local:4317",
+            "dd-otel-collector.observability.svc.cluster.local:4318",
+            "dd-otel-collector.observability.svc.cluster.local:8889",
+            "dd-nats.messaging.svc.cluster.local:4222",
+            "dd-nats.messaging.svc.cluster.local:8222",
+            "dd-nats.messaging.svc.cluster.local:7777"
+        ],
+        "liveKubernetes": {
+            "services": services,
+            "deployments": deployments
+        }
+    })
+}
+
+async fn kubernetes_inventory_json(state: &AppState) -> Value {
+    let targets = inventory_targets();
+    let mut futures = FuturesUnordered::new();
+    for (index, target) in targets.iter().copied().enumerate() {
+        let state = state.clone();
+        futures.push(async move {
+            let entry = kubernetes_resource_entry(
+                &state,
+                target,
+                state.config.kubernetes_inventory_body_limit_bytes,
+                true,
+            )
+            .await;
+            (index, entry)
+        });
+    }
+
+    let mut resources = Vec::new();
+    while let Some(entry) = futures.next().await {
+        resources.push(entry);
+    }
+    resources.sort_by_key(|(index, _)| *index);
+    let resources = resources
+        .into_iter()
+        .map(|(_, entry)| entry)
+        .collect::<Vec<_>>();
+
+    json!({
+        "source": "kubernetes-api",
+        "scope": "cluster inventory metadata",
+        "readOnly": true,
+        "metadataOnlyRequest": true,
+        "resources": resources,
+        "excluded": [
+            "secrets",
+            "configmaps data",
+            "pods/exec",
+            "pods/log",
+            "mutation verbs"
+        ]
+    })
+}
+
+async fn kubernetes_deployments_json(state: &AppState) -> Value {
+    kubernetes_resource_json(
+        state,
+        "deployments",
+        "all-namespaces",
+        "/apis/apps/v1/deployments?limit=500",
+        state.config.kubernetes_body_limit_bytes,
+        true,
+    )
+    .await
+}
+
+// Full-object (non-metadata-only) Kubernetes GET for the tools that need
+// status/spec fields (rollout status, LB endpoints, events). Returns the
+// parsed body on success; the Err string is already sanitized. The parse
+// guard is MCP_KUBERNETES_FULL_BODY_LIMIT_BYTES because full objects carry
+// managedFields and complete specs.
+async fn kubernetes_get_body(state: &AppState, path: &str) -> Result<Value, String> {
+    state
+        .metrics
+        .k8s_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let token = tokio::fs::read_to_string(&state.config.kubernetes_token_path)
+        .await
+        .map_err(|error| format!("failed to read service account token: {error}"))?
+        .trim()
+        .to_string();
+    let url = join_url(&state.config.kubernetes_api_url, path);
+    let response = state
+        .k8s_http
+        .get(url)
+        .timeout(state.config.kubernetes_timeout)
+        .bearer_auth(token)
+        .header(header::ACCEPT, "application/json")
+        .send()
+        .await
+        .map_err(|error| sanitize_text(&error.to_string()))?;
+    let status = response.status();
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|error| sanitize_text(&error.to_string()))?;
+    if !status.is_success() {
+        return Err(format!(
+            "kubernetes api returned status {}",
+            status.as_u16()
+        ));
+    }
+    if bytes.len() > state.config.kubernetes_full_body_limit_bytes {
+        return Err(format!(
+            "kubernetes response body ({} bytes) exceeded MCP_KUBERNETES_FULL_BODY_LIMIT_BYTES ({})",
+            bytes.len(),
+            state.config.kubernetes_full_body_limit_bytes
+        ));
+    }
+    serde_json::from_slice::<Value>(&bytes).map_err(|error| sanitize_text(&error.to_string()))
+}
+
+async fn kubernetes_ingress_endpoints_json(state: &AppState) -> Value {
+    let ingresses =
+        kubernetes_get_body(state, "/apis/networking.k8s.io/v1/ingresses?limit=500").await;
+    let services = kubernetes_get_body(state, "/api/v1/services?limit=500").await;
+    let limit = state.config.kubernetes_items_limit;
+    let ingresses = match &ingresses {
+        Ok(body) => json!({ "ok": true, "items": summarize_ingress_endpoints(body, limit) }),
+        Err(error) => json!({ "ok": false, "error": error }),
+    };
+    let services = match &services {
+        Ok(body) => json!({ "ok": true, "items": summarize_loadbalancer_services(body, limit) }),
+        Err(error) => json!({ "ok": false, "error": error }),
+    };
+    json!({
+        "source": "kubernetes-api",
+        "scope": "all-namespaces",
+        "readOnly": true,
+        "ingresses": ingresses,
+        "loadBalancerServices": services
+    })
+}
+
+fn summarize_ingress_endpoints(body: &Value, limit: usize) -> Vec<Value> {
+    body.get("items")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .take(limit)
+                .map(|item| {
+                    let metadata = item.get("metadata").unwrap_or(&Value::Null);
+                    let hosts = item
+                        .pointer("/spec/rules")
+                        .and_then(Value::as_array)
+                        .map(|rules| {
+                            rules
+                                .iter()
+                                .filter_map(|rule| rule.get("host").cloned())
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+                    json!({
+                        "name": metadata.get("name"),
+                        "namespace": metadata.get("namespace"),
+                        "className": item.pointer("/spec/ingressClassName"),
+                        "hosts": hosts,
+                        "loadBalancer": item
+                            .pointer("/status/loadBalancer/ingress")
+                            .cloned()
+                            .unwrap_or_else(|| json!([]))
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn summarize_loadbalancer_services(body: &Value, limit: usize) -> Vec<Value> {
+    body.get("items")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter(|item| {
+                    item.pointer("/spec/type").and_then(Value::as_str) == Some("LoadBalancer")
+                })
+                .take(limit)
+                .map(|item| {
+                    let metadata = item.get("metadata").unwrap_or(&Value::Null);
+                    let ports = item
+                        .pointer("/spec/ports")
+                        .and_then(Value::as_array)
+                        .map(|ports| {
+                            ports
+                                .iter()
+                                .map(|port| {
+                                    json!({
+                                        "name": port.get("name"),
+                                        "port": port.get("port"),
+                                        "protocol": port.get("protocol")
+                                    })
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+                    json!({
+                        "name": metadata.get("name"),
+                        "namespace": metadata.get("namespace"),
+                        "ports": ports,
+                        "externalEndpoints":
+                            lb_ingress_endpoints(item.pointer("/status/loadBalancer/ingress")),
+                        "externalIPs": item
+                            .pointer("/spec/externalIPs")
+                            .cloned()
+                            .unwrap_or_else(|| json!([]))
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+// Flatten status.loadBalancer.ingress entries into normalized ip/hostname
+// strings (an entry can carry both).
+fn lb_ingress_endpoints(ingress: Option<&Value>) -> Vec<String> {
+    let mut endpoints = Vec::new();
+    if let Some(entries) = ingress.and_then(Value::as_array) {
+        for entry in entries {
+            for key in ["ip", "hostname"] {
+                if let Some(value) = entry.get(key).and_then(Value::as_str) {
+                    endpoints.push(normalize_dns_name(value));
+                }
+            }
+        }
+    }
+    endpoints
+}
+
+async fn deployment_rollout_status_json(state: &AppState) -> Value {
+    match kubernetes_get_body(state, "/apis/apps/v1/deployments?limit=500").await {
+        Ok(body) => {
+            let item_count = body.get("items").and_then(Value::as_array).map(Vec::len);
+            json!({
+                "source": "kubernetes-api",
+                "resource": "deployments",
+                "scope": "all-namespaces",
+                "readOnly": true,
+                "ok": true,
+                "itemCount": item_count,
+                "deployments":
+                    summarize_deployment_rollouts(&body, state.config.kubernetes_items_limit)
+            })
+        }
+        Err(error) => json!({
+            "source": "kubernetes-api",
+            "resource": "deployments",
+            "ok": false,
+            "error": error
+        }),
+    }
+}
+
+fn summarize_deployment_rollouts(body: &Value, limit: usize) -> Vec<Value> {
+    body.get("items")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .take(limit)
+                .map(summarize_deployment_rollout)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn summarize_deployment_rollout(item: &Value) -> Value {
+    let metadata = item.get("metadata").unwrap_or(&Value::Null);
+    let status = item.get("status").unwrap_or(&Value::Null);
+    let conditions = status
+        .get("conditions")
+        .and_then(Value::as_array)
+        .map(|conditions| {
+            conditions
+                .iter()
+                .filter(|condition| {
+                    matches!(
+                        condition.get("type").and_then(Value::as_str),
+                        Some("Available") | Some("Progressing")
+                    )
+                })
+                .map(|condition| {
+                    json!({
+                        "type": condition.get("type"),
+                        "status": condition.get("status"),
+                        "reason": condition.get("reason"),
+                        "message": condition
+                            .get("message")
+                            .and_then(Value::as_str)
+                            .map(sanitize_text)
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    json!({
+        "name": metadata.get("name"),
+        "namespace": metadata.get("namespace"),
+        "replicas": item.pointer("/spec/replicas"),
+        "readyReplicas": status.get("readyReplicas"),
+        "updatedReplicas": status.get("updatedReplicas"),
+        "availableReplicas": status.get("availableReplicas"),
+        "conditions": conditions
+    })
+}
+
+async fn kubernetes_events_warnings_json(state: &AppState) -> Value {
+    // fieldSelector `type!=Normal` percent-encoded (`!` -> %21, `=` -> %3D);
+    // the request limit matches MAX_WARNING_EVENTS.
+    let path = "/api/v1/events?fieldSelector=type%21%3DNormal&limit=100";
+    match kubernetes_get_body(state, path).await {
+        Ok(body) => {
+            let item_count = body.get("items").and_then(Value::as_array).map(Vec::len);
+            json!({
+                "source": "kubernetes-api",
+                "resource": "events",
+                "scope": "all-namespaces",
+                "fieldSelector": "type!=Normal",
+                "readOnly": true,
+                "ok": true,
+                "itemCount": item_count,
+                "events": summarize_warning_events(&body, MAX_WARNING_EVENTS)
+            })
+        }
+        Err(error) => json!({
+            "source": "kubernetes-api",
+            "resource": "events",
+            "fieldSelector": "type!=Normal",
+            "ok": false,
+            "error": error
+        }),
+    }
+}
+
+fn summarize_warning_events(body: &Value, limit: usize) -> Vec<Value> {
+    body.get("items")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .take(limit)
+                .map(|event| {
+                    let involved = event.get("involvedObject").unwrap_or(&Value::Null);
+                    json!({
+                        "reason": event.get("reason"),
+                        "type": event.get("type"),
+                        "involvedObject": {
+                            "kind": involved.get("kind"),
+                            "name": involved.get("name"),
+                            "namespace": involved.get("namespace")
+                        },
+                        "count": event.get("count"),
+                        "lastTimestamp": event.get("lastTimestamp"),
+                        "message": event
+                            .get("message")
+                            .and_then(Value::as_str)
+                            .map(sanitize_text)
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn inventory_targets() -> Vec<ResourceTarget> {
+    vec![
+        ResourceTarget {
+            name: "namespaces",
+            scope: "cluster",
+            path: "/api/v1/namespaces?limit=500",
+        },
+        ResourceTarget {
+            name: "nodes",
+            scope: "cluster",
+            path: "/api/v1/nodes?limit=500",
+        },
+        ResourceTarget {
+            name: "persistentvolumes",
+            scope: "cluster",
+            path: "/api/v1/persistentvolumes?limit=500",
+        },
+        ResourceTarget {
+            name: "serviceaccounts",
+            scope: "all-namespaces",
+            path: "/api/v1/serviceaccounts?limit=500",
+        },
+        ResourceTarget {
+            name: "pods",
+            scope: "all-namespaces",
+            path: "/api/v1/pods?limit=500",
+        },
+        ResourceTarget {
+            name: "services",
+            scope: "all-namespaces",
+            path: "/api/v1/services?limit=500",
+        },
+        ResourceTarget {
+            name: "endpoints",
+            scope: "all-namespaces",
+            path: "/api/v1/endpoints?limit=500",
+        },
+        ResourceTarget {
+            name: "persistentvolumeclaims",
+            scope: "all-namespaces",
+            path: "/api/v1/persistentvolumeclaims?limit=500",
+        },
+        ResourceTarget {
+            name: "events",
+            scope: "all-namespaces",
+            path: "/api/v1/events?limit=500",
+        },
+        ResourceTarget {
+            name: "deployments",
+            scope: "all-namespaces",
+            path: "/apis/apps/v1/deployments?limit=500",
+        },
+        ResourceTarget {
+            name: "daemonsets",
+            scope: "all-namespaces",
+            path: "/apis/apps/v1/daemonsets?limit=500",
+        },
+        ResourceTarget {
+            name: "replicasets",
+            scope: "all-namespaces",
+            path: "/apis/apps/v1/replicasets?limit=500",
+        },
+        ResourceTarget {
+            name: "statefulsets",
+            scope: "all-namespaces",
+            path: "/apis/apps/v1/statefulsets?limit=500",
+        },
+        ResourceTarget {
+            name: "jobs",
+            scope: "all-namespaces",
+            path: "/apis/batch/v1/jobs?limit=500",
+        },
+        ResourceTarget {
+            name: "cronjobs",
+            scope: "all-namespaces",
+            path: "/apis/batch/v1/cronjobs?limit=500",
+        },
+        ResourceTarget {
+            name: "ingresses",
+            scope: "all-namespaces",
+            path: "/apis/networking.k8s.io/v1/ingresses?limit=500",
+        },
+        ResourceTarget {
+            name: "networkpolicies",
+            scope: "all-namespaces",
+            path: "/apis/networking.k8s.io/v1/networkpolicies?limit=500",
+        },
+        ResourceTarget {
+            name: "horizontalpodautoscalers",
+            scope: "all-namespaces",
+            path: "/apis/autoscaling/v2/horizontalpodautoscalers?limit=500",
+        },
+        ResourceTarget {
+            name: "storageclasses",
+            scope: "cluster",
+            path: "/apis/storage.k8s.io/v1/storageclasses?limit=500",
+        },
+        ResourceTarget {
+            name: "customresourcedefinitions",
+            scope: "cluster",
+            path: "/apis/apiextensions.k8s.io/v1/customresourcedefinitions?limit=500",
+        },
+    ]
+}
+
+async fn kubernetes_resource_entry(
+    state: &AppState,
+    target: ResourceTarget,
+    limit: usize,
+    metadata_only: bool,
+) -> Value {
+    json!({
+        "name": target.name,
+        "scope": target.scope,
+        "path": target.path,
+        "url": sanitize_url_for_output(&join_url(&state.config.kubernetes_api_url, target.path)),
+        "response": kubernetes_get(state, target.path, limit, metadata_only).await
+    })
+}
+
+async fn kubernetes_resource_json(
+    state: &AppState,
+    name: &str,
+    scope: &str,
+    path: &str,
+    limit: usize,
+    metadata_only: bool,
+) -> Value {
+    json!({
+        "source": "kubernetes-api",
+        "resource": name,
+        "scope": scope,
+        "url": sanitize_url_for_output(&join_url(&state.config.kubernetes_api_url, path)),
+        "readOnly": true,
+        "metadataOnlyRequest": metadata_only,
+        "response": kubernetes_get(state, path, limit, metadata_only).await
+    })
+}
+
+async fn kubernetes_get(state: &AppState, path: &str, limit: usize, metadata_only: bool) -> Value {
+    state
+        .metrics
+        .k8s_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let started = Instant::now();
+    let token = match tokio::fs::read_to_string(&state.config.kubernetes_token_path).await {
+        Ok(token) => token.trim().to_string(),
+        Err(error) => {
+            return json!({
+                "ok": false,
+                "durationMs": elapsed_ms(started),
+                "error": format!("failed to read service account token: {error}")
+            });
+        }
+    };
+    let url = join_url(&state.config.kubernetes_api_url, path);
+    let mut request = state
+        .k8s_http
+        .get(url)
+        .timeout(state.config.kubernetes_timeout)
+        .bearer_auth(token);
+    if metadata_only {
+        request = request.header(
+            header::ACCEPT,
+            "application/json;as=PartialObjectMetadataList;g=meta.k8s.io;v=v1",
+        );
+    } else {
+        request = request.header(header::ACCEPT, "application/json");
+    }
+
+    match request.send().await {
+        Ok(response) => {
+            let status = response.status();
+            let reason = status.canonical_reason().unwrap_or("").to_string();
+            match response.bytes().await {
+                Ok(bytes) => {
+                    let body = String::from_utf8_lossy(&bytes).to_string();
+                    let (sample, truncated) = kubernetes_response_sample(&body, limit);
+                    let (item_count, items) = summarize_kubernetes_items(
+                        &body,
+                        state.config.kubernetes_items_limit,
+                        metadata_only,
+                    );
+                    json!({
+                        "ok": status.is_success(),
+                        "status": status.as_u16(),
+                        "reason": reason,
+                        "durationMs": elapsed_ms(started),
+                        "truncated": truncated,
+                        "itemCount": item_count,
+                        "items": items,
+                        "sample": sample
+                    })
+                }
+                Err(error) => json!({
+                    "ok": false,
+                    "status": status.as_u16(),
+                    "reason": reason,
+                    "durationMs": elapsed_ms(started),
+                    "error": sanitize_text(&error.to_string())
+                }),
+            }
+        }
+        Err(error) => json!({
+            "ok": false,
+            "durationMs": elapsed_ms(started),
+            "error": sanitize_text(&error.to_string())
+        }),
+    }
+}
+
+fn summarize_kubernetes_items(
+    body: &str,
+    limit: usize,
+    metadata_only: bool,
+) -> (Option<usize>, Vec<Value>) {
+    let Ok(parsed) = serde_json::from_str::<Value>(body) else {
+        return (None, Vec::new());
+    };
+    let Some(items) = parsed.get("items").and_then(Value::as_array) else {
+        return (None, Vec::new());
+    };
+    let summary = items
+        .iter()
+        .take(limit)
+        .map(|item| summarize_kubernetes_item(item, metadata_only))
+        .collect::<Vec<_>>();
+    (Some(items.len()), summary)
+}
+
+fn summarize_kubernetes_item(item: &Value, metadata_only: bool) -> Value {
+    let metadata = item.get("metadata").unwrap_or(&Value::Null);
+    let mut output = Map::new();
+    output.insert(
+        "apiVersion".to_string(),
+        item.get("apiVersion").cloned().unwrap_or(Value::Null),
+    );
+    output.insert(
+        "kind".to_string(),
+        item.get("kind").cloned().unwrap_or(Value::Null),
+    );
+    output.insert(
+        "name".to_string(),
+        metadata.get("name").cloned().unwrap_or(Value::Null),
+    );
+    output.insert(
+        "namespace".to_string(),
+        metadata.get("namespace").cloned().unwrap_or(Value::Null),
+    );
+    output.insert(
+        "creationTimestamp".to_string(),
+        metadata
+            .get("creationTimestamp")
+            .cloned()
+            .unwrap_or(Value::Null),
+    );
+    output.insert(
+        "labels".to_string(),
+        metadata
+            .get("labels")
+            .map(redacted_json_clone)
+            .unwrap_or_else(|| json!({})),
+    );
+    if !metadata_only {
+        if let Some(spec) = item.get("spec") {
+            output.insert("specSummary".to_string(), summarize_service_spec(spec));
+        }
+    }
+    Value::Object(output)
+}
+
+async fn kubernetes_services_summary(state: &AppState) -> Value {
+    let result = kubernetes_get(
+        state,
+        "/api/v1/services?limit=500",
+        state.config.kubernetes_body_limit_bytes,
+        false,
+    )
+    .await;
+    json!({
+        "source": "kubernetes-api",
+        "resource": "services",
+        "scope": "all-namespaces",
+        "readOnly": true,
+        "response": result
+    })
+}
+
+fn summarize_service_spec(spec: &Value) -> Value {
+    json!({
+        "type": spec.get("type").cloned().unwrap_or(Value::Null),
+        "clusterIP": spec.get("clusterIP").cloned().unwrap_or(Value::Null),
+        "selector": spec.get("selector").cloned().unwrap_or_else(|| json!({})),
+        "ports": spec
+            .get("ports")
+            .and_then(Value::as_array)
+            .map(|ports| {
+                ports
+                    .iter()
+                    .map(|port| {
+                        json!({
+                            "name": port.get("name").cloned().unwrap_or(Value::Null),
+                            "protocol": port.get("protocol").cloned().unwrap_or(Value::Null),
+                            "port": port.get("port").cloned().unwrap_or(Value::Null),
+                            "targetPort": port.get("targetPort").cloned().unwrap_or(Value::Null)
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
+    })
+}
+
+fn human_access_policy_json() -> Value {
+    json!({
+        "source": "mcp-policy",
+        "readOnlyByDefault": true,
+        "humanAuthRequiredForPublicGateway": true,
+        "humanAuthPath": "/auth?return=/cluster-mcp/home",
+        "acceptedGatewayProofs": [
+            "dd_auth HttpOnly cookie from dd-remote-auth",
+            "Auth header with the gateway secret for non-browser callers"
+        ],
+        "recommendedHumanProof": "operator passphrase plus optional TOTP on dd-remote-auth",
+        "elevatedMcpToolsEnabled": false,
+        "externalReadIntegrations": [
+            "Cloudflare API zone/DNS listing (read-only token from dd-cluster-mcp-rs-secrets, optional)",
+            "RDAP domain registration lookups (no credentials)",
+            "DNS-over-HTTPS record lookups (no credentials)"
+        ],
+        "sensitiveKubernetesAccess": [
+            "Do not expose Kubernetes Secrets through MCP",
+            "Do not expose ConfigMap data through MCP",
+            "Do not expose pod logs or pod exec through MCP",
+            "Use VPN plus dd-bastion, SSM, or SSH for human shell access"
+        ],
+        "auditExpectation": "Add a separate short-lived grant service before enabling any write, secret, log, or exec-capable MCP tool."
+    })
+}
+
+fn telemetry_targets_json(state: &AppState) -> Value {
+    json!({
+        "service": SERVICE_NAME,
+        "mode": "read-only",
+        "timeoutMs": state.config.observability_timeout.as_millis() as u64,
+        "bodyLimitBytes": state.config.observability_body_limit_bytes,
+        "targets": [
+            target_obj("prometheus", &state.config.prometheus_url, "metrics/query store"),
+            target_obj("loki", &state.config.loki_url, "log store"),
+            target_obj("grafana", &state.config.grafana_url, "dashboard UI/API"),
+            target_obj("tempo", &state.config.tempo_url, "trace store"),
+            target_obj("jaeger", &state.config.jaeger_url, "trace query UI/API"),
+            target_obj("otelCollectorPrometheus", &join_url(&state.config.otel_collector_metrics_url, "/metrics"), "collector exported metrics"),
+            target_obj("natsMonitor", &state.config.nats_monitor_url, "NATS server monitoring API"),
+            target_obj("natsMetrics", &join_url(&state.config.nats_metrics_url, "/metrics"), "NATS Prometheus exporter")
+        ],
+        "safeQueries": [
+            { "name": "prometheus_up", "query": "up" },
+            { "name": "loki_labels", "path": "/loki/api/v1/labels" },
+            { "name": "grafana_datasources", "path": "/api/datasources" },
+            { "name": "grafana_dashboards", "path": "/api/search?type=dash-db" },
+            { "name": "jaeger_services", "path": "/api/services" },
+            { "name": "nats_varz", "path": "/varz" },
+            { "name": "nats_exporter_metrics", "path": "/metrics" }
+        ]
+    })
+}
+
+fn target_obj(name: &str, url: &str, role: &str) -> Value {
+    json!({ "name": name, "url": sanitize_url_for_output(url), "role": role })
+}
+
+async fn observability_health_json(state: &AppState) -> Value {
+    let checks = parallel_http_checks(
+        state,
+        vec![
+            (
+                "prometheus",
+                join_url(&state.config.prometheus_url, "/-/healthy"),
+                2048,
+            ),
+            ("loki", join_url(&state.config.loki_url, "/ready"), 2048),
+            (
+                "grafana",
+                join_url(&state.config.grafana_url, "/api/health"),
+                4096,
+            ),
+            ("tempo", join_url(&state.config.tempo_url, "/ready"), 2048),
+            (
+                "jaeger",
+                join_url(&state.config.jaeger_url, "/api/services"),
+                4096,
+            ),
+            (
+                "otelCollectorMetrics",
+                join_url(&state.config.otel_collector_metrics_url, "/metrics"),
+                4096,
+            ),
+            (
+                "natsMonitor",
+                join_url(&state.config.nats_monitor_url, "/healthz"),
+                2048,
+            ),
+            (
+                "natsMetrics",
+                join_url(&state.config.nats_metrics_url, "/metrics"),
+                4096,
+            ),
+        ],
+    )
+    .await;
+    json!({
+        "service": SERVICE_NAME,
+        "mode": "read-only observability health",
+        "checks": checks
+    })
+}
+
+async fn telemetry_summary_json(state: &AppState) -> Value {
+    let sources = parallel_http_checks(
+        state,
+        vec![
+            (
+                "prometheusHealthy",
+                join_url(&state.config.prometheus_url, "/-/healthy"),
+                2048,
+            ),
+            (
+                "prometheusTargets",
+                join_url(&state.config.prometheus_url, "/api/v1/targets?state=active"),
+                state.config.observability_body_limit_bytes,
+            ),
+            (
+                "lokiReady",
+                join_url(&state.config.loki_url, "/ready"),
+                2048,
+            ),
+            (
+                "lokiLabels",
+                join_url(&state.config.loki_url, "/loki/api/v1/labels"),
+                state.config.observability_body_limit_bytes,
+            ),
+            (
+                "grafanaHealth",
+                join_url(&state.config.grafana_url, "/api/health"),
+                4096,
+            ),
+            (
+                "grafanaDatasources",
+                join_url(&state.config.grafana_url, "/api/datasources"),
+                state.config.observability_body_limit_bytes,
+            ),
+            (
+                "grafanaDashboards",
+                join_url(&state.config.grafana_url, "/api/search?type=dash-db"),
+                state.config.observability_body_limit_bytes,
+            ),
+            (
+                "tempoReady",
+                join_url(&state.config.tempo_url, "/ready"),
+                2048,
+            ),
+            (
+                "jaegerServices",
+                join_url(&state.config.jaeger_url, "/api/services"),
+                state.config.observability_body_limit_bytes,
+            ),
+            (
+                "otelCollectorMetrics",
+                join_url(&state.config.otel_collector_metrics_url, "/metrics"),
+                state.config.observability_body_limit_bytes,
+            ),
+            (
+                "natsVarz",
+                join_url(&state.config.nats_monitor_url, "/varz"),
+                state.config.observability_body_limit_bytes,
+            ),
+            (
+                "natsExporterMetrics",
+                join_url(&state.config.nats_metrics_url, "/metrics"),
+                state.config.observability_body_limit_bytes,
+            ),
+        ],
+    )
+    .await;
+    json!({
+        "service": SERVICE_NAME,
+        "mode": "bounded read-only telemetry summary",
+        "sources": sources
+    })
+}
+
+async fn prometheus_up_json(state: &AppState) -> Value {
+    let query = "up";
+    let url = join_url(&state.config.prometheus_url, "/api/v1/query?query=up");
+    json!({
+        "service": SERVICE_NAME,
+        "source": "prometheus",
+        "query": query,
+        "result": http_result(state, &url, state.config.observability_body_limit_bytes).await
+    })
+}
+
+async fn loki_labels_json(state: &AppState) -> Value {
+    let path = "/loki/api/v1/labels";
+    let url = join_url(&state.config.loki_url, path);
+    json!({
+        "service": SERVICE_NAME,
+        "source": "loki",
+        "path": path,
+        "result": http_result(state, &url, state.config.observability_body_limit_bytes).await
+    })
+}
+
+async fn grafana_inventory_json(state: &AppState) -> Value {
+    json!({
+        "service": SERVICE_NAME,
+        "source": "grafana",
+        "datasources": http_result(
+            state,
+            &join_url(&state.config.grafana_url, "/api/datasources"),
+            state.config.observability_body_limit_bytes,
+        )
+        .await,
+        "dashboards": http_result(
+            state,
+            &join_url(&state.config.grafana_url, "/api/search?type=dash-db"),
+            state.config.observability_body_limit_bytes,
+        )
+        .await
+    })
+}
+
+async fn nats_metrics_json(state: &AppState) -> Value {
+    json!({
+        "service": SERVICE_NAME,
+        "source": "nats",
+        "monitor": http_result(
+            state,
+            &join_url(&state.config.nats_monitor_url, "/varz"),
+            state.config.observability_body_limit_bytes,
+        )
+        .await,
+        "metrics": http_result(
+            state,
+            &join_url(&state.config.nats_metrics_url, "/metrics"),
+            state.config.observability_body_limit_bytes,
+        )
+        .await
+    })
+}
+
+async fn trace_backends_json(state: &AppState) -> Value {
+    let checks = parallel_http_checks(
+        state,
+        vec![
+            (
+                "tempoReady",
+                join_url(&state.config.tempo_url, "/ready"),
+                4096,
+            ),
+            (
+                "jaegerServices",
+                join_url(&state.config.jaeger_url, "/api/services"),
+                state.config.observability_body_limit_bytes,
+            ),
+        ],
+    )
+    .await;
+    json!({
+        "service": SERVICE_NAME,
+        "mode": "trace backend read-only summary",
+        "checks": checks
+    })
+}
+
+// Bounded external GET returning (meta, parsed body). The meta value always
+// carries ok/status/durationMs (error strings sanitized); the body is only
+// parsed when the response succeeded and fits DD_MCP_EXTERNAL_BODY_LIMIT_BYTES.
+async fn external_json_get(
+    state: &AppState,
+    client: &reqwest::Client,
+    url: &str,
+    bearer: Option<&str>,
+    accept: &str,
+) -> (Value, Option<Value>) {
+    state
+        .metrics
+        .external_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let started = Instant::now();
+    let mut request = client
+        .get(url)
+        .timeout(state.config.external_timeout)
+        .header(header::ACCEPT, accept);
+    if let Some(bearer) = bearer {
+        request = request.bearer_auth(bearer);
+    }
+    let response = match request.send().await {
+        Ok(response) => response,
+        Err(error) => {
+            return (
+                json!({
+                    "ok": false,
+                    "durationMs": elapsed_ms(started),
+                    "error": sanitize_text(&error.to_string())
+                }),
+                None,
+            );
+        }
+    };
+    let status = response.status();
+    let bytes = match response.bytes().await {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            return (
+                json!({
+                    "ok": false,
+                    "status": status.as_u16(),
+                    "durationMs": elapsed_ms(started),
+                    "error": sanitize_text(&error.to_string())
+                }),
+                None,
+            );
+        }
+    };
+    if bytes.len() > state.config.external_body_limit_bytes {
+        return (
+            json!({
+                "ok": false,
+                "status": status.as_u16(),
+                "durationMs": elapsed_ms(started),
+                "error": format!(
+                    "response body ({} bytes) exceeded DD_MCP_EXTERNAL_BODY_LIMIT_BYTES ({})",
+                    bytes.len(),
+                    state.config.external_body_limit_bytes
+                )
+            }),
+            None,
+        );
+    }
+    let body = serde_json::from_slice::<Value>(&bytes).ok();
+    let ok = status.is_success() && body.is_some();
+    let body = body.filter(|_| status.is_success());
+    (
+        json!({ "ok": ok, "status": status.as_u16(), "durationMs": elapsed_ms(started) }),
+        body,
+    )
+}
+
+// Cloudflare's token is optional by design: without it the tools report a
+// not-configured ok:false payload instead of a JSON-RPC error, so agents can
+// discover the capability gap without noise.
+fn cloudflare_not_configured() -> Value {
+    json!({
+        "source": "cloudflare",
+        "ok": false,
+        "configured": false,
+        "hint": "CLOUDFLARE_API_TOKEN is not configured; populate the optional CLOUDFLARE_API_TOKEN key in dd-cluster-mcp-rs-secrets to enable read-only Cloudflare zone/DNS reads"
+    })
+}
+
+// Bounded zone listing: at most MAX_CLOUDFLARE_ZONE_PAGES pages of
+// CLOUDFLARE_ZONES_PER_PAGE, stopping early on the API's own total_pages.
+async fn cloudflare_list_zones(state: &AppState, token: &str) -> (Vec<Value>, Vec<Value>) {
+    let base = state.config.cloudflare_api_url.trim_end_matches('/');
+    let mut zones = Vec::new();
+    let mut pages = Vec::new();
+    for page in 1..=MAX_CLOUDFLARE_ZONE_PAGES {
+        let url = format!("{base}/zones?page={page}&per_page={CLOUDFLARE_ZONES_PER_PAGE}");
+        let (meta, body) =
+            external_json_get(state, &state.http, &url, Some(token), "application/json").await;
+        let Some(body) = body else {
+            pages.push(json!({ "page": page, "result": meta }));
+            break;
+        };
+        let result = body
+            .get("result")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let page_count = result.len();
+        let total_pages = body
+            .pointer("/result_info/total_pages")
+            .and_then(Value::as_u64)
+            .unwrap_or(1);
+        zones.extend(result);
+        pages.push(json!({ "page": page, "result": meta, "zones": page_count }));
+        if page as u64 >= total_pages || page_count == 0 {
+            break;
+        }
+    }
+    (zones, pages)
+}
+
+fn summarize_cloudflare_zone(zone: &Value) -> Value {
+    json!({
+        "name": zone.get("name"),
+        "id": zone.get("id"),
+        "status": zone.get("status"),
+        "paused": zone.get("paused"),
+        "plan": zone.pointer("/plan/name"),
+        "nameServers": zone.get("name_servers").cloned().unwrap_or_else(|| json!([]))
+    })
+}
+
+async fn cloudflare_zones_json(state: &AppState) -> Value {
+    let Some(token) = state.config.cloudflare_api_token.clone() else {
+        return cloudflare_not_configured();
+    };
+    let (zones, pages) = cloudflare_list_zones(state, &token).await;
+    json!({
+        "source": "cloudflare",
+        "endpoint": sanitize_url_for_output(&join_url(&state.config.cloudflare_api_url, "/zones")),
+        "readOnly": true,
+        "pages": pages,
+        "zoneCount": zones.len(),
+        "zones": zones.iter().map(summarize_cloudflare_zone).collect::<Vec<_>>()
+    })
+}
+
+fn summarize_cloudflare_dns_record(record: &Value) -> Value {
+    // Record content goes through the full text redaction pipeline: TXT
+    // records routinely embed verification tokens and other secret-shaped
+    // values under non-secret-like names.
+    json!({
+        "type": record.get("type"),
+        "name": record.get("name"),
+        "content": record.get("content").and_then(Value::as_str).map(sanitize_text),
+        "proxied": record.get("proxied"),
+        "ttl": record.get("ttl")
+    })
+}
+
+// Summarize up to `budget` records; the bool reports whether the budget
+// clipped anything.
+fn summarize_cloudflare_dns_records(records: &[Value], budget: usize) -> (Vec<Value>, bool) {
+    let summarized = records
+        .iter()
+        .take(budget)
+        .map(summarize_cloudflare_dns_record)
+        .collect::<Vec<_>>();
+    let truncated = records.len() > summarized.len();
+    (summarized, truncated)
+}
+
+async fn cloudflare_dns_records_json(state: &AppState) -> Value {
+    let Some(token) = state.config.cloudflare_api_token.clone() else {
+        return cloudflare_not_configured();
+    };
+    let base = state
+        .config
+        .cloudflare_api_url
+        .trim_end_matches('/')
+        .to_string();
+    let (zones, _pages) = cloudflare_list_zones(state, &token).await;
+    let mut remaining = MAX_CLOUDFLARE_DNS_RECORDS;
+    let mut truncated = zones.len() > MAX_CLOUDFLARE_DNS_ZONES;
+    let mut scanned = Vec::new();
+    for zone in zones.iter().take(MAX_CLOUDFLARE_DNS_ZONES) {
+        let Some(zone_id) = zone.get("id").and_then(Value::as_str) else {
+            continue;
+        };
+        // Zone ids come from the Cloudflare response body; constrain them to
+        // alphanumerics before using them as a path segment.
+        if !zone_id.bytes().all(|byte| byte.is_ascii_alphanumeric()) {
+            continue;
+        }
+        if remaining == 0 {
+            truncated = true;
+            break;
+        }
+        let url = format!("{base}/zones/{zone_id}/dns_records?per_page=100");
+        let (meta, body) =
+            external_json_get(state, &state.http, &url, Some(&token), "application/json").await;
+        let records = body
+            .as_ref()
+            .and_then(|body| body.get("result"))
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let (summarized, clipped) = summarize_cloudflare_dns_records(&records, remaining);
+        truncated = truncated || clipped;
+        remaining -= summarized.len();
+        scanned.push(json!({
+            "zone": zone.get("name"),
+            "zoneId": zone_id,
+            "result": meta,
+            "recordCount": records.len(),
+            "records": summarized
+        }));
+    }
+    json!({
+        "source": "cloudflare",
+        "readOnly": true,
+        "zoneCount": zones.len(),
+        "zonesScanned": scanned.len(),
+        "recordCap": MAX_CLOUDFLARE_DNS_RECORDS,
+        "truncated": truncated,
+        "zones": scanned
+    })
+}
+
+fn normalize_dns_name(name: &str) -> String {
+    name.trim().trim_end_matches('.').to_ascii_lowercase()
+}
+
+fn valid_dns_name(domain: &str) -> bool {
+    !domain.is_empty()
+        && domain.len() <= 253
+        && domain.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-' || byte == b'.'
+        })
+}
+
+// Registrar-neutral RDAP: rdap.org bootstraps to the registry's RDAP server
+// via redirects. This is the honest integration for registrars with no public
+// domains API (e.g. Squarespace) — registrar name, status, and expiry come
+// from the registry record.
+async fn domain_registration_json(state: &AppState) -> Value {
+    let base = state.config.rdap_url.trim_end_matches('/').to_string();
+    let mut domains = Vec::new();
+    for domain in &state.config.domains {
+        if !valid_dns_name(domain) {
+            domains.push(json!({ "domain": domain, "ok": false, "error": "invalid domain name" }));
+            continue;
+        }
+        let url = format!("{base}/domain/{domain}");
+        let (meta, body) = external_json_get(
+            state,
+            &state.external_http,
+            &url,
+            None,
+            "application/rdap+json, application/json",
+        )
+        .await;
+        domains.push(json!({
+            "domain": domain,
+            "result": meta,
+            "registration": body.as_ref().map(|body| summarize_rdap_domain(domain, body))
+        }));
+    }
+    json!({
+        "source": "rdap",
+        "endpoint": sanitize_url_for_output(&state.config.rdap_url),
+        "note": "Registrar-neutral RDAP lookups; covers registrars without a public API (e.g. Squarespace-registered domains).",
+        "domainCount": domains.len(),
+        "domains": domains
+    })
+}
+
+fn summarize_rdap_domain(domain: &str, body: &Value) -> Value {
+    let expiration = rdap_event_date(body, "expiration");
+    json!({
+        "domain": domain,
+        "registrar": rdap_registrar_name(body),
+        "status": body.get("status").cloned().unwrap_or_else(|| json!([])),
+        "registered": rdap_event_date(body, "registration"),
+        "expires": expiration,
+        "daysUntilExpiry": expiration.as_deref().and_then(days_until_date),
+        "nameservers": rdap_nameservers(body)
+    })
+}
+
+fn rdap_registrar_name(body: &Value) -> Option<String> {
+    let entities = body.get("entities")?.as_array()?;
+    entities.iter().find_map(|entity| {
+        let is_registrar = entity
+            .get("roles")
+            .and_then(Value::as_array)
+            .is_some_and(|roles| roles.iter().any(|role| role.as_str() == Some("registrar")));
+        if !is_registrar {
+            return None;
+        }
+        vcard_full_name(entity)
+            .or_else(|| {
+                entity
+                    .pointer("/publicIds/0/identifier")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            })
+            .or_else(|| {
+                entity
+                    .get("handle")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            })
+    })
+}
+
+// vcardArray shape: ["vcard", [["version",{},"text","4.0"],
+// ["fn",{},"text","Squarespace Domains II, LLC"], ...]]
+fn vcard_full_name(entity: &Value) -> Option<String> {
+    entity
+        .pointer("/vcardArray/1")?
+        .as_array()?
+        .iter()
+        .find_map(|property| {
+            let property = property.as_array()?;
+            if property.first()?.as_str()? != "fn" {
+                return None;
+            }
+            property.get(3)?.as_str().map(str::to_string)
+        })
+}
+
+fn rdap_event_date(body: &Value, action: &str) -> Option<String> {
+    body.get("events")?.as_array()?.iter().find_map(|event| {
+        if event.get("eventAction").and_then(Value::as_str) != Some(action) {
+            return None;
+        }
+        event
+            .get("eventDate")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    })
+}
+
+fn rdap_nameservers(body: &Value) -> Vec<String> {
+    body.get("nameservers")
+        .and_then(Value::as_array)
+        .map(|servers| {
+            servers
+                .iter()
+                .filter_map(|server| {
+                    server
+                        .get("ldhName")
+                        .and_then(Value::as_str)
+                        .map(normalize_dns_name)
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+// Days from today (UTC) until an RFC3339 date like "2027-01-15T04:00:00Z".
+// Date precision is plenty for expiry monitoring; negative means expired.
+fn days_until_date(date: &str) -> Option<i64> {
+    let expiry_days = civil_days_from_rfc3339_date(date)?;
+    let today_days = (SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs() / 86_400) as i64;
+    Some(expiry_days - today_days)
+}
+
+fn civil_days_from_rfc3339_date(date: &str) -> Option<i64> {
+    let date = date.get(..10)?;
+    let mut parts = date.split('-');
+    let year = parts.next()?.parse::<i64>().ok()?;
+    let month = parts.next()?.parse::<u32>().ok()?;
+    let day = parts.next()?.parse::<u32>().ok()?;
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return None;
+    }
+    Some(days_from_civil(year, month, day))
+}
+
+// Howard Hinnant's days_from_civil: days since 1970-01-01 for a proleptic
+// Gregorian date. Avoids pulling a date crate for one subtraction.
+fn days_from_civil(year: i64, month: u32, day: u32) -> i64 {
+    let y = if month <= 2 { year - 1 } else { year };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let mp = i64::from(if month > 2 { month - 3 } else { month + 9 });
+    let doy = (153 * mp + 2) / 5 + i64::from(day) - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+const DOH_QUERY_TYPES: &[&str] = &["A", "AAAA", "CNAME", "NS"];
+
+fn doh_type_name(code: u16) -> &'static str {
+    match code {
+        1 => "A",
+        2 => "NS",
+        5 => "CNAME",
+        28 => "AAAA",
+        _ => "OTHER",
+    }
+}
+
+// dns-json shape: { "Status": 0, "Answer": [{ "name", "type": 1, "TTL",
+// "data" }] }. Status 3 = NXDOMAIN (no Answer array). Names/data are
+// normalized (lowercase, no trailing dot) for endpoint matching.
+fn parse_doh_answers(body: &Value) -> (Option<i64>, Vec<(u16, String, String)>) {
+    let status = body.get("Status").and_then(Value::as_i64);
+    let answers = body
+        .get("Answer")
+        .and_then(Value::as_array)
+        .map(|answers| {
+            answers
+                .iter()
+                .filter_map(|answer| {
+                    let rtype = answer.get("type").and_then(Value::as_u64)? as u16;
+                    let name = normalize_dns_name(answer.get("name").and_then(Value::as_str)?);
+                    let data = normalize_dns_name(answer.get("data").and_then(Value::as_str)?);
+                    Some((rtype, name, data))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    (status, answers)
+}
+
+// A domain is "wired" to the cluster when any resolved A/AAAA address or any
+// CNAME target in its chain equals an expected endpoint (env-configured
+// ingress IPs plus live LoadBalancer/Ingress status endpoints).
+fn correlate_domain_wiring(
+    records: &[(u16, String, String)],
+    expected: &[String],
+) -> (bool, Option<String>) {
+    for (rtype, _name, data) in records {
+        if !matches!(rtype, 1 | 5 | 28) {
+            continue;
+        }
+        if let Some(endpoint) = expected.iter().find(|endpoint| *endpoint == data) {
+            return (true, Some(endpoint.clone()));
+        }
+    }
+    (false, None)
+}
+
+// Union of env-configured expected ingress IPs and live cluster LB endpoints
+// (LoadBalancer Services + Ingress statuses), deduplicated, with provenance.
+fn expected_cluster_endpoints(
+    configured: &[String],
+    services_body: Option<&Value>,
+    ingresses_body: Option<&Value>,
+) -> Vec<(String, String)> {
+    let mut endpoints: Vec<(String, String)> = Vec::new();
+    let push = |endpoint: String, source: String, endpoints: &mut Vec<(String, String)>| {
+        if !endpoint.is_empty() && !endpoints.iter().any(|(existing, _)| *existing == endpoint) {
+            endpoints.push((endpoint, source));
+        }
+    };
+    for ip in configured {
+        push(
+            normalize_dns_name(ip),
+            "env:DD_MCP_EXPECTED_INGRESS_IPS".to_string(),
+            &mut endpoints,
+        );
+    }
+    if let Some(items) = services_body
+        .and_then(|body| body.get("items"))
+        .and_then(Value::as_array)
+    {
+        for item in items {
+            if item.pointer("/spec/type").and_then(Value::as_str) != Some("LoadBalancer") {
+                continue;
+            }
+            let name = item
+                .pointer("/metadata/name")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let namespace = item
+                .pointer("/metadata/namespace")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            for endpoint in lb_ingress_endpoints(item.pointer("/status/loadBalancer/ingress")) {
+                push(
+                    endpoint,
+                    format!("service:{namespace}/{name}"),
+                    &mut endpoints,
+                );
+            }
+        }
+    }
+    if let Some(items) = ingresses_body
+        .and_then(|body| body.get("items"))
+        .and_then(Value::as_array)
+    {
+        for item in items {
+            let name = item
+                .pointer("/metadata/name")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let namespace = item
+                .pointer("/metadata/namespace")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            for endpoint in lb_ingress_endpoints(item.pointer("/status/loadBalancer/ingress")) {
+                push(
+                    endpoint,
+                    format!("ingress:{namespace}/{name}"),
+                    &mut endpoints,
+                );
+            }
+        }
+    }
+    endpoints
+}
+
+async fn domain_dns_wiring_json(state: &AppState) -> Value {
+    let services_body = kubernetes_get_body(state, "/api/v1/services?limit=500")
+        .await
+        .ok();
+    let ingresses_body =
+        kubernetes_get_body(state, "/apis/networking.k8s.io/v1/ingresses?limit=500")
+            .await
+            .ok();
+    let expected = expected_cluster_endpoints(
+        &state.config.expected_ingress_ips,
+        services_body.as_ref(),
+        ingresses_body.as_ref(),
+    );
+    let expected_names = expected
+        .iter()
+        .map(|(endpoint, _)| endpoint.clone())
+        .collect::<Vec<_>>();
+
+    let doh = state.config.doh_url.trim_end_matches('/').to_string();
+    let mut domains = Vec::new();
+    for domain in &state.config.domains {
+        if !valid_dns_name(domain) {
+            domains.push(json!({ "domain": domain, "ok": false, "error": "invalid domain name" }));
+            continue;
+        }
+        let mut records: Vec<(u16, String, String)> = Vec::new();
+        let mut queries = Vec::new();
+        for record_type in DOH_QUERY_TYPES {
+            let url = format!("{doh}?name={domain}&type={record_type}");
+            let (meta, body) = external_json_get(
+                state,
+                &state.external_http,
+                &url,
+                None,
+                "application/dns-json",
+            )
+            .await;
+            let (dns_status, answers) = body
+                .as_ref()
+                .map(parse_doh_answers)
+                .unwrap_or((None, Vec::new()));
+            queries.push(json!({ "type": record_type, "result": meta, "dnsStatus": dns_status }));
+            for answer in answers {
+                if !records.contains(&answer) {
+                    records.push(answer);
+                }
+            }
+        }
+        let (matched, matched_endpoint) = correlate_domain_wiring(&records, &expected_names);
+        domains.push(json!({
+            "domain": domain,
+            "queries": queries,
+            "records": records
+                .iter()
+                .map(|(rtype, name, data)| {
+                    json!({ "type": doh_type_name(*rtype), "name": name, "data": data })
+                })
+                .collect::<Vec<_>>(),
+            "matched": matched,
+            "matchedEndpoint": matched_endpoint
+        }));
+    }
+
+    json!({
+        "source": "dns-over-https",
+        "endpoint": sanitize_url_for_output(&state.config.doh_url),
+        "expectedEndpoints": expected
+            .iter()
+            .map(|(endpoint, source)| json!({ "endpoint": endpoint, "source": source }))
+            .collect::<Vec<_>>(),
+        "domainCount": domains.len(),
+        "domains": domains
+    })
+}
+
+async fn parallel_http_checks(
+    state: &AppState,
+    checks: Vec<(&'static str, String, usize)>,
+) -> Vec<Value> {
+    let mut futures = FuturesUnordered::new();
+    for (index, (name, url, limit)) in checks.into_iter().enumerate() {
+        let state = state.clone();
+        futures.push(async move {
+            let result = http_result(&state, &url, limit).await;
+            (
+                index,
+                json!({ "name": name, "url": sanitize_url_for_output(&url), "result": result }),
+            )
+        });
+    }
+
+    let mut output = Vec::new();
+    while let Some(item) = futures.next().await {
+        output.push(item);
+    }
+    output.sort_by_key(|(index, _)| *index);
+    output.into_iter().map(|(_, value)| value).collect()
+}
+
+async fn http_result(state: &AppState, url: &str, limit: usize) -> Value {
+    state
+        .metrics
+        .observability_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let started = Instant::now();
+    match state
+        .http
+        .get(url)
+        .timeout(state.config.observability_timeout)
+        .header(header::ACCEPT, "application/json,text/plain,*/*")
+        .send()
+        .await
+    {
+        Ok(response) => {
+            let status = response.status();
+            let reason = status.canonical_reason().unwrap_or("").to_string();
+            match response.bytes().await {
+                Ok(bytes) => {
+                    let body = String::from_utf8_lossy(&bytes).to_string();
+                    let (sample, truncated) = response_sample(&body, limit);
+                    json!({
+                        "ok": status.is_success(),
+                        "status": status.as_u16(),
+                        "reason": reason,
+                        "durationMs": elapsed_ms(started),
+                        "truncated": truncated,
+                        "sample": sample
+                    })
+                }
+                Err(error) => json!({
+                    "ok": false,
+                    "status": status.as_u16(),
+                    "reason": reason,
+                    "durationMs": elapsed_ms(started),
+                    "error": sanitize_text(&error.to_string())
+                }),
+            }
+        }
+        Err(error) => json!({
+            "ok": false,
+            "durationMs": elapsed_ms(started),
+            "error": sanitize_text(&error.to_string())
+        }),
+    }
+}
+
+fn join_url(base: &str, path: &str) -> String {
+    let base = base.trim_end_matches('/');
+    if path.is_empty() {
+        return base.to_string();
+    }
+    if path.starts_with('/') {
+        format!("{base}{path}")
+    } else {
+        format!("{base}/{path}")
+    }
+}
+
+fn clip_string(value: &str, limit: usize) -> String {
+    if value.len() <= limit {
+        return value.to_string();
+    }
+    if limit <= 32 {
+        return value.chars().take(limit).collect();
+    }
+    let mut clipped = String::new();
+    let mut used = 0usize;
+    for ch in value.chars() {
+        let next = used + ch.len_utf8();
+        if next > limit {
+            break;
+        }
+        clipped.push(ch);
+        used = next;
+    }
+    clipped.push_str("\n... clipped ...");
+    clipped
+}
+
+fn response_sample(body: &str, limit: usize) -> (String, bool) {
+    let sanitized = sanitize_response_body(body);
+    let truncated = sanitized.len() > limit;
+    (clip_string(&sanitized, limit), truncated)
+}
+
+// Kubernetes API bodies get an extra strip before the generic redact/clip:
+// metadata.annotations can embed entire prior objects (e.g.
+// kubectl.kubernetes.io/last-applied-configuration) under keys that are not
+// secret-like, and metadata.managedFields is pure noise. The per-item summary
+// already drops both; this keeps the raw `sample` from shipping them.
+fn kubernetes_response_sample(body: &str, limit: usize) -> (String, bool) {
+    match serde_json::from_str::<Value>(body) {
+        Ok(mut value) => {
+            strip_kubernetes_metadata_noise(&mut value);
+            redact_json_value(&mut value);
+            let sanitized = value.to_string();
+            let truncated = sanitized.len() > limit;
+            (clip_string(&sanitized, limit), truncated)
+        }
+        Err(_) => response_sample(body, limit),
+    }
+}
+
+fn strip_kubernetes_metadata_noise(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            if let Some(Value::Object(metadata)) = map.get_mut("metadata") {
+                metadata.remove("annotations");
+                metadata.remove("managedFields");
+            }
+            for child in map.values_mut() {
+                strip_kubernetes_metadata_noise(child);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                strip_kubernetes_metadata_noise(item);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn sanitize_response_body(body: &str) -> String {
+    match serde_json::from_str::<Value>(body) {
+        Ok(mut value) => {
+            redact_json_value(&mut value);
+            value.to_string()
+        }
+        Err(_) => sanitize_text(body),
+    }
+}
+
+fn redacted_json_clone(value: &Value) -> Value {
+    let mut value = value.clone();
+    redact_json_value(&mut value);
+    value
+}
+
+fn redact_json_value(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            for (key, value) in map.iter_mut() {
+                if is_secret_like_key(key) {
+                    *value = json!(REDACTED);
+                } else {
+                    redact_json_value(value);
+                }
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                redact_json_value(item);
+            }
+        }
+        Value::String(text) => {
+            // Key-based redaction misses secrets stored under innocuous keys;
+            // catch high-signal value shapes (JWTs, AWS key ids, long hex or
+            // base64 runs) wherever they appear.
+            if let Cow::Owned(redacted) = redact_sensitive_values(text) {
+                *value = Value::String(redacted);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn is_secret_like_key(key: &str) -> bool {
+    let key = key.to_ascii_lowercase();
+    let normalized = key.replace(['-', '_', '.'], "");
+    key.contains("authorization")
+        || key.contains("cookie")
+        || key.contains("credential")
+        || key.contains("password")
+        || key.contains("secret")
+        || key.contains("session")
+        || key.contains("token")
+        || normalized.contains("apikey")
+        || normalized.contains("accesskey")
+        || normalized.contains("privatekey")
+        || normalized.contains("clientsecret")
+}
+
+fn sanitize_text(value: &str) -> String {
+    value
+        .lines()
+        .map(redact_sensitive_line)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn redact_sensitive_line(line: &str) -> String {
+    if !line
+        .split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_' && ch != '-')
+        .any(is_secret_like_key)
+    {
+        return redact_sensitive_values(line).into_owned();
+    }
+
+    if let Some(index) = line.find('=').or_else(|| line.find(':')) {
+        format!("{}{}", &line[..=index], REDACTED)
+    } else {
+        REDACTED.to_string()
+    }
+}
+
+const JWT_MIN_LEN: usize = 20;
+const LONG_HEX_MIN_LEN: usize = 32;
+const LONG_BASE64_MIN_LEN: usize = 40;
+
+// Candidate value tokens are maximal runs of this charset: it covers base64,
+// base64url, hex, JWT dot separators, and key=value glue, so an embedded
+// secret is examined as one run. Matching tokens are redacted whole — a
+// partial secret is still a secret.
+fn is_value_run_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'=' | b'_' | b'-' | b'.')
+}
+
+// Allocation-light single pass: byte scanning is safe because run bytes are
+// all ASCII (UTF-8 continuation bytes never match), and it only builds a new
+// string when a token actually matches a sensitive-value pattern.
+fn redact_sensitive_values(text: &str) -> Cow<'_, str> {
+    let bytes = text.as_bytes();
+    let mut output = String::new();
+    let mut copied_to = 0usize;
+    let mut index = 0usize;
+    while index < bytes.len() {
+        if !is_value_run_byte(bytes[index]) {
+            index += 1;
+            continue;
+        }
+        let start = index;
+        while index < bytes.len() && is_value_run_byte(bytes[index]) {
+            index += 1;
+        }
+        if is_sensitive_value_token(&text[start..index]) {
+            output.push_str(&text[copied_to..start]);
+            output.push_str(REDACTED);
+            copied_to = index;
+        }
+    }
+    if copied_to == 0 {
+        return Cow::Borrowed(text);
+    }
+    output.push_str(&text[copied_to..]);
+    Cow::Owned(output)
+}
+
+fn is_sensitive_value_token(token: &str) -> bool {
+    contains_jwt(token)
+        || contains_aws_access_key_id(token)
+        || contains_long_hex_run(token)
+        || contains_long_base64_segment(token)
+}
+
+// "eyJ" is base64 for `{"` — the standard JWT/JWS/JWE opener. Require a token
+// boundary before it and a plausible run length after it.
+fn contains_jwt(token: &str) -> bool {
+    let bytes = token.as_bytes();
+    token.match_indices("eyJ").any(|(index, _)| {
+        let boundary_ok = index == 0 || !bytes[index - 1].is_ascii_alphanumeric();
+        boundary_ok && token.len() - index >= JWT_MIN_LEN
+    })
+}
+
+// AKIA[0-9A-Z]{16} with a non-alphanumeric boundary before the prefix.
+fn contains_aws_access_key_id(token: &str) -> bool {
+    let bytes = token.as_bytes();
+    token.match_indices("AKIA").any(|(index, _)| {
+        let boundary_ok = index == 0 || !bytes[index - 1].is_ascii_alphanumeric();
+        let key_chars = bytes[index + 4..]
+            .iter()
+            .take_while(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit())
+            .count();
+        boundary_ok && key_chars >= 16
+    })
+}
+
+// A maximal hex run of >= 32 chars with non-alphanumeric boundaries (sha256
+// digests, session ids, 128-bit-plus keys).
+fn contains_long_hex_run(token: &str) -> bool {
+    let bytes = token.as_bytes();
+    let mut index = 0usize;
+    while index < bytes.len() {
+        if !bytes[index].is_ascii_hexdigit() {
+            index += 1;
+            continue;
+        }
+        let start = index;
+        while index < bytes.len() && bytes[index].is_ascii_hexdigit() {
+            index += 1;
+        }
+        let bounded = (start == 0 || !bytes[start - 1].is_ascii_alphanumeric())
+            && (index == bytes.len() || !bytes[index].is_ascii_alphanumeric());
+        if bounded && index - start >= LONG_HEX_MIN_LEN {
+            return true;
+        }
+    }
+    false
+}
+
+// A dot-free base64/base64url segment of >= 40 chars containing upper, lower,
+// and digit characters. The mixed-character requirement keeps long DNS names
+// (all lowercase, e.g. dd-otel-collector.observability.svc.cluster.local) and
+// similar identifiers out of the redaction.
+fn contains_long_base64_segment(token: &str) -> bool {
+    token.split('.').any(|segment| {
+        if segment.len() < LONG_BASE64_MIN_LEN {
+            return false;
+        }
+        let mut upper = false;
+        let mut lower = false;
+        let mut digit = false;
+        for byte in segment.bytes() {
+            match byte {
+                b'A'..=b'Z' => upper = true,
+                b'a'..=b'z' => lower = true,
+                b'0'..=b'9' => digit = true,
+                b'+' | b'/' | b'=' | b'_' | b'-' => {}
+                _ => return false,
+            }
+        }
+        upper && lower && digit
+    })
+}
+
+fn sanitize_url_for_output(raw: &str) -> String {
+    match reqwest::Url::parse(raw) {
+        Ok(mut url) => {
+            if !url.username().is_empty() {
+                let _ = url.set_username("redacted");
+            }
+            if url.password().is_some() {
+                let _ = url.set_password(Some("redacted"));
+            }
+            if url.query().is_some() {
+                url.set_query(Some("redacted=1"));
+            }
+            url.set_fragment(None);
+            url.to_string()
+        }
+        Err(_) => sanitize_text(raw),
+    }
+}
+
+async fn api_docs_html(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Some(response) = gated_unauthorized_response(&state, &headers) {
+        return response;
+    }
+    Html(include_str!("../generated/api-docs.html")).into_response()
+}
+
+async fn api_docs_json(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Some(response) = gated_unauthorized_response(&state, &headers) {
+        return response;
+    }
+    (
+        [("content-type", "application/json; charset=utf-8")],
+        include_str!("../generated/api-docs.json"),
+    )
+        .into_response()
+}
+
+#[tokio::main]
+async fn main() {
+    let _otel = dd_telemetry::init("dd-cluster-mcp-rs");
+
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .ok();
+
+    let config = Arc::new(config_from_env());
+    let state = AppState {
+        http: build_http_client(&config),
+        k8s_http: build_k8s_client(&config),
+        external_http: build_external_client(&config),
+        metrics: Arc::new(Metrics::default()),
+        config,
+    };
+
+    let app = Router::new()
+        .route("/", get(root).post(rpc))
+        .route("/home", get(home))
+        .route("/healthz", get(healthz))
+        .route("/readyz", get(healthz))
+        .route("/metrics", get(metrics))
+        .route("/observability", get(observability))
+        .route("/docs/api", get(api_docs_html))
+        .route("/api/docs", get(api_docs_html))
+        .route("/api/docs.json", get(api_docs_json))
+        .route("/mcp", get(mcp_get).post(rpc))
+        .with_state(state.clone())
+        // Merge the runtime-config /internal/* routes BEFORE applying the body
+        // limit so the cap covers them too (layer() only wraps routes added so
+        // far; a merge after it would leave /internal/* on axum's 2 MiB default).
+        .merge(dd_runtime_config_client::router())
+        .layer(DefaultBodyLimit::max(MAX_RPC_BODY_BYTES));
+
+    tokio::spawn(dd_runtime_config_client::register_with_control_plane());
+
+    let address: SocketAddr = format!("{}:{}", state.config.host, state.config.port)
+        .parse()
+        .expect("failed to parse bind address");
+    log_dd_event(
+        "INFO",
+        9,
+        "dd-cluster-mcp-rs listening",
+        "cluster_mcp.server.listening",
+        json!({ "address": address.to_string(), "port": state.config.port }),
+        None,
+    );
+
+    let listener = tokio::net::TcpListener::bind(address)
+        .await
+        .expect("failed to bind tcp listener");
+    // into_make_service_with_connect_info exposes the socket peer address to
+    // handlers (ConnectInfo) so rpc/tool log events can attribute callers.
+    axum::serve(
+        listener,
+        app.layer(dd_telemetry::http_trace_layer())
+            .into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await
+    .expect("axum server crashed");
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        let _ = tokio::signal::ctrl_c().await;
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        use tokio::signal::unix::{signal, SignalKind};
+        if let Ok(mut sigterm) = signal(SignalKind::terminate()) {
+            let _ = sigterm.recv().await;
+        }
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn join_url_handles_slashes() {
+        assert_eq!(
+            join_url("http://example.test/", "/ready"),
+            "http://example.test/ready"
+        );
+        assert_eq!(
+            join_url("http://example.test", "ready"),
+            "http://example.test/ready"
+        );
+        assert_eq!(join_url("http://example.test/", ""), "http://example.test");
+    }
+
+    #[test]
+    fn clip_string_preserves_utf8_boundaries() {
+        let clipped = clip_string(
+            "alpha beta gamma delta epsilon zeta eta theta iota kappa",
+            40,
+        );
+        assert!(clipped.starts_with("alpha beta gamma"));
+        assert!(clipped.ends_with("... clipped ..."));
+        let prefix = "a".repeat(32);
+        let unicode = clip_string(&format!("{prefix}\u{00e9}omega"), 33);
+        assert_eq!(unicode.trim_end_matches("\n... clipped ..."), prefix);
+    }
+
+    #[test]
+    fn response_sample_redacts_secret_like_json_fields() {
+        let body = json!({
+            "ok": true,
+            "token": "abc123",
+            "nested": {
+                "client_secret": "shh",
+                "safe": "visible"
+            },
+            "items": [{ "authorization": "Bearer secret-token" }]
+        })
+        .to_string();
+        let (sample, truncated) = response_sample(&body, 10_000);
+        assert!(!truncated);
+        assert!(sample.contains(REDACTED));
+        assert!(sample.contains("visible"));
+        assert!(!sample.contains("abc123"));
+        assert!(!sample.contains("secret-token"));
+    }
+
+    #[test]
+    fn response_sample_redacts_secret_like_text_lines() {
+        let (sample, _) = response_sample("ready\napi_key=super-secret\nconnections 3", 10_000);
+        assert!(sample.contains("ready"));
+        assert!(sample.contains(&format!("api_key={REDACTED}")));
+        assert!(!sample.contains("super-secret"));
+    }
+
+    #[test]
+    fn allowed_mcp_base_url_stays_inside_cluster_or_loopback() {
+        assert!(allowed_mcp_base_url(
+            "http://dd-prometheus.observability.svc.cluster.local:9090"
+        ));
+        assert!(allowed_mcp_base_url("http://127.0.0.1:19090"));
+        assert!(!allowed_mcp_base_url("https://example.com"));
+        assert!(!allowed_mcp_base_url(
+            "http://dd-prometheus.observability.svc.cluster.local:9090?token=abc"
+        ));
+        assert!(!allowed_mcp_base_url("file:///var/run/secrets/token"));
+    }
+
+    #[test]
+    fn sanitize_url_for_output_removes_url_credentials_and_query() {
+        assert_eq!(
+            sanitize_url_for_output("https://user:pass@example.test/path?token=abc#frag"),
+            "https://redacted:redacted@example.test/path?redacted=1"
+        );
+    }
+
+    #[test]
+    fn json_rpc_ids_are_scalar_only() {
+        assert_eq!(sanitize_rpc_id(Some(&json!("abc"))), json!("abc"));
+        assert_eq!(sanitize_rpc_id(Some(&json!(42))), json!(42));
+        assert_eq!(sanitize_rpc_id(Some(&json!(null))), json!(null));
+        assert_eq!(
+            sanitize_rpc_id(Some(&json!({ "not": "allowed" }))),
+            json!(null)
+        );
+        assert_eq!(sanitize_rpc_id(None), json!(null));
+    }
+
+    #[test]
+    fn service_summary_omits_annotations() {
+        let item = json!({
+            "apiVersion": "v1",
+            "kind": "Service",
+            "metadata": {
+                "name": "dd-example",
+                "namespace": "default",
+                "annotations": { "kubectl.kubernetes.io/last-applied-configuration": "large" },
+                "labels": { "app": "dd-example", "token": "abc123" }
+            },
+            "spec": {
+                "type": "ClusterIP",
+                "clusterIP": "10.0.0.10",
+                "selector": { "app": "dd-example" },
+                "ports": [{ "name": "http", "port": 8080, "targetPort": 8080, "protocol": "TCP" }]
+            }
+        });
+        let summary = summarize_kubernetes_item(&item, false);
+        assert!(summary.get("annotations").is_none());
+        assert_eq!(summary["specSummary"]["ports"][0]["port"], json!(8080));
+        assert_eq!(summary["labels"]["token"], json!(REDACTED));
+    }
+
+    #[test]
+    fn tool_catalog_keeps_expected_names() {
+        let listed = TOOL_NAMES.to_vec();
+        assert!(listed.contains(&"kubernetes_inventory"));
+        assert!(listed.contains(&"telemetry_summary"));
+        assert!(listed.contains(&"trace_backends"));
+    }
+
+    #[test]
+    fn metric_labels_bucket_unknown_to_other() {
+        // Known names pass through; arbitrary caller-supplied names collapse to
+        // "other" so the metric maps can't be grown without bound.
+        assert_eq!(bounded_method_label("tools/call"), "tools/call");
+        assert_eq!(bounded_method_label("initialize"), "initialize");
+        assert_eq!(bounded_method_label("evil/../../etc/passwd"), "other");
+        assert_eq!(bounded_method_label(""), "other");
+        assert_eq!(
+            bounded_tool_label("kubernetes_inventory"),
+            "kubernetes_inventory"
+        );
+        assert_eq!(bounded_tool_label("attacker-supplied-name"), "other");
+    }
+
+    #[test]
+    fn constant_time_secret_eq_matches_only_exact_values() {
+        assert!(constant_time_secret_eq("s3cret", "s3cret"));
+        assert!(!constant_time_secret_eq("s3cret", "s3cres"));
+        assert!(!constant_time_secret_eq("s3cret", "s3cre"));
+        assert!(!constant_time_secret_eq("s3cret", "s3cret-and-more"));
+        assert!(!constant_time_secret_eq("s3cret", ""));
+        assert!(constant_time_secret_eq("", ""));
+    }
+
+    #[test]
+    fn value_patterns_redact_jwts() {
+        let jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
+        let line = format!("upstream said: {jwt} (rejected)");
+        let redacted = redact_sensitive_values(&line);
+        assert!(!redacted.contains("SflKxwRJ"));
+        assert!(!redacted.contains("eyJhbGci"));
+        assert!(redacted.contains(REDACTED));
+        assert!(redacted.contains("upstream said:"));
+        assert!(redacted.contains("(rejected)"));
+        // Also caught when glued to key=value syntax.
+        let glued = redact_sensitive_values("id_token=eyJhbGciOiJIUzI1NiJ9.e30.x1y2");
+        assert!(!glued.contains("eyJhbGci"));
+    }
+
+    #[test]
+    fn value_patterns_redact_aws_access_key_ids() {
+        let redacted = redact_sensitive_values("cred check AKIAIOSFODNN7EXAMPLE failed");
+        assert!(!redacted.contains("AKIAIOSFODNN7EXAMPLE"));
+        assert!(redacted.contains("cred check"));
+        // Lowercase-adjacent prefix is not a key id boundary.
+        let untouched = redact_sensitive_values("nakiakind is a word");
+        assert_eq!(untouched, "nakiakind is a word");
+    }
+
+    #[test]
+    fn value_patterns_redact_long_hex_and_base64_runs() {
+        // 64-char sha256-style digest behind a non-secret-like key.
+        let digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        let hex_line = format!("digest sha256:{digest} ok");
+        let redacted = redact_sensitive_values(&hex_line);
+        assert!(!redacted.contains(digest));
+        assert!(redacted.contains("sha256:"));
+        // 40-char AWS-style secret (mixed case + digit).
+        let secret = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
+        let base64_line = format!("value {secret} here");
+        let redacted = redact_sensitive_values(&base64_line);
+        assert!(!redacted.contains("K7MDENG"));
+    }
+
+    #[test]
+    fn value_patterns_keep_ordinary_identifiers() {
+        for line in [
+            "dd-otel-collector.observability.svc.cluster.local:8889 reachable",
+            "kubernetes.default.svc responded 200 OK",
+            "deployment dd-cluster-mcp-rs scaled to 2 replicas",
+            "short hex deadbeefdeadbeefdeadbeef is fine", // 24 < 32
+        ] {
+            assert_eq!(redact_sensitive_values(line), line);
+        }
+    }
+
+    #[test]
+    fn response_sample_redacts_value_patterns_in_json_strings() {
+        let body = json!({
+            "note": "login used eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.abc123def456",
+            "imageID": "docker://sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "hostname": "dd-prometheus.observability.svc.cluster.local"
+        })
+        .to_string();
+        let (sample, _) = response_sample(&body, 10_000);
+        assert!(!sample.contains("eyJhbGci"));
+        assert!(!sample.contains("e3b0c442"));
+        assert!(sample.contains("dd-prometheus.observability.svc.cluster.local"));
+    }
+
+    #[test]
+    fn kubernetes_sample_strips_annotations_and_managed_fields() {
+        let body = json!({
+            "kind": "ServiceList",
+            "items": [{
+                "metadata": {
+                    "name": "dd-example",
+                    "annotations": {
+                        "kubectl.kubernetes.io/last-applied-configuration":
+                            "{\"metadata\":{\"labels\":{\"harmless\":\"embedded-prior-object\"}}}"
+                    },
+                    "managedFields": [{ "manager": "kubectl" }]
+                }
+            }]
+        })
+        .to_string();
+        let (sample, truncated) = kubernetes_response_sample(&body, 10_000);
+        assert!(!truncated);
+        assert!(!sample.contains("last-applied-configuration"));
+        assert!(!sample.contains("embedded-prior-object"));
+        assert!(!sample.contains("managedFields"));
+        assert!(sample.contains("dd-example"));
+    }
+
+    #[test]
+    fn initialize_negotiates_protocol_version() {
+        assert_eq!(
+            negotiated_protocol_version(Some(&json!({ "protocolVersion": "2025-06-18" }))),
+            "2025-06-18"
+        );
+        assert_eq!(
+            negotiated_protocol_version(Some(&json!({ "protocolVersion": "1999-01-01" }))),
+            PROTOCOL_VERSION
+        );
+        assert_eq!(
+            negotiated_protocol_version(Some(&json!({ "protocolVersion": 42 }))),
+            PROTOCOL_VERSION
+        );
+        assert_eq!(negotiated_protocol_version(None), PROTOCOL_VERSION);
+        let result = initialize_result(json!(1), Some(&json!({ "protocolVersion": "2025-03-26" })));
+        assert_eq!(result["result"]["protocolVersion"], json!("2025-03-26"));
+    }
+
+    #[test]
+    fn tool_results_embed_data_in_text_and_flag_total_failure() {
+        let mixed = tool_json_result(
+            json!(1),
+            "telemetry_summary",
+            "blurb",
+            json!({ "sources": [
+                { "result": { "ok": true } },
+                { "result": { "ok": false } }
+            ]}),
+        );
+        assert_eq!(mixed["result"]["isError"], json!(false));
+        let text = mixed["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.starts_with("blurb"));
+        assert!(text.contains("\"sources\""));
+
+        let failed = tool_json_result(
+            json!(2),
+            "telemetry_summary",
+            "blurb",
+            json!({ "sources": [
+                { "result": { "ok": false } },
+                { "result": { "ok": false } }
+            ]}),
+        );
+        assert_eq!(failed["result"]["isError"], json!(true));
+
+        // Static tools have no upstream ok fields => never an error.
+        let static_tool = tool_json_result(
+            json!(3),
+            "human_access_policy",
+            "blurb",
+            json!({ "readOnlyByDefault": true }),
+        );
+        assert_eq!(static_tool["result"]["isError"], json!(false));
+    }
+
+    #[test]
+    fn cloudflare_zone_summary_extracts_expected_fields() {
+        // Shape mirrors the Cloudflare v4 GET /zones response items.
+        let zone = json!({
+            "id": "023e105f4ecef8ad9ca31a8372d0c353",
+            "name": "fiducia.cloud",
+            "status": "active",
+            "paused": false,
+            "plan": { "id": "plan-id", "name": "Free Website" },
+            "name_servers": ["ada.ns.cloudflare.com", "bob.ns.cloudflare.com"],
+            "account": { "id": "acct", "name": "ops@example.test" }
+        });
+        let summary = summarize_cloudflare_zone(&zone);
+        assert_eq!(summary["name"], json!("fiducia.cloud"));
+        assert_eq!(summary["id"], json!("023e105f4ecef8ad9ca31a8372d0c353"));
+        assert_eq!(summary["status"], json!("active"));
+        assert_eq!(summary["paused"], json!(false));
+        assert_eq!(summary["plan"], json!("Free Website"));
+        assert_eq!(summary["nameServers"][1], json!("bob.ns.cloudflare.com"));
+        // Only the picked fields ship — account details are dropped.
+        assert!(summary.get("account").is_none());
+    }
+
+    #[test]
+    fn cloudflare_dns_record_summary_redacts_secretish_content() {
+        let records = vec![
+            json!({ "type": "A", "name": "fiducia.cloud", "content": "98.90.186.114",
+                    "proxied": true, "ttl": 1 }),
+            json!({ "type": "TXT", "name": "_verify.fiducia.cloud",
+                    "content": "site-verification=wJalrXUtnFEMI7K7MDENGbPxRfiCYEXAMPLEKEY9aB",
+                    "proxied": false, "ttl": 300 }),
+        ];
+        let (summarized, truncated) = summarize_cloudflare_dns_records(&records, 500);
+        assert!(!truncated);
+        assert_eq!(summarized[0]["content"], json!("98.90.186.114"));
+        assert_eq!(summarized[0]["proxied"], json!(true));
+        // The TXT verification token (long mixed-case base64 run) is redacted.
+        let txt = summarized[1]["content"].as_str().unwrap();
+        assert!(txt.contains(REDACTED));
+        assert!(!txt.contains("wJalrXUtnFEMI7K7MDENG"));
+    }
+
+    #[test]
+    fn cloudflare_dns_records_honor_record_budget() {
+        let records = (0..5)
+            .map(|index| {
+                json!({ "type": "A", "name": format!("host{index}.example.test"),
+                        "content": "10.0.0.1", "proxied": false, "ttl": 60 })
+            })
+            .collect::<Vec<_>>();
+        let (summarized, truncated) = summarize_cloudflare_dns_records(&records, 2);
+        assert_eq!(summarized.len(), 2);
+        assert!(truncated);
+    }
+
+    #[test]
+    fn cloudflare_unconfigured_reports_hint_not_error() {
+        let result = cloudflare_not_configured();
+        assert_eq!(result["ok"], json!(false));
+        assert_eq!(result["configured"], json!(false));
+        assert!(result["hint"]
+            .as_str()
+            .unwrap()
+            .contains("CLOUDFLARE_API_TOKEN"));
+        // Wrapped as a tool result it is a well-formed result, not a JSON-RPC
+        // error (agents see the hint instead of noise).
+        let wrapped = tool_json_result(json!(1), "cloudflare_zones", "blurb", result);
+        assert!(wrapped.get("error").is_none());
+        assert!(wrapped["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("not configured"));
+    }
+
+    #[test]
+    fn rdap_summary_extracts_squarespace_registrar_and_expiry() {
+        // Trimmed from a real Verisign RDAP response for a Squarespace-
+        // registered .cloud/.com domain.
+        let body = json!({
+            "objectClassName": "domain",
+            "ldhName": "EXAMPLE-SQSP.CLOUD",
+            "status": ["client delete prohibited", "client transfer prohibited"],
+            "entities": [{
+                "objectClassName": "entity",
+                "handle": "895",
+                "roles": ["registrar"],
+                "vcardArray": ["vcard", [
+                    ["version", {}, "text", "4.0"],
+                    ["fn", {}, "text", "Squarespace Domains II, LLC"]
+                ]],
+                "publicIds": [{ "type": "IANA Registrar ID", "identifier": "895" }]
+            }],
+            "events": [
+                { "eventAction": "registration", "eventDate": "2023-11-02T17:31:15Z" },
+                { "eventAction": "expiration", "eventDate": "2999-11-02T17:31:15Z" }
+            ],
+            "nameservers": [
+                { "objectClassName": "nameserver", "ldhName": "ADA.NS.CLOUDFLARE.COM." },
+                { "objectClassName": "nameserver", "ldhName": "BOB.NS.CLOUDFLARE.COM." }
+            ]
+        });
+        let summary = summarize_rdap_domain("example-sqsp.cloud", &body);
+        assert_eq!(summary["registrar"], json!("Squarespace Domains II, LLC"));
+        assert_eq!(summary["registered"], json!("2023-11-02T17:31:15Z"));
+        assert_eq!(summary["expires"], json!("2999-11-02T17:31:15Z"));
+        assert!(summary["daysUntilExpiry"].as_i64().unwrap() > 0);
+        assert_eq!(summary["nameservers"][0], json!("ada.ns.cloudflare.com"));
+        assert_eq!(summary["status"][0], json!("client delete prohibited"));
+        // An already-expired date is reported as negative, not dropped.
+        let expired = json!({ "events": [
+            { "eventAction": "expiration", "eventDate": "1999-01-01T00:00:00Z" }
+        ]});
+        let summary = summarize_rdap_domain("expired.test", &expired);
+        assert!(summary["daysUntilExpiry"].as_i64().unwrap() < 0);
+    }
+
+    #[test]
+    fn days_from_civil_matches_known_epochs() {
+        assert_eq!(days_from_civil(1970, 1, 1), 0);
+        assert_eq!(days_from_civil(1970, 1, 2), 1);
+        assert_eq!(days_from_civil(2000, 1, 1), 10_957);
+        assert_eq!(
+            civil_days_from_rfc3339_date("2000-01-01T00:00:00Z"),
+            Some(10_957)
+        );
+        assert_eq!(civil_days_from_rfc3339_date("not-a-date"), None);
+        assert_eq!(civil_days_from_rfc3339_date("2000-13-01T00:00:00Z"), None);
+    }
+
+    #[test]
+    fn doh_answers_parse_a_and_cname_chains_and_nxdomain() {
+        // cloudflare-dns.com dns-json shape: an A query whose answer carries
+        // the CNAME chain plus the terminal A record.
+        let body = json!({
+            "Status": 0,
+            "Answer": [
+                { "name": "app.fiducia.cloud.", "type": 5, "TTL": 300,
+                  "data": "lb.example-elb.amazonaws.com." },
+                { "name": "lb.example-elb.amazonaws.com.", "type": 1, "TTL": 60,
+                  "data": "98.90.186.114" }
+            ]
+        });
+        let (status, answers) = parse_doh_answers(&body);
+        assert_eq!(status, Some(0));
+        assert_eq!(
+            answers,
+            vec![
+                (
+                    5,
+                    "app.fiducia.cloud".to_string(),
+                    "lb.example-elb.amazonaws.com".to_string()
+                ),
+                (
+                    1,
+                    "lb.example-elb.amazonaws.com".to_string(),
+                    "98.90.186.114".to_string()
+                ),
+            ]
+        );
+        // NXDOMAIN: Status 3, no Answer array.
+        let nxdomain = json!({ "Status": 3, "Authority": [{ "type": 6 }] });
+        let (status, answers) = parse_doh_answers(&nxdomain);
+        assert_eq!(status, Some(3));
+        assert!(answers.is_empty());
+    }
+
+    #[test]
+    fn domain_wiring_matches_a_records_cname_targets_or_nothing() {
+        let expected = vec![
+            "98.90.186.114".to_string(),
+            "lb.example-elb.amazonaws.com".to_string(),
+        ];
+        // Direct A-record match.
+        let a_records = vec![(
+            1u16,
+            "fiducia.cloud".to_string(),
+            "98.90.186.114".to_string(),
+        )];
+        assert_eq!(
+            correlate_domain_wiring(&a_records, &expected),
+            (true, Some("98.90.186.114".to_string()))
+        );
+        // CNAME-to-LB-hostname match (no A answer needed).
+        let cname_records = vec![(
+            5u16,
+            "app.fiducia.cloud".to_string(),
+            "lb.example-elb.amazonaws.com".to_string(),
+        )];
+        assert_eq!(
+            correlate_domain_wiring(&cname_records, &expected),
+            (true, Some("lb.example-elb.amazonaws.com".to_string()))
+        );
+        // No match: unrelated A record, and NS records never match.
+        let unrelated = vec![
+            (
+                1u16,
+                "elsewhere.test".to_string(),
+                "203.0.113.9".to_string(),
+            ),
+            (
+                2u16,
+                "elsewhere.test".to_string(),
+                "98.90.186.114".to_string(),
+            ),
+        ];
+        assert_eq!(
+            correlate_domain_wiring(&unrelated, &expected),
+            (false, None)
+        );
+    }
+
+    #[test]
+    fn expected_endpoints_union_env_lb_services_and_ingresses() {
+        let services = json!({ "items": [
+            { "metadata": { "name": "edge", "namespace": "default" },
+              "spec": { "type": "LoadBalancer" },
+              "status": { "loadBalancer": { "ingress": [
+                  { "ip": "98.90.186.114" },
+                  { "hostname": "LB.Example-ELB.amazonaws.com." }
+              ]}}},
+            { "metadata": { "name": "internal", "namespace": "default" },
+              "spec": { "type": "ClusterIP" },
+              "status": { "loadBalancer": { "ingress": [{ "ip": "10.0.0.9" }] }}}
+        ]});
+        let ingresses = json!({ "items": [
+            { "metadata": { "name": "web", "namespace": "default" },
+              "status": { "loadBalancer": { "ingress": [{ "ip": "203.0.113.7" }] }}}
+        ]});
+        let configured = vec!["98.90.186.114".to_string()];
+        let endpoints = expected_cluster_endpoints(&configured, Some(&services), Some(&ingresses));
+        let names = endpoints
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect::<Vec<_>>();
+        // Dedup: the env IP and the LB service IP are the same entry; the
+        // ClusterIP service is excluded.
+        assert_eq!(
+            names,
+            vec![
+                "98.90.186.114",
+                "lb.example-elb.amazonaws.com",
+                "203.0.113.7"
+            ]
+        );
+        assert_eq!(endpoints[0].1, "env:DD_MCP_EXPECTED_INGRESS_IPS");
+        assert_eq!(endpoints[2].1, "ingress:default/web");
+    }
+
+    #[test]
+    fn ingress_and_lb_service_summaries_extract_hosts_and_endpoints() {
+        let ingresses = json!({ "items": [{
+            "metadata": { "name": "web", "namespace": "default" },
+            "spec": {
+                "ingressClassName": "nginx",
+                "rules": [{ "host": "app.fiducia.cloud" }, { "host": "admin.fiducia.cloud" }]
+            },
+            "status": { "loadBalancer": { "ingress": [{ "ip": "98.90.186.114" }] } }
+        }]});
+        let summary = summarize_ingress_endpoints(&ingresses, 10);
+        assert_eq!(summary.len(), 1);
+        assert_eq!(
+            summary[0]["hosts"],
+            json!(["app.fiducia.cloud", "admin.fiducia.cloud"])
+        );
+        assert_eq!(summary[0]["className"], json!("nginx"));
+        assert_eq!(summary[0]["loadBalancer"][0]["ip"], json!("98.90.186.114"));
+
+        let services = json!({ "items": [
+            { "metadata": { "name": "edge", "namespace": "default" },
+              "spec": { "type": "LoadBalancer",
+                        "ports": [{ "name": "https", "port": 443, "protocol": "TCP" }] },
+              "status": { "loadBalancer": { "ingress": [{ "ip": "98.90.186.114" }] } } },
+            { "metadata": { "name": "plain", "namespace": "default" },
+              "spec": { "type": "ClusterIP" } }
+        ]});
+        let summary = summarize_loadbalancer_services(&services, 10);
+        assert_eq!(summary.len(), 1);
+        assert_eq!(summary[0]["name"], json!("edge"));
+        assert_eq!(summary[0]["ports"][0]["port"], json!(443));
+        assert_eq!(summary[0]["externalEndpoints"], json!(["98.90.186.114"]));
+    }
+
+    #[test]
+    fn deployment_rollout_summary_keeps_replicas_and_key_conditions() {
+        let body = json!({ "items": [{
+            "metadata": { "name": "dd-cluster-mcp-rs", "namespace": "default" },
+            "spec": { "replicas": 2 },
+            "status": {
+                "readyReplicas": 1,
+                "updatedReplicas": 2,
+                "availableReplicas": 1,
+                "conditions": [
+                    { "type": "Available", "status": "False", "reason": "MinimumReplicasUnavailable",
+                      "message": "Deployment does not have minimum availability." },
+                    { "type": "Progressing", "status": "True", "reason": "ReplicaSetUpdated",
+                      "message": "ReplicaSet is progressing." },
+                    { "type": "ReplicaFailure", "status": "True", "reason": "FailedCreate",
+                      "message": "pods exceeded quota" }
+                ]
+            }
+        }]});
+        let rollouts = summarize_deployment_rollouts(&body, 10);
+        assert_eq!(rollouts.len(), 1);
+        let rollout = &rollouts[0];
+        assert_eq!(rollout["replicas"], json!(2));
+        assert_eq!(rollout["readyReplicas"], json!(1));
+        assert_eq!(rollout["availableReplicas"], json!(1));
+        // Only Available/Progressing conditions ship.
+        assert_eq!(rollout["conditions"].as_array().unwrap().len(), 2);
+        assert_eq!(rollout["conditions"][0]["type"], json!("Available"));
+        assert_eq!(
+            rollout["conditions"][1]["reason"],
+            json!("ReplicaSetUpdated")
+        );
+    }
+
+    #[test]
+    fn warning_event_summary_bounds_and_redacts_messages() {
+        let event = |message: &str| {
+            json!({
+                "reason": "FailedMount", "type": "Warning",
+                "involvedObject": { "kind": "Pod", "name": "dd-x-0", "namespace": "default" },
+                "count": 7, "lastTimestamp": "2026-07-13T00:00:00Z",
+                "message": message
+            })
+        };
+        let body = json!({ "items": [
+            event("MountVolume.SetUp failed: secret \"dd-agent-secrets\" not found"),
+            event("failed: api_key=super-secret-value rejected"),
+            event("third event")
+        ]});
+        let events = summarize_warning_events(&body, 2);
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0]["involvedObject"]["kind"], json!("Pod"));
+        assert_eq!(events[0]["count"], json!(7));
+        // Key-based line redaction applies to messages.
+        let message = events[1]["message"].as_str().unwrap();
+        assert!(message.contains(REDACTED));
+        assert!(!message.contains("super-secret-value"));
+    }
+
+    #[test]
+    fn tools_list_includes_new_integrations() {
+        assert_eq!(TOOL_NAMES.len(), 20);
+        for tool in [
+            "cloudflare_zones",
+            "cloudflare_dns_records",
+            "domain_registration",
+            "domain_dns_wiring",
+            "kubernetes_ingress_endpoints",
+            "deployment_rollout_status",
+            "kubernetes_events_warnings",
+        ] {
+            assert!(TOOL_NAMES.contains(&tool), "missing tool {tool}");
+        }
+        let listed = tools_list_result(json!(1));
+        let tools = listed["result"]["tools"].as_array().unwrap();
+        assert_eq!(tools.len(), TOOL_NAMES.len());
+        let names = tools
+            .iter()
+            .map(|tool| tool["name"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        for tool in TOOL_NAMES {
+            assert!(names.contains(tool), "tools/list missing {tool}");
+        }
+    }
+
+    #[test]
+    fn csv_env_lists_normalize_and_bound() {
+        // env_csv_bounded is exercised through its parser behavior: values are
+        // trimmed, lowercased, de-dotted, and capped.
+        std::env::set_var(
+            "DD_MCP_DOMAINS_TEST_FIXTURE",
+            " Fiducia.Cloud. , app.fiducia.cloud ,, canonical.cloud,a.test,b.test,c.test",
+        );
+        let domains = env_csv_bounded("DD_MCP_DOMAINS_TEST_FIXTURE", "", 4);
+        std::env::remove_var("DD_MCP_DOMAINS_TEST_FIXTURE");
+        assert_eq!(
+            domains,
+            vec![
+                "fiducia.cloud",
+                "app.fiducia.cloud",
+                "canonical.cloud",
+                "a.test"
+            ]
+        );
+    }
+
+    #[test]
+    fn header_secret_gate_accepts_only_matching_credentials() {
+        let mut headers = HeaderMap::new();
+        // No secret configured => fail closed even with a header present.
+        headers.insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_static("Bearer s3cret"),
+        );
+        assert!(!header_secret_ok(None, &headers));
+        assert!(!header_secret_ok(Some(""), &headers));
+        // Correct bearer.
+        assert!(header_secret_ok(Some("s3cret"), &headers));
+        // Wrong bearer.
+        assert!(!header_secret_ok(Some("nope"), &headers));
+        // X-Server-Auth path.
+        let mut xheaders = HeaderMap::new();
+        xheaders.insert("x-server-auth", HeaderValue::from_static("s3cret"));
+        assert!(header_secret_ok(Some("s3cret"), &xheaders));
+        // Missing entirely.
+        assert!(!header_secret_ok(Some("s3cret"), &HeaderMap::new()));
+    }
+}

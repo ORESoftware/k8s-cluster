@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+dd-telemetry = { path = "../../libs/telemetry-rs" }
+tracing = "0.1"
 async-nats = "=0.38.0"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 # Source-of-truth NATS subject names, wildcards, queue groups, and stream

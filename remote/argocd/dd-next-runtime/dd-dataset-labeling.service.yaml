@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-dataset-labeling
+  namespace: default
+  labels:
+    app: dd-dataset-labeling
+spec:
+  selector:
+    app: dd-dataset-labeling
+  ports:
+    - name: http
+      port: 8138
+      targetPort: http

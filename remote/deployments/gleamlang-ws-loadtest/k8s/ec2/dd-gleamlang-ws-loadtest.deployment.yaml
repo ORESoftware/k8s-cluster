@@ -6,7 +6,9 @@ metadata:
   labels:
     app: dd-gleamlang-ws-loadtest
 spec:
-  replicas: 1
+  # Default replicas: 0 - operators scale to 1 for the duration of a load
+  # test and back to 0 afterwards.
+  replicas: 0
   selector:
     matchLabels:
       app: dd-gleamlang-ws-loadtest
@@ -37,8 +39,18 @@ spec:
           env:
             - name: TARGET_WS_URL
               value: ws://dd-gleamlang-server.default.svc.cluster.local:8081/ws
+            - name: LOAD_MODE
+              value: "pipeline"
             - name: CLIENT_COUNT
               value: "5000"
+            - name: MESSAGES_PER_SECOND_PER_CLIENT
+              value: "1.0"
+            - name: MESSAGE_PAYLOAD
+              value: "gleam-bench-payload"
+            - name: MESSAGE_ENCODINGS
+              value: "json,msgpack,protobuf,flatbuffers"
+            - name: LOADTEST_TRANSPORTS
+              value: "http,tcp,websocket"
             - name: HOLD_SECONDS
               value: "300"
             - name: CONNECT_TIMEOUT_MS

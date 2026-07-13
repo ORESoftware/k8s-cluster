@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-ocr-rs
+  namespace: default
+  labels:
+    app: dd-ocr-rs
+spec:
+  selector:
+    app: dd-ocr-rs
+  ports:
+    - name: http
+      port: 8123
+      targetPort: http

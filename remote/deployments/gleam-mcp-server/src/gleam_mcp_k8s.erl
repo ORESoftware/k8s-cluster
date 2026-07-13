@@ -9,16 +9,23 @@
 -define(DEFAULT_TIMEOUT_MS, 1500).
 -define(DEFAULT_BODY_LIMIT_BYTES, 262144).
 -define(DEFAULT_INVENTORY_BODY_LIMIT_BYTES, 32768).
+-define(MAX_TIMEOUT_MS, 5000).
+-define(MAX_BODY_LIMIT_BYTES, 262144).
 
 deployments_json() ->
-    Base = env_bin("MCP_KUBERNETES_API_URL", ?DEFAULT_API_URL),
-    Limit = env_pos_int("MCP_KUBERNETES_BODY_LIMIT_BYTES", ?DEFAULT_BODY_LIMIT_BYTES),
-    Path = env_bin("MCP_KUBERNETES_DEPLOYMENTS_PATH", ?DEFAULT_DEPLOYMENTS_PATH),
+    Base = gleam_mcp_redact:safe_base_url("MCP_KUBERNETES_API_URL", ?DEFAULT_API_URL),
+    Limit = bounded_int("MCP_KUBERNETES_BODY_LIMIT_BYTES", ?DEFAULT_BODY_LIMIT_BYTES, 1024, ?MAX_BODY_LIMIT_BYTES),
+    Path = deployments_path(),
     resource_json(Base, Limit, <<"deployments">>, <<"all-namespaces">>, Path).
 
 inventory_json() ->
-    Base = env_bin("MCP_KUBERNETES_API_URL", ?DEFAULT_API_URL),
-    Limit = env_pos_int("MCP_KUBERNETES_INVENTORY_BODY_LIMIT_BYTES", ?DEFAULT_INVENTORY_BODY_LIMIT_BYTES),
+    Base = gleam_mcp_redact:safe_base_url("MCP_KUBERNETES_API_URL", ?DEFAULT_API_URL),
+    Limit = bounded_int(
+        "MCP_KUBERNETES_INVENTORY_BODY_LIMIT_BYTES",
+        ?DEFAULT_INVENTORY_BODY_LIMIT_BYTES,
+        1024,
+        ?MAX_BODY_LIMIT_BYTES
+    ),
     Resources = [resource_entry(Base, Limit, Target) || Target <- inventory_targets()],
     json_obj([
         {<<"source">>, <<"kubernetes-api">>},
@@ -79,6 +86,13 @@ inventory_targets() ->
         {<<"customresourcedefinitions">>, <<"cluster">>, <<"/apis/apiextensions.k8s.io/v1/customresourcedefinitions?limit=500">>}
     ].
 
+deployments_path() ->
+    Path = env_bin("MCP_KUBERNETES_DEPLOYMENTS_PATH", ?DEFAULT_DEPLOYMENTS_PATH),
+    case Path of
+        <<"/apis/apps/v1/deployments", _/binary>> -> Path;
+        _ -> ?DEFAULT_DEPLOYMENTS_PATH
+    end.
+
 resource_json(Base, Limit, Name, Scope, Path) ->
     Url = join_url(Base, Path),
     Result = kubernetes_get(Url, Limit),
@@ -86,7 +100,7 @@ resource_json(Base, Limit, Name, Scope, Path) ->
         {<<"source">>, <<"kubernetes-api">>},
         {<<"resource">>, Name},
         {<<"scope">>, Scope},
-        {<<"url">>, Url},
+        {<<"url">>, gleam_mcp_redact:url_for_output(Url)},
         {<<"readOnly">>, true},
         {<<"metadataOnlyRequest">>, true},
         {<<"response">>, raw(Result)}
@@ -99,14 +113,14 @@ resource_entry(Base, Limit, {Name, Scope, Path}) ->
         {<<"name">>, Name},
         {<<"scope">>, Scope},
         {<<"path">>, Path},
-        {<<"url">>, Url},
+        {<<"url">>, gleam_mcp_redact:url_for_output(Url)},
         {<<"response">>, raw(Result)}
     ])).
 
 kubernetes_get(UrlBin, Limit) ->
     _ = application:ensure_all_started(inets),
     _ = application:ensure_all_started(ssl),
-    Timeout = env_pos_int("MCP_KUBERNETES_TIMEOUT_MS", ?DEFAULT_TIMEOUT_MS),
+    Timeout = bounded_int("MCP_KUBERNETES_TIMEOUT_MS", ?DEFAULT_TIMEOUT_MS, 100, ?MAX_TIMEOUT_MS),
     Started = erlang:monotonic_time(millisecond),
     Url = binary_to_list(UrlBin),
     TokenPath = binary_to_list(env_bin("MCP_KUBERNETES_TOKEN_PATH", ?DEFAULT_TOKEN_PATH)),
@@ -121,13 +135,17 @@ kubernetes_get(UrlBin, Limit) ->
             HttpOptions = [
                 {timeout, Timeout},
                 {connect_timeout, Timeout},
+                %% Never follow redirects: httpc re-sends headers (including this
+                %% Bearer token) on a 3xx and does not strip them cross-host, so
+                %% a redirect must not be able to retarget a token-bearing call.
+                {autoredirect, false},
                 {ssl, [{verify, verify_peer}, {cacertfile, CaPath}]}
             ],
             Options = [{body_format, binary}],
             case catch httpc:request(get, {Url, Headers}, HttpOptions, Options) of
                 {ok, {{_, Status, Reason}, _RespHeaders, Body0}} ->
                     BodyOriginal = to_binary(Body0),
-                    Body = clip(BodyOriginal, Limit),
+                    Body = gleam_mcp_redact:sample(BodyOriginal, Limit),
                     Truncated = byte_size(BodyOriginal) > Limit,
                     json_obj([
                         {<<"ok">>, Status >= 200 andalso Status < 400},
@@ -179,29 +197,10 @@ trim_trailing_slash(Bin) ->
     end.
 
 env_bin(Name, Default) ->
-    case os:getenv(Name) of
-        false -> Default;
-        "" -> Default;
-        Value -> unicode:characters_to_binary(Value)
-    end.
+    dd_cli_config_client_ffi:getenv(Name, Default).
 
-env_pos_int(Name, Default) ->
-    case os:getenv(Name) of
-        false -> Default;
-        "" -> Default;
-        Raw ->
-            case string:to_integer(Raw) of
-                {Value, _} when Value > 0 -> Value;
-                _ -> Default
-            end
-    end.
-
-clip(Bin, Limit) when byte_size(Bin) =< Limit -> Bin;
-clip(Bin, Limit) when Limit > 32 ->
-    Prefix = binary:part(Bin, 0, Limit),
-    <<Prefix/binary, "\n... clipped ...">>;
-clip(Bin, Limit) ->
-    binary:part(Bin, 0, Limit).
+bounded_int(Name, Default, Min, Max) ->
+    gleam_mcp_redact:bounded_int(Name, Default, Min, Max).
 
 json_obj(Pairs) ->
     <<"{", (join([json_pair(K, V) || {K, V} <- Pairs], <<",">>))/binary, "}">>.

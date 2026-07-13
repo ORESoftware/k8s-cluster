@@ -5,8 +5,18 @@ edition = "2021"
 description = "HTTP server that runs the discrete-event-system.rs engine as a library and serves the rendered HTML result pages."
 
 [dependencies]
-axum = { version = "0.7", features = ["multipart"] }
+# NOTE: the shared `dd-telemetry` crate (../../libs/telemetry-rs) lives in a
+# PRIVATE submodule (k8s-libs-and-shared-defs) that the in-pod build cannot fetch
+# (the k8s repo is cloned over public https with no creds, and the build script
+# does not assemble remote/libs into its build root), so depending on it makes
+# the in-pod `cargo build` fail at dependency resolution. Use a plain stdout
+# tracing subscriber until the shared telemetry crate is actually shipped — same
+# approach as dd-soccer-rs.
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+axum = { version = "0.7", features = ["multipart", "ws"] }
 tokio = { version = "1", features = ["fs", "io-util", "macros", "rt-multi-thread", "signal", "time"] }
+tokio-util = { version = "0.7", features = ["io"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
@@ -16,3 +26,14 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 # This is the whole point of the deployment: run the real Rust DES engine
 # in-process and serve the HTML/JSON artifacts its simulations render.
 des_engine = { path = "../../submodules/discrete-event-system.rs" }
+
+# Soccer was extracted out of des_engine into the `soccer_engine` crate
+# (soccer-sim-game-engine.rs), checked out adjacently as a submodule. Its own
+# `des_engine = { path = "../discrete-event-system.rs" }` resolves to the SAME
+# engine submodule above, so there is exactly one des_engine in the graph.
+#
+# The `planner` feature is REQUIRED: soccer-sim-game-engine.rs@main feature-gated
+# its `soccer_planner` re-export behind `#[cfg(feature = "planner")]`, and this
+# server imports `soccer_engine::soccer_planner` for the rotation planner routes.
+# Without it the in-pod build fails with `unresolved import` (E0432).
+soccer_engine = { path = "../../submodules/soccer-sim-game-engine.rs", features = ["planner"] }

@@ -17,10 +17,12 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-03-des-rs-dns-refresh'
+        dd.dev/telemetry-revision: '2026-06-07-gateway-quoted-regex'
+        dd.dev/gateway-config-revision: '2026-06-26-fiducia-canonical-sites'
       labels:
         app: dd-remote-gateway
     spec:
+      priorityClassName: system-cluster-critical
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 20
       containers:
@@ -50,6 +52,16 @@ spec:
                 secretKeyRef:
                   name: dd-agent-secrets
                   key: SERVER_AUTH_SECRET
+            # Dedicated read-only MCP bearer token validated by the gateway for
+            # /mcp and /cluster-mcp only. Lets local IDE MCP clients connect
+            # with a narrow, revocable credential instead of the master
+            # operator cookie value. Required (not optional) so the
+            # $dd_mcp_bearer_ok map never matches an empty "Bearer " token.
+            - name: DD_MCP_READONLY_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-mcp-gateway-token
+                  key: MCP_READONLY_TOKEN
           ports:
             - name: http
               containerPort: 80

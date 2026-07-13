@@ -35,17 +35,17 @@ spec:
     # --network host` and inherit the EC2 node's network namespace.
     # Their MCP requests therefore arrive with the node's host IP rather
     # than a pod identity, so the podSelector clauses above never match
-    # and Cilium drops the SYN. Allowing RFC1918 ingress on :8090
-    # mirrors the egress allowlist already present in this policy and
-    # is safe because the `/mcp` surface is intentionally read-only and
-    # the ops/runtime-config paths still require X-Server-Auth.
+    # and Cilium drops the SYN. Scope the ipBlock to the cluster VPC CIDR
+    # (172.31.0.0/16) — the node's host IP lives there. The previous
+    # 10.0.0.0/8 also matched the 10.244.0.0/16 pod network, which let ANY
+    # pod reach this unauthenticated read-only surface and bypass the
+    # podSelector allowlist above; legitimate in-cluster callers are matched
+    # by the podSelector/namespaceSelector rules, not this ipBlock. The
+    # `/mcp` surface is read-only and the ops/runtime-config paths still
+    # require X-Server-Auth.
     - from:
         - ipBlock:
-            cidr: 10.0.0.0/8
-        - ipBlock:
-            cidr: 172.16.0.0/12
-        - ipBlock:
-            cidr: 192.168.0.0/16
+            cidr: 172.31.0.0/16
       ports:
         - protocol: TCP
           port: 8090
@@ -97,6 +97,15 @@ spec:
             matchLabels:
               app: dd-nats
       ports:
+        # 4222: NATS client protocol. Required for the server's NATS
+        # transport (publish McpToolEvents / subscribe McpControl). Without
+        # this the dd_nats gen_server would log "connect failed" + reconnect
+        # forever while the HTTP surface kept working — the same silent
+        # half-failure mode as the runtime-config egress rule below.
+        - protocol: TCP
+          port: 4222
+        # 7777 (Prometheus exporter) + 8222 (monitoring API): scraped over
+        # HTTP by the nats_metrics / observability tools.
         - protocol: TCP
           port: 7777
         - protocol: TCP

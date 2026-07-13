@@ -1,0 +1,334 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: airflow-dags
+  namespace: big-data
+data:
+  big_data_smoke_dag.py: |
+    from datetime import datetime
+
+    from airflow.decorators import dag, task
+
+
+    @dag(
+        dag_id="big_data_smoke",
+        start_date=datetime(2024, 1, 1),
+        schedule=None,
+        catchup=False,
+        tags=["big-data", "smoke"],
+    )
+    def big_data_smoke():
+        @task
+        def hello():
+            return "Spark, Airflow, and MinIO are deployed."
+
+        hello()
+
+
+    big_data_smoke()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airflow
+  namespace: big-data
+  labels:
+    app.kubernetes.io/name: airflow
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  progressDeadlineSeconds: 900
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: airflow
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: airflow
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      serviceAccountName: big-data-workload
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        fsGroup: 0
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: airflow-init
+          image: docker.io/apache/airflow:2.10.5@sha256:6499a680a93463846d3a6be980e85d601dc97b0d81e82eed9ef5e5cb9da31b79
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 50000
+            runAsGroup: 0
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - bash
+            - -ec
+          args:
+            - |
+              airflow db migrate
+              python - <<'PY'
+              import os
+
+              from airflow.www.app import cached_app
+
+
+              username = os.environ["AIRFLOW_ADMIN_USERNAME"]
+              password = os.environ["AIRFLOW_ADMIN_PASSWORD"]
+
+              app = cached_app()
+              security_manager = app.appbuilder.sm
+              role = security_manager.find_role("Admin")
+              if role is None:
+                  raise RuntimeError("Airflow Admin role was not initialized")
+
+              user = security_manager.find_user(username=username)
+              if user is None:
+                  security_manager.add_user(
+                      username=username,
+                      first_name="Big",
+                      last_name="Data",
+                      email="admin@example.local",
+                      role=role,
+                      password=password,
+                  )
+              else:
+                  user.first_name = "Big"
+                  user.last_name = "Data"
+                  user.email = "admin@example.local"
+                  user.password = security_manager.get_hash(password)
+                  user.roles = [role]
+                  security_manager.get_session.commit()
+              PY
+          env:
+            - name: AIRFLOW_HOME
+              value: /opt/airflow/runtime
+            - name: AIRFLOW__CORE__EXECUTOR
+              value: SequentialExecutor
+            - name: AIRFLOW__CORE__DAGS_FOLDER
+              value: /opt/airflow/dags
+            - name: AIRFLOW__CORE__LOAD_EXAMPLES
+              value: "false"
+            - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+              value: sqlite:////opt/airflow/runtime/airflow.db
+            - name: AIRFLOW__LOGGING__BASE_LOG_FOLDER
+              value: /opt/airflow/runtime/logs
+            - name: AIRFLOW__WEBSERVER__EXPOSE_CONFIG
+              value: "false"
+            - name: TMPDIR
+              value: /tmp
+            - name: AIRFLOW_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: airflow-admin
+                  key: username
+                  optional: false
+            - name: AIRFLOW_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: airflow-admin
+                  key: password
+                  optional: false
+          volumeMounts:
+            - name: airflow-runtime
+              mountPath: /opt/airflow/runtime
+            - name: dags
+              mountPath: /opt/airflow/dags
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+              ephemeral-storage: 1Gi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+              ephemeral-storage: 2Gi
+      containers:
+        - name: webserver
+          image: docker.io/apache/airflow:2.10.5@sha256:6499a680a93463846d3a6be980e85d601dc97b0d81e82eed9ef5e5cb9da31b79
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 50000
+            runAsGroup: 0
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - airflow
+          args:
+            - webserver
+            - --port
+            - "8080"
+          env:
+            - name: AIRFLOW_HOME
+              value: /opt/airflow/runtime
+            - name: AIRFLOW__CORE__EXECUTOR
+              value: SequentialExecutor
+            - name: AIRFLOW__CORE__DAGS_FOLDER
+              value: /opt/airflow/dags
+            - name: AIRFLOW__CORE__LOAD_EXAMPLES
+              value: "false"
+            - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+              value: sqlite:////opt/airflow/runtime/airflow.db
+            - name: AIRFLOW__LOGGING__BASE_LOG_FOLDER
+              value: /opt/airflow/runtime/logs
+            - name: AIRFLOW__WEBSERVER__EXPOSE_CONFIG
+              value: "false"
+            - name: TMPDIR
+              value: /tmp
+          ports:
+            - name: web
+              containerPort: 8080
+          volumeMounts:
+            - name: airflow-runtime
+              mountPath: /opt/airflow/runtime
+            - name: dags
+              mountPath: /opt/airflow/dags
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+              ephemeral-storage: 1Gi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+              ephemeral-storage: 2Gi
+          startupProbe:
+            httpGet:
+              path: /health
+              port: web
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: web
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 8
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: web
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+        - name: scheduler
+          image: docker.io/apache/airflow:2.10.5@sha256:6499a680a93463846d3a6be980e85d601dc97b0d81e82eed9ef5e5cb9da31b79
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 50000
+            runAsGroup: 0
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - airflow
+          args:
+            - scheduler
+          env:
+            - name: AIRFLOW_HOME
+              value: /opt/airflow/runtime
+            - name: AIRFLOW__CORE__EXECUTOR
+              value: SequentialExecutor
+            - name: AIRFLOW__CORE__DAGS_FOLDER
+              value: /opt/airflow/dags
+            - name: AIRFLOW__CORE__LOAD_EXAMPLES
+              value: "false"
+            - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+              value: sqlite:////opt/airflow/runtime/airflow.db
+            - name: AIRFLOW__LOGGING__BASE_LOG_FOLDER
+              value: /opt/airflow/runtime/logs
+            - name: TMPDIR
+              value: /tmp
+          volumeMounts:
+            - name: airflow-runtime
+              mountPath: /opt/airflow/runtime
+            - name: dags
+              mountPath: /opt/airflow/dags
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+              ephemeral-storage: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+              ephemeral-storage: 1Gi
+          startupProbe:
+            exec:
+              command:
+                - bash
+                - -ec
+                - airflow jobs check --job-type SchedulerJob --hostname "${HOSTNAME}"
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 30
+          livenessProbe:
+            exec:
+              command:
+                - bash
+                - -ec
+                - airflow jobs check --job-type SchedulerJob --hostname "${HOSTNAME}"
+            periodSeconds: 60
+            timeoutSeconds: 10
+            failureThreshold: 3
+      volumes:
+        - name: airflow-runtime
+          emptyDir:
+            sizeLimit: 4Gi
+        - name: dags
+          configMap:
+            name: airflow-dags
+            defaultMode: 0440
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: airflow
+  namespace: big-data
+  labels:
+    app.kubernetes.io/name: airflow
+spec:
+  selector:
+    app.kubernetes.io/name: airflow
+  ports:
+    - name: web
+      appProtocol: http
+      port: 8080
+      targetPort: web

@@ -24,12 +24,16 @@ pub struct Config {
     pub paypal_client_secret: Option<String>,
     pub paypal_env: ProviderEnvironment,
     pub paypal_webhook_id: Option<String>,
+    pub paypal_api_base_override: Option<String>,
+    pub paypal_connect_base_override: Option<String>,
     pub braintree_client_id: Option<String>,
     pub braintree_client_secret: Option<String>,
     pub braintree_env: ProviderEnvironment,
+    pub braintree_api_base_override: Option<String>,
     pub plaid_client_id: Option<String>,
     pub plaid_secret: Option<String>,
     pub plaid_env: PlaidEnvironment,
+    pub plaid_api_base_override: Option<String>,
     pub coinbase_webhook_secret: Option<String>,
     pub coinflow_webhook_validation_key: Option<String>,
     pub revolut_webhook_secret: Option<String>,
@@ -80,6 +84,42 @@ pub struct Config {
     /// `BILLING_ALLOW_PRIVATE_OUTBOUND=true` to opt out (for dev /
     /// integration tests against a local mock server).
     pub block_private_outbound: bool,
+
+    /// Gate customer billing-state snapshots and customer-account ledger
+    /// writes with the external live-mutex-rs broker. Defaults off for local
+    /// development; production manifests turn this on.
+    pub customer_snapshot_lock_enabled: bool,
+
+    /// live-mutex TCP broker address, usually
+    /// `dd-rust-network-mutex.default.svc.cluster.local:6970`.
+    pub live_mutex_addr: String,
+
+    /// TTL hint sent to the broker for customer snapshot/write locks.
+    pub live_mutex_lock_ttl_ms: u64,
+
+    /// Timeout for connect/acquire/release broker operations.
+    pub live_mutex_request_timeout_ms: u64,
+
+    /// NATS server URL for the domain-event feed + inbound sync commands.
+    /// `BILLING_NATS_URL`, falling back to the shared `NATS_URL`. When unset
+    /// the [`crate::events::EventBus`] runs as a silent no-op (publishes are
+    /// dropped, no subscriber loop is started), mirroring the CDC consumer.
+    pub nats_url: Option<String>,
+
+    /// Master switch for the NATS event layer. Defaults `false` so the
+    /// server carries no messaging dependency unless an operator opts in.
+    /// Connecting (and the inbound sync-command subscriber) only happens
+    /// when this is true AND `nats_url` resolves.
+    pub nats_publish_enabled: bool,
+
+    /// Queue group for the inbound `dd.remote.billing.commands.sync`
+    /// subscription so replicas load-balance commands. Defaults to the
+    /// generated `BILLING_SYNC_COMMANDS_QUEUE_GROUP` (`dd-billing-server`).
+    pub nats_queue_group: Option<String>,
+
+    /// Hard ceiling on published payload bytes and accepted inbound command
+    /// bytes (defense against a malformed / hostile message). Default 1 MiB.
+    pub nats_max_payload_bytes: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -148,12 +188,16 @@ impl Config {
             paypal_client_secret: env::var("PAYPAL_CLIENT_SECRET").ok(),
             paypal_env: ProviderEnvironment::from_env("PAYPAL_ENV"),
             paypal_webhook_id: env::var("PAYPAL_WEBHOOK_ID").ok(),
+            paypal_api_base_override: optional_trimmed_env("BILLING_PAYPAL_API_BASE"),
+            paypal_connect_base_override: optional_trimmed_env("BILLING_PAYPAL_CONNECT_BASE"),
             braintree_client_id: env::var("BRAINTREE_CLIENT_ID").ok(),
             braintree_client_secret: env::var("BRAINTREE_CLIENT_SECRET").ok(),
             braintree_env: ProviderEnvironment::from_env("BRAINTREE_ENV"),
+            braintree_api_base_override: optional_trimmed_env("BILLING_BRAINTREE_API_BASE"),
             plaid_client_id: env::var("PLAID_CLIENT_ID").ok(),
             plaid_secret: env::var("PLAID_SECRET").ok(),
             plaid_env: PlaidEnvironment::from_env("PLAID_ENV"),
+            plaid_api_base_override: optional_trimmed_env("BILLING_PLAID_API_BASE"),
             coinbase_webhook_secret: env::var("COINBASE_WEBHOOK_SECRET").ok(),
             coinflow_webhook_validation_key: env::var("COINFLOW_WEBHOOK_VALIDATION_KEY").ok(),
             revolut_webhook_secret: env::var("REVOLUT_WEBHOOK_SECRET").ok(),
@@ -174,23 +218,45 @@ impl Config {
             .unwrap_or(300),
 
             admin_ui_enabled: env_bool("BILLING_ADMIN_UI_ENABLED", true),
-            admin_auth_bearer: env::var("BILLING_ADMIN_AUTH_BEARER")
-                .ok()
-                .and_then(|s| {
-                    let t = s.trim();
-                    if t.is_empty() { None } else { Some(t.to_string()) }
-                }),
+            admin_auth_bearer: env::var("BILLING_ADMIN_AUTH_BEARER").ok().and_then(|s| {
+                let t = s.trim();
+                if t.is_empty() {
+                    None
+                } else {
+                    Some(t.to_string())
+                }
+            }),
             admin_allowed_origins: parse_csv_env("BILLING_ADMIN_ALLOWED_ORIGINS"),
-            api_auth_bearer: env::var("BILLING_API_AUTH_BEARER")
-                .ok()
-                .and_then(|s| {
-                    let t = s.trim();
-                    if t.is_empty() { None } else { Some(t.to_string()) }
-                }),
+            api_auth_bearer: env::var("BILLING_API_AUTH_BEARER").ok().and_then(|s| {
+                let t = s.trim();
+                if t.is_empty() {
+                    None
+                } else {
+                    Some(t.to_string())
+                }
+            }),
             // Default fail-closed: the only legitimate use for outbound
             // private-IP traffic is dev/integration. Production callers
             // should hit the public webhook URL of their tenant.
             block_private_outbound: env_bool("BILLING_BLOCK_PRIVATE_OUTBOUND", true),
+            customer_snapshot_lock_enabled: env_bool(
+                "BILLING_CUSTOMER_SNAPSHOT_LOCK_ENABLED",
+                false,
+            ),
+            live_mutex_addr: env::var("BILLING_LIVE_MUTEX_ADDR")
+                .unwrap_or_else(|_| "dd-rust-network-mutex.default.svc.cluster.local:6970".into()),
+            live_mutex_lock_ttl_ms: env_u64("BILLING_LIVE_MUTEX_LOCK_TTL_MS", 60_000)
+                .clamp(1_000, 60_000),
+            live_mutex_request_timeout_ms: env_u64("BILLING_LIVE_MUTEX_REQUEST_TIMEOUT_MS", 30_000)
+                .clamp(100, 30_000),
+            nats_url: optional_trimmed_env("BILLING_NATS_URL")
+                .or_else(|| optional_trimmed_env("NATS_URL")),
+            nats_publish_enabled: env_bool("BILLING_NATS_PUBLISH_ENABLED", false),
+            nats_queue_group: optional_trimmed_env("BILLING_NATS_QUEUE_GROUP"),
+            // 1 MiB default; clamp to a sane band so a typo can't set 0
+            // (which would reject every message) or an absurd ceiling.
+            nats_max_payload_bytes: env_u64("BILLING_NATS_MAX_PAYLOAD_BYTES", 1_048_576)
+                .clamp(4_096, 8_388_608) as usize,
         })
     }
 
@@ -200,28 +266,40 @@ impl Config {
             .or(self.stripe_client_secret.as_ref())
     }
 
-    pub fn paypal_api_base(&self) -> &'static str {
+    pub fn paypal_api_base(&self) -> &str {
+        if let Some(base) = &self.paypal_api_base_override {
+            return base;
+        }
         match self.paypal_env {
             ProviderEnvironment::Production => "https://api-m.paypal.com",
             ProviderEnvironment::Sandbox => "https://api-m.sandbox.paypal.com",
         }
     }
 
-    pub fn paypal_connect_base(&self) -> &'static str {
+    pub fn paypal_connect_base(&self) -> &str {
+        if let Some(base) = &self.paypal_connect_base_override {
+            return base;
+        }
         match self.paypal_env {
             ProviderEnvironment::Production => "https://www.paypal.com",
             ProviderEnvironment::Sandbox => "https://www.sandbox.paypal.com",
         }
     }
 
-    pub fn braintree_api_base(&self) -> &'static str {
+    pub fn braintree_api_base(&self) -> &str {
+        if let Some(base) = &self.braintree_api_base_override {
+            return base;
+        }
         match self.braintree_env {
             ProviderEnvironment::Production => "https://api.braintreegateway.com",
             ProviderEnvironment::Sandbox => "https://api.sandbox.braintreegateway.com",
         }
     }
 
-    pub fn plaid_api_base(&self) -> &'static str {
+    pub fn plaid_api_base(&self) -> &str {
+        if let Some(base) = &self.plaid_api_base_override {
+            return base;
+        }
         match self.plaid_env {
             PlaidEnvironment::Production => "https://production.plaid.com",
             PlaidEnvironment::Development => "https://development.plaid.com",
@@ -252,12 +330,16 @@ impl Config {
             paypal_client_secret: None,
             paypal_env: ProviderEnvironment::Sandbox,
             paypal_webhook_id: None,
+            paypal_api_base_override: None,
+            paypal_connect_base_override: None,
             braintree_client_id: None,
             braintree_client_secret: None,
             braintree_env: ProviderEnvironment::Sandbox,
+            braintree_api_base_override: None,
             plaid_client_id: None,
             plaid_secret: None,
             plaid_env: PlaidEnvironment::Sandbox,
+            plaid_api_base_override: None,
             coinbase_webhook_secret: None,
             coinflow_webhook_validation_key: None,
             revolut_webhook_secret: None,
@@ -273,6 +355,14 @@ impl Config {
             api_auth_bearer: None,
             // Tests sometimes hit localhost; default-allow keeps them simple.
             block_private_outbound: false,
+            customer_snapshot_lock_enabled: false,
+            live_mutex_addr: "127.0.0.1:6970".into(),
+            live_mutex_lock_ttl_ms: 60_000,
+            live_mutex_request_timeout_ms: 30_000,
+            nats_url: None,
+            nats_publish_enabled: false,
+            nats_queue_group: None,
+            nats_max_payload_bytes: 1_048_576,
         }
     }
 }
@@ -317,6 +407,24 @@ fn env_bool(name: &str, default: bool) -> bool {
             let s = s.to_ascii_lowercase();
             s == "1" || s == "true" || s == "yes" || s == "on"
         })
+        .unwrap_or(default)
+}
+
+fn optional_trimmed_env(name: &str) -> Option<String> {
+    env::var(name).ok().and_then(|s| {
+        let trimmed = s.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
+}
+
+fn env_u64(name: &str, default: u64) -> u64 {
+    env::var(name)
+        .ok()
+        .and_then(|s| s.parse().ok())
         .unwrap_or(default)
 }
 

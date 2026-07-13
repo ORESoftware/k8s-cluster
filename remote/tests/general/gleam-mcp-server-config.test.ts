@@ -35,11 +35,13 @@ test('Gleam MCP server is a standalone OTP runtime', async () => {
     'remote/deployments/gleam-mcp-server/src/gleam_mcp_observability.erl',
   );
   const k8sFfi = await readRepoFile('remote/deployments/gleam-mcp-server/src/gleam_mcp_k8s.erl');
+  const redactFfi = await readRepoFile('remote/deployments/gleam-mcp-server/src/gleam_mcp_redact.erl');
   const runtimeEnv = await readRepoFile('remote/deployments/gleam-mcp-server/src/gleam_mcp_runtime_env.erl');
   const jsonFfi = await readRepoFile('remote/deployments/gleam-mcp-server/src/gleam_mcp_json.erl');
 
   assert.match(gleamToml, /name = "gleam_mcp_server"/);
   assert.match(gleamToml, /mist = ">= 6\.0\.0 and < 7\.0\.0"/);
+  assert.match(gleamToml, /dd_cli_config_client/);
   assert.match(main, /supervisor\.new\(supervisor\.OneForOne\)/);
   assert.match(main, /metrics\.start\(named_as: metrics_name\)/);
   assert.match(main, /http_server\.supervised\(metrics_name\)/);
@@ -52,10 +54,15 @@ test('Gleam MCP server is a standalone OTP runtime', async () => {
   assert.match(main, /http_server\.bind_host\(\)/);
   assert.match(main, /http_server\.bind_port\(\)/);
   assert.match(runtimeEnv, /-module\(gleam_mcp_runtime_env\)/);
-  assert.match(runtimeEnv, /os:getenv\(Name\)/);
+  assert.match(runtimeEnv, /dd_cli_config_client_ffi:getenv\(Name, <<>>\)/);
   assert.match(jsonFfi, /-module\(gleam_mcp_json\)/);
   assert.match(jsonFfi, /request_id\/1/);
-  assert.match(jsonFfi, /re:run\(Body, Pattern/);
+  assert.match(jsonFfi, /method\/1/);
+  assert.match(jsonFfi, /tool_name\/1/);
+  assert.match(jsonFfi, /json:decode\(Body\)/);
+  assert.doesNotMatch(jsonFfi, /re:run\(Body, Pattern/);
+  assert.doesNotMatch(httpServer, /method_from_body/);
+  assert.doesNotMatch(httpServer, /tool_from_body/);
   assert.match(httpServer, /Get, \["healthz"\] -> healthz\(\)/);
   assert.match(httpServer, /Get, \["metrics"\] -> metrics_response\(metrics_name\)/);
   assert.match(httpServer, /Get, \["observability"\] -> observability_response\(\)/);
@@ -64,7 +71,7 @@ test('Gleam MCP server is a standalone OTP runtime', async () => {
   assert.match(httpServer, /"tools\/call"/);
   assert.match(httpServer, /initialize_result\(request_id\)/);
   assert.match(httpServer, /tools_list_result\(request_id\)/);
-  assert.match(httpServer, /tools_call_result\(tool_from_body\(body\), request_id\)/);
+  assert.match(httpServer, /tools_call_result\(json_tool_name\(body\), request_id\)/);
   assert.match(httpServer, /import gleam_mcp_server\/k8s/);
   assert.match(httpServer, /"kubernetes_inventory"/);
   assert.match(httpServer, /"kubernetes_deployments"/);
@@ -102,6 +109,8 @@ test('Gleam MCP server is a standalone OTP runtime', async () => {
   assert.match(observabilityFfi, /MCP_NATS_MONITOR_URL/);
   assert.match(observabilityFfi, /MCP_NATS_METRICS_URL/);
   assert.match(observabilityFfi, /MCP_OBSERVABILITY_TIMEOUT_MS/);
+  assert.match(observabilityFfi, /gleam_mcp_redact:sample/);
+  assert.match(observabilityFfi, /safe_base_url/);
   assert.match(k8sFfi, /-module\(gleam_mcp_k8s\)/);
   assert.match(k8sFfi, /inventory_json\/0/);
   assert.match(k8sFfi, /human_access_policy_json\/0/);
@@ -117,6 +126,14 @@ test('Gleam MCP server is a standalone OTP runtime', async () => {
   assert.match(k8sFfi, /application\/json;as=PartialObjectMetadataList;g=meta\.k8s\.io;v=v1/);
   assert.doesNotMatch(k8sFfi, /PartialObjectMetadataList;g=meta\.k8s\.io;v=v1, application\/json/);
   assert.match(k8sFfi, /httpc:request/);
+  assert.match(k8sFfi, /gleam_mcp_redact:sample/);
+  assert.match(k8sFfi, /safe_base_url/);
+  assert.match(redactFfi, /safe_base_url\/2/);
+  assert.match(redactFfi, /allowed_host\("kubernetes\.default\.svc"\)/);
+  assert.match(redactFfi, /"\.svc\.cluster\.local"/);
+  assert.match(redactFfi, /json:decode\(Body\)/);
+  assert.match(redactFfi, /secret_like_key/);
+  assert.match(redactFfi, /<redacted>/);
 });
 
 test('Gleam MCP server uses EC2 inventory RBAC', async () => {
@@ -143,47 +160,34 @@ test('Gleam MCP server uses EC2 inventory RBAC', async () => {
 
   assert.match(ec2Deployment, /name:\s*dd-gleam-mcp-server/);
   assert.match(ec2Deployment, /ghcr\.io\/gleam-lang\/gleam:v1\.16\.0-erlang-alpine/);
-  // The EC2 overlay mounts the host checkout read-modify-unsafe at
-  // /opt/dd-next-1 and drops ALL Linux capabilities, so it must copy the
-  // project plus its local-path deps into a writable scratch dir backed
-  // by an explicit, bounded emptyDir before invoking gleam (gleam needs
-  // to write build/dev/erlang/... and the host dir is owned by ec2-user
-  // with no CAP_DAC_OVERRIDE in the pod). Running `gleam run` straight
-  // out of /opt/dd-next-1 silently crash-loops the pod, which surfaces
-  // as a 502 at the public gateway — see commit 073e451 and its revert
-  // for the failure mode.
+  // The EC2 overlay mounts the host checkout read-only at /opt/dd-next-1,
+  // copies just this service plus local path deps into a bounded /work
+  // emptyDir, builds in an init container, then starts only the generated
+  // BEAM modules in the memory-capped long-running container.
   assert.match(
     ec2Deployment,
-    /SRC_ROOT=\/opt\/dd-next-1[\s\S]*SCRATCH_ROOT=\/tmp\/dd-gleam-mcp-server[\s\S]*WORK_ROOT="\$SCRATCH_ROOT\/dd-next-1"[\s\S]*touch "\$SCRATCH_ROOT\/\.boot-probe"[\s\S]*cp -R "\$SRC_ROOT\/remote\/deployments\/gleam-mcp-server"\/\. "\$WORK_ROOT\/remote\/deployments\/gleam-mcp-server"\/[\s\S]*cp -R "\$SRC_ROOT\/remote\/libs\/pg-defs\/generated\/gleam" "\$WORK_ROOT\/remote\/libs\/pg-defs\/generated\/gleam"[\s\S]*cp -R "\$SRC_ROOT\/remote\/libs\/runtime-config-client-gleam"\/\. "\$WORK_ROOT\/remote\/libs\/runtime-config-client-gleam"\/[\s\S]*cd "\$WORK_ROOT\/remote\/deployments\/gleam-mcp-server"[\s\S]*if \[ ! -f manifest\.toml \][\s\S]*if \[ ! -d build\/packages \][\s\S]*exec gleam run/,
-  );
-  assert.doesNotMatch(
-    ec2Deployment,
-    /\n\s+cd \/opt\/dd-next-1\/remote\/deployments\/gleam-mcp-server\n\s+if \[ ! -f manifest\.toml \]/,
-  );
-  // The boot script must use a deterministic write-probe instead of the
-  // older noisy `mountpoint -q` heuristic, and must defensively re-check
-  // that build/packages matches every entry in manifest.toml. The exact
-  // failure mode this catches: a new local-path dep is added to
-  // manifest.toml but the host's build/packages is left stale, so
-  // gleam tries to re-resolve over the network and trips the
-  // NetworkPolicy hex.pm block — visible end-to-end once as a public
-  // gateway 502 with `Resolving versions` in the pod logs.
-  assert.doesNotMatch(ec2Deployment, /mountpoint -q\s+"\$SCRATCH_ROOT"/);
-  assert.match(
-    ec2Deployment,
-    /touch "\$SCRATCH_ROOT\/\.boot-probe"[\s\S]*\$SCRATCH_ROOT is not writable/,
+    /initContainers:[\s\S]*- name: build-gleam-mcp-server[\s\S]*SRC_ROOT=\/opt\/dd-next-1[\s\S]*WORK_ROOT=\/work\/dd-next-1[\s\S]*cp -R "\$SRC_ROOT\/remote\/deployments\/gleam-mcp-server"\/\. "\$WORK_ROOT\/remote\/deployments\/gleam-mcp-server"\/[\s\S]*cp -R "\$SRC_ROOT\/remote\/libs\/cli-config-client-gleam"\/\. "\$WORK_ROOT\/remote\/libs\/cli-config-client-gleam"\/[\s\S]*cp -R "\$SRC_ROOT\/remote\/libs\/pg-defs\/generated\/gleam" "\$WORK_ROOT\/remote\/libs\/pg-defs\/generated\/gleam"[\s\S]*cp -R "\$SRC_ROOT\/remote\/libs\/runtime-config-client-gleam"\/\. "\$WORK_ROOT\/remote\/libs\/runtime-config-client-gleam"/,
   );
   assert.match(
     ec2Deployment,
-    /names=\$\(awk '\/\^packages = \\\[\/,\/\^\\\]\/' manifest\.toml[\s\S]*grep -oE 'name = "\[\^"\]\+"'[\s\S]*for name in \$names; do[\s\S]*build\/packages\/\$name\.config_fingerprint[\s\S]*build\/packages stale relative to manifest\.toml/,
+    /build-gleam-mcp-server[\s\S]*for path in[\s\S]*\$PROJ\/gleam\.toml[\s\S]*\$PROJ\/manifest\.toml[\s\S]*\$WORK_ROOT\/remote\/libs\/cli-config-client-gleam\/gleam\.toml[\s\S]*\$WORK_ROOT\/remote\/libs\/pg-defs\/generated\/gleam\/gleam\.toml[\s\S]*\$WORK_ROOT\/remote\/libs\/runtime-config-client-gleam\/gleam\.toml/,
   );
+  assert.match(
+    ec2Deployment,
+    /build\/packages is empty in the copied project[\s\S]*gleam deps download[\s\S]*names=\$\(awk '\/\^packages = \\\[\/,\/\^\\\]\/' "\$PROJ\/manifest\.toml"[\s\S]*build\/packages\/\$name\.config_fingerprint[\s\S]*build\/packages on the host is stale, missing entries for:/,
+  );
+  assert.match(ec2Deployment, /cd "\$PROJ"[\s\S]*gleam build[\s\S]*echo "build: ok"/);
+  assert.match(
+    ec2Deployment,
+    /exec erl -pa build\/dev\/erlang\/\*\/ebin -noshell -eval 'gleam_mcp_server@@main:run\(gleam_mcp_server\)\.'/,
+  );
+  assert.doesNotMatch(ec2Deployment, /exec gleam run/);
   assert.match(
     ec2Deployment,
     /hostPath:\s*\n\s+path:\s*\/home\/ec2-user\/codes\/dd\/dd-next-1[\s\S]*type:\s*Directory/,
   );
   assert.doesNotMatch(ec2Deployment, /apk add/);
   assert.doesNotMatch(ec2Deployment, /^\s*gleam deps download\s*$/m);
-  assert.match(ec2Deployment, /exec gleam run/);
   assert.match(ec2Deployment, /containerPort:\s*8090/);
   assert.match(ec2Deployment, /serviceAccountName:\s*dd-gleam-mcp-server/);
   assert.match(ec2Deployment, /automountServiceAccountToken:\s*true/);
@@ -192,8 +196,8 @@ test('Gleam MCP server uses EC2 inventory RBAC', async () => {
   assert.match(ec2Deployment, /startupProbe:[\s\S]*failureThreshold:\s*60/);
   assert.match(ec2Deployment, /readinessProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*8090/);
   assert.match(ec2Deployment, /livenessProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*8090/);
-  assert.match(ec2Deployment, /requests:[\s\S]*cpu:\s*250m[\s\S]*memory:\s*1Gi[\s\S]*ephemeral-storage:\s*256Mi/);
-  assert.match(ec2Deployment, /limits:[\s\S]*cpu:\s*"4"[\s\S]*memory:\s*8Gi[\s\S]*ephemeral-storage:\s*2Gi/);
+  assert.match(ec2Deployment, /requests:[\s\S]*cpu:\s*250m[\s\S]*memory:\s*512Mi[\s\S]*ephemeral-storage:\s*512Mi/);
+  assert.match(ec2Deployment, /limits:[\s\S]*cpu:\s*"2"[\s\S]*memory:\s*8Gi[\s\S]*ephemeral-storage:\s*4Gi/);
   assert.match(ec2Deployment, /mountPath:\s*\/opt\/dd-next-1/);
   // The hostPath mount must be readOnly so even an accidental write or a
   // misconfigured boot script can't corrupt the source-of-truth host repo
@@ -202,16 +206,16 @@ test('Gleam MCP server uses EC2 inventory RBAC', async () => {
     ec2Deployment,
     /- name: repo\s*\n\s+mountPath: \/opt\/dd-next-1\s*\n\s+readOnly: true/,
   );
-  // The scratch space must be an explicit, bounded emptyDir mounted at
-  // the exact path the boot script uses (/tmp/dd-gleam-mcp-server) so
-  // the boot-time copy never consumes the writable layer unbounded.
+  // The workdir and tmp space are explicit, bounded emptyDirs so neither
+  // dependency copy/build output nor crash/temp files can consume the
+  // container writable layer unbounded.
   assert.match(
     ec2Deployment,
-    /- name: scratch\s*\n\s+mountPath: \/tmp\/dd-gleam-mcp-server/,
+    /- name: work\s*\n\s+mountPath: \/work/,
   );
   assert.match(
     ec2Deployment,
-    /- name: scratch\s*\n\s+emptyDir:\s*\n\s+sizeLimit:\s*1Gi/,
+    /- name: work\s*\n\s+emptyDir:\s*\n\s+sizeLimit:\s*4Gi/,
   );
   // The main container runs with a read-only root filesystem. The only
   // mutable surfaces are the two bounded emptyDirs (scratch + tmp), and
@@ -232,45 +236,20 @@ test('Gleam MCP server uses EC2 inventory RBAC', async () => {
   );
   assert.match(
     ec2Deployment,
-    /- name: HOME\s*\n\s+value: \/tmp\/dd-gleam-mcp-server\/home/,
+    /- name: HOME\s*\n\s+value: \/work\/home/,
   );
   assert.match(
     ec2Deployment,
-    /- name: XDG_CACHE_HOME\s*\n\s+value: \/tmp\/dd-gleam-mcp-server\/cache/,
+    /- name: XDG_CACHE_HOME\s*\n\s+value: \/work\/cache/,
   );
   assert.match(
     ec2Deployment,
-    /- name: GLEAM_HOME\s*\n\s+value: \/tmp\/dd-gleam-mcp-server\/gleam-home/,
-  );
-  // Boot script must mkdir those env-pinned subdirs before exec'ing
-  // gleam (otherwise gleam will try to create them on the read-only
-  // rootfs if HOME/XDG/GLEAM_HOME isn't already there).
-  assert.match(
-    ec2Deployment,
-    /mkdir -p "\$SCRATCH_ROOT\/home" "\$SCRATCH_ROOT\/cache" "\$SCRATCH_ROOT\/gleam-home"/,
-  );
-  // Init container must run before the main container, fail fast on a
-  // bad host checkout, and produce operator-actionable log lines that
-  // point at the exact host-side fix (warm the checkout / run
-  // `gleam deps download` on the EC2 node). This is the line of defence
-  // that turns the "silent CrashLoop -> 502 at the gateway" failure mode
-  // into a visible `kubectl describe pod` error.
-  assert.match(
-    ec2Deployment,
-    /initContainers:[\s\S]*- name: preflight[\s\S]*image:\s*ghcr\.io\/gleam-lang\/gleam:v1\.16\.0-erlang-alpine[\s\S]*readOnlyRootFilesystem:\s*true[\s\S]*for path in[\s\S]*\$PROJ\/gleam\.toml[\s\S]*\$PROJ\/manifest\.toml[\s\S]*\/opt\/dd-next-1\/remote\/libs\/pg-defs\/generated\/gleam\/gleam\.toml[\s\S]*\/opt\/dd-next-1\/remote\/libs\/runtime-config-client-gleam\/gleam\.toml[\s\S]*build\/packages is empty in the host checkout[\s\S]*gleam deps download[\s\S]*preflight: ok/,
-  );
-  // Preflight must also fail fast when the host's build/packages exists
-  // but is missing entries for packages listed in manifest.toml (the
-  // exact stale-cache failure mode we observed once: a new local-path
-  // dep was added but the host was never re-warmed).
-  assert.match(
-    ec2Deployment,
-    /initContainers:[\s\S]*- name: preflight[\s\S]*names=\$\(awk '\/\^packages = \\\[\/,\/\^\\\]\/' "\$PROJ\/manifest\.toml"[\s\S]*grep -oE 'name = "\[\^"\]\+"'[\s\S]*for name in \$names; do[\s\S]*build\/packages\/\$name\.config_fingerprint[\s\S]*build\/packages on the host is stale, missing entries for:[\s\S]*preflight: ok/,
+    /- name: GLEAM_HOME\s*\n\s+value: \/work\/gleam-home/,
   );
   // The init container reads the host repo but must never write to it.
   assert.match(
     ec2Deployment,
-    /initContainers:[\s\S]*- name: preflight[\s\S]*volumeMounts:[\s\S]*- name: repo\s*\n\s+mountPath: \/opt\/dd-next-1\s*\n\s+readOnly: true/,
+    /initContainers:[\s\S]*- name: build-gleam-mcp-server[\s\S]*volumeMounts:[\s\S]*- name: repo\s*\n\s+mountPath: \/opt\/dd-next-1\s*\n\s+readOnly: true/,
   );
   assert.match(ec2Deployment, /dd\.dev\/telemetry-revision/);
   assert.match(ec2Deployment, /name:\s*HOST[\s\S]*value:\s*0\.0\.0\.0/);
@@ -288,6 +267,7 @@ test('Gleam MCP server uses EC2 inventory RBAC', async () => {
   assert.match(ec2Deployment, /MCP_KUBERNETES_TIMEOUT_MS[\s\S]*value:\s*'1500'/);
   assert.match(ec2Deployment, /MCP_KUBERNETES_BODY_LIMIT_BYTES[\s\S]*value:\s*'262144'/);
   assert.match(ec2Deployment, /MCP_KUBERNETES_INVENTORY_BODY_LIMIT_BYTES[\s\S]*value:\s*'32768'/);
+  assert.match(ec2Deployment, /MCP_ALLOW_EXTERNAL_URLS[\s\S]*value:\s*'false'/);
   assert.match(ec2Deployment, /path:\s*\/home\/ec2-user\/codes\/dd\/dd-next-1/);
   assert.match(ec2Service, /port:\s*8090/);
   assert.match(ec2Service, /targetPort:\s*8090/);
@@ -414,7 +394,7 @@ test('Gleam MCP server is exposed through gateway and observability', async () =
   assert.match(collector, /job_name: dd-gleam-mcp-server/);
   assert.match(collector, /job_name: dd-gleam-mcp-server[\s\S]*metrics_path: \/metrics/);
   assert.match(collector, /dd-gleam-mcp-server\.default\.svc\.cluster\.local:8090/);
-  assert.match(dashboard, /Gleam MCP Runtime/);
+  assert.match(dashboard, /Cluster MCP Runtime/);
   assert.match(dashboard, /dd_gleam_mcp_rpc_requests_total/);
 });
 

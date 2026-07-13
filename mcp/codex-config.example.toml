@@ -1,0 +1,25 @@
+# Codex CLI MCP config for the dd read-only cluster MCP servers.
+#
+# Codex supports native streamable-HTTP MCP servers with per-server
+# `http_headers`, so no `mcp-remote` bridge is needed. The gateway serves a
+# publicly-trusted Let's Encrypt IP certificate, so no custom CA is needed
+# either — just the bearer token.
+#
+# Copy these two blocks into ~/.codex/config.toml and replace the token
+# placeholder. This file is an EXAMPLE: do not commit the real token. Your
+# ~/.codex/config.toml is local-only, so a literal token there is fine.
+#
+# If the EC2 Elastic IP changes again, update the two URLs (see mcp/README.md
+# for how to discover the current IP).
+
+[mcp_servers.dd-cluster-mcp]
+url = "https://98.90.186.114/cluster-mcp"
+
+[mcp_servers.dd-cluster-mcp.http_headers]
+Authorization = "Bearer REPLACE_WITH_DD_MCP_TOKEN"
+
+[mcp_servers.dd-gleam-mcp]
+url = "https://98.90.186.114/mcp"
+
+[mcp_servers.dd-gleam-mcp.http_headers]
+Authorization = "Bearer REPLACE_WITH_DD_MCP_TOKEN"
