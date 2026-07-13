@@ -2163,15 +2163,22 @@ fn sanitize_url_for_output(raw: &str) -> String {
     }
 }
 
-async fn api_docs_html() -> Html<&'static str> {
-    Html(include_str!("../generated/api-docs.html"))
+async fn api_docs_html(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Some(response) = gated_unauthorized_response(&state, &headers) {
+        return response;
+    }
+    Html(include_str!("../generated/api-docs.html")).into_response()
 }
 
-async fn api_docs_json() -> impl IntoResponse {
+async fn api_docs_json(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Some(response) = gated_unauthorized_response(&state, &headers) {
+        return response;
+    }
     (
         [("content-type", "application/json; charset=utf-8")],
         include_str!("../generated/api-docs.json"),
     )
+        .into_response()
 }
 
 #[tokio::main]
