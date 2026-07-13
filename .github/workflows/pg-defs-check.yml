@@ -199,22 +199,27 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # remote/libs is a submodule (ORESoftware/k8s-libs-and-shared-defs,
+      # pinned to main) holding pg-defs/nats/interfaces; the wiring steps
+      # below hit file-not-found without it. The nested async-java submodule
+      # uses an SSH URL, so rewrite git@github.com: to HTTPS.
+      - name: Init remote/libs submodule only
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule update --init --recursive --depth 1 remote/libs
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
         with:
-          # remote/libs is a submodule (ORESoftware/k8s-libs-and-shared-defs,
-          # pinned to main) holding pg-defs/nats/interfaces. Without this the
-          # generator + wiring steps below hit file-not-found. `recursive`
-          # matches repo-checks.yml and also pulls the nested async-java.
-          submodules: recursive
+          version: 10.33.0
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
