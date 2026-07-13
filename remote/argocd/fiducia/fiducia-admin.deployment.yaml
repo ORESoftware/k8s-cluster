@@ -82,6 +82,21 @@ spec:
             - name: SUPABASE_PUBLISHABLE_KEY
               valueFrom:
                 secretKeyRef: { name: fiducia-admin-secrets, key: supabase-publishable-key, optional: true }
+            # Cluster-internal trusted-hop secret — must equal the value node and
+            # brain run with; the admin's brain/node observe calls attach it as
+            # x-fiducia-internal-auth (add key internal-secret to the same Secret).
+            - name: FIDUCIA_INTERNAL_SECRET
+              valueFrom:
+                secretKeyRef: { name: fiducia-admin-secrets, key: internal-secret, optional: true }
+            # Observability plane (namespace `observability`): PromQL + LogQL
+            # query APIs for the admin cluster-insight pages, and the public
+            # Grafana subpath for deep-link handoff.
+            - { name: FIDUCIA_PROMETHEUS_URL, value: http://dd-prometheus.observability.svc.cluster.local:9090 }
+            - { name: FIDUCIA_LOKI_URL, value: http://dd-loki.observability.svc.cluster.local:3100 }
+            - { name: FIDUCIA_GRAFANA_PUBLIC_URL, value: /telemetry }
+            # Export OTLP traces to the shared collector (fiducia-telemetry
+            # degrades to stdout-only logging when unset).
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://dd-otel-collector.observability.svc.cluster.local:4317 }
             - { name: RUST_LOG, value: info }
             - { name: HOME, value: /tmp }
             - { name: CARGO_HOME, value: /tmp/cargo }
