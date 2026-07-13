@@ -237,7 +237,7 @@ jobs:
             ${{ runner.os }}-cargo-pg-defs-
 
       - name: Install tsx (remote/tests)
-        run: pnpm install --frozen-lockfile=false
+        run: pnpm install --frozen-lockfile
         working-directory: remote/tests
 
       # Asserts:
