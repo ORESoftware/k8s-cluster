@@ -122,3 +122,16 @@ scripts/audit-repo-state.sh --allow-dirty
 - `apps/fiducia-telemetry.rs`
 - `apps/fiducia-test-config`
 - `apps/fiducia-ui.web`
+
+## Security posture
+
+The superproject itself ships no application code and no secrets — it only pins
+submodule commits. `.env*` are git-ignored (`!.env.example` excepted), and
+`.env.example` carries placeholder values only. Secret hygiene is enforced by
+`scripts/audit-repo-state.sh`, which fails on tracked secret files,
+secret-looking values, stale conflict markers, missing Dockerfiles, and Rust
+runtime images that are not distroless/nonroot. Each app repo keeps its own
+visibility boundary (see `docs/repo-boundaries.md`), so public SDK/protocol
+repos can coexist with private control-plane/infra/customer repos under one
+integration view. Per-app security posture lives in each submodule's own README;
+submodule internals are never edited from here.
