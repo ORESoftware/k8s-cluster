@@ -1,0 +1,137 @@
+# flags-2-env config for dd-sound-recorder-rs: maps CLI flags to the env vars the
+# server reads. Launch with flags (e.g. `--port=8126 --rate-limit-per-minute=120`)
+# and flags2env converts them to env at startup (see src/main.rs::apply_cli_flags).
+# Env vars set directly still work; flags override them. This covers the common
+# operational knobs; the full set of SOUND_RECORDER_* vars remains settable via env
+# (see .env.example) and can be added here as flags when useful.
+[help]
+url = "https://github.com/sonus-auris/sonus-auris-backend.rs"
+columns = ["options", "env", "type", "default", "description"]
+
+[env]
+# Legitimate env keys not (yet) exposed as flags — don't flag them in .env audits.
+ignore = [
+  "RUST_LOG",
+  "SOUND_RECORDER_S3_BUCKET", "SOUND_RECORDER_S3_KEY_PREFIX",
+  "SOUND_RECORDER_GOOGLE_CLIENT_ID", "SOUND_RECORDER_GOOGLE_CLIENT_SECRET",
+  "SOUND_RECORDER_GOOGLE_DRIVE_UPLOAD_URL", "SOUND_RECORDER_GOOGLE_TOKEN_URL",
+  "SOUND_RECORDER_GOOGLE_AUTHORIZATION_URL",
+  "SOUND_RECORDER_MICROSOFT_CLIENT_ID", "SOUND_RECORDER_MICROSOFT_CLIENT_SECRET",
+  "SOUND_RECORDER_MICROSOFT_GRAPH_BASE_URL", "SOUND_RECORDER_MICROSOFT_TOKEN_URL",
+  "SOUND_RECORDER_MICROSOFT_AUTHORIZATION_URL",
+  "SOUND_RECORDER_CLOUD_TOKEN_ENCRYPTION_KEY", "SOUND_RECORDER_DEVICE_TOKEN_PEPPER",
+  "SOUND_RECORDER_OAUTH_REDIRECT_ALLOWLIST", "SOUND_RECORDER_CDN_BASE_URL",
+  "SOUND_RECORDER_IOS_APP_STORE_URL", "SOUND_RECORDER_ANDROID_PLAY_STORE_URL",
+]
+
+[flags.host]
+env = "HOST"
+aliases = ["host"]
+short = "H"
+type = "string"
+default = "0.0.0.0"
+help = "Host/interface to bind."
+
+[flags.port]
+env = "PORT"
+aliases = ["port"]
+short = "p"
+type = "integer"
+default = 8126
+help = "TCP port for the HTTP listener."
+
+[flags.database_url]
+env = "SOUND_RECORDER_RDS_DATABASE_URL"
+aliases = ["database-url"]
+type = "string"
+help = "Postgres/RDS connection string."
+
+[flags.pg_pool_max_size]
+env = "SOUND_RECORDER_PG_POOL_MAX_SIZE"
+aliases = ["pg-pool-max-size"]
+type = "integer"
+help = "Max Postgres connection-pool size."
+
+[flags.public_base_url]
+env = "SOUND_RECORDER_PUBLIC_BASE_URL"
+aliases = ["public-base-url"]
+type = "string"
+help = "Public base URL for listen/alert links."
+
+[flags.supabase_url]
+env = "SOUND_RECORDER_SUPABASE_URL"
+aliases = ["supabase-url"]
+type = "string"
+help = "Supabase project URL."
+
+[flags.supabase_jwks_url]
+env = "SOUND_RECORDER_SUPABASE_JWKS_URL"
+aliases = ["supabase-jwks-url"]
+type = "string"
+help = "Supabase JWKS URL for JWT verification."
+
+[flags.supabase_jwt_secret]
+env = "SOUND_RECORDER_SUPABASE_JWT_SECRET"
+aliases = ["supabase-jwt-secret"]
+type = "string"
+help = "Supabase HS256 JWT secret (if using HS256)."
+
+[flags.supabase_service_role_key]
+env = "SOUND_RECORDER_SUPABASE_SERVICE_ROLE_KEY"
+aliases = ["supabase-service-role-key"]
+type = "string"
+help = "Supabase service-role key (server-side; account deletion)."
+
+[flags.rate_limit_per_minute]
+env = "SOUND_RECORDER_RATE_LIMIT_PER_MINUTE"
+aliases = ["rate-limit-per-minute"]
+type = "integer"
+help = "Per-key request rate limit per minute (0 disables)."
+
+[flags.rate_limit_trust_forwarded_for]
+env = "SOUND_RECORDER_RATE_LIMIT_TRUST_FORWARDED_FOR"
+aliases = ["rate-limit-trust-forwarded-for"]
+type = "bool"
+default = "false"
+true_aliases = ["1", "t"]
+false_aliases = ["0", "f"]
+help = "Key rate limiting on X-Forwarded-For (only behind a trusted proxy)."
+
+[flags.allow_public_device_registration]
+env = "SOUND_RECORDER_ALLOW_PUBLIC_DEVICE_REGISTRATION"
+aliases = ["allow-public-device-registration"]
+type = "bool"
+default = "false"
+true_aliases = ["1", "t"]
+false_aliases = ["0", "f"]
+help = "Allow public install-id device registration (keep off in production)."
+
+[flags.alert_email_to]
+env = "SOUND_RECORDER_ALERT_EMAIL_TO"
+aliases = ["alert-email-to"]
+type = "string"
+help = "Recipient for triggered-alert emails (unset disables alert emails)."
+
+[flags.alert_email_webhook_url]
+env = "SOUND_RECORDER_ALERT_EMAIL_WEBHOOK_URL"
+aliases = ["alert-email-webhook-url"]
+type = "string"
+help = "Webhook URL that delivers alert emails."
+
+[flags.default_retention_hours]
+env = "SOUND_RECORDER_DEFAULT_RETENTION_HOURS"
+aliases = ["default-retention-hours"]
+type = "integer"
+help = "Default cloud retention window, in hours."
+
+[flags.upload_url_ttl_seconds]
+env = "SOUND_RECORDER_UPLOAD_URL_TTL_SECONDS"
+aliases = ["upload-url-ttl-seconds"]
+type = "integer"
+help = "TTL of presigned upload URLs, in seconds."
+
+[flags.download_url_ttl_seconds]
+env = "SOUND_RECORDER_DOWNLOAD_URL_TTL_SECONDS"
+aliases = ["download-url-ttl-seconds"]
+type = "integer"
+help = "TTL of presigned download URLs, in seconds."
