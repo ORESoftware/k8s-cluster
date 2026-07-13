@@ -2543,6 +2543,7 @@ async fn main() {
     let state = AppState {
         http: build_http_client(&config),
         k8s_http: build_k8s_client(&config),
+        external_http: build_external_client(&config),
         metrics: Arc::new(Metrics::default()),
         config,
     };
