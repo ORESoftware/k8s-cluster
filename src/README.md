@@ -24,8 +24,14 @@ The entire `dd-sound-recorder-rs` binary lives here. There is exactly one file.
 
 ## Notes
 
-- Audio bytes are never proxied through this process — it deals only in presigned S3 URLs and
-  metadata rows.
+- Normal mobile uploads/downloads never proxy audio through this process — it deals in presigned
+  AWS S3 or Cloudflare R2 URLs and metadata rows. The server does use authenticated `HeadObject`
+  to verify completion, and reads bytes only for explicit Google Drive / OneDrive copy jobs.
+- Production readiness uses a configured object sentinel for a bounded remote `HeadObject`; the
+  signing-only fallback is an explicit development opt-out. New rows also carry a backend
+  fingerprint so changing the one global S3/R2 client cannot silently misroute historical keys.
+- AWS/custom S3 must be explicitly unversioned. Key-only deletion cannot physically erase old
+  versions from versioned or versioning-suspended buckets; R2 does not support versioning.
 - Postgres schema is owned out-of-band (see [`../migrations/README.md`](../migrations/README.md)),
   so there are no embedded migrations or ORM models here.
 - See the repo [`readme.md`](../readme.md) for routes, environment variables, and deployment.

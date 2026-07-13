@@ -47,8 +47,9 @@ The crate is also packaged with Nix (`flake.nix`, `.nix/`) and a `Dockerfile` fo
 
 - Mobile clients record short audio segments locally and request a new presigned S3 `PUT` URL for
   each segment.
-- The service stores metadata in Postgres and stores audio bytes in S3. It does not proxy audio
-  through the Rust process.
+- The service stores metadata in Postgres and audio bytes in the configured AWS S3 / Cloudflare R2
+  primary backend. Normal mobile transfer is direct via presigned URLs; the Rust process reads
+  bytes only for explicit server-managed Google Drive / OneDrive copy jobs.
 - Google Drive and Microsoft OneDrive links use server-side OAuth tokens sealed with AES-256-GCM.
   The server stores only sealed token envelopes in Postgres and refreshes access tokens inside the
   internal copy drain.
@@ -69,6 +70,10 @@ The crate is also packaged with Nix (`flake.nix`, `.nix/`) and a `Dockerfile` fo
 - Account deletion is also rooted in Supabase: `DELETE /api/mobile/v1/account` verifies the signed-in
   user's JWT, deletes Sonus Auris backend metadata, revokes device/cloud tokens, and deletes the
   Supabase Auth user with the server-only service-role key.
+- Browser account data stays a JSON concern here: the typed `/api/v1/data/*` routes verify the
+  caller's Supabase JWT and forward that JWT plus the publishable key to the Supabase Data API.
+  `sonus-auris-interfaces` deserializes the response and Supabase RLS remains the row-authorization
+  boundary; these routes never use the service-role key.
 - Google Drive / OneDrive links support a hybrid OAuth flow: the client may pass Supabase-brokered
   `providerAccessToken`/`providerRefreshToken` to `cloud-connections/oauth/complete` to be sealed
   directly, or omit them to fall back to the server-side authorization-code exchange.
@@ -87,13 +92,20 @@ The crate is also packaged with Nix (`flake.nix`, `.nix/`) and a `Dockerfile` fo
 - `GET /listen/:alert_id` — short-lived audio alert listening page.
 - `GET /download/ios` — redirects to `SOUND_RECORDER_IOS_APP_STORE_URL`.
 - `GET /download/android` — redirects to `SOUND_RECORDER_ANDROID_PLAY_STORE_URL`.
+- `GET /api/v1/data/acoustic-events?limit=50` — returns up to 200 owner-scoped `AcousticEvent`
+  rows using the shared interface crate and the caller's Supabase access token.
+- `GET /api/v1/data/user-consents?limit=50` — returns up to 200 owner-scoped `UserConsent` rows
+  using the same JWT/RLS path. Both data routes return `{ "count": N, "data": [...] }`.
 - `POST /api/mobile/v1/devices/register` — creates or rotates a device token.
-- `DELETE /api/mobile/v1/account` — deletes the signed-in Supabase account and Sonus Auris metadata.
+- `DELETE /api/mobile/v1/account` — deletes private storage objects, revokes Sonus Auris metadata
+  and credentials, then deletes the signed-in Supabase Auth user. Storage deletion is batched,
+  checked, and retry-safe.
 - `POST /api/mobile/v1/upload-sessions` — starts a device upload session.
 - `POST /api/mobile/v1/upload-sessions/:session_id/segments/presign` — creates/refreshes one
   segment row and returns a presigned S3 `PUT`.
-- `POST /api/mobile/v1/upload-sessions/:session_id/segments/:segment_id/complete` — marks a
-  segment uploaded after the mobile client receives success from S3.
+- `POST /api/mobile/v1/upload-sessions/:session_id/segments/:segment_id/complete` — verifies the
+  object with authenticated `HeadObject` (existence, size, content type, ETag) before marking it
+  uploaded; the mobile client's success report is never trusted by itself.
 - `POST /api/mobile/v1/upload-sessions/:session_id/heartbeat` — refreshes session liveness and
   returns the next expected sequence number.
 - `POST /api/mobile/v1/upload-sessions/:session_id/close` — closes an upload session.
@@ -132,29 +144,42 @@ The crate is also packaged with Nix (`flake.nix`, `.nix/`) and a `Dockerfile` fo
 | `PORT` | `8126` | Bind port. |
 | `SOUND_RECORDER_RDS_DATABASE_URL` | falls back to shared RDS env vars | Postgres URL. |
 | `SOUND_RECORDER_PG_POOL_MAX_SIZE` | `16` | Max pooled Postgres connections (clamped to `1..100`). Connections are pooled and reused, not opened per request. |
-| `SOUND_RECORDER_S3_BUCKET` / `S3_BUCKET` | unset | Required for presigned upload/download URLs. |
+| `SOUND_RECORDER_S3_BUCKET` / `S3_BUCKET` | unset | Primary AWS S3 bucket. `SOUND_RECORDER_R2_BUCKET` / `R2_BUCKET` are equivalent R2 aliases. |
 | `SOUND_RECORDER_S3_KEY_PREFIX` | `sound-recorder/segments` | Object key prefix. |
+| `SOUND_RECORDER_S3_REGION` / `R2_REGION` | `us-east-1` (`auto` for R2) | SigV4 region. R2 endpoints are always signed with Cloudflare's required `auto` region. |
+| `SOUND_RECORDER_S3_ENDPOINT` / `SOUND_RECORDER_R2_ENDPOINT` / `R2_ENDPOINT` / `S3_ENDPOINT` | unset | HTTPS S3-compatible endpoint. `SOUND_RECORDER_R2_ACCOUNT_ID` can derive Cloudflare's endpoint automatically. |
+| `SOUND_RECORDER_S3_ACCESS_KEY_ID` / `SOUND_RECORDER_S3_SECRET_ACCESS_KEY` | SDK credential chain | Optional service-scoped credential pair. R2-specific aliases are also supported; native AWS IAM roles and standard `AWS_*` credentials continue to work. |
+| `SOUND_RECORDER_S3_FORCE_PATH_STYLE` | `false` (`true` for generic custom endpoints) | Select path-style addressing when required by MinIO/another compatible store. R2 defaults to its documented virtual-host style. |
+| `SOUND_RECORDER_S3_SERVER_SIDE_ENCRYPTION` | `auto` | `auto`, `aes256`, or `none`. Auto signs explicit AES256 only for native AWS S3; it omits the unsupported header for R2, which already encrypts objects at rest. |
+| `SOUND_RECORDER_S3_MAX_ATTEMPTS` | `3` | AWS SDK standard retry attempts, clamped to `1..10`, with exponential backoff and jitter. |
+| `SOUND_RECORDER_S3_VERSIONING_MODE` | `unversioned` for R2; required for AWS/custom S3 | Must be explicitly `unversioned` (or `disabled`) for AWS/custom S3. Versioned and versioning-suspended buckets are rejected because key-only deletion does not physically erase prior versions. R2 has no versioning. |
+| `SOUND_RECORDER_S3_READINESS_OBJECT_KEY` | unset | Existing sentinel inside the configured prefix. Strict readiness performs a bounded remote `HeadObject`; no `HeadBucket`/`ListBucket` permission is needed. Production must set this. |
+| `SOUND_RECORDER_ALLOW_SIGNING_ONLY_STORAGE_READINESS` | `false` | Development-only opt-out permitting a local SigV4 signing check when no sentinel is configured. It does not prove remote availability or authorization. |
+| `SOUND_RECORDER_ALLOW_UNMARKED_STORAGE_HISTORY` | `false` | Temporary legacy-rollout acknowledgment for rows created before storage fingerprints. Requires the companion fingerprint below. Mismatched marked rows always fail readiness. Backfill verified rows, then return this to `false` before any backend cutover. |
+| `SOUND_RECORDER_UNMARKED_STORAGE_HISTORY_FINGERPRINT` | unset | When the legacy acknowledgment is true, this must exactly match `storageBackendFingerprint` from `/healthz`. Changing endpoint/region/bucket invalidates the acknowledgment automatically. |
 | `SOUND_RECORDER_CDN_BASE_URL` | unset | Optional CloudFront/base URL returned as `cdnUrl`. |
 | `SOUND_RECORDER_PUBLIC_BASE_URL` | unset | HTTPS base URL used to build `/listen/:alert_id` links in alert emails. HTTP is allowed only for localhost development. |
-| `SOUND_RECORDER_ALERT_EMAIL_TO` | `alexander.d.mills@gmail.com` | Server-controlled alert recipient. Client-supplied recipients are ignored. |
+| `SOUND_RECORDER_ALERT_EMAIL_TO` | unset | Server-controlled alert recipient. Alerts fail closed until configured; client-supplied recipients are ignored. |
 | `SOUND_RECORDER_ALERT_EMAIL_WEBHOOK_URL` | unset | Optional webhook that receives `{ to, subject, text, html }` for alert emails. |
 | `SOUND_RECORDER_DEVICE_TOKEN_PEPPER` | local random fallback | Required for durable device-token verification. |
 | `SOUND_RECORDER_REGISTRATION_BEARER` | unset | Optional bearer required by device registration. |
 | `SOUND_RECORDER_ALLOW_PUBLIC_DEVICE_REGISTRATION` | `false` | Explicitly opens registration when no bearer is configured. |
-| `SOUND_RECORDER_SERVER_AUTH_SECRET` / `SERVER_AUTH_SECRET` | unset | Required for `/internal/retention/sweep`. |
+| `SOUND_RECORDER_SERVER_AUTH_SECRET` / `SERVER_AUTH_SECRET` | unset | Required for both `/internal/retention/sweep` and `/internal/cloud-copy/drain`. |
 | `SOUND_RECORDER_DEFAULT_RETENTION_HOURS` | `500` | Clamped to `1..500`. |
 | `SOUND_RECORDER_DEFAULT_SEGMENT_SECONDS` | `60` | Suggested mobile segment length. |
 | `SOUND_RECORDER_MAX_SEGMENT_SECONDS` | `120` | Upper bound accepted by the API. |
 | `SOUND_RECORDER_MAX_SEGMENT_BYTES` | `10485760` | Upper bound accepted by the API. |
-| `SOUND_RECORDER_UPLOAD_URL_TTL_SECONDS` | `300` | Short-lived S3 PUT URL TTL. |
+| `SOUND_RECORDER_UPLOAD_URL_TTL_SECONDS` | `300` | Short-lived S3 PUT URL TTL. A segment too near its retention cutoff to leave this TTL plus a ten-minute upload-settle window is rejected rather than risking a post-delete write. |
 | `SOUND_RECORDER_DOWNLOAD_URL_TTL_SECONDS` | `900` | Short-lived evidence GET URL TTL. |
 | `SOUND_RECORDER_CLOUD_TOKEN_ENCRYPTION_KEY` | unset | Base64-encoded 32-byte AES-GCM key required for server-managed Google Drive and OneDrive links. |
 | `SOUND_RECORDER_SUPABASE_URL` / `SUPABASE_URL` | unset | Supabase project URL. Used to derive the JWKS URL and expected issuer. |
+| `SOUND_RECORDER_SUPABASE_PUBLISHABLE_KEY` / `SUPABASE_PUBLISHABLE_KEY` | unset | Publishable (or legacy anon) key used with the caller's JWT for typed `/api/v1/data/*` reads. It is not a service-role key. |
 | `SOUND_RECORDER_SUPABASE_JWT_SECRET` / `SUPABASE_JWT_SECRET` | unset | Legacy HS256 JWT secret. Enables verifying HS256 Supabase tokens. |
-| `SOUND_RECORDER_SUPABASE_JWKS_URL` | `${SUPABASE_URL}/auth/v1/.well-known/jwks.json` | JWKS endpoint for asymmetric (RS256/ES256) Supabase signing keys. Cached for one hour. |
+| `SOUND_RECORDER_SUPABASE_JWKS_URL` | `${SUPABASE_URL}/auth/v1/.well-known/jwks.json` | JWKS endpoint for asymmetric (RS256/ES256) Supabase signing keys. It must share the project URL's origin and is cached for at most ten minutes. |
 | `SOUND_RECORDER_SUPABASE_ISSUER` | `${SUPABASE_URL}/auth/v1` | Expected `iss` claim. |
 | `SOUND_RECORDER_SUPABASE_AUDIENCE` | `authenticated` | Expected `aud` claim. |
 | `SOUND_RECORDER_SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_SERVICE_ROLE_KEY` | unset | Server-only Supabase service-role key. Required for `DELETE /api/mobile/v1/account`; never expose it to the mobile app. |
+| `SOUND_RECORDER_REQUIRE_SUPABASE` | `true` | Makes complete Supabase account support (URL/JWKS/issuer, publishable key, service-role key) part of readiness. Set `false` only for isolated anonymous/local development. |
 | `SOUND_RECORDER_GOOGLE_CLIENT_ID` / `SOUND_RECORDER_GOOGLE_CLIENT_SECRET` | unset | OAuth client for Google Drive `drive.file` links. |
 | `SOUND_RECORDER_MICROSOFT_CLIENT_ID` / `SOUND_RECORDER_MICROSOFT_CLIENT_SECRET` | unset | OAuth client for Microsoft OneDrive AppFolder links. |
 | `SOUND_RECORDER_GOOGLE_AUTHORIZATION_URL` / `SOUND_RECORDER_GOOGLE_TOKEN_URL` | Google OAuth endpoints | Optional provider endpoint overrides for local integration tests. |
@@ -169,8 +194,78 @@ The crate is also packaged with Nix (`flake.nix`, `.nix/`) and a `Dockerfile` fo
 | `SOUND_RECORDER_IOS_APP_STORE_URL` | unset | `/download/ios` target. |
 | `SOUND_RECORDER_ANDROID_PLAY_STORE_URL` | unset | `/download/android` target. |
 
-`/readyz` requires Postgres, S3, durable token pepper, registration posture, and internal auth to be
-configured. `/healthz` always reports process health and configuration booleans.
+`/readyz` performs a live Postgres `select 1`, checks storage-history compatibility, and requires a
+bounded remote `HeadObject` of `SOUND_RECORDER_S3_READINESS_OBJECT_KEY`. It deliberately does not
+call `HeadBucket` or `ListBucket`: a least-privilege principal can access the configured object
+prefix without a list grant. Signing-only readiness is available solely through the explicit
+development flag above. When Supabase is required (the default), readiness also fetches and parses a
+non-empty JWKS for asymmetric projects or calls the documented Auth health route for legacy HS256
+projects. Durable token pepper, registration posture, internal auth, and complete Supabase account
+configuration remain required. `/healthz` reports process health, the non-secret storage fingerprint,
+and configuration booleans without contacting dependencies. Unknown boolean spellings are invalid
+configuration and fail readiness; they never silently become `false`.
+
+## CLI flags
+
+[`flags-2-env`](https://github.com/ORESoftware/flags-2-env) maps the declared
+options in `.cli-flags.toml` onto the existing environment contract before the
+backend starts:
+
+```sh
+scripts/with-flags help
+scripts/with-flags audit
+scripts/with-flags --port=8126 --supabase-url=https://project.supabase.co -- cargo run
+```
+
+The wrapper uses the monorepo's pinned native source when available and builds
+it into a commit-keyed user cache. Set `FLAGS2ENV_BIN` for a standalone install.
+Database credentials, JWT secrets, service-role keys, token peppers, and server
+auth secrets intentionally remain environment-only.
+
+## AWS S3 and Cloudflare R2
+
+The service supports either AWS S3 or Cloudflare R2 as its primary private object store through the
+same S3 API contract. For R2, set `SOUND_RECORDER_R2_ACCOUNT_ID`, bucket, access-key id, and secret;
+the endpoint and `auto` signing region are selected automatically. The generic
+`R2_BUCKET`, `R2_REGION`, `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, and
+`R2_SECRET_ACCESS_KEY` names emitted by the shared infrastructure templates are
+also accepted. An explicit
+`SOUND_RECORDER_S3_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com` works as
+well. Presigned URLs use the S3 API domain, not an R2 custom domain. PUT URLs
+sign the expected content type and, when supplied, byte length; completion
+verifies the stored object before it becomes visible in the timeline or
+cloud-copy queue.
+
+Production readiness uses a persistent sentinel inside `SOUND_RECORDER_S3_KEY_PREFIX`, proving
+remote endpoint reachability and object authorization without bucket listing. Deployment validation
+should additionally use a throwaway key and exercise PUT -> HEAD -> GET -> DELETE. The runtime
+principal needs only object-level write/read/delete permissions on that prefix.
+
+AWS/custom S3 buckets must be unversioned. In a versioned or versioning-suspended bucket,
+`DeleteObject`/`DeleteObjects` against a key leave older versions behind, so retention and account
+deletion would not be physical erasure. Supporting such buckets requires durable storage of version
+IDs plus list-and-delete-all-versions work; the current schema and workers do not provide that.
+
+This is a primary-backend choice, not an untracked simultaneous mirror. A durable AWS S3 -> R2
+mirror needs a schema-owned object-copy job (source/destination provider, bucket/key, status,
+attempts, lease, last error, completion timestamp), relaxed `storage_provider` constraints, a
+retrying worker, and retention/account-deletion coordination. The existing user cloud-copy table is
+constrained to Google Drive, OneDrive, and iCloud and cannot safely represent R2 jobs. Adding a
+best-effort copy without that durable state would falsely report protection after a lost write, so
+the backend deliberately does not do that.
+
+Likewise, changing the single global backend/endpoint is not an implicit cutover. New upload-session
+and segment metadata carries `sonusAurisStorageFingerprint`, derived from backend kind, endpoint,
+region, and bucket. Readiness rejects marked rows from any other fingerprint and, by default,
+pre-fingerprint rows too. During rollout only, an operator may set
+`SOUND_RECORDER_ALLOW_UNMARKED_STORAGE_HISTORY=true` after proving all unmarked keys belong to the
+currently configured store, and set `SOUND_RECORDER_UNMARKED_STORAGE_HISTORY_FINGERPRINT` to the
+exact fingerprint exposed by `/healthz`. This binding automatically fails if the backend changes.
+Use that value to backfill both segment and upload-session metadata, then disable the acknowledgment.
+Before a later AWS/R2 switch, migrate or delete every historical object and update its durable
+ownership metadata; otherwise readiness stays closed. True simultaneous/migrating providers require
+schema-owned provider identity, per-provider clients, and durable copy/delete jobs rather than the
+current single client.
 
 ## Mobile Notes
 
@@ -190,13 +285,15 @@ sample-counted segment timeline and can trim intentional overlap with a gapless 
 
 ```bash
 SOUND_RECORDER_ALLOW_PUBLIC_DEVICE_REGISTRATION=true \
+SOUND_RECORDER_REQUIRE_SUPABASE=false \
 SOUND_RECORDER_DEVICE_TOKEN_PEPPER=local-dev-pepper \
 SOUND_RECORDER_CLOUD_TOKEN_ENCRYPTION_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
 SOUND_RECORDER_SERVER_AUTH_SECRET=local-dev-secret \
 cargo run
 ```
 
-The page, health, metrics, and generated docs render without cloud credentials. Mobile write paths
+The page, health, metrics, and generated docs render without cloud credentials; strict `/readyz`
+correctly remains unavailable until Postgres and object storage are reachable. Mobile write paths
 need the Postgres tables (schema lives in the `ores/k8s-cluster` monorepo under
 `remote/libs/pg-defs/schema/schema.sql`) plus S3 credentials. The `migrations/` directory here is
 applied out-of-band — see `migrations/RUNBOOK.md`.

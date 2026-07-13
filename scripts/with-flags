@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+config_path="$repo_root/.cli-flags.toml"
+
+usage() {
+  cat >&2 <<'EOF'
+Usage:
+  scripts/with-flags audit
+  scripts/with-flags help
+  scripts/with-flags [flags2env options] -- command [arguments...]
+EOF
+}
+
+cached_binary_for_source() {
+  local source_dir="$1"
+  local revision cache_root build_dir binary
+
+  revision="$(git -C "$source_dir" rev-parse HEAD)"
+  cache_root="${FLAGS2ENV_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/flags-2-env}"
+  build_dir="$cache_root/$revision"
+  binary="$build_dir/flags2env"
+
+  if [[ ! -x "$binary" || "$source_dir/src/main.c" -nt "$binary" || "$source_dir/src/parser.c" -nt "$binary" ]]; then
+    make -C "$source_dir" BUILD_DIR="$build_dir" all >&2
+  fi
+
+  printf '%s\n' "$binary"
+}
+
+resolve_binary() {
+  local candidate
+
+  if [[ -n "${FLAGS2ENV_BIN:-}" ]]; then
+    if [[ ! -x "$FLAGS2ENV_BIN" ]]; then
+      printf 'FLAGS2ENV_BIN is not executable: %s\n' "$FLAGS2ENV_BIN" >&2
+      return 1
+    fi
+    printf '%s\n' "$FLAGS2ENV_BIN"
+    return
+  fi
+
+  for candidate in \
+    "$repo_root/tools/flags-2-env" \
+    "$repo_root/../../tools/flags-2-env" \
+    "$repo_root/../sonus-auris-monorepo/tools/flags-2-env" \
+    "$repo_root/../flags-2-env"; do
+    if [[ -f "$candidate/src/main.c" && -f "$candidate/Makefile" ]]; then
+      cached_binary_for_source "$candidate"
+      return
+    fi
+  done
+
+  if command -v flags2env >/dev/null 2>&1; then
+    command -v flags2env
+    return
+  fi
+
+  printf '%s\n' \
+    'flags2env was not found. Initialize the monorepo tools/flags-2-env submodule or set FLAGS2ENV_BIN.' >&2
+  return 1
+}
+
+flags2env_bin="$(resolve_binary)"
+
+case "${1:-}" in
+  audit)
+    [[ $# -eq 1 ]] || { usage; exit 64; }
+    exec "$flags2env_bin" audit "$config_path"
+    ;;
+  help|--help|-h)
+    [[ $# -eq 1 ]] || { usage; exit 64; }
+    cd "$repo_root"
+    exec "$flags2env_bin" "$(basename "$repo_root")" --help
+    ;;
+esac
+
+flag_args=()
+found_separator=false
+while (( $# > 0 )); do
+  if [[ "$1" == "--" ]]; then
+    found_separator=true
+    shift
+    break
+  fi
+  flag_args+=("$1")
+  shift
+done
+
+if [[ "$found_separator" != true || $# -eq 0 ]]; then
+  usage
+  exit 64
+fi
+
+exports="$("$flags2env_bin" shell-env --config "$config_path" -- "$(basename "$repo_root")" "${flag_args[@]}")"
+eval "$exports"
+
+if [[ "${FLAGS2ENV_PARSE_ERRORS:-[]}" != "[]" ]]; then
+  printf 'flags2env rejected one or more values: %s\n' "$FLAGS2ENV_PARSE_ERRORS" >&2
+  exit 64
+fi
+
+if [[ "${FLAGS2ENV_UNKNOWN_OPTIONS:-[]}" != "[]" ]]; then
+  printf 'flags2env received unknown options: %s\n' "$FLAGS2ENV_UNKNOWN_OPTIONS" >&2
+  exit 64
+fi
+
+exec "$@"

@@ -6,7 +6,11 @@ description = "Rust backend for mobile sound-recorder dashcam uploads, S3 presig
 
 [dependencies]
 aws-config = "1"
-aws-sdk-s3 = { version = "1", features = ["http-1x"] }
+# default-features off to drop the legacy `rustls` feature (rustls 0.21 +
+# rustls-webpki 0.101, both with open RUSTSEC advisories); default-https-client
+# is the maintained rustls 0.23 stack. Other listed features match the crate's
+# defaults minus `rustls`.
+aws-sdk-s3 = { version = "1.138", default-features = false, features = ["default-https-client", "http-1x", "rt-tokio", "sigv4a"] }
 axum = { version = "0.7", features = ["macros"] }
 aes-gcm = { version = "0.10.3", features = ["aes"] }
 base64 = "0.22"
@@ -25,7 +29,8 @@ rustls = { version = "=0.23.31", default-features = false, features = ["ring", "
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync"] }
+sonus-auris-interfaces = { path = "../sonus-auris-interfaces/generated/rust" }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-postgres = { version = "=0.7.18", features = ["with-chrono-0_4", "with-serde_json-1"] }
 tokio-postgres-rustls = "=0.12.0"
 tracing = "0.1"
