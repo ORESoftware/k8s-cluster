@@ -113,6 +113,7 @@ in `fiducia-infra` is explicitly restricted to labeled non-production clusters.
 - `apps/fiducia-admin.rs`
 - `apps/fiducia-ai-agent-bridge.rs`
 - `apps/fiducia-ai-agent-control-plane`
+- `apps/fiducia-ai-agent-manager.rs`
 - `apps/fiducia-auth.rs`
 - `apps/fiducia-backend.rs`
 - `apps/fiducia-brain.rs`
@@ -123,10 +124,9 @@ in `fiducia-infra` is explicitly restricted to labeled non-production clusters.
 - `apps/fiducia-edge`
 - `apps/fiducia-infra`
 - `apps/fiducia-interfaces`
+- `apps/fiducia-lambda-service.rs`
 - `apps/fiducia-load-balance.rs`
-- `apps/fiducia-memory`
 - `apps/fiducia-memory.rs`
-- `apps/fiducia-messaging`
 - `apps/fiducia-messaging.rs`
 - `apps/fiducia-node-sidecar.rs`
 - `apps/fiducia-node.rs`
