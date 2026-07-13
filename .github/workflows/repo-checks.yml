@@ -3,8 +3,11 @@ name: repo checks
 on:
   pull_request:
   push:
+    # PRs already run via `pull_request`; limit push runs to the long-lived
+    # branches so feature-branch pushes don't double-run every check.
     branches:
-      - '**'
+      - dev
+      - main
     tags:
       - '**'
   workflow_dispatch:
