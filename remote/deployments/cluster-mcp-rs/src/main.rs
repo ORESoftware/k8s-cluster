@@ -82,6 +82,7 @@ struct AppState {
     config: Arc<Config>,
     http: reqwest::Client,
     k8s_http: reqwest::Client,
+    external_http: reqwest::Client,
     metrics: Arc<Metrics>,
 }
 
