@@ -128,6 +128,11 @@ defmodule DdPgDefs do
     DdPgDefs.VcsRepositories,
     DdPgDefs.VcsRefs,
     DdPgDefs.VcsOperations,
+    DdPgDefs.Agents,
+    DdPgDefs.Channels,
+    DdPgDefs.Messages,
+    DdPgDefs.ChannelMembers,
+    DdPgDefs.SharedContext,
   ]
 
   @spec tables() :: [module()]

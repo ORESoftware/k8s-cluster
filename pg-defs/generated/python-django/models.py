@@ -915,6 +915,7 @@ class DesSoccerLearningPolicyEntries(models.Model):
     target_tactical_cell_id = models.IntegerField(default=-1, validators=[MinValueValidator(-1)])
     target_macro_cell_id = models.IntegerField(default=-1, validators=[MinValueValidator(-1)])
     target_root_cell_id = models.IntegerField(default=-1, validators=[MinValueValidator(-1)])
+    receiver_descriptor = models.IntegerField(default=-1, validators=[MinValueValidator(-1)])
     value_micros = models.BigIntegerField()
     visits = models.IntegerField(default=0, validators=[MinValueValidator(0)])
     source_run_id = models.UUIDField(null=True, blank=True)
@@ -1000,6 +1001,7 @@ class DesSoccerLearningRunDeltas(models.Model):
     target_tactical_cell_id = models.IntegerField(default=-1, validators=[MinValueValidator(-1)])
     target_macro_cell_id = models.IntegerField(default=-1, validators=[MinValueValidator(-1)])
     target_root_cell_id = models.IntegerField(default=-1, validators=[MinValueValidator(-1)])
+    receiver_descriptor = models.IntegerField(default=-1, validators=[MinValueValidator(-1)])
     before_value_micros = models.BigIntegerField(default=0)
     after_value_micros = models.BigIntegerField(default=0)
     value_delta_micros = models.BigIntegerField(default=0)
@@ -2683,3 +2685,89 @@ class VcsOperations(models.Model):
         managed = False
         app_label = "dd_pg_defs"
         db_table = "vcs_operations"
+
+
+class Agents(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    agent_key = models.CharField(max_length=120, validators=[RegexValidator(regex="^[A-Za-z0-9._:-]{1,120}$")])
+    display_name = models.CharField(max_length=200, default="")
+    kind = models.CharField(max_length=32, choices=[("claude", "claude"), ("codex", "codex"), ("human", "human"), ("other", "other")], default="other")
+    host = models.CharField(max_length=255, null=True, blank=True)
+    meta_data = models.JSONField(default=dict)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "ai_agent_bridge\".\"agents"
+
+
+class Channels(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    slug = models.CharField(max_length=120, validators=[RegexValidator(regex="^[a-z0-9][a-z0-9._-]{0,119}$")])
+    topic = models.TextField()
+    topic_summary = models.TextField(null=True, blank=True)
+    embedding_model = models.CharField(max_length=120, default="local-hash-v1")
+    embedding = models.JSONField(default=list)
+    embedding_dimensions = models.IntegerField(default=0, validators=[MinValueValidator(0)])
+    status = models.CharField(max_length=32, choices=[("active", "active"), ("archived", "archived")], default="active")
+    created_by = models.CharField(max_length=120, default="system")
+    meta_data = models.JSONField(default=dict)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "ai_agent_bridge\".\"channels"
+
+
+class Messages(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    channel_slug = models.CharField(max_length=120, validators=[RegexValidator(regex="^[a-z0-9][a-z0-9._-]{0,119}$")])
+    channel_id = models.UUIDField(null=True, blank=True)
+    seq = models.BigIntegerField(validators=[MinValueValidator(1)])
+    from_agent_key = models.CharField(max_length=120, validators=[RegexValidator(regex="^[A-Za-z0-9._:-]{1,120}$")])
+    role = models.CharField(max_length=32, choices=[("user", "user"), ("assistant", "assistant"), ("system", "system"), ("tool", "tool")], default="user")
+    content = models.TextField()
+    meta_data = models.JSONField(default=dict)
+    created_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "ai_agent_bridge\".\"messages"
+
+
+class ChannelMembers(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    channel_slug = models.CharField(max_length=120, validators=[RegexValidator(regex="^[a-z0-9][a-z0-9._-]{0,119}$")])
+    channel_id = models.UUIDField(null=True, blank=True)
+    agent_key = models.CharField(max_length=120, validators=[RegexValidator(regex="^[A-Za-z0-9._:-]{1,120}$")])
+    role = models.CharField(max_length=32, choices=[("owner", "owner"), ("member", "member"), ("observer", "observer")], default="member")
+    joined_at = models.DateTimeField()
+    last_seen_at = models.DateTimeField()
+    meta_data = models.JSONField(default=dict)
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "ai_agent_bridge\".\"channel_members"
+
+
+class SharedContext(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    channel_slug = models.CharField(max_length=120, null=True, blank=True, validators=[RegexValidator(regex="^[a-z0-9][a-z0-9._-]{0,119}$")])
+    channel_id = models.UUIDField(null=True, blank=True)
+    ctx_key = models.CharField(max_length=200, validators=[RegexValidator(regex="^[A-Za-z0-9._:/-]{1,200}$")])
+    value = models.JSONField(default=dict)
+    version = models.IntegerField(default=1, validators=[MinValueValidator(1)])
+    updated_by = models.CharField(max_length=120, default="system")
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "ai_agent_bridge\".\"shared_context"

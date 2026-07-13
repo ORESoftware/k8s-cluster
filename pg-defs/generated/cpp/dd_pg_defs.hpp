@@ -3937,7 +3937,7 @@ inline std::optional<std::string> validate_des_soccer_learning_policy_versions_v
 }
 
 inline const char* des_soccer_learning_policy_entries_table = "des_soccer_learning_policy_entries";
-inline const std::vector<std::string> des_soccer_learning_policy_entries_columns = { "id", "policy_version_id", "team", "entry_kind", "state_hash", "state_key", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "value_micros", "visits", "source_run_id", "created_at" };
+inline const std::vector<std::string> des_soccer_learning_policy_entries_columns = { "id", "policy_version_id", "team", "entry_kind", "state_hash", "state_key", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "receiver_descriptor", "value_micros", "visits", "source_run_id", "created_at" };
 inline const char* des_soccer_learning_policy_entries_select_sql = R"SQL(select
       id::text as id,
       policy_version_id::text as policy_version_id,
@@ -3950,6 +3950,7 @@ inline const char* des_soccer_learning_policy_entries_select_sql = R"SQL(select
       target_tactical_cell_id,
       target_macro_cell_id,
       target_root_cell_id,
+      receiver_descriptor,
       value_micros,
       visits,
       source_run_id::text as source_run_id,
@@ -3996,6 +3997,7 @@ struct DesSoccerLearningPolicyEntriesRow {
     int32_t target_tactical_cell_id;
     int32_t target_macro_cell_id;
     int32_t target_root_cell_id;
+    int32_t receiver_descriptor;
     int64_t value_micros;
     int32_t visits;
     std::optional<std::string> source_run_id;
@@ -4016,10 +4018,11 @@ inline DesSoccerLearningPolicyEntriesRow des_soccer_learning_policy_entries_row_
     row.target_tactical_cell_id = std::stoi(get(8));
     row.target_macro_cell_id = std::stoi(get(9));
     row.target_root_cell_id = std::stoi(get(10));
-    row.value_micros = std::stoll(get(11));
-    row.visits = std::stoi(get(12));
-    row.source_run_id = is_null(13) ? std::nullopt : std::optional<std::string>(get(13));
-    row.created_at = get(14);
+    row.receiver_descriptor = std::stoi(get(11));
+    row.value_micros = std::stoll(get(12));
+    row.visits = std::stoi(get(13));
+    row.source_run_id = is_null(14) ? std::nullopt : std::optional<std::string>(get(14));
+    row.created_at = get(15);
     return row;
 }
 inline std::optional<std::string> validate_des_soccer_learning_policy_entries_state_hash(const std::string& value) {
@@ -4045,6 +4048,10 @@ inline std::optional<std::string> validate_des_soccer_learning_policy_entries_ta
 }
 inline std::optional<std::string> validate_des_soccer_learning_policy_entries_target_root_cell_id(int32_t value) {
     if (value < -1) return std::string("des_soccer_learning_policy_entries.target_root_cell_id is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_policy_entries_receiver_descriptor(int32_t value) {
+    if (value < -1) return std::string("des_soccer_learning_policy_entries.receiver_descriptor is below the minimum");
     return std::nullopt;
 }
 inline std::optional<std::string> validate_des_soccer_learning_policy_entries_visits(int32_t value) {
@@ -4360,7 +4367,7 @@ inline std::optional<std::string> validate_des_soccer_learning_runs_transitions(
 }
 
 inline const char* des_soccer_learning_run_deltas_table = "des_soccer_learning_run_deltas";
-inline const std::vector<std::string> des_soccer_learning_run_deltas_columns = { "id", "run_id", "team", "entry_kind", "state_hash", "state_key", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "before_value_micros", "after_value_micros", "value_delta_micros", "visit_delta", "merge_weight_micros", "effective_visit_micros", "created_at" };
+inline const std::vector<std::string> des_soccer_learning_run_deltas_columns = { "id", "run_id", "team", "entry_kind", "state_hash", "state_key", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "receiver_descriptor", "before_value_micros", "after_value_micros", "value_delta_micros", "visit_delta", "merge_weight_micros", "effective_visit_micros", "created_at" };
 inline const char* des_soccer_learning_run_deltas_select_sql = R"SQL(select
       id::text as id,
       run_id::text as run_id,
@@ -4373,6 +4380,7 @@ inline const char* des_soccer_learning_run_deltas_select_sql = R"SQL(select
       target_tactical_cell_id,
       target_macro_cell_id,
       target_root_cell_id,
+      receiver_descriptor,
       before_value_micros,
       after_value_micros,
       value_delta_micros,
@@ -4422,6 +4430,7 @@ struct DesSoccerLearningRunDeltasRow {
     int32_t target_tactical_cell_id;
     int32_t target_macro_cell_id;
     int32_t target_root_cell_id;
+    int32_t receiver_descriptor;
     int64_t before_value_micros;
     int64_t after_value_micros;
     int64_t value_delta_micros;
@@ -4445,13 +4454,14 @@ inline DesSoccerLearningRunDeltasRow des_soccer_learning_run_deltas_row_of_row(c
     row.target_tactical_cell_id = std::stoi(get(8));
     row.target_macro_cell_id = std::stoi(get(9));
     row.target_root_cell_id = std::stoi(get(10));
-    row.before_value_micros = std::stoll(get(11));
-    row.after_value_micros = std::stoll(get(12));
-    row.value_delta_micros = std::stoll(get(13));
-    row.visit_delta = std::stoi(get(14));
-    row.merge_weight_micros = std::stoll(get(15));
-    row.effective_visit_micros = std::stoll(get(16));
-    row.created_at = get(17);
+    row.receiver_descriptor = std::stoi(get(11));
+    row.before_value_micros = std::stoll(get(12));
+    row.after_value_micros = std::stoll(get(13));
+    row.value_delta_micros = std::stoll(get(14));
+    row.visit_delta = std::stoi(get(15));
+    row.merge_weight_micros = std::stoll(get(16));
+    row.effective_visit_micros = std::stoll(get(17));
+    row.created_at = get(18);
     return row;
 }
 inline std::optional<std::string> validate_des_soccer_learning_run_deltas_state_hash(const std::string& value) {
@@ -4477,6 +4487,10 @@ inline std::optional<std::string> validate_des_soccer_learning_run_deltas_target
 }
 inline std::optional<std::string> validate_des_soccer_learning_run_deltas_target_root_cell_id(int32_t value) {
     if (value < -1) return std::string("des_soccer_learning_run_deltas.target_root_cell_id is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_des_soccer_learning_run_deltas_receiver_descriptor(int32_t value) {
+    if (value < -1) return std::string("des_soccer_learning_run_deltas.receiver_descriptor is below the minimum");
     return std::nullopt;
 }
 inline std::optional<std::string> validate_des_soccer_learning_run_deltas_visit_delta(int32_t value) {
@@ -12375,6 +12389,352 @@ inline std::optional<std::string> validate_vcs_operations_duration_ms(int32_t va
 }
 inline std::optional<std::string> validate_vcs_operations_requested_by(const std::string& value) {
     if (value.size() > 200) return std::string("vcs_operations.requested_by must be at most 200 characters");
+    return std::nullopt;
+}
+
+inline const char* agents_table = "ai_agent_bridge.agents";
+inline const std::vector<std::string> agents_columns = { "id", "agent_key", "display_name", "kind", "host", "meta_data", "created_at", "updated_at" };
+inline const char* agents_select_sql = R"SQL(select
+      id::text as id,
+      agent_key,
+      display_name,
+      kind,
+      host,
+      meta_data::text as meta_data_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from ai_agent_bridge.agents)SQL";
+
+enum class AgentsKind { Claude, Codex, Human, Other };
+inline std::string agents_kind_to_string(AgentsKind value) {
+    switch (value) {
+        case AgentsKind::Claude: return "claude";
+        case AgentsKind::Codex: return "codex";
+        case AgentsKind::Human: return "human";
+        case AgentsKind::Other: return "other";
+    }
+    return "";
+}
+inline std::optional<AgentsKind> parse_agents_kind(const std::string& value) {
+    if (value == "claude") return AgentsKind::Claude;
+    if (value == "codex") return AgentsKind::Codex;
+    if (value == "human") return AgentsKind::Human;
+    if (value == "other") return AgentsKind::Other;
+    return std::nullopt;
+}
+
+struct AgentsRow {
+    std::string id;
+    std::string agent_key;
+    std::string display_name;
+    std::string kind;
+    std::optional<std::string> host;
+    std::string meta_data;
+    std::string created_at;
+    std::string updated_at;
+};
+
+inline AgentsRow agents_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    AgentsRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.agent_key = get(1);
+    row.display_name = get(2);
+    row.kind = get(3);
+    row.host = is_null(4) ? std::nullopt : std::optional<std::string>(get(4));
+    row.meta_data = get(5);
+    row.created_at = get(6);
+    row.updated_at = get(7);
+    return row;
+}
+inline std::optional<std::string> validate_agents_agent_key(const std::string& value) {
+    if (value.size() > 120) return std::string("agents.agent_key must be at most 120 characters");
+    if (!std::regex_match(value, std::regex(R"RX(^[A-Za-z0-9._:-]{1,120}$)RX"))) return std::string("agents.agent_key does not match the required pattern");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_agents_display_name(const std::string& value) {
+    if (value.size() > 200) return std::string("agents.display_name must be at most 200 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_agents_host(const std::string& value) {
+    if (value.size() > 255) return std::string("agents.host must be at most 255 characters");
+    return std::nullopt;
+}
+
+inline const char* channels_table = "ai_agent_bridge.channels";
+inline const std::vector<std::string> channels_columns = { "id", "slug", "topic", "topic_summary", "embedding_model", "embedding", "embedding_dimensions", "status", "created_by", "meta_data", "created_at", "updated_at" };
+inline const char* channels_select_sql = R"SQL(select
+      id::text as id,
+      slug,
+      topic,
+      topic_summary,
+      embedding_model,
+      embedding::text as embedding_json,
+      embedding_dimensions,
+      status,
+      created_by,
+      meta_data::text as meta_data_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from ai_agent_bridge.channels)SQL";
+
+enum class ChannelsStatus { Active, Archived };
+inline std::string channels_status_to_string(ChannelsStatus value) {
+    switch (value) {
+        case ChannelsStatus::Active: return "active";
+        case ChannelsStatus::Archived: return "archived";
+    }
+    return "";
+}
+inline std::optional<ChannelsStatus> parse_channels_status(const std::string& value) {
+    if (value == "active") return ChannelsStatus::Active;
+    if (value == "archived") return ChannelsStatus::Archived;
+    return std::nullopt;
+}
+
+struct ChannelsRow {
+    std::string id;
+    std::string slug;
+    std::string topic;
+    std::optional<std::string> topic_summary;
+    std::string embedding_model;
+    std::string embedding;
+    int32_t embedding_dimensions;
+    std::string status;
+    std::string created_by;
+    std::string meta_data;
+    std::string created_at;
+    std::string updated_at;
+};
+
+inline ChannelsRow channels_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    ChannelsRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.slug = get(1);
+    row.topic = get(2);
+    row.topic_summary = is_null(3) ? std::nullopt : std::optional<std::string>(get(3));
+    row.embedding_model = get(4);
+    row.embedding = get(5);
+    row.embedding_dimensions = std::stoi(get(6));
+    row.status = get(7);
+    row.created_by = get(8);
+    row.meta_data = get(9);
+    row.created_at = get(10);
+    row.updated_at = get(11);
+    return row;
+}
+inline std::optional<std::string> validate_channels_slug(const std::string& value) {
+    if (value.size() > 120) return std::string("channels.slug must be at most 120 characters");
+    if (!std::regex_match(value, std::regex(R"RX(^[a-z0-9][a-z0-9._-]{0,119}$)RX"))) return std::string("channels.slug does not match the required pattern");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_channels_embedding_model(const std::string& value) {
+    if (value.size() > 120) return std::string("channels.embedding_model must be at most 120 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_channels_embedding_dimensions(int32_t value) {
+    if (value < 0) return std::string("channels.embedding_dimensions is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_channels_created_by(const std::string& value) {
+    if (value.size() > 120) return std::string("channels.created_by must be at most 120 characters");
+    return std::nullopt;
+}
+
+inline const char* messages_table = "ai_agent_bridge.messages";
+inline const std::vector<std::string> messages_columns = { "id", "channel_slug", "channel_id", "seq", "from_agent_key", "role", "content", "meta_data", "created_at" };
+inline const char* messages_select_sql = R"SQL(select
+      id::text as id,
+      channel_slug,
+      channel_id::text as channel_id,
+      seq,
+      from_agent_key,
+      role,
+      content,
+      meta_data::text as meta_data_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from ai_agent_bridge.messages)SQL";
+
+enum class MessagesRole { User, Assistant, System, Tool };
+inline std::string messages_role_to_string(MessagesRole value) {
+    switch (value) {
+        case MessagesRole::User: return "user";
+        case MessagesRole::Assistant: return "assistant";
+        case MessagesRole::System: return "system";
+        case MessagesRole::Tool: return "tool";
+    }
+    return "";
+}
+inline std::optional<MessagesRole> parse_messages_role(const std::string& value) {
+    if (value == "user") return MessagesRole::User;
+    if (value == "assistant") return MessagesRole::Assistant;
+    if (value == "system") return MessagesRole::System;
+    if (value == "tool") return MessagesRole::Tool;
+    return std::nullopt;
+}
+
+struct MessagesRow {
+    std::string id;
+    std::string channel_slug;
+    std::optional<std::string> channel_id;
+    int64_t seq;
+    std::string from_agent_key;
+    std::string role;
+    std::string content;
+    std::string meta_data;
+    std::string created_at;
+};
+
+inline MessagesRow messages_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    MessagesRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.channel_slug = get(1);
+    row.channel_id = is_null(2) ? std::nullopt : std::optional<std::string>(get(2));
+    row.seq = std::stoll(get(3));
+    row.from_agent_key = get(4);
+    row.role = get(5);
+    row.content = get(6);
+    row.meta_data = get(7);
+    row.created_at = get(8);
+    return row;
+}
+inline std::optional<std::string> validate_messages_channel_slug(const std::string& value) {
+    if (value.size() > 120) return std::string("messages.channel_slug must be at most 120 characters");
+    if (!std::regex_match(value, std::regex(R"RX(^[a-z0-9][a-z0-9._-]{0,119}$)RX"))) return std::string("messages.channel_slug does not match the required pattern");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_messages_seq(int64_t value) {
+    if (value < 1) return std::string("messages.seq is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_messages_from_agent_key(const std::string& value) {
+    if (value.size() > 120) return std::string("messages.from_agent_key must be at most 120 characters");
+    if (!std::regex_match(value, std::regex(R"RX(^[A-Za-z0-9._:-]{1,120}$)RX"))) return std::string("messages.from_agent_key does not match the required pattern");
+    return std::nullopt;
+}
+
+inline const char* channel_members_table = "ai_agent_bridge.channel_members";
+inline const std::vector<std::string> channel_members_columns = { "id", "channel_slug", "channel_id", "agent_key", "role", "joined_at", "last_seen_at", "meta_data" };
+inline const char* channel_members_select_sql = R"SQL(select
+      id::text as id,
+      channel_slug,
+      channel_id::text as channel_id,
+      agent_key,
+      role,
+      to_char(joined_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as joined_at,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at,
+      meta_data::text as meta_data_json
+    from ai_agent_bridge.channel_members)SQL";
+
+enum class ChannelMembersRole { Owner, Member, Observer };
+inline std::string channel_members_role_to_string(ChannelMembersRole value) {
+    switch (value) {
+        case ChannelMembersRole::Owner: return "owner";
+        case ChannelMembersRole::Member: return "member";
+        case ChannelMembersRole::Observer: return "observer";
+    }
+    return "";
+}
+inline std::optional<ChannelMembersRole> parse_channel_members_role(const std::string& value) {
+    if (value == "owner") return ChannelMembersRole::Owner;
+    if (value == "member") return ChannelMembersRole::Member;
+    if (value == "observer") return ChannelMembersRole::Observer;
+    return std::nullopt;
+}
+
+struct ChannelMembersRow {
+    std::string id;
+    std::string channel_slug;
+    std::optional<std::string> channel_id;
+    std::string agent_key;
+    std::string role;
+    std::string joined_at;
+    std::string last_seen_at;
+    std::string meta_data;
+};
+
+inline ChannelMembersRow channel_members_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    ChannelMembersRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.channel_slug = get(1);
+    row.channel_id = is_null(2) ? std::nullopt : std::optional<std::string>(get(2));
+    row.agent_key = get(3);
+    row.role = get(4);
+    row.joined_at = get(5);
+    row.last_seen_at = get(6);
+    row.meta_data = get(7);
+    return row;
+}
+inline std::optional<std::string> validate_channel_members_channel_slug(const std::string& value) {
+    if (value.size() > 120) return std::string("channel_members.channel_slug must be at most 120 characters");
+    if (!std::regex_match(value, std::regex(R"RX(^[a-z0-9][a-z0-9._-]{0,119}$)RX"))) return std::string("channel_members.channel_slug does not match the required pattern");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_channel_members_agent_key(const std::string& value) {
+    if (value.size() > 120) return std::string("channel_members.agent_key must be at most 120 characters");
+    if (!std::regex_match(value, std::regex(R"RX(^[A-Za-z0-9._:-]{1,120}$)RX"))) return std::string("channel_members.agent_key does not match the required pattern");
+    return std::nullopt;
+}
+
+inline const char* shared_context_table = "ai_agent_bridge.shared_context";
+inline const std::vector<std::string> shared_context_columns = { "id", "channel_slug", "channel_id", "ctx_key", "value", "version", "updated_by", "created_at", "updated_at" };
+inline const char* shared_context_select_sql = R"SQL(select
+      id::text as id,
+      channel_slug,
+      channel_id::text as channel_id,
+      ctx_key,
+      value::text as value_json,
+      version,
+      updated_by,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from ai_agent_bridge.shared_context)SQL";
+
+struct SharedContextRow {
+    std::string id;
+    std::optional<std::string> channel_slug;
+    std::optional<std::string> channel_id;
+    std::string ctx_key;
+    std::string value;
+    int32_t version;
+    std::string updated_by;
+    std::string created_at;
+    std::string updated_at;
+};
+
+inline SharedContextRow shared_context_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    SharedContextRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.channel_slug = is_null(1) ? std::nullopt : std::optional<std::string>(get(1));
+    row.channel_id = is_null(2) ? std::nullopt : std::optional<std::string>(get(2));
+    row.ctx_key = get(3);
+    row.value = get(4);
+    row.version = std::stoi(get(5));
+    row.updated_by = get(6);
+    row.created_at = get(7);
+    row.updated_at = get(8);
+    return row;
+}
+inline std::optional<std::string> validate_shared_context_channel_slug(const std::string& value) {
+    if (value.size() > 120) return std::string("shared_context.channel_slug must be at most 120 characters");
+    if (!std::regex_match(value, std::regex(R"RX(^[a-z0-9][a-z0-9._-]{0,119}$)RX"))) return std::string("shared_context.channel_slug does not match the required pattern");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_shared_context_ctx_key(const std::string& value) {
+    if (value.size() > 200) return std::string("shared_context.ctx_key must be at most 200 characters");
+    if (!std::regex_match(value, std::regex(R"RX(^[A-Za-z0-9._:/-]{1,200}$)RX"))) return std::string("shared_context.ctx_key does not match the required pattern");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_shared_context_version(int32_t value) {
+    if (value < 1) return std::string("shared_context.version is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_shared_context_updated_by(const std::string& value) {
+    if (value.size() > 120) return std::string("shared_context.updated_by must be at most 120 characters");
     return std::nullopt;
 }
 

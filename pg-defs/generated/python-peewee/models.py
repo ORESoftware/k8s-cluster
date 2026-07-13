@@ -851,6 +851,7 @@ class DesSoccerLearningPolicyEntries(BaseModel):
     target_tactical_cell_id = IntegerField()
     target_macro_cell_id = IntegerField()
     target_root_cell_id = IntegerField()
+    receiver_descriptor = IntegerField()
     value_micros = BigIntegerField()
     visits = IntegerField()
     source_run_id = UUIDField(null=True)
@@ -930,6 +931,7 @@ class DesSoccerLearningRunDeltas(BaseModel):
     target_tactical_cell_id = IntegerField()
     target_macro_cell_id = IntegerField()
     target_root_cell_id = IntegerField()
+    receiver_descriptor = IntegerField()
     before_value_micros = BigIntegerField()
     after_value_micros = BigIntegerField()
     value_delta_micros = BigIntegerField()
@@ -2473,3 +2475,84 @@ class VcsOperations(BaseModel):
 
     class Meta:
         table_name = "vcs_operations"
+
+
+class Agents(BaseModel):
+    id = UUIDField(primary_key=True)
+    agent_key = CharField(max_length=120)
+    display_name = CharField(max_length=200)
+    kind = CharField(max_length=32)
+    host = CharField(max_length=255, null=True)
+    meta_data = BinaryJSONField()
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+
+    class Meta:
+        table_name = "agents"
+        schema = "ai_agent_bridge"
+
+
+class Channels(BaseModel):
+    id = UUIDField(primary_key=True)
+    slug = CharField(max_length=120)
+    topic = TextField()
+    topic_summary = TextField(null=True)
+    embedding_model = CharField(max_length=120)
+    embedding = BinaryJSONField()
+    embedding_dimensions = IntegerField()
+    status = CharField(max_length=32)
+    created_by = CharField(max_length=120)
+    meta_data = BinaryJSONField()
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+
+    class Meta:
+        table_name = "channels"
+        schema = "ai_agent_bridge"
+
+
+class Messages(BaseModel):
+    id = UUIDField(primary_key=True)
+    channel_slug = CharField(max_length=120)
+    channel_id = UUIDField(null=True)
+    seq = BigIntegerField()
+    from_agent_key = CharField(max_length=120)
+    role = CharField(max_length=32)
+    content = TextField()
+    meta_data = BinaryJSONField()
+    created_at = DateTimeField()
+
+    class Meta:
+        table_name = "messages"
+        schema = "ai_agent_bridge"
+
+
+class ChannelMembers(BaseModel):
+    id = UUIDField(primary_key=True)
+    channel_slug = CharField(max_length=120)
+    channel_id = UUIDField(null=True)
+    agent_key = CharField(max_length=120)
+    role = CharField(max_length=32)
+    joined_at = DateTimeField()
+    last_seen_at = DateTimeField()
+    meta_data = BinaryJSONField()
+
+    class Meta:
+        table_name = "channel_members"
+        schema = "ai_agent_bridge"
+
+
+class SharedContext(BaseModel):
+    id = UUIDField(primary_key=True)
+    channel_slug = CharField(max_length=120, null=True)
+    channel_id = UUIDField(null=True)
+    ctx_key = CharField(max_length=200)
+    value = BinaryJSONField()
+    version = IntegerField()
+    updated_by = CharField(max_length=120)
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+
+    class Meta:
+        table_name = "shared_context"
+        schema = "ai_agent_bridge"

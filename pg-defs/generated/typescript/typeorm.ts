@@ -1978,7 +1978,7 @@ export class DesSoccerLearningPolicyVersionsEntity {
 
 }
 
-@Index("des_soccer_learning_policy_entries_key_uq", ["policyVersionId", "team", "entryKind", "stateHash", "action", "targetFineCellId", "targetTacticalCellId", "targetMacroCellId", "targetRootCellId"], { unique: true })
+@Index("des_soccer_learning_policy_entries_key_uq", ["policyVersionId", "team", "entryKind", "stateHash", "action", "targetFineCellId", "targetTacticalCellId", "targetMacroCellId", "targetRootCellId", "receiverDescriptor"], { unique: true })
 @Index("des_soccer_learning_policy_entries_lookup_idx", ["policyVersionId", "team", "entryKind", "stateHash"])
 @Entity({ name: "des_soccer_learning_policy_entries" })
 export class DesSoccerLearningPolicyEntriesEntity {
@@ -2014,6 +2014,9 @@ export class DesSoccerLearningPolicyEntriesEntity {
 
   @Column({ name: "target_root_cell_id", type: "integer", default: () => "-1" })
   targetRootCellId!: number;
+
+  @Column({ name: "receiver_descriptor", type: "integer", default: () => "-1" })
+  receiverDescriptor!: number;
 
   @Column({ name: "value_micros", type: "bigint" })
   valueMicros!: number;
@@ -2179,7 +2182,7 @@ export class DesSoccerLearningRunsEntity {
 
 }
 
-@Index("des_soccer_learning_run_deltas_key_uq", ["runId", "team", "entryKind", "stateHash", "action", "targetFineCellId", "targetTacticalCellId", "targetMacroCellId", "targetRootCellId"], { unique: true })
+@Index("des_soccer_learning_run_deltas_key_uq", ["runId", "team", "entryKind", "stateHash", "action", "targetFineCellId", "targetTacticalCellId", "targetMacroCellId", "targetRootCellId", "receiverDescriptor"], { unique: true })
 @Index("des_soccer_learning_run_deltas_merge_idx", ["team", "entryKind", "stateHash", "action"])
 @Entity({ name: "des_soccer_learning_run_deltas" })
 export class DesSoccerLearningRunDeltasEntity {
@@ -2215,6 +2218,9 @@ export class DesSoccerLearningRunDeltasEntity {
 
   @Column({ name: "target_root_cell_id", type: "integer", default: () => "-1" })
   targetRootCellId!: number;
+
+  @Column({ name: "receiver_descriptor", type: "integer", default: () => "-1" })
+  receiverDescriptor!: number;
 
   @Column({ name: "before_value_micros", type: "bigint", default: () => "0" })
   beforeValueMicros!: number;
@@ -5962,6 +5968,173 @@ export class VcsOperationsEntity {
 
   @Column({ name: "requested_by", type: "varchar", length: 200, nullable: true })
   requestedBy!: string | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+@Index("ai_agent_bridge_agents_agent_key_uq", ["agentKey"], { unique: true })
+@Entity({ schema: "ai_agent_bridge", name: "agents" })
+export class AgentsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "agent_key", type: "varchar", length: 120 })
+  agentKey!: string;
+
+  @Column({ name: "display_name", type: "varchar", length: 200, default: () => "''" })
+  displayName!: string;
+
+  @Column({ name: "kind", type: "varchar", length: 32, default: () => "'other'" })
+  kind!: string;
+
+  @Column({ name: "host", type: "varchar", length: 255, nullable: true })
+  host!: string | null;
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+@Index("ai_agent_bridge_channels_slug_uq", ["slug"], { unique: true })
+@Index("ai_agent_bridge_channels_status_idx", ["status"], { where: "status = 'active'" })
+// ai_agent_bridge_channels_updated_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ schema: "ai_agent_bridge", name: "channels" })
+export class ChannelsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "slug", type: "varchar", length: 120 })
+  slug!: string;
+
+  @Column({ name: "topic", type: "text" })
+  topic!: string;
+
+  @Column({ name: "topic_summary", type: "text", nullable: true })
+  topicSummary!: string | null;
+
+  @Column({ name: "embedding_model", type: "varchar", length: 120, default: () => "'local-hash-v1'" })
+  embeddingModel!: string;
+
+  @Column({ name: "embedding", type: "jsonb", default: () => "'[]'::jsonb" })
+  embedding!: unknown[];
+
+  @Column({ name: "embedding_dimensions", type: "integer", default: () => "0" })
+  embeddingDimensions!: number;
+
+  @Column({ name: "status", type: "varchar", length: 32, default: () => "'active'" })
+  status!: string;
+
+  @Column({ name: "created_by", type: "varchar", length: 120, default: () => "'system'" })
+  createdBy!: string;
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+@Index("ai_agent_bridge_messages_channel_seq_uq", ["channelSlug", "seq"], { unique: true })
+// ai_agent_bridge_messages_channel_created_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ schema: "ai_agent_bridge", name: "messages" })
+export class MessagesEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "channel_slug", type: "varchar", length: 120 })
+  channelSlug!: string;
+
+  @Column({ name: "channel_id", type: "uuid", nullable: true })
+  channelId!: string | null;
+
+  @Column({ name: "seq", type: "bigint" })
+  seq!: number;
+
+  @Column({ name: "from_agent_key", type: "varchar", length: 120 })
+  fromAgentKey!: string;
+
+  @Column({ name: "role", type: "varchar", length: 32, default: () => "'user'" })
+  role!: string;
+
+  @Column({ name: "content", type: "text" })
+  content!: string;
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+}
+
+@Index("ai_agent_bridge_members_channel_agent_uq", ["channelSlug", "agentKey"], { unique: true })
+@Index("ai_agent_bridge_members_agent_idx", ["agentKey"])
+@Entity({ schema: "ai_agent_bridge", name: "channel_members" })
+export class ChannelMembersEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "channel_slug", type: "varchar", length: 120 })
+  channelSlug!: string;
+
+  @Column({ name: "channel_id", type: "uuid", nullable: true })
+  channelId!: string | null;
+
+  @Column({ name: "agent_key", type: "varchar", length: 120 })
+  agentKey!: string;
+
+  @Column({ name: "role", type: "varchar", length: 32, default: () => "'member'" })
+  role!: string;
+
+  @Column({ name: "joined_at", type: "timestamptz", default: () => "now()" })
+  joinedAt!: Date;
+
+  @Column({ name: "last_seen_at", type: "timestamptz", default: () => "now()" })
+  lastSeenAt!: Date;
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+}
+
+@Index("ai_agent_bridge_context_channel_key_uq", ["channelSlug", "ctxKey"], { unique: true })
+@Entity({ schema: "ai_agent_bridge", name: "shared_context" })
+export class SharedContextEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "channel_slug", type: "varchar", length: 120, nullable: true })
+  channelSlug!: string | null;
+
+  @Column({ name: "channel_id", type: "uuid", nullable: true })
+  channelId!: string | null;
+
+  @Column({ name: "ctx_key", type: "varchar", length: 200 })
+  ctxKey!: string;
+
+  @Column({ name: "value", type: "jsonb", default: () => "'{}'::jsonb" })
+  value!: Record<string, unknown>;
+
+  @Column({ name: "version", type: "integer", default: () => "1" })
+  version!: number;
+
+  @Column({ name: "updated_by", type: "varchar", length: 120, default: () => "'system'" })
+  updatedBy!: string;
 
   @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
   createdAt!: Date;

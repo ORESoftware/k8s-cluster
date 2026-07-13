@@ -665,6 +665,7 @@ module DdPgDefs
     validates :target_tactical_cell_id, numericality: { only_integer: true, greater_than_or_equal_to: -1 }
     validates :target_macro_cell_id, numericality: { only_integer: true, greater_than_or_equal_to: -1 }
     validates :target_root_cell_id, numericality: { only_integer: true, greater_than_or_equal_to: -1 }
+    validates :receiver_descriptor, numericality: { only_integer: true, greater_than_or_equal_to: -1 }
     validates :value_micros, presence: true
     validates :value_micros, numericality: { only_integer: true }
     validates :visits, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
@@ -730,6 +731,7 @@ module DdPgDefs
     validates :target_tactical_cell_id, numericality: { only_integer: true, greater_than_or_equal_to: -1 }
     validates :target_macro_cell_id, numericality: { only_integer: true, greater_than_or_equal_to: -1 }
     validates :target_root_cell_id, numericality: { only_integer: true, greater_than_or_equal_to: -1 }
+    validates :receiver_descriptor, numericality: { only_integer: true, greater_than_or_equal_to: -1 }
     validates :before_value_micros, numericality: { only_integer: true }
     validates :after_value_micros, numericality: { only_integer: true }
     validates :value_delta_micros, numericality: { only_integer: true }
@@ -1904,5 +1906,73 @@ module DdPgDefs
     validates :status, inclusion: { in: ["pending", "running", "success", "error"] }
     validates :duration_ms, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
     validates :requested_by, length: { maximum: 200 }, allow_nil: true
+  end
+
+  class Agents < ActiveRecord::Base
+    self.table_name = "ai_agent_bridge.agents"
+    self.primary_key = "id"
+
+    validates :agent_key, presence: true
+    validates :agent_key, length: { maximum: 120 }
+    validates :agent_key, format: { with: Regexp.new("\\A[A-Za-z0-9._:-]{1,120}\\z") }
+    validates :display_name, length: { maximum: 200 }
+    validates :kind, inclusion: { in: ["claude", "codex", "human", "other"] }
+    validates :host, length: { maximum: 255 }, allow_nil: true
+  end
+
+  class Channels < ActiveRecord::Base
+    self.table_name = "ai_agent_bridge.channels"
+    self.primary_key = "id"
+
+    validates :slug, presence: true
+    validates :slug, length: { maximum: 120 }
+    validates :slug, format: { with: Regexp.new("\\A[a-z0-9][a-z0-9._-]{0,119}\\z") }
+    validates :topic, presence: true
+    validates :embedding_model, length: { maximum: 120 }
+    validates :embedding_dimensions, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :status, inclusion: { in: ["active", "archived"] }
+    validates :created_by, length: { maximum: 120 }
+  end
+
+  class Messages < ActiveRecord::Base
+    self.table_name = "ai_agent_bridge.messages"
+    self.primary_key = "id"
+
+    validates :channel_slug, presence: true
+    validates :channel_slug, length: { maximum: 120 }
+    validates :channel_slug, format: { with: Regexp.new("\\A[a-z0-9][a-z0-9._-]{0,119}\\z") }
+    validates :seq, presence: true
+    validates :seq, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
+    validates :from_agent_key, presence: true
+    validates :from_agent_key, length: { maximum: 120 }
+    validates :from_agent_key, format: { with: Regexp.new("\\A[A-Za-z0-9._:-]{1,120}\\z") }
+    validates :role, inclusion: { in: ["user", "assistant", "system", "tool"] }
+    validates :content, presence: true
+  end
+
+  class ChannelMembers < ActiveRecord::Base
+    self.table_name = "ai_agent_bridge.channel_members"
+    self.primary_key = "id"
+
+    validates :channel_slug, presence: true
+    validates :channel_slug, length: { maximum: 120 }
+    validates :channel_slug, format: { with: Regexp.new("\\A[a-z0-9][a-z0-9._-]{0,119}\\z") }
+    validates :agent_key, presence: true
+    validates :agent_key, length: { maximum: 120 }
+    validates :agent_key, format: { with: Regexp.new("\\A[A-Za-z0-9._:-]{1,120}\\z") }
+    validates :role, inclusion: { in: ["owner", "member", "observer"] }
+  end
+
+  class SharedContext < ActiveRecord::Base
+    self.table_name = "ai_agent_bridge.shared_context"
+    self.primary_key = "id"
+
+    validates :channel_slug, length: { maximum: 120 }, allow_nil: true
+    validates :channel_slug, format: { with: Regexp.new("\\A[a-z0-9][a-z0-9._-]{0,119}\\z") }, allow_nil: true
+    validates :ctx_key, presence: true
+    validates :ctx_key, length: { maximum: 200 }
+    validates :ctx_key, format: { with: Regexp.new("\\A[A-Za-z0-9._:/-]{1,200}\\z") }
+    validates :version, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
+    validates :updated_by, length: { maximum: 120 }
   end
 end

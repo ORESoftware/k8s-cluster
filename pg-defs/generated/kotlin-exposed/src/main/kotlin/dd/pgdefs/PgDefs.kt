@@ -796,6 +796,7 @@ object DesSoccerLearningPolicyEntries : Table("des_soccer_learning_policy_entrie
     val targetTacticalCellId = integer("target_tactical_cell_id")
     val targetMacroCellId = integer("target_macro_cell_id")
     val targetRootCellId = integer("target_root_cell_id")
+    val receiverDescriptor = integer("receiver_descriptor")
     val valueMicros = long("value_micros")
     val visits = integer("visits")
     val sourceRunId = uuid("source_run_id").nullable()
@@ -872,6 +873,7 @@ object DesSoccerLearningRunDeltas : Table("des_soccer_learning_run_deltas") {
     val targetTacticalCellId = integer("target_tactical_cell_id")
     val targetMacroCellId = integer("target_macro_cell_id")
     val targetRootCellId = integer("target_root_cell_id")
+    val receiverDescriptor = integer("receiver_descriptor")
     val beforeValueMicros = long("before_value_micros")
     val afterValueMicros = long("after_value_micros")
     val valueDeltaMicros = long("value_delta_micros")
@@ -2331,6 +2333,77 @@ object VcsOperations : Table("vcs_operations") {
     override val primaryKey = PrimaryKey(id)
 }
 
+object Agents : Table("ai_agent_bridge.agents") {
+    val id = uuid("id")
+    val agentKey = varchar("agent_key", 120)
+    val displayName = varchar("display_name", 200)
+    val kind = varchar("kind", 32)
+    val host = varchar("host", 255).nullable()
+    val metaData = jsonb<String>("meta_data", { it }, { it })
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object Channels : Table("ai_agent_bridge.channels") {
+    val id = uuid("id")
+    val slug = varchar("slug", 120)
+    val topic = text("topic")
+    val topicSummary = text("topic_summary").nullable()
+    val embeddingModel = varchar("embedding_model", 120)
+    val embedding = jsonb<String>("embedding", { it }, { it })
+    val embeddingDimensions = integer("embedding_dimensions")
+    val status = varchar("status", 32)
+    val createdBy = varchar("created_by", 120)
+    val metaData = jsonb<String>("meta_data", { it }, { it })
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object Messages : Table("ai_agent_bridge.messages") {
+    val id = uuid("id")
+    val channelSlug = varchar("channel_slug", 120)
+    val channelId = uuid("channel_id").nullable()
+    val seq = long("seq")
+    val fromAgentKey = varchar("from_agent_key", 120)
+    val role = varchar("role", 32)
+    val content = text("content")
+    val metaData = jsonb<String>("meta_data", { it }, { it })
+    val createdAt = timestampWithTimeZone("created_at")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object ChannelMembers : Table("ai_agent_bridge.channel_members") {
+    val id = uuid("id")
+    val channelSlug = varchar("channel_slug", 120)
+    val channelId = uuid("channel_id").nullable()
+    val agentKey = varchar("agent_key", 120)
+    val role = varchar("role", 32)
+    val joinedAt = timestampWithTimeZone("joined_at")
+    val lastSeenAt = timestampWithTimeZone("last_seen_at")
+    val metaData = jsonb<String>("meta_data", { it }, { it })
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object SharedContext : Table("ai_agent_bridge.shared_context") {
+    val id = uuid("id")
+    val channelSlug = varchar("channel_slug", 120).nullable()
+    val channelId = uuid("channel_id").nullable()
+    val ctxKey = varchar("ctx_key", 200)
+    val value = jsonb<String>("value", { it }, { it })
+    val version = integer("version")
+    val updatedBy = varchar("updated_by", 120)
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
 data class AppConfigRow(
     val id: UUID,
     val scope: String,
@@ -3713,6 +3786,7 @@ data class DesSoccerLearningPolicyEntriesRow(
     val targetTacticalCellId: Int,
     val targetMacroCellId: Int,
     val targetRootCellId: Int,
+    val receiverDescriptor: Int,
     val valueMicros: Long,
     val visits: Int,
     val sourceRunId: UUID?,
@@ -3731,6 +3805,7 @@ fun toDesSoccerLearningPolicyEntriesRow(row: ResultRow): DesSoccerLearningPolicy
     row[DesSoccerLearningPolicyEntries.targetTacticalCellId],
     row[DesSoccerLearningPolicyEntries.targetMacroCellId],
     row[DesSoccerLearningPolicyEntries.targetRootCellId],
+    row[DesSoccerLearningPolicyEntries.receiverDescriptor],
     row[DesSoccerLearningPolicyEntries.valueMicros],
     row[DesSoccerLearningPolicyEntries.visits],
     row[DesSoccerLearningPolicyEntries.sourceRunId],
@@ -3853,6 +3928,7 @@ data class DesSoccerLearningRunDeltasRow(
     val targetTacticalCellId: Int,
     val targetMacroCellId: Int,
     val targetRootCellId: Int,
+    val receiverDescriptor: Int,
     val beforeValueMicros: Long,
     val afterValueMicros: Long,
     val valueDeltaMicros: Long,
@@ -3874,6 +3950,7 @@ fun toDesSoccerLearningRunDeltasRow(row: ResultRow): DesSoccerLearningRunDeltasR
     row[DesSoccerLearningRunDeltas.targetTacticalCellId],
     row[DesSoccerLearningRunDeltas.targetMacroCellId],
     row[DesSoccerLearningRunDeltas.targetRootCellId],
+    row[DesSoccerLearningRunDeltas.receiverDescriptor],
     row[DesSoccerLearningRunDeltas.beforeValueMicros],
     row[DesSoccerLearningRunDeltas.afterValueMicros],
     row[DesSoccerLearningRunDeltas.valueDeltaMicros],
@@ -6493,4 +6570,126 @@ fun toVcsOperationsRow(row: ResultRow): VcsOperationsRow = VcsOperationsRow(
     row[VcsOperations.requestedBy],
     row[VcsOperations.createdAt],
     row[VcsOperations.updatedAt],
+)
+
+data class AgentsRow(
+    val id: UUID,
+    val agentKey: String,
+    val displayName: String,
+    val kind: String,
+    val host: String?,
+    val metaData: String,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+)
+
+fun toAgentsRow(row: ResultRow): AgentsRow = AgentsRow(
+    row[Agents.id],
+    row[Agents.agentKey],
+    row[Agents.displayName],
+    row[Agents.kind],
+    row[Agents.host],
+    row[Agents.metaData],
+    row[Agents.createdAt],
+    row[Agents.updatedAt],
+)
+
+data class ChannelsRow(
+    val id: UUID,
+    val slug: String,
+    val topic: String,
+    val topicSummary: String?,
+    val embeddingModel: String,
+    val embedding: String,
+    val embeddingDimensions: Int,
+    val status: String,
+    val createdBy: String,
+    val metaData: String,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+)
+
+fun toChannelsRow(row: ResultRow): ChannelsRow = ChannelsRow(
+    row[Channels.id],
+    row[Channels.slug],
+    row[Channels.topic],
+    row[Channels.topicSummary],
+    row[Channels.embeddingModel],
+    row[Channels.embedding],
+    row[Channels.embeddingDimensions],
+    row[Channels.status],
+    row[Channels.createdBy],
+    row[Channels.metaData],
+    row[Channels.createdAt],
+    row[Channels.updatedAt],
+)
+
+data class MessagesRow(
+    val id: UUID,
+    val channelSlug: String,
+    val channelId: UUID?,
+    val seq: Long,
+    val fromAgentKey: String,
+    val role: String,
+    val content: String,
+    val metaData: String,
+    val createdAt: OffsetDateTime,
+)
+
+fun toMessagesRow(row: ResultRow): MessagesRow = MessagesRow(
+    row[Messages.id],
+    row[Messages.channelSlug],
+    row[Messages.channelId],
+    row[Messages.seq],
+    row[Messages.fromAgentKey],
+    row[Messages.role],
+    row[Messages.content],
+    row[Messages.metaData],
+    row[Messages.createdAt],
+)
+
+data class ChannelMembersRow(
+    val id: UUID,
+    val channelSlug: String,
+    val channelId: UUID?,
+    val agentKey: String,
+    val role: String,
+    val joinedAt: OffsetDateTime,
+    val lastSeenAt: OffsetDateTime,
+    val metaData: String,
+)
+
+fun toChannelMembersRow(row: ResultRow): ChannelMembersRow = ChannelMembersRow(
+    row[ChannelMembers.id],
+    row[ChannelMembers.channelSlug],
+    row[ChannelMembers.channelId],
+    row[ChannelMembers.agentKey],
+    row[ChannelMembers.role],
+    row[ChannelMembers.joinedAt],
+    row[ChannelMembers.lastSeenAt],
+    row[ChannelMembers.metaData],
+)
+
+data class SharedContextRow(
+    val id: UUID,
+    val channelSlug: String?,
+    val channelId: UUID?,
+    val ctxKey: String,
+    val value: String,
+    val version: Int,
+    val updatedBy: String,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+)
+
+fun toSharedContextRow(row: ResultRow): SharedContextRow = SharedContextRow(
+    row[SharedContext.id],
+    row[SharedContext.channelSlug],
+    row[SharedContext.channelId],
+    row[SharedContext.ctxKey],
+    row[SharedContext.value],
+    row[SharedContext.version],
+    row[SharedContext.updatedBy],
+    row[SharedContext.createdAt],
+    row[SharedContext.updatedAt],
 )

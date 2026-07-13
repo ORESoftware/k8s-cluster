@@ -1099,6 +1099,7 @@ class DesSoccerLearningPolicyEntriesTable extends Table {
   IntColumn get targetTacticalCellId => integer().named("target_tactical_cell_id").clientDefault(() => -1)();
   IntColumn get targetMacroCellId => integer().named("target_macro_cell_id").clientDefault(() => -1)();
   IntColumn get targetRootCellId => integer().named("target_root_cell_id").clientDefault(() => -1)();
+  IntColumn get receiverDescriptor => integer().named("receiver_descriptor").clientDefault(() => -1)();
   Int64Column get valueMicros => int64().named("value_micros")();
   IntColumn get visits => integer().named("visits").clientDefault(() => 0)();
   TextColumn get sourceRunId => text().named("source_run_id").nullable().customConstraint("UUID")();
@@ -1199,6 +1200,7 @@ class DesSoccerLearningRunDeltasTable extends Table {
   IntColumn get targetTacticalCellId => integer().named("target_tactical_cell_id").clientDefault(() => -1)();
   IntColumn get targetMacroCellId => integer().named("target_macro_cell_id").clientDefault(() => -1)();
   IntColumn get targetRootCellId => integer().named("target_root_cell_id").clientDefault(() => -1)();
+  IntColumn get receiverDescriptor => integer().named("receiver_descriptor").clientDefault(() => -1)();
   Int64Column get beforeValueMicros => int64().named("before_value_micros").clientDefault(() => 0)();
   Int64Column get afterValueMicros => int64().named("after_value_micros").clientDefault(() => 0)();
   Int64Column get valueDeltaMicros => int64().named("value_delta_micros").clientDefault(() => 0)();
@@ -3233,6 +3235,117 @@ class VcsOperationsTable extends Table {
   };
 }
 
+@DataClassName("AgentsData")
+class AgentsTable extends Table {
+  @override String get tableName => "agents";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get agentKey => text().named("agent_key").withLength(max: 120)();
+  TextColumn get displayName => text().named("display_name").withLength(max: 200).clientDefault(() => '')();
+  TextColumn get kind => text().named("kind").clientDefault(() => 'other')();
+  TextColumn get host => text().named("host").withLength(max: 255).nullable()();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("ChannelsData")
+class ChannelsTable extends Table {
+  @override String get tableName => "channels";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get slug => text().named("slug").withLength(max: 120)();
+  TextColumn get topic => text().named("topic")();
+  TextColumn get topicSummary => text().named("topic_summary").nullable()();
+  TextColumn get embeddingModel => text().named("embedding_model").withLength(max: 120).clientDefault(() => 'local-hash-v1')();
+  TextColumn get embedding => text().named("embedding").clientDefault(() => '[]').customConstraint("JSONB")();
+  IntColumn get embeddingDimensions => integer().named("embedding_dimensions").clientDefault(() => 0)();
+  TextColumn get status => text().named("status").clientDefault(() => 'active')();
+  TextColumn get createdBy => text().named("created_by").withLength(max: 120).clientDefault(() => 'system')();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("MessagesData")
+class MessagesTable extends Table {
+  @override String get tableName => "messages";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get channelSlug => text().named("channel_slug").withLength(max: 120)();
+  TextColumn get channelId => text().named("channel_id").nullable().customConstraint("UUID REFERENCES channels (id)")();
+  Int64Column get seq => int64().named("seq")();
+  TextColumn get fromAgentKey => text().named("from_agent_key").withLength(max: 120)();
+  TextColumn get role => text().named("role").clientDefault(() => 'user')();
+  TextColumn get content => text().named("content")();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("ChannelMembersData")
+class ChannelMembersTable extends Table {
+  @override String get tableName => "channel_members";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get channelSlug => text().named("channel_slug").withLength(max: 120)();
+  TextColumn get channelId => text().named("channel_id").nullable().customConstraint("UUID REFERENCES channels (id)")();
+  TextColumn get agentKey => text().named("agent_key").withLength(max: 120)();
+  TextColumn get role => text().named("role").clientDefault(() => 'member')();
+  DateTimeColumn get joinedAt => dateTime().named("joined_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get lastSeenAt => dateTime().named("last_seen_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("SharedContextData")
+class SharedContextTable extends Table {
+  @override String get tableName => "shared_context";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get channelSlug => text().named("channel_slug").withLength(max: 120).nullable()();
+  TextColumn get channelId => text().named("channel_id").nullable().customConstraint("UUID REFERENCES channels (id)")();
+  TextColumn get ctxKey => text().named("ctx_key").withLength(max: 200)();
+  TextColumn get value => text().named("value").clientDefault(() => '{}').customConstraint("JSONB")();
+  IntColumn get version => integer().named("version").clientDefault(() => 1)();
+  TextColumn get updatedBy => text().named("updated_by").withLength(max: 120).clientDefault(() => 'system')();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
 // Drift annotation users should re-export the table classes via:
 // @DriftDatabase(tables: [...registeredDriftTables])
 const List<Type> registeredDriftTables = <Type>[
@@ -3353,4 +3466,9 @@ const List<Type> registeredDriftTables = <Type>[
   VcsRepositoriesTable,
   VcsRefsTable,
   VcsOperationsTable,
+  AgentsTable,
+  ChannelsTable,
+  MessagesTable,
+  ChannelMembersTable,
+  SharedContextTable,
 ];

@@ -2961,10 +2961,10 @@ desSoccerLearningPolicyEntriesTable :: Text
 desSoccerLearningPolicyEntriesTable = "des_soccer_learning_policy_entries"
 
 desSoccerLearningPolicyEntriesColumns :: [Text]
-desSoccerLearningPolicyEntriesColumns = ["id", "policy_version_id", "team", "entry_kind", "state_hash", "state_key", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "value_micros", "visits", "source_run_id", "created_at"]
+desSoccerLearningPolicyEntriesColumns = ["id", "policy_version_id", "team", "entry_kind", "state_hash", "state_key", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "receiver_descriptor", "value_micros", "visits", "source_run_id", "created_at"]
 
 desSoccerLearningPolicyEntriesSelectSql :: Text
-desSoccerLearningPolicyEntriesSelectSql = "select\n      id::text as id,\n      policy_version_id::text as policy_version_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      value_micros,\n      visits,\n      source_run_id::text as source_run_id,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_policy_entries"
+desSoccerLearningPolicyEntriesSelectSql = "select\n      id::text as id,\n      policy_version_id::text as policy_version_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      receiver_descriptor,\n      value_micros,\n      visits,\n      source_run_id::text as source_run_id,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_policy_entries"
 
 data DesSoccerLearningPolicyEntriesTeam = DesSoccerLearningPolicyEntriesTeamHome | DesSoccerLearningPolicyEntriesTeamAway
   deriving (Eq, Show)
@@ -3006,6 +3006,7 @@ data DesSoccerLearningPolicyEntriesRow = DesSoccerLearningPolicyEntriesRow
   , desSoccerLearningPolicyEntriesTargetTacticalCellId :: Int
   , desSoccerLearningPolicyEntriesTargetMacroCellId :: Int
   , desSoccerLearningPolicyEntriesTargetRootCellId :: Int
+  , desSoccerLearningPolicyEntriesReceiverDescriptor :: Int
   , desSoccerLearningPolicyEntriesValueMicros :: Int
   , desSoccerLearningPolicyEntriesVisits :: Int
   , desSoccerLearningPolicyEntriesSourceRunId :: (Maybe Text)
@@ -3013,7 +3014,7 @@ data DesSoccerLearningPolicyEntriesRow = DesSoccerLearningPolicyEntriesRow
   } deriving (Eq, Show)
 
 instance FromRow DesSoccerLearningPolicyEntriesRow where
-  fromRow = DesSoccerLearningPolicyEntriesRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+  fromRow = DesSoccerLearningPolicyEntriesRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
 
 validateDesSoccerLearningPolicyEntriesStateHash :: Text -> Either Text Text
 validateDesSoccerLearningPolicyEntriesStateHash value
@@ -3043,6 +3044,11 @@ validateDesSoccerLearningPolicyEntriesTargetMacroCellId value
 validateDesSoccerLearningPolicyEntriesTargetRootCellId :: Int -> Either Text Int
 validateDesSoccerLearningPolicyEntriesTargetRootCellId value
   | value < -1 = Left "des_soccer_learning_policy_entries.target_root_cell_id is below the minimum"
+  | otherwise = Right value
+
+validateDesSoccerLearningPolicyEntriesReceiverDescriptor :: Int -> Either Text Int
+validateDesSoccerLearningPolicyEntriesReceiverDescriptor value
+  | value < -1 = Left "des_soccer_learning_policy_entries.receiver_descriptor is below the minimum"
   | otherwise = Right value
 
 validateDesSoccerLearningPolicyEntriesVisits :: Int -> Either Text Int
@@ -3284,10 +3290,10 @@ desSoccerLearningRunDeltasTable :: Text
 desSoccerLearningRunDeltasTable = "des_soccer_learning_run_deltas"
 
 desSoccerLearningRunDeltasColumns :: [Text]
-desSoccerLearningRunDeltasColumns = ["id", "run_id", "team", "entry_kind", "state_hash", "state_key", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "before_value_micros", "after_value_micros", "value_delta_micros", "visit_delta", "merge_weight_micros", "effective_visit_micros", "created_at"]
+desSoccerLearningRunDeltasColumns = ["id", "run_id", "team", "entry_kind", "state_hash", "state_key", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "receiver_descriptor", "before_value_micros", "after_value_micros", "value_delta_micros", "visit_delta", "merge_weight_micros", "effective_visit_micros", "created_at"]
 
 desSoccerLearningRunDeltasSelectSql :: Text
-desSoccerLearningRunDeltasSelectSql = "select\n      id::text as id,\n      run_id::text as run_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      before_value_micros,\n      after_value_micros,\n      value_delta_micros,\n      visit_delta,\n      merge_weight_micros,\n      effective_visit_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_run_deltas"
+desSoccerLearningRunDeltasSelectSql = "select\n      id::text as id,\n      run_id::text as run_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      receiver_descriptor,\n      before_value_micros,\n      after_value_micros,\n      value_delta_micros,\n      visit_delta,\n      merge_weight_micros,\n      effective_visit_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_run_deltas"
 
 data DesSoccerLearningRunDeltasTeam = DesSoccerLearningRunDeltasTeamHome | DesSoccerLearningRunDeltasTeamAway
   deriving (Eq, Show)
@@ -3329,6 +3335,7 @@ data DesSoccerLearningRunDeltasRow = DesSoccerLearningRunDeltasRow
   , desSoccerLearningRunDeltasTargetTacticalCellId :: Int
   , desSoccerLearningRunDeltasTargetMacroCellId :: Int
   , desSoccerLearningRunDeltasTargetRootCellId :: Int
+  , desSoccerLearningRunDeltasReceiverDescriptor :: Int
   , desSoccerLearningRunDeltasBeforeValueMicros :: Int
   , desSoccerLearningRunDeltasAfterValueMicros :: Int
   , desSoccerLearningRunDeltasValueDeltaMicros :: Int
@@ -3339,7 +3346,7 @@ data DesSoccerLearningRunDeltasRow = DesSoccerLearningRunDeltasRow
   } deriving (Eq, Show)
 
 instance FromRow DesSoccerLearningRunDeltasRow where
-  fromRow = DesSoccerLearningRunDeltasRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+  fromRow = DesSoccerLearningRunDeltasRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
 
 validateDesSoccerLearningRunDeltasStateHash :: Text -> Either Text Text
 validateDesSoccerLearningRunDeltasStateHash value
@@ -3369,6 +3376,11 @@ validateDesSoccerLearningRunDeltasTargetMacroCellId value
 validateDesSoccerLearningRunDeltasTargetRootCellId :: Int -> Either Text Int
 validateDesSoccerLearningRunDeltasTargetRootCellId value
   | value < -1 = Left "des_soccer_learning_run_deltas.target_root_cell_id is below the minimum"
+  | otherwise = Right value
+
+validateDesSoccerLearningRunDeltasReceiverDescriptor :: Int -> Either Text Int
+validateDesSoccerLearningRunDeltasReceiverDescriptor value
+  | value < -1 = Left "des_soccer_learning_run_deltas.receiver_descriptor is below the minimum"
   | otherwise = Right value
 
 validateDesSoccerLearningRunDeltasVisitDelta :: Int -> Either Text Int
@@ -9407,4 +9419,271 @@ validateVcsOperationsDurationMs value
 validateVcsOperationsRequestedBy :: Text -> Either Text Text
 validateVcsOperationsRequestedBy value
   | T.length value > 200 = Left "vcs_operations.requested_by must be at most 200 characters"
+  | otherwise = Right value
+
+agentsTable :: Text
+agentsTable = "ai_agent_bridge.agents"
+
+agentsColumns :: [Text]
+agentsColumns = ["id", "agent_key", "display_name", "kind", "host", "meta_data", "created_at", "updated_at"]
+
+agentsSelectSql :: Text
+agentsSelectSql = "select\n      id::text as id,\n      agent_key,\n      display_name,\n      kind,\n      host,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from ai_agent_bridge.agents"
+
+data AgentsKind = AgentsKindClaude | AgentsKindCodex | AgentsKindHuman | AgentsKindOther
+  deriving (Eq, Show)
+
+agentsKindToText :: AgentsKind -> Text
+agentsKindToText value = case value of
+  AgentsKindClaude -> "claude"
+  AgentsKindCodex -> "codex"
+  AgentsKindHuman -> "human"
+  AgentsKindOther -> "other"
+
+parseAgentsKind :: Text -> Either Text AgentsKind
+parseAgentsKind value = case value of
+  "claude" -> Right AgentsKindClaude
+  "codex" -> Right AgentsKindCodex
+  "human" -> Right AgentsKindHuman
+  "other" -> Right AgentsKindOther
+  _ -> Left (T.append "unsupported agents.kind: " value)
+
+data AgentsRow = AgentsRow
+  { agentsId :: Text
+  , agentsAgentKey :: Text
+  , agentsDisplayName :: Text
+  , agentsKind :: Text
+  , agentsHost :: (Maybe Text)
+  , agentsMetaData :: Text
+  , agentsCreatedAt :: Text
+  , agentsUpdatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow AgentsRow where
+  fromRow = AgentsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateAgentsAgentKey :: Text -> Either Text Text
+validateAgentsAgentKey value
+  | T.length value > 120 = Left "agents.agent_key must be at most 120 characters"
+  | otherwise = Right value
+
+validateAgentsDisplayName :: Text -> Either Text Text
+validateAgentsDisplayName value
+  | T.length value > 200 = Left "agents.display_name must be at most 200 characters"
+  | otherwise = Right value
+
+validateAgentsHost :: Text -> Either Text Text
+validateAgentsHost value
+  | T.length value > 255 = Left "agents.host must be at most 255 characters"
+  | otherwise = Right value
+
+channelsTable :: Text
+channelsTable = "ai_agent_bridge.channels"
+
+channelsColumns :: [Text]
+channelsColumns = ["id", "slug", "topic", "topic_summary", "embedding_model", "embedding", "embedding_dimensions", "status", "created_by", "meta_data", "created_at", "updated_at"]
+
+channelsSelectSql :: Text
+channelsSelectSql = "select\n      id::text as id,\n      slug,\n      topic,\n      topic_summary,\n      embedding_model,\n      embedding::text as embedding_json,\n      embedding_dimensions,\n      status,\n      created_by,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from ai_agent_bridge.channels"
+
+data ChannelsStatus = ChannelsStatusActive | ChannelsStatusArchived
+  deriving (Eq, Show)
+
+channelsStatusToText :: ChannelsStatus -> Text
+channelsStatusToText value = case value of
+  ChannelsStatusActive -> "active"
+  ChannelsStatusArchived -> "archived"
+
+parseChannelsStatus :: Text -> Either Text ChannelsStatus
+parseChannelsStatus value = case value of
+  "active" -> Right ChannelsStatusActive
+  "archived" -> Right ChannelsStatusArchived
+  _ -> Left (T.append "unsupported channels.status: " value)
+
+data ChannelsRow = ChannelsRow
+  { channelsId :: Text
+  , channelsSlug :: Text
+  , channelsTopic :: Text
+  , channelsTopicSummary :: (Maybe Text)
+  , channelsEmbeddingModel :: Text
+  , channelsEmbedding :: Text
+  , channelsEmbeddingDimensions :: Int
+  , channelsStatus :: Text
+  , channelsCreatedBy :: Text
+  , channelsMetaData :: Text
+  , channelsCreatedAt :: Text
+  , channelsUpdatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow ChannelsRow where
+  fromRow = ChannelsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateChannelsSlug :: Text -> Either Text Text
+validateChannelsSlug value
+  | T.length value > 120 = Left "channels.slug must be at most 120 characters"
+  | otherwise = Right value
+
+validateChannelsEmbeddingModel :: Text -> Either Text Text
+validateChannelsEmbeddingModel value
+  | T.length value > 120 = Left "channels.embedding_model must be at most 120 characters"
+  | otherwise = Right value
+
+validateChannelsEmbeddingDimensions :: Int -> Either Text Int
+validateChannelsEmbeddingDimensions value
+  | value < 0 = Left "channels.embedding_dimensions is below the minimum"
+  | otherwise = Right value
+
+validateChannelsCreatedBy :: Text -> Either Text Text
+validateChannelsCreatedBy value
+  | T.length value > 120 = Left "channels.created_by must be at most 120 characters"
+  | otherwise = Right value
+
+messagesTable :: Text
+messagesTable = "ai_agent_bridge.messages"
+
+messagesColumns :: [Text]
+messagesColumns = ["id", "channel_slug", "channel_id", "seq", "from_agent_key", "role", "content", "meta_data", "created_at"]
+
+messagesSelectSql :: Text
+messagesSelectSql = "select\n      id::text as id,\n      channel_slug,\n      channel_id::text as channel_id,\n      seq,\n      from_agent_key,\n      role,\n      content,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from ai_agent_bridge.messages"
+
+data MessagesRole = MessagesRoleUser | MessagesRoleAssistant | MessagesRoleSystem | MessagesRoleTool
+  deriving (Eq, Show)
+
+messagesRoleToText :: MessagesRole -> Text
+messagesRoleToText value = case value of
+  MessagesRoleUser -> "user"
+  MessagesRoleAssistant -> "assistant"
+  MessagesRoleSystem -> "system"
+  MessagesRoleTool -> "tool"
+
+parseMessagesRole :: Text -> Either Text MessagesRole
+parseMessagesRole value = case value of
+  "user" -> Right MessagesRoleUser
+  "assistant" -> Right MessagesRoleAssistant
+  "system" -> Right MessagesRoleSystem
+  "tool" -> Right MessagesRoleTool
+  _ -> Left (T.append "unsupported messages.role: " value)
+
+data MessagesRow = MessagesRow
+  { messagesId :: Text
+  , messagesChannelSlug :: Text
+  , messagesChannelId :: (Maybe Text)
+  , messagesSeq :: Int
+  , messagesFromAgentKey :: Text
+  , messagesRole :: Text
+  , messagesContent :: Text
+  , messagesMetaData :: Text
+  , messagesCreatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow MessagesRow where
+  fromRow = MessagesRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateMessagesChannelSlug :: Text -> Either Text Text
+validateMessagesChannelSlug value
+  | T.length value > 120 = Left "messages.channel_slug must be at most 120 characters"
+  | otherwise = Right value
+
+validateMessagesSeq :: Int -> Either Text Int
+validateMessagesSeq value
+  | value < 1 = Left "messages.seq is below the minimum"
+  | otherwise = Right value
+
+validateMessagesFromAgentKey :: Text -> Either Text Text
+validateMessagesFromAgentKey value
+  | T.length value > 120 = Left "messages.from_agent_key must be at most 120 characters"
+  | otherwise = Right value
+
+channelMembersTable :: Text
+channelMembersTable = "ai_agent_bridge.channel_members"
+
+channelMembersColumns :: [Text]
+channelMembersColumns = ["id", "channel_slug", "channel_id", "agent_key", "role", "joined_at", "last_seen_at", "meta_data"]
+
+channelMembersSelectSql :: Text
+channelMembersSelectSql = "select\n      id::text as id,\n      channel_slug,\n      channel_id::text as channel_id,\n      agent_key,\n      role,\n      to_char(joined_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as joined_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      meta_data::text as meta_data_json\n    from ai_agent_bridge.channel_members"
+
+data ChannelMembersRole = ChannelMembersRoleOwner | ChannelMembersRoleMember | ChannelMembersRoleObserver
+  deriving (Eq, Show)
+
+channelMembersRoleToText :: ChannelMembersRole -> Text
+channelMembersRoleToText value = case value of
+  ChannelMembersRoleOwner -> "owner"
+  ChannelMembersRoleMember -> "member"
+  ChannelMembersRoleObserver -> "observer"
+
+parseChannelMembersRole :: Text -> Either Text ChannelMembersRole
+parseChannelMembersRole value = case value of
+  "owner" -> Right ChannelMembersRoleOwner
+  "member" -> Right ChannelMembersRoleMember
+  "observer" -> Right ChannelMembersRoleObserver
+  _ -> Left (T.append "unsupported channel_members.role: " value)
+
+data ChannelMembersRow = ChannelMembersRow
+  { channelMembersId :: Text
+  , channelMembersChannelSlug :: Text
+  , channelMembersChannelId :: (Maybe Text)
+  , channelMembersAgentKey :: Text
+  , channelMembersRole :: Text
+  , channelMembersJoinedAt :: Text
+  , channelMembersLastSeenAt :: Text
+  , channelMembersMetaData :: Text
+  } deriving (Eq, Show)
+
+instance FromRow ChannelMembersRow where
+  fromRow = ChannelMembersRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateChannelMembersChannelSlug :: Text -> Either Text Text
+validateChannelMembersChannelSlug value
+  | T.length value > 120 = Left "channel_members.channel_slug must be at most 120 characters"
+  | otherwise = Right value
+
+validateChannelMembersAgentKey :: Text -> Either Text Text
+validateChannelMembersAgentKey value
+  | T.length value > 120 = Left "channel_members.agent_key must be at most 120 characters"
+  | otherwise = Right value
+
+sharedContextTable :: Text
+sharedContextTable = "ai_agent_bridge.shared_context"
+
+sharedContextColumns :: [Text]
+sharedContextColumns = ["id", "channel_slug", "channel_id", "ctx_key", "value", "version", "updated_by", "created_at", "updated_at"]
+
+sharedContextSelectSql :: Text
+sharedContextSelectSql = "select\n      id::text as id,\n      channel_slug,\n      channel_id::text as channel_id,\n      ctx_key,\n      value::text as value_json,\n      version,\n      updated_by,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from ai_agent_bridge.shared_context"
+
+data SharedContextRow = SharedContextRow
+  { sharedContextId :: Text
+  , sharedContextChannelSlug :: (Maybe Text)
+  , sharedContextChannelId :: (Maybe Text)
+  , sharedContextCtxKey :: Text
+  , sharedContextValue :: Text
+  , sharedContextVersion :: Int
+  , sharedContextUpdatedBy :: Text
+  , sharedContextCreatedAt :: Text
+  , sharedContextUpdatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow SharedContextRow where
+  fromRow = SharedContextRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateSharedContextChannelSlug :: Text -> Either Text Text
+validateSharedContextChannelSlug value
+  | T.length value > 120 = Left "shared_context.channel_slug must be at most 120 characters"
+  | otherwise = Right value
+
+validateSharedContextCtxKey :: Text -> Either Text Text
+validateSharedContextCtxKey value
+  | T.length value > 200 = Left "shared_context.ctx_key must be at most 200 characters"
+  | otherwise = Right value
+
+validateSharedContextVersion :: Int -> Either Text Int
+validateSharedContextVersion value
+  | value < 1 = Left "shared_context.version is below the minimum"
+  | otherwise = Right value
+
+validateSharedContextUpdatedBy :: Text -> Either Text Text
+validateSharedContextUpdatedBy value
+  | T.length value > 120 = Left "shared_context.updated_by must be at most 120 characters"
   | otherwise = Right value

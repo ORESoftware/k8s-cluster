@@ -12,6 +12,7 @@ const jsonObjectSchema = z.record(z.string(), z.unknown());
 const jsonArraySchema = z.array(z.unknown());
 
 export const benefactorSchema = pgSchema("benefactor");
+export const aiAgentBridgeSchema = pgSchema("ai_agent_bridge");
 
 export const appConfigStatusValues = ["active","paused","archived"] as const;
 export const appConfigStatusSchema = z.enum(appConfigStatusValues);
@@ -3075,6 +3076,7 @@ export const desSoccerLearningPolicyEntries = pgTable(
     targetTacticalCellId: integer("target_tactical_cell_id").default(sql`-1`).notNull(),
     targetMacroCellId: integer("target_macro_cell_id").default(sql`-1`).notNull(),
     targetRootCellId: integer("target_root_cell_id").default(sql`-1`).notNull(),
+    receiverDescriptor: integer("receiver_descriptor").default(sql`-1`).notNull(),
     valueMicros: bigint("value_micros", { mode: "number" }).notNull(),
     visits: integer("visits").default(sql`0`).notNull(),
     sourceRunId: uuid("source_run_id"),
@@ -3090,8 +3092,9 @@ export const desSoccerLearningPolicyEntries = pgTable(
     desSoccerLearningPolicyEntriesTargetTacticalChk: check("des_soccer_learning_policy_entries_target_tactical_chk", sql.raw("target_tactical_cell_id >= -1")),
     desSoccerLearningPolicyEntriesTargetMacroChk: check("des_soccer_learning_policy_entries_target_macro_chk", sql.raw("target_macro_cell_id >= -1")),
     desSoccerLearningPolicyEntriesTargetRootChk: check("des_soccer_learning_policy_entries_target_root_chk", sql.raw("target_root_cell_id >= -1")),
+    desSoccerLearningPolicyEntriesReceiverDescriptorChk: check("des_soccer_learning_policy_entries_receiver_descriptor_chk", sql.raw("receiver_descriptor >= -1")),
     desSoccerLearningPolicyEntriesVisitsChk: check("des_soccer_learning_policy_entries_visits_chk", sql.raw("visits >= 0")),
-    desSoccerLearningPolicyEntriesKeyUq: uniqueIndex("des_soccer_learning_policy_entries_key_uq").on(table.policyVersionId, table.team, table.entryKind, table.stateHash, table.action, table.targetFineCellId, table.targetTacticalCellId, table.targetMacroCellId, table.targetRootCellId),
+    desSoccerLearningPolicyEntriesKeyUq: uniqueIndex("des_soccer_learning_policy_entries_key_uq").on(table.policyVersionId, table.team, table.entryKind, table.stateHash, table.action, table.targetFineCellId, table.targetTacticalCellId, table.targetMacroCellId, table.targetRootCellId, table.receiverDescriptor),
     desSoccerLearningPolicyEntriesLookupIdx: index("des_soccer_learning_policy_entries_lookup_idx").on(table.policyVersionId, table.team, table.entryKind, table.stateHash),
   }),
 );
@@ -3108,6 +3111,7 @@ export const desSoccerLearningPolicyEntriesRowSchema = z.object({
   targetTacticalCellId: z.number().int().min(-1),
   targetMacroCellId: z.number().int().min(-1),
   targetRootCellId: z.number().int().min(-1),
+  receiverDescriptor: z.number().int().min(-1),
   valueMicros: z.number().int(),
   visits: z.number().int().min(0),
   sourceRunId: z.string().uuid().nullable(),
@@ -3126,6 +3130,7 @@ export const desSoccerLearningPolicyEntriesInsertSchema = z.object({
   targetTacticalCellId: z.number().int().min(-1).optional().default(-1),
   targetMacroCellId: z.number().int().min(-1).optional().default(-1),
   targetRootCellId: z.number().int().min(-1).optional().default(-1),
+  receiverDescriptor: z.number().int().min(-1).optional().default(-1),
   valueMicros: z.number().int(),
   visits: z.number().int().min(0).optional().default(0),
   sourceRunId: z.string().uuid().nullable().optional(),
@@ -3382,6 +3387,7 @@ export const desSoccerLearningRunDeltas = pgTable(
     targetTacticalCellId: integer("target_tactical_cell_id").default(sql`-1`).notNull(),
     targetMacroCellId: integer("target_macro_cell_id").default(sql`-1`).notNull(),
     targetRootCellId: integer("target_root_cell_id").default(sql`-1`).notNull(),
+    receiverDescriptor: integer("receiver_descriptor").default(sql`-1`).notNull(),
     beforeValueMicros: bigint("before_value_micros", { mode: "number" }).default(sql`0`).notNull(),
     afterValueMicros: bigint("after_value_micros", { mode: "number" }).default(sql`0`).notNull(),
     valueDeltaMicros: bigint("value_delta_micros", { mode: "number" }).default(sql`0`).notNull(),
@@ -3400,10 +3406,11 @@ export const desSoccerLearningRunDeltas = pgTable(
     desSoccerLearningRunDeltasTargetTacticalChk: check("des_soccer_learning_run_deltas_target_tactical_chk", sql.raw("target_tactical_cell_id >= -1")),
     desSoccerLearningRunDeltasTargetMacroChk: check("des_soccer_learning_run_deltas_target_macro_chk", sql.raw("target_macro_cell_id >= -1")),
     desSoccerLearningRunDeltasTargetRootChk: check("des_soccer_learning_run_deltas_target_root_chk", sql.raw("target_root_cell_id >= -1")),
+    desSoccerLearningRunDeltasReceiverDescriptorChk: check("des_soccer_learning_run_deltas_receiver_descriptor_chk", sql.raw("receiver_descriptor >= -1")),
     desSoccerLearningRunDeltasVisitDeltaChk: check("des_soccer_learning_run_deltas_visit_delta_chk", sql.raw("visit_delta > 0")),
     desSoccerLearningRunDeltasMergeWeightChk: check("des_soccer_learning_run_deltas_merge_weight_chk", sql.raw("merge_weight_micros >= 0")),
     desSoccerLearningRunDeltasEffectiveVisitChk: check("des_soccer_learning_run_deltas_effective_visit_chk", sql.raw("effective_visit_micros >= 0")),
-    desSoccerLearningRunDeltasKeyUq: uniqueIndex("des_soccer_learning_run_deltas_key_uq").on(table.runId, table.team, table.entryKind, table.stateHash, table.action, table.targetFineCellId, table.targetTacticalCellId, table.targetMacroCellId, table.targetRootCellId),
+    desSoccerLearningRunDeltasKeyUq: uniqueIndex("des_soccer_learning_run_deltas_key_uq").on(table.runId, table.team, table.entryKind, table.stateHash, table.action, table.targetFineCellId, table.targetTacticalCellId, table.targetMacroCellId, table.targetRootCellId, table.receiverDescriptor),
     desSoccerLearningRunDeltasMergeIdx: index("des_soccer_learning_run_deltas_merge_idx").on(table.team, table.entryKind, table.stateHash, table.action),
   }),
 );
@@ -3420,6 +3427,7 @@ export const desSoccerLearningRunDeltasRowSchema = z.object({
   targetTacticalCellId: z.number().int().min(-1),
   targetMacroCellId: z.number().int().min(-1),
   targetRootCellId: z.number().int().min(-1),
+  receiverDescriptor: z.number().int().min(-1),
   beforeValueMicros: z.number().int(),
   afterValueMicros: z.number().int(),
   valueDeltaMicros: z.number().int(),
@@ -3441,6 +3449,7 @@ export const desSoccerLearningRunDeltasInsertSchema = z.object({
   targetTacticalCellId: z.number().int().min(-1).optional().default(-1),
   targetMacroCellId: z.number().int().min(-1).optional().default(-1),
   targetRootCellId: z.number().int().min(-1).optional().default(-1),
+  receiverDescriptor: z.number().int().min(-1).optional().default(-1),
   beforeValueMicros: z.number().int().optional().default(0),
   afterValueMicros: z.number().int().optional().default(0),
   valueDeltaMicros: z.number().int().optional().default(0),
@@ -9194,3 +9203,283 @@ export const vcsOperationsUpdateSchema = vcsOperationsInsertSchema.partial();
 export type VcsOperationsRow = z.infer<typeof vcsOperationsRowSchema>;
 export type VcsOperationsInsert = z.infer<typeof vcsOperationsInsertSchema>;
 export type VcsOperationsUpdate = z.infer<typeof vcsOperationsUpdateSchema>;
+
+export const agentsKindValues = ["claude","codex","human","other"] as const;
+export const agentsKindSchema = z.enum(agentsKindValues);
+export type AgentsKind = z.infer<typeof agentsKindSchema>;
+
+export const agents = aiAgentBridgeSchema.table(
+  "agents",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    agentKey: varchar("agent_key", { length: 120 }).notNull(),
+    displayName: varchar("display_name", { length: 200 }).default(sql`''`).notNull(),
+    kind: varchar("kind", { length: 32 }).default(sql`'other'`).notNull(),
+    host: varchar("host", { length: 255 }),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    aiAgentBridgeAgentsKeyFormatChk: check("ai_agent_bridge_agents_key_format_chk", sql.raw("agent_key ~ '^[A-Za-z0-9._:-]{1,120}$'")),
+    aiAgentBridgeAgentsKindChk: check("ai_agent_bridge_agents_kind_chk", sql.raw("kind in ('claude', 'codex', 'human', 'other')")),
+    aiAgentBridgeAgentsMetaObjectChk: check("ai_agent_bridge_agents_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    aiAgentBridgeAgentsAgentKeyUq: uniqueIndex("ai_agent_bridge_agents_agent_key_uq").on(table.agentKey),
+  }),
+);
+
+export const agentsRowSchema = z.object({
+  id: z.string().uuid(),
+  agentKey: z.string().max(120).regex(new RegExp("^[A-Za-z0-9._:-]{1,120}$")),
+  displayName: z.string().max(200),
+  kind: agentsKindSchema,
+  host: z.string().max(255).nullable(),
+  metaData: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const agentsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  agentKey: z.string().max(120).regex(new RegExp("^[A-Za-z0-9._:-]{1,120}$")),
+  displayName: z.string().max(200).optional().default(""),
+  kind: agentsKindSchema.optional().default("other"),
+  host: z.string().max(255).nullable().optional(),
+  metaData: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const agentsUpdateSchema = agentsInsertSchema.partial();
+export type AgentsRow = z.infer<typeof agentsRowSchema>;
+export type AgentsInsert = z.infer<typeof agentsInsertSchema>;
+export type AgentsUpdate = z.infer<typeof agentsUpdateSchema>;
+
+export const channelsStatusValues = ["active","archived"] as const;
+export const channelsStatusSchema = z.enum(channelsStatusValues);
+export type ChannelsStatus = z.infer<typeof channelsStatusSchema>;
+
+export const channels = aiAgentBridgeSchema.table(
+  "channels",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    slug: varchar("slug", { length: 120 }).notNull(),
+    topic: text("topic").notNull(),
+    topicSummary: text("topic_summary"),
+    embeddingModel: varchar("embedding_model", { length: 120 }).default(sql`'local-hash-v1'`).notNull(),
+    embedding: jsonb("embedding").default(sql`'[]'::jsonb`).notNull(),
+    embeddingDimensions: integer("embedding_dimensions").default(sql`0`).notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'active'`).notNull(),
+    createdBy: varchar("created_by", { length: 120 }).default(sql`'system'`).notNull(),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    aiAgentBridgeChannelsSlugFormatChk: check("ai_agent_bridge_channels_slug_format_chk", sql.raw("slug ~ '^[a-z0-9][a-z0-9._-]{0,119}$'")),
+    aiAgentBridgeChannelsTopicSizeChk: check("ai_agent_bridge_channels_topic_size_chk", sql.raw("octet_length(topic) between 1 and 8192")),
+    aiAgentBridgeChannelsStatusChk: check("ai_agent_bridge_channels_status_chk", sql.raw("status in ('active', 'archived')")),
+    aiAgentBridgeChannelsEmbeddingArrayChk: check("ai_agent_bridge_channels_embedding_array_chk", sql.raw("jsonb_typeof(embedding) = 'array'")),
+    aiAgentBridgeChannelsDimensionsChk: check("ai_agent_bridge_channels_dimensions_chk", sql.raw("embedding_dimensions >= 0")),
+    aiAgentBridgeChannelsMetaObjectChk: check("ai_agent_bridge_channels_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    aiAgentBridgeChannelsSlugUq: uniqueIndex("ai_agent_bridge_channels_slug_uq").on(table.slug),
+    aiAgentBridgeChannelsStatusIdx: index("ai_agent_bridge_channels_status_idx").on(table.status).where(sql.raw("status = 'active'")),
+    aiAgentBridgeChannelsUpdatedAtIdx: index("ai_agent_bridge_channels_updated_at_idx").on(table.updatedAt.desc()),
+  }),
+);
+
+export const channelsRowSchema = z.object({
+  id: z.string().uuid(),
+  slug: z.string().max(120).regex(new RegExp("^[a-z0-9][a-z0-9._-]{0,119}$")),
+  topic: z.string().refine((value) => byteLength(value) <= 8192, "Must be at most 8192 bytes"),
+  topicSummary: z.string().nullable(),
+  embeddingModel: z.string().max(120),
+  embedding: jsonArraySchema,
+  embeddingDimensions: z.number().int().min(0),
+  status: channelsStatusSchema,
+  createdBy: z.string().max(120),
+  metaData: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const channelsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  slug: z.string().max(120).regex(new RegExp("^[a-z0-9][a-z0-9._-]{0,119}$")),
+  topic: z.string().refine((value) => byteLength(value) <= 8192, "Must be at most 8192 bytes"),
+  topicSummary: z.string().nullable().optional(),
+  embeddingModel: z.string().max(120).optional().default("local-hash-v1"),
+  embedding: jsonArraySchema.optional().default([]),
+  embeddingDimensions: z.number().int().min(0).optional().default(0),
+  status: channelsStatusSchema.optional().default("active"),
+  createdBy: z.string().max(120).optional().default("system"),
+  metaData: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const channelsUpdateSchema = channelsInsertSchema.partial();
+export type ChannelsRow = z.infer<typeof channelsRowSchema>;
+export type ChannelsInsert = z.infer<typeof channelsInsertSchema>;
+export type ChannelsUpdate = z.infer<typeof channelsUpdateSchema>;
+
+export const messagesRoleValues = ["user","assistant","system","tool"] as const;
+export const messagesRoleSchema = z.enum(messagesRoleValues);
+export type MessagesRole = z.infer<typeof messagesRoleSchema>;
+
+export const messages = aiAgentBridgeSchema.table(
+  "messages",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    channelSlug: varchar("channel_slug", { length: 120 }).notNull(),
+    channelId: uuid("channel_id"),
+    seq: bigint("seq", { mode: "number" }).notNull(),
+    fromAgentKey: varchar("from_agent_key", { length: 120 }).notNull(),
+    role: varchar("role", { length: 32 }).default(sql`'user'`).notNull(),
+    content: text("content").notNull(),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    aiAgentBridgeMessagesSlugFormatChk: check("ai_agent_bridge_messages_slug_format_chk", sql.raw("channel_slug ~ '^[a-z0-9][a-z0-9._-]{0,119}$'")),
+    aiAgentBridgeMessagesFromFormatChk: check("ai_agent_bridge_messages_from_format_chk", sql.raw("from_agent_key ~ '^[A-Za-z0-9._:-]{1,120}$'")),
+    aiAgentBridgeMessagesSeqChk: check("ai_agent_bridge_messages_seq_chk", sql.raw("seq > 0")),
+    aiAgentBridgeMessagesRoleChk: check("ai_agent_bridge_messages_role_chk", sql.raw("role in ('user', 'assistant', 'system', 'tool')")),
+    aiAgentBridgeMessagesContentSizeChk: check("ai_agent_bridge_messages_content_size_chk", sql.raw("octet_length(content) between 1 and 1048576")),
+    aiAgentBridgeMessagesMetaObjectChk: check("ai_agent_bridge_messages_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    aiAgentBridgeMessagesChannelSeqUq: uniqueIndex("ai_agent_bridge_messages_channel_seq_uq").on(table.channelSlug, table.seq),
+    aiAgentBridgeMessagesChannelCreatedIdx: index("ai_agent_bridge_messages_channel_created_idx").on(table.channelSlug, table.createdAt.desc()),
+  }),
+);
+
+export const messagesRowSchema = z.object({
+  id: z.string().uuid(),
+  channelSlug: z.string().max(120).regex(new RegExp("^[a-z0-9][a-z0-9._-]{0,119}$")),
+  channelId: z.string().uuid().nullable(),
+  seq: z.number().int().min(1),
+  fromAgentKey: z.string().max(120).regex(new RegExp("^[A-Za-z0-9._:-]{1,120}$")),
+  role: messagesRoleSchema,
+  content: z.string().refine((value) => byteLength(value) <= 1048576, "Must be at most 1048576 bytes"),
+  metaData: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+});
+
+export const messagesInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  channelSlug: z.string().max(120).regex(new RegExp("^[a-z0-9][a-z0-9._-]{0,119}$")),
+  channelId: z.string().uuid().nullable().optional(),
+  seq: z.number().int().min(1),
+  fromAgentKey: z.string().max(120).regex(new RegExp("^[A-Za-z0-9._:-]{1,120}$")),
+  role: messagesRoleSchema.optional().default("user"),
+  content: z.string().refine((value) => byteLength(value) <= 1048576, "Must be at most 1048576 bytes"),
+  metaData: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const messagesUpdateSchema = messagesInsertSchema.partial();
+export type MessagesRow = z.infer<typeof messagesRowSchema>;
+export type MessagesInsert = z.infer<typeof messagesInsertSchema>;
+export type MessagesUpdate = z.infer<typeof messagesUpdateSchema>;
+
+export const channelMembersRoleValues = ["owner","member","observer"] as const;
+export const channelMembersRoleSchema = z.enum(channelMembersRoleValues);
+export type ChannelMembersRole = z.infer<typeof channelMembersRoleSchema>;
+
+export const channelMembers = aiAgentBridgeSchema.table(
+  "channel_members",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    channelSlug: varchar("channel_slug", { length: 120 }).notNull(),
+    channelId: uuid("channel_id"),
+    agentKey: varchar("agent_key", { length: 120 }).notNull(),
+    role: varchar("role", { length: 32 }).default(sql`'member'`).notNull(),
+    joinedAt: timestamp("joined_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+  },
+  (table) => ({
+    aiAgentBridgeMembersSlugFormatChk: check("ai_agent_bridge_members_slug_format_chk", sql.raw("channel_slug ~ '^[a-z0-9][a-z0-9._-]{0,119}$'")),
+    aiAgentBridgeMembersAgentFormatChk: check("ai_agent_bridge_members_agent_format_chk", sql.raw("agent_key ~ '^[A-Za-z0-9._:-]{1,120}$'")),
+    aiAgentBridgeMembersRoleChk: check("ai_agent_bridge_members_role_chk", sql.raw("role in ('owner', 'member', 'observer')")),
+    aiAgentBridgeMembersMetaObjectChk: check("ai_agent_bridge_members_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    aiAgentBridgeMembersChannelAgentUq: uniqueIndex("ai_agent_bridge_members_channel_agent_uq").on(table.channelSlug, table.agentKey),
+    aiAgentBridgeMembersAgentIdx: index("ai_agent_bridge_members_agent_idx").on(table.agentKey),
+  }),
+);
+
+export const channelMembersRowSchema = z.object({
+  id: z.string().uuid(),
+  channelSlug: z.string().max(120).regex(new RegExp("^[a-z0-9][a-z0-9._-]{0,119}$")),
+  channelId: z.string().uuid().nullable(),
+  agentKey: z.string().max(120).regex(new RegExp("^[A-Za-z0-9._:-]{1,120}$")),
+  role: channelMembersRoleSchema,
+  joinedAt: z.string().datetime(),
+  lastSeenAt: z.string().datetime(),
+  metaData: jsonObjectSchema,
+});
+
+export const channelMembersInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  channelSlug: z.string().max(120).regex(new RegExp("^[a-z0-9][a-z0-9._-]{0,119}$")),
+  channelId: z.string().uuid().nullable().optional(),
+  agentKey: z.string().max(120).regex(new RegExp("^[A-Za-z0-9._:-]{1,120}$")),
+  role: channelMembersRoleSchema.optional().default("member"),
+  joinedAt: z.string().datetime().optional(),
+  lastSeenAt: z.string().datetime().optional(),
+  metaData: jsonObjectSchema.optional().default({}),
+});
+
+export const channelMembersUpdateSchema = channelMembersInsertSchema.partial();
+export type ChannelMembersRow = z.infer<typeof channelMembersRowSchema>;
+export type ChannelMembersInsert = z.infer<typeof channelMembersInsertSchema>;
+export type ChannelMembersUpdate = z.infer<typeof channelMembersUpdateSchema>;
+
+export const sharedContext = aiAgentBridgeSchema.table(
+  "shared_context",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    channelSlug: varchar("channel_slug", { length: 120 }),
+    channelId: uuid("channel_id"),
+    ctxKey: varchar("ctx_key", { length: 200 }).notNull(),
+    value: jsonb("value").default(sql`'{}'::jsonb`).notNull(),
+    version: integer("version").default(sql`1`).notNull(),
+    updatedBy: varchar("updated_by", { length: 120 }).default(sql`'system'`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    aiAgentBridgeContextSlugFormatChk: check("ai_agent_bridge_context_slug_format_chk", sql.raw("channel_slug is null or channel_slug ~ '^[a-z0-9][a-z0-9._-]{0,119}$'")),
+    aiAgentBridgeContextKeyFormatChk: check("ai_agent_bridge_context_key_format_chk", sql.raw("ctx_key ~ '^[A-Za-z0-9._:/-]{1,200}$'")),
+    aiAgentBridgeContextVersionChk: check("ai_agent_bridge_context_version_chk", sql.raw("version > 0")),
+    aiAgentBridgeContextChannelKeyUq: uniqueIndex("ai_agent_bridge_context_channel_key_uq").on(table.channelSlug, table.ctxKey),
+  }),
+);
+
+export const sharedContextRowSchema = z.object({
+  id: z.string().uuid(),
+  channelSlug: z.string().max(120).regex(new RegExp("^[a-z0-9][a-z0-9._-]{0,119}$")).nullable(),
+  channelId: z.string().uuid().nullable(),
+  ctxKey: z.string().max(200).regex(new RegExp("^[A-Za-z0-9._:/-]{1,200}$")),
+  value: jsonObjectSchema,
+  version: z.number().int().min(1),
+  updatedBy: z.string().max(120),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const sharedContextInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  channelSlug: z.string().max(120).regex(new RegExp("^[a-z0-9][a-z0-9._-]{0,119}$")).nullable().optional(),
+  channelId: z.string().uuid().nullable().optional(),
+  ctxKey: z.string().max(200).regex(new RegExp("^[A-Za-z0-9._:/-]{1,200}$")),
+  value: jsonObjectSchema.optional().default({}),
+  version: z.number().int().min(1).optional().default(1),
+  updatedBy: z.string().max(120).optional().default("system"),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const sharedContextUpdateSchema = sharedContextInsertSchema.partial();
+export type SharedContextRow = z.infer<typeof sharedContextRowSchema>;
+export type SharedContextInsert = z.infer<typeof sharedContextInsertSchema>;
+export type SharedContextUpdate = z.infer<typeof sharedContextUpdateSchema>;

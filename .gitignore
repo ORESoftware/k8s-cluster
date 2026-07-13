@@ -1,2 +1,6 @@
 node_modules/
 target/
+.gradle/
+build/
+bin/
+pg-defs/tmp/

@@ -1193,8 +1193,8 @@ class DesSoccerLearningPolicyEntries extends Model
     public $incrementing = false;
     protected $keyType = 'string';
     public $timestamps = false;
-    protected $fillable = ['policy_version_id', 'team', 'entry_kind', 'state_hash', 'state_key', 'action', 'target_fine_cell_id', 'target_tactical_cell_id', 'target_macro_cell_id', 'target_root_cell_id', 'value_micros', 'visits', 'source_run_id', 'created_at'];
-    protected $casts = ['state_key' => 'array', 'target_fine_cell_id' => 'integer', 'target_tactical_cell_id' => 'integer', 'target_macro_cell_id' => 'integer', 'target_root_cell_id' => 'integer', 'value_micros' => 'integer', 'visits' => 'integer', 'created_at' => 'datetime'];
+    protected $fillable = ['policy_version_id', 'team', 'entry_kind', 'state_hash', 'state_key', 'action', 'target_fine_cell_id', 'target_tactical_cell_id', 'target_macro_cell_id', 'target_root_cell_id', 'receiver_descriptor', 'value_micros', 'visits', 'source_run_id', 'created_at'];
+    protected $casts = ['state_key' => 'array', 'target_fine_cell_id' => 'integer', 'target_tactical_cell_id' => 'integer', 'target_macro_cell_id' => 'integer', 'target_root_cell_id' => 'integer', 'receiver_descriptor' => 'integer', 'value_micros' => 'integer', 'visits' => 'integer', 'created_at' => 'datetime'];
 
     /** @return array<string, array<int, string>> */
     public static function rules(): array
@@ -1210,6 +1210,7 @@ class DesSoccerLearningPolicyEntries extends Model
             'target_tactical_cell_id' => ['nullable', 'integer', 'min:-1'],
             'target_macro_cell_id' => ['nullable', 'integer', 'min:-1'],
             'target_root_cell_id' => ['nullable', 'integer', 'min:-1'],
+            'receiver_descriptor' => ['nullable', 'integer', 'min:-1'],
             'value_micros' => ['required', 'integer'],
             'visits' => ['nullable', 'integer', 'min:0'],
             'source_run_id' => ['nullable', 'uuid'],
@@ -1300,8 +1301,8 @@ class DesSoccerLearningRunDeltas extends Model
     public $incrementing = false;
     protected $keyType = 'string';
     public $timestamps = false;
-    protected $fillable = ['run_id', 'team', 'entry_kind', 'state_hash', 'state_key', 'action', 'target_fine_cell_id', 'target_tactical_cell_id', 'target_macro_cell_id', 'target_root_cell_id', 'before_value_micros', 'after_value_micros', 'value_delta_micros', 'visit_delta', 'merge_weight_micros', 'effective_visit_micros', 'created_at'];
-    protected $casts = ['state_key' => 'array', 'target_fine_cell_id' => 'integer', 'target_tactical_cell_id' => 'integer', 'target_macro_cell_id' => 'integer', 'target_root_cell_id' => 'integer', 'before_value_micros' => 'integer', 'after_value_micros' => 'integer', 'value_delta_micros' => 'integer', 'visit_delta' => 'integer', 'merge_weight_micros' => 'integer', 'effective_visit_micros' => 'integer', 'created_at' => 'datetime'];
+    protected $fillable = ['run_id', 'team', 'entry_kind', 'state_hash', 'state_key', 'action', 'target_fine_cell_id', 'target_tactical_cell_id', 'target_macro_cell_id', 'target_root_cell_id', 'receiver_descriptor', 'before_value_micros', 'after_value_micros', 'value_delta_micros', 'visit_delta', 'merge_weight_micros', 'effective_visit_micros', 'created_at'];
+    protected $casts = ['state_key' => 'array', 'target_fine_cell_id' => 'integer', 'target_tactical_cell_id' => 'integer', 'target_macro_cell_id' => 'integer', 'target_root_cell_id' => 'integer', 'receiver_descriptor' => 'integer', 'before_value_micros' => 'integer', 'after_value_micros' => 'integer', 'value_delta_micros' => 'integer', 'visit_delta' => 'integer', 'merge_weight_micros' => 'integer', 'effective_visit_micros' => 'integer', 'created_at' => 'datetime'];
 
     /** @return array<string, array<int, string>> */
     public static function rules(): array
@@ -1317,6 +1318,7 @@ class DesSoccerLearningRunDeltas extends Model
             'target_tactical_cell_id' => ['nullable', 'integer', 'min:-1'],
             'target_macro_cell_id' => ['nullable', 'integer', 'min:-1'],
             'target_root_cell_id' => ['nullable', 'integer', 'min:-1'],
+            'receiver_descriptor' => ['nullable', 'integer', 'min:-1'],
             'before_value_micros' => ['nullable', 'integer'],
             'after_value_micros' => ['nullable', 'integer'],
             'value_delta_micros' => ['nullable', 'integer'],
@@ -3513,6 +3515,130 @@ class VcsOperations extends Model
             'error' => ['nullable', 'string'],
             'duration_ms' => ['nullable', 'integer', 'min:0'],
             'requested_by' => ['nullable', 'string', 'max:200'],
+        ];
+    }
+}
+
+class Agents extends Model
+{
+    protected $table = 'ai_agent_bridge.agents';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = true;
+    protected $fillable = ['agent_key', 'display_name', 'kind', 'host', 'meta_data', 'created_at', 'updated_at'];
+    protected $casts = ['meta_data' => 'array', 'created_at' => 'datetime', 'updated_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'agent_key' => ['required', 'string', 'max:120', 'regex:/^[A-Za-z0-9._:-]{1,120}$/'],
+            'display_name' => ['nullable', 'string', 'max:200'],
+            'kind' => ['nullable', 'string', 'in:claude,codex,human,other'],
+            'host' => ['nullable', 'string', 'max:255'],
+            'meta_data' => ['nullable', 'array'],
+        ];
+    }
+}
+
+class Channels extends Model
+{
+    protected $table = 'ai_agent_bridge.channels';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = true;
+    protected $fillable = ['slug', 'topic', 'topic_summary', 'embedding_model', 'embedding', 'embedding_dimensions', 'status', 'created_by', 'meta_data', 'created_at', 'updated_at'];
+    protected $casts = ['embedding' => 'array', 'embedding_dimensions' => 'integer', 'meta_data' => 'array', 'created_at' => 'datetime', 'updated_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'slug' => ['required', 'string', 'max:120', 'regex:/^[a-z0-9][a-z0-9._-]{0,119}$/'],
+            'topic' => ['required', 'string'],
+            'topic_summary' => ['nullable', 'string'],
+            'embedding_model' => ['nullable', 'string', 'max:120'],
+            'embedding' => ['nullable', 'array'],
+            'embedding_dimensions' => ['nullable', 'integer', 'min:0'],
+            'status' => ['nullable', 'string', 'in:active,archived'],
+            'created_by' => ['nullable', 'string', 'max:120'],
+            'meta_data' => ['nullable', 'array'],
+        ];
+    }
+}
+
+class Messages extends Model
+{
+    protected $table = 'ai_agent_bridge.messages';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+    protected $fillable = ['channel_slug', 'channel_id', 'seq', 'from_agent_key', 'role', 'content', 'meta_data', 'created_at'];
+    protected $casts = ['seq' => 'integer', 'meta_data' => 'array', 'created_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'channel_slug' => ['required', 'string', 'max:120', 'regex:/^[a-z0-9][a-z0-9._-]{0,119}$/'],
+            'channel_id' => ['nullable', 'uuid'],
+            'seq' => ['required', 'integer', 'min:1'],
+            'from_agent_key' => ['required', 'string', 'max:120', 'regex:/^[A-Za-z0-9._:-]{1,120}$/'],
+            'role' => ['nullable', 'string', 'in:user,assistant,system,tool'],
+            'content' => ['required', 'string'],
+            'meta_data' => ['nullable', 'array'],
+        ];
+    }
+}
+
+class ChannelMembers extends Model
+{
+    protected $table = 'ai_agent_bridge.channel_members';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+    protected $fillable = ['channel_slug', 'channel_id', 'agent_key', 'role', 'joined_at', 'last_seen_at', 'meta_data'];
+    protected $casts = ['joined_at' => 'datetime', 'last_seen_at' => 'datetime', 'meta_data' => 'array'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'channel_slug' => ['required', 'string', 'max:120', 'regex:/^[a-z0-9][a-z0-9._-]{0,119}$/'],
+            'channel_id' => ['nullable', 'uuid'],
+            'agent_key' => ['required', 'string', 'max:120', 'regex:/^[A-Za-z0-9._:-]{1,120}$/'],
+            'role' => ['nullable', 'string', 'in:owner,member,observer'],
+            'joined_at' => ['nullable', 'date'],
+            'last_seen_at' => ['nullable', 'date'],
+            'meta_data' => ['nullable', 'array'],
+        ];
+    }
+}
+
+class SharedContext extends Model
+{
+    protected $table = 'ai_agent_bridge.shared_context';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = true;
+    protected $fillable = ['channel_slug', 'channel_id', 'ctx_key', 'value', 'version', 'updated_by', 'created_at', 'updated_at'];
+    protected $casts = ['value' => 'array', 'version' => 'integer', 'created_at' => 'datetime', 'updated_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'channel_slug' => ['nullable', 'string', 'max:120', 'regex:/^[a-z0-9][a-z0-9._-]{0,119}$/'],
+            'channel_id' => ['nullable', 'uuid'],
+            'ctx_key' => ['required', 'string', 'max:200', 'regex:/^[A-Za-z0-9._:\\/-]{1,200}$/'],
+            'value' => ['nullable', 'array'],
+            'version' => ['nullable', 'integer', 'min:1'],
+            'updated_by' => ['nullable', 'string', 'max:120'],
         ];
     }
 }
