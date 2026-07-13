@@ -182,3 +182,59 @@ said "supply it from a Secret", yet no mount existed — so flipping
 Added an explicit optional `MCP_AUTH_SECRET` key mount from
 `dd-cluster-mcp-rs-secrets`, matching the Gleam pod. Renders; `cargo build` +
 11 tests green.
+
+## Pass 7 (2026-07-13)
+
+Server-code hardening + MCP-quality pass (src/main.rs only; no manifest,
+NetworkPolicy, Gleam, or gateway changes).
+
+- **R8 (Med, fixed) — bearer gate bypassed on non-RPC GET routes.** The pass-2
+  `MCP_REQUIRE_AUTH` gate only covered `POST /mcp`, but `GET /observability`
+  returns the *full* `telemetry_summary` tool output, and `/metrics` +
+  `/docs/api` / `/api/docs(.json)` expose internal counters and the API
+  surface — so "auth required" still leaked cluster state to any in-VPC
+  caller. **Fixed:** `gated_unauthorized_response` applies the same check (401
+  + `WWW-Authenticate`) to those GET handlers. `/healthz` and `/readyz` stay
+  open for kubelet probes; default (`MCP_REQUIRE_AUTH=false`) behavior is
+  unchanged.
+- **R9 (Low, fixed) — secret compare was plain `==`.** `header_secret_ok`
+  compared the bearer/`X-Server-Auth` values with string equality (timing
+  side channel). **Fixed** with `subtle::ConstantTimeEq` (`subtle` was already
+  in-tree via rustls; promoted to a direct dependency — one Cargo.lock edge,
+  no new packages). Test: `constant_time_secret_eq_matches_only_exact_values`.
+- **R10 (Med, fixed) — raw k8s `sample` shipped `metadata.annotations`.** The
+  per-item summary already dropped annotations, but the redacted/clipped raw
+  `sample` did not — and `kubectl.kubernetes.io/last-applied-configuration`
+  embeds whole prior objects under a non-secret-like key. **Fixed:**
+  `kubernetes_response_sample` strips `metadata.annotations` and
+  `metadata.managedFields` everywhere in the body before redaction/clipping.
+  Test: `kubernetes_sample_strips_annotations_and_managed_fields`.
+- **R11 (hardening) — value-pattern redaction.** Key-based redaction misses
+  secrets under innocuous keys. `redact_sensitive_values` (allocation-light
+  single-pass byte scan, Cow return, no regex dep) now redacts JWTs (`eyJ`
+  base64url runs), AWS access key ids (`AKIA[0-9A-Z]{16}`), bounded hex runs
+  >= 32, and dot-free mixed-case base64 runs >= 40 (the mixed-character rule
+  keeps DNS names and ordinary identifiers untouched). Applied to JSON string
+  values in `redact_json_value` and to non-key-matched lines in
+  `redact_sensitive_line`. Tests: `value_patterns_*`,
+  `response_sample_redacts_value_patterns_in_json_strings`.
+- **MCP result quality.** Tool results previously put real data only in
+  `structuredContent` with a static blurb in `content` — spec-minimal clients
+  saw no data. `tool_json_result` now serializes the (already bounded)
+  structured payload into the text block and sets `isError: true` when every
+  upstream call in the payload reported `ok: false` (static tools with no
+  upstream calls can never be flagged). Test:
+  `tool_results_embed_data_in_text_and_flag_total_failure`.
+- **Caller attribution.** rpc/tool log events (`cluster_mcp.rpc.request`,
+  `…rpc.parse_error`, `…rpc.invalid_request`, `…tool.call`) now carry
+  `client.ip` from the socket peer address
+  (`into_make_service_with_connect_info`), plus `client.forwarded_for` as a
+  separate clearly-untrusted field (clipped + sanitized) when X-Forwarded-For
+  is present — unauthenticated in-VPC calls are now attributable.
+- **Protocol version negotiation.** `initialize` previously always answered
+  `2025-11-25`; it now echoes the client's requested `protocolVersion` when
+  supported (`2025-11-25`, `2025-06-18`, `2025-03-26`), else answers the
+  newest. Test: `initialize_negotiates_protocol_version`.
+
+`cargo check` clean, `cargo test` 20 passed (11 prior + 9 new), `cargo fmt` +
+`cargo clippy` clean.

@@ -1049,7 +1049,9 @@ async fn rpc(
         "initialize" => initialize_result(id, request.params.as_ref()),
         "ping" => json!({ "jsonrpc": "2.0", "id": id, "result": {} }),
         "tools/list" => tools_list_result(id),
-        "tools/call" => tools_call_result(&state, id, request.params.as_ref(), peer, &headers).await,
+        "tools/call" => {
+            tools_call_result(&state, id, request.params.as_ref(), peer, &headers).await
+        }
         _ => {
             state
                 .metrics
@@ -2636,7 +2638,10 @@ mod tests {
         assert_eq!(bounded_method_label("initialize"), "initialize");
         assert_eq!(bounded_method_label("evil/../../etc/passwd"), "other");
         assert_eq!(bounded_method_label(""), "other");
-        assert_eq!(bounded_tool_label("kubernetes_inventory"), "kubernetes_inventory");
+        assert_eq!(
+            bounded_tool_label("kubernetes_inventory"),
+            "kubernetes_inventory"
+        );
         assert_eq!(bounded_tool_label("attacker-supplied-name"), "other");
     }
 
@@ -2755,10 +2760,7 @@ mod tests {
             PROTOCOL_VERSION
         );
         assert_eq!(negotiated_protocol_version(None), PROTOCOL_VERSION);
-        let result = initialize_result(
-            json!(1),
-            Some(&json!({ "protocolVersion": "2025-03-26" })),
-        );
+        let result = initialize_result(json!(1), Some(&json!({ "protocolVersion": "2025-03-26" })));
         assert_eq!(result["result"]["protocolVersion"], json!("2025-03-26"));
     }
 
@@ -2803,7 +2805,10 @@ mod tests {
     fn header_secret_gate_accepts_only_matching_credentials() {
         let mut headers = HeaderMap::new();
         // No secret configured => fail closed even with a header present.
-        headers.insert(header::AUTHORIZATION, HeaderValue::from_static("Bearer s3cret"));
+        headers.insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_static("Bearer s3cret"),
+        );
         assert!(!header_secret_ok(None, &headers));
         assert!(!header_secret_ok(Some(""), &headers));
         // Correct bearer.
