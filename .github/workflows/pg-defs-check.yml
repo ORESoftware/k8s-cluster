@@ -76,32 +76,46 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # remote/libs is a submodule (ORESoftware/k8s-libs-and-shared-defs,
+      # pinned to main) holding pg-defs/nats/interfaces. Without it the
+      # generator + wiring steps below hit file-not-found. Only remote/libs
+      # is needed here; it has a nested async-java submodule pinned to an
+      # SSH URL, so rewrite git@github.com: to HTTPS (actions/checkout's
+      # persisted extraheader token authenticates the HTTPS fetches).
+      - name: Init remote/libs submodule only
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule update --init --recursive --depth 1 remote/libs
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
         with:
-          # remote/libs is a submodule (ORESoftware/k8s-libs-and-shared-defs,
-          # pinned to main) holding pg-defs/nats/interfaces. Without this the
-          # generator + wiring steps below hit file-not-found. `recursive`
-          # matches repo-checks.yml and also pulls the nested async-java.
-          submodules: recursive
+          version: 10.33.0
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
 
-      # The generator is dependency-light (Node stdlib only), so no `npm
-      # install` is needed. Running `--check` re-runs the generator in memory
-      # and compares against the committed `generated/` files; if any file
-      # would change, the job fails and prints the stale path(s) so the
-      # author can run `node remote/libs/pg-defs/src/generate.mjs` locally
-      # and commit the diff.
-      - name: Verify generated bindings are in sync with schema.sql
-        run: node remote/libs/pg-defs/src/generate.mjs --check
-
-      - name: Run pg-defs parser/generator self-tests
-        # Locks in the parser hardening contract: between/comparison/regex/foreign-key
-        # extraction. If any fact stops flowing into adapters, this job fails before the
-        # downstream wiring jobs even start running their per-language checks.
-        run: node --test remote/libs/pg-defs/src/generate.test.mjs
+      # The generators are dependency-light (Node stdlib only), so no `npm
+      # install` is needed. Running `--check` re-runs each generator in
+      # memory and compares against the committed `generated/` files; if any
+      # file would change, the job fails and prints the stale path(s) so the
+      # author can run `node remote/libs/<gen>/src/generate.mjs` locally and
+      # commit the diff. Each generator's self-tests lock in its parser
+      # contract before the downstream wiring jobs run per-language checks.
+      - name: Verify generated bindings are in sync (all remote/libs generators)
+        run: |
+          set -euo pipefail
+          for gen in pg-defs nats/subject-defs interfaces/redis interfaces/shared; do
+            echo "::group::remote/libs/${gen}"
+            node "remote/libs/${gen}/src/generate.mjs" --check
+            node --test "remote/libs/${gen}/src/generate.test.mjs"
+            echo "::endgroup::"
+          done
 
       - name: Print SQL DDL for review on stale runs
         if: failure()
@@ -110,13 +124,8 @@ jobs:
       # Enforce the "exactly two homes for .sql" rule: every table DDL must
       # live in remote/libs/pg-defs/schema/schema.sql and every fixture in
       # remote/databases/pg/seeds/. See remote/databases/pg/seeds/readme.md.
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
       - name: Install tsx (remote/tests)
-        run: pnpm install --frozen-lockfile=false
+        run: pnpm install --frozen-lockfile
         working-directory: remote/tests
 
       - name: Enforce SQL file centralization
