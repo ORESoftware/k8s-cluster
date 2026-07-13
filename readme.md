@@ -110,6 +110,10 @@ scripts/audit-repo-state.sh --allow-dirty
 - `apps/fiducia-infra`
 - `apps/fiducia-interfaces`
 - `apps/fiducia-load-balance.rs`
+- `apps/fiducia-memory`
+- `apps/fiducia-memory.rs`
+- `apps/fiducia-messaging`
+- `apps/fiducia-messaging.rs`
 - `apps/fiducia-node-sidecar.rs`
 - `apps/fiducia-node.rs`
 - `apps/fiducia-operations-control-plane`
