@@ -10,31 +10,18 @@
 # (validation-only) — so it is safe to run on a repo with no prod credentials:
 #   KUBE_CONFIG_PROD    raw kubeconfig (YAML) with apply rights on the prod
 #                       cluster(s). Primary gate for a kubectl rollout.
-#   ARGOCD_SERVER       ArgoCD API host (optional; enables `argocd app sync`).
-#   ARGOCD_AUTH_TOKEN   ArgoCD auth token (optional; pairs with ARGOCD_SERVER).
-#   REGISTRY_USERNAME   container registry user for pulling release images.
-#   REGISTRY_PASSWORD   container registry token/password.
 # For a human approval gate, protect the `prod` GitHub Environment with required
 # reviewers — this job binds to it via `environment:` below.
 
 name: deploy
 on:
   workflow_dispatch:
-    inputs:
-      environment:
-        description: Target environment
-        type: string
-        default: prod
-      ref:
-        description: Superproject ref (branch, tag, or SHA) to deploy; blank = the dispatched ref
-        type: string
-        default: ""
 
 permissions:
   contents: read
 
 concurrency:
-  group: deploy-${{ inputs.environment }}
+  group: deploy-prod
   cancel-in-progress: false
 
 jobs:
@@ -42,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     # Binds to a GitHub Environment so required-reviewer protection (if enabled)
     # gates every run. Reinforces: prod never deploys automatically.
-    environment: ${{ inputs.environment }}
+    environment: prod
     steps:
       # Submodules use SSH URLs; CI authenticates over HTTPS. Rewrite SSH -> HTTPS
       # before checkout so the default token can init the (public) submodules.
@@ -50,12 +37,23 @@ jobs:
         run: git config --global url."https://github.com/".insteadOf "git@github.com:"
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.ref || github.ref }}
           submodules: recursive
           fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
+
+      - name: Verify protected main and exact pin set
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF}" = "refs/heads/main"
+          git fetch origin main --no-tags
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+          if git submodule status --recursive | grep -Eq '^[+U-]'; then
+            echo "submodule checkout does not match the reviewed gitlink pins" >&2
+            exit 1
+          fi
 
       # --- Validate the deployable state BEFORE any apply -------------------
       # topology.toml is the single source of truth; fail if generated cluster
@@ -78,26 +76,17 @@ jobs:
           test "$built" -gt 0
 
       # --- Prod rollout — ONLY with credentials ----------------------------
-      # Never auto-deploys: with no ArgoCD/kubeconfig secret this prints a notice
+      # Never auto-deploys: with no kubeconfig secret this prints a notice
       # and succeeds, leaving prod untouched (the workflow ran validation-only).
       - name: Prod rollout
         env:
-          ENVIRONMENT: ${{ inputs.environment }}
           KUBE_CONFIG_PROD: ${{ secrets.KUBE_CONFIG_PROD }}
-          ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
-          ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
         run: |
           set -euo pipefail
-          if [ -n "${ARGOCD_SERVER}" ] && [ -n "${ARGOCD_AUTH_TOKEN}" ]; then
-            echo "ArgoCD credentials present — syncing '${ENVIRONMENT}' via GitOps"
-            argocd app sync "fiducia-${ENVIRONMENT}" \
-              --server "${ARGOCD_SERVER}" --auth-token "${ARGOCD_AUTH_TOKEN}" \
-              --prune --timeout 600
-          elif [ -n "${KUBE_CONFIG_PROD}" ]; then
-            echo "Kubeconfig present — applying rendered manifests to '${ENVIRONMENT}'"
+          if [ -n "${KUBE_CONFIG_PROD}" ]; then
+            echo "Kubeconfig present — applying reviewed production pin set"
             kubeconfig="$(mktemp)"
-            trap 'rm -f "${kubeconfig}"' EXIT
-            printf '%s' "${KUBE_CONFIG_PROD}" > "${kubeconfig}"
+            printf '%s' "${KUBE_CONFIG_PROD}" | install -m 600 /dev/stdin "${kubeconfig}"
             shopt -s nullglob
             for c in apps/fiducia-infra/clusters/*/; do
               echo "apply ${c}"

@@ -60,6 +60,7 @@ test("submodule declarations stay complete, pinned to main, and backed by apps d
     "apps/fiducia-admin.rs",
     "apps/fiducia-ai-agent-bridge.rs",
     "apps/fiducia-ai-agent-control-plane",
+    "apps/fiducia-ai-agent-manager.rs",
     "apps/fiducia-auth.rs",
     "apps/fiducia-backend.rs",
     "apps/fiducia-brain.rs",
