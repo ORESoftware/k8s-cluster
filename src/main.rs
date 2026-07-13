@@ -50,7 +50,11 @@ use std::{
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
 use aws_config::meta::region::RegionProviderChain;
-use aws_sdk_s3::{config::Region, presigning::PresigningConfig, types::ServerSideEncryption};
+use aws_sdk_s3::{
+    config::{Credentials, Region},
+    presigning::PresigningConfig,
+    types::ServerSideEncryption,
+};
 use axum::{
     extract::{ConnectInfo, DefaultBodyLimit, Path, Query, Request, State},
     http::{header, HeaderMap, HeaderName, HeaderValue, StatusCode},
@@ -289,6 +293,7 @@ struct S3StorageConfig {
     bucket: String,
     key_prefix: String,
     cdn_base_url: Option<String>,
+    server_side_encryption: bool,
 }
 
 #[derive(Clone)]
@@ -381,6 +386,10 @@ struct HealthResponse {
     microsoft_onedrive_configured: bool,
     supabase_configured: bool,
     supabase_data_api_configured: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    postgres_reachable: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    s3_reachable: Option<bool>,
     retention_hours: i32,
 }
 
@@ -1035,6 +1044,19 @@ fn config_from_env() -> Config {
     );
     max_segment_bytes = max_segment_bytes.clamp(1, MAX_SEGMENT_BYTES);
 
+    let s3_endpoint = first_env(&[
+        "SOUND_RECORDER_S3_ENDPOINT",
+        "R2_ENDPOINT",
+        "AWS_ENDPOINT_URL_S3",
+        "S3_ENDPOINT",
+    ]);
+    let server_side_encryption = env_bool(
+        "SOUND_RECORDER_S3_SERVER_SIDE_ENCRYPTION",
+        !s3_endpoint
+            .as_deref()
+            .is_some_and(is_cloudflare_r2_endpoint),
+    );
+
     Config {
         database_url: first_env(&[
             "SOUND_RECORDER_RDS_DATABASE_URL",
@@ -1052,7 +1074,8 @@ fn config_from_env() -> Config {
             false,
         ),
         s3: S3StorageConfig {
-            bucket: first_env(&["SOUND_RECORDER_S3_BUCKET", "S3_BUCKET"]).unwrap_or_default(),
+            bucket: first_env(&["SOUND_RECORDER_S3_BUCKET", "R2_BUCKET", "S3_BUCKET"])
+                .unwrap_or_default(),
             key_prefix: first_env(&["SOUND_RECORDER_S3_KEY_PREFIX", "S3_KEY_PREFIX"])
                 .unwrap_or_else(|| "sound-recorder/segments".to_string()),
             cdn_base_url: first_env(&[
@@ -1060,6 +1083,7 @@ fn config_from_env() -> Config {
                 "SOUND_RECORDER_S3_PUBLIC_BASE_URL",
                 "S3_PUBLIC_BASE_URL",
             ]),
+            server_side_encryption,
         },
         ios_app_store_url: first_env(&["SOUND_RECORDER_IOS_APP_STORE_URL"]),
         android_play_store_url: first_env(&["SOUND_RECORDER_ANDROID_PLAY_STORE_URL"]),
@@ -1193,6 +1217,7 @@ async fn state_from_config(config: Config) -> AppState {
     let s3 = if !config.s3.bucket.is_empty() {
         let region = first_env(&[
             "SOUND_RECORDER_S3_REGION",
+            "R2_REGION",
             "S3_REGION",
             "AWS_REGION",
             "AWS_DEFAULT_REGION",
@@ -1205,8 +1230,38 @@ async fn state_from_config(config: Config) -> AppState {
             .load()
             .await;
         let mut builder = aws_sdk_s3::config::Builder::from(&shared_config);
-        if let Some(endpoint) = first_env(&["SOUND_RECORDER_S3_ENDPOINT", "S3_ENDPOINT"]) {
+        if let Some(endpoint) = first_env(&[
+            "SOUND_RECORDER_S3_ENDPOINT",
+            "R2_ENDPOINT",
+            "AWS_ENDPOINT_URL_S3",
+            "S3_ENDPOINT",
+        ]) {
             builder = builder.endpoint_url(endpoint);
+        }
+        if let (Some(access_key_id), Some(secret_access_key)) = (
+            first_env(&[
+                "SOUND_RECORDER_S3_ACCESS_KEY_ID",
+                "R2_ACCESS_KEY_ID",
+                "AWS_ACCESS_KEY_ID",
+            ]),
+            first_env(&[
+                "SOUND_RECORDER_S3_SECRET_ACCESS_KEY",
+                "R2_SECRET_ACCESS_KEY",
+                "AWS_SECRET_ACCESS_KEY",
+            ]),
+        ) {
+            let session_token = first_env(&[
+                "SOUND_RECORDER_S3_SESSION_TOKEN",
+                "R2_SESSION_TOKEN",
+                "AWS_SESSION_TOKEN",
+            ]);
+            builder = builder.credentials_provider(Credentials::new(
+                access_key_id,
+                secret_access_key,
+                session_token,
+                None,
+                "sonus-auris-storage-env",
+            ));
         }
         Some(aws_sdk_s3::Client::from_conf(builder.build()))
     } else {
@@ -1245,6 +1300,15 @@ async fn state_from_config(config: Config) -> AppState {
         supabase,
         pg_pool,
     }
+}
+
+fn is_cloudflare_r2_endpoint(value: &str) -> bool {
+    reqwest::Url::parse(value)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_ascii_lowercase))
+        .is_some_and(|host| {
+            host == "r2.cloudflarestorage.com" || host.ends_with(".r2.cloudflarestorage.com")
+        })
 }
 
 /// Builds the shared Postgres pool. `build_unchecked` opens no socket, so the
@@ -1320,7 +1384,7 @@ impl CloudProvider {
         }
     }
 
-    fn oauth_config<'a>(self, config: &'a Config) -> Option<&'a OAuthProviderConfig> {
+    fn oauth_config(self, config: &Config) -> Option<&OAuthProviderConfig> {
         match self {
             Self::GoogleDrive => Some(&config.google_oauth),
             Self::MicrosoftOneDrive => Some(&config.microsoft_oauth),
@@ -2662,14 +2726,33 @@ async fn healthz(State(state): State<AppState>) -> Json<HealthResponse> {
             && state.config.microsoft_oauth.client_secret.is_some(),
         supabase_configured: state.supabase.is_some(),
         supabase_data_api_configured: state.config.supabase.is_data_api_enabled(),
+        postgres_reachable: None,
+        s3_reachable: None,
         retention_hours: state.config.default_retention_hours,
     })
 }
 
 async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
-    let ready = state.config.database_url.is_some()
-        && state.s3.is_some()
-        && !state.config.s3.bucket.is_empty()
+    let postgres_check = async {
+        match &state.pg_pool {
+            Some(pool) => pool.get().await.is_ok(),
+            None => false,
+        }
+    };
+    let s3_check = async {
+        match &state.s3 {
+            Some(s3) if !state.config.s3.bucket.is_empty() => s3
+                .head_bucket()
+                .bucket(&state.config.s3.bucket)
+                .send()
+                .await
+                .is_ok(),
+            _ => false,
+        }
+    };
+    let (postgres_reachable, s3_reachable) = tokio::join!(postgres_check, s3_check);
+    let ready = postgres_reachable
+        && s3_reachable
         && state.config.token_pepper_configured
         && (state.config.registration_bearer.is_some()
             || state.config.allow_public_device_registration)
@@ -2699,6 +2782,8 @@ async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
                 && state.config.microsoft_oauth.client_secret.is_some(),
             supabase_configured: state.supabase.is_some(),
             supabase_data_api_configured: state.config.supabase.is_data_api_enabled(),
+            postgres_reachable: Some(postgres_reachable),
+            s3_reachable: Some(s3_reachable),
             retention_hours: state.config.default_retention_hours,
         }),
     )
@@ -4470,15 +4555,17 @@ async fn complete_cloud_link(
     let connection = upsert_cloud_connection(
         &client,
         &auth,
-        provider,
-        display_name,
-        Some(provider_account_id),
-        root_folder_id,
-        folder_path,
-        oauth_scope,
-        sealed,
-        token_expires_at,
-        request_meta,
+        CloudConnectionUpsert {
+            provider,
+            display_name,
+            provider_account_id: Some(provider_account_id),
+            root_folder_id,
+            folder_path,
+            oauth_scope,
+            sealed,
+            token_expires_at,
+            meta_data: request_meta,
+        },
     )
     .await?;
     client
@@ -5264,12 +5351,16 @@ async fn presign_put(
         .expires_in(ttl)
         .build()
         .map_err(|err| ServiceError::Internal(format!("invalid presign ttl: {err}")))?;
-    let mut request = s3
+    let request = s3
         .put_object()
         .bucket(bucket)
         .key(key)
-        .content_type(content_type)
-        .server_side_encryption(ServerSideEncryption::Aes256);
+        .content_type(content_type);
+    let mut request = if state.config.s3.server_side_encryption {
+        request.server_side_encryption(ServerSideEncryption::Aes256)
+    } else {
+        request
+    };
     if let Some(byte_count) = byte_count {
         request = request.content_length(byte_count as i64);
     }
@@ -5779,9 +5870,7 @@ async fn token_set_for_connection(
     Ok(refreshed)
 }
 
-async fn upsert_cloud_connection(
-    client: &tokio_postgres::Client,
-    auth: &DeviceAuth,
+struct CloudConnectionUpsert {
     provider: CloudProvider,
     display_name: Option<String>,
     provider_account_id: Option<String>,
@@ -5791,7 +5880,24 @@ async fn upsert_cloud_connection(
     sealed: Option<SealedTokenEnvelope>,
     token_expires_at: Option<DateTime<Utc>>,
     meta_data: Value,
+}
+
+async fn upsert_cloud_connection(
+    client: &tokio_postgres::Client,
+    auth: &DeviceAuth,
+    input: CloudConnectionUpsert,
 ) -> Result<CloudConnectionRecord, ServiceError> {
+    let CloudConnectionUpsert {
+        provider,
+        display_name,
+        provider_account_id,
+        root_folder_id,
+        folder_path,
+        oauth_scope,
+        sealed,
+        token_expires_at,
+        meta_data,
+    } = input;
     let provider_name = provider.as_str();
     let existing_id = if let Some(provider_account_id) = &provider_account_id {
         client
@@ -6299,6 +6405,7 @@ async fn shutdown_signal() {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
     use std::io::{Read, Write};
@@ -6374,6 +6481,7 @@ mod tests {
                 bucket: "test-bucket".to_string(),
                 key_prefix: "sound-recorder/segments".to_string(),
                 cdn_base_url: None,
+                server_side_encryption: true,
             },
             ios_app_store_url: None,
             android_play_store_url: None,
@@ -6424,6 +6532,21 @@ mod tests {
     }
 
     #[test]
+    fn cloudflare_r2_endpoints_are_detected_without_lookalike_hosts() {
+        assert!(is_cloudflare_r2_endpoint(
+            "https://account-id.r2.cloudflarestorage.com"
+        ));
+        assert!(is_cloudflare_r2_endpoint(
+            "https://account-id.eu.r2.cloudflarestorage.com"
+        ));
+        assert!(!is_cloudflare_r2_endpoint(
+            "https://r2.cloudflarestorage.com.example.test"
+        ));
+        assert!(!is_cloudflare_r2_endpoint("https://s3.amazonaws.com"));
+        assert!(!is_cloudflare_r2_endpoint("not-a-url"));
+    }
+
+    #[test]
     fn rate_limiter_allows_up_to_limit_then_rejects() {
         let limiter = RateLimiter::new();
         let now = Instant::now();
@@ -6434,7 +6557,7 @@ mod tests {
         assert!(limiter.check("1.2.3.4", 3, window, now).is_ok());
         // The fourth in the same window is rejected with a Retry-After.
         let retry = limiter.check("1.2.3.4", 3, window, now).unwrap_err();
-        assert!(retry >= 1 && retry <= 60);
+        assert!((1..=60).contains(&retry));
         // A different client has its own independent budget.
         assert!(limiter.check("5.6.7.8", 3, window, now).is_ok());
     }

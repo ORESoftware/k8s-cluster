@@ -140,11 +140,16 @@ The crate is also packaged with Nix (`flake.nix`, `.nix/`) and a `Dockerfile` fo
 | `PORT` | `8126` | Bind port. |
 | `SOUND_RECORDER_RDS_DATABASE_URL` | falls back to shared RDS env vars | Postgres URL. |
 | `SOUND_RECORDER_PG_POOL_MAX_SIZE` | `16` | Max pooled Postgres connections (clamped to `1..100`). Connections are pooled and reused, not opened per request. |
-| `SOUND_RECORDER_S3_BUCKET` / `S3_BUCKET` | unset | Required for presigned upload/download URLs. |
+| `SOUND_RECORDER_S3_BUCKET` / `R2_BUCKET` / `S3_BUCKET` | unset | Required for presigned upload/download URLs. |
+| `SOUND_RECORDER_S3_REGION` / `R2_REGION` / `S3_REGION` | SDK default | Use the AWS region for S3 or `auto` for Cloudflare R2. |
+| `SOUND_RECORDER_S3_ENDPOINT` / `R2_ENDPOINT` / `AWS_ENDPOINT_URL_S3` | AWS S3 | S3-compatible endpoint. R2 uses `https://<account-id>.r2.cloudflarestorage.com`. |
+| `SOUND_RECORDER_S3_ACCESS_KEY_ID` / `R2_ACCESS_KEY_ID` | default AWS credential chain | Explicit S3-compatible access key without exposing it to mobile clients. |
+| `SOUND_RECORDER_S3_SECRET_ACCESS_KEY` / `R2_SECRET_ACCESS_KEY` | default AWS credential chain | Explicit S3-compatible secret key. |
+| `SOUND_RECORDER_S3_SERVER_SIDE_ENCRYPTION` | enabled except for R2 | Adds the standard `AES256` S3 upload header. It is automatically omitted for R2 compatibility. |
 | `SOUND_RECORDER_S3_KEY_PREFIX` | `sound-recorder/segments` | Object key prefix. |
 | `SOUND_RECORDER_CDN_BASE_URL` | unset | Optional CloudFront/base URL returned as `cdnUrl`. |
 | `SOUND_RECORDER_PUBLIC_BASE_URL` | unset | HTTPS base URL used to build `/listen/:alert_id` links in alert emails. HTTP is allowed only for localhost development. |
-| `SOUND_RECORDER_ALERT_EMAIL_TO` | `alexander.d.mills@gmail.com` | Server-controlled alert recipient. Client-supplied recipients are ignored. |
+| `SOUND_RECORDER_ALERT_EMAIL_TO` | unset | Server-controlled alert recipient. Alerts fail closed until configured; client-supplied recipients are ignored. |
 | `SOUND_RECORDER_ALERT_EMAIL_WEBHOOK_URL` | unset | Optional webhook that receives `{ to, subject, text, html }` for alert emails. |
 | `SOUND_RECORDER_DEVICE_TOKEN_PEPPER` | local random fallback | Required for durable device-token verification. |
 | `SOUND_RECORDER_REGISTRATION_BEARER` | unset | Optional bearer required by device registration. |
@@ -178,8 +183,10 @@ The crate is also packaged with Nix (`flake.nix`, `.nix/`) and a `Dockerfile` fo
 | `SOUND_RECORDER_IOS_APP_STORE_URL` | unset | `/download/ios` target. |
 | `SOUND_RECORDER_ANDROID_PLAY_STORE_URL` | unset | `/download/android` target. |
 
-`/readyz` requires Postgres, S3, durable token pepper, registration posture, and internal auth to be
-configured. `/healthz` always reports process health and configuration booleans.
+`/readyz` requires a live Postgres connection, a successful S3/R2 `HeadBucket`,
+durable token pepper, registration posture, and internal auth. Its JSON includes
+`postgresReachable` and `s3Reachable` so operators can distinguish live failures
+from missing configuration. `/healthz` stays a cheap process/configuration probe.
 
 ## CLI flags
 
