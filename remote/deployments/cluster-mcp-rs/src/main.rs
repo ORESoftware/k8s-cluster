@@ -207,6 +207,17 @@ fn env_usize_bounded(key: &str, fallback: usize, min: usize, max: usize) -> usiz
         .unwrap_or(fallback)
 }
 
+// Comma-separated env list, bounded, trimmed, lowercased, trailing dots
+// dropped (DNS names compare canonically).
+fn env_csv_bounded(key: &str, fallback: &str, max: usize) -> Vec<String> {
+    env_string(key, fallback)
+        .split(',')
+        .map(|item| item.trim().trim_end_matches('.').to_ascii_lowercase())
+        .filter(|item| !item.is_empty())
+        .take(max)
+        .collect()
+}
+
 fn env_mcp_base_url(key: &str, fallback: &str, allow_external: bool) -> String {
     let value = env_string(key, fallback);
     if allow_external || allowed_mcp_base_url(&value) {
