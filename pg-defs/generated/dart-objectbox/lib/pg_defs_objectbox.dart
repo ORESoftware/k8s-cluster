@@ -3679,6 +3679,8 @@ class DesSoccerLearningPolicyEntriesObjectBox {
 
   int targetRootCellId;
 
+  int receiverDescriptor;
+
   int valueMicros;
 
   int visits;
@@ -3700,6 +3702,7 @@ class DesSoccerLearningPolicyEntriesObjectBox {
     required this.targetTacticalCellId,
     required this.targetMacroCellId,
     required this.targetRootCellId,
+    required this.receiverDescriptor,
     required this.valueMicros,
     required this.visits,
     this.sourceRunId,
@@ -3718,6 +3721,7 @@ class DesSoccerLearningPolicyEntriesObjectBox {
     "targetTacticalCellId": targetTacticalCellId,
     "targetMacroCellId": targetMacroCellId,
     "targetRootCellId": targetRootCellId,
+    "receiverDescriptor": receiverDescriptor,
     "valueMicros": valueMicros,
     "visits": visits,
     "sourceRunId": sourceRunId,
@@ -3737,6 +3741,7 @@ class DesSoccerLearningPolicyEntriesObjectBox {
       targetTacticalCellId: (json["targetTacticalCellId"] as num).toInt(),
       targetMacroCellId: (json["targetMacroCellId"] as num).toInt(),
       targetRootCellId: (json["targetRootCellId"] as num).toInt(),
+      receiverDescriptor: (json["receiverDescriptor"] as num).toInt(),
       valueMicros: (json["valueMicros"] as num).toInt(),
       visits: (json["visits"] as num).toInt(),
       sourceRunId: json["sourceRunId"] as String?,
@@ -4046,6 +4051,8 @@ class DesSoccerLearningRunDeltasObjectBox {
 
   int targetRootCellId;
 
+  int receiverDescriptor;
+
   int beforeValueMicros;
 
   int afterValueMicros;
@@ -4073,6 +4080,7 @@ class DesSoccerLearningRunDeltasObjectBox {
     required this.targetTacticalCellId,
     required this.targetMacroCellId,
     required this.targetRootCellId,
+    required this.receiverDescriptor,
     required this.beforeValueMicros,
     required this.afterValueMicros,
     required this.valueDeltaMicros,
@@ -4094,6 +4102,7 @@ class DesSoccerLearningRunDeltasObjectBox {
     "targetTacticalCellId": targetTacticalCellId,
     "targetMacroCellId": targetMacroCellId,
     "targetRootCellId": targetRootCellId,
+    "receiverDescriptor": receiverDescriptor,
     "beforeValueMicros": beforeValueMicros,
     "afterValueMicros": afterValueMicros,
     "valueDeltaMicros": valueDeltaMicros,
@@ -4116,6 +4125,7 @@ class DesSoccerLearningRunDeltasObjectBox {
       targetTacticalCellId: (json["targetTacticalCellId"] as num).toInt(),
       targetMacroCellId: (json["targetMacroCellId"] as num).toInt(),
       targetRootCellId: (json["targetRootCellId"] as num).toInt(),
+      receiverDescriptor: (json["receiverDescriptor"] as num).toInt(),
       beforeValueMicros: (json["beforeValueMicros"] as num).toInt(),
       afterValueMicros: (json["afterValueMicros"] as num).toInt(),
       valueDeltaMicros: (json["valueDeltaMicros"] as num).toInt(),
@@ -4802,6 +4812,85 @@ class DesSoccerLearningNeuralRunMetricsObjectBox {
       lastLossMicros: json["lastLossMicros"] == null ? null : (json["lastLossMicros"] as num).toInt(),
       averageLossMicros: json["averageLossMicros"] == null ? null : (json["averageLossMicros"] as num).toInt(),
       createdAt: json["createdAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class DesSoccerLearningPassMetricsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String gitCommit;
+
+  int runs;
+
+  int passesAttempted;
+
+  int passesCompleted;
+
+  int completedPassGainYardsMicros;
+
+  int passChains;
+
+  int passChainGainYardsMicros;
+
+  int passChainsNetLoss;
+
+  int shotsOnTarget;
+
+  int shotsAfterPass;
+
+  String firstSeenAt;
+
+  String updatedAt;
+
+
+  DesSoccerLearningPassMetricsObjectBox({
+    required this.gitCommit,
+    required this.runs,
+    required this.passesAttempted,
+    required this.passesCompleted,
+    required this.completedPassGainYardsMicros,
+    required this.passChains,
+    required this.passChainGainYardsMicros,
+    required this.passChainsNetLoss,
+    required this.shotsOnTarget,
+    required this.shotsAfterPass,
+    required this.firstSeenAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "gitCommit": gitCommit,
+    "runs": runs,
+    "passesAttempted": passesAttempted,
+    "passesCompleted": passesCompleted,
+    "completedPassGainYardsMicros": completedPassGainYardsMicros,
+    "passChains": passChains,
+    "passChainGainYardsMicros": passChainGainYardsMicros,
+    "passChainsNetLoss": passChainsNetLoss,
+    "shotsOnTarget": shotsOnTarget,
+    "shotsAfterPass": shotsAfterPass,
+    "firstSeenAt": firstSeenAt,
+    "updatedAt": updatedAt,
+  };
+
+  static DesSoccerLearningPassMetricsObjectBox fromJson(Map<String, Object?> json) {
+    return DesSoccerLearningPassMetricsObjectBox(
+      gitCommit: json["gitCommit"] as String,
+      runs: (json["runs"] as num).toInt(),
+      passesAttempted: (json["passesAttempted"] as num).toInt(),
+      passesCompleted: (json["passesCompleted"] as num).toInt(),
+      completedPassGainYardsMicros: (json["completedPassGainYardsMicros"] as num).toInt(),
+      passChains: (json["passChains"] as num).toInt(),
+      passChainGainYardsMicros: (json["passChainGainYardsMicros"] as num).toInt(),
+      passChainsNetLoss: (json["passChainsNetLoss"] as num).toInt(),
+      shotsOnTarget: (json["shotsOnTarget"] as num).toInt(),
+      shotsAfterPass: (json["shotsAfterPass"] as num).toInt(),
+      firstSeenAt: json["firstSeenAt"] as String,
+      updatedAt: json["updatedAt"] as String,
     );
   }
 }
@@ -10967,6 +11056,337 @@ class VcsOperationsObjectBox {
       error: json["error"] as String?,
       durationMs: json["durationMs"] == null ? null : (json["durationMs"] as num).toInt(),
       requestedBy: json["requestedBy"] as String?,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class AgentsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String agentKey;
+
+  String displayName;
+
+  String kind;
+
+  String? host;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  AgentsObjectBox({
+    required this.id,
+    required this.agentKey,
+    required this.displayName,
+    required this.kind,
+    this.host,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "agentKey": agentKey,
+    "displayName": displayName,
+    "kind": kind,
+    "host": host,
+    "metaData": jsonDecode(metaData),
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static AgentsObjectBox fromJson(Map<String, Object?> json) {
+    return AgentsObjectBox(
+      id: json["id"] as String,
+      agentKey: json["agentKey"] as String,
+      displayName: json["displayName"] as String,
+      kind: json["kind"] as String,
+      host: json["host"] as String?,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class ChannelsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String slug;
+
+  String topic;
+
+  String? topicSummary;
+
+  String embeddingModel;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String embedding;
+
+  int embeddingDimensions;
+
+  String status;
+
+  String createdBy;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  ChannelsObjectBox({
+    required this.id,
+    required this.slug,
+    required this.topic,
+    this.topicSummary,
+    required this.embeddingModel,
+    required this.embedding,
+    required this.embeddingDimensions,
+    required this.status,
+    required this.createdBy,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "slug": slug,
+    "topic": topic,
+    "topicSummary": topicSummary,
+    "embeddingModel": embeddingModel,
+    "embedding": jsonDecode(embedding),
+    "embeddingDimensions": embeddingDimensions,
+    "status": status,
+    "createdBy": createdBy,
+    "metaData": jsonDecode(metaData),
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static ChannelsObjectBox fromJson(Map<String, Object?> json) {
+    return ChannelsObjectBox(
+      id: json["id"] as String,
+      slug: json["slug"] as String,
+      topic: json["topic"] as String,
+      topicSummary: json["topicSummary"] as String?,
+      embeddingModel: json["embeddingModel"] as String,
+      embedding: json["embedding"] is String ? json["embedding"] as String : jsonEncode(json["embedding"]),
+      embeddingDimensions: (json["embeddingDimensions"] as num).toInt(),
+      status: json["status"] as String,
+      createdBy: json["createdBy"] as String,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class MessagesObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String channelSlug;
+
+  String? channelId;
+
+  int seq;
+
+  String fromAgentKey;
+
+  String role;
+
+  String content;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  String createdAt;
+
+
+  MessagesObjectBox({
+    required this.id,
+    required this.channelSlug,
+    this.channelId,
+    required this.seq,
+    required this.fromAgentKey,
+    required this.role,
+    required this.content,
+    required this.metaData,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "channelSlug": channelSlug,
+    "channelId": channelId,
+    "seq": seq,
+    "fromAgentKey": fromAgentKey,
+    "role": role,
+    "content": content,
+    "metaData": jsonDecode(metaData),
+    "createdAt": createdAt,
+  };
+
+  static MessagesObjectBox fromJson(Map<String, Object?> json) {
+    return MessagesObjectBox(
+      id: json["id"] as String,
+      channelSlug: json["channelSlug"] as String,
+      channelId: json["channelId"] as String?,
+      seq: (json["seq"] as num).toInt(),
+      fromAgentKey: json["fromAgentKey"] as String,
+      role: json["role"] as String,
+      content: json["content"] as String,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      createdAt: json["createdAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class ChannelMembersObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String channelSlug;
+
+  String? channelId;
+
+  String agentKey;
+
+  String role;
+
+  String joinedAt;
+
+  String lastSeenAt;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+
+  ChannelMembersObjectBox({
+    required this.id,
+    required this.channelSlug,
+    this.channelId,
+    required this.agentKey,
+    required this.role,
+    required this.joinedAt,
+    required this.lastSeenAt,
+    required this.metaData,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "channelSlug": channelSlug,
+    "channelId": channelId,
+    "agentKey": agentKey,
+    "role": role,
+    "joinedAt": joinedAt,
+    "lastSeenAt": lastSeenAt,
+    "metaData": jsonDecode(metaData),
+  };
+
+  static ChannelMembersObjectBox fromJson(Map<String, Object?> json) {
+    return ChannelMembersObjectBox(
+      id: json["id"] as String,
+      channelSlug: json["channelSlug"] as String,
+      channelId: json["channelId"] as String?,
+      agentKey: json["agentKey"] as String,
+      role: json["role"] as String,
+      joinedAt: json["joinedAt"] as String,
+      lastSeenAt: json["lastSeenAt"] as String,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+    );
+  }
+}
+
+@Entity()
+class SharedContextObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String? channelSlug;
+
+  String? channelId;
+
+  String ctxKey;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String value;
+
+  int version;
+
+  String updatedBy;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  SharedContextObjectBox({
+    required this.id,
+    this.channelSlug,
+    this.channelId,
+    required this.ctxKey,
+    required this.value,
+    required this.version,
+    required this.updatedBy,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "channelSlug": channelSlug,
+    "channelId": channelId,
+    "ctxKey": ctxKey,
+    "value": jsonDecode(value),
+    "version": version,
+    "updatedBy": updatedBy,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static SharedContextObjectBox fromJson(Map<String, Object?> json) {
+    return SharedContextObjectBox(
+      id: json["id"] as String,
+      channelSlug: json["channelSlug"] as String?,
+      channelId: json["channelId"] as String?,
+      ctxKey: json["ctxKey"] as String,
+      value: json["value"] is String ? json["value"] as String : jsonEncode(json["value"]),
+      version: (json["version"] as num).toInt(),
+      updatedBy: json["updatedBy"] as String,
       createdAt: json["createdAt"] as String,
       updatedAt: json["updatedAt"] as String,
     );

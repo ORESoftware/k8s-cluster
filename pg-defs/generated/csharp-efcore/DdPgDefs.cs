@@ -2500,6 +2500,10 @@ public class DesSoccerLearningPolicyEntries
     [Range(-1, 2147483647)]
     public int TargetRootCellId { get; set; }
 
+    [Column("receiver_descriptor")]
+    [Range(-1, 2147483647)]
+    public int ReceiverDescriptor { get; set; }
+
     [Column("value_micros")]
     public long ValueMicros { get; set; }
 
@@ -2750,6 +2754,10 @@ public class DesSoccerLearningRunDeltas
     [Column("target_root_cell_id")]
     [Range(-1, 2147483647)]
     public int TargetRootCellId { get; set; }
+
+    [Column("receiver_descriptor")]
+    [Range(-1, 2147483647)]
+    public int ReceiverDescriptor { get; set; }
 
     [Column("before_value_micros")]
     public long BeforeValueMicros { get; set; }
@@ -3189,6 +3197,56 @@ public class DesSoccerLearningNeuralRunMetrics
 
     [Column("created_at")]
     public DateTimeOffset CreatedAt { get; set; }
+}
+
+[Table("des_soccer_learning_pass_metrics")]
+public class DesSoccerLearningPassMetrics
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("git_commit")]
+    [MaxLength(64)]
+    public string GitCommit { get; set; } = null!;
+
+    [Column("runs")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long Runs { get; set; }
+
+    [Column("passes_attempted")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long PassesAttempted { get; set; }
+
+    [Column("passes_completed")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long PassesCompleted { get; set; }
+
+    [Column("completed_pass_gain_yards_micros")]
+    public long CompletedPassGainYardsMicros { get; set; }
+
+    [Column("pass_chains")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long PassChains { get; set; }
+
+    [Column("pass_chain_gain_yards_micros")]
+    public long PassChainGainYardsMicros { get; set; }
+
+    [Column("pass_chains_net_loss")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long PassChainsNetLoss { get; set; }
+
+    [Column("shots_on_target")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long ShotsOnTarget { get; set; }
+
+    [Column("shots_after_pass")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long ShotsAfterPass { get; set; }
+
+    [Column("first_seen_at")]
+    public DateTimeOffset FirstSeenAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
 }
 
 [Table("des_fel_elevator_learning_runs")]
@@ -7279,6 +7337,229 @@ public class VcsOperations
     public DateTimeOffset UpdatedAt { get; set; }
 }
 
+[Table("agents", Schema = "ai_agent_bridge")]
+public class Agents
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Required]
+    [Column("agent_key")]
+    [MaxLength(120)]
+    [RegularExpression(@"^[A-Za-z0-9._:-]{1,120}$")]
+    public string AgentKey { get; set; } = null!;
+
+    [Required]
+    [Column("display_name")]
+    [MaxLength(200)]
+    public string DisplayName { get; set; } = null!;
+
+    [Required]
+    [Column("kind")]
+    [MaxLength(32)]
+    [RegularExpression(@"^(claude|codex|human|other)$")]
+    public string Kind { get; set; } = null!;
+
+    [Column("host")]
+    [MaxLength(255)]
+    public string? Host { get; set; }
+
+    [Required]
+    [Column("meta_data", TypeName = "jsonb")]
+    public string MetaData { get; set; } = null!;
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+[Table("channels", Schema = "ai_agent_bridge")]
+public class Channels
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Required]
+    [Column("slug")]
+    [MaxLength(120)]
+    [RegularExpression(@"^[a-z0-9][a-z0-9._-]{0,119}$")]
+    public string Slug { get; set; } = null!;
+
+    [Required]
+    [Column("topic")]
+    public string Topic { get; set; } = null!;
+
+    [Column("topic_summary")]
+    public string? TopicSummary { get; set; }
+
+    [Required]
+    [Column("embedding_model")]
+    [MaxLength(120)]
+    public string EmbeddingModel { get; set; } = null!;
+
+    [Required]
+    [Column("embedding", TypeName = "jsonb")]
+    public string Embedding { get; set; } = null!;
+
+    [Column("embedding_dimensions")]
+    [Range(0, 2147483647)]
+    public int EmbeddingDimensions { get; set; }
+
+    [Required]
+    [Column("status")]
+    [MaxLength(32)]
+    [RegularExpression(@"^(active|archived)$")]
+    public string Status { get; set; } = null!;
+
+    [Required]
+    [Column("created_by")]
+    [MaxLength(120)]
+    public string CreatedBy { get; set; } = null!;
+
+    [Required]
+    [Column("meta_data", TypeName = "jsonb")]
+    public string MetaData { get; set; } = null!;
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+[Table("messages", Schema = "ai_agent_bridge")]
+public class Messages
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Required]
+    [Column("channel_slug")]
+    [MaxLength(120)]
+    [RegularExpression(@"^[a-z0-9][a-z0-9._-]{0,119}$")]
+    public string ChannelSlug { get; set; } = null!;
+
+    [Column("channel_id")]
+    public Guid? ChannelId { get; set; }
+
+    [Column("seq")]
+    [Range(typeof(long), "1", "9223372036854775807")]
+    public long Seq { get; set; }
+
+    [Required]
+    [Column("from_agent_key")]
+    [MaxLength(120)]
+    [RegularExpression(@"^[A-Za-z0-9._:-]{1,120}$")]
+    public string FromAgentKey { get; set; } = null!;
+
+    [Required]
+    [Column("role")]
+    [MaxLength(32)]
+    [RegularExpression(@"^(user|assistant|system|tool)$")]
+    public string Role { get; set; } = null!;
+
+    [Required]
+    [Column("content")]
+    public string Content { get; set; } = null!;
+
+    [Required]
+    [Column("meta_data", TypeName = "jsonb")]
+    public string MetaData { get; set; } = null!;
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+[Table("channel_members", Schema = "ai_agent_bridge")]
+public class ChannelMembers
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Required]
+    [Column("channel_slug")]
+    [MaxLength(120)]
+    [RegularExpression(@"^[a-z0-9][a-z0-9._-]{0,119}$")]
+    public string ChannelSlug { get; set; } = null!;
+
+    [Column("channel_id")]
+    public Guid? ChannelId { get; set; }
+
+    [Required]
+    [Column("agent_key")]
+    [MaxLength(120)]
+    [RegularExpression(@"^[A-Za-z0-9._:-]{1,120}$")]
+    public string AgentKey { get; set; } = null!;
+
+    [Required]
+    [Column("role")]
+    [MaxLength(32)]
+    [RegularExpression(@"^(owner|member|observer)$")]
+    public string Role { get; set; } = null!;
+
+    [Column("joined_at")]
+    public DateTimeOffset JoinedAt { get; set; }
+
+    [Column("last_seen_at")]
+    public DateTimeOffset LastSeenAt { get; set; }
+
+    [Required]
+    [Column("meta_data", TypeName = "jsonb")]
+    public string MetaData { get; set; } = null!;
+}
+
+[Table("shared_context", Schema = "ai_agent_bridge")]
+public class SharedContext
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Column("channel_slug")]
+    [MaxLength(120)]
+    [RegularExpression(@"^[a-z0-9][a-z0-9._-]{0,119}$")]
+    public string? ChannelSlug { get; set; }
+
+    [Column("channel_id")]
+    public Guid? ChannelId { get; set; }
+
+    [Required]
+    [Column("ctx_key")]
+    [MaxLength(200)]
+    [RegularExpression(@"^[A-Za-z0-9._:/-]{1,200}$")]
+    public string CtxKey { get; set; } = null!;
+
+    [Required]
+    [Column("value", TypeName = "jsonb")]
+    public string Value { get; set; } = null!;
+
+    [Column("version")]
+    [Range(1, 2147483647)]
+    public int Version { get; set; }
+
+    [Required]
+    [Column("updated_by")]
+    [MaxLength(120)]
+    public string UpdatedBy { get; set; } = null!;
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
 public class DdPgDefsContext : DbContext
 {
     public DdPgDefsContext(DbContextOptions<DdPgDefsContext> options) : base(options)
@@ -7388,6 +7669,8 @@ public class DdPgDefsContext : DbContext
     public DbSet<DesSoccerLearningSetPlayEpisodeMetrics> DesSoccerLearningSetPlayEpisodeMetricsSet => Set<DesSoccerLearningSetPlayEpisodeMetrics>();
 
     public DbSet<DesSoccerLearningNeuralRunMetrics> DesSoccerLearningNeuralRunMetricsSet => Set<DesSoccerLearningNeuralRunMetrics>();
+
+    public DbSet<DesSoccerLearningPassMetrics> DesSoccerLearningPassMetricsSet => Set<DesSoccerLearningPassMetrics>();
 
     public DbSet<DesFelElevatorLearningRuns> DesFelElevatorLearningRunsSet => Set<DesFelElevatorLearningRuns>();
 
@@ -7516,4 +7799,14 @@ public class DdPgDefsContext : DbContext
     public DbSet<VcsRefs> VcsRefsSet => Set<VcsRefs>();
 
     public DbSet<VcsOperations> VcsOperationsSet => Set<VcsOperations>();
+
+    public DbSet<Agents> AgentsSet => Set<Agents>();
+
+    public DbSet<Channels> ChannelsSet => Set<Channels>();
+
+    public DbSet<Messages> MessagesSet => Set<Messages>();
+
+    public DbSet<ChannelMembers> ChannelMembersSet => Set<ChannelMembers>();
+
+    public DbSet<SharedContext> SharedContextSet => Set<SharedContext>();
 }

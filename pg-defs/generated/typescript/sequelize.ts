@@ -711,6 +711,7 @@ export function defineDdModels(sequelize: Sequelize) {
     target_tactical_cell_id: { type: DataTypes.INTEGER, allowNull: false, defaultValue: -1, validate: { min: -1 } },
     target_macro_cell_id: { type: DataTypes.INTEGER, allowNull: false, defaultValue: -1, validate: { min: -1 } },
     target_root_cell_id: { type: DataTypes.INTEGER, allowNull: false, defaultValue: -1, validate: { min: -1 } },
+    receiver_descriptor: { type: DataTypes.INTEGER, allowNull: false, defaultValue: -1, validate: { min: -1 } },
     value_micros: { type: DataTypes.BIGINT, allowNull: false },
     visits: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0, validate: { min: 0 } },
     source_run_id: { type: DataTypes.UUID, allowNull: true },
@@ -781,6 +782,7 @@ export function defineDdModels(sequelize: Sequelize) {
     target_tactical_cell_id: { type: DataTypes.INTEGER, allowNull: false, defaultValue: -1, validate: { min: -1 } },
     target_macro_cell_id: { type: DataTypes.INTEGER, allowNull: false, defaultValue: -1, validate: { min: -1 } },
     target_root_cell_id: { type: DataTypes.INTEGER, allowNull: false, defaultValue: -1, validate: { min: -1 } },
+    receiver_descriptor: { type: DataTypes.INTEGER, allowNull: false, defaultValue: -1, validate: { min: -1 } },
     before_value_micros: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0 },
     after_value_micros: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0 },
     value_delta_micros: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0 },
@@ -918,6 +920,21 @@ export function defineDdModels(sequelize: Sequelize) {
     average_loss_micros: { type: DataTypes.BIGINT, allowNull: true },
     created_at: { type: DataTypes.DATE, allowNull: false },
   }, { tableName: "des_soccer_learning_neural_run_metrics", timestamps: false, freezeTableName: true });
+
+  const DesSoccerLearningPassMetrics = sequelize.define("DesSoccerLearningPassMetrics", {
+    git_commit: { type: DataTypes.STRING(64), allowNull: false, primaryKey: true, validate: { len: [0, 64] } },
+    runs: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0, validate: { min: 0 } },
+    passes_attempted: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0, validate: { min: 0 } },
+    passes_completed: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0, validate: { min: 0 } },
+    completed_pass_gain_yards_micros: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0 },
+    pass_chains: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0, validate: { min: 0 } },
+    pass_chain_gain_yards_micros: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0 },
+    pass_chains_net_loss: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0, validate: { min: 0 } },
+    shots_on_target: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0, validate: { min: 0 } },
+    shots_after_pass: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0, validate: { min: 0 } },
+    first_seen_at: { type: DataTypes.DATE, allowNull: false },
+    updated_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "des_soccer_learning_pass_metrics", timestamps: false, freezeTableName: true });
 
   const DesFelElevatorLearningRuns = sequelize.define("DesFelElevatorLearningRuns", {
     id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
@@ -2081,5 +2098,66 @@ export function defineDdModels(sequelize: Sequelize) {
     updated_at: { type: DataTypes.DATE, allowNull: false },
   }, { tableName: "vcs_operations", timestamps: false, freezeTableName: true });
 
-  return { AppConfig, VapiPhoneCallEvents, MusicSongs, MusicSongVotes, SoundRecorderAccounts, SoundRecorderDevices, SoundRecorderUploadSessions, SoundRecorderSegments, SoundRecorderEvidenceExports, SoundRecorderAuditEvents, SoundRecorderOauthStates, SoundRecorderCloudConnections, SoundRecorderCloudCopyJobs, ContainerPoolConfigs, KnownGitRepo, AgentContextBlobs, AgentContextEmbeddings, AgentRemoteDevThread, AgentRemoteDevTask, AgentRemoteDevEvent, AgentRemoteDevBreadcrumb, AgentRemoteDevArtifact, AgentRemoteDevRuntimeLock, MipSolverSessions, MipSolverSolves, MipSolverJobs, MipSolverEvents, LambdaFunction, WorkflowDefinitions, WorkflowRuns, WorkflowStepRuns, ContainerPoolImageRevisions, ContainerPoolBuildRuns, PresenceConvs, PresenceConvMembers, PresenceUsers, PresenceEvents, PresenceConsumerCheckpoints, DesSoccerLearningExperiments, DesSoccerLearningPolicyVersions, DesSoccerLearningPolicyEntries, DesSoccerLearningJobs, DesSoccerLearningRuns, DesSoccerLearningRunDeltas, DesSoccerLearningMergeEvents, DesSoccerTournaments, DesSoccerTournamentMatches, DesSoccerTournamentTeamBrains, DesSoccerLearningSetPlayRuns, DesSoccerLearningSetPlayRestartMix, DesSoccerLearningSetPlayEpisodeMetrics, DesSoccerLearningNeuralRunMetrics, DesFelElevatorLearningRuns, DesFelElevatorPolicyStates, DesFelElevatorDispatchDecisions, DesFelElevatorPomdpBeliefs, BenefactorMarketingClients, BenefactorMarketingContacts, BenefactorMarketingServicePackages, BenefactorMarketingContracts, BenefactorMarketingInvoices, BenefactorMarketingIntegrations, BenefactorMarketingLeads, BenefactorMarketingEnrichmentJobs, BenefactorMarketingCampaigns, BenefactorMarketingCampaignChannels, BenefactorMarketingCampaignExperiments, BenefactorMarketingAutomationWorkflows, BenefactorMarketingAutomationEvents, BenefactorMarketingReports, BenefactorMarketingAttributionEvents, BenefactorMarketingOpportunities, BenefactorMarketingContentAssets, BenefactorMarketingProjectTasks, BenefactorMarketingClientApprovals, BenefactorMarketingTickets, BenefactorMarketingMeetings, BenefactorMarketingTeamAllocations, BenefactorMarketingIntegrationSyncRuns, BenefactorMarketingOutreachSequences, BenefactorMarketingOutreachSteps, BenefactorMarketingOutreachEnrollments, BenefactorMarketingOutreachTouchpoints, BenefactorMarketingProspectResearchBriefs, BenefactorMarketingConversionEvents, BenefactorMarketingPortalMembers, BenefactorMarketingSharedDocuments, BenefactorMarketingCollaborationComments, BenefactorMarketingNotifications, BenefactorMarketingTimeEntries, BenefactorMarketingVendorCosts, BenefactorMarketingCommissionEntries, BenefactorMarketingBudgetForecasts, BenefactorMarketingCallInsights, UsaccUsers, UsaccCases, UsaccCaseParticipants, UsaccCaseStages, UsaccElections, UsaccVotes, UsaccEscrowAccounts, UsaccLedgerEntries, UsaccContractOperations, UsaccSimulationRuns, UsaccAuditEvents, BenefactorLeads, BenefactorLeadsDomains, BenefactorSearchLocations, BenefactorScrapeQueries, BenefactorDomainSearchTracking, BenefactorIcps, BenefactorLeadsThrottling, BenefactorLeadsReminders, VcsRepositories, VcsRefs, VcsOperations };
+  const Agents = sequelize.define("Agents", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    agent_key: { type: DataTypes.STRING(120), allowNull: false, validate: { len: [0, 120], is: new RegExp("^[A-Za-z0-9._:-]{1,120}$") } },
+    display_name: { type: DataTypes.STRING(200), allowNull: false, defaultValue: "", validate: { len: [0, 200] } },
+    kind: { type: DataTypes.STRING(32), allowNull: false, defaultValue: "other", validate: { isIn: [["claude", "codex", "human", "other"]] } },
+    host: { type: DataTypes.STRING(255), allowNull: true, validate: { len: [0, 255] } },
+    meta_data: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+    updated_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "agents", schema: "ai_agent_bridge", timestamps: false, freezeTableName: true });
+
+  const Channels = sequelize.define("Channels", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    slug: { type: DataTypes.STRING(120), allowNull: false, validate: { len: [0, 120], is: new RegExp("^[a-z0-9][a-z0-9._-]{0,119}$") } },
+    topic: { type: DataTypes.TEXT, allowNull: false },
+    topic_summary: { type: DataTypes.TEXT, allowNull: true },
+    embedding_model: { type: DataTypes.STRING(120), allowNull: false, defaultValue: "local-hash-v1", validate: { len: [0, 120] } },
+    embedding: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
+    embedding_dimensions: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0, validate: { min: 0 } },
+    status: { type: DataTypes.STRING(32), allowNull: false, defaultValue: "active", validate: { isIn: [["active", "archived"]] } },
+    created_by: { type: DataTypes.STRING(120), allowNull: false, defaultValue: "system", validate: { len: [0, 120] } },
+    meta_data: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+    updated_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "channels", schema: "ai_agent_bridge", timestamps: false, freezeTableName: true });
+
+  const Messages = sequelize.define("Messages", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    channel_slug: { type: DataTypes.STRING(120), allowNull: false, validate: { len: [0, 120], is: new RegExp("^[a-z0-9][a-z0-9._-]{0,119}$") } },
+    channel_id: { type: DataTypes.UUID, allowNull: true },
+    seq: { type: DataTypes.BIGINT, allowNull: false, validate: { min: 1 } },
+    from_agent_key: { type: DataTypes.STRING(120), allowNull: false, validate: { len: [0, 120], is: new RegExp("^[A-Za-z0-9._:-]{1,120}$") } },
+    role: { type: DataTypes.STRING(32), allowNull: false, defaultValue: "user", validate: { isIn: [["user", "assistant", "system", "tool"]] } },
+    content: { type: DataTypes.TEXT, allowNull: false },
+    meta_data: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "messages", schema: "ai_agent_bridge", timestamps: false, freezeTableName: true });
+
+  const ChannelMembers = sequelize.define("ChannelMembers", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    channel_slug: { type: DataTypes.STRING(120), allowNull: false, validate: { len: [0, 120], is: new RegExp("^[a-z0-9][a-z0-9._-]{0,119}$") } },
+    channel_id: { type: DataTypes.UUID, allowNull: true },
+    agent_key: { type: DataTypes.STRING(120), allowNull: false, validate: { len: [0, 120], is: new RegExp("^[A-Za-z0-9._:-]{1,120}$") } },
+    role: { type: DataTypes.STRING(32), allowNull: false, defaultValue: "member", validate: { isIn: [["owner", "member", "observer"]] } },
+    joined_at: { type: DataTypes.DATE, allowNull: false },
+    last_seen_at: { type: DataTypes.DATE, allowNull: false },
+    meta_data: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
+  }, { tableName: "channel_members", schema: "ai_agent_bridge", timestamps: false, freezeTableName: true });
+
+  const SharedContext = sequelize.define("SharedContext", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    channel_slug: { type: DataTypes.STRING(120), allowNull: true, validate: { len: [0, 120], is: new RegExp("^[a-z0-9][a-z0-9._-]{0,119}$") } },
+    channel_id: { type: DataTypes.UUID, allowNull: true },
+    ctx_key: { type: DataTypes.STRING(200), allowNull: false, validate: { len: [0, 200], is: new RegExp("^[A-Za-z0-9._:/-]{1,200}$") } },
+    value: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
+    version: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1, validate: { min: 1 } },
+    updated_by: { type: DataTypes.STRING(120), allowNull: false, defaultValue: "system", validate: { len: [0, 120] } },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+    updated_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "shared_context", schema: "ai_agent_bridge", timestamps: false, freezeTableName: true });
+
+  return { AppConfig, VapiPhoneCallEvents, MusicSongs, MusicSongVotes, SoundRecorderAccounts, SoundRecorderDevices, SoundRecorderUploadSessions, SoundRecorderSegments, SoundRecorderEvidenceExports, SoundRecorderAuditEvents, SoundRecorderOauthStates, SoundRecorderCloudConnections, SoundRecorderCloudCopyJobs, ContainerPoolConfigs, KnownGitRepo, AgentContextBlobs, AgentContextEmbeddings, AgentRemoteDevThread, AgentRemoteDevTask, AgentRemoteDevEvent, AgentRemoteDevBreadcrumb, AgentRemoteDevArtifact, AgentRemoteDevRuntimeLock, MipSolverSessions, MipSolverSolves, MipSolverJobs, MipSolverEvents, LambdaFunction, WorkflowDefinitions, WorkflowRuns, WorkflowStepRuns, ContainerPoolImageRevisions, ContainerPoolBuildRuns, PresenceConvs, PresenceConvMembers, PresenceUsers, PresenceEvents, PresenceConsumerCheckpoints, DesSoccerLearningExperiments, DesSoccerLearningPolicyVersions, DesSoccerLearningPolicyEntries, DesSoccerLearningJobs, DesSoccerLearningRuns, DesSoccerLearningRunDeltas, DesSoccerLearningMergeEvents, DesSoccerTournaments, DesSoccerTournamentMatches, DesSoccerTournamentTeamBrains, DesSoccerLearningSetPlayRuns, DesSoccerLearningSetPlayRestartMix, DesSoccerLearningSetPlayEpisodeMetrics, DesSoccerLearningNeuralRunMetrics, DesSoccerLearningPassMetrics, DesFelElevatorLearningRuns, DesFelElevatorPolicyStates, DesFelElevatorDispatchDecisions, DesFelElevatorPomdpBeliefs, BenefactorMarketingClients, BenefactorMarketingContacts, BenefactorMarketingServicePackages, BenefactorMarketingContracts, BenefactorMarketingInvoices, BenefactorMarketingIntegrations, BenefactorMarketingLeads, BenefactorMarketingEnrichmentJobs, BenefactorMarketingCampaigns, BenefactorMarketingCampaignChannels, BenefactorMarketingCampaignExperiments, BenefactorMarketingAutomationWorkflows, BenefactorMarketingAutomationEvents, BenefactorMarketingReports, BenefactorMarketingAttributionEvents, BenefactorMarketingOpportunities, BenefactorMarketingContentAssets, BenefactorMarketingProjectTasks, BenefactorMarketingClientApprovals, BenefactorMarketingTickets, BenefactorMarketingMeetings, BenefactorMarketingTeamAllocations, BenefactorMarketingIntegrationSyncRuns, BenefactorMarketingOutreachSequences, BenefactorMarketingOutreachSteps, BenefactorMarketingOutreachEnrollments, BenefactorMarketingOutreachTouchpoints, BenefactorMarketingProspectResearchBriefs, BenefactorMarketingConversionEvents, BenefactorMarketingPortalMembers, BenefactorMarketingSharedDocuments, BenefactorMarketingCollaborationComments, BenefactorMarketingNotifications, BenefactorMarketingTimeEntries, BenefactorMarketingVendorCosts, BenefactorMarketingCommissionEntries, BenefactorMarketingBudgetForecasts, BenefactorMarketingCallInsights, UsaccUsers, UsaccCases, UsaccCaseParticipants, UsaccCaseStages, UsaccElections, UsaccVotes, UsaccEscrowAccounts, UsaccLedgerEntries, UsaccContractOperations, UsaccSimulationRuns, UsaccAuditEvents, BenefactorLeads, BenefactorLeadsDomains, BenefactorSearchLocations, BenefactorScrapeQueries, BenefactorDomainSearchTracking, BenefactorIcps, BenefactorLeadsThrottling, BenefactorLeadsReminders, VcsRepositories, VcsRefs, VcsOperations, Agents, Channels, Messages, ChannelMembers, SharedContext };
 }

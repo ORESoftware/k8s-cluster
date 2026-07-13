@@ -3410,8 +3410,8 @@ let validateDesSoccerLearningPolicyVersionsVisitCount (value: int64) : Result<in
     else Ok value
 
 let desSoccerLearningPolicyEntriesTable = "des_soccer_learning_policy_entries"
-let desSoccerLearningPolicyEntriesColumns = [ "id"; "policy_version_id"; "team"; "entry_kind"; "state_hash"; "state_key"; "action"; "target_fine_cell_id"; "target_tactical_cell_id"; "target_macro_cell_id"; "target_root_cell_id"; "value_micros"; "visits"; "source_run_id"; "created_at" ]
-let desSoccerLearningPolicyEntriesSelectSql = "select\n      id::text as id,\n      policy_version_id::text as policy_version_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      value_micros,\n      visits,\n      source_run_id::text as source_run_id,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_policy_entries"
+let desSoccerLearningPolicyEntriesColumns = [ "id"; "policy_version_id"; "team"; "entry_kind"; "state_hash"; "state_key"; "action"; "target_fine_cell_id"; "target_tactical_cell_id"; "target_macro_cell_id"; "target_root_cell_id"; "receiver_descriptor"; "value_micros"; "visits"; "source_run_id"; "created_at" ]
+let desSoccerLearningPolicyEntriesSelectSql = "select\n      id::text as id,\n      policy_version_id::text as policy_version_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      receiver_descriptor,\n      value_micros,\n      visits,\n      source_run_id::text as source_run_id,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_policy_entries"
 
 [<RequireQualifiedAccess>]
 type DesSoccerLearningPolicyEntriesTeam =
@@ -3457,6 +3457,7 @@ type DesSoccerLearningPolicyEntriesRow =
       DesSoccerLearningPolicyEntriesTargetTacticalCellId: int
       DesSoccerLearningPolicyEntriesTargetMacroCellId: int
       DesSoccerLearningPolicyEntriesTargetRootCellId: int
+      DesSoccerLearningPolicyEntriesReceiverDescriptor: int
       DesSoccerLearningPolicyEntriesValueMicros: int64
       DesSoccerLearningPolicyEntriesVisits: int
       DesSoccerLearningPolicyEntriesSourceRunId: string option
@@ -3475,10 +3476,11 @@ let desSoccerLearningPolicyEntriesRowOfRow (get: int -> string) (isNullAt: int -
       DesSoccerLearningPolicyEntriesTargetTacticalCellId = int (get 8)
       DesSoccerLearningPolicyEntriesTargetMacroCellId = int (get 9)
       DesSoccerLearningPolicyEntriesTargetRootCellId = int (get 10)
-      DesSoccerLearningPolicyEntriesValueMicros = int64 (get 11)
-      DesSoccerLearningPolicyEntriesVisits = int (get 12)
-      DesSoccerLearningPolicyEntriesSourceRunId = (if isNullAt 13 then None else Some (get 13))
-      DesSoccerLearningPolicyEntriesCreatedAt = get 14
+      DesSoccerLearningPolicyEntriesReceiverDescriptor = int (get 11)
+      DesSoccerLearningPolicyEntriesValueMicros = int64 (get 12)
+      DesSoccerLearningPolicyEntriesVisits = int (get 13)
+      DesSoccerLearningPolicyEntriesSourceRunId = (if isNullAt 14 then None else Some (get 14))
+      DesSoccerLearningPolicyEntriesCreatedAt = get 15
     }
 
 let validateDesSoccerLearningPolicyEntriesStateHash (value: string) : Result<string, string> =
@@ -3504,6 +3506,10 @@ let validateDesSoccerLearningPolicyEntriesTargetMacroCellId (value: int) : Resul
 
 let validateDesSoccerLearningPolicyEntriesTargetRootCellId (value: int) : Result<int, string> =
     if value < -1 then Error "des_soccer_learning_policy_entries.target_root_cell_id is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningPolicyEntriesReceiverDescriptor (value: int) : Result<int, string> =
+    if value < -1 then Error "des_soccer_learning_policy_entries.receiver_descriptor is below the minimum"
     else Ok value
 
 let validateDesSoccerLearningPolicyEntriesVisits (value: int) : Result<int, string> =
@@ -3783,8 +3789,8 @@ let validateDesSoccerLearningRunsTransitions (value: int) : Result<int, string> 
     else Ok value
 
 let desSoccerLearningRunDeltasTable = "des_soccer_learning_run_deltas"
-let desSoccerLearningRunDeltasColumns = [ "id"; "run_id"; "team"; "entry_kind"; "state_hash"; "state_key"; "action"; "target_fine_cell_id"; "target_tactical_cell_id"; "target_macro_cell_id"; "target_root_cell_id"; "before_value_micros"; "after_value_micros"; "value_delta_micros"; "visit_delta"; "merge_weight_micros"; "effective_visit_micros"; "created_at" ]
-let desSoccerLearningRunDeltasSelectSql = "select\n      id::text as id,\n      run_id::text as run_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      before_value_micros,\n      after_value_micros,\n      value_delta_micros,\n      visit_delta,\n      merge_weight_micros,\n      effective_visit_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_run_deltas"
+let desSoccerLearningRunDeltasColumns = [ "id"; "run_id"; "team"; "entry_kind"; "state_hash"; "state_key"; "action"; "target_fine_cell_id"; "target_tactical_cell_id"; "target_macro_cell_id"; "target_root_cell_id"; "receiver_descriptor"; "before_value_micros"; "after_value_micros"; "value_delta_micros"; "visit_delta"; "merge_weight_micros"; "effective_visit_micros"; "created_at" ]
+let desSoccerLearningRunDeltasSelectSql = "select\n      id::text as id,\n      run_id::text as run_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      receiver_descriptor,\n      before_value_micros,\n      after_value_micros,\n      value_delta_micros,\n      visit_delta,\n      merge_weight_micros,\n      effective_visit_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_run_deltas"
 
 [<RequireQualifiedAccess>]
 type DesSoccerLearningRunDeltasTeam =
@@ -3830,6 +3836,7 @@ type DesSoccerLearningRunDeltasRow =
       DesSoccerLearningRunDeltasTargetTacticalCellId: int
       DesSoccerLearningRunDeltasTargetMacroCellId: int
       DesSoccerLearningRunDeltasTargetRootCellId: int
+      DesSoccerLearningRunDeltasReceiverDescriptor: int
       DesSoccerLearningRunDeltasBeforeValueMicros: int64
       DesSoccerLearningRunDeltasAfterValueMicros: int64
       DesSoccerLearningRunDeltasValueDeltaMicros: int64
@@ -3851,13 +3858,14 @@ let desSoccerLearningRunDeltasRowOfRow (get: int -> string) (isNullAt: int -> bo
       DesSoccerLearningRunDeltasTargetTacticalCellId = int (get 8)
       DesSoccerLearningRunDeltasTargetMacroCellId = int (get 9)
       DesSoccerLearningRunDeltasTargetRootCellId = int (get 10)
-      DesSoccerLearningRunDeltasBeforeValueMicros = int64 (get 11)
-      DesSoccerLearningRunDeltasAfterValueMicros = int64 (get 12)
-      DesSoccerLearningRunDeltasValueDeltaMicros = int64 (get 13)
-      DesSoccerLearningRunDeltasVisitDelta = int (get 14)
-      DesSoccerLearningRunDeltasMergeWeightMicros = int64 (get 15)
-      DesSoccerLearningRunDeltasEffectiveVisitMicros = int64 (get 16)
-      DesSoccerLearningRunDeltasCreatedAt = get 17
+      DesSoccerLearningRunDeltasReceiverDescriptor = int (get 11)
+      DesSoccerLearningRunDeltasBeforeValueMicros = int64 (get 12)
+      DesSoccerLearningRunDeltasAfterValueMicros = int64 (get 13)
+      DesSoccerLearningRunDeltasValueDeltaMicros = int64 (get 14)
+      DesSoccerLearningRunDeltasVisitDelta = int (get 15)
+      DesSoccerLearningRunDeltasMergeWeightMicros = int64 (get 16)
+      DesSoccerLearningRunDeltasEffectiveVisitMicros = int64 (get 17)
+      DesSoccerLearningRunDeltasCreatedAt = get 18
     }
 
 let validateDesSoccerLearningRunDeltasStateHash (value: string) : Result<string, string> =
@@ -3883,6 +3891,10 @@ let validateDesSoccerLearningRunDeltasTargetMacroCellId (value: int) : Result<in
 
 let validateDesSoccerLearningRunDeltasTargetRootCellId (value: int) : Result<int, string> =
     if value < -1 then Error "des_soccer_learning_run_deltas.target_root_cell_id is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningRunDeltasReceiverDescriptor (value: int) : Result<int, string> =
+    if value < -1 then Error "des_soccer_learning_run_deltas.receiver_descriptor is below the minimum"
     else Ok value
 
 let validateDesSoccerLearningRunDeltasVisitDelta (value: int) : Result<int, string> =
@@ -4432,6 +4444,72 @@ let validateDesSoccerLearningNeuralRunMetricsReplayCapacity (value: int) : Resul
 
 let validateDesSoccerLearningNeuralRunMetricsParameterCount (value: int) : Result<int, string> =
     if value < 0 then Error "des_soccer_learning_neural_run_metrics.parameter_count is below the minimum"
+    else Ok value
+
+let desSoccerLearningPassMetricsTable = "des_soccer_learning_pass_metrics"
+let desSoccerLearningPassMetricsColumns = [ "git_commit"; "runs"; "passes_attempted"; "passes_completed"; "completed_pass_gain_yards_micros"; "pass_chains"; "pass_chain_gain_yards_micros"; "pass_chains_net_loss"; "shots_on_target"; "shots_after_pass"; "first_seen_at"; "updated_at" ]
+let desSoccerLearningPassMetricsSelectSql = "select\n      git_commit,\n      runs,\n      passes_attempted,\n      passes_completed,\n      completed_pass_gain_yards_micros,\n      pass_chains,\n      pass_chain_gain_yards_micros,\n      pass_chains_net_loss,\n      shots_on_target,\n      shots_after_pass,\n      to_char(first_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as first_seen_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_soccer_learning_pass_metrics"
+
+type DesSoccerLearningPassMetricsRow =
+    { DesSoccerLearningPassMetricsGitCommit: string
+      DesSoccerLearningPassMetricsRuns: int64
+      DesSoccerLearningPassMetricsPassesAttempted: int64
+      DesSoccerLearningPassMetricsPassesCompleted: int64
+      DesSoccerLearningPassMetricsCompletedPassGainYardsMicros: int64
+      DesSoccerLearningPassMetricsPassChains: int64
+      DesSoccerLearningPassMetricsPassChainGainYardsMicros: int64
+      DesSoccerLearningPassMetricsPassChainsNetLoss: int64
+      DesSoccerLearningPassMetricsShotsOnTarget: int64
+      DesSoccerLearningPassMetricsShotsAfterPass: int64
+      DesSoccerLearningPassMetricsFirstSeenAt: string
+      DesSoccerLearningPassMetricsUpdatedAt: string
+    }
+
+let desSoccerLearningPassMetricsRowOfRow (get: int -> string) (isNullAt: int -> bool) : DesSoccerLearningPassMetricsRow =
+    { DesSoccerLearningPassMetricsGitCommit = get 0
+      DesSoccerLearningPassMetricsRuns = int64 (get 1)
+      DesSoccerLearningPassMetricsPassesAttempted = int64 (get 2)
+      DesSoccerLearningPassMetricsPassesCompleted = int64 (get 3)
+      DesSoccerLearningPassMetricsCompletedPassGainYardsMicros = int64 (get 4)
+      DesSoccerLearningPassMetricsPassChains = int64 (get 5)
+      DesSoccerLearningPassMetricsPassChainGainYardsMicros = int64 (get 6)
+      DesSoccerLearningPassMetricsPassChainsNetLoss = int64 (get 7)
+      DesSoccerLearningPassMetricsShotsOnTarget = int64 (get 8)
+      DesSoccerLearningPassMetricsShotsAfterPass = int64 (get 9)
+      DesSoccerLearningPassMetricsFirstSeenAt = get 10
+      DesSoccerLearningPassMetricsUpdatedAt = get 11
+    }
+
+let validateDesSoccerLearningPassMetricsGitCommit (value: string) : Result<string, string> =
+    if value.Length > 64 then Error "des_soccer_learning_pass_metrics.git_commit must be at most 64 characters"
+    else Ok value
+
+let validateDesSoccerLearningPassMetricsRuns (value: int64) : Result<int64, string> =
+    if value < 0L then Error "des_soccer_learning_pass_metrics.runs is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningPassMetricsPassesAttempted (value: int64) : Result<int64, string> =
+    if value < 0L then Error "des_soccer_learning_pass_metrics.passes_attempted is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningPassMetricsPassesCompleted (value: int64) : Result<int64, string> =
+    if value < 0L then Error "des_soccer_learning_pass_metrics.passes_completed is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningPassMetricsPassChains (value: int64) : Result<int64, string> =
+    if value < 0L then Error "des_soccer_learning_pass_metrics.pass_chains is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningPassMetricsPassChainsNetLoss (value: int64) : Result<int64, string> =
+    if value < 0L then Error "des_soccer_learning_pass_metrics.pass_chains_net_loss is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningPassMetricsShotsOnTarget (value: int64) : Result<int64, string> =
+    if value < 0L then Error "des_soccer_learning_pass_metrics.shots_on_target is below the minimum"
+    else Ok value
+
+let validateDesSoccerLearningPassMetricsShotsAfterPass (value: int64) : Result<int64, string> =
+    if value < 0L then Error "des_soccer_learning_pass_metrics.shots_after_pass is below the minimum"
     else Ok value
 
 let desFelElevatorLearningRunsTable = "des_fel_elevator_learning_runs"
@@ -10948,4 +11026,297 @@ let validateVcsOperationsDurationMs (value: int) : Result<int, string> =
 
 let validateVcsOperationsRequestedBy (value: string) : Result<string, string> =
     if value.Length > 200 then Error "vcs_operations.requested_by must be at most 200 characters"
+    else Ok value
+
+let agentsTable = "ai_agent_bridge.agents"
+let agentsColumns = [ "id"; "agent_key"; "display_name"; "kind"; "host"; "meta_data"; "created_at"; "updated_at" ]
+let agentsSelectSql = "select\n      id::text as id,\n      agent_key,\n      display_name,\n      kind,\n      host,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from ai_agent_bridge.agents"
+
+[<RequireQualifiedAccess>]
+type AgentsKind =
+    | Claude
+    | Codex
+    | Human
+    | Other
+
+let agentsKindToString (value: AgentsKind) : string =
+    match value with
+    | AgentsKind.Claude -> "claude"
+    | AgentsKind.Codex -> "codex"
+    | AgentsKind.Human -> "human"
+    | AgentsKind.Other -> "other"
+
+let parseAgentsKind (value: string) : Result<AgentsKind, string> =
+    match value with
+    | "claude" -> Ok AgentsKind.Claude
+    | "codex" -> Ok AgentsKind.Codex
+    | "human" -> Ok AgentsKind.Human
+    | "other" -> Ok AgentsKind.Other
+    | _ -> Error ("unsupported agents.kind: " + value)
+
+type AgentsRow =
+    { AgentsId: string
+      AgentsAgentKey: string
+      AgentsDisplayName: string
+      AgentsKind: string
+      AgentsHost: string option
+      AgentsMetaData: string
+      AgentsCreatedAt: string
+      AgentsUpdatedAt: string
+    }
+
+let agentsRowOfRow (get: int -> string) (isNullAt: int -> bool) : AgentsRow =
+    { AgentsId = get 0
+      AgentsAgentKey = get 1
+      AgentsDisplayName = get 2
+      AgentsKind = get 3
+      AgentsHost = (if isNullAt 4 then None else Some (get 4))
+      AgentsMetaData = get 5
+      AgentsCreatedAt = get 6
+      AgentsUpdatedAt = get 7
+    }
+
+let validateAgentsAgentKey (value: string) : Result<string, string> =
+    if value.Length > 120 then Error "agents.agent_key must be at most 120 characters"
+    elif not (Regex.IsMatch(value, @"^[A-Za-z0-9._:-]{1,120}$")) then Error "agents.agent_key does not match the required pattern"
+    else Ok value
+
+let validateAgentsDisplayName (value: string) : Result<string, string> =
+    if value.Length > 200 then Error "agents.display_name must be at most 200 characters"
+    else Ok value
+
+let validateAgentsHost (value: string) : Result<string, string> =
+    if value.Length > 255 then Error "agents.host must be at most 255 characters"
+    else Ok value
+
+let channelsTable = "ai_agent_bridge.channels"
+let channelsColumns = [ "id"; "slug"; "topic"; "topic_summary"; "embedding_model"; "embedding"; "embedding_dimensions"; "status"; "created_by"; "meta_data"; "created_at"; "updated_at" ]
+let channelsSelectSql = "select\n      id::text as id,\n      slug,\n      topic,\n      topic_summary,\n      embedding_model,\n      embedding::text as embedding_json,\n      embedding_dimensions,\n      status,\n      created_by,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from ai_agent_bridge.channels"
+
+[<RequireQualifiedAccess>]
+type ChannelsStatus =
+    | Active
+    | Archived
+
+let channelsStatusToString (value: ChannelsStatus) : string =
+    match value with
+    | ChannelsStatus.Active -> "active"
+    | ChannelsStatus.Archived -> "archived"
+
+let parseChannelsStatus (value: string) : Result<ChannelsStatus, string> =
+    match value with
+    | "active" -> Ok ChannelsStatus.Active
+    | "archived" -> Ok ChannelsStatus.Archived
+    | _ -> Error ("unsupported channels.status: " + value)
+
+type ChannelsRow =
+    { ChannelsId: string
+      ChannelsSlug: string
+      ChannelsTopic: string
+      ChannelsTopicSummary: string option
+      ChannelsEmbeddingModel: string
+      ChannelsEmbedding: string
+      ChannelsEmbeddingDimensions: int
+      ChannelsStatus: string
+      ChannelsCreatedBy: string
+      ChannelsMetaData: string
+      ChannelsCreatedAt: string
+      ChannelsUpdatedAt: string
+    }
+
+let channelsRowOfRow (get: int -> string) (isNullAt: int -> bool) : ChannelsRow =
+    { ChannelsId = get 0
+      ChannelsSlug = get 1
+      ChannelsTopic = get 2
+      ChannelsTopicSummary = (if isNullAt 3 then None else Some (get 3))
+      ChannelsEmbeddingModel = get 4
+      ChannelsEmbedding = get 5
+      ChannelsEmbeddingDimensions = int (get 6)
+      ChannelsStatus = get 7
+      ChannelsCreatedBy = get 8
+      ChannelsMetaData = get 9
+      ChannelsCreatedAt = get 10
+      ChannelsUpdatedAt = get 11
+    }
+
+let validateChannelsSlug (value: string) : Result<string, string> =
+    if value.Length > 120 then Error "channels.slug must be at most 120 characters"
+    elif not (Regex.IsMatch(value, @"^[a-z0-9][a-z0-9._-]{0,119}$")) then Error "channels.slug does not match the required pattern"
+    else Ok value
+
+let validateChannelsEmbeddingModel (value: string) : Result<string, string> =
+    if value.Length > 120 then Error "channels.embedding_model must be at most 120 characters"
+    else Ok value
+
+let validateChannelsEmbeddingDimensions (value: int) : Result<int, string> =
+    if value < 0 then Error "channels.embedding_dimensions is below the minimum"
+    else Ok value
+
+let validateChannelsCreatedBy (value: string) : Result<string, string> =
+    if value.Length > 120 then Error "channels.created_by must be at most 120 characters"
+    else Ok value
+
+let messagesTable = "ai_agent_bridge.messages"
+let messagesColumns = [ "id"; "channel_slug"; "channel_id"; "seq"; "from_agent_key"; "role"; "content"; "meta_data"; "created_at" ]
+let messagesSelectSql = "select\n      id::text as id,\n      channel_slug,\n      channel_id::text as channel_id,\n      seq,\n      from_agent_key,\n      role,\n      content,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from ai_agent_bridge.messages"
+
+[<RequireQualifiedAccess>]
+type MessagesRole =
+    | User
+    | Assistant
+    | System
+    | Tool
+
+let messagesRoleToString (value: MessagesRole) : string =
+    match value with
+    | MessagesRole.User -> "user"
+    | MessagesRole.Assistant -> "assistant"
+    | MessagesRole.System -> "system"
+    | MessagesRole.Tool -> "tool"
+
+let parseMessagesRole (value: string) : Result<MessagesRole, string> =
+    match value with
+    | "user" -> Ok MessagesRole.User
+    | "assistant" -> Ok MessagesRole.Assistant
+    | "system" -> Ok MessagesRole.System
+    | "tool" -> Ok MessagesRole.Tool
+    | _ -> Error ("unsupported messages.role: " + value)
+
+type MessagesRow =
+    { MessagesId: string
+      MessagesChannelSlug: string
+      MessagesChannelId: string option
+      MessagesSeq: int64
+      MessagesFromAgentKey: string
+      MessagesRole: string
+      MessagesContent: string
+      MessagesMetaData: string
+      MessagesCreatedAt: string
+    }
+
+let messagesRowOfRow (get: int -> string) (isNullAt: int -> bool) : MessagesRow =
+    { MessagesId = get 0
+      MessagesChannelSlug = get 1
+      MessagesChannelId = (if isNullAt 2 then None else Some (get 2))
+      MessagesSeq = int64 (get 3)
+      MessagesFromAgentKey = get 4
+      MessagesRole = get 5
+      MessagesContent = get 6
+      MessagesMetaData = get 7
+      MessagesCreatedAt = get 8
+    }
+
+let validateMessagesChannelSlug (value: string) : Result<string, string> =
+    if value.Length > 120 then Error "messages.channel_slug must be at most 120 characters"
+    elif not (Regex.IsMatch(value, @"^[a-z0-9][a-z0-9._-]{0,119}$")) then Error "messages.channel_slug does not match the required pattern"
+    else Ok value
+
+let validateMessagesSeq (value: int64) : Result<int64, string> =
+    if value < 1L then Error "messages.seq is below the minimum"
+    else Ok value
+
+let validateMessagesFromAgentKey (value: string) : Result<string, string> =
+    if value.Length > 120 then Error "messages.from_agent_key must be at most 120 characters"
+    elif not (Regex.IsMatch(value, @"^[A-Za-z0-9._:-]{1,120}$")) then Error "messages.from_agent_key does not match the required pattern"
+    else Ok value
+
+let channelMembersTable = "ai_agent_bridge.channel_members"
+let channelMembersColumns = [ "id"; "channel_slug"; "channel_id"; "agent_key"; "role"; "joined_at"; "last_seen_at"; "meta_data" ]
+let channelMembersSelectSql = "select\n      id::text as id,\n      channel_slug,\n      channel_id::text as channel_id,\n      agent_key,\n      role,\n      to_char(joined_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as joined_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      meta_data::text as meta_data_json\n    from ai_agent_bridge.channel_members"
+
+[<RequireQualifiedAccess>]
+type ChannelMembersRole =
+    | Owner
+    | Member
+    | Observer
+
+let channelMembersRoleToString (value: ChannelMembersRole) : string =
+    match value with
+    | ChannelMembersRole.Owner -> "owner"
+    | ChannelMembersRole.Member -> "member"
+    | ChannelMembersRole.Observer -> "observer"
+
+let parseChannelMembersRole (value: string) : Result<ChannelMembersRole, string> =
+    match value with
+    | "owner" -> Ok ChannelMembersRole.Owner
+    | "member" -> Ok ChannelMembersRole.Member
+    | "observer" -> Ok ChannelMembersRole.Observer
+    | _ -> Error ("unsupported channel_members.role: " + value)
+
+type ChannelMembersRow =
+    { ChannelMembersId: string
+      ChannelMembersChannelSlug: string
+      ChannelMembersChannelId: string option
+      ChannelMembersAgentKey: string
+      ChannelMembersRole: string
+      ChannelMembersJoinedAt: string
+      ChannelMembersLastSeenAt: string
+      ChannelMembersMetaData: string
+    }
+
+let channelMembersRowOfRow (get: int -> string) (isNullAt: int -> bool) : ChannelMembersRow =
+    { ChannelMembersId = get 0
+      ChannelMembersChannelSlug = get 1
+      ChannelMembersChannelId = (if isNullAt 2 then None else Some (get 2))
+      ChannelMembersAgentKey = get 3
+      ChannelMembersRole = get 4
+      ChannelMembersJoinedAt = get 5
+      ChannelMembersLastSeenAt = get 6
+      ChannelMembersMetaData = get 7
+    }
+
+let validateChannelMembersChannelSlug (value: string) : Result<string, string> =
+    if value.Length > 120 then Error "channel_members.channel_slug must be at most 120 characters"
+    elif not (Regex.IsMatch(value, @"^[a-z0-9][a-z0-9._-]{0,119}$")) then Error "channel_members.channel_slug does not match the required pattern"
+    else Ok value
+
+let validateChannelMembersAgentKey (value: string) : Result<string, string> =
+    if value.Length > 120 then Error "channel_members.agent_key must be at most 120 characters"
+    elif not (Regex.IsMatch(value, @"^[A-Za-z0-9._:-]{1,120}$")) then Error "channel_members.agent_key does not match the required pattern"
+    else Ok value
+
+let sharedContextTable = "ai_agent_bridge.shared_context"
+let sharedContextColumns = [ "id"; "channel_slug"; "channel_id"; "ctx_key"; "value"; "version"; "updated_by"; "created_at"; "updated_at" ]
+let sharedContextSelectSql = "select\n      id::text as id,\n      channel_slug,\n      channel_id::text as channel_id,\n      ctx_key,\n      value::text as value_json,\n      version,\n      updated_by,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from ai_agent_bridge.shared_context"
+
+type SharedContextRow =
+    { SharedContextId: string
+      SharedContextChannelSlug: string option
+      SharedContextChannelId: string option
+      SharedContextCtxKey: string
+      SharedContextValue: string
+      SharedContextVersion: int
+      SharedContextUpdatedBy: string
+      SharedContextCreatedAt: string
+      SharedContextUpdatedAt: string
+    }
+
+let sharedContextRowOfRow (get: int -> string) (isNullAt: int -> bool) : SharedContextRow =
+    { SharedContextId = get 0
+      SharedContextChannelSlug = (if isNullAt 1 then None else Some (get 1))
+      SharedContextChannelId = (if isNullAt 2 then None else Some (get 2))
+      SharedContextCtxKey = get 3
+      SharedContextValue = get 4
+      SharedContextVersion = int (get 5)
+      SharedContextUpdatedBy = get 6
+      SharedContextCreatedAt = get 7
+      SharedContextUpdatedAt = get 8
+    }
+
+let validateSharedContextChannelSlug (value: string) : Result<string, string> =
+    if value.Length > 120 then Error "shared_context.channel_slug must be at most 120 characters"
+    elif not (Regex.IsMatch(value, @"^[a-z0-9][a-z0-9._-]{0,119}$")) then Error "shared_context.channel_slug does not match the required pattern"
+    else Ok value
+
+let validateSharedContextCtxKey (value: string) : Result<string, string> =
+    if value.Length > 200 then Error "shared_context.ctx_key must be at most 200 characters"
+    elif not (Regex.IsMatch(value, @"^[A-Za-z0-9._:/-]{1,200}$")) then Error "shared_context.ctx_key does not match the required pattern"
+    else Ok value
+
+let validateSharedContextVersion (value: int) : Result<int, string> =
+    if value < 1 then Error "shared_context.version is below the minimum"
+    else Ok value
+
+let validateSharedContextUpdatedBy (value: string) : Result<string, string> =
+    if value.Length > 120 then Error "shared_context.updated_by must be at most 120 characters"
     else Ok value

@@ -97,6 +97,14 @@ var usaccAuditEventsEventHashPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,1
 var usaccAuditEventsSourcePattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,80}$`)
 var vcsRepositoriesSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,119}$`)
 var vcsRepositoriesDefaultBranchPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,160}$`)
+var agentsAgentKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,120}$`)
+var channelsSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,119}$`)
+var messagesChannelSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,119}$`)
+var messagesFromAgentKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,120}$`)
+var channelMembersChannelSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,119}$`)
+var channelMembersAgentKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,120}$`)
+var sharedContextChannelSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,119}$`)
+var sharedContextCtxKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,200}$`)
 
 const AppConfigTable = "app_config"
 const AppConfigSelectSQL = `select
@@ -2245,6 +2253,7 @@ const DesSoccerLearningPolicyEntriesSelectSQL = `select
       target_tactical_cell_id,
       target_macro_cell_id,
       target_root_cell_id,
+      receiver_descriptor,
       value_micros,
       visits,
       source_run_id::text as source_run_id,
@@ -2267,6 +2276,7 @@ type DesSoccerLearningPolicyEntriesBun struct {
 	TargetTacticalCellId int32 `bun:"target_tactical_cell_id,type:integer,default:-1" json:"targetTacticalCellId"`
 	TargetMacroCellId int32 `bun:"target_macro_cell_id,type:integer,default:-1" json:"targetMacroCellId"`
 	TargetRootCellId int32 `bun:"target_root_cell_id,type:integer,default:-1" json:"targetRootCellId"`
+	ReceiverDescriptor int32 `bun:"receiver_descriptor,type:integer,default:-1" json:"receiverDescriptor"`
 	ValueMicros int64 `bun:"value_micros,type:bigint" json:"valueMicros"`
 	Visits int32 `bun:"visits,type:integer,default:0" json:"visits"`
 	SourceRunId *uuid.UUID `bun:"source_run_id,type:uuid,nullzero" json:"sourceRunId,omitempty"`
@@ -2284,6 +2294,7 @@ func (value DesSoccerLearningPolicyEntriesBun) Validate() error {
 	if value.TargetTacticalCellId < -1 { return errors.New("des_soccer_learning_policy_entries.target_tactical_cell_id is below the minimum") }
 	if value.TargetMacroCellId < -1 { return errors.New("des_soccer_learning_policy_entries.target_macro_cell_id is below the minimum") }
 	if value.TargetRootCellId < -1 { return errors.New("des_soccer_learning_policy_entries.target_root_cell_id is below the minimum") }
+	if value.ReceiverDescriptor < -1 { return errors.New("des_soccer_learning_policy_entries.receiver_descriptor is below the minimum") }
 	if value.Visits < 0 { return errors.New("des_soccer_learning_policy_entries.visits is below the minimum") }
 	return nil
 }
@@ -2456,6 +2467,7 @@ const DesSoccerLearningRunDeltasSelectSQL = `select
       target_tactical_cell_id,
       target_macro_cell_id,
       target_root_cell_id,
+      receiver_descriptor,
       before_value_micros,
       after_value_micros,
       value_delta_micros,
@@ -2481,6 +2493,7 @@ type DesSoccerLearningRunDeltasBun struct {
 	TargetTacticalCellId int32 `bun:"target_tactical_cell_id,type:integer,default:-1" json:"targetTacticalCellId"`
 	TargetMacroCellId int32 `bun:"target_macro_cell_id,type:integer,default:-1" json:"targetMacroCellId"`
 	TargetRootCellId int32 `bun:"target_root_cell_id,type:integer,default:-1" json:"targetRootCellId"`
+	ReceiverDescriptor int32 `bun:"receiver_descriptor,type:integer,default:-1" json:"receiverDescriptor"`
 	BeforeValueMicros int64 `bun:"before_value_micros,type:bigint,default:0" json:"beforeValueMicros"`
 	AfterValueMicros int64 `bun:"after_value_micros,type:bigint,default:0" json:"afterValueMicros"`
 	ValueDeltaMicros int64 `bun:"value_delta_micros,type:bigint,default:0" json:"valueDeltaMicros"`
@@ -2501,6 +2514,7 @@ func (value DesSoccerLearningRunDeltasBun) Validate() error {
 	if value.TargetTacticalCellId < -1 { return errors.New("des_soccer_learning_run_deltas.target_tactical_cell_id is below the minimum") }
 	if value.TargetMacroCellId < -1 { return errors.New("des_soccer_learning_run_deltas.target_macro_cell_id is below the minimum") }
 	if value.TargetRootCellId < -1 { return errors.New("des_soccer_learning_run_deltas.target_root_cell_id is below the minimum") }
+	if value.ReceiverDescriptor < -1 { return errors.New("des_soccer_learning_run_deltas.receiver_descriptor is below the minimum") }
 	if value.VisitDelta < 1 { return errors.New("des_soccer_learning_run_deltas.visit_delta is below the minimum") }
 	if value.MergeWeightMicros < 0 { return errors.New("des_soccer_learning_run_deltas.merge_weight_micros is below the minimum") }
 	if value.EffectiveVisitMicros < 0 { return errors.New("des_soccer_learning_run_deltas.effective_visit_micros is below the minimum") }
@@ -2870,6 +2884,49 @@ func (value DesSoccerLearningNeuralRunMetricsBun) Validate() error {
 	if value.ReplaySamples < 0 { return errors.New("des_soccer_learning_neural_run_metrics.replay_samples is below the minimum") }
 	if value.ReplayCapacity < 0 { return errors.New("des_soccer_learning_neural_run_metrics.replay_capacity is below the minimum") }
 	if value.ParameterCount < 0 { return errors.New("des_soccer_learning_neural_run_metrics.parameter_count is below the minimum") }
+	return nil
+}
+
+const DesSoccerLearningPassMetricsTable = "des_soccer_learning_pass_metrics"
+const DesSoccerLearningPassMetricsSelectSQL = `select
+      git_commit,
+      runs,
+      passes_attempted,
+      passes_completed,
+      completed_pass_gain_yards_micros,
+      pass_chains,
+      pass_chain_gain_yards_micros,
+      pass_chains_net_loss,
+      shots_on_target,
+      shots_after_pass,
+      to_char(first_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as first_seen_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from des_soccer_learning_pass_metrics`
+
+type DesSoccerLearningPassMetricsBun struct {
+	bun.BaseModel `bun:"table:des_soccer_learning_pass_metrics"`
+	GitCommit string `bun:"git_commit,type:varchar(64),pk" json:"gitCommit"`
+	Runs int64 `bun:"runs,type:bigint,default:0" json:"runs"`
+	PassesAttempted int64 `bun:"passes_attempted,type:bigint,default:0" json:"passesAttempted"`
+	PassesCompleted int64 `bun:"passes_completed,type:bigint,default:0" json:"passesCompleted"`
+	CompletedPassGainYardsMicros int64 `bun:"completed_pass_gain_yards_micros,type:bigint,default:0" json:"completedPassGainYardsMicros"`
+	PassChains int64 `bun:"pass_chains,type:bigint,default:0" json:"passChains"`
+	PassChainGainYardsMicros int64 `bun:"pass_chain_gain_yards_micros,type:bigint,default:0" json:"passChainGainYardsMicros"`
+	PassChainsNetLoss int64 `bun:"pass_chains_net_loss,type:bigint,default:0" json:"passChainsNetLoss"`
+	ShotsOnTarget int64 `bun:"shots_on_target,type:bigint,default:0" json:"shotsOnTarget"`
+	ShotsAfterPass int64 `bun:"shots_after_pass,type:bigint,default:0" json:"shotsAfterPass"`
+	FirstSeenAt time.Time `bun:"first_seen_at,type:timestamptz,default:now()" json:"firstSeenAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value DesSoccerLearningPassMetricsBun) Validate() error {
+	if value.Runs < 0 { return errors.New("des_soccer_learning_pass_metrics.runs is below the minimum") }
+	if value.PassesAttempted < 0 { return errors.New("des_soccer_learning_pass_metrics.passes_attempted is below the minimum") }
+	if value.PassesCompleted < 0 { return errors.New("des_soccer_learning_pass_metrics.passes_completed is below the minimum") }
+	if value.PassChains < 0 { return errors.New("des_soccer_learning_pass_metrics.pass_chains is below the minimum") }
+	if value.PassChainsNetLoss < 0 { return errors.New("des_soccer_learning_pass_metrics.pass_chains_net_loss is below the minimum") }
+	if value.ShotsOnTarget < 0 { return errors.New("des_soccer_learning_pass_metrics.shots_on_target is below the minimum") }
+	if value.ShotsAfterPass < 0 { return errors.New("des_soccer_learning_pass_metrics.shots_after_pass is below the minimum") }
 	return nil
 }
 
@@ -6421,6 +6478,193 @@ func (value VcsOperationsBun) Validate() error {
 	if value.DurationMs != nil {
 		if *value.DurationMs < 0 { return errors.New("vcs_operations.duration_ms is below the minimum") }
 	}
+	return nil
+}
+
+const AgentsTable = "ai_agent_bridge.agents"
+const AgentsSelectSQL = `select
+      id::text as id,
+      agent_key,
+      display_name,
+      kind,
+      host,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from ai_agent_bridge.agents`
+
+var AgentsKindValues = []string{"claude", "codex", "human", "other"}
+
+type AgentsBun struct {
+	bun.BaseModel `bun:"table:ai_agent_bridge.agents"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	AgentKey string `bun:"agent_key,type:varchar(120)" json:"agentKey"`
+	DisplayName string `bun:"display_name,type:varchar(200),default:''" json:"displayName"`
+	Kind string `bun:"kind,type:varchar(32),default:'other'" json:"kind"`
+	Host *string `bun:"host,type:varchar(255),nullzero" json:"host,omitempty"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value AgentsBun) Validate() error {
+	if !agentsAgentKeyPattern.MatchString(value.AgentKey) { return errors.New("agents.agent_key does not match the required pattern") }
+	if !containsString(AgentsKindValues, value.Kind) { return errors.New("unsupported agents.kind") }
+	if !validateRawJSON(value.MetaData) { return errors.New("agents.meta_data must be valid JSON") }
+	return nil
+}
+
+const ChannelsTable = "ai_agent_bridge.channels"
+const ChannelsSelectSQL = `select
+      id::text as id,
+      slug,
+      topic,
+      topic_summary,
+      embedding_model,
+      embedding,
+      embedding_dimensions,
+      status,
+      created_by,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from ai_agent_bridge.channels`
+
+var ChannelsStatusValues = []string{"active", "archived"}
+
+type ChannelsBun struct {
+	bun.BaseModel `bun:"table:ai_agent_bridge.channels"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	Slug string `bun:"slug,type:varchar(120)" json:"slug"`
+	Topic string `bun:"topic,type:text" json:"topic"`
+	TopicSummary *string `bun:"topic_summary,type:text,nullzero" json:"topicSummary,omitempty"`
+	EmbeddingModel string `bun:"embedding_model,type:varchar(120),default:'local-hash-v1'" json:"embeddingModel"`
+	Embedding json.RawMessage `bun:"embedding,type:jsonb,default:'[]'::jsonb" json:"embedding"`
+	EmbeddingDimensions int32 `bun:"embedding_dimensions,type:integer,default:0" json:"embeddingDimensions"`
+	Status string `bun:"status,type:varchar(32),default:'active'" json:"status"`
+	CreatedBy string `bun:"created_by,type:varchar(120),default:'system'" json:"createdBy"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value ChannelsBun) Validate() error {
+	if !channelsSlugPattern.MatchString(value.Slug) { return errors.New("channels.slug does not match the required pattern") }
+	if len([]byte(value.Topic)) > 8192 { return errors.New("channels.topic exceeds 8192 bytes") }
+	if len([]byte(value.Topic)) < 1 { return errors.New("channels.topic is below 1 bytes") }
+	if !validateRawJSON(value.Embedding) { return errors.New("channels.embedding must be valid JSON") }
+	if value.EmbeddingDimensions < 0 { return errors.New("channels.embedding_dimensions is below the minimum") }
+	if !containsString(ChannelsStatusValues, value.Status) { return errors.New("unsupported channels.status") }
+	if !validateRawJSON(value.MetaData) { return errors.New("channels.meta_data must be valid JSON") }
+	return nil
+}
+
+const MessagesTable = "ai_agent_bridge.messages"
+const MessagesSelectSQL = `select
+      id::text as id,
+      channel_slug,
+      channel_id::text as channel_id,
+      seq,
+      from_agent_key,
+      role,
+      content,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from ai_agent_bridge.messages`
+
+var MessagesRoleValues = []string{"user", "assistant", "system", "tool"}
+
+type MessagesBun struct {
+	bun.BaseModel `bun:"table:ai_agent_bridge.messages"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	ChannelSlug string `bun:"channel_slug,type:varchar(120)" json:"channelSlug"`
+	ChannelId *uuid.UUID `bun:"channel_id,type:uuid,nullzero" json:"channelId,omitempty"`
+	Seq int64 `bun:"seq,type:bigint" json:"seq"`
+	FromAgentKey string `bun:"from_agent_key,type:varchar(120)" json:"fromAgentKey"`
+	Role string `bun:"role,type:varchar(32),default:'user'" json:"role"`
+	Content string `bun:"content,type:text" json:"content"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+}
+
+func (value MessagesBun) Validate() error {
+	if !messagesChannelSlugPattern.MatchString(value.ChannelSlug) { return errors.New("messages.channel_slug does not match the required pattern") }
+	if value.Seq < 1 { return errors.New("messages.seq is below the minimum") }
+	if !messagesFromAgentKeyPattern.MatchString(value.FromAgentKey) { return errors.New("messages.from_agent_key does not match the required pattern") }
+	if !containsString(MessagesRoleValues, value.Role) { return errors.New("unsupported messages.role") }
+	if len([]byte(value.Content)) > 1048576 { return errors.New("messages.content exceeds 1048576 bytes") }
+	if len([]byte(value.Content)) < 1 { return errors.New("messages.content is below 1 bytes") }
+	if !validateRawJSON(value.MetaData) { return errors.New("messages.meta_data must be valid JSON") }
+	return nil
+}
+
+const ChannelMembersTable = "ai_agent_bridge.channel_members"
+const ChannelMembersSelectSQL = `select
+      id::text as id,
+      channel_slug,
+      channel_id::text as channel_id,
+      agent_key,
+      role,
+      to_char(joined_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as joined_at,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at,
+      meta_data
+    from ai_agent_bridge.channel_members`
+
+var ChannelMembersRoleValues = []string{"owner", "member", "observer"}
+
+type ChannelMembersBun struct {
+	bun.BaseModel `bun:"table:ai_agent_bridge.channel_members"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	ChannelSlug string `bun:"channel_slug,type:varchar(120)" json:"channelSlug"`
+	ChannelId *uuid.UUID `bun:"channel_id,type:uuid,nullzero" json:"channelId,omitempty"`
+	AgentKey string `bun:"agent_key,type:varchar(120)" json:"agentKey"`
+	Role string `bun:"role,type:varchar(32),default:'member'" json:"role"`
+	JoinedAt time.Time `bun:"joined_at,type:timestamptz,default:now()" json:"joinedAt"`
+	LastSeenAt time.Time `bun:"last_seen_at,type:timestamptz,default:now()" json:"lastSeenAt"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+}
+
+func (value ChannelMembersBun) Validate() error {
+	if !channelMembersChannelSlugPattern.MatchString(value.ChannelSlug) { return errors.New("channel_members.channel_slug does not match the required pattern") }
+	if !channelMembersAgentKeyPattern.MatchString(value.AgentKey) { return errors.New("channel_members.agent_key does not match the required pattern") }
+	if !containsString(ChannelMembersRoleValues, value.Role) { return errors.New("unsupported channel_members.role") }
+	if !validateRawJSON(value.MetaData) { return errors.New("channel_members.meta_data must be valid JSON") }
+	return nil
+}
+
+const SharedContextTable = "ai_agent_bridge.shared_context"
+const SharedContextSelectSQL = `select
+      id::text as id,
+      channel_slug,
+      channel_id::text as channel_id,
+      ctx_key,
+      value,
+      version,
+      updated_by,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from ai_agent_bridge.shared_context`
+
+type SharedContextBun struct {
+	bun.BaseModel `bun:"table:ai_agent_bridge.shared_context"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	ChannelSlug *string `bun:"channel_slug,type:varchar(120),nullzero" json:"channelSlug,omitempty"`
+	ChannelId *uuid.UUID `bun:"channel_id,type:uuid,nullzero" json:"channelId,omitempty"`
+	CtxKey string `bun:"ctx_key,type:varchar(200)" json:"ctxKey"`
+	Value json.RawMessage `bun:"value,type:jsonb,default:'{}'::jsonb" json:"value"`
+	Version int32 `bun:"version,type:integer,default:1" json:"version"`
+	UpdatedBy string `bun:"updated_by,type:varchar(120),default:'system'" json:"updatedBy"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value SharedContextBun) Validate() error {
+	if value.ChannelSlug != nil {
+		if !sharedContextChannelSlugPattern.MatchString(*value.ChannelSlug) { return errors.New("shared_context.channel_slug does not match the required pattern") }
+	}
+	if !sharedContextCtxKeyPattern.MatchString(value.CtxKey) { return errors.New("shared_context.ctx_key does not match the required pattern") }
+	if !validateRawJSON(value.Value) { return errors.New("shared_context.value must be valid JSON") }
+	if value.Version < 1 { return errors.New("shared_context.version is below the minimum") }
 	return nil
 }
 

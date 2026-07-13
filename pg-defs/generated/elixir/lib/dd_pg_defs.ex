@@ -63,6 +63,7 @@ defmodule DdPgDefs do
     DdPgDefs.DesSoccerLearningSetPlayRestartMix,
     DdPgDefs.DesSoccerLearningSetPlayEpisodeMetrics,
     DdPgDefs.DesSoccerLearningNeuralRunMetrics,
+    DdPgDefs.DesSoccerLearningPassMetrics,
     DdPgDefs.DesFelElevatorLearningRuns,
     DdPgDefs.DesFelElevatorPolicyStates,
     DdPgDefs.DesFelElevatorDispatchDecisions,
@@ -127,6 +128,11 @@ defmodule DdPgDefs do
     DdPgDefs.VcsRepositories,
     DdPgDefs.VcsRefs,
     DdPgDefs.VcsOperations,
+    DdPgDefs.Agents,
+    DdPgDefs.Channels,
+    DdPgDefs.Messages,
+    DdPgDefs.ChannelMembers,
+    DdPgDefs.SharedContext,
   ]
 
   @spec tables() :: [module()]

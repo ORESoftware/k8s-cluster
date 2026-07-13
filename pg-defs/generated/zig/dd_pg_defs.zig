@@ -3728,8 +3728,8 @@ pub fn validateDesSoccerLearningPolicyVersionsVisitCount(value: i64) ?[]const u8
 }
 
 pub const des_soccer_learning_policy_entries_table: []const u8 = "des_soccer_learning_policy_entries";
-pub const des_soccer_learning_policy_entries_columns = [_][]const u8{ "id", "policy_version_id", "team", "entry_kind", "state_hash", "state_key", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "value_micros", "visits", "source_run_id", "created_at" };
-pub const des_soccer_learning_policy_entries_select_sql: []const u8 = "select\n      id::text as id,\n      policy_version_id::text as policy_version_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      value_micros,\n      visits,\n      source_run_id::text as source_run_id,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_policy_entries";
+pub const des_soccer_learning_policy_entries_columns = [_][]const u8{ "id", "policy_version_id", "team", "entry_kind", "state_hash", "state_key", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "receiver_descriptor", "value_micros", "visits", "source_run_id", "created_at" };
+pub const des_soccer_learning_policy_entries_select_sql: []const u8 = "select\n      id::text as id,\n      policy_version_id::text as policy_version_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      receiver_descriptor,\n      value_micros,\n      visits,\n      source_run_id::text as source_run_id,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_policy_entries";
 
 pub const DesSoccerLearningPolicyEntriesTeam = enum {
     home,
@@ -3779,6 +3779,7 @@ pub const DesSoccerLearningPolicyEntriesRow = struct {
     target_tactical_cell_id: i32,
     target_macro_cell_id: i32,
     target_root_cell_id: i32,
+    receiver_descriptor: i32,
     value_micros: i64,
     visits: i32,
     source_run_id: ?[]const u8,
@@ -3797,10 +3798,11 @@ pub const DesSoccerLearningPolicyEntriesRow = struct {
             .target_tactical_cell_id = @as(i32, @intCast(reader.int(8))),
             .target_macro_cell_id = @as(i32, @intCast(reader.int(9))),
             .target_root_cell_id = @as(i32, @intCast(reader.int(10))),
-            .value_micros = reader.int(11),
-            .visits = @as(i32, @intCast(reader.int(12))),
-            .source_run_id = if (reader.is_null(13)) null else reader.text(13),
-            .created_at = reader.text(14),
+            .receiver_descriptor = @as(i32, @intCast(reader.int(11))),
+            .value_micros = reader.int(12),
+            .visits = @as(i32, @intCast(reader.int(13))),
+            .source_run_id = if (reader.is_null(14)) null else reader.text(14),
+            .created_at = reader.text(15),
         };
     }
 };
@@ -3832,6 +3834,11 @@ pub fn validateDesSoccerLearningPolicyEntriesTargetMacroCellId(value: i32) ?[]co
 
 pub fn validateDesSoccerLearningPolicyEntriesTargetRootCellId(value: i32) ?[]const u8 {
     if (value < -1) return "des_soccer_learning_policy_entries.target_root_cell_id is below the minimum";
+    return null;
+}
+
+pub fn validateDesSoccerLearningPolicyEntriesReceiverDescriptor(value: i32) ?[]const u8 {
+    if (value < -1) return "des_soccer_learning_policy_entries.receiver_descriptor is below the minimum";
     return null;
 }
 
@@ -4140,8 +4147,8 @@ pub fn validateDesSoccerLearningRunsTransitions(value: i32) ?[]const u8 {
 }
 
 pub const des_soccer_learning_run_deltas_table: []const u8 = "des_soccer_learning_run_deltas";
-pub const des_soccer_learning_run_deltas_columns = [_][]const u8{ "id", "run_id", "team", "entry_kind", "state_hash", "state_key", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "before_value_micros", "after_value_micros", "value_delta_micros", "visit_delta", "merge_weight_micros", "effective_visit_micros", "created_at" };
-pub const des_soccer_learning_run_deltas_select_sql: []const u8 = "select\n      id::text as id,\n      run_id::text as run_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      before_value_micros,\n      after_value_micros,\n      value_delta_micros,\n      visit_delta,\n      merge_weight_micros,\n      effective_visit_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_run_deltas";
+pub const des_soccer_learning_run_deltas_columns = [_][]const u8{ "id", "run_id", "team", "entry_kind", "state_hash", "state_key", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "receiver_descriptor", "before_value_micros", "after_value_micros", "value_delta_micros", "visit_delta", "merge_weight_micros", "effective_visit_micros", "created_at" };
+pub const des_soccer_learning_run_deltas_select_sql: []const u8 = "select\n      id::text as id,\n      run_id::text as run_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      receiver_descriptor,\n      before_value_micros,\n      after_value_micros,\n      value_delta_micros,\n      visit_delta,\n      merge_weight_micros,\n      effective_visit_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_run_deltas";
 
 pub const DesSoccerLearningRunDeltasTeam = enum {
     home,
@@ -4191,6 +4198,7 @@ pub const DesSoccerLearningRunDeltasRow = struct {
     target_tactical_cell_id: i32,
     target_macro_cell_id: i32,
     target_root_cell_id: i32,
+    receiver_descriptor: i32,
     before_value_micros: i64,
     after_value_micros: i64,
     value_delta_micros: i64,
@@ -4212,13 +4220,14 @@ pub const DesSoccerLearningRunDeltasRow = struct {
             .target_tactical_cell_id = @as(i32, @intCast(reader.int(8))),
             .target_macro_cell_id = @as(i32, @intCast(reader.int(9))),
             .target_root_cell_id = @as(i32, @intCast(reader.int(10))),
-            .before_value_micros = reader.int(11),
-            .after_value_micros = reader.int(12),
-            .value_delta_micros = reader.int(13),
-            .visit_delta = @as(i32, @intCast(reader.int(14))),
-            .merge_weight_micros = reader.int(15),
-            .effective_visit_micros = reader.int(16),
-            .created_at = reader.text(17),
+            .receiver_descriptor = @as(i32, @intCast(reader.int(11))),
+            .before_value_micros = reader.int(12),
+            .after_value_micros = reader.int(13),
+            .value_delta_micros = reader.int(14),
+            .visit_delta = @as(i32, @intCast(reader.int(15))),
+            .merge_weight_micros = reader.int(16),
+            .effective_visit_micros = reader.int(17),
+            .created_at = reader.text(18),
         };
     }
 };
@@ -4250,6 +4259,11 @@ pub fn validateDesSoccerLearningRunDeltasTargetMacroCellId(value: i32) ?[]const 
 
 pub fn validateDesSoccerLearningRunDeltasTargetRootCellId(value: i32) ?[]const u8 {
     if (value < -1) return "des_soccer_learning_run_deltas.target_root_cell_id is below the minimum";
+    return null;
+}
+
+pub fn validateDesSoccerLearningRunDeltasReceiverDescriptor(value: i32) ?[]const u8 {
+    if (value < -1) return "des_soccer_learning_run_deltas.receiver_descriptor is below the minimum";
     return null;
 }
 
@@ -4862,6 +4876,82 @@ pub fn validateDesSoccerLearningNeuralRunMetricsReplayCapacity(value: i32) ?[]co
 
 pub fn validateDesSoccerLearningNeuralRunMetricsParameterCount(value: i32) ?[]const u8 {
     if (value < 0) return "des_soccer_learning_neural_run_metrics.parameter_count is below the minimum";
+    return null;
+}
+
+pub const des_soccer_learning_pass_metrics_table: []const u8 = "des_soccer_learning_pass_metrics";
+pub const des_soccer_learning_pass_metrics_columns = [_][]const u8{ "git_commit", "runs", "passes_attempted", "passes_completed", "completed_pass_gain_yards_micros", "pass_chains", "pass_chain_gain_yards_micros", "pass_chains_net_loss", "shots_on_target", "shots_after_pass", "first_seen_at", "updated_at" };
+pub const des_soccer_learning_pass_metrics_select_sql: []const u8 = "select\n      git_commit,\n      runs,\n      passes_attempted,\n      passes_completed,\n      completed_pass_gain_yards_micros,\n      pass_chains,\n      pass_chain_gain_yards_micros,\n      pass_chains_net_loss,\n      shots_on_target,\n      shots_after_pass,\n      to_char(first_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as first_seen_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_soccer_learning_pass_metrics";
+
+pub const DesSoccerLearningPassMetricsRow = struct {
+    git_commit: []const u8,
+    runs: i64,
+    passes_attempted: i64,
+    passes_completed: i64,
+    completed_pass_gain_yards_micros: i64,
+    pass_chains: i64,
+    pass_chain_gain_yards_micros: i64,
+    pass_chains_net_loss: i64,
+    shots_on_target: i64,
+    shots_after_pass: i64,
+    first_seen_at: []const u8,
+    updated_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) DesSoccerLearningPassMetricsRow {
+        return DesSoccerLearningPassMetricsRow{
+            .git_commit = reader.text(0),
+            .runs = reader.int(1),
+            .passes_attempted = reader.int(2),
+            .passes_completed = reader.int(3),
+            .completed_pass_gain_yards_micros = reader.int(4),
+            .pass_chains = reader.int(5),
+            .pass_chain_gain_yards_micros = reader.int(6),
+            .pass_chains_net_loss = reader.int(7),
+            .shots_on_target = reader.int(8),
+            .shots_after_pass = reader.int(9),
+            .first_seen_at = reader.text(10),
+            .updated_at = reader.text(11),
+        };
+    }
+};
+
+pub fn validateDesSoccerLearningPassMetricsGitCommit(value: []const u8) ?[]const u8 {
+    if (value.len > 64) return "des_soccer_learning_pass_metrics.git_commit must be at most 64 characters";
+    return null;
+}
+
+pub fn validateDesSoccerLearningPassMetricsRuns(value: i64) ?[]const u8 {
+    if (value < 0) return "des_soccer_learning_pass_metrics.runs is below the minimum";
+    return null;
+}
+
+pub fn validateDesSoccerLearningPassMetricsPassesAttempted(value: i64) ?[]const u8 {
+    if (value < 0) return "des_soccer_learning_pass_metrics.passes_attempted is below the minimum";
+    return null;
+}
+
+pub fn validateDesSoccerLearningPassMetricsPassesCompleted(value: i64) ?[]const u8 {
+    if (value < 0) return "des_soccer_learning_pass_metrics.passes_completed is below the minimum";
+    return null;
+}
+
+pub fn validateDesSoccerLearningPassMetricsPassChains(value: i64) ?[]const u8 {
+    if (value < 0) return "des_soccer_learning_pass_metrics.pass_chains is below the minimum";
+    return null;
+}
+
+pub fn validateDesSoccerLearningPassMetricsPassChainsNetLoss(value: i64) ?[]const u8 {
+    if (value < 0) return "des_soccer_learning_pass_metrics.pass_chains_net_loss is below the minimum";
+    return null;
+}
+
+pub fn validateDesSoccerLearningPassMetricsShotsOnTarget(value: i64) ?[]const u8 {
+    if (value < 0) return "des_soccer_learning_pass_metrics.shots_on_target is below the minimum";
+    return null;
+}
+
+pub fn validateDesSoccerLearningPassMetricsShotsAfterPass(value: i64) ?[]const u8 {
+    if (value < 0) return "des_soccer_learning_pass_metrics.shots_after_pass is below the minimum";
     return null;
 }
 
@@ -11934,5 +12024,324 @@ pub fn validateVcsOperationsDurationMs(value: i32) ?[]const u8 {
 
 pub fn validateVcsOperationsRequestedBy(value: []const u8) ?[]const u8 {
     if (value.len > 200) return "vcs_operations.requested_by must be at most 200 characters";
+    return null;
+}
+
+pub const agents_table: []const u8 = "ai_agent_bridge.agents";
+pub const agents_columns = [_][]const u8{ "id", "agent_key", "display_name", "kind", "host", "meta_data", "created_at", "updated_at" };
+pub const agents_select_sql: []const u8 = "select\n      id::text as id,\n      agent_key,\n      display_name,\n      kind,\n      host,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from ai_agent_bridge.agents";
+
+pub const AgentsKind = enum {
+    claude,
+    codex,
+    human,
+    other,
+
+    pub fn toString(self: AgentsKind) []const u8 {
+        return switch (self) {
+            .claude => "claude",
+            .codex => "codex",
+            .human => "human",
+            .other => "other",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?AgentsKind {
+        if (std.mem.eql(u8, value, "claude")) return .claude;
+        if (std.mem.eql(u8, value, "codex")) return .codex;
+        if (std.mem.eql(u8, value, "human")) return .human;
+        if (std.mem.eql(u8, value, "other")) return .other;
+        return null;
+    }
+};
+
+pub const AgentsRow = struct {
+    id: []const u8,
+    agent_key: []const u8,
+    display_name: []const u8,
+    kind: []const u8,
+    host: ?[]const u8,
+    meta_data: []const u8,
+    created_at: []const u8,
+    updated_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) AgentsRow {
+        return AgentsRow{
+            .id = reader.text(0),
+            .agent_key = reader.text(1),
+            .display_name = reader.text(2),
+            .kind = reader.text(3),
+            .host = if (reader.is_null(4)) null else reader.text(4),
+            .meta_data = reader.text(5),
+            .created_at = reader.text(6),
+            .updated_at = reader.text(7),
+        };
+    }
+};
+
+pub fn validateAgentsAgentKey(value: []const u8) ?[]const u8 {
+    if (value.len > 120) return "agents.agent_key must be at most 120 characters";
+    return null;
+}
+
+pub fn validateAgentsDisplayName(value: []const u8) ?[]const u8 {
+    if (value.len > 200) return "agents.display_name must be at most 200 characters";
+    return null;
+}
+
+pub fn validateAgentsHost(value: []const u8) ?[]const u8 {
+    if (value.len > 255) return "agents.host must be at most 255 characters";
+    return null;
+}
+
+pub const channels_table: []const u8 = "ai_agent_bridge.channels";
+pub const channels_columns = [_][]const u8{ "id", "slug", "topic", "topic_summary", "embedding_model", "embedding", "embedding_dimensions", "status", "created_by", "meta_data", "created_at", "updated_at" };
+pub const channels_select_sql: []const u8 = "select\n      id::text as id,\n      slug,\n      topic,\n      topic_summary,\n      embedding_model,\n      embedding::text as embedding_json,\n      embedding_dimensions,\n      status,\n      created_by,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from ai_agent_bridge.channels";
+
+pub const ChannelsStatus = enum {
+    active,
+    archived,
+
+    pub fn toString(self: ChannelsStatus) []const u8 {
+        return switch (self) {
+            .active => "active",
+            .archived => "archived",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?ChannelsStatus {
+        if (std.mem.eql(u8, value, "active")) return .active;
+        if (std.mem.eql(u8, value, "archived")) return .archived;
+        return null;
+    }
+};
+
+pub const ChannelsRow = struct {
+    id: []const u8,
+    slug: []const u8,
+    topic: []const u8,
+    topic_summary: ?[]const u8,
+    embedding_model: []const u8,
+    embedding: []const u8,
+    embedding_dimensions: i32,
+    status: []const u8,
+    created_by: []const u8,
+    meta_data: []const u8,
+    created_at: []const u8,
+    updated_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) ChannelsRow {
+        return ChannelsRow{
+            .id = reader.text(0),
+            .slug = reader.text(1),
+            .topic = reader.text(2),
+            .topic_summary = if (reader.is_null(3)) null else reader.text(3),
+            .embedding_model = reader.text(4),
+            .embedding = reader.text(5),
+            .embedding_dimensions = @as(i32, @intCast(reader.int(6))),
+            .status = reader.text(7),
+            .created_by = reader.text(8),
+            .meta_data = reader.text(9),
+            .created_at = reader.text(10),
+            .updated_at = reader.text(11),
+        };
+    }
+};
+
+pub fn validateChannelsSlug(value: []const u8) ?[]const u8 {
+    if (value.len > 120) return "channels.slug must be at most 120 characters";
+    return null;
+}
+
+pub fn validateChannelsEmbeddingModel(value: []const u8) ?[]const u8 {
+    if (value.len > 120) return "channels.embedding_model must be at most 120 characters";
+    return null;
+}
+
+pub fn validateChannelsEmbeddingDimensions(value: i32) ?[]const u8 {
+    if (value < 0) return "channels.embedding_dimensions is below the minimum";
+    return null;
+}
+
+pub fn validateChannelsCreatedBy(value: []const u8) ?[]const u8 {
+    if (value.len > 120) return "channels.created_by must be at most 120 characters";
+    return null;
+}
+
+pub const messages_table: []const u8 = "ai_agent_bridge.messages";
+pub const messages_columns = [_][]const u8{ "id", "channel_slug", "channel_id", "seq", "from_agent_key", "role", "content", "meta_data", "created_at" };
+pub const messages_select_sql: []const u8 = "select\n      id::text as id,\n      channel_slug,\n      channel_id::text as channel_id,\n      seq,\n      from_agent_key,\n      role,\n      content,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from ai_agent_bridge.messages";
+
+pub const MessagesRole = enum {
+    user,
+    assistant,
+    system,
+    tool,
+
+    pub fn toString(self: MessagesRole) []const u8 {
+        return switch (self) {
+            .user => "user",
+            .assistant => "assistant",
+            .system => "system",
+            .tool => "tool",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?MessagesRole {
+        if (std.mem.eql(u8, value, "user")) return .user;
+        if (std.mem.eql(u8, value, "assistant")) return .assistant;
+        if (std.mem.eql(u8, value, "system")) return .system;
+        if (std.mem.eql(u8, value, "tool")) return .tool;
+        return null;
+    }
+};
+
+pub const MessagesRow = struct {
+    id: []const u8,
+    channel_slug: []const u8,
+    channel_id: ?[]const u8,
+    seq: i64,
+    from_agent_key: []const u8,
+    role: []const u8,
+    content: []const u8,
+    meta_data: []const u8,
+    created_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) MessagesRow {
+        return MessagesRow{
+            .id = reader.text(0),
+            .channel_slug = reader.text(1),
+            .channel_id = if (reader.is_null(2)) null else reader.text(2),
+            .seq = reader.int(3),
+            .from_agent_key = reader.text(4),
+            .role = reader.text(5),
+            .content = reader.text(6),
+            .meta_data = reader.text(7),
+            .created_at = reader.text(8),
+        };
+    }
+};
+
+pub fn validateMessagesChannelSlug(value: []const u8) ?[]const u8 {
+    if (value.len > 120) return "messages.channel_slug must be at most 120 characters";
+    return null;
+}
+
+pub fn validateMessagesSeq(value: i64) ?[]const u8 {
+    if (value < 1) return "messages.seq is below the minimum";
+    return null;
+}
+
+pub fn validateMessagesFromAgentKey(value: []const u8) ?[]const u8 {
+    if (value.len > 120) return "messages.from_agent_key must be at most 120 characters";
+    return null;
+}
+
+pub const channel_members_table: []const u8 = "ai_agent_bridge.channel_members";
+pub const channel_members_columns = [_][]const u8{ "id", "channel_slug", "channel_id", "agent_key", "role", "joined_at", "last_seen_at", "meta_data" };
+pub const channel_members_select_sql: []const u8 = "select\n      id::text as id,\n      channel_slug,\n      channel_id::text as channel_id,\n      agent_key,\n      role,\n      to_char(joined_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as joined_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      meta_data::text as meta_data_json\n    from ai_agent_bridge.channel_members";
+
+pub const ChannelMembersRole = enum {
+    owner,
+    member,
+    observer,
+
+    pub fn toString(self: ChannelMembersRole) []const u8 {
+        return switch (self) {
+            .owner => "owner",
+            .member => "member",
+            .observer => "observer",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?ChannelMembersRole {
+        if (std.mem.eql(u8, value, "owner")) return .owner;
+        if (std.mem.eql(u8, value, "member")) return .member;
+        if (std.mem.eql(u8, value, "observer")) return .observer;
+        return null;
+    }
+};
+
+pub const ChannelMembersRow = struct {
+    id: []const u8,
+    channel_slug: []const u8,
+    channel_id: ?[]const u8,
+    agent_key: []const u8,
+    role: []const u8,
+    joined_at: []const u8,
+    last_seen_at: []const u8,
+    meta_data: []const u8,
+
+    pub fn fromRow(reader: RowReader) ChannelMembersRow {
+        return ChannelMembersRow{
+            .id = reader.text(0),
+            .channel_slug = reader.text(1),
+            .channel_id = if (reader.is_null(2)) null else reader.text(2),
+            .agent_key = reader.text(3),
+            .role = reader.text(4),
+            .joined_at = reader.text(5),
+            .last_seen_at = reader.text(6),
+            .meta_data = reader.text(7),
+        };
+    }
+};
+
+pub fn validateChannelMembersChannelSlug(value: []const u8) ?[]const u8 {
+    if (value.len > 120) return "channel_members.channel_slug must be at most 120 characters";
+    return null;
+}
+
+pub fn validateChannelMembersAgentKey(value: []const u8) ?[]const u8 {
+    if (value.len > 120) return "channel_members.agent_key must be at most 120 characters";
+    return null;
+}
+
+pub const shared_context_table: []const u8 = "ai_agent_bridge.shared_context";
+pub const shared_context_columns = [_][]const u8{ "id", "channel_slug", "channel_id", "ctx_key", "value", "version", "updated_by", "created_at", "updated_at" };
+pub const shared_context_select_sql: []const u8 = "select\n      id::text as id,\n      channel_slug,\n      channel_id::text as channel_id,\n      ctx_key,\n      value::text as value_json,\n      version,\n      updated_by,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from ai_agent_bridge.shared_context";
+
+pub const SharedContextRow = struct {
+    id: []const u8,
+    channel_slug: ?[]const u8,
+    channel_id: ?[]const u8,
+    ctx_key: []const u8,
+    value: []const u8,
+    version: i32,
+    updated_by: []const u8,
+    created_at: []const u8,
+    updated_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) SharedContextRow {
+        return SharedContextRow{
+            .id = reader.text(0),
+            .channel_slug = if (reader.is_null(1)) null else reader.text(1),
+            .channel_id = if (reader.is_null(2)) null else reader.text(2),
+            .ctx_key = reader.text(3),
+            .value = reader.text(4),
+            .version = @as(i32, @intCast(reader.int(5))),
+            .updated_by = reader.text(6),
+            .created_at = reader.text(7),
+            .updated_at = reader.text(8),
+        };
+    }
+};
+
+pub fn validateSharedContextChannelSlug(value: []const u8) ?[]const u8 {
+    if (value.len > 120) return "shared_context.channel_slug must be at most 120 characters";
+    return null;
+}
+
+pub fn validateSharedContextCtxKey(value: []const u8) ?[]const u8 {
+    if (value.len > 200) return "shared_context.ctx_key must be at most 200 characters";
+    return null;
+}
+
+pub fn validateSharedContextVersion(value: i32) ?[]const u8 {
+    if (value < 1) return "shared_context.version is below the minimum";
+    return null;
+}
+
+pub fn validateSharedContextUpdatedBy(value: []const u8) ?[]const u8 {
+    if (value.len > 120) return "shared_context.updated_by must be at most 120 characters";
     return null;
 }

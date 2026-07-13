@@ -1763,6 +1763,8 @@ pub struct Model {
     pub target_macro_cell_id: i32,
     #[sea_orm(column_name = "target_root_cell_id")]
     pub target_root_cell_id: i32,
+    #[sea_orm(column_name = "receiver_descriptor")]
+    pub receiver_descriptor: i32,
     #[sea_orm(column_name = "value_micros")]
     pub value_micros: i64,
     pub visits: i32,
@@ -1924,6 +1926,8 @@ pub struct Model {
     pub target_macro_cell_id: i32,
     #[sea_orm(column_name = "target_root_cell_id")]
     pub target_root_cell_id: i32,
+    #[sea_orm(column_name = "receiver_descriptor")]
+    pub receiver_descriptor: i32,
     #[sea_orm(column_name = "before_value_micros")]
     pub before_value_micros: i64,
     #[sea_orm(column_name = "after_value_micros")]
@@ -2279,6 +2283,47 @@ impl ActiveModelBehavior for ActiveModel {}
 
 pub use des_soccer_learning_neural_run_metrics::Entity as DesSoccerLearningNeuralRunMetricsEntity;
 pub use des_soccer_learning_neural_run_metrics::Model as DesSoccerLearningNeuralRunMetricsModel;
+
+pub mod des_soccer_learning_pass_metrics {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "des_soccer_learning_pass_metrics")]
+pub struct Model {
+    #[sea_orm(primary_key, column_name = "git_commit")]
+    pub git_commit: String,
+    pub runs: i64,
+    #[sea_orm(column_name = "passes_attempted")]
+    pub passes_attempted: i64,
+    #[sea_orm(column_name = "passes_completed")]
+    pub passes_completed: i64,
+    #[sea_orm(column_name = "completed_pass_gain_yards_micros")]
+    pub completed_pass_gain_yards_micros: i64,
+    #[sea_orm(column_name = "pass_chains")]
+    pub pass_chains: i64,
+    #[sea_orm(column_name = "pass_chain_gain_yards_micros")]
+    pub pass_chain_gain_yards_micros: i64,
+    #[sea_orm(column_name = "pass_chains_net_loss")]
+    pub pass_chains_net_loss: i64,
+    #[sea_orm(column_name = "shots_on_target")]
+    pub shots_on_target: i64,
+    #[sea_orm(column_name = "shots_after_pass")]
+    pub shots_after_pass: i64,
+    #[sea_orm(column_name = "first_seen_at")]
+    pub first_seen_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use des_soccer_learning_pass_metrics::Entity as DesSoccerLearningPassMetricsEntity;
+pub use des_soccer_learning_pass_metrics::Model as DesSoccerLearningPassMetricsModel;
 
 pub mod des_fel_elevator_learning_runs {
     use super::*;
@@ -5181,3 +5226,173 @@ impl ActiveModelBehavior for ActiveModel {}
 
 pub use vcs_operations::Entity as VcsOperationsEntity;
 pub use vcs_operations::Model as VcsOperationsModel;
+
+pub mod agents {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(schema_name = "ai_agent_bridge", table_name = "agents")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "agent_key")]
+    pub agent_key: String,
+    #[sea_orm(column_name = "display_name")]
+    pub display_name: String,
+    pub kind: String,
+    pub host: Option<String>,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use agents::Entity as AgentsEntity;
+pub use agents::Model as AgentsModel;
+
+pub mod channels {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(schema_name = "ai_agent_bridge", table_name = "channels")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    pub slug: String,
+    pub topic: String,
+    #[sea_orm(column_name = "topic_summary")]
+    pub topic_summary: Option<String>,
+    #[sea_orm(column_name = "embedding_model")]
+    pub embedding_model: String,
+    pub embedding: Json,
+    #[sea_orm(column_name = "embedding_dimensions")]
+    pub embedding_dimensions: i32,
+    pub status: String,
+    #[sea_orm(column_name = "created_by")]
+    pub created_by: String,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use channels::Entity as ChannelsEntity;
+pub use channels::Model as ChannelsModel;
+
+pub mod messages {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(schema_name = "ai_agent_bridge", table_name = "messages")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "channel_slug")]
+    pub channel_slug: String,
+    #[sea_orm(column_name = "channel_id")]
+    pub channel_id: Option<Uuid>,
+    pub seq: i64,
+    #[sea_orm(column_name = "from_agent_key")]
+    pub from_agent_key: String,
+    pub role: String,
+    pub content: String,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use messages::Entity as MessagesEntity;
+pub use messages::Model as MessagesModel;
+
+pub mod channel_members {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(schema_name = "ai_agent_bridge", table_name = "channel_members")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "channel_slug")]
+    pub channel_slug: String,
+    #[sea_orm(column_name = "channel_id")]
+    pub channel_id: Option<Uuid>,
+    #[sea_orm(column_name = "agent_key")]
+    pub agent_key: String,
+    pub role: String,
+    #[sea_orm(column_name = "joined_at")]
+    pub joined_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "last_seen_at")]
+    pub last_seen_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use channel_members::Entity as ChannelMembersEntity;
+pub use channel_members::Model as ChannelMembersModel;
+
+pub mod shared_context {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(schema_name = "ai_agent_bridge", table_name = "shared_context")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "channel_slug")]
+    pub channel_slug: Option<String>,
+    #[sea_orm(column_name = "channel_id")]
+    pub channel_id: Option<Uuid>,
+    #[sea_orm(column_name = "ctx_key")]
+    pub ctx_key: String,
+    pub value: Json,
+    pub version: i32,
+    #[sea_orm(column_name = "updated_by")]
+    pub updated_by: String,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use shared_context::Entity as SharedContextEntity;
+pub use shared_context::Model as SharedContextModel;

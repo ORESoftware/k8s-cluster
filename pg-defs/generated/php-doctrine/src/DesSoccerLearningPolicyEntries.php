@@ -50,6 +50,9 @@ class DesSoccerLearningPolicyEntries
     #[ORM\Column(type: 'integer', name: 'target_root_cell_id')]
     public int $targetRootCellId;
 
+    #[ORM\Column(type: 'integer', name: 'receiver_descriptor')]
+    public int $receiverDescriptor;
+
     #[ORM\Column(type: 'bigint', name: 'value_micros')]
     public string $valueMicros;
 

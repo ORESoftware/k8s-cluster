@@ -906,11 +906,12 @@ model DesSoccerLearningPolicyEntries {
   targetTacticalCellId Int @map("target_tactical_cell_id") @default(-1)
   targetMacroCellId Int @map("target_macro_cell_id") @default(-1)
   targetRootCellId Int @map("target_root_cell_id") @default(-1)
+  receiverDescriptor Int @map("receiver_descriptor") @default(-1)
   valueMicros BigInt @map("value_micros") @db.BigInt
   visits Int @default(0)
   sourceRunId String? @map("source_run_id") @db.Uuid
   createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
-  @@unique([policyVersionId, team, entryKind, stateHash, action, targetFineCellId, targetTacticalCellId, targetMacroCellId, targetRootCellId], map: "des_soccer_learning_policy_entries_key_uq")
+  @@unique([policyVersionId, team, entryKind, stateHash, action, targetFineCellId, targetTacticalCellId, targetMacroCellId, targetRootCellId, receiverDescriptor], map: "des_soccer_learning_policy_entries_key_uq")
   @@index([policyVersionId, team, entryKind, stateHash], map: "des_soccer_learning_policy_entries_lookup_idx")
   // Check constraints live in schema.sql and must be migrated from the SQL contract.
   @@map("des_soccer_learning_policy_entries")
@@ -988,6 +989,7 @@ model DesSoccerLearningRunDeltas {
   targetTacticalCellId Int @map("target_tactical_cell_id") @default(-1)
   targetMacroCellId Int @map("target_macro_cell_id") @default(-1)
   targetRootCellId Int @map("target_root_cell_id") @default(-1)
+  receiverDescriptor Int @map("receiver_descriptor") @default(-1)
   beforeValueMicros BigInt @map("before_value_micros") @default(0) @db.BigInt
   afterValueMicros BigInt @map("after_value_micros") @default(0) @db.BigInt
   valueDeltaMicros BigInt @map("value_delta_micros") @default(0) @db.BigInt
@@ -995,7 +997,7 @@ model DesSoccerLearningRunDeltas {
   mergeWeightMicros BigInt @map("merge_weight_micros") @default(0) @db.BigInt
   effectiveVisitMicros BigInt @map("effective_visit_micros") @default(0) @db.BigInt
   createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
-  @@unique([runId, team, entryKind, stateHash, action, targetFineCellId, targetTacticalCellId, targetMacroCellId, targetRootCellId], map: "des_soccer_learning_run_deltas_key_uq")
+  @@unique([runId, team, entryKind, stateHash, action, targetFineCellId, targetTacticalCellId, targetMacroCellId, targetRootCellId, receiverDescriptor], map: "des_soccer_learning_run_deltas_key_uq")
   @@index([team, entryKind, stateHash, action], map: "des_soccer_learning_run_deltas_merge_idx")
   // Check constraints live in schema.sql and must be migrated from the SQL contract.
   @@map("des_soccer_learning_run_deltas")
@@ -1146,6 +1148,24 @@ model DesSoccerLearningNeuralRunMetrics {
   @@index([trainingSteps, samples], map: "des_soccer_learning_neural_run_steps_idx")
   // Check constraints live in schema.sql and must be migrated from the SQL contract.
   @@map("des_soccer_learning_neural_run_metrics")
+}
+
+model DesSoccerLearningPassMetrics {
+  gitCommit String @map("git_commit") @id @db.VarChar(64)
+  runs BigInt @default(0) @db.BigInt
+  passesAttempted BigInt @map("passes_attempted") @default(0) @db.BigInt
+  passesCompleted BigInt @map("passes_completed") @default(0) @db.BigInt
+  completedPassGainYardsMicros BigInt @map("completed_pass_gain_yards_micros") @default(0) @db.BigInt
+  passChains BigInt @map("pass_chains") @default(0) @db.BigInt
+  passChainGainYardsMicros BigInt @map("pass_chain_gain_yards_micros") @default(0) @db.BigInt
+  passChainsNetLoss BigInt @map("pass_chains_net_loss") @default(0) @db.BigInt
+  shotsOnTarget BigInt @map("shots_on_target") @default(0) @db.BigInt
+  shotsAfterPass BigInt @map("shots_after_pass") @default(0) @db.BigInt
+  firstSeenAt DateTime @map("first_seen_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@index([updatedAt], map: "des_soccer_learning_pass_metrics_updated_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("des_soccer_learning_pass_metrics")
 }
 
 model DesFelElevatorLearningRuns {
@@ -2610,4 +2630,84 @@ model VcsOperations {
   @@index([createdAt], map: "vcs_operations_created_at_idx")
   // Check constraints live in schema.sql and must be migrated from the SQL contract.
   @@map("vcs_operations")
+}
+
+model Agents {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  agentKey String @map("agent_key") @db.VarChar(120)
+  displayName String @map("display_name") @default("") @db.VarChar(200)
+  kind String @default("other") @db.VarChar(32)
+  host String? @db.VarChar(255)
+  metaData Json @map("meta_data") @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@unique([agentKey], map: "ai_agent_bridge_agents_agent_key_uq")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("agents")
+}
+
+model Channels {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug String @db.VarChar(120)
+  topic String @db.Text
+  topicSummary String? @map("topic_summary") @db.Text
+  embeddingModel String @map("embedding_model") @default("local-hash-v1") @db.VarChar(120)
+  embedding Json @default("[]")
+  embeddingDimensions Int @map("embedding_dimensions") @default(0)
+  status String @default("active") @db.VarChar(32)
+  createdBy String @map("created_by") @default("system") @db.VarChar(120)
+  metaData Json @map("meta_data") @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@unique([slug], map: "ai_agent_bridge_channels_slug_uq")
+  // ai_agent_bridge_channels_status_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  @@index([updatedAt], map: "ai_agent_bridge_channels_updated_at_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("channels")
+}
+
+model Messages {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  channelSlug String @map("channel_slug") @db.VarChar(120)
+  channelId String? @map("channel_id") @db.Uuid
+  seq BigInt @db.BigInt
+  fromAgentKey String @map("from_agent_key") @db.VarChar(120)
+  role String @default("user") @db.VarChar(32)
+  content String @db.Text
+  metaData Json @map("meta_data") @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  @@unique([channelSlug, seq], map: "ai_agent_bridge_messages_channel_seq_uq")
+  @@index([channelSlug, createdAt], map: "ai_agent_bridge_messages_channel_created_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("messages")
+}
+
+model ChannelMembers {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  channelSlug String @map("channel_slug") @db.VarChar(120)
+  channelId String? @map("channel_id") @db.Uuid
+  agentKey String @map("agent_key") @db.VarChar(120)
+  role String @default("member") @db.VarChar(32)
+  joinedAt DateTime @map("joined_at") @default(now()) @db.Timestamptz(6)
+  lastSeenAt DateTime @map("last_seen_at") @default(now()) @db.Timestamptz(6)
+  metaData Json @map("meta_data") @default("{}")
+  @@unique([channelSlug, agentKey], map: "ai_agent_bridge_members_channel_agent_uq")
+  @@index([agentKey], map: "ai_agent_bridge_members_agent_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("channel_members")
+}
+
+model SharedContext {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  channelSlug String? @map("channel_slug") @db.VarChar(120)
+  channelId String? @map("channel_id") @db.Uuid
+  ctxKey String @map("ctx_key") @db.VarChar(200)
+  value Json @default("{}")
+  version Int @default(1)
+  updatedBy String @map("updated_by") @default("system") @db.VarChar(120)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@unique([channelSlug, ctxKey], map: "ai_agent_bridge_context_channel_key_uq")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("shared_context")
 }

@@ -602,16 +602,16 @@ update des_soccer_learning_policy_versions set experiment_id = $2, parent_policy
 delete from des_soccer_learning_policy_versions where id = $1;
 
 -- name: ListDesSoccerLearningPolicyEntries :many
-select id, policy_version_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, value_micros, visits, source_run_id, created_at from des_soccer_learning_policy_entries;
+select id, policy_version_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, receiver_descriptor, value_micros, visits, source_run_id, created_at from des_soccer_learning_policy_entries;
 
 -- name: GetDesSoccerLearningPolicyEntries :one
-select id, policy_version_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, value_micros, visits, source_run_id, created_at from des_soccer_learning_policy_entries where id = $1 limit 1;
+select id, policy_version_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, receiver_descriptor, value_micros, visits, source_run_id, created_at from des_soccer_learning_policy_entries where id = $1 limit 1;
 
 -- name: CreateDesSoccerLearningPolicyEntries :one
-insert into des_soccer_learning_policy_entries (id, policy_version_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, value_micros, visits, source_run_id, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) returning id, policy_version_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, value_micros, visits, source_run_id, created_at;
+insert into des_soccer_learning_policy_entries (id, policy_version_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, receiver_descriptor, value_micros, visits, source_run_id, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) returning id, policy_version_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, receiver_descriptor, value_micros, visits, source_run_id, created_at;
 
 -- name: UpdateDesSoccerLearningPolicyEntries :one
-update des_soccer_learning_policy_entries set policy_version_id = $2, team = $3, entry_kind = $4, state_hash = $5, state_key = $6, action = $7, target_fine_cell_id = $8, target_tactical_cell_id = $9, target_macro_cell_id = $10, target_root_cell_id = $11, value_micros = $12, visits = $13, source_run_id = $14 where id = $1 returning id, policy_version_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, value_micros, visits, source_run_id, created_at;
+update des_soccer_learning_policy_entries set policy_version_id = $2, team = $3, entry_kind = $4, state_hash = $5, state_key = $6, action = $7, target_fine_cell_id = $8, target_tactical_cell_id = $9, target_macro_cell_id = $10, target_root_cell_id = $11, receiver_descriptor = $12, value_micros = $13, visits = $14, source_run_id = $15 where id = $1 returning id, policy_version_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, receiver_descriptor, value_micros, visits, source_run_id, created_at;
 
 -- name: DeleteDesSoccerLearningPolicyEntries :exec
 delete from des_soccer_learning_policy_entries where id = $1;
@@ -647,16 +647,16 @@ update des_soccer_learning_runs set job_id = $2, experiment_id = $3, base_policy
 delete from des_soccer_learning_runs where id = $1;
 
 -- name: ListDesSoccerLearningRunDeltas :many
-select id, run_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, before_value_micros, after_value_micros, value_delta_micros, visit_delta, merge_weight_micros, effective_visit_micros, created_at from des_soccer_learning_run_deltas;
+select id, run_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, receiver_descriptor, before_value_micros, after_value_micros, value_delta_micros, visit_delta, merge_weight_micros, effective_visit_micros, created_at from des_soccer_learning_run_deltas;
 
 -- name: GetDesSoccerLearningRunDeltas :one
-select id, run_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, before_value_micros, after_value_micros, value_delta_micros, visit_delta, merge_weight_micros, effective_visit_micros, created_at from des_soccer_learning_run_deltas where id = $1 limit 1;
+select id, run_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, receiver_descriptor, before_value_micros, after_value_micros, value_delta_micros, visit_delta, merge_weight_micros, effective_visit_micros, created_at from des_soccer_learning_run_deltas where id = $1 limit 1;
 
 -- name: CreateDesSoccerLearningRunDeltas :one
-insert into des_soccer_learning_run_deltas (id, run_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, before_value_micros, after_value_micros, value_delta_micros, visit_delta, merge_weight_micros, effective_visit_micros, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) returning id, run_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, before_value_micros, after_value_micros, value_delta_micros, visit_delta, merge_weight_micros, effective_visit_micros, created_at;
+insert into des_soccer_learning_run_deltas (id, run_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, receiver_descriptor, before_value_micros, after_value_micros, value_delta_micros, visit_delta, merge_weight_micros, effective_visit_micros, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) returning id, run_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, receiver_descriptor, before_value_micros, after_value_micros, value_delta_micros, visit_delta, merge_weight_micros, effective_visit_micros, created_at;
 
 -- name: UpdateDesSoccerLearningRunDeltas :one
-update des_soccer_learning_run_deltas set run_id = $2, team = $3, entry_kind = $4, state_hash = $5, state_key = $6, action = $7, target_fine_cell_id = $8, target_tactical_cell_id = $9, target_macro_cell_id = $10, target_root_cell_id = $11, before_value_micros = $12, after_value_micros = $13, value_delta_micros = $14, visit_delta = $15, merge_weight_micros = $16, effective_visit_micros = $17 where id = $1 returning id, run_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, before_value_micros, after_value_micros, value_delta_micros, visit_delta, merge_weight_micros, effective_visit_micros, created_at;
+update des_soccer_learning_run_deltas set run_id = $2, team = $3, entry_kind = $4, state_hash = $5, state_key = $6, action = $7, target_fine_cell_id = $8, target_tactical_cell_id = $9, target_macro_cell_id = $10, target_root_cell_id = $11, receiver_descriptor = $12, before_value_micros = $13, after_value_micros = $14, value_delta_micros = $15, visit_delta = $16, merge_weight_micros = $17, effective_visit_micros = $18 where id = $1 returning id, run_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, receiver_descriptor, before_value_micros, after_value_micros, value_delta_micros, visit_delta, merge_weight_micros, effective_visit_micros, created_at;
 
 -- name: DeleteDesSoccerLearningRunDeltas :exec
 delete from des_soccer_learning_run_deltas where id = $1;
@@ -780,6 +780,21 @@ update des_soccer_learning_neural_run_metrics set policy_version_id = $2, enable
 
 -- name: DeleteDesSoccerLearningNeuralRunMetrics :exec
 delete from des_soccer_learning_neural_run_metrics where run_id = $1;
+
+-- name: ListDesSoccerLearningPassMetrics :many
+select git_commit, runs, passes_attempted, passes_completed, completed_pass_gain_yards_micros, pass_chains, pass_chain_gain_yards_micros, pass_chains_net_loss, shots_on_target, shots_after_pass, first_seen_at, updated_at from des_soccer_learning_pass_metrics;
+
+-- name: GetDesSoccerLearningPassMetrics :one
+select git_commit, runs, passes_attempted, passes_completed, completed_pass_gain_yards_micros, pass_chains, pass_chain_gain_yards_micros, pass_chains_net_loss, shots_on_target, shots_after_pass, first_seen_at, updated_at from des_soccer_learning_pass_metrics where git_commit = $1 limit 1;
+
+-- name: CreateDesSoccerLearningPassMetrics :one
+insert into des_soccer_learning_pass_metrics (git_commit, runs, passes_attempted, passes_completed, completed_pass_gain_yards_micros, pass_chains, pass_chain_gain_yards_micros, pass_chains_net_loss, shots_on_target, shots_after_pass, first_seen_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) returning git_commit, runs, passes_attempted, passes_completed, completed_pass_gain_yards_micros, pass_chains, pass_chain_gain_yards_micros, pass_chains_net_loss, shots_on_target, shots_after_pass, first_seen_at, updated_at;
+
+-- name: UpdateDesSoccerLearningPassMetrics :one
+update des_soccer_learning_pass_metrics set runs = $2, passes_attempted = $3, passes_completed = $4, completed_pass_gain_yards_micros = $5, pass_chains = $6, pass_chain_gain_yards_micros = $7, pass_chains_net_loss = $8, shots_on_target = $9, shots_after_pass = $10, first_seen_at = $11, updated_at = $12 where git_commit = $1 returning git_commit, runs, passes_attempted, passes_completed, completed_pass_gain_yards_micros, pass_chains, pass_chain_gain_yards_micros, pass_chains_net_loss, shots_on_target, shots_after_pass, first_seen_at, updated_at;
+
+-- name: DeleteDesSoccerLearningPassMetrics :exec
+delete from des_soccer_learning_pass_metrics where git_commit = $1;
 
 -- name: ListDesFelElevatorLearningRuns :many
 select id, run_label, scenario_slug, status, dispatch_policy, seed, floors, shafts, capacity, travel_seconds_micros, dwell_seconds_micros, arrival_rate_micros, horizon_seconds_micros, events, arrivals, boarded, served, mean_wait_micros, dispatch_decisions, pomdp_belief_updates, online_learning_updates, online_learning_loss_last_micros, config, metrics, artifact, created_at, updated_at from des_fel_elevator_learning_runs;
@@ -1740,3 +1755,78 @@ update vcs_operations set repository_id = $2, vcs_kind = $3, op_type = $4, statu
 
 -- name: DeleteVcsOperations :exec
 delete from vcs_operations where id = $1;
+
+-- name: ListAgents :many
+select id, agent_key, display_name, kind, host, meta_data, created_at, updated_at from ai_agent_bridge.agents;
+
+-- name: GetAgents :one
+select id, agent_key, display_name, kind, host, meta_data, created_at, updated_at from ai_agent_bridge.agents where id = $1 limit 1;
+
+-- name: CreateAgents :one
+insert into ai_agent_bridge.agents (id, agent_key, display_name, kind, host, meta_data, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8) returning id, agent_key, display_name, kind, host, meta_data, created_at, updated_at;
+
+-- name: UpdateAgents :one
+update ai_agent_bridge.agents set agent_key = $2, display_name = $3, kind = $4, host = $5, meta_data = $6, updated_at = $7 where id = $1 returning id, agent_key, display_name, kind, host, meta_data, created_at, updated_at;
+
+-- name: DeleteAgents :exec
+delete from ai_agent_bridge.agents where id = $1;
+
+-- name: ListChannels :many
+select id, slug, topic, topic_summary, embedding_model, embedding, embedding_dimensions, status, created_by, meta_data, created_at, updated_at from ai_agent_bridge.channels;
+
+-- name: GetChannels :one
+select id, slug, topic, topic_summary, embedding_model, embedding, embedding_dimensions, status, created_by, meta_data, created_at, updated_at from ai_agent_bridge.channels where id = $1 limit 1;
+
+-- name: CreateChannels :one
+insert into ai_agent_bridge.channels (id, slug, topic, topic_summary, embedding_model, embedding, embedding_dimensions, status, created_by, meta_data, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) returning id, slug, topic, topic_summary, embedding_model, embedding, embedding_dimensions, status, created_by, meta_data, created_at, updated_at;
+
+-- name: UpdateChannels :one
+update ai_agent_bridge.channels set slug = $2, topic = $3, topic_summary = $4, embedding_model = $5, embedding = $6, embedding_dimensions = $7, status = $8, created_by = $9, meta_data = $10, updated_at = $11 where id = $1 returning id, slug, topic, topic_summary, embedding_model, embedding, embedding_dimensions, status, created_by, meta_data, created_at, updated_at;
+
+-- name: DeleteChannels :exec
+delete from ai_agent_bridge.channels where id = $1;
+
+-- name: ListMessages :many
+select id, channel_slug, channel_id, seq, from_agent_key, role, content, meta_data, created_at from ai_agent_bridge.messages;
+
+-- name: GetMessages :one
+select id, channel_slug, channel_id, seq, from_agent_key, role, content, meta_data, created_at from ai_agent_bridge.messages where id = $1 limit 1;
+
+-- name: CreateMessages :one
+insert into ai_agent_bridge.messages (id, channel_slug, channel_id, seq, from_agent_key, role, content, meta_data, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id, channel_slug, channel_id, seq, from_agent_key, role, content, meta_data, created_at;
+
+-- name: UpdateMessages :one
+update ai_agent_bridge.messages set channel_slug = $2, channel_id = $3, seq = $4, from_agent_key = $5, role = $6, content = $7, meta_data = $8 where id = $1 returning id, channel_slug, channel_id, seq, from_agent_key, role, content, meta_data, created_at;
+
+-- name: DeleteMessages :exec
+delete from ai_agent_bridge.messages where id = $1;
+
+-- name: ListChannelMembers :many
+select id, channel_slug, channel_id, agent_key, role, joined_at, last_seen_at, meta_data from ai_agent_bridge.channel_members;
+
+-- name: GetChannelMembers :one
+select id, channel_slug, channel_id, agent_key, role, joined_at, last_seen_at, meta_data from ai_agent_bridge.channel_members where id = $1 limit 1;
+
+-- name: CreateChannelMembers :one
+insert into ai_agent_bridge.channel_members (id, channel_slug, channel_id, agent_key, role, joined_at, last_seen_at, meta_data) values ($1, $2, $3, $4, $5, $6, $7, $8) returning id, channel_slug, channel_id, agent_key, role, joined_at, last_seen_at, meta_data;
+
+-- name: UpdateChannelMembers :one
+update ai_agent_bridge.channel_members set channel_slug = $2, channel_id = $3, agent_key = $4, role = $5, joined_at = $6, last_seen_at = $7, meta_data = $8 where id = $1 returning id, channel_slug, channel_id, agent_key, role, joined_at, last_seen_at, meta_data;
+
+-- name: DeleteChannelMembers :exec
+delete from ai_agent_bridge.channel_members where id = $1;
+
+-- name: ListSharedContext :many
+select id, channel_slug, channel_id, ctx_key, value, version, updated_by, created_at, updated_at from ai_agent_bridge.shared_context;
+
+-- name: GetSharedContext :one
+select id, channel_slug, channel_id, ctx_key, value, version, updated_by, created_at, updated_at from ai_agent_bridge.shared_context where id = $1 limit 1;
+
+-- name: CreateSharedContext :one
+insert into ai_agent_bridge.shared_context (id, channel_slug, channel_id, ctx_key, value, version, updated_by, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id, channel_slug, channel_id, ctx_key, value, version, updated_by, created_at, updated_at;
+
+-- name: UpdateSharedContext :one
+update ai_agent_bridge.shared_context set channel_slug = $2, channel_id = $3, ctx_key = $4, value = $5, version = $6, updated_by = $7, updated_at = $8 where id = $1 returning id, channel_slug, channel_id, ctx_key, value, version, updated_by, created_at, updated_at;
+
+-- name: DeleteSharedContext :exec
+delete from ai_agent_bridge.shared_context where id = $1;

@@ -2189,6 +2189,7 @@ create table if not exists des_soccer_learning_policy_entries (
   target_tactical_cell_id integer default -1 not null,
   target_macro_cell_id integer default -1 not null,
   target_root_cell_id integer default -1 not null,
+  receiver_descriptor integer default -1 not null,
   value_micros bigint not null,
   visits integer default 0 not null,
   source_run_id uuid,
@@ -2211,6 +2212,8 @@ create table if not exists des_soccer_learning_policy_entries (
     check (target_macro_cell_id >= -1),
   constraint des_soccer_learning_policy_entries_target_root_chk
     check (target_root_cell_id >= -1),
+  constraint des_soccer_learning_policy_entries_receiver_descriptor_chk
+    check (receiver_descriptor >= -1),
   constraint des_soccer_learning_policy_entries_visits_chk
     check (visits >= 0)
 );
@@ -2225,7 +2228,8 @@ create unique index if not exists des_soccer_learning_policy_entries_key_uq
     target_fine_cell_id,
     target_tactical_cell_id,
     target_macro_cell_id,
-    target_root_cell_id
+    target_root_cell_id,
+    receiver_descriptor
   );
 
 create index if not exists des_soccer_learning_policy_entries_lookup_idx
@@ -2354,6 +2358,7 @@ create table if not exists des_soccer_learning_run_deltas (
   target_tactical_cell_id integer default -1 not null,
   target_macro_cell_id integer default -1 not null,
   target_root_cell_id integer default -1 not null,
+  receiver_descriptor integer default -1 not null,
   before_value_micros bigint default 0 not null,
   after_value_micros bigint default 0 not null,
   value_delta_micros bigint default 0 not null,
@@ -2379,6 +2384,8 @@ create table if not exists des_soccer_learning_run_deltas (
     check (target_macro_cell_id >= -1),
   constraint des_soccer_learning_run_deltas_target_root_chk
     check (target_root_cell_id >= -1),
+  constraint des_soccer_learning_run_deltas_receiver_descriptor_chk
+    check (receiver_descriptor >= -1),
   constraint des_soccer_learning_run_deltas_visit_delta_chk
     check (visit_delta > 0),
   constraint des_soccer_learning_run_deltas_merge_weight_chk
@@ -2397,7 +2404,8 @@ create unique index if not exists des_soccer_learning_run_deltas_key_uq
     target_fine_cell_id,
     target_tactical_cell_id,
     target_macro_cell_id,
-    target_root_cell_id
+    target_root_cell_id,
+    receiver_descriptor
   );
 
 create index if not exists des_soccer_learning_run_deltas_merge_idx
@@ -2644,6 +2652,41 @@ create index if not exists des_soccer_learning_set_play_episode_restart_idx
 
 create index if not exists des_soccer_learning_neural_run_steps_idx
   on des_soccer_learning_neural_run_metrics (training_steps desc, samples desc);
+
+-- Per-git-commit learning-progress pass metrics. One accumulating row per commit the
+-- learner ran under: pass completion (passes_completed / passes_attempted), average yards
+-- gained per pass (completed_pass_gain_yards_micros / passes_completed), consecutive-pass
+-- chains and their total gained yards, chains that ended in a net yards loss, and shots on
+-- target that came off at least one pass. Yard sums are 1e6 micros. Written via upsert by the
+-- learning-run completion path; the table is also created at runtime by the Rust engine
+-- (CREATE TABLE IF NOT EXISTS), so this contract entry keeps pg-defs in sync.
+create table if not exists des_soccer_learning_pass_metrics (
+  git_commit varchar(64) primary key,
+  runs bigint default 0 not null,
+  passes_attempted bigint default 0 not null,
+  passes_completed bigint default 0 not null,
+  completed_pass_gain_yards_micros bigint default 0 not null,
+  pass_chains bigint default 0 not null,
+  pass_chain_gain_yards_micros bigint default 0 not null,
+  pass_chains_net_loss bigint default 0 not null,
+  shots_on_target bigint default 0 not null,
+  shots_after_pass bigint default 0 not null,
+  first_seen_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint des_soccer_learning_pass_metrics_counts_chk
+    check (
+      runs >= 0
+      and passes_attempted >= 0
+      and passes_completed >= 0
+      and pass_chains >= 0
+      and pass_chains_net_loss >= 0
+      and shots_on_target >= 0
+      and shots_after_pass >= 0
+    )
+);
+
+create index if not exists des_soccer_learning_pass_metrics_updated_idx
+  on des_soccer_learning_pass_metrics (updated_at desc);
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- DES FEL elevator dispatch learning.
@@ -5767,3 +5810,163 @@ alter table if exists vcs_refs
 alter table if exists vcs_operations
   add constraint vcs_operations_repository_fk
   foreign key (repository_id) references vcs_repositories(id);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- ai-agent-bridge: an inter-agent conversation bus. Multi-participant chatrooms
+-- (capped at 32 members, enforced by the ai-agent-bridge.rs service) discovered
+-- by topic-embedding similarity, with a durable message log, roster, and shared
+-- context. Isolated in its own `ai_agent_bridge` schema (mirrors the `benefactor`
+-- block) so it does not collide with the shared public tables; consuming services
+-- address them via `search_path = ai_agent_bridge, public` or the schema-qualified
+-- constants emitted by pg-defs. The service is in-memory-first — these tables are
+-- a best-effort durable mirror, so they use denormalized `channel_slug` as the
+-- natural link (the uuid FK is nullable and best-effort). Embeddings are stored
+-- as JSONB arrays + a dimension column, mirroring `agent_context_embeddings`.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+create schema if not exists ai_agent_bridge;
+
+create table if not exists ai_agent_bridge.agents (
+  id uuid primary key default gen_random_uuid(),
+  agent_key varchar(120) not null,
+  display_name varchar(200) default '' not null,
+  kind varchar(32) default 'other' not null,
+  host varchar(255),
+  meta_data jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint ai_agent_bridge_agents_key_format_chk
+    check (agent_key ~ '^[A-Za-z0-9._:-]{1,120}$'),
+  constraint ai_agent_bridge_agents_kind_chk
+    check (kind in ('claude', 'codex', 'human', 'other')),
+  constraint ai_agent_bridge_agents_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create unique index if not exists ai_agent_bridge_agents_agent_key_uq
+  on ai_agent_bridge.agents (agent_key);
+
+create table if not exists ai_agent_bridge.channels (
+  id uuid primary key default gen_random_uuid(),
+  slug varchar(120) not null,
+  topic text not null,
+  topic_summary text,
+  embedding_model varchar(120) default 'local-hash-v1' not null,
+  embedding jsonb default '[]'::jsonb not null,
+  embedding_dimensions integer default 0 not null,
+  status varchar(32) default 'active' not null,
+  created_by varchar(120) default 'system' not null,
+  meta_data jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint ai_agent_bridge_channels_slug_format_chk
+    check (slug ~ '^[a-z0-9][a-z0-9._-]{0,119}$'),
+  constraint ai_agent_bridge_channels_topic_size_chk
+    check (octet_length(topic) between 1 and 8192),
+  constraint ai_agent_bridge_channels_status_chk
+    check (status in ('active', 'archived')),
+  constraint ai_agent_bridge_channels_embedding_array_chk
+    check (jsonb_typeof(embedding) = 'array'),
+  constraint ai_agent_bridge_channels_dimensions_chk
+    check (embedding_dimensions >= 0),
+  constraint ai_agent_bridge_channels_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create unique index if not exists ai_agent_bridge_channels_slug_uq
+  on ai_agent_bridge.channels (slug);
+
+create index if not exists ai_agent_bridge_channels_status_idx
+  on ai_agent_bridge.channels (status)
+  where status = 'active';
+
+create index if not exists ai_agent_bridge_channels_updated_at_idx
+  on ai_agent_bridge.channels (updated_at desc);
+
+create table if not exists ai_agent_bridge.messages (
+  id uuid primary key default gen_random_uuid(),
+  channel_slug varchar(120) not null,
+  channel_id uuid,
+  seq bigint not null,
+  from_agent_key varchar(120) not null,
+  role varchar(32) default 'user' not null,
+  content text not null,
+  meta_data jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  constraint ai_agent_bridge_messages_slug_format_chk
+    check (channel_slug ~ '^[a-z0-9][a-z0-9._-]{0,119}$'),
+  constraint ai_agent_bridge_messages_from_format_chk
+    check (from_agent_key ~ '^[A-Za-z0-9._:-]{1,120}$'),
+  constraint ai_agent_bridge_messages_seq_chk
+    check (seq > 0),
+  constraint ai_agent_bridge_messages_role_chk
+    check (role in ('user', 'assistant', 'system', 'tool')),
+  constraint ai_agent_bridge_messages_content_size_chk
+    check (octet_length(content) between 1 and 1048576),
+  constraint ai_agent_bridge_messages_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create unique index if not exists ai_agent_bridge_messages_channel_seq_uq
+  on ai_agent_bridge.messages (channel_slug, seq);
+
+create index if not exists ai_agent_bridge_messages_channel_created_idx
+  on ai_agent_bridge.messages (channel_slug, created_at desc);
+
+create table if not exists ai_agent_bridge.channel_members (
+  id uuid primary key default gen_random_uuid(),
+  channel_slug varchar(120) not null,
+  channel_id uuid,
+  agent_key varchar(120) not null,
+  role varchar(32) default 'member' not null,
+  joined_at timestamptz default now() not null,
+  last_seen_at timestamptz default now() not null,
+  meta_data jsonb default '{}'::jsonb not null,
+  constraint ai_agent_bridge_members_slug_format_chk
+    check (channel_slug ~ '^[a-z0-9][a-z0-9._-]{0,119}$'),
+  constraint ai_agent_bridge_members_agent_format_chk
+    check (agent_key ~ '^[A-Za-z0-9._:-]{1,120}$'),
+  constraint ai_agent_bridge_members_role_chk
+    check (role in ('owner', 'member', 'observer')),
+  constraint ai_agent_bridge_members_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create unique index if not exists ai_agent_bridge_members_channel_agent_uq
+  on ai_agent_bridge.channel_members (channel_slug, agent_key);
+
+create index if not exists ai_agent_bridge_members_agent_idx
+  on ai_agent_bridge.channel_members (agent_key);
+
+create table if not exists ai_agent_bridge.shared_context (
+  id uuid primary key default gen_random_uuid(),
+  channel_slug varchar(120),
+  channel_id uuid,
+  ctx_key varchar(200) not null,
+  value jsonb default '{}'::jsonb not null,
+  version integer default 1 not null,
+  updated_by varchar(120) default 'system' not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint ai_agent_bridge_context_slug_format_chk
+    check (channel_slug is null or channel_slug ~ '^[a-z0-9][a-z0-9._-]{0,119}$'),
+  constraint ai_agent_bridge_context_key_format_chk
+    check (ctx_key ~ '^[A-Za-z0-9._:/-]{1,200}$'),
+  constraint ai_agent_bridge_context_version_chk
+    check (version > 0)
+);
+
+create unique index if not exists ai_agent_bridge_context_channel_key_uq
+  on ai_agent_bridge.shared_context (channel_slug, ctx_key);
+
+alter table if exists ai_agent_bridge.messages
+  add constraint ai_agent_bridge_messages_channel_fk
+  foreign key (channel_id) references ai_agent_bridge.channels(id);
+
+alter table if exists ai_agent_bridge.channel_members
+  add constraint ai_agent_bridge_members_channel_fk
+  foreign key (channel_id) references ai_agent_bridge.channels(id);
+
+alter table if exists ai_agent_bridge.shared_context
+  add constraint ai_agent_bridge_context_channel_fk
+  foreign key (channel_id) references ai_agent_bridge.channels(id);
