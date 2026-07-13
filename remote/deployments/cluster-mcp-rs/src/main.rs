@@ -2251,6 +2251,11 @@ fn human_access_policy_json() -> Value {
         ],
         "recommendedHumanProof": "operator passphrase plus optional TOTP on dd-remote-auth",
         "elevatedMcpToolsEnabled": false,
+        "externalReadIntegrations": [
+            "Cloudflare API zone/DNS listing (read-only token from dd-cluster-mcp-rs-secrets, optional)",
+            "RDAP domain registration lookups (no credentials)",
+            "DNS-over-HTTPS record lookups (no credentials)"
+        ],
         "sensitiveKubernetesAccess": [
             "Do not expose Kubernetes Secrets through MCP",
             "Do not expose ConfigMap data through MCP",
