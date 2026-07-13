@@ -238,3 +238,73 @@ NetworkPolicy, Gleam, or gateway changes).
 
 `cargo check` clean, `cargo test` 20 passed (11 prior + 9 new), `cargo fmt` +
 `cargo clippy` clean.
+
+## Pass 8 (2026-07-13)
+
+Feature pass, same rules as pass 7: seven new **zero-argument, read-only** MCP
+tools (env-configured, no caller inputs — the zero-input security model is
+unchanged), all bounded/clamped/redacted like the existing surface.
+
+- **New in-cluster tools** (via `kubernetes_get_body`, a full-object GET with
+  a dedicated `MCP_KUBERNETES_FULL_BODY_LIMIT_BYTES` parse guard, default
+  1 MiB, hard cap 4 MiB — full objects carry managedFields/specs, so the
+  256 KiB sample-path limit was the wrong bound):
+  - `kubernetes_ingress_endpoints` — Ingress hosts/rules + LoadBalancer
+    Service external endpoints. RBAC already granted `list` on
+    `networking.k8s.io/ingresses`; no ClusterRole change needed.
+  - `deployment_rollout_status` — replica counts + Available/Progressing
+    conditions (messages through `sanitize_text`). The existing
+    `kubernetes_deployments` is metadata-only, which drops `status` entirely.
+  - `kubernetes_events_warnings` — `fieldSelector=type!=Normal`
+    (percent-encoded), ≤100 events, messages redacted.
+- **External read-only integrations** (`external_json_get`: clamped
+  `DD_MCP_EXTERNAL_TIMEOUT_MS` ≤5 s, `DD_MCP_EXTERNAL_BODY_LIMIT_BYTES`
+  ≤256 KiB parse guard, sanitized errors, new
+  `dd_cluster_mcp_rs_external_requests_total` counter; egress rides the
+  existing NetworkPolicy 0.0.0.0/0:443 rule):
+  - `cloudflare_zones` / `cloudflare_dns_records` — Cloudflare v4 API with
+    `CLOUDFLARE_API_TOKEN` (optional secretKeyRef; when unset the tools return
+    an `ok:false` + "not configured" hint, never a JSON-RPC error). Bounded:
+    ≤3 pages × 50 zones, ≤20 zones scanned for records, ≤500 records total.
+    Record `content` runs through the full redaction pipeline (TXT
+    verification tokens are exactly the pass-7 value-pattern shapes). The
+    token rides the redirect-disabled client and never appears in any output
+    or log path; Cloudflare-supplied zone ids are constrained to alphanumerics
+    before being used as a path segment.
+  - `domain_registration` — registrar-neutral **RDAP** (`rdap.org` bootstrap)
+    per `DD_MCP_DOMAINS` domain: registrar (vcard `fn` → publicIds → handle),
+    status[], registration/expiration events, nameservers, `daysUntilExpiry`
+    (Hinnant days-from-civil; no date crate). This is the honest coverage for
+    Squarespace-registered domains — Squarespace has no public domains API.
+  - `domain_dns_wiring` — DNS-over-HTTPS (`DD_MCP_DOH_URL`, default
+    cloudflare-dns.com) A/AAAA/CNAME/NS per domain, correlated against the
+    union of `DD_MCP_EXPECTED_INGRESS_IPS` and live LoadBalancer/Ingress
+    status endpoints → per-domain `matched` / `matchedEndpoint`.
+- **Redirect-policy exception (deliberate, scoped):** a third reqwest client
+  (`external_http`, `Policy::limited(5)`) exists only for RDAP/DoH because
+  rdap.org is a bootstrap *redirector* — following redirects is the protocol.
+  It never carries credentials; the Cloudflare token stays on the
+  redirect-disabled client, preserving the R2/RC1 posture.
+- **URL overrides stay allowlisted:** `MCP_CLOUDFLARE_API_URL`,
+  `DD_MCP_RDAP_URL`, `DD_MCP_DOH_URL` go through the existing
+  `env_mcp_base_url` gate — the external defaults are the fallbacks, but
+  overrides are restricted to loopback/`*.svc` unless
+  `MCP_ALLOW_EXTERNAL_URLS=true`.
+- **Manifest (additive only):** `CLOUDFLARE_API_TOKEN` optional secretKeyRef
+  into the existing `dd-cluster-mcp-rs-secrets`, plus `DD_MCP_DOMAINS`
+  (fiducia.cloud, app./admin.fiducia.cloud from the gateway `server_name`
+  vhosts + the canonical.cloud marketing apex) and
+  `DD_MCP_EXPECTED_INGRESS_IPS` (gateway EIP 98.90.186.114). Kustomize
+  renders. No ExternalSecret changes.
+- Tools registered in `TOOL_NAMES`, `tools/list`, dispatch, and the
+  `human_access_policy` external-integrations enumeration; documented in
+  `mcp/README.md` (Rust-server-only until Gleam parity).
+
+Fixture-based tests (no network): Cloudflare zone/record extraction,
+record-budget truncation, token-absent hint; Squarespace RDAP
+registrar/expiry/nameserver extraction + days-from-civil epochs; DoH
+A/CNAME-chain and NXDOMAIN parsing; wiring correlation (A match,
+CNAME→LB-hostname match, no-match); expected-endpoint union/dedup;
+ingress/LB/rollout/event summaries; tools/list count = 20. `cargo check`
+clean, `cargo test` 34 passed (20 prior + 14 new), `cargo clippy
+--all-targets` clean, `cargo fmt` applied.
