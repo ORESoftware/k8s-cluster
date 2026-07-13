@@ -137,6 +137,61 @@ impl CanonicalMcp {
             Err(error) => Ok(tool_error(error)),
         }
     }
+
+    #[tool(
+        description = "Registrar-side and DNS-side status for a domain (default canonical.cloud). \
+                       Registrar state (Squarespace has no public domains API) comes from public \
+                       RDAP: registrar, status codes, registration/expiration events, delegated \
+                       nameservers. Live NS/A/AAAA resolution comes from DNS-over-HTTPS, plus \
+                       whether the delegation points at Cloudflare."
+    )]
+    async fn domain_status(
+        &self,
+        Parameters(params): Parameters<DomainStatusParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let domain = params.domain.as_deref().unwrap_or(domain::DEFAULT_DOMAIN);
+        match domain::domain_status_report(&self.http, domain).await {
+            Ok(report) => json_result(&report),
+            Err(error) => Ok(tool_error(error)),
+        }
+    }
+
+    #[tool(
+        description = "List DNS records for a Cloudflare zone (default canonical.cloud): type, \
+                       name, content, proxied, TTL. Read-only; requires a CLOUDFLARE_API_TOKEN \
+                       env var with Zone.Zone:Read and Zone.DNS:Read."
+    )]
+    async fn cloudflare_dns(
+        &self,
+        Parameters(params): Parameters<CloudflareDnsParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let domain = params.domain.as_deref().unwrap_or(domain::DEFAULT_DOMAIN);
+        match cloudflare::dns_records_report(&self.http, domain).await {
+            Ok(report) => json_result(&report),
+            Err(error) => Ok(tool_error(error)),
+        }
+    }
+
+    #[tool(
+        description = "Read-only Kubernetes status via `kubectl get` (nodes, pods, deployments, \
+                       services, or ingresses), summarized to name/namespace/status/age rows. \
+                       Optional namespace and kubeconfig context. Never mutates the cluster."
+    )]
+    async fn k8s_status(
+        &self,
+        Parameters(params): Parameters<K8sStatusParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        match k8s::k8s_status_report(
+            params.resource,
+            params.namespace.as_deref(),
+            params.context.as_deref(),
+        )
+        .await
+        {
+            Ok(report) => json_result(&report),
+            Err(error) => Ok(tool_error(error)),
+        }
+    }
 }
 
 #[tool_handler(router = self.tool_router)]
