@@ -181,6 +181,23 @@ The crate is also packaged with Nix (`flake.nix`, `.nix/`) and a `Dockerfile` fo
 `/readyz` requires Postgres, S3, durable token pepper, registration posture, and internal auth to be
 configured. `/healthz` always reports process health and configuration booleans.
 
+## CLI flags
+
+[`flags-2-env`](https://github.com/ORESoftware/flags-2-env) maps the declared
+options in `.cli-flags.toml` onto the existing environment contract before the
+backend starts:
+
+```sh
+scripts/with-flags help
+scripts/with-flags audit
+scripts/with-flags --port=8126 --supabase-url=https://project.supabase.co -- cargo run
+```
+
+The wrapper uses the monorepo's pinned native source when available and builds
+it into a commit-keyed user cache. Set `FLAGS2ENV_BIN` for a standalone install.
+Database credentials, JWT secrets, service-role keys, and other privileged
+values intentionally remain environment-only.
+
 ## Mobile Notes
 
 The app stores should be treated as part of the product contract, not a deploy afterthought. Mobile

@@ -1,0 +1,105 @@
+[help]
+url = "https://github.com/sonus-auris/sonus-auris-backend.rs"
+columns = ["options", "env", "type", "description"]
+
+[parse]
+require_equals = true
+stop_at_first_positional = false
+unknown_options_env = "FLAGS2ENV_UNKNOWN_OPTIONS"
+errors_env = "FLAGS2ENV_PARSE_ERRORS"
+allow_unknown = false
+
+[env]
+ignore = ["SOUND_RECORDER_RDS_DATABASE_URL", "DATABASE_URL", "SOUND_RECORDER_SUPABASE_JWT_SECRET", "SOUND_RECORDER_SUPABASE_SERVICE_ROLE_KEY", "SOUND_RECORDER_CLOUD_TOKEN_ENCRYPTION_KEY", "SOUND_RECORDER_DEVICE_TOKEN_PEPPER", "SOUND_RECORDER_REGISTRATION_BEARER", "SOUND_RECORDER_SERVER_AUTH_SECRET"]
+
+[flags.host]
+env = "HOST"
+aliases = ["host", "bind-host"]
+short = "H"
+type = "string"
+help = "HTTP bind host."
+
+[flags.port]
+env = "PORT"
+aliases = ["port", "bind-port"]
+short = "p"
+type = "integer"
+help = "HTTP bind port."
+
+[flags.public_base_url]
+env = "SOUND_RECORDER_PUBLIC_BASE_URL"
+aliases = ["public-base-url"]
+type = "string"
+help = "Public HTTPS origin used in generated links."
+
+[flags.cdn_base_url]
+env = "SOUND_RECORDER_CDN_BASE_URL"
+aliases = ["cdn-base-url"]
+type = "string"
+help = "Optional public object/CDN base URL."
+
+[flags.supabase_url]
+env = "SOUND_RECORDER_SUPABASE_URL"
+aliases = ["supabase-url"]
+type = "string"
+help = "Supabase project URL used for Auth and typed Data API access."
+
+[flags.supabase_jwks_url]
+env = "SOUND_RECORDER_SUPABASE_JWKS_URL"
+aliases = ["supabase-jwks-url"]
+type = "string"
+help = "Optional explicit Supabase JWKS endpoint."
+
+[flags.supabase_issuer]
+env = "SOUND_RECORDER_SUPABASE_ISSUER"
+aliases = ["supabase-issuer"]
+type = "string"
+help = "Optional explicit Supabase JWT issuer."
+
+[flags.supabase_audience]
+env = "SOUND_RECORDER_SUPABASE_AUDIENCE"
+aliases = ["supabase-audience"]
+type = "string"
+help = "Expected Supabase JWT audience."
+
+[flags.supabase_publishable_key]
+env = "SOUND_RECORDER_SUPABASE_PUBLISHABLE_KEY"
+aliases = ["supabase-publishable-key"]
+type = "string"
+help = "Public Supabase API key; never pass a service-role key here."
+
+[flags.s3_bucket]
+env = "SOUND_RECORDER_S3_BUCKET"
+aliases = ["s3-bucket"]
+type = "string"
+help = "S3-compatible object bucket."
+
+[flags.s3_region]
+env = "SOUND_RECORDER_S3_REGION"
+aliases = ["s3-region"]
+type = "string"
+help = "S3-compatible object region."
+
+[flags.s3_endpoint]
+env = "SOUND_RECORDER_S3_ENDPOINT"
+aliases = ["s3-endpoint"]
+type = "string"
+help = "Optional S3-compatible endpoint override."
+
+[flags.rate_limit]
+env = "SOUND_RECORDER_RATE_LIMIT_PER_MINUTE"
+aliases = ["rate-limit-per-minute"]
+type = "integer"
+help = "Per-client request budget per minute; zero disables it."
+
+[flags.trust_forwarded_for]
+env = "SOUND_RECORDER_RATE_LIMIT_TRUST_FORWARDED_FOR"
+aliases = ["trust-forwarded-for"]
+type = "bool"
+help = "Trust the leftmost X-Forwarded-For hop behind a trusted proxy."
+
+[flags.rust_log]
+env = "RUST_LOG"
+aliases = ["rust-log", "log-filter"]
+type = "string"
+help = "Tracing filter passed to tracing-subscriber."
