@@ -1,0 +1,14 @@
+node_modules/
+target/
+Cargo.lock
+# wasm-pack output for generated/rust-wasm
+pkg/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+.env
+
+# Scratch / git worktrees (tmp/worktrees/*)
+tmp/

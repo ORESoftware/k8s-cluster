@@ -1,0 +1,308 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CanonicalApi",
+  "description": "Typed-IO for the canonical-web-server.rs versioned REST API and compatibility endpoints.",
+  "$defs": {
+    "HealthStatus": {
+      "type": "object",
+      "description": "Legacy-compatible response of GET /api/health and GET /api/v1/health.",
+      "required": ["status", "service"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["ok", "degraded"],
+          "description": "Liveness of the service."
+        },
+        "service": {
+          "type": "string",
+          "description": "Service name (e.g. \"canonical-web-server\")."
+        }
+      }
+    },
+    "ServiceInfo": {
+      "type": "object",
+      "description": "Response of GET /api/info and GET /api/v1/info.",
+      "required": ["service", "version", "domain", "stack"],
+      "additionalProperties": false,
+      "properties": {
+        "service": {
+          "type": "string",
+          "const": "canonical-web-server",
+          "description": "Stable service name."
+        },
+        "version": {
+          "type": "string",
+          "description": "Semantic version of the running build (CARGO_PKG_VERSION)."
+        },
+        "domain": {
+          "type": "string",
+          "const": "canonical.cloud",
+          "description": "Public domain served (e.g. \"canonical.cloud\")."
+        },
+        "stack": {
+          "type": "array",
+          "description": "Runtime sMASH components reported by the service.",
+          "items": {
+            "type": "string",
+            "enum": ["supabase", "maud", "axum", "seaorm", "htmx"]
+          },
+          "minItems": 5,
+          "maxItems": 5,
+          "uniqueItems": true
+        }
+      }
+    },
+    "DraftNoteValue": {
+      "type": "object",
+      "description": "Schema-version-1 value for the only record kind accepted by the initial sync protocol.",
+      "required": ["title", "body"],
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Draft-note title, limited to 200 characters."
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 100000,
+          "description": "Draft-note body, limited to 100,000 characters."
+        }
+      }
+    },
+    "DraftNoteKey": {
+      "type": "object",
+      "description": "Owner-scoped key for a draft-note sync record.",
+      "required": ["kind", "id"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["draft_note"],
+          "description": "Bounded record-kind discriminator."
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Client-generated UUID for the record."
+        }
+      }
+    },
+    "MutationOperation": {
+      "type": "object",
+      "description": "One idempotent compare-and-swap operation in a draft-note mutation batch.",
+      "required": ["mutationId", "key", "action", "baseVersion", "schemaVersion"],
+      "additionalProperties": false,
+      "properties": {
+        "mutationId": {
+          "type": "string",
+          "format": "uuid",
+          "description": "UUID idempotency key, unique per client and logical mutation."
+        },
+        "key": {
+          "$ref": "#/$defs/DraftNoteKey",
+          "description": "Record targeted by the operation."
+        },
+        "action": {
+          "type": "string",
+          "enum": ["put", "delete"],
+          "description": "Mutation action."
+        },
+        "baseVersion": {
+          "type": ["string", "null"],
+          "pattern": "^(0|[1-9][0-9]{0,18})$",
+          "description": "Unsigned decimal-string version used for compare-and-swap, or null for a create."
+        },
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1,
+          "minimum": 1,
+          "maximum": 1,
+          "description": "Draft-note payload schema version; only version 1 is accepted."
+        },
+        "value": {
+          "$ref": "#/$defs/DraftNoteValue",
+          "description": "Required for put and omitted for delete."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "action": { "const": "put" } },
+            "required": ["action"]
+          },
+          "then": { "required": ["value"] }
+        },
+        {
+          "if": {
+            "properties": { "action": { "const": "delete" } },
+            "required": ["action"]
+          },
+          "then": { "not": { "required": ["value"] } }
+        }
+      ]
+    },
+    "MutationRequest": {
+      "type": "object",
+      "description": "Body of POST /api/v1/sync/mutations.",
+      "required": ["protocolVersion", "clientId", "operations"],
+      "additionalProperties": false,
+      "properties": {
+        "protocolVersion": {
+          "type": "integer",
+          "const": 1,
+          "minimum": 1,
+          "maximum": 1,
+          "description": "Sync protocol version; only version 1 is accepted."
+        },
+        "clientId": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Stable UUID for this browser installation or API client."
+        },
+        "operations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/MutationOperation" },
+          "minItems": 1,
+          "maxItems": 50,
+          "description": "Bounded mutation batch containing between 1 and 50 operations."
+        }
+      }
+    },
+    "WireRecord": {
+      "type": "object",
+      "description": "Authoritative server snapshot of a draft-note record or tombstone.",
+      "required": ["key", "version", "schemaVersion", "deleted"],
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/DraftNoteKey",
+          "description": "Owner-scoped record key."
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,18})$",
+          "description": "Authoritative record version encoded as an unsigned decimal string."
+        },
+        "schemaVersion": {
+          "type": "integer",
+          "const": 1,
+          "minimum": 1,
+          "maximum": 1,
+          "description": "Draft-note payload schema version."
+        },
+        "deleted": {
+          "type": "boolean",
+          "description": "True when the snapshot is a permanent tombstone."
+        },
+        "value": {
+          "$ref": "#/$defs/DraftNoteValue",
+          "description": "Present for live records and omitted for tombstones."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "deleted": { "const": false } },
+            "required": ["deleted"]
+          },
+          "then": { "required": ["value"] }
+        },
+        {
+          "if": {
+            "properties": { "deleted": { "const": true } },
+            "required": ["deleted"]
+          },
+          "then": { "not": { "required": ["value"] } }
+        }
+      ]
+    },
+    "MutationResult": {
+      "type": "object",
+      "description": "Per-operation result returned in the same order as the mutation request.",
+      "required": ["mutationId", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "mutationId": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Idempotency key copied from the operation."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["applied", "conflict", "gone", "invalid", "idempotency_key_reused"],
+          "description": "Outcome of the compare-and-swap operation."
+        },
+        "record": {
+          "$ref": "#/$defs/WireRecord",
+          "description": "Applied or authoritative conflicting snapshot when available."
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 1000,
+          "description": "Optional human-readable failure detail; clients must branch on status."
+        }
+      }
+    },
+    "MutationResponse": {
+      "type": "object",
+      "description": "Response of POST /api/v1/sync/mutations.",
+      "required": ["results"],
+      "additionalProperties": false,
+      "properties": {
+        "results": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/MutationResult" },
+          "minItems": 1,
+          "maxItems": 50,
+          "description": "One result for every submitted operation, in request order."
+        }
+      }
+    },
+    "ChangesQuery": {
+      "type": "object",
+      "description": "Query parameters accepted by GET /api/v1/sync/changes.",
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "Opaque, encrypted, owner-bound cursor returned by the previous pull."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500,
+          "default": 200,
+          "description": "Requested page size; the server clamps values to 1 through 500."
+        }
+      }
+    },
+    "ChangesResponse": {
+      "type": "object",
+      "description": "Response of GET /api/v1/sync/changes; REST pull is authoritative over WebSocket hints.",
+      "required": ["changes", "nextCursor", "caughtUp"],
+      "additionalProperties": false,
+      "properties": {
+        "changes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/WireRecord" },
+          "maxItems": 500,
+          "description": "Commit-ordered authoritative snapshots and tombstones."
+        },
+        "nextCursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "Opaque cursor to persist and send on the next pull."
+        },
+        "caughtUp": {
+          "type": "boolean",
+          "description": "True when the response reached the pull's stable high-water mark."
+        }
+      }
+    }
+  }
+}

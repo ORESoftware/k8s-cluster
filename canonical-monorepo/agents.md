@@ -3,8 +3,9 @@
 Git superproject for the canonical-cloud repos. Each app lives in its own repo
 and is tracked here as a submodule under `apps/`:
 
-- `apps/canonical-backend.rs` — Rust (axum) service
-- `apps/canonical-frontend` — Astro static site
+- `apps/canonical-web-server.rs` — Rust sMASH application server plus the
+  TypeScript/IndexedDB sync client
+- `apps/canonical-marketing-site.web` — Astro static marketing site
 
 ## Working here
 
@@ -13,8 +14,8 @@ and is tracked here as a submodule under `apps/`:
   first, then update the pin here with `scripts/pin-submodules.sh main`.
 - The superproject only ever stores submodule *pins* (gitlinks) + shared config
   (CI, docs, scripts). Don't vendor app source directly into the superproject.
-- `./build.sh` builds the frontend and serves it via the backend for a full
-  local stack.
+- `./build.sh` builds the marketing site, verifies/builds the HTMX/IndexedDB
+  application client, and builds the Rust server for a full local stack.
 - `npm test` runs the `node --test` contract specs that keep the submodule
   wiring, README, and scripts honest.
 

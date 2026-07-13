@@ -120,10 +120,28 @@ for i in "${!module_paths[@]}"; do
 
   if [[ -z "$module_url" ]]; then
     fail "$module_path is missing a submodule URL"
+  elif [[ ! "$module_url" =~ ^git@github\.com:canonical-cloud/ ]]; then
+    fail "$module_path url is not an SSH canonical-cloud remote: $module_url"
   fi
 
   if [[ -z "$module_branch" ]]; then
     fail "$module_path is missing a submodule branch"
+  elif [[ "$module_branch" != "main" ]]; then
+    fail "$module_path submodule branch is '$module_branch', expected 'main'"
+  fi
+
+  # The recorded gitlink must be an ancestor of (or equal to) the tracked branch
+  # on the remote — i.e. the pin points at real, pushed history, not a local-only
+  # or detached commit. (Skipped when the remote can't be reached.)
+  if [[ -d "$module_path" ]]; then
+    pinned_sha="$(git -C "$module_path" rev-parse HEAD 2>/dev/null || true)"
+    if git -C "$module_path" fetch -q origin "$module_branch" 2>/dev/null; then
+      if [[ -n "$pinned_sha" ]] && ! git -C "$module_path" merge-base --is-ancestor "$pinned_sha" FETCH_HEAD 2>/dev/null; then
+        fail "$module_path pin $pinned_sha is not on origin/$module_branch (unpushed or diverged)"
+      fi
+    else
+      warn "$module_path: could not fetch origin/$module_branch to verify the pin"
+    fi
   fi
 
   if [[ ! -d "$module_path" ]]; then
@@ -140,21 +158,36 @@ for i in "${!module_paths[@]}"; do
     fail "README.md app list is missing $module_path"
   fi
 
-  if [[ ! -f "$module_path/Dockerfile" ]]; then
-    fail "$module_path is missing Dockerfile"
-  fi
-
-  if [[ ! -f "$module_path/.dockerignore" ]]; then
-    fail "$module_path is missing .dockerignore"
-  fi
-
+  # A submodule is a deployable *service* if it ships a runnable server: a Rust
+  # binary crate, or a web app with an Astro build. Library/interface repos (e.g.
+  # canonical-interfaces: schema + generated adapters) are not deployed and are
+  # exempt from the Dockerfile requirement.
+  is_rust_service=0
+  is_web_service=0
   if [[ -f "$module_path/Cargo.toml" && ( -f "$module_path/src/main.rs" || -d "$module_path/src/bin" ) ]]; then
+    is_rust_service=1
+  fi
+  if compgen -G "$module_path/astro.config.*" >/dev/null 2>&1; then
+    is_web_service=1
+  fi
+
+  if [[ "$is_rust_service" -eq 1 || "$is_web_service" -eq 1 ]]; then
+    if [[ ! -f "$module_path/Dockerfile" ]]; then
+      fail "$module_path (service) is missing Dockerfile"
+    fi
+    if [[ ! -f "$module_path/.dockerignore" ]]; then
+      fail "$module_path (service) is missing .dockerignore"
+    fi
+  fi
+
+  if [[ "$is_rust_service" -eq 1 && -f "$module_path/Dockerfile" ]]; then
     if ! grep -q '^FROM gcr.io/distroless/cc-debian12:nonroot$' "$module_path/Dockerfile"; then
       fail "$module_path Rust runtime image is not distroless nonroot"
     fi
 
-    if ! grep -q '^COPY --from=build --chown=65532:65532 ' "$module_path/Dockerfile"; then
-      fail "$module_path does not copy only the release binary into the runtime stage"
+    if ! grep -Eq '^COPY --from=[^[:space:]]+ --chown=65532:65532[[:space:]]' "$module_path/Dockerfile" \
+      || ! grep -q 'target/release/' "$module_path/Dockerfile"; then
+      fail "$module_path does not copy its release binary from a builder as nonroot"
     fi
   fi
 

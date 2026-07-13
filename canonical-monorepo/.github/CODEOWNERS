@@ -1,0 +1,7 @@
+# Default owners for everything in the superproject.
+# App source is owned in each app's own repo; this covers the superproject
+# wiring: submodule pins, CI, scripts, and docs.
+*                       @ORESoftware
+/.github/               @ORESoftware
+/scripts/               @ORESoftware
+/.gitmodules            @ORESoftware

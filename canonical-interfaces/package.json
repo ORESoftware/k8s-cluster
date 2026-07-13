@@ -1,0 +1,20 @@
+{
+  "name": "@canonical-cloud/interfaces",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "JSON Schema (typed-IO) for the canonical.cloud HTTP API + canonical Postgres schema for its compliance store. Generated language adapters live under generated/<lang>.",
+  "scripts": {
+    "generate": "node src/generate.mjs",
+    "check": "node src/generate.mjs --check",
+    "test": "node --test src/*.test.mjs && node src/generate.mjs --check"
+  },
+  "exports": {
+    "./schema": "./schema/index.json",
+    "./sql": "./sql/schema.sql",
+    "./typescript": "./generated/typescript/index.ts",
+    "./rust": "./generated/rust/src/lib.rs",
+    "./python": "./generated/python/canonical_interfaces.py",
+    "./go": "./generated/go/interfaces.go"
+  }
+}

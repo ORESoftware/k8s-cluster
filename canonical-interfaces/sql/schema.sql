@@ -1,0 +1,185 @@
+-- Canonical Supabase Postgres reference schema for canonical.cloud.
+--
+-- Apply this DDL with a privileged migration role. The canonical-web-server
+-- runtime must use a separate least-privilege role without BYPASSRLS and must
+-- install the verified owner in transaction-local request.jwt.claims before
+-- touching owner-scoped rows. The SeaORM migration remains the executable
+-- runtime migration; keep these shared shapes and its constraints in sync.
+--
+-- Browser clients never connect to these tables with database credentials.
+-- web_session is intentionally not duplicated here: its server-owned migration
+-- stores Supabase access and refresh tokens encrypted, never as plaintext.
+
+-- Legacy compliance-domain storage. It is not part of the draft_note sync API;
+-- do not grant it to anon/authenticated roles until it gains an owner column and
+-- an explicit RLS policy.
+
+create table if not exists audit_engagement (
+    id                  uuid primary key,
+    company             text        not null,
+    framework           text        not null
+        check (framework in ('soc2', 'fedramp', 'hipaa', 'iso_27001', 'pci_dss', 'gdpr')),
+    status              text        not null default 'scoping'
+        check (status in ('scoping', 'remediation', 'in_audit', 'complete')),
+    opened_at           timestamptz not null default now(),
+    target_report_date  date
+);
+
+create index if not exists audit_engagement_framework_idx on audit_engagement (framework);
+create index if not exists audit_engagement_status_idx    on audit_engagement (status);
+
+-- No owner contract exists for this legacy table yet, so forced RLS with no
+-- policy intentionally denies runtime access instead of exposing global rows.
+alter table audit_engagement enable row level security;
+alter table audit_engagement force row level security;
+
+-- Supabase-auth identity projection. auth.users remains the identity source of
+-- truth; this table contains only application profile data.
+create table if not exists user_profile (
+    user_id       uuid primary key references auth.users(id) on delete cascade,
+    email         text        not null,
+    display_name  text,
+    created_at    timestamptz not null,
+    updated_at    timestamptz not null
+);
+
+-- One row per owner. Lock this row FOR UPDATE before assigning a cursor. The
+-- lock, record mutation, clock increment, sync_change insert, and sync_receipt
+-- insert must commit in one transaction so cursors reflect commit order without
+-- gaps that a client could accidentally advance past.
+create table if not exists sync_clock (
+    owner_id  uuid primary key,
+    cursor    bigint not null default 0 check (cursor >= 0)
+);
+
+-- Authoritative current record state. Versions are Postgres bigint values here
+-- and unsigned decimal strings on the JSON wire to avoid JavaScript precision
+-- loss. Tombstoned record IDs are permanent and must not be reused.
+create table if not exists sync_record (
+    owner_id    uuid        not null,
+    collection  text        not null,
+    record_id   uuid        not null,
+    version     bigint      not null check (version > 0),
+    payload     jsonb       not null,
+    deleted_at  timestamptz,
+    updated_at  timestamptz not null,
+    primary key (owner_id, collection, record_id)
+);
+
+-- Append-only, owner-local change log. (owner_id, cursor) is the stable pull
+-- order and every payload is a complete wire snapshot, including tombstones.
+create table if not exists sync_change (
+    owner_id    uuid        not null,
+    cursor      bigint      not null check (cursor > 0),
+    collection  text        not null,
+    record_id   uuid        not null,
+    version     bigint      not null check (version > 0),
+    operation   text        not null check (operation in ('put', 'delete')),
+    payload     jsonb       not null,
+    changed_at  timestamptz not null,
+    primary key (owner_id, cursor)
+);
+
+create index if not exists sync_change_owner_cursor_idx
+    on sync_change (owner_id, cursor);
+
+-- Durable idempotency receipt. request_hash is a digest of the mutation body;
+-- result is the previously returned JSON result. Neither column contains an
+-- authentication credential.
+create table if not exists sync_receipt (
+    owner_id     uuid        not null,
+    client_id    uuid        not null,
+    mutation_id  uuid        not null,
+    request_hash text        not null,
+    result       jsonb       not null,
+    created_at   timestamptz not null,
+    primary key (owner_id, client_id, mutation_id)
+);
+
+alter table user_profile enable row level security;
+alter table user_profile force row level security;
+alter table sync_clock enable row level security;
+alter table sync_clock force row level security;
+alter table sync_record enable row level security;
+alter table sync_record force row level security;
+alter table sync_change enable row level security;
+alter table sync_change force row level security;
+alter table sync_receipt enable row level security;
+alter table sync_receipt force row level security;
+
+-- Policy creation is guarded so the reference DDL can be reapplied while the
+-- table definitions continue to use CREATE TABLE IF NOT EXISTS.
+do $$
+begin
+    if not exists (
+        select 1 from pg_policies
+        where schemaname = current_schema()
+          and tablename = 'user_profile'
+          and policyname = 'user_profile_owner'
+    ) then
+        create policy user_profile_owner on user_profile
+            using (user_id = auth.uid())
+            with check (user_id = auth.uid());
+    end if;
+
+    if not exists (
+        select 1 from pg_policies
+        where schemaname = current_schema()
+          and tablename = 'sync_clock'
+          and policyname = 'sync_clock_owner'
+    ) then
+        create policy sync_clock_owner on sync_clock
+            using (owner_id = auth.uid())
+            with check (owner_id = auth.uid());
+    end if;
+
+    if not exists (
+        select 1 from pg_policies
+        where schemaname = current_schema()
+          and tablename = 'sync_record'
+          and policyname = 'sync_record_owner'
+    ) then
+        create policy sync_record_owner on sync_record
+            using (owner_id = auth.uid())
+            with check (owner_id = auth.uid());
+    end if;
+
+    if not exists (
+        select 1 from pg_policies
+        where schemaname = current_schema()
+          and tablename = 'sync_change'
+          and policyname = 'sync_change_owner'
+    ) then
+        create policy sync_change_owner on sync_change
+            using (owner_id = auth.uid())
+            with check (owner_id = auth.uid());
+    end if;
+
+    if not exists (
+        select 1 from pg_policies
+        where schemaname = current_schema()
+          and tablename = 'sync_receipt'
+          and policyname = 'sync_receipt_owner'
+    ) then
+        create policy sync_receipt_owner on sync_receipt
+            using (owner_id = auth.uid())
+            with check (owner_id = auth.uid());
+    end if;
+end
+$$;
+
+-- Required server transaction shape (illustrative, not a client API):
+--
+--   begin;
+--   select set_config(
+--     'request.jwt.claims', json_build_object('sub', :owner_id)::text, true
+--   );
+--   insert into sync_clock (owner_id, cursor) values (:owner_id, 0)
+--     on conflict (owner_id) do nothing;
+--   select cursor from sync_clock where owner_id = :owner_id for update;
+--   -- validate/idempotency-check, mutate sync_record, advance sync_clock,
+--   -- append sync_change, and persist sync_receipt here
+--   commit;
+--
+-- Pull cursors sent to browsers are encrypted, owner-bound application tokens;
+-- never expose the raw bigint clock as the resumable REST cursor.

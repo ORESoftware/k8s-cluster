@@ -1,9 +1,14 @@
 # Dependencies & build artifacts (rebuilt in-pod / locally; never committed)
 **/node_modules/
-canonical-frontend/dist/
-canonical-frontend/.astro/
-canonical-backend.rs/target/
-canonical-backend.rs/static/
+canonical-marketing-site.web/dist/
+canonical-marketing-site.web/.astro/
+canonical-web-server.rs/target/
+canonical-web-server.rs/static/
+
+# The nested monorepo owns these as submodules. The umbrella repository vendors
+# the superproject files only; staging these checkouts here would create broken
+# root-level gitlinks without matching root-level .gitmodules entries.
+canonical-monorepo/apps/
 
 # misc
 .DS_Store

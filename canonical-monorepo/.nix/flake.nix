@@ -23,7 +23,7 @@
         {
           default = pkgs.mkShell {
             packages = with pkgs; [
-              # Rust (canonical-backend.rs)
+              # Rust (canonical-web-server.rs)
               rustc
               cargo
               rustfmt
@@ -31,7 +31,7 @@
               rust-analyzer
               bacon
 
-              # Node (canonical-frontend + superproject contract tests)
+              # Node (marketing/app clients + superproject contract tests)
               nodejs
               pnpm
 

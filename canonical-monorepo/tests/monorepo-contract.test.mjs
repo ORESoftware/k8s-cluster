@@ -46,8 +46,12 @@ test("submodule declarations stay complete, pinned to main, and backed by apps d
   const modules = parseGitmodules();
   const paths = modules.map((module) => module.path).sort();
 
-  assert.equal(modules.length, 2);
-  assert.deepEqual(paths, ["apps/canonical-backend.rs", "apps/canonical-frontend"]);
+  assert.equal(modules.length, 3);
+  assert.deepEqual(paths, [
+    "apps/canonical-interfaces",
+    "apps/canonical-marketing-site.web",
+    "apps/canonical-web-server.rs",
+  ]);
 
   for (const module of modules) {
     assert.equal(module.branch, "main", `${module.path} must track main`);
@@ -76,12 +80,54 @@ test("README and boundary docs classify every app submodule", () => {
 
 test("env template exposes the runtime knobs and keeps values placeholder-only", () => {
   const env = parseEnvExample();
-  for (const key of ["PORT", "STATIC_DIR", "RUST_LOG", "PUBLIC_BASE"]) {
+  for (const key of [
+    "PORT",
+    "STATIC_DIR",
+    "APP_ASSET_DIR",
+    "RUST_LOG",
+    "APP_BASE_URL",
+    "APP_ALLOWED_ORIGINS",
+    "APP_SESSION_ENCRYPTION_KEY",
+    "DATABASE_URL",
+    "MIGRATION_DATABASE_URL",
+    "MIGRATION_DATABASE_MAX_CONNECTIONS",
+    "SUPABASE_URL",
+    "SUPABASE_PUBLISHABLE_KEY",
+    "PUBLIC_BASE",
+  ]) {
     assert.ok(env.has(key), `.env.example is missing ${key}`);
     assert.notEqual(env.get(key), "", `${key} must not be blank`);
   }
+  assert.notEqual(env.get("DATABASE_URL"), env.get("MIGRATION_DATABASE_URL"));
+  assert.doesNotMatch(env.get("SUPABASE_PUBLISHABLE_KEY"), /service_role|secret/i);
   // No obvious real secrets in the template.
   assert.doesNotMatch(read(".env.example"), /ghp_[A-Za-z0-9]{36}/);
+});
+
+test("full-stack build includes both browser clients before the locked Rust build", () => {
+  const build = read("build.sh");
+  assert.match(build, /canonical-marketing-site\.web/);
+  assert.match(build, /APP_CLIENT="\$WEB_SERVER\/client"/);
+  assert.match(build, /npm run typecheck/);
+  assert.match(build, /npm test/);
+  assert.match(build, /npm run build/);
+  assert.match(build, /cargo build --locked --release/);
+  assert.match(build, /canonical-web-server migrate/);
+  assert.match(build, /unset MIGRATION_DATABASE_URL MIGRATION_DATABASE_MAX_CONNECTIONS/);
+  assert.match(build, /canonical-web-server serve/);
+  assert.doesNotMatch(build, /\brm\b|\bcp\b/);
+});
+
+test("architecture docs keep migration, RLS, HTMX WebSocket, and backplane boundaries explicit", () => {
+  const readme = read("README.md");
+  const deploy = read("docs/deploy.md");
+  const boundaries = read("docs/repo-boundaries.md");
+
+  assert.match(readme, /canonical-web-server migrate/);
+  assert.match(deploy, /bootstrap_runtime_role\.sql/);
+  assert.match(deploy, /LISTEN.*NOTIFY/s);
+  assert.match(deploy, /HTMX-owned WebSocket/);
+  assert.match(boundaries, /non-owner, non-`BYPASSRLS`/);
 });
 
 test("monorepo scripts keep destructive actions manual and include dry-run/audit guardrails", () => {

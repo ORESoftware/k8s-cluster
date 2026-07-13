@@ -1,0 +1,157 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          components: rustfmt, clippy
+          toolchain: "1.95.0"
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - name: client dependencies
+        run: npm ci --prefix client
+      - name: client tests
+        run: npm test --prefix client
+      - name: client typecheck
+        run: npm run typecheck --prefix client
+      - name: client build
+        run: npm run build --prefix client
+      - name: fmt
+        run: cargo fmt --check
+      - name: clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: test
+        run: cargo test --all-targets
+
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: "1.95.0"
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked --version 0.22.2
+      - name: Assert ignored RSA package is not in the build graph
+        shell: bash
+        run: |
+          # RUSTSEC-2023-0071 is allowed below only because Cargo.lock records
+          # SQLx's disabled optional MySQL/RSA edge. If that edge ever becomes
+          # active, this gate fails before the advisory allow-list is applied.
+          rsa_path="$(cargo tree --invert rsa 2>/dev/null)"
+          if [ -n "$rsa_path" ]; then
+            echo "rsa unexpectedly entered the active dependency graph" >&2
+            exit 1
+          fi
+      - name: Audit Rust dependencies
+        shell: bash
+        run: |
+          # RUSTSEC-2023-0071: unreachable optional SQLx MySQL/RSA lock entry;
+          # the preceding inverse-tree gate makes this exception fail closed.
+          # RUSTSEC-2026-0173: unmaintained (not vulnerable) compile-time-only
+          # proc-macro-error2, currently required by SeaORM's derive macros.
+          cargo audit --deny warnings \
+            --ignore RUSTSEC-2023-0071 \
+            --ignore RUSTSEC-2026-0173
+
+  postgres-rls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_POSTGRES_ADMIN_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: "1.95.0"
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          key: postgres-rls
+      - name: PostgreSQL runtime-role and RLS integration test
+        run: cargo test --test postgres_rls -- --nocapture
+
+  container-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Build production image
+        run: docker build --tag canonical-web-server:ci .
+      - name: Run non-root health smoke
+        shell: bash
+        run: |
+          trap 'docker stop canonical-web-server-ci >/dev/null 2>&1 || true' EXIT
+          docker run --detach \
+            --name canonical-web-server-ci \
+            --read-only \
+            --publish 18081:8081 \
+            --env PORT=8081 \
+            --env APP_BASE_URL=http://127.0.0.1:8081 \
+            --env APP_ALLOWED_ORIGINS=http://127.0.0.1:8081 \
+            --env APP_SESSION_ENCRYPTION_KEY=AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE= \
+            --env COOKIE_SECURE=false \
+            --env DATABASE_URL=sqlite::memory: \
+            --env DATABASE_MAX_CONNECTIONS=1 \
+            --env AUTO_MIGRATE=true \
+            --env SUPABASE_URL=http://127.0.0.1:54321 \
+            --env SUPABASE_PUBLISHABLE_KEY=sb_publishable_ci_only \
+            canonical-web-server:ci
+          test "$(docker inspect --format '{{.Config.User}}' canonical-web-server-ci)" = "65532:65532"
+          for attempt in {1..30}; do
+            if curl --fail --silent --show-error http://127.0.0.1:18081/healthz; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              docker logs canonical-web-server-ci
+              exit 1
+            fi
+            sleep 1
+          done

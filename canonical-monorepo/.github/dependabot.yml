@@ -1,0 +1,11 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+  # Track the app submodule pins so stale gitlinks surface as PRs.
+  - package-ecosystem: gitsubmodule
+    directory: "/"
+    schedule:
+      interval: weekly

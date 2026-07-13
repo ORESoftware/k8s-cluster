@@ -1,0 +1,23 @@
+{
+  "name": "@canonical-cloud/web-server-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "htmx-ext-ws": "2.0.4",
+    "htmx.org": "2.0.10",
+    "idb": "8.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "26.1.1",
+    "fake-indexeddb": "6.2.5",
+    "typescript": "7.0.2",
+    "vite": "8.1.4",
+    "vitest": "4.1.10"
+  }
+}

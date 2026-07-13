@@ -1,0 +1,12 @@
+[submodule "apps/canonical-web-server.rs"]
+	path = apps/canonical-web-server.rs
+	url = git@github.com:canonical-cloud/canonical-web-server.rs
+	branch = main
+[submodule "apps/canonical-marketing-site.web"]
+	path = apps/canonical-marketing-site.web
+	url = git@github.com:canonical-cloud/canonical-marketing-site.web
+	branch = main
+[submodule "apps/canonical-interfaces"]
+	path = apps/canonical-interfaces
+	url = git@github.com:canonical-cloud/canonical-interfaces
+	branch = main

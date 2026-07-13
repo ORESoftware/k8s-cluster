@@ -1,0 +1,75 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same ref (a new push obsoletes the previous one).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+      - run: npm ci || npm install
+      # Generator self-tests + `--check` that generated/ is up to date.
+      - run: npm test
+
+  # The generated Rust->WebAssembly crate must compile to wasm32 and produce a
+  # valid wasm-bindgen package (this is what surfaces tsify type-mapping bugs).
+  wasm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: generated/rust-wasm
+      # Pinned, checksummed prebuilt binary — no `curl | sh`, guaranteed on PATH.
+      - uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb # v2
+        with:
+          tool: wasm-pack
+      - name: Compile to wasm32
+        run: cargo build --manifest-path generated/rust-wasm/Cargo.toml --target wasm32-unknown-unknown
+      # --dev skips wasm-opt, avoiding an extra binaryen download
+      - name: wasm-bindgen package
+        run: wasm-pack build generated/rust-wasm --target web --dev
+      # Regression guard: the generated .d.ts must not contain an undefined `Value`,
+      # a `bigint` (i64 leak), or a `Map<>` (should be `Record`).
+      - name: Assert generated .d.ts is clean
+        run: |
+          dts=$(ls generated/rust-wasm/pkg/*.d.ts | grep -v _bg)
+          echo "checking $dts"
+          if grep -nE ':[[:space:]]*(bigint|Map<)|:[[:space:]]*Value([;[]|$)' "$dts"; then
+            echo "::error::generated .d.ts has an undefined Value, a bigint, or a Map<> — tsify type-mapping regression"
+            exit 1
+          fi
+          echo "clean"
+      # Stronger guard: the generated .d.ts must be valid TypeScript (catches any
+      # unresolved type, e.g. an undefined `Value`, that the grep would miss).
+      - name: Type-check generated .d.ts (tsc)
+        run: |
+          dts=$(ls generated/rust-wasm/pkg/*.d.ts | grep -v _bg)
+          npx -y -p typescript@5 tsc --noEmit --lib esnext,dom "$dts"

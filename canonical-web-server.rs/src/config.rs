@@ -1,0 +1,351 @@
+use base64::{engine::general_purpose::STANDARD, Engine as _};
+use std::{collections::HashSet, env, path::PathBuf, time::Duration};
+use thiserror::Error;
+
+#[derive(Clone)]
+pub struct Config {
+    pub port: u16,
+    pub static_dir: PathBuf,
+    pub app_asset_dir: PathBuf,
+    pub database_url: String,
+    pub database_max_connections: u32,
+    pub auto_migrate: bool,
+    pub app_base_url: String,
+    pub allowed_origins: HashSet<String>,
+    pub session_cookie: String,
+    pub cookie_secure: bool,
+    pub session_encryption_key: Vec<u8>,
+    pub session_ttl: Duration,
+    pub supabase_url: String,
+    pub supabase_publishable_key: String,
+}
+
+#[derive(Clone)]
+pub struct MigrationConfig {
+    pub database_url: String,
+    pub database_max_connections: u32,
+}
+
+impl std::fmt::Debug for MigrationConfig {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("MigrationConfig")
+            .field("database_url", &"[REDACTED]")
+            .field("database_max_connections", &self.database_max_connections)
+            .finish()
+    }
+}
+
+impl std::fmt::Debug for Config {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Config")
+            .field("port", &self.port)
+            .field("static_dir", &self.static_dir)
+            .field("app_asset_dir", &self.app_asset_dir)
+            .field("database_url", &"[REDACTED]")
+            .field("database_max_connections", &self.database_max_connections)
+            .field("auto_migrate", &self.auto_migrate)
+            .field("app_base_url", &self.app_base_url)
+            .field("allowed_origins", &self.allowed_origins)
+            .field("session_cookie", &self.session_cookie)
+            .field("cookie_secure", &self.cookie_secure)
+            .field("session_encryption_key", &"[REDACTED]")
+            .field("session_ttl", &self.session_ttl)
+            .field("supabase_url", &self.supabase_url)
+            .field("supabase_publishable_key", &"[REDACTED]")
+            .finish()
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum ConfigError {
+    #[error("required environment variable {0} is missing")]
+    Missing(&'static str),
+    #[error("environment variable {name} has an invalid value: {message}")]
+    Invalid { name: &'static str, message: String },
+}
+
+impl Config {
+    pub fn from_env() -> Result<Self, ConfigError> {
+        let app_base_url = validated_origin("APP_BASE_URL", &required("APP_BASE_URL")?)?;
+        let cookie_secure = optional_bool("COOKIE_SECURE", app_base_url.starts_with("https://"))?;
+        let default_cookie = if cookie_secure {
+            "__Host-canonical_session"
+        } else {
+            "canonical_session"
+        };
+        let origins = env::var("APP_ALLOWED_ORIGINS").unwrap_or_else(|_| app_base_url.clone());
+        let allowed_origins = origins
+            .split(',')
+            .map(str::trim)
+            .filter(|origin| !origin.is_empty())
+            .map(|origin| validated_origin("APP_ALLOWED_ORIGINS", origin))
+            .collect::<Result<HashSet<_>, _>>()?;
+        if allowed_origins.is_empty() {
+            return Err(ConfigError::Invalid {
+                name: "APP_ALLOWED_ORIGINS",
+                message: "at least one exact origin is required".into(),
+            });
+        }
+        if allowed_origins.len() > 16 {
+            return Err(ConfigError::Invalid {
+                name: "APP_ALLOWED_ORIGINS",
+                message: "at most 16 exact origins are allowed".into(),
+            });
+        }
+        if !allowed_origins.contains(&app_base_url) {
+            return Err(ConfigError::Invalid {
+                name: "APP_ALLOWED_ORIGINS",
+                message: "must include APP_BASE_URL".into(),
+            });
+        }
+
+        let key_text = required("APP_SESSION_ENCRYPTION_KEY")?;
+        let session_encryption_key =
+            STANDARD
+                .decode(key_text)
+                .map_err(|_| ConfigError::Invalid {
+                    name: "APP_SESSION_ENCRYPTION_KEY",
+                    message: "expected standard base64".into(),
+                })?;
+        if session_encryption_key.len() != 32 {
+            return Err(ConfigError::Invalid {
+                name: "APP_SESSION_ENCRYPTION_KEY",
+                message: "decoded key must be exactly 32 bytes".into(),
+            });
+        }
+        if session_encryption_key.iter().all(|byte| *byte == 0) {
+            return Err(ConfigError::Invalid {
+                name: "APP_SESSION_ENCRYPTION_KEY",
+                message: "replace the all-zero example with a random key".into(),
+            });
+        }
+
+        let supabase_url = validated_supabase_url(required("SUPABASE_URL")?)?;
+
+        let session_ttl_days = optional_parse::<u64>("APP_SESSION_TTL_DAYS", 30)?;
+        let session_ttl = session_ttl_from_days(session_ttl_days)?;
+
+        let session_cookie =
+            env::var("APP_SESSION_COOKIE").unwrap_or_else(|_| default_cookie.to_owned());
+        if session_cookie.starts_with("__Host-") && !cookie_secure {
+            return Err(ConfigError::Invalid {
+                name: "APP_SESSION_COOKIE",
+                message: "a __Host- cookie requires COOKIE_SECURE=true".into(),
+            });
+        }
+
+        Ok(Self {
+            port: optional_parse("PORT", 8081)?,
+            static_dir: env::var_os("STATIC_DIR")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("static")),
+            app_asset_dir: env::var_os("APP_ASSET_DIR")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("client/dist")),
+            database_url: required("DATABASE_URL")?,
+            database_max_connections: optional_parse("DATABASE_MAX_CONNECTIONS", 10)?,
+            auto_migrate: optional_bool("AUTO_MIGRATE", false)?,
+            app_base_url,
+            allowed_origins,
+            session_cookie,
+            cookie_secure,
+            session_encryption_key,
+            session_ttl,
+            supabase_url,
+            supabase_publishable_key: required("SUPABASE_PUBLISHABLE_KEY")?,
+        })
+    }
+}
+
+fn validated_origin(name: &'static str, value: &str) -> Result<String, ConfigError> {
+    let parsed = reqwest::Url::parse(value).map_err(|error| ConfigError::Invalid {
+        name,
+        message: format!("expected an absolute HTTP(S) origin: {error}"),
+    })?;
+    if !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+        || parsed.path() != "/"
+    {
+        return Err(ConfigError::Invalid {
+            name,
+            message: "expected an origin without credentials, path, query, or fragment".into(),
+        });
+    }
+    let host = parsed.host_str().ok_or_else(|| ConfigError::Invalid {
+        name,
+        message: "a host is required".into(),
+    })?;
+    let is_exact_loopback =
+        host.eq_ignore_ascii_case("localhost") || host == "127.0.0.1" || host == "::1";
+    match parsed.scheme() {
+        "https" => {}
+        "http" if is_exact_loopback => {}
+        _ => {
+            return Err(ConfigError::Invalid {
+                name,
+                message: "HTTPS is required except for exact loopback origins".into(),
+            });
+        }
+    }
+    Ok(parsed.origin().ascii_serialization())
+}
+
+impl MigrationConfig {
+    /// Loads only the privileged connection needed by the migration command.
+    /// Keeping this separate from `Config` means a deploy job never needs the
+    /// HTTP server's Supabase or session-encryption settings.
+    pub fn from_env() -> Result<Self, ConfigError> {
+        Ok(Self {
+            database_url: required("MIGRATION_DATABASE_URL")?,
+            database_max_connections: optional_parse("MIGRATION_DATABASE_MAX_CONNECTIONS", 2)?,
+        })
+    }
+}
+
+fn session_ttl_from_days(days: u64) -> Result<Duration, ConfigError> {
+    let seconds = days
+        .checked_mul(24)
+        .and_then(|hours| hours.checked_mul(60))
+        .and_then(|minutes| minutes.checked_mul(60))
+        .ok_or_else(|| ConfigError::Invalid {
+            name: "APP_SESSION_TTL_DAYS",
+            message: "value is too large".into(),
+        })?;
+    Ok(Duration::from_secs(seconds))
+}
+
+fn validated_supabase_url(value: String) -> Result<String, ConfigError> {
+    let parsed = reqwest::Url::parse(&value).map_err(|error| ConfigError::Invalid {
+        name: "SUPABASE_URL",
+        message: format!("expected an absolute URL: {error}"),
+    })?;
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err(ConfigError::Invalid {
+            name: "SUPABASE_URL",
+            message: "credentials are not allowed".into(),
+        });
+    }
+    if parsed.fragment().is_some() {
+        return Err(ConfigError::Invalid {
+            name: "SUPABASE_URL",
+            message: "fragments are not allowed".into(),
+        });
+    }
+    if parsed.query().is_some() {
+        return Err(ConfigError::Invalid {
+            name: "SUPABASE_URL",
+            message: "query strings are not allowed".into(),
+        });
+    }
+    let host = parsed.host_str().ok_or_else(|| ConfigError::Invalid {
+        name: "SUPABASE_URL",
+        message: "a host is required".into(),
+    })?;
+    let is_exact_loopback = host.eq_ignore_ascii_case("localhost")
+        || host == "127.0.0.1"
+        || host == "::1"
+        || host == "[::1]";
+    match parsed.scheme() {
+        "https" => {}
+        "http" if is_exact_loopback => {}
+        _ => {
+            return Err(ConfigError::Invalid {
+                name: "SUPABASE_URL",
+                message: "HTTPS is required except for localhost, 127.0.0.1, or ::1".into(),
+            });
+        }
+    }
+    Ok(parsed.as_str().trim_end_matches('/').to_owned())
+}
+
+fn required(name: &'static str) -> Result<String, ConfigError> {
+    env::var(name)
+        .map_err(|_| ConfigError::Missing(name))
+        .and_then(|value| {
+            if value.trim().is_empty() {
+                Err(ConfigError::Missing(name))
+            } else {
+                Ok(value)
+            }
+        })
+}
+
+fn optional_parse<T>(name: &'static str, default: T) -> Result<T, ConfigError>
+where
+    T: std::str::FromStr,
+    T::Err: std::fmt::Display,
+{
+    match env::var(name) {
+        Ok(value) => value.parse().map_err(|error: T::Err| ConfigError::Invalid {
+            name,
+            message: error.to_string(),
+        }),
+        Err(_) => Ok(default),
+    }
+}
+
+fn optional_bool(name: &'static str, default: bool) -> Result<bool, ConfigError> {
+    match env::var(name) {
+        Ok(value) => match value.to_ascii_lowercase().as_str() {
+            "1" | "true" | "yes" => Ok(true),
+            "0" | "false" | "no" => Ok(false),
+            _ => Err(ConfigError::Invalid {
+                name,
+                message: "expected true or false".into(),
+            }),
+        },
+        Err(_) => Ok(default),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{session_ttl_from_days, validated_origin, validated_supabase_url};
+    use std::time::Duration;
+
+    #[test]
+    fn supabase_url_requires_https_except_for_exact_loopback_hosts() {
+        assert_eq!(
+            validated_supabase_url("https://project.supabase.co/".into()).unwrap(),
+            "https://project.supabase.co"
+        );
+        assert!(validated_supabase_url("http://project.supabase.co".into()).is_err());
+        assert!(validated_supabase_url("http://localhost.evil.test".into()).is_err());
+        assert!(validated_supabase_url("http://127.0.0.2".into()).is_err());
+        assert!(validated_supabase_url("http://localhost:54321/".into()).is_ok());
+        assert!(validated_supabase_url("http://127.0.0.1:54321/".into()).is_ok());
+        assert!(validated_supabase_url("http://[::1]:54321/".into()).is_ok());
+    }
+
+    #[test]
+    fn supabase_url_rejects_credentials_fragments_and_queries() {
+        assert!(validated_supabase_url("https://user:pass@example.com".into()).is_err());
+        assert!(validated_supabase_url("https://example.com/#fragment".into()).is_err());
+        assert!(validated_supabase_url("https://example.com/?query=value".into()).is_err());
+    }
+
+    #[test]
+    fn session_ttl_days_cannot_overflow_seconds() {
+        assert_eq!(
+            session_ttl_from_days(30).unwrap(),
+            Duration::from_secs(30 * 24 * 60 * 60)
+        );
+        assert!(session_ttl_from_days(u64::MAX).is_err());
+    }
+
+    #[test]
+    fn application_origins_are_exact_and_secure() {
+        assert_eq!(
+            validated_origin("APP_BASE_URL", "https://app.example.com/").unwrap(),
+            "https://app.example.com"
+        );
+        assert!(validated_origin("APP_BASE_URL", "https://app.example.com/path").is_err());
+        assert!(validated_origin("APP_BASE_URL", "https://app.example.com/?query=1").is_err());
+        assert!(validated_origin("APP_BASE_URL", "http://app.example.com").is_err());
+        assert!(validated_origin("APP_BASE_URL", "http://localhost:8081").is_ok());
+    }
+}
