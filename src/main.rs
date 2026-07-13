@@ -80,8 +80,9 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use sonus_auris_interfaces::{
-    AcousticEvent, UserConsent, ACOUSTIC_EVENTS_COLUMNS, ACOUSTIC_EVENTS_TABLE,
-    USER_CONSENTS_COLUMNS, USER_CONSENTS_TABLE,
+    AcousticEvent, UserConsent, UserSettings, ACOUSTIC_EVENTS_COLUMNS, ACOUSTIC_EVENTS_TABLE,
+    USER_CONSENTS_COLUMNS, USER_CONSENTS_TABLE, USER_SETTINGS_CLOUD_PROVIDER_VALUES,
+    USER_SETTINGS_COLUMNS, USER_SETTINGS_PREFERRED_USE_CASE_VALUES, USER_SETTINGS_TABLE,
 };
 use tokio::sync::{Mutex as AsyncMutex, RwLock};
 use tokio_postgres::Row;
@@ -507,6 +508,204 @@ struct UserDataQuery {
 struct UserDataList<T> {
     count: usize,
     data: Vec<T>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct UserSettingsInput {
+    preferred_use_case: String,
+    device_retention_hours: i64,
+    cloud_retention_hours: i64,
+    segment_minutes: i64,
+    overlap_seconds: i64,
+    bit_rate: i64,
+    sample_rate: i64,
+    channels: i64,
+    upload_enabled: bool,
+    cloud_provider: String,
+    mic_sensitivity: f64,
+    noise_trigger_sensitivity: f64,
+    bass_gain_db: f64,
+    mid_gain_db: f64,
+    treble_gain_db: f64,
+    auto_gain: bool,
+    noise_suppress: bool,
+    acoustic_analysis_enabled: bool,
+    analysis_activation_db: f64,
+    analysis_sustain_seconds: f64,
+    analysis_hold_seconds: f64,
+    snore_detection_enabled: bool,
+    sleep_analysis_enabled: bool,
+    music_detection_enabled: bool,
+    speech_detection_enabled: bool,
+    adaptive_quality_enabled: bool,
+    capture_sample_rate: i64,
+    quiet_sample_rate: i64,
+    adaptive_loudness_db: f64,
+}
+
+impl Default for UserSettingsInput {
+    fn default() -> Self {
+        Self {
+            preferred_use_case: "security".to_string(),
+            device_retention_hours: 50,
+            cloud_retention_hours: 500,
+            segment_minutes: 1,
+            overlap_seconds: 2,
+            bit_rate: 64_000,
+            sample_rate: 16_000,
+            channels: 1,
+            upload_enabled: false,
+            cloud_provider: "s3".to_string(),
+            mic_sensitivity: 1.0,
+            noise_trigger_sensitivity: 0.5,
+            bass_gain_db: 0.0,
+            mid_gain_db: 0.0,
+            treble_gain_db: 0.0,
+            auto_gain: true,
+            noise_suppress: true,
+            acoustic_analysis_enabled: false,
+            analysis_activation_db: -40.0,
+            analysis_sustain_seconds: 2.0,
+            analysis_hold_seconds: 45.0,
+            snore_detection_enabled: true,
+            sleep_analysis_enabled: false,
+            music_detection_enabled: true,
+            speech_detection_enabled: true,
+            adaptive_quality_enabled: false,
+            capture_sample_rate: 48_000,
+            quiet_sample_rate: 16_000,
+            adaptive_loudness_db: -40.0,
+        }
+    }
+}
+
+impl UserSettingsInput {
+    fn validate(&self) -> Result<(), ServiceError> {
+        validate_choice(
+            "preferred_use_case",
+            &self.preferred_use_case,
+            USER_SETTINGS_PREFERRED_USE_CASE_VALUES,
+        )?;
+        validate_integer_range(
+            "device_retention_hours",
+            self.device_retention_hours,
+            1,
+            500,
+        )?;
+        validate_integer_range(
+            "cloud_retention_hours",
+            self.cloud_retention_hours,
+            1,
+            2_000,
+        )?;
+        if self.cloud_retention_hours < self.device_retention_hours {
+            return Err(ServiceError::BadRequest(
+                "cloud_retention_hours must not be shorter than device_retention_hours".to_string(),
+            ));
+        }
+        validate_integer_range("segment_minutes", self.segment_minutes, 1, 60)?;
+        validate_integer_range("overlap_seconds", self.overlap_seconds, 0, 30)?;
+        if self.overlap_seconds >= self.segment_minutes * 60 {
+            return Err(ServiceError::BadRequest(
+                "overlap_seconds must be shorter than the segment".to_string(),
+            ));
+        }
+        validate_integer_range("bit_rate", self.bit_rate, 16_000, 320_000)?;
+        validate_sample_rate("sample_rate", self.sample_rate)?;
+        validate_integer_range("channels", self.channels, 1, 2)?;
+        validate_choice(
+            "cloud_provider",
+            &self.cloud_provider,
+            USER_SETTINGS_CLOUD_PROVIDER_VALUES,
+        )?;
+        validate_float_range("mic_sensitivity", self.mic_sensitivity, 0.25, 4.0)?;
+        validate_float_range(
+            "noise_trigger_sensitivity",
+            self.noise_trigger_sensitivity,
+            0.0,
+            1.0,
+        )?;
+        for (name, value) in [
+            ("bass_gain_db", self.bass_gain_db),
+            ("mid_gain_db", self.mid_gain_db),
+            ("treble_gain_db", self.treble_gain_db),
+        ] {
+            validate_float_range(name, value, -12.0, 12.0)?;
+        }
+        validate_float_range(
+            "analysis_activation_db",
+            self.analysis_activation_db,
+            -90.0,
+            0.0,
+        )?;
+        validate_float_range(
+            "analysis_sustain_seconds",
+            self.analysis_sustain_seconds,
+            0.5,
+            30.0,
+        )?;
+        validate_float_range(
+            "analysis_hold_seconds",
+            self.analysis_hold_seconds,
+            0.0,
+            600.0,
+        )?;
+        validate_sample_rate("capture_sample_rate", self.capture_sample_rate)?;
+        validate_sample_rate("quiet_sample_rate", self.quiet_sample_rate)?;
+        if self.quiet_sample_rate > self.capture_sample_rate {
+            return Err(ServiceError::BadRequest(
+                "quiet_sample_rate must not exceed capture_sample_rate".to_string(),
+            ));
+        }
+        validate_float_range(
+            "adaptive_loudness_db",
+            self.adaptive_loudness_db,
+            -90.0,
+            0.0,
+        )?;
+        Ok(())
+    }
+
+    fn into_interface(self, user_id: String, updated_at: String) -> UserSettings {
+        UserSettings {
+            user_id,
+            preferred_use_case: self.preferred_use_case,
+            device_retention_hours: self.device_retention_hours,
+            cloud_retention_hours: self.cloud_retention_hours,
+            segment_minutes: self.segment_minutes,
+            overlap_seconds: self.overlap_seconds,
+            bit_rate: self.bit_rate,
+            sample_rate: self.sample_rate,
+            channels: self.channels,
+            upload_enabled: self.upload_enabled,
+            cloud_provider: self.cloud_provider,
+            mic_sensitivity: self.mic_sensitivity,
+            noise_trigger_sensitivity: self.noise_trigger_sensitivity,
+            bass_gain_db: self.bass_gain_db,
+            mid_gain_db: self.mid_gain_db,
+            treble_gain_db: self.treble_gain_db,
+            auto_gain: self.auto_gain,
+            noise_suppress: self.noise_suppress,
+            acoustic_analysis_enabled: self.acoustic_analysis_enabled,
+            analysis_activation_db: self.analysis_activation_db,
+            analysis_sustain_seconds: self.analysis_sustain_seconds,
+            analysis_hold_seconds: self.analysis_hold_seconds,
+            snore_detection_enabled: self.snore_detection_enabled,
+            sleep_analysis_enabled: self.sleep_analysis_enabled,
+            music_detection_enabled: self.music_detection_enabled,
+            speech_detection_enabled: self.speech_detection_enabled,
+            adaptive_quality_enabled: self.adaptive_quality_enabled,
+            capture_sample_rate: self.capture_sample_rate,
+            quiet_sample_rate: self.quiet_sample_rate,
+            adaptive_loudness_db: self.adaptive_loudness_db,
+            updated_at,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct UserSettingsResponse {
+    data: UserSettings,
 }
 
 #[derive(Deserialize)]
@@ -3641,6 +3840,97 @@ fn user_data_limit(requested: Option<usize>) -> usize {
         .clamp(1, MAX_USER_DATA_LIMIT)
 }
 
+fn validate_choice(field: &str, value: &str, choices: &[&str]) -> Result<(), ServiceError> {
+    if choices.contains(&value) {
+        Ok(())
+    } else {
+        Err(ServiceError::BadRequest(format!(
+            "{field} must be one of {}",
+            choices.join(", ")
+        )))
+    }
+}
+
+fn validate_integer_range(
+    field: &str,
+    value: i64,
+    minimum: i64,
+    maximum: i64,
+) -> Result<(), ServiceError> {
+    if (minimum..=maximum).contains(&value) {
+        Ok(())
+    } else {
+        Err(ServiceError::BadRequest(format!(
+            "{field} must be between {minimum} and {maximum}"
+        )))
+    }
+}
+
+fn validate_float_range(
+    field: &str,
+    value: f64,
+    minimum: f64,
+    maximum: f64,
+) -> Result<(), ServiceError> {
+    if value.is_finite() && (minimum..=maximum).contains(&value) {
+        Ok(())
+    } else {
+        Err(ServiceError::BadRequest(format!(
+            "{field} must be between {minimum} and {maximum}"
+        )))
+    }
+}
+
+fn validate_sample_rate(field: &str, value: i64) -> Result<(), ServiceError> {
+    const SAMPLE_RATES: &[i64] = &[8_000, 16_000, 22_050, 24_000, 44_100, 48_000];
+    if SAMPLE_RATES.contains(&value) {
+        Ok(())
+    } else {
+        Err(ServiceError::BadRequest(format!(
+            "{field} must be a supported sample rate"
+        )))
+    }
+}
+
+struct SupabaseDataContext {
+    token: String,
+    base_url: String,
+    publishable_key: String,
+    identity: SupabaseIdentity,
+}
+
+async fn supabase_data_context(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<SupabaseDataContext, ServiceError> {
+    let verifier = state
+        .supabase
+        .as_deref()
+        .ok_or_else(|| ServiceError::Unavailable("Supabase auth is not configured".to_string()))?;
+    let token = supabase_token(headers)
+        .ok_or(ServiceError::Unauthorized)?
+        .to_string();
+    let identity = verifier.verify(&state.http, &token).await?;
+    let base_url =
+        state.config.supabase.url.clone().ok_or_else(|| {
+            ServiceError::Unavailable("Supabase URL is not configured".to_string())
+        })?;
+    let publishable_key = state
+        .config
+        .supabase
+        .publishable_key
+        .clone()
+        .ok_or_else(|| {
+            ServiceError::Unavailable("Supabase publishable key is not configured".to_string())
+        })?;
+    Ok(SupabaseDataContext {
+        token,
+        base_url,
+        publishable_key,
+        identity,
+    })
+}
+
 async fn fetch_supabase_rows<T: DeserializeOwned>(
     state: &AppState,
     headers: &HeaderMap,
@@ -3649,30 +3939,23 @@ async fn fetch_supabase_rows<T: DeserializeOwned>(
     order: &str,
     limit: usize,
 ) -> Result<Vec<T>, ServiceError> {
-    let verifier = state
-        .supabase
-        .as_deref()
-        .ok_or_else(|| ServiceError::Unavailable("Supabase auth is not configured".to_string()))?;
-    let token = supabase_token(headers).ok_or(ServiceError::Unauthorized)?;
-    verifier.verify(&state.http, token).await?;
+    let context = supabase_data_context(state, headers).await?;
+    fetch_supabase_rows_with_context(state, &context, table, columns, order, limit).await
+}
 
-    let base_url =
-        state.config.supabase.url.as_deref().ok_or_else(|| {
-            ServiceError::Unavailable("Supabase URL is not configured".to_string())
-        })?;
-    let publishable_key = state
-        .config
-        .supabase
-        .publishable_key
-        .as_deref()
-        .ok_or_else(|| {
-            ServiceError::Unavailable("Supabase publishable key is not configured".to_string())
-        })?;
+async fn fetch_supabase_rows_with_context<T: DeserializeOwned>(
+    state: &AppState,
+    context: &SupabaseDataContext,
+    table: &str,
+    columns: &[&str],
+    order: &str,
+    limit: usize,
+) -> Result<Vec<T>, ServiceError> {
     let response = state
         .http
-        .get(format!("{base_url}/rest/v1/{table}"))
-        .header("apikey", publishable_key)
-        .bearer_auth(token)
+        .get(format!("{}/rest/v1/{table}", context.base_url))
+        .header("apikey", &context.publishable_key)
+        .bearer_auth(&context.token)
         .query(&[
             ("select", columns.join(",")),
             ("order", order.to_string()),
@@ -3737,6 +4020,94 @@ async fn list_user_consents(
     let count = data.len();
     record_request("GET", "/api/v1/data/user-consents", StatusCode::OK);
     Ok(Json(UserDataList { count, data }))
+}
+
+async fn get_user_settings(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<UserSettingsResponse>, ServiceError> {
+    let context = supabase_data_context(&state, &headers).await?;
+    let mut rows = fetch_supabase_rows_with_context(
+        &state,
+        &context,
+        USER_SETTINGS_TABLE,
+        USER_SETTINGS_COLUMNS,
+        "updated_at.desc",
+        1,
+    )
+    .await?;
+    let data = rows.pop().unwrap_or_else(|| {
+        UserSettingsInput::default()
+            .into_interface(context.identity.subject.clone(), Utc::now().to_rfc3339())
+    });
+    record_request("GET", "/api/v1/data/user-settings", StatusCode::OK);
+    Ok(Json(UserSettingsResponse { data }))
+}
+
+async fn update_user_settings(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<UserSettingsInput>,
+) -> Result<Json<UserSettingsResponse>, ServiceError> {
+    input.validate()?;
+    let context = supabase_data_context(&state, &headers).await?;
+    let mut payload = serde_json::to_value(&input)
+        .map_err(|_| ServiceError::BadRequest("settings payload is invalid".to_string()))?;
+    let Value::Object(ref mut object) = payload else {
+        return Err(ServiceError::Internal(
+            "settings payload could not be serialized".to_string(),
+        ));
+    };
+    object.insert(
+        "updated_at".to_string(),
+        Value::String(Utc::now().to_rfc3339()),
+    );
+
+    let response = state
+        .http
+        .post(format!(
+            "{}/rest/v1/{USER_SETTINGS_TABLE}",
+            context.base_url
+        ))
+        .header("apikey", &context.publishable_key)
+        .bearer_auth(&context.token)
+        .header(
+            "Prefer",
+            "resolution=merge-duplicates,missing=default,return=representation",
+        )
+        .query(&[("on_conflict", "user_id")])
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|_| {
+            ServiceError::Unavailable(
+                "Supabase Data API settings update could not be completed".to_string(),
+            )
+        })?;
+    let status = response.status();
+    if matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) {
+        return Err(ServiceError::Unauthorized);
+    }
+    if !status.is_success() {
+        return Err(ServiceError::Unavailable(format!(
+            "Supabase Data API settings update failed with {status}"
+        )));
+    }
+    let mut rows = response.json::<Vec<UserSettings>>().await.map_err(|_| {
+        ServiceError::Internal(
+            "Supabase Data API returned an invalid user_settings payload".to_string(),
+        )
+    })?;
+    let data = rows.pop().ok_or_else(|| {
+        ServiceError::Internal("Supabase Data API returned no updated settings".to_string())
+    })?;
+    if data.user_id != context.identity.subject {
+        return Err(ServiceError::Internal(
+            "Supabase Data API returned settings for another user".to_string(),
+        ));
+    }
+    record_request("PUT", "/api/v1/data/user-settings", StatusCode::OK);
+    Ok(Json(UserSettingsResponse { data }))
 }
 
 async fn register_device(
@@ -7337,6 +7708,10 @@ fn app(state: AppState) -> Router {
         .route("/download/android", get(download_android))
         .route("/api/v1/data/acoustic-events", get(list_acoustic_events))
         .route("/api/v1/data/user-consents", get(list_user_consents))
+        .route(
+            "/api/v1/data/user-settings",
+            get(get_user_settings).put(update_user_settings),
+        )
         .route("/api/mobile/v1/account", delete(delete_account))
         .route("/api/mobile/v1/devices/register", post(register_device))
         .route(
@@ -8620,6 +8995,67 @@ mod tests {
             .validation_errors
             .push("invalid Supabase URL".to_string());
         assert!(!config.account_features_configured());
+    }
+
+    #[test]
+    fn user_settings_defaults_match_the_shared_contract() {
+        let input = UserSettingsInput::default();
+        assert!(input.validate().is_ok());
+        let row = input.into_interface(
+            "11111111-1111-1111-1111-111111111111".to_string(),
+            "2026-07-13T00:00:00Z".to_string(),
+        );
+        assert_eq!(row.preferred_use_case, "security");
+        assert_eq!(row.device_retention_hours, 50);
+        assert_eq!(row.capture_sample_rate, 48_000);
+        assert_eq!(row.quiet_sample_rate, 16_000);
+        assert_eq!(row.user_id, "11111111-1111-1111-1111-111111111111");
+    }
+
+    #[test]
+    fn user_settings_validation_rejects_cross_field_and_enum_drift() {
+        let input = UserSettingsInput {
+            preferred_use_case: "surveillance".to_string(),
+            ..UserSettingsInput::default()
+        };
+        assert!(input.validate().is_err());
+
+        let input = UserSettingsInput {
+            quiet_sample_rate: 48_000,
+            capture_sample_rate: 16_000,
+            ..UserSettingsInput::default()
+        };
+        assert!(input.validate().is_err());
+
+        let input = UserSettingsInput {
+            device_retention_hours: 100,
+            cloud_retention_hours: 99,
+            ..UserSettingsInput::default()
+        };
+        assert!(input.validate().is_err());
+
+        let input = UserSettingsInput {
+            segment_minutes: 1,
+            overlap_seconds: 60,
+            ..UserSettingsInput::default()
+        };
+        assert!(input.validate().is_err());
+
+        let input = UserSettingsInput {
+            mic_sensitivity: f64::NAN,
+            ..UserSettingsInput::default()
+        };
+        assert!(input.validate().is_err());
+    }
+
+    #[test]
+    fn user_settings_upsert_payload_never_accepts_an_owner_id() {
+        let value = serde_json::to_value(UserSettingsInput::default()).expect("serialize settings");
+        let object = value.as_object().expect("settings object");
+        assert!(object.contains_key("preferred_use_case"));
+        assert!(!object.contains_key("user_id"));
+        assert!(!object.contains_key("supabase_anon_key"));
+        assert!(!object.contains_key("s3_access_key"));
     }
 
     #[test]
