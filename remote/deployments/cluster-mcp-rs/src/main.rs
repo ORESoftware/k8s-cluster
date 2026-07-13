@@ -1030,7 +1030,7 @@ async fn rpc(
         9,
         "MCP JSON-RPC request",
         "cluster_mcp.rpc.request",
-        json!({ "rpc.method": method }),
+        client_attrs(json!({ "rpc.method": method }), peer, &headers),
         Some(&trace),
     );
 
