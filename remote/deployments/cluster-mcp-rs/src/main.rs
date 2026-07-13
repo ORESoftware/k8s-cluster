@@ -1143,7 +1143,13 @@ fn tool_def(name: &str, title: &str, description: &str) -> Value {
     })
 }
 
-async fn tools_call_result(state: &AppState, id: Value, params: Option<&Value>) -> Value {
+async fn tools_call_result(
+    state: &AppState,
+    id: Value,
+    params: Option<&Value>,
+    peer: SocketAddr,
+    headers: &HeaderMap,
+) -> Value {
     let tool = params
         .and_then(|params| params.get("name"))
         .and_then(Value::as_str)
@@ -1155,7 +1161,7 @@ async fn tools_call_result(state: &AppState, id: Value, params: Option<&Value>) 
         9,
         "MCP tool call",
         "cluster_mcp.tool.call",
-        json!({ "mcp.tool": tool }),
+        client_attrs(json!({ "mcp.tool": tool }), peer, headers),
         Some(&trace),
     );
 
