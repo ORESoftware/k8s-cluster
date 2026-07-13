@@ -1315,6 +1315,48 @@ async fn tools_call_result(
             "Kubernetes deployment metadata visible to the read-only MCP service account.",
             kubernetes_deployments_json(state).await,
         ),
+        "kubernetes_ingress_endpoints" => tool_json_result(
+            id,
+            tool,
+            "Ingress hosts and LoadBalancer Service external endpoints from the in-cluster Kubernetes API.",
+            kubernetes_ingress_endpoints_json(state).await,
+        ),
+        "deployment_rollout_status" => tool_json_result(
+            id,
+            tool,
+            "Deployment rollout status (replica counts and conditions) from the in-cluster Kubernetes API.",
+            deployment_rollout_status_json(state).await,
+        ),
+        "kubernetes_events_warnings" => tool_json_result(
+            id,
+            tool,
+            "Recent non-Normal Kubernetes events summarized with redacted messages.",
+            kubernetes_events_warnings_json(state).await,
+        ),
+        "cloudflare_zones" => tool_json_result(
+            id,
+            tool,
+            "Cloudflare zone inventory from the Cloudflare v4 API.",
+            cloudflare_zones_json(state).await,
+        ),
+        "cloudflare_dns_records" => tool_json_result(
+            id,
+            tool,
+            "Bounded Cloudflare DNS record inventory with redacted record content.",
+            cloudflare_dns_records_json(state).await,
+        ),
+        "domain_registration" => tool_json_result(
+            id,
+            tool,
+            "RDAP registration summary (registrar, status, expiry, nameservers) for the configured domains.",
+            domain_registration_json(state).await,
+        ),
+        "domain_dns_wiring" => tool_json_result(
+            id,
+            tool,
+            "DNS-over-HTTPS resolution for the configured domains correlated against expected cluster ingress endpoints.",
+            domain_dns_wiring_json(state).await,
+        ),
         "human_access_policy" => tool_json_result(
             id,
             tool,
