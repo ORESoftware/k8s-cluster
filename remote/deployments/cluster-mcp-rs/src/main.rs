@@ -23,6 +23,7 @@ use rand::RngCore;
 use reqwest::Certificate;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
+use subtle::ConstantTimeEq;
 
 const SERVICE_NAME: &str = "dd-cluster-mcp-rs";
 const SERVICE_NAMESPACE: &str = "default";
