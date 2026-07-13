@@ -1,4 +1,5 @@
 mod runtime_config;
+mod soccer_formation;
 
 use std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -43,7 +44,10 @@ use des_engine::des::general::{
         solve_ipmip_with_des, BranchRule, ConcreteLpRelaxationAlgorithm, IPMIPProblem,
         IPMIPSolution, IPMIPSolveOptions, IPMIPStatus, LpRelaxationAlgorithm,
     },
-    lp::{solve_lp_internal, InternalSimplexOptions, LPProblem, LPSolution, LPStatus, Sense},
+    lp::{
+        solve_lp_internal, solve_lp_internal_ipm, InternalInteriorPointOptions,
+        InternalSimplexOptions, LPProblem, LPSolution, LPStatus, Sense,
+    },
 };
 use futures_util::StreamExt;
 use libloading::Library;
@@ -369,6 +373,7 @@ struct SolveOptions {
     max_nodes: Option<usize>,
     max_ticks: Option<usize>,
     lp_max_iters: Option<usize>,
+    lp_algorithm: Option<String>,
     int_tol: Option<f64>,
     split_depth: Option<usize>,
     max_subproblems: Option<usize>,
@@ -386,6 +391,7 @@ impl Default for SolveOptions {
             max_nodes: Some(20_000),
             max_ticks: Some(200_000),
             lp_max_iters: Some(5_000),
+            lp_algorithm: Some("internal-simplex".to_string()),
             int_tol: Some(1e-6),
             split_depth: Some(1),
             max_subproblems: Some(256),
@@ -412,6 +418,7 @@ impl SolveOptions {
             max_nodes: input.max_nodes.or(defaults.max_nodes),
             max_ticks: input.max_ticks.or(defaults.max_ticks),
             lp_max_iters: input.lp_max_iters.or(defaults.lp_max_iters),
+            lp_algorithm: input.lp_algorithm.or(defaults.lp_algorithm),
             int_tol: input.int_tol.or(defaults.int_tol),
             split_depth: input.split_depth.or(defaults.split_depth),
             max_subproblems: input.max_subproblems.or(defaults.max_subproblems),
@@ -443,6 +450,7 @@ impl SolveOptions {
                 "MIP_SOLVER_LP_MAX_ITERS",
                 defaults.lp_max_iters.unwrap_or(5_000),
             )),
+            lp_algorithm: optional_env_value("MIP_SOLVER_LP_ALGORITHM").or(defaults.lp_algorithm),
             int_tol: Some(env_f64(
                 "MIP_SOLVER_INT_TOL",
                 defaults.int_tol.unwrap_or(1e-6),
@@ -482,15 +490,35 @@ impl SolveOptions {
         }
     }
 
-    fn to_ipmip_options(&self) -> IPMIPSolveOptions {
-        IPMIPSolveOptions {
+    fn requested_lp_algorithm(&self) -> Result<ConcreteLpRelaxationAlgorithm, String> {
+        let requested = self
+            .lp_algorithm
+            .as_deref()
+            .unwrap_or("internal-simplex")
+            .trim()
+            .to_ascii_lowercase()
+            .replace('_', "-");
+        match requested.as_str() {
+            "simplex" | "internal-simplex" => Ok(ConcreteLpRelaxationAlgorithm::InternalSimplex),
+            "ipm" | "interior-point" | "internal-interior-point" | "internal-ipm" => {
+                Ok(ConcreteLpRelaxationAlgorithm::InternalInteriorPoint)
+            }
+            _ => Err(format!(
+                "unsupported lpAlgorithm {:?}; expected internal-simplex or internal-ipm",
+                self.lp_algorithm.as_deref().unwrap_or_default()
+            )),
+        }
+    }
+
+    fn to_ipmip_options(&self) -> Result<IPMIPSolveOptions, String> {
+        Ok(IPMIPSolveOptions {
             max_nodes: self.max_nodes,
             max_ticks: self.max_ticks,
             lp_max_iters: self.lp_max_iters,
             int_tol: self.int_tol,
             branch_rule: Some(BranchRule::MostFractional),
             lp_algorithm: Some(LpRelaxationAlgorithm::Concrete(
-                ConcreteLpRelaxationAlgorithm::InternalSimplex,
+                self.requested_lp_algorithm()?,
             )),
             allow_external_solvers: Some(false),
             max_cut_rounds: Some(solver_max_cut_rounds()),
@@ -498,7 +526,7 @@ impl SolveOptions {
             heuristic_passes: Some(solver_heuristic_passes()),
             verbose: Some(solver_verbose()),
             ..Default::default()
-        }
+        })
     }
 }
 
@@ -2141,21 +2169,41 @@ fn to_lp_problem(
 fn solve_lp_relaxation(
     problem: &MipProblemSpec,
     extra_constraints: &[BranchConstraint],
-    lp_max_iters: usize,
+    options: &SolveOptions,
 ) -> Result<LpRelaxation, String> {
     let lp = to_lp_problem(problem, extra_constraints)?;
-    let sol = solve_lp_internal(
-        &lp,
-        &InternalSimplexOptions {
-            max_iter: Some(lp_max_iters),
-            tol: Some(1e-9),
-            basis_start: None,
-        },
-    );
+    let sol = solve_lp_with_options(&lp, options)?;
     Ok(LpRelaxation {
         status: sol.status,
         x: sol.x,
     })
+}
+
+fn solve_lp_with_options(lp: &LPProblem, options: &SolveOptions) -> Result<LPSolution, String> {
+    let max_iter = options.lp_max_iters.or(Some(5_000));
+    match options.requested_lp_algorithm()? {
+        ConcreteLpRelaxationAlgorithm::InternalSimplex => Ok(solve_lp_internal(
+            lp,
+            &InternalSimplexOptions {
+                max_iter,
+                tol: Some(1e-9),
+                basis_start: None,
+            },
+        )),
+        ConcreteLpRelaxationAlgorithm::InternalInteriorPoint => Ok(solve_lp_internal_ipm(
+            lp,
+            &InternalInteriorPointOptions {
+                max_iter,
+                tol: Some(1e-9),
+                step_fraction: None,
+                regularization: None,
+            },
+        )),
+        algorithm => Err(format!(
+            "LP algorithm {} is not available for in-process solves",
+            algorithm.as_str()
+        )),
+    }
 }
 
 fn is_pure_lp(problem: &MipProblemSpec) -> Result<bool, String> {
@@ -2227,9 +2275,8 @@ fn split_subproblem_children(
         return Ok(None);
     }
     let problem = job.problem()?;
-    let lp_max_iters = job.options.lp_max_iters.unwrap_or(5_000);
     let int_tol = job.options.int_tol.unwrap_or(1e-6);
-    let relaxation = solve_lp_relaxation(problem, &job.extra_constraints, lp_max_iters)?;
+    let relaxation = solve_lp_relaxation(problem, &job.extra_constraints, &job.options)?;
     if relaxation.status != LPStatus::Optimal {
         return Ok(None);
     }
@@ -2304,7 +2351,6 @@ fn build_frontier_jobs(
     problem_stored: bool,
 ) -> Result<(Vec<SubproblemJob>, Vec<String>), String> {
     let split_depth = options.split_depth.unwrap_or(1).min(8);
-    let lp_max_iters = options.lp_max_iters.unwrap_or(5_000);
     let int_tol = options.int_tol.unwrap_or(1e-6);
     let max_subproblems = options.max_subproblems.unwrap_or(256).clamp(1, 100_000);
     let mut warnings = Vec::new();
@@ -2316,7 +2362,7 @@ fn build_frontier_jobs(
     let mut jobs = Vec::new();
 
     while let Some(node) = queue.pop_front() {
-        let relaxation = solve_lp_relaxation(problem, &node.extra_constraints, lp_max_iters)?;
+        let relaxation = solve_lp_relaxation(problem, &node.extra_constraints, options)?;
         match relaxation.status {
             LPStatus::Infeasible => continue,
             LPStatus::NumericalError | LPStatus::IterLimit => {
@@ -2405,21 +2451,14 @@ fn solve_subproblem(job: SubproblemJob, worker_node: String) -> SubproblemResult
         }
         if is_pure_lp(problem)? {
             let lp = to_lp_problem(problem, &job.extra_constraints)?;
-            let solution = solve_lp_internal(
-                &lp,
-                &InternalSimplexOptions {
-                    max_iter: job.options.lp_max_iters,
-                    tol: Some(1e-9),
-                    basis_start: None,
-                },
-            );
+            let solution = solve_lp_with_options(&lp, &job.options)?;
             return Ok(SubproblemSolveOutcome::Lp {
                 problem: lp,
                 solution,
             });
         }
         let problem = to_ipmip_problem(problem, &job.extra_constraints)?;
-        let solution = solve_ipmip_with_des(problem, job.options.to_ipmip_options());
+        let solution = solve_ipmip_with_des(problem, job.options.to_ipmip_options()?);
         Ok::<_, String>(SubproblemSolveOutcome::IpMip(solution))
     }));
 
@@ -5722,6 +5761,7 @@ async fn solve_problem_distributed(
     problem: MipProblemSpec,
     options: SolveOptions,
 ) -> Result<SolveResponse, String> {
+    options.requested_lp_algorithm()?;
     let problem = normalized_problem(problem)?;
     if is_pure_lp(&problem)? {
         return solve_pure_lp_local(state, request_id, problem_id, revision, problem, options)
@@ -6499,6 +6539,8 @@ fn links_document() -> Value {
         "solves": "/mip-solver-cluster/solves",
         "metrics": "/metrics",
         "exampleModel": "/model/example",
+        "soccerFormationMipModel": "/model/soccer-formation",
+        "soccerFormationLpModel": "/model/soccer-formation-lp",
         "uploadProblem": "/problems/{problemId}",
         "solveProblem": "/problems/{problemId}/solve",
         "solve": "/solve",
@@ -6580,6 +6622,8 @@ fn api_docs_document(state: &AppState) -> Value {
             {"method": "POST", "path": "/mip-solver-cluster/requests/:request_id/cancel", "kind": "json", "description": "Cancel a running solve by request id."},
             {"method": "GET", "path": "/workers", "kind": "json", "description": "Compatibility alias for /mip-solver-cluster/workers."},
             {"method": "GET", "path": "/model/example", "kind": "json", "description": "Example knapsack MIP request payload."},
+            {"method": "GET", "path": "/model/soccer-formation", "kind": "json", "description": "Akrion-derived binary F433 roster-to-grid assignment MIP request payload."},
+            {"method": "GET", "path": "/model/soccer-formation-lp", "kind": "json", "description": "Continuous relaxation of the Akrion-derived F433 assignment model, configured for the internal IPM solver."},
             {"method": "POST", "path": "/problems/:problem_id", "kind": "json", "description": "Stream and store a problem model by UUID for later solve-by-reference requests."},
             {"method": "POST", "path": "/problems/:problem_id/solve", "kind": "json", "description": "Solve a previously stored problem model by UUID."},
             {"method": "POST", "path": "/solve", "kind": "json", "description": "Submit a MIP/IP/LP solve request to a master node."},
@@ -6925,6 +6969,14 @@ async fn example() -> impl IntoResponse {
             "timeoutMs": 120000
         }
     }))
+}
+
+async fn soccer_formation_model() -> impl IntoResponse {
+    Json(soccer_formation::model_document(false))
+}
+
+async fn soccer_formation_lp_model() -> impl IntoResponse {
+    Json(soccer_formation::model_document(true))
 }
 
 async fn read_limited_body(body: Body) -> Result<Vec<u8>, String> {
@@ -8228,6 +8280,8 @@ fn app_router(state: AppState) -> Router {
         .route("/problems/:problem_id", post(upload_problem))
         .route("/problems/:problem_id/solve", post(solve_stored_problem))
         .route("/model/example", get(example))
+        .route("/model/soccer-formation", get(soccer_formation_model))
+        .route("/model/soccer-formation-lp", get(soccer_formation_lp_model))
         .route("/solve", post(solve_http))
         .route("/sessions/:session_id", get(get_session))
         .route("/sessions/:session_id/events", post(stream_session))
@@ -8854,6 +8908,7 @@ mod tests {
             max_nodes: Some(111),
             max_ticks: Some(222),
             lp_max_iters: Some(333),
+            lp_algorithm: Some("internal-simplex".to_string()),
             int_tol: Some(1e-4),
             split_depth: Some(2),
             max_subproblems: Some(12),
@@ -8868,6 +8923,7 @@ mod tests {
             max_nodes: Some(999),
             max_ticks: None,
             lp_max_iters: Some(777),
+            lp_algorithm: Some("internal-ipm".to_string()),
             int_tol: None,
             split_depth: Some(5),
             max_subproblems: Some(3),
@@ -8884,6 +8940,7 @@ mod tests {
         assert_eq!(merged.max_nodes, Some(999));
         assert_eq!(merged.max_ticks, Some(222));
         assert_eq!(merged.lp_max_iters, Some(777));
+        assert_eq!(merged.lp_algorithm.as_deref(), Some("internal-ipm"));
         assert_eq!(merged.int_tol, Some(1e-4));
         assert_eq!(merged.split_depth, Some(5));
         assert_eq!(merged.max_subproblems, Some(3));
@@ -9114,7 +9171,7 @@ mod tests {
 
     #[test]
     fn solve_options_force_in_house_lp_and_mip_engines() {
-        let options = SolveOptions::default().to_ipmip_options();
+        let options = SolveOptions::default().to_ipmip_options().unwrap();
 
         assert_eq!(options.allow_external_solvers, Some(false));
         assert!(matches!(
@@ -9127,6 +9184,53 @@ mod tests {
             options.branch_rule,
             Some(BranchRule::MostFractional)
         ));
+    }
+
+    #[test]
+    fn solve_options_select_internal_ipm_and_reject_external_or_unknown_algorithms() {
+        for alias in ["internal-ipm", "internal_interior_point", "ipm"] {
+            let options = SolveOptions {
+                lp_algorithm: Some(alias.to_string()),
+                ..SolveOptions::default()
+            }
+            .to_ipmip_options()
+            .unwrap();
+            assert!(matches!(
+                options.lp_algorithm,
+                Some(LpRelaxationAlgorithm::Concrete(
+                    ConcreteLpRelaxationAlgorithm::InternalInteriorPoint
+                ))
+            ));
+            assert_eq!(options.allow_external_solvers, Some(false));
+        }
+
+        for rejected in ["external-highs", "auto", "mystery"] {
+            let error = SolveOptions {
+                lp_algorithm: Some(rejected.to_string()),
+                ..SolveOptions::default()
+            }
+            .to_ipmip_options()
+            .unwrap_err();
+            assert!(error.contains("unsupported lpAlgorithm"), "{error}");
+        }
+    }
+
+    #[tokio::test]
+    async fn solve_http_rejects_unsupported_lp_algorithm_before_tracking_work() {
+        let state = test_state(NodeRole::Master);
+        let app = app_router(state.clone());
+        let mut payload = soccer_formation::model_document(false);
+        payload["options"]["lpAlgorithm"] = json!("external-highs");
+
+        let (status, response) = post_json(app, "/solve", payload).await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(response.get("ok"), Some(&json!(false)));
+        assert!(response
+            .get("error")
+            .and_then(Value::as_str)
+            .is_some_and(|error| error.contains("unsupported lpAlgorithm")));
+        assert!(state.solves.lock().unwrap().is_empty());
     }
 
     #[test]
@@ -9618,6 +9722,82 @@ mod tests {
     }
 
     #[test]
+    fn solve_subproblem_solves_lp_with_internal_ipm() {
+        let mut job = test_job(pure_lp_problem());
+        job.options.lp_algorithm = Some("internal-ipm".to_string());
+
+        let result = solve_subproblem(job, "worker-test".to_string());
+
+        assert!(result.ok, "subproblem error: {:?}", result.error);
+        assert_eq!(result.status, "optimal");
+        assert!(result.z.is_some_and(|z| (z - 10.0).abs() < 1e-5));
+        assert_eq!(
+            result.lp.as_ref().map(|report| report.solver.as_str()),
+            Some("internal-ipm")
+        );
+    }
+
+    #[test]
+    fn soccer_formation_mip_and_lp_ipm_match_the_expected_optimum() {
+        let mip = solve_subproblem(
+            test_job(soccer_formation::problem(false)),
+            "worker-soccer-mip".to_string(),
+        );
+        let mut mip_ipm_job = test_job(soccer_formation::problem(false));
+        mip_ipm_job.options.lp_algorithm = Some("internal-ipm".to_string());
+        let mip_ipm = solve_subproblem(mip_ipm_job, "worker-soccer-mip-ipm".to_string());
+        let mut lp_job = test_job(soccer_formation::problem(true));
+        lp_job.options.lp_algorithm = Some("internal-ipm".to_string());
+        let lp = solve_subproblem(lp_job, "worker-soccer-lp".to_string());
+
+        assert!(mip.ok, "MIP error: {:?}", mip.error);
+        assert!(mip_ipm.ok, "MIP/IPM error: {:?}", mip_ipm.error);
+        assert!(lp.ok, "LP/IPM error: {:?}", lp.error);
+        let expected = soccer_formation::expected_objective();
+        assert!(mip.z.is_some_and(|z| (z - expected).abs() < 1e-6));
+        assert!(mip_ipm.z.is_some_and(|z| (z - expected).abs() < 1e-4));
+        assert!(
+            lp.z.is_some_and(|z| (z - expected).abs() < 1e-4),
+            "LP/IPM objective {:?}, expected {expected}; report {:?}",
+            lp.z,
+            lp.lp
+        );
+        assert_eq!(
+            soccer_formation::decode_assignment(&mip.x).unwrap(),
+            soccer_formation::decode_assignment(&mip_ipm.x).unwrap()
+        );
+        assert_eq!(
+            soccer_formation::decode_assignment(&mip.x).unwrap(),
+            soccer_formation::decode_assignment(&lp.x).unwrap()
+        );
+        assert!(lp
+            .x
+            .iter()
+            .all(|value| { value.abs() < 1e-5 || (*value - 1.0).abs() < 1e-5 }));
+    }
+
+    #[tokio::test]
+    async fn soccer_formation_models_are_served_with_matching_matrices() {
+        let app = app_router(test_state(NodeRole::Master));
+        let (mip_status, mip) = get_json(app.clone(), "/model/soccer-formation").await;
+        let (lp_status, lp) = get_json(app, "/model/soccer-formation-lp").await;
+
+        assert_eq!(mip_status, StatusCode::OK);
+        assert_eq!(lp_status, StatusCode::OK);
+        assert_eq!(mip.pointer("/scenario/pitchGrid/lanes"), Some(&json!(12)));
+        assert_eq!(mip.pointer("/scenario/pitchGrid/rows"), Some(&json!(24)));
+        assert_eq!(mip.pointer("/scenario/decisionVariables"), Some(&json!(46)));
+        assert_eq!(mip.pointer("/scenario/constraints"), Some(&json!(37)));
+        assert_eq!(mip.pointer("/problem/c"), lp.pointer("/problem/c"));
+        assert_eq!(mip.pointer("/problem/a"), lp.pointer("/problem/a"));
+        assert_eq!(mip.pointer("/problem/b"), lp.pointer("/problem/b"));
+        assert_eq!(
+            lp.pointer("/options/lpAlgorithm"),
+            Some(&json!("internal-ipm"))
+        );
+    }
+
+    #[test]
     fn solve_subproblem_solves_general_integer_program_with_in_house_solver() {
         let result = solve_subproblem(
             test_job(general_integer_problem()),
@@ -10092,6 +10272,46 @@ mod tests {
                     .message
                     .as_deref()
                     .is_some_and(|message| message.contains("usesExternalSolvers=true")),
+                "{method}: {verification:?}"
+            );
+        }
+    }
+
+    #[cfg(feature = "external-solver-verification")]
+    #[test]
+    fn external_highs_methods_verify_soccer_formation_optimum() {
+        if std::process::Command::new("highs")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            eprintln!("SKIP external soccer verification: highs command not installed");
+            return;
+        }
+        let problem = normalized_problem(soccer_formation::problem(false)).unwrap();
+        let options = SolveOptions::default();
+        let expected_z = soccer_formation::expected_objective();
+
+        for method in ["highs", "highs-ds", "highs-ipm"] {
+            let verification =
+                run_external_verification(&problem, &options, expected_z, method, 1e-5)
+                    .unwrap_or_else(|error| panic!("soccer {method} verification failed: {error}"));
+            assert_eq!(
+                verification.status, "verified",
+                "{method}: {verification:?}"
+            );
+            assert_eq!(verification.method.as_deref(), Some(method));
+            assert_eq!(verification.solution_status.as_deref(), Some("optimal"));
+            assert!(
+                verification
+                    .objective
+                    .is_some_and(|objective| (objective - expected_z).abs() <= 1e-5),
+                "{method}: {verification:?}"
+            );
+            assert!(
+                verification
+                    .objective_delta
+                    .is_some_and(|delta| delta <= verification.tolerance),
                 "{method}: {verification:?}"
             );
         }

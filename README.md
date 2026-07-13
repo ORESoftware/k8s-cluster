@@ -31,6 +31,7 @@ Request `options` override environment defaults. When an option is omitted, the 
 - `MIP_SOLVER_MAX_NODES`
 - `MIP_SOLVER_MAX_TICKS`
 - `MIP_SOLVER_LP_MAX_ITERS`
+- `MIP_SOLVER_LP_ALGORITHM`
 - `MIP_SOLVER_INT_TOL`
 - `MIP_SOLVER_SPLIT_DEPTH`
 - `MIP_SOLVER_MAX_SUBPROBLEMS`
@@ -43,6 +44,13 @@ Request `options` override environment defaults. When an option is omitted, the 
 - `MIP_SOLVER_EXTERNAL_VERIFICATION_METHOD`
 - `MIP_SOLVER_EXTERNAL_VERIFICATION_TOLERANCE`
 
+`MIP_SOLVER_LP_ALGORITHM` and the request-level `lpAlgorithm` option accept
+`internal-simplex` (the default) or `internal-ipm`. The selection is honored by
+pure LP solves, master-side frontier construction, delegated subtree splitting,
+and worker-side branch-and-bound relaxations. Unknown, automatic, and external
+algorithm names fail closed before jobs are tracked or published; external
+solvers remain available only through the independent verification feature.
+
 `MIP_SOLVER_MAX_SUBPROBLEMS` caps the master's pre-split branch-and-bound frontier. When the cap is reached, remaining fractional nodes are delegated as subtree jobs instead of being split further by the master.
 
 Delegated subtree jobs can split again on a slave when their LP relaxation is fractional and their depth is still below `splitDepth`. The slave returns a `split` result with child jobs; the master records the parent as non-terminal, publishes the children to JetStream, and aggregates only completed leaf results.
@@ -52,6 +60,20 @@ Delegated subtree jobs can split again on a slave when their LP relaxation is fr
 Slaves publish job-aware progress heartbeats every `MIP_SOLVER_WORKER_HEARTBEAT_SECONDS` seconds (default 25) while processing a `jobUuid`. During distributed solves, the master treats a running job as stale when no heartbeat has arrived for `MIP_SOLVER_WORKER_STALE_SECONDS` seconds (default 100), re-publishes that work with a new `jobUuid`, and excludes the stale worker node from the retry. The queued retry creates JetStream lag for KEDA to scale replacement slave capacity.
 
 External optimum verification is opt-in. Build with the `external-solver-verification` Cargo feature, then set `MIP_SOLVER_VERIFY_EXTERNAL=true` or pass `"verifyExternal": true` in solve options. The response includes `externalVerification` with `verified`, `mismatch`, `unverified`, `unavailable`, or `skipped` status. Local checks use the sibling DES checkout at `~/codes/ores/discrete-event-system.rs` via `local/Cargo.toml`; cluster builds keep using the DES submodule under `remote/submodules/discrete-event-system.rs`. The default method is `highs`, with `highs-ds` and `highs-ipm` accepted through `MIP_SOLVER_EXTERNAL_VERIFICATION_METHOD` or `"externalVerificationMethod"`.
+
+## Soccer formation reference model
+
+`GET /model/soccer-formation` serves a binary assignment MIP derived from
+Akrion's F433 anchors on its 12-lane by 24-row pitch grid. It chooses 11 players
+from a 15-player roster, assigns one role-eligible player to each formation
+cell, and maximizes player quality plus preferred-cell affinity. The sparse
+model has 46 binary variables and 37 constraints; its deterministic reference
+optimum is `993.0`.
+
+`GET /model/soccer-formation-lp` serves the exact same matrix with integrality
+relaxed and `internal-ipm` selected. This gives deployments a real LP/IPM parity
+fixture instead of a separate toy problem. Both documents include the expected
+lineup and can be posted directly to `/solve`.
 
 ## Persistence model
 
