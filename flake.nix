@@ -22,7 +22,7 @@
           pkgs = import nixpkgs { inherit system; };
         in
         {
-          default = import ./nix/dev-shell.nix { inherit pkgs; };
+          default = import ./.nix/dev-shell.nix { inherit pkgs; };
         }
       );
     };

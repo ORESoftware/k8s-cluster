@@ -135,6 +135,27 @@ spec:
                   name: dd-cluster-mcp-rs-secrets
                   key: MCP_AUTH_SECRET
                   optional: true
+            # Read-only Cloudflare API token for the cloudflare_zones /
+            # cloudflare_dns_records tools. Optional: when the key is absent
+            # the tools report a not-configured hint instead of failing.
+            - name: CLOUDFLARE_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-cluster-mcp-rs-secrets
+                  key: CLOUDFLARE_API_TOKEN
+                  optional: true
+            # Domains monitored by the domain_registration (RDAP) and
+            # domain_dns_wiring (DNS-over-HTTPS) tools. Derived from the
+            # dd-remote-gateway vhosts (app./admin.fiducia.cloud server_name
+            # blocks) plus the public marketing apexes it fronts
+            # (fiducia.cloud, canonical.cloud).
+            - name: DD_MCP_DOMAINS
+              value: fiducia.cloud,app.fiducia.cloud,admin.fiducia.cloud,canonical.cloud
+            # Where those domains are expected to land: the gateway Elastic IP
+            # (see mcp/README.md). domain_dns_wiring also unions in live
+            # LoadBalancer/Ingress endpoints from the cluster automatically.
+            - name: DD_MCP_EXPECTED_INGRESS_IPS
+              value: '98.90.186.114'
             - name: OTEL_SERVICE_NAME
               value: dd-cluster-mcp-rs
             - name: OTEL_EXPORTER_OTLP_ENDPOINT

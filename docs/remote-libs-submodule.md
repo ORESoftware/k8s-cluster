@@ -77,10 +77,11 @@ single-path change is also what fires `pg-defs-check.yml` (its trigger watches
 - `pg-defs-check.yml` checkouts gained `submodules: recursive` and its trigger
   was repointed from `remote/libs/pg-defs/**` to the `remote/libs` gitlink.
 
-## Known caveat (pre-existing, not caused by the split)
+## Migrations
 
-`pg-defs/src/generate.mjs --check` currently throws
-`Unsupported SQL type for Drizzle: smallint` because `schema.sql` gained a
-`battery_level smallint` column that `drizzleColumn()` doesn't map yet. This
-predates the extraction (the file is byte-identical to the old in-tree copy) and
-must be fixed in the libs repo, not here.
+The libs repo now uses [`dpm` (declarative-postgres-migrate)](https://github.com/declarative-migrations/declarative-postgres-migrate.rs)
+for Postgres migrations: `pg-defs/schema/schema.sql` is the declarative source and
+`remote/libs/pg-defs/scripts/dpm.sh {diff|verify|review|apply}` converges a live
+database onto it with reviewable SQL. See `pg-defs/readme.md` in the libs repo.
+The historical caveat about `generate.mjs --check` failing on `smallint` was fixed
+upstream; the check passes on the current pin.

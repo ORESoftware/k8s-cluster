@@ -3,8 +3,11 @@ name: repo checks
 on:
   pull_request:
   push:
+    # PRs already run via `pull_request`; limit push runs to the long-lived
+    # branches so feature-branch pushes don't double-run every check.
     branches:
-      - '**'
+      - dev
+      - main
     tags:
       - '**'
   workflow_dispatch:
@@ -119,53 +122,29 @@ jobs:
       - name: Render overlays
         run: |
           set -euo pipefail
-          overlays=(
-            remote/argocd/ai-ml-platform
-            remote/argocd/dd-next-runtime
-            remote/argocd/headlamp
-            remote/argocd/messaging
-            remote/argocd/observability
-            remote/argocd/secrets
-            remote/argocd/vpn
-            remote/deployments/akka-ws-server/k8s/ec2
-            remote/deployments/billing-server-rs/k8s/ec2
-            remote/deployments/dart-server/k8s/ec2
-            remote/deployments/formal-methods-server-rs/k8s
-            remote/deployments/formal-methods-server-rs/k8s/ec2
-            remote/deployments/formal-methods-service-rs/k8s/ec2
-            remote/deployments/fsharp-ws-server/k8s/ec2
-            remote/deployments/gcs/k8s/ec2
-            remote/deployments/gleam-lambda-runner/k8s/ec2
-            remote/deployments/gleam-mcp-server/k8s/ec2
-            remote/deployments/gleamlang-server/k8s
-            remote/deployments/gleamlang-server/k8s/ec2
-            remote/deployments/gleamlang-ws-loadtest/k8s/akkaws-akkastreams
-            remote/deployments/gleamlang-ws-loadtest/k8s/akkaws-asyncjava
-            remote/deployments/gleamlang-ws-loadtest/k8s/dart
-            remote/deployments/gleamlang-ws-loadtest/k8s/ec2
-            remote/deployments/gleamlang-ws-loadtest/k8s/gcs
-            remote/deployments/gleamlang-ws-loadtest/k8s/gcs-node
-            remote/deployments/gleamlang-ws-server/k8s/ec2
-            remote/deployments/live-mutex-loadtest-node/k8s/ec2
-            remote/deployments/lock-loadtest-gleam/k8s/ec2
-            remote/deployments/lock-loadtest-rs/k8s/ec2
+
+          # Auto-discover every tracked kustomization.yaml so new overlays
+          # gain coverage without touching this list. `git ls-files` does not
+          # descend into submodules (intentional: their overlays belong to
+          # their own repos' CI); the exceptions below are rendered explicitly.
+          git ls-files '*/kustomization.yaml' | while read -r f; do
+            overlay="$(dirname "$f")"
+            echo "::group::${overlay}"
+            output="${RUNNER_TEMP}/${overlay//\//__}.yaml"
+            kubectl kustomize --load-restrictor=LoadRestrictionsNone "${overlay}" > "${output}"
+            test -s "${output}"
+            echo "::endgroup::"
+          done
+
+          # Overlays hosted inside submodules (checked out via
+          # `submodules: recursive` above) that git ls-files cannot see;
+          # carried over from the previous hardcoded list so coverage
+          # does not regress.
+          submodule_overlays=(
             remote/deployments/mip-solver-node.rs/k8s
             remote/deployments/mip-solver-node.rs/k8s-gpu
-            remote/deployments/rust-network-mutex-rs/k8s/ec2
-            remote/deployments/spark-pipeline-server/k8s/ec2
-            remote/deployments/thread-fleet-exporter-go/k8s/ec2
-            remote/deployments/thread-operator-go/k8s/ec2
-            remote/deployments/ws-loadtest-rs/k8s/akkaws-akkastreams
-            remote/deployments/ws-loadtest-rs/k8s/akkaws-asyncjava
-            remote/deployments/ws-loadtest-rs/k8s/dart
-            remote/deployments/ws-loadtest-rs/k8s/ec2
-            remote/deployments/ws-loadtest-rs/k8s/fsharp-rx
-            remote/deployments/ws-loadtest-rs/k8s/gcs
-            remote/deployments/ws-loadtest-rs/k8s/go-wss
-            remote/deployments/ws-loadtest-rs/k8s/rust-wss
           )
-
-          for overlay in "${overlays[@]}"; do
+          for overlay in "${submodule_overlays[@]}"; do
             echo "::group::${overlay}"
             output="${RUNNER_TEMP}/${overlay//\//__}.yaml"
             kubectl kustomize --load-restrictor=LoadRestrictionsNone "${overlay}" > "${output}"

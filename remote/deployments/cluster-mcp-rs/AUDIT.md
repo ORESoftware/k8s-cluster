@@ -182,3 +182,129 @@ said "supply it from a Secret", yet no mount existed — so flipping
 Added an explicit optional `MCP_AUTH_SECRET` key mount from
 `dd-cluster-mcp-rs-secrets`, matching the Gleam pod. Renders; `cargo build` +
 11 tests green.
+
+## Pass 7 (2026-07-13)
+
+Server-code hardening + MCP-quality pass (src/main.rs only; no manifest,
+NetworkPolicy, Gleam, or gateway changes).
+
+- **R8 (Med, fixed) — bearer gate bypassed on non-RPC GET routes.** The pass-2
+  `MCP_REQUIRE_AUTH` gate only covered `POST /mcp`, but `GET /observability`
+  returns the *full* `telemetry_summary` tool output, and `/metrics` +
+  `/docs/api` / `/api/docs(.json)` expose internal counters and the API
+  surface — so "auth required" still leaked cluster state to any in-VPC
+  caller. **Fixed:** `gated_unauthorized_response` applies the same check (401
+  + `WWW-Authenticate`) to those GET handlers. `/healthz` and `/readyz` stay
+  open for kubelet probes; default (`MCP_REQUIRE_AUTH=false`) behavior is
+  unchanged.
+- **R9 (Low, fixed) — secret compare was plain `==`.** `header_secret_ok`
+  compared the bearer/`X-Server-Auth` values with string equality (timing
+  side channel). **Fixed** with `subtle::ConstantTimeEq` (`subtle` was already
+  in-tree via rustls; promoted to a direct dependency — one Cargo.lock edge,
+  no new packages). Test: `constant_time_secret_eq_matches_only_exact_values`.
+- **R10 (Med, fixed) — raw k8s `sample` shipped `metadata.annotations`.** The
+  per-item summary already dropped annotations, but the redacted/clipped raw
+  `sample` did not — and `kubectl.kubernetes.io/last-applied-configuration`
+  embeds whole prior objects under a non-secret-like key. **Fixed:**
+  `kubernetes_response_sample` strips `metadata.annotations` and
+  `metadata.managedFields` everywhere in the body before redaction/clipping.
+  Test: `kubernetes_sample_strips_annotations_and_managed_fields`.
+- **R11 (hardening) — value-pattern redaction.** Key-based redaction misses
+  secrets under innocuous keys. `redact_sensitive_values` (allocation-light
+  single-pass byte scan, Cow return, no regex dep) now redacts JWTs (`eyJ`
+  base64url runs), AWS access key ids (`AKIA[0-9A-Z]{16}`), bounded hex runs
+  >= 32, and dot-free mixed-case base64 runs >= 40 (the mixed-character rule
+  keeps DNS names and ordinary identifiers untouched). Applied to JSON string
+  values in `redact_json_value` and to non-key-matched lines in
+  `redact_sensitive_line`. Tests: `value_patterns_*`,
+  `response_sample_redacts_value_patterns_in_json_strings`.
+- **MCP result quality.** Tool results previously put real data only in
+  `structuredContent` with a static blurb in `content` — spec-minimal clients
+  saw no data. `tool_json_result` now serializes the (already bounded)
+  structured payload into the text block and sets `isError: true` when every
+  upstream call in the payload reported `ok: false` (static tools with no
+  upstream calls can never be flagged). Test:
+  `tool_results_embed_data_in_text_and_flag_total_failure`.
+- **Caller attribution.** rpc/tool log events (`cluster_mcp.rpc.request`,
+  `…rpc.parse_error`, `…rpc.invalid_request`, `…tool.call`) now carry
+  `client.ip` from the socket peer address
+  (`into_make_service_with_connect_info`), plus `client.forwarded_for` as a
+  separate clearly-untrusted field (clipped + sanitized) when X-Forwarded-For
+  is present — unauthenticated in-VPC calls are now attributable.
+- **Protocol version negotiation.** `initialize` previously always answered
+  `2025-11-25`; it now echoes the client's requested `protocolVersion` when
+  supported (`2025-11-25`, `2025-06-18`, `2025-03-26`), else answers the
+  newest. Test: `initialize_negotiates_protocol_version`.
+
+`cargo check` clean, `cargo test` 20 passed (11 prior + 9 new), `cargo fmt` +
+`cargo clippy` clean.
+
+## Pass 8 (2026-07-13)
+
+Feature pass, same rules as pass 7: seven new **zero-argument, read-only** MCP
+tools (env-configured, no caller inputs — the zero-input security model is
+unchanged), all bounded/clamped/redacted like the existing surface.
+
+- **New in-cluster tools** (via `kubernetes_get_body`, a full-object GET with
+  a dedicated `MCP_KUBERNETES_FULL_BODY_LIMIT_BYTES` parse guard, default
+  1 MiB, hard cap 4 MiB — full objects carry managedFields/specs, so the
+  256 KiB sample-path limit was the wrong bound):
+  - `kubernetes_ingress_endpoints` — Ingress hosts/rules + LoadBalancer
+    Service external endpoints. RBAC already granted `list` on
+    `networking.k8s.io/ingresses`; no ClusterRole change needed.
+  - `deployment_rollout_status` — replica counts + Available/Progressing
+    conditions (messages through `sanitize_text`). The existing
+    `kubernetes_deployments` is metadata-only, which drops `status` entirely.
+  - `kubernetes_events_warnings` — `fieldSelector=type!=Normal`
+    (percent-encoded), ≤100 events, messages redacted.
+- **External read-only integrations** (`external_json_get`: clamped
+  `DD_MCP_EXTERNAL_TIMEOUT_MS` ≤5 s, `DD_MCP_EXTERNAL_BODY_LIMIT_BYTES`
+  ≤256 KiB parse guard, sanitized errors, new
+  `dd_cluster_mcp_rs_external_requests_total` counter; egress rides the
+  existing NetworkPolicy 0.0.0.0/0:443 rule):
+  - `cloudflare_zones` / `cloudflare_dns_records` — Cloudflare v4 API with
+    `CLOUDFLARE_API_TOKEN` (optional secretKeyRef; when unset the tools return
+    an `ok:false` + "not configured" hint, never a JSON-RPC error). Bounded:
+    ≤3 pages × 50 zones, ≤20 zones scanned for records, ≤500 records total.
+    Record `content` runs through the full redaction pipeline (TXT
+    verification tokens are exactly the pass-7 value-pattern shapes). The
+    token rides the redirect-disabled client and never appears in any output
+    or log path; Cloudflare-supplied zone ids are constrained to alphanumerics
+    before being used as a path segment.
+  - `domain_registration` — registrar-neutral **RDAP** (`rdap.org` bootstrap)
+    per `DD_MCP_DOMAINS` domain: registrar (vcard `fn` → publicIds → handle),
+    status[], registration/expiration events, nameservers, `daysUntilExpiry`
+    (Hinnant days-from-civil; no date crate). This is the honest coverage for
+    Squarespace-registered domains — Squarespace has no public domains API.
+  - `domain_dns_wiring` — DNS-over-HTTPS (`DD_MCP_DOH_URL`, default
+    cloudflare-dns.com) A/AAAA/CNAME/NS per domain, correlated against the
+    union of `DD_MCP_EXPECTED_INGRESS_IPS` and live LoadBalancer/Ingress
+    status endpoints → per-domain `matched` / `matchedEndpoint`.
+- **Redirect-policy exception (deliberate, scoped):** a third reqwest client
+  (`external_http`, `Policy::limited(5)`) exists only for RDAP/DoH because
+  rdap.org is a bootstrap *redirector* — following redirects is the protocol.
+  It never carries credentials; the Cloudflare token stays on the
+  redirect-disabled client, preserving the R2/RC1 posture.
+- **URL overrides stay allowlisted:** `MCP_CLOUDFLARE_API_URL`,
+  `DD_MCP_RDAP_URL`, `DD_MCP_DOH_URL` go through the existing
+  `env_mcp_base_url` gate — the external defaults are the fallbacks, but
+  overrides are restricted to loopback/`*.svc` unless
+  `MCP_ALLOW_EXTERNAL_URLS=true`.
+- **Manifest (additive only):** `CLOUDFLARE_API_TOKEN` optional secretKeyRef
+  into the existing `dd-cluster-mcp-rs-secrets`, plus `DD_MCP_DOMAINS`
+  (fiducia.cloud, app./admin.fiducia.cloud from the gateway `server_name`
+  vhosts + the canonical.cloud marketing apex) and
+  `DD_MCP_EXPECTED_INGRESS_IPS` (gateway EIP 98.90.186.114). Kustomize
+  renders. No ExternalSecret changes.
+- Tools registered in `TOOL_NAMES`, `tools/list`, dispatch, and the
+  `human_access_policy` external-integrations enumeration; documented in
+  `mcp/README.md` (Rust-server-only until Gleam parity).
+
+Fixture-based tests (no network): Cloudflare zone/record extraction,
+record-budget truncation, token-absent hint; Squarespace RDAP
+registrar/expiry/nameserver extraction + days-from-civil epochs; DoH
+A/CNAME-chain and NXDOMAIN parsing; wiring correlation (A match,
+CNAME→LB-hostname match, no-match); expected-endpoint union/dedup;
+ingress/LB/rollout/event summaries; tools/list count = 20. `cargo check`
+clean, `cargo test` 34 passed (20 prior + 14 new), `cargo clippy
+--all-targets` clean, `cargo fmt` applied.

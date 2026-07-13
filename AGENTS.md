@@ -44,6 +44,29 @@ read-only by default; do not add write-capable AWS or Kubernetes tools without a
 short-lived human grant, auth, and audit design. Treat the EC2 Kubernetes manifests and live
 `dd_cluster` output as the runtime source of truth.
 
+## canonical-mcp (canonical.cloud stack)
+
+For anything touching `remote/deployments/canonical-cloud`, the
+[`canonical-cloud/canonical-mcp-server.rs`](https://github.com/canonical-cloud/canonical-mcp-server.rs)
+stdio MCP server gives read-only visibility into that stack. Remember the in-tree copy here is a
+**secondary** checkout — the source of truth is `~/codes/canonical.cloud` (see the submodules note
+above) — so check stack state through the MCP tools instead of inspecting the vendored files:
+
+- `stack_ci_status` — latest GitHub Actions runs across the four canonical-cloud repos.
+- `submodule_pins` — whether `canonical-monorepo` (the deployment vehicle) is pinned at each app's
+  `main` HEAD, and how many commits behind.
+- `service_health` — probe `/healthz`, `/readyz`, `/api/v1/health` on a deployed base URL.
+- `stack_docs` — the monorepo's `deploy` / `repo-boundaries` docs (deployment contract, env vars,
+  migration/RLS bootstrap).
+- `domain_status` / `cloudflare_dns` — registrar (RDAP) state and Cloudflare zone records for the
+  public domain.
+- `k8s_status` — read-only `kubectl get` summaries (nodes/pods/deployments/services/ingresses);
+  point it at this cluster's kubeconfig context to check the canonical-cloud workloads.
+
+Register with `claude mcp add canonical-mcp -- <checkout>/target/release/canonical-mcp-server`
+(build with `cargo build --release`; optional `GITHUB_TOKEN`, `CLOUDFLARE_API_TOKEN`). Like
+`dd_cluster`, its surface is read-only by design and must stay that way.
+
 ## Observability Contract
 
 Prefer collection at the process and platform boundaries over runtime-wide instrumentation. Do not
@@ -106,10 +129,16 @@ API contract. If generic database inspection is needed for operators, keep it be
 enabled internal route such as `/internal/db/*`, with service/operator auth, and keep it out of
 public gateway paths.
 
+Migrations are generated with `dpm` (declarative-postgres-migrate) via
+`remote/libs/pg-defs/scripts/dpm.sh {diff|verify|review|apply}`: `schema.sql` is the declarative
+source and dpm emits ordered, reviewable SQL that converges the live database onto it. Destructive
+statements are emitted commented-out and refused at apply time without explicit consent flags.
+Never apply migrations automatically; a human reviews the generated SQL first.
+
 Use `scripts/pg/diff/rds-vs-pg-defs.mjs` for declarative RDS-vs-pg-defs drift reports. The script
 compares live RDS catalog state to `remote/libs/pg-defs/schema/schema.sql` and does not generate
-`.sql` migration files. Treat its output as review context for human-owned manual migration work,
-not as an executable migration artifact.
+`.sql` migration files. Treat its output as an independent second opinion on dpm's diff, review
+context for human-owned migration work, not as an executable migration artifact.
 
 ## API Docs Contract
 
