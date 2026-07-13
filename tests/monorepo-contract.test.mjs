@@ -69,24 +69,24 @@ test("submodule declarations stay complete, pinned to main, and backed by gitlin
       }),
   );
 
-  assert.equal(modules.length, 26);
+  assert.equal(modules.length, 25);
   assert.deepEqual(paths, [
     "apps/fiducia-admin.rs",
     "apps/fiducia-ai-agent-bridge.rs",
     "apps/fiducia-ai-agent-control-plane",
     "apps/fiducia-ai-agent-manager.rs",
     "apps/fiducia-auth.rs",
-    "apps/fiducia-backend.rs",
     "apps/fiducia-brain.rs",
     "apps/fiducia-cli.rs",
     "apps/fiducia-clients",
-    "apps/fiducia-customer-ui.web",
+    "apps/fiducia-customer.rs",
     "apps/fiducia-e2e",
     "apps/fiducia-edge",
     "apps/fiducia-infra",
     "apps/fiducia-interfaces",
     "apps/fiducia-lambda-service.rs",
     "apps/fiducia-load-balance.rs",
+    "apps/fiducia-marketing.web",
     "apps/fiducia-memory.rs",
     "apps/fiducia-messaging.rs",
     "apps/fiducia-node-sidecar.rs",
@@ -96,7 +96,6 @@ test("submodule declarations stay complete, pinned to main, and backed by gitlin
     "apps/fiducia-sync",
     "apps/fiducia-telemetry.rs",
     "apps/fiducia-test-config",
-    "apps/fiducia-ui.web",
   ]);
 
   for (const module of modules) {

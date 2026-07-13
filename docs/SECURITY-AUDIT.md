@@ -93,7 +93,7 @@ they were all **PUBLIC** in the 2026-07-13 live GitHub audit:
 | `fiducia-infra` | private | **public** |
 | `fiducia-auth.rs` | private | **public** |
 | `fiducia-admin.rs` | private | **public** |
-| `fiducia-backend.rs` | private | **public** |
+| `fiducia-customer.rs` | private | **public** |
 | `fiducia-brain.rs` | private | **public** |
 | `fiducia-load-balance.rs` | private | **public** |
 | `fiducia-node.rs` | private | **public** |
@@ -296,7 +296,7 @@ task, Dependabot is being added, which addresses the update cadence.*
 ### #6 — Root-user images + unpinned interfaces clone (Low)
 
 **Where:** `fiducia-telemetry.rs/Dockerfile`, `fiducia-infra/Dockerfile`,
-`fiducia-ui.web/Dockerfile`.
+`fiducia-marketing.web/Dockerfile`.
 
 **Issue:**
 - **`fiducia-telemetry.rs/Dockerfile`** ran the test image as **root** and cloned
@@ -305,14 +305,14 @@ task, Dependabot is being added, which addresses the update cadence.*
   whatever `main` points at.
 - **`fiducia-infra/Dockerfile`** runs as **root** and uses `npm install` (not
   `npm ci`).
-- **`fiducia-ui.web/Dockerfile`** already uses `npm ci` (good) but the final
+- **`fiducia-marketing.web/Dockerfile`** already uses `npm ci` (good) but the final
   `nginx` stage runs as **root** (no `USER`).
 
 **Fix:**
 - Telemetry non-root: **APPLIED** — see [Applied fixes](#applied-fixes-this-pass).
 - Pin `INTERFACES_REF` to a tag/SHA instead of `main` (doc — build-input change).
 - `fiducia-infra`: add a non-root `USER` and switch to `npm ci` (doc).
-- `fiducia-ui.web`: add a non-root `USER` in the nginx stage, e.g. run as
+- `fiducia-marketing.web`: add a non-root `USER` in the nginx stage, e.g. run as
   `nginx-unprivileged` / bind an unprivileged port (doc).
 
 ---

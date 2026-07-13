@@ -103,17 +103,17 @@ fallback.
 - `apps/fiducia-ai-agent-control-plane`
 - `apps/fiducia-ai-agent-manager.rs`
 - `apps/fiducia-auth.rs`
-- `apps/fiducia-backend.rs`
 - `apps/fiducia-brain.rs`
 - `apps/fiducia-cli.rs`
 - `apps/fiducia-clients`
-- `apps/fiducia-customer-ui.web`
+- `apps/fiducia-customer.rs`
 - `apps/fiducia-e2e`
 - `apps/fiducia-edge`
 - `apps/fiducia-infra`
 - `apps/fiducia-interfaces`
 - `apps/fiducia-lambda-service.rs`
 - `apps/fiducia-load-balance.rs`
+- `apps/fiducia-marketing.web`
 - `apps/fiducia-memory.rs`
 - `apps/fiducia-messaging.rs`
 - `apps/fiducia-node-sidecar.rs`
@@ -123,7 +123,6 @@ fallback.
 - `apps/fiducia-sync`
 - `apps/fiducia-telemetry.rs`
 - `apps/fiducia-test-config`
-- `apps/fiducia-ui.web`
 
 ## Security posture
 

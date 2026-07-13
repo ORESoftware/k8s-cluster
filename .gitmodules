@@ -6,9 +6,9 @@
 	path = apps/fiducia-auth.rs
 	url = git@github.com:fiducia-cloud/fiducia-auth.rs
 	branch = main
-[submodule "apps/fiducia-backend.rs"]
-	path = apps/fiducia-backend.rs
-	url = git@github.com:fiducia-cloud/fiducia-backend.rs
+[submodule "apps/fiducia-customer.rs"]
+	path = apps/fiducia-customer.rs
+	url = git@github.com:fiducia-cloud/fiducia-customer.rs
 	branch = main
 [submodule "apps/fiducia-brain.rs"]
 	path = apps/fiducia-brain.rs
@@ -17,10 +17,6 @@
 [submodule "apps/fiducia-clients"]
 	path = apps/fiducia-clients
 	url = git@github.com:fiducia-cloud/fiducia-clients
-	branch = main
-[submodule "apps/fiducia-customer-ui.web"]
-	path = apps/fiducia-customer-ui.web
-	url = git@github.com:fiducia-cloud/fiducia-customer-ui.web.git
 	branch = main
 [submodule "apps/fiducia-edge"]
 	path = apps/fiducia-edge
@@ -54,9 +50,9 @@
 	path = apps/fiducia-telemetry.rs
 	url = git@github.com:fiducia-cloud/fiducia-telemetry.rs
 	branch = main
-[submodule "apps/fiducia-ui.web"]
-	path = apps/fiducia-ui.web
-	url = git@github.com:fiducia-cloud/fiducia-ui.web
+[submodule "apps/fiducia-marketing.web"]
+	path = apps/fiducia-marketing.web
+	url = git@github.com:fiducia-cloud/fiducia-marketing.web
 	branch = main
 [submodule "apps/fiducia-cli.rs"]
 	path = apps/fiducia-cli.rs

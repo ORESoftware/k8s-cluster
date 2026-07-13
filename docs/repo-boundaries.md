@@ -31,7 +31,7 @@ Public or public-ready repositories:
 - `fiducia-lambda-service.rs`: sandboxed function/runner dispatch service with
   request-body limits and server-auth-gated mutating routes.
 - `fiducia-routing.rs`: region enum and deterministic routing helpers.
-- `fiducia-ui.web`: public marketing/product web surface.
+- `fiducia-marketing.web`: public marketing/product web surface.
 
 Private repositories by default:
 
@@ -46,8 +46,8 @@ Private repositories by default:
   conversation bus, transport hardening, and optional message persistence.
 - `fiducia-ai-agent-control-plane`: single-tenant, customer-operated agent
   orchestration, source context, model workflows, memory, and audit state.
-- `fiducia-backend.rs`: customer portal backend integration.
-- `fiducia-customer-ui.web`: authenticated customer portal.
+- `fiducia-customer.rs`: customer portal backend integration.
+- `fiducia-customer-ui.web`: deprecated legacy customer SPA (archived; superseded by `fiducia-customer.rs`, no longer a monorepo submodule).
 - `fiducia-node-sidecar.rs`: node-local bridge and heartbeat logic.
 - `fiducia-operations-control-plane`: single-tenant deployment, migration,
   scheduling, runner, rollout, and infrastructure audit state.
