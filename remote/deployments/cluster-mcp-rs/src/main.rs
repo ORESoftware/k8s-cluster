@@ -466,6 +466,31 @@ fn new_trace_context() -> TraceContext {
     }
 }
 
+// Source attribution for rpc/tool log events so unauthenticated in-VPC calls
+// are traceable to a peer. The socket peer address is ground truth;
+// X-Forwarded-For is caller-controlled, so it is logged only as a separate,
+// clearly-labelled field (clipped and sanitized, never trusted).
+fn client_attrs(attributes: Value, peer: SocketAddr, headers: &HeaderMap) -> Value {
+    let mut map = match attributes {
+        Value::Object(map) => map,
+        other => {
+            let mut map = Map::new();
+            map.insert("attributes".to_string(), other);
+            map
+        }
+    };
+    map.insert("client.ip".to_string(), json!(peer.ip().to_string()));
+    if let Some(forwarded) = headers
+        .get("x-forwarded-for")
+        .and_then(|value| value.to_str().ok())
+        .map(|value| sanitize_text(&clip_string(value.trim(), 256)))
+        .filter(|value| !value.is_empty())
+    {
+        map.insert("client.forwarded_for".to_string(), json!(forwarded));
+    }
+    Value::Object(map)
+}
+
 const KNOWN_METHODS: &[&str] = &[
     "initialize",
     "notifications/initialized",
