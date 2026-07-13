@@ -15,6 +15,7 @@ visibility, so public repos (UI, marketing site) coexist with private ones
 | App | Path | Source |
 |-----|------|--------|
 | Backend (Rust) | [`apps/sonus-auris-backend.rs`](apps/sonus-auris-backend.rs) | `sonus-auris/sonus-auris-backend.rs` |
+| Account web server (Maud/Axum/SeaORM/HTMX) | [`apps/sonus-auris-web-server.rs`](apps/sonus-auris-web-server.rs) | `sonus-auris/sonus-auris-web-server.rs` |
 | UI (Dart/Flutter) | [`apps/sonus-auris-ui.dart`](apps/sonus-auris-ui.dart) | `sonus-auris/sonus-auris-ui.dart` |
 | Shared interfaces | [`apps/sonus-auris-interfaces`](apps/sonus-auris-interfaces) | `sonus-auris/sonus-auris-interfaces` |
 | Marketing site | [`apps/sonus-auris-site.web`](apps/sonus-auris-site.web) | `sonus-auris/sonus-auris-site.web` |
