@@ -97,3 +97,5 @@ jobs:
           tags: |
             ${{ steps.ecr.outputs.registry }}/${{ vars.REMOTE_DEV_ECR_REPOSITORY }}:latest
             ${{ steps.ecr.outputs.registry }}/${{ vars.REMOTE_DEV_ECR_REPOSITORY }}:dev-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
