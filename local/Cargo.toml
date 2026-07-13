@@ -17,9 +17,9 @@ required-features = ["des-engine"]
 [dependencies]
 async-nats = "=0.38.0"
 axum = { version = "0.7", features = ["macros"] }
-dd-nats-subject-defs = { path = "../../k8s-cluster/remote/libs/nats/subject-defs/generated/rust" }
-dd-pg-defs = { path = "../../k8s-cluster/remote/libs/pg-defs/generated/rust" }
-dd-redis-interfaces = { path = "../../k8s-cluster/remote/libs/interfaces/redis/generated/rust" }
+dd-nats-subject-defs = { path = "../vendor/nats-subject-defs" }
+dd-pg-defs = { path = "../vendor/pg-defs" }
+dd-redis-interfaces = { path = "../vendor/redis-interfaces" }
 des_engine = { path = "../../discrete-event-system.rs", optional = true }
 futures-util = "0.3"
 libloading = "0.8"

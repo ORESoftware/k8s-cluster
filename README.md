@@ -18,15 +18,15 @@ The same binary can run as either a master or a slave. The role is deterministic
 
 ## NATS source of truth
 
-When this repo is mounted as `k8s-cluster/remote/deployments/mip-solver-node.rs`, `Cargo.toml` imports generated constants from:
+The repository vendors the generated NATS contract crate at:
 
-`../../libs/nats/subject-defs/generated/rust`
+`vendor/nats-subject-defs`
 
-The service uses those generated definitions for the MIP solver jobs, results, events, stream name, and worker queue group, avoiding local string drift in Rust code.
+The service uses those generated definitions for the MIP solver jobs, results, events, stream name, and worker queue group, avoiding local string drift in Rust code. The generated Postgres and Redis contract crates are vendored alongside it so standalone and cluster builds do not require access to the private shared-definitions repository.
 
 ## Local checkout
 
-This repo was created for `~/codes/ores/mip-solver-node.rs`. For direct local checks from that location, use the local manifest because the shared path dependencies live in the sibling k8s-cluster checkout:
+This repo was created for `~/codes/ores/mip-solver-node.rs`. For direct local checks from that location, use the local manifest so Cargo resolves the sibling DES engine checkout:
 
 `cargo check --manifest-path local/Cargo.toml`
 
@@ -89,7 +89,7 @@ lineup and can be posted directly to `/solve`.
 
 Active solves are kept in memory on the master for low-latency frontier mutation, worker tracking, and aggregation. NATS JetStream carries persisted job/result messages between pods.
 
-Postgres is the durable journal for solve starts, model revisions, subproblem submissions/completions/splits, and solve finishes. The Rust binary imports MIP-specific table names from `remote/libs/pg-defs/generated/rust` (`mip_solver_sessions`, `mip_solver_solves`, `mip_solver_jobs`, `mip_solver_events`) and writes best-effort upserts/events when `MIP_SOLVER_DATABASE_URL`, `AGENT_TASKS_RDS_DATABASE_URL`, `RDS_DATABASE_URL`, `DATABASE_URL`, or `PG_DATABASE_URL` is configured.
+Postgres is the durable journal for solve starts, model revisions, subproblem submissions/completions/splits, and solve finishes. The Rust binary imports MIP-specific table names from `vendor/pg-defs` (`mip_solver_sessions`, `mip_solver_solves`, `mip_solver_jobs`, `mip_solver_events`) and writes best-effort upserts/events when `MIP_SOLVER_DATABASE_URL`, `AGENT_TASKS_RDS_DATABASE_URL`, `RDS_DATABASE_URL`, `DATABASE_URL`, or `PG_DATABASE_URL` is configured.
 
 Redis is the hot cache and coordination layer for solve snapshots, frontier snapshots, live session model snapshots, and revision locks. Configure `MIP_SOLVER_REDIS_URL` or `REDIS_URL`; key names are under `MIP_SOLVER_REDIS_KEY_PREFIX` (default `dd:mip-solver`) and `/` reports the concrete key templates. Network-wide ownership locks can use Redis `SET NX PX` or the in-cluster live-mutex service if ownership migration is added later.
 
@@ -107,7 +107,7 @@ Session edits and session solves acquire the session revision lock and load the 
 
 KEDA scales slave pods from NATS JetStream consumer lag. New pods boot with `MIP_SOLVER_NODE_ROLE=slave`, attach to the same durable pull consumer, and start draining pending subproblems.
 
-Argo CD should source this repository directly (`path: k8s`). The Kubernetes startup command still builds inside a full `k8s-cluster` source tree because the normal Cargo manifest depends on generated NATS/Postgres/Redis crates under `remote/libs/...` and the in-house DES solver under `remote/submodules/discrete-event-system.rs`. By default the pod clones `k8s-cluster` from `MIP_SOLVER_CLUSTER_GIT_URL`/`MIP_SOLVER_CLUSTER_GIT_REF`, initializes both the `remote/libs` and DES submodules, then clones this solver repo from `MIP_SOLVER_NODE_GIT_URL`/`MIP_SOLVER_NODE_GIT_REF` into `remote/deployments/mip-solver-node.rs`. The pod does not mount the host checkout; source lives in an isolated `/tmp` checkout.
+Argo CD should source this repository directly (`path: k8s`). The Kubernetes startup command still builds inside a `k8s-cluster` source tree because the normal Cargo manifest resolves the in-house DES solver at `remote/submodules/discrete-event-system.rs`; the generated NATS/Postgres/Redis crates are self-contained under this repo's `vendor/` directory. By default the pod clones `k8s-cluster` from `MIP_SOLVER_CLUSTER_GIT_URL`/`MIP_SOLVER_CLUSTER_GIT_REF`, initializes the DES submodule, then clones this solver repo from `MIP_SOLVER_NODE_GIT_URL`/`MIP_SOLVER_NODE_GIT_REF` into `remote/deployments/mip-solver-node.rs`. The pod does not mount the host checkout; source lives in an isolated `/tmp` checkout.
 
 That split is intentional: C owns cluster/shared dependency layout, while A owns the service source and rendered Kubernetes bundle. It also prevents a stale C submodule pointer from making pods build older A code than Argo rendered.
 

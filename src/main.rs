@@ -9258,28 +9258,34 @@ mod tests {
     }
 
     #[test]
-    fn deployment_bootstrap_includes_every_shared_path_dependency() {
+    fn deployment_bootstrap_is_self_contained_except_for_des() {
         for manifest in [
             include_str!("../k8s/master-deployment.yaml"),
             include_str!("../k8s/slave-deployment.yaml"),
         ] {
             assert!(manifest.contains(
-                "submodule set-url remote/libs https://github.com/ORESoftware/k8s-libs-and-shared-defs.git"
+                "submodule update --init --depth 1 remote/submodules/discrete-event-system.rs"
             ));
-            assert!(manifest.contains(
-                "submodule update --init --depth 1 remote/libs remote/submodules/discrete-event-system.rs"
-            ));
+            assert!(!manifest.contains("remote/libs"));
             assert!(manifest.contains("memory: 32Mi"));
         }
 
         let dockerfile = include_str!("../Dockerfile");
-        for dependency in [
-            "remote/libs/nats/subject-defs/generated/rust",
-            "remote/libs/pg-defs/generated/rust",
-            "remote/libs/interfaces/redis/generated/rust",
-            "remote/submodules/discrete-event-system.rs",
+        assert!(!dockerfile.contains("remote/libs"));
+        assert!(dockerfile.contains("remote/deployments/mip-solver-node.rs"));
+        assert!(dockerfile.contains("remote/submodules/discrete-event-system.rs"));
+
+        for manifest in [
+            include_str!("../Cargo.toml"),
+            include_str!("../local/Cargo.toml"),
         ] {
-            assert!(dockerfile.contains(dependency), "missing {dependency}");
+            for dependency in [
+                "vendor/nats-subject-defs",
+                "vendor/pg-defs",
+                "vendor/redis-interfaces",
+            ] {
+                assert!(manifest.contains(dependency), "missing {dependency}");
+            }
         }
     }
 
