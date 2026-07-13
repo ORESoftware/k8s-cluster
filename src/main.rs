@@ -1070,16 +1070,23 @@ fn config_from_env() -> Config {
         microsoft_graph_base_url: first_env(&["SOUND_RECORDER_MICROSOFT_GRAPH_BASE_URL"])
             .unwrap_or_else(|| "https://graph.microsoft.com/v1.0".to_string()),
         public_base_url: first_env(&["SOUND_RECORDER_PUBLIC_BASE_URL"]),
-        alert_email_to: first_env(&["SOUND_RECORDER_ALERT_EMAIL_TO"])
-            .unwrap_or_else(|| "alexander.d.mills@gmail.com".to_string()),
+        // No hardcoded default recipient: a baked-in personal address would receive
+        // every deployment's alert audio links if the operator forgot to set this.
+        // Unset => alerts are disabled (fail closed), exactly like the webhook below.
+        alert_email_to: first_env(&["SOUND_RECORDER_ALERT_EMAIL_TO"]).unwrap_or_default(),
         alert_email_webhook_url: first_env(&["SOUND_RECORDER_ALERT_EMAIL_WEBHOOK_URL"]),
         rate_limit_per_minute: env_u32_allow_zero(
             "SOUND_RECORDER_RATE_LIMIT_PER_MINUTE",
             DEFAULT_RATE_LIMIT_PER_MINUTE,
         ),
+        // Secure by default: key the rate limiter on the real peer IP, not a
+        // client-spoofable X-Forwarded-For header. Operators behind a trusted
+        // proxy that sets XFF must opt in with
+        // SOUND_RECORDER_RATE_LIMIT_TRUST_FORWARDED_FOR=1; otherwise an attacker
+        // could rotate XFF per request to get an unbounded per-key budget.
         rate_limit_trust_forwarded_for: env_bool(
             "SOUND_RECORDER_RATE_LIMIT_TRUST_FORWARDED_FOR",
-            true,
+            false,
         ),
         supabase: supabase_config_from_env(),
     }
@@ -4027,6 +4034,15 @@ async fn send_alert_email(
     listen_url: Option<&str>,
     segment_count: usize,
 ) -> bool {
+    if to.trim().is_empty() {
+        info!(
+            trigger,
+            %occurred_at,
+            segment_count,
+            "alert email recipient (SOUND_RECORDER_ALERT_EMAIL_TO) is not configured; skipping send"
+        );
+        return false;
+    }
     let Some(webhook_url) = state.config.alert_email_webhook_url.as_deref() else {
         info!(
             to,
@@ -6183,7 +6199,7 @@ mod tests {
             google_drive_upload_url: "https://www.googleapis.com/upload/drive/v3/files".to_string(),
             microsoft_graph_base_url: "https://graph.microsoft.com/v1.0".to_string(),
             public_base_url: Some("https://sound.example".to_string()),
-            alert_email_to: "alexander.d.mills@gmail.com".to_string(),
+            alert_email_to: "alerts@sound.example".to_string(),
             alert_email_webhook_url: None,
             rate_limit_per_minute: 0,
             rate_limit_trust_forwarded_for: true,
