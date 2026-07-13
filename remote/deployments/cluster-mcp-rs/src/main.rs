@@ -795,11 +795,14 @@ async fn healthz(State(state): State<AppState>) -> impl IntoResponse {
     })
 }
 
-async fn metrics(State(state): State<AppState>) -> Response {
+async fn metrics(State(state): State<AppState>, headers: HeaderMap) -> Response {
     state
         .metrics
         .http_requests_total
         .fetch_add(1, Ordering::Relaxed);
+    if let Some(response) = gated_unauthorized_response(&state, &headers) {
+        return response;
+    }
     let mut body = format!(
         concat!(
             "# HELP dd_cluster_mcp_rs_build_info Cluster MCP Rust build metadata.\n",
