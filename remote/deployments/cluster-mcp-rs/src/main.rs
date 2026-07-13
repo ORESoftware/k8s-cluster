@@ -1628,6 +1628,304 @@ async fn kubernetes_deployments_json(state: &AppState) -> Value {
     .await
 }
 
+// Full-object (non-metadata-only) Kubernetes GET for the tools that need
+// status/spec fields (rollout status, LB endpoints, events). Returns the
+// parsed body on success; the Err string is already sanitized. The parse
+// guard is MCP_KUBERNETES_FULL_BODY_LIMIT_BYTES because full objects carry
+// managedFields and complete specs.
+async fn kubernetes_get_body(state: &AppState, path: &str) -> Result<Value, String> {
+    state
+        .metrics
+        .k8s_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let token = tokio::fs::read_to_string(&state.config.kubernetes_token_path)
+        .await
+        .map_err(|error| format!("failed to read service account token: {error}"))?
+        .trim()
+        .to_string();
+    let url = join_url(&state.config.kubernetes_api_url, path);
+    let response = state
+        .k8s_http
+        .get(url)
+        .timeout(state.config.kubernetes_timeout)
+        .bearer_auth(token)
+        .header(header::ACCEPT, "application/json")
+        .send()
+        .await
+        .map_err(|error| sanitize_text(&error.to_string()))?;
+    let status = response.status();
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|error| sanitize_text(&error.to_string()))?;
+    if !status.is_success() {
+        return Err(format!(
+            "kubernetes api returned status {}",
+            status.as_u16()
+        ));
+    }
+    if bytes.len() > state.config.kubernetes_full_body_limit_bytes {
+        return Err(format!(
+            "kubernetes response body ({} bytes) exceeded MCP_KUBERNETES_FULL_BODY_LIMIT_BYTES ({})",
+            bytes.len(),
+            state.config.kubernetes_full_body_limit_bytes
+        ));
+    }
+    serde_json::from_slice::<Value>(&bytes).map_err(|error| sanitize_text(&error.to_string()))
+}
+
+async fn kubernetes_ingress_endpoints_json(state: &AppState) -> Value {
+    let ingresses = kubernetes_get_body(state, "/apis/networking.k8s.io/v1/ingresses?limit=500").await;
+    let services = kubernetes_get_body(state, "/api/v1/services?limit=500").await;
+    let limit = state.config.kubernetes_items_limit;
+    let ingresses = match &ingresses {
+        Ok(body) => json!({ "ok": true, "items": summarize_ingress_endpoints(body, limit) }),
+        Err(error) => json!({ "ok": false, "error": error }),
+    };
+    let services = match &services {
+        Ok(body) => json!({ "ok": true, "items": summarize_loadbalancer_services(body, limit) }),
+        Err(error) => json!({ "ok": false, "error": error }),
+    };
+    json!({
+        "source": "kubernetes-api",
+        "scope": "all-namespaces",
+        "readOnly": true,
+        "ingresses": ingresses,
+        "loadBalancerServices": services
+    })
+}
+
+fn summarize_ingress_endpoints(body: &Value, limit: usize) -> Vec<Value> {
+    body.get("items")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .take(limit)
+                .map(|item| {
+                    let metadata = item.get("metadata").unwrap_or(&Value::Null);
+                    let hosts = item
+                        .pointer("/spec/rules")
+                        .and_then(Value::as_array)
+                        .map(|rules| {
+                            rules
+                                .iter()
+                                .filter_map(|rule| rule.get("host").cloned())
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+                    json!({
+                        "name": metadata.get("name"),
+                        "namespace": metadata.get("namespace"),
+                        "className": item.pointer("/spec/ingressClassName"),
+                        "hosts": hosts,
+                        "loadBalancer": item
+                            .pointer("/status/loadBalancer/ingress")
+                            .cloned()
+                            .unwrap_or_else(|| json!([]))
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn summarize_loadbalancer_services(body: &Value, limit: usize) -> Vec<Value> {
+    body.get("items")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter(|item| {
+                    item.pointer("/spec/type").and_then(Value::as_str) == Some("LoadBalancer")
+                })
+                .take(limit)
+                .map(|item| {
+                    let metadata = item.get("metadata").unwrap_or(&Value::Null);
+                    let ports = item
+                        .pointer("/spec/ports")
+                        .and_then(Value::as_array)
+                        .map(|ports| {
+                            ports
+                                .iter()
+                                .map(|port| {
+                                    json!({
+                                        "name": port.get("name"),
+                                        "port": port.get("port"),
+                                        "protocol": port.get("protocol")
+                                    })
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+                    json!({
+                        "name": metadata.get("name"),
+                        "namespace": metadata.get("namespace"),
+                        "ports": ports,
+                        "externalEndpoints":
+                            lb_ingress_endpoints(item.pointer("/status/loadBalancer/ingress")),
+                        "externalIPs": item
+                            .pointer("/spec/externalIPs")
+                            .cloned()
+                            .unwrap_or_else(|| json!([]))
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+// Flatten status.loadBalancer.ingress entries into normalized ip/hostname
+// strings (an entry can carry both).
+fn lb_ingress_endpoints(ingress: Option<&Value>) -> Vec<String> {
+    let mut endpoints = Vec::new();
+    if let Some(entries) = ingress.and_then(Value::as_array) {
+        for entry in entries {
+            for key in ["ip", "hostname"] {
+                if let Some(value) = entry.get(key).and_then(Value::as_str) {
+                    endpoints.push(normalize_dns_name(value));
+                }
+            }
+        }
+    }
+    endpoints
+}
+
+async fn deployment_rollout_status_json(state: &AppState) -> Value {
+    match kubernetes_get_body(state, "/apis/apps/v1/deployments?limit=500").await {
+        Ok(body) => {
+            let item_count = body.get("items").and_then(Value::as_array).map(Vec::len);
+            json!({
+                "source": "kubernetes-api",
+                "resource": "deployments",
+                "scope": "all-namespaces",
+                "readOnly": true,
+                "ok": true,
+                "itemCount": item_count,
+                "deployments":
+                    summarize_deployment_rollouts(&body, state.config.kubernetes_items_limit)
+            })
+        }
+        Err(error) => json!({
+            "source": "kubernetes-api",
+            "resource": "deployments",
+            "ok": false,
+            "error": error
+        }),
+    }
+}
+
+fn summarize_deployment_rollouts(body: &Value, limit: usize) -> Vec<Value> {
+    body.get("items")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .take(limit)
+                .map(summarize_deployment_rollout)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn summarize_deployment_rollout(item: &Value) -> Value {
+    let metadata = item.get("metadata").unwrap_or(&Value::Null);
+    let status = item.get("status").unwrap_or(&Value::Null);
+    let conditions = status
+        .get("conditions")
+        .and_then(Value::as_array)
+        .map(|conditions| {
+            conditions
+                .iter()
+                .filter(|condition| {
+                    matches!(
+                        condition.get("type").and_then(Value::as_str),
+                        Some("Available") | Some("Progressing")
+                    )
+                })
+                .map(|condition| {
+                    json!({
+                        "type": condition.get("type"),
+                        "status": condition.get("status"),
+                        "reason": condition.get("reason"),
+                        "message": condition
+                            .get("message")
+                            .and_then(Value::as_str)
+                            .map(sanitize_text)
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    json!({
+        "name": metadata.get("name"),
+        "namespace": metadata.get("namespace"),
+        "replicas": item.pointer("/spec/replicas"),
+        "readyReplicas": status.get("readyReplicas"),
+        "updatedReplicas": status.get("updatedReplicas"),
+        "availableReplicas": status.get("availableReplicas"),
+        "conditions": conditions
+    })
+}
+
+async fn kubernetes_events_warnings_json(state: &AppState) -> Value {
+    // fieldSelector `type!=Normal` percent-encoded (`!` -> %21, `=` -> %3D);
+    // the request limit matches MAX_WARNING_EVENTS.
+    let path = "/api/v1/events?fieldSelector=type%21%3DNormal&limit=100";
+    match kubernetes_get_body(state, path).await {
+        Ok(body) => {
+            let item_count = body.get("items").and_then(Value::as_array).map(Vec::len);
+            json!({
+                "source": "kubernetes-api",
+                "resource": "events",
+                "scope": "all-namespaces",
+                "fieldSelector": "type!=Normal",
+                "readOnly": true,
+                "ok": true,
+                "itemCount": item_count,
+                "events": summarize_warning_events(&body, MAX_WARNING_EVENTS)
+            })
+        }
+        Err(error) => json!({
+            "source": "kubernetes-api",
+            "resource": "events",
+            "fieldSelector": "type!=Normal",
+            "ok": false,
+            "error": error
+        }),
+    }
+}
+
+fn summarize_warning_events(body: &Value, limit: usize) -> Vec<Value> {
+    body.get("items")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .take(limit)
+                .map(|event| {
+                    let involved = event.get("involvedObject").unwrap_or(&Value::Null);
+                    json!({
+                        "reason": event.get("reason"),
+                        "type": event.get("type"),
+                        "involvedObject": {
+                            "kind": involved.get("kind"),
+                            "name": involved.get("name"),
+                            "namespace": involved.get("namespace")
+                        },
+                        "count": event.get("count"),
+                        "lastTimestamp": event.get("lastTimestamp"),
+                        "message": event
+                            .get("message")
+                            .and_then(Value::as_str)
+                            .map(sanitize_text)
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn inventory_targets() -> Vec<ResourceTarget> {
     vec![
         ResourceTarget {
