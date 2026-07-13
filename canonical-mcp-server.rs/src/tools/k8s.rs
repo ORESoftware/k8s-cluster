@@ -46,7 +46,7 @@ impl K8sResource {
 /// Validate a namespace or context argument so nothing flag-like or
 /// shell-ish reaches kubectl. (Arguments are passed exec-style, never
 /// through a shell; this is defense in depth.)
-pub fn validate_k8s_name(value: &str, what: &str) -> Result<&str, String> {
+pub fn validate_k8s_name<'a>(value: &'a str, what: &str) -> Result<&'a str, String> {
     let valid = !value.is_empty()
         && value.len() <= 253
         && !value.starts_with('-')
