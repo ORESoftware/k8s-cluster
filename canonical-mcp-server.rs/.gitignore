@@ -1,0 +1,6 @@
+/target
+.DS_Store
+*.log
+
+# Scratch / git worktrees (tmp/worktrees/*)
+tmp/
