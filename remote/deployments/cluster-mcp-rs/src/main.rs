@@ -532,6 +532,21 @@ fn build_http_client(config: &Config) -> reqwest::Client {
         .expect("failed to build http client")
 }
 
+fn build_external_client(config: &Config) -> reqwest::Client {
+    // RDAP + DNS-over-HTTPS reads. This is the one client that follows
+    // redirects (bounded): rdap.org is a bootstrap redirector to the
+    // registry's RDAP server, so redirects are the protocol. Safe here because
+    // these requests carry no credentials (the Cloudflare token rides the
+    // redirect-disabled `http` client instead) and responses go through the
+    // same bounded-read + redaction pipeline.
+    reqwest::Client::builder()
+        .user_agent(format!("{SERVICE_NAME}/{SERVICE_VERSION}"))
+        .timeout(config.external_timeout)
+        .redirect(reqwest::redirect::Policy::limited(5))
+        .build()
+        .expect("failed to build external http client")
+}
+
 fn now_unix_nano() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
