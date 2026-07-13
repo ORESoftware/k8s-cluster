@@ -47,6 +47,9 @@ const TOOL_NAMES: &[&str] = &[
     "service_directory",
     "kubernetes_inventory",
     "kubernetes_deployments",
+    "kubernetes_ingress_endpoints",
+    "deployment_rollout_status",
+    "kubernetes_events_warnings",
     "human_access_policy",
     "telemetry_targets",
     "telemetry_summary",
@@ -56,7 +59,23 @@ const TOOL_NAMES: &[&str] = &[
     "grafana_inventory",
     "nats_metrics",
     "trace_backends",
+    "cloudflare_zones",
+    "cloudflare_dns_records",
+    "domain_registration",
+    "domain_dns_wiring",
 ];
+
+// Hard caps for the external read-only integrations (Cloudflare API, RDAP,
+// DNS-over-HTTPS). All are bounded regardless of upstream paging metadata.
+const MAX_CLOUDFLARE_ZONE_PAGES: usize = 3;
+const CLOUDFLARE_ZONES_PER_PAGE: usize = 50;
+const MAX_CLOUDFLARE_DNS_ZONES: usize = 20;
+const MAX_CLOUDFLARE_DNS_RECORDS: usize = 500;
+const MAX_CONFIGURED_DOMAINS: usize = 16;
+const MAX_WARNING_EVENTS: usize = 100;
+const MAX_EXTERNAL_TIMEOUT_MS: u64 = 5_000;
+const MAX_EXTERNAL_BODY_LIMIT_BYTES: usize = 262_144;
+const MAX_KUBERNETES_FULL_BODY_LIMIT_BYTES: usize = 4_194_304;
 
 #[derive(Clone)]
 struct AppState {
