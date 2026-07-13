@@ -8,11 +8,10 @@ making production a single, deliberate, auditable action.
 Each app repo's own CI is responsible for the **test** environment on merge to
 `main`:
 
-- CI publishes the release image (e.g. `ghcr.io/fiducia-cloud/<app>`) and runs
-  its **secret-gated** test-env rollout.
-- The rollout is a **no-op without credentials**: if the repo has no test
-  cluster/registry deploy secret, the step prints a notice and the job stays
-  green. A fork or a freshly created repo never deploys anything by accident.
+- CI publishes the release image (e.g. `ghcr.io/fiducia-cloud/<app>`) and may
+  run its **secret-gated** test-env rollout. Repository test workflows must
+  distinguish an explicit validation-only job from a deployment job; a job
+  named as a deployment must fail closed when required credentials are absent.
 - Test deploys are per-repo and fast — they do **not** wait on the superproject
   and do **not** touch production.
 
@@ -29,11 +28,13 @@ prod deploy anywhere.
 - The workflow first **validates** the rendered state from `apps/fiducia-infra`
   (`node tools/render.mjs --check`, then `kubectl kustomize` for every
   `clusters/*/`) before any apply.
-- The rollout step is **credential-gated and never automatic**: with an ArgoCD
-  token or `KUBE_CONFIG_PROD` it performs the real `argocd app sync` /
-  `kubectl apply`; with none it prints
-  `no prod credentials configured — validation-only` and succeeds without
-  touching prod. Required prod secrets are listed at the top of `deploy.yml`.
+- The rollout step is **credential-gated and never automatic**. It requires
+  `KUBE_CONFIG_PROD` plus a read-only fine-grained
+  `FIDUCIA_SUBMODULE_TOKEN` that can clone every private app repo. Missing
+  credentials fail the manual workflow. Public PR CI is the contract-only
+  validation path; trusted `main` CI additionally runs the recursive fleet
+  audit with the same read-only token. Required secrets are listed at the top
+  of `deploy.yml`.
 - Bind the `prod` GitHub Environment to **required reviewers** for a human
   approval gate on top of the manual dispatch.
 

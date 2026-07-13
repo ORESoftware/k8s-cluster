@@ -2,8 +2,12 @@
 set -euo pipefail
 
 # Pre-deploy audit of the superproject + every app submodule: fails on dirty
-# checkouts, conflict markers, tracked/committed secrets, missing Dockerfiles or
-# non-distroless Rust runtimes, readme app-list drift, and non-private visibility.
+# checkouts, conflict markers, tracked/committed secrets, mutable or fail-open
+# workflows, dependency lifecycle hooks, unpinned container bases, unsafe
+# runtime identities, missing Docker update automation, unreproducible README
+# commands, readme app-list drift, and visibility-policy drift. Rust tool runners
+# may use the explicit audited `tool-runner-nonroot` profile when their contract
+# requires OS executables.
 
 failures=0
 allow_dirty=0
@@ -105,7 +109,7 @@ scan_git_repo() {
   fi
 
   secret_output="$(
-    git -C "$repo" grep -n -E 'sb_secret_[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{36}|-----BEGIN [A-Z ]*PRIVATE KEY-----' -- . \
+    git -C "$repo" grep -n -E 'sb_secret_[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{36}|^[[:space:]]*-----BEGIN [A-Z ]*PRIVATE KEY-----' -- . \
       ':(exclude)*.lock' \
       ':(exclude)dist/**' \
       ':(exclude)target/**' \
@@ -118,7 +122,169 @@ scan_git_repo() {
   fi
 }
 
+scan_action_pins() {
+  local repo="$1"
+  local label="$2"
+  local action_output
+
+  action_output="$(
+    git -C "$repo" grep -n -E \
+      'uses:[[:space:]]*[^[:space:]#]+@[^[:space:]#]+' -- \
+      '.github/workflows/*.yml' '.github/workflows/*.yaml' 2>/dev/null \
+      | grep -v -E \
+        'uses:[[:space:]]*[^[:space:]#]+@[0-9a-f]{40}([[:space:]]|$)' \
+      || true
+  )"
+  if [[ -n "$action_output" ]]; then
+    fail "$label has GitHub Actions that are not pinned to full commit SHAs"
+    printf '%s\n' "$action_output" >&2
+  fi
+}
+
+scan_workflow_hardening() {
+  local repo="$1"
+  local label="$2"
+  local fail_open_output
+  local lifecycle_script_output
+  local unlocked_cargo_output
+  local moving_ref_output
+
+  scan_action_pins "$repo" "$label"
+
+  fail_open_output="$(
+    git -C "$repo" grep -n -E \
+      'continue-on-error:[[:space:]]*true|[|][|][[:space:]]*(true|echo)|exit[[:space:]]+0|npm[[:space:]]+install([[:space:]]|$)' -- \
+      '.github/workflows/*.yml' '.github/workflows/*.yaml' 2>/dev/null \
+      | grep -v -E ':[0-9]+:[[:space:]]*#' \
+      || true
+  )"
+  if [[ -n "$fail_open_output" ]]; then
+    fail "$label has fail-open or lockfile-bypassing workflow commands"
+    printf '%s\n' "$fail_open_output" >&2
+  fi
+
+  lifecycle_script_output="$(
+    git -C "$repo" grep -n -E \
+      'npm[[:space:]]+ci([[:space:]]|$)' -- \
+      '.github/workflows/*.yml' '.github/workflows/*.yaml' 2>/dev/null \
+      | grep -v -- '--ignore-scripts' \
+      | grep -v -E ':[0-9]+:[[:space:]]*#' \
+      || true
+  )"
+  if [[ -n "$lifecycle_script_output" ]]; then
+    fail "$label runs npm dependency lifecycle scripts in a workflow"
+    printf '%s\n' "$lifecycle_script_output" >&2
+  fi
+
+  unlocked_cargo_output="$(
+    git -C "$repo" grep -n -E \
+      '(^|[[:space:]])cargo[[:space:]]+(build|check|clippy|run|test)([[:space:]]|$)' -- \
+      '.github/workflows/*.yml' '.github/workflows/*.yaml' 2>/dev/null \
+      | grep -v -- '--locked' \
+      || true
+  )"
+  if [[ -n "$unlocked_cargo_output" ]]; then
+    fail "$label has Cargo workflow commands without --locked"
+    printf '%s\n' "$unlocked_cargo_output" >&2
+  fi
+
+  moving_ref_output="$(
+    git -C "$repo" grep -n -E \
+      'ref:[[:space:]]*(main|master|stable)([[:space:]]|$)|^ARG[[:space:]]+[A-Z0-9_]*REF=(main|master|stable)$' -- \
+      '.github/workflows/*.yml' '.github/workflows/*.yaml' 'Dockerfile' 2>/dev/null \
+      || true
+  )"
+  if [[ -n "$moving_ref_output" ]]; then
+    fail "$label consumes a moving cross-repository revision"
+    printf '%s\n' "$moving_ref_output" >&2
+  fi
+}
+
+scan_container_hardening() {
+  local repo="$1"
+  local label="$2"
+  local dockerfile="$repo/Dockerfile"
+  local mutable_bases
+  local runtime_user
+  local lifecycle_script_output
+
+  if [[ ! -f "$dockerfile" ]]; then
+    fail "$label is missing Dockerfile"
+    return
+  fi
+
+  mutable_bases="$(
+    grep -n '^FROM[[:space:]]' "$dockerfile" \
+      | grep -v -E '^([0-9]+:)?FROM[[:space:]]+[^[:space:]]+@sha256:[0-9a-f]{64}([[:space:]]+[Aa][Ss][[:space:]]+[A-Za-z0-9._-]+)?$' \
+      || true
+  )"
+  if [[ -n "$mutable_bases" ]]; then
+    fail "$label has container base images without immutable sha256 digests"
+    printf '%s\n' "$mutable_bases" >&2
+  fi
+
+  lifecycle_script_output="$(
+    grep -n -E '^RUN[[:space:]].*npm[[:space:]]+ci([[:space:]]|$)' "$dockerfile" \
+      | grep -v -- '--ignore-scripts' \
+      || true
+  )"
+  if [[ -n "$lifecycle_script_output" ]]; then
+    fail "$label runs npm dependency lifecycle scripts during its container build"
+    printf '%s\n' "$lifecycle_script_output" >&2
+  fi
+
+  runtime_user="$(awk '/^FROM[[:space:]]/{user=""} /^USER[[:space:]]/{user=$0} END{print user}' "$dockerfile")"
+  if [[ -z "$runtime_user" ]]; then
+    fail "$label runtime stage has no explicit USER"
+  fi
+
+  if [[ ! -f "$repo/.github/dependabot.yml" ]] \
+    || ! grep -q 'package-ecosystem:[[:space:]]*docker' "$repo/.github/dependabot.yml"; then
+    fail "$label does not track Docker base updates with Dependabot"
+  fi
+}
+
+scan_readme_reproducibility() {
+  local repo="$1"
+  local label="$2"
+  local unlocked_cargo_output
+  local lifecycle_script_output
+
+  unlocked_cargo_output="$(
+    git -C "$repo" grep -n -E \
+      '^[[:space:]]*([^#[:space:]]+[[:space:]]+)?cargo[[:space:]]+(build|check|clippy|run|test)([[:space:]]|$)' -- \
+      '*README*.md' '*readme*.md' \
+      ':(exclude)vendor/**' ':(exclude)node_modules/**' 2>/dev/null \
+      | grep -v -- '--locked' \
+      || true
+  )"
+  if [[ -n "$unlocked_cargo_output" ]]; then
+    fail "$label documents dependency-resolving Cargo commands without --locked"
+    printf '%s\n' "$unlocked_cargo_output" >&2
+  fi
+
+  lifecycle_script_output="$(
+    git -C "$repo" grep -n -E \
+      '^[[:space:]]*npm[[:space:]]+ci([[:space:]]|$)' -- \
+      '*README*.md' '*readme*.md' \
+      ':(exclude)vendor/**' ':(exclude)node_modules/**' 2>/dev/null \
+      | grep -v -- '--ignore-scripts' \
+      || true
+  )"
+  if [[ -n "$lifecycle_script_output" ]]; then
+    fail "$label documents npm ci without disabling dependency lifecycle scripts"
+    printf '%s\n' "$lifecycle_script_output" >&2
+  fi
+}
+
 scan_git_repo "$repo_root" "superproject"
+scan_workflow_hardening "$repo_root" "superproject"
+scan_container_hardening "$repo_root" "superproject"
+scan_readme_reproducibility "$repo_root" "superproject"
+
+if git submodule status --recursive | grep -Eq '^[+U-]'; then
+  fail "submodule checkout does not exactly match an initialized reviewed gitlink"
+fi
 
 for i in "${!module_paths[@]}"; do
   module_name="${module_names[$i]}"
@@ -130,8 +296,8 @@ for i in "${!module_paths[@]}"; do
     fail "$module_path is missing a submodule URL"
   fi
 
-  if [[ -z "$module_branch" ]]; then
-    fail "$module_path is missing a submodule branch"
+  if [[ "$module_branch" != "main" ]]; then
+    fail "$module_path must track main (found '${module_branch:-unset}')"
   fi
 
   if [[ ! -d "$module_path" ]]; then
@@ -148,32 +314,38 @@ for i in "${!module_paths[@]}"; do
     fail "readme.md app list is missing $module_path"
   fi
 
-  if [[ ! -f "$module_path/Dockerfile" ]]; then
-    fail "$module_path is missing Dockerfile"
-  fi
-
   if [[ ! -f "$module_path/.dockerignore" ]]; then
     fail "$module_path is missing .dockerignore"
   fi
 
+  scan_container_hardening "$module_path" "$module_path"
+
   if [[ -f "$module_path/Cargo.toml" && ( -f "$module_path/src/main.rs" || -d "$module_path/src/bin" ) ]]; then
-    if ! grep -q '^FROM gcr.io/distroless/cc-debian12:nonroot$' "$module_path/Dockerfile"; then
-      fail "$module_path Rust runtime image is not distroless nonroot"
+    if grep -q -E '^FROM gcr\.io/distroless/cc-debian12:nonroot@sha256:[0-9a-f]{64}$' "$module_path/Dockerfile"; then
+      :
+    elif grep -q '^LABEL org\.fiducia\.runtime-profile="tool-runner-nonroot"$' "$module_path/Dockerfile"; then
+      if ! grep -q '^USER 65532:65532$' "$module_path/Dockerfile"; then
+        fail "$module_path tool-runner runtime does not use uid/gid 65532:65532"
+      fi
+    else
+      fail "$module_path Rust runtime is neither distroless nonroot nor an explicit non-root tool runner"
     fi
 
     if ! grep -q '^COPY --from=build --chown=65532:65532 ' "$module_path/Dockerfile"; then
-      fail "$module_path does not copy only the release binary into the runtime stage"
+      fail "$module_path does not copy its release binary with non-root ownership"
     fi
   fi
 
   scan_git_repo "$module_path" "$module_path"
+  scan_workflow_hardening "$module_path" "$module_path"
+  scan_readme_reproducibility "$module_path" "$module_path"
 done
 
 if [[ -f docs/repo-boundaries.md ]]; then
   if command -v gh >/dev/null 2>&1; then
     visibility="$(gh repo view fiducia-cloud/fiducia-monorepo --json visibility --jq .visibility 2>/dev/null || true)"
     if [[ -n "$visibility" && "$visibility" != "PRIVATE" ]]; then
-      fail "fiducia-monorepo visibility is $visibility; all-up GitOps superproject should stay PRIVATE"
+      warn "fiducia-monorepo visibility is $visibility; intended PRIVATE visibility requires an owner decision"
     fi
   else
     warn "gh is unavailable; skipping remote visibility check"

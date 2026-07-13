@@ -5,11 +5,18 @@ scripts are `bash`, start with `set -euo pipefail`, never `git push`, and offer
 `--dry-run`/`--allow-dirty` previews (enforced by `tests/monorepo-contract.test.mjs`).
 
 - `pin-submodules.sh <branch>` — pins every submodule to a branch: verifies the
-  branch exists on each remote, rewrites `.gitmodules`, fast-forwards each
-  submodule, and stages the resulting gitlink pins (the deployable state).
-- `checkout-feature-branch.sh <branch>` — switches the superproject and every
-  submodule to the same feature branch, creating it from the base when needed;
-  refuses dirty checkouts.
+  branch exists on each remote, fast-forwards each submodule, and stages the
+  resulting gitlink pins (the deployable state). The script itself now rejects
+  every branch except `main` while the current main-only policy is active.
+- `checkout-feature-branch.sh <branch>` — retained for a future branch-policy
+  change, but currently unauthorized: agents and operators must keep the
+  superproject and every application checkout on `main` and must not create
+  feature branches or linked worktrees.
 - `audit-repo-state.sh` — pre-deploy safety audit: flags dirty trees, conflict
-  markers, tracked/committed secrets, missing Dockerfiles, non-distroless Rust
-  runtimes, readme app-list drift, and non-private superproject visibility.
+  markers, tracked/committed secrets, mutable or fail-open workflow inputs,
+  unlocked Cargo commands, dependency lifecycle hooks, moving sibling refs,
+  non-digest base images, missing Docker Dependabot coverage, unsafe runtime
+  identities, unreproducible README commands, readme app-list drift, and
+  visibility-policy drift. Rust services are distroless/nonroot by default;
+  OS-tool runners require the explicit `tool-runner-nonroot` profile and uid/gid
+  `65532:65532`.

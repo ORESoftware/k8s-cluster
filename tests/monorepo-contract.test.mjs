@@ -3,7 +3,8 @@
 // .env.example keeps required (placeholder-only) knobs, and that the ops scripts
 // keep destructive actions manual with dry-run/audit guardrails.
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
@@ -51,9 +52,22 @@ function parseEnvExample() {
   return env;
 }
 
-test("submodule declarations stay complete, pinned to main, and backed by apps directories", () => {
+test("submodule declarations stay complete, pinned to main, and backed by gitlinks", () => {
   const modules = parseGitmodules();
   const paths = modules.map((module) => module.path).sort();
+  const gitlinks = new Map(
+    execFileSync("git", ["ls-files", "--stage", "--", "apps"], {
+      cwd: root,
+      encoding: "utf8",
+    })
+      .trim()
+      .split(/\r?\n/)
+      .map((line) => {
+        const entry = line.match(/^(\d+) [0-9a-f]+ \d+\t(.+)$/);
+        assert.ok(entry, `unexpected git index entry: ${line}`);
+        return [entry[2], entry[1]];
+      }),
+  );
 
   assert.equal(modules.length, 26);
   assert.deepEqual(paths, [
@@ -89,7 +103,7 @@ test("submodule declarations stay complete, pinned to main, and backed by apps d
     assert.equal(module.branch, "main", `${module.path} must track main`);
     assert.match(module.url, /^git@github\.com:fiducia-cloud\/fiducia-[A-Za-z0-9.-]+(?:\.git)?$/);
     assert.ok(module.path.startsWith("apps/fiducia-"));
-    assert.ok(existsSync(path.join(root, module.path)), `${module.path} is initialized`);
+    assert.equal(gitlinks.get(module.path), "160000", `${module.path} must be a pinned gitlink`);
   }
 });
 
@@ -103,7 +117,9 @@ test("readme and boundary docs classify every app submodule", () => {
     assert.match(boundaries, new RegExp(`\`${repoName.replaceAll(".", "\\.")}\``));
   }
 
-  assert.match(boundaries, /Keep the all-up superproject private/);
+  assert.match(boundaries, /fiducia-monorepo` is the integration and GitOps superproject and is intended to\s+be private/);
+  assert.match(boundaries, /Live visibility snapshot/);
+  assert.match(boundaries, /Restore the all-up superproject to private unless an owner explicitly accepts/);
   assert.match(boundaries, /Do not commit real `\.env\*` files/);
 });
 
@@ -123,6 +139,8 @@ test("env template exposes auth, passkey, 2fa, api key, email, and idempotency k
     "WEBAUTHN_RP_ID",
     "WEBAUTHN_ORIGIN",
     "TOTP_ISSUER",
+    "FIDUCIA_ADMIN_ORIGIN",
+    "FIDUCIA_ADMIN_CSRF_SECRET",
     "CUSTOMER_API_KEY_PEPPER",
     "IDEMPOTENCY_KEY_HEADER",
     "IDEMPOTENCY_STORE_URL",
@@ -146,6 +164,7 @@ test("env template keeps sensitive values placeholder-only", () => {
   const env = parseEnvExample();
   const sensitiveKeys = [
     "SUPABASE_SECRET_KEY",
+    "FIDUCIA_ADMIN_CSRF_SECRET",
     "CUSTOMER_API_KEY_PEPPER",
     "SMTP_PASSWORD",
   ];
@@ -155,6 +174,9 @@ test("env template keeps sensitive values placeholder-only", () => {
     assert.match(value, /replace[-_]me|secret-manager/i, `${key} must stay as a placeholder`);
     assert.doesNotMatch(value, /^eyJ[A-Za-z0-9_-]+\./, `${key} looks like a JWT`);
   }
+
+  assert.match(env.get("FIDUCIA_ADMIN_ORIGIN"), /^https:\/\//);
+  assert.ok(env.get("FIDUCIA_ADMIN_CSRF_SECRET").length >= 32);
 });
 
 test("monorepo scripts keep destructive actions manual and include dry-run/audit guardrails", () => {
@@ -179,6 +201,17 @@ test("monorepo scripts keep destructive actions manual and include dry-run/audit
   assert.match(audit, /:\(exclude\)target\/\*\*/);
   assert.match(audit, /:\(exclude\)node_modules\/\*\*/);
   assert.match(audit, /:\(exclude\)dist\/\*\*/);
+  assert.match(audit, /GitHub Actions that are not pinned to full commit SHAs/);
+  assert.match(audit, /\[0-9a-f\]\{40\}/);
+  assert.match(audit, /fail-open or lockfile-bypassing workflow commands/);
+  assert.match(audit, /runs npm dependency lifecycle scripts in a workflow/);
+  assert.match(audit, /Cargo workflow commands without --locked/);
+  assert.match(audit, /documents dependency-resolving Cargo commands without --locked/);
+  assert.match(audit, /documents npm ci without disabling dependency lifecycle scripts/);
+  assert.match(audit, /container base images without immutable sha256 digests/);
+  assert.match(audit, /package-ecosystem:\[\[:space:\]\]\*docker/);
+  assert.match(audit, /tool-runner-nonroot/);
+  assert.match(audit, /USER 65532:65532/);
 
   const branchScripts = [
     read("scripts/pin-submodules.sh"),
@@ -187,4 +220,31 @@ test("monorepo scripts keep destructive actions manual and include dry-run/audit
   for (const body of branchScripts) {
     assert.match(body, /\^\[A-Za-z0-9\._\/-\]\+\$/);
   }
+  assert.match(branchScripts[0], /permits only the main branch/);
+});
+
+test("CI and production workflows fail closed on immutable inputs", () => {
+  const ci = read(".github/workflows/ci.yml");
+  const deploy = read(".github/workflows/deploy.yml");
+  const dockerfile = read("Dockerfile");
+  const dependabot = read(".github/dependabot.yml");
+
+  for (const workflow of [ci, deploy]) {
+    assert.match(workflow, /actions\/checkout@[0-9a-f]{40}/);
+    assert.match(workflow, /actions\/setup-node@[0-9a-f]{40}/);
+    assert.match(workflow, /FIDUCIA_SUBMODULE_TOKEN/);
+    assert.match(workflow, /npm ci --ignore-scripts/);
+    assert.doesNotMatch(workflow, /continue-on-error:\s*true|npm ci \|\| npm install/);
+  }
+
+  assert.match(ci, /Initialize public contract submodules/);
+  assert.match(ci, /apps\/fiducia-interfaces apps\/fiducia-sync/);
+  assert.match(ci, /fleet-audit:/);
+  assert.match(ci, /if: github\.event_name != 'pull_request'/);
+  assert.match(ci, /submodules: recursive/);
+  assert.match(deploy, /test -n "\$KUBE_CONFIG_PROD"/);
+  assert.doesNotMatch(deploy, /validation-only; nothing deployed/);
+  assert.match(dockerfile, /^FROM .*@sha256:[0-9a-f]{64}$/m);
+  assert.match(dockerfile, /^USER 65532:65532$/m);
+  assert.match(dependabot, /package-ecosystem: docker/);
 });

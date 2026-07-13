@@ -1,10 +1,15 @@
 # syntax=docker/dockerfile:1
 # Tooling image for submodule pinning and branch coordination workflows.
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim@sha256:60eac759739651111db372c07be67863818726f754804b8707c90979bda511df
+LABEL org.fiducia.runtime-profile="tool-runner-nonroot"
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends bash git ca-certificates
+    && apt-get install -y --no-install-recommends bash git ca-certificates \
+    && apt-get clean \
+    && install -d -o 65532 -g 65532 /workspace/fiducia-monorepo /tmp
 WORKDIR /workspace/fiducia-monorepo
-COPY .gitmodules readme.md ./
-COPY docs docs
-COPY scripts scripts
+COPY --chown=65532:65532 .gitmodules readme.md ./
+COPY --chown=65532:65532 docs docs
+COPY --chown=65532:65532 scripts scripts
+ENV HOME=/tmp
+USER 65532:65532
 CMD ["bash", "-lc", "scripts/pin-submodules.sh --help && scripts/checkout-feature-branch.sh --help"]
