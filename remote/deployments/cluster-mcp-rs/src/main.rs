@@ -131,6 +131,7 @@ struct Metrics {
     tool_failures_total: AtomicU64,
     k8s_requests_total: AtomicU64,
     observability_requests_total: AtomicU64,
+    external_requests_total: AtomicU64,
     otlp_spans_total: AtomicU64,
     otlp_failures_total: AtomicU64,
     rpc_by_method: Mutex<BTreeMap<String, u64>>,
