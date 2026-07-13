@@ -163,10 +163,7 @@ async fn doh_query(client: &reqwest::Client, domain: &str, kind: &str) -> Result
 }
 
 /// `domain_status`: RDAP registrar-side report plus live DNS delegation.
-pub async fn domain_status_report(
-    client: &reqwest::Client,
-    domain: &str,
-) -> Result<Value, String> {
+pub async fn domain_status_report(client: &reqwest::Client, domain: &str) -> Result<Value, String> {
     let domain = validate_domain(domain)?;
 
     let rdap = get_json(
@@ -251,10 +248,7 @@ mod tests {
             summary["registrar"].as_str(),
             Some("Squarespace Domains II LLC")
         );
-        assert_eq!(
-            summary["status"],
-            json!(["client transfer prohibited"])
-        );
+        assert_eq!(summary["status"], json!(["client transfer prohibited"]));
         // The event missing its date is dropped, not fabricated.
         assert_eq!(
             summary["events"],

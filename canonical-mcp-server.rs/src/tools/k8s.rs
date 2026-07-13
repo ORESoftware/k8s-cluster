@@ -64,7 +64,11 @@ pub fn validate_k8s_name<'a>(value: &'a str, what: &str) -> Result<&'a str, Stri
 pub fn age_between(created: &str, now: DateTime<Utc>) -> Option<String> {
     let created = DateTime::parse_from_rfc3339(created).ok()?;
     let seconds = (now - created.with_timezone(&Utc)).num_seconds().max(0);
-    let (days, hours, minutes) = (seconds / 86_400, (seconds % 86_400) / 3_600, (seconds % 3_600) / 60);
+    let (days, hours, minutes) = (
+        seconds / 86_400,
+        (seconds % 86_400) / 3_600,
+        (seconds % 3_600) / 60,
+    );
     Some(if days > 0 {
         format!("{days}d{hours}h")
     } else if hours > 0 {
