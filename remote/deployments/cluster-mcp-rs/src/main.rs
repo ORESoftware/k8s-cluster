@@ -2253,7 +2253,7 @@ fn redact_sensitive_line(line: &str) -> String {
         .split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_' && ch != '-')
         .any(is_secret_like_key)
     {
-        return line.to_string();
+        return redact_sensitive_values(line).into_owned();
     }
 
     if let Some(index) = line.find('=').or_else(|| line.find(':')) {
@@ -2261,6 +2261,126 @@ fn redact_sensitive_line(line: &str) -> String {
     } else {
         REDACTED.to_string()
     }
+}
+
+const JWT_MIN_LEN: usize = 20;
+const LONG_HEX_MIN_LEN: usize = 32;
+const LONG_BASE64_MIN_LEN: usize = 40;
+
+// Candidate value tokens are maximal runs of this charset: it covers base64,
+// base64url, hex, JWT dot separators, and key=value glue, so an embedded
+// secret is examined as one run. Matching tokens are redacted whole — a
+// partial secret is still a secret.
+fn is_value_run_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'=' | b'_' | b'-' | b'.')
+}
+
+// Allocation-light single pass: byte scanning is safe because run bytes are
+// all ASCII (UTF-8 continuation bytes never match), and it only builds a new
+// string when a token actually matches a sensitive-value pattern.
+fn redact_sensitive_values(text: &str) -> Cow<'_, str> {
+    let bytes = text.as_bytes();
+    let mut output = String::new();
+    let mut copied_to = 0usize;
+    let mut index = 0usize;
+    while index < bytes.len() {
+        if !is_value_run_byte(bytes[index]) {
+            index += 1;
+            continue;
+        }
+        let start = index;
+        while index < bytes.len() && is_value_run_byte(bytes[index]) {
+            index += 1;
+        }
+        if is_sensitive_value_token(&text[start..index]) {
+            output.push_str(&text[copied_to..start]);
+            output.push_str(REDACTED);
+            copied_to = index;
+        }
+    }
+    if copied_to == 0 {
+        return Cow::Borrowed(text);
+    }
+    output.push_str(&text[copied_to..]);
+    Cow::Owned(output)
+}
+
+fn is_sensitive_value_token(token: &str) -> bool {
+    contains_jwt(token)
+        || contains_aws_access_key_id(token)
+        || contains_long_hex_run(token)
+        || contains_long_base64_segment(token)
+}
+
+// "eyJ" is base64 for `{"` — the standard JWT/JWS/JWE opener. Require a token
+// boundary before it and a plausible run length after it.
+fn contains_jwt(token: &str) -> bool {
+    let bytes = token.as_bytes();
+    token.match_indices("eyJ").any(|(index, _)| {
+        let boundary_ok = index == 0 || !bytes[index - 1].is_ascii_alphanumeric();
+        boundary_ok && token.len() - index >= JWT_MIN_LEN
+    })
+}
+
+// AKIA[0-9A-Z]{16} with a non-alphanumeric boundary before the prefix.
+fn contains_aws_access_key_id(token: &str) -> bool {
+    let bytes = token.as_bytes();
+    token.match_indices("AKIA").any(|(index, _)| {
+        let boundary_ok = index == 0 || !bytes[index - 1].is_ascii_alphanumeric();
+        let key_chars = bytes[index + 4..]
+            .iter()
+            .take_while(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit())
+            .count();
+        boundary_ok && key_chars >= 16
+    })
+}
+
+// A maximal hex run of >= 32 chars with non-alphanumeric boundaries (sha256
+// digests, session ids, 128-bit-plus keys).
+fn contains_long_hex_run(token: &str) -> bool {
+    let bytes = token.as_bytes();
+    let mut index = 0usize;
+    while index < bytes.len() {
+        if !bytes[index].is_ascii_hexdigit() {
+            index += 1;
+            continue;
+        }
+        let start = index;
+        while index < bytes.len() && bytes[index].is_ascii_hexdigit() {
+            index += 1;
+        }
+        let bounded = (start == 0 || !bytes[start - 1].is_ascii_alphanumeric())
+            && (index == bytes.len() || !bytes[index].is_ascii_alphanumeric());
+        if bounded && index - start >= LONG_HEX_MIN_LEN {
+            return true;
+        }
+    }
+    false
+}
+
+// A dot-free base64/base64url segment of >= 40 chars containing upper, lower,
+// and digit characters. The mixed-character requirement keeps long DNS names
+// (all lowercase, e.g. dd-otel-collector.observability.svc.cluster.local) and
+// similar identifiers out of the redaction.
+fn contains_long_base64_segment(token: &str) -> bool {
+    token.split('.').any(|segment| {
+        if segment.len() < LONG_BASE64_MIN_LEN {
+            return false;
+        }
+        let mut upper = false;
+        let mut lower = false;
+        let mut digit = false;
+        for byte in segment.bytes() {
+            match byte {
+                b'A'..=b'Z' => upper = true,
+                b'a'..=b'z' => lower = true,
+                b'0'..=b'9' => digit = true,
+                b'+' | b'/' | b'=' | b'_' | b'-' => {}
+                _ => return false,
+            }
+        }
+        upper && lower && digit
+    })
 }
 
 fn sanitize_url_for_output(raw: &str) -> String {
