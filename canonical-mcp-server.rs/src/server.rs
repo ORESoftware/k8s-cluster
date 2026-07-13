@@ -57,6 +57,28 @@ pub struct StackDocsParams {
     pub doc: docs::DocName,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct DomainStatusParams {
+    /// Domain to inspect. Defaults to "canonical.cloud".
+    pub domain: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct CloudflareDnsParams {
+    /// Zone (apex domain) whose DNS records to list. Defaults to "canonical.cloud".
+    pub domain: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct K8sStatusParams {
+    /// Resource to inspect: nodes, pods, deployments, services, or ingresses.
+    pub resource: k8s::K8sResource,
+    /// Namespace to scope to. Omit for all namespaces.
+    pub namespace: Option<String>,
+    /// kubeconfig context to use. Omit for the current context.
+    pub context: Option<String>,
+}
+
 #[tool_router]
 impl CanonicalMcp {
     #[tool(
