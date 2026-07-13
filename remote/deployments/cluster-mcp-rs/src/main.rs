@@ -926,7 +926,12 @@ async fn observability(State(state): State<AppState>, headers: HeaderMap) -> Res
     json_response(StatusCode::OK, telemetry_summary_json(&state).await)
 }
 
-async fn rpc(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> Response {
+async fn rpc(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
     state
         .metrics
         .http_requests_total
