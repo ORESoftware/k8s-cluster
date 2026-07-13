@@ -71,7 +71,7 @@ pub async fn probe(
                         url,
                         status: Some(status),
                         body: None,
-                        error: Some(format!("error reading body: {error}")),
+                        error: Some(format!("error reading body: {}", super::error_chain(&error))),
                     },
                 }
             }
@@ -79,7 +79,7 @@ pub async fn probe(
                 url,
                 status: None,
                 body: None,
-                error: Some(error.to_string()),
+                error: Some(super::error_chain(&error)),
             },
         };
         reports.push(report);
