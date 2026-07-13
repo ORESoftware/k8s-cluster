@@ -1243,7 +1243,11 @@ fn tools_list_result(id: Value) -> Value {
                 tool_def("loki_labels", "Loki labels", "Read Loki label names to confirm container logs are flowing through promtail."),
                 tool_def("grafana_inventory", "Grafana inventory", "Read Grafana datasource and dashboard inventory so agents can discover available observability views."),
                 tool_def("nats_metrics", "NATS metrics", "Read NATS server /varz and the Prometheus exporter /metrics endpoint for messaging telemetry."),
-                tool_def("trace_backends", "Trace backends", "Read Tempo readiness and Jaeger service discovery to confirm OTLP trace export/query wiring.")
+                tool_def("trace_backends", "Trace backends", "Read Tempo readiness and Jaeger service discovery to confirm OTLP trace export/query wiring."),
+                tool_def("cloudflare_zones", "Cloudflare zones", "List Cloudflare zones (name, status, plan, nameservers) via the Cloudflare API using the read-only CLOUDFLARE_API_TOKEN. Reports not-configured when no token is set."),
+                tool_def("cloudflare_dns_records", "Cloudflare DNS records", "List bounded DNS records per Cloudflare zone (type, name, redacted content, proxied, ttl) using the read-only CLOUDFLARE_API_TOKEN."),
+                tool_def("domain_registration", "Domain registration", "Registrar-neutral RDAP lookup for the configured domains: registrar, status, registration/expiration dates, days until expiry, nameservers. Covers registrars without a public API (e.g. Squarespace)."),
+                tool_def("domain_dns_wiring", "Domain DNS wiring", "Resolve the configured domains over DNS-over-HTTPS (A/AAAA/CNAME/NS) and correlate against expected ingress IPs and live Kubernetes LoadBalancer/Ingress endpoints.")
             ]
         }
     })
