@@ -6095,7 +6095,7 @@ fn apply_cli_flags() {
     let f2e = match unsafe { flags2env::Flags2Env::load(None) } {
         Ok(f) => f,
         Err(cause) => {
-            debug!(%cause, "flags2env native lib not loaded; using plain env");
+            tracing::debug!(%cause, "flags2env native lib not loaded; using plain env");
             return;
         }
     };
