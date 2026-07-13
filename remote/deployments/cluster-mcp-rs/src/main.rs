@@ -375,6 +375,59 @@ fn config_from_env() -> Config {
             .ok()
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty()),
+        // Full (non-metadata-only) Kubernetes list bodies carry managedFields
+        // and full specs, so they need a larger parse guard than the clipped
+        // sample paths. Still hard-capped at 4 MiB.
+        kubernetes_full_body_limit_bytes: env_usize_bounded(
+            "MCP_KUBERNETES_FULL_BODY_LIMIT_BYTES",
+            1_048_576,
+            4096,
+            MAX_KUBERNETES_FULL_BODY_LIMIT_BYTES,
+        ),
+        // External read-only integrations. The default bases are inherently
+        // external, so they are the fallbacks; overrides still go through the
+        // MCP_ALLOW_EXTERNAL_URLS allowlist (loopback / *.svc), which keeps
+        // test/dev overrides possible without opening arbitrary retargeting.
+        cloudflare_api_url: env_mcp_base_url(
+            "MCP_CLOUDFLARE_API_URL",
+            "https://api.cloudflare.com/client/v4",
+            allow_external_mcp_urls,
+        ),
+        cloudflare_api_token: env::var("CLOUDFLARE_API_TOKEN")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty()),
+        rdap_url: env_mcp_base_url("DD_MCP_RDAP_URL", "https://rdap.org", allow_external_mcp_urls),
+        doh_url: env_mcp_base_url(
+            "DD_MCP_DOH_URL",
+            "https://cloudflare-dns.com/dns-query",
+            allow_external_mcp_urls,
+        ),
+        // Default domain set derived from the dd-remote-gateway vhosts
+        // (app./admin.fiducia.cloud server_name blocks) plus the public
+        // marketing apexes (fiducia.cloud, canonical.cloud) it fronts.
+        domains: env_csv_bounded(
+            "DD_MCP_DOMAINS",
+            "fiducia.cloud,app.fiducia.cloud,admin.fiducia.cloud,canonical.cloud",
+            MAX_CONFIGURED_DOMAINS,
+        ),
+        expected_ingress_ips: env_csv_bounded(
+            "DD_MCP_EXPECTED_INGRESS_IPS",
+            "",
+            MAX_CONFIGURED_DOMAINS,
+        ),
+        external_timeout: Duration::from_millis(env_u64_bounded(
+            "DD_MCP_EXTERNAL_TIMEOUT_MS",
+            2500,
+            100,
+            MAX_EXTERNAL_TIMEOUT_MS,
+        )),
+        external_body_limit_bytes: env_usize_bounded(
+            "DD_MCP_EXTERNAL_BODY_LIMIT_BYTES",
+            65_536,
+            1024,
+            MAX_EXTERNAL_BODY_LIMIT_BYTES,
+        ),
     }
 }
 
