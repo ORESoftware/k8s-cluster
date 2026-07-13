@@ -27,8 +27,8 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/fiducia-ui-revision: 'fiducia-cloud/fiducia-ui.web@main'
-        dd.dev/fiducia-backend-revision: 'fiducia-cloud/fiducia-backend.rs@349c27c (harden + docs/diagram refresh)'
+        dd.dev/fiducia-ui-revision: 'fiducia-cloud/fiducia-marketing.web@main'
+        dd.dev/fiducia-backend-revision: 'fiducia-cloud/fiducia-customer.rs@349c27c (harden + docs/diagram refresh)'
       labels:
         app: dd-fiducia-rs
     spec:
@@ -55,7 +55,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       initContainers:
-        # 1) Clone fiducia-ui.web and build the Astro frontend with the gateway
+        # 1) Clone fiducia-marketing.web and build the Astro frontend with the gateway
         # prefix baked in (--base /fiducia) so asset URLs resolve behind
         # /fiducia/. The built dist is handed to the backend via the shared
         # site-dist emptyDir.
@@ -87,7 +87,7 @@ spec:
               cp -R dist/. /site-dist/
           env:
             - name: FIDUCIA_UI_GIT_URL
-              value: https://github.com/fiducia-cloud/fiducia-ui.web.git
+              value: https://github.com/fiducia-cloud/fiducia-marketing.web.git
             - name: FIDUCIA_UI_GIT_REF
               value: main
             - name: npm_config_cache
@@ -109,7 +109,7 @@ spec:
             - name: build-work
               mountPath: /work
       containers:
-        # 2) Clone fiducia-backend.rs, build the axum backend, and serve the
+        # 2) Clone fiducia-customer.rs, build the axum backend, and serve the
         # built site from the shared site-dist volume (STATIC_DIR) plus /healthz
         # and /api/*.
         - name: fiducia-backend
@@ -137,7 +137,7 @@ spec:
               # backend's Cargo.toml depends on ../fiducia-interfaces/generated/rust.
               work_dir="$(mktemp -d /tmp/fiducia-build.XXXXXX)"
               interfaces_dir="$work_dir/fiducia-interfaces"
-              backend_dir="$work_dir/fiducia-backend.rs"
+              backend_dir="$work_dir/fiducia-customer.rs"
               git clone --depth 1 --branch "${FIDUCIA_INTERFACES_GIT_REF}" "${FIDUCIA_INTERFACES_GIT_URL}" "$interfaces_dir"
               echo "[dd-fiducia-rs] interfaces: ${FIDUCIA_INTERFACES_GIT_URL}@${FIDUCIA_INTERFACES_GIT_REF} ($(git -C "$interfaces_dir" rev-parse --short HEAD))"
               git clone --depth 1 --branch "${FIDUCIA_BACKEND_GIT_REF}" "${FIDUCIA_BACKEND_GIT_URL}" "$backend_dir"
@@ -152,7 +152,7 @@ spec:
             - name: STATIC_DIR
               value: /site-dist
             - name: FIDUCIA_BACKEND_GIT_URL
-              value: https://github.com/fiducia-cloud/fiducia-backend.rs.git
+              value: https://github.com/fiducia-cloud/fiducia-customer.rs.git
             - name: FIDUCIA_BACKEND_GIT_REF
               value: main
             - name: FIDUCIA_INTERFACES_GIT_URL

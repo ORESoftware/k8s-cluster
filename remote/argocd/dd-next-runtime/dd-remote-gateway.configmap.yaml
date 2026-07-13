@@ -2528,3 +2528,68 @@ data:
         return 401 '{"error":"unauthorized","errMessage":"missing required dd header"}';
       }
     }
+
+    # app.fiducia.cloud — the fiducia customer portal (fiducia-customer.rs, a
+    # Rust MASH app serving /app, /api/customer/*, WebSocket/SSE refresh, and
+    # the marketing fallback at /). The cert (dd-remote-gateway-tls) must carry
+    # this SAN — add `-d app.fiducia.cloud` to the certbot lineage. No gateway
+    # auth gate: the app owns its own Supabase-mediated login and
+    # __Host-fiducia_customer_session cookie, which requires the exact Host and
+    # https X-Forwarded-Proto forwarded below.
+    server {
+      listen 443 ssl;
+      server_name app.fiducia.cloud;
+
+      ssl_certificate /etc/nginx/tls/tls.crt;
+      ssl_certificate_key /etc/nginx/tls/tls.key;
+      ssl_protocols TLSv1.2 TLSv1.3;
+      add_header Strict-Transport-Security "max-age=15552000" always;
+
+      location / {
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 120;
+        proxy_send_timeout 120;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Auth "";
+        set $fiducia_customer_up fiducia-backend.fiducia.svc.cluster.local:8117;
+        proxy_pass http://$fiducia_customer_up;
+      }
+    }
+
+    # admin.fiducia.cloud — the operator-only fiducia admin dashboard
+    # (fiducia-admin.rs). Same cert lineage: add `-d admin.fiducia.cloud`.
+    # The app enforces its own operator authorization (Supabase role +
+    # operator registry), exact-Host/Origin CSRF, and the
+    # __Host-fiducia_admin_session cookie; FIDUCIA_ADMIN_ORIGIN in the
+    # deployment must equal https://admin.fiducia.cloud.
+    server {
+      listen 443 ssl;
+      server_name admin.fiducia.cloud;
+
+      ssl_certificate /etc/nginx/tls/tls.crt;
+      ssl_certificate_key /etc/nginx/tls/tls.key;
+      ssl_protocols TLSv1.2 TLSv1.3;
+      add_header Strict-Transport-Security "max-age=15552000" always;
+
+      location / {
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 120;
+        proxy_send_timeout 120;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Auth "";
+        set $fiducia_admin_up fiducia-admin.fiducia.svc.cluster.local:8096;
+        proxy_pass http://$fiducia_admin_up;
+      }
+    }
