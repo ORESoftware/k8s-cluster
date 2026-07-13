@@ -10,13 +10,17 @@ repo. Include the affected commit and a minimal reproduction.
 
 This is local developer/ops tooling served over stdio; it binds no ports and
 stores nothing. It makes outbound HTTPS requests to `api.github.com`,
-`raw.githubusercontent.com`, and the `base_url` given to `service_health`.
+`raw.githubusercontent.com`, `rdap.org` (plus the registry RDAP endpoint it
+redirects to), `cloudflare-dns.com`, `api.cloudflare.com`, and the `base_url`
+given to `service_health`. `k8s_status` execs a strictly allowlisted
+`kubectl get` with your local kubeconfig; every tool is read-only.
 
 ## Secrets
 
-Never commit real secrets. The only credential this server touches is an
-optional GitHub token read from `GITHUB_TOKEN`/`GH_TOKEN` at runtime; it is
-sent only to `api.github.com` and is never logged or echoed into tool output.
+Never commit real secrets. The credentials this server touches are an optional
+GitHub token (`GITHUB_TOKEN`/`GH_TOKEN`, sent only to `api.github.com`) and an
+optional read-only Cloudflare token (`CLOUDFLARE_API_TOKEN`, sent only to
+`api.cloudflare.com`); neither is ever logged or echoed into tool output.
 
 ## CI supply chain
 
