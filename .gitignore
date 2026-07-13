@@ -1,2 +1,4 @@
 node_modules/
 target/
+pg-defs/generated/**/.gradle/
+pg-defs/generated/**/build/
