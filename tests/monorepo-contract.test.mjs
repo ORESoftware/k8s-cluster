@@ -3,7 +3,8 @@
 // .env.example keeps required (placeholder-only) knobs, and that the ops scripts
 // keep destructive actions manual with dry-run/audit guardrails.
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
@@ -51,9 +52,22 @@ function parseEnvExample() {
   return env;
 }
 
-test("submodule declarations stay complete, pinned to main, and backed by apps directories", () => {
+test("submodule declarations stay complete, pinned to main, and backed by gitlinks", () => {
   const modules = parseGitmodules();
   const paths = modules.map((module) => module.path).sort();
+  const gitlinks = new Map(
+    execFileSync("git", ["ls-files", "--stage", "--", "apps"], {
+      cwd: root,
+      encoding: "utf8",
+    })
+      .trim()
+      .split(/\r?\n/)
+      .map((line) => {
+        const entry = line.match(/^(\d+) [0-9a-f]+ \d+\t(.+)$/);
+        assert.ok(entry, `unexpected git index entry: ${line}`);
+        return [entry[2], entry[1]];
+      }),
+  );
 
   assert.equal(modules.length, 26);
   assert.deepEqual(paths, [
@@ -89,7 +103,7 @@ test("submodule declarations stay complete, pinned to main, and backed by apps d
     assert.equal(module.branch, "main", `${module.path} must track main`);
     assert.match(module.url, /^git@github\.com:fiducia-cloud\/fiducia-[A-Za-z0-9.-]+(?:\.git)?$/);
     assert.ok(module.path.startsWith("apps/fiducia-"));
-    assert.ok(existsSync(path.join(root, module.path)), `${module.path} is initialized`);
+    assert.equal(gitlinks.get(module.path), "160000", `${module.path} must be a pinned gitlink`);
   }
 });
 

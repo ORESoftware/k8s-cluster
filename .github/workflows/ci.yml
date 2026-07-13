@@ -1,5 +1,6 @@
-# CI: checks out all submodules and runs the superproject contract tests
-# (tests/*.test.mjs) that guard submodule wiring and the cross-repo sync contract.
+# CI checks the superproject wiring and the cross-repo sync contract. Only the
+# two public submodules whose files the tests read need working-tree checkouts;
+# every other app remains validated as a pinned gitlink.
 name: ci
 on:
   push:
@@ -14,23 +15,20 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      # Submodule URLs in .gitmodules use SSH (git@github.com:...), but CI
-      # authenticates over HTTPS with the default GITHUB_TOKEN. Rewrite SSH ->
-      # HTTPS BEFORE checkout so it can init every submodule with that token.
-      # All app submodules are public; only this superproject is private.
+      # Submodule URLs use SSH, while Actions authenticates with HTTPS.
       - name: Use HTTPS for submodule fetch
         run: git config --global url."https://github.com/".insteadOf "git@github.com:"
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
-          submodules: recursive
           fetch-depth: 0
-      - uses: actions/setup-node@v6
+      - name: Initialize contract submodules
+        run: git submodule update --init --depth 1 apps/fiducia-interfaces apps/fiducia-sync
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "22"
       # Only a stub package-lock (no runtime deps); fall back to `npm install`
       # if `npm ci` refuses the lockfile.
       - run: npm ci || npm install
-      # Contract tests for the superproject wiring; needs submodules checked out
-      # (monorepo-contract asserts apps/ dirs; integration-sync-contract reads
-      # files from apps/fiducia-interfaces and apps/fiducia-sync).
+      # The integration contract reads files from the two initialized modules;
+      # the monorepo contract validates every app as a gitlink.
       - run: node --test tests/*.test.mjs
