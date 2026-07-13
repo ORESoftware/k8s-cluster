@@ -19,7 +19,7 @@ bb8-postgres = "0.8"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 # CLI-flags -> env at startup, driven by .cli-flags.toml. Loads a native lib at
 # runtime; if it's absent the app degrades gracefully to plain env vars.
-flags2env = { git = "https://github.com/ORESoftware/flags-2-env.git" }
+flags2env = { git = "https://github.com/ORESoftware/flags-2-env.git", rev = "16fbd8b724e76990e9dcf6237bf44528433b09b1" }
 jsonwebtoken = "9"
 once_cell = "1"
 # default-features off drops the `protobuf` feature (protobuf 2.x,
