@@ -12,6 +12,14 @@ data:
     rule_files:
       - /etc/prometheus/observability.rules.yml
 
+    # Route firing alert rules to Alertmanager (dedup, grouping, inhibition,
+    # delivery). Before this, rules evaluated but had nowhere to go.
+    alerting:
+      alertmanagers:
+        - static_configs:
+            - targets:
+                - dd-alertmanager.observability.svc.cluster.local:9093
+
     scrape_configs:
       - job_name: prometheus
         static_configs:
