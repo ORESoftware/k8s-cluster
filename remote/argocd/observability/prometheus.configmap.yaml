@@ -12,6 +12,14 @@ data:
     rule_files:
       - /etc/prometheus/observability.rules.yml
 
+    # Route firing alert rules to Alertmanager (dedup, grouping, inhibition,
+    # delivery). Before this, rules evaluated but had nowhere to go.
+    alerting:
+      alertmanagers:
+        - static_configs:
+            - targets:
+                - dd-alertmanager.observability.svc.cluster.local:9093
+
     scrape_configs:
       - job_name: prometheus
         static_configs:
@@ -43,6 +51,11 @@ data:
         static_configs:
           - targets:
               - dd-loki.observability.svc.cluster.local:3100
+      - job_name: dd-alertmanager
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-alertmanager.observability.svc.cluster.local:9093
       - job_name: dd-k8s-resource-exporter
         metrics_path: /metrics
         static_configs:
@@ -251,11 +264,11 @@ data:
         interval: 30s
         rules:
           - record: dd:observability:target_up_ratio
-            expr: avg(up{job=~"prometheus|otel-collector-self|otel-collector|dd-grafana|dd-loki|dd-k8s-resource-exporter|dd-promtail"})
+            expr: avg(up{job=~"prometheus|otel-collector-self|otel-collector|dd-grafana|dd-loki|dd-k8s-resource-exporter|dd-promtail|dd-alertmanager"})
           - record: dd:k8s_workload:available_ratio
             expr: sum by (namespace, kind, workload) (dd_k8s_workload_available_replicas) / clamp_min(sum by (namespace, kind, workload) (dd_k8s_workload_desired_replicas), 1)
           - alert: DDObservabilityTargetDown
-            expr: up{job=~"prometheus|otel-collector-self|otel-collector|dd-grafana|dd-loki|dd-k8s-resource-exporter|dd-promtail"} == 0
+            expr: up{job=~"prometheus|otel-collector-self|otel-collector|dd-grafana|dd-loki|dd-k8s-resource-exporter|dd-promtail|dd-alertmanager"} == 0
             for: 2m
             labels:
               severity: warning

@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dd-alertmanager-config
+  namespace: observability
+data:
+  alertmanager.yml: |
+    global:
+      resolve_timeout: 5m
+
+    # Routing tree. The stack ships with delivery DISABLED — every alert lands on
+    # the empty 'null' receiver, so Alertmanager aggregates, deduplicates, groups,
+    # and shows alerts in its UI (and Prometheus /alerts) without pushing anywhere
+    # and without erroring on a missing destination. To go live:
+    #   1. kubectl -n observability create secret generic dd-alertmanager-secrets \
+    #        --from-literal=webhook-url=https://hooks.slack.com/...   (or PagerDuty/etc)
+    #   2. change the `receiver:` below (or the child route) to 'web.hook'.
+    # The stakater reloader picks up both edits without a manual rollout.
+    route:
+      group_by: ['alertname', 'namespace']
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      receiver: 'null'
+      routes:
+        # Critical + warning severities are grouped separately so a future
+        # `web.hook` switch here delivers only actionable alerts.
+        - matchers:
+            - severity =~ "critical|warning"
+          receiver: 'null'
+
+    inhibit_rules:
+      # A firing critical silences a matching warning for the same alert/namespace,
+      # so one incident does not page twice.
+      - source_matchers: [ severity = "critical" ]
+        target_matchers: [ severity = "warning" ]
+        equal: ['alertname', 'namespace']
+
+    receivers:
+      # The safe default sink: no notifiers, so it can never error on send.
+      - name: 'null'
+      # Ready-to-use webhook. Reads its URL from the optional
+      # dd-alertmanager-secrets/webhook-url file, so no destination lives in git.
+      - name: 'web.hook'
+        webhook_configs:
+          - url_file: /etc/alertmanager/secrets/webhook-url
+            send_resolved: true

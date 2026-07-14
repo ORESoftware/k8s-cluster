@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-alertmanager
+  namespace: observability
+  labels:
+    app: dd-alertmanager
+  annotations:
+    # Reload on routing-config edits AND on the delivery-secret being created or
+    # rotated, so wiring a destination never needs a manual rollout.
+    configmap.reloader.stakater.com/reload: "dd-alertmanager-config"
+    secret.reloader.stakater.com/reload: "dd-alertmanager-secrets"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-alertmanager
+  template:
+    metadata:
+      labels:
+        app: dd-alertmanager
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: alertmanager
+          image: prom/alertmanager:v0.27.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          args:
+            - --config.file=/etc/alertmanager/alertmanager.yml
+            - --storage.path=/alertmanager
+            - --web.route-prefix=/
+          ports:
+            - name: http
+              containerPort: 9093
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: 9093
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/alertmanager
+            - name: secrets
+              mountPath: /etc/alertmanager/secrets
+              readOnly: true
+            - name: data
+              mountPath: /alertmanager
+      volumes:
+        - name: config
+          configMap:
+            name: dd-alertmanager-config
+        - name: secrets
+          # Optional: the stack deploys and runs without a delivery destination.
+          # Create dd-alertmanager-secrets (key: webhook-url) to enable webhook
+          # delivery; until then this mounts empty and the 'null' receiver is used.
+          secret:
+            secretName: dd-alertmanager-secrets
+            optional: true
+        - name: data
+          emptyDir:
+            sizeLimit: 1Gi
