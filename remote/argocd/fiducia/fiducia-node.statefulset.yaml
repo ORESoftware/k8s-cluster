@@ -193,6 +193,17 @@ spec:
               value: http://fiducia-brain.fiducia.svc.cluster.local:8095
             - name: FIDUCIA_HEARTBEAT_MS
               value: '2000'
+            # Same shared secret the node runs with — the sidecar attaches it as
+            # x-fiducia-internal-auth on its heartbeat and on the exporter's
+            # localhost /v1/observe/* scrape (both fail closed without it). The
+            # sidecar itself requires this at startup.
+            - name: FIDUCIA_INTERNAL_SECRET
+              valueFrom:
+                secretKeyRef: { name: fiducia-cluster-secrets, key: internal-secret, optional: true }
+            # Prometheus exporter mode: translate the local node's observe API to
+            # /metrics (scraped by the fiducia-node-sidecar Prometheus job).
+            - name: FIDUCIA_EXPORT_TARGET
+              value: node
             - name: RUST_LOG
               value: info
             - name: HOME
