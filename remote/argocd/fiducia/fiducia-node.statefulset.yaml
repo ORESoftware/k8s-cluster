@@ -89,6 +89,16 @@ spec:
             # lock-coordination key) lands on shard 0's single Raft group.
             - name: FIDUCIA_SHARD_COUNT
               value: '1'
+            # Cluster-internal trusted-hop secret (shared fiducia-cluster-secrets,
+            # identical across node, brain, sidecar, admin). The node rejects all
+            # /v1 and /raft calls without it, so it fails closed until the Secret
+            # exists (see the brain StatefulSet for the create command).
+            - name: FIDUCIA_INTERNAL_SECRET
+              valueFrom:
+                secretKeyRef: { name: fiducia-cluster-secrets, key: internal-secret, optional: true }
+            # Export OTLP traces to the shared collector (stdout-only when unset).
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://dd-otel-collector.observability.svc.cluster.local:4317
             - name: RUST_LOG
               value: info
             - name: HOME
