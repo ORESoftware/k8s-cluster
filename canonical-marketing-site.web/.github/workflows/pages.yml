@@ -25,18 +25,18 @@ jobs:
           node-version: "22"
       - run: npm ci
       - run: npm test
-      - name: Build the GitHub Pages project site
+      - name: Build the canonical.plus site
         run: >-
           npm run build --
-          --site https://canonical-cloud.github.io
-          --base /canonical-marketing-site.web
-      - name: Verify project-path URLs
+          --site https://canonical.plus
+          --base /
+      - name: Verify root-domain URLs
         shell: bash
         run: |
-          grep -q 'href="/canonical-marketing-site.web/"' dist/index.html
-          grep -q 'href="/canonical-marketing-site.web/favicon.svg"' dist/index.html
-          grep -Eq 'href="/canonical-marketing-site.web/_astro/[^" ]+\.css"' dist/index.html
-          ! grep -Eq '(href|src)="/(_astro|favicon\.svg)' dist/index.html
+          grep -q 'href="/"' dist/index.html
+          grep -q 'href="/favicon.svg"' dist/index.html
+          grep -Eq 'href="/_astro/[^" ]+\.css"' dist/index.html
+          ! grep -q '/canonical-marketing-site.web/' dist/index.html
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:

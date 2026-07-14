@@ -45,9 +45,9 @@ STATIC_DIR=$PWD/dist  (cd ../canonical-web-server.rs && cargo run)
 ## GitHub Pages
 
 Pushes to `main` deploy the static site to
-<https://canonical-cloud.github.io/canonical-marketing-site.web/> through the
-`pages` workflow. The workflow supplies Astro's GitHub project-site `site` and
-`base` flags only for that build, so the normal root deployment at
+<https://canonical.plus/> through the `pages` workflow. The workflow supplies
+Astro's custom-domain `site` and root `base` flags only for that build, so the
+normal root deployment at
 `https://canonical.cloud` remains unchanged.
 
 To reproduce the Pages artifact locally:
@@ -56,8 +56,8 @@ To reproduce the Pages artifact locally:
 npm ci
 npm test
 npm run build -- \
-  --site https://canonical-cloud.github.io \
-  --base /canonical-marketing-site.web
+  --site https://canonical.plus \
+  --base /
 ```
 
 ## Test
