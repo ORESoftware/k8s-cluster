@@ -94,6 +94,23 @@ spec:
               value: '3'
             - name: FIDUCIA_REPLICATION_FACTOR
               value: '3'
+            # Cluster-internal trusted-hop secret (shared, identical across node,
+            # brain, sidecar, admin). Brain fails closed on /v1 without it, so it
+            # will CrashLoop until the Secret exists:
+            #   kubectl -n fiducia create secret generic fiducia-cluster-secrets \
+            #     --from-literal=internal-secret=<shared 32+ bytes> \
+            #     --from-literal=brain-raft-secret=<brain peer-plane 32+ bytes>
+            - name: FIDUCIA_INTERNAL_SECRET
+              valueFrom:
+                secretKeyRef: { name: fiducia-cluster-secrets, key: internal-secret, optional: true }
+            # Separate bearer secret for the brain's /raft peer plane (:9095).
+            - name: FIDUCIA_BRAIN_RAFT_SECRET
+              valueFrom:
+                secretKeyRef: { name: fiducia-cluster-secrets, key: brain-raft-secret, optional: true }
+            # Export OTLP traces to the shared collector (fiducia-telemetry
+            # degrades to stdout-only logging when unset).
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://dd-otel-collector.observability.svc.cluster.local:4317
             - name: RUST_LOG
               value: info
             - name: HOME
