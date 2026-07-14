@@ -17,6 +17,11 @@ and final remediation section record the current state after the 2026-07-13
 fleet-wide hardening pass; do not treat historical code snippets as the live
 implementation.
 
+> **Companion:** open cross-repo *architectural* findings (shared-secret identity,
+> web-tier login rate-limiting, infra hardening, and the 2026-07-14 messaging/node
+> code findings) are tracked separately in
+> [`architectural-security-findings.md`](./architectural-security-findings.md).
+
 The codebase is, on the whole, **well-hardened**: JWT algorithm-confusion is
 actively defended, secret comparisons are constant-time, admin HTML output is
 consistently escaped, the admin dev-session bypass is fail-closed in release
