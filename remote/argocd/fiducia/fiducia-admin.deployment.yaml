@@ -82,12 +82,12 @@ spec:
             - name: SUPABASE_PUBLISHABLE_KEY
               valueFrom:
                 secretKeyRef: { name: fiducia-admin-secrets, key: supabase-publishable-key, optional: true }
-            # Cluster-internal trusted-hop secret — must equal the value node and
-            # brain run with; the admin's brain/node observe calls attach it as
-            # x-fiducia-internal-auth (add key internal-secret to the same Secret).
+            # Cluster-internal trusted-hop secret — the shared source of truth,
+            # identical across node, brain, sidecar, and admin. The admin's
+            # brain/node observe calls attach it as x-fiducia-internal-auth.
             - name: FIDUCIA_INTERNAL_SECRET
               valueFrom:
-                secretKeyRef: { name: fiducia-admin-secrets, key: internal-secret, optional: true }
+                secretKeyRef: { name: fiducia-cluster-secrets, key: internal-secret, optional: true }
             # Observability plane (namespace `observability`): PromQL + LogQL
             # query APIs for the admin cluster-insight pages, and the public
             # Grafana subpath for deep-link handoff.
