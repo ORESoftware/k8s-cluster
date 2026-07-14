@@ -152,6 +152,103 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+        # Control-plane metrics exporter: the same fiducia-node-sidecar binary run
+        # in brain mode (FIDUCIA_EXPORT_TARGET=brain forces the exporter-only role,
+        # so it does NOT heartbeat itself in as a node). Translates the local
+        # brain's /v1/status rollup into Prometheus text on :8091/metrics, scraped
+        # by the fiducia-brain-sidecar job. Builds from source in-pod like the rest.
+        - name: fiducia-brain-sidecar
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          command: [/bin/bash, -lc]
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              rm -rf /tmp/sidecar-src && mkdir -p /tmp/sidecar-src && cd /tmp/sidecar-src
+              for repo in fiducia-node-sidecar.rs fiducia-interfaces; do git clone --depth 1 --branch main "https://github.com/fiducia-cloud/${repo}.git"; done
+              echo "[brain-sidecar] exporter for ${POD_NAME} (brain=${FIDUCIA_BRAIN_URL})"
+              cd /tmp/sidecar-src/fiducia-node-sidecar.rs
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            # Label brain metrics by the pod they came from.
+            - name: FIDUCIA_NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: FIDUCIA_REGION
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: PORT
+              value: '8091'
+            # Brain mode → exporter-only role (no node heartbeat / log-shipping).
+            - name: FIDUCIA_EXPORT_TARGET
+              value: brain
+            - name: FIDUCIA_BRAIN_URL
+              value: http://localhost:8095
+            # Brain /v1/status requires the trusted-hop secret; the exporter also
+            # fails closed at startup without it.
+            - name: FIDUCIA_INTERNAL_SECRET
+              valueFrom:
+                secretKeyRef: { name: fiducia-cluster-secrets, key: internal-secret, optional: true }
+            - name: RUST_LOG
+              value: info
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /tmp/cargo
+            - name: CARGO_TARGET_DIR
+              value: /tmp/sidecar-target
+            - name: CARGO_BUILD_JOBS
+              value: '1'
+          ports:
+            - name: sidecar
+              containerPort: 8091
+          resources:
+            requests:
+              memory: 384Mi
+            limits:
+              memory: 1536Mi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: sidecar
+            periodSeconds: 5
+            # Cold in-pod build shares CARGO_HOME with the brain container; give the
+            # package-cache lock room so a cold dependency pull can't trip the probe.
+            failureThreshold: 360
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: sidecar
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: sidecar
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: tmp
           emptyDir:
