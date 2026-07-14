@@ -142,3 +142,9 @@ visibility boundary (see `docs/repo-boundaries.md`), so public SDK/protocol
 repos can coexist with private control-plane/infra/customer repos under one
 integration view. Per-app security posture lives in each submodule's own README;
 submodule internals are never edited from here.
+
+Cross-repo security findings are tracked in two companion docs:
+`docs/SECURITY-AUDIT.md` (flag-based / CI / visibility findings) and
+`docs/architectural-security-findings.md` (open architectural items needing
+cross-repo design — shared-secret identity, web-tier login rate-limiting, infra
+hardening, plus the 2026-07-14 messaging/node code findings).
