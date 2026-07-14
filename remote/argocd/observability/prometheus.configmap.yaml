@@ -234,6 +234,17 @@ data:
               - fiducia-node-0.fiducia-node-peer.fiducia.svc.cluster.local:8091
               - fiducia-node-1.fiducia-node-peer.fiducia.svc.cluster.local:8091
               - fiducia-node-2.fiducia-node-peer.fiducia.svc.cluster.local:8091
+      # fiducia control-plane (brain) raft metrics. Each fiducia-brain StatefulSet
+      # pod runs the same sidecar binary in brain mode (:8091/metrics), translating
+      # the brain's /v1/status rollup (leader/term, placement gaps, node health).
+      # Per-pod via the headless peer Service (serviceName: fiducia-brain-peer).
+      - job_name: fiducia-brain-sidecar
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - fiducia-brain-0.fiducia-brain-peer.fiducia.svc.cluster.local:8091
+              - fiducia-brain-1.fiducia-brain-peer.fiducia.svc.cluster.local:8091
+              - fiducia-brain-2.fiducia-brain-peer.fiducia.svc.cluster.local:8091
   observability.rules.yml: |
     groups:
       - name: dd.observability.rules
