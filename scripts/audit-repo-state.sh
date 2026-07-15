@@ -5,7 +5,8 @@ set -euo pipefail
 # checkouts, conflict markers, tracked/committed secrets, mutable or fail-open
 # workflows, dependency lifecycle hooks, unpinned container bases, unsafe
 # runtime identities, missing Docker update automation, unreproducible README
-# commands, readme app-list drift, and visibility-policy drift. Rust tool runners
+# commands, tracked directories without README entrypoints, readme app-list drift,
+# and visibility-policy drift. Rust tool runners
 # may use the explicit audited `tool-runner-nonroot` profile when their contract
 # requires OS executables.
 
@@ -277,10 +278,51 @@ scan_readme_reproducibility() {
   fi
 }
 
+scan_directory_readmes() {
+  local repo="$1"
+  local label="$2"
+  local tracked_path dir gitlink skip
+  local -a gitlinks=()
+  local -a dirs=()
+
+  while IFS= read -r gitlink; do
+    [[ -n "$gitlink" ]] && gitlinks+=("$gitlink")
+  done < <(git -C "$repo" ls-files --stage | awk '$1 == "160000" { sub(/^[^\t]*\t/, ""); print }')
+
+  while IFS= read -r tracked_path; do
+    dir="${tracked_path%/*}"
+    [[ "$dir" == "$tracked_path" || "$dir" == "." ]] && continue
+    case "/$dir/" in
+      */target/*|*/node_modules/*|*/dist/*|*/tmp/*|*/vendor/*) continue ;;
+    esac
+    if git -C "$repo" check-ignore --no-index -q -- "$dir"; then
+      continue
+    fi
+    skip=0
+    for gitlink in "${gitlinks[@]}"; do
+      if [[ "$dir" == "$gitlink" || "$dir" == "$gitlink/"* ]]; then
+        skip=1
+        break
+      fi
+    done
+    [[ "$skip" == 1 ]] && continue
+    dirs+=("$dir")
+  done < <(git -C "$repo" ls-files)
+
+  [[ ${#dirs[@]} -eq 0 ]] && return
+  while IFS= read -r dir; do
+    [[ -z "$dir" ]] && continue
+    if [[ ! -f "$repo/$dir/README.md" ]]; then
+      fail "$label tracked directory '$dir' is missing README.md"
+    fi
+  done < <(printf '%s\n' "${dirs[@]}" | LC_ALL=C sort -u)
+}
+
 scan_git_repo "$repo_root" "superproject"
 scan_workflow_hardening "$repo_root" "superproject"
 scan_container_hardening "$repo_root" "superproject"
 scan_readme_reproducibility "$repo_root" "superproject"
+scan_directory_readmes "$repo_root" "superproject"
 
 if git submodule status --recursive | grep -Eq '^[+U-]'; then
   fail "submodule checkout does not exactly match an initialized reviewed gitlink"
@@ -339,6 +381,7 @@ for i in "${!module_paths[@]}"; do
   scan_git_repo "$module_path" "$module_path"
   scan_workflow_hardening "$module_path" "$module_path"
   scan_readme_reproducibility "$module_path" "$module_path"
+  scan_directory_readmes "$module_path" "$module_path"
 done
 
 if [[ -f docs/repo-boundaries.md ]]; then

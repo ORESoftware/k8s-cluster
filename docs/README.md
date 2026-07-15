@@ -12,6 +12,8 @@ concerns that span the whole fleet rather than any single app repo.
 - `future-work.md` — storage decisions and highest-value product gaps.
 - `use-cases-exploration.md` — speculative fit analysis of proposed product
   directions against Fiducia's coordination primitives.
+- `messaging-consensus-observability.md` — enforceable boundary between Raft
+  authority and NATS delivery, plus the fleet telemetry and failure contract.
 
 Some of these files are asserted by the contract tests in `tests/` (e.g.
 `repo-boundaries.md` must classify every submodule).

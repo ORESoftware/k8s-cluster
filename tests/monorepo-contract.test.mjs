@@ -208,6 +208,8 @@ test("monorepo scripts keep destructive actions manual and include dry-run/audit
   assert.match(audit, /Cargo workflow commands without --locked/);
   assert.match(audit, /documents dependency-resolving Cargo commands without --locked/);
   assert.match(audit, /documents npm ci without disabling dependency lifecycle scripts/);
+  assert.match(audit, /tracked directory.*is missing README\.md/);
+  assert.match(audit, /git -C "\$repo" check-ignore --no-index/);
   assert.match(audit, /container base images without immutable sha256 digests/);
   assert.match(audit, /package-ecosystem:\[\[:space:\]\]\*docker/);
   assert.match(audit, /tool-runner-nonroot/);
@@ -221,6 +223,26 @@ test("monorepo scripts keep destructive actions manual and include dry-run/audit
     assert.match(body, /\^\[A-Za-z0-9\._\/-\]\+\$/);
   }
   assert.match(branchScripts[0], /permits only the main branch/);
+});
+
+test("consensus services stay transport-independent from NATS", () => {
+  const consensusRepos = [
+    "apps/fiducia-brain.rs",
+    "apps/fiducia-node.rs",
+    "apps/fiducia-routing.rs",
+    "apps/fiducia-load-balance.rs",
+  ];
+
+  for (const repo of consensusRepos) {
+    const manifest = read(`${repo}/Cargo.toml`);
+    assert.doesNotMatch(manifest, /\b(?:async-)?nats\b/i, `${repo} must not depend on NATS`);
+    const sourceFiles = execFileSync("git", ["-C", path.join(root, repo), "ls-files", "src"], {
+      encoding: "utf8",
+    }).trim().split(/\r?\n/).filter((file) => file.endsWith(".rs"));
+    for (const file of sourceFiles) {
+      assert.doesNotMatch(read(`${repo}/${file}`), /\basync_nats\b/, `${repo}/${file} must use Raft peer transport, not NATS`);
+    }
+  }
 });
 
 test("CI and production workflows fail closed on immutable inputs", () => {
