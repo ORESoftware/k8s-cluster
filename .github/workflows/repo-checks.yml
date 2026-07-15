@@ -25,10 +25,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      - name: Require private-submodule read token
+        env:
+          K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
+        run: test -n "$K8S_SUBMODULE_TOKEN"
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
           submodules: recursive
+          token: ${{ secrets.REMOTE_DEV_GH_PAT }}
+          persist-credentials: false
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -109,10 +116,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Require private-submodule read token
+        env:
+          K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
+        run: test -n "$K8S_SUBMODULE_TOKEN"
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
           submodules: recursive
+          token: ${{ secrets.REMOTE_DEV_GH_PAT }}
+          persist-credentials: false
 
       - name: Setup kubectl
         uses: azure/setup-kubectl@v4
