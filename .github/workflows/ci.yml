@@ -1,6 +1,6 @@
-# Public contract CI needs only the two public repositories whose files the
-# tests read. Trusted main/manual runs additionally require the private-module
-# token and audit the complete pinned fleet.
+# Public contract CI initializes every public repository whose files the tests
+# read. Trusted main/manual runs additionally require the private-module token
+# and audit the complete pinned fleet.
 name: ci
 on:
   push:
@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Submodule URLs use SSH, while Actions authenticates with HTTPS. Contract
-      # CI initializes only the reviewed public interface and sync gitlinks;
+      # CI initializes only the reviewed public contract/consensus gitlinks;
       # private app contents are not required to validate the gitlink inventory.
       - name: Use HTTPS for submodule fetch
         run: git config --global url."https://github.com/".insteadOf "git@github.com:"
@@ -25,7 +25,14 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Initialize public contract submodules
-        run: git submodule update --init --depth 1 apps/fiducia-interfaces apps/fiducia-sync
+        run: >-
+          git submodule update --init --depth 1
+          apps/fiducia-interfaces
+          apps/fiducia-sync
+          apps/fiducia-brain.rs
+          apps/fiducia-node.rs
+          apps/fiducia-routing.rs
+          apps/fiducia-load-balance.rs
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "22"

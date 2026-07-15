@@ -260,7 +260,16 @@ test("CI and production workflows fail closed on immutable inputs", () => {
   }
 
   assert.match(ci, /Initialize public contract submodules/);
-  assert.match(ci, /apps\/fiducia-interfaces apps\/fiducia-sync/);
+  for (const publicContractRepo of [
+    "fiducia-interfaces",
+    "fiducia-sync",
+    "fiducia-brain.rs",
+    "fiducia-node.rs",
+    "fiducia-routing.rs",
+    "fiducia-load-balance.rs",
+  ]) {
+    assert.match(ci, new RegExp(`apps/${publicContractRepo.replace(".", "\\.")}`));
+  }
   assert.match(ci, /fleet-audit:/);
   assert.match(ci, /if: github\.event_name != 'pull_request'/);
   assert.match(ci, /submodules: recursive/);
