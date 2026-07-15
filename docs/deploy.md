@@ -1,21 +1,24 @@
 # Deployment
 
-Two environments, two owners. The split keeps everyday iteration fast while
-making production a single, deliberate, auditable action.
+One deployment owner, many test owners. Component repositories validate their
+code and publish immutable artifacts; the superproject is the only repository
+allowed to mutate a runtime environment.
 
-## TEST — owned by each app repo
+## Component repositories — tests and artifacts only
 
-Each app repo's own CI is responsible for the **test** environment on merge to
-`main`:
+Each app repo's own CI is responsible for validating changes on pull requests
+and `main`:
 
-- CI publishes the release image (e.g. `ghcr.io/fiducia-cloud/<app>`) and may
-  run its **secret-gated** test-env rollout. Repository test workflows must
-  distinguish an explicit validation-only job from a deployment job; a job
-  named as a deployment must fail closed when required credentials are absent.
-- Test deploys are per-repo and fast — they do **not** wait on the superproject
-  and do **not** touch production.
+- Test workflows use locked dependency graphs, immutable sibling revisions,
+  least-privilege tokens, bounded jobs, and non-persisted checkout credentials.
+- Container-producing repositories publish a commit-SHA tag with provenance and
+  an SBOM. They do not publish `latest` and do not receive kubeconfig or
+  Cloudflare deployment credentials.
+- The marketing site's GitHub Pages workflow is the only exception because the
+  Pages OIDC token and environment are bound by GitHub to that repository. Its
+  write permissions exist only on the deploy job.
 
-## PROD — owned by the monorepo, manually
+## Runtime deployment — owned by the monorepo, manually
 
 `fiducia-monorepo` is the **only** path to production. There is no push-triggered
 prod deploy anywhere.
@@ -28,6 +31,13 @@ prod deploy anywhere.
 - The workflow first **validates** the rendered state from `apps/fiducia-infra`
   (`node tools/render.mjs --check`, then `kubectl kustomize` for every
   `clusters/*/`) before any apply.
+- Core workload images are derived from the reviewed component gitlinks. The
+  workflow verifies that each commit-SHA image exists in GHCR, rewrites the
+  runner's manifest copy to those exact SHAs, and rejects mutable core tags.
+- Each cluster overlay is applied only to a kubeconfig context with the same
+  explicit cluster name (`hetzner`, `vultr`, `civo`). A missing context fails
+  the deployment instead of falling back to the ambient/current context. Every
+  node, brain, and load-balancer rollout must then complete.
 - The rollout step is **credential-gated and never automatic**. It requires
   `KUBE_CONFIG_PROD` plus a read-only fine-grained
   `FIDUCIA_SUBMODULE_TOKEN` that can clone every private app repo. Missing
@@ -38,9 +48,9 @@ prod deploy anywhere.
 - Bind the `prod` GitHub Environment to **required reviewers** for a human
   approval gate on top of the manual dispatch.
 
-## Why prod lives here and not in the app repos
+## Why deployment lives here and not in the app repos
 
-Production is a property of the **whole fleet at a coherent set of pins**, not of
-any single component. Centralizing it in the superproject means one reviewed pin
-set, one manual trigger, one place to audit — while app repos keep shipping to
-test independently.
+Deployment is a property of the **whole fleet at a coherent set of pins**, not
+of any single component. Centralizing it in the superproject means one reviewed
+pin set, one manual trigger, one place to audit, and no race between independent
+component rollouts.

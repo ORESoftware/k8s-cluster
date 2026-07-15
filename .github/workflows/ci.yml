@@ -11,9 +11,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   contracts:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       # Submodule URLs use SSH, while Actions authenticates with HTTPS. Contract
       # CI initializes only the reviewed public contract/consensus gitlinks;
@@ -24,6 +29,10 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Validate GitHub Actions
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: ./.github/workflows/ci.yml ./.github/workflows/deploy.yml
       - name: Initialize public contract submodules
         run: >-
           git submodule update --init --depth 1
@@ -35,7 +44,7 @@ jobs:
           apps/fiducia-load-balance.rs
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
-          node-version: "22"
+          node-version: "22.22.1"
       - run: npm ci --ignore-scripts
       - run: npm audit --omit=dev
       - run: npm test
@@ -44,6 +53,9 @@ jobs:
     if: github.event_name != 'pull_request'
     needs: contracts
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Isolates the private read token from public pull-request jobs.
+    environment: internal-ci
     steps:
       - name: Require private-submodule read token
         env:

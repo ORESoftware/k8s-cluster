@@ -1,9 +1,8 @@
 # Production deploy — the monorepo is the ONLY path to prod.
 #
-# Manual only (workflow_dispatch); NEVER triggered by push. Individual app repos
-# deploy to a TEST environment from their own CI on merge to main; production
-# happens HERE, and only when an operator dispatches this workflow against a
-# reviewed superproject pin set. See docs/deploy.md.
+# Manual only (workflow_dispatch); NEVER triggered by push. Component repos test
+# and publish immutable commit-tagged images, but all cluster mutation happens
+# HERE against a reviewed superproject pin set. See docs/deploy.md.
 #
 # Required secrets for every rollout. Missing credentials fail the manual job
 # before validation or apply; CI is the validation-only path.
@@ -19,6 +18,7 @@ on:
 
 permissions:
   contents: read
+  packages: read # Required only to verify reviewed commit-SHA images in GHCR.
 
 concurrency:
   group: deploy-prod
@@ -27,6 +27,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     # Binds to a GitHub Environment so required-reviewer protection (if enabled)
     # gates every run. Reinforces: prod never deploys automatically.
     environment: prod
@@ -50,7 +51,13 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
-          node-version: "22"
+          node-version: "22.22.1"
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+      - uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
 
       - run: npm ci --ignore-scripts
       - run: npm audit --omit=dev
@@ -65,8 +72,7 @@ jobs:
         run: |
           set -euo pipefail
           test "${GITHUB_REF}" = "refs/heads/main"
-          git fetch origin main --no-tags
-          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
           if git submodule status --recursive | grep -Eq '^[+U-]'; then
             echo "submodule checkout does not match the reviewed gitlink pins" >&2
             exit 1
@@ -78,6 +84,39 @@ jobs:
       - name: Validate infra topology is in sync
         working-directory: apps/fiducia-infra
         run: node tools/render.mjs --check
+
+      # The superproject gitlinks are the release bill of materials. Replace the
+      # human-readable base tags in the runner checkout with the exact component
+      # commit SHAs and refuse to proceed unless those images already exist.
+      - name: Pin deploy images to reviewed gitlinks
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          pin_image() {
+            local image="$1"
+            local repo="$2"
+            local sha ref matches
+            sha="$(git -C "$repo" rev-parse HEAD)"
+            ref="${image}:${sha}"
+
+            docker buildx imagetools inspect "$ref" >/dev/null
+            matches="$(grep -RIl --include='*.yaml' "image: ${image}:" apps/fiducia-infra/base)"
+            if [ -z "$matches" ]; then
+              echo "no deploy manifest references ${image}" >&2
+              exit 1
+            fi
+            while IFS= read -r file; do
+              sed -i -E "s#(image:[[:space:]]*${image}):[^[:space:]#]+#\\1:${sha}#g" "$file"
+            done <<< "$matches"
+            echo "pinned ${image} to ${sha}"
+          }
+
+          pin_image ghcr.io/fiducia-cloud/fiducia-node apps/fiducia-node.rs
+          pin_image ghcr.io/fiducia-cloud/fiducia-node-sidecar apps/fiducia-node-sidecar.rs
+          pin_image ghcr.io/fiducia-cloud/fiducia-brain apps/fiducia-brain.rs
+          pin_image ghcr.io/fiducia-cloud/fiducia-load-balance apps/fiducia-load-balance.rs
+
       # Every per-cluster kustomization must build cleanly.
       - name: Validate every cluster kustomization builds
         run: |
@@ -85,7 +124,19 @@ jobs:
           built=0
           for c in apps/fiducia-infra/clusters/*/; do
             echo "::group::kubectl kustomize $c"
-            kubectl kustomize "$c" >/dev/null
+            rendered="$(mktemp)"
+            kubectl kustomize "$c" > "$rendered"
+            if grep -Eq 'image: ghcr.io/fiducia-cloud/(fiducia-node|fiducia-node-sidecar|fiducia-brain|fiducia-load-balance):(latest|v[0-9])' "$rendered"; then
+              echo "mutable core image remains in $c" >&2
+              exit 1
+            fi
+            for repo in fiducia-node.rs fiducia-node-sidecar.rs fiducia-brain.rs fiducia-load-balance.rs; do
+              sha="$(git -C "apps/$repo" rev-parse HEAD)"
+              grep -Fq ":${sha}" "$rendered" || {
+                echo "$c does not contain the reviewed image for $repo" >&2
+                exit 1
+              }
+            done
             echo "::endgroup::"
             built=$((built + 1))
           done
@@ -104,6 +155,18 @@ jobs:
           printf '%s' "${KUBE_CONFIG_PROD}" | install -m 600 /dev/stdin "${kubeconfig}"
           shopt -s nullglob
           for c in apps/fiducia-infra/clusters/*/; do
-            echo "apply ${c}"
-            kubectl --kubeconfig "${kubeconfig}" apply -k "${c}"
+            cluster="$(basename "$c")"
+            if ! kubectl --kubeconfig "${kubeconfig}" config get-contexts "$cluster" -o name \
+              | grep -Fxq "$cluster"; then
+              echo "kubeconfig is missing required context: $cluster" >&2
+              exit 1
+            fi
+            echo "apply ${c} to context ${cluster}"
+            kubectl --kubeconfig "${kubeconfig}" --context "$cluster" apply -k "${c}"
+            kubectl --kubeconfig "${kubeconfig}" --context "$cluster" -n fiducia \
+              rollout status statefulset/fiducia-node --timeout=10m
+            kubectl --kubeconfig "${kubeconfig}" --context "$cluster" -n fiducia \
+              rollout status statefulset/fiducia-brain --timeout=10m
+            kubectl --kubeconfig "${kubeconfig}" --context "$cluster" -n fiducia \
+              rollout status deployment/fiducia-load-balance --timeout=10m
           done

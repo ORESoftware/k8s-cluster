@@ -133,7 +133,7 @@ scan_action_pins() {
       'uses:[[:space:]]*[^[:space:]#]+@[^[:space:]#]+' -- \
       '.github/workflows/*.yml' '.github/workflows/*.yaml' 2>/dev/null \
       | grep -v -E \
-        'uses:[[:space:]]*[^[:space:]#]+@[0-9a-f]{40}([[:space:]]|$)' \
+        'uses:[[:space:]]*[^[:space:]#]+@[0-9a-f]{40}([[:space:]]|$)|uses:[[:space:]]*docker://[^[:space:]#]+@sha256:[0-9a-f]{64}([[:space:]]|$)' \
       || true
   )"
   if [[ -n "$action_output" ]]; then
@@ -149,6 +149,64 @@ scan_workflow_hardening() {
   local lifecycle_script_output
   local unlocked_cargo_output
   local moving_ref_output
+  local workflow
+  local runs_on_count
+  local timeout_count
+  local checkout_count
+  local nonpersisting_checkout_count
+  local mutation_output
+  local -a workflow_files=()
+
+  shopt -s nullglob
+  workflow_files=(
+    "$repo"/.github/workflows/*.yml
+    "$repo"/.github/workflows/*.yaml
+  )
+  shopt -u nullglob
+
+  if [[ ${#workflow_files[@]} -eq 0 ]]; then
+    fail "$label has no executable GitHub Actions workflow"
+  fi
+
+  for workflow in "${workflow_files[@]}"; do
+    if ! grep -q '^permissions:' "$workflow"; then
+      fail "$label workflow ${workflow#$repo/} has no explicit top-level permissions"
+    fi
+    if ! grep -q '^concurrency:' "$workflow"; then
+      fail "$label workflow ${workflow#$repo/} has no concurrency policy"
+    fi
+
+    runs_on_count="$(grep -c '^[[:space:]]*runs-on:' "$workflow" || true)"
+    timeout_count="$(grep -c '^[[:space:]]*timeout-minutes:' "$workflow" || true)"
+    if [[ "$runs_on_count" -ne "$timeout_count" ]]; then
+      fail "$label workflow ${workflow#$repo/} does not bound every runner job"
+    fi
+
+    checkout_count="$(grep -c 'uses:[[:space:]]*actions/checkout@' "$workflow" || true)"
+    nonpersisting_checkout_count="$(grep -c 'persist-credentials:[[:space:]]*false' "$workflow" || true)"
+    if [[ "$checkout_count" -ne "$nonpersisting_checkout_count" ]]; then
+      fail "$label workflow ${workflow#$repo/} persists checkout credentials"
+    fi
+
+    if grep -q -E 'pull_request_target:|workflow_run:|issue_comment:' "$workflow"; then
+      fail "$label workflow ${workflow#$repo/} uses a privileged untrusted-code trigger"
+    fi
+    if grep -q -E 'ghcr\.io/fiducia-cloud/[^[:space:]]+:(latest|main|edge)([[:space:]]|$)' "$workflow"; then
+      fail "$label workflow ${workflow#$repo/} publishes or consumes a mutable image tag"
+    fi
+  done
+
+  if [[ "$label" != "superproject" ]]; then
+    mutation_output="$(
+      grep -n -E \
+        'KUBE_CONFIG|kubectl[[:space:]].*(apply|set[[:space:]]+image)|wrangler.*deploy|npm[[:space:]]+run[[:space:]]+deploy' \
+        "${workflow_files[@]}" 2>/dev/null || true
+    )"
+    if [[ -n "$mutation_output" ]]; then
+      fail "$label contains component-repository deployment commands"
+      printf '%s\n' "$mutation_output" >&2
+    fi
+  fi
 
   scan_action_pins "$repo" "$label"
 
