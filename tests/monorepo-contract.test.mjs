@@ -218,6 +218,7 @@ test("monorepo scripts keep destructive actions manual and include dry-run/audit
   assert.match(audit, /documents npm ci without disabling dependency lifecycle scripts/);
   assert.match(audit, /tracked directory.*is missing README\.md/);
   assert.match(audit, /git -C "\$repo" check-ignore --no-index/);
+  assert.match(audit, /\[\[ \$\{#gitlinks\[@\]\} -gt 0 \]\]/);
   assert.match(audit, /container base images without immutable sha256 digests/);
   assert.match(audit, /package-ecosystem:\[\[:space:\]\]\*docker/);
   assert.match(audit, /tool-runner-nonroot/);

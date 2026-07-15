@@ -357,12 +357,16 @@ scan_directory_readmes() {
       continue
     fi
     skip=0
-    for gitlink in "${gitlinks[@]}"; do
-      if [[ "$dir" == "$gitlink" || "$dir" == "$gitlink/"* ]]; then
-        skip=1
-        break
-      fi
-    done
+    # Bash 3.2 (the macOS system Bash) raises an unbound-variable error for an
+    # empty array expansion under `set -u`, even when the array was declared.
+    if [[ ${#gitlinks[@]} -gt 0 ]]; then
+      for gitlink in "${gitlinks[@]}"; do
+        if [[ "$dir" == "$gitlink" || "$dir" == "$gitlink/"* ]]; then
+          skip=1
+          break
+        fi
+      done
+    fi
     [[ "$skip" == 1 ]] && continue
     dirs+=("$dir")
   done < <(git -C "$repo" ls-files)
