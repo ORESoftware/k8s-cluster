@@ -7259,6 +7259,32 @@ fn mirror_retry_backoff(attempts: i32) -> ChronoDuration {
     ChronoDuration::seconds(seconds)
 }
 
+/// Idempotently deletes one mirror copy; DeleteObject on a missing key
+/// succeeds, so `true` means "no mirror copy remains at this bucket/key".
+async fn delete_mirror_object(
+    mirror: &aws_sdk_s3::Client,
+    bucket: &str,
+    key: &str,
+    segment_id: &str,
+) -> bool {
+    match tokio::time::timeout(
+        STORAGE_OBJECT_TIMEOUT,
+        mirror.delete_object().bucket(bucket).key(key).send(),
+    )
+    .await
+    {
+        Ok(Ok(_)) => true,
+        Ok(Err(err)) => {
+            warn!(error = %err, segment_id, "mirror object delete failed");
+            false
+        }
+        Err(_) => {
+            warn!(segment_id, "mirror object delete timed out");
+            false
+        }
+    }
+}
+
 async fn download_object_bytes(
     state: &AppState,
     segment_id: &str,
