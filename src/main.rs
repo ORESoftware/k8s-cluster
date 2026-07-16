@@ -9631,6 +9631,71 @@ mod tests {
         assert!(unmarked_history_acknowledgment(true, Some("old"), "current").is_err());
     }
 
+    #[test]
+    fn mirror_metadata_is_server_owned() {
+        let config = test_config().s3;
+        let meta = attach_storage_metadata(
+            json!({
+                MIRROR_STATE_META_KEY: "mirrored",
+                MIRROR_BUCKET_META_KEY: "attacker-bucket",
+                MIRROR_FINGERPRINT_META_KEY: "forged",
+                MIRROR_ATTEMPTS_META_KEY: "not-a-number",
+                MIRROR_CLAIM_ID_META_KEY: "stolen-claim",
+                "client": "kept"
+            }),
+            &config.backend_fingerprint,
+        )
+        .unwrap();
+        for key in [
+            MIRROR_STATE_META_KEY,
+            MIRROR_BUCKET_META_KEY,
+            MIRROR_FINGERPRINT_META_KEY,
+            MIRROR_ATTEMPTS_META_KEY,
+            MIRROR_CLAIM_ID_META_KEY,
+        ] {
+            assert!(meta.get(key).is_none(), "client-supplied {key} must be stripped");
+        }
+        assert_eq!(meta.get("client").and_then(Value::as_str), Some("kept"));
+    }
+
+    #[test]
+    fn mirror_must_target_a_different_store_than_primary() {
+        let primary = test_config().s3;
+        let mut mirror = primary.clone();
+        assert!(mirror_targets_conflict(&primary, &mirror));
+        mirror.bucket = "backup-bucket".to_string();
+        mirror.backend_fingerprint = storage_backend_fingerprint(
+            mirror.backend,
+            mirror.endpoint.as_deref(),
+            &mirror.region,
+            &mirror.bucket,
+        );
+        assert!(!mirror_targets_conflict(&primary, &mirror));
+        // An unconfigured mirror never conflicts.
+        mirror.bucket = String::new();
+        assert!(!mirror_targets_conflict(&primary, &mirror));
+    }
+
+    #[test]
+    fn mirror_retry_backoff_grows_and_caps() {
+        assert_eq!(mirror_retry_backoff(0), ChronoDuration::seconds(60));
+        assert_eq!(mirror_retry_backoff(1), ChronoDuration::seconds(120));
+        assert_eq!(mirror_retry_backoff(3), ChronoDuration::seconds(480));
+        assert_eq!(mirror_retry_backoff(6), ChronoDuration::seconds(3600));
+        assert_eq!(mirror_retry_backoff(100), ChronoDuration::seconds(3600));
+        assert_eq!(mirror_retry_backoff(-5), ChronoDuration::seconds(60));
+    }
+
+    #[test]
+    fn mirror_probe_mode_reflects_configuration() {
+        let mut mirror = test_config().mirror;
+        assert_eq!(mirror_probe_mode(&mirror), "unconfigured");
+        mirror.bucket = "backup-bucket".to_string();
+        assert_eq!(mirror_probe_mode(&mirror), "head_probe_not_found_ok");
+        mirror.readiness_object_key = Some("sound-recorder/segments/.sentinel".to_string());
+        assert_eq!(mirror_probe_mode(&mirror), "head_object");
+    }
+
     #[tokio::test]
     async fn sentinel_readiness_performs_remote_head_object() {
         let (endpoint, requests, handle) = spawn_json_server("");
