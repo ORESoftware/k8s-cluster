@@ -4205,6 +4205,14 @@ async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
             supabase_ready,
             supabase_required: state.config.require_supabase,
             retention_hours: state.config.default_retention_hours,
+            mirror_configured: state.mirror.is_some() && state.config.mirror.is_configured(),
+            mirror_ready,
+            mirror_probe_mode: mirror_probe_mode(&state.config.mirror),
+            mirror_backend: (!state.config.mirror.bucket.is_empty())
+                .then(|| state.config.mirror.backend.as_str()),
+            mirror_backend_fingerprint: (!state.config.mirror.bucket.is_empty())
+                .then(|| state.config.mirror.backend_fingerprint.clone()),
+            mirror_readiness_required: state.config.mirror_readiness_required,
         }),
     )
 }
