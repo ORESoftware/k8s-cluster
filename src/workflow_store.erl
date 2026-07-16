@@ -28,8 +28,9 @@
     repark_wait/1,
     cancel_run/1,
     deliver_signal/3,
-    %% Exported for unit tests (pure helper).
-    clamp_text/2
+    %% Exported for unit tests (pure helpers).
+    clamp_text/2,
+    psql_input/1
 ]).
 
 -define(PSQL_TIMEOUT_MS, 5000).
@@ -523,18 +524,25 @@ run_psql(Vars, Sql) ->
                 Psql ->
                     VarArgs = lists:append([["-v", var_arg(Name, Value)] || {Name, Value} <- Vars]),
                     Args = VarArgs ++ [
-                        DatabaseUrl,
                         "-X", "-q", "-At",
                         "-v", "ON_ERROR_STOP=1",
-                        "-c", binary_to_list(iolist_to_binary(Sql))
+                        DatabaseUrl
                     ],
                     Port = open_port({spawn_executable, Psql}, [
                         binary, exit_status, stderr_to_stdout, use_stdio,
                         {args, Args}
                     ]),
+                    %% psql deliberately skips its variable-substitution layer
+                    %% for a command supplied with `-c`. Feed the statement to
+                    %% its normal input processor instead, then terminate with
+                    %% `\q`, so :'name' bindings remain escaped SQL literals.
+                    true = port_command(Port, psql_input(Sql)),
                     collect_port(Port, [], 0)
             end
     end.
+
+psql_input(Sql) ->
+    iolist_to_binary([Sql, ";\n\\q\n"]).
 
 var_arg(Name, Value) ->
     binary_to_list(iolist_to_binary([to_binary(Name), "=", to_binary(Value)])).

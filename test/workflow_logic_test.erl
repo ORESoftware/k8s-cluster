@@ -18,6 +18,12 @@ clamp_text_lands_on_utf8_boundary_test() ->
     ?assert(byte_size(Clamped) =< 2),
     ?assertMatch(B when is_binary(B), unicode:characters_to_binary(Clamped, utf8, utf8)).
 
+psql_input_uses_interactive_processor_test() ->
+    ?assertEqual(
+        <<"select :'lease';\n\\q\n">>,
+        workflow_store:psql_input("select :'lease'")
+    ).
+
 backoff_default_first_attempt_test() ->
     ?assertEqual(1000, workflow_engine:backoff_ms(#{}, 0)).
 
