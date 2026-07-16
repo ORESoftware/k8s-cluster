@@ -108,6 +108,47 @@ The manager prewarms one Node.js host worker by default via `LAMBDA_PREWARM_RUNT
 `LAMBDA_PREWARM_CONTAINER_RUNTIMES` can also warm container workers when the runtime images below
 exist in the EC2 node's local containerd image store.
 
+### Playwright and Puppeteer as Node.js lambda capabilities
+
+Containerized Node.js lambdas can opt into first-class Chromium automation by
+setting `metaData.browserAutomation=true` (or the equivalent top-level field).
+The managed Node image includes `playwright-core`, `puppeteer-core`, Chromium,
+fonts, and CA certificates. The runner exposes fixed launch helpers and closes
+every browser it launched when the invocation finishes, including error paths:
+
+```js
+const browser = await context.browser.launchPlaywright();
+const page = await browser.newPage();
+await page.goto(request.url, { waitUntil: "domcontentloaded" });
+return { title: await page.title() };
+```
+
+Use `context.browser.launchPuppeteer()` for the Puppeteer API. Browser helpers
+are intentionally unavailable to host-mode functions: browser lambdas must use
+`containerized: true`, keeping child processes, filesystem access, and Chromium
+inside the non-root, read-only runtime container. Check responses report
+`browserAutomation` and `browserEngines`, so clients can verify the capability
+before invocation. Browser-enabled definitions receive separate bounded defaults
+(`1g` memory, `1` CPU, `256m` tmpfs, 256 PIDs); tune them with
+`LAMBDA_BROWSER_CONTAINER_MEMORY`, `LAMBDA_BROWSER_CONTAINER_MEMORY_BYTES`,
+`LAMBDA_BROWSER_CONTAINER_CPUS`, `LAMBDA_BROWSER_CONTAINER_TMPFS_SIZE`, and
+`LAMBDA_BROWSER_CONTAINER_PIDS_LIMIT`.
+
+The digest-pinned browser image uses Node 22's permission model to restrict
+filesystem reads/writes and allow the Chromium child process. Node 22 does not
+offer a network permission flag; destination policy therefore belongs at the
+container/pod network boundary and in the scraping service's SSRF controls.
+The generated NATS subject module is copied into the same repository-relative
+path during the image build, so container-pool routing fails at build time if
+the shared messaging contract disappears.
+
+Browser scraping is a safe, ethical, and legitimate lambda use when it targets
+public or explicitly authorized data, respects site terms and `robots.txt`,
+rate-limits requests, and minimizes retained personal data. It is not permission
+to evade authentication, paywalls, CAPTCHAs, blocks, or opt-outs. Keep egress
+controls in place and use the dedicated `dd-web-scraper` service when callers need
+its stronger per-request SSRF, redirect, proxy, and subresource policy.
+
 ## Container-pool dispatch (warm containers over NATS)
 
 Instead of spawning a child container locally per invoke, the runner can hand an invocation to
@@ -158,7 +199,7 @@ and Gleam build work at boot do not trip liveness before the service is ready.
 Build the reusable container pool images from the repository root:
 
 ```sh
-nerdctl -n k8s.io build -f remote/deployments/gleam-lambda-runner/runtime-images/nodejs.Dockerfile -t docker.io/library/dd-lambda-nodejs-runtime:dev remote/deployments/gleam-lambda-runner
+nerdctl -n k8s.io build -f remote/deployments/gleam-lambda-runner/runtime-images/nodejs.Dockerfile -t docker.io/library/dd-lambda-nodejs-runtime:dev remote
 nerdctl -n k8s.io build -f remote/deployments/gleam-lambda-runner/runtime-images/python3.Dockerfile -t docker.io/library/dd-lambda-python3-runtime:dev remote/deployments/gleam-lambda-runner
 nerdctl -n k8s.io build -f remote/deployments/gleam-lambda-runner/runtime-images/ruby.Dockerfile -t docker.io/library/dd-lambda-ruby-runtime:dev remote/deployments/gleam-lambda-runner
 nerdctl -n k8s.io build -f remote/deployments/gleam-lambda-runner/runtime-images/bash.Dockerfile -t docker.io/library/dd-lambda-bash-runtime:dev remote/deployments/gleam-lambda-runner

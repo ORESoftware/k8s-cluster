@@ -46,7 +46,26 @@ spec:
                 cat /tmp/dd-lambda-runner-apk.log
                 exit 1
               fi
-              cd /opt/dd-next-1/remote/deployments/gleam-lambda-runner
+              # Build from a clean, pod-local projection. Host-mounted macOS
+              # AppleDouble files (._*) are not source modules and otherwise
+              # cause Gleam/Erlang compilation failures on the Linux node.
+              clean_root=/tmp/dd-gleam-lambda-source
+              mkdir -p "$clean_root"
+              tar \
+                --exclude='._*' \
+                --exclude='*/._*' \
+                --exclude='*/build' \
+                -C /opt/dd-next-1 \
+                -cf - \
+                remote/deployments/gleam-lambda-runner \
+                remote/libs/nats/subject-defs/generated/gleam \
+                remote/libs/nats/subject-defs/generated/javascript \
+                remote/libs/cli-config-client-gleam \
+                remote/libs/otel-client-gleam \
+                remote/libs/pg-defs/generated/gleam \
+                remote/libs/runtime-config-client-gleam \
+                | tar -C "$clean_root" -xf -
+              cd "$clean_root/remote/deployments/gleam-lambda-runner"
               gleam deps download || { sleep 10; gleam deps download; } || { sleep 10; gleam deps download; }
               gleam build
               if [ -d build/dev/erlang/hpack/src ] && [ ! -f build/dev/erlang/hpack/ebin/hpack.app ]; then
@@ -112,6 +131,16 @@ spec:
               value: /usr/local/bin/ctr
             - name: LAMBDA_CONTAINER_MEMORY_BYTES
               value: '268435456'
+            - name: LAMBDA_BROWSER_CONTAINER_MEMORY
+              value: 1g
+            - name: LAMBDA_BROWSER_CONTAINER_MEMORY_BYTES
+              value: '1073741824'
+            - name: LAMBDA_BROWSER_CONTAINER_CPUS
+              value: '1.0'
+            - name: LAMBDA_BROWSER_CONTAINER_TMPFS_SIZE
+              value: 256m
+            - name: LAMBDA_BROWSER_CONTAINER_PIDS_LIMIT
+              value: '256'
             - name: LAMBDA_NODEJS_CONTAINER_IMAGE
               value: docker.io/library/dd-lambda-nodejs-runtime:dev
             - name: LAMBDA_PYTHON3_CONTAINER_IMAGE
@@ -178,6 +207,7 @@ spec:
           volumeMounts:
             - name: repo
               mountPath: /opt/dd-next-1
+              readOnly: true
             - name: containerd-run
               mountPath: /run/containerd
               mountPropagation: Bidirectional
