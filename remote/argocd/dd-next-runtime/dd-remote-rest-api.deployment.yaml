@@ -46,6 +46,10 @@ spec:
               value: 0.0.0.0
             - name: PORT
               value: '8082'
+            - name: IMAGE_BUILD_DELEGATE_URL
+              value: http://dd-image-builder.default.svc.cluster.local:8082
+            - name: IMAGE_BUILD_DELEGATE_TIMEOUT_SECONDS
+              value: '1200'
             - name: NATS_URL
               value: nats://dd-nats.messaging.svc.cluster.local:4222
             - name: NATS_TASK_SUBJECT

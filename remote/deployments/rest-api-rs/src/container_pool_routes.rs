@@ -217,7 +217,7 @@ fn image_build_delegate_timeout() -> Duration {
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or(30);
-    Duration::from_secs(seconds.clamp(5, 300))
+    Duration::from_secs(seconds.clamp(5, 1800))
 }
 
 fn operator_api_secret() -> Option<String> {
