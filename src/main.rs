@@ -1763,6 +1763,232 @@ fn s3_storage_config_from_env() -> S3StorageConfig {
     }
 }
 
+/// Two storage targets conflict when they resolve to the same backend, endpoint,
+/// region, and bucket — a "mirror" that writes back into the primary bucket is
+/// not a backup and must be rejected at configuration time.
+fn mirror_targets_conflict(primary: &S3StorageConfig, mirror: &S3StorageConfig) -> bool {
+    !mirror.bucket.is_empty() && mirror.backend_fingerprint == primary.backend_fingerprint
+}
+
+/// Backup/mirror target configuration. Unlike the primary reader, this reads
+/// only `SOUND_RECORDER_MIRROR_*` names: the primary's generic `R2_*` / `AWS_*`
+/// alias chains are deliberately not consulted, so the mirror can never
+/// accidentally inherit the primary's credentials or endpoint. An empty
+/// `SOUND_RECORDER_MIRROR_S3_BUCKET` (and no mirror account id) disables the
+/// mirror entirely and produces no validation errors.
+fn mirror_storage_config_from_env(primary: &S3StorageConfig) -> S3StorageConfig {
+    let mut validation_errors = Vec::new();
+    let r2_account_id = first_env(&["SOUND_RECORDER_MIRROR_R2_ACCOUNT_ID"]);
+    if r2_account_id
+        .as_deref()
+        .is_some_and(|account_id| !is_valid_r2_account_id(account_id))
+    {
+        validation_errors.push(
+            "SOUND_RECORDER_MIRROR_R2_ACCOUNT_ID must be a 32-character hexadecimal account id"
+                .to_string(),
+        );
+    }
+    let derived_r2_endpoint = r2_account_id
+        .as_deref()
+        .filter(|account_id| is_valid_r2_account_id(account_id))
+        .map(|account_id| format!("https://{account_id}.r2.cloudflarestorage.com"));
+    let endpoint = first_env(&["SOUND_RECORDER_MIRROR_S3_ENDPOINT"])
+        .or(derived_r2_endpoint)
+        .map(|endpoint| endpoint.trim_end_matches('/').to_string());
+    let bucket = first_env(&["SOUND_RECORDER_MIRROR_S3_BUCKET"]).unwrap_or_default();
+    if bucket.is_empty() {
+        // Mirror disabled. Ignore every other mirror variable rather than
+        // validating a half-configured target into a readiness failure, but
+        // do flag a likely operator mistake: credentials without a bucket.
+        if endpoint.is_some()
+            || first_env(&["SOUND_RECORDER_MIRROR_S3_ACCESS_KEY_ID"]).is_some()
+        {
+            validation_errors.push(
+                "mirror storage is partially configured; set SOUND_RECORDER_MIRROR_S3_BUCKET to enable it or unset the other SOUND_RECORDER_MIRROR_* variables"
+                    .to_string(),
+            );
+        }
+        return S3StorageConfig {
+            bucket: String::new(),
+            key_prefix: primary.key_prefix.clone(),
+            cdn_base_url: None,
+            region: "auto".to_string(),
+            endpoint: None,
+            force_path_style: false,
+            send_sse_aes256: false,
+            max_attempts: DEFAULT_S3_MAX_ATTEMPTS,
+            readiness_object_key: None,
+            allow_signing_only_readiness: false,
+            allow_unmarked_storage_history: false,
+            backend_fingerprint: String::new(),
+            versioning_mode: "unversioned",
+            access_key_id: None,
+            secret_access_key: None,
+            session_token: None,
+            backend: ObjectStorageBackend::S3Compatible,
+            validation_errors,
+        };
+    }
+    if bucket.len() > 200
+        || bucket
+            .chars()
+            .any(|ch| ch.is_control() || ch.is_whitespace() || matches!(ch, '/' | '\\'))
+    {
+        validation_errors.push(
+            "SOUND_RECORDER_MIRROR_S3_BUCKET must be 1-200 characters without whitespace or slashes"
+                .to_string(),
+        );
+    }
+    if endpoint
+        .as_deref()
+        .is_some_and(|endpoint| !validate_service_url(endpoint, true))
+    {
+        validation_errors.push(
+            "SOUND_RECORDER_MIRROR_S3_ENDPOINT must be HTTPS (or loopback HTTP) with no path, credentials, query, or fragment"
+                .to_string(),
+        );
+    }
+    let backend = storage_backend_for_endpoint(endpoint.as_deref());
+    let region = if backend == ObjectStorageBackend::CloudflareR2 {
+        "auto".to_string()
+    } else {
+        first_env(&["SOUND_RECORDER_MIRROR_S3_REGION"]).unwrap_or_else(|| "us-east-1".to_string())
+    };
+    if region.len() > 80
+        || !region
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+    {
+        validation_errors.push("SOUND_RECORDER_MIRROR_S3_REGION is invalid".to_string());
+    }
+    let access_key_id = first_env(&["SOUND_RECORDER_MIRROR_S3_ACCESS_KEY_ID"]);
+    let secret_access_key = first_env(&["SOUND_RECORDER_MIRROR_S3_SECRET_ACCESS_KEY"]);
+    // The primary may fall back to the ambient AWS credential chain; the mirror
+    // must not, because in a mixed S3+R2 deployment the ambient chain belongs
+    // to the primary. Explicit credentials are therefore required.
+    if access_key_id.is_none() || secret_access_key.is_none() {
+        validation_errors.push(
+            "mirror storage requires explicit SOUND_RECORDER_MIRROR_S3_ACCESS_KEY_ID and SOUND_RECORDER_MIRROR_S3_SECRET_ACCESS_KEY"
+                .to_string(),
+        );
+    }
+    let readiness_object_key = first_env(&["SOUND_RECORDER_MIRROR_S3_READINESS_OBJECT_KEY"]);
+    if readiness_object_key
+        .as_deref()
+        .is_some_and(|key| key.len() > 2048 || key.chars().any(char::is_control))
+    {
+        validation_errors.push(
+            "SOUND_RECORDER_MIRROR_S3_READINESS_OBJECT_KEY must be at most 2048 non-control characters"
+                .to_string(),
+        );
+    }
+    let requested_sse = first_env(&["SOUND_RECORDER_MIRROR_S3_SERVER_SIDE_ENCRYPTION"])
+        .unwrap_or_else(|| "auto".to_string())
+        .to_ascii_lowercase();
+    let send_sse_aes256 = match requested_sse.as_str() {
+        "auto" => backend == ObjectStorageBackend::AmazonS3,
+        "aes256" | "aes-256" => {
+            if backend == ObjectStorageBackend::CloudflareR2 {
+                validation_errors.push(
+                    "SOUND_RECORDER_MIRROR_S3_SERVER_SIDE_ENCRYPTION=aes256 is incompatible with Cloudflare R2; use auto or none"
+                        .to_string(),
+                );
+                false
+            } else {
+                true
+            }
+        }
+        "none" | "off" | "disabled" => false,
+        _ => {
+            validation_errors.push(
+                "SOUND_RECORDER_MIRROR_S3_SERVER_SIDE_ENCRYPTION must be auto, aes256, or none"
+                    .to_string(),
+            );
+            false
+        }
+    };
+    // The mirror carries the same physical-erasure obligation as the primary:
+    // retention and account deletion must actually destroy the backup copy, so
+    // versioned mirror buckets (delete markers only) are equally unsupported.
+    let requested_versioning = first_env(&["SOUND_RECORDER_MIRROR_S3_VERSIONING_MODE"]);
+    let versioning_mode = if backend == ObjectStorageBackend::CloudflareR2 {
+        if requested_versioning.as_deref().is_some_and(|value| {
+            !matches!(
+                value.to_ascii_lowercase().as_str(),
+                "unversioned" | "disabled"
+            )
+        }) {
+            validation_errors.push(
+                "Cloudflare R2 does not support versioning; SOUND_RECORDER_MIRROR_S3_VERSIONING_MODE must be unversioned"
+                    .to_string(),
+            );
+        }
+        "unversioned"
+    } else {
+        match requested_versioning
+            .as_deref()
+            .map(str::trim)
+            .map(str::to_ascii_lowercase)
+            .as_deref()
+        {
+            Some("unversioned" | "disabled") => "unversioned",
+            Some(_) => {
+                validation_errors.push(
+                    "SOUND_RECORDER_MIRROR_S3_VERSIONING_MODE must be unversioned; versioned mirror buckets are unsupported"
+                        .to_string(),
+                );
+                "invalid"
+            }
+            None => {
+                validation_errors.push(
+                    "SOUND_RECORDER_MIRROR_S3_VERSIONING_MODE=unversioned must be explicitly set for a non-R2 mirror"
+                        .to_string(),
+                );
+                "unknown"
+            }
+        }
+    };
+    let force_path_style = env_bool(
+        "SOUND_RECORDER_MIRROR_S3_FORCE_PATH_STYLE",
+        backend == ObjectStorageBackend::S3Compatible,
+        &mut validation_errors,
+    );
+    let backend_fingerprint =
+        storage_backend_fingerprint(backend, endpoint.as_deref(), &region, &bucket);
+    let mirror = S3StorageConfig {
+        bucket,
+        key_prefix: primary.key_prefix.clone(),
+        cdn_base_url: None,
+        region,
+        endpoint,
+        force_path_style,
+        send_sse_aes256,
+        max_attempts: env_u64(
+            "SOUND_RECORDER_MIRROR_S3_MAX_ATTEMPTS",
+            DEFAULT_S3_MAX_ATTEMPTS as u64,
+        )
+        .clamp(1, 10) as u32,
+        readiness_object_key,
+        allow_signing_only_readiness: false,
+        allow_unmarked_storage_history: false,
+        backend_fingerprint,
+        versioning_mode,
+        access_key_id,
+        secret_access_key,
+        session_token: first_env(&["SOUND_RECORDER_MIRROR_S3_SESSION_TOKEN"]),
+        backend,
+        validation_errors,
+    };
+    let mut mirror = mirror;
+    if mirror_targets_conflict(primary, &mirror) {
+        mirror.validation_errors.push(
+            "mirror storage must target a different bucket/endpoint than the primary; a mirror into the same bucket is not a backup"
+                .to_string(),
+        );
+    }
+    mirror
+}
+
 fn config_from_env() -> Config {
     let mut validation_errors = Vec::new();
     let token_pepper = first_env(&["SOUND_RECORDER_DEVICE_TOKEN_PEPPER"]);
