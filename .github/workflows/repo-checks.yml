@@ -32,10 +32,18 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          token: ${{ secrets.REMOTE_DEV_GH_PAT }}
-          persist-credentials: false
+
+      - name: Initialize required contract submodule
+        env:
+          K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
+        run: |
+          set -euo pipefail
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          basic_auth="$(printf 'x-access-token:%s' "$K8S_SUBMODULE_TOKEN" | base64 | tr -d '\n')"
+          GIT_CONFIG_COUNT=1 \
+          GIT_CONFIG_KEY_0=http.https://github.com/.extraheader \
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic ${basic_auth}" \
+            git submodule update --init --depth 1 -- remote/libs
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -116,17 +124,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Require private-submodule read token
-        env:
-          K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
-        run: test -n "$K8S_SUBMODULE_TOKEN"
-
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          token: ${{ secrets.REMOTE_DEV_GH_PAT }}
-          persist-credentials: false
+
+      - name: Initialize required public overlay submodule
+        run: |
+          set -euo pipefail
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule update --init --depth 1 -- remote/deployments/mip-solver-node.rs
 
       - name: Setup kubectl
         uses: azure/setup-kubectl@v4
@@ -150,8 +155,8 @@ jobs:
             echo "::endgroup::"
           done
 
-          # Overlays hosted inside submodules (checked out via
-          # `submodules: recursive` above) that git ls-files cannot see;
+          # Overlays hosted inside the explicitly initialized submodule that
+          # git ls-files cannot see;
           # carried over from the previous hardcoded list so coverage
           # does not regress.
           submodule_overlays=(
