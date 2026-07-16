@@ -4,9 +4,9 @@ import { connect as connectTcp } from 'node:net';
 import { env, stdin, stderr, stdout } from 'node:process';
 import { compileFunction as compileVmFunction, createContext } from 'node:vm';
 
-// Source-of-truth NATS subject constants. The repo is mounted at
-// /opt/dd-next-1 inside the pod so this relative path resolves identically
-// in dev, CI, and prod containers.
+// Source-of-truth NATS subject constants. The runner's working directory is
+// the service root in dev, CI, the pod's clean projection, and runtime images,
+// so this relative path resolves identically on every execution path.
 import {
   containerPoolLanguageRequestsSubject,
 } from '../../../libs/nats/subject-defs/generated/javascript/index.mjs';
