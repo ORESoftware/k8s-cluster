@@ -547,6 +547,12 @@ struct HealthResponse {
     supabase_ready: Option<bool>,
     supabase_required: bool,
     retention_hours: i32,
+    mirror_configured: bool,
+    mirror_ready: Option<bool>,
+    mirror_probe_mode: &'static str,
+    mirror_backend: Option<&'static str>,
+    mirror_backend_fingerprint: Option<String>,
+    mirror_readiness_required: bool,
 }
 
 #[derive(Deserialize)]
