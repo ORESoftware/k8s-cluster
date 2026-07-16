@@ -17,6 +17,7 @@
 !libs/runtime-config-client-rs/**
 !libs/interfaces/shared/generated/rust/**
 !libs/pg-defs/generated/rust/**
+!libs/telemetry-rs/**
 !libs/browser/service-worker.js
 
 # Drop build artifacts back out of the re-included trees.
