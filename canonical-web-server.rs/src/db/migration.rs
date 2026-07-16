@@ -6,7 +6,7 @@ pub struct Migrator;
 #[async_trait::async_trait]
 impl MigratorTrait for Migrator {
     fn migrations() -> Vec<Box<dyn MigrationTrait>> {
-        vec![Box::new(Migration)]
+        vec![Box::new(Migration), Box::new(AddEngagements)]
     }
 }
 
@@ -291,6 +291,222 @@ impl MigrationTrait for Migration {
             .await?;
         Ok(())
     }
+}
+
+struct AddEngagements;
+
+// DeriveMigrationName would reuse this module's name, colliding with the
+// initial migration's version key; name this one explicitly.
+impl MigrationName for AddEngagements {
+    fn name(&self) -> &str {
+        "m20260713_000001_add_engagements"
+    }
+}
+
+#[async_trait::async_trait]
+impl MigrationTrait for AddEngagements {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .create_table(
+                Table::create()
+                    .table(AuditEngagement::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(AuditEngagement::Id)
+                            .uuid()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(ColumnDef::new(AuditEngagement::OwnerId).uuid().not_null())
+                    .col(ColumnDef::new(AuditEngagement::Company).string().not_null())
+                    .col(
+                        // The enum values are also enforced in the handlers so
+                        // SQLite deployments get the same protection.
+                        // text (not varchar): text-column check constraints
+                        // round-trip Postgres deparsing byte-stably, which the
+                        // dpm declarative-schema gate depends on.
+                        ColumnDef::new(AuditEngagement::Framework)
+                            .text()
+                            .not_null()
+                            .check(Expr::col(AuditEngagement::Framework).is_in([
+                                "soc2",
+                                "fedramp",
+                                "hipaa",
+                                "iso_27001",
+                                "pci_dss",
+                                "gdpr",
+                            ])),
+                    )
+                    .col(
+                        ColumnDef::new(AuditEngagement::Status)
+                            .text()
+                            .not_null()
+                            .check(Expr::col(AuditEngagement::Status).is_in([
+                                "scoping",
+                                "remediation",
+                                "in_audit",
+                                "complete",
+                            ])),
+                    )
+                    .col(
+                        ColumnDef::new(AuditEngagement::OpenedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .col(ColumnDef::new(AuditEngagement::TargetReportDate).date())
+                    .col(
+                        ColumnDef::new(AuditEngagement::UpdatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .create_index(
+                Index::create()
+                    .name("audit_engagement_owner_idx")
+                    .table(AuditEngagement::Table)
+                    .col(AuditEngagement::OwnerId)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .create_index(
+                Index::create()
+                    .name("audit_engagement_owner_status_idx")
+                    .table(AuditEngagement::Table)
+                    .col(AuditEngagement::OwnerId)
+                    .col(AuditEngagement::Status)
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_table(
+                Table::create()
+                    .table(EngagementNote::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(EngagementNote::Id)
+                            .uuid()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(
+                        ColumnDef::new(EngagementNote::EngagementId)
+                            .uuid()
+                            .not_null(),
+                    )
+                    .col(ColumnDef::new(EngagementNote::OwnerId).uuid().not_null())
+                    .col(ColumnDef::new(EngagementNote::Body).string().not_null())
+                    .col(
+                        ColumnDef::new(EngagementNote::CreatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("engagement_note_engagement_fk")
+                            .from(EngagementNote::Table, EngagementNote::EngagementId)
+                            .to(AuditEngagement::Table, AuditEngagement::Id)
+                            .on_delete(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .create_index(
+                Index::create()
+                    .name("engagement_note_engagement_created_idx")
+                    .table(EngagementNote::Table)
+                    .col(EngagementNote::EngagementId)
+                    .col(EngagementNote::CreatedAt)
+                    .to_owned(),
+            )
+            .await?;
+        // Supports the owner FK (auth.users cascade deletes) and owner scans.
+        manager
+            .create_index(
+                Index::create()
+                    .name("engagement_note_owner_idx")
+                    .table(EngagementNote::Table)
+                    .col(EngagementNote::OwnerId)
+                    .to_owned(),
+            )
+            .await?;
+
+        if manager.get_database_backend() == DatabaseBackend::Postgres {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    r#"
+                    ALTER TABLE audit_engagement ENABLE ROW LEVEL SECURITY;
+                    ALTER TABLE audit_engagement FORCE ROW LEVEL SECURITY;
+                    ALTER TABLE engagement_note ENABLE ROW LEVEL SECURITY;
+                    ALTER TABLE engagement_note FORCE ROW LEVEL SECURITY;
+
+                    ALTER TABLE audit_engagement
+                      ADD CONSTRAINT audit_engagement_auth_user_fk
+                      FOREIGN KEY (owner_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+                    ALTER TABLE engagement_note
+                      ADD CONSTRAINT engagement_note_auth_user_fk
+                      FOREIGN KEY (owner_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
+                    CREATE POLICY audit_engagement_owner ON audit_engagement
+                      USING (owner_id = auth.uid()) WITH CHECK (owner_id = auth.uid());
+                    CREATE POLICY engagement_note_owner ON engagement_note
+                      USING (owner_id = auth.uid()) WITH CHECK (owner_id = auth.uid());
+                    "#,
+                )
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .drop_table(
+                Table::drop()
+                    .table(EngagementNote::Table)
+                    .if_exists()
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .drop_table(
+                Table::drop()
+                    .table(AuditEngagement::Table)
+                    .if_exists()
+                    .to_owned(),
+            )
+            .await?;
+        Ok(())
+    }
+}
+
+#[derive(DeriveIden)]
+enum AuditEngagement {
+    Table,
+    Id,
+    OwnerId,
+    Company,
+    Framework,
+    Status,
+    OpenedAt,
+    TargetReportDate,
+    UpdatedAt,
+}
+
+#[derive(DeriveIden)]
+enum EngagementNote {
+    Table,
+    Id,
+    EngagementId,
+    OwnerId,
+    Body,
+    CreatedAt,
 }
 
 #[derive(DeriveIden)]

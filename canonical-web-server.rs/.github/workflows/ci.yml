@@ -114,6 +114,118 @@ jobs:
       - name: PostgreSQL runtime-role and RLS integration test
         run: cargo test --test postgres_rls -- --nocapture
 
+  # deploy/postgres/schema.sql is the declarative source of truth for the
+  # Supabase public schema, migrated with dpm (declarative-postgres-migrate).
+  # This gate proves the SeaORM migrations and that file converge: it migrates
+  # a fresh Supabase-shaped database, then `dpm verify` rehearses the diff on
+  # a shadow replica and requires an empty plan. Exit 3 = schema drift.
+  declarative-schema:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: "1.95.0"
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          key: declarative-schema
+      # Commit-pinned like the actions above (supply-chain hardening).
+      - name: Install dpm
+        run: >
+          cargo install --locked declarative-postgres-migrate
+          --git https://github.com/declarative-migrations/declarative-postgres-migrate.rs
+          --rev 621d1c5e79f7753cb03191f30244ff3d931e5665
+      - name: Create Supabase-shaped fixture
+        shell: bash
+        run: |
+          # Roles + auth schema the migrations reference, in the app database
+          # AND in template1 so dpm's throwaway shadow databases inherit them.
+          psql -h 127.0.0.1 -U postgres -c "CREATE ROLE anon NOLOGIN" -c "CREATE ROLE authenticated NOLOGIN"
+          for db in postgres template1; do
+            psql -h 127.0.0.1 -U postgres -d "$db" -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE SCHEMA auth;
+          CREATE TABLE auth.users (id uuid PRIMARY KEY);
+          CREATE FUNCTION auth.uid() RETURNS uuid
+            LANGUAGE sql STABLE
+            AS $$ SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+          SQL
+          done
+      - name: Run SeaORM migrations
+        env:
+          MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+          MIGRATION_DATABASE_MAX_CONNECTIONS: "2"
+          PORT: "8081"
+          APP_BASE_URL: http://127.0.0.1:8081
+          APP_ALLOWED_ORIGINS: http://127.0.0.1:8081
+          APP_SESSION_ENCRYPTION_KEY: AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+          SUPABASE_URL: http://127.0.0.1:54321
+          SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_only
+        run: cargo run --quiet -- migrate
+      - name: Declarative schema convergence (dpm verify)
+        run: >
+          dpm verify
+          --source deploy/postgres/schema.sql
+          --target postgresql://postgres:postgres@127.0.0.1:5432/postgres
+          --shadow postgresql://postgres:postgres@127.0.0.1:5432/postgres
+
+  # The same migrations + owner RLS contract must hold on CockroachDB (v25.2+
+  # has forced RLS and policies over the Postgres wire protocol). Service
+  # containers cannot pass a command, so the single-node cluster starts via
+  # docker run. See tests/cockroach_rls.rs for the two documented divergences
+  # (FK-check privileges, no LISTEN/NOTIFY backplane).
+  cockroach-rls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: "1.95.0"
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          key: cockroach-rls
+      - name: Start single-node CockroachDB
+        shell: bash
+        run: |
+          docker run --detach --name crdb --publish 26257:26257 \
+            cockroachdb/cockroach:v25.2.4 start-single-node --insecure
+          for attempt in {1..60}; do
+            if docker exec crdb cockroach sql --insecure -e "SELECT 1" >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs crdb
+          exit 1
+      - name: CockroachDB migration and RLS integration test
+        env:
+          TEST_COCKROACH_ADMIN_URL: postgresql://root@127.0.0.1:26257/defaultdb?sslmode=disable
+        run: cargo test --test cockroach_rls -- --nocapture
+
   container-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 25

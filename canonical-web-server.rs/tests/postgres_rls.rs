@@ -217,6 +217,77 @@ async fn runtime_role_enforces_supabase_rls_context() -> Result<(), Box<dyn Erro
     assert!(cross_user_insert.is_err());
     cross_user_transaction.rollback().await?;
 
+    // Engagement tables carry the same forced owner-scoped RLS contract.
+    let engagement_a = Uuid::new_v4();
+    let engagement_b = Uuid::new_v4();
+    privileged
+        .execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            INSERT INTO audit_engagement
+              (id, owner_id, company, framework, status, opened_at, target_report_date, updated_at)
+            VALUES
+              ($1, $3, 'Own Co', 'soc2', 'scoping', now(), NULL, now()),
+              ($2, $4, 'Other Co', 'hipaa', 'in_audit', now(), NULL, now())
+            "#,
+            [
+                engagement_a.into(),
+                engagement_b.into(),
+                user_a.into(),
+                user_b.into(),
+            ],
+        ))
+        .await?;
+
+    let engagement_transaction = begin_user_transaction(&runtime, user_a).await?;
+    let visible_engagements = engagement_transaction
+        .query_one(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "SELECT count(*)::bigint AS count FROM audit_engagement",
+        ))
+        .await?
+        .ok_or_else(|| io::Error::other("engagement count returned no row"))?
+        .try_get::<i64>("", "count")?;
+    assert_eq!(visible_engagements, 1);
+
+    let foreign_update = engagement_transaction
+        .execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "UPDATE audit_engagement SET status = 'complete' WHERE id = $1",
+            [engagement_b.into()],
+        ))
+        .await?;
+    assert_eq!(foreign_update.rows_affected(), 0);
+
+    let own_note = engagement_transaction
+        .execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            INSERT INTO engagement_note (id, engagement_id, owner_id, body, created_at)
+            VALUES ($1, $2, $3, 'runtime note', now())
+            "#,
+            [Uuid::new_v4().into(), engagement_a.into(), user_a.into()],
+        ))
+        .await?;
+    assert_eq!(own_note.rows_affected(), 1);
+    engagement_transaction.commit().await?;
+
+    // WITH CHECK must reject notes claiming another owner, even on a visible
+    // engagement id.
+    let foreign_note_transaction = begin_user_transaction(&runtime, user_a).await?;
+    let foreign_note = foreign_note_transaction
+        .execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            INSERT INTO engagement_note (id, engagement_id, owner_id, body, created_at)
+            VALUES ($1, $2, $3, 'spoofed owner', now())
+            "#,
+            [Uuid::new_v4().into(), engagement_a.into(), user_b.into()],
+        ))
+        .await;
+    assert!(foreign_note.is_err());
+    foreign_note_transaction.rollback().await?;
+
     runtime.close().await?;
     privileged.close().await?;
     admin

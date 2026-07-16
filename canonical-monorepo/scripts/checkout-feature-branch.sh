@@ -84,14 +84,26 @@ done
 
 validate_branch_name() {
   local branch="$1"
-  if [[ ! "$branch" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+  if [[ ! "$branch" =~ ^[A-Za-z0-9._/-]+$ || "$branch" == -* ]]; then
     echo "invalid branch name: $branch" >&2
+    exit 64
+  fi
+}
+
+# Remote names reach `git fetch`/`ls-remote` as positional arguments; a
+# flag-shaped value (e.g. --upload-pack=/attacker) would be parsed as an
+# option.
+validate_remote_name() {
+  local remote="$1"
+  if [[ ! "$remote" =~ ^[A-Za-z0-9._/-]+$ || "$remote" == -* ]]; then
+    echo "invalid remote name: $remote" >&2
     exit 64
   fi
 }
 
 validate_branch_name "$target_branch"
 validate_branch_name "$base_branch"
+validate_remote_name "$remote"
 
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"

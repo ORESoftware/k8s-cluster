@@ -98,7 +98,9 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
   public.sync_record,
   public.sync_clock,
   public.sync_change,
-  public.sync_receipt
+  public.sync_receipt,
+  public.audit_engagement,
+  public.engagement_note
 TO canonical_web_server;
 
 -- No current table uses a sequence, but granting only sequence value access

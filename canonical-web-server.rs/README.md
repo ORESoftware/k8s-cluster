@@ -110,6 +110,32 @@ psql "$MIGRATION_DATABASE_URL" \
 canonical-web-server serve
 ```
 
+Supabase schema changes are managed declaratively with
+[dpm](https://github.com/declarative-migrations/declarative-postgres-migrate.rs):
+`deploy/postgres/schema.sql` is the desired-state source of truth, and CI
+proves the SeaORM migrations converge with it on every change (the
+`declarative-schema` job). Against a live Supabase database, generate and
+review a migration instead of hand-writing DDL — connect via the direct
+connection or session pooler (5432), never the transaction pooler:
+
+```sh
+dpm diff   --source deploy/postgres/schema.sql --target "$MIGRATION_DATABASE_URL"            --shadow "$SHADOW_DATABASE_URL"      # review the SQL
+dpm verify --source deploy/postgres/schema.sql --target "$MIGRATION_DATABASE_URL"            --shadow "$SHADOW_DATABASE_URL"      # rehearse on a shadow replica
+dpm apply  --source deploy/postgres/schema.sql --target "$MIGRATION_DATABASE_URL"            --shadow "$SHADOW_DATABASE_URL"      # interactive confirm before writes
+```
+
+Destructive changes require dpm's two explicit consent flags and stay
+commented out otherwise; grants are out of dpm's scope and stay in
+`bootstrap_runtime_role.sql`.
+
+The migrations are also proven against **CockroachDB** (v25.2+, which speaks
+the Postgres wire protocol and supports forced RLS): the `cockroach-rls` CI
+job applies the full chain to a single-node cluster and asserts the same
+owner-isolation contract. Two documented divergences: CockroachDB validates
+foreign keys with the inserting role's privileges (grant the app role SELECT
+on `auth.users`), and it has no LISTEN/NOTIFY, so the WebSocket invalidation
+backplane is Postgres-only — REST pull remains authoritative either way.
+
 The bootstrap creates `canonical_web_server` as a non-owner,
 non-`BYPASSRLS` login without a password and grants only the application's
 current tables. Set its password or another authentication mechanism through

@@ -61,6 +61,24 @@ platform rather than committing them. The server requires:
 - `STATIC_DIR` and `APP_ASSET_DIR` pointing at the two built browser asset
   directories.
 
+Schema changes against Supabase are managed declaratively with
+[dpm](https://github.com/declarative-migrations/declarative-postgres-migrate.rs).
+The desired state lives in
+`apps/canonical-web-server.rs/deploy/postgres/schema.sql`; the web server's CI
+proves the SeaORM migrations converge with that file. To migrate a live
+Supabase database, generate, rehearse, and apply a reviewed diff (direct
+connection or session pooler only — never the transaction pooler):
+
+```sh
+dpm diff   --source apps/canonical-web-server.rs/deploy/postgres/schema.sql            --target "$MIGRATION_DATABASE_URL" --shadow "$SHADOW_DATABASE_URL"
+dpm verify --source apps/canonical-web-server.rs/deploy/postgres/schema.sql            --target "$MIGRATION_DATABASE_URL" --shadow "$SHADOW_DATABASE_URL"
+dpm apply  --source apps/canonical-web-server.rs/deploy/postgres/schema.sql            --target "$MIGRATION_DATABASE_URL" --shadow "$SHADOW_DATABASE_URL"
+```
+
+Destructive DDL stays commented out unless both dpm consent flags are given,
+and grants remain the bootstrap script's job. For a fresh database you can
+equally run the SeaORM migrations directly:
+
 Run SeaORM migrations and establish the explicit runtime grants before serving:
 
 ```sh
@@ -77,6 +95,9 @@ its password outside Git, use it in the runtime `DATABASE_URL`, and re-run the
 bootstrap when future migrations change the table allow-list. Keep
 `AUTO_MIGRATE=false` for `serve`.
 
+Connection strings must use `sslmode=verify-full` (with the Supabase CA
+bundle installed) — `sslmode=require` encrypts but does not authenticate the
+server, so a spoofed endpoint could harvest the runtime credential.
 Supavisor session mode or a direct TLS connection is required for the
 long-lived SeaORM pool and PostgreSQL `LISTEN`/`NOTIFY` backplane; transaction
 mode cannot preserve listener state. Budget one listener connection per server

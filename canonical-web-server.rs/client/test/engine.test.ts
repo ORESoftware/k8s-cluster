@@ -102,9 +102,14 @@ describe("CanonicalSyncClient coordination", () => {
     const first = await openClient(fetchImplementation, databaseName);
     const second = await openClient(fetchImplementation, databaseName);
 
+    // Sync sequentially: on runtimes with a real Web Locks API (Node >= 23)
+    // two concurrent passes on one account key race for the same exclusive
+    // lock and the loser (ifAvailable) legitimately skips its pull, which
+    // would make a concurrent request count nondeterministic.
     first.start();
+    await first.syncNow();
     second.start();
-    await Promise.all([first.syncNow(), second.syncNow()]);
+    await second.syncNow();
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(requests).toBe(2);

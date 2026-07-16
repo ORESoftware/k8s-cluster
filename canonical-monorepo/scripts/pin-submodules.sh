@@ -61,8 +61,15 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
-if [[ ! "$target_branch" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+if [[ ! "$target_branch" =~ ^[A-Za-z0-9._/-]+$ || "$target_branch" == -* ]]; then
   echo "invalid branch name: $target_branch" >&2
+  exit 64
+fi
+
+# Remote names reach `git fetch` as positional arguments; a flag-shaped value
+# (e.g. --upload-pack=/attacker) would otherwise be parsed as a git option.
+if [[ ! "$remote" =~ ^[A-Za-z0-9._/-]+$ || "$remote" == -* ]]; then
+  echo "invalid remote name: $remote" >&2
   exit 64
 fi
 

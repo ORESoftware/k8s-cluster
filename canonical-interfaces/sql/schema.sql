@@ -10,28 +10,51 @@
 -- web_session is intentionally not duplicated here: its server-owned migration
 -- stores Supabase access and refresh tokens encrypted, never as plaintext.
 
--- Legacy compliance-domain storage. It is not part of the draft_note sync API;
--- do not grant it to anon/authenticated roles until it gains an owner column and
--- an explicit RLS policy.
+-- Compliance-domain storage. Owner-scoped since 2026-07: audit_engagement
+-- gained the owner contract (owner_id + forced owner RLS) that its earlier
+-- legacy shape lacked, and per-engagement notes live in engagement_note.
+-- The executable migration is canonical-web-server.rs (SeaORM migration +
+-- deploy/postgres/schema.sql, the dpm declarative source); keep these shapes
+-- in sync with it.
 
 create table if not exists audit_engagement (
     id                  uuid primary key,
-    company             text        not null,
+    owner_id            uuid        not null references auth.users(id) on delete cascade,
+    company             varchar     not null,
     framework           text        not null
         check (framework in ('soc2', 'fedramp', 'hipaa', 'iso_27001', 'pci_dss', 'gdpr')),
-    status              text        not null default 'scoping'
+    status              text        not null
         check (status in ('scoping', 'remediation', 'in_audit', 'complete')),
-    opened_at           timestamptz not null default now(),
-    target_report_date  date
+    opened_at           timestamptz not null,
+    target_report_date  date,
+    updated_at          timestamptz not null
 );
 
-create index if not exists audit_engagement_framework_idx on audit_engagement (framework);
-create index if not exists audit_engagement_status_idx    on audit_engagement (status);
+create index if not exists audit_engagement_owner_idx        on audit_engagement (owner_id);
+create index if not exists audit_engagement_owner_status_idx on audit_engagement (owner_id, status);
 
--- No owner contract exists for this legacy table yet, so forced RLS with no
--- policy intentionally denies runtime access instead of exposing global rows.
 alter table audit_engagement enable row level security;
 alter table audit_engagement force row level security;
+create policy audit_engagement_owner on audit_engagement
+    using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+
+-- Free-form notes attached to an engagement, same owner contract.
+create table if not exists engagement_note (
+    id             uuid        primary key,
+    engagement_id  uuid        not null references audit_engagement(id) on delete cascade,
+    owner_id       uuid        not null references auth.users(id) on delete cascade,
+    body           varchar     not null,
+    created_at     timestamptz not null
+);
+
+create index if not exists engagement_note_engagement_created_idx
+    on engagement_note (engagement_id, created_at);
+create index if not exists engagement_note_owner_idx on engagement_note (owner_id);
+
+alter table engagement_note enable row level security;
+alter table engagement_note force row level security;
+create policy engagement_note_owner on engagement_note
+    using (owner_id = auth.uid()) with check (owner_id = auth.uid());
 
 -- Supabase-auth identity projection. auth.users remains the identity source of
 -- truth; this table contains only application profile data.

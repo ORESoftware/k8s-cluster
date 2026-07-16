@@ -139,14 +139,22 @@ test("monorepo scripts keep destructive actions manual and include dry-run/audit
     "audit-repo-state.sh",
     "checkout-feature-branch.sh",
     "pin-submodules.sh",
+    "stack-smoke.sh",
   ]);
 
   for (const script of scripts) {
     const body = read(`scripts/${script}`);
-    assert.ok(body.startsWith("#!/usr/bin/env bash\nset -euo pipefail\n"));
+    assert.ok(body.startsWith("#!/usr/bin/env bash\n"));
+    assert.match(body, /set -euo pipefail/);
     assert.doesNotMatch(body, /\bgit\s+push\b/);
-    assert.match(body, /--dry-run|--allow-dirty/);
   }
+
+  // Scripts that touch git state must offer rehearsal/escape hatches; the
+  // stack smoke is stricter — it must not run git at all.
+  for (const script of ["audit-repo-state.sh", "checkout-feature-branch.sh", "pin-submodules.sh"]) {
+    assert.match(read(`scripts/${script}`), /--dry-run|--allow-dirty/);
+  }
+  assert.doesNotMatch(read("scripts/stack-smoke.sh"), /\bgit\s/);
 
   const audit = read("scripts/audit-repo-state.sh");
   assert.match(audit, /:\(exclude\)target\/\*\*/);

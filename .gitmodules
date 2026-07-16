@@ -1,0 +1,4 @@
+[submodule "canonical-mcp-server.rs"]
+	path = canonical-mcp-server.rs
+	url = https://github.com/canonical-cloud/canonical-mcp-server.rs.git
+	branch = main
