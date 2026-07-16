@@ -272,7 +272,7 @@ fn parse_ascii_stl(bytes: &[u8]) -> Result<Mesh, String> {
             coords.extend_from_slice(&v);
         }
     }
-    if coords.is_empty() || coords.len() % 9 != 0 {
+    if coords.is_empty() || !coords.len().is_multiple_of(9) {
         return Err(format!(
             "ascii stl produced {} vertex coordinates (not a whole number of triangles)",
             coords.len()
@@ -343,7 +343,7 @@ pub fn decode_base64(input: &str) -> Result<Vec<u8>, String> {
 pub fn encode_base64(input: &[u8]) -> String {
     const ALPHABET: &[u8; 64] =
         b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity((input.len() + 2) / 3 * 4);
+    let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
     for chunk in input.chunks(3) {
         let b0 = chunk[0] as u32;
         let b1 = *chunk.get(1).unwrap_or(&0) as u32;

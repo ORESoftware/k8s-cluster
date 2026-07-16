@@ -20,6 +20,7 @@ use axum::{
     Json, Router,
 };
 use dd_nats_subject_defs::{
+    DD_REMOTE_FABRICATION_STREAM_NAME, DD_REMOTE_FABRICATION_STREAM_SUBJECTS,
     FABRICATION_ASSEMBLY_PLANNING_REQUESTS_QUEUE_GROUP,
     FABRICATION_ASSEMBLY_PLANNING_REQUESTS_SUBJECT, FABRICATION_ASSEMBLY_PLANNING_RESULTS_SUBJECT,
     FABRICATION_DESIGN_CONVERSION_REQUESTS_QUEUE_GROUP,
@@ -63,6 +64,7 @@ use des_engine::{
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
+use tokio::sync::Semaphore;
 
 mod as_built_catalog_content;
 mod assembly_catalog_content;
@@ -154,6 +156,7 @@ struct AppState {
     event_subject: String,
     mdp_subject: String,
     mdp_autopublish: bool,
+    nats_inflight: Arc<Semaphore>,
     metrics: Arc<Metrics>,
     jobs: Arc<RwLock<FabricationJobStore>>,
     learning: Arc<RwLock<LearningMemory>>,
@@ -6819,6 +6822,21 @@ fn env_bool(key: &str, fallback: bool) -> bool {
             )
         })
         .unwrap_or(fallback)
+}
+
+fn env_u64(key: &str, fallback: u64, min: u64, max: u64) -> u64 {
+    env::var(key)
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .unwrap_or(fallback)
+        .clamp(min, max)
+}
+
+fn optional_env(key: &str) -> Option<String> {
+    env::var(key)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn now_ms() -> u128 {
@@ -61764,6 +61782,13 @@ async fn publish_json_to_nats(state: &AppState, subject: &str, payload: Value) -
         .await
     {
         Ok(()) => {
+            if let Err(error) = nats.flush().await {
+                state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+                tracing::error!(
+                    "{SERVICE_NAME} failed to confirm publish to {subject} with NATS: {error}"
+                );
+                return false;
+            }
             state
                 .metrics
                 .nats_published_total
@@ -62361,13 +62386,14 @@ fn instruction_analysis_mdp_request(response: &InstructionAnalysisResponse) -> V
     })
 }
 
-async fn publish_plan_outputs(state: &AppState, response: &FabricationPlanResponse) {
+async fn publish_plan_outputs(state: &AppState, response: &FabricationPlanResponse) -> bool {
     let result = json!({
         "schemaVersion": SCHEMA_VERSION,
         "type": "fabrication.plan.result",
         "response": response,
     });
-    if publish_json_to_nats(state, &state.result_subject, result).await {
+    let result_published = publish_json_to_nats(state, &state.result_subject, result).await;
+    if result_published {
         state
             .metrics
             .nats_results_published_total
@@ -62382,15 +62408,20 @@ async fn publish_plan_outputs(state: &AppState, response: &FabricationPlanRespon
                 .fetch_add(1, Ordering::Relaxed);
         }
     }
+    result_published
 }
 
-async fn publish_analysis_outputs(state: &AppState, response: &InstructionAnalysisResponse) {
+async fn publish_analysis_outputs(
+    state: &AppState,
+    response: &InstructionAnalysisResponse,
+) -> bool {
     let result = json!({
         "schemaVersion": "fabrication.analysis.v1",
         "type": "fabrication.instructions.analysis.result",
         "response": response,
     });
-    if publish_json_to_nats(state, &state.result_subject, result).await {
+    let result_published = publish_json_to_nats(state, &state.result_subject, result).await;
+    if result_published {
         state
             .metrics
             .nats_results_published_total
@@ -62405,15 +62436,20 @@ async fn publish_analysis_outputs(state: &AppState, response: &InstructionAnalys
                 .fetch_add(1, Ordering::Relaxed);
         }
     }
+    result_published
 }
 
-async fn publish_learning_outputs(state: &AppState, response: &FabricationLearningResponse) {
+async fn publish_learning_outputs(
+    state: &AppState,
+    response: &FabricationLearningResponse,
+) -> bool {
     let result = json!({
         "schemaVersion": "fabrication.learning.v1",
         "type": "fabrication.learning.result",
         "response": response,
     });
-    if publish_json_to_nats(state, &state.result_subject, result).await {
+    let result_published = publish_json_to_nats(state, &state.result_subject, result).await;
+    if result_published {
         state
             .metrics
             .nats_results_published_total
@@ -62427,13 +62463,14 @@ async fn publish_learning_outputs(state: &AppState, response: &FabricationLearni
                 .fetch_add(1, Ordering::Relaxed);
         }
     }
+    result_published
 }
 
 async fn publish_learning_outcome_outputs(
     state: &AppState,
     outcome_id: &str,
     snapshot: &LearningPolicySnapshot,
-) {
+) -> bool {
     let result = json!({
         "schemaVersion": "fabrication.learning-outcome.v1",
         "type": "fabrication.learning.outcome.result",
@@ -62441,12 +62478,14 @@ async fn publish_learning_outcome_outputs(
         "outcomeId": outcome_id,
         "policy": snapshot,
     });
-    if publish_json_to_nats(state, &state.result_subject, result).await {
+    let result_published = publish_json_to_nats(state, &state.result_subject, result).await;
+    if result_published {
         state
             .metrics
             .nats_results_published_total
             .fetch_add(1, Ordering::Relaxed);
     }
+    result_published
 }
 
 fn record_plan_metrics(state: &AppState, response: &FabricationPlanResponse) {
@@ -62633,195 +62672,335 @@ fn parse_fabrication_nats_request(payload: &[u8]) -> Result<FabricationNatsReque
     parse_plan_nats_value(value).map(FabricationNatsRequest::Plan)
 }
 
+async fn build_fabrication_consumer(
+    state: &AppState,
+) -> Result<async_nats::jetstream::consumer::PullConsumer, Box<dyn Error + Send + Sync>> {
+    let nats = state.nats.clone().ok_or("NATS client is unavailable")?;
+    let jetstream = async_nats::jetstream::new(nats);
+    let mut subjects = DD_REMOTE_FABRICATION_STREAM_SUBJECTS
+        .iter()
+        .map(|subject| (*subject).to_string())
+        .collect::<Vec<_>>();
+    if !state.request_subject.starts_with("dd.remote.fabrication.") {
+        subjects.push(state.request_subject.clone());
+    }
+    let stream_name = env_value("FABRICATION_STREAM_NAME", DD_REMOTE_FABRICATION_STREAM_NAME);
+    let stream = jetstream
+        .get_or_create_stream(async_nats::jetstream::stream::Config {
+            name: stream_name,
+            description: Some(
+                "Durable fabrication request/result and lifecycle history".to_string(),
+            ),
+            subjects,
+            retention: async_nats::jetstream::stream::RetentionPolicy::Limits,
+            max_age: Duration::from_secs(env_u64(
+                "FABRICATION_STREAM_MAX_AGE_SECONDS",
+                60 * 60 * 24 * 14,
+                60,
+                60 * 60 * 24 * 90,
+            )),
+            max_bytes: env_u64(
+                "FABRICATION_STREAM_MAX_BYTES",
+                5 * 1024 * 1024 * 1024,
+                1024 * 1024,
+                i64::MAX as u64,
+            ) as i64,
+            max_message_size: MAX_NATS_PAYLOAD_BYTES as i32,
+            duplicate_window: Duration::from_secs(120),
+            ..Default::default()
+        })
+        .await?;
+
+    let consumer = stream
+        .get_or_create_consumer::<async_nats::jetstream::consumer::pull::Config>(
+            &state.queue_group,
+            async_nats::jetstream::consumer::pull::Config {
+                durable_name: Some(state.queue_group.clone()),
+                description: Some(
+                    "Durable fabrication planner with explicit post-processing acknowledgements"
+                        .to_string(),
+                ),
+                filter_subject: state.request_subject.clone(),
+                ack_policy: async_nats::jetstream::consumer::AckPolicy::Explicit,
+                ack_wait: Duration::from_secs(env_u64(
+                    "FABRICATION_NATS_ACK_WAIT_SECONDS",
+                    900,
+                    30,
+                    60 * 60 * 6,
+                )),
+                max_deliver: env_u64("FABRICATION_NATS_MAX_DELIVER", 5, 1, 100) as i64,
+                max_ack_pending: env_u64("FABRICATION_NATS_MAX_INFLIGHT", 8, 1, 128) as i64,
+                ..Default::default()
+            },
+        )
+        .await?;
+    Ok(consumer)
+}
+
 async fn run_nats_loop(state: AppState) {
-    let Some(nats) = state.nats.clone() else {
+    if state.nats.is_none() {
         tracing::info!("{SERVICE_NAME} nats loop disabled: NATS_URL is not configured");
         return;
-    };
+    }
     tracing::info!(
-        "{SERVICE_NAME} nats loop starting: subject={} queueGroup={} resultSubject={}",
-        state.request_subject, state.queue_group, state.result_subject
+        "{SERVICE_NAME} JetStream loop starting: stream={} subject={} durableConsumer={} resultSubject={}",
+        env_value("FABRICATION_STREAM_NAME", DD_REMOTE_FABRICATION_STREAM_NAME),
+        state.request_subject,
+        state.queue_group,
+        state.result_subject
     );
     loop {
-    let mut subscription = match nats
-        .queue_subscribe(state.request_subject.clone(), state.queue_group.clone())
-        .await
-    {
-        Ok(subscription) => subscription,
-        Err(error) => {
-            tracing::error!("{SERVICE_NAME} nats subscribe failed: {error}; retrying in 5s");
-            tokio::time::sleep(Duration::from_secs(5)).await;
-            continue;
-        }
-    };
+        let consumer = match build_fabrication_consumer(&state).await {
+            Ok(consumer) => consumer,
+            Err(error) => {
+                tracing::error!(
+                    "{SERVICE_NAME} JetStream consumer setup failed: {error}; retrying in 5s"
+                );
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                continue;
+            }
+        };
+        let mut subscription = match consumer.messages().await {
+            Ok(subscription) => subscription,
+            Err(error) => {
+                tracing::error!(
+                    "{SERVICE_NAME} JetStream pull setup failed: {error}; retrying in 5s"
+                );
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                continue;
+            }
+        };
 
-    while let Some(message) = subscription.next().await {
-        state
-            .metrics
-            .nats_messages_total
-            .fetch_add(1, Ordering::Relaxed);
-        let payload = message.payload.to_vec();
-        if payload.len() > MAX_NATS_PAYLOAD_BYTES {
-            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            tracing::error!(
+        while let Some(message) = subscription.next().await {
+            let message = match message {
+                Ok(message) => message,
+                Err(error) => {
+                    state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+                    tracing::error!("{SERVICE_NAME} JetStream fetch failed: {error}");
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    continue;
+                }
+            };
+            state
+                .metrics
+                .nats_messages_total
+                .fetch_add(1, Ordering::Relaxed);
+            let payload = message.payload.to_vec();
+            if payload.len() > MAX_NATS_PAYLOAD_BYTES {
+                state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+                tracing::error!(
                 "{SERVICE_NAME} rejected oversize nats request: bytes={} max={MAX_NATS_PAYLOAD_BYTES}",
                 payload.len()
             );
-            continue;
-        }
-        let task_state = state.clone();
-        tokio::spawn(async move {
-            match parse_fabrication_nats_request(&payload) {
-                Ok(FabricationNatsRequest::Plan(request)) => {
-                    let policy_snapshot = learning_policy_snapshot(&task_state).ok();
-                    match plan_fabrication_with_policy(request, policy_snapshot.as_ref()) {
-                        Ok(response) => {
-                            task_state
-                                .metrics
-                                .plan_requests_total
-                                .fetch_add(1, Ordering::Relaxed);
-                            record_plan_metrics(&task_state, &response);
-                            store_plan_response(&task_state, &response);
-                            publish_plan_outputs(&task_state, &response).await;
-                            publish_event(
-                                &task_state,
-                                "fabrication.plan.completed",
-                                &response.request_id,
-                                response.ok,
-                            )
-                            .await;
-                        }
-                        Err(error) => {
-                            task_state
-                                .metrics
-                                .errors_total
-                                .fetch_add(1, Ordering::Relaxed);
-                            tracing::error!("{SERVICE_NAME} failed nats fabrication plan: {error}");
-                        }
-                    }
+                if let Err(error) = message.ack().await {
+                    tracing::error!(
+                        "{SERVICE_NAME} failed to ack oversize poison request: {error}"
+                    );
                 }
-                Ok(FabricationNatsRequest::InstructionAnalysis(request)) => {
-                    match analyze_instruction_request(request) {
-                        Ok(response) => {
-                            task_state
-                                .metrics
-                                .analysis_requests_total
-                                .fetch_add(1, Ordering::Relaxed);
-                            record_analysis_metrics(&task_state, &response);
-                            store_analysis_response(&task_state, &response);
-                            publish_analysis_outputs(&task_state, &response).await;
-                            publish_event(
-                                &task_state,
-                                "fabrication.instructions.analyzed",
-                                &response.request_id,
-                                response.ok,
-                            )
-                            .await;
-                        }
-                        Err(error) => {
-                            task_state
-                                .metrics
-                                .errors_total
-                                .fetch_add(1, Ordering::Relaxed);
-                            tracing::error!("{SERVICE_NAME} failed nats instruction analysis: {error}");
-                        }
-                    }
-                }
-                Ok(FabricationNatsRequest::FabricationOutcome(request)) => {
-                    task_state
-                        .metrics
-                        .learning_requests_total
-                        .fetch_add(1, Ordering::Relaxed);
-                    let request = enrich_outcome_from_store(&task_state, request);
-                    match learn_from_outcome(request) {
-                        Ok((response, record)) => {
-                            match store_learning_response(&task_state, &response, record) {
-                                Ok(_) => {
-                                    publish_learning_outputs(&task_state, &response).await;
-                                    publish_event(
-                                        &task_state,
-                                        "fabrication.learning.observed",
-                                        &response.request_id,
-                                        response.ok,
-                                    )
-                                    .await;
-                                }
-                                Err(error) => {
-                                    task_state
-                                        .metrics
-                                        .errors_total
-                                        .fetch_add(1, Ordering::Relaxed);
-                                    tracing::error!("{SERVICE_NAME} failed nats learning store: {error}");
-                                }
+                continue;
+            }
+            let permit = match state.nats_inflight.clone().acquire_owned().await {
+                Ok(permit) => permit,
+                Err(_) => return,
+            };
+            let task_state = state.clone();
+            tokio::spawn(async move {
+                let _permit = permit;
+                let delivery_succeeded = match parse_fabrication_nats_request(&payload) {
+                    Ok(FabricationNatsRequest::Plan(request)) => {
+                        let policy_snapshot = learning_policy_snapshot(&task_state).ok();
+                        match plan_fabrication_with_policy(request, policy_snapshot.as_ref()) {
+                            Ok(response) => {
+                                task_state
+                                    .metrics
+                                    .plan_requests_total
+                                    .fetch_add(1, Ordering::Relaxed);
+                                record_plan_metrics(&task_state, &response);
+                                store_plan_response(&task_state, &response);
+                                let published = publish_plan_outputs(&task_state, &response).await;
+                                publish_event(
+                                    &task_state,
+                                    "fabrication.plan.completed",
+                                    &response.request_id,
+                                    response.ok,
+                                )
+                                .await;
+                                published
+                            }
+                            Err(error) => {
+                                task_state
+                                    .metrics
+                                    .errors_total
+                                    .fetch_add(1, Ordering::Relaxed);
+                                tracing::error!(
+                                    "{SERVICE_NAME} failed nats fabrication plan: {error}"
+                                );
+                                true
                             }
                         }
-                        Err(error) => {
-                            task_state
-                                .metrics
-                                .errors_total
-                                .fetch_add(1, Ordering::Relaxed);
-                            tracing::error!("{SERVICE_NAME} failed nats fabrication outcome: {error}");
+                    }
+                    Ok(FabricationNatsRequest::InstructionAnalysis(request)) => {
+                        match analyze_instruction_request(request) {
+                            Ok(response) => {
+                                task_state
+                                    .metrics
+                                    .analysis_requests_total
+                                    .fetch_add(1, Ordering::Relaxed);
+                                record_analysis_metrics(&task_state, &response);
+                                store_analysis_response(&task_state, &response);
+                                let published =
+                                    publish_analysis_outputs(&task_state, &response).await;
+                                publish_event(
+                                    &task_state,
+                                    "fabrication.instructions.analyzed",
+                                    &response.request_id,
+                                    response.ok,
+                                )
+                                .await;
+                                published
+                            }
+                            Err(error) => {
+                                task_state
+                                    .metrics
+                                    .errors_total
+                                    .fetch_add(1, Ordering::Relaxed);
+                                tracing::error!(
+                                    "{SERVICE_NAME} failed nats instruction analysis: {error}"
+                                );
+                                true
+                            }
                         }
                     }
-                }
-                Ok(FabricationNatsRequest::LearningOutcome(request)) => {
-                    task_state
-                        .metrics
-                        .learning_requests_total
-                        .fetch_add(1, Ordering::Relaxed);
-                    match learning_outcome_record(request) {
-                        Ok(record) => {
-                            let outcome_id = record.outcome_id.clone();
-                            match store_learning_record(&task_state, record) {
-                                Ok(snapshot) => {
-                                    publish_learning_outcome_outputs(
-                                        &task_state,
-                                        &outcome_id,
-                                        &snapshot,
-                                    )
-                                    .await;
-                                    publish_event(
-                                        &task_state,
-                                        "fabrication.learning.outcome",
-                                        &outcome_id,
-                                        true,
-                                    )
-                                    .await;
+                    Ok(FabricationNatsRequest::FabricationOutcome(request)) => {
+                        task_state
+                            .metrics
+                            .learning_requests_total
+                            .fetch_add(1, Ordering::Relaxed);
+                        let request = enrich_outcome_from_store(&task_state, request);
+                        match learn_from_outcome(request) {
+                            Ok((response, record)) => {
+                                match store_learning_response(&task_state, &response, record) {
+                                    Ok(_) => {
+                                        let published =
+                                            publish_learning_outputs(&task_state, &response).await;
+                                        publish_event(
+                                            &task_state,
+                                            "fabrication.learning.observed",
+                                            &response.request_id,
+                                            response.ok,
+                                        )
+                                        .await;
+                                        published
+                                    }
+                                    Err(error) => {
+                                        task_state
+                                            .metrics
+                                            .errors_total
+                                            .fetch_add(1, Ordering::Relaxed);
+                                        tracing::error!(
+                                            "{SERVICE_NAME} failed nats learning store: {error}"
+                                        );
+                                        false
+                                    }
                                 }
-                                Err(error) => {
-                                    task_state
-                                        .metrics
-                                        .errors_total
-                                        .fetch_add(1, Ordering::Relaxed);
-                                    tracing::error!(
+                            }
+                            Err(error) => {
+                                task_state
+                                    .metrics
+                                    .errors_total
+                                    .fetch_add(1, Ordering::Relaxed);
+                                tracing::error!(
+                                    "{SERVICE_NAME} failed nats fabrication outcome: {error}"
+                                );
+                                true
+                            }
+                        }
+                    }
+                    Ok(FabricationNatsRequest::LearningOutcome(request)) => {
+                        task_state
+                            .metrics
+                            .learning_requests_total
+                            .fetch_add(1, Ordering::Relaxed);
+                        match learning_outcome_record(request) {
+                            Ok(record) => {
+                                let outcome_id = record.outcome_id.clone();
+                                match store_learning_record(&task_state, record) {
+                                    Ok(snapshot) => {
+                                        let published = publish_learning_outcome_outputs(
+                                            &task_state,
+                                            &outcome_id,
+                                            &snapshot,
+                                        )
+                                        .await;
+                                        publish_event(
+                                            &task_state,
+                                            "fabrication.learning.outcome",
+                                            &outcome_id,
+                                            true,
+                                        )
+                                        .await;
+                                        published
+                                    }
+                                    Err(error) => {
+                                        task_state
+                                            .metrics
+                                            .errors_total
+                                            .fetch_add(1, Ordering::Relaxed);
+                                        tracing::error!(
                                         "{SERVICE_NAME} failed nats compact learning store: {error}"
                                     );
+                                        false
+                                    }
                                 }
                             }
-                        }
-                        Err(error) => {
-                            task_state
-                                .metrics
-                                .errors_total
-                                .fetch_add(1, Ordering::Relaxed);
-                            tracing::error!(
-                                "{SERVICE_NAME} failed nats compact learning outcome: {error}"
-                            );
+                            Err(error) => {
+                                task_state
+                                    .metrics
+                                    .errors_total
+                                    .fetch_add(1, Ordering::Relaxed);
+                                tracing::error!(
+                                    "{SERVICE_NAME} failed nats compact learning outcome: {error}"
+                                );
+                                true
+                            }
                         }
                     }
-                }
-                Err(error) => {
+                    Err(error) => {
+                        task_state
+                            .metrics
+                            .errors_total
+                            .fetch_add(1, Ordering::Relaxed);
+                        tracing::error!("{SERVICE_NAME} invalid nats fabrication request: {error}");
+                        true
+                    }
+                };
+                let acknowledgement = if delivery_succeeded {
+                    message.ack().await
+                } else {
+                    message
+                        .ack_with(async_nats::jetstream::AckKind::Nak(Some(
+                            Duration::from_secs(env_u64(
+                                "FABRICATION_NATS_NAK_DELAY_SECONDS",
+                                10,
+                                1,
+                                300,
+                            )),
+                        )))
+                        .await
+                };
+                if let Err(error) = acknowledgement {
                     task_state
                         .metrics
                         .errors_total
                         .fetch_add(1, Ordering::Relaxed);
-                    tracing::error!("{SERVICE_NAME} invalid nats fabrication request: {error}");
+                    tracing::error!(
+                        "{SERVICE_NAME} failed to settle processed fabrication request: {error}"
+                    );
                 }
-            }
-        });
-    }
-    tracing::error!("{SERVICE_NAME} nats subscription ended; re-subscribing in 5s");
-    tokio::time::sleep(Duration::from_secs(5)).await;
+            });
+        }
+        tracing::error!("{SERVICE_NAME} JetStream subscription ended; rebuilding in 5s");
+        tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }
 
@@ -121206,9 +121385,7 @@ async fn toolpath_generate_http(
 
 /// Real manufacturing cost estimate from STL geometry: material from watertight
 /// volume, machine time from sliced path length, plus setup and overhead.
-async fn cost_estimate_http(
-    Json(request): Json<geometry::api::CostEstimateRequest>,
-) -> Response {
+async fn cost_estimate_http(Json(request): Json<geometry::api::CostEstimateRequest>) -> Response {
     match geometry::api::cost_estimate_response(request) {
         Ok(response) => Json(response).into_response(),
         Err(error) => (
@@ -123375,6 +123552,28 @@ async fn api_docs_json() -> impl IntoResponse {
     )
 }
 
+async fn connect_nats(nats_url: &str) -> Result<async_nats::Client, Box<dyn Error + Send + Sync>> {
+    let mut options = async_nats::ConnectOptions::new()
+        .name(SERVICE_NAME)
+        .retry_on_initial_connect()
+        .ping_interval(Duration::from_secs(15))
+        .connection_timeout(Duration::from_secs(10));
+    if env_bool("NATS_REQUIRE_TLS", false) {
+        options = options.require_tls(true);
+    }
+    if let Some(path) = optional_env("NATS_CREDENTIALS_FILE") {
+        options = options
+            .credentials_file(&path)
+            .await
+            .map_err(|error| format!("failed to read NATS credentials file {path}: {error}"))?;
+    } else if let Some(token) = optional_env("NATS_TOKEN") {
+        options = options.token(token);
+    } else if let Some(seed) = optional_env("NATS_NKEY") {
+        options = options.nkey(seed);
+    }
+    Ok(options.connect(nats_url).await?)
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let _otel = dd_telemetry::init("dd-fabrication-server");
@@ -123385,16 +123584,22 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .ok()
         .filter(|value| !value.trim().is_empty())
     {
-        // Degrade gracefully if the broker is down at boot: the HTTP API must
-        // come up even when messaging is unavailable. async-nats serves a
-        // reconnecting client, so a later recovery is picked up.
-        Some(url) => match async_nats::connect(&url).await {
-            Ok(client) => Some(client),
-            Err(error) => {
-                tracing::error!("dd-fabrication-server NATS connect failed ({url}): {error}");
-                None
+        // Bound initial broker startup so the independent HTTP planning API can
+        // still come up during an outage. Once connected, async-nats handles
+        // reconnects and the durable consumer resumes from its last ack.
+        Some(url) => {
+            match tokio::time::timeout(Duration::from_secs(12), connect_nats(&url)).await {
+                Ok(Ok(client)) => Some(client),
+                Ok(Err(error)) => {
+                    tracing::error!("dd-fabrication-server NATS connect failed ({url}): {error}");
+                    None
+                }
+                Err(_) => {
+                    tracing::error!("dd-fabrication-server NATS connect timed out ({url})");
+                    None
+                }
             }
-        },
+        }
         None => None,
     };
     let state = AppState {
@@ -123405,6 +123610,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         event_subject: env_value("FABRICATION_EVENT_SUBJECT", RUNTIME_EVENTS_SUBJECT),
         mdp_subject: env_value("FABRICATION_MDP_OPTIMIZE_SUBJECT", MDP_OPTIMIZE_SUBJECT),
         mdp_autopublish: env_bool("FABRICATION_MDP_AUTOPUBLISH", false),
+        nats_inflight: Arc::new(Semaphore::new(
+            env_u64("FABRICATION_NATS_MAX_INFLIGHT", 8, 1, 128) as usize,
+        )),
         metrics: Arc::new(Metrics::default()),
         jobs: Arc::new(RwLock::new(FabricationJobStore::new(MAX_STORED_JOBS))),
         learning: Arc::new(RwLock::new(LearningMemory::new(MAX_LEARNING_OUTCOMES))),
@@ -123761,10 +123969,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             post(mesh_repair_result_http),
         )
         .route("/mesh-repair/plan", post(mesh_repair_plan_http))
-        .route(
-            "/fabrication/mesh-repair/plan",
-            post(mesh_repair_plan_http),
-        )
+        .route("/fabrication/mesh-repair/plan", post(mesh_repair_plan_http))
         .route("/formats/catalog", get(design_import_catalog_http))
         .route(
             "/fabrication/formats/catalog",
@@ -140611,6 +140816,7 @@ mod tests {
             event_subject: RUNTIME_EVENTS_SUBJECT.to_string(),
             mdp_subject: MDP_OPTIMIZE_SUBJECT.to_string(),
             mdp_autopublish: false,
+            nats_inflight: Arc::new(Semaphore::new(1)),
             metrics: Arc::new(Metrics::default()),
             jobs: Arc::new(RwLock::new(FabricationJobStore::new(MAX_STORED_JOBS))),
             learning: Arc::new(RwLock::new(LearningMemory::new(MAX_LEARNING_OUTCOMES))),
