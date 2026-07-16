@@ -76,6 +76,16 @@ async function waitUntil(predicate: () => boolean): Promise<void> {
   throw new Error("condition was not reached");
 }
 
+async function waitUntilAsync(predicate: () => Promise<boolean>): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (await predicate()) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  throw new Error("condition was not reached");
+}
+
 beforeEach(() => {
   vi.stubGlobal("BroadcastChannel", TestBroadcastChannel);
 });
@@ -102,17 +112,120 @@ describe("CanonicalSyncClient coordination", () => {
     const first = await openClient(fetchImplementation, databaseName);
     const second = await openClient(fetchImplementation, databaseName);
 
-    // Sync sequentially: on runtimes with a real Web Locks API (Node >= 23)
+    // Start sequentially: on runtimes with a real Web Locks API (Node >= 23)
     // two concurrent passes on one account key race for the same exclusive
     // lock and the loser (ifAvailable) legitimately skips its pull, which
-    // would make a concurrent request count nondeterministic.
+    // would make a concurrent request count nondeterministic. Do not call
+    // syncNow merely to await start: an explicit wake during a pass now
+    // intentionally drains one additional pass.
     first.start();
-    await first.syncNow();
+    await waitUntil(() => requests === 1);
+    await new Promise((resolve) => setTimeout(resolve, 0));
     second.start();
-    await second.syncNow();
+    await waitUntil(() => requests === 2);
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(requests).toBe(2);
+  });
+
+  it("drains a local-edit wake that arrives during an active pull", async () => {
+    const requestMethods: string[] = [];
+    let getRequests = 0;
+    let resolveFirstPull: ((response: Response) => void) | undefined;
+    const firstPull = new Promise<Response>((resolve) => {
+      resolveFirstPull = resolve;
+    });
+    const fetchImplementation = vi.fn<typeof fetch>(async (_input, init) => {
+      const method = init?.method ?? "GET";
+      requestMethods.push(method);
+      if (method === "POST") {
+        const request = JSON.parse(String(init?.body)) as MutationRequest;
+        const response: MutationResponse = {
+          results: request.operations.map((operation) => ({
+            mutationId: operation.mutationId,
+            status: "applied",
+            record: {
+              key: operation.key,
+              version: "1",
+              schemaVersion: 1,
+              deleted: operation.action === "delete",
+              ...(operation.value === undefined ? {} : { value: operation.value }),
+            },
+          })),
+        };
+        return jsonResponse(response);
+      }
+      getRequests += 1;
+      if (getRequests === 1) {
+        return firstPull;
+      }
+      return jsonResponse({ changes: [], nextCursor: "after-rerun", caughtUp: true });
+    });
+    const client = await openClient(fetchImplementation);
+
+    client.start();
+    await waitUntil(() => getRequests === 1);
+    await client.putDraftNote(NOTE_A, { title: "queued mid-pull", body: "must push promptly" });
+    resolveFirstPull?.(
+      jsonResponse({ changes: [], nextCursor: "first-pass", caughtUp: true }),
+    );
+    await waitUntilAsync(
+      async () => getRequests === 2 && (await client.store.listOutbox()).length === 0,
+    );
+
+    expect(requestMethods).toEqual(["GET", "POST", "GET"]);
+    expect(await client.store.listOutbox()).toEqual([]);
+    expect(await client.store.getRecord(NOTE_A)).toMatchObject({
+      state: "synced",
+      confirmed: {
+        value: { title: "queued mid-pull", body: "must push promptly" },
+      },
+    });
+  });
+
+  it("keeps the active promise pending for a wake at the drain-settlement edge", async () => {
+    vi.stubGlobal("navigator", { onLine: true });
+    let getRequests = 0;
+    let resolveSecondPull: ((response: Response) => void) | undefined;
+    const secondPull = new Promise<Response>((resolve) => {
+      resolveSecondPull = resolve;
+    });
+    const fetchImplementation = vi.fn<typeof fetch>(async () => {
+      getRequests += 1;
+      if (getRequests === 2) {
+        return secondPull;
+      }
+      return jsonResponse({ changes: [], nextCursor: `cursor-${getRequests}`, caughtUp: true });
+    });
+    const client = await openClient(fetchImplementation);
+    let wakeScheduled = false;
+    client.addEventListener("change", () => {
+      if (wakeScheduled) {
+        return;
+      }
+      wakeScheduled = true;
+      // Run after pullOnce, syncPass, withLeaderLock, and drainSyncRequests
+      // have each resumed, but before the drain's finally callback settles.
+      queueMicrotask(() =>
+        queueMicrotask(() =>
+          queueMicrotask(() => queueMicrotask(() => void client.syncNow())),
+        ),
+      );
+    });
+
+    let settled = false;
+    const sync = client.syncNow().then(() => {
+      settled = true;
+    });
+    await waitUntil(() => getRequests === 2);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(settled).toBe(false);
+    resolveSecondPull?.(
+      jsonResponse({ changes: [], nextCursor: "after-edge-wake", caughtUp: true }),
+    );
+    await sync;
+    expect(settled).toBe(true);
   });
 
   it("cannot restore account data from a pull that completes during logout", async () => {

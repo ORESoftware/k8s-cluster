@@ -1,13 +1,27 @@
+use async_trait::async_trait;
+use axum::{
+    body::Body,
+    http::{header, Request, StatusCode},
+    response::Response,
+    Router,
+};
 use canonical_web_server::{
+    auth::{AuthProvider, AuthProviderError, AuthTokens, SupabaseUser},
+    build_app,
+    config::Config,
     db::begin_user_transaction,
     run_migrations,
     ws::{Hub, POSTGRES_INVALIDATION_CHANNEL},
+    AppState,
 };
+use chrono::{Duration as ChronoDuration, Utc};
+use http_body_util::BodyExt;
 use sea_orm::{
     sqlx::postgres::PgListener, ConnectionTrait, Database, DatabaseBackend, DatabaseConnection,
     Statement,
 };
-use std::{env, error::Error, io, time::Duration};
+use std::{collections::HashSet, env, error::Error, io, path::PathBuf, sync::Arc, time::Duration};
+use tower::ServiceExt;
 use uuid::Uuid;
 
 const RUNTIME_ROLE: &str = "canonical_web_server";
@@ -288,6 +302,16 @@ async fn runtime_role_enforces_supabase_rls_context() -> Result<(), Box<dyn Erro
     assert!(foreign_note.is_err());
     foreign_note_transaction.rollback().await?;
 
+    assert_page_routes_use_rls_context(
+        &runtime,
+        &runtime_url,
+        user_a,
+        user_b,
+        engagement_a,
+        engagement_b,
+    )
+    .await?;
+
     runtime.close().await?;
     privileged.close().await?;
     admin
@@ -305,6 +329,194 @@ async fn runtime_role_enforces_supabase_rls_context() -> Result<(), Box<dyn Erro
     admin.close().await?;
 
     Ok(())
+}
+
+#[derive(Clone)]
+struct UnusedAuth;
+
+#[async_trait]
+impl AuthProvider for UnusedAuth {
+    async fn password_sign_in(
+        &self,
+        _email: &str,
+        _password: &str,
+    ) -> Result<AuthTokens, AuthProviderError> {
+        Err(AuthProviderError::Unavailable)
+    }
+
+    async fn refresh(&self, _refresh_token: &str) -> Result<AuthTokens, AuthProviderError> {
+        Err(AuthProviderError::Unavailable)
+    }
+
+    async fn user_for_token(&self, _access_token: &str) -> Result<SupabaseUser, AuthProviderError> {
+        Err(AuthProviderError::Unavailable)
+    }
+
+    async fn sign_out(&self, _access_token: &str) -> Result<(), AuthProviderError> {
+        Err(AuthProviderError::Unavailable)
+    }
+}
+
+async fn assert_page_routes_use_rls_context(
+    runtime: &DatabaseConnection,
+    runtime_url: &str,
+    user_a: Uuid,
+    user_b: Uuid,
+    engagement_a: Uuid,
+    engagement_b: Uuid,
+) -> Result<(), Box<dyn Error>> {
+    let config = Config {
+        port: 8081,
+        static_dir: PathBuf::from("test-fixtures/no-marketing-site"),
+        app_asset_dir: PathBuf::from("client/dist"),
+        database_url: runtime_url.to_string(),
+        database_max_connections: 4,
+        auto_migrate: false,
+        app_base_url: "http://localhost:8081".into(),
+        allowed_origins: HashSet::from(["http://localhost:8081".into()]),
+        session_cookie: "canonical_session".into(),
+        cookie_secure: false,
+        session_encryption_key: vec![7; 32],
+        session_ttl: Duration::from_secs(30 * 24 * 60 * 60),
+        supabase_url: "http://localhost:9999".into(),
+        supabase_publishable_key: "test-publishable-key".into(),
+    };
+    let state = AppState::new(config, runtime.clone(), Arc::new(UnusedAuth))?;
+    let session_a = state
+        .sessions
+        .create(tokens_for(user_a, "a@example.com"))
+        .await?;
+    let session_b = state
+        .sessions
+        .create(tokens_for(user_b, "b@example.com"))
+        .await?;
+    let app = build_app(state);
+
+    let (status, page_a) = page_get(&app, "/app/engagements", &session_a.raw_id).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(page_a.contains("Own Co"));
+    assert!(!page_a.contains("Other Co"));
+
+    let (status, page_b) = page_get(&app, "/app/engagements", &session_b.raw_id).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(page_b.contains("Other Co"));
+    assert!(!page_b.contains("Own Co"));
+
+    assert_eq!(
+        page_get(
+            &app,
+            &format!("/app/engagements/{engagement_a}"),
+            &session_b.raw_id,
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        page_get(
+            &app,
+            &format!("/app/engagements/{engagement_b}"),
+            &session_a.raw_id,
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+
+    let created = page_post(
+        &app,
+        "/app/engagements",
+        &session_a.raw_id,
+        format!(
+            "csrf={}&company=Runtime%20Created&framework=fedramp&target_report_date=",
+            session_a.csrf_token
+        ),
+        false,
+    )
+    .await;
+    assert_eq!(created.status(), StatusCode::SEE_OTHER);
+    let (_, page_a) = page_get(&app, "/app/engagements", &session_a.raw_id).await;
+    assert!(page_a.contains("Runtime Created"));
+    assert!(!page_a.contains("Other Co"));
+
+    let updated = page_post(
+        &app,
+        &format!("/app/engagements/{engagement_a}/status"),
+        &session_a.raw_id,
+        format!("csrf={}&status=complete", session_a.csrf_token),
+        true,
+    )
+    .await;
+    assert_eq!(updated.status(), StatusCode::OK);
+    assert!(response_text(updated).await.contains("Status: Complete"));
+
+    let note = page_post(
+        &app,
+        &format!("/app/engagements/{engagement_a}/notes"),
+        &session_a.raw_id,
+        format!("csrf={}&body=RLS%20route%20note", session_a.csrf_token),
+        true,
+    )
+    .await;
+    assert_eq!(note.status(), StatusCode::OK);
+    assert!(response_text(note).await.contains("RLS route note"));
+
+    let (status, detail) = page_get(
+        &app,
+        &format!("/app/engagements/{engagement_a}"),
+        &session_a.raw_id,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(detail.contains("Status: Complete"));
+    assert!(detail.contains("RLS route note"));
+    Ok(())
+}
+
+fn tokens_for(user_id: Uuid, email: &str) -> AuthTokens {
+    AuthTokens {
+        access_token: format!("access-{user_id}"),
+        refresh_token: format!("refresh-{user_id}"),
+        expires_at: Utc::now() + ChronoDuration::hours(1),
+        user: SupabaseUser {
+            id: user_id,
+            email: Some(email.into()),
+        },
+    }
+}
+
+async fn page_get(app: &Router, path: &str, session: &str) -> (StatusCode, String) {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::get(path)
+                .header(header::COOKIE, format!("canonical_session={session}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = response.status();
+    (status, response_text(response).await)
+}
+
+async fn page_post(app: &Router, path: &str, session: &str, body: String, htmx: bool) -> Response {
+    let mut request = Request::post(path)
+        .header(header::ORIGIN, "http://localhost:8081")
+        .header(header::COOKIE, format!("canonical_session={session}"))
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded");
+    if htmx {
+        request = request.header("hx-request", "true");
+    }
+    app.clone()
+        .oneshot(request.body(Body::from(body)).unwrap())
+        .await
+        .unwrap()
+}
+
+async fn response_text(response: Response) -> String {
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    String::from_utf8(bytes.to_vec()).unwrap()
 }
 
 async fn assert_backplane_commit_delivery(
