@@ -17,6 +17,9 @@ spec:
         - podSelector:
             matchLabels:
               app: dd-remote-gateway
+        - podSelector:
+            matchLabels:
+              app: dd-runtime-config
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: observability
@@ -43,6 +46,13 @@ spec:
       ports:
         - protocol: TCP
           port: 4222
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dd-runtime-config
+      ports:
+        - protocol: TCP
+          port: 8110
     - to:
         - ipBlock:
             cidr: 10.0.0.0/8
