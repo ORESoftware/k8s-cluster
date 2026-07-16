@@ -3878,6 +3878,66 @@ async fn postgres_is_reachable(state: &AppState) -> bool {
     )
 }
 
+fn mirror_probe_mode(config: &S3StorageConfig) -> &'static str {
+    if config.bucket.is_empty() {
+        "unconfigured"
+    } else if config.readiness_object_key.is_some() {
+        "head_object"
+    } else {
+        "head_probe_not_found_ok"
+    }
+}
+
+/// `None` when no mirror is intended; otherwise whether the mirror target is
+/// reachable with the configured credentials.
+async fn mirror_is_ready(state: &AppState) -> Option<bool> {
+    if state.config.mirror.bucket.is_empty() && state.config.mirror.validation_errors.is_empty() {
+        return None;
+    }
+    let Some(mirror) = state.mirror.as_ref() else {
+        return Some(false);
+    };
+    if let Some(key) = state.config.mirror.readiness_object_key.as_deref() {
+        return Some(matches!(
+            tokio::time::timeout(
+                STORAGE_PROBE_TIMEOUT,
+                mirror
+                    .head_object()
+                    .bucket(&state.config.mirror.bucket)
+                    .key(key)
+                    .send()
+            )
+            .await,
+            Ok(Ok(_))
+        ));
+    }
+    // Without a sentinel object, HeadObject on a never-written probe key still
+    // proves endpoint, credentials, and bucket-level object access: an
+    // authorized miss is a clean 404, while bad credentials, a bad endpoint,
+    // or a missing bucket surface as other errors.
+    let key = format!(
+        "{}/.mirror-readiness-probe",
+        state.config.mirror.key_prefix
+    );
+    let result = tokio::time::timeout(
+        STORAGE_PROBE_TIMEOUT,
+        mirror
+            .head_object()
+            .bucket(&state.config.mirror.bucket)
+            .key(key)
+            .send(),
+    )
+    .await;
+    Some(match result {
+        Ok(Ok(_)) => true,
+        Ok(Err(err)) => err
+            .as_service_error()
+            .map(|service_error| service_error.is_not_found())
+            .unwrap_or(false),
+        Err(_) => false,
+    })
+}
+
 async fn storage_is_ready(state: &AppState) -> bool {
     let Some(s3) = state.s3.as_ref() else {
         return false;
