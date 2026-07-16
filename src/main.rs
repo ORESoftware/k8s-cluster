@@ -142,6 +142,21 @@ static SEGMENT_PRESIGNS: Lazy<IntCounterVec> = Lazy::new(|| {
     counter
 });
 
+static MIRROR_COPIES: Lazy<IntCounterVec> = Lazy::new(|| {
+    let counter = IntCounterVec::new(
+        Opts::new(
+            "dd_sound_recorder_rs_mirror_copies_total",
+            "Segment mirror copy attempts by dd-sound-recorder-rs.",
+        ),
+        &["result"],
+    )
+    .expect("failed to create dd_sound_recorder_rs_mirror_copies_total");
+    prometheus::default_registry()
+        .register(Box::new(counter.clone()))
+        .expect("failed to register dd_sound_recorder_rs_mirror_copies_total");
+    counter
+});
+
 const SERVICE_NAME: &str = "dd-sound-recorder-rs";
 const DEFAULT_PORT: u16 = 8126;
 const DEFAULT_RETENTION_HOURS: i32 = 500;
