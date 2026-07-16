@@ -46,6 +46,12 @@ seeds or your password. Written in Rust (axum + sqlx/Postgres).
   reaches the server at all.
 - **Sync.** Per-device version vectors give last-writer-wins-with-merge; a stale
   push gets a `Conflict` and must pull/merge/retry.
+- **Telemetry boundary.** Ciphertext, passwords, bearer tokens, auth hashes, and
+  device secrets must never be placed in logs, spans, metric labels, or message
+  payloads. The server intentionally does not publish vault operations to the
+  shared NATS bus: Postgres is the authoritative sync boundary. Any future NATS
+  integration must use a generated subject contract and emit only compact,
+  redacted lifecycle identifiers after the database transaction commits.
 
 ## Run locally
 
@@ -73,6 +79,8 @@ builder is pinned to the multi-architecture Rust 1.95 Bookworm image digest.
 - JSON `tracing` records go to stdout for Promtail/Loki collection.
 - HTTP spans preserve W3C `traceparent` and export over OTLP/HTTP. Configure
   `OTEL_EXPORTER_OTLP_ENDPOINT` or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`.
+- The default-deny NetworkPolicy permits OTLP only to TCP `4318` in the
+  `observability` namespace; no general Internet egress is opened.
 - `/metrics` exposes bounded route/status counters, request latency histograms,
   and vault-conflict counts for Prometheus.
 - `THREEFA_AUTH_MAX_CONCURRENT` (default `2`) bounds concurrent Argon2 work;

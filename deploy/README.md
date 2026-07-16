@@ -21,7 +21,7 @@ Push to the registry the cluster pulls from (GHCR/ECR), then update
 - `namespace.yaml` – `threefa` namespace, PodSecurity `restricted`
 - `deployment.yaml` – 2 replicas, non-root, read-only rootfs, liveness/readiness probes, OTLP resource metadata, and Prometheus discovery
 - `service.yaml` – ClusterIP on 8080
-- `networkpolicy.yaml` – default-deny; ingress from ingress-nginx, egress to DNS + Postgres only
+- `networkpolicy.yaml` – default-deny; ingress from ingress-nginx/observability, egress to DNS, Postgres, and the namespace-scoped OTLP/HTTP collector only
 - `externalsecret.yaml` – pulls the Postgres DSN into the `threefa-db` Secret
 - `argocd-application.yaml` – the ArgoCD App
 
