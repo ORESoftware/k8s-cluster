@@ -8032,6 +8032,17 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
                                     }
                             }
                             _ = progress_tick.tick() => {
+                                // Extend the JetStream ack deadline while the solve
+                                // runs. A MIP solve can exceed `ack_wait` (default
+                                // 600s); without this heartbeat JetStream treats the
+                                // still-running delivery as stalled and redelivers
+                                // it to another worker, so the same subproblem is
+                                // solved twice. The control event below is only
+                                // observability and does not touch the ack timer, so
+                                // the ack-progress must be sent explicitly here.
+                                let _ = message
+                                    .ack_with(async_nats::jetstream::AckKind::Progress)
+                                    .await;
                                 publish_control(
                                     &state_for_task,
                                     "worker-progress",
