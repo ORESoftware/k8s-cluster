@@ -4452,6 +4452,11 @@ async fn maybe_package_lambda_image(
             .await
             .unwrap_or(function);
     let result = if let Some(delegate_url) = image_build_delegate_url() {
+        tracing::info!(
+            function_id = %building.id,
+            delegate = %delegate_url,
+            "delegating lambda image build"
+        );
         delegate_lambda_image(&delegate_url, &building.id).await
     } else {
         let build_input = building.clone();
@@ -4527,6 +4532,7 @@ async fn package_lambda_image_internal(
     if !authorized_image_builder_request(&headers) {
         return unauthorized_response();
     }
+    tracing::info!(%function_id, "internal lambda image build accepted");
     let function = match fetch_lambda_function_by_id(&function_id).await {
         Ok(function) => function,
         Err(error) => {

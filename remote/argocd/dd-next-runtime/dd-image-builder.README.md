@@ -53,7 +53,7 @@ surfaces and receives only the shared server-auth and Postgres secrets.
 Keep the change additive and flag-gated; with the flag unset there must be **zero**
 behavioral diff (so it deploys safely while you test).
 
-## Staged cutover
+## Staged cutover (completed 2026-07-16)
 1. **Deploy the builder (additive, no behavior change).** The three
    `dd-image-builder.*.yaml` resources are in `kustomization.yaml`. Confirm the
    pod builds from source and goes Ready (`/healthz`). It’s idle until step 3.
@@ -62,7 +62,7 @@ behavioral diff (so it deploys safely while you test).
 3. **Flip delegation on the public API.** Set
    `IMAGE_BUILD_DELEGATE_URL=http://dd-image-builder.default.svc.cluster.local:8082`
    on `dd-remote-rest-api`. Trigger a container-pool build and a lambda build;
-   confirm they execute **on the builder** (builder logs / `nerdctl -n k8s.io images`
+    confirm they execute **on the builder** (builder logs / `nerdctl -n k8s.io images`
    on the builder pod) and status/rows still update.
 4. **De-privilege the public API** (`dd-remote-rest-api.deployment.yaml`): remove
    `securityContext.privileged: true`; remove the volumeMounts **and** volumes for
@@ -70,9 +70,14 @@ behavioral diff (so it deploys safely while you test).
    `buildkit-run`, `nerdctl-state`. Keep `IMAGE_BUILD_DELEGATE_URL`. Re-verify a
    build still succeeds (now fully via the builder) and the public API is healthy.
    (Re-check whether the `repo`, `lambda-image-builds`, `container-pool-image-builds`
-   mounts are still read by non-build code paths before removing them too.)
+    mounts are still read by non-build code paths before removing them too.)
 5. **Confirm** the public pod is unprivileged and socket-free:
    `kubectl exec deploy/dd-remote-rest-api -- ls /run/containerd/containerd.sock` → absent.
+
+The cutover was executed in order: the internal builder became Ready, an
+authenticated delegated Node.js build reached `built/passed`, then the public
+pods lost all build mounts and privileges. Public source is now read-only and
+Cargo build state lives in an isolated `emptyDir`.
 
 ## Rollback
 At any step: unset `IMAGE_BUILD_DELEGATE_URL` (reverts to local builds) and/or

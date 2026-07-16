@@ -952,6 +952,7 @@ async fn delegate_build_test(slug: &str, body: &BuildTestBody) -> Result<Respons
     let secret = operator_api_secret()
         .ok_or_else(|| "image builder delegation auth is not configured".to_string())?;
     let url = format!("{base_url}/api/container-pool/images/{slug}/build-test");
+    tracing::info!(image_slug = %slug, delegate = %base_url, "delegating container image build");
     let response = reqwest::Client::builder()
         .timeout(image_build_delegate_timeout())
         .build()
@@ -968,6 +969,7 @@ async fn delegate_build_test(slug: &str, body: &BuildTestBody) -> Result<Respons
         .json::<Value>()
         .await
         .map_err(|error| format!("image builder returned invalid JSON: {error}"))?;
+    tracing::info!(image_slug = %slug, http_status = status.as_u16(), "container image build delegation accepted");
     Ok((status, Json(payload)).into_response())
 }
 
@@ -1085,9 +1087,19 @@ async fn trigger_build_test(Path(slug): Path<String>, Json(body): Json<BuildTest
     let revision_for_task = revision.clone();
     let build_for_task = build_row.clone();
     let entry_clone: CatalogEntry = entry.clone();
+    tracing::info!(
+        image_slug = %slug,
+        build_id = %build_row.id,
+        candidate_tag = %build_row.candidate_tag,
+        "local container image build accepted"
+    );
     tokio::spawn(async move {
-        if let Err(err) = run_build_and_test(entry_clone, revision_for_task, build_for_task).await {
-            tracing::error!("container-pool build/test orchestration failed: {err}");
+        let build_id = build_for_task.id.clone();
+        match run_build_and_test(entry_clone, revision_for_task, build_for_task).await {
+            Ok(()) => tracing::info!(%build_id, "local container image build completed"),
+            Err(err) => {
+                tracing::error!(%build_id, "container-pool build/test orchestration failed: {err}")
+            }
         }
     });
     (
