@@ -7655,12 +7655,14 @@ async fn mirror_drain(
         let copy_result = mirror_copy_segment(
             &state,
             &mirror,
-            &id,
-            &bucket,
-            &key,
-            &content_type,
-            byte_count,
-            sha256_hex.as_deref(),
+            &MirrorCopySource {
+                segment_id: &id,
+                bucket: &bucket,
+                key: &key,
+                content_type: &content_type,
+                byte_count,
+                sha256_hex: sha256_hex.as_deref(),
+            },
         )
         .await;
         match copy_result {
