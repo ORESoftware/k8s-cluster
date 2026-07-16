@@ -85,6 +85,7 @@ struct BrokerHealth {
     ok: bool,
     service: &'static str,
     direct_dispatch_enabled: bool,
+    nats_connected: bool,
 }
 
 #[derive(Serialize)]
@@ -259,7 +260,9 @@ fn validate_identifier(value: &str, label: &str) -> Result<(), String> {
         return Err(format!("{label} must not be empty"));
     }
     if value.len() > MAX_IDENTIFIER_LEN {
-        return Err(format!("{label} must be at most {MAX_IDENTIFIER_LEN} bytes"));
+        return Err(format!(
+            "{label} must be at most {MAX_IDENTIFIER_LEN} bytes"
+        ));
     }
     if let Some(bad) = value
         .chars()
@@ -292,7 +295,37 @@ async fn healthz(State(state): State<AppState>) -> impl IntoResponse {
         ok: true,
         service: "dd-agent-worker-broker",
         direct_dispatch_enabled: state.config.direct_dispatch_enabled,
+        nats_connected: nats_connected(&state),
     })
+}
+
+fn nats_connected(state: &AppState) -> bool {
+    matches!(
+        state.nats.connection_state(),
+        async_nats::connection::State::Connected
+    )
+}
+
+async fn readyz(State(state): State<AppState>) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let connected = nats_connected(&state);
+    let status = if connected {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    (
+        status,
+        Json(json!({
+            "ok": connected,
+            "service": "dd-agent-worker-broker",
+            "natsConnected": connected,
+        })),
+    )
+        .into_response()
 }
 
 async fn metrics(State(state): State<AppState>) -> Response {
@@ -319,13 +352,17 @@ async fn metrics(State(state): State<AppState>) -> Response {
             "dd_agent_worker_broker_nats_publish_failures_total {}\n",
             "# HELP dd_agent_worker_broker_direct_dispatch_enabled Direct worker dispatch setting.\n",
             "# TYPE dd_agent_worker_broker_direct_dispatch_enabled gauge\n",
-            "dd_agent_worker_broker_direct_dispatch_enabled {}\n"
+            "dd_agent_worker_broker_direct_dispatch_enabled {}\n",
+            "# HELP dd_agent_worker_broker_nats_connected Whether the shared NATS connection is established.\n",
+            "# TYPE dd_agent_worker_broker_nats_connected gauge\n",
+            "dd_agent_worker_broker_nats_connected {}\n"
         ),
         state.metrics.http_requests_total.load(Ordering::Relaxed),
         state.metrics.dispatch_requests_total.load(Ordering::Relaxed),
         state.metrics.dispatch_failures_total.load(Ordering::Relaxed),
         state.metrics.nats_publish_failures_total.load(Ordering::Relaxed),
-        u8::from(state.config.direct_dispatch_enabled)
+        u8::from(state.config.direct_dispatch_enabled),
+        u8::from(nats_connected(&state))
     );
 
     (
@@ -826,6 +863,7 @@ async fn main() {
 
     let app = Router::new()
         .route("/healthz", get(healthz))
+        .route("/readyz", get(readyz))
         .route("/docs/api", get(api_docs_html))
         .route("/api/docs", get(api_docs_html))
         .route("/api/docs.json", get(api_docs_json))
@@ -876,7 +914,6 @@ async fn shutdown_signal() {
         _ = terminate => {},
     }
 }
-
 
 #[cfg(test)]
 mod tests {

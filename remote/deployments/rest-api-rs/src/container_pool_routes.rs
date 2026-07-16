@@ -205,6 +205,21 @@ fn custom_test_commands_enabled() -> bool {
     env_bool("CONTAINER_POOL_IMAGE_CUSTOM_TEST_COMMANDS_ENABLED", false)
 }
 
+fn image_build_delegate_url() -> Option<String> {
+    env::var("IMAGE_BUILD_DELEGATE_URL")
+        .ok()
+        .map(|value| value.trim().trim_end_matches('/').to_string())
+        .filter(|value| value.starts_with("http://") || value.starts_with("https://"))
+}
+
+fn image_build_delegate_timeout() -> Duration {
+    let seconds = env::var("IMAGE_BUILD_DELEGATE_TIMEOUT_SECONDS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(30);
+    Duration::from_secs(seconds.clamp(5, 300))
+}
+
 fn operator_api_secret() -> Option<String> {
     env::var("CONTAINER_POOL_IMAGE_API_SECRET")
         .ok()
@@ -919,7 +934,7 @@ async fn get_build(Path(build_id): Path<String>) -> Response {
     }
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Clone, Deserialize, Serialize, Default)]
 struct BuildTestBody {
     #[serde(rename = "revisionId")]
     revision_id: Option<String>,
@@ -931,6 +946,31 @@ struct BuildTestBody {
     notes: Option<String>,
 }
 
+async fn delegate_build_test(slug: &str, body: &BuildTestBody) -> Result<Response, String> {
+    let base_url = image_build_delegate_url()
+        .ok_or_else(|| "IMAGE_BUILD_DELEGATE_URL is not configured".to_string())?;
+    let secret = operator_api_secret()
+        .ok_or_else(|| "image builder delegation auth is not configured".to_string())?;
+    let url = format!("{base_url}/api/container-pool/images/{slug}/build-test");
+    let response = reqwest::Client::builder()
+        .timeout(image_build_delegate_timeout())
+        .build()
+        .map_err(|error| format!("failed to create image builder client: {error}"))?
+        .post(url)
+        .header("x-server-auth", secret)
+        .json(body)
+        .send()
+        .await
+        .map_err(|error| format!("image builder request failed: {error}"))?;
+    let status = StatusCode::from_u16(response.status().as_u16())
+        .map_err(|error| format!("image builder returned an invalid status: {error}"))?;
+    let payload = response
+        .json::<Value>()
+        .await
+        .map_err(|error| format!("image builder returned invalid JSON: {error}"))?;
+    Ok((status, Json(payload)).into_response())
+}
+
 async fn trigger_build_test(Path(slug): Path<String>, Json(body): Json<BuildTestBody>) -> Response {
     let Some(entry) = catalog_entry(&slug) else {
         return error_response(StatusCode::NOT_FOUND, "unknown image slug");
@@ -940,6 +980,12 @@ async fn trigger_build_test(Path(slug): Path<String>, Json(body): Json<BuildTest
             StatusCode::PRECONDITION_FAILED,
             "container pool image builds disabled (CONTAINER_POOL_IMAGE_BUILDS_ENABLED=false)",
         );
+    }
+    if image_build_delegate_url().is_some() {
+        return match delegate_build_test(&slug, &body).await {
+            Ok(response) => response,
+            Err(error) => error_response(StatusCode::BAD_GATEWAY, error),
+        };
     }
     let client = match connect_postgres().await {
         Ok(c) => c,
@@ -1510,4 +1556,49 @@ pub fn router() -> Router {
         )
         .route("/api/container-pool/builds/:build_id", get(get_build))
         .route_layer(middleware::from_fn(require_operator_auth))
+}
+
+/// Minimal privileged-builder surface. The builder role intentionally omits
+/// the catalog read/write and build-status APIs; only the authenticated build
+/// trigger is reachable inside its NetworkPolicy boundary.
+pub fn builder_router() -> Router {
+    Router::new()
+        .route(
+            "/api/container-pool/images/:slug/build-test",
+            post(trigger_build_test),
+        )
+        .route_layer(middleware::from_fn(require_operator_auth))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn builder_router_exposes_only_authenticated_build_trigger() {
+        let catalog_response = builder_router()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/container-pool/images")
+                    .body(Body::empty())
+                    .expect("catalog request"),
+            )
+            .await
+            .expect("catalog response");
+        assert_eq!(catalog_response.status(), StatusCode::NOT_FOUND);
+
+        let build_response = builder_router()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/container-pool/images/nodejs/build-test")
+                    .header("content-type", "application/json")
+                    .body(Body::from("{}"))
+                    .expect("build request"),
+            )
+            .await
+            .expect("build response");
+        assert_eq!(build_response.status(), StatusCode::UNAUTHORIZED);
+    }
 }

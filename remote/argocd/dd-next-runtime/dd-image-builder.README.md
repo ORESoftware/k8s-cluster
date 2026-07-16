@@ -21,42 +21,44 @@ HTTP. Net: the internet-facing surface is no longer node-root-capable.
 - The build path is **not runtime-testable off-cluster** (needs real containerd),
   so the flag-flip + de-privilege are explicit, verified cutover steps.
 
-## Files added by this change (currently NOT in kustomization.yaml — inert)
+## Files deployed by the additive builder stage
 - `dd-image-builder.deployment.yaml` — internal builder (same image, privileged +
   socket + build mounts, `replicas: 1`, build env enabled, `IMAGE_BUILD_DELEGATE_URL` unset → builds locally).
 - `dd-image-builder.service.yaml` — ClusterIP `:8082`, no gateway route.
-- `dd-image-builder.networkpolicy.yaml` — ingress to `:8082` only from `app=dd-remote-rest-api` (see kubelet-probe caveat in the file).
+- `dd-image-builder.networkpolicy.yaml` — ingress to `:8082` only from the REST API, runtime-config, and observability; egress is default-deny with DNS, Postgres, OTLP, runtime-config, and HTTPS allowances.
 
-## The delegation code seam (to implement in a branch, `cargo check` + CI)
+## The delegation code seam
 Add one env: `IMAGE_BUILD_DELEGATE_URL` (e.g. `http://dd-image-builder.default.svc.cluster.local:8082`).
 - **Unset** (builder + today's rest-api): run the local `nerdctl`/`buildctl` path — *unchanged behavior*.
 - **Set** (public rest-api after cutover): forward build work to the builder instead of shelling out.
 
 Two seams in `remote/deployments/rest-api-rs`:
 1. **Container-pool builds** — `container_pool_routes.rs`: `trigger_build_test()`
-   (`POST /api/container-pool/images/:slug/builds`) → `run_build_and_test()` (the
+   (`POST /api/container-pool/images/:slug/build-test`) → `run_build_and_test()` (the
    `nerdctl build/run` shell-out). Delegation: when the flag is set, **forward the
-   trigger request** to `{DELEGATE_URL}/api/container-pool/images/{slug}/builds`
+   trigger request** to `{DELEGATE_URL}/api/container-pool/images/{slug}/build-test`
    and return its response. Build **status is Postgres-backed** (`fetch_build_by_id`),
    so `GET /api/container-pool/builds/:id` keeps working from the public API with
    no delegation. Only the *trigger* forwards.
 2. **Lambda images** — `main.rs`: `maybe_package_lambda_image()` /
    `package_lambda_image_sync()` (the `nerdctl` build), invoked **inline** during
-   lambda CRUD. Delegation: add a small internal builder endpoint, e.g.
-   `POST /internal/lambda-image/package {function_id}` that runs
-   `package_lambda_image_sync` locally; when the flag is set, `maybe_package_lambda_image`
-   calls that endpoint instead of building locally. (Auth it with the existing
-   `X-Server-Auth`/`SERVER_AUTH_SECRET` the services already share.)
+   lambda CRUD. With delegation enabled it calls the authenticated
+   `POST /internal/lambda-images/:function_id/package` builder endpoint instead.
+
+`DD_SERVICE_ROLE=image-builder` selects a minimal router: health/readiness,
+metrics, generated docs, runtime-config, and the two authenticated build triggers.
+The privileged pod does not expose the general REST, GraphQL, CDC, or internal DB
+surfaces and receives only the shared server-auth and Postgres secrets.
 
 Keep the change additive and flag-gated; with the flag unset there must be **zero**
 behavioral diff (so it deploys safely while you test).
 
 ## Staged cutover
-1. **Deploy the builder (additive, no behavior change).** Add the three
-   `dd-image-builder.*.yaml` to `kustomization.yaml`; let ArgoCD sync. Confirm the
+1. **Deploy the builder (additive, no behavior change).** The three
+   `dd-image-builder.*.yaml` resources are in `kustomization.yaml`. Confirm the
    pod builds from source and goes Ready (`/healthz`). It’s idle until step 3.
-2. **Land the delegation code** (branch → `cargo check` + CI). Deploy it with
-   `IMAGE_BUILD_DELEGATE_URL` **unset** everywhere → inert.
+2. **Land the delegation code** (`cargo check` + CI). It is flag-gated and
+   deployed with `IMAGE_BUILD_DELEGATE_URL` **unset** everywhere → inert.
 3. **Flip delegation on the public API.** Set
    `IMAGE_BUILD_DELEGATE_URL=http://dd-image-builder.default.svc.cluster.local:8082`
    on `dd-remote-rest-api`. Trigger a container-pool build and a lambda build;

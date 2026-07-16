@@ -14,10 +14,10 @@
     {
       "service": "agent-worker-broker-rs",
       "language": "rust",
-      "routeCount": 9,
+      "routeCount": 10,
       "routeTypeCounts": {
         "user-generated": 1,
-        "service": 5,
+        "service": 6,
         "runtime-config": 3
       },
       "generated": [
@@ -109,9 +109,9 @@
     {
       "service": "build-server-rs",
       "language": "rust",
-      "routeCount": 12,
+      "routeCount": 13,
       "routeTypeCounts": {
-        "service": 6,
+        "service": 7,
         "user-generated": 3,
         "runtime-config": 3
       },
@@ -137,9 +137,9 @@
     {
       "service": "container-pool-rs",
       "language": "rust",
-      "routeCount": 12,
+      "routeCount": 13,
       "routeTypeCounts": {
-        "service": 5,
+        "service": 6,
         "runtime-config": 3,
         "user-generated": 4
       },
@@ -546,10 +546,10 @@
     {
       "service": "rest-api-rs",
       "language": "rust",
-      "routeCount": 45,
+      "routeCount": 47,
       "routeTypeCounts": {
-        "user-generated": 25,
-        "service": 7,
+        "user-generated": 26,
+        "service": 8,
         "internal-db": 10,
         "runtime-config": 3
       },
@@ -561,9 +561,9 @@
     {
       "service": "runtime-config-rs",
       "language": "rust",
-      "routeCount": 18,
+      "routeCount": 19,
       "routeTypeCounts": {
-        "service": 6,
+        "service": 7,
         "user-generated": 12
       },
       "generated": [

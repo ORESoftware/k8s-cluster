@@ -47,7 +47,7 @@
     <p>Central generated index. Each listed HTTP service must also mount <code>/docs/api</code>, <code>/api/docs</code>, and <code>/api/docs.json</code> on its own service port.</p>
     <div class="summary">
       <span>50 services</span>
-      <span>1544 routes</span>
+      <span>1550 routes</span>
       <span>central JSON <code>/api-docs.json</code></span>
     </div>
   </header>
@@ -55,7 +55,7 @@
 <details>
   <summary>
     <span><strong>agent-worker-broker-rs</strong> <span class="muted">rust</span></span>
-    <span>9 routes</span>
+    <span>10 routes</span>
   </summary>
   <div class="generated">
     <span>Generated JSON: <code>remote/deployments/agent-worker-broker-rs/generated/api-docs.json</code></span>
@@ -126,6 +126,13 @@
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/metrics</code></td>
   <td data-label="Purpose">Prometheus metrics.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>agent-worker-broker-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/readyz</code></td>
+  <td data-label="Purpose">Readiness check.</td>
 </tr>
     </tbody>
   </table>
@@ -1105,7 +1112,7 @@
 <details>
   <summary>
     <span><strong>build-server-rs</strong> <span class="muted">rust</span></span>
-    <span>12 routes</span>
+    <span>13 routes</span>
   </summary>
   <div class="generated">
     <span>Generated JSON: <code>remote/deployments/build-server-rs/generated/api-docs.json</code></span>
@@ -1197,6 +1204,13 @@
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/metrics</code></td>
   <td data-label="Purpose">Prometheus metrics.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>build-server-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/readyz</code></td>
+  <td data-label="Purpose">Readiness check.</td>
 </tr>
     </tbody>
   </table>
@@ -1310,7 +1324,7 @@
 <details>
   <summary>
     <span><strong>container-pool-rs</strong> <span class="muted">rust</span></span>
-    <span>12 routes</span>
+    <span>13 routes</span>
   </summary>
   <div class="generated">
     <span>Generated JSON: <code>remote/deployments/container-pool-rs/generated/api-docs.json</code></span>
@@ -1402,6 +1416,13 @@
   <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
   <td data-label="Path"><code>/pools/:pool/warm</code></td>
   <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>container-pool-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/readyz</code></td>
+  <td data-label="Purpose">Readiness check.</td>
 </tr>
     </tbody>
   </table>
@@ -9824,7 +9845,7 @@
 <details>
   <summary>
     <span><strong>rest-api-rs</strong> <span class="muted">rust</span></span>
-    <span>45 routes</span>
+    <span>47 routes</span>
   </summary>
   <div class="generated">
     <span>Generated JSON: <code>remote/deployments/rest-api-rs/generated/api-docs.json</code></span>
@@ -10122,6 +10143,13 @@
 </tr>
 <tr>
   <td data-label="Service"><code>rest-api-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/internal/lambda-images/:function_id/package</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>rest-api-rs</code></td>
   <td data-label="Type"><span class="badge runtime-config">runtime-config</span></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/internal/runtime-config</code></td>
@@ -10148,13 +10176,20 @@
   <td data-label="Path"><code>/metrics</code></td>
   <td data-label="Purpose">Prometheus metrics.</td>
 </tr>
+<tr>
+  <td data-label="Service"><code>rest-api-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/readyz</code></td>
+  <td data-label="Purpose">Readiness check.</td>
+</tr>
     </tbody>
   </table>
 </details>
 <details>
   <summary>
     <span><strong>runtime-config-rs</strong> <span class="muted">rust</span></span>
-    <span>18 routes</span>
+    <span>19 routes</span>
   </summary>
   <div class="generated">
     <span>Generated JSON: <code>remote/deployments/runtime-config-rs/generated/api-docs.json</code></span>
@@ -10253,6 +10288,13 @@
   <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
   <td data-label="Path"><code>/push/:env</code></td>
   <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>runtime-config-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/readyz</code></td>
+  <td data-label="Purpose">Readiness check.</td>
 </tr>
 <tr>
   <td data-label="Service"><code>runtime-config-rs</code></td>

@@ -1,14 +1,14 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: dd-container-pool
+  name: dd-agent-worker-broker
   namespace: default
   labels:
-    app: dd-container-pool
+    app: dd-agent-worker-broker
 spec:
   podSelector:
     matchLabels:
-      app: dd-container-pool
+      app: dd-agent-worker-broker
   policyTypes:
     - Ingress
     - Egress
@@ -19,31 +19,17 @@ spec:
               app: dd-remote-gateway
         - podSelector:
             matchLabels:
-              app: dd-runtime-config
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: observability
-      ports:
-        - protocol: TCP
-          port: 8102
-  egress:
-    # Allow OTLP trace export to the in-cluster OpenTelemetry collector.
-    - to:
+              app: dd-remote-rest-api
         - podSelector:
             matchLabels:
               app: dd-runtime-config
-      ports:
-        - protocol: TCP
-          port: 8110
-    - to:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: observability
       ports:
         - protocol: TCP
-          port: 4317
-        - protocol: TCP
-          port: 4318
+          port: 8098
+  egress:
     - to:
         - namespaceSelector:
             matchLabels:
@@ -66,31 +52,23 @@ spec:
     - to:
         - podSelector:
             matchLabels:
-              app: dd-redis-cache
+              app: dd-runtime-config
       ports:
         - protocol: TCP
-          port: 6379
+          port: 8110
     - to:
-        - ipBlock:
-            cidr: 10.0.0.0/8
-        - ipBlock:
-            cidr: 172.16.0.0/12
-        - ipBlock:
-            cidr: 192.168.0.0/16
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: thread-pod
       ports:
         - protocol: TCP
-          port: 5432
+          port: 8080
     - to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
-            except:
-              - 10.0.0.0/8
-              - 127.0.0.0/8
-              - 169.254.0.0/16
-              - 172.16.0.0/12
-              - 192.168.0.0/16
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
       ports:
         - protocol: TCP
-          port: 80
+          port: 4317
         - protocol: TCP
-          port: 443
+          port: 4318

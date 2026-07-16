@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "rest-api-rs",
   "language": "rust",
-  "routeCount": 45,
+  "routeCount": 47,
   "routeTypeCounts": {
-    "user-generated": 25,
-    "service": 7,
+    "user-generated": 26,
+    "service": 8,
     "internal-db": 10,
     "runtime-config": 3
   },
@@ -736,6 +736,23 @@
       "notes": ""
     },
     {
+      "path": "/internal/lambda-images/:function_id/package",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "package_lambda_image_internal"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/internal/runtime-config",
       "methods": [
         "GET"
@@ -797,6 +814,23 @@
       "purpose": "Prometheus metrics.",
       "handlers": [
         "metrics"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/readyz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Readiness check.",
+      "handlers": [
+        "image_builder_readyz"
       ],
       "sourceFiles": [
         "remote/deployments/rest-api-rs/src/main.rs"

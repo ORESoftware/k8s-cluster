@@ -760,6 +760,44 @@ fn worker_auth_secret() -> Option<String> {
     first_env(&["REMOTE_DEV_SERVER_SECRET", "SERVER_AUTH_SECRET"])
 }
 
+fn constant_time_equals(candidate: &str, expected: &str) -> bool {
+    let candidate = candidate.as_bytes();
+    let expected = expected.as_bytes();
+    if candidate.len() != expected.len() {
+        return false;
+    }
+    let mut difference = 0u8;
+    for (left, right) in candidate.iter().zip(expected.iter()) {
+        difference |= left ^ right;
+    }
+    difference == 0
+}
+
+fn authorized_image_builder_request(headers: &HeaderMap) -> bool {
+    let Some(expected) = worker_auth_secret() else {
+        return false;
+    };
+    headers
+        .get("x-server-auth")
+        .or_else(|| headers.get("x-agent-auth"))
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| constant_time_equals(value, &expected))
+}
+
+fn image_builder_role() -> bool {
+    env::var("DD_SERVICE_ROLE")
+        .ok()
+        .is_some_and(|value| value.eq_ignore_ascii_case("image-builder"))
+}
+
+fn service_name() -> &'static str {
+    if image_builder_role() {
+        "dd-image-builder"
+    } else {
+        "dd-remote-rest-api"
+    }
+}
+
 fn missing_worker_auth_secret_message() -> &'static str {
     "REMOTE_DEV_SERVER_SECRET or SERVER_AUTH_SECRET is not set"
 }
@@ -1572,7 +1610,9 @@ async fn prune_awake_thread_workers_for_capacity(
             Ok(result) if result.ok => slept.push(name),
             Ok(result) => tracing::error!(
                 "thread capacity prune scale failed: {} status={} body={}",
-                result.resource, result.status, result.body
+                result.resource,
+                result.status,
+                result.body
             ),
             Err(error) => tracing::error!("thread capacity prune failed for {name}: {error}"),
         }
@@ -3762,9 +3802,9 @@ fn managed_lambda_entry_command(value: &str) -> bool {
     [
         "nodejs", "python3", "ruby", "bash", "golang", "dart", "erlang", "elixir", "java",
     ]
-        .iter()
-        .map(|runtime| lambda_entry_command_for_runtime(runtime))
-        .any(|command| command == value)
+    .iter()
+    .map(|runtime| lambda_entry_command_for_runtime(runtime))
+    .any(|command| command == value)
 }
 
 fn validate_lambda_entry_command(value: Option<&str>, runtime: &str) -> Result<String, String> {
@@ -4411,13 +4451,17 @@ async fn maybe_package_lambda_image(
         update_lambda_container_build(&function.id, Some(&image), "building", None, false)
             .await
             .unwrap_or(function);
-    let build_input = building.clone();
-    let image_for_build = image.clone();
-    let result = tokio::task::spawn_blocking(move || {
-        package_lambda_image_sync(&build_input, &image_for_build)
-    })
-    .await
-    .map_err(|error| error.to_string())?;
+    let result = if let Some(delegate_url) = image_build_delegate_url() {
+        delegate_lambda_image(&delegate_url, &building.id).await
+    } else {
+        let build_input = building.clone();
+        let image_for_build = image.clone();
+        tokio::task::spawn_blocking(move || {
+            package_lambda_image_sync(&build_input, &image_for_build)
+        })
+        .await
+        .map_err(|error| error.to_string())?
+    };
 
     match result {
         Ok(()) => update_lambda_container_build(&building.id, Some(&image), "built", None, true)
@@ -4435,6 +4479,94 @@ async fn maybe_package_lambda_image(
             .await
             .or(Ok(building))
         }
+    }
+}
+
+fn image_build_delegate_url() -> Option<String> {
+    env::var("IMAGE_BUILD_DELEGATE_URL")
+        .ok()
+        .map(|value| value.trim().trim_end_matches('/').to_string())
+        .filter(|value| value.starts_with("http://") || value.starts_with("https://"))
+}
+
+async fn delegate_lambda_image(delegate_url: &str, function_id: &str) -> Result<(), String> {
+    let secret = worker_auth_secret()
+        .ok_or_else(|| "image builder delegation auth is not configured".to_string())?;
+    let timeout_seconds = env::var("LAMBDA_IMAGE_BUILD_TIMEOUT_SECONDS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(1200)
+        .clamp(60, 3600);
+    let response = reqwest::Client::builder()
+        .timeout(Duration::from_secs(timeout_seconds))
+        .build()
+        .map_err(|error| format!("failed to create image builder client: {error}"))?
+        .post(format!(
+            "{delegate_url}/internal/lambda-images/{function_id}/package"
+        ))
+        .header("x-server-auth", secret)
+        .send()
+        .await
+        .map_err(|error| format!("image builder request failed: {error}"))?;
+    let status = response.status();
+    if status.is_success() {
+        return Ok(());
+    }
+    let detail = response.text().await.unwrap_or_default();
+    Err(format!(
+        "image builder returned HTTP {}: {}",
+        status.as_u16(),
+        detail.chars().take(8192).collect::<String>()
+    ))
+}
+
+async fn package_lambda_image_internal(
+    Path(function_id): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    if !authorized_image_builder_request(&headers) {
+        return unauthorized_response();
+    }
+    let function = match fetch_lambda_function_by_id(&function_id).await {
+        Ok(function) => function,
+        Err(error) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
+    };
+    if !function.containerized {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": "lambda is not containerized" })),
+        )
+            .into_response();
+    }
+    let image = lambda_image_tag(&function);
+    let build_input = function.clone();
+    let image_for_build = image.clone();
+    match tokio::task::spawn_blocking(move || {
+        package_lambda_image_sync(&build_input, &image_for_build)
+    })
+    .await
+    {
+        Ok(Ok(())) => (
+            StatusCode::OK,
+            Json(json!({ "ok": true, "functionId": function.id, "image": image })),
+        )
+            .into_response(),
+        Ok(Err(error)) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "ok": false, "error": error.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -5129,7 +5261,9 @@ async fn run_cdc_fanout_subscriptions() {
                  subject=cdc.public.lambda_functions.> -> {}",
                 nats_lambda_functions_subject()
             ),
-            Err(error) => tracing::error!("rest-api cdc lambda subscription failed to start: {error}"),
+            Err(error) => {
+                tracing::error!("rest-api cdc lambda subscription failed to start: {error}")
+            }
         }
     }
 
@@ -5177,7 +5311,9 @@ async fn run_cdc_fanout_subscriptions() {
                  subject=cdc.public.known_git_repos.> -> {}",
                 nats_git_repos_changes_subject()
             ),
-            Err(error) => tracing::error!("rest-api cdc git-repo subscription failed to start: {error}"),
+            Err(error) => {
+                tracing::error!("rest-api cdc git-repo subscription failed to start: {error}")
+            }
         }
     }
 
@@ -5445,9 +5581,40 @@ async fn healthz() -> impl IntoResponse {
     record_request("GET", "/healthz", StatusCode::OK);
     Json(HealthResponse {
         ok: true,
-        service: "dd-remote-rest-api".to_string(),
-        mode: "database-boundary".to_string(),
+        service: service_name().to_string(),
+        mode: if image_builder_role() {
+            "internal-image-builder".to_string()
+        } else {
+            "database-boundary".to_string()
+        },
     })
+}
+
+fn image_builder_dependencies_ready() -> bool {
+    FsPath::new("/run/containerd/containerd.sock").exists()
+        && FsPath::new(&lambda_image_build_nerdctl()).exists()
+        && FsPath::new("/usr/local/bin/buildctl").exists()
+        && FsPath::new("/run/buildkit").is_dir()
+        && worker_auth_secret().is_some()
+        && postgres_database_url().is_some()
+}
+
+async fn image_builder_readyz() -> Response {
+    let ready = image_builder_dependencies_ready();
+    let status = if ready {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    (
+        status,
+        Json(json!({
+            "ok": ready,
+            "service": "dd-image-builder",
+            "dependenciesReady": ready,
+        })),
+    )
+        .into_response()
 }
 
 async fn agents_tasks(Query(query): Query<AgentsQuery>) -> impl IntoResponse {
@@ -5863,7 +6030,9 @@ async fn dispatch_thread_task(
                 repo_config = stored_config;
             }
             Ok(None) => {}
-            Err(error) => tracing::error!("failed to fetch thread repo config before dispatch: {error}"),
+            Err(error) => {
+                tracing::error!("failed to fetch thread repo config before dispatch: {error}")
+            }
         }
         match fetch_existing_task_dispatch_from_postgres(&request.task_id).await {
             Ok(Some(existing)) => {
@@ -5939,7 +6108,9 @@ async fn dispatch_thread_task(
                 )
                 .await;
             }
-            Err(error) => tracing::error!("failed to persist queued dispatch accepted event: {error}"),
+            Err(error) => {
+                tracing::error!("failed to persist queued dispatch accepted event: {error}")
+            }
         }
         match publish_task_dispatch_to_nats(&request, None).await {
             Ok(()) => {}
@@ -6458,6 +6629,24 @@ async fn metrics() -> impl IntoResponse {
         .encode(&metric_families, &mut buffer)
         .expect("failed to encode prometheus metrics");
 
+    if image_builder_role() {
+        let ready = image_builder_dependencies_ready();
+        buffer.extend_from_slice(
+            b"# HELP dd_image_builder_build_info Image builder process metadata.\n\
+# TYPE dd_image_builder_build_info gauge\n\
+dd_image_builder_build_info{service=\"dd-image-builder\"} 1\n",
+        );
+        buffer.extend_from_slice(
+            format!(
+                "# HELP dd_image_builder_dependencies_ready Whether auth, Postgres, containerd, nerdctl, buildctl, and buildkit are available.\n\
+                 # TYPE dd_image_builder_dependencies_ready gauge\n\
+                 dd_image_builder_dependencies_ready {}\n",
+                u8::from(ready)
+            )
+            .as_bytes(),
+        );
+    }
+
     (
         [(header::CONTENT_TYPE, encoder.format_type().to_string())],
         buffer,
@@ -6646,6 +6835,22 @@ fn internal_db_routes_enabled() -> bool {
 }
 
 fn app_router() -> Router {
+    if image_builder_role() {
+        return Router::new()
+            .route("/healthz", get(healthz))
+            .route("/readyz", get(image_builder_readyz))
+            .route("/docs/api", get(api_docs::html))
+            .route("/api/docs", get(api_docs::html))
+            .route("/api/docs.json", get(api_docs::json))
+            .route("/metrics", get(metrics))
+            .route(
+                "/internal/lambda-images/:function_id/package",
+                post(package_lambda_image_internal),
+            )
+            .merge(container_pool_routes::builder_router())
+            .merge(dd_runtime_config_client::router());
+    }
+
     let router = Router::new()
         .route("/healthz", get(healthz))
         .route("/docs/api", get(api_docs::html))
@@ -6665,7 +6870,7 @@ fn app_router() -> Router {
 
 #[tokio::main]
 async fn main() {
-    let _otel = dd_telemetry::init("dd-remote-rest-api");
+    let _otel = dd_telemetry::init(service_name());
 
     // Fail fast at startup if `remote/libs/pg-defs/schema/schema.sql`
     // has drifted away from what this service reads or writes against
@@ -6675,7 +6880,9 @@ async fn main() {
     // can't ship even if CI was skipped).
     pg_contract::assert_canonical_schema_matches_local_reads();
 
-    tokio::spawn(run_cdc_fanout_subscriptions());
+    if !image_builder_role() {
+        tokio::spawn(run_cdc_fanout_subscriptions());
+    }
     tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
@@ -6689,7 +6896,7 @@ async fn main() {
     let address: SocketAddr = format!("{host}:{port}")
         .parse()
         .expect("failed to parse bind address");
-    tracing::info!("dd-remote-rest-api listening on http://{address}");
+    tracing::info!(service = service_name(), "listening on http://{address}");
 
     let listener = tokio::net::TcpListener::bind(address)
         .await
@@ -6810,6 +7017,13 @@ mod cdc_tests {
 #[cfg(test)]
 mod dispatch_path_tests {
     use super::*;
+
+    #[test]
+    fn image_builder_auth_comparison_matches_only_identical_secrets() {
+        assert!(constant_time_equals("same-secret", "same-secret"));
+        assert!(!constant_time_equals("same-secret", "same-secreu"));
+        assert!(!constant_time_equals("same-secret", "same-secret-longer"));
+    }
 
     #[test]
     fn queued_modes_resolve_to_nats_queue_only() {

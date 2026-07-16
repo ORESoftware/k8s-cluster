@@ -14,6 +14,7 @@ resources:
   - dd-remote-rest-api.service.yaml
   - dd-agent-worker-broker-rbac.yaml
   - dd-agent-worker-broker.deployment.yaml
+  - dd-agent-worker-broker.networkpolicy.yaml
   - dd-agent-worker-broker.service.yaml
   - dd-container-pool-rbac.yaml
   - dd-container-pool.deployment.yaml
@@ -23,6 +24,9 @@ resources:
   - dd-build-server.deployment.yaml
   - dd-build-server.service.yaml
   - dd-build-server.networkpolicy.yaml
+  - dd-image-builder.deployment.yaml
+  - dd-image-builder.service.yaml
+  - dd-image-builder.networkpolicy.yaml
   - dd-remote-queue-consumer.deployment.yaml
   - dd-remote-queue-consumer.scaledobject.yaml
   - dd-mdp-optimizer.deployment.yaml
@@ -183,6 +187,7 @@ resources:
   - dd-remote-gateway.service.yaml
   - dd-remote-gateway.ingress.yaml
   - dd-runtime-config.deployment.yaml
+  - dd-runtime-config.networkpolicy.yaml
   - dd-runtime-config.service.yaml
   - dd-idle-reaper.configmap.yaml
   - dd-idle-reaper-rbac.yaml

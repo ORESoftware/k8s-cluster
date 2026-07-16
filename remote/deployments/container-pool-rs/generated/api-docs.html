@@ -42,9 +42,9 @@
     <h1>container-pool-rs API docs</h1>
     <p>Generated from route declarations in source. Standard routes: <code>/docs/api</code>, <code>/api/docs</code>, <code>/api/docs.json</code>.</p>
     <div class="summary">
-      <span>12 routes</span>
+      <span>13 routes</span>
       <span>rust</span>
-      <span>5 service</span>
+      <span>6 service</span>
       <span>4 user-generated</span>
       <span>3 runtime-config</span>
     </div>
@@ -148,6 +148,14 @@
   <td data-label="Purpose">Custom code-first route derived from the service router.</td>
   <td data-label="Handlers"><code>warm_pool</code></td>
   <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/readyz</code></td>
+  <td data-label="Purpose">Readiness check.</td>
+  <td data-label="Handlers"><code>readyz</code></td>
+  <td data-label="Auth">public</td>
 </tr>
       </tbody>
     </table>

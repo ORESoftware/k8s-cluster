@@ -1,5 +1,6 @@
 # Restrict who can reach the (privileged, node-root-capable) image builder.
-# Only dd-remote-rest-api (the delegator) should call it on :8082.
+# Only dd-remote-rest-api, runtime-config callbacks, and observability scraping
+# should reach it on :8082. Egress is default-deny with explicit build needs.
 #
 # IMPORTANT before relying on this (verify at cutover): an Ingress NetworkPolicy
 # makes the pod default-deny for ingress. Kubelet liveness/readiness probes hit
@@ -19,11 +20,68 @@ spec:
       app: dd-image-builder
   policyTypes:
     - Ingress
+    - Egress
   ingress:
     - from:
         - podSelector:
             matchLabels:
               app: dd-remote-rest-api
+        - podSelector:
+            matchLabels:
+              app: dd-runtime-config
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
       ports:
         - port: 8082
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dd-runtime-config
+      ports:
+        - port: 8110
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - port: 4317
+          protocol: TCP
+        - port: 4318
+          protocol: TCP
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+        - ipBlock:
+            cidr: 172.16.0.0/12
+        - ipBlock:
+            cidr: 192.168.0.0/16
+      ports:
+        - port: 5432
+          protocol: TCP
+    - to:
+        # Cargo can fetch crates during the in-pod source build. Image layers
+        # are pulled by the host buildkit/containerd daemons over their sockets.
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - port: 443
           protocol: TCP

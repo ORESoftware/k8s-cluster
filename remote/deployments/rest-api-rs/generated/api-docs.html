@@ -42,10 +42,10 @@
     <h1>rest-api-rs API docs</h1>
     <p>Generated from route declarations in source. Standard routes: <code>/docs/api</code>, <code>/api/docs</code>, <code>/api/docs.json</code>.</p>
     <div class="summary">
-      <span>45 routes</span>
+      <span>47 routes</span>
       <span>rust</span>
-      <span>7 service</span>
-      <span>25 user-generated</span>
+      <span>8 service</span>
+      <span>26 user-generated</span>
       <span>10 internal-db</span>
       <span>3 runtime-config</span>
     </div>
@@ -383,6 +383,14 @@
   <td data-label="Auth">operator secret</td>
 </tr>
 <tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/internal/lambda-images/:function_id/package</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>package_lambda_image_internal</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
   <td data-label="Type"><span class="badge runtime-config">runtime-config</span><div class="muted">code-first</div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/internal/runtime-config</code></td>
@@ -412,6 +420,14 @@
   <td data-label="Path"><code>/metrics</code></td>
   <td data-label="Purpose">Prometheus metrics.</td>
   <td data-label="Handlers"><code>metrics</code></td>
+  <td data-label="Auth">public</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/readyz</code></td>
+  <td data-label="Purpose">Readiness check.</td>
+  <td data-label="Handlers"><code>image_builder_readyz</code></td>
   <td data-label="Auth">public</td>
 </tr>
       </tbody>
