@@ -143,6 +143,22 @@ scan_action_pins() {
     fail "$label has GitHub Actions that are not pinned to full commit SHAs (or docker digests)"
     printf '%s\n' "$action_output" >&2
   fi
+
+  # A `docker://image:tag` reference carries no `@` at all, so the primary scan
+  # above never sees it — catch digestless docker actions explicitly.
+  local docker_output
+  docker_output="$(
+    git -C "$repo" grep -n -E \
+      'uses:[[:space:]]*docker://[^[:space:]#]+' -- \
+      '.github/workflows/*.yml' '.github/workflows/*.yaml' 2>/dev/null \
+      | grep -v -E \
+        'docker://[^[:space:]#]+@sha256:[0-9a-f]{64}([[:space:]]|$)' \
+      || true
+  )"
+  if [[ -n "$docker_output" ]]; then
+    fail "$label has docker:// actions without an immutable sha256 digest"
+    printf '%s\n' "$docker_output" >&2
+  fi
 }
 
 scan_workflow_hardening() {
