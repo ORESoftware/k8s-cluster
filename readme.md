@@ -191,8 +191,12 @@ is not a stable generic CNI entrypoint from inside that trusted pod. Treat the r
 node-level infrastructure: keep invocation and CRUD routes authenticated, and rely on the
 per-lambda runtime flags above for the untrusted function containers.
 
-The EC2 manifest includes a `startupProbe` on `/healthz` so package install, dependency download,
-and Gleam build work at boot do not trip liveness before the service is ready.
+The EC2 manifest includes a `startupProbe` on `/healthz` so package installation does not trip
+liveness before the service is ready. Compilation runs in a dedicated init container with an
+8 GiB build-only limit and writes BEAM artifacts to a pod-local `emptyDir`; the long-running
+process has a 2 GiB limit and executes the compiled entry module directly. The source hostPath is
+read-only, and the init copy excludes macOS `._*` metadata so host artifacts cannot break Linux
+builds or acquire ownership of build outputs.
 
 ## Runtime images
 
