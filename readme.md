@@ -95,7 +95,13 @@ The crate is also packaged with Nix (`flake.nix`, `.nix/`) and a `Dockerfile` fo
 - `GET /api/v1/data/acoustic-events?limit=50` — returns up to 200 owner-scoped `AcousticEvent`
   rows using the shared interface crate and the caller's Supabase access token.
 - `GET /api/v1/data/user-consents?limit=50` — returns up to 200 owner-scoped `UserConsent` rows
-  using the same JWT/RLS path. Both data routes return `{ "count": N, "data": [...] }`.
+  using the same JWT/RLS path. Both list routes return `{ "count": N, "data": [...] }`.
+- `GET /api/v1/data/user-settings` — returns the typed owner settings row, or mobile-compatible
+  defaults before the first save.
+- `PUT /api/v1/data/user-settings` — validates and upserts the portable settings subset. The owner
+  id and update time are server-controlled; credentials and device-only controls are not accepted.
+  Browser data routes carry the Supabase JWT in `X-Supabase-Auth: Bearer ...`, intentionally
+  separate from the device token accepted in `Authorization` on mobile routes.
 - `POST /api/mobile/v1/devices/register` — creates or rotates a device token.
 - `DELETE /api/mobile/v1/account` — deletes private storage objects, revokes Sonus Auris metadata
   and credentials, then deletes the signed-in Supabase Auth user. Storage deletion is batched,
