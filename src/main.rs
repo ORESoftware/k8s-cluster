@@ -2256,41 +2256,8 @@ async fn state_from_config(config: Config) -> AppState {
     for error in &config.supabase.validation_errors {
         warn!(error, "Supabase configuration is invalid");
     }
-    let s3 = if config.s3.is_configured() {
-        let retry_config = RetryConfig::standard().with_max_attempts(config.s3.max_attempts);
-        let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest())
-            .region(Region::new(config.s3.region.clone()))
-            .retry_config(retry_config);
-        if let (Some(access_key_id), Some(secret_access_key)) = (
-            config.s3.access_key_id.as_deref(),
-            config.s3.secret_access_key.as_deref(),
-        ) {
-            loader = loader.credentials_provider(aws_sdk_s3::config::Credentials::new(
-                access_key_id,
-                secret_access_key,
-                config.s3.session_token.clone(),
-                None,
-                "sonus-auris-object-storage",
-            ));
-        }
-        let shared_config = loader.load().await;
-        let mut builder = aws_sdk_s3::config::Builder::from(&shared_config);
-        if let Some(endpoint) = &config.s3.endpoint {
-            builder = builder.endpoint_url(endpoint);
-        }
-        builder = builder.force_path_style(config.s3.force_path_style);
-        info!(
-            backend = config.s3.backend.as_str(),
-            region = %config.s3.region,
-            custom_endpoint = config.s3.endpoint.is_some(),
-            force_path_style = config.s3.force_path_style,
-            max_attempts = config.s3.max_attempts,
-            "object storage client configured"
-        );
-        Some(aws_sdk_s3::Client::from_conf(builder.build()))
-    } else {
-        None
-    };
+    let s3 = build_object_storage_client(&config.s3, "primary").await;
+    let mirror = build_object_storage_client(&config.mirror, "mirror").await;
 
     let cloud_sealer = match first_env(&["SOUND_RECORDER_CLOUD_TOKEN_ENCRYPTION_KEY"]) {
         Some(key) => match CloudTokenSealer::from_base64_key(&key) {
