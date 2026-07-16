@@ -1202,7 +1202,7 @@ public final class DdNatsSubjects {
     }
 
     /**
-     * Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS). Producers publish per-thread; consumers either subscribe to the exact subject (the worker for that thread) or to the wildcard via a queue group (the preparer).
+     * Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS) with WorkQueue retention. Producers publish per-thread and queue-consumer replicas share the durable wildcard consumer so each task has one handoff owner.
      * Service: dd-remote-rest-api
      */
     public static final String THREAD_TASKS_PATTERN = "dd.remote.thread.{thread_id}.tasks";
@@ -1505,12 +1505,12 @@ public final class DdNatsSubjects {
     public static final String DD_REMOTE_ROUTING_STREAM_ACK = "explicit";
 
     /**
-     * JetStream file storage, explicit ack, message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard.
+     * JetStream file storage with WorkQueue retention, explicit ack, and message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard.
      * Service: dd-remote-rest-api
      */
     public static final String DD_REMOTE_TASKS_STREAM_NAME = "DD_REMOTE_TASKS";
     public static final List<String> DD_REMOTE_TASKS_STREAM_SUBJECTS = List.of("dd.remote.thread.*.tasks");
-    public static final String DD_REMOTE_TASKS_STREAM_RETENTION = "limits";
+    public static final String DD_REMOTE_TASKS_STREAM_RETENTION = "workqueue";
     public static final String DD_REMOTE_TASKS_STREAM_STORAGE = "file";
     public static final String DD_REMOTE_TASKS_STREAM_ACK = "explicit";
 

@@ -578,7 +578,7 @@ let parse_thread_heartbeat_subject subject =
   | ["dd"; "remote"; "thread"; thread_id; "heartbeat"] -> Some { thread_heartbeat_subject_parts_thread_id = thread_id }
   | _ -> None
 
-(* Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS). Producers publish per-thread; consumers either subscribe to the exact subject (the worker for that thread) or to the wildcard via a queue group (the preparer). *)
+(* Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS) with WorkQueue retention. Producers publish per-thread and queue-consumer replicas share the durable wildcard consumer so each task has one handoff owner. *)
 let thread_tasks_pattern = "dd.remote.thread.{thread_id}.tasks"
 let thread_tasks_wildcard = "dd.remote.thread.*.tasks"
 let thread_tasks_queue_group = "dd-remote-thread-preparer"
@@ -740,10 +740,10 @@ let dd_remote_routing_stream_retention = "limits"
 let dd_remote_routing_stream_storage = "file"
 let dd_remote_routing_stream_ack = "explicit"
 
-(* JetStream file storage, explicit ack, message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard. *)
+(* JetStream file storage with WorkQueue retention, explicit ack, and message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard. *)
 let dd_remote_tasks_stream_name = "DD_REMOTE_TASKS"
 let dd_remote_tasks_stream_subjects = ["dd.remote.thread.*.tasks"]
-let dd_remote_tasks_stream_retention = "limits"
+let dd_remote_tasks_stream_retention = "workqueue"
 let dd_remote_tasks_stream_storage = "file"
 let dd_remote_tasks_stream_ack = "explicit"
 

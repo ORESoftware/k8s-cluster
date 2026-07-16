@@ -554,7 +554,7 @@ defmodule DdNatsSubjectDefs do
 
   def dd_remote_tasks_stream_name, do: "DD_REMOTE_TASKS"
   def dd_remote_tasks_stream_subjects, do: ["dd.remote.thread.*.tasks"]
-  def dd_remote_tasks_stream_retention, do: "limits"
+  def dd_remote_tasks_stream_retention, do: "workqueue"
   def dd_remote_tasks_stream_storage, do: "file"
   def dd_remote_tasks_stream_ack, do: "explicit"
 

@@ -559,7 +559,7 @@ let dD_REMOTE_ROUTINGStreamAck : string = "explicit"
 
 let dD_REMOTE_TASKSStreamName : string = "DD_REMOTE_TASKS"
 let dD_REMOTE_TASKSStreamSubjects : string list = [ "dd.remote.thread.*.tasks" ]
-let dD_REMOTE_TASKSStreamRetention : string = "limits"
+let dD_REMOTE_TASKSStreamRetention : string = "workqueue"
 let dD_REMOTE_TASKSStreamStorage : string = "file"
 let dD_REMOTE_TASKSStreamAck : string = "explicit"
 

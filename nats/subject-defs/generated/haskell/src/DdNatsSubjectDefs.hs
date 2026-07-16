@@ -818,7 +818,7 @@ parseThreadHeartbeatSubject subject =
     ["dd", "remote", "thread", thread_id, "heartbeat"] -> Just (ThreadHeartbeatSubjectParts thread_id)
     _ -> Nothing
 
--- Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS). Producers publish per-thread; consumers either subscribe to the exact subject (the worker for that thread) or to the wildcard via a queue group (the preparer).
+-- Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS) with WorkQueue retention. Producers publish per-thread and queue-consumer replicas share the durable wildcard consumer so each task has one handoff owner.
 threadTasksPattern :: Text
 threadTasksPattern = "dd.remote.thread.{thread_id}.tasks"
 threadTasksWildcard :: Text
@@ -1060,13 +1060,13 @@ dD_REMOTE_ROUTINGStreamStorage = "file"
 dD_REMOTE_ROUTINGStreamAck :: Text
 dD_REMOTE_ROUTINGStreamAck = "explicit"
 
--- JetStream file storage, explicit ack, message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard.
+-- JetStream file storage with WorkQueue retention, explicit ack, and message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard.
 dD_REMOTE_TASKSStreamName :: Text
 dD_REMOTE_TASKSStreamName = "DD_REMOTE_TASKS"
 dD_REMOTE_TASKSStreamSubjects :: [Text]
 dD_REMOTE_TASKSStreamSubjects = ["dd.remote.thread.*.tasks"]
 dD_REMOTE_TASKSStreamRetention :: Text
-dD_REMOTE_TASKSStreamRetention = "limits"
+dD_REMOTE_TASKSStreamRetention = "workqueue"
 dD_REMOTE_TASKSStreamStorage :: Text
 dD_REMOTE_TASKSStreamStorage = "file"
 dD_REMOTE_TASKSStreamAck :: Text

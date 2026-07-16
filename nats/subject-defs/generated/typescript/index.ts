@@ -1190,7 +1190,7 @@ export function parseThreadHeartbeatSubject(subject: string): ThreadHeartbeatSub
 }
 
 /**
- * Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS). Producers publish per-thread; consumers either subscribe to the exact subject (the worker for that thread) or to the wildcard via a queue group (the preparer).
+ * Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS) with WorkQueue retention. Producers publish per-thread and queue-consumer replicas share the durable wildcard consumer so each task has one handoff owner.
  * Service: dd-remote-rest-api
  */
 export const THREAD_TASKS_PATTERN = "dd.remote.thread.{thread_id}.tasks";
@@ -1497,12 +1497,12 @@ export const DD_REMOTE_ROUTING_STREAM_STORAGE = "file";
 export const DD_REMOTE_ROUTING_STREAM_ACK = "explicit";
 
 /**
- * JetStream file storage, explicit ack, message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard.
+ * JetStream file storage with WorkQueue retention, explicit ack, and message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard.
  * Service: dd-remote-rest-api
  */
 export const DD_REMOTE_TASKS_STREAM_NAME = "DD_REMOTE_TASKS";
 export const DD_REMOTE_TASKS_STREAM_SUBJECTS: readonly string[] = ["dd.remote.thread.*.tasks"];
-export const DD_REMOTE_TASKS_STREAM_RETENTION = "limits";
+export const DD_REMOTE_TASKS_STREAM_RETENTION = "workqueue";
 export const DD_REMOTE_TASKS_STREAM_STORAGE = "file";
 export const DD_REMOTE_TASKS_STREAM_ACK = "explicit";
 

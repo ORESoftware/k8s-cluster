@@ -10,7 +10,7 @@
     "subjects": [
       {
         "name": "ThreadTasks",
-        "description": "Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS). Producers publish per-thread; consumers either subscribe to the exact subject (the worker for that thread) or to the wildcard via a queue group (the preparer).",
+        "description": "Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS) with WorkQueue retention. Producers publish per-thread and queue-consumer replicas share the durable wildcard consumer so each task has one handoff owner.",
         "kind": "parameterized",
         "pattern": "dd.remote.thread.{thread_id}.tasks",
         "wildcard": "dd.remote.thread.*.tasks",
@@ -92,9 +92,9 @@
     "streams": [
       {
         "name": "DD_REMOTE_TASKS",
-        "description": "JetStream file storage, explicit ack, message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard.",
+        "description": "JetStream file storage with WorkQueue retention, explicit ack, and message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard.",
         "subjects": ["dd.remote.thread.*.tasks"],
-        "retention": "limits",
+        "retention": "workqueue",
         "storage": "file",
         "ack": "explicit"
       },

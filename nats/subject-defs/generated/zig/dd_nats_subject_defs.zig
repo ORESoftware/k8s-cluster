@@ -715,7 +715,7 @@ pub const dd_remote_routing_stream_ack: []const u8 = "explicit";
 
 pub const dd_remote_tasks_stream_name: []const u8 = "DD_REMOTE_TASKS";
 pub const dd_remote_tasks_stream_subjects = [_][]const u8{ "dd.remote.thread.*.tasks" };
-pub const dd_remote_tasks_stream_retention: []const u8 = "limits";
+pub const dd_remote_tasks_stream_retention: []const u8 = "workqueue";
 pub const dd_remote_tasks_stream_storage: []const u8 = "file";
 pub const dd_remote_tasks_stream_ack: []const u8 = "explicit";
 

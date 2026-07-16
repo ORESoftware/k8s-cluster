@@ -934,7 +934,7 @@ def parse_thread_heartbeat_subject(subject: str) -> Optional[ThreadHeartbeatSubj
         return None
     return ThreadHeartbeatSubjectParts(thread_id=result["thread_id"])
 
-# Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS). Producers publish per-thread; consumers either subscribe to the exact subject (the worker for that thread) or to the wildcard via a queue group (the preparer).
+# Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS) with WorkQueue retention. Producers publish per-thread and queue-consumer replicas share the durable wildcard consumer so each task has one handoff owner.
 # Service: dd-remote-rest-api
 THREAD_TASKS_PATTERN = "dd.remote.thread.{thread_id}.tasks"
 THREAD_TASKS_WILDCARD = "dd.remote.thread.*.tasks"
@@ -945,7 +945,7 @@ class ThreadTasksSubjectParts:
     thread_id: str
 
 def thread_tasks_subject(thread_id: str) -> str:
-    """Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS). Producers publish per-thread; consumers either subscribe to the exact subject (the worker for that thread) or to the wildcard via a queue group (the preparer)."""
+    """Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS) with WorkQueue retention. Producers publish per-thread and queue-consumer replicas share the durable wildcard consumer so each task has one handoff owner."""
     return "dd.remote.thread.{thread_id}.tasks".format(thread_id=thread_id)
 
 def parse_thread_tasks_subject(subject: str) -> Optional[ThreadTasksSubjectParts]:
@@ -1173,11 +1173,11 @@ DD_REMOTE_ROUTING_STREAM_RETENTION = "limits"
 DD_REMOTE_ROUTING_STREAM_STORAGE = "file"
 DD_REMOTE_ROUTING_STREAM_ACK = "explicit"
 
-# JetStream file storage, explicit ack, message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard.
+# JetStream file storage with WorkQueue retention, explicit ack, and message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard.
 # Service: dd-remote-rest-api
 DD_REMOTE_TASKS_STREAM_NAME = "DD_REMOTE_TASKS"
 DD_REMOTE_TASKS_STREAM_SUBJECTS = ("dd.remote.thread.*.tasks",)
-DD_REMOTE_TASKS_STREAM_RETENTION = "limits"
+DD_REMOTE_TASKS_STREAM_RETENTION = "workqueue"
 DD_REMOTE_TASKS_STREAM_STORAGE = "file"
 DD_REMOTE_TASKS_STREAM_ACK = "explicit"
 

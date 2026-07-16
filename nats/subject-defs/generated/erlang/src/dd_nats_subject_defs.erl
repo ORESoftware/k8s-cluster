@@ -1202,7 +1202,7 @@ parse_thread_heartbeat_subject(Subject) ->
             end
     end.
 
-%% Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS). Producers publish per-thread; consumers either subscribe to the exact subject (the worker for that thread) or to the wildcard via a queue group (the preparer).
+%% Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS) with WorkQueue retention. Producers publish per-thread and queue-consumer replicas share the durable wildcard consumer so each task has one handoff owner.
 %% Service: dd-remote-rest-api
 thread_tasks_pattern() -> <<"dd.remote.thread.{thread_id}.tasks"/utf8>>.
 thread_tasks_wildcard() -> <<"dd.remote.thread.*.tasks"/utf8>>.
@@ -1438,12 +1438,12 @@ dd_remote_routing_stream_retention() -> <<"limits"/utf8>>.
 dd_remote_routing_stream_storage() -> <<"file"/utf8>>.
 dd_remote_routing_stream_ack() -> <<"explicit"/utf8>>.
 
-%% JetStream file storage, explicit ack, message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard.
+%% JetStream file storage with WorkQueue retention, explicit ack, and message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard.
 %% Service: dd-remote-rest-api
 dd_remote_tasks_stream_name() -> <<"DD_REMOTE_TASKS"/utf8>>.
 dd_remote_tasks_stream_subjects() ->
     [<<"dd.remote.thread.*.tasks"/utf8>>].
-dd_remote_tasks_stream_retention() -> <<"limits"/utf8>>.
+dd_remote_tasks_stream_retention() -> <<"workqueue"/utf8>>.
 dd_remote_tasks_stream_storage() -> <<"file"/utf8>>.
 dd_remote_tasks_stream_ack() -> <<"explicit"/utf8>>.
 

@@ -674,7 +674,7 @@ inline const char* dd_remote_routing_stream_ack = "explicit";
 
 inline const char* dd_remote_tasks_stream_name = "DD_REMOTE_TASKS";
 inline const std::vector<std::string> dd_remote_tasks_stream_subjects = { "dd.remote.thread.*.tasks" };
-inline const char* dd_remote_tasks_stream_retention = "limits";
+inline const char* dd_remote_tasks_stream_retention = "workqueue";
 inline const char* dd_remote_tasks_stream_storage = "file";
 inline const char* dd_remote_tasks_stream_ack = "explicit";
 
