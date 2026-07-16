@@ -610,7 +610,7 @@ impl Default for UserSettingsInput {
     fn default() -> Self {
         Self {
             preferred_use_case: "security".to_string(),
-            device_retention_hours: 50,
+            device_retention_hours: 100,
             cloud_retention_hours: 500,
             segment_minutes: 1,
             overlap_seconds: 2,
