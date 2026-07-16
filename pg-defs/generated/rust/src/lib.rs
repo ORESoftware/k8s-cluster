@@ -5,6 +5,149 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub const ACCOUNTS_TABLE: &str = "threefa.accounts";
+pub const ACCOUNTS_COLUMNS: &[&str] = &["id", "username", "auth_secret", "created_at"];
+pub const ACCOUNTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      username,
+      auth_secret,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from threefa.accounts"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct AccountsRow {
+    pub id: String,
+    pub username: String,
+    pub auth_secret: String,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountsInsert {
+    pub id: Option<String>,
+    pub username: Option<String>,
+    pub auth_secret: Option<String>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_accounts_row(value: &AccountsRow) -> Result<(), String> {
+    if (&value.username).as_bytes().len() > 320 { return Err("accounts.username exceeds 320 bytes".to_string()); }
+    if (&value.auth_secret).as_bytes().len() > 1024 { return Err("accounts.auth_secret exceeds 1024 bytes".to_string()); }
+    Ok(())
+}
+
+pub fn validate_accounts_insert(value: &AccountsInsert) -> Result<(), String> {
+    if let Some(value) = &value.username {
+        if (value).as_bytes().len() > 320 { return Err("accounts.username exceeds 320 bytes".to_string()); }
+    }
+    if let Some(value) = &value.auth_secret {
+        if (value).as_bytes().len() > 1024 { return Err("accounts.auth_secret exceeds 1024 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub const DEVICES_TABLE: &str = "threefa.devices";
+pub const DEVICES_COLUMNS: &[&str] = &["id", "account_id", "device_name", "sync_token_hash", "revoked", "created_at"];
+pub const DEVICES_SELECT_SQL: &str = r###"select
+      id::text as id,
+      account_id::text as account_id,
+      device_name,
+      sync_token_hash,
+      revoked,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from threefa.devices"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct DevicesRow {
+    pub id: String,
+    pub account_id: String,
+    pub device_name: String,
+    pub sync_token_hash: String,
+    pub revoked: bool,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DevicesInsert {
+    pub id: Option<String>,
+    pub account_id: Option<String>,
+    pub device_name: Option<String>,
+    pub sync_token_hash: Option<String>,
+    pub revoked: Option<bool>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_devices_row(value: &DevicesRow) -> Result<(), String> {
+    if (&value.device_name).as_bytes().len() > 200 { return Err("devices.device_name exceeds 200 bytes".to_string()); }
+    Ok(())
+}
+
+pub fn validate_devices_insert(value: &DevicesInsert) -> Result<(), String> {
+    if let Some(value) = &value.device_name {
+        if (value).as_bytes().len() > 200 { return Err("devices.device_name exceeds 200 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub const VAULT_BLOBS_TABLE: &str = "threefa.vault_blobs";
+pub const VAULT_BLOBS_COLUMNS: &[&str] = &["account_id", "ciphertext", "nonce", "kdf_salt", "kdf_params", "version", "updated_at"];
+pub const VAULT_BLOBS_SELECT_SQL: &str = r###"select
+      account_id::text as account_id,
+      ciphertext,
+      nonce,
+      kdf_salt,
+      kdf_params,
+      version,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from threefa.vault_blobs"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct VaultBlobsRow {
+    pub account_id: String,
+    pub ciphertext: String,
+    pub nonce: String,
+    pub kdf_salt: String,
+    pub kdf_params: Value,
+    pub version: Value,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultBlobsInsert {
+    pub account_id: Option<String>,
+    pub ciphertext: Option<String>,
+    pub nonce: Option<String>,
+    pub kdf_salt: Option<String>,
+    pub kdf_params: Option<Value>,
+    pub version: Option<Value>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_vault_blobs_row(value: &VaultBlobsRow) -> Result<(), String> {
+    if !(&value.kdf_params).is_object() { return Err("vault_blobs.kdf_params must be a JSON object".to_string()); }
+    if !(&value.version).is_array() { return Err("vault_blobs.version must be a JSON array".to_string()); }
+    Ok(())
+}
+
+pub fn validate_vault_blobs_insert(value: &VaultBlobsInsert) -> Result<(), String> {
+    if let Some(value) = &value.kdf_params {
+        if !(value).is_object() { return Err("vault_blobs.kdf_params must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.version {
+        if !(value).is_array() { return Err("vault_blobs.version must be a JSON array".to_string()); }
+    }
+    Ok(())
+}
+
 pub const APP_CONFIG_TABLE: &str = "app_config";
 pub const APP_CONFIG_COLUMNS: &[&str] = &["id", "scope", "key", "value", "version", "status", "labels", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
 pub const APP_CONFIG_SELECT_SQL: &str = r###"select

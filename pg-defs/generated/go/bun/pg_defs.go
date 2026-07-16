@@ -14,6 +14,7 @@ import (
 	"github.com/uptrace/bun"
 )
 
+var devicesSyncTokenHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var appConfigScopePattern = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,120}$`)
 var appConfigKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,200}$`)
 var vapiPhoneCallEventsEventTypePattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,80}$`)
@@ -105,6 +106,85 @@ var channelMembersChannelSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{
 var channelMembersAgentKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,120}$`)
 var sharedContextChannelSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,119}$`)
 var sharedContextCtxKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,200}$`)
+
+const AccountsTable = "threefa.accounts"
+const AccountsSelectSQL = `select
+      id::text as id,
+      username,
+      auth_secret,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from threefa.accounts`
+
+type AccountsBun struct {
+	bun.BaseModel `bun:"table:threefa.accounts"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	Username string `bun:"username,type:text" json:"username"`
+	AuthSecret string `bun:"auth_secret,type:text" json:"authSecret"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+}
+
+func (value AccountsBun) Validate() error {
+	if len([]byte(value.Username)) > 320 { return errors.New("accounts.username exceeds 320 bytes") }
+	if len([]byte(value.Username)) < 1 { return errors.New("accounts.username is below 1 bytes") }
+	if len([]byte(value.AuthSecret)) > 1024 { return errors.New("accounts.auth_secret exceeds 1024 bytes") }
+	if len([]byte(value.AuthSecret)) < 1 { return errors.New("accounts.auth_secret is below 1 bytes") }
+	return nil
+}
+
+const DevicesTable = "threefa.devices"
+const DevicesSelectSQL = `select
+      id::text as id,
+      account_id::text as account_id,
+      device_name,
+      sync_token_hash,
+      revoked,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from threefa.devices`
+
+type DevicesBun struct {
+	bun.BaseModel `bun:"table:threefa.devices"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	AccountId uuid.UUID `bun:"account_id,type:uuid" json:"accountId"`
+	DeviceName string `bun:"device_name,type:text" json:"deviceName"`
+	SyncTokenHash string `bun:"sync_token_hash,type:text" json:"syncTokenHash"`
+	Revoked bool `bun:"revoked,type:boolean,default:false" json:"revoked"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+}
+
+func (value DevicesBun) Validate() error {
+	if len([]byte(value.DeviceName)) > 200 { return errors.New("devices.device_name exceeds 200 bytes") }
+	if len([]byte(value.DeviceName)) < 1 { return errors.New("devices.device_name is below 1 bytes") }
+	if !devicesSyncTokenHashPattern.MatchString(value.SyncTokenHash) { return errors.New("devices.sync_token_hash does not match the required pattern") }
+	return nil
+}
+
+const VaultBlobsTable = "threefa.vault_blobs"
+const VaultBlobsSelectSQL = `select
+      account_id::text as account_id,
+      ciphertext,
+      nonce,
+      kdf_salt,
+      kdf_params,
+      version,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from threefa.vault_blobs`
+
+type VaultBlobsBun struct {
+	bun.BaseModel `bun:"table:threefa.vault_blobs"`
+	AccountId uuid.UUID `bun:"account_id,type:uuid,pk" json:"accountId"`
+	Ciphertext string `bun:"ciphertext,type:text" json:"ciphertext"`
+	Nonce string `bun:"nonce,type:text" json:"nonce"`
+	KdfSalt string `bun:"kdf_salt,type:text" json:"kdfSalt"`
+	KdfParams json.RawMessage `bun:"kdf_params,type:jsonb" json:"kdfParams"`
+	Version json.RawMessage `bun:"version,type:jsonb" json:"version"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value VaultBlobsBun) Validate() error {
+	if !validateRawJSON(value.KdfParams) { return errors.New("vault_blobs.kdf_params must be valid JSON") }
+	if !validateRawJSON(value.Version) { return errors.New("vault_blobs.version must be valid JSON") }
+	return nil
+}
 
 const AppConfigTable = "app_config"
 const AppConfigSelectSQL = `select

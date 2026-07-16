@@ -8,6 +8,68 @@
 -- This file is the desired-state contract used by the remote migration diff generator.
 -- Do not apply it directly to a shared database; generate and review a diff instead.
 
+create schema if not exists threefa;
+
+create table if not exists threefa.accounts (
+  id uuid primary key default gen_random_uuid(),
+  username text not null,
+  auth_secret text not null,
+  created_at timestamptz default now() not null,
+  constraint threefa_accounts_username_size_chk
+    check (octet_length(username) between 1 and 320),
+  constraint threefa_accounts_username_trimmed_chk
+    check (username = btrim(username)),
+  constraint threefa_accounts_auth_secret_size_chk
+    check (octet_length(auth_secret) between 1 and 1024)
+);
+
+create unique index if not exists threefa_accounts_username_uq
+  on threefa.accounts (username);
+
+create table if not exists threefa.devices (
+  id uuid primary key default gen_random_uuid(),
+  account_id uuid not null references threefa.accounts(id) on delete cascade,
+  device_name text not null,
+  sync_token_hash text not null,
+  revoked boolean default false not null,
+  created_at timestamptz default now() not null,
+  constraint threefa_devices_name_size_chk
+    check (octet_length(device_name) between 1 and 200),
+  constraint threefa_devices_name_trimmed_chk
+    check (device_name = btrim(device_name)),
+  constraint threefa_devices_token_hash_chk
+    check (sync_token_hash ~ '^[a-f0-9]{64}$')
+);
+
+create index if not exists threefa_devices_account_idx
+  on threefa.devices (account_id);
+
+create index if not exists threefa_devices_token_idx
+  on threefa.devices (sync_token_hash)
+  where revoked = false;
+
+create table if not exists threefa.vault_blobs (
+  account_id uuid primary key references threefa.accounts(id) on delete cascade,
+  ciphertext text not null,
+  nonce text not null,
+  kdf_salt text not null,
+  kdf_params jsonb not null,
+  version jsonb not null,
+  updated_at timestamptz default now() not null,
+  constraint threefa_vault_ciphertext_size_chk
+    check (octet_length(decode(ciphertext, 'base64')) between 1 and 524288),
+  constraint threefa_vault_nonce_size_chk
+    check (octet_length(decode(nonce, 'base64')) = 24),
+  constraint threefa_vault_salt_size_chk
+    check (octet_length(decode(kdf_salt, 'base64')) between 8 and 64),
+  constraint threefa_vault_kdf_params_object_chk
+    check (jsonb_typeof(kdf_params) = 'object'),
+  constraint threefa_vault_version_array_chk
+    check (jsonb_typeof(version) = 'array'),
+  constraint threefa_vault_version_size_chk
+    check (jsonb_array_length(version) <= 64)
+);
+
 create table if not exists app_config (
   id uuid primary key default gen_random_uuid(),
   scope varchar(120) default 'default' not null,

@@ -26,6 +26,44 @@ class BaseModel(Model):
         database = database
 
 
+class Accounts(BaseModel):
+    id = UUIDField(primary_key=True)
+    username = TextField()
+    auth_secret = TextField()
+    created_at = DateTimeField()
+
+    class Meta:
+        table_name = "accounts"
+        schema = "threefa"
+
+
+class Devices(BaseModel):
+    id = UUIDField(primary_key=True)
+    account_id = UUIDField()
+    device_name = TextField()
+    sync_token_hash = TextField()
+    revoked = BooleanField()
+    created_at = DateTimeField()
+
+    class Meta:
+        table_name = "devices"
+        schema = "threefa"
+
+
+class VaultBlobs(BaseModel):
+    account_id = UUIDField(primary_key=True)
+    ciphertext = TextField()
+    nonce = TextField()
+    kdf_salt = TextField()
+    kdf_params = BinaryJSONField()
+    version = BinaryJSONField()
+    updated_at = DateTimeField()
+
+    class Meta:
+        table_name = "vault_blobs"
+        schema = "threefa"
+
+
 class AppConfig(BaseModel):
     id = UUIDField(primary_key=True)
     scope = CharField(max_length=120)

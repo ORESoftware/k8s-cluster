@@ -257,6 +257,7 @@
     dd_remote_cron_stream_name/0,
     dd_remote_events_stream_name/0,
     dd_remote_evolution_stream_name/0,
+    dd_remote_fabrication_stream_name/0,
     dd_remote_mip_solver_stream_name/0,
     dd_remote_routing_stream_name/0,
     dd_remote_tasks_stream_name/0
@@ -509,6 +510,7 @@ dd_remote_critical_events_stream_name() -> <<"DD_REMOTE_CRITICAL_EVENTS"/utf8>>.
 dd_remote_cron_stream_name() -> <<"DD_REMOTE_CRON"/utf8>>.
 dd_remote_events_stream_name() -> <<"DD_REMOTE_EVENTS"/utf8>>.
 dd_remote_evolution_stream_name() -> <<"DD_REMOTE_EVOLUTION"/utf8>>.
+dd_remote_fabrication_stream_name() -> <<"DD_REMOTE_FABRICATION"/utf8>>.
 dd_remote_mip_solver_stream_name() -> <<"DD_REMOTE_MIP_SOLVER"/utf8>>.
 dd_remote_routing_stream_name() -> <<"DD_REMOTE_ROUTING"/utf8>>.
 dd_remote_tasks_stream_name() -> <<"DD_REMOTE_TASKS"/utf8>>.

@@ -11,6 +11,85 @@ using Microsoft.EntityFrameworkCore;
 
 namespace DdPgDefs;
 
+[Table("accounts", Schema = "threefa")]
+public class Accounts
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Required]
+    [Column("username")]
+    public string Username { get; set; } = null!;
+
+    [Required]
+    [Column("auth_secret")]
+    public string AuthSecret { get; set; } = null!;
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+[Table("devices", Schema = "threefa")]
+public class Devices
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Column("account_id")]
+    public Guid AccountId { get; set; }
+
+    [Required]
+    [Column("device_name")]
+    public string DeviceName { get; set; } = null!;
+
+    [Required]
+    [Column("sync_token_hash")]
+    [RegularExpression(@"^[a-f0-9]{64}$")]
+    public string SyncTokenHash { get; set; } = null!;
+
+    [Column("revoked")]
+    public bool Revoked { get; set; }
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+[Table("vault_blobs", Schema = "threefa")]
+public class VaultBlobs
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("account_id")]
+    public Guid AccountId { get; set; }
+
+    [Required]
+    [Column("ciphertext")]
+    public string Ciphertext { get; set; } = null!;
+
+    [Required]
+    [Column("nonce")]
+    public string Nonce { get; set; } = null!;
+
+    [Required]
+    [Column("kdf_salt")]
+    public string KdfSalt { get; set; } = null!;
+
+    [Required]
+    [Column("kdf_params", TypeName = "jsonb")]
+    public string KdfParams { get; set; } = null!;
+
+    [Required]
+    [Column("version", TypeName = "jsonb")]
+    public string Version { get; set; } = null!;
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
 [Table("app_config")]
 public class AppConfig
 {
@@ -7565,6 +7644,12 @@ public class DdPgDefsContext : DbContext
     public DdPgDefsContext(DbContextOptions<DdPgDefsContext> options) : base(options)
     {
     }
+
+    public DbSet<Accounts> AccountsSet => Set<Accounts>();
+
+    public DbSet<Devices> DevicesSet => Set<Devices>();
+
+    public DbSet<VaultBlobs> VaultBlobsSet => Set<VaultBlobs>();
 
     public DbSet<AppConfig> AppConfigSet => Set<AppConfig>();
 

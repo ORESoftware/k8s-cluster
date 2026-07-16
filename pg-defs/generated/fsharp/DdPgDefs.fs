@@ -6,6 +6,74 @@ module DdPgDefs
 
 open System.Text.RegularExpressions
 
+let accountsTable = "threefa.accounts"
+let accountsColumns = [ "id"; "username"; "auth_secret"; "created_at" ]
+let accountsSelectSql = "select\n      id::text as id,\n      username,\n      auth_secret,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from threefa.accounts"
+
+type AccountsRow =
+    { AccountsId: string
+      AccountsUsername: string
+      AccountsAuthSecret: string
+      AccountsCreatedAt: string
+    }
+
+let accountsRowOfRow (get: int -> string) (isNullAt: int -> bool) : AccountsRow =
+    { AccountsId = get 0
+      AccountsUsername = get 1
+      AccountsAuthSecret = get 2
+      AccountsCreatedAt = get 3
+    }
+
+let devicesTable = "threefa.devices"
+let devicesColumns = [ "id"; "account_id"; "device_name"; "sync_token_hash"; "revoked"; "created_at" ]
+let devicesSelectSql = "select\n      id::text as id,\n      account_id::text as account_id,\n      device_name,\n      sync_token_hash,\n      revoked,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from threefa.devices"
+
+type DevicesRow =
+    { DevicesId: string
+      DevicesAccountId: string
+      DevicesDeviceName: string
+      DevicesSyncTokenHash: string
+      DevicesRevoked: bool
+      DevicesCreatedAt: string
+    }
+
+let devicesRowOfRow (get: int -> string) (isNullAt: int -> bool) : DevicesRow =
+    { DevicesId = get 0
+      DevicesAccountId = get 1
+      DevicesDeviceName = get 2
+      DevicesSyncTokenHash = get 3
+      DevicesRevoked = (get 4 = "t")
+      DevicesCreatedAt = get 5
+    }
+
+let validateDevicesSyncTokenHash (value: string) : Result<string, string> =
+    if not (Regex.IsMatch(value, @"^[a-f0-9]{64}$")) then Error "devices.sync_token_hash does not match the required pattern"
+    else Ok value
+
+let vaultBlobsTable = "threefa.vault_blobs"
+let vaultBlobsColumns = [ "account_id"; "ciphertext"; "nonce"; "kdf_salt"; "kdf_params"; "version"; "updated_at" ]
+let vaultBlobsSelectSql = "select\n      account_id::text as account_id,\n      ciphertext,\n      nonce,\n      kdf_salt,\n      kdf_params::text as kdf_params_json,\n      version::text as version_json,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from threefa.vault_blobs"
+
+type VaultBlobsRow =
+    { VaultBlobsAccountId: string
+      VaultBlobsCiphertext: string
+      VaultBlobsNonce: string
+      VaultBlobsKdfSalt: string
+      VaultBlobsKdfParams: string
+      VaultBlobsVersion: string
+      VaultBlobsUpdatedAt: string
+    }
+
+let vaultBlobsRowOfRow (get: int -> string) (isNullAt: int -> bool) : VaultBlobsRow =
+    { VaultBlobsAccountId = get 0
+      VaultBlobsCiphertext = get 1
+      VaultBlobsNonce = get 2
+      VaultBlobsKdfSalt = get 3
+      VaultBlobsKdfParams = get 4
+      VaultBlobsVersion = get 5
+      VaultBlobsUpdatedAt = get 6
+    }
+
 let appConfigTable = "app_config"
 let appConfigColumns = [ "id"; "scope"; "key"; "value"; "version"; "status"; "labels"; "meta_data"; "is_soft_deleted"; "created_at"; "updated_at"; "created_by"; "updated_by" ]
 let appConfigSelectSql = "select\n      id::text as id,\n      scope,\n      key,\n      value::text as value_json,\n      version,\n      status,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from app_config"

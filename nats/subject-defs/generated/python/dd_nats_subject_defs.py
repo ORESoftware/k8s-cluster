@@ -1144,6 +1144,14 @@ DD_REMOTE_EVOLUTION_STREAM_RETENTION = "limits"
 DD_REMOTE_EVOLUTION_STREAM_STORAGE = "file"
 DD_REMOTE_EVOLUTION_STREAM_ACK = "explicit"
 
+# Durable JetStream history for fabrication requests, results, machine profiles, design conversion, instruction generation and review, execution telemetry, learning outcomes, and release readiness.
+# Service: dd-fabrication-server
+DD_REMOTE_FABRICATION_STREAM_NAME = "DD_REMOTE_FABRICATION"
+DD_REMOTE_FABRICATION_STREAM_SUBJECTS = ("dd.remote.fabrication.>",)
+DD_REMOTE_FABRICATION_STREAM_RETENTION = "limits"
+DD_REMOTE_FABRICATION_STREAM_STORAGE = "file"
+DD_REMOTE_FABRICATION_STREAM_ACK = "explicit"
+
 # JetStream stream for distributed in-house LP/MIP/IP solver work, results, control, and progress events.
 # Service: dd-ai-ml-pipeline
 DD_REMOTE_MIP_SOLVER_STREAM_NAME = "DD_REMOTE_MIP_SOLVER"

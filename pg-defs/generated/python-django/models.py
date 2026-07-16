@@ -10,6 +10,47 @@ from django.core.validators import MaxValueValidator, MinLengthValidator, MinVal
 from django.db import models
 
 
+class Accounts(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    username = models.TextField()
+    auth_secret = models.TextField()
+    created_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "threefa\".\"accounts"
+
+
+class Devices(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    account_id = models.UUIDField()
+    device_name = models.TextField()
+    sync_token_hash = models.TextField(validators=[RegexValidator(regex="^[a-f0-9]{64}$")])
+    revoked = models.BooleanField(default=False)
+    created_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "threefa\".\"devices"
+
+
+class VaultBlobs(models.Model):
+    account_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    ciphertext = models.TextField()
+    nonce = models.TextField()
+    kdf_salt = models.TextField()
+    kdf_params = models.JSONField()
+    version = models.JSONField()
+    updated_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "threefa\".\"vault_blobs"
+
+
 class AppConfig(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     scope = models.CharField(max_length=120, default="default", validators=[RegexValidator(regex="^[A-Za-z0-9._/-]{1,120}$")])

@@ -715,6 +715,13 @@ let dd_remote_evolution_stream_retention = "limits"
 let dd_remote_evolution_stream_storage = "file"
 let dd_remote_evolution_stream_ack = "explicit"
 
+(* Durable JetStream history for fabrication requests, results, machine profiles, design conversion, instruction generation and review, execution telemetry, learning outcomes, and release readiness. *)
+let dd_remote_fabrication_stream_name = "DD_REMOTE_FABRICATION"
+let dd_remote_fabrication_stream_subjects = ["dd.remote.fabrication.>"]
+let dd_remote_fabrication_stream_retention = "limits"
+let dd_remote_fabrication_stream_storage = "file"
+let dd_remote_fabrication_stream_ack = "explicit"
+
 (* JetStream stream for distributed in-house LP/MIP/IP solver work, results, control, and progress events. *)
 let dd_remote_mip_solver_stream_name = "DD_REMOTE_MIP_SOLVER"
 let dd_remote_mip_solver_stream_subjects = ["dd.remote.mip_solver.jobs"; "dd.remote.mip_solver.results"; "dd.remote.mip_solver.control"; "dd.remote.mip_solver.events"]

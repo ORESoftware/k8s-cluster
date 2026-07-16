@@ -12,6 +12,41 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Accounts {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  username String @db.Text
+  authSecret String @map("auth_secret") @db.Text
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  @@unique([username], map: "threefa_accounts_username_uq")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("accounts")
+}
+
+model Devices {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+  deviceName String @map("device_name") @db.Text
+  syncTokenHash String @map("sync_token_hash") @db.Text
+  revoked Boolean @default(false)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  @@index([accountId], map: "threefa_devices_account_idx")
+  // threefa_devices_token_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("devices")
+}
+
+model VaultBlobs {
+  accountId String @map("account_id") @id @db.Uuid
+  ciphertext String @db.Text
+  nonce String @db.Text
+  kdfSalt String @map("kdf_salt") @db.Text
+  kdfParams Json @map("kdf_params")
+  version Json
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("vault_blobs")
+}
+
 model AppConfig {
   id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   scope String @default("default") @db.VarChar(120)

@@ -1236,6 +1236,14 @@ const DdRemoteEvolutionStreamRetention = "limits"
 const DdRemoteEvolutionStreamStorage = "file"
 const DdRemoteEvolutionStreamAck = "explicit"
 
+// Durable JetStream history for fabrication requests, results, machine profiles, design conversion, instruction generation and review, execution telemetry, learning outcomes, and release readiness.
+// Service: dd-fabrication-server
+const DdRemoteFabricationStreamName = "DD_REMOTE_FABRICATION"
+var DdRemoteFabricationStreamSubjects = []string{"dd.remote.fabrication.>"}
+const DdRemoteFabricationStreamRetention = "limits"
+const DdRemoteFabricationStreamStorage = "file"
+const DdRemoteFabricationStreamAck = "explicit"
+
 // JetStream stream for distributed in-house LP/MIP/IP solver work, results, control, and progress events.
 // Service: dd-ai-ml-pipeline
 const DdRemoteMipSolverStreamName = "DD_REMOTE_MIP_SOLVER"

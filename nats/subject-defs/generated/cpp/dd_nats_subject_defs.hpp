@@ -651,6 +651,12 @@ inline const char* dd_remote_evolution_stream_retention = "limits";
 inline const char* dd_remote_evolution_stream_storage = "file";
 inline const char* dd_remote_evolution_stream_ack = "explicit";
 
+inline const char* dd_remote_fabrication_stream_name = "DD_REMOTE_FABRICATION";
+inline const std::vector<std::string> dd_remote_fabrication_stream_subjects = { "dd.remote.fabrication.>" };
+inline const char* dd_remote_fabrication_stream_retention = "limits";
+inline const char* dd_remote_fabrication_stream_storage = "file";
+inline const char* dd_remote_fabrication_stream_ack = "explicit";
+
 inline const char* dd_remote_mip_solver_stream_name = "DD_REMOTE_MIP_SOLVER";
 inline const std::vector<std::string> dd_remote_mip_solver_stream_subjects = { "dd.remote.mip_solver.jobs", "dd.remote.mip_solver.results", "dd.remote.mip_solver.control", "dd.remote.mip_solver.events" };
 inline const char* dd_remote_mip_solver_stream_retention = "limits";

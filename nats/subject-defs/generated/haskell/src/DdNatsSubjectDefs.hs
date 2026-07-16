@@ -1018,6 +1018,18 @@ dD_REMOTE_EVOLUTIONStreamStorage = "file"
 dD_REMOTE_EVOLUTIONStreamAck :: Text
 dD_REMOTE_EVOLUTIONStreamAck = "explicit"
 
+-- Durable JetStream history for fabrication requests, results, machine profiles, design conversion, instruction generation and review, execution telemetry, learning outcomes, and release readiness.
+dD_REMOTE_FABRICATIONStreamName :: Text
+dD_REMOTE_FABRICATIONStreamName = "DD_REMOTE_FABRICATION"
+dD_REMOTE_FABRICATIONStreamSubjects :: [Text]
+dD_REMOTE_FABRICATIONStreamSubjects = ["dd.remote.fabrication.>"]
+dD_REMOTE_FABRICATIONStreamRetention :: Text
+dD_REMOTE_FABRICATIONStreamRetention = "limits"
+dD_REMOTE_FABRICATIONStreamStorage :: Text
+dD_REMOTE_FABRICATIONStreamStorage = "file"
+dD_REMOTE_FABRICATIONStreamAck :: Text
+dD_REMOTE_FABRICATIONStreamAck = "explicit"
+
 -- JetStream stream for distributed in-house LP/MIP/IP solver work, results, control, and progress events.
 dD_REMOTE_MIP_SOLVERStreamName :: Text
 dD_REMOTE_MIP_SOLVERStreamName = "DD_REMOTE_MIP_SOLVER"

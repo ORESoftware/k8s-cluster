@@ -1422,6 +1422,16 @@ export const DD_REMOTE_EVOLUTION_STREAM_STORAGE = "file";
 export const DD_REMOTE_EVOLUTION_STREAM_ACK = "explicit";
 
 /**
+ * Durable JetStream history for fabrication requests, results, machine profiles, design conversion, instruction generation and review, execution telemetry, learning outcomes, and release readiness.
+ * Service: dd-fabrication-server
+ */
+export const DD_REMOTE_FABRICATION_STREAM_NAME = "DD_REMOTE_FABRICATION";
+export const DD_REMOTE_FABRICATION_STREAM_SUBJECTS = Object.freeze(["dd.remote.fabrication.>"]);
+export const DD_REMOTE_FABRICATION_STREAM_RETENTION = "limits";
+export const DD_REMOTE_FABRICATION_STREAM_STORAGE = "file";
+export const DD_REMOTE_FABRICATION_STREAM_ACK = "explicit";
+
+/**
  * JetStream stream for distributed in-house LP/MIP/IP solver work, results, control, and progress events.
  * Service: dd-ai-ml-pipeline
  */

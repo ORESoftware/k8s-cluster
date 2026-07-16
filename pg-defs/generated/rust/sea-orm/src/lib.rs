@@ -5,6 +5,89 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
+pub mod accounts {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(schema_name = "threefa", table_name = "accounts")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    pub username: String,
+    #[sea_orm(column_name = "auth_secret")]
+    pub auth_secret: String,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use accounts::Entity as AccountsEntity;
+pub use accounts::Model as AccountsModel;
+
+pub mod devices {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(schema_name = "threefa", table_name = "devices")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "account_id")]
+    pub account_id: Uuid,
+    #[sea_orm(column_name = "device_name")]
+    pub device_name: String,
+    #[sea_orm(column_name = "sync_token_hash")]
+    pub sync_token_hash: String,
+    pub revoked: bool,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use devices::Entity as DevicesEntity;
+pub use devices::Model as DevicesModel;
+
+pub mod vault_blobs {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(schema_name = "threefa", table_name = "vault_blobs")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false, column_name = "account_id")]
+    pub account_id: Uuid,
+    pub ciphertext: String,
+    pub nonce: String,
+    #[sea_orm(column_name = "kdf_salt")]
+    pub kdf_salt: String,
+    #[sea_orm(column_name = "kdf_params")]
+    pub kdf_params: Json,
+    pub version: Json,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use vault_blobs::Entity as VaultBlobsEntity;
+pub use vault_blobs::Model as VaultBlobsModel;
+
 pub mod app_config {
     use super::*;
 

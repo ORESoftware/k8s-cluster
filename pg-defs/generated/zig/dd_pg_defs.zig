@@ -15,6 +15,76 @@ pub const RowReader = struct {
     is_null: *const fn (usize) bool,
 };
 
+pub const accounts_table: []const u8 = "threefa.accounts";
+pub const accounts_columns = [_][]const u8{ "id", "username", "auth_secret", "created_at" };
+pub const accounts_select_sql: []const u8 = "select\n      id::text as id,\n      username,\n      auth_secret,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from threefa.accounts";
+
+pub const AccountsRow = struct {
+    id: []const u8,
+    username: []const u8,
+    auth_secret: []const u8,
+    created_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) AccountsRow {
+        return AccountsRow{
+            .id = reader.text(0),
+            .username = reader.text(1),
+            .auth_secret = reader.text(2),
+            .created_at = reader.text(3),
+        };
+    }
+};
+
+pub const devices_table: []const u8 = "threefa.devices";
+pub const devices_columns = [_][]const u8{ "id", "account_id", "device_name", "sync_token_hash", "revoked", "created_at" };
+pub const devices_select_sql: []const u8 = "select\n      id::text as id,\n      account_id::text as account_id,\n      device_name,\n      sync_token_hash,\n      revoked,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from threefa.devices";
+
+pub const DevicesRow = struct {
+    id: []const u8,
+    account_id: []const u8,
+    device_name: []const u8,
+    sync_token_hash: []const u8,
+    revoked: bool,
+    created_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) DevicesRow {
+        return DevicesRow{
+            .id = reader.text(0),
+            .account_id = reader.text(1),
+            .device_name = reader.text(2),
+            .sync_token_hash = reader.text(3),
+            .revoked = reader.boolean(4),
+            .created_at = reader.text(5),
+        };
+    }
+};
+
+pub const vault_blobs_table: []const u8 = "threefa.vault_blobs";
+pub const vault_blobs_columns = [_][]const u8{ "account_id", "ciphertext", "nonce", "kdf_salt", "kdf_params", "version", "updated_at" };
+pub const vault_blobs_select_sql: []const u8 = "select\n      account_id::text as account_id,\n      ciphertext,\n      nonce,\n      kdf_salt,\n      kdf_params::text as kdf_params_json,\n      version::text as version_json,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from threefa.vault_blobs";
+
+pub const VaultBlobsRow = struct {
+    account_id: []const u8,
+    ciphertext: []const u8,
+    nonce: []const u8,
+    kdf_salt: []const u8,
+    kdf_params: []const u8,
+    version: []const u8,
+    updated_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) VaultBlobsRow {
+        return VaultBlobsRow{
+            .account_id = reader.text(0),
+            .ciphertext = reader.text(1),
+            .nonce = reader.text(2),
+            .kdf_salt = reader.text(3),
+            .kdf_params = reader.text(4),
+            .version = reader.text(5),
+            .updated_at = reader.text(6),
+        };
+    }
+};
+
 pub const app_config_table: []const u8 = "app_config";
 pub const app_config_columns = [_][]const u8{ "id", "scope", "key", "value", "version", "status", "labels", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by" };
 pub const app_config_select_sql: []const u8 = "select\n      id::text as id,\n      scope,\n      key,\n      value::text as value_json,\n      version,\n      status,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from app_config";

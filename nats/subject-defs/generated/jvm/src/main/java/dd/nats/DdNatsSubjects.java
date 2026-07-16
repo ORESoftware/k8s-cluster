@@ -1468,6 +1468,16 @@ public final class DdNatsSubjects {
     public static final String DD_REMOTE_EVOLUTION_STREAM_ACK = "explicit";
 
     /**
+     * Durable JetStream history for fabrication requests, results, machine profiles, design conversion, instruction generation and review, execution telemetry, learning outcomes, and release readiness.
+     * Service: dd-fabrication-server
+     */
+    public static final String DD_REMOTE_FABRICATION_STREAM_NAME = "DD_REMOTE_FABRICATION";
+    public static final List<String> DD_REMOTE_FABRICATION_STREAM_SUBJECTS = List.of("dd.remote.fabrication.>");
+    public static final String DD_REMOTE_FABRICATION_STREAM_RETENTION = "limits";
+    public static final String DD_REMOTE_FABRICATION_STREAM_STORAGE = "file";
+    public static final String DD_REMOTE_FABRICATION_STREAM_ACK = "explicit";
+
+    /**
      * JetStream stream for distributed in-house LP/MIP/IP solver work, results, control, and progress events.
      * Service: dd-ai-ml-pipeline
      */

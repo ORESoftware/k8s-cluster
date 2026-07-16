@@ -11,6 +11,68 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Database.PostgreSQL.Simple.FromRow (FromRow (..), field)
 
+accountsTable :: Text
+accountsTable = "threefa.accounts"
+
+accountsColumns :: [Text]
+accountsColumns = ["id", "username", "auth_secret", "created_at"]
+
+accountsSelectSql :: Text
+accountsSelectSql = "select\n      id::text as id,\n      username,\n      auth_secret,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from threefa.accounts"
+
+data AccountsRow = AccountsRow
+  { accountsId :: Text
+  , accountsUsername :: Text
+  , accountsAuthSecret :: Text
+  , accountsCreatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow AccountsRow where
+  fromRow = AccountsRow <$> field <*> field <*> field <*> field
+
+devicesTable :: Text
+devicesTable = "threefa.devices"
+
+devicesColumns :: [Text]
+devicesColumns = ["id", "account_id", "device_name", "sync_token_hash", "revoked", "created_at"]
+
+devicesSelectSql :: Text
+devicesSelectSql = "select\n      id::text as id,\n      account_id::text as account_id,\n      device_name,\n      sync_token_hash,\n      revoked,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from threefa.devices"
+
+data DevicesRow = DevicesRow
+  { devicesId :: Text
+  , devicesAccountId :: Text
+  , devicesDeviceName :: Text
+  , devicesSyncTokenHash :: Text
+  , devicesRevoked :: Bool
+  , devicesCreatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow DevicesRow where
+  fromRow = DevicesRow <$> field <*> field <*> field <*> field <*> field <*> field
+
+vaultBlobsTable :: Text
+vaultBlobsTable = "threefa.vault_blobs"
+
+vaultBlobsColumns :: [Text]
+vaultBlobsColumns = ["account_id", "ciphertext", "nonce", "kdf_salt", "kdf_params", "version", "updated_at"]
+
+vaultBlobsSelectSql :: Text
+vaultBlobsSelectSql = "select\n      account_id::text as account_id,\n      ciphertext,\n      nonce,\n      kdf_salt,\n      kdf_params::text as kdf_params_json,\n      version::text as version_json,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from threefa.vault_blobs"
+
+data VaultBlobsRow = VaultBlobsRow
+  { vaultBlobsAccountId :: Text
+  , vaultBlobsCiphertext :: Text
+  , vaultBlobsNonce :: Text
+  , vaultBlobsKdfSalt :: Text
+  , vaultBlobsKdfParams :: Text
+  , vaultBlobsVersion :: Text
+  , vaultBlobsUpdatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow VaultBlobsRow where
+  fromRow = VaultBlobsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field
+
 appConfigTable :: Text
 appConfigTable = "app_config"
 

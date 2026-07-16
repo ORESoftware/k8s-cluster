@@ -5,6 +5,161 @@
 
 import 'dart:convert';
 
+const accountsTable = "threefa.accounts";
+const accountsSelectSql = "select\n      id::text as id,\n      username,\n      auth_secret,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from threefa.accounts";
+
+class AccountsRow {
+  const AccountsRow({
+    required this.id,
+    required this.username,
+    required this.authSecret,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String username;
+  final String authSecret;
+  final String createdAt;
+
+  factory AccountsRow.fromJson(Map<String, Object?> json) {
+    return AccountsRow(
+      id: _readRequiredString(json, "id"),
+      username: _readRequiredString(json, "username"),
+      authSecret: _readRequiredString(json, "authSecret"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "username": username,
+    "authSecret": authSecret,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (utf8.encode(username).length > 320) {
+      errors.add("accounts.username exceeds 320 bytes");
+    }
+    if (utf8.encode(username).length < 1) {
+      errors.add("accounts.username is below 1 bytes");
+    }
+    if (utf8.encode(authSecret).length > 1024) {
+      errors.add("accounts.auth_secret exceeds 1024 bytes");
+    }
+    if (utf8.encode(authSecret).length < 1) {
+      errors.add("accounts.auth_secret is below 1 bytes");
+    }
+    return errors;
+  }
+}
+
+const devicesTable = "threefa.devices";
+const devicesSelectSql = "select\n      id::text as id,\n      account_id::text as account_id,\n      device_name,\n      sync_token_hash,\n      revoked,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from threefa.devices";
+
+class DevicesRow {
+  const DevicesRow({
+    required this.id,
+    required this.accountId,
+    required this.deviceName,
+    required this.syncTokenHash,
+    required this.revoked,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String accountId;
+  final String deviceName;
+  final String syncTokenHash;
+  final bool revoked;
+  final String createdAt;
+
+  factory DevicesRow.fromJson(Map<String, Object?> json) {
+    return DevicesRow(
+      id: _readRequiredString(json, "id"),
+      accountId: _readRequiredString(json, "accountId"),
+      deviceName: _readRequiredString(json, "deviceName"),
+      syncTokenHash: _readRequiredString(json, "syncTokenHash"),
+      revoked: _readRequiredBool(json, "revoked"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "accountId": accountId,
+    "deviceName": deviceName,
+    "syncTokenHash": syncTokenHash,
+    "revoked": revoked,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (utf8.encode(deviceName).length > 200) {
+      errors.add("devices.device_name exceeds 200 bytes");
+    }
+    if (utf8.encode(deviceName).length < 1) {
+      errors.add("devices.device_name is below 1 bytes");
+    }
+    if (!RegExp(r'^[a-f0-9]{64}$').hasMatch(syncTokenHash)) {
+      errors.add("devices.sync_token_hash does not match the required pattern");
+    }
+    return errors;
+  }
+}
+
+const vaultBlobsTable = "threefa.vault_blobs";
+const vaultBlobsSelectSql = "select\n      account_id::text as account_id,\n      ciphertext,\n      nonce,\n      kdf_salt,\n      kdf_params::text as kdf_params_json,\n      version::text as version_json,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from threefa.vault_blobs";
+
+class VaultBlobsRow {
+  const VaultBlobsRow({
+    required this.accountId,
+    required this.ciphertext,
+    required this.nonce,
+    required this.kdfSalt,
+    required this.kdfParams,
+    required this.version,
+    required this.updatedAt,
+  });
+
+  final String accountId;
+  final String ciphertext;
+  final String nonce;
+  final String kdfSalt;
+  final Map<String, Object?> kdfParams;
+  final List<Object?> version;
+  final String updatedAt;
+
+  factory VaultBlobsRow.fromJson(Map<String, Object?> json) {
+    return VaultBlobsRow(
+      accountId: _readRequiredString(json, "accountId"),
+      ciphertext: _readRequiredString(json, "ciphertext"),
+      nonce: _readRequiredString(json, "nonce"),
+      kdfSalt: _readRequiredString(json, "kdfSalt"),
+      kdfParams: _readRequiredObject(json, "kdfParams"),
+      version: _readRequiredArray(json, "version"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "accountId": accountId,
+    "ciphertext": ciphertext,
+    "nonce": nonce,
+    "kdfSalt": kdfSalt,
+    "kdfParams": kdfParams,
+    "version": version,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+}
+
 const appConfigTable = "app_config";
 const appConfigSelectSql = "select\n      id::text as id,\n      scope,\n      key,\n      value::text as value_json,\n      version,\n      status,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from app_config";
 

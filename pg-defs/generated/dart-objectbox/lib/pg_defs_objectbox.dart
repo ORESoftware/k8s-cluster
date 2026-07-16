@@ -7,6 +7,150 @@ import 'dart:convert';
 import 'package:objectbox/objectbox.dart';
 
 @Entity()
+class AccountsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String username;
+
+  String authSecret;
+
+  String createdAt;
+
+
+  AccountsObjectBox({
+    required this.id,
+    required this.username,
+    required this.authSecret,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "username": username,
+    "authSecret": authSecret,
+    "createdAt": createdAt,
+  };
+
+  static AccountsObjectBox fromJson(Map<String, Object?> json) {
+    return AccountsObjectBox(
+      id: json["id"] as String,
+      username: json["username"] as String,
+      authSecret: json["authSecret"] as String,
+      createdAt: json["createdAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class DevicesObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String accountId;
+
+  String deviceName;
+
+  String syncTokenHash;
+
+  bool revoked;
+
+  String createdAt;
+
+
+  DevicesObjectBox({
+    required this.id,
+    required this.accountId,
+    required this.deviceName,
+    required this.syncTokenHash,
+    required this.revoked,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "accountId": accountId,
+    "deviceName": deviceName,
+    "syncTokenHash": syncTokenHash,
+    "revoked": revoked,
+    "createdAt": createdAt,
+  };
+
+  static DevicesObjectBox fromJson(Map<String, Object?> json) {
+    return DevicesObjectBox(
+      id: json["id"] as String,
+      accountId: json["accountId"] as String,
+      deviceName: json["deviceName"] as String,
+      syncTokenHash: json["syncTokenHash"] as String,
+      revoked: json["revoked"] as bool,
+      createdAt: json["createdAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class VaultBlobsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String accountId;
+
+  String ciphertext;
+
+  String nonce;
+
+  String kdfSalt;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String kdfParams;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String version;
+
+  String updatedAt;
+
+
+  VaultBlobsObjectBox({
+    required this.accountId,
+    required this.ciphertext,
+    required this.nonce,
+    required this.kdfSalt,
+    required this.kdfParams,
+    required this.version,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "accountId": accountId,
+    "ciphertext": ciphertext,
+    "nonce": nonce,
+    "kdfSalt": kdfSalt,
+    "kdfParams": jsonDecode(kdfParams),
+    "version": jsonDecode(version),
+    "updatedAt": updatedAt,
+  };
+
+  static VaultBlobsObjectBox fromJson(Map<String, Object?> json) {
+    return VaultBlobsObjectBox(
+      accountId: json["accountId"] as String,
+      ciphertext: json["ciphertext"] as String,
+      nonce: json["nonce"] as String,
+      kdfSalt: json["kdfSalt"] as String,
+      kdfParams: json["kdfParams"] is String ? json["kdfParams"] as String : jsonEncode(json["kdfParams"]),
+      version: json["version"] is String ? json["version"] as String : jsonEncode(json["version"]),
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
 class AppConfigObjectBox {
   @Id()
   int obxId = 0;

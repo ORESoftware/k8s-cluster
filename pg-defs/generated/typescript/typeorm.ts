@@ -4,6 +4,72 @@
 // MIGRATION SAFETY: never run or apply migrations automatically. Require explicit human review and approval before any database write.
 import { Column, Entity, Index, PrimaryColumn, PrimaryGeneratedColumn } from "typeorm";
 
+@Index("threefa_accounts_username_uq", ["username"], { unique: true })
+@Entity({ schema: "threefa", name: "accounts" })
+export class AccountsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "username", type: "text" })
+  username!: string;
+
+  @Column({ name: "auth_secret", type: "text" })
+  authSecret!: string;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+}
+
+@Index("threefa_devices_account_idx", ["accountId"])
+@Index("threefa_devices_token_idx", ["syncTokenHash"], { where: "revoked = false" })
+@Entity({ schema: "threefa", name: "devices" })
+export class DevicesEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "account_id", type: "uuid" })
+  accountId!: string;
+
+  @Column({ name: "device_name", type: "text" })
+  deviceName!: string;
+
+  @Column({ name: "sync_token_hash", type: "text" })
+  syncTokenHash!: string;
+
+  @Column({ name: "revoked", type: "boolean", default: () => "false" })
+  revoked!: boolean;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+}
+
+@Entity({ schema: "threefa", name: "vault_blobs" })
+export class VaultBlobsEntity {
+  @PrimaryColumn({ name: "account_id", type: "uuid" })
+  accountId!: string;
+
+  @Column({ name: "ciphertext", type: "text" })
+  ciphertext!: string;
+
+  @Column({ name: "nonce", type: "text" })
+  nonce!: string;
+
+  @Column({ name: "kdf_salt", type: "text" })
+  kdfSalt!: string;
+
+  @Column({ name: "kdf_params", type: "jsonb" })
+  kdfParams!: Record<string, unknown>;
+
+  @Column({ name: "version", type: "jsonb" })
+  version!: unknown[];
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
 @Index("app_config_scope_key_uq", ["scope", "key"], { unique: true })
 @Index("app_config_status_idx", ["status"], { where: "is_soft_deleted = false" })
 // app_config_updated_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.

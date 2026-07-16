@@ -17,6 +17,159 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 class Base(DeclarativeBase):
     pass
 
+class Accounts(Base):
+    __tablename__ = "accounts"
+    __table_args__ = (
+        CheckConstraint("octet_length(username) between 1 and 320", name="threefa_accounts_username_size_chk"),
+        CheckConstraint("username = btrim(username)", name="threefa_accounts_username_trimmed_chk"),
+        CheckConstraint("octet_length(auth_secret) between 1 and 1024", name="threefa_accounts_auth_secret_size_chk"),
+        Index("threefa_accounts_username_uq", "username", unique=True),
+        {"schema": "threefa"},
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    username: Mapped[str] = mapped_column(Text(), nullable=False)
+    auth_secret: Mapped[str] = mapped_column(Text(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class AccountsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    username: str
+    authSecret: str
+    createdAt: datetime
+
+    @field_validator("username")
+    @classmethod
+    def validate_username(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 320:
+            raise ValueError("accounts.username exceeds 320 bytes")
+        return value
+
+    @field_validator("authSecret")
+    @classmethod
+    def validate_auth_secret(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 1024:
+            raise ValueError("accounts.auth_secret exceeds 1024 bytes")
+        return value
+
+class AccountsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    username: str
+    authSecret: str
+    createdAt: datetime | None = None
+
+    @field_validator("username")
+    @classmethod
+    def validate_username(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 320:
+            raise ValueError("accounts.username exceeds 320 bytes")
+        return value
+
+    @field_validator("authSecret")
+    @classmethod
+    def validate_auth_secret(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 1024:
+            raise ValueError("accounts.auth_secret exceeds 1024 bytes")
+        return value
+
+class Devices(Base):
+    __tablename__ = "devices"
+    __table_args__ = (
+        CheckConstraint("octet_length(device_name) between 1 and 200", name="threefa_devices_name_size_chk"),
+        CheckConstraint("device_name = btrim(device_name)", name="threefa_devices_name_trimmed_chk"),
+        CheckConstraint("sync_token_hash ~ '^[a-f0-9]{64}$'", name="threefa_devices_token_hash_chk"),
+        Index("threefa_devices_account_idx", "account_id"),
+        Index("threefa_devices_token_idx", "sync_token_hash", postgresql_where=text("revoked = false")),
+        {"schema": "threefa"},
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    account_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    device_name: Mapped[str] = mapped_column(Text(), nullable=False)
+    sync_token_hash: Mapped[str] = mapped_column(Text(), nullable=False)
+    revoked: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class DevicesRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    accountId: UUID
+    deviceName: str
+    syncTokenHash: str = Field(..., pattern="^[a-f0-9]{64}$")
+    revoked: bool
+    createdAt: datetime
+
+    @field_validator("deviceName")
+    @classmethod
+    def validate_device_name(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("devices.device_name exceeds 200 bytes")
+        return value
+
+class DevicesInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    accountId: UUID
+    deviceName: str
+    syncTokenHash: str = Field(..., pattern="^[a-f0-9]{64}$")
+    revoked: bool | None = False
+    createdAt: datetime | None = None
+
+    @field_validator("deviceName")
+    @classmethod
+    def validate_device_name(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("devices.device_name exceeds 200 bytes")
+        return value
+
+class VaultBlobs(Base):
+    __tablename__ = "vault_blobs"
+    __table_args__ = (
+        CheckConstraint("octet_length(decode(ciphertext, 'base64')) between 1 and 524288", name="threefa_vault_ciphertext_size_chk"),
+        CheckConstraint("octet_length(decode(nonce, 'base64')) = 24", name="threefa_vault_nonce_size_chk"),
+        CheckConstraint("octet_length(decode(kdf_salt, 'base64')) between 8 and 64", name="threefa_vault_salt_size_chk"),
+        CheckConstraint("jsonb_typeof(kdf_params) = 'object'", name="threefa_vault_kdf_params_object_chk"),
+        CheckConstraint("jsonb_typeof(version) = 'array'", name="threefa_vault_version_array_chk"),
+        CheckConstraint("jsonb_array_length(version) <= 64", name="threefa_vault_version_size_chk"),
+        {"schema": "threefa"},
+    )
+
+    account_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
+    ciphertext: Mapped[str] = mapped_column(Text(), nullable=False)
+    nonce: Mapped[str] = mapped_column(Text(), nullable=False)
+    kdf_salt: Mapped[str] = mapped_column(Text(), nullable=False)
+    kdf_params: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False)
+    version: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class VaultBlobsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    accountId: UUID
+    ciphertext: str
+    nonce: str
+    kdfSalt: str
+    kdfParams: dict[str, Any]
+    version: list[Any]
+    updatedAt: datetime
+
+class VaultBlobsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    accountId: UUID
+    ciphertext: str
+    nonce: str
+    kdfSalt: str
+    kdfParams: dict[str, Any]
+    version: list[Any]
+    updatedAt: datetime | None = None
+
 AppConfigStatus = Literal["active", "paused", "archived"]
 
 class AppConfig(Base):

@@ -692,6 +692,12 @@ pub const dd_remote_evolution_stream_retention: []const u8 = "limits";
 pub const dd_remote_evolution_stream_storage: []const u8 = "file";
 pub const dd_remote_evolution_stream_ack: []const u8 = "explicit";
 
+pub const dd_remote_fabrication_stream_name: []const u8 = "DD_REMOTE_FABRICATION";
+pub const dd_remote_fabrication_stream_subjects = [_][]const u8{ "dd.remote.fabrication.>" };
+pub const dd_remote_fabrication_stream_retention: []const u8 = "limits";
+pub const dd_remote_fabrication_stream_storage: []const u8 = "file";
+pub const dd_remote_fabrication_stream_ack: []const u8 = "explicit";
+
 pub const dd_remote_mip_solver_stream_name: []const u8 = "DD_REMOTE_MIP_SOLVER";
 pub const dd_remote_mip_solver_stream_subjects = [_][]const u8{ "dd.remote.mip_solver.jobs", "dd.remote.mip_solver.results", "dd.remote.mip_solver.control", "dd.remote.mip_solver.events" };
 pub const dd_remote_mip_solver_stream_retention: []const u8 = "limits";

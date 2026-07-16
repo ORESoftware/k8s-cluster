@@ -5,6 +5,62 @@
 
 import 'package:drift/drift.dart';
 
+@DataClassName("AccountsData")
+class AccountsTable extends Table {
+  @override String get tableName => "accounts";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get username => text().named("username")();
+  TextColumn get authSecret => text().named("auth_secret")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("DevicesData")
+class DevicesTable extends Table {
+  @override String get tableName => "devices";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get accountId => text().named("account_id").customConstraint("UUID")();
+  TextColumn get deviceName => text().named("device_name")();
+  TextColumn get syncTokenHash => text().named("sync_token_hash")();
+  BoolColumn get revoked => boolean().named("revoked").clientDefault(() => false)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("VaultBlobsData")
+class VaultBlobsTable extends Table {
+  @override String get tableName => "vault_blobs";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get accountId => text().named("account_id").customConstraint("UUID")();
+  TextColumn get ciphertext => text().named("ciphertext")();
+  TextColumn get nonce => text().named("nonce")();
+  TextColumn get kdfSalt => text().named("kdf_salt")();
+  TextColumn get kdfParams => text().named("kdf_params").customConstraint("JSONB")();
+  TextColumn get version => text().named("version").customConstraint("JSONB")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        accountId,
+  };
+}
+
 @DataClassName("AppConfigData")
 class AppConfigTable extends Table {
   @override String get tableName => "app_config";
@@ -3349,6 +3405,9 @@ class SharedContextTable extends Table {
 // Drift annotation users should re-export the table classes via:
 // @DriftDatabase(tables: [...registeredDriftTables])
 const List<Type> registeredDriftTables = <Type>[
+  AccountsTable,
+  DevicesTable,
+  VaultBlobsTable,
   AppConfigTable,
   VapiPhoneCallEventsTable,
   MusicSongsTable,

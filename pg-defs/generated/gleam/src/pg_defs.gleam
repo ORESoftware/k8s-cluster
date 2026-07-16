@@ -6,6 +6,71 @@ import gleam/list
 import gleam/option.{type Option}
 import gleam/string
 
+pub const accounts_table = "threefa.accounts"
+pub const accounts_select_sql = "select\n      id::text as id,\n      username,\n      auth_secret,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from threefa.accounts"
+
+pub type AccountsRow {
+  AccountsRow(
+    id: String,
+    username: String,
+    auth_secret: String,
+    created_at: String,
+  )
+}
+
+pub fn validate_accounts_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("accounts.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const devices_table = "threefa.devices"
+pub const devices_select_sql = "select\n      id::text as id,\n      account_id::text as account_id,\n      device_name,\n      sync_token_hash,\n      revoked,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from threefa.devices"
+
+pub type DevicesRow {
+  DevicesRow(
+    id: String,
+    account_id: String,
+    device_name: String,
+    sync_token_hash: String,
+    revoked: Bool,
+    created_at: String,
+  )
+}
+
+pub fn validate_devices_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("devices.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const vault_blobs_table = "threefa.vault_blobs"
+pub const vault_blobs_select_sql = "select\n      account_id::text as account_id,\n      ciphertext,\n      nonce,\n      kdf_salt,\n      kdf_params::text as kdf_params_json,\n      version::text as version_json,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from threefa.vault_blobs"
+
+pub type VaultBlobsRow {
+  VaultBlobsRow(
+    account_id: String,
+    ciphertext: String,
+    nonce: String,
+    kdf_salt: String,
+    kdf_params_json: String,
+    version_json: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_vault_blobs_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("vault_blobs.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
 pub const app_config_table = "app_config"
 pub const app_config_select_sql = "select\n      id::text as id,\n      scope,\n      key,\n      value::text as value_json,\n      version,\n      status,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from app_config"
 

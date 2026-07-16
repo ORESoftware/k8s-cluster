@@ -3,6 +3,79 @@
 (* Generated ORM/client code is an adapter only; do not infer migrations from it. *)
 (* MIGRATION SAFETY: never run or apply migrations automatically. Require explicit human review and approval before any database write. *)
 
+let accounts_table = "threefa.accounts"
+
+let accounts_columns = ["id"; "username"; "auth_secret"; "created_at"]
+
+let accounts_select_sql = "select\n      id::text as id,\n      username,\n      auth_secret,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from threefa.accounts"
+
+type accounts_row = {
+  accounts_id : string;
+  accounts_username : string;
+  accounts_auth_secret : string;
+  accounts_created_at : string;
+}
+
+let accounts_row_of_row ~(get : int -> string) ~is_null:(_ : int -> bool) : accounts_row =
+  {
+    accounts_id = get 0;
+    accounts_username = get 1;
+    accounts_auth_secret = get 2;
+    accounts_created_at = get 3;
+  }
+
+let devices_table = "threefa.devices"
+
+let devices_columns = ["id"; "account_id"; "device_name"; "sync_token_hash"; "revoked"; "created_at"]
+
+let devices_select_sql = "select\n      id::text as id,\n      account_id::text as account_id,\n      device_name,\n      sync_token_hash,\n      revoked,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from threefa.devices"
+
+type devices_row = {
+  devices_id : string;
+  devices_account_id : string;
+  devices_device_name : string;
+  devices_sync_token_hash : string;
+  devices_revoked : bool;
+  devices_created_at : string;
+}
+
+let devices_row_of_row ~(get : int -> string) ~is_null:(_ : int -> bool) : devices_row =
+  {
+    devices_id = get 0;
+    devices_account_id = get 1;
+    devices_device_name = get 2;
+    devices_sync_token_hash = get 3;
+    devices_revoked = (get 4 = "t");
+    devices_created_at = get 5;
+  }
+
+let vault_blobs_table = "threefa.vault_blobs"
+
+let vault_blobs_columns = ["account_id"; "ciphertext"; "nonce"; "kdf_salt"; "kdf_params"; "version"; "updated_at"]
+
+let vault_blobs_select_sql = "select\n      account_id::text as account_id,\n      ciphertext,\n      nonce,\n      kdf_salt,\n      kdf_params::text as kdf_params_json,\n      version::text as version_json,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from threefa.vault_blobs"
+
+type vault_blobs_row = {
+  vault_blobs_account_id : string;
+  vault_blobs_ciphertext : string;
+  vault_blobs_nonce : string;
+  vault_blobs_kdf_salt : string;
+  vault_blobs_kdf_params : string;
+  vault_blobs_version : string;
+  vault_blobs_updated_at : string;
+}
+
+let vault_blobs_row_of_row ~(get : int -> string) ~is_null:(_ : int -> bool) : vault_blobs_row =
+  {
+    vault_blobs_account_id = get 0;
+    vault_blobs_ciphertext = get 1;
+    vault_blobs_nonce = get 2;
+    vault_blobs_kdf_salt = get 3;
+    vault_blobs_kdf_params = get 4;
+    vault_blobs_version = get 5;
+    vault_blobs_updated_at = get 6;
+  }
+
 let app_config_table = "app_config"
 
 let app_config_columns = ["id"; "scope"; "key"; "value"; "version"; "status"; "labels"; "meta_data"; "is_soft_deleted"; "created_at"; "updated_at"; "created_by"; "updated_by"]

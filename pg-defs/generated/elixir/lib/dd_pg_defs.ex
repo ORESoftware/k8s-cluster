@@ -11,6 +11,9 @@ defmodule DdPgDefs do
   """
 
   @tables [
+    DdPgDefs.Accounts,
+    DdPgDefs.Devices,
+    DdPgDefs.VaultBlobs,
     DdPgDefs.AppConfig,
     DdPgDefs.VapiPhoneCallEvents,
     DdPgDefs.MusicSongs,

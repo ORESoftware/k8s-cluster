@@ -7,6 +7,35 @@
 require "active_record"
 
 module DdPgDefs
+  class Accounts < ActiveRecord::Base
+    self.table_name = "threefa.accounts"
+    self.primary_key = "id"
+
+    validates :username, presence: true
+    validates :auth_secret, presence: true
+  end
+
+  class Devices < ActiveRecord::Base
+    self.table_name = "threefa.devices"
+    self.primary_key = "id"
+
+    validates :account_id, presence: true
+    validates :device_name, presence: true
+    validates :sync_token_hash, presence: true
+    validates :sync_token_hash, format: { with: Regexp.new("\\A[a-f0-9]{64}\\z") }
+  end
+
+  class VaultBlobs < ActiveRecord::Base
+    self.table_name = "threefa.vault_blobs"
+    self.primary_key = "account_id"
+
+    validates :ciphertext, presence: true
+    validates :nonce, presence: true
+    validates :kdf_salt, presence: true
+    validates :kdf_params, presence: true
+    validates :version, presence: true
+  end
+
   class AppConfig < ActiveRecord::Base
     self.table_name = "app_config"
     self.primary_key = "id"

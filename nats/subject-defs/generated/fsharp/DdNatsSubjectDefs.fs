@@ -536,6 +536,12 @@ let dD_REMOTE_EVOLUTIONStreamRetention : string = "limits"
 let dD_REMOTE_EVOLUTIONStreamStorage : string = "file"
 let dD_REMOTE_EVOLUTIONStreamAck : string = "explicit"
 
+let dD_REMOTE_FABRICATIONStreamName : string = "DD_REMOTE_FABRICATION"
+let dD_REMOTE_FABRICATIONStreamSubjects : string list = [ "dd.remote.fabrication.>" ]
+let dD_REMOTE_FABRICATIONStreamRetention : string = "limits"
+let dD_REMOTE_FABRICATIONStreamStorage : string = "file"
+let dD_REMOTE_FABRICATIONStreamAck : string = "explicit"
+
 let dD_REMOTE_MIP_SOLVERStreamName : string = "DD_REMOTE_MIP_SOLVER"
 let dD_REMOTE_MIP_SOLVERStreamSubjects : string list = [ "dd.remote.mip_solver.jobs"; "dd.remote.mip_solver.results"; "dd.remote.mip_solver.control"; "dd.remote.mip_solver.events" ]
 let dD_REMOTE_MIP_SOLVERStreamRetention : string = "limits"

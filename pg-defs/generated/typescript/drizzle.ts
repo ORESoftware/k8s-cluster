@@ -11,8 +11,132 @@ const byteLength = (value: string) => textEncoder.encode(value).length;
 const jsonObjectSchema = z.record(z.string(), z.unknown());
 const jsonArraySchema = z.array(z.unknown());
 
+export const threefaSchema = pgSchema("threefa");
 export const benefactorSchema = pgSchema("benefactor");
 export const aiAgentBridgeSchema = pgSchema("ai_agent_bridge");
+
+export const accounts = threefaSchema.table(
+  "accounts",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    username: text("username").notNull(),
+    authSecret: text("auth_secret").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    threefaAccountsUsernameSizeChk: check("threefa_accounts_username_size_chk", sql.raw("octet_length(username) between 1 and 320")),
+    threefaAccountsUsernameTrimmedChk: check("threefa_accounts_username_trimmed_chk", sql.raw("username = btrim(username)")),
+    threefaAccountsAuthSecretSizeChk: check("threefa_accounts_auth_secret_size_chk", sql.raw("octet_length(auth_secret) between 1 and 1024")),
+    threefaAccountsUsernameUq: uniqueIndex("threefa_accounts_username_uq").on(table.username),
+  }),
+);
+
+export const accountsRowSchema = z.object({
+  id: z.string().uuid(),
+  username: z.string().refine((value) => byteLength(value) <= 320, "Must be at most 320 bytes"),
+  authSecret: z.string().refine((value) => byteLength(value) <= 1024, "Must be at most 1024 bytes"),
+  createdAt: z.string().datetime(),
+});
+
+export const accountsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  username: z.string().refine((value) => byteLength(value) <= 320, "Must be at most 320 bytes"),
+  authSecret: z.string().refine((value) => byteLength(value) <= 1024, "Must be at most 1024 bytes"),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const accountsUpdateSchema = accountsInsertSchema.partial();
+export type AccountsRow = z.infer<typeof accountsRowSchema>;
+export type AccountsInsert = z.infer<typeof accountsInsertSchema>;
+export type AccountsUpdate = z.infer<typeof accountsUpdateSchema>;
+
+export const devices = threefaSchema.table(
+  "devices",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    accountId: uuid("account_id").notNull(),
+    deviceName: text("device_name").notNull(),
+    syncTokenHash: text("sync_token_hash").notNull(),
+    revoked: boolean("revoked").default(sql`false`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    threefaDevicesNameSizeChk: check("threefa_devices_name_size_chk", sql.raw("octet_length(device_name) between 1 and 200")),
+    threefaDevicesNameTrimmedChk: check("threefa_devices_name_trimmed_chk", sql.raw("device_name = btrim(device_name)")),
+    threefaDevicesTokenHashChk: check("threefa_devices_token_hash_chk", sql.raw("sync_token_hash ~ '^[a-f0-9]{64}$'")),
+    threefaDevicesAccountIdx: index("threefa_devices_account_idx").on(table.accountId),
+    threefaDevicesTokenIdx: index("threefa_devices_token_idx").on(table.syncTokenHash).where(sql.raw("revoked = false")),
+  }),
+);
+
+export const devicesRowSchema = z.object({
+  id: z.string().uuid(),
+  accountId: z.string().uuid(),
+  deviceName: z.string().refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  syncTokenHash: z.string().regex(new RegExp("^[a-f0-9]{64}$")),
+  revoked: z.boolean(),
+  createdAt: z.string().datetime(),
+});
+
+export const devicesInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  accountId: z.string().uuid(),
+  deviceName: z.string().refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  syncTokenHash: z.string().regex(new RegExp("^[a-f0-9]{64}$")),
+  revoked: z.boolean().optional().default(false),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const devicesUpdateSchema = devicesInsertSchema.partial();
+export type DevicesRow = z.infer<typeof devicesRowSchema>;
+export type DevicesInsert = z.infer<typeof devicesInsertSchema>;
+export type DevicesUpdate = z.infer<typeof devicesUpdateSchema>;
+
+export const vaultBlobs = threefaSchema.table(
+  "vault_blobs",
+  {
+    accountId: uuid("account_id").primaryKey(),
+    ciphertext: text("ciphertext").notNull(),
+    nonce: text("nonce").notNull(),
+    kdfSalt: text("kdf_salt").notNull(),
+    kdfParams: jsonb("kdf_params").notNull(),
+    version: jsonb("version").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    threefaVaultCiphertextSizeChk: check("threefa_vault_ciphertext_size_chk", sql.raw("octet_length(decode(ciphertext, 'base64')) between 1 and 524288")),
+    threefaVaultNonceSizeChk: check("threefa_vault_nonce_size_chk", sql.raw("octet_length(decode(nonce, 'base64')) = 24")),
+    threefaVaultSaltSizeChk: check("threefa_vault_salt_size_chk", sql.raw("octet_length(decode(kdf_salt, 'base64')) between 8 and 64")),
+    threefaVaultKdfParamsObjectChk: check("threefa_vault_kdf_params_object_chk", sql.raw("jsonb_typeof(kdf_params) = 'object'")),
+    threefaVaultVersionArrayChk: check("threefa_vault_version_array_chk", sql.raw("jsonb_typeof(version) = 'array'")),
+    threefaVaultVersionSizeChk: check("threefa_vault_version_size_chk", sql.raw("jsonb_array_length(version) <= 64")),
+  }),
+);
+
+export const vaultBlobsRowSchema = z.object({
+  accountId: z.string().uuid(),
+  ciphertext: z.string(),
+  nonce: z.string(),
+  kdfSalt: z.string(),
+  kdfParams: jsonObjectSchema,
+  version: jsonArraySchema,
+  updatedAt: z.string().datetime(),
+});
+
+export const vaultBlobsInsertSchema = z.object({
+  accountId: z.string().uuid(),
+  ciphertext: z.string(),
+  nonce: z.string(),
+  kdfSalt: z.string(),
+  kdfParams: jsonObjectSchema,
+  version: jsonArraySchema,
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const vaultBlobsUpdateSchema = vaultBlobsInsertSchema.partial();
+export type VaultBlobsRow = z.infer<typeof vaultBlobsRowSchema>;
+export type VaultBlobsInsert = z.infer<typeof vaultBlobsInsertSchema>;
+export type VaultBlobsUpdate = z.infer<typeof vaultBlobsUpdateSchema>;
 
 export const appConfigStatusValues = ["active","paused","archived"] as const;
 export const appConfigStatusSchema = z.enum(appConfigStatusValues);

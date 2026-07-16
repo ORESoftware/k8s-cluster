@@ -173,6 +173,16 @@
         "subject": "dd.remote.fabrication.release.readiness.results",
         "direction": "both"
       }
+    ],
+    "streams": [
+      {
+        "name": "DD_REMOTE_FABRICATION",
+        "description": "Durable JetStream history for fabrication requests, results, machine profiles, design conversion, instruction generation and review, execution telemetry, learning outcomes, and release readiness.",
+        "subjects": ["dd.remote.fabrication.>"],
+        "retention": "limits",
+        "storage": "file",
+        "ack": "explicit"
+      }
     ]
   }
 }

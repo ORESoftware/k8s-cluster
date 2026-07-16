@@ -11,6 +11,71 @@ namespace DdPgDefs;
 
 use Illuminate\Database\Eloquent\Model;
 
+class Accounts extends Model
+{
+    protected $table = 'threefa.accounts';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+    protected $fillable = ['username', 'auth_secret', 'created_at'];
+    protected $casts = ['created_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'username' => ['required', 'string'],
+            'auth_secret' => ['required', 'string'],
+        ];
+    }
+}
+
+class Devices extends Model
+{
+    protected $table = 'threefa.devices';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+    protected $fillable = ['account_id', 'device_name', 'sync_token_hash', 'revoked', 'created_at'];
+    protected $casts = ['revoked' => 'boolean', 'created_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'account_id' => ['required', 'uuid'],
+            'device_name' => ['required', 'string'],
+            'sync_token_hash' => ['required', 'string', 'regex:/^[a-f0-9]{64}$/'],
+            'revoked' => ['nullable', 'boolean'],
+        ];
+    }
+}
+
+class VaultBlobs extends Model
+{
+    protected $table = 'threefa.vault_blobs';
+    protected $primaryKey = 'account_id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+    protected $fillable = ['ciphertext', 'nonce', 'kdf_salt', 'kdf_params', 'version', 'updated_at'];
+    protected $casts = ['kdf_params' => 'array', 'version' => 'array', 'updated_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'ciphertext' => ['required', 'string'],
+            'nonce' => ['required', 'string'],
+            'kdf_salt' => ['required', 'string'],
+            'kdf_params' => ['required', 'array'],
+            'version' => ['required', 'array'],
+        ];
+    }
+}
+
 class AppConfig extends Model
 {
     protected $table = 'app_config';

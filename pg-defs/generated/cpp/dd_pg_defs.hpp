@@ -13,6 +13,103 @@
 
 namespace dd_pg_defs {
 
+inline const char* accounts_table = "threefa.accounts";
+inline const std::vector<std::string> accounts_columns = { "id", "username", "auth_secret", "created_at" };
+inline const char* accounts_select_sql = R"SQL(select
+      id::text as id,
+      username,
+      auth_secret,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from threefa.accounts)SQL";
+
+struct AccountsRow {
+    std::string id;
+    std::string username;
+    std::string auth_secret;
+    std::string created_at;
+};
+
+inline AccountsRow accounts_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    AccountsRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.username = get(1);
+    row.auth_secret = get(2);
+    row.created_at = get(3);
+    return row;
+}
+
+inline const char* devices_table = "threefa.devices";
+inline const std::vector<std::string> devices_columns = { "id", "account_id", "device_name", "sync_token_hash", "revoked", "created_at" };
+inline const char* devices_select_sql = R"SQL(select
+      id::text as id,
+      account_id::text as account_id,
+      device_name,
+      sync_token_hash,
+      revoked,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from threefa.devices)SQL";
+
+struct DevicesRow {
+    std::string id;
+    std::string account_id;
+    std::string device_name;
+    std::string sync_token_hash;
+    bool revoked;
+    std::string created_at;
+};
+
+inline DevicesRow devices_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    DevicesRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.account_id = get(1);
+    row.device_name = get(2);
+    row.sync_token_hash = get(3);
+    row.revoked = (get(4) == "t");
+    row.created_at = get(5);
+    return row;
+}
+inline std::optional<std::string> validate_devices_sync_token_hash(const std::string& value) {
+    if (!std::regex_match(value, std::regex(R"RX(^[a-f0-9]{64}$)RX"))) return std::string("devices.sync_token_hash does not match the required pattern");
+    return std::nullopt;
+}
+
+inline const char* vault_blobs_table = "threefa.vault_blobs";
+inline const std::vector<std::string> vault_blobs_columns = { "account_id", "ciphertext", "nonce", "kdf_salt", "kdf_params", "version", "updated_at" };
+inline const char* vault_blobs_select_sql = R"SQL(select
+      account_id::text as account_id,
+      ciphertext,
+      nonce,
+      kdf_salt,
+      kdf_params::text as kdf_params_json,
+      version::text as version_json,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from threefa.vault_blobs)SQL";
+
+struct VaultBlobsRow {
+    std::string account_id;
+    std::string ciphertext;
+    std::string nonce;
+    std::string kdf_salt;
+    std::string kdf_params;
+    std::string version;
+    std::string updated_at;
+};
+
+inline VaultBlobsRow vault_blobs_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    VaultBlobsRow row;
+    (void)is_null;
+    row.account_id = get(0);
+    row.ciphertext = get(1);
+    row.nonce = get(2);
+    row.kdf_salt = get(3);
+    row.kdf_params = get(4);
+    row.version = get(5);
+    row.updated_at = get(6);
+    return row;
+}
+
 inline const char* app_config_table = "app_config";
 inline const std::vector<std::string> app_config_columns = { "id", "scope", "key", "value", "version", "status", "labels", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by" };
 inline const char* app_config_select_sql = R"SQL(select

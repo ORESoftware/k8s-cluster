@@ -24,6 +24,32 @@ public final class Tables {
     private Tables() {
     }
 
+    public static final Name ACCOUNTS_NAME = DSL.name("threefa", "accounts");
+    public static final Table<org.jooq.Record> ACCOUNTS = DSL.table(ACCOUNTS_NAME);
+    public static final Field<UUID> ACCOUNTS_ID = DSL.field(DSL.name("threefa", "accounts", "id"), SQLDataType.UUID);
+    public static final Field<String> ACCOUNTS_USERNAME = DSL.field(DSL.name("threefa", "accounts", "username"), SQLDataType.CLOB);
+    public static final Field<String> ACCOUNTS_AUTH_SECRET = DSL.field(DSL.name("threefa", "accounts", "auth_secret"), SQLDataType.CLOB);
+    public static final Field<OffsetDateTime> ACCOUNTS_CREATED_AT = DSL.field(DSL.name("threefa", "accounts", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
+    public static final Name DEVICES_NAME = DSL.name("threefa", "devices");
+    public static final Table<org.jooq.Record> DEVICES = DSL.table(DEVICES_NAME);
+    public static final Field<UUID> DEVICES_ID = DSL.field(DSL.name("threefa", "devices", "id"), SQLDataType.UUID);
+    public static final Field<UUID> DEVICES_ACCOUNT_ID = DSL.field(DSL.name("threefa", "devices", "account_id"), SQLDataType.UUID);
+    public static final Field<String> DEVICES_DEVICE_NAME = DSL.field(DSL.name("threefa", "devices", "device_name"), SQLDataType.CLOB);
+    public static final Field<String> DEVICES_SYNC_TOKEN_HASH = DSL.field(DSL.name("threefa", "devices", "sync_token_hash"), SQLDataType.CLOB);
+    public static final Field<Boolean> DEVICES_REVOKED = DSL.field(DSL.name("threefa", "devices", "revoked"), SQLDataType.BOOLEAN);
+    public static final Field<OffsetDateTime> DEVICES_CREATED_AT = DSL.field(DSL.name("threefa", "devices", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
+    public static final Name VAULT_BLOBS_NAME = DSL.name("threefa", "vault_blobs");
+    public static final Table<org.jooq.Record> VAULT_BLOBS = DSL.table(VAULT_BLOBS_NAME);
+    public static final Field<UUID> VAULT_BLOBS_ACCOUNT_ID = DSL.field(DSL.name("threefa", "vault_blobs", "account_id"), SQLDataType.UUID);
+    public static final Field<String> VAULT_BLOBS_CIPHERTEXT = DSL.field(DSL.name("threefa", "vault_blobs", "ciphertext"), SQLDataType.CLOB);
+    public static final Field<String> VAULT_BLOBS_NONCE = DSL.field(DSL.name("threefa", "vault_blobs", "nonce"), SQLDataType.CLOB);
+    public static final Field<String> VAULT_BLOBS_KDF_SALT = DSL.field(DSL.name("threefa", "vault_blobs", "kdf_salt"), SQLDataType.CLOB);
+    public static final Field<JSONB> VAULT_BLOBS_KDF_PARAMS = DSL.field(DSL.name("threefa", "vault_blobs", "kdf_params"), SQLDataType.JSONB);
+    public static final Field<JSONB> VAULT_BLOBS_VERSION = DSL.field(DSL.name("threefa", "vault_blobs", "version"), SQLDataType.JSONB);
+    public static final Field<OffsetDateTime> VAULT_BLOBS_UPDATED_AT = DSL.field(DSL.name("threefa", "vault_blobs", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
     public static final Name APP_CONFIG_NAME = DSL.name("app_config");
     public static final Table<org.jooq.Record> APP_CONFIG = DSL.table(APP_CONFIG_NAME);
     public static final Field<UUID> APP_CONFIG_ID = DSL.field(DSL.name("app_config", "id"), SQLDataType.UUID);

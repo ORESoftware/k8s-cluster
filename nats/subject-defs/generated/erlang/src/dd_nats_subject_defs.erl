@@ -300,6 +300,11 @@
     dd_remote_evolution_stream_retention/0,
     dd_remote_evolution_stream_storage/0,
     dd_remote_evolution_stream_ack/0,
+    dd_remote_fabrication_stream_name/0,
+    dd_remote_fabrication_stream_subjects/0,
+    dd_remote_fabrication_stream_retention/0,
+    dd_remote_fabrication_stream_storage/0,
+    dd_remote_fabrication_stream_ack/0,
     dd_remote_mip_solver_stream_name/0,
     dd_remote_mip_solver_stream_subjects/0,
     dd_remote_mip_solver_stream_retention/0,
@@ -1393,6 +1398,15 @@ dd_remote_evolution_stream_subjects() ->
 dd_remote_evolution_stream_retention() -> <<"limits"/utf8>>.
 dd_remote_evolution_stream_storage() -> <<"file"/utf8>>.
 dd_remote_evolution_stream_ack() -> <<"explicit"/utf8>>.
+
+%% Durable JetStream history for fabrication requests, results, machine profiles, design conversion, instruction generation and review, execution telemetry, learning outcomes, and release readiness.
+%% Service: dd-fabrication-server
+dd_remote_fabrication_stream_name() -> <<"DD_REMOTE_FABRICATION"/utf8>>.
+dd_remote_fabrication_stream_subjects() ->
+    [<<"dd.remote.fabrication.>"/utf8>>].
+dd_remote_fabrication_stream_retention() -> <<"limits"/utf8>>.
+dd_remote_fabrication_stream_storage() -> <<"file"/utf8>>.
+dd_remote_fabrication_stream_ack() -> <<"explicit"/utf8>>.
 
 %% JetStream stream for distributed in-house LP/MIP/IP solver work, results, control, and progress events.
 %% Service: dd-ai-ml-pipeline

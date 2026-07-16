@@ -11,6 +11,38 @@ import org.jetbrains.exposed.sql.Table
 import org.jetbrains.exposed.sql.javatime.timestampWithTimeZone
 import org.jetbrains.exposed.sql.json.jsonb
 
+object Accounts : Table("threefa.accounts") {
+    val id = uuid("id")
+    val username = text("username")
+    val authSecret = text("auth_secret")
+    val createdAt = timestampWithTimeZone("created_at")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object Devices : Table("threefa.devices") {
+    val id = uuid("id")
+    val accountId = uuid("account_id")
+    val deviceName = text("device_name")
+    val syncTokenHash = text("sync_token_hash")
+    val revoked = bool("revoked")
+    val createdAt = timestampWithTimeZone("created_at")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object VaultBlobs : Table("threefa.vault_blobs") {
+    val accountId = uuid("account_id")
+    val ciphertext = text("ciphertext")
+    val nonce = text("nonce")
+    val kdfSalt = text("kdf_salt")
+    val kdfParams = jsonb<String>("kdf_params", { it }, { it })
+    val version = jsonb<String>("version", { it }, { it })
+    val updatedAt = timestampWithTimeZone("updated_at")
+
+    override val primaryKey = PrimaryKey(accountId)
+}
+
 object AppConfig : Table("app_config") {
     val id = uuid("id")
     val scope = varchar("scope", 120)
@@ -2403,6 +2435,58 @@ object SharedContext : Table("ai_agent_bridge.shared_context") {
 
     override val primaryKey = PrimaryKey(id)
 }
+
+data class AccountsRow(
+    val id: UUID,
+    val username: String,
+    val authSecret: String,
+    val createdAt: OffsetDateTime,
+)
+
+fun toAccountsRow(row: ResultRow): AccountsRow = AccountsRow(
+    row[Accounts.id],
+    row[Accounts.username],
+    row[Accounts.authSecret],
+    row[Accounts.createdAt],
+)
+
+data class DevicesRow(
+    val id: UUID,
+    val accountId: UUID,
+    val deviceName: String,
+    val syncTokenHash: String,
+    val revoked: Boolean,
+    val createdAt: OffsetDateTime,
+)
+
+fun toDevicesRow(row: ResultRow): DevicesRow = DevicesRow(
+    row[Devices.id],
+    row[Devices.accountId],
+    row[Devices.deviceName],
+    row[Devices.syncTokenHash],
+    row[Devices.revoked],
+    row[Devices.createdAt],
+)
+
+data class VaultBlobsRow(
+    val accountId: UUID,
+    val ciphertext: String,
+    val nonce: String,
+    val kdfSalt: String,
+    val kdfParams: String,
+    val version: String,
+    val updatedAt: OffsetDateTime,
+)
+
+fun toVaultBlobsRow(row: ResultRow): VaultBlobsRow = VaultBlobsRow(
+    row[VaultBlobs.accountId],
+    row[VaultBlobs.ciphertext],
+    row[VaultBlobs.nonce],
+    row[VaultBlobs.kdfSalt],
+    row[VaultBlobs.kdfParams],
+    row[VaultBlobs.version],
+    row[VaultBlobs.updatedAt],
+)
 
 data class AppConfigRow(
     val id: UUID,

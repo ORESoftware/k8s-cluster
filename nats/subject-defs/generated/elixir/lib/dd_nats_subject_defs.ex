@@ -531,6 +531,12 @@ defmodule DdNatsSubjectDefs do
   def dd_remote_evolution_stream_storage, do: "file"
   def dd_remote_evolution_stream_ack, do: "explicit"
 
+  def dd_remote_fabrication_stream_name, do: "DD_REMOTE_FABRICATION"
+  def dd_remote_fabrication_stream_subjects, do: ["dd.remote.fabrication.>"]
+  def dd_remote_fabrication_stream_retention, do: "limits"
+  def dd_remote_fabrication_stream_storage, do: "file"
+  def dd_remote_fabrication_stream_ack, do: "explicit"
+
   def dd_remote_mip_solver_stream_name, do: "DD_REMOTE_MIP_SOLVER"
   def dd_remote_mip_solver_stream_subjects, do: ["dd.remote.mip_solver.jobs", "dd.remote.mip_solver.results", "dd.remote.mip_solver.control", "dd.remote.mip_solver.events"]
   def dd_remote_mip_solver_stream_retention, do: "limits"
