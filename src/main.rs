@@ -4189,6 +4189,7 @@ async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
             storage_versioning_mode: state.config.s3.versioning_mode,
             configuration_valid: state.config.validation_errors.is_empty()
                 && state.config.s3.validation_errors.is_empty()
+                && state.config.mirror.validation_errors.is_empty()
                 && state.config.supabase.validation_errors.is_empty(),
             token_pepper_configured: state.config.token_pepper_configured,
             registration_configured,
