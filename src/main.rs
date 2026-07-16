@@ -35,7 +35,12 @@
 //!   `send_alert_email` webhook payload.
 //! - **Account deletion** — `delete_account` and `delete_supabase_auth_user`
 //!   (Supabase service-role key), which purge backend metadata and revoke tokens.
-//! - **Retention** — `retention_sweep` marks expired (non-pinned) segment rows.
+//! - **Retention** — `retention_sweep` marks expired (non-pinned) segment rows
+//!   and physically deletes both the primary object and any mirror copy.
+//! - **Storage mirror** — `mirror_drain` (`/internal/storage-mirror/drain`)
+//!   asynchronously copies uploaded segments from the primary object store
+//!   into the `SOUND_RECORDER_MIRROR_*` backup store (e.g. Cloudflare R2 next
+//!   to AWS S3), recording per-segment mirror state in `meta_data`.
 //! - **Rate limiting & security** — the `rate_limit` and `add_security_headers`
 //!   middleware layers.
 //! - **`main` / router** — `Router::new()` wiring, TLS Postgres setup, and
