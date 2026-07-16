@@ -1807,9 +1807,7 @@ fn mirror_storage_config_from_env(primary: &S3StorageConfig) -> S3StorageConfig 
         // Mirror disabled. Ignore every other mirror variable rather than
         // validating a half-configured target into a readiness failure, but
         // do flag a likely operator mistake: credentials without a bucket.
-        if endpoint.is_some()
-            || first_env(&["SOUND_RECORDER_MIRROR_S3_ACCESS_KEY_ID"]).is_some()
-        {
+        if endpoint.is_some() || first_env(&["SOUND_RECORDER_MIRROR_S3_ACCESS_KEY_ID"]).is_some() {
             validation_errors.push(
                 "mirror storage is partially configured; set SOUND_RECORDER_MIRROR_S3_BUCKET to enable it or unset the other SOUND_RECORDER_MIRROR_* variables"
                     .to_string(),
@@ -3924,10 +3922,7 @@ async fn mirror_is_ready(state: &AppState) -> Option<bool> {
     // proves endpoint, credentials, and bucket-level object access: an
     // authorized miss is a clean 404, while bad credentials, a bad endpoint,
     // or a missing bucket surface as other errors.
-    let key = format!(
-        "{}/.mirror-readiness-probe",
-        state.config.mirror.key_prefix
-    );
+    let key = format!("{}/.mirror-readiness-probe", state.config.mirror.key_prefix);
     let result = tokio::time::timeout(
         STORAGE_PROBE_TIMEOUT,
         mirror
@@ -4133,7 +4128,13 @@ async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
             None
         }
     };
-    let (postgres_reachable, storage_ready, storage_history_compatible, supabase_ready, mirror_ready) = tokio::join!(
+    let (
+        postgres_reachable,
+        storage_ready,
+        storage_history_compatible,
+        supabase_ready,
+        mirror_ready,
+    ) = tokio::join!(
         postgres_is_reachable(&state),
         storage_is_ready(&state),
         storage_history_is_compatible(&state),
@@ -4147,8 +4148,8 @@ async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
     // A configured-but-invalid mirror always fails readiness (misconfiguration
     // must be caught at rollout); a probe failure of a valid mirror only fails
     // readiness when the operator opted into gating on the backup target.
-    let mirror_intended = !state.config.mirror.bucket.is_empty()
-        || !state.config.mirror.validation_errors.is_empty();
+    let mirror_intended =
+        !state.config.mirror.bucket.is_empty() || !state.config.mirror.validation_errors.is_empty();
     let mirror_ok = state.config.mirror.validation_errors.is_empty()
         && (!mirror_intended || state.mirror.is_some())
         && (!state.config.mirror_readiness_required
@@ -4674,7 +4675,10 @@ async fn delete_account_storage_objects(
                 .or_default()
                 .push(key.clone());
         }
-        by_bucket.entry(row.get("storage_bucket")).or_default().push(key);
+        by_bucket
+            .entry(row.get("storage_bucket"))
+            .or_default()
+            .push(key);
     }
     // Account deletion is an erasure guarantee: refuse to report success while
     // a recorded backup copy exists that we have no client to delete with.
@@ -4690,8 +4694,8 @@ async fn delete_account_storage_objects(
     }
     let mut deleted = 0u64;
     for (bucket, keys) in by_bucket {
-        deleted = deleted
-            .saturating_add(delete_objects_in_bucket(s3, &bucket, &keys, account_id).await?);
+        deleted =
+            deleted.saturating_add(delete_objects_in_bucket(s3, &bucket, &keys, account_id).await?);
     }
     if let Some(mirror) = state.mirror.as_ref() {
         for (bucket, keys) in mirror_by_bucket {
@@ -7457,6 +7461,17 @@ async fn download_object_bytes(
     Ok(bytes.into_bytes().to_vec())
 }
 
+/// The primary-store location and recorded integrity expectations of one
+/// claimed segment awaiting a mirror copy.
+struct MirrorCopySource<'a> {
+    segment_id: &'a str,
+    bucket: &'a str,
+    key: &'a str,
+    content_type: &'a str,
+    byte_count: Option<i32>,
+    sha256_hex: Option<&'a str>,
+}
+
 /// Copies one claimed segment from the primary store into the mirror bucket
 /// under the same account-scoped key, verifying size and (when recorded)
 /// SHA-256 before the copy so a corrupted or tampered primary object can never
@@ -7464,13 +7479,16 @@ async fn download_object_bytes(
 async fn mirror_copy_segment(
     state: &AppState,
     mirror: &aws_sdk_s3::Client,
-    segment_id: &str,
-    bucket: &str,
-    key: &str,
-    content_type: &str,
-    byte_count: Option<i32>,
-    sha256_hex: Option<&str>,
+    source: &MirrorCopySource<'_>,
 ) -> Result<(), ServiceError> {
+    let MirrorCopySource {
+        segment_id,
+        bucket,
+        key,
+        content_type,
+        byte_count,
+        sha256_hex,
+    } = *source;
     let bytes = download_object_bytes(state, segment_id, bucket, key).await?;
     if let Some(expected) = byte_count {
         if bytes.len() as i64 != expected as i64 {
@@ -9653,7 +9671,10 @@ mod tests {
             MIRROR_ATTEMPTS_META_KEY,
             MIRROR_CLAIM_ID_META_KEY,
         ] {
-            assert!(meta.get(key).is_none(), "client-supplied {key} must be stripped");
+            assert!(
+                meta.get(key).is_none(),
+                "client-supplied {key} must be stripped"
+            );
         }
         assert_eq!(meta.get("client").and_then(Value::as_str), Some("kept"));
     }
