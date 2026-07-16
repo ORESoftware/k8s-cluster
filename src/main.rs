@@ -2057,7 +2057,20 @@ fn config_from_env() -> Config {
         token_pepper_configured,
         registration_bearer: first_env(&["SOUND_RECORDER_REGISTRATION_BEARER"]),
         allow_public_device_registration,
-        s3: s3_storage_config_from_env(),
+        s3,
+        mirror,
+        mirror_readiness_required,
+        mirror_batch_size: env_i64_clamped(
+            "SOUND_RECORDER_MIRROR_BATCH_SIZE",
+            DEFAULT_MIRROR_BATCH_SIZE,
+            1,
+            MAX_MIRROR_BATCH_SIZE,
+        ),
+        mirror_copy_max_attempts: env_i32(
+            "SOUND_RECORDER_MIRROR_COPY_MAX_ATTEMPTS",
+            DEFAULT_MIRROR_COPY_MAX_ATTEMPTS,
+        )
+        .clamp(1, 20),
         ios_app_store_url: first_env(&["SOUND_RECORDER_IOS_APP_STORE_URL"]),
         android_play_store_url: first_env(&["SOUND_RECORDER_ANDROID_PLAY_STORE_URL"]),
         default_retention_hours,
