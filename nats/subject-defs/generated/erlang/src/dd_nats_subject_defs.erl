@@ -177,6 +177,8 @@
     telemetry_mdp_subject/0,
     telemetry_raw_subject/0,
     telemetry_raw_queue_group/0,
+    thread_tasks_dead_letter_subject/0,
+    thread_tasks_dead_letter_stream/0,
     trading_decisions_subject/0,
     trading_order_intents_subject/0,
     trading_signals_subject/0,
@@ -319,7 +321,12 @@
     dd_remote_tasks_stream_subjects/0,
     dd_remote_tasks_stream_retention/0,
     dd_remote_tasks_stream_storage/0,
-    dd_remote_tasks_stream_ack/0
+    dd_remote_tasks_stream_ack/0,
+    dd_remote_tasks_dlq_stream_name/0,
+    dd_remote_tasks_dlq_stream_subjects/0,
+    dd_remote_tasks_dlq_stream_retention/0,
+    dd_remote_tasks_dlq_stream_storage/0,
+    dd_remote_tasks_dlq_stream_ack/0
 ]).
 
 %% Per-tick simulation frames fanned out for live demos (grid/agent snapshots and aggregate stats). Broadcast with no queue group so every interested consumer (and the websocket bridge) receives each frame. Default for AGENT_SIM_FRAME_SUBJECT.
@@ -849,6 +856,11 @@ telemetry_mdp_subject() -> <<"dd.remote.telemetry.mdp"/utf8>>.
 %% Service: dd-ai-ml-pipeline
 telemetry_raw_subject() -> <<"dd.remote.telemetry.raw"/utf8>>.
 telemetry_raw_queue_group() -> <<"dd-ai-ml-pipeline"/utf8>>.
+
+%% Redacted terminal task failures emitted after the queue consumer exhausts JetStream redelivery. Kept on a separate limits-retention stream so poison-message evidence is durable without affecting the WorkQueue consumer lag used by KEDA.
+%% Service: dd-remote-rest-api
+thread_tasks_dead_letter_subject() -> <<"dd.remote.thread.tasks.deadletter"/utf8>>.
+thread_tasks_dead_letter_stream() -> <<"DD_REMOTE_TASKS_DLQ"/utf8>>.
 
 %% Risk-gated buy/sell/hold decisions emitted by the trading server. Default for TRADING_DECISION_SUBJECT.
 %% Service: dd-trading-server
@@ -1434,6 +1446,15 @@ dd_remote_tasks_stream_subjects() ->
 dd_remote_tasks_stream_retention() -> <<"limits"/utf8>>.
 dd_remote_tasks_stream_storage() -> <<"file"/utf8>>.
 dd_remote_tasks_stream_ack() -> <<"explicit"/utf8>>.
+
+%% Durable limits-retention stream for redacted terminal task failures. It is separate from DD_REMOTE_TASKS so dead letters cannot inflate queue-consumer lag or trigger KEDA scaling.
+%% Service: dd-remote-rest-api
+dd_remote_tasks_dlq_stream_name() -> <<"DD_REMOTE_TASKS_DLQ"/utf8>>.
+dd_remote_tasks_dlq_stream_subjects() ->
+    [<<"dd.remote.thread.tasks.deadletter"/utf8>>].
+dd_remote_tasks_dlq_stream_retention() -> <<"limits"/utf8>>.
+dd_remote_tasks_dlq_stream_storage() -> <<"file"/utf8>>.
+dd_remote_tasks_dlq_stream_ack() -> <<"explicit"/utf8>>.
 
 %% ---------- helpers ----------
 

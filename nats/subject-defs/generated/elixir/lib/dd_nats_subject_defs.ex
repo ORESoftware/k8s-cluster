@@ -294,6 +294,9 @@ defmodule DdNatsSubjectDefs do
   def telemetry_raw_subject, do: "dd.remote.telemetry.raw"
   def telemetry_raw_queue_group, do: "dd-ai-ml-pipeline"
 
+  def thread_tasks_dead_letter_subject, do: "dd.remote.thread.tasks.deadletter"
+  def thread_tasks_dead_letter_stream, do: "DD_REMOTE_TASKS_DLQ"
+
   def trading_decisions_subject, do: "dd.remote.trading.decisions"
 
   def trading_order_intents_subject, do: "dd.remote.trading.order_intents"
@@ -554,4 +557,10 @@ defmodule DdNatsSubjectDefs do
   def dd_remote_tasks_stream_retention, do: "limits"
   def dd_remote_tasks_stream_storage, do: "file"
   def dd_remote_tasks_stream_ack, do: "explicit"
+
+  def dd_remote_tasks_dlq_stream_name, do: "DD_REMOTE_TASKS_DLQ"
+  def dd_remote_tasks_dlq_stream_subjects, do: ["dd.remote.thread.tasks.deadletter"]
+  def dd_remote_tasks_dlq_stream_retention, do: "limits"
+  def dd_remote_tasks_dlq_stream_storage, do: "file"
+  def dd_remote_tasks_dlq_stream_ack, do: "explicit"
 end

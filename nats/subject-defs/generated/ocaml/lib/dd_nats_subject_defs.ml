@@ -411,6 +411,10 @@ let telemetry_mdp_subject = "dd.remote.telemetry.mdp"
 let telemetry_raw_subject = "dd.remote.telemetry.raw"
 let telemetry_raw_queue_group = "dd-ai-ml-pipeline"
 
+(* Redacted terminal task failures emitted after the queue consumer exhausts JetStream redelivery. Kept on a separate limits-retention stream so poison-message evidence is durable without affecting the WorkQueue consumer lag used by KEDA. *)
+let thread_tasks_dead_letter_subject = "dd.remote.thread.tasks.deadletter"
+let thread_tasks_dead_letter_stream = "DD_REMOTE_TASKS_DLQ"
+
 (* Risk-gated buy/sell/hold decisions emitted by the trading server. Default for TRADING_DECISION_SUBJECT. *)
 let trading_decisions_subject = "dd.remote.trading.decisions"
 
@@ -742,3 +746,10 @@ let dd_remote_tasks_stream_subjects = ["dd.remote.thread.*.tasks"]
 let dd_remote_tasks_stream_retention = "limits"
 let dd_remote_tasks_stream_storage = "file"
 let dd_remote_tasks_stream_ack = "explicit"
+
+(* Durable limits-retention stream for redacted terminal task failures. It is separate from DD_REMOTE_TASKS so dead letters cannot inflate queue-consumer lag or trigger KEDA scaling. *)
+let dd_remote_tasks_dlq_stream_name = "DD_REMOTE_TASKS_DLQ"
+let dd_remote_tasks_dlq_stream_subjects = ["dd.remote.thread.tasks.deadletter"]
+let dd_remote_tasks_dlq_stream_retention = "limits"
+let dd_remote_tasks_dlq_stream_storage = "file"
+let dd_remote_tasks_dlq_stream_ack = "explicit"

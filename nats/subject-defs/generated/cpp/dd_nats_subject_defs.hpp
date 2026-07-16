@@ -309,6 +309,9 @@ inline const char* telemetry_mdp_subject = "dd.remote.telemetry.mdp";
 inline const char* telemetry_raw_subject = "dd.remote.telemetry.raw";
 inline const char* telemetry_raw_queue_group = "dd-ai-ml-pipeline";
 
+inline const char* thread_tasks_dead_letter_subject = "dd.remote.thread.tasks.deadletter";
+inline const char* thread_tasks_dead_letter_stream = "DD_REMOTE_TASKS_DLQ";
+
 inline const char* trading_decisions_subject = "dd.remote.trading.decisions";
 
 inline const char* trading_order_intents_subject = "dd.remote.trading.order_intents";
@@ -674,5 +677,11 @@ inline const std::vector<std::string> dd_remote_tasks_stream_subjects = { "dd.re
 inline const char* dd_remote_tasks_stream_retention = "limits";
 inline const char* dd_remote_tasks_stream_storage = "file";
 inline const char* dd_remote_tasks_stream_ack = "explicit";
+
+inline const char* dd_remote_tasks_dlq_stream_name = "DD_REMOTE_TASKS_DLQ";
+inline const std::vector<std::string> dd_remote_tasks_dlq_stream_subjects = { "dd.remote.thread.tasks.deadletter" };
+inline const char* dd_remote_tasks_dlq_stream_retention = "limits";
+inline const char* dd_remote_tasks_dlq_stream_storage = "file";
+inline const char* dd_remote_tasks_dlq_stream_ack = "explicit";
 
 }  // namespace dd_nats_subject_defs

@@ -22,6 +22,14 @@
         "stream": "DD_REMOTE_TASKS"
       },
       {
+        "name": "ThreadTasksDeadLetter",
+        "description": "Redacted terminal task failures emitted after the queue consumer exhausts JetStream redelivery. Kept on a separate limits-retention stream so poison-message evidence is durable without affecting the WorkQueue consumer lag used by KEDA.",
+        "kind": "static",
+        "subject": "dd.remote.thread.tasks.deadletter",
+        "direction": "publish",
+        "stream": "DD_REMOTE_TASKS_DLQ"
+      },
+      {
         "name": "ThreadControl",
         "description": "Per-thread control-plane commands (scale, evict, reload). Short-retention JetStream control stream.",
         "kind": "parameterized",
@@ -86,6 +94,14 @@
         "name": "DD_REMOTE_TASKS",
         "description": "JetStream file storage, explicit ack, message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard.",
         "subjects": ["dd.remote.thread.*.tasks"],
+        "retention": "limits",
+        "storage": "file",
+        "ack": "explicit"
+      },
+      {
+        "name": "DD_REMOTE_TASKS_DLQ",
+        "description": "Durable limits-retention stream for redacted terminal task failures. It is separate from DD_REMOTE_TASKS so dead letters cannot inflate queue-consumer lag or trigger KEDA scaling.",
+        "subjects": ["dd.remote.thread.tasks.deadletter"],
         "retention": "limits",
         "storage": "file",
         "ack": "explicit"

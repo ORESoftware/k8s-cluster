@@ -294,6 +294,9 @@ let telemetryMdpSubject : string = "dd.remote.telemetry.mdp"
 let telemetryRawSubject : string = "dd.remote.telemetry.raw"
 let telemetryRawQueueGroup : string = "dd-ai-ml-pipeline"
 
+let threadTasksDeadLetterSubject : string = "dd.remote.thread.tasks.deadletter"
+let threadTasksDeadLetterStream : string = "DD_REMOTE_TASKS_DLQ"
+
 let tradingDecisionsSubject : string = "dd.remote.trading.decisions"
 
 let tradingOrderIntentsSubject : string = "dd.remote.trading.order_intents"
@@ -559,3 +562,9 @@ let dD_REMOTE_TASKSStreamSubjects : string list = [ "dd.remote.thread.*.tasks" ]
 let dD_REMOTE_TASKSStreamRetention : string = "limits"
 let dD_REMOTE_TASKSStreamStorage : string = "file"
 let dD_REMOTE_TASKSStreamAck : string = "explicit"
+
+let dD_REMOTE_TASKS_DLQStreamName : string = "DD_REMOTE_TASKS_DLQ"
+let dD_REMOTE_TASKS_DLQStreamSubjects : string list = [ "dd.remote.thread.tasks.deadletter" ]
+let dD_REMOTE_TASKS_DLQStreamRetention : string = "limits"
+let dD_REMOTE_TASKS_DLQStreamStorage : string = "file"
+let dD_REMOTE_TASKS_DLQStreamAck : string = "explicit"

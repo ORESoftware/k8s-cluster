@@ -769,6 +769,13 @@ export const TELEMETRY_RAW_SUBJECT = "dd.remote.telemetry.raw";
 export const TELEMETRY_RAW_QUEUE_GROUP = "dd-ai-ml-pipeline";
 
 /**
+ * Redacted terminal task failures emitted after the queue consumer exhausts JetStream redelivery. Kept on a separate limits-retention stream so poison-message evidence is durable without affecting the WorkQueue consumer lag used by KEDA.
+ * Service: dd-remote-rest-api
+ */
+export const THREAD_TASKS_DEAD_LETTER_SUBJECT = "dd.remote.thread.tasks.deadletter";
+export const THREAD_TASKS_DEAD_LETTER_STREAM = "DD_REMOTE_TASKS_DLQ";
+
+/**
  * Risk-gated buy/sell/hold decisions emitted by the trading server. Default for TRADING_DECISION_SUBJECT.
  * Service: dd-trading-server
  */
@@ -1498,3 +1505,13 @@ export const DD_REMOTE_TASKS_STREAM_SUBJECTS: readonly string[] = ["dd.remote.th
 export const DD_REMOTE_TASKS_STREAM_RETENTION = "limits";
 export const DD_REMOTE_TASKS_STREAM_STORAGE = "file";
 export const DD_REMOTE_TASKS_STREAM_ACK = "explicit";
+
+/**
+ * Durable limits-retention stream for redacted terminal task failures. It is separate from DD_REMOTE_TASKS so dead letters cannot inflate queue-consumer lag or trigger KEDA scaling.
+ * Service: dd-remote-rest-api
+ */
+export const DD_REMOTE_TASKS_DLQ_STREAM_NAME = "DD_REMOTE_TASKS_DLQ";
+export const DD_REMOTE_TASKS_DLQ_STREAM_SUBJECTS: readonly string[] = ["dd.remote.thread.tasks.deadletter"];
+export const DD_REMOTE_TASKS_DLQ_STREAM_RETENTION = "limits";
+export const DD_REMOTE_TASKS_DLQ_STREAM_STORAGE = "file";
+export const DD_REMOTE_TASKS_DLQ_STREAM_ACK = "explicit";

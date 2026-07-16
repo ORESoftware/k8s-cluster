@@ -591,6 +591,12 @@ telemetryRawSubject = "dd.remote.telemetry.raw"
 telemetryRawQueueGroup :: Text
 telemetryRawQueueGroup = "dd-ai-ml-pipeline"
 
+-- Redacted terminal task failures emitted after the queue consumer exhausts JetStream redelivery. Kept on a separate limits-retention stream so poison-message evidence is durable without affecting the WorkQueue consumer lag used by KEDA.
+threadTasksDeadLetterSubject :: Text
+threadTasksDeadLetterSubject = "dd.remote.thread.tasks.deadletter"
+threadTasksDeadLetterStream :: Text
+threadTasksDeadLetterStream = "DD_REMOTE_TASKS_DLQ"
+
 -- Risk-gated buy/sell/hold decisions emitted by the trading server. Default for TRADING_DECISION_SUBJECT.
 tradingDecisionsSubject :: Text
 tradingDecisionsSubject = "dd.remote.trading.decisions"
@@ -1065,3 +1071,15 @@ dD_REMOTE_TASKSStreamStorage :: Text
 dD_REMOTE_TASKSStreamStorage = "file"
 dD_REMOTE_TASKSStreamAck :: Text
 dD_REMOTE_TASKSStreamAck = "explicit"
+
+-- Durable limits-retention stream for redacted terminal task failures. It is separate from DD_REMOTE_TASKS so dead letters cannot inflate queue-consumer lag or trigger KEDA scaling.
+dD_REMOTE_TASKS_DLQStreamName :: Text
+dD_REMOTE_TASKS_DLQStreamName = "DD_REMOTE_TASKS_DLQ"
+dD_REMOTE_TASKS_DLQStreamSubjects :: [Text]
+dD_REMOTE_TASKS_DLQStreamSubjects = ["dd.remote.thread.tasks.deadletter"]
+dD_REMOTE_TASKS_DLQStreamRetention :: Text
+dD_REMOTE_TASKS_DLQStreamRetention = "limits"
+dD_REMOTE_TASKS_DLQStreamStorage :: Text
+dD_REMOTE_TASKS_DLQStreamStorage = "file"
+dD_REMOTE_TASKS_DLQStreamAck :: Text
+dD_REMOTE_TASKS_DLQStreamAck = "explicit"
