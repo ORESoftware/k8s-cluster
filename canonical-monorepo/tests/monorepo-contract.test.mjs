@@ -169,6 +169,19 @@ test("monorepo scripts keep destructive actions manual and include dry-run/audit
   }
 });
 
+test("submodule pin verification fails closed when origin cannot be fetched", () => {
+  const audit = read("scripts/audit-repo-state.sh");
+
+  assert.match(
+    audit,
+    /else\s+fail "\$module_path: could not fetch origin\/\$module_branch to verify the pin"/,
+  );
+  assert.doesNotMatch(
+    audit,
+    /warn "\$module_path: could not fetch origin\/\$module_branch to verify the pin"/,
+  );
+});
+
 test("every app agents.md blacklists rm and whitelists git rm / git mv", () => {
   for (const module of parseGitmodules()) {
     const agents = read(path.join(module.path, "agents.md"));

@@ -27,6 +27,15 @@ function wireRecord(id: string, version: string, value: DraftNoteValue): WireRec
   };
 }
 
+function deletedWireRecord(id: string, version: string): WireRecord {
+  return {
+    key: { kind: "draft_note", id },
+    version,
+    schemaVersion: 1,
+    deleted: true,
+  };
+}
+
 afterEach(async () => {
   const opened = openStores.splice(0);
   for (const { store } of opened) {
@@ -226,5 +235,32 @@ describe("SyncStore pull and conflicts", () => {
       confirmed: { version: "10", value: note("new") },
     });
     expect((await store.getAccountState()).pullCursor).toBe("cursor-2");
+  });
+
+  it("does not resurrect a persisted tombstone after the browser database reopens", async () => {
+    const name = `canonical-sync-test-${crypto.randomUUID()}`;
+    const first = await SyncStore.open({ accountKey: "project:user-a", databaseName: name });
+    openStores.push({ name, store: first });
+    await first.applyChanges({
+      changes: [deletedWireRecord(NOTE_ID, "10")],
+      nextCursor: "cursor-tombstone",
+      caughtUp: true,
+    });
+    first.close();
+
+    const restarted = await SyncStore.open({ accountKey: "project:user-a", databaseName: name });
+    openStores.push({ name, store: restarted });
+    await restarted.applyChanges({
+      changes: [wireRecord(NOTE_ID, "9", note("stale payload"))],
+      nextCursor: "cursor-replayed",
+      caughtUp: true,
+    });
+
+    expect(await restarted.getRecord(NOTE_ID)).toMatchObject({
+      confirmed: { version: "10", deleted: true },
+      optimistic: null,
+      state: "synced",
+    });
+    expect(await restarted.listEffectiveDraftNotes()).toEqual([]);
   });
 });

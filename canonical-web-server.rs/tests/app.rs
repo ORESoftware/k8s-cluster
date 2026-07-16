@@ -26,7 +26,7 @@ use std::{
     path::PathBuf,
     sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc,
+        Arc, Mutex as StdMutex,
     },
     time::Duration,
 };
@@ -87,6 +87,12 @@ struct RefreshFailureAuth {
     calls: Arc<AtomicUsize>,
 }
 
+#[derive(Clone)]
+struct RotatingAuth {
+    seen_refresh_tokens: Arc<StdMutex<Vec<String>>>,
+    calls: Arc<AtomicUsize>,
+}
+
 #[async_trait]
 impl AuthProvider for RefreshFailureAuth {
     async fn password_sign_in(
@@ -107,6 +113,40 @@ impl AuthProvider for RefreshFailureAuth {
 
     async fn user_for_token(&self, _access_token: &str) -> Result<SupabaseUser, AuthProviderError> {
         unreachable!("the refresh fixture authenticates only session cookies")
+    }
+
+    async fn sign_out(&self, _access_token: &str) -> Result<(), AuthProviderError> {
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl AuthProvider for RotatingAuth {
+    async fn password_sign_in(
+        &self,
+        _email: &str,
+        _password: &str,
+    ) -> Result<AuthTokens, AuthProviderError> {
+        unreachable!("the rotation fixture creates tokens directly")
+    }
+
+    async fn refresh(&self, refresh_token: &str) -> Result<AuthTokens, AuthProviderError> {
+        self.seen_refresh_tokens
+            .lock()
+            .unwrap()
+            .push(refresh_token.to_owned());
+        let call = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
+        let mut refreshed = tokens();
+        refreshed.access_token = format!("rotated-access-token-{call}");
+        refreshed.refresh_token = format!("rotated-refresh-token-{call}");
+        // Keep the access token expired so the next authentication proves the
+        // newly rotated refresh token was committed to the session row.
+        refreshed.expires_at = Utc::now() - ChronoDuration::minutes(1);
+        Ok(refreshed)
+    }
+
+    async fn user_for_token(&self, _access_token: &str) -> Result<SupabaseUser, AuthProviderError> {
+        unreachable!("the rotation fixture authenticates only session cookies")
     }
 
     async fn sign_out(&self, _access_token: &str) -> Result<(), AuthProviderError> {
@@ -529,6 +569,36 @@ async fn transient_refresh_failure_keeps_the_local_session_retryable() {
         Err(AppError::AuthUpstream)
     ));
     assert_eq!(calls.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn rotated_refresh_token_is_persisted_before_the_next_refresh() {
+    let db = Database::connect("sqlite::memory:").await.unwrap();
+    Migrator::up(&db, None).await.unwrap();
+    let seen_refresh_tokens = Arc::new(StdMutex::new(Vec::new()));
+    let calls = Arc::new(AtomicUsize::new(0));
+    let sessions = SessionService::new(
+        db,
+        Arc::new(RotatingAuth {
+            seen_refresh_tokens: seen_refresh_tokens.clone(),
+            calls: calls.clone(),
+        }),
+        &[7; 32],
+        Duration::from_secs(3600),
+    )
+    .unwrap();
+    let mut expired_tokens = tokens();
+    expired_tokens.expires_at = Utc::now() - ChronoDuration::minutes(1);
+    let created = sessions.create(expired_tokens).await.unwrap();
+
+    sessions.authenticate(&created.raw_id).await.unwrap();
+    sessions.authenticate(&created.raw_id).await.unwrap();
+
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        *seen_refresh_tokens.lock().unwrap(),
+        vec!["refresh-token", "rotated-refresh-token-1"]
+    );
 }
 
 #[tokio::test]

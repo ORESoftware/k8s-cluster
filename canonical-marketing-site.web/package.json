@@ -13,7 +13,7 @@
     "test:browser": "npm run build && node --test --test-concurrency=1 --test-timeout=120000 tests/site-playwright.test.mjs tests/site-puppeteer.test.mjs"
   },
   "dependencies": {
-    "astro": "^7.0.7"
+    "astro": "^7.1.0"
   },
   "devDependencies": {
     "playwright": "^1.56.0",

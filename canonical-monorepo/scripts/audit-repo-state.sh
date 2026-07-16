@@ -141,7 +141,7 @@ for i in "${!module_paths[@]}"; do
 
   # The recorded gitlink must be an ancestor of (or equal to) the tracked branch
   # on the remote — i.e. the pin points at real, pushed history, not a local-only
-  # or detached commit. (Skipped when the remote can't be reached.)
+  # or detached commit. Remote verification is a blocking supply-chain gate.
   if [[ -d "$module_path" ]]; then
     pinned_sha="$(git -C "$module_path" rev-parse HEAD 2>/dev/null || true)"
     if git -C "$module_path" fetch -q origin "$module_branch" 2>/dev/null; then
@@ -149,7 +149,7 @@ for i in "${!module_paths[@]}"; do
         fail "$module_path pin $pinned_sha is not on origin/$module_branch (unpushed or diverged)"
       fi
     else
-      warn "$module_path: could not fetch origin/$module_branch to verify the pin"
+      fail "$module_path: could not fetch origin/$module_branch to verify the pin"
     fi
   fi
 
