@@ -8513,6 +8513,7 @@ mod tests {
         AppState {
             config: Arc::new(config),
             s3: None,
+            mirror: None,
             http: reqwest::Client::builder()
                 .timeout(Duration::from_secs(5))
                 .build()
