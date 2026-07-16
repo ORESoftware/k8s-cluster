@@ -2246,6 +2246,49 @@ fn supabase_config_from_env() -> SupabaseConfig {
     }
 }
 
+/// Builds one S3-compatible client from a validated storage config, or `None`
+/// when that target is unconfigured/invalid. `role` only labels the log line.
+async fn build_object_storage_client(
+    config: &S3StorageConfig,
+    role: &'static str,
+) -> Option<aws_sdk_s3::Client> {
+    if !config.is_configured() {
+        return None;
+    }
+    let retry_config = RetryConfig::standard().with_max_attempts(config.max_attempts);
+    let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest())
+        .region(Region::new(config.region.clone()))
+        .retry_config(retry_config);
+    if let (Some(access_key_id), Some(secret_access_key)) = (
+        config.access_key_id.as_deref(),
+        config.secret_access_key.as_deref(),
+    ) {
+        loader = loader.credentials_provider(aws_sdk_s3::config::Credentials::new(
+            access_key_id,
+            secret_access_key,
+            config.session_token.clone(),
+            None,
+            "sonus-auris-object-storage",
+        ));
+    }
+    let shared_config = loader.load().await;
+    let mut builder = aws_sdk_s3::config::Builder::from(&shared_config);
+    if let Some(endpoint) = &config.endpoint {
+        builder = builder.endpoint_url(endpoint);
+    }
+    builder = builder.force_path_style(config.force_path_style);
+    info!(
+        role,
+        backend = config.backend.as_str(),
+        region = %config.region,
+        custom_endpoint = config.endpoint.is_some(),
+        force_path_style = config.force_path_style,
+        max_attempts = config.max_attempts,
+        "object storage client configured"
+    );
+    Some(aws_sdk_s3::Client::from_conf(builder.build()))
+}
+
 async fn state_from_config(config: Config) -> AppState {
     for error in &config.validation_errors {
         warn!(error, "service configuration is invalid");
