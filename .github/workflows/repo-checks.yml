@@ -25,10 +25,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      - name: Require private-submodule read token
+        env:
+          K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
+        run: test -n "$K8S_SUBMODULE_TOKEN"
+
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
+
+      - name: Initialize required contract submodule
+        env:
+          K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
+        run: |
+          set -euo pipefail
+          token_url="https://x-access-token:${K8S_SUBMODULE_TOKEN}@github.com/"
+          git config --global url."${token_url}".insteadOf "git@github.com:"
+          trap 'git config --global --unset-all url."${token_url}".insteadOf || true' EXIT
+          git submodule update --init --depth 1 -- remote/libs
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -111,8 +124,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
+
+      - name: Initialize required public overlay submodule
+        run: |
+          set -euo pipefail
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule update --init --depth 1 -- remote/deployments/mip-solver-node.rs
 
       - name: Setup kubectl
         uses: azure/setup-kubectl@v4
@@ -136,8 +153,8 @@ jobs:
             echo "::endgroup::"
           done
 
-          # Overlays hosted inside submodules (checked out via
-          # `submodules: recursive` above) that git ls-files cannot see;
+          # Overlays hosted inside the explicitly initialized submodule that
+          # git ls-files cannot see;
           # carried over from the previous hardcoded list so coverage
           # does not regress.
           submodule_overlays=(

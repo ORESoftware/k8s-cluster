@@ -12,6 +12,14 @@ data:
     rule_files:
       - /etc/prometheus/observability.rules.yml
 
+    # Route firing alert rules to Alertmanager (dedup, grouping, inhibition,
+    # delivery). Before this, rules evaluated but had nowhere to go.
+    alerting:
+      alertmanagers:
+        - static_configs:
+            - targets:
+                - dd-alertmanager.observability.svc.cluster.local:9093
+
     scrape_configs:
       - job_name: prometheus
         static_configs:
@@ -43,6 +51,11 @@ data:
         static_configs:
           - targets:
               - dd-loki.observability.svc.cluster.local:3100
+      - job_name: dd-alertmanager
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-alertmanager.observability.svc.cluster.local:9093
       - job_name: dd-k8s-resource-exporter
         metrics_path: /metrics
         static_configs:
@@ -234,17 +247,28 @@ data:
               - fiducia-node-0.fiducia-node-peer.fiducia.svc.cluster.local:8091
               - fiducia-node-1.fiducia-node-peer.fiducia.svc.cluster.local:8091
               - fiducia-node-2.fiducia-node-peer.fiducia.svc.cluster.local:8091
+      # fiducia control-plane (brain) raft metrics. Each fiducia-brain StatefulSet
+      # pod runs the same sidecar binary in brain mode (:8091/metrics), translating
+      # the brain's /v1/status rollup (leader/term, placement gaps, node health).
+      # Per-pod via the headless peer Service (serviceName: fiducia-brain-peer).
+      - job_name: fiducia-brain-sidecar
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - fiducia-brain-0.fiducia-brain-peer.fiducia.svc.cluster.local:8091
+              - fiducia-brain-1.fiducia-brain-peer.fiducia.svc.cluster.local:8091
+              - fiducia-brain-2.fiducia-brain-peer.fiducia.svc.cluster.local:8091
   observability.rules.yml: |
     groups:
       - name: dd.observability.rules
         interval: 30s
         rules:
           - record: dd:observability:target_up_ratio
-            expr: avg(up{job=~"prometheus|otel-collector-self|otel-collector|dd-grafana|dd-loki|dd-k8s-resource-exporter|dd-promtail"})
+            expr: avg(up{job=~"prometheus|otel-collector-self|otel-collector|dd-grafana|dd-loki|dd-k8s-resource-exporter|dd-promtail|dd-alertmanager"})
           - record: dd:k8s_workload:available_ratio
             expr: sum by (namespace, kind, workload) (dd_k8s_workload_available_replicas) / clamp_min(sum by (namespace, kind, workload) (dd_k8s_workload_desired_replicas), 1)
           - alert: DDObservabilityTargetDown
-            expr: up{job=~"prometheus|otel-collector-self|otel-collector|dd-grafana|dd-loki|dd-k8s-resource-exporter|dd-promtail"} == 0
+            expr: up{job=~"prometheus|otel-collector-self|otel-collector|dd-grafana|dd-loki|dd-k8s-resource-exporter|dd-promtail|dd-alertmanager"} == 0
             for: 2m
             labels:
               severity: warning

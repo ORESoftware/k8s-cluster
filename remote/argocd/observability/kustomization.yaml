@@ -15,6 +15,9 @@ resources:
   - prometheus.configmap.yaml
   - prometheus.deployment.yaml
   - prometheus.service.yaml
+  - alertmanager.configmap.yaml
+  - alertmanager.deployment.yaml
+  - alertmanager.service.yaml
   - grafana.provisioning.configmap.yaml
   - grafana.dashboards.configmap.yaml
   - grafana.deployment.yaml
