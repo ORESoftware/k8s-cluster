@@ -152,13 +152,16 @@ spec:
               memory: 128Mi
             limits:
               cpu: '1'
-              memory: 1Gi
+              # Rust + sqlx/async-graphql codegen can exceed 1 GiB during a
+              # cold in-pod source build even though steady-state use is lower.
+              memory: 2Gi
           startupProbe:
             httpGet:
               path: /healthz
               port: http
             periodSeconds: 5
-            failureThreshold: 60
+            # Preserve the pod through cold Cargo builds and dependency fetches.
+            failureThreshold: 600
           readinessProbe:
             httpGet:
               path: /healthz
