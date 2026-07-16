@@ -7071,6 +7071,7 @@ async fn retention_sweep(
              from candidates
              where s.id = candidates.id and s.pinned_at is null
              returning s.id::text, s.storage_bucket, s.storage_key,
+                       s.meta_data->>($7::text) as mirror_bucket,
                        candidates.previous_status",
             &[
                 &SWEEP_BATCH,
@@ -7079,6 +7080,7 @@ async fn retention_sweep(
                 &RETENTION_DELETE_CLAIMED_AT_META_KEY,
                 &RETENTION_PREVIOUS_STATUS_META_KEY,
                 &claim_id,
+                &MIRROR_BUCKET_META_KEY,
             ],
         )
         .await
