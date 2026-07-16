@@ -7205,6 +7205,339 @@ async fn retention_sweep(
     }))
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MirrorDrainResponse {
+    ok: bool,
+    attempted: u64,
+    mirrored: u64,
+    failed: u64,
+    skipped: u64,
+}
+
+/// Exponential retry backoff for failed mirror copies, capped at one hour.
+fn mirror_retry_backoff(attempts: i32) -> ChronoDuration {
+    let exponent = attempts.clamp(0, 6) as u32;
+    let seconds = 60_i64.saturating_mul(1_i64 << exponent).min(3600);
+    ChronoDuration::seconds(seconds)
+}
+
+async fn download_object_bytes(
+    state: &AppState,
+    segment_id: &str,
+    bucket: &str,
+    key: &str,
+) -> Result<Vec<u8>, ServiceError> {
+    let s3 = state
+        .s3
+        .as_ref()
+        .ok_or_else(|| ServiceError::Unavailable("S3 client is not configured".to_string()))?;
+    let object = tokio::time::timeout(
+        STORAGE_OBJECT_TIMEOUT,
+        s3.get_object().bucket(bucket).key(key).send(),
+    )
+    .await
+    .map_err(|_| ServiceError::Unavailable("primary object download timed out".to_string()))?
+    .map_err(|err| {
+        warn!(error = %err, segment_id, "primary object download failed");
+        ServiceError::Unavailable("primary object download failed".to_string())
+    })?;
+    let bytes = tokio::time::timeout(STORAGE_OBJECT_TIMEOUT, object.body.collect())
+        .await
+        .map_err(|_| ServiceError::Unavailable("primary object body read timed out".to_string()))?
+        .map_err(|err| {
+            warn!(error = %err, segment_id, "primary object body read failed");
+            ServiceError::Unavailable("primary object body read failed".to_string())
+        })?;
+    Ok(bytes.into_bytes().to_vec())
+}
+
+/// Copies one claimed segment from the primary store into the mirror bucket
+/// under the same account-scoped key, verifying size and (when recorded)
+/// SHA-256 before the copy so a corrupted or tampered primary object can never
+/// silently poison the backup.
+async fn mirror_copy_segment(
+    state: &AppState,
+    mirror: &aws_sdk_s3::Client,
+    segment_id: &str,
+    bucket: &str,
+    key: &str,
+    content_type: &str,
+    byte_count: Option<i32>,
+    sha256_hex: Option<&str>,
+) -> Result<(), ServiceError> {
+    let bytes = download_object_bytes(state, segment_id, bucket, key).await?;
+    if let Some(expected) = byte_count {
+        if bytes.len() as i64 != expected as i64 {
+            return Err(ServiceError::Internal(format!(
+                "primary object size {} does not match recorded byteCount {expected}",
+                bytes.len()
+            )));
+        }
+    }
+    if let Some(expected) = sha256_hex.filter(|value| !value.is_empty()) {
+        let digest = Sha256::digest(&bytes);
+        let actual = digest
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        if !actual.eq_ignore_ascii_case(expected) {
+            return Err(ServiceError::Internal(
+                "primary object SHA-256 does not match the recorded segment hash".to_string(),
+            ));
+        }
+    }
+    let mut request = mirror
+        .put_object()
+        .bucket(&state.config.mirror.bucket)
+        .key(key)
+        .content_type(content_type)
+        .content_length(bytes.len() as i64)
+        .body(ByteStream::from(bytes));
+    if state.config.mirror.send_sse_aes256 {
+        request = request.server_side_encryption(ServerSideEncryption::Aes256);
+    }
+    tokio::time::timeout(STORAGE_OBJECT_TIMEOUT, request.send())
+        .await
+        .map_err(|_| ServiceError::Unavailable("mirror object upload timed out".to_string()))?
+        .map_err(|err| {
+            warn!(error = %err, segment_id, "mirror object upload failed");
+            ServiceError::Unavailable("mirror object upload failed".to_string())
+        })?;
+    Ok(())
+}
+
+/// Server-side backup job: copies settled (`uploaded`) segments from the
+/// primary object store into the configured mirror (e.g. Cloudflare R2 next to
+/// AWS S3) and records per-segment mirror state in `meta_data`. Cron-driven
+/// like the retention sweep — each call drains one bounded batch, claims rows
+/// with a reclaimable lease, and the cron re-invokes until nothing is left.
+async fn mirror_drain(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<MirrorDrainResponse>, ServiceError> {
+    require_internal_auth(&state.config, &headers)?;
+    if !state.config.mirror.is_configured() {
+        return Err(ServiceError::Unavailable(
+            "mirror storage is not configured".to_string(),
+        ));
+    }
+    let Some(mirror) = state.mirror.clone() else {
+        return Err(ServiceError::Unavailable(
+            "mirror storage client is not configured".to_string(),
+        ));
+    };
+    require_storage_history_compatible(&state).await?;
+    let client = db_conn(&state).await?;
+    let claim_id = Uuid::new_v4().to_string();
+    // meta_data values on legacy rows may predate the server-owned strip list,
+    // so every cast is guarded by a CASE + format check instead of trusting
+    // client-influenced text to be a number or timestamp.
+    let rows = client
+        .query(
+            "with candidates as (
+               select id
+               from sound_recorder_segments
+               where status = 'uploaded'
+                 and storage_bucket <> ''
+                 and storage_key <> ''
+                 and meta_data->>($2::text) is distinct from 'mirrored'
+                 and case
+                   when meta_data->>($2::text) is distinct from 'copying' then true
+                   when coalesce(meta_data->>($4::text), '') !~ '^\\d{4}-\\d{2}-\\d{2}' then true
+                   else (meta_data->>($4::text))::timestamptz < now() - ($9::text)::interval
+                 end
+                 and case
+                   when coalesce(meta_data->>($5::text), '') ~ '^\\d{1,9}$'
+                     then (meta_data->>($5::text))::int < $6
+                   else true
+                 end
+                 and case
+                   when coalesce(meta_data->>($7::text), '') !~ '^\\d{4}-\\d{2}-\\d{2}' then true
+                   else (meta_data->>($7::text))::timestamptz <= now()
+                 end
+               order by uploaded_at asc nulls last
+               limit $1
+               for update skip locked
+             )
+             update sound_recorder_segments s
+             set meta_data = coalesce(s.meta_data, '{}'::jsonb) || jsonb_build_object(
+                   $2::text, 'copying',
+                   $3::text, $8::text,
+                   $4::text, now()
+                 ),
+                 updated_at = now()
+             from candidates
+             where s.id = candidates.id
+             returning s.id::text, s.storage_bucket, s.storage_key, s.content_type,
+                       s.byte_count, s.sha256_hex,
+                       case
+                         when coalesce(s.meta_data->>($5::text), '') ~ '^\\d{1,9}$'
+                           then (s.meta_data->>($5::text))::int
+                         else 0
+                       end as attempts,
+                       s.meta_data->>($10::text) as storage_fingerprint",
+            &[
+                &state.config.mirror_batch_size,
+                &MIRROR_STATE_META_KEY,
+                &MIRROR_CLAIM_ID_META_KEY,
+                &MIRROR_CLAIMED_AT_META_KEY,
+                &MIRROR_ATTEMPTS_META_KEY,
+                &state.config.mirror_copy_max_attempts,
+                &MIRROR_NEXT_ATTEMPT_AT_META_KEY,
+                &claim_id,
+                &MIRROR_CLAIM_LEASE,
+                &STORAGE_FINGERPRINT_META_KEY,
+            ],
+        )
+        .await
+        .map_err(db_error)?;
+
+    let mut mirrored: u64 = 0;
+    let mut failed: u64 = 0;
+    let mut skipped: u64 = 0;
+    for row in &rows {
+        let id: String = row.get("id");
+        let bucket: String = row.get("storage_bucket");
+        let key: String = row.get("storage_key");
+        let content_type: String = row.get("content_type");
+        let byte_count: Option<i32> = row.get("byte_count");
+        let sha256_hex: Option<String> = row.get("sha256_hex");
+        let attempts: i32 = row.get("attempts");
+        let storage_fingerprint: Option<String> = row.get("storage_fingerprint");
+        // A row from a different (unacknowledged) backend must not be copied:
+        // the primary client would read the wrong store. Release the claim
+        // without consuming an attempt.
+        if !storage_record_is_compatible(&state.config.s3, storage_fingerprint.as_deref()) {
+            skipped += 1;
+            client
+                .execute(
+                    "update sound_recorder_segments
+                     set meta_data = coalesce(meta_data, '{}'::jsonb)
+                           - $3::text - $4::text - $5::text,
+                         updated_at = now()
+                     where id = $1::uuid and meta_data->>($4::text) = $2",
+                    &[
+                        &id,
+                        &claim_id,
+                        &MIRROR_STATE_META_KEY,
+                        &MIRROR_CLAIM_ID_META_KEY,
+                        &MIRROR_CLAIMED_AT_META_KEY,
+                    ],
+                )
+                .await
+                .map_err(db_error)?;
+            continue;
+        }
+        let copy_result = mirror_copy_segment(
+            &state,
+            &mirror,
+            &id,
+            &bucket,
+            &key,
+            &content_type,
+            byte_count,
+            sha256_hex.as_deref(),
+        )
+        .await;
+        match copy_result {
+            Ok(()) => {
+                mirrored += 1;
+                MIRROR_COPIES.with_label_values(&["mirrored"]).inc();
+                client
+                    .execute(
+                        "update sound_recorder_segments
+                         set meta_data = (coalesce(meta_data, '{}'::jsonb)
+                               - $3::text - $4::text - $5::text - $6::text - $7::text)
+                             || jsonb_build_object(
+                               $8::text, 'mirrored',
+                               $9::text, now(),
+                               $10::text, $11::text,
+                               $12::text, $13::text
+                             ),
+                             updated_at = now()
+                         where id = $1::uuid and meta_data->>($4::text) = $2",
+                        &[
+                            &id,
+                            &claim_id,
+                            &MIRROR_CLAIMED_AT_META_KEY,
+                            &MIRROR_CLAIM_ID_META_KEY,
+                            &MIRROR_ATTEMPTS_META_KEY,
+                            &MIRROR_LAST_ERROR_META_KEY,
+                            &MIRROR_NEXT_ATTEMPT_AT_META_KEY,
+                            &MIRROR_STATE_META_KEY,
+                            &MIRROR_MIRRORED_AT_META_KEY,
+                            &MIRROR_BUCKET_META_KEY,
+                            &state.config.mirror.bucket,
+                            &MIRROR_FINGERPRINT_META_KEY,
+                            &state.config.mirror.backend_fingerprint,
+                        ],
+                    )
+                    .await
+                    .map_err(db_error)?;
+            }
+            Err(error) => {
+                failed += 1;
+                MIRROR_COPIES.with_label_values(&["failed"]).inc();
+                let attempts_next = attempts.saturating_add(1);
+                let next_attempt_at = Utc::now() + mirror_retry_backoff(attempts_next);
+                let message = service_error_message(&error);
+                warn!(segment_id = id, attempts = attempts_next, error = %message, "segment mirror copy failed");
+                client
+                    .execute(
+                        "update sound_recorder_segments
+                         set meta_data = (coalesce(meta_data, '{}'::jsonb)
+                               - $3::text - $4::text)
+                             || jsonb_build_object(
+                               $5::text, 'failed',
+                               $6::text, $7,
+                               $8::text, $9::text,
+                               $10::text, $11
+                             ),
+                             updated_at = now()
+                         where id = $1::uuid and meta_data->>($4::text) = $2",
+                        &[
+                            &id,
+                            &claim_id,
+                            &MIRROR_CLAIMED_AT_META_KEY,
+                            &MIRROR_CLAIM_ID_META_KEY,
+                            &MIRROR_STATE_META_KEY,
+                            &MIRROR_ATTEMPTS_META_KEY,
+                            &attempts_next,
+                            &MIRROR_LAST_ERROR_META_KEY,
+                            &message,
+                            &MIRROR_NEXT_ATTEMPT_AT_META_KEY,
+                            &next_attempt_at,
+                        ],
+                    )
+                    .await
+                    .map_err(db_error)?;
+            }
+        }
+    }
+    audit_event(
+        &client,
+        None,
+        None,
+        "sound_recorder.mirror.drained",
+        json!({
+            "attempted": rows.len() as u64,
+            "mirrored": mirrored,
+            "failed": failed,
+            "skipped": skipped,
+        }),
+    )
+    .await;
+    record_request("POST", "/internal/storage-mirror/drain", StatusCode::OK);
+    Ok(Json(MirrorDrainResponse {
+        ok: true,
+        attempted: rows.len() as u64,
+        mirrored,
+        failed,
+        skipped,
+    }))
+}
+
 async fn load_session_policy(
     client: &tokio_postgres::Client,
     auth: &DeviceAuth,
