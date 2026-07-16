@@ -40,7 +40,10 @@ spec:
           # published image is wired. The path-deps (../fiducia-routing.rs,
           # ../fiducia-interfaces) resolve because we build from the monorepo's
           # apps/ sibling layout.
-          image: docker.io/library/rust:1.90-bookworm
+          # Matches fiducia-node.rs/rust-toolchain.toml. RUSTUP_TOOLCHAIN below
+          # keeps cargo from attempting a writable toolchain sync on this
+          # read-only root filesystem.
+          image: docker.io/library/rust:1.95.0-bookworm
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -99,6 +102,8 @@ spec:
               value: /tmp/target
             - name: CARGO_BUILD_JOBS
               value: '1'
+            - name: RUSTUP_TOOLCHAIN
+              value: '1.95.0'
           ports:
             - name: http
               containerPort: 8090

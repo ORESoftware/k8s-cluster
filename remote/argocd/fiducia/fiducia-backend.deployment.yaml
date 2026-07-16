@@ -69,7 +69,8 @@ spec:
             - { name: work, mountPath: /work }
       containers:
         - name: fiducia-backend
-          image: docker.io/library/rust:1.90-bookworm
+          # Matches fiducia-customer.rs/rust-toolchain.toml.
+          image: docker.io/library/rust:1.97.0-bookworm
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -103,6 +104,7 @@ spec:
             - { name: CARGO_HOME, value: /tmp/cargo }
             - { name: CARGO_TARGET_DIR, value: /tmp/target }
             - { name: CARGO_BUILD_JOBS, value: '1' }
+            - { name: RUSTUP_TOOLCHAIN, value: '1.97.0' }
           ports:
             - name: http
               containerPort: 8117
