@@ -92,6 +92,11 @@ spec:
             # lock-coordination key) lands on shard 0's single Raft group.
             - name: FIDUCIA_SHARD_COUNT
               value: '1'
+            - name: FIDUCIA_INTERNAL_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: fiducia-cluster-secrets
+                  key: internal-secret
             - name: RUST_LOG
               value: info
             - name: HOME
@@ -135,7 +140,12 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: data
+              mountPath: /var/lib/fiducia
       volumes:
         - name: tmp
           emptyDir:
             sizeLimit: 8Gi
+        - name: data
+          emptyDir:
+            sizeLimit: 10Gi

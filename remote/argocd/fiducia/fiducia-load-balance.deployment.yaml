@@ -82,6 +82,11 @@ spec:
             - name: FIDUCIA_INTROSPECT_SECRET
               valueFrom:
                 secretKeyRef: { name: fiducia-auth-secrets, key: introspect-secret, optional: true }
+            # The same trusted-hop secret used by nodes and brain. The LB verifies
+            # the edge header with it, then injects it on every upstream request.
+            - name: FIDUCIA_INTERNAL_SECRET
+              valueFrom:
+                secretKeyRef: { name: fiducia-cluster-secrets, key: internal-secret }
             - name: RUST_LOG
               value: info
             - name: HOME
