@@ -8091,6 +8091,7 @@ fn app(state: AppState) -> Router {
         )
         .route("/internal/retention/sweep", post(retention_sweep))
         .route("/internal/cloud-copy/drain", post(drain_cloud_copy_jobs))
+        .route("/internal/storage-mirror/drain", post(mirror_drain))
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .route("/metrics", get(metrics))
