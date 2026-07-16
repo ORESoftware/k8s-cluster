@@ -38,7 +38,8 @@ spec:
           type: RuntimeDefault
       containers:
         - name: fiducia-load-balance
-          image: docker.io/library/rust:1.90-bookworm
+          # Matches fiducia-load-balance.rs/rust-toolchain.toml.
+          image: docker.io/library/rust:1.95.0-bookworm
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -81,6 +82,11 @@ spec:
             - name: FIDUCIA_INTROSPECT_SECRET
               valueFrom:
                 secretKeyRef: { name: fiducia-auth-secrets, key: introspect-secret, optional: true }
+            # The same trusted-hop secret used by nodes and brain. The LB verifies
+            # the edge header with it, then injects it on every upstream request.
+            - name: FIDUCIA_INTERNAL_SECRET
+              valueFrom:
+                secretKeyRef: { name: fiducia-cluster-secrets, key: internal-secret }
             - name: RUST_LOG
               value: info
             - name: HOME
@@ -91,6 +97,8 @@ spec:
               value: /tmp/target
             - name: CARGO_BUILD_JOBS
               value: '1'
+            - name: RUSTUP_TOOLCHAIN
+              value: '1.95.0'
           ports:
             - name: http
               containerPort: 8088
