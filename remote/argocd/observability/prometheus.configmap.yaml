@@ -56,8 +56,17 @@ data:
         static_configs:
           - targets:
               - dd-alertmanager.observability.svc.cluster.local:9093
+      # dd-k8s-resource-exporter serves a ~3 MB /metrics payload built from
+      # live k8s API list calls plus TCP/Redis/RabbitMQ dependency probes, and
+      # each scrape takes ~13-16s in this cluster. The global 15s/10s
+      # interval/timeout would mark every scrape as up=0 and truncate the
+      # response mid-write (visible as BrokenPipeError in the exporter log).
+      # Give this job its own longer interval and timeout so the scrape can
+      # actually complete.
       - job_name: dd-k8s-resource-exporter
         metrics_path: /metrics
+        scrape_interval: 30s
+        scrape_timeout: 25s
         static_configs:
           - targets:
               - dd-k8s-resource-exporter.observability.svc.cluster.local:9102
