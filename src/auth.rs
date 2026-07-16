@@ -77,7 +77,7 @@ pub async fn authenticate(pool: &PgPool, headers: &HeaderMap) -> Result<AuthedDe
 
     let hash = token_hash(token);
     let row: Option<(Uuid, Uuid)> = sqlx::query_as(
-        "SELECT id, account_id FROM devices WHERE sync_token_hash = $1 AND revoked = FALSE",
+        "SELECT id, account_id FROM threefa.devices WHERE sync_token_hash = $1 AND revoked = FALSE",
     )
     .bind(&hash)
     .fetch_optional(pool)

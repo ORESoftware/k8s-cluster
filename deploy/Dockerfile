@@ -5,12 +5,11 @@
 #   docker build -f deploy/Dockerfile -t threefa-sync-server:dev .
 # Base images pinned by digest for reproducible, tamper-evident builds. Refresh
 # the digest when bumping the tag: `docker buildx imagetools inspect <tag>`.
-FROM rust:1.83-bookworm@sha256:a45bf1f5d9af0a23b26703b3500d70af1abff7f984a7abef5a104b42c02a292b AS build
+FROM rust:1.95-bookworm@sha256:6258907abe69656e41cd992e0b705cdcfabcbbe3db374f92ed2d47121282d4a1 AS build
 WORKDIR /app
 
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
-COPY migrations ./migrations
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry,sharing=locked \
     --mount=type=cache,target=/app/target,id=threefa-backend-target,sharing=locked \

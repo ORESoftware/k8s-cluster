@@ -33,6 +33,8 @@ seeds or your password. Written in Rust (axum + sqlx/Postgres).
 | POST   | `/v1/vault`           | ✓    | Push a sealed vault blob (version-vector reconciled) |
 | POST   | `/v1/devices/revoke`  | ✓    | Revoke a device's sync token         |
 | GET    | `/healthz`            | —    | Liveness                             |
+| GET    | `/readyz`             | —    | Postgres readiness                   |
+| GET    | `/metrics`            | —    | Prometheus metrics                   |
 
 ## Security model
 
@@ -48,12 +50,33 @@ seeds or your password. Written in Rust (axum + sqlx/Postgres).
 ## Run locally
 
 ```bash
+DATABASE_URL=postgres://user:pass@localhost/threefa sqlx migrate run
 DATABASE_URL=postgres://user:pass@localhost/threefa cargo run
-# runs migrations on startup, serves on :8080 (override with BIND_ADDR)
+# serves on :8080 (override with BIND_ADDR)
 ```
+
+Migrations are an explicit operator step: the server never applies DDL on
+startup. Review the SQL before running `sqlx migrate run`, and use the shared
+declarative Postgres contract when deploying into the ORES cluster. Migration
+`0002_isolate_threefa_schema.sql` moves the legacy public tables into the
+service-owned `threefa` schema; confirm that the source tables belong to 3FA
+before applying it to a shared database.
 
 `sqlx` uses runtime (non-macro) queries, so **no live database is needed to
 build** — only to run.
+
+The dependency lock currently requires Rust 1.88 or newer. The deployment
+builder is pinned to the multi-architecture Rust 1.95 Bookworm image digest.
+
+## Observability
+
+- JSON `tracing` records go to stdout for Promtail/Loki collection.
+- HTTP spans preserve W3C `traceparent` and export over OTLP/HTTP. Configure
+  `OTEL_EXPORTER_OTLP_ENDPOINT` or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`.
+- `/metrics` exposes bounded route/status counters, request latency histograms,
+  and vault-conflict counts for Prometheus.
+- `THREEFA_AUTH_MAX_CONCURRENT` (default `2`) bounds concurrent Argon2 work;
+  excess login/register requests fail with `429` instead of exhausting memory.
 
 ## Layout
 
@@ -62,7 +85,7 @@ src/app.rs        Router, handlers, app state
 src/auth.rs       Argon2id verifier + bearer tokens (OPAQUE seam)
 src/vault_blob.rs Sealed-blob store + version-vector reconciliation
 src/devices.rs    Device registration / revocation
-src/db.rs         Pool + migration runner
+src/db.rs         Bounded Postgres pool (DDL stays operator-owned)
 src/protocol.rs   Wire-protocol DTOs (duplicated with the frontend)
 migrations/       sqlx Postgres migrations
 deploy/           Dockerfile + k8s/ArgoCD manifests

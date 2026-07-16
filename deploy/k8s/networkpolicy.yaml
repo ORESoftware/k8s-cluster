@@ -19,6 +19,14 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
+    # Prometheus scrapes /metrics on the same HTTP port.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 8080
   egress:
     # DNS
     - to:

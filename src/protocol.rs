@@ -12,6 +12,7 @@
 //! seed, password, or vault key.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 /// Protocol version negotiated between client and server. Bump on ANY breaking
 /// change to the DTOs below (and to flag a copy drift between the two repos).
@@ -113,6 +114,22 @@ pub struct VersionEntry {
 /// A complete version vector: the causal history a blob has observed.
 pub type VersionVector = Vec<VersionEntry>;
 
+/// Validate client-supplied vector structure before it is compared or stored.
+/// Duplicate ids make vector-clock comparison ambiguous, zero counters carry no
+/// causal information, and unchecked labels/cardinality would allow a valid
+/// device token to grow the JSON document without bound.
+pub fn version_vector_is_well_formed(vector: &VersionVector) -> bool {
+    if vector.len() > MAX_VERSION_ENTRIES {
+        return false;
+    }
+    let mut ids = HashSet::with_capacity(vector.len());
+    vector.iter().all(|entry| {
+        entry.counter > 0
+            && device_id_is_valid(&entry.device_id)
+            && ids.insert(entry.device_id.as_str())
+    })
+}
+
 /// Request to push a new sealed vault version up to the server.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PushRequest {
@@ -166,9 +183,19 @@ mod tests {
     fn default_params_are_sane_but_extremes_are_not() {
         assert!(KdfParams::default().is_sane());
         // Memory-exhaustion attempt (~4 GiB) is rejected.
-        assert!(!KdfParams { mem_kib: 4_000_000, iterations: 3, parallelism: 1 }.is_sane());
+        assert!(!KdfParams {
+            mem_kib: 4_000_000,
+            iterations: 3,
+            parallelism: 1
+        }
+        .is_sane());
         // Weakened-to-nothing params are rejected.
-        assert!(!KdfParams { mem_kib: 8, iterations: 0, parallelism: 0 }.is_sane());
+        assert!(!KdfParams {
+            mem_kib: 8,
+            iterations: 0,
+            parallelism: 0
+        }
+        .is_sane());
     }
 
     #[test]
@@ -202,5 +229,35 @@ mod tests {
         assert!(!device_id_is_valid("has space"));
         assert!(!device_id_is_valid("bad\nnewline"));
         assert!(!device_id_is_valid(&"x".repeat(MAX_DEVICE_ID_LEN + 1)));
+    }
+
+    #[test]
+    fn version_vector_validation_rejects_duplicates_zeroes_and_bad_ids() {
+        let valid = vec![
+            VersionEntry {
+                device_id: "device-a".into(),
+                counter: 2,
+            },
+            VersionEntry {
+                device_id: "device-b".into(),
+                counter: 1,
+            },
+        ];
+        assert!(version_vector_is_well_formed(&valid));
+
+        let mut duplicate = valid.clone();
+        duplicate.push(VersionEntry {
+            device_id: "device-a".into(),
+            counter: 3,
+        });
+        assert!(!version_vector_is_well_formed(&duplicate));
+
+        let mut zero = valid.clone();
+        zero[0].counter = 0;
+        assert!(!version_vector_is_well_formed(&zero));
+
+        let mut malformed = valid;
+        malformed[0].device_id = "bad id".into();
+        assert!(!version_vector_is_well_formed(&malformed));
     }
 }

@@ -14,9 +14,13 @@
 //! timeout (see [`router`]).
 
 use crate::error::ApiError;
-use crate::{auth, db, devices, vault_blob};
+use crate::protocol::{PullResponse, PushRequest, PushResponse};
+use crate::{auth, db, devices, metrics, telemetry, vault_blob};
+use axum::body::Body;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
+use axum::middleware;
+use axum::response::Response;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
@@ -24,13 +28,12 @@ use sqlx::PgPool;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
-use crate::protocol::{PullResponse, PushRequest, PushResponse};
+use tokio::sync::Semaphore;
 use tower_governor::governor::GovernorConfigBuilder;
 use tower_governor::key_extractor::SmartIpKeyExtractor;
 use tower_governor::GovernorLayer;
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::timeout::TimeoutLayer;
-use tower_http::trace::TraceLayer;
 use uuid::Uuid;
 
 /// Hard caps on attacker-controlled string inputs (bytes). The body limit is
@@ -41,30 +44,42 @@ const MAX_DEVICE_NAME_LEN: usize = 256;
 const MAX_PASSWORD_LEN: usize = 1024;
 /// Per-request wall-clock budget. Bounds slow/stuck handlers.
 const REQUEST_TIMEOUT_SECS: u64 = 15;
+const DEFAULT_AUTH_MAX_CONCURRENT: usize = 2;
 
 #[derive(Clone)]
 pub struct AppState {
     pub pool: PgPool,
+    pub metrics: Arc<metrics::Metrics>,
+    auth_slots: Arc<Semaphore>,
 }
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,sqlx=warn".into()),
-        )
-        .init();
+    let _telemetry = telemetry::init("threefa-sync-server");
 
     let database_url = std::env::var("DATABASE_URL")
         .map_err(|_| "DATABASE_URL must be set (Postgres connection string)")?;
     let bind = std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".into());
+    let auth_max_concurrent = std::env::var("THREEFA_AUTH_MAX_CONCURRENT")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(DEFAULT_AUTH_MAX_CONCURRENT);
 
     let pool = db::connect(&database_url).await?;
-    let state = AppState { pool };
+    let state = AppState {
+        pool,
+        metrics: Arc::new(metrics::Metrics::new()?),
+        auth_slots: Arc::new(Semaphore::new(auth_max_concurrent)),
+    };
 
     let app = router(state);
     let addr: SocketAddr = bind.parse()?;
-    tracing::info!(%addr, "3FA sync server listening");
+    tracing::info!(
+        %addr,
+        auth_max_concurrent,
+        protocol_version = crate::protocol::PROTOCOL_VERSION,
+        "3FA sync server listening"
+    );
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     // `into_make_service_with_connect_info` exposes the socket peer address so the
@@ -106,11 +121,16 @@ pub fn router(state: AppState) -> Router {
         .route("/healthz", get(|| async { "ok" }))
         // Readiness: only serve traffic if the DB pool is actually usable.
         .route("/readyz", get(readyz))
+        .route("/metrics", get(metrics_http))
         .merge(auth_routes)
         .route("/v1/devices/revoke", post(revoke_device))
         .route("/v1/vault", get(pull_vault).post(push_vault))
         // Outermost-to-innermost: request log, body cap, then a hard timeout.
-        .layer(TraceLayer::new_for_http())
+        .layer(telemetry::http_trace_layer())
+        .layer(middleware::from_fn_with_state(
+            state.metrics.clone(),
+            metrics::record_http_metrics,
+        ))
         // Sealed blobs are small; cap bodies to 1 MiB to bound abuse.
         .layer(RequestBodyLimitLayer::new(1024 * 1024))
         // Bound every request's lifetime so slow/hung clients can't pin the small
@@ -120,6 +140,10 @@ pub fn router(state: AppState) -> Router {
             Duration::from_secs(REQUEST_TIMEOUT_SECS),
         ))
         .with_state(state)
+}
+
+async fn metrics_http(State(st): State<AppState>) -> Response<Body> {
+    metrics::response(&st.metrics)
 }
 
 /// Readiness probe: confirms the Postgres pool can serve a trivial query within a
@@ -172,23 +196,31 @@ async fn register(
     // single field can't carry an unbounded payload into the DB / version-vector
     // space. Password also has a minimum length.
     if req.username.trim().is_empty()
+        || req.username != req.username.trim()
         || req.username.len() > MAX_USERNAME_LEN
+        || req.device_name.trim().is_empty()
+        || req.device_name != req.device_name.trim()
         || req.device_name.len() > MAX_DEVICE_NAME_LEN
         || !(8..=MAX_PASSWORD_LEN).contains(&req.password.len())
     {
         return Err(ApiError::BadRequest);
     }
-    let secret = auth::hash_password(req.password.as_bytes())?;
+    let secret = hash_password_bounded(&st, req.password).await?;
+
+    // Account creation and first-device issuance are one transaction. Without
+    // this, a transient device insert failure leaves an unusable username that
+    // every registration retry sees as a duplicate.
+    let mut tx = st.pool.begin().await?;
 
     // A duplicate username trips the UNIQUE constraint, which sqlx surfaces as a
     // database error (NOT an empty row set). Map that to a coarse 409 instead of
     // letting it bubble up as a 500 with an error-log entry on every retry.
     let account_id: Uuid = match sqlx::query_scalar(
-        "INSERT INTO accounts (username, auth_secret) VALUES ($1, $2) RETURNING id",
+        "INSERT INTO threefa.accounts (username, auth_secret) VALUES ($1, $2) RETURNING id",
     )
     .bind(&req.username)
     .bind(&secret)
-    .fetch_one(&st.pool)
+    .fetch_one(&mut *tx)
     .await
     {
         Ok(id) => id,
@@ -198,7 +230,8 @@ async fn register(
         Err(e) => return Err(e.into()),
     };
 
-    let (device_id, token) = devices::register(&st.pool, account_id, &req.device_name).await?;
+    let (device_id, token) = devices::register(&mut *tx, account_id, &req.device_name).await?;
+    tx.commit().await?;
     Ok(Json(TokenResponse {
         account_id,
         device_id,
@@ -212,22 +245,29 @@ async fn login(
 ) -> Result<Json<TokenResponse>, ApiError> {
     // Bound the inputs before any DB or Argon2 work. These checks are
     // account-independent, so they add no username-enumeration signal.
-    if req.username.len() > MAX_USERNAME_LEN
+    if req.username.trim().is_empty()
+        || req.username != req.username.trim()
+        || req.username.len() > MAX_USERNAME_LEN
+        || req.device_name.trim().is_empty()
+        || req.device_name != req.device_name.trim()
         || req.device_name.len() > MAX_DEVICE_NAME_LEN
         || req.password.len() > MAX_PASSWORD_LEN
     {
         return Err(ApiError::BadRequest);
     }
     let row: Option<(Uuid, String)> =
-        sqlx::query_as("SELECT id, auth_secret FROM accounts WHERE username = $1")
+        sqlx::query_as("SELECT id, auth_secret FROM threefa.accounts WHERE username = $1")
             .bind(&req.username)
             .fetch_optional(&st.pool)
             .await?;
 
     // Always run exactly one Argon2 verify to avoid a username-enumeration
     // timing oracle, whether or not the account exists.
-    let (account_id, secret) = row.unwrap_or_else(|| (Uuid::nil(), dummy_phc().to_string()));
-    let ok = auth::verify_password(req.password.as_bytes(), &secret);
+    let (account_id, secret) = match row {
+        Some((account_id, secret)) => (account_id, Some(secret)),
+        None => (Uuid::nil(), None),
+    };
+    let ok = verify_password_bounded(&st, req.password, secret).await?;
     if !ok || account_id.is_nil() {
         return Err(ApiError::Unauthorized);
     }
@@ -263,7 +303,50 @@ async fn push_vault(
     Json(req): Json<PushRequest>,
 ) -> Result<Json<PushResponse>, ApiError> {
     let who = auth::authenticate(&st.pool, &headers).await?;
-    Ok(Json(vault_blob::store(&st.pool, who, &req).await?))
+    let response = vault_blob::store(&st.pool, who, &req).await?;
+    if matches!(&response, PushResponse::Conflict { .. }) {
+        st.metrics.vault_conflicts.inc();
+    }
+    Ok(Json(response))
+}
+
+async fn hash_password_bounded(st: &AppState, password: String) -> Result<String, ApiError> {
+    let permit = st
+        .auth_slots
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| ApiError::TooManyRequests)?;
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        auth::hash_password(password.as_bytes())
+    })
+    .await
+    .map_err(|error| {
+        tracing::error!(error = %error, "Argon2 registration worker failed");
+        ApiError::Internal
+    })?
+}
+
+async fn verify_password_bounded(
+    st: &AppState,
+    password: String,
+    secret: Option<String>,
+) -> Result<bool, ApiError> {
+    let permit = st
+        .auth_slots
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| ApiError::TooManyRequests)?;
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        let secret = secret.unwrap_or_else(|| dummy_phc().to_string());
+        auth::verify_password(password.as_bytes(), &secret)
+    })
+    .await
+    .map_err(|error| {
+        tracing::error!(error = %error, "Argon2 login worker failed");
+        ApiError::Internal
+    })
 }
 
 /// A valid Argon2id PHC string, computed once, to verify against when the
@@ -271,7 +354,5 @@ async fn push_vault(
 fn dummy_phc() -> &'static str {
     use std::sync::OnceLock;
     static D: OnceLock<String> = OnceLock::new();
-    D.get_or_init(|| {
-        auth::hash_password(b"3fa-dummy-account-not-real").expect("dummy hash")
-    })
+    D.get_or_init(|| auth::hash_password(b"3fa-dummy-account-not-real").expect("dummy hash"))
 }

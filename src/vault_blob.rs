@@ -8,10 +8,12 @@
 
 use crate::auth::AuthedDevice;
 use crate::error::ApiError;
+use crate::protocol::{
+    KdfParams, PullResponse, PushRequest, PushResponse, SealedBlob, VersionEntry, VersionVector,
+};
+use base64::Engine;
 use sqlx::types::Json;
 use sqlx::PgPool;
-use crate::protocol::{KdfParams, PullResponse, PushRequest, PushResponse, SealedBlob, VersionEntry,
-    VersionVector};
 use uuid::Uuid;
 
 // ---- pure version-vector logic (unit-tested without a DB) ----
@@ -57,12 +59,12 @@ pub fn reconcile(
 
 // ---- DB-backed handlers ----
 
-type BlobRow = (Vec<u8>, Vec<u8>, Vec<u8>, Json<KdfParams>, Json<VersionVector>);
+type BlobRow = (String, String, String, Json<KdfParams>, Json<VersionVector>);
 
 pub async fn load(pool: &PgPool, account_id: Uuid) -> Result<PullResponse, ApiError> {
     let row: Option<BlobRow> = sqlx::query_as(
         "SELECT ciphertext, nonce, kdf_salt, kdf_params, version \
-         FROM vault_blobs WHERE account_id = $1",
+         FROM threefa.vault_blobs WHERE account_id = $1",
     )
     .bind(account_id)
     .fetch_optional(pool)
@@ -71,9 +73,15 @@ pub async fn load(pool: &PgPool, account_id: Uuid) -> Result<PullResponse, ApiEr
     Ok(match row {
         Some((ciphertext, nonce, kdf_salt, params, version)) => PullResponse {
             blob: Some(SealedBlob {
-                ciphertext,
-                nonce,
-                kdf_salt,
+                ciphertext: base64::engine::general_purpose::STANDARD
+                    .decode(ciphertext)
+                    .map_err(|_| ApiError::Internal)?,
+                nonce: base64::engine::general_purpose::STANDARD
+                    .decode(nonce)
+                    .map_err(|_| ApiError::Internal)?,
+                kdf_salt: base64::engine::general_purpose::STANDARD
+                    .decode(kdf_salt)
+                    .map_err(|_| ApiError::Internal)?,
                 kdf_params: params.0,
             }),
             version: version.0,
@@ -95,18 +103,23 @@ pub async fn store(
     // device can't be made to allocate gigabytes on the next pull), and bound the
     // client-supplied device id (charset + length) so it can't inject junk into
     // the version vector. The server still never decrypts — this is pure shape.
-    if !req.blob.is_well_formed() || !crate::protocol::device_id_is_valid(&req.device_id) {
+    if !req.blob.is_well_formed()
+        || !crate::protocol::device_id_is_valid(&req.device_id)
+        || !crate::protocol::version_vector_is_well_formed(&req.base_version)
+        || req.device_id != who.device_id.to_string()
+    {
         return Err(ApiError::BadRequest);
     }
 
     // Read current version (default empty), reconcile, then upsert atomically.
     let mut tx = pool.begin().await?;
 
-    let current: Option<Json<VersionVector>> =
-        sqlx::query_scalar("SELECT version FROM vault_blobs WHERE account_id = $1 FOR UPDATE")
-            .bind(who.account_id)
-            .fetch_optional(&mut *tx)
-            .await?;
+    let current: Option<Json<VersionVector>> = sqlx::query_scalar(
+        "SELECT version FROM threefa.vault_blobs WHERE account_id = $1 FOR UPDATE",
+    )
+    .bind(who.account_id)
+    .fetch_optional(&mut *tx)
+    .await?;
     let stored = current.map(|j| j.0).unwrap_or_default();
 
     let new_version = match reconcile(&stored, &req.base_version, &req.device_id) {
@@ -124,8 +137,12 @@ pub async fn store(
         return Err(ApiError::BadRequest);
     }
 
+    let ciphertext = base64::engine::general_purpose::STANDARD.encode(&req.blob.ciphertext);
+    let nonce = base64::engine::general_purpose::STANDARD.encode(&req.blob.nonce);
+    let kdf_salt = base64::engine::general_purpose::STANDARD.encode(&req.blob.kdf_salt);
+
     sqlx::query(
-        "INSERT INTO vault_blobs (account_id, ciphertext, nonce, kdf_salt, kdf_params, version, updated_at) \
+        "INSERT INTO threefa.vault_blobs (account_id, ciphertext, nonce, kdf_salt, kdf_params, version, updated_at) \
          VALUES ($1, $2, $3, $4, $5, $6, now()) \
          ON CONFLICT (account_id) DO UPDATE SET \
            ciphertext = EXCLUDED.ciphertext, nonce = EXCLUDED.nonce, \
@@ -133,16 +150,18 @@ pub async fn store(
            version = EXCLUDED.version, updated_at = now()",
     )
     .bind(who.account_id)
-    .bind(&req.blob.ciphertext)
-    .bind(&req.blob.nonce)
-    .bind(&req.blob.kdf_salt)
+    .bind(ciphertext)
+    .bind(nonce)
+    .bind(kdf_salt)
     .bind(Json(req.blob.kdf_params))
     .bind(Json(&new_version))
     .execute(&mut *tx)
     .await?;
 
     tx.commit().await?;
-    Ok(PushResponse::Ok { version: new_version })
+    Ok(PushResponse::Ok {
+        version: new_version,
+    })
 }
 
 #[cfg(test)]
