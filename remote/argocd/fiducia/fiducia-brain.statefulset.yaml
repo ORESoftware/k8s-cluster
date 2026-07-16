@@ -1,0 +1,336 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: fiducia-brain
+  namespace: fiducia
+  labels:
+    app: fiducia-brain
+spec:
+  # The brain now runs its OWN Raft (one member per ordinal), replicating the
+  # placement map + scale plan and electing a single leader that alone reconciles.
+  # That needs STABLE per-member network identity, so this is a StatefulSet with a
+  # headless peer service — the same pattern as fiducia-node. (It replaces the old
+  # Deployment x3, which was split-brain: 3 independent in-memory brains behind a
+  # round-robin Service.)
+  serviceName: fiducia-brain-peer
+  replicas: 3
+  podManagementPolicy: Parallel
+  minReadySeconds: 5
+  selector:
+    matchLabels:
+      app: fiducia-brain
+  template:
+    metadata:
+      labels:
+        app: fiducia-brain
+      annotations:
+        dd.dev/fiducia-source: 'fiducia-cloud/fiducia-monorepo@main (apps/fiducia-brain.rs)'
+        dd.dev/fiducia-build: '2026-06-28-brain-raft'
+    spec:
+      # The KubeOracle reads pod status from the k8s API, so it needs its SA token
+      # mounted. The token is scoped by the read-only Role below (pods get/list).
+      serviceAccountName: fiducia-brain
+      automountServiceAccountToken: true
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: fiducia-brain
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          command: [/bin/bash, -lc]
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              # Clone PUBLIC app repos as siblings (the monorepo is private).
+              rm -rf /tmp/src && mkdir -p /tmp/src && cd /tmp/src
+              for repo in fiducia-brain.rs fiducia-routing.rs fiducia-interfaces; do git clone --depth 1 --branch main "https://github.com/fiducia-cloud/${repo}.git"; done
+              # Raft identity + peer list from the StatefulSet ordinal (exclude self).
+              # Ids are full base URLs (scheme+host+port) — the engine uses them as
+              # both peer identity and the address its HTTP transport POSTs to.
+              suffix="fiducia-brain-peer.fiducia.svc.cluster.local"
+              peers=""
+              for i in 0 1 2; do
+                n="fiducia-brain-$i"
+                [ "$n" = "${POD_NAME}" ] && continue
+                peers="${peers:+$peers,}http://${n}.${suffix}:9095"
+              done
+              export FIDUCIA_BRAIN_ID="http://${POD_NAME}.${suffix}:9095"
+              export FIDUCIA_BRAIN_PEERS="$peers"
+              echo "[fiducia-brain] id=${FIDUCIA_BRAIN_ID} peers=${FIDUCIA_BRAIN_PEERS}"
+              cd /tmp/src/fiducia-brain.rs
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: PORT
+              value: '8095'
+            # Raft WAL home (on the /tmp emptyDir). A pod that loses this rejoins
+            # empty and re-syncs from the leader; a total brain loss re-derives
+            # placement from node heartbeats (the reconciler's cold-start adoption).
+            # A PVC would harden this further.
+            - name: FIDUCIA_DATA_DIR
+              value: /tmp/fiducia-brain/raft
+            - name: FIDUCIA_SHARD_COUNT
+              value: '1'
+            - name: FIDUCIA_TARGET_NODES
+              value: '3'
+            - name: FIDUCIA_REPLICATION_FACTOR
+              value: '3'
+            - name: FIDUCIA_BRAIN_PEER_PORT
+              value: '9095'
+            # Cluster-internal trusted-hop secret (shared, identical across node,
+            # brain, sidecar, admin). Brain fails closed on /v1 without it, so it
+            # will CrashLoop until the Secret exists:
+            #   kubectl -n fiducia create secret generic fiducia-cluster-secrets \
+            #     --from-literal=internal-secret=<shared 32+ bytes> \
+            #     --from-literal=brain-raft-secret=<brain peer-plane 32+ bytes>
+            - name: FIDUCIA_INTERNAL_SECRET
+              valueFrom:
+                secretKeyRef: { name: fiducia-cluster-secrets, key: internal-secret, optional: true }
+            # Separate bearer secret for the brain's /raft peer plane (:9095).
+            - name: FIDUCIA_BRAIN_RAFT_SECRET
+              valueFrom:
+                secretKeyRef: { name: fiducia-cluster-secrets, key: brain-raft-secret, optional: true }
+            # Export OTLP traces to the shared collector (fiducia-telemetry
+            # degrades to stdout-only logging when unset).
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://dd-otel-collector.observability.svc.cluster.local:4317
+            - name: RUST_LOG
+              value: info
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /tmp/cargo
+            - name: CARGO_TARGET_DIR
+              value: /tmp/target
+            - name: CARGO_BUILD_JOBS
+              value: '1'
+          ports:
+            - name: http
+              containerPort: 8095
+            - name: peer
+              containerPort: 9095
+          resources:
+            requests:
+              memory: 768Mi
+            limits:
+              memory: 3Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 240
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+        # Control-plane metrics exporter: the same fiducia-node-sidecar binary run
+        # in brain mode (FIDUCIA_EXPORT_TARGET=brain forces the exporter-only role,
+        # so it does NOT heartbeat itself in as a node). Translates the local
+        # brain's /v1/status rollup into Prometheus text on :8091/metrics, scraped
+        # by the fiducia-brain-sidecar job. Builds from source in-pod like the rest.
+        - name: fiducia-brain-sidecar
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          command: [/bin/bash, -lc]
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              rm -rf /tmp/sidecar-src && mkdir -p /tmp/sidecar-src && cd /tmp/sidecar-src
+              for repo in fiducia-node-sidecar.rs fiducia-interfaces; do git clone --depth 1 --branch main "https://github.com/fiducia-cloud/${repo}.git"; done
+              echo "[brain-sidecar] exporter for ${POD_NAME} (brain=${FIDUCIA_BRAIN_URL})"
+              cd /tmp/sidecar-src/fiducia-node-sidecar.rs
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            # Label brain metrics by the pod they came from.
+            - name: FIDUCIA_NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: FIDUCIA_REGION
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: PORT
+              value: '8091'
+            # Brain mode → exporter-only role (no node heartbeat / log-shipping).
+            - name: FIDUCIA_EXPORT_TARGET
+              value: brain
+            - name: FIDUCIA_BRAIN_URL
+              value: http://localhost:8095
+            # Brain /v1/status requires the trusted-hop secret; the exporter also
+            # fails closed at startup without it.
+            - name: FIDUCIA_INTERNAL_SECRET
+              valueFrom:
+                secretKeyRef: { name: fiducia-cluster-secrets, key: internal-secret, optional: true }
+            - name: RUST_LOG
+              value: info
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /tmp/cargo
+            - name: CARGO_TARGET_DIR
+              value: /tmp/sidecar-target
+            - name: CARGO_BUILD_JOBS
+              value: '1'
+          ports:
+            - name: sidecar
+              containerPort: 8091
+          resources:
+            requests:
+              memory: 384Mi
+            limits:
+              memory: 1536Mi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: sidecar
+            periodSeconds: 5
+            # Cold in-pod build shares CARGO_HOME with the brain container; give the
+            # package-cache lock room so a cold dependency pull can't trip the probe.
+            failureThreshold: 360
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: sidecar
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: sidecar
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 8Gi
+---
+# Client-facing API service (admin, load balancer, operators). Round-robins the
+# members: reads are served locally (placement is replicated); writes (`/v1/scale`)
+# are accepted only by the leader, which a follower reports via `leader`.
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-brain
+  namespace: fiducia
+  labels:
+    app: fiducia-brain
+spec:
+  type: ClusterIP
+  selector:
+    app: fiducia-brain
+  ports:
+    - name: http
+      port: 8095
+      targetPort: http
+    - name: peer
+      port: 9095
+      targetPort: peer
+---
+# Headless peer service — stable DNS per member
+# (fiducia-brain-0.fiducia-brain-peer.fiducia.svc.cluster.local) for Raft peer RPC
+# on /raft/*. publishNotReadyAddresses so members reach each other during the cold
+# build / initial election, before /readyz passes.
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-brain-peer
+  namespace: fiducia
+  labels:
+    app: fiducia-brain
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app: fiducia-brain
+  ports:
+    - name: http
+      port: 8095
+      targetPort: http
+---
+# Least-privilege identity for the KubeOracle: READ-ONLY on pods in this namespace
+# (it confirms data-plane pod liveness; it never mutates cluster state — k8s
+# schedules pods, the brain only places shards).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fiducia-brain
+  namespace: fiducia
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fiducia-brain-pod-reader
+  namespace: fiducia
+rules:
+  - apiGroups: ['']
+    resources: [pods]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fiducia-brain-pod-reader
+  namespace: fiducia
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: fiducia-brain-pod-reader
+subjects:
+  - kind: ServiceAccount
+    name: fiducia-brain
+    namespace: fiducia
