@@ -4589,6 +4589,56 @@ fn chunked_body_complete(body: &[u8]) -> bool {
     }
 }
 
+async fn read_http_response<R>(stream: &mut R, max_response_bytes: u64) -> Result<Vec<u8>, String>
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    let mut response = Vec::new();
+    let mut header_end: Option<usize> = None;
+    let mut expected_len: Option<usize> = None;
+    let mut chunked = false;
+    let mut buf = [0u8; 4096];
+    loop {
+        if response.len() as u64 > max_response_bytes {
+            return Err(format!(
+                "live-mutex response exceeded {} bytes",
+                max_response_bytes
+            ));
+        }
+        if let Some(end) = header_end {
+            let body_start = end + 4;
+            let body_len = response.len().saturating_sub(body_start);
+            if let Some(length) = expected_len {
+                if body_len >= length {
+                    response.truncate(body_start + length);
+                    break;
+                }
+            } else if chunked && chunked_body_complete(&response[body_start..]) {
+                break;
+            }
+        }
+        let read = stream
+            .read(&mut buf)
+            .await
+            .map_err(|error| format!("read response: {error}"))?;
+        if read == 0 {
+            break;
+        }
+        response.extend_from_slice(&buf[..read]);
+        if header_end.is_none() {
+            if let Some(end) = response.windows(4).position(|window| window == b"\r\n\r\n") {
+                let headers = std::str::from_utf8(&response[..end]).map_err(|error| {
+                    format!("live-mutex response headers are not utf8: {error}")
+                })?;
+                expected_len = response_content_length(headers)?;
+                chunked = response_is_chunked(headers);
+                header_end = Some(end);
+            }
+        }
+    }
+    Ok(response)
+}
+
 async fn live_mutex_post_json(
     config: &LiveMutexConfig,
     path: &str,
@@ -4642,50 +4692,7 @@ async fn live_mutex_post_json(
             .await
             .map_err(|error| format!("flush request body: {error}"))?;
         let max_response_bytes = config.max_response_bytes.clamp(1, 16 * 1024 * 1024);
-        let mut response = Vec::new();
-        let mut header_end: Option<usize> = None;
-        let mut expected_len: Option<usize> = None;
-        let mut chunked = false;
-        let mut buf = [0u8; 4096];
-        loop {
-            if response.len() as u64 > max_response_bytes {
-                return Err(format!(
-                    "live-mutex response exceeded {} bytes",
-                    max_response_bytes
-                ));
-            }
-            if let Some(end) = header_end {
-                let body_start = end + 4;
-                let body_len = response.len().saturating_sub(body_start);
-                if let Some(length) = expected_len {
-                    if body_len >= length {
-                        response.truncate(body_start + length);
-                        break;
-                    }
-                } else if chunked && chunked_body_complete(&response[body_start..]) {
-                    break;
-                }
-            }
-            let read = stream
-                .read(&mut buf)
-                .await
-                .map_err(|error| format!("read response: {error}"))?;
-            if read == 0 {
-                break;
-            }
-            response.extend_from_slice(&buf[..read]);
-            if header_end.is_none() {
-                if let Some(end) = response.windows(4).position(|window| window == b"\r\n\r\n") {
-                    let headers = std::str::from_utf8(&response[..end]).map_err(|error| {
-                        format!("live-mutex response headers are not utf8: {error}")
-                    })?;
-                    expected_len = response_content_length(headers)?;
-                    chunked = response_is_chunked(headers);
-                    header_end = Some(end);
-                }
-            }
-        }
-        Ok::<Vec<u8>, String>(response)
+        read_http_response(&mut stream, max_response_bytes).await
     })
     .await
     .map_err(|_| format!("live-mutex request to {path} timed out"))??;
@@ -8608,6 +8615,60 @@ mod tests {
         }
     }
 
+    fn assert_solution_certificate(
+        problem: &MipProblemSpec,
+        result: &SubproblemResult,
+        tolerance: f64,
+    ) {
+        assert!(result.ok, "solver error: {:?}", result.error);
+        assert_eq!(result.status, "optimal");
+        assert_eq!(result.x.len(), problem.c.len());
+
+        for (index, value) in result.x.iter().copied().enumerate() {
+            assert!(value.is_finite(), "x[{index}] is not finite: {value}");
+            assert!(value >= -tolerance, "x[{index}] is negative: {value}");
+            if let Some(upper_bounds) = problem.ub.as_ref() {
+                assert!(
+                    value <= upper_bounds[index] + tolerance,
+                    "x[{index}]={value} exceeds upper bound {}",
+                    upper_bounds[index]
+                );
+            }
+            if problem.integer_vars[index] {
+                assert!(
+                    (value - value.round()).abs() <= tolerance,
+                    "integer x[{index}] is fractional: {value}"
+                );
+            }
+        }
+
+        for (row_index, (row, rhs)) in problem.a.iter().zip(&problem.b).enumerate() {
+            let activity = row
+                .iter()
+                .zip(&result.x)
+                .map(|(coefficient, value)| coefficient * value)
+                .sum::<f64>();
+            assert!(
+                activity <= rhs + tolerance,
+                "row {row_index} is violated: activity {activity} > rhs {rhs}"
+            );
+        }
+
+        let objective = problem
+            .c
+            .iter()
+            .zip(&result.x)
+            .map(|(coefficient, value)| coefficient * value)
+            .sum::<f64>();
+        assert!(
+            result
+                .z
+                .is_some_and(|reported| (reported - objective).abs() <= tolerance),
+            "reported objective {:?} does not certify computed objective {objective}",
+            result.z
+        );
+    }
+
     async fn post_json(app: Router, path: &str, payload: Value) -> (StatusCode, Value) {
         let request = Request::builder()
             .method(Method::POST)
@@ -9377,32 +9438,25 @@ mod tests {
 
     #[tokio::test]
     async fn live_mutex_http_client_stops_after_content_length_without_eof() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let (mut client, mut server_stream) = tokio::io::duplex(2048);
         let server = tokio::spawn(async move {
-            let (mut socket, _) = listener.accept().await.unwrap();
-            let mut request = vec![0u8; 1024];
-            let _ = socket.read(&mut request).await.unwrap();
             let body = br#"{"acquired":true,"lockUuid":"lock-a"}"#;
             let response = format!(
                 "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n",
                 body.len()
             );
-            socket.write_all(response.as_bytes()).await.unwrap();
-            socket.write_all(body).await.unwrap();
+            server_stream.write_all(response.as_bytes()).await.unwrap();
+            server_stream.write_all(body).await.unwrap();
             tokio::time::sleep(Duration::from_millis(750)).await;
         });
-        let config = LiveMutexConfig {
-            base_url: format!("http://{addr}"),
-            auth_token: None,
-            request_timeout_ms: 1_000,
-            max_response_bytes: 1024,
-        };
 
         let started = Instant::now();
-        let value = live_mutex_post_json(&config, "/v1/lock", json!({"key":"content-length"}))
-            .await
+        let response = read_http_response(&mut client, 1024).await.unwrap();
+        let header_end = response
+            .windows(4)
+            .position(|window| window == b"\r\n\r\n")
             .unwrap();
+        let value: Value = serde_json::from_slice(&response[header_end + 4..]).unwrap();
 
         assert_eq!(value["lockUuid"], "lock-a");
         assert!(started.elapsed() < Duration::from_millis(500));
@@ -9772,20 +9826,22 @@ mod tests {
 
     #[test]
     fn soccer_formation_mip_and_lp_ipm_match_the_expected_optimum() {
+        let mip_problem = soccer_formation::problem(false);
+        let lp_problem = soccer_formation::problem(true);
         let mip = solve_subproblem(
-            test_job(soccer_formation::problem(false)),
+            test_job(mip_problem.clone()),
             "worker-soccer-mip".to_string(),
         );
-        let mut mip_ipm_job = test_job(soccer_formation::problem(false));
+        let mut mip_ipm_job = test_job(mip_problem.clone());
         mip_ipm_job.options.lp_algorithm = Some("internal-ipm".to_string());
         let mip_ipm = solve_subproblem(mip_ipm_job, "worker-soccer-mip-ipm".to_string());
-        let mut lp_job = test_job(soccer_formation::problem(true));
+        let mut lp_job = test_job(lp_problem.clone());
         lp_job.options.lp_algorithm = Some("internal-ipm".to_string());
         let lp = solve_subproblem(lp_job, "worker-soccer-lp".to_string());
 
-        assert!(mip.ok, "MIP error: {:?}", mip.error);
-        assert!(mip_ipm.ok, "MIP/IPM error: {:?}", mip_ipm.error);
-        assert!(lp.ok, "LP/IPM error: {:?}", lp.error);
+        assert_solution_certificate(&mip_problem, &mip, 1e-6);
+        assert_solution_certificate(&mip_problem, &mip_ipm, 1e-4);
+        assert_solution_certificate(&lp_problem, &lp, 1e-4);
         let expected = soccer_formation::expected_objective();
         assert!(mip.z.is_some_and(|z| (z - expected).abs() < 1e-6));
         assert!(mip_ipm.z.is_some_and(|z| (z - expected).abs() < 1e-4));
@@ -9809,6 +9865,42 @@ mod tests {
             .all(|value| { value.abs() < 1e-5 || (*value - 1.0).abs() < 1e-5 }));
     }
 
+    #[test]
+    fn soccer_formation_rejects_forcing_one_player_into_two_slots() {
+        let problem = soccer_formation::problem(false);
+        let names = problem.var_names.as_ref().unwrap();
+        let forced_variables = [
+            "assign_iker_lane_to_left_back",
+            "assign_iker_lane_to_right_back",
+        ]
+        .map(|variable_name| {
+            let index = names
+                .iter()
+                .position(|name| name == variable_name)
+                .unwrap_or_else(|| panic!("missing soccer variable {variable_name}"));
+            (variable_name, index)
+        });
+        let variable_count = names.len();
+        let mut job = test_job(problem);
+
+        for (variable_name, variable_index) in forced_variables {
+            let mut coefs = vec![0.0; variable_count];
+            coefs[variable_index] = -1.0;
+            job.extra_constraints.push(BranchConstraint {
+                coefs,
+                rhs: -1.0,
+                name: format!("force_{variable_name}"),
+            });
+        }
+
+        let result = solve_subproblem(job, "worker-soccer-infeasible".to_string());
+
+        assert!(!result.ok);
+        assert_eq!(result.status, "infeasible");
+        assert!(result.z.is_none());
+        assert!(result.x.is_empty());
+    }
+
     #[tokio::test]
     async fn soccer_formation_models_are_served_with_matching_matrices() {
         let app = app_router(test_state(NodeRole::Master));
@@ -9828,6 +9920,39 @@ mod tests {
             lp.pointer("/options/lpAlgorithm"),
             Some(&json!("internal-ipm"))
         );
+    }
+
+    #[tokio::test]
+    async fn published_soccer_models_solve_end_to_end_over_http() {
+        let app = app_router(test_state(NodeRole::Master));
+        let expected = soccer_formation::expected_objective();
+        let mut decoded_assignments = Vec::new();
+
+        for relaxed in [false, true] {
+            let payload = soccer_formation::model_document(relaxed);
+            let (status, body) = post_json(app.clone(), "/solve", payload).await;
+
+            assert_eq!(status, StatusCode::OK, "response: {body}");
+            assert_eq!(body.get("ok"), Some(&json!(true)));
+            assert_eq!(body.get("status"), Some(&json!("optimal")));
+            assert!(
+                body.get("z")
+                    .and_then(Value::as_f64)
+                    .is_some_and(|objective| (objective - expected).abs() <= 1e-4),
+                "response: {body}"
+            );
+            assert_eq!(body.get("distributed"), Some(&json!(false)));
+            let x = body
+                .get("x")
+                .and_then(Value::as_array)
+                .expect("solution vector")
+                .iter()
+                .map(|value| value.as_f64().expect("numeric solution value"))
+                .collect::<Vec<_>>();
+            decoded_assignments.push(soccer_formation::decode_assignment(&x).unwrap());
+        }
+
+        assert_eq!(decoded_assignments[0], decoded_assignments[1]);
     }
 
     #[test]
@@ -10348,6 +10473,39 @@ mod tests {
                 "{method}: {verification:?}"
             );
         }
+    }
+
+    #[cfg(feature = "external-solver-verification")]
+    #[test]
+    fn external_highs_detects_an_incorrect_soccer_objective_claim() {
+        if std::process::Command::new("highs")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            eprintln!("SKIP external soccer mismatch test: highs command not installed");
+            return;
+        }
+        let problem = normalized_problem(soccer_formation::problem(false)).unwrap();
+        let incorrect_z = soccer_formation::expected_objective() + 1.0;
+
+        let verification = run_external_verification(
+            &problem,
+            &SolveOptions::default(),
+            incorrect_z,
+            "highs",
+            1e-5,
+        )
+        .unwrap();
+
+        assert_eq!(verification.status, "mismatch", "{verification:?}");
+        assert_eq!(verification.solution_status.as_deref(), Some("optimal"));
+        assert!(verification.objective.is_some_and(|value| {
+            (value - soccer_formation::expected_objective()).abs() <= 1e-5
+        }));
+        assert!(verification
+            .objective_delta
+            .is_some_and(|delta| (delta - 1.0).abs() <= 1e-5));
     }
 
     #[tokio::test]
