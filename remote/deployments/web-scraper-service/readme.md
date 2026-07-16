@@ -2,6 +2,19 @@
 
 Long-running Fastify service for scraping from the remote Kubernetes runtime.
 
+## Safe and ethical use
+
+Scraping public or operator-authorized data is a safe, ethical, and legitimate
+automation technique when callers respect site terms and `robots.txt`, identify
+the automation where appropriate, rate-limit it, minimize retained data, and
+handle personal information responsibly. Playwright and Puppeteer are provided
+for exactly those compliant browser workflows.
+
+This service is not an access-control bypass. Do not use it to evade login,
+paywall, CAPTCHA, blocking, or opt-out controls without the target owner's
+written authorization. Private/cluster/cloud-metadata targets stay blocked,
+and the deployment's egress policy is the final SSRF backstop.
+
 ## Framework choice
 
 This service uses Fastify instead of Nest because the current server state is small and local:
@@ -75,8 +88,8 @@ and the result is reported as `response.captcha` (`detected`, `type`, `sitekey`,
 override with `"detectCaptcha": false`.
 
 On the browser strategies (`playwright`/`puppeteer`) the service can also solve
-the challenge: when `SCRAPER_CAPTCHA_AUTOSOLVE=true` (or a request sets
-`"solveCaptcha": true`) and a solver API key is present, it submits the sitekey to
+the challenge for owner-authorized testing: when the operator sets
+`SCRAPER_CAPTCHA_AUTOSOLVE=true` and a solver API key is present, it submits the sitekey to
 the provider, injects the returned token into the page's response field, fires the
 widget callback, and continues to extraction. `solved: true` means a token was
 obtained and applied. Static strategies report detection only — they have no page
@@ -95,7 +108,9 @@ and `type`.
 - **Cost amplification.** A solve holds the in-flight slot and the browser page
   for up to `SCRAPER_CAPTCHA_TIMEOUT_MS` (longer than the request timeout) and
   costs money per solve. A hostile target can serve a fake sitekey to trigger
-  this. Auto-solve is therefore off by default, and `SCRAPER_CAPTCHA_MAX_CONCURRENT`
+  this. Auto-solve is therefore off by default and cannot be enabled by a request;
+  `"solveCaptcha": false` may only disable an operator-enabled solve.
+  `SCRAPER_CAPTCHA_MAX_CONCURRENT`
   caps simultaneous solves — excess challenges are reported as detected-only
   (`captcha.error = "captcha solver concurrency limit reached"`) rather than
   queued. Keep auto-solve scoped to trusted target sets.

@@ -32,6 +32,7 @@ import {
   type CaptchaDetection,
   type CaptchaType,
 } from './captcha.js';
+import { captchaAutoSolveAllowed } from './scrape-policy.js';
 
 const STRATEGIES = [
   'native-fetch',
@@ -1064,7 +1065,10 @@ async function orchestrateCaptcha(
   }
   recordCaptchaMetric('detected', detection.type);
 
-  const autoSolve = input.solveCaptcha ?? config.captchaAutoSolve;
+  // Per-request input may disable an operator-enabled solver, but it cannot turn
+  // solving on. This keeps access-control/challenge automation behind an
+  // explicit deployment decision instead of an ordinary authenticated request.
+  const autoSolve = captchaAutoSolveAllowed(config.captchaAutoSolve, input.solveCaptcha);
   const solvable = SOLVABLE_CAPTCHA_TYPES.has(detection.type) && Boolean(detection.sitekey);
   if (!autoSolve || !solvable) {
     return;

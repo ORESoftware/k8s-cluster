@@ -523,11 +523,26 @@ outcomes.
 - `POST /learning/outcomes`
 - `POST /fabrication/learning/outcomes`
 
-When `NATS_URL` is configured, the service also queue-subscribes to
-`dd.remote.fabrication.requests` with queue group `dd-fabrication-server`,
-publishes responses to `dd.remote.fabrication.results`, emits compact lifecycle
-events to `dd.remote.events`, and can publish optimizer-shaped learning jobs to
-`dd.remote.mdp.optimize` when `FABRICATION_MDP_AUTOPUBLISH=true`. Generated
+When `NATS_URL` is configured, the service consumes
+`dd.remote.fabrication.requests` through the durable
+`DD_REMOTE_FABRICATION` JetStream and the explicit-ack consumer
+`dd-fabrication-server`. It acknowledges only after handler completion, bounds
+in-flight work, and leaves an unacknowledged message for redelivery if a task
+panics. The same limits-retention stream records fabrication result and worker
+subjects for replay/audit. The server publishes responses to
+`dd.remote.fabrication.results`, emits compact lifecycle events to
+`dd.remote.events`, and can publish optimizer-shaped learning jobs to
+`dd.remote.mdp.optimize` when `FABRICATION_MDP_AUTOPUBLISH=true`.
+
+Messaging controls are `FABRICATION_STREAM_NAME`,
+`FABRICATION_STREAM_MAX_AGE_SECONDS`, `FABRICATION_STREAM_MAX_BYTES`,
+`FABRICATION_NATS_ACK_WAIT_SECONDS`, `FABRICATION_NATS_MAX_DELIVER`, and
+`FABRICATION_NATS_MAX_INFLIGHT`; `FABRICATION_NATS_NAK_DELAY_SECONDS` controls
+the bounded retry delay after a result publish/store failure. NATS auth supports
+`NATS_CREDENTIALS_FILE`, `NATS_TOKEN`, or `NATS_NKEY` (in that precedence),
+with `NATS_REQUIRE_TLS=true` for a TLS listener. Result publication is flushed
+before the request is acknowledged; a failed confirmation is negatively
+acknowledged for redelivery. Generated
 machine code is intentionally advisory: responses are draft planning artifacts
 and are not marked machine-ready.
 The Rust deployment imports the local `des_engine` crate from

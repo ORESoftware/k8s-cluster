@@ -11,9 +11,12 @@
 !deployments/dd-ocr-rs/**
 !deployments/dd-git-rs/**
 !deployments/web-home-rs/**
+!deployments/gleam-lambda-runner/runtime-images/nodejs/**
+!deployments/gleam-lambda-runner/child-runtimes/js-function-runner.mjs
 !deployments/generated-api-docs-index.html
 !deployments/generated-api-docs-index.json
 !libs/nats/subject-defs/generated/rust/**
+!libs/nats/subject-defs/generated/javascript/**
 !libs/runtime-config-client-rs/**
 !libs/interfaces/shared/generated/rust/**
 !libs/pg-defs/generated/rust/**

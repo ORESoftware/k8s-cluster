@@ -1,10 +1,11 @@
 use std::{
-    collections::HashSet,
     collections::hash_map::DefaultHasher,
+    collections::HashSet,
     env,
     error::Error,
     fs,
     hash::{Hash, Hasher},
+    io::Write,
     path::PathBuf,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -48,7 +49,9 @@ fn validate_identifier(value: &str, label: &str) -> Result<(), String> {
         return Err(format!("{label} must not be empty"));
     }
     if value.len() > MAX_IDENTIFIER_LEN {
-        return Err(format!("{label} must be at most {MAX_IDENTIFIER_LEN} bytes"));
+        return Err(format!(
+            "{label} must be at most {MAX_IDENTIFIER_LEN} bytes"
+        ));
     }
     if value.contains("..") {
         return Err(format!("{label} must not contain '..'"));
@@ -157,7 +160,18 @@ fn has_task_receipt(receipts: &mut HashSet<String>, base_dir: &str, task_id: &st
     if receipts.contains(task_id) {
         return true;
     }
-    if receipt_path(base_dir, task_id).exists() {
+    let path = receipt_path(base_dir, task_id);
+    let valid_receipt = fs::read(&path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        .and_then(|value| {
+            value
+                .get("taskId")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
+        .is_some_and(|recorded_task_id| recorded_task_id == task_id);
+    if valid_receipt {
         record_receipt(receipts, task_id);
         return true;
     }
@@ -169,16 +183,30 @@ fn write_task_receipt(
     task: &QueueTaskMessage,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     fs::create_dir_all(base_dir)?;
-    fs::write(
-        receipt_path(base_dir, &task.task_id),
-        serde_json::to_vec_pretty(&serde_json::json!({
-            "threadId": &task.thread_id,
-            "taskId": &task.task_id,
-            "messageKind": &task.message_kind,
-            "shadow": task.shadow.unwrap_or(false),
-            "directDispatch": task.direct_dispatch.unwrap_or(false),
-        }))?,
-    )?;
+    let destination = receipt_path(base_dir, &task.task_id);
+    let temporary = destination.with_extension(format!(
+        "json.tmp-{}-{}",
+        std::process::id(),
+        now_unix_nano()
+    ));
+    let encoded = serde_json::to_vec_pretty(&serde_json::json!({
+        "threadId": &task.thread_id,
+        "taskId": &task.task_id,
+        "messageKind": &task.message_kind,
+        "shadow": task.shadow.unwrap_or(false),
+        "directDispatch": task.direct_dispatch.unwrap_or(false),
+    }))?;
+
+    // A receipt is a task-suppression decision, so it must never become visible
+    // half-written. Flush a uniquely named file and atomically rename it into
+    // place; readers also validate its JSON/task id before trusting it.
+    let mut file = fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(&temporary)?;
+    file.write_all(&encoded)?;
+    file.sync_all()?;
+    fs::rename(temporary, destination)?;
     Ok(())
 }
 
@@ -464,6 +492,10 @@ async fn emit_runtime_critical_event(
     }
 }
 
+// Keeping the event's semantic fields explicit at call sites makes the ordered
+// worker breadcrumb stream reviewable; grouping them would obscure which value
+// is the persisted sequence, stage, status, or operator-facing message.
+#[allow(clippy::too_many_arguments)]
 async fn emit_queue_status_event(
     http: &reqwest::Client,
     nats: &async_nats::Client,
@@ -672,22 +704,26 @@ async fn dispatch_to_deterministic_worker(
     dispatch_to_rest_api(http, rest_api_url, secret, task).await
 }
 
-async fn build_jetstream_consumer(
-    client: async_nats::Client,
-    stream_name: &str,
-    subject: &str,
-    consumer_name: &str,
+struct JetStreamConsumerConfig<'a> {
+    stream_name: &'a str,
+    subject: &'a str,
+    consumer_name: &'a str,
     retention: async_nats::jetstream::stream::RetentionPolicy,
     ack_wait: Duration,
     max_ack_pending: i64,
     max_deliver: i64,
+}
+
+async fn build_jetstream_consumer(
+    client: async_nats::Client,
+    config: JetStreamConsumerConfig<'_>,
 ) -> Result<async_nats::jetstream::consumer::PullConsumer, Box<dyn Error + Send + Sync>> {
     let jetstream = async_nats::jetstream::new(client);
     let stream = jetstream
         .get_or_create_stream(async_nats::jetstream::stream::Config {
-            name: stream_name.to_string(),
-            subjects: vec![subject.to_string()],
-            retention,
+            name: config.stream_name.to_string(),
+            subjects: vec![config.subject.to_string()],
+            retention: config.retention,
             max_age: Duration::from_secs(60 * 60 * 24 * 14),
             max_message_size: 8 * 1024 * 1024,
             ..Default::default()
@@ -696,13 +732,13 @@ async fn build_jetstream_consumer(
 
     let consumer = stream
         .get_or_create_consumer::<async_nats::jetstream::consumer::pull::Config>(
-            consumer_name,
+            config.consumer_name,
             async_nats::jetstream::consumer::pull::Config {
-                durable_name: Some(consumer_name.to_string()),
-                filter_subject: subject.to_string(),
-                ack_wait,
-                max_ack_pending,
-                max_deliver,
+                durable_name: Some(config.consumer_name.to_string()),
+                filter_subject: config.subject.to_string(),
+                ack_wait: config.ack_wait,
+                max_ack_pending: config.max_ack_pending,
+                max_deliver: config.max_deliver,
                 ..Default::default()
             },
         )
@@ -722,13 +758,15 @@ async fn run_critical_event_logger(
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let consumer = build_jetstream_consumer(
         client,
-        &stream_name,
-        &subject,
-        &consumer_name,
-        async_nats::jetstream::stream::RetentionPolicy::Limits,
-        ack_wait,
-        max_ack_pending,
-        max_deliver,
+        JetStreamConsumerConfig {
+            stream_name: &stream_name,
+            subject: &subject,
+            consumer_name: &consumer_name,
+            retention: async_nats::jetstream::stream::RetentionPolicy::Limits,
+            ack_wait,
+            max_ack_pending,
+            max_deliver,
+        },
     )
     .await?;
     let mut messages = consumer.messages().await?;
@@ -1028,13 +1066,15 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     }
     let consumer = build_jetstream_consumer(
         nats_client.clone(),
-        &stream_name,
-        &subject,
-        &consumer_name,
-        async_nats::jetstream::stream::RetentionPolicy::WorkQueue,
-        Duration::from_secs(ack_wait_seconds),
-        max_ack_pending,
-        max_deliver,
+        JetStreamConsumerConfig {
+            stream_name: &stream_name,
+            subject: &subject,
+            consumer_name: &consumer_name,
+            retention: async_nats::jetstream::stream::RetentionPolicy::WorkQueue,
+            ack_wait: Duration::from_secs(ack_wait_seconds),
+            max_ack_pending,
+            max_deliver,
+        },
     )
     .await?;
     let mut messages = consumer.messages().await?;
@@ -1638,7 +1678,11 @@ mod tests {
         // Same id is stable.
         assert_eq!(receipt_path("/tmp/x", "ab"), receipt_path("/tmp/x", "ab"));
         // Filenames stay filesystem-safe (sanitized stem + hex hash + .json).
-        let name = receipt_path("/tmp/x", "weird/../id").file_name().unwrap().to_string_lossy().into_owned();
+        let name = receipt_path("/tmp/x", "weird/../id")
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
         assert!(name.ends_with(".json"));
         assert!(!name.contains('/'));
     }

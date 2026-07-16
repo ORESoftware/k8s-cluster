@@ -13,6 +13,7 @@
     "dev": "tsx watch src/server.ts",
     "start": "node dist/server.js",
     "start:src": "tsx src/server.ts",
+    "test": "pnpm run build && node --test test/*.test.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
