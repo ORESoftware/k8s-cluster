@@ -281,6 +281,18 @@ struct Config {
     registration_bearer: Option<String>,
     allow_public_device_registration: bool,
     s3: S3StorageConfig,
+    /// Backup/mirror object store. Independent of the primary: its own bucket,
+    /// endpoint, and explicit credentials (no ambient AWS/R2 fallback, so a
+    /// misconfigured mirror can never silently sign with primary credentials).
+    mirror: S3StorageConfig,
+    /// When true, a configured mirror must pass its readiness probe for
+    /// `/readyz` to return 200. Default false: the mirror is a backup, not a
+    /// serving dependency, so a mirror outage alone should not pull the
+    /// service out of rotation. Misconfiguration (validation errors) always
+    /// fails readiness regardless of this flag.
+    mirror_readiness_required: bool,
+    mirror_batch_size: i64,
+    mirror_copy_max_attempts: i32,
     ios_app_store_url: Option<String>,
     android_play_store_url: Option<String>,
     default_retention_hours: i32,
