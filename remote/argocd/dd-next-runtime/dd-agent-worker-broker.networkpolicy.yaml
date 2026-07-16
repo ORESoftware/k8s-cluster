@@ -72,3 +72,18 @@ spec:
           port: 4317
         - protocol: TCP
           port: 4318
+    - to:
+        # The deployment builds the Rust service from mounted source on cold
+        # start. Permit dependency fetches over public HTTPS without opening
+        # private, loopback, or cloud-metadata destinations.
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
