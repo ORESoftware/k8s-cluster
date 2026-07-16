@@ -3847,6 +3847,7 @@ async fn healthz(State(state): State<AppState>) -> Json<HealthResponse> {
         storage_versioning_mode: state.config.s3.versioning_mode,
         configuration_valid: state.config.validation_errors.is_empty()
             && state.config.s3.validation_errors.is_empty()
+            && state.config.mirror.validation_errors.is_empty()
             && state.config.supabase.validation_errors.is_empty(),
         token_pepper_configured: state.config.token_pepper_configured,
         registration_configured: state.supabase.is_some()
@@ -3864,6 +3865,14 @@ async fn healthz(State(state): State<AppState>) -> Json<HealthResponse> {
         supabase_ready: None,
         supabase_required: state.config.require_supabase,
         retention_hours: state.config.default_retention_hours,
+        mirror_configured: state.mirror.is_some() && state.config.mirror.is_configured(),
+        mirror_ready: None,
+        mirror_probe_mode: mirror_probe_mode(&state.config.mirror),
+        mirror_backend: (!state.config.mirror.bucket.is_empty())
+            .then(|| state.config.mirror.backend.as_str()),
+        mirror_backend_fingerprint: (!state.config.mirror.bucket.is_empty())
+            .then(|| state.config.mirror.backend_fingerprint.clone()),
+        mirror_readiness_required: state.config.mirror_readiness_required,
     })
 }
 
