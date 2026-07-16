@@ -7097,8 +7097,9 @@ async fn retention_sweep(
         let id: String = row.get("id");
         let bucket: String = row.get("storage_bucket");
         let key: String = row.get("storage_key");
+        let mirror_bucket: Option<String> = row.get("mirror_bucket");
         let previous_status: String = row.get("previous_status");
-        let deleted = if bucket.is_empty() || key.is_empty() {
+        let primary_deleted = if bucket.is_empty() || key.is_empty() {
             true
         } else if let Some(s3) = state.s3.as_ref() {
             match tokio::time::timeout(
@@ -7130,6 +7131,40 @@ async fn retention_sweep(
             );
             false
         };
+        // Retention is a physical-erasure guarantee, so a row only finalizes
+        // once the backup copy is gone too. A recorded mirror copy with no
+        // mirror client keeps the row claimed (and retried) instead of
+        // silently leaving audio behind in the mirror bucket.
+        let mirror_deleted = if !primary_deleted || key.is_empty() {
+            primary_deleted
+        } else {
+            let recorded_bucket = mirror_bucket.as_deref().filter(|value| !value.is_empty());
+            match (recorded_bucket, state.mirror.as_ref()) {
+                (None, None) => true,
+                // No bookkeeping but a mirror is configured: delete the same
+                // key defensively. DeleteObject on a missing key succeeds, and
+                // this covers a copy whose meta_data update was lost between
+                // the mirror PUT and the bookkeeping write.
+                (None, Some(mirror)) => {
+                    delete_mirror_object(mirror, &state.config.mirror.bucket, &key, &id).await
+                }
+                (Some(recorded), Some(mirror)) => {
+                    delete_mirror_object(mirror, recorded, &key, &id).await
+                }
+                (Some(recorded), None) => {
+                    warn!(
+                        segment_id = id,
+                        mirror_bucket = recorded,
+                        "retention mirror delete skipped; mirror client unavailable"
+                    );
+                    false
+                }
+            }
+        };
+        if primary_deleted && !mirror_deleted {
+            delete_failures += 1;
+        }
+        let deleted = primary_deleted && mirror_deleted;
         if deleted {
             expired += client
                 .execute(
