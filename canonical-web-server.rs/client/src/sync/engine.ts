@@ -83,9 +83,9 @@ export class CanonicalSyncClient extends EventTarget {
     return new CanonicalSyncClient(store, options);
   }
 
-  start(): void {
+  start(): Promise<void> {
     if (this.started) {
-      return;
+      return this.runningSync ?? Promise.resolve();
     }
     this.started = true;
     globalThis.addEventListener?.("online", this.handleWake);
@@ -103,7 +103,7 @@ export class CanonicalSyncClient extends EventTarget {
     if (!this.htmxOwnsSocket) {
       this.socket.start();
     }
-    void this.syncNow();
+    return this.syncNow();
   }
 
   stop(): void {

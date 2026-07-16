@@ -112,18 +112,14 @@ describe("CanonicalSyncClient coordination", () => {
     const first = await openClient(fetchImplementation, databaseName);
     const second = await openClient(fetchImplementation, databaseName);
 
-    // Start sequentially: on runtimes with a real Web Locks API (Node >= 23)
-    // two concurrent passes on one account key race for the same exclusive
-    // lock and the loser (ifAvailable) legitimately skips its pull, which
-    // would make a concurrent request count nondeterministic. Do not call
-    // syncNow merely to await start: an explicit wake during a pass now
-    // intentionally drains one additional pass.
-    first.start();
-    await waitUntil(() => requests === 1);
+    // Await each initial pass so runtimes with a real Web Locks API (Node >=
+    // 23) release the first client's exclusive lock before the second client
+    // requests it with ifAvailable. Polling the request count is insufficient:
+    // the fetch may have completed while IndexedDB work still holds the lock.
+    await first.start();
+    expect(requests).toBe(1);
+    await second.start();
     await new Promise((resolve) => setTimeout(resolve, 0));
-    second.start();
-    await waitUntil(() => requests === 2);
-    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(requests).toBe(2);
   });
