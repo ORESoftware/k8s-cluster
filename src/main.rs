@@ -4133,16 +4133,27 @@ async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
             None
         }
     };
-    let (postgres_reachable, storage_ready, storage_history_compatible, supabase_ready) = tokio::join!(
+    let (postgres_reachable, storage_ready, storage_history_compatible, supabase_ready, mirror_ready) = tokio::join!(
         postgres_is_reachable(&state),
         storage_is_ready(&state),
         storage_history_is_compatible(&state),
-        supabase_probe
+        supabase_probe,
+        mirror_is_ready(&state)
     );
     let registration_configured = state.supabase.is_some()
         || state.config.registration_bearer.is_some()
         || state.config.allow_public_device_registration;
     let supabase_accounts_configured = state.config.supabase.account_features_configured();
+    // A configured-but-invalid mirror always fails readiness (misconfiguration
+    // must be caught at rollout); a probe failure of a valid mirror only fails
+    // readiness when the operator opted into gating on the backup target.
+    let mirror_intended = !state.config.mirror.bucket.is_empty()
+        || !state.config.mirror.validation_errors.is_empty();
+    let mirror_ok = state.config.mirror.validation_errors.is_empty()
+        && (!mirror_intended || state.mirror.is_some())
+        && (!state.config.mirror_readiness_required
+            || !mirror_intended
+            || mirror_ready == Some(true));
     let ready = state.config.database_url.is_some()
         && postgres_reachable
         && state.config.validation_errors.is_empty()
@@ -4150,6 +4161,7 @@ async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
         && state.config.s3.is_configured()
         && storage_ready
         && storage_history_compatible
+        && mirror_ok
         && state.config.token_pepper_configured
         && registration_configured
         && state.config.server_auth_secret.is_some()
