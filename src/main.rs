@@ -6,8 +6,9 @@
 //! Drive / OneDrive / iCloud destinations, and emails short-lived alert
 //! "listen" links. Normal mobile transfer uses presigned URLs; bytes flow
 //! through this process only when the authenticated cloud-copy worker mirrors a
-//! segment to Google Drive or OneDrive. See `readme.md` for routes, environment
-//! variables, and the wider product/deployment context.
+//! segment to Google Drive or OneDrive, or when the storage-mirror worker
+//! copies a segment into the backup object store. See `readme.md` for routes,
+//! environment variables, and the wider product/deployment context.
 //!
 //! This is intentionally one large file. Its major sections, roughly in the
 //! order they appear below, are:
