@@ -4540,13 +4540,13 @@ async fn delete_account_storage_objects(
     require_storage_history_compatible(state).await?;
     let rows = client
         .query(
-            "select storage_bucket, storage_key
+            "select storage_bucket, storage_key, meta_data->>($2::text) as mirror_bucket
              from sound_recorder_segments
              where account_id = $1::uuid
                and storage_bucket <> ''
                and storage_key <> ''
              order by storage_bucket, storage_key",
-            &[&account_id],
+            &[&account_id, &MIRROR_BUCKET_META_KEY],
         )
         .await
         .map_err(db_error)?;
@@ -4558,57 +4558,103 @@ async fn delete_account_storage_objects(
         .as_ref()
         .ok_or_else(|| ServiceError::Unavailable("S3 client is not configured".to_string()))?;
     let mut by_bucket: HashMap<String, Vec<String>> = HashMap::new();
+    let mut mirror_by_bucket: HashMap<String, Vec<String>> = HashMap::new();
+    let mut has_mirror_copies = false;
     for row in rows {
-        by_bucket
-            .entry(row.get("storage_bucket"))
-            .or_default()
-            .push(row.get("storage_key"));
+        let key: String = row.get("storage_key");
+        let recorded_mirror: Option<String> = row.get("mirror_bucket");
+        if let Some(mirror_bucket) = recorded_mirror.filter(|value| !value.is_empty()) {
+            has_mirror_copies = true;
+            mirror_by_bucket
+                .entry(mirror_bucket)
+                .or_default()
+                .push(key.clone());
+        } else if !state.config.mirror.bucket.is_empty() {
+            // No bookkeeping, but a mirror is configured: erase the same key
+            // defensively (idempotent) in case a copy's meta_data update was
+            // lost between the mirror PUT and the bookkeeping write.
+            mirror_by_bucket
+                .entry(state.config.mirror.bucket.clone())
+                .or_default()
+                .push(key.clone());
+        }
+        by_bucket.entry(row.get("storage_bucket")).or_default().push(key);
+    }
+    // Account deletion is an erasure guarantee: refuse to report success while
+    // a recorded backup copy exists that we have no client to delete with.
+    if has_mirror_copies && state.mirror.is_none() {
+        warn!(
+            account_id,
+            "account has mirrored segments but no mirror storage client is configured"
+        );
+        return Err(ServiceError::Unavailable(
+            "mirrored account objects cannot be deleted; mirror storage is not configured"
+                .to_string(),
+        ));
     }
     let mut deleted = 0u64;
     for (bucket, keys) in by_bucket {
-        for chunk in keys.chunks(1000) {
-            let objects = chunk
-                .iter()
-                .map(|key| {
-                    ObjectIdentifier::builder().key(key).build().map_err(|_| {
-                        ServiceError::Internal(
-                            "failed to build object deletion request".to_string(),
-                        )
-                    })
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            let delete = Delete::builder()
-                .set_objects(Some(objects))
-                .quiet(true)
-                .build()
-                .map_err(|_| {
-                    ServiceError::Internal("failed to build object deletion request".to_string())
-                })?;
-            let output = tokio::time::timeout(
-                STORAGE_OBJECT_TIMEOUT,
-                s3.delete_objects().bucket(&bucket).delete(delete).send(),
-            )
-            .await
-            .map_err(|_| {
-                warn!(account_id, "account object deletion timed out");
-                ServiceError::Unavailable("account object deletion timed out".to_string())
-            })?
-            .map_err(|err| {
-                warn!(error = %err, account_id, "account object deletion failed");
-                ServiceError::Unavailable("account object deletion failed".to_string())
-            })?;
-            if !output.errors().is_empty() {
-                warn!(
-                    account_id,
-                    failures = output.errors().len(),
-                    "account object deletion returned per-object failures"
-                );
-                return Err(ServiceError::Unavailable(
-                    "one or more account objects could not be deleted".to_string(),
-                ));
-            }
-            deleted = deleted.saturating_add(chunk.len() as u64);
+        deleted = deleted
+            .saturating_add(delete_objects_in_bucket(s3, &bucket, &keys, account_id).await?);
+    }
+    if let Some(mirror) = state.mirror.as_ref() {
+        for (bucket, keys) in mirror_by_bucket {
+            delete_objects_in_bucket(mirror, &bucket, &keys, account_id).await?;
         }
+    }
+    Ok(deleted)
+}
+
+/// Batch-deletes `keys` from `bucket`, failing if any per-object delete fails.
+/// DeleteObjects on missing keys succeeds, so callers may pass defensive
+/// candidates that were never actually written.
+async fn delete_objects_in_bucket(
+    client: &aws_sdk_s3::Client,
+    bucket: &str,
+    keys: &[String],
+    account_id: &str,
+) -> Result<u64, ServiceError> {
+    let mut deleted = 0u64;
+    for chunk in keys.chunks(1000) {
+        let objects = chunk
+            .iter()
+            .map(|key| {
+                ObjectIdentifier::builder().key(key).build().map_err(|_| {
+                    ServiceError::Internal("failed to build object deletion request".to_string())
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let delete = Delete::builder()
+            .set_objects(Some(objects))
+            .quiet(true)
+            .build()
+            .map_err(|_| {
+                ServiceError::Internal("failed to build object deletion request".to_string())
+            })?;
+        let output = tokio::time::timeout(
+            STORAGE_OBJECT_TIMEOUT,
+            client.delete_objects().bucket(bucket).delete(delete).send(),
+        )
+        .await
+        .map_err(|_| {
+            warn!(account_id, "account object deletion timed out");
+            ServiceError::Unavailable("account object deletion timed out".to_string())
+        })?
+        .map_err(|err| {
+            warn!(error = %err, account_id, "account object deletion failed");
+            ServiceError::Unavailable("account object deletion failed".to_string())
+        })?;
+        if !output.errors().is_empty() {
+            warn!(
+                account_id,
+                failures = output.errors().len(),
+                "account object deletion returned per-object failures"
+            );
+            return Err(ServiceError::Unavailable(
+                "one or more account objects could not be deleted".to_string(),
+            ));
+        }
+        deleted = deleted.saturating_add(chunk.len() as u64);
     }
     Ok(deleted)
 }
