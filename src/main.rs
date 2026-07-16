@@ -2329,6 +2329,7 @@ async fn state_from_config(config: Config) -> AppState {
     AppState {
         config: Arc::new(config),
         s3,
+        mirror,
         http,
         cloud_sealer,
         supabase,
