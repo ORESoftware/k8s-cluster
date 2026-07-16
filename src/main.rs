@@ -2035,6 +2035,13 @@ fn config_from_env() -> Config {
         true,
         &mut validation_errors,
     );
+    let mirror_readiness_required = env_bool(
+        "SOUND_RECORDER_MIRROR_READINESS_REQUIRED",
+        false,
+        &mut validation_errors,
+    );
+    let s3 = s3_storage_config_from_env();
+    let mirror = mirror_storage_config_from_env(&s3);
 
     Config {
         validation_errors,
