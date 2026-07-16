@@ -9,7 +9,10 @@ use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_s3::{config::Region, primitives::ByteStream, types::ServerSideEncryption};
 use axum::{
     body::Bytes,
-    extract::{Path, Query, State},
+    extract::{
+        ws::{Message, WebSocket, WebSocketUpgrade},
+        Path, Query, State,
+    },
     http::{header, HeaderMap, StatusCode},
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
@@ -32,7 +35,7 @@ use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use tokio::sync::Mutex;
+use tokio::sync::{broadcast, Mutex};
 use tokio_postgres::types::ToSql;
 use uuid::Uuid;
 
@@ -116,6 +119,12 @@ struct AppState {
     redis_connection: Arc<Mutex<Option<redis::aio::MultiplexedConnection>>>,
     s3: Option<aws_sdk_s3::Client>,
     nats: Option<async_nats::Client>,
+    /// Realtime fan-out hub. Each connected `/ws` client subscribes; the vote
+    /// handler broadcasts a re-rendered song card (as an htmx out-of-band swap
+    /// fragment) so every open page sees the new vote count live, without
+    /// waiting for the 120s shelf poll. Server-initiated push over WebSockets,
+    /// reusing the same maud template the HTTP fragment routes render.
+    vote_hub: broadcast::Sender<String>,
 }
 
 #[derive(Clone)]
@@ -451,12 +460,17 @@ async fn state_from_config(config: Config) -> Result<AppState, String> {
         None => None,
     };
 
+    // Capacity 256: a burst of votes buffers briefly; a client that falls
+    // further behind gets a Lagged error and simply skips to the latest, which
+    // is fine because each message is a full self-contained card snapshot.
+    let (vote_hub, _) = broadcast::channel(256);
     Ok(AppState {
         config: Arc::new(config),
         redis,
         redis_connection: Arc::new(Mutex::new(None)),
         s3,
         nats,
+        vote_hub,
     })
 }
 
@@ -739,11 +753,58 @@ async fn vote_song(
         .with_label_values(&[if request.value > 0 { "up" } else { "down" }])
         .inc();
     publish_music_event(&state, MUSIC_VOTES_EVENTS_SUBJECT, vote_event(&song, request.value)).await;
+    // Push the updated card to every open page over WebSockets as an OOB swap.
+    // send() only errors when there are no subscribers, which is not a problem.
+    let _ = state
+        .vote_hub
+        .send(render_song_card_oob(&song).into_string());
     record_request("POST", "/songs/:song_id/votes", StatusCode::OK);
     if is_htmx_request(&headers) {
         Ok(Html(render_song_card(&song).into_string()).into_response())
     } else {
         Ok(Json(VoteResponse { ok: true, song }).into_response())
+    }
+}
+
+/// WebSocket upgrade for the live vote stream. The home page is public and
+/// vote counts are public data, so this read-only stream is unauthenticated
+/// like the HTTP GET pages. For a stream carrying per-user or privileged data,
+/// authenticate/authorize HERE, before `on_upgrade` — WebSocket upgrades skip
+/// the normal request middleware, so the check cannot be assumed elsewhere.
+async fn ws_votes(State(state): State<AppState>, ws: WebSocketUpgrade) -> Response {
+    ws.on_upgrade(move |socket| ws_votes_connection(socket, state.vote_hub.subscribe()))
+}
+
+async fn ws_votes_connection(mut socket: WebSocket, mut updates: broadcast::Receiver<String>) {
+    // Heartbeat so idle connections and dead peers are detected and reaped
+    // rather than lingering; browsers answer Ping with Pong automatically.
+    let mut heartbeat = tokio::time::interval(Duration::from_secs(30));
+    heartbeat.tick().await; // consume the immediate first tick
+    loop {
+        tokio::select! {
+            update = updates.recv() => match update {
+                Ok(html) => {
+                    if socket.send(Message::Text(html)).await.is_err() {
+                        break; // client went away
+                    }
+                }
+                // A slow client that fell behind skips to the latest; each
+                // message is a full card snapshot, so no state is lost.
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(broadcast::error::RecvError::Closed) => break,
+            },
+            _ = heartbeat.tick() => {
+                if socket.send(Message::Ping(Vec::new())).await.is_err() {
+                    break;
+                }
+            }
+            incoming = socket.recv() => match incoming {
+                // Read-only stream: ignore any client frames except close/EOF.
+                Some(Ok(Message::Close(_))) | None => break,
+                Some(Ok(_)) => {}
+                Some(Err(_)) => break,
+            },
+        }
     }
 }
 
@@ -1627,6 +1688,16 @@ fn render_shelf_error() -> Markup {
 // titles, ids, genres, and audio URLs are hardened against HTML/attribute
 // injection by construction.
 fn render_song_card(song: &SongRow) -> Markup {
+    render_song_card_markup(song, false)
+}
+
+/// The same card marked as an htmx out-of-band swap, so a WebSocket push
+/// replaces the existing `#song-<id>` element in place rather than appending.
+fn render_song_card_oob(song: &SongRow) -> Markup {
+    render_song_card_markup(song, true)
+}
+
+fn render_song_card_markup(song: &SongRow, oob: bool) -> Markup {
     let duration = format!("{:.0}s", song.duration_seconds);
     let bpm = format!("{:.1} bpm", song.bpm);
     let quality = format!("{:.2}", song.listenability_score);
@@ -1637,7 +1708,7 @@ fn render_song_card(song: &SongRow) -> Markup {
     );
     let published = song.published_at.as_deref().unwrap_or("recent");
     html! {
-        article id={ "song-" (song.id) } class="song" {
+        article id={ "song-" (song.id) } class="song" hx-swap-oob=[oob.then_some("true")] {
             div {
                 h3 { (song.title) }
                 div class="meta" {
@@ -1942,6 +2013,7 @@ fn app(state: AppState) -> Router {
         .route("/songs/:song_id", get(get_song))
         .route("/songs/:song_id/audio", get(song_audio))
         .route("/songs/:song_id/votes", post(vote_song))
+        .route("/ws", get(ws_votes))
         .route("/internal/generate", post(generate_internal))
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
@@ -2022,9 +2094,14 @@ fn render_home() -> Markup {
                 meta name="viewport" content="width=device-width, initial-scale=1";
                 title { "dd music" }
                 script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js" {}
+                script src="https://unpkg.com/htmx-ext-ws@2.0.2/ws.js" {}
                 style { (PreEscaped(HOME_CSS)) }
             }
-            body {
+            // hx-ext="ws" + ws-connect opens the live vote stream on load; the
+            // server pushes OOB song-card fragments that htmx swaps into the
+            // matching #song-<id> elements, so vote counts update in realtime
+            // between the shelf's 120s polls.
+            body hx-ext="ws" ws-connect="/ws" {
                 nav class="page-nav" aria-label="Primary" {
                     a class="brand" href="." { "dd music" }
                     div class="nav-links" {
@@ -2454,5 +2531,27 @@ mod tests {
         assert!(html.contains("--green:#236b4b"));
         // 24 waveform bars rendered.
         assert_eq!(html.matches(r#"<span class="bar">"#).count(), 24);
+        // WebSocket live-vote stream is wired: the ws extension is loaded and the
+        // body connects to /ws so pushed OOB card fragments get swapped in.
+        assert!(html.contains(r#"src="https://unpkg.com/htmx-ext-ws@2.0.2/ws.js""#));
+        assert!(html.contains(r#"hx-ext="ws""#));
+        assert!(html.contains(r#"ws-connect="/ws""#));
+    }
+
+    #[test]
+    fn oob_card_targets_same_id_for_websocket_swap() {
+        let id = "12345678-aaaa-bbbb-cccc-123456789abc";
+        let song = sample_song(id, "Signal Bloom");
+        let oob = render_song_card_oob(&song).into_string();
+        let normal = render_song_card(&song).into_string();
+        // The OOB variant carries hx-swap-oob and the SAME #song-<id> the normal
+        // card renders, so a WS push replaces exactly that element in place.
+        assert!(oob.contains(r#"hx-swap-oob="true""#));
+        assert!(oob.contains(&format!(r##"id="song-{id}""##)));
+        assert!(normal.contains(&format!(r##"id="song-{id}""##)));
+        // The normal (HTTP fragment / shelf) card must NOT be an OOB swap.
+        assert!(!normal.contains("hx-swap-oob"));
+        // Same card body otherwise (auto-escaping still applies).
+        assert!(oob.contains("Signal Bloom"));
     }
 }
