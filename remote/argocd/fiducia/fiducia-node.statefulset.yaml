@@ -74,9 +74,9 @@ spec:
               for i in 0 1 2; do
                 n="fiducia-node-$i"
                 [ "$n" = "${POD_NAME}" ] && continue
-                peers="${peers:+$peers,}${n}.${suffix}:8090"
+                peers="${peers:+$peers,}${n}.${suffix}:9090"
               done
-              export FIDUCIA_NODE_ID="http://${POD_NAME}.${suffix}:8090"
+              export FIDUCIA_NODE_ID="http://${POD_NAME}.${suffix}:9090"
               export FIDUCIA_PEERS="$peers"
               echo "[fiducia-node] id=${FIDUCIA_NODE_ID} peers=${FIDUCIA_PEERS} shards=${FIDUCIA_SHARD_COUNT}"
               cd /tmp/src/fiducia-node.rs
@@ -109,9 +109,13 @@ spec:
               value: '1'
             - name: RUSTUP_TOOLCHAIN
               value: '1.95.0'
+            - name: FIDUCIA_PEER_PORT
+              value: '9090'
           ports:
             - name: http
               containerPort: 8090
+            - name: raft
+              containerPort: 9090
           resources:
             requests:
               memory: 768Mi
