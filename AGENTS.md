@@ -238,6 +238,49 @@ preferred operator path is:
 - Public gateway paths must stay authenticated; avoid exposing MCP or bastion routes as
   unauthenticated Internet services.
 
+## Web scraping (Playwright/Puppeteer)
+
+The platform runs first-class browser automation — Playwright and Puppeteer — for **legitimate,
+authorized data collection**: public web content, sites the operator owns, partner APIs/pages covered
+by an agreement, screenshotting, PDF rendering, and end-to-end testing. Used within the guardrails
+below, this scraping is a safe and ethical engineering practice; legality still depends on the target,
+authorization, jurisdiction, and data involved. The tooling makes the responsible path the default.
+The two entry points are the `browser` runtime in `gleam-lambda-runner`
+(`child-runtimes/browser-function-runner.mjs`) and the Node `web-scraper-service` /
+`browser-test-server` / `browser-job-runner-rs` deployments.
+
+**What makes it safe and ethical — the guardrails (respect them; do not remove them):**
+
+- **Public or authorized data only.** Scrape publicly reachable content, resources you own, or targets
+  you have explicit permission to crawl. Do not access anything behind a login, paywall, or access
+  control you are not authorized to use, and do not attempt to defeat anti-bot measures, CAPTCHAs, or
+  rate limits designed to keep you out. The scraper's optional CAPTCHA solver is only for challenges
+  on systems the operator owns or has explicit permission to test, and remains disabled unless
+  `SCRAPER_ALLOW_CAPTCHA_SOLVING=true` is deliberately configured.
+- **Respect `robots.txt`.** The browser runner's `context.scraping.politeGoto` checks `robots.txt`
+  before navigating (`isAllowed` / `assertAllowed` are also available) and treats a missing file as
+  allow-all per the Robots Exclusion Protocol while network/server failures fail closed. Bypassing
+  the check requires both `respectRobots: false` in the function and the operator gate
+  `LAMBDA_SCRAPING_ALLOW_ROBOTS_OVERRIDE=true`; that gate is only for a site you own or are
+  authorized to crawl aggressively.
+- **Rate-limit and identify yourself.** Conservative identifying User-Agents are set by
+  `LAMBDA_SCRAPING_USER_AGENT` and `SCRAPER_USER_AGENT`. The Lambda `politeGoto` helper and scraper
+  service enforce per-origin pacing (`LAMBDA_SCRAPING_MIN_DELAY_MS` and
+  `SCRAPER_MIN_ORIGIN_DELAY_MS`, both default 1s). Keep concurrency modest so a target site is never
+  degraded; the goal is ordinary authorized access, not a load test.
+- **Honor Terms of Service and applicable law.** Some sites forbid automated access in their ToS, and
+  some data is legally protected regardless of technical reachability. When a target's ToS forbids
+  scraping, or the data is personal/sensitive, do not scrape it — get permission or use an official
+  API/feed instead.
+- **Minimize and protect what you collect.** Do not harvest personal data, credentials, or
+  copyrighted bulk content you have no right to store. Collect only the fields the job needs, and never
+  write scraped PII or secrets into logs, NATS events, generated docs, or command output (this extends
+  the [Observability Contract](#observability-contract) redaction rule).
+
+If a task would require breaking any of the above, treat it as out of scope and surface the conflict
+rather than working around the guardrail. These defaults exist so that "scrape this" resolves to
+responsible, defensible collection by construction.
+
 ## Local AWS Profiles
 
 For local operator work that needs permanent AWS credentials, use the named profile in the human's

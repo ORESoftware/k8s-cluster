@@ -7,7 +7,7 @@
 # k8s-cluster repo. Tracking the backend repo directly sidesteps that entirely.
 #
 # Prereq before this syncs: ArgoCD needs read access to the private
-# git@github.com:ORESoftware/3fa-backend.rs.git (add a repo cred / deploy key),
+# git@github.com:3FA-app/3fa-backend.rs.git (add a repo cred / deploy key),
 # and the `threefa` namespace needs DATABASE_URL provided (see
 # deploy/k8s/externalsecret.yaml). The backend applies migrations/0001_init.sql.
 #
@@ -22,7 +22,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: git@github.com:ORESoftware/3fa-backend.rs.git
+    repoURL: git@github.com:3FA-app/3fa-backend.rs.git
     targetRevision: main
     path: deploy/k8s
   destination:
