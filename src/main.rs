@@ -9980,7 +9980,7 @@ mod tests {
             "2026-07-13T00:00:00Z".to_string(),
         );
         assert_eq!(row.preferred_use_case, "security");
-        assert_eq!(row.device_retention_hours, 50);
+        assert_eq!(row.device_retention_hours, 100);
         assert_eq!(row.capture_sample_rate, 48_000);
         assert_eq!(row.quiet_sample_rate, 16_000);
         assert_eq!(row.user_id, "11111111-1111-1111-1111-111111111111");
