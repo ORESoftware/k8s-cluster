@@ -257,6 +257,10 @@ type PgConn = PooledConnection<'static, PgManager>;
 struct AppState {
     config: Arc<Config>,
     s3: Option<aws_sdk_s3::Client>,
+    /// Client for the backup/mirror object store (R2 alongside a primary S3, or
+    /// vice versa). Never used to serve reads; only the mirror drain, retention
+    /// sweep, and account erasure touch it.
+    mirror: Option<aws_sdk_s3::Client>,
     http: reqwest::Client,
     cloud_sealer: Option<CloudTokenSealer>,
     supabase: Option<Arc<SupabaseVerifier>>,
