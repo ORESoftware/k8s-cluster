@@ -1,6 +1,5 @@
 use std::{
     env,
-    fmt::Write as _,
     net::SocketAddr,
     sync::Arc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -26,6 +25,7 @@ use des_engine::des::general::music_production::{
     MusicGenre, SongSpec, StylePalette, DEFAULT_SAMPLE_RATE,
 };
 use futures_util::StreamExt;
+use maud::{html, Markup, PreEscaped, DOCTYPE};
 use once_cell::sync::Lazy;
 use prometheus::{Encoder, IntCounterVec, IntGauge, Opts, TextEncoder};
 use redis::AsyncCommands;
@@ -608,9 +608,9 @@ async fn api_docs_json() -> impl IntoResponse {
     )
 }
 
-async fn home() -> Html<&'static str> {
+async fn home() -> Html<String> {
     record_request("GET", "/", StatusCode::OK);
-    Html(HOME_HTML)
+    Html(render_home().into_string())
 }
 
 async fn songs_shelf(
@@ -627,12 +627,16 @@ async fn songs_shelf(
     match result {
         Ok(songs) => {
             record_request("GET", "/songs/shelf", StatusCode::OK);
-            (StatusCode::OK, Html(render_song_shelf(&songs))).into_response()
+            (
+                StatusCode::OK,
+                Html(render_song_shelf(&songs).into_string()),
+            )
+                .into_response()
         }
         Err(error) => {
             tracing::error!("dd-music-rs song shelf unavailable: {error:?}");
             record_request("GET", "/songs/shelf", StatusCode::OK);
-            (StatusCode::OK, Html(render_shelf_error())).into_response()
+            (StatusCode::OK, Html(render_shelf_error().into_string())).into_response()
         }
     }
 }
@@ -737,7 +741,7 @@ async fn vote_song(
     publish_music_event(&state, MUSIC_VOTES_EVENTS_SUBJECT, vote_event(&song, request.value)).await;
     record_request("POST", "/songs/:song_id/votes", StatusCode::OK);
     if is_htmx_request(&headers) {
-        Ok(Html(render_song_card(&song)).into_response())
+        Ok(Html(render_song_card(&song).into_string()).into_response())
     } else {
         Ok(Json(VoteResponse { ok: true, song }).into_response())
     }
@@ -1578,57 +1582,51 @@ fn is_htmx_request(headers: &HeaderMap) -> bool {
         .unwrap_or(false)
 }
 
-fn render_song_shelf(songs: &[SongRow]) -> String {
-    let mut html = String::new();
-    let _ = write!(
-        html,
-        r##"<div class="shelf-head">
-  <div>
-    <p class="eyebrow">Latest transmissions</p>
-    <h2>Generated today and recently</h2>
-  </div>
-  <div class="shelf-actions">
-    <span>{} published tracks</span>
-    <button type="button" hx-get="songs/shelf?limit=36" hx-target="#shelf" hx-swap="innerHTML">Refresh</button>
-  </div>
-</div>"##,
-        songs.len()
-    );
-
-    if songs.is_empty() {
-        html.push_str(
-            r#"<div class="empty">No published songs yet. The generator will fill this shelf once Postgres and storage are ready.</div>"#,
-        );
-        return html;
+fn render_song_shelf(songs: &[SongRow]) -> Markup {
+    html! {
+        div class="shelf-head" {
+            div {
+                p class="eyebrow" { "Latest transmissions" }
+                h2 { "Generated today and recently" }
+            }
+            div class="shelf-actions" {
+                span { (songs.len()) " published tracks" }
+                button type="button" hx-get="songs/shelf?limit=36" hx-target="#shelf" hx-swap="innerHTML" { "Refresh" }
+            }
+        }
+        @if songs.is_empty() {
+            div class="empty" { "No published songs yet. The generator will fill this shelf once Postgres and storage are ready." }
+        } @else {
+            div class="grid" {
+                @for song in songs {
+                    (render_song_card(song))
+                }
+            }
+        }
     }
-
-    html.push_str(r#"<div class="grid">"#);
-    for song in songs {
-        html.push_str(&render_song_card(song));
-    }
-    html.push_str("</div>");
-    html
 }
 
-fn render_shelf_error() -> String {
-    r##"<div class="shelf-head">
-  <div>
-    <p class="eyebrow">Latest transmissions</p>
-    <h2>Generated today and recently</h2>
-  </div>
-  <div class="shelf-actions">
-    <span>Offline</span>
-    <button type="button" hx-get="songs/shelf?limit=36" hx-target="#shelf" hx-swap="innerHTML">Retry</button>
-  </div>
-</div>
-<div class="empty error">Songs are unavailable right now.</div>"##
-        .to_string()
+fn render_shelf_error() -> Markup {
+    html! {
+        div class="shelf-head" {
+            div {
+                p class="eyebrow" { "Latest transmissions" }
+                h2 { "Generated today and recently" }
+            }
+            div class="shelf-actions" {
+                span { "Offline" }
+                button type="button" hx-get="songs/shelf?limit=36" hx-target="#shelf" hx-swap="innerHTML" { "Retry" }
+            }
+        }
+        div class="empty error" { "Songs are unavailable right now." }
+    }
 }
 
-fn render_song_card(song: &SongRow) -> String {
-    let id = escape_html(&song.id);
-    let title = escape_html(&song.title);
-    let genre = escape_html(&song.genre);
+// maud auto-escapes every interpolated value, so the manual escape_html helper
+// (and its easy-to-forget failure mode on any missed field) is gone: song
+// titles, ids, genres, and audio URLs are hardened against HTML/attribute
+// injection by construction.
+fn render_song_card(song: &SongRow) -> Markup {
     let duration = format!("{:.0}s", song.duration_seconds);
     let bpm = format!("{:.1} bpm", song.bpm);
     let quality = format!("{:.2}", song.listenability_score);
@@ -1637,71 +1635,41 @@ fn render_song_card(song: &SongRow) -> String {
         "{:.0} Hz",
         summary_number(&song.summary, "spectralCentroidHz")
     );
-    let published = song
-        .published_at
-        .as_deref()
-        .map(escape_html)
-        .unwrap_or_else(|| "recent".to_string());
-    let audio = song
-        .audio_url
-        .as_deref()
-        .map(|url| {
-            format!(
-                r#"<audio controls preload="none" src="{}"></audio>"#,
-                escape_html(url)
-            )
-        })
-        .unwrap_or_else(|| r#"<div class="empty mini">Audio not available</div>"#.to_string());
-
-    format!(
-        r##"<article id="song-{id}" class="song">
-  <div>
-    <h3>{title}</h3>
-    <div class="meta">
-      <span class="pill">{genre}</span>
-      <span class="pill">{duration}</span>
-      <span class="pill">{bpm}</span>
-    </div>
-  </div>
-  {audio}
-  <div class="quality">
-    <span>quality {quality}</span>
-    <span>plays {plays}</span>
-    <span>rms {rms}</span>
-    <span>centroid {centroid}</span>
-  </div>
-  <div class="votes">
-    <button type="button" hx-post="songs/{id}/votes?value=1" hx-target="#song-{id}" hx-swap="outerHTML" aria-label="Upvote {title}">Up</button>
-    <strong class="score">{score}</strong>
-    <button type="button" hx-post="songs/{id}/votes?value=-1" hx-target="#song-{id}" hx-swap="outerHTML" aria-label="Downvote {title}">Down</button>
-    <span class="sub">{up} up / {down} down</span>
-  </div>
-  <p class="published">Published {published}</p>
-</article>"##,
-        plays = song.play_count,
-        score = song.vote_score,
-        up = song.up_votes,
-        down = song.down_votes
-    )
+    let published = song.published_at.as_deref().unwrap_or("recent");
+    html! {
+        article id={ "song-" (song.id) } class="song" {
+            div {
+                h3 { (song.title) }
+                div class="meta" {
+                    span class="pill" { (song.genre) }
+                    span class="pill" { (duration) }
+                    span class="pill" { (bpm) }
+                }
+            }
+            @if let Some(url) = song.audio_url.as_deref() {
+                audio controls preload="none" src=(url) {}
+            } @else {
+                div class="empty mini" { "Audio not available" }
+            }
+            div class="quality" {
+                span { "quality " (quality) }
+                span { "plays " (song.play_count) }
+                span { "rms " (rms) }
+                span { "centroid " (centroid) }
+            }
+            div class="votes" {
+                button type="button" hx-post={ "songs/" (song.id) "/votes?value=1" } hx-target={ "#song-" (song.id) } hx-swap="outerHTML" aria-label={ "Upvote " (song.title) } { "Up" }
+                strong class="score" { (song.vote_score) }
+                button type="button" hx-post={ "songs/" (song.id) "/votes?value=-1" } hx-target={ "#song-" (song.id) } hx-swap="outerHTML" aria-label={ "Downvote " (song.title) } { "Down" }
+                span class="sub" { (song.up_votes) " up / " (song.down_votes) " down" }
+            }
+            p class="published" { "Published " (published) }
+        }
+    }
 }
 
 fn summary_number(summary: &Value, key: &str) -> f64 {
     summary.get(key).and_then(Value::as_f64).unwrap_or(0.0)
-}
-
-fn escape_html(value: &str) -> String {
-    let mut escaped = String::with_capacity(value.len());
-    for ch in value.chars() {
-        match ch {
-            '&' => escaped.push_str("&amp;"),
-            '<' => escaped.push_str("&lt;"),
-            '>' => escaped.push_str("&gt;"),
-            '"' => escaped.push_str("&quot;"),
-            '\'' => escaped.push_str("&#39;"),
-            _ => escaped.push(ch),
-        }
-    }
-    escaped
 }
 
 fn client_ip_for_hash(headers: &HeaderMap) -> String {
@@ -2041,15 +2009,77 @@ async fn shutdown_signal() {
     let _ = tokio::signal::ctrl_c().await;
 }
 
-const HOME_HTML: &str = r##"<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>dd music</title>
-  <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js"></script>
-  <style>
-    :root {
+/// The static home page shell. maud compile-checks the markup structure and
+/// emits `<!DOCTYPE html>`; the large stylesheet lives in `HOME_CSS` and is
+/// injected verbatim via `PreEscaped`. HTMX wiring (hx-get / hx-target /
+/// hx-swap / hx-trigger) is preserved exactly from the previous `HOME_HTML`.
+fn render_home() -> Markup {
+    html! {
+        (DOCTYPE)
+        html lang="en" {
+            head {
+                meta charset="utf-8";
+                meta name="viewport" content="width=device-width, initial-scale=1";
+                title { "dd music" }
+                script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js" {}
+                style { (PreEscaped(HOME_CSS)) }
+            }
+            body {
+                nav class="page-nav" aria-label="Primary" {
+                    a class="brand" href="." { "dd music" }
+                    div class="nav-links" {
+                        a href="#shelf-section" { "Tracks" }
+                        a class="button" href="#shelf-section" { "Listen" }
+                    }
+                }
+                header class="hero" {
+                    div class="hero-inner" {
+                        div {
+                            p class="eyebrow" { "Rust generated music server" }
+                            h1 { "dd music" }
+                            p class="lede" { "Microtonal tracks from the DES music engine, published as a daily shelf with native browser playback and anonymous voting." }
+                            div class="hero-actions" {
+                                a class="button primary" href="#shelf-section" { "Listen now" }
+                                button type="button" hx-get="songs/shelf?limit=36" hx-target="#shelf" hx-swap="innerHTML" { "Refresh shelf" }
+                            }
+                            div class="stats" aria-label="Service profile" {
+                                div class="stat" { strong { "3-5" } span { "new tracks targeted per day" } }
+                                div class="stat" { strong { "DES" } span { "in-process Rust generation" } }
+                                div class="stat" { strong { "S3" } span { "encrypted published audio" } }
+                            }
+                        }
+                        div class="visual" aria-hidden="true" {
+                            div class="wave" {
+                                @for _ in 0..24 {
+                                    span class="bar" {}
+                                }
+                            }
+                            div class="visual-caption" { span { "daily generator" } span { "vote-shaped shelf" } }
+                        }
+                    }
+                }
+                main {
+                    section id="shelf-section" class="shelf-band" {
+                        div class="section-inner" {
+                            div id="shelf" hx-get="songs/shelf?limit=36" hx-trigger="load, every 120s" hx-swap="innerHTML" {
+                                div class="shelf-head" {
+                                    div {
+                                        p class="eyebrow" { "Latest transmissions" }
+                                        h2 { "Generated today and recently" }
+                                    }
+                                    div class="shelf-actions" { span { "Loading" } }
+                                }
+                                div class="empty" { "Loading songs." }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+const HOME_CSS: &str = r##"    :root {
       color-scheme: light;
       --bg:#f6f7f4;
       --ink:#14181c;
@@ -2235,65 +2265,7 @@ const HOME_HTML: &str = r##"<!doctype html>
       .shelf-head { align-items:flex-start; flex-direction:column; }
       .shelf-actions { white-space:normal; }
       h1 { font-size:52px; }
-    }
-  </style>
-</head>
-<body>
-  <nav class="page-nav" aria-label="Primary">
-    <a class="brand" href=".">dd music</a>
-    <div class="nav-links">
-      <a href="#shelf-section">Tracks</a>
-      <a class="button" href="#shelf-section">Listen</a>
-    </div>
-  </nav>
-  <header class="hero">
-    <div class="hero-inner">
-      <div>
-        <p class="eyebrow">Rust generated music server</p>
-        <h1>dd music</h1>
-        <p class="lede">Microtonal tracks from the DES music engine, published as a daily shelf with native browser playback and anonymous voting.</p>
-        <div class="hero-actions">
-          <a class="button primary" href="#shelf-section">Listen now</a>
-          <button type="button" hx-get="songs/shelf?limit=36" hx-target="#shelf" hx-swap="innerHTML">Refresh shelf</button>
-        </div>
-        <div class="stats" aria-label="Service profile">
-          <div class="stat"><strong>3-5</strong><span>new tracks targeted per day</span></div>
-          <div class="stat"><strong>DES</strong><span>in-process Rust generation</span></div>
-          <div class="stat"><strong>S3</strong><span>encrypted published audio</span></div>
-        </div>
-      </div>
-      <div class="visual" aria-hidden="true">
-        <div class="wave">
-          <span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span>
-          <span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span>
-          <span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span>
-          <span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span>
-          <span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span>
-          <span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span>
-        </div>
-        <div class="visual-caption"><span>daily generator</span><span>vote-shaped shelf</span></div>
-      </div>
-    </div>
-  </header>
-  <main>
-    <section id="shelf-section" class="shelf-band">
-      <div class="section-inner">
-        <div id="shelf" hx-get="songs/shelf?limit=36" hx-trigger="load, every 120s" hx-swap="innerHTML">
-          <div class="shelf-head">
-            <div>
-              <p class="eyebrow">Latest transmissions</p>
-              <h2>Generated today and recently</h2>
-            </div>
-            <div class="shelf-actions"><span>Loading</span></div>
-          </div>
-          <div class="empty">Loading songs.</div>
-        </div>
-      </div>
-    </section>
-  </main>
-</body>
-</html>
-"##;
+    }"##;
 
 #[cfg(test)]
 mod tests {
@@ -2398,12 +2370,10 @@ mod tests {
         assert_eq!(json_request.value, -1);
     }
 
-    #[test]
-    fn render_song_card_escapes_content_and_uses_htmx_votes() {
-        let id = "12345678-aaaa-bbbb-cccc-123456789abc".to_string();
-        let song = SongRow {
-            id: id.clone(),
-            title: "Signal <Bloom>".to_string(),
+    fn sample_song(id: &str, title: &str) -> SongRow {
+        SongRow {
+            id: id.to_string(),
+            title: title.to_string(),
             slug: "signal-bloom".to_string(),
             genre: "House & Bass".to_string(),
             status: "published".to_string(),
@@ -2422,12 +2392,67 @@ mod tests {
             }),
             published_at: Some("2026-06-07T12:00:00Z".to_string()),
             created_at: "2026-06-07T12:00:00Z".to_string(),
-        };
+        }
+    }
 
-        let html = render_song_card(&song);
+    #[test]
+    fn render_song_card_escapes_content_and_uses_htmx_votes() {
+        let id = "12345678-aaaa-bbbb-cccc-123456789abc";
+        let song = sample_song(id, "Signal <Bloom>");
+
+        let html = render_song_card(&song).into_string();
+        // maud auto-escaping hardens against injection in both text and attributes.
         assert!(html.contains("Signal &lt;Bloom&gt;"));
         assert!(html.contains("House &amp; Bass"));
         assert!(html.contains(&format!(r##"hx-post="songs/{id}/votes?value=1""##)));
+        assert!(html.contains(&format!(r##"hx-post="songs/{id}/votes?value=-1""##)));
         assert!(html.contains(&format!(r##"hx-target="#song-{id}""##)));
+        assert!(html.contains(r#"hx-swap="outerHTML""#));
+        assert!(html.contains(&format!(r##"id="song-{id}""##)));
+    }
+
+    #[test]
+    fn render_song_card_auto_escapes_script_title() {
+        // XSS hardening: a malicious song title must never reach the browser as
+        // live markup. maud escapes the angle brackets by construction.
+        let song = sample_song(
+            "12345678-aaaa-bbbb-cccc-123456789abc",
+            "<script>alert('xss')</script>",
+        );
+        let html = render_song_card(&song).into_string();
+        assert!(html.contains("&lt;script&gt;alert('xss')&lt;/script&gt;"));
+        assert!(!html.contains("<script>alert"));
+    }
+
+    #[test]
+    fn render_song_shelf_wires_htmx_and_grid() {
+        let song = sample_song("12345678-aaaa-bbbb-cccc-123456789abc", "Signal Bloom");
+        let html = render_song_shelf(std::slice::from_ref(&song)).into_string();
+        assert!(html.contains(r#"hx-get="songs/shelf?limit=36""#));
+        assert!(html.contains(r##"hx-target="#shelf""##));
+        assert!(html.contains(r#"<div class="grid">"#));
+        assert!(html.contains("1 published tracks"));
+
+        let empty = render_song_shelf(&[]).into_string();
+        assert!(empty.contains(r#"<div class="empty">No published songs yet."#));
+        assert!(!empty.contains(r#"<div class="grid">"#));
+    }
+
+    #[test]
+    fn render_home_emits_doctype_and_htmx_shell() {
+        let html = render_home().into_string();
+        // maud emits an uppercase DOCTYPE.
+        assert!(html.starts_with("<!DOCTYPE html>"));
+        assert!(html.contains(r#"<html lang="en">"#));
+        // HTMX wiring preserved verbatim from the original template.
+        assert!(html.contains(r#"src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js""#));
+        assert!(html.contains(r#"hx-get="songs/shelf?limit=36""#));
+        assert!(html.contains(r#"hx-trigger="load, every 120s""#));
+        assert!(html.contains(r##"hx-target="#shelf""##));
+        assert!(html.contains(r#"hx-swap="innerHTML""#));
+        // CSS embedded verbatim via PreEscaped.
+        assert!(html.contains("--green:#236b4b"));
+        // 24 waveform bars rendered.
+        assert_eq!(html.matches(r#"<span class="bar">"#).count(), 24);
     }
 }

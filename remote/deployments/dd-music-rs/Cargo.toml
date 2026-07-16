@@ -17,6 +17,7 @@ dd-pg-defs = { path = "../../libs/pg-defs/generated/rust" }
 dd-redis-interfaces = { path = "../../libs/interfaces/redis/generated/rust" }
 des_engine = { path = "../../submodules/discrete-event-system.rs" }
 futures-util = "0.3"
+maud = "0.26"
 once_cell = "1"
 prometheus = "0.13"
 redis = { version = "=0.27.6", default-features = false, features = ["aio", "tokio-comp"] }
