@@ -530,6 +530,14 @@ events to `dd.remote.events`, and can publish optimizer-shaped learning jobs to
 `dd.remote.mdp.optimize` when `FABRICATION_MDP_AUTOPUBLISH=true`. Generated
 machine code is intentionally advisory: responses are draft planning artifacts
 and are not marked machine-ready.
+
+Outbound Core NATS publishes are followed by a broker `flush()` before they are
+counted as delivered. `dd_fabrication_server_nats_publish_failures_total`
+records either publish or flush failure, while structured error logs flow to
+Loki and explicit spans flow through the configured OTLP collector. Fabrication
+subjects are also covered by the generated `DD_REMOTE_FABRICATION` JetStream
+contract (`dd.remote.fabrication.>`); Core queue subscription remains the live
+worker-delivery path until a durable consumer migration is completed.
 The Rust deployment imports the local `des_engine` crate from
 `remote/submodules/discrete-event-system.rs` as the preferred in-process
 math/simulation/learning engine. Learning responses and optimizer artifacts

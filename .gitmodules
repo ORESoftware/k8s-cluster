@@ -55,7 +55,7 @@
 	branch = main
 [submodule "remote/deployments/3fa-backend"]
 	path = remote/deployments/3fa-backend
-	url = git@github.com:ORESoftware/3fa-backend.rs.git
+	url = git@github.com:3FA-app/3fa-backend.rs.git
 	branch = main
 [submodule "remote/libs"]
 	path = remote/libs

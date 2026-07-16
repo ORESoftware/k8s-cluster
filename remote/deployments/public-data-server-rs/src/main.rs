@@ -2999,6 +2999,17 @@ async fn run_nats_loop(state: AppState) {
         state.config.queue_group,
         state.config.ingest_result_subject
     );
+    // Bound in-flight handlers. Each message can trigger a scrape (outbound HTTP)
+    // or ingest (DB writes); previously every one was `tokio::spawn`ed with no
+    // ceiling, so a burst could spawn unbounded concurrent scrapes and exhaust
+    // the pod. Acquiring a permit before spawning also backpressures the
+    // subscription instead of piling work on. Kept modest since scrapes are heavy.
+    let max_concurrency = env::var("PUBLIC_DATA_NATS_MAX_CONCURRENCY")
+        .ok()
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(32);
+    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(max_concurrency));
     loop {
         let mut subscription = match nats
             .queue_subscribe(
@@ -3028,8 +3039,14 @@ async fn run_nats_loop(state: AppState) {
                 );
                 continue;
             }
+            // Backpressure point: wait for a concurrency permit before spawning.
+            let permit = match semaphore.clone().acquire_owned().await {
+                Ok(permit) => permit,
+                Err(_) => break,
+            };
             let task_state = state.clone();
             tokio::spawn(async move {
+                let _permit = permit; // released when this handler finishes
                 match serde_json::from_slice::<Value>(&payload) {
                     Ok(value) => {
                         let result = if value.get("scrape").is_some() {

@@ -1,22 +1,26 @@
 use std::{
-    collections::HashSet,
     collections::hash_map::DefaultHasher,
+    collections::HashSet,
     env,
     error::Error,
+    fmt::Write as _,
     fs,
     hash::{Hash, Hasher},
     path::PathBuf,
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use dd_nats_subject_defs::{
-    DD_REMOTE_CRITICAL_EVENTS_STREAM_NAME, DD_REMOTE_TASKS_STREAM_NAME,
-    RUNTIME_CRITICAL_EVENTS_QUEUE_GROUP, RUNTIME_CRITICAL_EVENTS_SUBJECT, RUNTIME_EVENTS_SUBJECT,
-    THREAD_PREPARER_QUEUE_GROUP, THREAD_TASKS_WILDCARD,
+    DD_REMOTE_CRITICAL_EVENTS_STREAM_NAME, DD_REMOTE_TASKS_DLQ_STREAM_NAME,
+    DD_REMOTE_TASKS_STREAM_NAME, RUNTIME_CRITICAL_EVENTS_QUEUE_GROUP,
+    RUNTIME_CRITICAL_EVENTS_SUBJECT, RUNTIME_EVENTS_SUBJECT, THREAD_PREPARER_QUEUE_GROUP,
+    THREAD_TASKS_DEAD_LETTER_SUBJECT, THREAD_TASKS_WILDCARD,
 };
 use dd_shared_interfaces::AgentTaskQueueMessage;
 use futures_util::StreamExt;
 use serde_json::{json, Value};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 type QueueTaskMessage = AgentTaskQueueMessage;
 
@@ -30,6 +34,16 @@ const MAX_IDENTIFIER_LEN: usize = 200;
 // grow it without bound. The on-disk receipt files remain the durable check;
 // this set is only a fast path, so trimming it is safe.
 const MAX_RECEIPT_CACHE: usize = 50_000;
+static READY: AtomicBool = AtomicBool::new(false);
+static MESSAGES_RECEIVED: AtomicU64 = AtomicU64::new(0);
+static FETCH_ERRORS: AtomicU64 = AtomicU64::new(0);
+static INVALID_MESSAGES: AtomicU64 = AtomicU64::new(0);
+static DUPLICATE_MESSAGES: AtomicU64 = AtomicU64::new(0);
+static ACK_PROGRESS_FAILURES: AtomicU64 = AtomicU64::new(0);
+static HANDOFF_SUCCESSES: AtomicU64 = AtomicU64::new(0);
+static HANDOFF_FAILURES: AtomicU64 = AtomicU64::new(0);
+static DEAD_LETTERED: AtomicU64 = AtomicU64::new(0);
+static DLQ_PUBLISH_FAILURES: AtomicU64 = AtomicU64::new(0);
 
 /// Reject identifiers that are empty, overlong, or carry characters that would
 /// let a NATS payload steer the REST request path (`/api/agents/threads/{id}/
@@ -48,7 +62,9 @@ fn validate_identifier(value: &str, label: &str) -> Result<(), String> {
         return Err(format!("{label} must not be empty"));
     }
     if value.len() > MAX_IDENTIFIER_LEN {
-        return Err(format!("{label} must be at most {MAX_IDENTIFIER_LEN} bytes"));
+        return Err(format!(
+            "{label} must be at most {MAX_IDENTIFIER_LEN} bytes"
+        ));
     }
     if value.contains("..") {
         return Err(format!("{label} must not contain '..'"));
@@ -90,6 +106,201 @@ fn fetch_error_backoff(consecutive_errors: u32) -> Duration {
     let exponent = consecutive_errors.saturating_sub(1).min(5);
     let millis = (250u64 << exponent).min(5_000);
     Duration::from_millis(millis)
+}
+
+/// Interval between `AckKind::Progress` heartbeats sent while a worker handoff
+/// is in flight. A third of the ack-wait window (floored at 5s) so several
+/// heartbeats land inside each ack deadline even if one is delayed by a slow
+/// broker round-trip.
+fn ack_progress_interval(ack_wait: Duration) -> Duration {
+    (ack_wait / 3).max(Duration::from_secs(5))
+}
+
+/// Whether JetStream has delivered a message its last permitted time, so a
+/// further failure must terminate + dead-letter it rather than Nak for an
+/// (impossible) redelivery. `max_deliver <= 0` means unlimited redelivery, so
+/// a message is never final in that mode.
+fn is_final_delivery(delivered: i64, max_deliver: i64) -> bool {
+    max_deliver > 0 && delivered >= max_deliver
+}
+
+/// Await `handoff` while periodically extending the JetStream ack deadline for
+/// `message` with `AckKind::Progress`.
+///
+/// A worker handoff can chain two HTTP calls (prepare + dispatch), each bounded
+/// only by `QUEUE_CONSUMER_HTTP_TIMEOUT_SECONDS` (default 420s), which can far
+/// exceed `ack_wait` (default 120s). Without a heartbeat, JetStream treats the
+/// still-running delivery as stalled once `ack_wait` elapses and redelivers it
+/// to another replica — dispatching the same task twice, because the
+/// duplicate-suppression receipt is only written *after* the handoff succeeds.
+/// Sending `Progress` on an interval keeps the deadline alive until the handoff
+/// resolves, so redelivery only happens on a genuine stall or crash.
+async fn run_handoff_with_ack_progress<F, T>(
+    message: &async_nats::jetstream::Message,
+    interval: Duration,
+    handoff: F,
+) -> T
+where
+    F: std::future::Future<Output = T>,
+{
+    let mut handoff = std::pin::pin!(handoff);
+    let mut ticker = tokio::time::interval(interval);
+    // If a heartbeat is delayed, resume the cadence from "now" rather than
+    // firing a burst of catch-up ticks.
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    ticker.tick().await; // The first tick completes immediately; skip it.
+    loop {
+        tokio::select! {
+            biased;
+            output = &mut handoff => return output,
+            _ = ticker.tick() => {
+                if let Err(error) = message
+                    .ack_with(async_nats::jetstream::AckKind::Progress)
+                    .await
+                {
+                    ACK_PROGRESS_FAILURES.fetch_add(1, Ordering::Relaxed);
+                    // A single missed heartbeat is not fatal: the handoff keeps
+                    // running and the next tick retries. Only if enough are
+                    // missed to blow the ack deadline does JetStream redeliver,
+                    // which the receipt/idempotency layer still guards against.
+                    log_warn(
+                        "queue-task-ack-progress-failed",
+                        "Queue consumer could not send an ack progress heartbeat.",
+                        json!({ "error": error.to_string() }),
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// After a handoff failure, either negatively-acknowledge the message for
+/// another delivery attempt or, if JetStream has already delivered it
+/// `max_deliver` times, terminate it and route the payload to the dead-letter
+/// subject.
+///
+/// Terminating matters under WorkQueue retention: a message that is only ever
+/// Nak'd is never removed once redelivery is exhausted, so it lingers in the
+/// stream until `max_age` (14 days here) and keeps counting toward the
+/// consumer's pending/lag total — the exact metric KEDA scales the consumer on,
+/// so one poison message can pin a replica alive for days. `Term` removes it
+/// immediately; the best-effort dead-letter publish preserves it for
+/// inspection, and the critical event is the durable audit record.
+#[allow(clippy::too_many_arguments)]
+async fn nak_or_dead_letter(
+    message: &async_nats::jetstream::Message,
+    nats: &async_nats::Client,
+    critical_subject: &str,
+    dlq_subject: &str,
+    stream_name: &str,
+    task: &QueueTaskMessage,
+    max_deliver: i64,
+    nak_delay: Duration,
+    error_text: &str,
+) {
+    let delivered = message.info().map(|info| info.delivered).unwrap_or(0);
+    if !is_final_delivery(delivered, max_deliver) {
+        if let Err(nak_error) = message
+            .ack_with(async_nats::jetstream::AckKind::Nak(Some(nak_delay)))
+            .await
+        {
+            emit_runtime_critical_event(
+                nats,
+                critical_subject,
+                "queue-task-negative-ack-failed",
+                "Queue consumer could not NAK a failed task message.",
+                json!({
+                    "threadId": &task.thread_id,
+                    "taskId": &task.task_id,
+                    "nakDelaySeconds": nak_delay.as_secs(),
+                    "delivered": delivered,
+                    "error": nak_error.to_string(),
+                }),
+            )
+            .await;
+        }
+        return;
+    }
+
+    DEAD_LETTERED.fetch_add(1, Ordering::Relaxed);
+    // Final delivery: preserve the payload on the dedicated JetStream
+    // dead-letter stream, then Term so WorkQueue frees it.
+    let dead_letter = json!({
+        "type": "dead-letter",
+        "schema": "dd.dead_letter.v1",
+        "source": SERVICE_NAME,
+        "stream": stream_name,
+        "threadId": &task.thread_id,
+        "taskId": &task.task_id,
+        "messageKind": &task.message_kind,
+        "deliveries": delivered,
+        "maxDeliver": max_deliver,
+        "error": error_text,
+        "emittedAtMs": now_ms(),
+    });
+    match serde_json::to_vec(&dead_letter) {
+        Ok(bytes) => {
+            let jetstream = async_nats::jetstream::new(nats.clone());
+            let publish_result = match jetstream
+                .publish(dlq_subject.to_string(), bytes.into())
+                .await
+            {
+                Ok(ack) => ack.await.map(|_| ()),
+                Err(error) => Err(error),
+            };
+            if let Err(publish_error) = publish_result {
+                DLQ_PUBLISH_FAILURES.fetch_add(1, Ordering::Relaxed);
+                log_warn(
+                    "dead-letter-publish-failed",
+                    "Queue consumer could not durably publish a task to the dead-letter stream.",
+                    json!({
+                        "threadId": &task.thread_id,
+                        "taskId": &task.task_id,
+                        "dlqSubject": dlq_subject,
+                        "error": publish_error.to_string(),
+                    }),
+                );
+            }
+        }
+        Err(serialize_error) => log_warn(
+            "dead-letter-serialize-failed",
+            "Queue consumer could not serialize a dead-letter payload.",
+            json!({
+                "threadId": &task.thread_id,
+                "taskId": &task.task_id,
+                "error": serialize_error.to_string(),
+            }),
+        ),
+    }
+    emit_runtime_critical_event(
+        nats,
+        critical_subject,
+        "queue-task-dead-lettered",
+        "Queue consumer exhausted redelivery for a task and moved it to the dead-letter subject.",
+        json!({
+            "threadId": &task.thread_id,
+            "taskId": &task.task_id,
+            "dlqSubject": dlq_subject,
+            "deliveries": delivered,
+            "maxDeliver": max_deliver,
+            "error": error_text,
+        }),
+    )
+    .await;
+    if let Err(term_error) = message.ack_with(async_nats::jetstream::AckKind::Term).await {
+        emit_runtime_critical_event(
+            nats,
+            critical_subject,
+            "queue-task-term-failed",
+            "Queue consumer could not terminate a poison task message; it may linger in the WorkQueue stream.",
+            json!({
+                "threadId": &task.thread_id,
+                "taskId": &task.task_id,
+                "error": term_error.to_string(),
+            }),
+        )
+        .await;
+    }
 }
 
 fn env_value(key: &str, fallback: &str) -> String {
@@ -279,6 +490,101 @@ fn log_error(event_name: &str, body: &str, attributes: Value) {
     write_structured_log_to_stderr("ERROR", event_name, body, attributes);
 }
 
+fn render_metrics() -> String {
+    let mut output = String::new();
+    let metrics = [
+        (
+            "dd_queue_consumer_messages_received_total",
+            MESSAGES_RECEIVED.load(Ordering::Relaxed),
+        ),
+        (
+            "dd_queue_consumer_fetch_errors_total",
+            FETCH_ERRORS.load(Ordering::Relaxed),
+        ),
+        (
+            "dd_queue_consumer_invalid_messages_total",
+            INVALID_MESSAGES.load(Ordering::Relaxed),
+        ),
+        (
+            "dd_queue_consumer_duplicate_messages_total",
+            DUPLICATE_MESSAGES.load(Ordering::Relaxed),
+        ),
+        (
+            "dd_queue_consumer_ack_progress_failures_total",
+            ACK_PROGRESS_FAILURES.load(Ordering::Relaxed),
+        ),
+        (
+            "dd_queue_consumer_handoff_successes_total",
+            HANDOFF_SUCCESSES.load(Ordering::Relaxed),
+        ),
+        (
+            "dd_queue_consumer_handoff_failures_total",
+            HANDOFF_FAILURES.load(Ordering::Relaxed),
+        ),
+        (
+            "dd_queue_consumer_dead_lettered_total",
+            DEAD_LETTERED.load(Ordering::Relaxed),
+        ),
+        (
+            "dd_queue_consumer_dlq_publish_failures_total",
+            DLQ_PUBLISH_FAILURES.load(Ordering::Relaxed),
+        ),
+    ];
+    for (name, value) in metrics {
+        let _ = writeln!(output, "# TYPE {name} counter\n{name} {value}");
+    }
+    let ready = u8::from(READY.load(Ordering::Relaxed));
+    let _ = writeln!(
+        output,
+        "# TYPE dd_queue_consumer_ready gauge\ndd_queue_consumer_ready {ready}"
+    );
+    output
+}
+
+async fn serve_metrics(addr: String) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    log_info(
+        "metrics-server-started",
+        "Queue consumer health and Prometheus endpoint started.",
+        json!({ "address": addr }),
+    );
+    loop {
+        let (mut socket, _) = listener.accept().await?;
+        tokio::spawn(async move {
+            let mut request = [0u8; 4096];
+            let bytes_read = match socket.read(&mut request).await {
+                Ok(bytes_read) => bytes_read,
+                Err(_) => return,
+            };
+            let request = String::from_utf8_lossy(&request[..bytes_read]);
+            let path = request
+                .lines()
+                .next()
+                .and_then(|line| line.split_whitespace().nth(1))
+                .unwrap_or("/");
+            let (status, content_type, body) = match path {
+                "/metrics" => ("200 OK", "text/plain; version=0.0.4", render_metrics()),
+                "/healthz" => ("200 OK", "text/plain", "ok\n".to_string()),
+                "/readyz" if READY.load(Ordering::Relaxed) => {
+                    ("200 OK", "text/plain", "ready\n".to_string())
+                }
+                "/readyz" => (
+                    "503 Service Unavailable",
+                    "text/plain",
+                    "not ready\n".to_string(),
+                ),
+                _ => ("404 Not Found", "text/plain", "not found\n".to_string()),
+            };
+            let response = format!(
+                "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = socket.write_all(response.as_bytes()).await;
+            let _ = socket.shutdown().await;
+        });
+    }
+}
+
 fn nats_event_subject() -> String {
     env_value("NATS_EVENT_SUBJECT", RUNTIME_EVENTS_SUBJECT)
 }
@@ -464,6 +770,7 @@ async fn emit_runtime_critical_event(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn emit_queue_status_event(
     http: &reqwest::Client,
     nats: &async_nats::Client,
@@ -672,6 +979,7 @@ async fn dispatch_to_deterministic_worker(
     dispatch_to_rest_api(http, rest_api_url, secret, task).await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn build_jetstream_consumer(
     client: async_nats::Client,
     stream_name: &str,
@@ -709,6 +1017,25 @@ async fn build_jetstream_consumer(
         .await?;
 
     Ok(consumer)
+}
+
+async fn ensure_dead_letter_stream(
+    client: async_nats::Client,
+    stream_name: &str,
+    subject: &str,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let jetstream = async_nats::jetstream::new(client);
+    jetstream
+        .get_or_create_stream(async_nats::jetstream::stream::Config {
+            name: stream_name.to_string(),
+            subjects: vec![subject.to_string()],
+            retention: async_nats::jetstream::stream::RetentionPolicy::Limits,
+            storage: async_nats::jetstream::stream::StorageType::File,
+            max_age: Duration::from_secs(30 * 24 * 60 * 60),
+            ..Default::default()
+        })
+        .await?;
+    Ok(())
 }
 
 async fn run_critical_event_logger(
@@ -883,6 +1210,17 @@ async fn shutdown_signal() {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let _otel = dd_telemetry::init("dd-remote-queue-consumer");
+    let metrics_addr = env_value("QUEUE_CONSUMER_METRICS_ADDR", "0.0.0.0:8120");
+    let metrics_addr_for_task = metrics_addr.clone();
+    tokio::spawn(async move {
+        if let Err(error) = serve_metrics(metrics_addr_for_task).await {
+            log_error(
+                "metrics-server-failed",
+                "Queue consumer health and Prometheus endpoint stopped.",
+                json!({ "error": error.to_string() }),
+            );
+        }
+    });
 
     let nats_url = env_value(
         "NATS_URL",
@@ -896,6 +1234,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let max_ack_pending = env_i64("NATS_TASK_MAX_ACK_PENDING", 256);
     let max_deliver = env_i64("NATS_TASK_MAX_DELIVER", 5);
     let nak_delay_seconds = env_u64("NATS_TASK_NAK_DELAY_SECONDS", 15);
+    let dlq_subject = env_value("NATS_TASK_DLQ_SUBJECT", THREAD_TASKS_DEAD_LETTER_SUBJECT);
+    let dlq_stream_name = env_value("NATS_TASK_DLQ_STREAM", DD_REMOTE_TASKS_DLQ_STREAM_NAME);
     let rest_api_url = env_value(
         "REMOTE_REST_API_URL",
         "http://dd-remote-rest-api.default.svc.cluster.local:8082",
@@ -959,14 +1299,18 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "criticalConsumer": &critical_consumer_name,
             "criticalLoggerEnabled": critical_logger_enabled,
             "consumer": &consumer_name,
+            "dlqSubject": &dlq_subject,
+            "dlqStream": &dlq_stream_name,
             "restApiUrl": &rest_api_url,
             "containerPoolUrl": &container_pool_url,
             "httpTimeoutSeconds": http_timeout_seconds,
             "fallbackRestDispatch": fallback_rest_dispatch,
             "receiptsDir": &receipts_dir,
+            "metricsAddr": &metrics_addr,
         }),
     );
     let nats_client = connect_nats(&nats_url).await?;
+    ensure_dead_letter_stream(nats_client.clone(), &dlq_stream_name, &dlq_subject).await?;
     if critical_logger_enabled {
         let critical_client = nats_client.clone();
         let critical_stream_for_task = critical_stream_name.clone();
@@ -1041,6 +1385,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut receipts = HashSet::new();
     let mut shutdown = std::pin::pin!(shutdown_signal());
     let mut consecutive_fetch_errors: u32 = 0;
+    let ack_progress_every = ack_progress_interval(Duration::from_secs(ack_wait_seconds));
+    READY.store(true, Ordering::Relaxed);
 
     loop {
         // Race the next JetStream message against a shutdown signal. A signal
@@ -1064,6 +1410,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         let message = match message {
             Ok(message) => message,
             Err(error) => {
+                FETCH_ERRORS.fetch_add(1, Ordering::Relaxed);
                 consecutive_fetch_errors = consecutive_fetch_errors.saturating_add(1);
                 emit_runtime_critical_event(
                     &nats_client,
@@ -1090,9 +1437,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             }
         };
         consecutive_fetch_errors = 0;
+        MESSAGES_RECEIVED.fetch_add(1, Ordering::Relaxed);
         let task = match serde_json::from_slice::<QueueTaskMessage>(&message.payload) {
             Ok(task) => task,
             Err(error) => {
+                INVALID_MESSAGES.fetch_add(1, Ordering::Relaxed);
                 emit_runtime_critical_event(
                     &nats_client,
                     &critical_subject,
@@ -1124,6 +1473,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             }
         };
         if let Err(validation_error) = validate_task_identifiers(&task) {
+            INVALID_MESSAGES.fetch_add(1, Ordering::Relaxed);
             emit_runtime_critical_event(
                 &nats_client,
                 &critical_subject,
@@ -1155,6 +1505,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             continue;
         }
         if has_task_receipt(&mut receipts, &receipts_dir, &task.task_id) {
+            DUPLICATE_MESSAGES.fetch_add(1, Ordering::Relaxed);
             log_info(
                 "queue-task-skipped-duplicate",
                 "Queue task skipped because a receipt already exists.",
@@ -1207,8 +1558,12 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .await;
         let direct_dispatch = task.direct_dispatch.unwrap_or(false);
         let container_pool_dispatch = should_dispatch_to_container_pool(&task);
-        let result = if direct_dispatch {
-            emit_queue_status_event(
+        // Run the handoff under an ack-progress heartbeat so a legitimately long
+        // prepare+dispatch is not mistaken for a stalled delivery and redelivered
+        // (which would dispatch the task twice). See run_handoff_with_ack_progress.
+        let handoff = async {
+            if direct_dispatch {
+                emit_queue_status_event(
                 &http,
                 &nats_client,
                 &rest_api_url,
@@ -1221,24 +1576,24 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 json!({ "directDispatch": true }),
             )
             .await;
-            Ok(())
-        } else if shadow {
-            emit_queue_status_event(
-                &http,
-                &nats_client,
-                &rest_api_url,
-                &secret,
-                &task,
-                -930,
-                "shadow-prepare",
-                "preparing shadow worker",
-                "Shadow handoff is waking the UUID-bound thread worker.",
-                json!({ "directDispatch": false }),
-            )
-            .await;
-            prepare_thread(&http, &rest_api_url, &secret, &task.thread_id).await
-        } else if !container_pool_dispatch {
-            emit_queue_status_event(
+                Ok(())
+            } else if shadow {
+                emit_queue_status_event(
+                    &http,
+                    &nats_client,
+                    &rest_api_url,
+                    &secret,
+                    &task,
+                    -930,
+                    "shadow-prepare",
+                    "preparing shadow worker",
+                    "Shadow handoff is waking the UUID-bound thread worker.",
+                    json!({ "directDispatch": false }),
+                )
+                .await;
+                prepare_thread(&http, &rest_api_url, &secret, &task.thread_id).await
+            } else if !container_pool_dispatch {
+                emit_queue_status_event(
                 &http,
                 &nats_client,
                 &rest_api_url,
@@ -1251,9 +1606,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 json!({ "dispatchMode": &task.dispatch_mode, "containerPoolDispatch": false }),
             )
             .await;
-            match dispatch_to_deterministic_worker(&http, &rest_api_url, &secret, &task).await {
-                Ok(()) => {
-                    emit_queue_status_event(
+                match dispatch_to_deterministic_worker(&http, &rest_api_url, &secret, &task).await {
+                    Ok(()) => {
+                        emit_queue_status_event(
                         &http,
                         &nats_client,
                         &rest_api_url,
@@ -1266,10 +1621,10 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                         json!({ "dispatchMode": &task.dispatch_mode, "containerPoolDispatch": false }),
                     )
                     .await;
-                    Ok(())
-                }
-                Err(error) => {
-                    emit_queue_status_event(
+                        Ok(())
+                    }
+                    Err(error) => {
+                        emit_queue_status_event(
                         &http,
                         &nats_client,
                         &rest_api_url,
@@ -1282,62 +1637,62 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                         json!({ "dispatchMode": &task.dispatch_mode, "containerPoolDispatch": false, "error": error.to_string() }),
                     )
                     .await;
-                    Err(error)
+                        Err(error)
+                    }
                 }
-            }
-        } else {
-            let pool = task
-                .repo
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(|repo| repo_pool_slug(repo, task.base_branch.as_deref().unwrap_or("dev")));
-            emit_queue_status_event(
-                &http,
-                &nats_client,
-                &rest_api_url,
-                &secret,
-                &task,
-                -930,
-                "container-pool-dispatch",
-                "dispatching to container pool",
-                "Queue consumer is asking container-pool for a warm repo worker.",
-                json!({ "poolSlug": &pool, "affinityKey": &task.thread_id }),
-            )
-            .await;
-            match dispatch_to_container_pool(&http, &container_pool_url, &secret, &task).await {
-                Ok(()) => {
-                    emit_queue_status_event(
-                        &http,
-                        &nats_client,
-                        &rest_api_url,
-                        &secret,
-                        &task,
-                        -920,
-                        "container-pool-accepted",
-                        "container pool accepted",
-                        "Container-pool accepted the task dispatch.",
-                        json!({ "poolSlug": &pool, "affinityKey": &task.thread_id }),
-                    )
-                    .await;
-                    Ok(())
-                }
-                Err(pool_error) => {
-                    let pool_error_summary =
-                        pool_error.to_string().chars().take(300).collect::<String>();
-                    let pool_error_message =
-                        format!("Container-pool dispatch failed: {pool_error_summary}");
-                    log_warn(
-                        "container-pool-dispatch-failed",
-                        "Container-pool dispatch failed; fallback may still recover the task.",
-                        json!({
-                            "threadId": &task.thread_id,
-                            "taskId": &task.task_id,
-                            "poolSlug": &pool,
-                            "error": pool_error.to_string(),
-                        }),
-                    );
-                    emit_queue_status_event(
+            } else {
+                let pool = task
+                    .repo
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(|repo| repo_pool_slug(repo, task.base_branch.as_deref().unwrap_or("dev")));
+                emit_queue_status_event(
+                    &http,
+                    &nats_client,
+                    &rest_api_url,
+                    &secret,
+                    &task,
+                    -930,
+                    "container-pool-dispatch",
+                    "dispatching to container pool",
+                    "Queue consumer is asking container-pool for a warm repo worker.",
+                    json!({ "poolSlug": &pool, "affinityKey": &task.thread_id }),
+                )
+                .await;
+                match dispatch_to_container_pool(&http, &container_pool_url, &secret, &task).await {
+                    Ok(()) => {
+                        emit_queue_status_event(
+                            &http,
+                            &nats_client,
+                            &rest_api_url,
+                            &secret,
+                            &task,
+                            -920,
+                            "container-pool-accepted",
+                            "container pool accepted",
+                            "Container-pool accepted the task dispatch.",
+                            json!({ "poolSlug": &pool, "affinityKey": &task.thread_id }),
+                        )
+                        .await;
+                        Ok(())
+                    }
+                    Err(pool_error) => {
+                        let pool_error_summary =
+                            pool_error.to_string().chars().take(300).collect::<String>();
+                        let pool_error_message =
+                            format!("Container-pool dispatch failed: {pool_error_summary}");
+                        log_warn(
+                            "container-pool-dispatch-failed",
+                            "Container-pool dispatch failed; fallback may still recover the task.",
+                            json!({
+                                "threadId": &task.thread_id,
+                                "taskId": &task.task_id,
+                                "poolSlug": &pool,
+                                "error": pool_error.to_string(),
+                            }),
+                        );
+                        emit_queue_status_event(
                         &http,
                         &nats_client,
                         &rest_api_url,
@@ -1350,10 +1705,10 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                         json!({ "poolSlug": &pool, "affinityKey": &task.thread_id, "error": pool_error.to_string() }),
                     )
                     .await;
-                    if !fallback_rest_dispatch {
-                        Err(pool_error)
-                    } else {
-                        emit_queue_status_event(
+                        if !fallback_rest_dispatch {
+                            Err(pool_error)
+                        } else {
+                            emit_queue_status_event(
                             &http,
                             &nats_client,
                             &rest_api_url,
@@ -1366,11 +1721,16 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                             json!({ "poolSlug": &pool, "affinityKey": &task.thread_id }),
                         )
                         .await;
-                        match dispatch_to_deterministic_worker(&http, &rest_api_url, &secret, &task)
+                            match dispatch_to_deterministic_worker(
+                                &http,
+                                &rest_api_url,
+                                &secret,
+                                &task,
+                            )
                             .await
-                        {
-                            Ok(()) => {
-                                emit_queue_status_event(
+                            {
+                                Ok(()) => {
+                                    emit_queue_status_event(
                                     &http,
                                     &nats_client,
                                     &rest_api_url,
@@ -1383,38 +1743,41 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                                     json!({ "poolSlug": &pool, "affinityKey": &task.thread_id }),
                                 )
                                 .await;
-                                Ok(())
-                            }
-                            Err(rest_error) => {
-                                let message = format!(
+                                    Ok(())
+                                }
+                                Err(rest_error) => {
+                                    let message = format!(
                                     "REST fallback dispatch failed after pool error: {rest_error}"
                                 );
-                                emit_queue_status_event(
-                                    &http,
-                                    &nats_client,
-                                    &rest_api_url,
-                                    &secret,
-                                    &task,
-                                    -914,
-                                    "rest-fallback-failed",
-                                    "direct worker fallback failed",
-                                    &message,
-                                    json!({
-                                        "poolSlug": &pool,
-                                        "affinityKey": &task.thread_id,
-                                        "poolError": pool_error.to_string(),
-                                        "restError": rest_error.to_string(),
-                                    }),
-                                )
-                                .await;
-                                Err(rest_error)
+                                    emit_queue_status_event(
+                                        &http,
+                                        &nats_client,
+                                        &rest_api_url,
+                                        &secret,
+                                        &task,
+                                        -914,
+                                        "rest-fallback-failed",
+                                        "direct worker fallback failed",
+                                        &message,
+                                        json!({
+                                            "poolSlug": &pool,
+                                            "affinityKey": &task.thread_id,
+                                            "poolError": pool_error.to_string(),
+                                            "restError": rest_error.to_string(),
+                                        }),
+                                    )
+                                    .await;
+                                    Err(rest_error)
+                                }
                             }
                         }
                     }
                 }
             }
         };
+        let result = run_handoff_with_ack_progress(&message, ack_progress_every, handoff).await;
         if let Err(error) = result {
+            HANDOFF_FAILURES.fetch_add(1, Ordering::Relaxed);
             if shadow {
                 let error_text = error.to_string();
                 emit_runtime_critical_event(
@@ -1518,28 +1881,21 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 json!({ "error": &error_text }),
             )
             .await;
-            if let Err(nak_error) = message
-                .ack_with(async_nats::jetstream::AckKind::Nak(Some(
-                    Duration::from_secs(nak_delay_seconds),
-                )))
-                .await
-            {
-                emit_runtime_critical_event(
-                    &nats_client,
-                    &critical_subject,
-                    "queue-task-negative-ack-failed",
-                    "Queue consumer could not NAK a failed task message.",
-                    json!({
-                        "threadId": &task.thread_id,
-                        "taskId": &task.task_id,
-                        "nakDelaySeconds": nak_delay_seconds,
-                        "error": nak_error.to_string(),
-                    }),
-                )
-                .await;
-            }
+            nak_or_dead_letter(
+                &message,
+                &nats_client,
+                &critical_subject,
+                &dlq_subject,
+                &stream_name,
+                &task,
+                max_deliver,
+                Duration::from_secs(nak_delay_seconds),
+                &error_text,
+            )
+            .await;
             continue;
         }
+        HANDOFF_SUCCESSES.fetch_add(1, Ordering::Relaxed);
         emit_queue_status_event(
             &http,
             &nats_client,
@@ -1599,6 +1955,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         }
     }
 
+    READY.store(false, Ordering::Relaxed);
     Ok(())
 }
 
@@ -1638,7 +1995,11 @@ mod tests {
         // Same id is stable.
         assert_eq!(receipt_path("/tmp/x", "ab"), receipt_path("/tmp/x", "ab"));
         // Filenames stay filesystem-safe (sanitized stem + hex hash + .json).
-        let name = receipt_path("/tmp/x", "weird/../id").file_name().unwrap().to_string_lossy().into_owned();
+        let name = receipt_path("/tmp/x", "weird/../id")
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
         assert!(name.ends_with(".json"));
         assert!(!name.contains('/'));
     }
@@ -1656,6 +2017,42 @@ mod tests {
     }
 
     #[test]
+    fn ack_progress_interval_is_a_third_of_ack_wait_with_floor() {
+        // A comfortable margin: three heartbeats per ack-wait window.
+        assert_eq!(
+            ack_progress_interval(Duration::from_secs(120)),
+            Duration::from_secs(40)
+        );
+        assert_eq!(
+            ack_progress_interval(Duration::from_secs(30)),
+            Duration::from_secs(10)
+        );
+        // Never heartbeats faster than the 5s floor even for tiny ack windows,
+        // so a misconfigured short ack_wait can't spin the broker.
+        assert_eq!(
+            ack_progress_interval(Duration::from_secs(9)),
+            Duration::from_secs(5)
+        );
+        assert_eq!(
+            ack_progress_interval(Duration::from_secs(1)),
+            Duration::from_secs(5)
+        );
+    }
+
+    #[test]
+    fn is_final_delivery_matches_max_deliver() {
+        // Not yet exhausted → Nak for another attempt.
+        assert!(!is_final_delivery(1, 5));
+        assert!(!is_final_delivery(4, 5));
+        // Reached or passed the limit → Term + dead-letter.
+        assert!(is_final_delivery(5, 5));
+        assert!(is_final_delivery(6, 5));
+        // max_deliver <= 0 means unlimited redelivery, so never final.
+        assert!(!is_final_delivery(1_000, 0));
+        assert!(!is_final_delivery(1_000, -1));
+    }
+
+    #[test]
     fn record_receipt_trims_when_capped() {
         let mut receipts = HashSet::new();
         for i in 0..MAX_RECEIPT_CACHE {
@@ -1666,5 +2063,13 @@ mod tests {
         record_receipt(&mut receipts, "fresh");
         assert!(receipts.len() <= MAX_RECEIPT_CACHE);
         assert!(receipts.contains("fresh"));
+    }
+
+    #[test]
+    fn prometheus_exposition_includes_queue_and_readiness_metrics() {
+        let metrics = render_metrics();
+        assert!(metrics.contains("# TYPE dd_queue_consumer_messages_received_total counter"));
+        assert!(metrics.contains("# TYPE dd_queue_consumer_dead_lettered_total counter"));
+        assert!(metrics.contains("# TYPE dd_queue_consumer_ready gauge"));
     }
 }

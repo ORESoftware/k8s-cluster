@@ -24,6 +24,7 @@ resources:
   - dd-build-server.service.yaml
   - dd-build-server.networkpolicy.yaml
   - dd-remote-queue-consumer.deployment.yaml
+  - dd-remote-queue-consumer.service.yaml
   - dd-remote-queue-consumer.scaledobject.yaml
   - dd-mdp-optimizer.deployment.yaml
   - dd-mdp-optimizer.service.yaml

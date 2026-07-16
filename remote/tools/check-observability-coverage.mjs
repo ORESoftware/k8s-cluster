@@ -264,7 +264,21 @@ function dependencyNamesFromManifest(file, text) {
 }
 
 function sourceFilesUnder(dir) {
-  return walk(dir).filter((file) => sourceFileExtensions.has(path.extname(file)));
+  return walk(dir).filter(
+    (file) => sourceFileExtensions.has(path.extname(file)) && !isTestSourceFile(file),
+  );
+}
+
+function isTestSourceFile(file) {
+  const relativeParts = path.relative(deploymentsDir, file).split(path.sep);
+  const basename = path.basename(file);
+  return (
+    relativeParts.includes('test') ||
+    relativeParts.includes('tests') ||
+    /(?:^|\.)test\.[^.]+$/.test(basename) ||
+    /(?:^|\.)spec\.[^.]+$/.test(basename) ||
+    /_test\.[^.]+$/.test(basename)
+  );
 }
 
 const workloadFiles = workloadRoots.flatMap((root) =>
