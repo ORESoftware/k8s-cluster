@@ -179,6 +179,11 @@ data:
         static_configs:
           - targets:
               - dd-build-server.default.svc.cluster.local:8100
+      - job_name: dd-image-builder
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-image-builder.default.svc.cluster.local:8082
       - job_name: dd-container-pool
         metrics_path: /metrics
         static_configs:
@@ -330,6 +335,24 @@ data:
             annotations:
               summary: Runtime-config push errors are increasing
               description: "dd-runtime-config is recording failed stage push attempts; dependent services such as dd-fabrication-server may be running with stale configuration."
+          - alert: DDExecutionControlPlaneTargetDown
+            expr: up{job=~"dd-agent-worker-broker|dd-build-server|dd-container-pool|dd-image-builder|dd-runtime-config"} == 0
+            for: 2m
+            labels:
+              severity: warning
+              service: execution-control-plane
+            annotations:
+              summary: "Execution control-plane target {{ $labels.job }} is down"
+              description: "Prometheus cannot scrape {{ $labels.instance }}; readiness, NATS, or build dependency evidence may be unavailable."
+          - alert: DDExecutionControlPlaneDependencyNotReady
+            expr: dd_agent_worker_broker_nats_connected == 0 or dd_build_server_dependencies_ready == 0 or dd_container_pool_dependencies_ready == 0 or dd_image_builder_dependencies_ready == 0 or dd_runtime_config_redis_ready == 0
+            for: 2m
+            labels:
+              severity: warning
+              service: execution-control-plane
+            annotations:
+              summary: "Execution control-plane dependency is not ready"
+              description: "A broker, build, container, image-builder, or runtime-config dependency readiness metric has remained zero for two minutes."
           - alert: DDFabricationNatsTargetDown
             expr: up{job="dd-nats"} == 0
             for: 2m

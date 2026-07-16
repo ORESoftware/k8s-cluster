@@ -36,7 +36,7 @@ data:
         "dd-gleamlang-ws-loadtest-akkaws-akkastreams,"
         "dd-gleamlang-ws-loadtest-akkaws-asyncjava,dd-gleamlang-ws-loadtest-dart,"
         "dd-gleamlang-ws-loadtest-gcs,dd-gleamlang-ws-server,dd-go-wss-server,"
-        "dd-grafana,dd-idle-reaper,dd-in-house-mip-solver-node-master,"
+        "dd-grafana,dd-idle-reaper,dd-image-builder,dd-in-house-mip-solver-node-master,"
         "dd-in-house-mip-solver-node-slave,dd-jaeger,dd-k8s-resource-exporter,dd-live-mutex,dd-live-mutex-distributed,"
         "dd-live-mutex-submodule,dd-lock-loadtest-gleam,dd-lock-loadtest-rs,"
         "dd-lock-loadtest-trigger,dd-loki,dd-mdp-optimizer,dd-mlflow-postgresql,dd-music-rs,dd-nats,"
