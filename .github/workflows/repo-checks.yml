@@ -38,12 +38,10 @@ jobs:
           K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
         run: |
           set -euo pipefail
-          git config --global url."https://github.com/".insteadOf "git@github.com:"
-          basic_auth="$(printf 'x-access-token:%s' "$K8S_SUBMODULE_TOKEN" | base64 | tr -d '\n')"
-          GIT_CONFIG_COUNT=1 \
-          GIT_CONFIG_KEY_0=http.https://github.com/.extraheader \
-          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic ${basic_auth}" \
-            git submodule update --init --depth 1 -- remote/libs
+          token_url="https://x-access-token:${K8S_SUBMODULE_TOKEN}@github.com/"
+          git config --global url."${token_url}".insteadOf "git@github.com:"
+          trap 'git config --global --unset-all url."${token_url}".insteadOf || true' EXIT
+          git submodule update --init --depth 1 -- remote/libs
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
