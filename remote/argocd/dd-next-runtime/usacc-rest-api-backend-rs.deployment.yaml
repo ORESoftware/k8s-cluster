@@ -10,7 +10,10 @@ spec:
   minReadySeconds: 5
   progressDeadlineSeconds: 1800
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: usacc-rest-api-backend-rs
