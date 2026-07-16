@@ -203,15 +203,15 @@ builds or acquire ownership of build outputs.
 Build the reusable container pool images from the repository root:
 
 ```sh
-nerdctl -n k8s.io build -f remote/deployments/gleam-lambda-runner/runtime-images/nodejs.Dockerfile -t docker.io/library/dd-lambda-nodejs-runtime:dev remote
-nerdctl -n k8s.io build -f remote/deployments/gleam-lambda-runner/runtime-images/python3.Dockerfile -t docker.io/library/dd-lambda-python3-runtime:dev remote/deployments/gleam-lambda-runner
-nerdctl -n k8s.io build -f remote/deployments/gleam-lambda-runner/runtime-images/ruby.Dockerfile -t docker.io/library/dd-lambda-ruby-runtime:dev remote/deployments/gleam-lambda-runner
-nerdctl -n k8s.io build -f remote/deployments/gleam-lambda-runner/runtime-images/bash.Dockerfile -t docker.io/library/dd-lambda-bash-runtime:dev remote/deployments/gleam-lambda-runner
-nerdctl -n k8s.io build -f remote/deployments/gleam-lambda-runner/runtime-images/golang.Dockerfile -t docker.io/library/dd-lambda-golang-runtime:dev remote/deployments/gleam-lambda-runner
-nerdctl -n k8s.io build -f remote/deployments/gleam-lambda-runner/runtime-images/dart.Dockerfile -t docker.io/library/dd-lambda-dart-runtime:dev remote/deployments/gleam-lambda-runner
-nerdctl -n k8s.io build -f remote/deployments/gleam-lambda-runner/runtime-images/erlang.Dockerfile -t docker.io/library/dd-lambda-erlang-runtime:dev remote/deployments/gleam-lambda-runner
-nerdctl -n k8s.io build -f remote/deployments/gleam-lambda-runner/runtime-images/elixir.Dockerfile -t docker.io/library/dd-lambda-elixir-runtime:dev remote/deployments/gleam-lambda-runner
-nerdctl -n k8s.io build -f remote/deployments/gleam-lambda-runner/runtime-images/java.Dockerfile -t docker.io/library/dd-lambda-java-runtime:dev remote/deployments/gleam-lambda-runner
+nerdctl -n dd-lambda build -f remote/deployments/gleam-lambda-runner/runtime-images/nodejs.Dockerfile -t docker.io/library/dd-lambda-nodejs-runtime:dev remote
+nerdctl -n dd-lambda build -f remote/deployments/gleam-lambda-runner/runtime-images/python3.Dockerfile -t docker.io/library/dd-lambda-python3-runtime:dev remote/deployments/gleam-lambda-runner
+nerdctl -n dd-lambda build -f remote/deployments/gleam-lambda-runner/runtime-images/ruby.Dockerfile -t docker.io/library/dd-lambda-ruby-runtime:dev remote/deployments/gleam-lambda-runner
+nerdctl -n dd-lambda build -f remote/deployments/gleam-lambda-runner/runtime-images/bash.Dockerfile -t docker.io/library/dd-lambda-bash-runtime:dev remote/deployments/gleam-lambda-runner
+nerdctl -n dd-lambda build -f remote/deployments/gleam-lambda-runner/runtime-images/golang.Dockerfile -t docker.io/library/dd-lambda-golang-runtime:dev remote/deployments/gleam-lambda-runner
+nerdctl -n dd-lambda build -f remote/deployments/gleam-lambda-runner/runtime-images/dart.Dockerfile -t docker.io/library/dd-lambda-dart-runtime:dev remote/deployments/gleam-lambda-runner
+nerdctl -n dd-lambda build -f remote/deployments/gleam-lambda-runner/runtime-images/erlang.Dockerfile -t docker.io/library/dd-lambda-erlang-runtime:dev remote/deployments/gleam-lambda-runner
+nerdctl -n dd-lambda build -f remote/deployments/gleam-lambda-runner/runtime-images/elixir.Dockerfile -t docker.io/library/dd-lambda-elixir-runtime:dev remote/deployments/gleam-lambda-runner
+nerdctl -n dd-lambda build -f remote/deployments/gleam-lambda-runner/runtime-images/java.Dockerfile -t docker.io/library/dd-lambda-java-runtime:dev remote/deployments/gleam-lambda-runner
 ```
 
 When the REST API has `LAMBDA_IMAGE_BUILD_ENABLED=true`, saving a containerized function also writes

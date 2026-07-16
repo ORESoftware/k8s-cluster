@@ -23,6 +23,8 @@ const containerPoolSubjectPrefix = env.CONTAINER_POOL_NATS_SUBJECT_PREFIX || '';
 const containerPoolNatsTimeoutMs = positiveInt(env.CONTAINER_POOL_NATS_TIMEOUT_MS, 30_000);
 const browserExecutablePath = env.LAMBDA_BROWSER_EXECUTABLE_PATH || '/usr/bin/chromium-browser';
 const browserLaunchArgs = Object.freeze([
+  '--disable-crash-reporter',
+  '--disable-crashpad',
   '--disable-dev-shm-usage',
   '--disable-gpu',
   '--disable-setuid-sandbox',
