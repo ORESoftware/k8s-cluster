@@ -54,6 +54,7 @@ use aws_config::retry::RetryConfig;
 use aws_sdk_s3::{
     config::Region,
     presigning::PresigningConfig,
+    primitives::ByteStream,
     types::{Delete, ObjectIdentifier, ServerSideEncryption},
 };
 use axum::{
