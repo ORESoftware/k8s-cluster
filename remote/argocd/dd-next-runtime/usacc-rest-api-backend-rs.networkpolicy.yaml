@@ -57,6 +57,21 @@ spec:
       ports:
         - protocol: TCP
           port: 8101
+    # The pod builds this Rust service at startup from the mounted repo, so it
+    # needs public HTTPS for crates.io sparse index and crate downloads.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
     - to:
         - ipBlock:
             cidr: 10.0.0.0/8
