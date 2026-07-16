@@ -36,6 +36,8 @@ spec:
       app: dd-image-builder
   template:
     metadata:
+      annotations:
+        dd.dev/source-revision: '2026-07-16-delegated-build-telemetry'
       labels:
         app: dd-image-builder
         dd.dev/role: image-builder
