@@ -1,6 +1,9 @@
 use crate::{
     auth::{require_csrf, require_origin, SessionAuthenticated},
-    db::entity::{audit_engagement, engagement_note},
+    db::{
+        begin_user_transaction,
+        entity::{audit_engagement, engagement_note},
+    },
     error::AppError,
     views, AppState,
 };
@@ -13,7 +16,8 @@ use axum::{
 };
 use chrono::{NaiveDate, Utc};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter, QueryOrder,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter,
+    QueryOrder,
 };
 use serde::Deserialize;
 use uuid::Uuid;
@@ -78,28 +82,34 @@ fn form_error(headers: &HeaderMap, slot: &'static str, message: &str) -> Respons
     }
 }
 
-async fn owned_engagement(
-    state: &AppState,
+async fn owned_engagement<C>(
+    connection: &C,
     owner_id: Uuid,
     raw_id: &str,
-) -> Result<audit_engagement::Model, AppError> {
+) -> Result<audit_engagement::Model, AppError>
+where
+    C: ConnectionTrait,
+{
     // A malformed id and someone else's engagement are indistinguishable: 404.
     let id = Uuid::parse_str(raw_id).map_err(|_| AppError::NotFound)?;
     audit_engagement::Entity::find_by_id(id)
         .filter(audit_engagement::Column::OwnerId.eq(owner_id))
-        .one(&state.db)
+        .one(connection)
         .await?
         .ok_or(AppError::NotFound)
 }
 
-async fn list_engagements(
-    state: &AppState,
+async fn list_engagements<C>(
+    connection: &C,
     owner_id: Uuid,
-) -> Result<Vec<audit_engagement::Model>, AppError> {
+) -> Result<Vec<audit_engagement::Model>, AppError>
+where
+    C: ConnectionTrait,
+{
     Ok(audit_engagement::Entity::find()
         .filter(audit_engagement::Column::OwnerId.eq(owner_id))
         .order_by_desc(audit_engagement::Column::OpenedAt)
-        .all(&state.db)
+        .all(connection)
         .await?)
 }
 
@@ -112,7 +122,14 @@ async fn engagements(
         Err(AppError::Unauthorized) => return Redirect::to("/login").into_response(),
         Err(error) => return error.into_response(),
     };
-    match list_engagements(&state, actor.user_id).await {
+    let result: Result<Vec<audit_engagement::Model>, AppError> = async {
+        let transaction = begin_user_transaction(&state.db, actor.user_id).await?;
+        let engagements = list_engagements(&transaction, actor.user_id).await?;
+        transaction.commit().await?;
+        Ok(engagements)
+    }
+    .await;
+    match result {
         Ok(engagements) => views::engagements_page(&actor, &engagements).into_response(),
         Err(error) => error.into_response(),
     }
@@ -166,6 +183,7 @@ async fn create_engagement(
     };
 
     let now = Utc::now();
+    let transaction = begin_user_transaction(&state.db, actor.user_id).await?;
     audit_engagement::ActiveModel {
         id: Set(Uuid::new_v4()),
         owner_id: Set(actor.user_id),
@@ -176,11 +194,18 @@ async fn create_engagement(
         target_report_date: Set(target_report_date),
         updated_at: Set(now),
     }
-    .insert(&state.db)
+    .insert(&transaction)
     .await?;
 
-    if headers.contains_key("hx-request") {
-        let engagements = list_engagements(&state, actor.user_id).await?;
+    let htmx = headers.contains_key("hx-request");
+    let engagements = if htmx {
+        Some(list_engagements(&transaction, actor.user_id).await?)
+    } else {
+        None
+    };
+    transaction.commit().await?;
+
+    if let Some(engagements) = engagements {
         Ok(views::engagement_list(&engagements).into_response())
     } else {
         Ok(Redirect::to("/app/engagements").into_response())
@@ -197,20 +222,23 @@ async fn engagement_detail(
         Err(AppError::Unauthorized) => return Redirect::to("/login").into_response(),
         Err(error) => return error.into_response(),
     };
-    let engagement = match owned_engagement(&state, actor.user_id, &raw_id).await {
-        Ok(engagement) => engagement,
+    let result: Result<_, AppError> = async {
+        let transaction = begin_user_transaction(&state.db, actor.user_id).await?;
+        let engagement = owned_engagement(&transaction, actor.user_id, &raw_id).await?;
+        let notes = engagement_note::Entity::find()
+            .filter(engagement_note::Column::EngagementId.eq(engagement.id))
+            .filter(engagement_note::Column::OwnerId.eq(actor.user_id))
+            .order_by_desc(engagement_note::Column::CreatedAt)
+            .all(&transaction)
+            .await?;
+        transaction.commit().await?;
+        Ok((engagement, notes))
+    }
+    .await;
+    let (engagement, notes) = match result {
+        Ok(result) => result,
         Err(AppError::NotFound) => return not_found().await,
         Err(error) => return error.into_response(),
-    };
-    let notes = match engagement_note::Entity::find()
-        .filter(engagement_note::Column::EngagementId.eq(engagement.id))
-        .filter(engagement_note::Column::OwnerId.eq(actor.user_id))
-        .order_by_desc(engagement_note::Column::CreatedAt)
-        .all(&state.db)
-        .await
-    {
-        Ok(notes) => notes,
-        Err(error) => return AppError::from(error).into_response(),
     };
     views::engagement_detail_page(&actor, &engagement, &notes).into_response()
 }
@@ -231,8 +259,10 @@ async fn update_engagement_status(
     require_origin(&headers, &state)?;
     require_csrf(&actor, &headers, Some(&form.csrf))?;
 
-    let engagement = owned_engagement(&state, actor.user_id, &raw_id).await?;
+    let transaction = begin_user_transaction(&state.db, actor.user_id).await?;
+    let engagement = owned_engagement(&transaction, actor.user_id, &raw_id).await?;
     if !audit_engagement::STATUSES.contains(&form.status.as_str()) {
+        transaction.rollback().await?;
         return Ok(form_error(
             &headers,
             "#engagement-status",
@@ -243,7 +273,8 @@ async fn update_engagement_status(
     let mut active: audit_engagement::ActiveModel = engagement.into();
     active.status = Set(form.status);
     active.updated_at = Set(Utc::now());
-    let engagement = active.update(&state.db).await?;
+    let engagement = active.update(&transaction).await?;
+    transaction.commit().await?;
 
     if headers.contains_key("hx-request") {
         let csrf = actor.csrf_token.as_deref().unwrap_or_default();
@@ -269,9 +300,11 @@ async fn add_engagement_note(
     require_origin(&headers, &state)?;
     require_csrf(&actor, &headers, Some(&form.csrf))?;
 
-    let engagement = owned_engagement(&state, actor.user_id, &raw_id).await?;
+    let transaction = begin_user_transaction(&state.db, actor.user_id).await?;
+    let engagement = owned_engagement(&transaction, actor.user_id, &raw_id).await?;
     let body = form.body.trim();
     if body.is_empty() || body.chars().count() > NOTE_MAX_CHARS {
+        transaction.rollback().await?;
         return Ok(form_error(
             &headers,
             "#note-form-error",
@@ -286,16 +319,25 @@ async fn add_engagement_note(
         body: Set(body.to_string()),
         created_at: Set(Utc::now()),
     }
-    .insert(&state.db)
+    .insert(&transaction)
     .await?;
 
-    if headers.contains_key("hx-request") {
-        let notes = engagement_note::Entity::find()
-            .filter(engagement_note::Column::EngagementId.eq(engagement.id))
-            .filter(engagement_note::Column::OwnerId.eq(actor.user_id))
-            .order_by_desc(engagement_note::Column::CreatedAt)
-            .all(&state.db)
-            .await?;
+    let htmx = headers.contains_key("hx-request");
+    let notes = if htmx {
+        Some(
+            engagement_note::Entity::find()
+                .filter(engagement_note::Column::EngagementId.eq(engagement.id))
+                .filter(engagement_note::Column::OwnerId.eq(actor.user_id))
+                .order_by_desc(engagement_note::Column::CreatedAt)
+                .all(&transaction)
+                .await?,
+        )
+    } else {
+        None
+    };
+    transaction.commit().await?;
+
+    if let Some(notes) = notes {
         Ok(views::engagement_notes(&notes).into_response())
     } else {
         Ok(Redirect::to(&format!("/app/engagements/{}", engagement.id)).into_response())

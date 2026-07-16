@@ -36,6 +36,7 @@ export class CanonicalSyncClient extends EventTarget {
   private readonly socket: SyncInvalidationSocket;
   private readonly htmxOwnsSocket: boolean;
   private runningSync: Promise<void> | null = null;
+  private pendingSync = false;
   private activeAbortController: AbortController | null = null;
   private syncGeneration = 0;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -166,21 +167,36 @@ export class CanonicalSyncClient extends EventTarget {
 
   async syncNow(): Promise<void> {
     if (this.runningSync !== null) {
+      this.pendingSync = true;
       return this.runningSync;
     }
     const generation = this.syncGeneration;
     const controller = new AbortController();
     this.activeAbortController = controller;
-    const running = this.withLeaderLock(generation, controller.signal).finally(() => {
+    const running = this.drainSyncRequests(generation, controller.signal).finally(() => {
+      let restart = false;
       if (this.runningSync === running) {
         this.runningSync = null;
+        restart = this.pendingSync && this.isCurrentSync(generation, controller.signal);
       }
       if (this.activeAbortController === controller) {
         this.activeAbortController = null;
       }
+      // A wake can land after the drain loop's final check but before this
+      // promise settles. Preserve that edge-trigger by starting a new drain.
+      if (restart) {
+        return this.syncNow();
+      }
     });
     this.runningSync = running;
     return running;
+  }
+
+  private async drainSyncRequests(generation: number, signal: AbortSignal): Promise<void> {
+    do {
+      this.pendingSync = false;
+      await this.withLeaderLock(generation, signal);
+    } while (this.pendingSync && this.isCurrentSync(generation, signal));
   }
 
   private readonly handleWake = (): void => {
@@ -360,6 +376,7 @@ export class CanonicalSyncClient extends EventTarget {
   }
 
   private cancelActiveSync(): Promise<void> | null {
+    this.pendingSync = false;
     this.syncGeneration += 1;
     this.activeAbortController?.abort();
     return this.runningSync;
