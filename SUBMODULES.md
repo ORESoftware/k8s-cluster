@@ -48,6 +48,7 @@ always lives at `~/codes/ores/k8s-cluster/<submodule path>`.
 | `remote/deployments/dd-data-viz-rs` | [claritas-viz/data-viz-server.rs](https://github.com/claritas-viz/data-viz-server.rs) | `main` | — _(submodule checkout only)_ |
 | `remote/deployments/athleto-backend-rs` | [athlet-o/athleto-backend.rs](https://github.com/athlet-o/athleto-backend.rs) | `main` | — _(submodule checkout only)_ |
 | `remote/deployments/usacc-rest-api-backend-rs` | [usa-acc/rest-api-backend.rs](https://github.com/usa-acc/rest-api-backend.rs) | `main` | — _(submodule checkout only)_ |
+| `remote/deployments/3fa-web-server-rs` | [3FA-app/3fa-web-server.rs](https://github.com/3FA-app/3fa-web-server.rs) | `main` | — _(submodule checkout only)_ |
 
 ---
 
