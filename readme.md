@@ -1,4 +1,12 @@
-# billing-server-rs
+# billing-server.rs — Quaestor
+
+**[quaestor-ledger](https://github.com/quaestor-ledger)** · site: [quaestor-ledger.github.io](https://quaestor-ledger.github.io)
+
+> Extracted with full history from `ORESoftware/k8s-cluster`
+> (`remote/deployments/billing-server-rs`) on 2026-07-17. **This repo is the
+> source of truth**; k8s-cluster vendors it back as a submodule at the same path.
+> Path deps (`../../libs`, `../../submodules`) resolve inside that superproject
+> checkout — full builds happen there. See [AGENTS.md](AGENTS.md) for repo rules.
 
 Multi-tenant AR/AP ledger server. HTTP/JSON, Rust, axum, Postgres source of
 truth, Solana as a tamper-evidence notary.
