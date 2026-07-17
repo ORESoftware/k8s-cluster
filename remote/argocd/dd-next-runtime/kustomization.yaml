@@ -11,6 +11,7 @@ resources:
   - dd-dev-server-api.service.yaml
   - dd-remote-rest-api-rbac.yaml
   - dd-remote-rest-api.deployment.yaml
+  - dd-remote-rest-api.networkpolicy.yaml
   - dd-remote-rest-api.service.yaml
   - dd-agent-worker-broker-rbac.yaml
   - dd-agent-worker-broker.deployment.yaml
