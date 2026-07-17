@@ -100,7 +100,7 @@ async function refresh() {
     document.getElementById('socks-addr').textContent = s.socks_listen;
     document.querySelectorAll('.socks').forEach(e => e.textContent = s.socks_listen.replace('0.0.0.0','127.0.0.1'));
     document.getElementById('relays').innerHTML =
-      (s.relays||[]).map(x => `<span class="pill" data-testid="relay-pill">${x.name} · ${x.addr}</span>`).join('');
+      (s.relays||[]).map(x => `<span class="pill" data-testid="relay-pill">${esc(x.name)} · ${esc(x.addr)}</span>`).join('');
   } catch (e) { /* transient */ }
 }
 function setUrl(u){ document.getElementById('url').value = u; }
