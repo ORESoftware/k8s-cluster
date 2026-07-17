@@ -105,3 +105,7 @@
 	path = remote/deployments/ai-agent-bridge
 	url = git@github.com:ORESoftware/ai-agent-bridge.rs.git
 	branch = main
+[submodule "remote/deployments/athleto-app-rs"]
+	path = remote/deployments/athleto-app-rs
+	url = git@github.com:athlet-o/athleto-app-rs.git
+	branch = main
