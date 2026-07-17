@@ -356,3 +356,5 @@ Build a container from the repo root:
 ```sh
 docker build -f remote/deployments/dd-data-viz-rs/Dockerfile -t dd-data-viz-rs:dev .
 ```
+
+> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).
