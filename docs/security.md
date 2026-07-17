@@ -52,7 +52,10 @@
   negotiation must finish in 30 s; `TOR_MAX_CIRCUITS` bounds concurrent circuits
   (reject, don't queue); `TOR_CIRCUIT_IDLE_TIMEOUT_SECS` optionally closes idle
   circuits (0 = off, to avoid breaking legitimately long-idle streams).
-  `TOR_MAX_SOCKS_CONNECTIONS` separately bounds accepted application streams.
+  `TOR_MAX_SOCKS_CONNECTIONS` separately bounds accepted application streams. A
+  circuit holds its `TOR_MAX_CIRCUITS` slot until *both* its forward handler and
+  its detached backward pump finish, so the cap reflects real resource use and a
+  long-lived stream cannot free a slot while its sockets are still open.
 - **Dashboard `/api/fetch` auth.** The fetch endpoint is a server-side proxy
   primitive. When the dashboard is bound to a non-loopback address, set
   `TOR_UI_TOKEN` (or `TOR_UI_TOKEN_FILE`); requests must then present it via
