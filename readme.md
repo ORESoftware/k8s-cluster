@@ -1,4 +1,12 @@
-# `remote/deployments/fabrication-server-rs`
+# fabrication-server.rs — Daedalus
+
+**[daedalus-fab](https://github.com/daedalus-fab)** · site: [daedalus-fab.github.io](https://daedalus-fab.github.io)
+
+> Extracted with full history from `ORESoftware/k8s-cluster`
+> (`remote/deployments/fabrication-server-rs`) on 2026-07-17. **This repo is the
+> source of truth**; k8s-cluster vendors it back as a submodule at the same path.
+> Path deps (`../../libs`, `../../submodules`) resolve inside that superproject
+> checkout — full builds happen there. See [AGENTS.md](AGENTS.md) for repo rules.
 
 Rust fabrication planning service for additive including large-format pellet/FGF,
 robotic/gantry additive cells, and sheet-lamination/LOM/UAM printers, subtractive, turning,
