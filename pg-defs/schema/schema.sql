@@ -6516,7 +6516,9 @@ create table if not exists fiducia.audit_log (
   action varchar(120) not null,
   target varchar(320),
   request_id varchar(120),
-  source_ip inet,
+  -- Textual IP (v4/v6). Deliberately varchar, not inet: display-only audit
+  -- metadata, and every pg-defs adapter can carry a string.
+  source_ip varchar(64),
   user_agent varchar(500),
   meta jsonb default '{}'::jsonb not null,
   created_at timestamptz default now() not null,
