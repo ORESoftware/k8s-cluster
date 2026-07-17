@@ -650,7 +650,7 @@ async fn program_verify_http(
                 "repoUrl": canonical.clone(),
                 "gitRef": request.git_ref.clone(),
                 "paths": paths,
-                "languages": ["rust"],
+                "languages": ["rs"],
                 "heuristics": request.heuristics.unwrap_or(true),
             }),
             json!({ "repository": canonical, "gitRef": request.git_ref.clone() }),

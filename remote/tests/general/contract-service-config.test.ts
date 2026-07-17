@@ -112,6 +112,7 @@ test('rust solana contract service is deployed, scraped, and guarded', async () 
   assert.match(solanaFeatures, /getSignaturesForAddress/);
   assert.match(solanaFeatures, /getRecentPrioritizationFees/);
   assert.match(solanaFeatures, /allowed_github_orgs/);
+  assert.match(solanaFeatures, /"languages": \["rs"\]/);
 
   assert.match(deployment, /name:\s*dd-contract-service/);
   assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/deployments\/contract-service-rs/);
