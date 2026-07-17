@@ -260,7 +260,9 @@ spec:
               path: /healthz
               port: http
             periodSeconds: 5
-            failureThreshold: 60
+            # First boot compiles the service and SQLx dependency graph into the
+            # pod-local cache; observed cold builds can exceed five minutes.
+            failureThreshold: 240
           readinessProbe:
             httpGet:
               path: /readyz
