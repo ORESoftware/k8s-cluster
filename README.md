@@ -211,6 +211,8 @@ See [docs/security.md](docs/security.md) for the full model.
 | `TOR_SOCKS_USERNAME` | client | `tor`             | RFC 1929 username                        |
 | `TOR_SOCKS_PASSWORD` / `_FILE` | client | (unset) | RFC 1929 password                        |
 | `TOR_MAX_SOCKS_CONNECTIONS` | client | `256`        | Max concurrent SOCKS connections         |
+| `TOR_HTTP_LISTEN`   | client | (unset = off)      | Also run an HTTP `CONNECT` proxy here (shares the proxy credential) |
+| `TOR_HTTP_ALLOW_REMOTE` | client | `0`            | Permit a non-loopback HTTP proxy bind (also requires a password) |
 | `TOR_UI_LISTEN`     | client | `127.0.0.1:9060`   | Dashboard/docs listen address            |
 | `TOR_ARTI_CONFIG`   | client | (Arti defaults)    | Arti client TOML, including bridges/transports |
 | `TOR_ARTI_ISOLATE_STREAMS` | client | `0`          | Force a fresh Arti circuit per stream (low volume only) |
