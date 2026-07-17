@@ -311,6 +311,12 @@ async fn login(
         return Err(ApiError::Unauthorized);
     }
 
+    // Bound live devices per account so repeated logins can't accumulate an
+    // unbounded set of un-revocable tokens (each login enrolls a new device).
+    if devices::live_count(&st.pool, account_id).await? >= devices::MAX_DEVICES_PER_ACCOUNT {
+        return Err(ApiError::TooManyRequests);
+    }
+
     let (device_id, token) = devices::register(&st.pool, account_id, &req.device_name).await?;
     Ok(Json(TokenResponse {
         account_id,
