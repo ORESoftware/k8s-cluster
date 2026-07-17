@@ -28,6 +28,15 @@ pub const blockchain_index_events_subject: []const u8 = "dd.remote.blockchain.in
 
 pub const blockchain_mev_alerts_subject: []const u8 = "dd.remote.blockchain.mev.alerts";
 
+pub const build_server_events_subject: []const u8 = "dd.remote.build_server.events";
+
+pub const build_server_images_subject: []const u8 = "dd.remote.build_server.images";
+
+pub const build_server_requests_subject: []const u8 = "dd.remote.build_server.requests";
+pub const build_server_requests_queue_group: []const u8 = "dd-build-server";
+
+pub const build_server_results_subject: []const u8 = "dd.remote.build_server.results";
+
 pub const chaos_events_subject: []const u8 = "dd.remote.chaos.events";
 
 pub const chaos_experiments_subject: []const u8 = "dd.remote.chaos.experiments";
@@ -615,6 +624,8 @@ pub const queue_group_agent_sim_server_queue_group: []const u8 = "dd-agent-sim-s
 
 pub const queue_group_billing_server_queue_group: []const u8 = "dd-billing-server";
 
+pub const queue_group_build_server_queue_group: []const u8 = "dd-build-server";
+
 pub const queue_group_constraint_scheduler_queue_group: []const u8 = "dd-constraint-scheduler";
 
 pub const queue_group_contact_send_queue_group: []const u8 = "dd-email-sms-contact";
@@ -664,6 +675,12 @@ pub const cdc_stream_subjects = [_][]const u8{ "cdc.>" };
 pub const cdc_stream_retention: []const u8 = "limits";
 pub const cdc_stream_storage: []const u8 = "file";
 pub const cdc_stream_ack: []const u8 = "explicit";
+
+pub const dd_remote_build_jobs_stream_name: []const u8 = "DD_REMOTE_BUILD_JOBS";
+pub const dd_remote_build_jobs_stream_subjects = [_][]const u8{ "dd.remote.build_server.requests" };
+pub const dd_remote_build_jobs_stream_retention: []const u8 = "workqueue";
+pub const dd_remote_build_jobs_stream_storage: []const u8 = "file";
+pub const dd_remote_build_jobs_stream_ack: []const u8 = "explicit";
 
 pub const dd_remote_control_stream_name: []const u8 = "DD_REMOTE_CONTROL";
 pub const dd_remote_control_stream_subjects = [_][]const u8{ "dd.remote.thread.*.control", "dd.remote.orchestrator.wakeup" };

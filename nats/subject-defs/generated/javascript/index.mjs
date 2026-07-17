@@ -85,6 +85,31 @@ export const BLOCKCHAIN_INDEX_EVENTS_SUBJECT = "dd.remote.blockchain.index.event
 export const BLOCKCHAIN_MEV_ALERTS_SUBJECT = "dd.remote.blockchain.mev.alerts";
 
 /**
+ * Redacted build lifecycle events (queued/running/succeeded/failed) published by the build server. Default for BUILD_SERVER_NATS_EVENT_SUBJECT.
+ * Service: dd-build-server
+ */
+export const BUILD_SERVER_EVENTS_SUBJECT = "dd.remote.build_server.events";
+
+/**
+ * Redacted container-image registry events (ECR / docker registry webhook pushes) relayed by the build server. Default for BUILD_SERVER_NATS_IMAGE_SUBJECT.
+ * Service: dd-build-server
+ */
+export const BUILD_SERVER_IMAGES_SUBJECT = "dd.remote.build_server.images";
+
+/**
+ * Durable build-request intake. Producers publish a build-server.v1 job document; build-server replicas consume via the shared queue group / durable JetStream consumer. Default for BUILD_SERVER_NATS_REQUEST_SUBJECT.
+ * Service: dd-build-server
+ */
+export const BUILD_SERVER_REQUESTS_SUBJECT = "dd.remote.build_server.requests";
+export const BUILD_SERVER_REQUESTS_QUEUE_GROUP = "dd-build-server";
+
+/**
+ * Terminal build results (succeeded/failed with jobId and error summary) for NATS-submitted and webhook-submitted jobs. Default for BUILD_SERVER_NATS_RESULT_SUBJECT.
+ * Service: dd-build-server
+ */
+export const BUILD_SERVER_RESULTS_SUBJECT = "dd.remote.build_server.results";
+
+/**
  * Per-fault lifecycle events (selected, injected, restored, aborted-by-guard) emitted by the chaos loops.
  * Service: dd-chaos
  */
@@ -1235,6 +1260,12 @@ export const AGENT_SIM_SERVER_QUEUE_GROUP = "dd-agent-sim-server";
 export const BILLING_SERVER_QUEUE_GROUP = "dd-billing-server";
 
 /**
+ * Shared queue group / durable consumer name used by build-server replicas for request intake.
+ * Service: dd-build-server
+ */
+export const BUILD_SERVER_QUEUE_GROUP = "dd-build-server";
+
+/**
  * Shared queue group used by dd-constraint-scheduler replicas consuming schedule requests.
  * Service: dd-constraint-scheduler
  */
@@ -1377,6 +1408,16 @@ export const CDC_STREAM_SUBJECTS = Object.freeze(["cdc.>"]);
 export const CDC_STREAM_RETENTION = "limits";
 export const CDC_STREAM_STORAGE = "file";
 export const CDC_STREAM_ACK = "explicit";
+
+/**
+ * JetStream file storage with WorkQueue retention and explicit ack for build-request intake. Dedupe by Nats-Msg-Id ('build-request:<requestId>'); Postgres (dd_build_server) remains the real idempotency guard.
+ * Service: dd-build-server
+ */
+export const DD_REMOTE_BUILD_JOBS_STREAM_NAME = "DD_REMOTE_BUILD_JOBS";
+export const DD_REMOTE_BUILD_JOBS_STREAM_SUBJECTS = Object.freeze(["dd.remote.build_server.requests"]);
+export const DD_REMOTE_BUILD_JOBS_STREAM_RETENTION = "workqueue";
+export const DD_REMOTE_BUILD_JOBS_STREAM_STORAGE = "file";
+export const DD_REMOTE_BUILD_JOBS_STREAM_ACK = "explicit";
 
 /**
  * Short-retention control plane stream.

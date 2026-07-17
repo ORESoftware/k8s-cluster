@@ -6,6 +6,13 @@ to Postgres from different runtimes.
 The canonical source is [`schema/schema.sql`](./schema/schema.sql). Generated adapters live under
 `generated/` and are adapters only.
 
+Services with their **own database** (separate from the shared contract) may keep their
+declarative schema under [`schema/databases/<db_name>/schema.sql`](./schema/databases/) so all
+shared defs stay in this repo; the owning service carries a `scripts/dpm.sh` pointing at that file
+(first example: `schema/databases/dd_build_server/schema.sql`, owned by
+`remote/deployments/build-server-rs`). These per-database contracts are not fed to the code
+generator — their consumers hand-write pg-defs-style entities.
+
 ```sh
 node src/generate.mjs
 ```

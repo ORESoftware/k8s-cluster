@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dd.dev/schemas/nats/build-server.schema.json",
+  "title": "BuildServerNats",
+  "description": "NATS subjects owned by dd-build-server (CI/CD build lifecycle, durable build-request intake, and registry image events).",
+  "type": "object",
+  "$dd:nats": {
+    "service": "dd-build-server",
+    "summary": "Build server lifecycle, request intake, and image event subjects.",
+    "subjects": [
+      {
+        "name": "BuildServerEvents",
+        "description": "Redacted build lifecycle events (queued/running/succeeded/failed) published by the build server. Default for BUILD_SERVER_NATS_EVENT_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.build_server.events",
+        "direction": "both"
+      },
+      {
+        "name": "BuildServerRequests",
+        "description": "Durable build-request intake. Producers publish a build-server.v1 job document; build-server replicas consume via the shared queue group / durable JetStream consumer. Default for BUILD_SERVER_NATS_REQUEST_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.build_server.requests",
+        "direction": "both",
+        "queueGroup": "dd-build-server"
+      },
+      {
+        "name": "BuildServerResults",
+        "description": "Terminal build results (succeeded/failed with jobId and error summary) for NATS-submitted and webhook-submitted jobs. Default for BUILD_SERVER_NATS_RESULT_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.build_server.results",
+        "direction": "both"
+      },
+      {
+        "name": "BuildServerImages",
+        "description": "Redacted container-image registry events (ECR / docker registry webhook pushes) relayed by the build server. Default for BUILD_SERVER_NATS_IMAGE_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.build_server.images",
+        "direction": "both"
+      }
+    ],
+    "queueGroups": [
+      {
+        "name": "BuildServerQueueGroup",
+        "value": "dd-build-server",
+        "description": "Shared queue group / durable consumer name used by build-server replicas for request intake."
+      }
+    ],
+    "streams": [
+      {
+        "name": "DD_REMOTE_BUILD_JOBS",
+        "description": "JetStream file storage with WorkQueue retention and explicit ack for build-request intake. Dedupe by Nats-Msg-Id ('build-request:<requestId>'); Postgres (dd_build_server) remains the real idempotency guard.",
+        "subjects": ["dd.remote.build_server.requests"],
+        "retention": "workqueue",
+        "storage": "file",
+        "ack": "explicit"
+      }
+    ]
+  }
+}

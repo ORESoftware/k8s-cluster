@@ -39,6 +39,19 @@ let blockchain_index_events_subject = "dd.remote.blockchain.index.events"
 (* Monitoring-only MEV/arbitrage spread alerts emitted when an observed venue spread crosses the configured threshold. Default for BLOCKCHAIN_MEV_ALERTS_SUBJECT. Observation surface only; there is no execution path. Publish-only. *)
 let blockchain_mev_alerts_subject = "dd.remote.blockchain.mev.alerts"
 
+(* Redacted build lifecycle events (queued/running/succeeded/failed) published by the build server. Default for BUILD_SERVER_NATS_EVENT_SUBJECT. *)
+let build_server_events_subject = "dd.remote.build_server.events"
+
+(* Redacted container-image registry events (ECR / docker registry webhook pushes) relayed by the build server. Default for BUILD_SERVER_NATS_IMAGE_SUBJECT. *)
+let build_server_images_subject = "dd.remote.build_server.images"
+
+(* Durable build-request intake. Producers publish a build-server.v1 job document; build-server replicas consume via the shared queue group / durable JetStream consumer. Default for BUILD_SERVER_NATS_REQUEST_SUBJECT. *)
+let build_server_requests_subject = "dd.remote.build_server.requests"
+let build_server_requests_queue_group = "dd-build-server"
+
+(* Terminal build results (succeeded/failed with jobId and error summary) for NATS-submitted and webhook-submitted jobs. Default for BUILD_SERVER_NATS_RESULT_SUBJECT. *)
+let build_server_results_subject = "dd.remote.build_server.results"
+
 (* Per-fault lifecycle events (selected, injected, restored, aborted-by-guard) emitted by the chaos loops. *)
 let chaos_events_subject = "dd.remote.chaos.events"
 
@@ -611,6 +624,9 @@ let queue_group_agent_sim_server_queue_group = "dd-agent-sim-server"
 (* Queue group shared by dd-billing-server replicas for inbound sync commands so each command is handled by exactly one pod. *)
 let queue_group_billing_server_queue_group = "dd-billing-server"
 
+(* Shared queue group / durable consumer name used by build-server replicas for request intake. *)
+let queue_group_build_server_queue_group = "dd-build-server"
+
 (* Shared queue group used by dd-constraint-scheduler replicas consuming schedule requests. *)
 let queue_group_constraint_scheduler_queue_group = "dd-constraint-scheduler"
 
@@ -683,6 +699,13 @@ let cdc_stream_subjects = ["cdc.>"]
 let cdc_stream_retention = "limits"
 let cdc_stream_storage = "file"
 let cdc_stream_ack = "explicit"
+
+(* JetStream file storage with WorkQueue retention and explicit ack for build-request intake. Dedupe by Nats-Msg-Id ('build-request:<requestId>'); Postgres (dd_build_server) remains the real idempotency guard. *)
+let dd_remote_build_jobs_stream_name = "DD_REMOTE_BUILD_JOBS"
+let dd_remote_build_jobs_stream_subjects = ["dd.remote.build_server.requests"]
+let dd_remote_build_jobs_stream_retention = "workqueue"
+let dd_remote_build_jobs_stream_storage = "file"
+let dd_remote_build_jobs_stream_ack = "explicit"
 
 (* Short-retention control plane stream. *)
 let dd_remote_control_stream_name = "DD_REMOTE_CONTROL"

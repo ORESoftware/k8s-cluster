@@ -43,6 +43,15 @@ inline const char* blockchain_index_events_subject = "dd.remote.blockchain.index
 
 inline const char* blockchain_mev_alerts_subject = "dd.remote.blockchain.mev.alerts";
 
+inline const char* build_server_events_subject = "dd.remote.build_server.events";
+
+inline const char* build_server_images_subject = "dd.remote.build_server.images";
+
+inline const char* build_server_requests_subject = "dd.remote.build_server.requests";
+inline const char* build_server_requests_queue_group = "dd-build-server";
+
+inline const char* build_server_results_subject = "dd.remote.build_server.results";
+
 inline const char* chaos_events_subject = "dd.remote.chaos.events";
 
 inline const char* chaos_experiments_subject = "dd.remote.chaos.experiments";
@@ -574,6 +583,8 @@ inline const char* queue_group_agent_sim_server_queue_group = "dd-agent-sim-serv
 
 inline const char* queue_group_billing_server_queue_group = "dd-billing-server";
 
+inline const char* queue_group_build_server_queue_group = "dd-build-server";
+
 inline const char* queue_group_constraint_scheduler_queue_group = "dd-constraint-scheduler";
 
 inline const char* queue_group_contact_send_queue_group = "dd-email-sms-contact";
@@ -623,6 +634,12 @@ inline const std::vector<std::string> cdc_stream_subjects = { "cdc.>" };
 inline const char* cdc_stream_retention = "limits";
 inline const char* cdc_stream_storage = "file";
 inline const char* cdc_stream_ack = "explicit";
+
+inline const char* dd_remote_build_jobs_stream_name = "DD_REMOTE_BUILD_JOBS";
+inline const std::vector<std::string> dd_remote_build_jobs_stream_subjects = { "dd.remote.build_server.requests" };
+inline const char* dd_remote_build_jobs_stream_retention = "workqueue";
+inline const char* dd_remote_build_jobs_stream_storage = "file";
+inline const char* dd_remote_build_jobs_stream_ack = "explicit";
 
 inline const char* dd_remote_control_stream_name = "DD_REMOTE_CONTROL";
 inline const std::vector<std::string> dd_remote_control_stream_subjects = { "dd.remote.thread.*.control", "dd.remote.orchestrator.wakeup" };

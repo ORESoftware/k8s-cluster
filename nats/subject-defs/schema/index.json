@@ -6,6 +6,7 @@
     "agent-sim.schema.json",
     "ai-ml-platform.schema.json",
     "billing.schema.json",
+    "build-server.schema.json",
     "chaos.schema.json",
     "constraint-scheduler.schema.json",
     "contact.schema.json",
