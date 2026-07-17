@@ -142,10 +142,14 @@ and an optional **rerank** stage reorders the fused top-N.
 This subsystem is **optional** and **owns its own database** (separate from the
 shared `pg-defs` contract, like `billing-server-rs`). It activates only when
 `DATABASE_URL` is set; otherwise `/api/search/*` returns 503
-`search_not_configured` and the rest of the service is unaffected. Migrations
-(`migrations/0001_init.sql`) run on boot when `SEARCH_RUN_MIGRATIONS=true` and
-require the DB user to `CREATE EXTENSION vector, pg_trgm` (pgvector ≥ 0.5 for
-HNSW). The embedding column is fixed at `EMBEDDINGS_SEARCH_DIM` (default 1536).
+`search_not_configured` and the rest of the service is unaffected. The schema
+is **declarative and dpm-managed**: `schema/schema.sql` is the source of truth
+and migrations are generated/reviewed/applied with `scripts/dpm.sh
+{diff|verify|review|apply}` (same workflow as
+`remote/libs/pg-defs/scripts/dpm.sh`) — the server never migrates at boot
+(`migrations/` is frozen as a historical record). The DB user needs
+`CREATE EXTENSION vector, pg_trgm` (pgvector ≥ 0.5 for HNSW). The embedding
+column is fixed at `EMBEDDINGS_SEARCH_DIM` (default 1536).
 
 ```bash
 # Index documents (content + structured attributes + graph edges)
@@ -216,8 +220,7 @@ for the cluster scraper.
 | `EMBEDDINGS_CACHE_MAX_ENTRIES`   | `50000` — embedding cache size (0 disables)          |
 | `EMBEDDINGS_CACHE_MAX_ITEM_BYTES`| `8192` — only cache texts at or below this length    |
 | `DATABASE_URL`                   | unset — enables the Postgres search subsystem        |
-| `SEARCH_RUN_MIGRATIONS`          | `true` — run search migrations on boot               |
-| `EMBEDDINGS_SEARCH_DIM`          | `1536` — search index embedding dim (matches migration) |
+| `EMBEDDINGS_SEARCH_DIM`          | `1536` — search index embedding dim (matches schema/schema.sql) |
 | `EMBEDDINGS_SEARCH_CANDIDATE_K`  | `200` — per-signal candidate pool before fusion      |
 | `EMBEDDINGS_SEARCH_MAX_HOPS`     | `4` — graph traversal hop cap                        |
 

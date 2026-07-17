@@ -27,9 +27,9 @@ pub struct Config {
     /// Postgres search subsystem. `database_url` is `None` when unset, in which
     /// case `/api/search/*` is disabled and returns 503.
     pub database_url: Option<String>,
-    pub run_migrations: bool,
     /// Embedding dimensionality of the search index. Must match the `vector(N)`
-    /// column in migrations/0001_init.sql (default 1536).
+    /// column in schema/schema.sql (default 1536). The schema itself is
+    /// dpm-managed (scripts/dpm.sh) — never applied at boot.
     pub search_dim: u32,
     /// Per-signal candidate pool size before fusion.
     pub search_candidate_k: usize,
@@ -78,7 +78,6 @@ impl Config {
                     .or_else(|_| std::env::var("RDS_DATABASE_URL"))
                     .ok(),
             ),
-            run_migrations: env_or("SEARCH_RUN_MIGRATIONS", "true") == "true",
             search_dim: env_or("EMBEDDINGS_SEARCH_DIM", "1536").parse()?,
             search_candidate_k: env_or("EMBEDDINGS_SEARCH_CANDIDATE_K", "200").parse()?,
             search_max_hops: env_or("EMBEDDINGS_SEARCH_MAX_HOPS", "4").parse()?,

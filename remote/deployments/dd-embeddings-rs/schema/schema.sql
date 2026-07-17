@@ -1,17 +1,29 @@
--- FROZEN — historical record only (see README.md in this directory). This
--- migration is no longer executed; the sqlx::migrate! boot path was removed.
--- The declarative source of truth is ../schema/schema.sql, applied via
--- ../scripts/dpm.sh (dpm — declarative-postgres-migrate).
+-- Canonical Postgres schema source for the dd-embeddings-rs search index.
 --
--- dd-embeddings-rs search index — owned by this service (separate from the
--- shared pg-defs contract).
+-- This file is the desired-state contract for the service's OWN search
+-- database (separate from the shared pg-defs RDS contract, like
+-- billing-server-rs). It is the consolidated final state of
+-- migrations/0001_init.sql; that frozen historical file remains under
+-- migrations/ for audit only.
+--
+-- Why not remote/libs/pg-defs? The pg-defs adapter generators cannot
+-- represent `vector`/`tsvector` columns (strict type switches reject them),
+-- and that contract intentionally excludes pgvector tables (see the
+-- des_soccer_moment_embeddings note in pg-defs schema/schema.sql). This
+-- service therefore mirrors the billing-server-rs pattern: a service-local
+-- declarative schema + scripts/dpm.sh.
+--
+-- Do not apply this file directly to a live database; generate and review a
+-- migration with scripts/dpm.sh (dpm — declarative-postgres-migrate) instead.
+-- The service never migrates at boot.
 --
 -- Prereqs: the database user must be able to CREATE EXTENSION `vector` and
--- `pg_trgm` (rds_superuser, or have an operator pre-create them). HNSW indexing
--- needs pgvector >= 0.5.
+-- `pg_trgm` (rds_superuser, or have an operator pre-create them), and the dpm
+-- SHADOW_DATABASE_URL server must have both extensions installed so this file
+-- can be materialized there. HNSW indexing needs pgvector >= 0.5.
 --
 -- The embedding column dimension (1536) is fixed here and must match the
--- service's EMBEDDINGS_SEARCH_DIM. Changing it requires a new migration + a
+-- service's EMBEDDINGS_SEARCH_DIM. Changing it requires a schema change + a
 -- re-index of all rows.
 
 create extension if not exists vector;

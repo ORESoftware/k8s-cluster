@@ -18,8 +18,8 @@ use serde_json::Value;
 
 use crate::error::ApiError;
 
-/// A heterogeneous bound parameter. Bound into a `PgArguments` in order; the
-/// SQL only ever references these by `$n` placeholder.
+/// A heterogeneous bound parameter. Bound into a `sea_orm::Statement`'s value
+/// list in order; the SQL only ever references these by `$n` placeholder.
 #[derive(Debug, Clone)]
 pub enum Bound {
     Text(String),
@@ -36,21 +36,19 @@ pub fn push(binds: &mut Vec<Bound>, b: Bound) -> usize {
     binds.len()
 }
 
-/// Build a `PgArguments` from the ordered bind list.
-pub fn to_args(binds: &[Bound]) -> Result<sqlx::postgres::PgArguments, ApiError> {
-    use sqlx::Arguments;
-    let mut args = sqlx::postgres::PgArguments::default();
-    for b in binds {
-        let r = match b {
-            Bound::Text(s) => args.add(s.clone()),
-            Bound::Float(f) => args.add(*f),
-            Bound::Int(i) => args.add(*i),
-            Bound::Json(v) => args.add(sqlx::types::Json(v.clone())),
-            Bound::Uuids(v) => args.add(v.clone()),
-        };
-        r.map_err(|e| ApiError::Invalid(format!("could not bind filter value: {e}")))?;
-    }
-    Ok(args)
+/// Build the ordered `sea_orm::Value` list from the bind list (for
+/// `Statement::from_sql_and_values`).
+pub fn to_values(binds: &[Bound]) -> Vec<sea_orm::Value> {
+    binds
+        .iter()
+        .map(|b| match b {
+            Bound::Text(s) => s.clone().into(),
+            Bound::Float(f) => (*f).into(),
+            Bound::Int(i) => (*i).into(),
+            Bound::Json(v) => v.clone().into(),
+            Bound::Uuids(v) => v.clone().into(),
+        })
+        .collect()
 }
 
 fn validate_field(field: &str) -> Result<(), ApiError> {
