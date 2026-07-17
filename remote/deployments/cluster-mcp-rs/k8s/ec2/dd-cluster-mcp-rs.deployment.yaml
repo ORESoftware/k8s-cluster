@@ -148,9 +148,10 @@ spec:
             # domain_dns_wiring (DNS-over-HTTPS) tools. Derived from the
             # dd-remote-gateway vhosts (app./admin.fiducia.cloud server_name
             # blocks) plus the public marketing apexes it fronts
-            # (fiducia.cloud, canonical.cloud).
+            # (fiducia.cloud, canonical.cloud, athleto.store) plus the
+            # dedicated AthletO jello-ws host.
             - name: DD_MCP_DOMAINS
-              value: fiducia.cloud,app.fiducia.cloud,admin.fiducia.cloud,canonical.cloud
+              value: fiducia.cloud,app.fiducia.cloud,admin.fiducia.cloud,canonical.cloud,athleto.store,app.athleto.store
             # Where those domains are expected to land: the gateway Elastic IP
             # (see mcp/README.md). domain_dns_wiring also unions in live
             # LoadBalancer/Ingress endpoints from the cluster automatically.

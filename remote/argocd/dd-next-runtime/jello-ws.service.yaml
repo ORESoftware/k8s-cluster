@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: jello-ws
+  namespace: default
+  labels:
+    app: dd-athleto-app-rs
+    app.kubernetes.io/name: jello-ws
+    app.kubernetes.io/component: storefront
+spec:
+  selector:
+    app: dd-athleto-app-rs
+  ports:
+    - name: http
+      port: 8145
+      targetPort: http
