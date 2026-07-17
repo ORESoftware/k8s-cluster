@@ -59,7 +59,11 @@ pub(super) fn validate_evm_address(addr: &str) -> Result<String, String> {
 }
 
 /// Validates a `0x`-prefixed hex blob of arbitrary even length (calldata, raw tx).
-pub(super) fn validate_hex_blob(value: &str, label: &str, max_bytes: usize) -> Result<String, String> {
+pub(super) fn validate_hex_blob(
+    value: &str,
+    label: &str,
+    max_bytes: usize,
+) -> Result<String, String> {
     let trimmed = value.trim();
     let raw = strip_hex_prefix(trimmed);
     if raw.is_empty() {
@@ -80,7 +84,10 @@ pub(super) fn validate_hex_blob(value: &str, label: &str, max_bytes: usize) -> R
 /// True for EVM mainnet (chain id 1, or a network label that names it).
 pub(super) fn is_evm_mainnet(chain_id: Option<u64>, network: &str) -> bool {
     chain_id == Some(1)
-        || matches!(network.to_ascii_lowercase().as_str(), "mainnet" | "ethereum" | "homestead")
+        || matches!(
+            network.to_ascii_lowercase().as_str(),
+            "mainnet" | "ethereum" | "homestead"
+        )
 }
 
 fn strip_hex_prefix(value: &str) -> &str {

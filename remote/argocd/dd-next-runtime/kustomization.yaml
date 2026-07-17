@@ -176,14 +176,15 @@ resources:
   - dd-akrion-web-server-rs.networkpolicy.yaml
   - dd-akrion-web-server-rs.pdb.yaml
   - dd-akrion-web-server-rs.service.yaml
-  # Athlet-O shop app (mash: Maud/Axum/SQLx/Supabase/HTMX), submodule
+  # AthletO jello-ws shop app (MASH: Maud/Axum/SQLx/Supabase/HTMX), submodule
   # remote/deployments/athleto-app-rs. Served on its own public host
-  # app.athleto.store via a dedicated Ingress rather than the gateway.
+  # app.athleto.store via a dedicated Ingress and the jello-ws Service alias.
   - dd-athleto-app-rs.deployment.yaml
   - dd-athleto-app-rs.ingress.yaml
   - dd-athleto-app-rs.networkpolicy.yaml
   - dd-athleto-app-rs.pdb.yaml
   - dd-athleto-app-rs.service.yaml
+  - jello-ws.service.yaml
   # Nightly soccer learning tournament. AWS and Hetzner both schedule it, while
   # the runner's Postgres advisory lock lets only one cluster run matches.
   - dd-soccer-tournament-nightly.cronjob.yaml

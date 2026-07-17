@@ -269,11 +269,11 @@ dependencies = [
  "dd-wal-consumer",
  "dotenvy",
  "ed25519-dalek",
+ "fiducia-interfaces",
  "futures-util",
  "hex",
  "hmac 0.13.0",
  "jsonwebtoken",
- "live-mutex-client",
  "maud",
  "rand 0.10.1",
  "reqwest 0.13.3",
@@ -859,6 +859,15 @@ name = "fiat-crypto"
 version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "28dea519a9695b9977216879a3ebfddf92f1c08c05d984f8996aecd6ecdc811d"
+
+[[package]]
+name = "fiducia-interfaces"
+version = "0.1.0"
+source = "git+https://github.com/fiducia-cloud/fiducia-interfaces.git?rev=dbf10fbb443f7b6a5cc6043faa10d2eb139a2f79#dbf10fbb443f7b6a5cc6043faa10d2eb139a2f79"
+dependencies = [
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "find-msvc-tools"
@@ -1607,17 +1616,6 @@ name = "litemap"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92daf443525c4cce67b150400bc2316076100ce0b3686209eb8cf3c31612e6f0"
-
-[[package]]
-name = "live-mutex-client"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "tokio",
- "uuid",
-]
 
 [[package]]
 name = "lock_api"

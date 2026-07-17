@@ -1,0 +1,28 @@
+# Companion to dd-athleto-app-rs.networkpolicy.yaml. The ingress-nginx
+# controllers run hostNetwork, so Cilium sees their traffic with the node
+# identity (host on the pod's own node, remote-node from the others) — the
+# base policy's ingress-nginx namespaceSelector never matches it. Same-node
+# nginx got in only via the implicit reserved:host allow; SYNs proxied from
+# nginx on the other nodes arrived as remote-node and were policy-dropped,
+# 504ing whichever dd-ingress-lb round-robin picks landed off-node. Plain
+# NetworkPolicy can't select node identities (no policy-cidr-match-mode set),
+# so this Cilium policy admits the cluster's own nodes on the app port.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: dd-athleto-app-rs-from-nodes
+  namespace: default
+  labels:
+    app: dd-athleto-app-rs
+spec:
+  endpointSelector:
+    matchLabels:
+      app: dd-athleto-app-rs
+  ingress:
+    - fromEntities:
+        - host
+        - remote-node
+      toPorts:
+        - ports:
+            - port: "8145"
+              protocol: TCP

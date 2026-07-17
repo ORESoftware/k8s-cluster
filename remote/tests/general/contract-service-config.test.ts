@@ -23,12 +23,21 @@ async function readRepoFile(relativePath: string): Promise<string> {
 test('rust solana contract service is deployed, scraped, and guarded', async () => {
   const cargo = await readRepoFile('remote/deployments/contract-service-rs/Cargo.toml');
   const source = await readRepoFile('remote/deployments/contract-service-rs/src/main.rs');
+  const coordination = await readRepoFile(
+    'remote/deployments/contract-service-rs/src/coordination.rs',
+  );
+  const solanaFeatures = await readRepoFile(
+    'remote/deployments/contract-service-rs/src/solana_features.rs',
+  );
   const readme = await readRepoFile('remote/deployments/contract-service-rs/readme.md');
   const deployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-contract-service.deployment.yaml',
   );
   const service = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-contract-service.service.yaml',
+  );
+  const networkPolicy = await readRepoFile(
+    'remote/argocd/dd-next-runtime/dd-contract-service.networkpolicy.yaml',
   );
   const kustomization = await readRepoFile('remote/argocd/dd-next-runtime/kustomization.yaml');
   const gateway = await readRepoFile(
@@ -49,6 +58,7 @@ test('rust solana contract service is deployed, scraped, and guarded', async () 
     /use dd_nats_subject_defs::\{[\s\S]*?CONTRACTS_SOLANA_RESULTS_SUBJECT[\s\S]*?CONTRACTS_SOLANA_VALIDATE_QUEUE_GROUP[\s\S]*?CONTRACTS_SOLANA_VALIDATE_SUBJECT[\s\S]*?RUNTIME_EVENTS_SUBJECT[\s\S]*?\};/,
   );
   assert.match(cargo, /reqwest[\s\S]*rustls-tls/);
+  assert.match(cargo, /sqlx[\s\S]*postgres/);
   assert.match(cargo, /bs58/);
   assert.match(source, /const SCHEMA_VERSION: &str = "solana\.contract\.v1"/);
   assert.match(source, /struct ContractRequest/);
@@ -59,6 +69,11 @@ test('rust solana contract service is deployed, scraped, and guarded', async () 
   assert.match(source, /fn authorize_send/);
   assert.match(source, /simulateTransaction/);
   assert.match(source, /sendTransaction/);
+  assert.match(source, /mod coordination;/);
+  assert.match(source, /mod solana_features;/);
+  assert.match(source, /MAX_RPC_RESPONSE_BYTES/);
+  assert.match(source, /try_acquire_owned/);
+  assert.match(source, /redirect\(reqwest::redirect::Policy::none\(\)\)/);
   assert.match(source, /SOLANA_SEND_ENABLED/);
   assert.match(source, /CONTRACT_SEND_AUTH_SECRET/);
   assert.match(source, /SOLANA_ALLOW_SKIP_PREFLIGHT/);
@@ -73,6 +88,8 @@ test('rust solana contract service is deployed, scraped, and guarded', async () 
   assert.match(source, /DefaultBodyLimit::max\(MAX_HTTP_BODY_BYTES\)/);
   assert.match(source, /payload\.len\(\) > MAX_NATS_PAYLOAD_BYTES/);
   assert.match(source, /\.route\("\/healthz", get\(healthz\)\)/);
+  assert.match(source, /\.route\("\/readyz", get\(readyz\)\)/);
+  assert.match(source, /\.merge\(solana_features::router\(\)\)/);
   assert.match(source, /\.route\("\/schema", get\(schema_http\)\)/);
   assert.match(source, /\.route\("\/validate", post\(validate_http\)\)/);
   assert.match(source, /\.route\("\/simulate", post\(simulate_http\)\)/);
@@ -81,6 +98,21 @@ test('rust solana contract service is deployed, scraped, and guarded', async () 
   assert.match(readme, /schemaVersion": "solana\.contract\.v1"/);
   assert.match(readme, /CONTRACT_SEND_AUTH_SECRET/);
   assert.match(readme, /SOLANA_ALLOW_PRIVATE_RPC=true/);
+  assert.match(readme, /pg_try_advisory_xact_lock/);
+  assert.match(readme, /github\.com\/fiducia-cloud/);
+
+  assert.match(coordination, /pg_try_advisory_xact_lock/);
+  assert.match(coordination, /\/v1\/idempotency\/claim/);
+  assert.match(coordination, /\/v1\/idempotency\/complete/);
+  assert.match(coordination, /\/v1\/idempotency\/abandon/);
+  assert.match(coordination, /fencing_token/);
+  assert.match(solanaFeatures, /\.route\("\/program\/inspect"/);
+  assert.match(solanaFeatures, /\.route\("\/program\/verify"/);
+  assert.match(solanaFeatures, /\.route\("\/escrow\/inspect"/);
+  assert.match(solanaFeatures, /getSignaturesForAddress/);
+  assert.match(solanaFeatures, /getRecentPrioritizationFees/);
+  assert.match(solanaFeatures, /allowed_github_orgs/);
+  assert.match(solanaFeatures, /"languages": \["rs"\]/);
 
   assert.match(deployment, /name:\s*dd-contract-service/);
   assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/deployments\/contract-service-rs/);
@@ -92,6 +124,16 @@ test('rust solana contract service is deployed, scraped, and guarded', async () 
   assert.match(deployment, /SOLANA_ALLOW_PRIVATE_RPC[\s\S]*value:\s*'false'/);
   assert.match(deployment, /SOLANA_SEND_ENABLED[\s\S]*value:\s*'false'/);
   assert.match(deployment, /SOLANA_ALLOW_SKIP_PREFLIGHT[\s\S]*value:\s*'false'/);
+  assert.match(deployment, /CONTRACT_FORMAL_METHODS_ENABLED[\s\S]*value:\s*'true'/);
+  assert.match(deployment, /FORMAL_METHODS_URL[\s\S]*dd-formal-methods-server/);
+  assert.match(deployment, /CONTRACT_FORMAL_METHODS_GITHUB_ORGS[\s\S]*fiducia-cloud/);
+  assert.match(deployment, /CONTRACT_COORDINATION_ENABLED[\s\S]*value:\s*'false'/);
+  assert.match(deployment, /CONTRACT_COORDINATION_REQUIRED[\s\S]*value:\s*'false'/);
+  assert.match(deployment, /RDS_DATABASE_URL[\s\S]*dd-remote-rest-api-secrets/);
+  assert.match(deployment, /FIDUCIA_LOCK_URL[\s\S]*fiducia-load-balance\.fiducia/);
+  assert.match(coordination, /requires a requests:write-scoped FIDUCIA_API_KEY/);
+  assert.match(coordination, /Method::OPTIONS/);
+  assert.match(source, /fn enforce_broadcast_coordination/);
   assert.match(deployment, /NATS_URL[\s\S]*dd-nats\.messaging\.svc\.cluster\.local:4222/);
   assert.match(deployment, /CONTRACT_VALIDATE_SUBJECT[\s\S]*dd\.remote\.contracts\.solana\.validate/);
   assert.match(deployment, /CONTRACT_QUEUE_GROUP[\s\S]*dd-contract-service/);
@@ -106,11 +148,14 @@ test('rust solana contract service is deployed, scraped, and guarded', async () 
   assert.match(deployment, /name:\s*build-cache[\s\S]*emptyDir:\s*\{\}/);
   assert.match(deployment, /name:\s*tmp[\s\S]*emptyDir:\s*\{\}/);
   assert.match(deployment, /startupProbe:[\s\S]*path: \/healthz[\s\S]*port: http/);
-  assert.match(deployment, /readinessProbe:[\s\S]*path: \/healthz[\s\S]*port: http/);
+  assert.match(deployment, /readinessProbe:[\s\S]*path: \/readyz[\s\S]*port: http/);
   assert.match(deployment, /livenessProbe:[\s\S]*path: \/healthz[\s\S]*port: http/);
   assert.match(service, /name:\s*dd-contract-service/);
   assert.match(service, /port:\s*8101/);
   assert.match(service, /targetPort:\s*http/);
+  assert.match(networkPolicy, /app:\s*dd-formal-methods-server[\s\S]*port:\s*8110/);
+  assert.match(networkPolicy, /app:\s*fiducia-load-balance[\s\S]*port:\s*8088/);
+  assert.match(networkPolicy, /cidr:\s*10\.0\.0\.0\/8[\s\S]*port:\s*5432/);
   assert.match(kustomization, /dd-contract-service\.deployment\.yaml/);
   assert.match(kustomization, /dd-contract-service\.service\.yaml/);
   assert.match(gateway, /location = \/contracts[\s\S]*return 302 \/contracts\//);

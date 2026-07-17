@@ -1,7 +1,8 @@
 # Dedicated public host for the Athlet-O shop app (submodule
 # remote/deployments/athleto-app-rs). Unlike the shared gateway Ingress
-# (gateway-edge), this routes app.athleto.store straight to the app's
-# ClusterIP Service — the app serves plain HTTP on 8145, so no
+# (gateway-edge), this routes app.athleto.store straight to the jello-ws
+# ClusterIP Service alias for the existing dd-athleto-app-rs pods. The app
+# serves plain HTTP on 8145, so no
 # backend-protocol annotation. DNS lives in Cloudflare (athleto.store zone);
 # keep the record DNS-only until the cert-manager certificate is issued.
 apiVersion: networking.k8s.io/v1
@@ -28,6 +29,6 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: dd-athleto-app-rs
+                name: jello-ws
                 port:
                   number: 8145

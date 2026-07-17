@@ -20,19 +20,27 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-05-customer-snapshot-locks'
+        dd.dev/telemetry-revision: '2026-07-16-fiducia-coordination'
       labels:
         app: dd-billing-server
-        dd.dev/live-mutex-client: 'true'
+        dd.dev/fiducia-client: 'true'
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
       containers:
         - name: billing-server
           image: docker.io/library/rust:1.95-bookworm
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
             seccompProfile:
               type: RuntimeDefault
           command:
@@ -54,10 +62,16 @@ spec:
               value: '8087'
             - name: BILLING_LOG_FORMAT
               value: json
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /tmp/cargo
             - name: RUST_LOG
               value: info,sqlx=warn,hyper=warn,tower_http=info
             - name: BILLING_RUN_MIGRATIONS
-              value: 'true'
+              # Schema changes are reviewed and applied through pg-defs/dpm;
+              # application startup must never mutate production DDL.
+              value: 'false'
             - name: BILLING_OAUTH_REDIRECT_BASE
               value: https://billing.dd.internal
             - name: BILLING_REQUIRE_WEBHOOK_SIGNATURES
@@ -70,19 +84,23 @@ spec:
             # tenant-supplied URLs.
             - name: BILLING_BLOCK_PRIVATE_OUTBOUND
               value: 'true'
-            # Customer billing-state snapshots and all customer-account
-            # ledger writes serialize through the external live-mutex-rs
-            # broker. This prevents a read from stitching together a
-            # half-before/half-after view while sync jobs or API writes
-            # mutate the same customer.
-            - name: BILLING_CUSTOMER_SNAPSHOT_LOCK_ENABLED
+            # Fiducia supplies atomic union locks for customer critical
+            # sections and renewable election leases for tenant jobs. Postgres
+            # transaction-scoped advisory locks remain an independent local
+            # serialization layer.
+            - name: BILLING_FIDUCIA_ENABLED
               value: 'true'
-            - name: BILLING_LIVE_MUTEX_ADDR
-              value: dd-rust-network-mutex.default.svc.cluster.local:6970
-            - name: BILLING_LIVE_MUTEX_LOCK_TTL_MS
+            - name: BILLING_FIDUCIA_BASE_URL
+              value: http://fiducia-load-balance.fiducia.svc.cluster.local:8088
+            - name: BILLING_FIDUCIA_LOCK_TTL_MS
               value: '60000'
-            - name: BILLING_LIVE_MUTEX_REQUEST_TIMEOUT_MS
+            - name: BILLING_FIDUCIA_REQUEST_TIMEOUT_MS
               value: '30000'
+            - name: BILLING_FIDUCIA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-billing-server-secrets
+                  key: fiducia_api_key
             # The JSON API is gated by a bearer token in addition to
             # any upstream gateway (`dd-remote-auth`). Without this set
             # the API is open to anyone who can reach the listener.
@@ -200,7 +218,7 @@ spec:
             - name: repo
               mountPath: /opt/dd-next-1
             - name: cargo-cache
-              mountPath: /usr/local/cargo/registry
+              mountPath: /tmp/cargo
       volumes:
         - name: repo
           hostPath:

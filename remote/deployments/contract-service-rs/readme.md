@@ -12,7 +12,9 @@ enable flags plus separate auth secrets.
 
 ### Contract validation / raw transactions
 
-- `GET /healthz` - readiness/liveness probe.
+- `GET /healthz` - process liveness probe.
+- `GET /readyz` - verifies Solana RPC, enabled PostgreSQL/Fiducia coordination, and formal-methods dependencies.
+- `GET /capabilities` - explicit product boundary, integrations, supported escrow actions, and active gates.
 - `GET /metrics` - Prometheus metrics.
 - `GET /status` - checks `getHealth` and `getVersion` against `SOLANA_RPC_URL`.
 - `GET /schema` - JSON Schema for `solana.contract.v1` envelopes.
@@ -32,6 +34,23 @@ enable flags plus separate auth secrets.
 - `POST /transaction` - `getTransaction` for a validated signature.
 - `POST /confirm` - polls `getSignatureStatuses` until each signature reaches the target commitment
   (`confirmed`/`finalized`), fails on-chain, or the bounded timeout elapses.
+- `POST /chain/signatures` - bounded `getSignaturesForAddress` history at durable commitment.
+- `POST /chain/priority-fees` - bounded `getRecentPrioritizationFees` samples plus median/p90 summary.
+
+### Programs, smart contracts, and formal verification
+
+- `POST /program/inspect` - validates a program public key and proves the deployed account exists and
+  is executable, returning owner, balance, data size, and context slot.
+- `POST /program/verify` - submits either bounded inline Rust source to the synchronous formal-methods
+  `/validate` endpoint or a repository job to `/analyses`. Repository URLs must be credential-free
+  `https://github.com/fiducia-cloud/<repo>` URLs; refs and paths reject traversal and option injection.
+- `POST /escrow/inspect` - checks that an escrow account exists, is owned by the expected program, is
+  non-executable, meets an optional minimum balance, and is rent-exempt. `dd-escrow-rs` remains the
+  domain validator for parties, terms, assets, release modes, and settlement policy.
+
+These routes are stateless across the two replicas. The older optional watch/index/multisig registries
+remain disabled in the checked-in deployment because they are bounded in-memory coordination aids,
+not durable sources of truth.
 
 ### Settlement and dispute resolution
 
@@ -71,8 +90,20 @@ action may enact them.
   prevent NATS-triggered broadcast being enabled by flipping one boolean, the service refuses to
   start with `CONTRACT_NATS_SETTLEMENT_ENABLED=true` unless `CONTRACT_NATS_SETTLEMENT_ACK_UNAUTHENTICATED_BUS=true`
   is also set. Lock NATS down (subject authz + a messaging NetworkPolicy) before setting the ack.
-- Settlement/resolution broadcasts are idempotent: an explicit `requestId` is claimed once within a
-  bounded TTL window, so retries do not double-broadcast (HTTP returns `409` on replay).
+- Every Solana `sendTransaction` call, regardless of whether it originated at `/send`, `/settle`,
+  `/resolve`, NATS, executor, relayer, staking, or bridge code, passes through one broadcast fence. The
+  service hashes the decoded signed transaction bytes, takes `pg_try_advisory_xact_lock` in a held
+  Postgres transaction, and claims a durable Fiducia idempotency lease with a fencing token. Completed
+  calls retain and replay the prior RPC result for seven days; failed calls abandon the lease. With
+  `CONTRACT_COORDINATION_REQUIRED=true`, a coordinator failure blocks broadcasts instead of degrading
+  to replica-local behavior.
+- Coordination refuses to start without a `requests:write`-scoped `FIDUCIA_API_KEY`. Readiness uses a
+  non-mutating `OPTIONS /v1/idempotency/claim` authorization probe, so a health-only connection cannot
+  be mistaken for write access. The checked-in deployment keeps coordination and every broadcast flag
+  disabled until fiducia-auth mints that scoped key into `dd-agent-secrets/FIDUCIA_API_KEY`; enabling any
+  broadcast flag while coordination is disabled or optional is a startup error.
+- Settlement/resolution request IDs are also claimed in-process for immediate caller replay feedback;
+  the transaction-digest fence above is the cross-replica source of truth.
 - Confirmation polling is bounded by a max timeout, min poll interval, and max poll count; `/confirm`
   accepts at most a small batch of signatures.
 - A service-wide cap bounds concurrent confirmation pollers across `/confirm`, `/settle`, `/resolve`,
@@ -80,11 +111,14 @@ action may enact them.
   cap, confirmations are shed gracefully (reported as `deferred`, no RPC) rather than queued.
 - `skipPreflight` is rejected unless `SOLANA_ALLOW_SKIP_PREFLIGHT=true`.
 - `simulateTransaction` rejects `sigVerify=true` with `replaceRecentBlockhash=true`.
+- Solana, Fiducia, and formal-methods HTTP clients refuse redirects and cap response bodies. A shared
+  semaphore bounds concurrent Solana RPC requests (`SOLANA_RPC_MAX_IN_FLIGHT`, default 64).
 - The deployment mounts the source checkout read-only and sends Cargo build/cache output to
   disposable `emptyDir` volumes.
 - The Kubernetes pod runs as a non-root UID with a read-only root filesystem, no service-account
   token, dropped Linux capabilities, and a NetworkPolicy that allows only gateway/runtime-config/
-  observability ingress plus DNS, NATS, runtime-config, and public HTTPS Solana RPC egress.
+  observability ingress plus explicit DNS, NATS, runtime-config, formal-methods, Fiducia, private RDS
+  Postgres, and public HTTPS Solana RPC egress.
 
 ## Telemetry
 

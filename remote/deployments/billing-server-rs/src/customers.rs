@@ -6,7 +6,7 @@
 
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use sqlx::{PgPool, Row};
+use sqlx::{PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 
 use crate::customer_locks::{CustomerLockBroker, CustomerSnapshotLockInfo};
@@ -111,8 +111,15 @@ impl CustomerService {
         let snapshot_lock = lock_guard.info();
 
         let result = async {
+            // The distributed lock excludes cooperating writers, while the
+            // repeatable-read, read-only transaction guarantees every query in
+            // this multi-query response observes one PostgreSQL snapshot.
+            let mut tx = self.pool.begin().await?;
+            sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+                .execute(&mut *tx)
+                .await?;
             let components = self
-                .customer_balance_components(tenant_id, user.id, currency)
+                .customer_balance_components(&mut tx, tenant_id, user.id, currency)
                 .await?;
 
             let outstanding = components.iter().map(|c| c.contribution_minor).sum();
@@ -121,11 +128,15 @@ impl CustomerService {
             let credit_memos = component_balance(&components, &format!("credit_memo/{}", user.id))
                 + component_balance(&components, &format!("credit_memos/{}", user.id));
 
-            let aging = self.compute_aging(tenant_id, user.id, currency).await?;
-            let last_payment = self.last_payment(tenant_id, user.id, currency).await?;
-            let recon = self.recon_status(tenant_id).await?;
+            let aging = self
+                .compute_aging(&mut tx, tenant_id, user.id, currency)
+                .await?;
+            let last_payment = self
+                .last_payment(&mut tx, tenant_id, user.id, currency)
+                .await?;
+            let recon = self.recon_status(&mut tx, tenant_id).await?;
 
-            Ok(BillingState {
+            let state = BillingState {
                 user_id: user.id,
                 email: user.email,
                 as_of: Utc::now(),
@@ -140,7 +151,9 @@ impl CustomerService {
                 last_payment,
                 reconciliation_status: recon,
                 as_of_confidence: Confidence::Finalized,
-            })
+            };
+            tx.commit().await?;
+            Ok(state)
         }
         .await;
 
@@ -152,6 +165,7 @@ impl CustomerService {
 
     async fn customer_balance_components(
         &self,
+        tx: &mut Transaction<'_, Postgres>,
         tenant_id: Uuid,
         user_id: Uuid,
         currency: Currency,
@@ -199,7 +213,7 @@ impl CustomerService {
         .bind(&credit_memo_code)
         .bind(&credit_memos_code)
         .bind(&customer_prefix)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut **tx)
         .await?;
 
         rows.iter()
@@ -223,6 +237,7 @@ impl CustomerService {
 
     async fn compute_aging(
         &self,
+        tx: &mut Transaction<'_, Postgres>,
         tenant_id: Uuid,
         user_id: Uuid,
         currency: Currency,
@@ -257,7 +272,7 @@ impl CustomerService {
         .bind(tenant_id)
         .bind(&ar_code)
         .bind(&cur)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut **tx)
         .await?;
 
         let parse = |k: &str| -> i128 {
@@ -278,6 +293,7 @@ impl CustomerService {
 
     async fn last_payment(
         &self,
+        tx: &mut Transaction<'_, Postgres>,
         tenant_id: Uuid,
         user_id: Uuid,
         currency: Currency,
@@ -301,7 +317,7 @@ impl CustomerService {
         .bind(tenant_id)
         .bind(&ar_code)
         .bind(&cur)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut **tx)
         .await?;
 
         Ok(row.map(|r| LastPayment {
@@ -316,13 +332,17 @@ impl CustomerService {
         }))
     }
 
-    async fn recon_status(&self, tenant_id: Uuid) -> AppResult<ReconciliationStatus> {
+    async fn recon_status(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        tenant_id: Uuid,
+    ) -> AppResult<ReconciliationStatus> {
         let count: i64 = sqlx::query_scalar(
             r#"SELECT COUNT(*) FROM reconciliation_breaks
                WHERE tenant_id = $1 AND status = 'open'"#,
         )
         .bind(tenant_id)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut **tx)
         .await?;
         Ok(if count == 0 {
             ReconciliationStatus::Clean
