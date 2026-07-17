@@ -11,6 +11,7 @@ resources:
   - dd-dev-server-api.service.yaml
   - dd-remote-rest-api-rbac.yaml
   - dd-remote-rest-api.deployment.yaml
+  - dd-remote-rest-api.networkpolicy.yaml
   - dd-remote-rest-api.service.yaml
   - dd-agent-worker-broker-rbac.yaml
   - dd-agent-worker-broker.deployment.yaml
@@ -43,6 +44,7 @@ resources:
   - dd-route-optimizer.deployment.yaml
   - dd-route-optimizer.service.yaml
   - dd-agent-sim-server.deployment.yaml
+  - dd-agent-sim-server.networkpolicy.yaml
   - dd-agent-sim-server.service.yaml
   - dd-monte-carlo-server.deployment.yaml
   - dd-monte-carlo-server.service.yaml
@@ -99,8 +101,10 @@ resources:
   - dd-rust-vapi-phone.networkpolicy.yaml
   - dd-rust-vapi-phone.service.yaml
   - dd-trading-server.deployment.yaml
+  - dd-trading-server.networkpolicy.yaml
   - dd-trading-server.service.yaml
   - dd-economics-server.deployment.yaml
+  - dd-economics-server.networkpolicy.yaml
   - dd-economics-server.service.yaml
   - dd-public-data-server.deployment.yaml
   - dd-public-data-server.service.yaml
@@ -151,6 +155,7 @@ resources:
   - dd-browser-job-runner.deployment.yaml
   - dd-browser-job-runner.service.yaml
   - dd-remote-web-home.deployment.yaml
+  - dd-remote-web-home.networkpolicy.yaml
   - dd-remote-web-home.pdb.yaml
   - dd-remote-web-home.service.yaml
   - dd-sonus-auris-site.configmap.yaml
@@ -161,6 +166,7 @@ resources:
   - dd-webrtc-media.deployment.yaml
   - dd-webrtc-media.service.yaml
   - dd-rust-wss-server.deployment.yaml
+  - dd-rust-wss-server.networkpolicy.yaml
   - dd-rust-wss-server.service.yaml
   - dd-go-wss-server.deployment.yaml
   - dd-go-wss-server.service.yaml
@@ -170,6 +176,7 @@ resources:
   # and the whole gateway crashloops.
   - dd-soccer-feature-gates.configmap.yaml
   - dd-soccer-rs.deployment.yaml
+  - dd-soccer-rs.networkpolicy.yaml
   - dd-soccer-rs.service.yaml
   # Akrion Sim web portal: Maud/HTMX pages and Supabase browser-login shell,
   # mounted by the gateway at /akrion-sim.

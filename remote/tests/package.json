@@ -46,6 +46,7 @@
     "test:cli:pg-sql-centralized": "pnpm exec tsx --test general/pg-sql-centralized.test.ts",
     "test:cli:redis-cache-config": "pnpm exec tsx --test general/redis-cache-config.test.ts",
     "test:cli:rest-api-route-parity": "pnpm exec tsx --test general/rest-api-route-parity.test.ts",
+    "test:cli:rust-fleet-hardening": "pnpm exec tsx --test general/rust-fleet-hardening.test.ts",
     "test:cli:rust-pg-defs-wiring": "pnpm exec tsx --test general/rust-pg-defs-wiring.test.ts",
     "test:cli:runtime-split-config": "pnpm exec tsx --test general/runtime-split-config.test.ts",
     "test:cli:selenium-server-config": "pnpm exec tsx --test general/selenium-server-config.test.ts",

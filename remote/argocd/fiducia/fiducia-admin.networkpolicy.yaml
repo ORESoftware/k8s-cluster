@@ -1,0 +1,145 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fiducia-admin
+  namespace: fiducia
+  labels:
+    app: fiducia-admin
+spec:
+  podSelector:
+    matchLabels:
+      app: fiducia-admin
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # admin.fiducia.cloud terminates on dd-remote-gateway (namespace `default`),
+    # which proxies to fiducia-admin.fiducia:8096 — the only legitimate caller
+    # besides the observability scrapers. Nothing in-namespace calls the admin.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: default
+          podSelector:
+            matchLabels:
+              app: dd-remote-gateway
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - dd-prometheus
+                  - dd-otel-collector
+      ports:
+        - protocol: TCP
+          port: 8096
+  egress:
+    # In-namespace upstreams from the deployment env: login/session checks via
+    # fiducia-auth (FIDUCIA_AUTH_URL) and control-plane reads via fiducia-brain
+    # (FIDUCIA_BRAIN_URL).
+    - to:
+        - podSelector:
+            matchLabels:
+              app: fiducia-auth
+      ports:
+        - protocol: TCP
+          port: 8097
+    - to:
+        - podSelector:
+            matchLabels:
+              app: fiducia-brain
+      ports:
+        - protocol: TCP
+          port: 8095
+    # The admin's observe pages attach x-fiducia-internal-auth on "brain/node
+    # observe calls" (see the deployment's FIDUCIA_INTERNAL_SECRET comment) —
+    # node addresses are learned from the brain's membership, not env, so allow
+    # the data-plane HTTP port too rather than break those pages.
+    - to:
+        - podSelector:
+            matchLabels:
+              app: fiducia-node
+      ports:
+        - protocol: TCP
+          port: 8090
+    # Observability plane: PromQL (dd-prometheus :9090) + LogQL (dd-loki :3100)
+    # for the cluster-insight pages, and OTLP trace export (:4317/:4318).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 9090
+        - protocol: TCP
+          port: 3100
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
+    # DNS resolution.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Public HTTP(S) for the cold in-pod build (git clone, crates.io) and for
+    # Supabase REST/auth; 5432/6543 for the admin plane's Supabase Postgres
+    # (direct + pooled), same shape as dd-athleto-app-rs. Private ranges
+    # excluded so this does not widen in-cluster reachability.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 0.0.0.0/8
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.0.0.0/24
+              - 192.168.0.0/16
+              - 192.0.2.0/24
+              - 198.18.0.0/15
+              - 198.51.100.0/24
+              - 203.0.113.0/24
+              - 224.0.0.0/4
+              - 240.0.0.0/4
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 6543
+    - to:
+        - ipBlock:
+            cidr: ::/0
+            except:
+              - ::/128
+              - ::1/128
+              - 64:ff9b:1::/48
+              - 100::/64
+              - 2001:2::/48
+              - 2001:db8::/32
+              - fc00::/7
+              - fe80::/10
+              - ff00::/8
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 6543

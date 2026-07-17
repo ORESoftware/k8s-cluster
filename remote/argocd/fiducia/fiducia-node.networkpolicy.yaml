@@ -1,0 +1,144 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fiducia-node
+  namespace: fiducia
+  labels:
+    app: fiducia-node
+spec:
+  podSelector:
+    matchLabels:
+      app: fiducia-node
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Data-plane HTTP API (:8090): fiducia-load-balance (FIDUCIA_NODES seed
+    # list), peer nodes (follower->leader forwarding, as in the house
+    # dd-rust-network-mutex-raft policy), the brain leader's reconciler, and
+    # the admin's node observe pages. The co-located sidecar scrapes
+    # localhost:8090, which NetworkPolicy does not police.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: fiducia-load-balance
+        - podSelector:
+            matchLabels:
+              app: fiducia-node
+        - podSelector:
+            matchLabels:
+              app: fiducia-brain
+        - podSelector:
+            matchLabels:
+              app: fiducia-admin
+      ports:
+        - protocol: TCP
+          port: 8090
+    # Raft peer plane (:9090): node members only.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: fiducia-node
+      ports:
+        - protocol: TCP
+          port: 9090
+    # The fiducia-node-sidecar Prometheus job scrapes each pod's exporter on
+    # :8091 via the headless peer Service.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - dd-prometheus
+                  - dd-otel-collector
+      ports:
+        - protocol: TCP
+          port: 8091
+  egress:
+    # Peer-to-peer Raft RPC (:9090) + follower->leader forwarding (:8090),
+    # mirroring the dd-rust-network-mutex-raft peer egress.
+    - to:
+        - podSelector:
+            matchLabels:
+              app: fiducia-node
+      ports:
+        - protocol: TCP
+          port: 9090
+        - protocol: TCP
+          port: 8090
+    # The sidecar heartbeats membership (+ failure domain) to the brain
+    # (FIDUCIA_BRAIN_URL).
+    - to:
+        - podSelector:
+            matchLabels:
+              app: fiducia-brain
+      ports:
+        - protocol: TCP
+          port: 8095
+    # OTLP trace export to the in-cluster OpenTelemetry collector.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
+    # DNS resolution.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Public HTTP(S) for the cold in-pod builds (node + sidecar: git clone
+    # GitHub, crates.io) — public internet only, private ranges excluded.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 0.0.0.0/8
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.0.0.0/24
+              - 192.168.0.0/16
+              - 192.0.2.0/24
+              - 198.18.0.0/15
+              - 198.51.100.0/24
+              - 203.0.113.0/24
+              - 224.0.0.0/4
+              - 240.0.0.0/4
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
+    - to:
+        - ipBlock:
+            cidr: ::/0
+            except:
+              - ::/128
+              - ::1/128
+              - 64:ff9b:1::/48
+              - 100::/64
+              - 2001:2::/48
+              - 2001:db8::/32
+              - fc00::/7
+              - fe80::/10
+              - ff00::/8
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443

@@ -19,10 +19,17 @@ namespace: fiducia
 
 resources:
   - namespace.yaml
+  - availability-pdbs.yaml
   - fiducia-node.statefulset.yaml
   - fiducia-node.service.yaml
+  - fiducia-node.networkpolicy.yaml
   - fiducia-brain.statefulset.yaml
+  - fiducia-brain.networkpolicy.yaml
   - fiducia-load-balance.deployment.yaml
+  - fiducia-load-balance.networkpolicy.yaml
   - fiducia-backend.deployment.yaml
+  - fiducia-backend.networkpolicy.yaml
   - fiducia-auth.deployment.yaml
+  - fiducia-auth.networkpolicy.yaml
   - fiducia-admin.deployment.yaml
+  - fiducia-admin.networkpolicy.yaml

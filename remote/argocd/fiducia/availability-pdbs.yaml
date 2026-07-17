@@ -1,0 +1,54 @@
+# PodDisruptionBudgets for the fiducia stack (same shape as dd-next-runtime's
+# availability-pdbs.yaml: one file, one PDB per multi-replica workload).
+#
+# Deliberately NOT covered — the single-replica Deployments (fiducia-admin,
+# fiducia-auth, fiducia-load-balance): a minAvailable: 1 PDB on a 1-replica
+# workload makes its only pod ineligible for eviction and blocks node drains
+# forever. The house file likewise only budgets multi-replica apps; give these
+# a second replica first if they ever need a disruption budget.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: fiducia-backend
+  namespace: fiducia
+  labels:
+    app: fiducia-backend
+spec:
+  # HPA floor is 2 (minReplicas), so one pod can always be evicted.
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: fiducia-backend
+---
+# Three-member control-plane Raft group: quorum is 2. Keep at least 2 pods
+# available so a voluntary disruption (drain, rolling update) can never drop
+# the brain below quorum — same convention as dd-rust-network-mutex-raft's
+# minAvailable-equals-quorum budget. With 3 replicas this allows at most 1
+# concurrent voluntary eviction.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: fiducia-brain
+  namespace: fiducia
+  labels:
+    app: fiducia-brain
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: fiducia-brain
+---
+# Three-member data-plane Raft group (1 shard, RF3): quorum is 2. At most 1
+# voluntary eviction at a time so the shard never loses write availability.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: fiducia-node
+  namespace: fiducia
+  labels:
+    app: fiducia-node
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: fiducia-node

@@ -79,6 +79,30 @@ spec:
             limits:
               cpu: '1'
               memory: 1Gi
+          # The reaper is a loop worker with no HTTP listener (reqwest/NATS
+          # clients only — see idle-reaper-rs/src/main.rs), so probes exec
+          # pgrep for the compiled binary's process name instead of httpGet.
+          # During the cold `cargo run --release` build only cargo/rustc are
+          # running, so the startup probe stays failing until the built
+          # `idle-reaper` binary is actually spawned; the generous threshold
+          # preserves the pod through cold builds like dd-remote-rest-api.
+          startupProbe:
+            exec:
+              command:
+                - /usr/bin/pgrep
+                - -x
+                - idle-reaper
+            periodSeconds: 5
+            failureThreshold: 600
+          livenessProbe:
+            exec:
+              command:
+                - /usr/bin/pgrep
+                - -x
+                - idle-reaper
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
           volumeMounts:
             - name: repo
               mountPath: /opt/dd-next-1
