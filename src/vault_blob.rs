@@ -219,4 +219,59 @@ mod tests {
         assert!(!dominates(&vv(&[("a", 1)]), &vv(&[("a", 2)])));
         assert!(dominates(&vv(&[("a", 1), ("b", 1)]), &vv(&[("a", 1)])));
     }
+
+    #[test]
+    fn concurrent_vectors_dominate_neither_way() {
+        // Each side has an event the other has not observed: true concurrency.
+        let left = vv(&[("a", 2), ("b", 1)]);
+        let right = vv(&[("a", 1), ("b", 2)]);
+        assert!(!dominates(&left, &right));
+        assert!(!dominates(&right, &left));
+    }
+
+    #[test]
+    fn empty_vector_dominance() {
+        let empty = vv(&[]);
+        let some = vv(&[("a", 1)]);
+        // Everything (including empty) dominates the empty history...
+        assert!(dominates(&empty, &empty));
+        assert!(dominates(&some, &empty));
+        // ...but the empty history dominates nothing non-empty.
+        assert!(!dominates(&empty, &some));
+    }
+
+    #[test]
+    fn bump_adds_absent_device_and_preserves_others() {
+        let base = vv(&[("a", 3)]);
+        let out = bump(&base, "b");
+        assert_eq!(counter_for(&out, "a"), 3);
+        assert_eq!(counter_for(&out, "b"), 1);
+        assert_eq!(out.len(), 2);
+        // Bumping an existing device increments only that entry.
+        let again = bump(&out, "b");
+        assert_eq!(counter_for(&again, "b"), 2);
+        assert_eq!(counter_for(&again, "a"), 3);
+    }
+
+    #[test]
+    fn concurrent_push_conflicts_even_if_client_advanced_itself() {
+        // Client advanced its own counter but never observed devB's write:
+        // its base does not dominate the stored vector, so it must pull+merge.
+        let stored = vv(&[("devA", 1), ("devB", 1)]);
+        let base = vv(&[("devA", 2)]);
+        let err = reconcile(&stored, &base, "devA").unwrap_err();
+        assert_eq!(err, stored);
+    }
+
+    #[test]
+    fn reconcile_accepts_superset_base_from_new_device() {
+        // A freshly-enrolled device pulled (observing devA/devB) and merged in
+        // history from a third source; its base strictly dominates the stored
+        // version, so the push lands and only its own counter is bumped.
+        let stored = vv(&[("devA", 1)]);
+        let base = vv(&[("devA", 1), ("devC", 5)]);
+        let out = reconcile(&stored, &base, "devC").unwrap();
+        assert_eq!(counter_for(&out, "devA"), 1);
+        assert_eq!(counter_for(&out, "devC"), 6);
+    }
 }
