@@ -6085,7 +6085,12 @@ create index if not exists fiducia_sync_tombstones_user_sequence_idx
   on fiducia.sync_tombstones (table_name, owner_user_id, sequence)
   where owner_user_id is not null;
 
-create or replace function fiducia.allocate_sync_sequence() returns bigint as $$
+create or replace function fiducia.allocate_sync_sequence()
+returns bigint
+language plpgsql
+security definer
+set search_path = pg_catalog, fiducia
+as $$
 declare allocated bigint;
 begin
   update fiducia.sync_clock
@@ -6097,7 +6102,7 @@ begin
   end if;
   return allocated;
 end;
-$$ language plpgsql security definer set search_path = pg_catalog, fiducia;
+$$;
 
 -- Lock the plane clock at statement start, before target-row locks. This keeps
 -- multi-row/multi-table writes from deadlocking in the row trigger while
