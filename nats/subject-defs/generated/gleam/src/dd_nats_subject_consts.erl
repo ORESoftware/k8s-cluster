@@ -184,6 +184,8 @@
     telemetry_mdp_subject/0,
     telemetry_raw_subject/0,
     telemetry_raw_queue_group/0,
+    thread_tasks_dead_letter_subject/0,
+    thread_tasks_dead_letter_stream/0,
     trading_decisions_subject/0,
     trading_order_intents_subject/0,
     trading_signals_subject/0,
@@ -257,9 +259,11 @@
     dd_remote_cron_stream_name/0,
     dd_remote_events_stream_name/0,
     dd_remote_evolution_stream_name/0,
+    dd_remote_fabrication_stream_name/0,
     dd_remote_mip_solver_stream_name/0,
     dd_remote_routing_stream_name/0,
-    dd_remote_tasks_stream_name/0
+    dd_remote_tasks_stream_name/0,
+    dd_remote_tasks_dlq_stream_name/0
 ]).
 
 agent_sim_frames_subject() -> <<"dd.remote.agent_sim.frames"/utf8>>.
@@ -436,6 +440,8 @@ scheduler_schedule_results_subject() -> <<"dd.remote.scheduler.schedule.results"
 telemetry_mdp_subject() -> <<"dd.remote.telemetry.mdp"/utf8>>.
 telemetry_raw_subject() -> <<"dd.remote.telemetry.raw"/utf8>>.
 telemetry_raw_queue_group() -> <<"dd-ai-ml-pipeline"/utf8>>.
+thread_tasks_dead_letter_subject() -> <<"dd.remote.thread.tasks.deadletter"/utf8>>.
+thread_tasks_dead_letter_stream() -> <<"DD_REMOTE_TASKS_DLQ"/utf8>>.
 trading_decisions_subject() -> <<"dd.remote.trading.decisions"/utf8>>.
 trading_order_intents_subject() -> <<"dd.remote.trading.order_intents"/utf8>>.
 trading_signals_subject() -> <<"dd.remote.trading.signals"/utf8>>.
@@ -509,6 +515,8 @@ dd_remote_critical_events_stream_name() -> <<"DD_REMOTE_CRITICAL_EVENTS"/utf8>>.
 dd_remote_cron_stream_name() -> <<"DD_REMOTE_CRON"/utf8>>.
 dd_remote_events_stream_name() -> <<"DD_REMOTE_EVENTS"/utf8>>.
 dd_remote_evolution_stream_name() -> <<"DD_REMOTE_EVOLUTION"/utf8>>.
+dd_remote_fabrication_stream_name() -> <<"DD_REMOTE_FABRICATION"/utf8>>.
 dd_remote_mip_solver_stream_name() -> <<"DD_REMOTE_MIP_SOLVER"/utf8>>.
 dd_remote_routing_stream_name() -> <<"DD_REMOTE_ROUTING"/utf8>>.
 dd_remote_tasks_stream_name() -> <<"DD_REMOTE_TASKS"/utf8>>.
+dd_remote_tasks_dlq_stream_name() -> <<"DD_REMOTE_TASKS_DLQ"/utf8>>.

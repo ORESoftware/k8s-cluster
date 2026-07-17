@@ -542,6 +542,11 @@ const TelemetryMdpSubject = "dd.remote.telemetry.mdp"
 const TelemetryRawSubject = "dd.remote.telemetry.raw"
 const TelemetryRawQueueGroup = "dd-ai-ml-pipeline"
 
+// Redacted terminal task failures emitted after the queue consumer exhausts JetStream redelivery. Kept on a separate limits-retention stream so poison-message evidence is durable without affecting the WorkQueue consumer lag used by KEDA.
+// Service: dd-remote-rest-api
+const ThreadTasksDeadLetterSubject = "dd.remote.thread.tasks.deadletter"
+const ThreadTasksDeadLetterStream = "DD_REMOTE_TASKS_DLQ"
+
 // Risk-gated buy/sell/hold decisions emitted by the trading server. Default for TRADING_DECISION_SUBJECT.
 // Service: dd-trading-server
 const TradingDecisionsSubject = "dd.remote.trading.decisions"
@@ -1009,7 +1014,7 @@ func ParseThreadHeartbeatSubject(subject string) (*ThreadHeartbeatSubjectParts, 
 	return parts, true
 }
 
-// Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS). Producers publish per-thread; consumers either subscribe to the exact subject (the worker for that thread) or to the wildcard via a queue group (the preparer).
+// Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS) with WorkQueue retention. Producers publish per-thread and queue-consumer replicas share the durable wildcard consumer so each task has one handoff owner.
 // Service: dd-remote-rest-api
 const ThreadTasksPattern = "dd.remote.thread.{thread_id}.tasks"
 const ThreadTasksWildcard = "dd.remote.thread.*.tasks"
@@ -1236,6 +1241,14 @@ const DdRemoteEvolutionStreamRetention = "limits"
 const DdRemoteEvolutionStreamStorage = "file"
 const DdRemoteEvolutionStreamAck = "explicit"
 
+// Durable JetStream history for fabrication requests, results, machine profiles, design conversion, instruction generation and review, execution telemetry, learning outcomes, and release readiness.
+// Service: dd-fabrication-server
+const DdRemoteFabricationStreamName = "DD_REMOTE_FABRICATION"
+var DdRemoteFabricationStreamSubjects = []string{"dd.remote.fabrication.>"}
+const DdRemoteFabricationStreamRetention = "limits"
+const DdRemoteFabricationStreamStorage = "file"
+const DdRemoteFabricationStreamAck = "explicit"
+
 // JetStream stream for distributed in-house LP/MIP/IP solver work, results, control, and progress events.
 // Service: dd-ai-ml-pipeline
 const DdRemoteMipSolverStreamName = "DD_REMOTE_MIP_SOLVER"
@@ -1252,10 +1265,18 @@ const DdRemoteRoutingStreamRetention = "limits"
 const DdRemoteRoutingStreamStorage = "file"
 const DdRemoteRoutingStreamAck = "explicit"
 
-// JetStream file storage, explicit ack, message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard.
+// JetStream file storage with WorkQueue retention, explicit ack, and message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard.
 // Service: dd-remote-rest-api
 const DdRemoteTasksStreamName = "DD_REMOTE_TASKS"
 var DdRemoteTasksStreamSubjects = []string{"dd.remote.thread.*.tasks"}
-const DdRemoteTasksStreamRetention = "limits"
+const DdRemoteTasksStreamRetention = "workqueue"
 const DdRemoteTasksStreamStorage = "file"
 const DdRemoteTasksStreamAck = "explicit"
+
+// Durable limits-retention stream for redacted terminal task failures. It is separate from DD_REMOTE_TASKS so dead letters cannot inflate queue-consumer lag or trigger KEDA scaling.
+// Service: dd-remote-rest-api
+const DdRemoteTasksDlqStreamName = "DD_REMOTE_TASKS_DLQ"
+var DdRemoteTasksDlqStreamSubjects = []string{"dd.remote.thread.tasks.deadletter"}
+const DdRemoteTasksDlqStreamRetention = "limits"
+const DdRemoteTasksDlqStreamStorage = "file"
+const DdRemoteTasksDlqStreamAck = "explicit"

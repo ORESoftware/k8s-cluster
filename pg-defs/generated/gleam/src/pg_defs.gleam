@@ -6,6 +6,71 @@ import gleam/list
 import gleam/option.{type Option}
 import gleam/string
 
+pub const accounts_table = "threefa.accounts"
+pub const accounts_select_sql = "select\n      id::text as id,\n      username,\n      auth_secret,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from threefa.accounts"
+
+pub type AccountsRow {
+  AccountsRow(
+    id: String,
+    username: String,
+    auth_secret: String,
+    created_at: String,
+  )
+}
+
+pub fn validate_accounts_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("accounts.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const devices_table = "threefa.devices"
+pub const devices_select_sql = "select\n      id::text as id,\n      account_id::text as account_id,\n      device_name,\n      sync_token_hash,\n      revoked,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from threefa.devices"
+
+pub type DevicesRow {
+  DevicesRow(
+    id: String,
+    account_id: String,
+    device_name: String,
+    sync_token_hash: String,
+    revoked: Bool,
+    created_at: String,
+  )
+}
+
+pub fn validate_devices_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("devices.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const vault_blobs_table = "threefa.vault_blobs"
+pub const vault_blobs_select_sql = "select\n      account_id::text as account_id,\n      ciphertext,\n      nonce,\n      kdf_salt,\n      kdf_params::text as kdf_params_json,\n      version::text as version_json,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from threefa.vault_blobs"
+
+pub type VaultBlobsRow {
+  VaultBlobsRow(
+    account_id: String,
+    ciphertext: String,
+    nonce: String,
+    kdf_salt: String,
+    kdf_params_json: String,
+    version_json: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_vault_blobs_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("vault_blobs.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
 pub const app_config_table = "app_config"
 pub const app_config_select_sql = "select\n      id::text as id,\n      scope,\n      key,\n      value::text as value_json,\n      version,\n      status,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from app_config"
 
@@ -9944,6 +10009,255 @@ pub fn validate_vcs_operations_status(value: String) -> Result(String, String) {
   case list.contains(["pending", "running", "success", "error"], value) {
     True -> Ok(value)
     False -> Error("unsupported vcs_operations.status: " <> value)
+  }
+}
+
+pub const agents_table = "ai_agent_bridge.agents"
+pub const agents_select_sql = "select\n      id::text as id,\n      agent_key,\n      display_name,\n      kind,\n      host,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from ai_agent_bridge.agents"
+
+pub type AgentsKind {
+  AgentsKindClaude
+  AgentsKindCodex
+  AgentsKindHuman
+  AgentsKindOther
+}
+
+pub fn agents_kind_to_string(value: AgentsKind) -> String {
+  case value {
+    AgentsKindClaude -> "claude"
+    AgentsKindCodex -> "codex"
+    AgentsKindHuman -> "human"
+    AgentsKindOther -> "other"
+  }
+}
+
+pub fn parse_agents_kind(value: String) -> Result(AgentsKind, String) {
+  case value {
+    "claude" -> Ok(AgentsKindClaude)
+    "codex" -> Ok(AgentsKindCodex)
+    "human" -> Ok(AgentsKindHuman)
+    "other" -> Ok(AgentsKindOther)
+    _ -> Error("unsupported agents.kind: " <> value)
+  }
+}
+
+pub type AgentsRow {
+  AgentsRow(
+    id: String,
+    agent_key: String,
+    display_name: String,
+    kind: String,
+    host: Option(String),
+    meta_data_json: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_agents_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("agents.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_agents_kind(value: String) -> Result(String, String) {
+  case list.contains(["claude", "codex", "human", "other"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported agents.kind: " <> value)
+  }
+}
+
+pub const channels_table = "ai_agent_bridge.channels"
+pub const channels_select_sql = "select\n      id::text as id,\n      slug,\n      topic,\n      topic_summary,\n      embedding_model,\n      embedding::text as embedding_json,\n      embedding_dimensions,\n      status,\n      created_by,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from ai_agent_bridge.channels"
+
+pub type ChannelsStatus {
+  ChannelsStatusActive
+  ChannelsStatusArchived
+}
+
+pub fn channels_status_to_string(value: ChannelsStatus) -> String {
+  case value {
+    ChannelsStatusActive -> "active"
+    ChannelsStatusArchived -> "archived"
+  }
+}
+
+pub fn parse_channels_status(value: String) -> Result(ChannelsStatus, String) {
+  case value {
+    "active" -> Ok(ChannelsStatusActive)
+    "archived" -> Ok(ChannelsStatusArchived)
+    _ -> Error("unsupported channels.status: " <> value)
+  }
+}
+
+pub type ChannelsRow {
+  ChannelsRow(
+    id: String,
+    slug: String,
+    topic: String,
+    topic_summary: Option(String),
+    embedding_model: String,
+    embedding_json: String,
+    embedding_dimensions: Int,
+    status: String,
+    created_by: String,
+    meta_data_json: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_channels_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("channels.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_channels_status(value: String) -> Result(String, String) {
+  case list.contains(["active", "archived"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported channels.status: " <> value)
+  }
+}
+
+pub const messages_table = "ai_agent_bridge.messages"
+pub const messages_select_sql = "select\n      id::text as id,\n      channel_slug,\n      channel_id::text as channel_id,\n      seq,\n      from_agent_key,\n      role,\n      content,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from ai_agent_bridge.messages"
+
+pub type MessagesRole {
+  MessagesRoleUser
+  MessagesRoleAssistant
+  MessagesRoleSystem
+  MessagesRoleTool
+}
+
+pub fn messages_role_to_string(value: MessagesRole) -> String {
+  case value {
+    MessagesRoleUser -> "user"
+    MessagesRoleAssistant -> "assistant"
+    MessagesRoleSystem -> "system"
+    MessagesRoleTool -> "tool"
+  }
+}
+
+pub fn parse_messages_role(value: String) -> Result(MessagesRole, String) {
+  case value {
+    "user" -> Ok(MessagesRoleUser)
+    "assistant" -> Ok(MessagesRoleAssistant)
+    "system" -> Ok(MessagesRoleSystem)
+    "tool" -> Ok(MessagesRoleTool)
+    _ -> Error("unsupported messages.role: " <> value)
+  }
+}
+
+pub type MessagesRow {
+  MessagesRow(
+    id: String,
+    channel_slug: String,
+    channel_id: Option(String),
+    seq: Int,
+    from_agent_key: String,
+    role: String,
+    content: String,
+    meta_data_json: String,
+    created_at: String,
+  )
+}
+
+pub fn validate_messages_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("messages.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_messages_role(value: String) -> Result(String, String) {
+  case list.contains(["user", "assistant", "system", "tool"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported messages.role: " <> value)
+  }
+}
+
+pub const channel_members_table = "ai_agent_bridge.channel_members"
+pub const channel_members_select_sql = "select\n      id::text as id,\n      channel_slug,\n      channel_id::text as channel_id,\n      agent_key,\n      role,\n      to_char(joined_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as joined_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      meta_data::text as meta_data_json\n    from ai_agent_bridge.channel_members"
+
+pub type ChannelMembersRole {
+  ChannelMembersRoleOwner
+  ChannelMembersRoleMember
+  ChannelMembersRoleObserver
+}
+
+pub fn channel_members_role_to_string(value: ChannelMembersRole) -> String {
+  case value {
+    ChannelMembersRoleOwner -> "owner"
+    ChannelMembersRoleMember -> "member"
+    ChannelMembersRoleObserver -> "observer"
+  }
+}
+
+pub fn parse_channel_members_role(value: String) -> Result(ChannelMembersRole, String) {
+  case value {
+    "owner" -> Ok(ChannelMembersRoleOwner)
+    "member" -> Ok(ChannelMembersRoleMember)
+    "observer" -> Ok(ChannelMembersRoleObserver)
+    _ -> Error("unsupported channel_members.role: " <> value)
+  }
+}
+
+pub type ChannelMembersRow {
+  ChannelMembersRow(
+    id: String,
+    channel_slug: String,
+    channel_id: Option(String),
+    agent_key: String,
+    role: String,
+    joined_at: String,
+    last_seen_at: String,
+    meta_data_json: String,
+  )
+}
+
+pub fn validate_channel_members_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("channel_members.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_channel_members_role(value: String) -> Result(String, String) {
+  case list.contains(["owner", "member", "observer"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported channel_members.role: " <> value)
+  }
+}
+
+pub const shared_context_table = "ai_agent_bridge.shared_context"
+pub const shared_context_select_sql = "select\n      id::text as id,\n      channel_slug,\n      channel_id::text as channel_id,\n      ctx_key,\n      value::text as value_json,\n      version,\n      updated_by,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from ai_agent_bridge.shared_context"
+
+pub type SharedContextRow {
+  SharedContextRow(
+    id: String,
+    channel_slug: Option(String),
+    channel_id: Option(String),
+    ctx_key: String,
+    value_json: String,
+    version: Int,
+    updated_by: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_shared_context_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("shared_context.slug must be a lowercase slug 3-120 characters long")
   }
 }
 

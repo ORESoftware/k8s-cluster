@@ -309,6 +309,9 @@ inline const char* telemetry_mdp_subject = "dd.remote.telemetry.mdp";
 inline const char* telemetry_raw_subject = "dd.remote.telemetry.raw";
 inline const char* telemetry_raw_queue_group = "dd-ai-ml-pipeline";
 
+inline const char* thread_tasks_dead_letter_subject = "dd.remote.thread.tasks.deadletter";
+inline const char* thread_tasks_dead_letter_stream = "DD_REMOTE_TASKS_DLQ";
+
 inline const char* trading_decisions_subject = "dd.remote.trading.decisions";
 
 inline const char* trading_order_intents_subject = "dd.remote.trading.order_intents";
@@ -651,6 +654,12 @@ inline const char* dd_remote_evolution_stream_retention = "limits";
 inline const char* dd_remote_evolution_stream_storage = "file";
 inline const char* dd_remote_evolution_stream_ack = "explicit";
 
+inline const char* dd_remote_fabrication_stream_name = "DD_REMOTE_FABRICATION";
+inline const std::vector<std::string> dd_remote_fabrication_stream_subjects = { "dd.remote.fabrication.>" };
+inline const char* dd_remote_fabrication_stream_retention = "limits";
+inline const char* dd_remote_fabrication_stream_storage = "file";
+inline const char* dd_remote_fabrication_stream_ack = "explicit";
+
 inline const char* dd_remote_mip_solver_stream_name = "DD_REMOTE_MIP_SOLVER";
 inline const std::vector<std::string> dd_remote_mip_solver_stream_subjects = { "dd.remote.mip_solver.jobs", "dd.remote.mip_solver.results", "dd.remote.mip_solver.control", "dd.remote.mip_solver.events" };
 inline const char* dd_remote_mip_solver_stream_retention = "limits";
@@ -665,8 +674,14 @@ inline const char* dd_remote_routing_stream_ack = "explicit";
 
 inline const char* dd_remote_tasks_stream_name = "DD_REMOTE_TASKS";
 inline const std::vector<std::string> dd_remote_tasks_stream_subjects = { "dd.remote.thread.*.tasks" };
-inline const char* dd_remote_tasks_stream_retention = "limits";
+inline const char* dd_remote_tasks_stream_retention = "workqueue";
 inline const char* dd_remote_tasks_stream_storage = "file";
 inline const char* dd_remote_tasks_stream_ack = "explicit";
+
+inline const char* dd_remote_tasks_dlq_stream_name = "DD_REMOTE_TASKS_DLQ";
+inline const std::vector<std::string> dd_remote_tasks_dlq_stream_subjects = { "dd.remote.thread.tasks.deadletter" };
+inline const char* dd_remote_tasks_dlq_stream_retention = "limits";
+inline const char* dd_remote_tasks_dlq_stream_storage = "file";
+inline const char* dd_remote_tasks_dlq_stream_ack = "explicit";
 
 }  // namespace dd_nats_subject_defs

@@ -7,6 +7,150 @@ import 'dart:convert';
 import 'package:objectbox/objectbox.dart';
 
 @Entity()
+class AccountsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String username;
+
+  String authSecret;
+
+  String createdAt;
+
+
+  AccountsObjectBox({
+    required this.id,
+    required this.username,
+    required this.authSecret,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "username": username,
+    "authSecret": authSecret,
+    "createdAt": createdAt,
+  };
+
+  static AccountsObjectBox fromJson(Map<String, Object?> json) {
+    return AccountsObjectBox(
+      id: json["id"] as String,
+      username: json["username"] as String,
+      authSecret: json["authSecret"] as String,
+      createdAt: json["createdAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class DevicesObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String accountId;
+
+  String deviceName;
+
+  String syncTokenHash;
+
+  bool revoked;
+
+  String createdAt;
+
+
+  DevicesObjectBox({
+    required this.id,
+    required this.accountId,
+    required this.deviceName,
+    required this.syncTokenHash,
+    required this.revoked,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "accountId": accountId,
+    "deviceName": deviceName,
+    "syncTokenHash": syncTokenHash,
+    "revoked": revoked,
+    "createdAt": createdAt,
+  };
+
+  static DevicesObjectBox fromJson(Map<String, Object?> json) {
+    return DevicesObjectBox(
+      id: json["id"] as String,
+      accountId: json["accountId"] as String,
+      deviceName: json["deviceName"] as String,
+      syncTokenHash: json["syncTokenHash"] as String,
+      revoked: json["revoked"] as bool,
+      createdAt: json["createdAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class VaultBlobsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String accountId;
+
+  String ciphertext;
+
+  String nonce;
+
+  String kdfSalt;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String kdfParams;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String version;
+
+  String updatedAt;
+
+
+  VaultBlobsObjectBox({
+    required this.accountId,
+    required this.ciphertext,
+    required this.nonce,
+    required this.kdfSalt,
+    required this.kdfParams,
+    required this.version,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "accountId": accountId,
+    "ciphertext": ciphertext,
+    "nonce": nonce,
+    "kdfSalt": kdfSalt,
+    "kdfParams": jsonDecode(kdfParams),
+    "version": jsonDecode(version),
+    "updatedAt": updatedAt,
+  };
+
+  static VaultBlobsObjectBox fromJson(Map<String, Object?> json) {
+    return VaultBlobsObjectBox(
+      accountId: json["accountId"] as String,
+      ciphertext: json["ciphertext"] as String,
+      nonce: json["nonce"] as String,
+      kdfSalt: json["kdfSalt"] as String,
+      kdfParams: json["kdfParams"] is String ? json["kdfParams"] as String : jsonEncode(json["kdfParams"]),
+      version: json["version"] is String ? json["version"] as String : jsonEncode(json["version"]),
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
 class AppConfigObjectBox {
   @Id()
   int obxId = 0;
@@ -11056,6 +11200,337 @@ class VcsOperationsObjectBox {
       error: json["error"] as String?,
       durationMs: json["durationMs"] == null ? null : (json["durationMs"] as num).toInt(),
       requestedBy: json["requestedBy"] as String?,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class AgentsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String agentKey;
+
+  String displayName;
+
+  String kind;
+
+  String? host;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  AgentsObjectBox({
+    required this.id,
+    required this.agentKey,
+    required this.displayName,
+    required this.kind,
+    this.host,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "agentKey": agentKey,
+    "displayName": displayName,
+    "kind": kind,
+    "host": host,
+    "metaData": jsonDecode(metaData),
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static AgentsObjectBox fromJson(Map<String, Object?> json) {
+    return AgentsObjectBox(
+      id: json["id"] as String,
+      agentKey: json["agentKey"] as String,
+      displayName: json["displayName"] as String,
+      kind: json["kind"] as String,
+      host: json["host"] as String?,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class ChannelsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String slug;
+
+  String topic;
+
+  String? topicSummary;
+
+  String embeddingModel;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String embedding;
+
+  int embeddingDimensions;
+
+  String status;
+
+  String createdBy;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  ChannelsObjectBox({
+    required this.id,
+    required this.slug,
+    required this.topic,
+    this.topicSummary,
+    required this.embeddingModel,
+    required this.embedding,
+    required this.embeddingDimensions,
+    required this.status,
+    required this.createdBy,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "slug": slug,
+    "topic": topic,
+    "topicSummary": topicSummary,
+    "embeddingModel": embeddingModel,
+    "embedding": jsonDecode(embedding),
+    "embeddingDimensions": embeddingDimensions,
+    "status": status,
+    "createdBy": createdBy,
+    "metaData": jsonDecode(metaData),
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static ChannelsObjectBox fromJson(Map<String, Object?> json) {
+    return ChannelsObjectBox(
+      id: json["id"] as String,
+      slug: json["slug"] as String,
+      topic: json["topic"] as String,
+      topicSummary: json["topicSummary"] as String?,
+      embeddingModel: json["embeddingModel"] as String,
+      embedding: json["embedding"] is String ? json["embedding"] as String : jsonEncode(json["embedding"]),
+      embeddingDimensions: (json["embeddingDimensions"] as num).toInt(),
+      status: json["status"] as String,
+      createdBy: json["createdBy"] as String,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class MessagesObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String channelSlug;
+
+  String? channelId;
+
+  int seq;
+
+  String fromAgentKey;
+
+  String role;
+
+  String content;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  String createdAt;
+
+
+  MessagesObjectBox({
+    required this.id,
+    required this.channelSlug,
+    this.channelId,
+    required this.seq,
+    required this.fromAgentKey,
+    required this.role,
+    required this.content,
+    required this.metaData,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "channelSlug": channelSlug,
+    "channelId": channelId,
+    "seq": seq,
+    "fromAgentKey": fromAgentKey,
+    "role": role,
+    "content": content,
+    "metaData": jsonDecode(metaData),
+    "createdAt": createdAt,
+  };
+
+  static MessagesObjectBox fromJson(Map<String, Object?> json) {
+    return MessagesObjectBox(
+      id: json["id"] as String,
+      channelSlug: json["channelSlug"] as String,
+      channelId: json["channelId"] as String?,
+      seq: (json["seq"] as num).toInt(),
+      fromAgentKey: json["fromAgentKey"] as String,
+      role: json["role"] as String,
+      content: json["content"] as String,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      createdAt: json["createdAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class ChannelMembersObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String channelSlug;
+
+  String? channelId;
+
+  String agentKey;
+
+  String role;
+
+  String joinedAt;
+
+  String lastSeenAt;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+
+  ChannelMembersObjectBox({
+    required this.id,
+    required this.channelSlug,
+    this.channelId,
+    required this.agentKey,
+    required this.role,
+    required this.joinedAt,
+    required this.lastSeenAt,
+    required this.metaData,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "channelSlug": channelSlug,
+    "channelId": channelId,
+    "agentKey": agentKey,
+    "role": role,
+    "joinedAt": joinedAt,
+    "lastSeenAt": lastSeenAt,
+    "metaData": jsonDecode(metaData),
+  };
+
+  static ChannelMembersObjectBox fromJson(Map<String, Object?> json) {
+    return ChannelMembersObjectBox(
+      id: json["id"] as String,
+      channelSlug: json["channelSlug"] as String,
+      channelId: json["channelId"] as String?,
+      agentKey: json["agentKey"] as String,
+      role: json["role"] as String,
+      joinedAt: json["joinedAt"] as String,
+      lastSeenAt: json["lastSeenAt"] as String,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+    );
+  }
+}
+
+@Entity()
+class SharedContextObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String? channelSlug;
+
+  String? channelId;
+
+  String ctxKey;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String value;
+
+  int version;
+
+  String updatedBy;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  SharedContextObjectBox({
+    required this.id,
+    this.channelSlug,
+    this.channelId,
+    required this.ctxKey,
+    required this.value,
+    required this.version,
+    required this.updatedBy,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "channelSlug": channelSlug,
+    "channelId": channelId,
+    "ctxKey": ctxKey,
+    "value": jsonDecode(value),
+    "version": version,
+    "updatedBy": updatedBy,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static SharedContextObjectBox fromJson(Map<String, Object?> json) {
+    return SharedContextObjectBox(
+      id: json["id"] as String,
+      channelSlug: json["channelSlug"] as String?,
+      channelId: json["channelId"] as String?,
+      ctxKey: json["ctxKey"] as String,
+      value: json["value"] is String ? json["value"] as String : jsonEncode(json["value"]),
+      version: (json["version"] as num).toInt(),
+      updatedBy: json["updatedBy"] as String,
       createdAt: json["createdAt"] as String,
       updatedAt: json["updatedAt"] as String,
     );

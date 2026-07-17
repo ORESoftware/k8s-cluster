@@ -11,6 +11,71 @@ namespace DdPgDefs;
 
 use Illuminate\Database\Eloquent\Model;
 
+class Accounts extends Model
+{
+    protected $table = 'threefa.accounts';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+    protected $fillable = ['username', 'auth_secret', 'created_at'];
+    protected $casts = ['created_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'username' => ['required', 'string'],
+            'auth_secret' => ['required', 'string'],
+        ];
+    }
+}
+
+class Devices extends Model
+{
+    protected $table = 'threefa.devices';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+    protected $fillable = ['account_id', 'device_name', 'sync_token_hash', 'revoked', 'created_at'];
+    protected $casts = ['revoked' => 'boolean', 'created_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'account_id' => ['required', 'uuid'],
+            'device_name' => ['required', 'string'],
+            'sync_token_hash' => ['required', 'string', 'regex:/^[a-f0-9]{64}$/'],
+            'revoked' => ['nullable', 'boolean'],
+        ];
+    }
+}
+
+class VaultBlobs extends Model
+{
+    protected $table = 'threefa.vault_blobs';
+    protected $primaryKey = 'account_id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+    protected $fillable = ['ciphertext', 'nonce', 'kdf_salt', 'kdf_params', 'version', 'updated_at'];
+    protected $casts = ['kdf_params' => 'array', 'version' => 'array', 'updated_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'ciphertext' => ['required', 'string'],
+            'nonce' => ['required', 'string'],
+            'kdf_salt' => ['required', 'string'],
+            'kdf_params' => ['required', 'array'],
+            'version' => ['required', 'array'],
+        ];
+    }
+}
+
 class AppConfig extends Model
 {
     protected $table = 'app_config';
@@ -3515,6 +3580,130 @@ class VcsOperations extends Model
             'error' => ['nullable', 'string'],
             'duration_ms' => ['nullable', 'integer', 'min:0'],
             'requested_by' => ['nullable', 'string', 'max:200'],
+        ];
+    }
+}
+
+class Agents extends Model
+{
+    protected $table = 'ai_agent_bridge.agents';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = true;
+    protected $fillable = ['agent_key', 'display_name', 'kind', 'host', 'meta_data', 'created_at', 'updated_at'];
+    protected $casts = ['meta_data' => 'array', 'created_at' => 'datetime', 'updated_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'agent_key' => ['required', 'string', 'max:120', 'regex:/^[A-Za-z0-9._:-]{1,120}$/'],
+            'display_name' => ['nullable', 'string', 'max:200'],
+            'kind' => ['nullable', 'string', 'in:claude,codex,human,other'],
+            'host' => ['nullable', 'string', 'max:255'],
+            'meta_data' => ['nullable', 'array'],
+        ];
+    }
+}
+
+class Channels extends Model
+{
+    protected $table = 'ai_agent_bridge.channels';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = true;
+    protected $fillable = ['slug', 'topic', 'topic_summary', 'embedding_model', 'embedding', 'embedding_dimensions', 'status', 'created_by', 'meta_data', 'created_at', 'updated_at'];
+    protected $casts = ['embedding' => 'array', 'embedding_dimensions' => 'integer', 'meta_data' => 'array', 'created_at' => 'datetime', 'updated_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'slug' => ['required', 'string', 'max:120', 'regex:/^[a-z0-9][a-z0-9._-]{0,119}$/'],
+            'topic' => ['required', 'string'],
+            'topic_summary' => ['nullable', 'string'],
+            'embedding_model' => ['nullable', 'string', 'max:120'],
+            'embedding' => ['nullable', 'array'],
+            'embedding_dimensions' => ['nullable', 'integer', 'min:0'],
+            'status' => ['nullable', 'string', 'in:active,archived'],
+            'created_by' => ['nullable', 'string', 'max:120'],
+            'meta_data' => ['nullable', 'array'],
+        ];
+    }
+}
+
+class Messages extends Model
+{
+    protected $table = 'ai_agent_bridge.messages';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+    protected $fillable = ['channel_slug', 'channel_id', 'seq', 'from_agent_key', 'role', 'content', 'meta_data', 'created_at'];
+    protected $casts = ['seq' => 'integer', 'meta_data' => 'array', 'created_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'channel_slug' => ['required', 'string', 'max:120', 'regex:/^[a-z0-9][a-z0-9._-]{0,119}$/'],
+            'channel_id' => ['nullable', 'uuid'],
+            'seq' => ['required', 'integer', 'min:1'],
+            'from_agent_key' => ['required', 'string', 'max:120', 'regex:/^[A-Za-z0-9._:-]{1,120}$/'],
+            'role' => ['nullable', 'string', 'in:user,assistant,system,tool'],
+            'content' => ['required', 'string'],
+            'meta_data' => ['nullable', 'array'],
+        ];
+    }
+}
+
+class ChannelMembers extends Model
+{
+    protected $table = 'ai_agent_bridge.channel_members';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+    protected $fillable = ['channel_slug', 'channel_id', 'agent_key', 'role', 'joined_at', 'last_seen_at', 'meta_data'];
+    protected $casts = ['joined_at' => 'datetime', 'last_seen_at' => 'datetime', 'meta_data' => 'array'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'channel_slug' => ['required', 'string', 'max:120', 'regex:/^[a-z0-9][a-z0-9._-]{0,119}$/'],
+            'channel_id' => ['nullable', 'uuid'],
+            'agent_key' => ['required', 'string', 'max:120', 'regex:/^[A-Za-z0-9._:-]{1,120}$/'],
+            'role' => ['nullable', 'string', 'in:owner,member,observer'],
+            'joined_at' => ['nullable', 'date'],
+            'last_seen_at' => ['nullable', 'date'],
+            'meta_data' => ['nullable', 'array'],
+        ];
+    }
+}
+
+class SharedContext extends Model
+{
+    protected $table = 'ai_agent_bridge.shared_context';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = true;
+    protected $fillable = ['channel_slug', 'channel_id', 'ctx_key', 'value', 'version', 'updated_by', 'created_at', 'updated_at'];
+    protected $casts = ['value' => 'array', 'version' => 'integer', 'created_at' => 'datetime', 'updated_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'channel_slug' => ['nullable', 'string', 'max:120', 'regex:/^[a-z0-9][a-z0-9._-]{0,119}$/'],
+            'channel_id' => ['nullable', 'uuid'],
+            'ctx_key' => ['required', 'string', 'max:200', 'regex:/^[A-Za-z0-9._:\\/-]{1,200}$/'],
+            'value' => ['nullable', 'array'],
+            'version' => ['nullable', 'integer', 'min:1'],
+            'updated_by' => ['nullable', 'string', 'max:120'],
         ];
     }
 }

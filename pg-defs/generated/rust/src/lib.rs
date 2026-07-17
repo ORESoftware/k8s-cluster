@@ -5,6 +5,149 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub const ACCOUNTS_TABLE: &str = "threefa.accounts";
+pub const ACCOUNTS_COLUMNS: &[&str] = &["id", "username", "auth_secret", "created_at"];
+pub const ACCOUNTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      username,
+      auth_secret,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from threefa.accounts"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct AccountsRow {
+    pub id: String,
+    pub username: String,
+    pub auth_secret: String,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountsInsert {
+    pub id: Option<String>,
+    pub username: Option<String>,
+    pub auth_secret: Option<String>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_accounts_row(value: &AccountsRow) -> Result<(), String> {
+    if (&value.username).as_bytes().len() > 320 { return Err("accounts.username exceeds 320 bytes".to_string()); }
+    if (&value.auth_secret).as_bytes().len() > 1024 { return Err("accounts.auth_secret exceeds 1024 bytes".to_string()); }
+    Ok(())
+}
+
+pub fn validate_accounts_insert(value: &AccountsInsert) -> Result<(), String> {
+    if let Some(value) = &value.username {
+        if (value).as_bytes().len() > 320 { return Err("accounts.username exceeds 320 bytes".to_string()); }
+    }
+    if let Some(value) = &value.auth_secret {
+        if (value).as_bytes().len() > 1024 { return Err("accounts.auth_secret exceeds 1024 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub const DEVICES_TABLE: &str = "threefa.devices";
+pub const DEVICES_COLUMNS: &[&str] = &["id", "account_id", "device_name", "sync_token_hash", "revoked", "created_at"];
+pub const DEVICES_SELECT_SQL: &str = r###"select
+      id::text as id,
+      account_id::text as account_id,
+      device_name,
+      sync_token_hash,
+      revoked,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from threefa.devices"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct DevicesRow {
+    pub id: String,
+    pub account_id: String,
+    pub device_name: String,
+    pub sync_token_hash: String,
+    pub revoked: bool,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DevicesInsert {
+    pub id: Option<String>,
+    pub account_id: Option<String>,
+    pub device_name: Option<String>,
+    pub sync_token_hash: Option<String>,
+    pub revoked: Option<bool>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_devices_row(value: &DevicesRow) -> Result<(), String> {
+    if (&value.device_name).as_bytes().len() > 200 { return Err("devices.device_name exceeds 200 bytes".to_string()); }
+    Ok(())
+}
+
+pub fn validate_devices_insert(value: &DevicesInsert) -> Result<(), String> {
+    if let Some(value) = &value.device_name {
+        if (value).as_bytes().len() > 200 { return Err("devices.device_name exceeds 200 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub const VAULT_BLOBS_TABLE: &str = "threefa.vault_blobs";
+pub const VAULT_BLOBS_COLUMNS: &[&str] = &["account_id", "ciphertext", "nonce", "kdf_salt", "kdf_params", "version", "updated_at"];
+pub const VAULT_BLOBS_SELECT_SQL: &str = r###"select
+      account_id::text as account_id,
+      ciphertext,
+      nonce,
+      kdf_salt,
+      kdf_params,
+      version,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from threefa.vault_blobs"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct VaultBlobsRow {
+    pub account_id: String,
+    pub ciphertext: String,
+    pub nonce: String,
+    pub kdf_salt: String,
+    pub kdf_params: Value,
+    pub version: Value,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultBlobsInsert {
+    pub account_id: Option<String>,
+    pub ciphertext: Option<String>,
+    pub nonce: Option<String>,
+    pub kdf_salt: Option<String>,
+    pub kdf_params: Option<Value>,
+    pub version: Option<Value>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_vault_blobs_row(value: &VaultBlobsRow) -> Result<(), String> {
+    if !(&value.kdf_params).is_object() { return Err("vault_blobs.kdf_params must be a JSON object".to_string()); }
+    if !(&value.version).is_array() { return Err("vault_blobs.version must be a JSON array".to_string()); }
+    Ok(())
+}
+
+pub fn validate_vault_blobs_insert(value: &VaultBlobsInsert) -> Result<(), String> {
+    if let Some(value) = &value.kdf_params {
+        if !(value).is_object() { return Err("vault_blobs.kdf_params must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.version {
+        if !(value).is_array() { return Err("vault_blobs.version must be a JSON array".to_string()); }
+    }
+    Ok(())
+}
+
 pub const APP_CONFIG_TABLE: &str = "app_config";
 pub const APP_CONFIG_COLUMNS: &[&str] = &["id", "scope", "key", "value", "version", "status", "labels", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
 pub const APP_CONFIG_SELECT_SQL: &str = r###"select
@@ -19122,6 +19265,515 @@ pub fn validate_vcs_operations_insert(value: &VcsOperationsInsert) -> Result<(),
     }
     if let Some(value) = &value.requested_by {
         validate_string_length("vcs_operations.requested_by", value, None, Some(200))?;
+    }
+    Ok(())
+}
+
+pub const AGENTS_TABLE: &str = "ai_agent_bridge.agents";
+pub const AGENTS_COLUMNS: &[&str] = &["id", "agent_key", "display_name", "kind", "host", "meta_data", "created_at", "updated_at"];
+pub const AGENTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      agent_key,
+      display_name,
+      kind,
+      host,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from ai_agent_bridge.agents"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentsKind {
+    Claude,
+    Codex,
+    Human,
+    Other,
+}
+
+impl AgentsKind {
+    pub const VALUES: &'static [&'static str] = &["claude", "codex", "human", "other"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Claude => "claude",
+            Self::Codex => "codex",
+            Self::Human => "human",
+            Self::Other => "other",
+        }
+    }
+}
+
+impl TryFrom<&str> for AgentsKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "claude" => Ok(Self::Claude),
+            "codex" => Ok(Self::Codex),
+            "human" => Ok(Self::Human),
+            "other" => Ok(Self::Other),
+            _ => Err(format!("unsupported kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct AgentsRow {
+    pub id: String,
+    pub agent_key: String,
+    pub display_name: String,
+    pub kind: String,
+    pub host: Option<String>,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentsInsert {
+    pub id: Option<String>,
+    pub agent_key: Option<String>,
+    pub display_name: Option<String>,
+    pub kind: Option<String>,
+    pub host: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_agents_row(value: &AgentsRow) -> Result<(), String> {
+    validate_string_length("agents.agent_key", &value.agent_key, None, Some(120))?;
+    validate_string_length("agents.display_name", &value.display_name, None, Some(200))?;
+    if !["claude", "codex", "human", "other"].contains(&(&value.kind).as_str()) { return Err(format!("unsupported agents.kind: {}", &value.kind)); }
+    if let Some(value) = &value.host {
+        validate_string_length("agents.host", value, None, Some(255))?;
+    }
+    if !(&value.meta_data).is_object() { return Err("agents.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_agents_insert(value: &AgentsInsert) -> Result<(), String> {
+    if let Some(value) = &value.agent_key {
+        validate_string_length("agents.agent_key", value, None, Some(120))?;
+    }
+    if let Some(value) = &value.display_name {
+        validate_string_length("agents.display_name", value, None, Some(200))?;
+    }
+    if let Some(value) = &value.kind {
+        if !["claude", "codex", "human", "other"].contains(&(value).as_str()) { return Err(format!("unsupported agents.kind: {}", value)); }
+    }
+    if let Some(value) = &value.host {
+        validate_string_length("agents.host", value, None, Some(255))?;
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("agents.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const CHANNELS_TABLE: &str = "ai_agent_bridge.channels";
+pub const CHANNELS_COLUMNS: &[&str] = &["id", "slug", "topic", "topic_summary", "embedding_model", "embedding", "embedding_dimensions", "status", "created_by", "meta_data", "created_at", "updated_at"];
+pub const CHANNELS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      slug,
+      topic,
+      topic_summary,
+      embedding_model,
+      embedding,
+      embedding_dimensions,
+      status,
+      created_by,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from ai_agent_bridge.channels"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ChannelsStatus {
+    Active,
+    Archived,
+}
+
+impl ChannelsStatus {
+    pub const VALUES: &'static [&'static str] = &["active", "archived"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Archived => "archived",
+        }
+    }
+}
+
+impl TryFrom<&str> for ChannelsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "active" => Ok(Self::Active),
+            "archived" => Ok(Self::Archived),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelsRow {
+    pub id: String,
+    pub slug: String,
+    pub topic: String,
+    pub topic_summary: Option<String>,
+    pub embedding_model: String,
+    pub embedding: Value,
+    pub embedding_dimensions: i32,
+    pub status: String,
+    pub created_by: String,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelsInsert {
+    pub id: Option<String>,
+    pub slug: Option<String>,
+    pub topic: Option<String>,
+    pub topic_summary: Option<String>,
+    pub embedding_model: Option<String>,
+    pub embedding: Option<Value>,
+    pub embedding_dimensions: Option<i32>,
+    pub status: Option<String>,
+    pub created_by: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_channels_row(value: &ChannelsRow) -> Result<(), String> {
+    validate_slug("channels.slug", &value.slug)?;
+    if (&value.topic).as_bytes().len() > 8192 { return Err("channels.topic exceeds 8192 bytes".to_string()); }
+    validate_string_length("channels.embedding_model", &value.embedding_model, None, Some(120))?;
+    if !(&value.embedding).is_array() { return Err("channels.embedding must be a JSON array".to_string()); }
+    if *(&value.embedding_dimensions) < 0 { return Err("channels.embedding_dimensions is below the minimum".to_string()); }
+    if !["active", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported channels.status: {}", &value.status)); }
+    validate_string_length("channels.created_by", &value.created_by, None, Some(120))?;
+    if !(&value.meta_data).is_object() { return Err("channels.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_channels_insert(value: &ChannelsInsert) -> Result<(), String> {
+    if let Some(value) = &value.slug {
+        validate_slug("channels.slug", value)?;
+    }
+    if let Some(value) = &value.topic {
+        if (value).as_bytes().len() > 8192 { return Err("channels.topic exceeds 8192 bytes".to_string()); }
+    }
+    if let Some(value) = &value.embedding_model {
+        validate_string_length("channels.embedding_model", value, None, Some(120))?;
+    }
+    if let Some(value) = &value.embedding {
+        if !(value).is_array() { return Err("channels.embedding must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.embedding_dimensions {
+        if *(value) < 0 { return Err("channels.embedding_dimensions is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.status {
+        if !["active", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported channels.status: {}", value)); }
+    }
+    if let Some(value) = &value.created_by {
+        validate_string_length("channels.created_by", value, None, Some(120))?;
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("channels.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const MESSAGES_TABLE: &str = "ai_agent_bridge.messages";
+pub const MESSAGES_COLUMNS: &[&str] = &["id", "channel_slug", "channel_id", "seq", "from_agent_key", "role", "content", "meta_data", "created_at"];
+pub const MESSAGES_SELECT_SQL: &str = r###"select
+      id::text as id,
+      channel_slug,
+      channel_id::text as channel_id,
+      seq,
+      from_agent_key,
+      role,
+      content,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from ai_agent_bridge.messages"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MessagesRole {
+    User,
+    Assistant,
+    System,
+    Tool,
+}
+
+impl MessagesRole {
+    pub const VALUES: &'static [&'static str] = &["user", "assistant", "system", "tool"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::Assistant => "assistant",
+            Self::System => "system",
+            Self::Tool => "tool",
+        }
+    }
+}
+
+impl TryFrom<&str> for MessagesRole {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "user" => Ok(Self::User),
+            "assistant" => Ok(Self::Assistant),
+            "system" => Ok(Self::System),
+            "tool" => Ok(Self::Tool),
+            _ => Err(format!("unsupported role: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct MessagesRow {
+    pub id: String,
+    pub channel_slug: String,
+    pub channel_id: Option<String>,
+    pub seq: i64,
+    pub from_agent_key: String,
+    pub role: String,
+    pub content: String,
+    pub meta_data: Value,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessagesInsert {
+    pub id: Option<String>,
+    pub channel_slug: Option<String>,
+    pub channel_id: Option<String>,
+    pub seq: Option<i64>,
+    pub from_agent_key: Option<String>,
+    pub role: Option<String>,
+    pub content: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_messages_row(value: &MessagesRow) -> Result<(), String> {
+    validate_slug("messages.channel_slug", &value.channel_slug)?;
+    if *(&value.seq) < 1 { return Err("messages.seq is below the minimum".to_string()); }
+    validate_string_length("messages.from_agent_key", &value.from_agent_key, None, Some(120))?;
+    if !["user", "assistant", "system", "tool"].contains(&(&value.role).as_str()) { return Err(format!("unsupported messages.role: {}", &value.role)); }
+    if (&value.content).as_bytes().len() > 1048576 { return Err("messages.content exceeds 1048576 bytes".to_string()); }
+    if !(&value.meta_data).is_object() { return Err("messages.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_messages_insert(value: &MessagesInsert) -> Result<(), String> {
+    if let Some(value) = &value.channel_slug {
+        validate_slug("messages.channel_slug", value)?;
+    }
+    if let Some(value) = &value.seq {
+        if *(value) < 1 { return Err("messages.seq is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.from_agent_key {
+        validate_string_length("messages.from_agent_key", value, None, Some(120))?;
+    }
+    if let Some(value) = &value.role {
+        if !["user", "assistant", "system", "tool"].contains(&(value).as_str()) { return Err(format!("unsupported messages.role: {}", value)); }
+    }
+    if let Some(value) = &value.content {
+        if (value).as_bytes().len() > 1048576 { return Err("messages.content exceeds 1048576 bytes".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("messages.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const CHANNEL_MEMBERS_TABLE: &str = "ai_agent_bridge.channel_members";
+pub const CHANNEL_MEMBERS_COLUMNS: &[&str] = &["id", "channel_slug", "channel_id", "agent_key", "role", "joined_at", "last_seen_at", "meta_data"];
+pub const CHANNEL_MEMBERS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      channel_slug,
+      channel_id::text as channel_id,
+      agent_key,
+      role,
+      to_char(joined_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as joined_at,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at,
+      meta_data
+    from ai_agent_bridge.channel_members"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ChannelMembersRole {
+    Owner,
+    Member,
+    Observer,
+}
+
+impl ChannelMembersRole {
+    pub const VALUES: &'static [&'static str] = &["owner", "member", "observer"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Owner => "owner",
+            Self::Member => "member",
+            Self::Observer => "observer",
+        }
+    }
+}
+
+impl TryFrom<&str> for ChannelMembersRole {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "owner" => Ok(Self::Owner),
+            "member" => Ok(Self::Member),
+            "observer" => Ok(Self::Observer),
+            _ => Err(format!("unsupported role: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelMembersRow {
+    pub id: String,
+    pub channel_slug: String,
+    pub channel_id: Option<String>,
+    pub agent_key: String,
+    pub role: String,
+    pub joined_at: String,
+    pub last_seen_at: String,
+    pub meta_data: Value,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelMembersInsert {
+    pub id: Option<String>,
+    pub channel_slug: Option<String>,
+    pub channel_id: Option<String>,
+    pub agent_key: Option<String>,
+    pub role: Option<String>,
+    pub joined_at: Option<String>,
+    pub last_seen_at: Option<String>,
+    pub meta_data: Option<Value>,
+}
+
+pub fn validate_channel_members_row(value: &ChannelMembersRow) -> Result<(), String> {
+    validate_slug("channel_members.channel_slug", &value.channel_slug)?;
+    validate_string_length("channel_members.agent_key", &value.agent_key, None, Some(120))?;
+    if !["owner", "member", "observer"].contains(&(&value.role).as_str()) { return Err(format!("unsupported channel_members.role: {}", &value.role)); }
+    if !(&value.meta_data).is_object() { return Err("channel_members.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_channel_members_insert(value: &ChannelMembersInsert) -> Result<(), String> {
+    if let Some(value) = &value.channel_slug {
+        validate_slug("channel_members.channel_slug", value)?;
+    }
+    if let Some(value) = &value.agent_key {
+        validate_string_length("channel_members.agent_key", value, None, Some(120))?;
+    }
+    if let Some(value) = &value.role {
+        if !["owner", "member", "observer"].contains(&(value).as_str()) { return Err(format!("unsupported channel_members.role: {}", value)); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("channel_members.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const SHARED_CONTEXT_TABLE: &str = "ai_agent_bridge.shared_context";
+pub const SHARED_CONTEXT_COLUMNS: &[&str] = &["id", "channel_slug", "channel_id", "ctx_key", "value", "version", "updated_by", "created_at", "updated_at"];
+pub const SHARED_CONTEXT_SELECT_SQL: &str = r###"select
+      id::text as id,
+      channel_slug,
+      channel_id::text as channel_id,
+      ctx_key,
+      value,
+      version,
+      updated_by,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from ai_agent_bridge.shared_context"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct SharedContextRow {
+    pub id: String,
+    pub channel_slug: Option<String>,
+    pub channel_id: Option<String>,
+    pub ctx_key: String,
+    pub value: Value,
+    pub version: i32,
+    pub updated_by: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SharedContextInsert {
+    pub id: Option<String>,
+    pub channel_slug: Option<String>,
+    pub channel_id: Option<String>,
+    pub ctx_key: Option<String>,
+    pub value: Option<Value>,
+    pub version: Option<i32>,
+    pub updated_by: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_shared_context_row(value: &SharedContextRow) -> Result<(), String> {
+    if let Some(value) = &value.channel_slug {
+        validate_slug("shared_context.channel_slug", value)?;
+    }
+    validate_string_length("shared_context.ctx_key", &value.ctx_key, None, Some(200))?;
+    if !(&value.value).is_object() { return Err("shared_context.value must be a JSON object".to_string()); }
+    if *(&value.version) < 1 { return Err("shared_context.version is below the minimum".to_string()); }
+    validate_string_length("shared_context.updated_by", &value.updated_by, None, Some(120))?;
+    Ok(())
+}
+
+pub fn validate_shared_context_insert(value: &SharedContextInsert) -> Result<(), String> {
+    if let Some(value) = &value.channel_slug {
+        validate_slug("shared_context.channel_slug", value)?;
+    }
+    if let Some(value) = &value.ctx_key {
+        validate_string_length("shared_context.ctx_key", value, None, Some(200))?;
+    }
+    if let Some(value) = &value.value {
+        if !(value).is_object() { return Err("shared_context.value must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.version {
+        if *(value) < 1 { return Err("shared_context.version is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.updated_by {
+        validate_string_length("shared_context.updated_by", value, None, Some(120))?;
     }
     Ok(())
 }

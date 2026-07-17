@@ -11,6 +11,85 @@ using Microsoft.EntityFrameworkCore;
 
 namespace DdPgDefs;
 
+[Table("accounts", Schema = "threefa")]
+public class Accounts
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Required]
+    [Column("username")]
+    public string Username { get; set; } = null!;
+
+    [Required]
+    [Column("auth_secret")]
+    public string AuthSecret { get; set; } = null!;
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+[Table("devices", Schema = "threefa")]
+public class Devices
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Column("account_id")]
+    public Guid AccountId { get; set; }
+
+    [Required]
+    [Column("device_name")]
+    public string DeviceName { get; set; } = null!;
+
+    [Required]
+    [Column("sync_token_hash")]
+    [RegularExpression(@"^[a-f0-9]{64}$")]
+    public string SyncTokenHash { get; set; } = null!;
+
+    [Column("revoked")]
+    public bool Revoked { get; set; }
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+[Table("vault_blobs", Schema = "threefa")]
+public class VaultBlobs
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("account_id")]
+    public Guid AccountId { get; set; }
+
+    [Required]
+    [Column("ciphertext")]
+    public string Ciphertext { get; set; } = null!;
+
+    [Required]
+    [Column("nonce")]
+    public string Nonce { get; set; } = null!;
+
+    [Required]
+    [Column("kdf_salt")]
+    public string KdfSalt { get; set; } = null!;
+
+    [Required]
+    [Column("kdf_params", TypeName = "jsonb")]
+    public string KdfParams { get; set; } = null!;
+
+    [Required]
+    [Column("version", TypeName = "jsonb")]
+    public string Version { get; set; } = null!;
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
 [Table("app_config")]
 public class AppConfig
 {
@@ -7337,11 +7416,240 @@ public class VcsOperations
     public DateTimeOffset UpdatedAt { get; set; }
 }
 
+[Table("agents", Schema = "ai_agent_bridge")]
+public class Agents
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Required]
+    [Column("agent_key")]
+    [MaxLength(120)]
+    [RegularExpression(@"^[A-Za-z0-9._:-]{1,120}$")]
+    public string AgentKey { get; set; } = null!;
+
+    [Required]
+    [Column("display_name")]
+    [MaxLength(200)]
+    public string DisplayName { get; set; } = null!;
+
+    [Required]
+    [Column("kind")]
+    [MaxLength(32)]
+    [RegularExpression(@"^(claude|codex|human|other)$")]
+    public string Kind { get; set; } = null!;
+
+    [Column("host")]
+    [MaxLength(255)]
+    public string? Host { get; set; }
+
+    [Required]
+    [Column("meta_data", TypeName = "jsonb")]
+    public string MetaData { get; set; } = null!;
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+[Table("channels", Schema = "ai_agent_bridge")]
+public class Channels
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Required]
+    [Column("slug")]
+    [MaxLength(120)]
+    [RegularExpression(@"^[a-z0-9][a-z0-9._-]{0,119}$")]
+    public string Slug { get; set; } = null!;
+
+    [Required]
+    [Column("topic")]
+    public string Topic { get; set; } = null!;
+
+    [Column("topic_summary")]
+    public string? TopicSummary { get; set; }
+
+    [Required]
+    [Column("embedding_model")]
+    [MaxLength(120)]
+    public string EmbeddingModel { get; set; } = null!;
+
+    [Required]
+    [Column("embedding", TypeName = "jsonb")]
+    public string Embedding { get; set; } = null!;
+
+    [Column("embedding_dimensions")]
+    [Range(0, 2147483647)]
+    public int EmbeddingDimensions { get; set; }
+
+    [Required]
+    [Column("status")]
+    [MaxLength(32)]
+    [RegularExpression(@"^(active|archived)$")]
+    public string Status { get; set; } = null!;
+
+    [Required]
+    [Column("created_by")]
+    [MaxLength(120)]
+    public string CreatedBy { get; set; } = null!;
+
+    [Required]
+    [Column("meta_data", TypeName = "jsonb")]
+    public string MetaData { get; set; } = null!;
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+[Table("messages", Schema = "ai_agent_bridge")]
+public class Messages
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Required]
+    [Column("channel_slug")]
+    [MaxLength(120)]
+    [RegularExpression(@"^[a-z0-9][a-z0-9._-]{0,119}$")]
+    public string ChannelSlug { get; set; } = null!;
+
+    [Column("channel_id")]
+    public Guid? ChannelId { get; set; }
+
+    [Column("seq")]
+    [Range(typeof(long), "1", "9223372036854775807")]
+    public long Seq { get; set; }
+
+    [Required]
+    [Column("from_agent_key")]
+    [MaxLength(120)]
+    [RegularExpression(@"^[A-Za-z0-9._:-]{1,120}$")]
+    public string FromAgentKey { get; set; } = null!;
+
+    [Required]
+    [Column("role")]
+    [MaxLength(32)]
+    [RegularExpression(@"^(user|assistant|system|tool)$")]
+    public string Role { get; set; } = null!;
+
+    [Required]
+    [Column("content")]
+    public string Content { get; set; } = null!;
+
+    [Required]
+    [Column("meta_data", TypeName = "jsonb")]
+    public string MetaData { get; set; } = null!;
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+[Table("channel_members", Schema = "ai_agent_bridge")]
+public class ChannelMembers
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Required]
+    [Column("channel_slug")]
+    [MaxLength(120)]
+    [RegularExpression(@"^[a-z0-9][a-z0-9._-]{0,119}$")]
+    public string ChannelSlug { get; set; } = null!;
+
+    [Column("channel_id")]
+    public Guid? ChannelId { get; set; }
+
+    [Required]
+    [Column("agent_key")]
+    [MaxLength(120)]
+    [RegularExpression(@"^[A-Za-z0-9._:-]{1,120}$")]
+    public string AgentKey { get; set; } = null!;
+
+    [Required]
+    [Column("role")]
+    [MaxLength(32)]
+    [RegularExpression(@"^(owner|member|observer)$")]
+    public string Role { get; set; } = null!;
+
+    [Column("joined_at")]
+    public DateTimeOffset JoinedAt { get; set; }
+
+    [Column("last_seen_at")]
+    public DateTimeOffset LastSeenAt { get; set; }
+
+    [Required]
+    [Column("meta_data", TypeName = "jsonb")]
+    public string MetaData { get; set; } = null!;
+}
+
+[Table("shared_context", Schema = "ai_agent_bridge")]
+public class SharedContext
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Column("channel_slug")]
+    [MaxLength(120)]
+    [RegularExpression(@"^[a-z0-9][a-z0-9._-]{0,119}$")]
+    public string? ChannelSlug { get; set; }
+
+    [Column("channel_id")]
+    public Guid? ChannelId { get; set; }
+
+    [Required]
+    [Column("ctx_key")]
+    [MaxLength(200)]
+    [RegularExpression(@"^[A-Za-z0-9._:/-]{1,200}$")]
+    public string CtxKey { get; set; } = null!;
+
+    [Required]
+    [Column("value", TypeName = "jsonb")]
+    public string Value { get; set; } = null!;
+
+    [Column("version")]
+    [Range(1, 2147483647)]
+    public int Version { get; set; }
+
+    [Required]
+    [Column("updated_by")]
+    [MaxLength(120)]
+    public string UpdatedBy { get; set; } = null!;
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
 public class DdPgDefsContext : DbContext
 {
     public DdPgDefsContext(DbContextOptions<DdPgDefsContext> options) : base(options)
     {
     }
+
+    public DbSet<Accounts> AccountsSet => Set<Accounts>();
+
+    public DbSet<Devices> DevicesSet => Set<Devices>();
+
+    public DbSet<VaultBlobs> VaultBlobsSet => Set<VaultBlobs>();
 
     public DbSet<AppConfig> AppConfigSet => Set<AppConfig>();
 
@@ -7576,4 +7884,14 @@ public class DdPgDefsContext : DbContext
     public DbSet<VcsRefs> VcsRefsSet => Set<VcsRefs>();
 
     public DbSet<VcsOperations> VcsOperationsSet => Set<VcsOperations>();
+
+    public DbSet<Agents> AgentsSet => Set<Agents>();
+
+    public DbSet<Channels> ChannelsSet => Set<Channels>();
+
+    public DbSet<Messages> MessagesSet => Set<Messages>();
+
+    public DbSet<ChannelMembers> ChannelMembersSet => Set<ChannelMembers>();
+
+    public DbSet<SharedContext> SharedContextSet => Set<SharedContext>();
 }

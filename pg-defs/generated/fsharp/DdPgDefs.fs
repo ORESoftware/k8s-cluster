@@ -6,6 +6,74 @@ module DdPgDefs
 
 open System.Text.RegularExpressions
 
+let accountsTable = "threefa.accounts"
+let accountsColumns = [ "id"; "username"; "auth_secret"; "created_at" ]
+let accountsSelectSql = "select\n      id::text as id,\n      username,\n      auth_secret,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from threefa.accounts"
+
+type AccountsRow =
+    { AccountsId: string
+      AccountsUsername: string
+      AccountsAuthSecret: string
+      AccountsCreatedAt: string
+    }
+
+let accountsRowOfRow (get: int -> string) (isNullAt: int -> bool) : AccountsRow =
+    { AccountsId = get 0
+      AccountsUsername = get 1
+      AccountsAuthSecret = get 2
+      AccountsCreatedAt = get 3
+    }
+
+let devicesTable = "threefa.devices"
+let devicesColumns = [ "id"; "account_id"; "device_name"; "sync_token_hash"; "revoked"; "created_at" ]
+let devicesSelectSql = "select\n      id::text as id,\n      account_id::text as account_id,\n      device_name,\n      sync_token_hash,\n      revoked,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from threefa.devices"
+
+type DevicesRow =
+    { DevicesId: string
+      DevicesAccountId: string
+      DevicesDeviceName: string
+      DevicesSyncTokenHash: string
+      DevicesRevoked: bool
+      DevicesCreatedAt: string
+    }
+
+let devicesRowOfRow (get: int -> string) (isNullAt: int -> bool) : DevicesRow =
+    { DevicesId = get 0
+      DevicesAccountId = get 1
+      DevicesDeviceName = get 2
+      DevicesSyncTokenHash = get 3
+      DevicesRevoked = (get 4 = "t")
+      DevicesCreatedAt = get 5
+    }
+
+let validateDevicesSyncTokenHash (value: string) : Result<string, string> =
+    if not (Regex.IsMatch(value, @"^[a-f0-9]{64}$")) then Error "devices.sync_token_hash does not match the required pattern"
+    else Ok value
+
+let vaultBlobsTable = "threefa.vault_blobs"
+let vaultBlobsColumns = [ "account_id"; "ciphertext"; "nonce"; "kdf_salt"; "kdf_params"; "version"; "updated_at" ]
+let vaultBlobsSelectSql = "select\n      account_id::text as account_id,\n      ciphertext,\n      nonce,\n      kdf_salt,\n      kdf_params::text as kdf_params_json,\n      version::text as version_json,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from threefa.vault_blobs"
+
+type VaultBlobsRow =
+    { VaultBlobsAccountId: string
+      VaultBlobsCiphertext: string
+      VaultBlobsNonce: string
+      VaultBlobsKdfSalt: string
+      VaultBlobsKdfParams: string
+      VaultBlobsVersion: string
+      VaultBlobsUpdatedAt: string
+    }
+
+let vaultBlobsRowOfRow (get: int -> string) (isNullAt: int -> bool) : VaultBlobsRow =
+    { VaultBlobsAccountId = get 0
+      VaultBlobsCiphertext = get 1
+      VaultBlobsNonce = get 2
+      VaultBlobsKdfSalt = get 3
+      VaultBlobsKdfParams = get 4
+      VaultBlobsVersion = get 5
+      VaultBlobsUpdatedAt = get 6
+    }
+
 let appConfigTable = "app_config"
 let appConfigColumns = [ "id"; "scope"; "key"; "value"; "version"; "status"; "labels"; "meta_data"; "is_soft_deleted"; "created_at"; "updated_at"; "created_by"; "updated_by" ]
 let appConfigSelectSql = "select\n      id::text as id,\n      scope,\n      key,\n      value::text as value_json,\n      version,\n      status,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from app_config"
@@ -11026,4 +11094,297 @@ let validateVcsOperationsDurationMs (value: int) : Result<int, string> =
 
 let validateVcsOperationsRequestedBy (value: string) : Result<string, string> =
     if value.Length > 200 then Error "vcs_operations.requested_by must be at most 200 characters"
+    else Ok value
+
+let agentsTable = "ai_agent_bridge.agents"
+let agentsColumns = [ "id"; "agent_key"; "display_name"; "kind"; "host"; "meta_data"; "created_at"; "updated_at" ]
+let agentsSelectSql = "select\n      id::text as id,\n      agent_key,\n      display_name,\n      kind,\n      host,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from ai_agent_bridge.agents"
+
+[<RequireQualifiedAccess>]
+type AgentsKind =
+    | Claude
+    | Codex
+    | Human
+    | Other
+
+let agentsKindToString (value: AgentsKind) : string =
+    match value with
+    | AgentsKind.Claude -> "claude"
+    | AgentsKind.Codex -> "codex"
+    | AgentsKind.Human -> "human"
+    | AgentsKind.Other -> "other"
+
+let parseAgentsKind (value: string) : Result<AgentsKind, string> =
+    match value with
+    | "claude" -> Ok AgentsKind.Claude
+    | "codex" -> Ok AgentsKind.Codex
+    | "human" -> Ok AgentsKind.Human
+    | "other" -> Ok AgentsKind.Other
+    | _ -> Error ("unsupported agents.kind: " + value)
+
+type AgentsRow =
+    { AgentsId: string
+      AgentsAgentKey: string
+      AgentsDisplayName: string
+      AgentsKind: string
+      AgentsHost: string option
+      AgentsMetaData: string
+      AgentsCreatedAt: string
+      AgentsUpdatedAt: string
+    }
+
+let agentsRowOfRow (get: int -> string) (isNullAt: int -> bool) : AgentsRow =
+    { AgentsId = get 0
+      AgentsAgentKey = get 1
+      AgentsDisplayName = get 2
+      AgentsKind = get 3
+      AgentsHost = (if isNullAt 4 then None else Some (get 4))
+      AgentsMetaData = get 5
+      AgentsCreatedAt = get 6
+      AgentsUpdatedAt = get 7
+    }
+
+let validateAgentsAgentKey (value: string) : Result<string, string> =
+    if value.Length > 120 then Error "agents.agent_key must be at most 120 characters"
+    elif not (Regex.IsMatch(value, @"^[A-Za-z0-9._:-]{1,120}$")) then Error "agents.agent_key does not match the required pattern"
+    else Ok value
+
+let validateAgentsDisplayName (value: string) : Result<string, string> =
+    if value.Length > 200 then Error "agents.display_name must be at most 200 characters"
+    else Ok value
+
+let validateAgentsHost (value: string) : Result<string, string> =
+    if value.Length > 255 then Error "agents.host must be at most 255 characters"
+    else Ok value
+
+let channelsTable = "ai_agent_bridge.channels"
+let channelsColumns = [ "id"; "slug"; "topic"; "topic_summary"; "embedding_model"; "embedding"; "embedding_dimensions"; "status"; "created_by"; "meta_data"; "created_at"; "updated_at" ]
+let channelsSelectSql = "select\n      id::text as id,\n      slug,\n      topic,\n      topic_summary,\n      embedding_model,\n      embedding::text as embedding_json,\n      embedding_dimensions,\n      status,\n      created_by,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from ai_agent_bridge.channels"
+
+[<RequireQualifiedAccess>]
+type ChannelsStatus =
+    | Active
+    | Archived
+
+let channelsStatusToString (value: ChannelsStatus) : string =
+    match value with
+    | ChannelsStatus.Active -> "active"
+    | ChannelsStatus.Archived -> "archived"
+
+let parseChannelsStatus (value: string) : Result<ChannelsStatus, string> =
+    match value with
+    | "active" -> Ok ChannelsStatus.Active
+    | "archived" -> Ok ChannelsStatus.Archived
+    | _ -> Error ("unsupported channels.status: " + value)
+
+type ChannelsRow =
+    { ChannelsId: string
+      ChannelsSlug: string
+      ChannelsTopic: string
+      ChannelsTopicSummary: string option
+      ChannelsEmbeddingModel: string
+      ChannelsEmbedding: string
+      ChannelsEmbeddingDimensions: int
+      ChannelsStatus: string
+      ChannelsCreatedBy: string
+      ChannelsMetaData: string
+      ChannelsCreatedAt: string
+      ChannelsUpdatedAt: string
+    }
+
+let channelsRowOfRow (get: int -> string) (isNullAt: int -> bool) : ChannelsRow =
+    { ChannelsId = get 0
+      ChannelsSlug = get 1
+      ChannelsTopic = get 2
+      ChannelsTopicSummary = (if isNullAt 3 then None else Some (get 3))
+      ChannelsEmbeddingModel = get 4
+      ChannelsEmbedding = get 5
+      ChannelsEmbeddingDimensions = int (get 6)
+      ChannelsStatus = get 7
+      ChannelsCreatedBy = get 8
+      ChannelsMetaData = get 9
+      ChannelsCreatedAt = get 10
+      ChannelsUpdatedAt = get 11
+    }
+
+let validateChannelsSlug (value: string) : Result<string, string> =
+    if value.Length > 120 then Error "channels.slug must be at most 120 characters"
+    elif not (Regex.IsMatch(value, @"^[a-z0-9][a-z0-9._-]{0,119}$")) then Error "channels.slug does not match the required pattern"
+    else Ok value
+
+let validateChannelsEmbeddingModel (value: string) : Result<string, string> =
+    if value.Length > 120 then Error "channels.embedding_model must be at most 120 characters"
+    else Ok value
+
+let validateChannelsEmbeddingDimensions (value: int) : Result<int, string> =
+    if value < 0 then Error "channels.embedding_dimensions is below the minimum"
+    else Ok value
+
+let validateChannelsCreatedBy (value: string) : Result<string, string> =
+    if value.Length > 120 then Error "channels.created_by must be at most 120 characters"
+    else Ok value
+
+let messagesTable = "ai_agent_bridge.messages"
+let messagesColumns = [ "id"; "channel_slug"; "channel_id"; "seq"; "from_agent_key"; "role"; "content"; "meta_data"; "created_at" ]
+let messagesSelectSql = "select\n      id::text as id,\n      channel_slug,\n      channel_id::text as channel_id,\n      seq,\n      from_agent_key,\n      role,\n      content,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from ai_agent_bridge.messages"
+
+[<RequireQualifiedAccess>]
+type MessagesRole =
+    | User
+    | Assistant
+    | System
+    | Tool
+
+let messagesRoleToString (value: MessagesRole) : string =
+    match value with
+    | MessagesRole.User -> "user"
+    | MessagesRole.Assistant -> "assistant"
+    | MessagesRole.System -> "system"
+    | MessagesRole.Tool -> "tool"
+
+let parseMessagesRole (value: string) : Result<MessagesRole, string> =
+    match value with
+    | "user" -> Ok MessagesRole.User
+    | "assistant" -> Ok MessagesRole.Assistant
+    | "system" -> Ok MessagesRole.System
+    | "tool" -> Ok MessagesRole.Tool
+    | _ -> Error ("unsupported messages.role: " + value)
+
+type MessagesRow =
+    { MessagesId: string
+      MessagesChannelSlug: string
+      MessagesChannelId: string option
+      MessagesSeq: int64
+      MessagesFromAgentKey: string
+      MessagesRole: string
+      MessagesContent: string
+      MessagesMetaData: string
+      MessagesCreatedAt: string
+    }
+
+let messagesRowOfRow (get: int -> string) (isNullAt: int -> bool) : MessagesRow =
+    { MessagesId = get 0
+      MessagesChannelSlug = get 1
+      MessagesChannelId = (if isNullAt 2 then None else Some (get 2))
+      MessagesSeq = int64 (get 3)
+      MessagesFromAgentKey = get 4
+      MessagesRole = get 5
+      MessagesContent = get 6
+      MessagesMetaData = get 7
+      MessagesCreatedAt = get 8
+    }
+
+let validateMessagesChannelSlug (value: string) : Result<string, string> =
+    if value.Length > 120 then Error "messages.channel_slug must be at most 120 characters"
+    elif not (Regex.IsMatch(value, @"^[a-z0-9][a-z0-9._-]{0,119}$")) then Error "messages.channel_slug does not match the required pattern"
+    else Ok value
+
+let validateMessagesSeq (value: int64) : Result<int64, string> =
+    if value < 1L then Error "messages.seq is below the minimum"
+    else Ok value
+
+let validateMessagesFromAgentKey (value: string) : Result<string, string> =
+    if value.Length > 120 then Error "messages.from_agent_key must be at most 120 characters"
+    elif not (Regex.IsMatch(value, @"^[A-Za-z0-9._:-]{1,120}$")) then Error "messages.from_agent_key does not match the required pattern"
+    else Ok value
+
+let channelMembersTable = "ai_agent_bridge.channel_members"
+let channelMembersColumns = [ "id"; "channel_slug"; "channel_id"; "agent_key"; "role"; "joined_at"; "last_seen_at"; "meta_data" ]
+let channelMembersSelectSql = "select\n      id::text as id,\n      channel_slug,\n      channel_id::text as channel_id,\n      agent_key,\n      role,\n      to_char(joined_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as joined_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      meta_data::text as meta_data_json\n    from ai_agent_bridge.channel_members"
+
+[<RequireQualifiedAccess>]
+type ChannelMembersRole =
+    | Owner
+    | Member
+    | Observer
+
+let channelMembersRoleToString (value: ChannelMembersRole) : string =
+    match value with
+    | ChannelMembersRole.Owner -> "owner"
+    | ChannelMembersRole.Member -> "member"
+    | ChannelMembersRole.Observer -> "observer"
+
+let parseChannelMembersRole (value: string) : Result<ChannelMembersRole, string> =
+    match value with
+    | "owner" -> Ok ChannelMembersRole.Owner
+    | "member" -> Ok ChannelMembersRole.Member
+    | "observer" -> Ok ChannelMembersRole.Observer
+    | _ -> Error ("unsupported channel_members.role: " + value)
+
+type ChannelMembersRow =
+    { ChannelMembersId: string
+      ChannelMembersChannelSlug: string
+      ChannelMembersChannelId: string option
+      ChannelMembersAgentKey: string
+      ChannelMembersRole: string
+      ChannelMembersJoinedAt: string
+      ChannelMembersLastSeenAt: string
+      ChannelMembersMetaData: string
+    }
+
+let channelMembersRowOfRow (get: int -> string) (isNullAt: int -> bool) : ChannelMembersRow =
+    { ChannelMembersId = get 0
+      ChannelMembersChannelSlug = get 1
+      ChannelMembersChannelId = (if isNullAt 2 then None else Some (get 2))
+      ChannelMembersAgentKey = get 3
+      ChannelMembersRole = get 4
+      ChannelMembersJoinedAt = get 5
+      ChannelMembersLastSeenAt = get 6
+      ChannelMembersMetaData = get 7
+    }
+
+let validateChannelMembersChannelSlug (value: string) : Result<string, string> =
+    if value.Length > 120 then Error "channel_members.channel_slug must be at most 120 characters"
+    elif not (Regex.IsMatch(value, @"^[a-z0-9][a-z0-9._-]{0,119}$")) then Error "channel_members.channel_slug does not match the required pattern"
+    else Ok value
+
+let validateChannelMembersAgentKey (value: string) : Result<string, string> =
+    if value.Length > 120 then Error "channel_members.agent_key must be at most 120 characters"
+    elif not (Regex.IsMatch(value, @"^[A-Za-z0-9._:-]{1,120}$")) then Error "channel_members.agent_key does not match the required pattern"
+    else Ok value
+
+let sharedContextTable = "ai_agent_bridge.shared_context"
+let sharedContextColumns = [ "id"; "channel_slug"; "channel_id"; "ctx_key"; "value"; "version"; "updated_by"; "created_at"; "updated_at" ]
+let sharedContextSelectSql = "select\n      id::text as id,\n      channel_slug,\n      channel_id::text as channel_id,\n      ctx_key,\n      value::text as value_json,\n      version,\n      updated_by,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from ai_agent_bridge.shared_context"
+
+type SharedContextRow =
+    { SharedContextId: string
+      SharedContextChannelSlug: string option
+      SharedContextChannelId: string option
+      SharedContextCtxKey: string
+      SharedContextValue: string
+      SharedContextVersion: int
+      SharedContextUpdatedBy: string
+      SharedContextCreatedAt: string
+      SharedContextUpdatedAt: string
+    }
+
+let sharedContextRowOfRow (get: int -> string) (isNullAt: int -> bool) : SharedContextRow =
+    { SharedContextId = get 0
+      SharedContextChannelSlug = (if isNullAt 1 then None else Some (get 1))
+      SharedContextChannelId = (if isNullAt 2 then None else Some (get 2))
+      SharedContextCtxKey = get 3
+      SharedContextValue = get 4
+      SharedContextVersion = int (get 5)
+      SharedContextUpdatedBy = get 6
+      SharedContextCreatedAt = get 7
+      SharedContextUpdatedAt = get 8
+    }
+
+let validateSharedContextChannelSlug (value: string) : Result<string, string> =
+    if value.Length > 120 then Error "shared_context.channel_slug must be at most 120 characters"
+    elif not (Regex.IsMatch(value, @"^[a-z0-9][a-z0-9._-]{0,119}$")) then Error "shared_context.channel_slug does not match the required pattern"
+    else Ok value
+
+let validateSharedContextCtxKey (value: string) : Result<string, string> =
+    if value.Length > 200 then Error "shared_context.ctx_key must be at most 200 characters"
+    elif not (Regex.IsMatch(value, @"^[A-Za-z0-9._:/-]{1,200}$")) then Error "shared_context.ctx_key does not match the required pattern"
+    else Ok value
+
+let validateSharedContextVersion (value: int) : Result<int, string> =
+    if value < 1 then Error "shared_context.version is below the minimum"
+    else Ok value
+
+let validateSharedContextUpdatedBy (value: string) : Result<string, string> =
+    if value.Length > 120 then Error "shared_context.updated_by must be at most 120 characters"
     else Ok value

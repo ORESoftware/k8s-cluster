@@ -5,6 +5,62 @@
 
 import 'package:drift/drift.dart';
 
+@DataClassName("AccountsData")
+class AccountsTable extends Table {
+  @override String get tableName => "accounts";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get username => text().named("username")();
+  TextColumn get authSecret => text().named("auth_secret")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("DevicesData")
+class DevicesTable extends Table {
+  @override String get tableName => "devices";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get accountId => text().named("account_id").customConstraint("UUID")();
+  TextColumn get deviceName => text().named("device_name")();
+  TextColumn get syncTokenHash => text().named("sync_token_hash")();
+  BoolColumn get revoked => boolean().named("revoked").clientDefault(() => false)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("VaultBlobsData")
+class VaultBlobsTable extends Table {
+  @override String get tableName => "vault_blobs";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get accountId => text().named("account_id").customConstraint("UUID")();
+  TextColumn get ciphertext => text().named("ciphertext")();
+  TextColumn get nonce => text().named("nonce")();
+  TextColumn get kdfSalt => text().named("kdf_salt")();
+  TextColumn get kdfParams => text().named("kdf_params").customConstraint("JSONB")();
+  TextColumn get version => text().named("version").customConstraint("JSONB")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        accountId,
+  };
+}
+
 @DataClassName("AppConfigData")
 class AppConfigTable extends Table {
   @override String get tableName => "app_config";
@@ -3235,9 +3291,123 @@ class VcsOperationsTable extends Table {
   };
 }
 
+@DataClassName("AgentsData")
+class AgentsTable extends Table {
+  @override String get tableName => "agents";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get agentKey => text().named("agent_key").withLength(max: 120)();
+  TextColumn get displayName => text().named("display_name").withLength(max: 200).clientDefault(() => '')();
+  TextColumn get kind => text().named("kind").clientDefault(() => 'other')();
+  TextColumn get host => text().named("host").withLength(max: 255).nullable()();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("ChannelsData")
+class ChannelsTable extends Table {
+  @override String get tableName => "channels";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get slug => text().named("slug").withLength(max: 120)();
+  TextColumn get topic => text().named("topic")();
+  TextColumn get topicSummary => text().named("topic_summary").nullable()();
+  TextColumn get embeddingModel => text().named("embedding_model").withLength(max: 120).clientDefault(() => 'local-hash-v1')();
+  TextColumn get embedding => text().named("embedding").clientDefault(() => '[]').customConstraint("JSONB")();
+  IntColumn get embeddingDimensions => integer().named("embedding_dimensions").clientDefault(() => 0)();
+  TextColumn get status => text().named("status").clientDefault(() => 'active')();
+  TextColumn get createdBy => text().named("created_by").withLength(max: 120).clientDefault(() => 'system')();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("MessagesData")
+class MessagesTable extends Table {
+  @override String get tableName => "messages";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get channelSlug => text().named("channel_slug").withLength(max: 120)();
+  TextColumn get channelId => text().named("channel_id").nullable().customConstraint("UUID REFERENCES channels (id)")();
+  Int64Column get seq => int64().named("seq")();
+  TextColumn get fromAgentKey => text().named("from_agent_key").withLength(max: 120)();
+  TextColumn get role => text().named("role").clientDefault(() => 'user')();
+  TextColumn get content => text().named("content")();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("ChannelMembersData")
+class ChannelMembersTable extends Table {
+  @override String get tableName => "channel_members";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get channelSlug => text().named("channel_slug").withLength(max: 120)();
+  TextColumn get channelId => text().named("channel_id").nullable().customConstraint("UUID REFERENCES channels (id)")();
+  TextColumn get agentKey => text().named("agent_key").withLength(max: 120)();
+  TextColumn get role => text().named("role").clientDefault(() => 'member')();
+  DateTimeColumn get joinedAt => dateTime().named("joined_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get lastSeenAt => dateTime().named("last_seen_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("SharedContextData")
+class SharedContextTable extends Table {
+  @override String get tableName => "shared_context";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get channelSlug => text().named("channel_slug").withLength(max: 120).nullable()();
+  TextColumn get channelId => text().named("channel_id").nullable().customConstraint("UUID REFERENCES channels (id)")();
+  TextColumn get ctxKey => text().named("ctx_key").withLength(max: 200)();
+  TextColumn get value => text().named("value").clientDefault(() => '{}').customConstraint("JSONB")();
+  IntColumn get version => integer().named("version").clientDefault(() => 1)();
+  TextColumn get updatedBy => text().named("updated_by").withLength(max: 120).clientDefault(() => 'system')();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
 // Drift annotation users should re-export the table classes via:
 // @DriftDatabase(tables: [...registeredDriftTables])
 const List<Type> registeredDriftTables = <Type>[
+  AccountsTable,
+  DevicesTable,
+  VaultBlobsTable,
   AppConfigTable,
   VapiPhoneCallEventsTable,
   MusicSongsTable,
@@ -3355,4 +3525,9 @@ const List<Type> registeredDriftTables = <Type>[
   VcsRepositoriesTable,
   VcsRefsTable,
   VcsOperationsTable,
+  AgentsTable,
+  ChannelsTable,
+  MessagesTable,
+  ChannelMembersTable,
+  SharedContextTable,
 ];

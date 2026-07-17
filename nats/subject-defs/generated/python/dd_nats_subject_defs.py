@@ -538,6 +538,11 @@ TELEMETRY_MDP_SUBJECT = "dd.remote.telemetry.mdp"
 TELEMETRY_RAW_SUBJECT = "dd.remote.telemetry.raw"
 TELEMETRY_RAW_QUEUE_GROUP = "dd-ai-ml-pipeline"
 
+# Redacted terminal task failures emitted after the queue consumer exhausts JetStream redelivery. Kept on a separate limits-retention stream so poison-message evidence is durable without affecting the WorkQueue consumer lag used by KEDA.
+# Service: dd-remote-rest-api
+THREAD_TASKS_DEAD_LETTER_SUBJECT = "dd.remote.thread.tasks.deadletter"
+THREAD_TASKS_DEAD_LETTER_STREAM = "DD_REMOTE_TASKS_DLQ"
+
 # Risk-gated buy/sell/hold decisions emitted by the trading server. Default for TRADING_DECISION_SUBJECT.
 # Service: dd-trading-server
 TRADING_DECISIONS_SUBJECT = "dd.remote.trading.decisions"
@@ -929,7 +934,7 @@ def parse_thread_heartbeat_subject(subject: str) -> Optional[ThreadHeartbeatSubj
         return None
     return ThreadHeartbeatSubjectParts(thread_id=result["thread_id"])
 
-# Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS). Producers publish per-thread; consumers either subscribe to the exact subject (the worker for that thread) or to the wildcard via a queue group (the preparer).
+# Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS) with WorkQueue retention. Producers publish per-thread and queue-consumer replicas share the durable wildcard consumer so each task has one handoff owner.
 # Service: dd-remote-rest-api
 THREAD_TASKS_PATTERN = "dd.remote.thread.{thread_id}.tasks"
 THREAD_TASKS_WILDCARD = "dd.remote.thread.*.tasks"
@@ -940,7 +945,7 @@ class ThreadTasksSubjectParts:
     thread_id: str
 
 def thread_tasks_subject(thread_id: str) -> str:
-    """Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS). Producers publish per-thread; consumers either subscribe to the exact subject (the worker for that thread) or to the wildcard via a queue group (the preparer)."""
+    """Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS) with WorkQueue retention. Producers publish per-thread and queue-consumer replicas share the durable wildcard consumer so each task has one handoff owner."""
     return "dd.remote.thread.{thread_id}.tasks".format(thread_id=thread_id)
 
 def parse_thread_tasks_subject(subject: str) -> Optional[ThreadTasksSubjectParts]:
@@ -1144,6 +1149,14 @@ DD_REMOTE_EVOLUTION_STREAM_RETENTION = "limits"
 DD_REMOTE_EVOLUTION_STREAM_STORAGE = "file"
 DD_REMOTE_EVOLUTION_STREAM_ACK = "explicit"
 
+# Durable JetStream history for fabrication requests, results, machine profiles, design conversion, instruction generation and review, execution telemetry, learning outcomes, and release readiness.
+# Service: dd-fabrication-server
+DD_REMOTE_FABRICATION_STREAM_NAME = "DD_REMOTE_FABRICATION"
+DD_REMOTE_FABRICATION_STREAM_SUBJECTS = ("dd.remote.fabrication.>",)
+DD_REMOTE_FABRICATION_STREAM_RETENTION = "limits"
+DD_REMOTE_FABRICATION_STREAM_STORAGE = "file"
+DD_REMOTE_FABRICATION_STREAM_ACK = "explicit"
+
 # JetStream stream for distributed in-house LP/MIP/IP solver work, results, control, and progress events.
 # Service: dd-ai-ml-pipeline
 DD_REMOTE_MIP_SOLVER_STREAM_NAME = "DD_REMOTE_MIP_SOLVER"
@@ -1160,10 +1173,18 @@ DD_REMOTE_ROUTING_STREAM_RETENTION = "limits"
 DD_REMOTE_ROUTING_STREAM_STORAGE = "file"
 DD_REMOTE_ROUTING_STREAM_ACK = "explicit"
 
-# JetStream file storage, explicit ack, message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard.
+# JetStream file storage with WorkQueue retention, explicit ack, and message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard.
 # Service: dd-remote-rest-api
 DD_REMOTE_TASKS_STREAM_NAME = "DD_REMOTE_TASKS"
 DD_REMOTE_TASKS_STREAM_SUBJECTS = ("dd.remote.thread.*.tasks",)
-DD_REMOTE_TASKS_STREAM_RETENTION = "limits"
+DD_REMOTE_TASKS_STREAM_RETENTION = "workqueue"
 DD_REMOTE_TASKS_STREAM_STORAGE = "file"
 DD_REMOTE_TASKS_STREAM_ACK = "explicit"
+
+# Durable limits-retention stream for redacted terminal task failures. It is separate from DD_REMOTE_TASKS so dead letters cannot inflate queue-consumer lag or trigger KEDA scaling.
+# Service: dd-remote-rest-api
+DD_REMOTE_TASKS_DLQ_STREAM_NAME = "DD_REMOTE_TASKS_DLQ"
+DD_REMOTE_TASKS_DLQ_STREAM_SUBJECTS = ("dd.remote.thread.tasks.deadletter",)
+DD_REMOTE_TASKS_DLQ_STREAM_RETENTION = "limits"
+DD_REMOTE_TASKS_DLQ_STREAM_STORAGE = "file"
+DD_REMOTE_TASKS_DLQ_STREAM_ACK = "explicit"

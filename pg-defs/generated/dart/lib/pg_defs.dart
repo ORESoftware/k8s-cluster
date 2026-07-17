@@ -5,6 +5,161 @@
 
 import 'dart:convert';
 
+const accountsTable = "threefa.accounts";
+const accountsSelectSql = "select\n      id::text as id,\n      username,\n      auth_secret,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from threefa.accounts";
+
+class AccountsRow {
+  const AccountsRow({
+    required this.id,
+    required this.username,
+    required this.authSecret,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String username;
+  final String authSecret;
+  final String createdAt;
+
+  factory AccountsRow.fromJson(Map<String, Object?> json) {
+    return AccountsRow(
+      id: _readRequiredString(json, "id"),
+      username: _readRequiredString(json, "username"),
+      authSecret: _readRequiredString(json, "authSecret"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "username": username,
+    "authSecret": authSecret,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (utf8.encode(username).length > 320) {
+      errors.add("accounts.username exceeds 320 bytes");
+    }
+    if (utf8.encode(username).length < 1) {
+      errors.add("accounts.username is below 1 bytes");
+    }
+    if (utf8.encode(authSecret).length > 1024) {
+      errors.add("accounts.auth_secret exceeds 1024 bytes");
+    }
+    if (utf8.encode(authSecret).length < 1) {
+      errors.add("accounts.auth_secret is below 1 bytes");
+    }
+    return errors;
+  }
+}
+
+const devicesTable = "threefa.devices";
+const devicesSelectSql = "select\n      id::text as id,\n      account_id::text as account_id,\n      device_name,\n      sync_token_hash,\n      revoked,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from threefa.devices";
+
+class DevicesRow {
+  const DevicesRow({
+    required this.id,
+    required this.accountId,
+    required this.deviceName,
+    required this.syncTokenHash,
+    required this.revoked,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String accountId;
+  final String deviceName;
+  final String syncTokenHash;
+  final bool revoked;
+  final String createdAt;
+
+  factory DevicesRow.fromJson(Map<String, Object?> json) {
+    return DevicesRow(
+      id: _readRequiredString(json, "id"),
+      accountId: _readRequiredString(json, "accountId"),
+      deviceName: _readRequiredString(json, "deviceName"),
+      syncTokenHash: _readRequiredString(json, "syncTokenHash"),
+      revoked: _readRequiredBool(json, "revoked"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "accountId": accountId,
+    "deviceName": deviceName,
+    "syncTokenHash": syncTokenHash,
+    "revoked": revoked,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (utf8.encode(deviceName).length > 200) {
+      errors.add("devices.device_name exceeds 200 bytes");
+    }
+    if (utf8.encode(deviceName).length < 1) {
+      errors.add("devices.device_name is below 1 bytes");
+    }
+    if (!RegExp(r'^[a-f0-9]{64}$').hasMatch(syncTokenHash)) {
+      errors.add("devices.sync_token_hash does not match the required pattern");
+    }
+    return errors;
+  }
+}
+
+const vaultBlobsTable = "threefa.vault_blobs";
+const vaultBlobsSelectSql = "select\n      account_id::text as account_id,\n      ciphertext,\n      nonce,\n      kdf_salt,\n      kdf_params::text as kdf_params_json,\n      version::text as version_json,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from threefa.vault_blobs";
+
+class VaultBlobsRow {
+  const VaultBlobsRow({
+    required this.accountId,
+    required this.ciphertext,
+    required this.nonce,
+    required this.kdfSalt,
+    required this.kdfParams,
+    required this.version,
+    required this.updatedAt,
+  });
+
+  final String accountId;
+  final String ciphertext;
+  final String nonce;
+  final String kdfSalt;
+  final Map<String, Object?> kdfParams;
+  final List<Object?> version;
+  final String updatedAt;
+
+  factory VaultBlobsRow.fromJson(Map<String, Object?> json) {
+    return VaultBlobsRow(
+      accountId: _readRequiredString(json, "accountId"),
+      ciphertext: _readRequiredString(json, "ciphertext"),
+      nonce: _readRequiredString(json, "nonce"),
+      kdfSalt: _readRequiredString(json, "kdfSalt"),
+      kdfParams: _readRequiredObject(json, "kdfParams"),
+      version: _readRequiredArray(json, "version"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "accountId": accountId,
+    "ciphertext": ciphertext,
+    "nonce": nonce,
+    "kdfSalt": kdfSalt,
+    "kdfParams": kdfParams,
+    "version": version,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+}
+
 const appConfigTable = "app_config";
 const appConfigSelectSql = "select\n      id::text as id,\n      scope,\n      key,\n      value::text as value_json,\n      version,\n      status,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from app_config";
 
@@ -11929,6 +12084,362 @@ class VcsOperationsRow {
     }
     if (durationMs != null && durationMs! < 0) {
       errors.add("vcs_operations.duration_ms is below the minimum");
+    }
+    return errors;
+  }
+}
+
+const agentsTable = "ai_agent_bridge.agents";
+const agentsSelectSql = "select\n      id::text as id,\n      agent_key,\n      display_name,\n      kind,\n      host,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from ai_agent_bridge.agents";
+
+const agentsKindValues = <String>["claude", "codex", "human", "other"];
+
+class AgentsRow {
+  const AgentsRow({
+    required this.id,
+    required this.agentKey,
+    required this.displayName,
+    required this.kind,
+    this.host,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String agentKey;
+  final String displayName;
+  final String kind;
+  final String? host;
+  final Map<String, Object?> metaData;
+  final String createdAt;
+  final String updatedAt;
+
+  factory AgentsRow.fromJson(Map<String, Object?> json) {
+    return AgentsRow(
+      id: _readRequiredString(json, "id"),
+      agentKey: _readRequiredString(json, "agentKey"),
+      displayName: _readRequiredString(json, "displayName"),
+      kind: _readRequiredString(json, "kind"),
+      host: _readOptionalString(json, "host"),
+      metaData: _readRequiredObject(json, "metaData"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "agentKey": agentKey,
+    "displayName": displayName,
+    "kind": kind,
+    "host": host,
+    "metaData": metaData,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[A-Za-z0-9._:-]{1,120}$').hasMatch(agentKey)) {
+      errors.add("agents.agent_key does not match the required pattern");
+    }
+    if (!agentsKindValues.contains(kind)) {
+      errors.add("unsupported agents.kind");
+    }
+    return errors;
+  }
+}
+
+const channelsTable = "ai_agent_bridge.channels";
+const channelsSelectSql = "select\n      id::text as id,\n      slug,\n      topic,\n      topic_summary,\n      embedding_model,\n      embedding::text as embedding_json,\n      embedding_dimensions,\n      status,\n      created_by,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from ai_agent_bridge.channels";
+
+const channelsStatusValues = <String>["active", "archived"];
+
+class ChannelsRow {
+  const ChannelsRow({
+    required this.id,
+    required this.slug,
+    required this.topic,
+    this.topicSummary,
+    required this.embeddingModel,
+    required this.embedding,
+    required this.embeddingDimensions,
+    required this.status,
+    required this.createdBy,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String slug;
+  final String topic;
+  final String? topicSummary;
+  final String embeddingModel;
+  final List<Object?> embedding;
+  final int embeddingDimensions;
+  final String status;
+  final String createdBy;
+  final Map<String, Object?> metaData;
+  final String createdAt;
+  final String updatedAt;
+
+  factory ChannelsRow.fromJson(Map<String, Object?> json) {
+    return ChannelsRow(
+      id: _readRequiredString(json, "id"),
+      slug: _readRequiredString(json, "slug"),
+      topic: _readRequiredString(json, "topic"),
+      topicSummary: _readOptionalString(json, "topicSummary"),
+      embeddingModel: _readRequiredString(json, "embeddingModel"),
+      embedding: _readRequiredArray(json, "embedding"),
+      embeddingDimensions: _readRequiredInt(json, "embeddingDimensions"),
+      status: _readRequiredString(json, "status"),
+      createdBy: _readRequiredString(json, "createdBy"),
+      metaData: _readRequiredObject(json, "metaData"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "slug": slug,
+    "topic": topic,
+    "topicSummary": topicSummary,
+    "embeddingModel": embeddingModel,
+    "embedding": embedding,
+    "embeddingDimensions": embeddingDimensions,
+    "status": status,
+    "createdBy": createdBy,
+    "metaData": metaData,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[a-z0-9][a-z0-9._-]{0,119}$').hasMatch(slug)) {
+      errors.add("channels.slug must be a lowercase slug");
+    }
+    if (utf8.encode(topic).length > 8192) {
+      errors.add("channels.topic exceeds 8192 bytes");
+    }
+    if (utf8.encode(topic).length < 1) {
+      errors.add("channels.topic is below 1 bytes");
+    }
+    if (embeddingDimensions < 0) {
+      errors.add("channels.embedding_dimensions is below the minimum");
+    }
+    if (!channelsStatusValues.contains(status)) {
+      errors.add("unsupported channels.status");
+    }
+    return errors;
+  }
+}
+
+const messagesTable = "ai_agent_bridge.messages";
+const messagesSelectSql = "select\n      id::text as id,\n      channel_slug,\n      channel_id::text as channel_id,\n      seq,\n      from_agent_key,\n      role,\n      content,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from ai_agent_bridge.messages";
+
+const messagesRoleValues = <String>["user", "assistant", "system", "tool"];
+
+class MessagesRow {
+  const MessagesRow({
+    required this.id,
+    required this.channelSlug,
+    this.channelId,
+    required this.seq,
+    required this.fromAgentKey,
+    required this.role,
+    required this.content,
+    required this.metaData,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String channelSlug;
+  final String? channelId;
+  final int seq;
+  final String fromAgentKey;
+  final String role;
+  final String content;
+  final Map<String, Object?> metaData;
+  final String createdAt;
+
+  factory MessagesRow.fromJson(Map<String, Object?> json) {
+    return MessagesRow(
+      id: _readRequiredString(json, "id"),
+      channelSlug: _readRequiredString(json, "channelSlug"),
+      channelId: _readOptionalString(json, "channelId"),
+      seq: _readRequiredInt(json, "seq"),
+      fromAgentKey: _readRequiredString(json, "fromAgentKey"),
+      role: _readRequiredString(json, "role"),
+      content: _readRequiredString(json, "content"),
+      metaData: _readRequiredObject(json, "metaData"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "channelSlug": channelSlug,
+    "channelId": channelId,
+    "seq": seq,
+    "fromAgentKey": fromAgentKey,
+    "role": role,
+    "content": content,
+    "metaData": metaData,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[a-z0-9][a-z0-9._-]{0,119}$').hasMatch(channelSlug)) {
+      errors.add("messages.channel_slug must be a lowercase slug");
+    }
+    if (!RegExp(r'^[A-Za-z0-9._:-]{1,120}$').hasMatch(fromAgentKey)) {
+      errors.add("messages.from_agent_key does not match the required pattern");
+    }
+    if (!messagesRoleValues.contains(role)) {
+      errors.add("unsupported messages.role");
+    }
+    if (utf8.encode(content).length > 1048576) {
+      errors.add("messages.content exceeds 1048576 bytes");
+    }
+    if (utf8.encode(content).length < 1) {
+      errors.add("messages.content is below 1 bytes");
+    }
+    return errors;
+  }
+}
+
+const channelMembersTable = "ai_agent_bridge.channel_members";
+const channelMembersSelectSql = "select\n      id::text as id,\n      channel_slug,\n      channel_id::text as channel_id,\n      agent_key,\n      role,\n      to_char(joined_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as joined_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      meta_data::text as meta_data_json\n    from ai_agent_bridge.channel_members";
+
+const channelMembersRoleValues = <String>["owner", "member", "observer"];
+
+class ChannelMembersRow {
+  const ChannelMembersRow({
+    required this.id,
+    required this.channelSlug,
+    this.channelId,
+    required this.agentKey,
+    required this.role,
+    required this.joinedAt,
+    required this.lastSeenAt,
+    required this.metaData,
+  });
+
+  final String id;
+  final String channelSlug;
+  final String? channelId;
+  final String agentKey;
+  final String role;
+  final String joinedAt;
+  final String lastSeenAt;
+  final Map<String, Object?> metaData;
+
+  factory ChannelMembersRow.fromJson(Map<String, Object?> json) {
+    return ChannelMembersRow(
+      id: _readRequiredString(json, "id"),
+      channelSlug: _readRequiredString(json, "channelSlug"),
+      channelId: _readOptionalString(json, "channelId"),
+      agentKey: _readRequiredString(json, "agentKey"),
+      role: _readRequiredString(json, "role"),
+      joinedAt: _readRequiredString(json, "joinedAt"),
+      lastSeenAt: _readRequiredString(json, "lastSeenAt"),
+      metaData: _readRequiredObject(json, "metaData"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "channelSlug": channelSlug,
+    "channelId": channelId,
+    "agentKey": agentKey,
+    "role": role,
+    "joinedAt": joinedAt,
+    "lastSeenAt": lastSeenAt,
+    "metaData": metaData,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[a-z0-9][a-z0-9._-]{0,119}$').hasMatch(channelSlug)) {
+      errors.add("channel_members.channel_slug must be a lowercase slug");
+    }
+    if (!RegExp(r'^[A-Za-z0-9._:-]{1,120}$').hasMatch(agentKey)) {
+      errors.add("channel_members.agent_key does not match the required pattern");
+    }
+    if (!channelMembersRoleValues.contains(role)) {
+      errors.add("unsupported channel_members.role");
+    }
+    return errors;
+  }
+}
+
+const sharedContextTable = "ai_agent_bridge.shared_context";
+const sharedContextSelectSql = "select\n      id::text as id,\n      channel_slug,\n      channel_id::text as channel_id,\n      ctx_key,\n      value::text as value_json,\n      version,\n      updated_by,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from ai_agent_bridge.shared_context";
+
+class SharedContextRow {
+  const SharedContextRow({
+    required this.id,
+    this.channelSlug,
+    this.channelId,
+    required this.ctxKey,
+    required this.value,
+    required this.version,
+    required this.updatedBy,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String? channelSlug;
+  final String? channelId;
+  final String ctxKey;
+  final Map<String, Object?> value;
+  final int version;
+  final String updatedBy;
+  final String createdAt;
+  final String updatedAt;
+
+  factory SharedContextRow.fromJson(Map<String, Object?> json) {
+    return SharedContextRow(
+      id: _readRequiredString(json, "id"),
+      channelSlug: _readOptionalString(json, "channelSlug"),
+      channelId: _readOptionalString(json, "channelId"),
+      ctxKey: _readRequiredString(json, "ctxKey"),
+      value: _readRequiredObject(json, "value"),
+      version: _readRequiredInt(json, "version"),
+      updatedBy: _readRequiredString(json, "updatedBy"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "channelSlug": channelSlug,
+    "channelId": channelId,
+    "ctxKey": ctxKey,
+    "value": value,
+    "version": version,
+    "updatedBy": updatedBy,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (channelSlug != null && !RegExp(r'^[a-z0-9][a-z0-9._-]{0,119}$').hasMatch(channelSlug!)) {
+      errors.add("shared_context.channel_slug must be a lowercase slug");
+    }
+    if (!RegExp(r'^[A-Za-z0-9._:/-]{1,200}$').hasMatch(ctxKey)) {
+      errors.add("shared_context.ctx_key does not match the required pattern");
+    }
+    if (version < 1) {
+      errors.add("shared_context.version is below the minimum");
     }
     return errors;
   }

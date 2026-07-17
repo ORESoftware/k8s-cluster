@@ -12,6 +12,41 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Accounts {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  username String @db.Text
+  authSecret String @map("auth_secret") @db.Text
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  @@unique([username], map: "threefa_accounts_username_uq")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("accounts")
+}
+
+model Devices {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+  deviceName String @map("device_name") @db.Text
+  syncTokenHash String @map("sync_token_hash") @db.Text
+  revoked Boolean @default(false)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  @@index([accountId], map: "threefa_devices_account_idx")
+  // threefa_devices_token_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("devices")
+}
+
+model VaultBlobs {
+  accountId String @map("account_id") @id @db.Uuid
+  ciphertext String @db.Text
+  nonce String @db.Text
+  kdfSalt String @map("kdf_salt") @db.Text
+  kdfParams Json @map("kdf_params")
+  version Json
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("vault_blobs")
+}
+
 model AppConfig {
   id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   scope String @default("default") @db.VarChar(120)
@@ -2630,4 +2665,84 @@ model VcsOperations {
   @@index([createdAt], map: "vcs_operations_created_at_idx")
   // Check constraints live in schema.sql and must be migrated from the SQL contract.
   @@map("vcs_operations")
+}
+
+model Agents {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  agentKey String @map("agent_key") @db.VarChar(120)
+  displayName String @map("display_name") @default("") @db.VarChar(200)
+  kind String @default("other") @db.VarChar(32)
+  host String? @db.VarChar(255)
+  metaData Json @map("meta_data") @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@unique([agentKey], map: "ai_agent_bridge_agents_agent_key_uq")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("agents")
+}
+
+model Channels {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug String @db.VarChar(120)
+  topic String @db.Text
+  topicSummary String? @map("topic_summary") @db.Text
+  embeddingModel String @map("embedding_model") @default("local-hash-v1") @db.VarChar(120)
+  embedding Json @default("[]")
+  embeddingDimensions Int @map("embedding_dimensions") @default(0)
+  status String @default("active") @db.VarChar(32)
+  createdBy String @map("created_by") @default("system") @db.VarChar(120)
+  metaData Json @map("meta_data") @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@unique([slug], map: "ai_agent_bridge_channels_slug_uq")
+  // ai_agent_bridge_channels_status_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  @@index([updatedAt], map: "ai_agent_bridge_channels_updated_at_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("channels")
+}
+
+model Messages {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  channelSlug String @map("channel_slug") @db.VarChar(120)
+  channelId String? @map("channel_id") @db.Uuid
+  seq BigInt @db.BigInt
+  fromAgentKey String @map("from_agent_key") @db.VarChar(120)
+  role String @default("user") @db.VarChar(32)
+  content String @db.Text
+  metaData Json @map("meta_data") @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  @@unique([channelSlug, seq], map: "ai_agent_bridge_messages_channel_seq_uq")
+  @@index([channelSlug, createdAt], map: "ai_agent_bridge_messages_channel_created_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("messages")
+}
+
+model ChannelMembers {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  channelSlug String @map("channel_slug") @db.VarChar(120)
+  channelId String? @map("channel_id") @db.Uuid
+  agentKey String @map("agent_key") @db.VarChar(120)
+  role String @default("member") @db.VarChar(32)
+  joinedAt DateTime @map("joined_at") @default(now()) @db.Timestamptz(6)
+  lastSeenAt DateTime @map("last_seen_at") @default(now()) @db.Timestamptz(6)
+  metaData Json @map("meta_data") @default("{}")
+  @@unique([channelSlug, agentKey], map: "ai_agent_bridge_members_channel_agent_uq")
+  @@index([agentKey], map: "ai_agent_bridge_members_agent_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("channel_members")
+}
+
+model SharedContext {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  channelSlug String? @map("channel_slug") @db.VarChar(120)
+  channelId String? @map("channel_id") @db.Uuid
+  ctxKey String @map("ctx_key") @db.VarChar(200)
+  value Json @default("{}")
+  version Int @default(1)
+  updatedBy String @map("updated_by") @default("system") @db.VarChar(120)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@unique([channelSlug, ctxKey], map: "ai_agent_bridge_context_channel_key_uq")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("shared_context")
 }

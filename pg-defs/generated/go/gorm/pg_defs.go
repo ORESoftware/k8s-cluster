@@ -14,6 +14,7 @@ import (
 	"gorm.io/datatypes"
 )
 
+var devicesSyncTokenHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var appConfigScopePattern = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,120}$`)
 var appConfigKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,200}$`)
 var vapiPhoneCallEventsEventTypePattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,80}$`)
@@ -97,6 +98,96 @@ var usaccAuditEventsEventHashPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,1
 var usaccAuditEventsSourcePattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,80}$`)
 var vcsRepositoriesSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,119}$`)
 var vcsRepositoriesDefaultBranchPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,160}$`)
+var agentsAgentKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,120}$`)
+var channelsSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,119}$`)
+var messagesChannelSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,119}$`)
+var messagesFromAgentKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,120}$`)
+var channelMembersChannelSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,119}$`)
+var channelMembersAgentKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,120}$`)
+var sharedContextChannelSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,119}$`)
+var sharedContextCtxKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,200}$`)
+
+const AccountsTable = "threefa.accounts"
+const AccountsSelectSQL = `select
+      id::text as id,
+      username,
+      auth_secret,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from threefa.accounts`
+
+type AccountsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	Username string `gorm:"column:username;type:text;not null" json:"username"`
+	AuthSecret string `gorm:"column:auth_secret;type:text;not null" json:"authSecret"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (AccountsGorm) TableName() string { return AccountsTable }
+
+func (value AccountsGorm) Validate() error {
+	if len([]byte(value.Username)) > 320 { return errors.New("accounts.username exceeds 320 bytes") }
+	if len([]byte(value.Username)) < 1 { return errors.New("accounts.username is below 1 bytes") }
+	if len([]byte(value.AuthSecret)) > 1024 { return errors.New("accounts.auth_secret exceeds 1024 bytes") }
+	if len([]byte(value.AuthSecret)) < 1 { return errors.New("accounts.auth_secret is below 1 bytes") }
+	return nil
+}
+
+const DevicesTable = "threefa.devices"
+const DevicesSelectSQL = `select
+      id::text as id,
+      account_id::text as account_id,
+      device_name,
+      sync_token_hash,
+      revoked,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from threefa.devices`
+
+type DevicesGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	AccountId uuid.UUID `gorm:"column:account_id;type:uuid;not null" json:"accountId"`
+	DeviceName string `gorm:"column:device_name;type:text;not null" json:"deviceName"`
+	SyncTokenHash string `gorm:"column:sync_token_hash;type:text;not null" json:"syncTokenHash"`
+	Revoked bool `gorm:"column:revoked;type:boolean;default:false;not null" json:"revoked"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (DevicesGorm) TableName() string { return DevicesTable }
+
+func (value DevicesGorm) Validate() error {
+	if len([]byte(value.DeviceName)) > 200 { return errors.New("devices.device_name exceeds 200 bytes") }
+	if len([]byte(value.DeviceName)) < 1 { return errors.New("devices.device_name is below 1 bytes") }
+	if !devicesSyncTokenHashPattern.MatchString(value.SyncTokenHash) { return errors.New("devices.sync_token_hash does not match the required pattern") }
+	return nil
+}
+
+const VaultBlobsTable = "threefa.vault_blobs"
+const VaultBlobsSelectSQL = `select
+      account_id::text as account_id,
+      ciphertext,
+      nonce,
+      kdf_salt,
+      kdf_params,
+      version,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from threefa.vault_blobs`
+
+type VaultBlobsGorm struct {
+	AccountId uuid.UUID `gorm:"column:account_id;type:uuid;primaryKey" json:"accountId"`
+	Ciphertext string `gorm:"column:ciphertext;type:text;not null" json:"ciphertext"`
+	Nonce string `gorm:"column:nonce;type:text;not null" json:"nonce"`
+	KdfSalt string `gorm:"column:kdf_salt;type:text;not null" json:"kdfSalt"`
+	KdfParams datatypes.JSON `gorm:"column:kdf_params;type:jsonb;not null" json:"kdfParams"`
+	Version datatypes.JSON `gorm:"column:version;type:jsonb;not null" json:"version"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (VaultBlobsGorm) TableName() string { return VaultBlobsTable }
+
+func (value VaultBlobsGorm) Validate() error {
+	if !validateJSONString(value.KdfParams) { return errors.New("vault_blobs.kdf_params must be valid JSON") }
+	if !validateJSONString(value.Version) { return errors.New("vault_blobs.version must be valid JSON") }
+	return nil
+}
 
 const AppConfigTable = "app_config"
 const AppConfigSelectSQL = `select
@@ -6587,6 +6678,198 @@ func (value VcsOperationsGorm) Validate() error {
 	if value.DurationMs != nil {
 		if *value.DurationMs < 0 { return errors.New("vcs_operations.duration_ms is below the minimum") }
 	}
+	return nil
+}
+
+const AgentsTable = "ai_agent_bridge.agents"
+const AgentsSelectSQL = `select
+      id::text as id,
+      agent_key,
+      display_name,
+      kind,
+      host,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from ai_agent_bridge.agents`
+
+var AgentsKindValues = []string{"claude", "codex", "human", "other"}
+
+type AgentsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	AgentKey string `gorm:"column:agent_key;type:varchar(120);not null" json:"agentKey"`
+	DisplayName string `gorm:"column:display_name;type:varchar(200);default:'';not null" json:"displayName"`
+	Kind string `gorm:"column:kind;type:varchar(32);default:'other';not null" json:"kind"`
+	Host *string `gorm:"column:host;type:varchar(255)" json:"host,omitempty"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (AgentsGorm) TableName() string { return AgentsTable }
+
+func (value AgentsGorm) Validate() error {
+	if !agentsAgentKeyPattern.MatchString(value.AgentKey) { return errors.New("agents.agent_key does not match the required pattern") }
+	if !containsString(AgentsKindValues, value.Kind) { return errors.New("unsupported agents.kind") }
+	if !validateJSONString(value.MetaData) { return errors.New("agents.meta_data must be valid JSON") }
+	return nil
+}
+
+const ChannelsTable = "ai_agent_bridge.channels"
+const ChannelsSelectSQL = `select
+      id::text as id,
+      slug,
+      topic,
+      topic_summary,
+      embedding_model,
+      embedding,
+      embedding_dimensions,
+      status,
+      created_by,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from ai_agent_bridge.channels`
+
+var ChannelsStatusValues = []string{"active", "archived"}
+
+type ChannelsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	Slug string `gorm:"column:slug;type:varchar(120);not null" json:"slug"`
+	Topic string `gorm:"column:topic;type:text;not null" json:"topic"`
+	TopicSummary *string `gorm:"column:topic_summary;type:text" json:"topicSummary,omitempty"`
+	EmbeddingModel string `gorm:"column:embedding_model;type:varchar(120);default:'local-hash-v1';not null" json:"embeddingModel"`
+	Embedding datatypes.JSON `gorm:"column:embedding;type:jsonb;default:'[]'::jsonb;not null" json:"embedding"`
+	EmbeddingDimensions int32 `gorm:"column:embedding_dimensions;type:integer;default:0;not null" json:"embeddingDimensions"`
+	Status string `gorm:"column:status;type:varchar(32);default:'active';not null" json:"status"`
+	CreatedBy string `gorm:"column:created_by;type:varchar(120);default:'system';not null" json:"createdBy"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (ChannelsGorm) TableName() string { return ChannelsTable }
+
+func (value ChannelsGorm) Validate() error {
+	if !channelsSlugPattern.MatchString(value.Slug) { return errors.New("channels.slug does not match the required pattern") }
+	if len([]byte(value.Topic)) > 8192 { return errors.New("channels.topic exceeds 8192 bytes") }
+	if len([]byte(value.Topic)) < 1 { return errors.New("channels.topic is below 1 bytes") }
+	if !validateJSONString(value.Embedding) { return errors.New("channels.embedding must be valid JSON") }
+	if value.EmbeddingDimensions < 0 { return errors.New("channels.embedding_dimensions is below the minimum") }
+	if !containsString(ChannelsStatusValues, value.Status) { return errors.New("unsupported channels.status") }
+	if !validateJSONString(value.MetaData) { return errors.New("channels.meta_data must be valid JSON") }
+	return nil
+}
+
+const MessagesTable = "ai_agent_bridge.messages"
+const MessagesSelectSQL = `select
+      id::text as id,
+      channel_slug,
+      channel_id::text as channel_id,
+      seq,
+      from_agent_key,
+      role,
+      content,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from ai_agent_bridge.messages`
+
+var MessagesRoleValues = []string{"user", "assistant", "system", "tool"}
+
+type MessagesGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ChannelSlug string `gorm:"column:channel_slug;type:varchar(120);not null" json:"channelSlug"`
+	ChannelId *uuid.UUID `gorm:"column:channel_id;type:uuid" json:"channelId,omitempty"`
+	Seq int64 `gorm:"column:seq;type:bigint;not null" json:"seq"`
+	FromAgentKey string `gorm:"column:from_agent_key;type:varchar(120);not null" json:"fromAgentKey"`
+	Role string `gorm:"column:role;type:varchar(32);default:'user';not null" json:"role"`
+	Content string `gorm:"column:content;type:text;not null" json:"content"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (MessagesGorm) TableName() string { return MessagesTable }
+
+func (value MessagesGorm) Validate() error {
+	if !messagesChannelSlugPattern.MatchString(value.ChannelSlug) { return errors.New("messages.channel_slug does not match the required pattern") }
+	if value.Seq < 1 { return errors.New("messages.seq is below the minimum") }
+	if !messagesFromAgentKeyPattern.MatchString(value.FromAgentKey) { return errors.New("messages.from_agent_key does not match the required pattern") }
+	if !containsString(MessagesRoleValues, value.Role) { return errors.New("unsupported messages.role") }
+	if len([]byte(value.Content)) > 1048576 { return errors.New("messages.content exceeds 1048576 bytes") }
+	if len([]byte(value.Content)) < 1 { return errors.New("messages.content is below 1 bytes") }
+	if !validateJSONString(value.MetaData) { return errors.New("messages.meta_data must be valid JSON") }
+	return nil
+}
+
+const ChannelMembersTable = "ai_agent_bridge.channel_members"
+const ChannelMembersSelectSQL = `select
+      id::text as id,
+      channel_slug,
+      channel_id::text as channel_id,
+      agent_key,
+      role,
+      to_char(joined_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as joined_at,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at,
+      meta_data
+    from ai_agent_bridge.channel_members`
+
+var ChannelMembersRoleValues = []string{"owner", "member", "observer"}
+
+type ChannelMembersGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ChannelSlug string `gorm:"column:channel_slug;type:varchar(120);not null" json:"channelSlug"`
+	ChannelId *uuid.UUID `gorm:"column:channel_id;type:uuid" json:"channelId,omitempty"`
+	AgentKey string `gorm:"column:agent_key;type:varchar(120);not null" json:"agentKey"`
+	Role string `gorm:"column:role;type:varchar(32);default:'member';not null" json:"role"`
+	JoinedAt time.Time `gorm:"column:joined_at;type:timestamptz;default:now();not null" json:"joinedAt"`
+	LastSeenAt time.Time `gorm:"column:last_seen_at;type:timestamptz;default:now();not null" json:"lastSeenAt"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+}
+
+func (ChannelMembersGorm) TableName() string { return ChannelMembersTable }
+
+func (value ChannelMembersGorm) Validate() error {
+	if !channelMembersChannelSlugPattern.MatchString(value.ChannelSlug) { return errors.New("channel_members.channel_slug does not match the required pattern") }
+	if !channelMembersAgentKeyPattern.MatchString(value.AgentKey) { return errors.New("channel_members.agent_key does not match the required pattern") }
+	if !containsString(ChannelMembersRoleValues, value.Role) { return errors.New("unsupported channel_members.role") }
+	if !validateJSONString(value.MetaData) { return errors.New("channel_members.meta_data must be valid JSON") }
+	return nil
+}
+
+const SharedContextTable = "ai_agent_bridge.shared_context"
+const SharedContextSelectSQL = `select
+      id::text as id,
+      channel_slug,
+      channel_id::text as channel_id,
+      ctx_key,
+      value,
+      version,
+      updated_by,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from ai_agent_bridge.shared_context`
+
+type SharedContextGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ChannelSlug *string `gorm:"column:channel_slug;type:varchar(120)" json:"channelSlug,omitempty"`
+	ChannelId *uuid.UUID `gorm:"column:channel_id;type:uuid" json:"channelId,omitempty"`
+	CtxKey string `gorm:"column:ctx_key;type:varchar(200);not null" json:"ctxKey"`
+	Value datatypes.JSON `gorm:"column:value;type:jsonb;default:'{}'::jsonb;not null" json:"value"`
+	Version int32 `gorm:"column:version;type:integer;default:1;not null" json:"version"`
+	UpdatedBy string `gorm:"column:updated_by;type:varchar(120);default:'system';not null" json:"updatedBy"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (SharedContextGorm) TableName() string { return SharedContextTable }
+
+func (value SharedContextGorm) Validate() error {
+	if value.ChannelSlug != nil {
+		if !sharedContextChannelSlugPattern.MatchString(*value.ChannelSlug) { return errors.New("shared_context.channel_slug does not match the required pattern") }
+	}
+	if !sharedContextCtxKeyPattern.MatchString(value.CtxKey) { return errors.New("shared_context.ctx_key does not match the required pattern") }
+	if !validateJSONString(value.Value) { return errors.New("shared_context.value must be valid JSON") }
+	if value.Version < 1 { return errors.New("shared_context.version is below the minimum") }
 	return nil
 }
 

@@ -8,6 +8,68 @@
 -- This file is the desired-state contract used by the remote migration diff generator.
 -- Do not apply it directly to a shared database; generate and review a diff instead.
 
+create schema if not exists threefa;
+
+create table if not exists threefa.accounts (
+  id uuid primary key default gen_random_uuid(),
+  username text not null,
+  auth_secret text not null,
+  created_at timestamptz default now() not null,
+  constraint threefa_accounts_username_size_chk
+    check (octet_length(username) between 1 and 320),
+  constraint threefa_accounts_username_trimmed_chk
+    check (username = btrim(username)),
+  constraint threefa_accounts_auth_secret_size_chk
+    check (octet_length(auth_secret) between 1 and 1024)
+);
+
+create unique index if not exists threefa_accounts_username_uq
+  on threefa.accounts (username);
+
+create table if not exists threefa.devices (
+  id uuid primary key default gen_random_uuid(),
+  account_id uuid not null references threefa.accounts(id) on delete cascade,
+  device_name text not null,
+  sync_token_hash text not null,
+  revoked boolean default false not null,
+  created_at timestamptz default now() not null,
+  constraint threefa_devices_name_size_chk
+    check (octet_length(device_name) between 1 and 200),
+  constraint threefa_devices_name_trimmed_chk
+    check (device_name = btrim(device_name)),
+  constraint threefa_devices_token_hash_chk
+    check (sync_token_hash ~ '^[a-f0-9]{64}$')
+);
+
+create index if not exists threefa_devices_account_idx
+  on threefa.devices (account_id);
+
+create index if not exists threefa_devices_token_idx
+  on threefa.devices (sync_token_hash)
+  where revoked = false;
+
+create table if not exists threefa.vault_blobs (
+  account_id uuid primary key references threefa.accounts(id) on delete cascade,
+  ciphertext text not null,
+  nonce text not null,
+  kdf_salt text not null,
+  kdf_params jsonb not null,
+  version jsonb not null,
+  updated_at timestamptz default now() not null,
+  constraint threefa_vault_ciphertext_size_chk
+    check (octet_length(decode(ciphertext, 'base64')) between 1 and 524288),
+  constraint threefa_vault_nonce_size_chk
+    check (octet_length(decode(nonce, 'base64')) = 24),
+  constraint threefa_vault_salt_size_chk
+    check (octet_length(decode(kdf_salt, 'base64')) between 8 and 64),
+  constraint threefa_vault_kdf_params_object_chk
+    check (jsonb_typeof(kdf_params) = 'object'),
+  constraint threefa_vault_version_array_chk
+    check (jsonb_typeof(version) = 'array'),
+  constraint threefa_vault_version_size_chk
+    check (jsonb_array_length(version) <= 64)
+);
+
 create table if not exists app_config (
   id uuid primary key default gen_random_uuid(),
   scope varchar(120) default 'default' not null,
@@ -5810,3 +5872,163 @@ alter table if exists vcs_refs
 alter table if exists vcs_operations
   add constraint vcs_operations_repository_fk
   foreign key (repository_id) references vcs_repositories(id);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- ai-agent-bridge: an inter-agent conversation bus. Multi-participant chatrooms
+-- (capped at 32 members, enforced by the ai-agent-bridge.rs service) discovered
+-- by topic-embedding similarity, with a durable message log, roster, and shared
+-- context. Isolated in its own `ai_agent_bridge` schema (mirrors the `benefactor`
+-- block) so it does not collide with the shared public tables; consuming services
+-- address them via `search_path = ai_agent_bridge, public` or the schema-qualified
+-- constants emitted by pg-defs. The service is in-memory-first — these tables are
+-- a best-effort durable mirror, so they use denormalized `channel_slug` as the
+-- natural link (the uuid FK is nullable and best-effort). Embeddings are stored
+-- as JSONB arrays + a dimension column, mirroring `agent_context_embeddings`.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+create schema if not exists ai_agent_bridge;
+
+create table if not exists ai_agent_bridge.agents (
+  id uuid primary key default gen_random_uuid(),
+  agent_key varchar(120) not null,
+  display_name varchar(200) default '' not null,
+  kind varchar(32) default 'other' not null,
+  host varchar(255),
+  meta_data jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint ai_agent_bridge_agents_key_format_chk
+    check (agent_key ~ '^[A-Za-z0-9._:-]{1,120}$'),
+  constraint ai_agent_bridge_agents_kind_chk
+    check (kind in ('claude', 'codex', 'human', 'other')),
+  constraint ai_agent_bridge_agents_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create unique index if not exists ai_agent_bridge_agents_agent_key_uq
+  on ai_agent_bridge.agents (agent_key);
+
+create table if not exists ai_agent_bridge.channels (
+  id uuid primary key default gen_random_uuid(),
+  slug varchar(120) not null,
+  topic text not null,
+  topic_summary text,
+  embedding_model varchar(120) default 'local-hash-v1' not null,
+  embedding jsonb default '[]'::jsonb not null,
+  embedding_dimensions integer default 0 not null,
+  status varchar(32) default 'active' not null,
+  created_by varchar(120) default 'system' not null,
+  meta_data jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint ai_agent_bridge_channels_slug_format_chk
+    check (slug ~ '^[a-z0-9][a-z0-9._-]{0,119}$'),
+  constraint ai_agent_bridge_channels_topic_size_chk
+    check (octet_length(topic) between 1 and 8192),
+  constraint ai_agent_bridge_channels_status_chk
+    check (status in ('active', 'archived')),
+  constraint ai_agent_bridge_channels_embedding_array_chk
+    check (jsonb_typeof(embedding) = 'array'),
+  constraint ai_agent_bridge_channels_dimensions_chk
+    check (embedding_dimensions >= 0),
+  constraint ai_agent_bridge_channels_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create unique index if not exists ai_agent_bridge_channels_slug_uq
+  on ai_agent_bridge.channels (slug);
+
+create index if not exists ai_agent_bridge_channels_status_idx
+  on ai_agent_bridge.channels (status)
+  where status = 'active';
+
+create index if not exists ai_agent_bridge_channels_updated_at_idx
+  on ai_agent_bridge.channels (updated_at desc);
+
+create table if not exists ai_agent_bridge.messages (
+  id uuid primary key default gen_random_uuid(),
+  channel_slug varchar(120) not null,
+  channel_id uuid,
+  seq bigint not null,
+  from_agent_key varchar(120) not null,
+  role varchar(32) default 'user' not null,
+  content text not null,
+  meta_data jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  constraint ai_agent_bridge_messages_slug_format_chk
+    check (channel_slug ~ '^[a-z0-9][a-z0-9._-]{0,119}$'),
+  constraint ai_agent_bridge_messages_from_format_chk
+    check (from_agent_key ~ '^[A-Za-z0-9._:-]{1,120}$'),
+  constraint ai_agent_bridge_messages_seq_chk
+    check (seq > 0),
+  constraint ai_agent_bridge_messages_role_chk
+    check (role in ('user', 'assistant', 'system', 'tool')),
+  constraint ai_agent_bridge_messages_content_size_chk
+    check (octet_length(content) between 1 and 1048576),
+  constraint ai_agent_bridge_messages_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create unique index if not exists ai_agent_bridge_messages_channel_seq_uq
+  on ai_agent_bridge.messages (channel_slug, seq);
+
+create index if not exists ai_agent_bridge_messages_channel_created_idx
+  on ai_agent_bridge.messages (channel_slug, created_at desc);
+
+create table if not exists ai_agent_bridge.channel_members (
+  id uuid primary key default gen_random_uuid(),
+  channel_slug varchar(120) not null,
+  channel_id uuid,
+  agent_key varchar(120) not null,
+  role varchar(32) default 'member' not null,
+  joined_at timestamptz default now() not null,
+  last_seen_at timestamptz default now() not null,
+  meta_data jsonb default '{}'::jsonb not null,
+  constraint ai_agent_bridge_members_slug_format_chk
+    check (channel_slug ~ '^[a-z0-9][a-z0-9._-]{0,119}$'),
+  constraint ai_agent_bridge_members_agent_format_chk
+    check (agent_key ~ '^[A-Za-z0-9._:-]{1,120}$'),
+  constraint ai_agent_bridge_members_role_chk
+    check (role in ('owner', 'member', 'observer')),
+  constraint ai_agent_bridge_members_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create unique index if not exists ai_agent_bridge_members_channel_agent_uq
+  on ai_agent_bridge.channel_members (channel_slug, agent_key);
+
+create index if not exists ai_agent_bridge_members_agent_idx
+  on ai_agent_bridge.channel_members (agent_key);
+
+create table if not exists ai_agent_bridge.shared_context (
+  id uuid primary key default gen_random_uuid(),
+  channel_slug varchar(120),
+  channel_id uuid,
+  ctx_key varchar(200) not null,
+  value jsonb default '{}'::jsonb not null,
+  version integer default 1 not null,
+  updated_by varchar(120) default 'system' not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint ai_agent_bridge_context_slug_format_chk
+    check (channel_slug is null or channel_slug ~ '^[a-z0-9][a-z0-9._-]{0,119}$'),
+  constraint ai_agent_bridge_context_key_format_chk
+    check (ctx_key ~ '^[A-Za-z0-9._:/-]{1,200}$'),
+  constraint ai_agent_bridge_context_version_chk
+    check (version > 0)
+);
+
+create unique index if not exists ai_agent_bridge_context_channel_key_uq
+  on ai_agent_bridge.shared_context (channel_slug, ctx_key);
+
+alter table if exists ai_agent_bridge.messages
+  add constraint ai_agent_bridge_messages_channel_fk
+  foreign key (channel_id) references ai_agent_bridge.channels(id);
+
+alter table if exists ai_agent_bridge.channel_members
+  add constraint ai_agent_bridge_members_channel_fk
+  foreign key (channel_id) references ai_agent_bridge.channels(id);
+
+alter table if exists ai_agent_bridge.shared_context
+  add constraint ai_agent_bridge_context_channel_fk
+  foreign key (channel_id) references ai_agent_bridge.channels(id);

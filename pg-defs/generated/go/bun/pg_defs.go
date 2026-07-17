@@ -14,6 +14,7 @@ import (
 	"github.com/uptrace/bun"
 )
 
+var devicesSyncTokenHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var appConfigScopePattern = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,120}$`)
 var appConfigKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,200}$`)
 var vapiPhoneCallEventsEventTypePattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,80}$`)
@@ -97,6 +98,93 @@ var usaccAuditEventsEventHashPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,1
 var usaccAuditEventsSourcePattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,80}$`)
 var vcsRepositoriesSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,119}$`)
 var vcsRepositoriesDefaultBranchPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,160}$`)
+var agentsAgentKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,120}$`)
+var channelsSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,119}$`)
+var messagesChannelSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,119}$`)
+var messagesFromAgentKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,120}$`)
+var channelMembersChannelSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,119}$`)
+var channelMembersAgentKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,120}$`)
+var sharedContextChannelSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,119}$`)
+var sharedContextCtxKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,200}$`)
+
+const AccountsTable = "threefa.accounts"
+const AccountsSelectSQL = `select
+      id::text as id,
+      username,
+      auth_secret,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from threefa.accounts`
+
+type AccountsBun struct {
+	bun.BaseModel `bun:"table:threefa.accounts"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	Username string `bun:"username,type:text" json:"username"`
+	AuthSecret string `bun:"auth_secret,type:text" json:"authSecret"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+}
+
+func (value AccountsBun) Validate() error {
+	if len([]byte(value.Username)) > 320 { return errors.New("accounts.username exceeds 320 bytes") }
+	if len([]byte(value.Username)) < 1 { return errors.New("accounts.username is below 1 bytes") }
+	if len([]byte(value.AuthSecret)) > 1024 { return errors.New("accounts.auth_secret exceeds 1024 bytes") }
+	if len([]byte(value.AuthSecret)) < 1 { return errors.New("accounts.auth_secret is below 1 bytes") }
+	return nil
+}
+
+const DevicesTable = "threefa.devices"
+const DevicesSelectSQL = `select
+      id::text as id,
+      account_id::text as account_id,
+      device_name,
+      sync_token_hash,
+      revoked,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from threefa.devices`
+
+type DevicesBun struct {
+	bun.BaseModel `bun:"table:threefa.devices"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	AccountId uuid.UUID `bun:"account_id,type:uuid" json:"accountId"`
+	DeviceName string `bun:"device_name,type:text" json:"deviceName"`
+	SyncTokenHash string `bun:"sync_token_hash,type:text" json:"syncTokenHash"`
+	Revoked bool `bun:"revoked,type:boolean,default:false" json:"revoked"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+}
+
+func (value DevicesBun) Validate() error {
+	if len([]byte(value.DeviceName)) > 200 { return errors.New("devices.device_name exceeds 200 bytes") }
+	if len([]byte(value.DeviceName)) < 1 { return errors.New("devices.device_name is below 1 bytes") }
+	if !devicesSyncTokenHashPattern.MatchString(value.SyncTokenHash) { return errors.New("devices.sync_token_hash does not match the required pattern") }
+	return nil
+}
+
+const VaultBlobsTable = "threefa.vault_blobs"
+const VaultBlobsSelectSQL = `select
+      account_id::text as account_id,
+      ciphertext,
+      nonce,
+      kdf_salt,
+      kdf_params,
+      version,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from threefa.vault_blobs`
+
+type VaultBlobsBun struct {
+	bun.BaseModel `bun:"table:threefa.vault_blobs"`
+	AccountId uuid.UUID `bun:"account_id,type:uuid,pk" json:"accountId"`
+	Ciphertext string `bun:"ciphertext,type:text" json:"ciphertext"`
+	Nonce string `bun:"nonce,type:text" json:"nonce"`
+	KdfSalt string `bun:"kdf_salt,type:text" json:"kdfSalt"`
+	KdfParams json.RawMessage `bun:"kdf_params,type:jsonb" json:"kdfParams"`
+	Version json.RawMessage `bun:"version,type:jsonb" json:"version"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value VaultBlobsBun) Validate() error {
+	if !validateRawJSON(value.KdfParams) { return errors.New("vault_blobs.kdf_params must be valid JSON") }
+	if !validateRawJSON(value.Version) { return errors.New("vault_blobs.version must be valid JSON") }
+	return nil
+}
 
 const AppConfigTable = "app_config"
 const AppConfigSelectSQL = `select
@@ -6470,6 +6558,193 @@ func (value VcsOperationsBun) Validate() error {
 	if value.DurationMs != nil {
 		if *value.DurationMs < 0 { return errors.New("vcs_operations.duration_ms is below the minimum") }
 	}
+	return nil
+}
+
+const AgentsTable = "ai_agent_bridge.agents"
+const AgentsSelectSQL = `select
+      id::text as id,
+      agent_key,
+      display_name,
+      kind,
+      host,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from ai_agent_bridge.agents`
+
+var AgentsKindValues = []string{"claude", "codex", "human", "other"}
+
+type AgentsBun struct {
+	bun.BaseModel `bun:"table:ai_agent_bridge.agents"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	AgentKey string `bun:"agent_key,type:varchar(120)" json:"agentKey"`
+	DisplayName string `bun:"display_name,type:varchar(200),default:''" json:"displayName"`
+	Kind string `bun:"kind,type:varchar(32),default:'other'" json:"kind"`
+	Host *string `bun:"host,type:varchar(255),nullzero" json:"host,omitempty"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value AgentsBun) Validate() error {
+	if !agentsAgentKeyPattern.MatchString(value.AgentKey) { return errors.New("agents.agent_key does not match the required pattern") }
+	if !containsString(AgentsKindValues, value.Kind) { return errors.New("unsupported agents.kind") }
+	if !validateRawJSON(value.MetaData) { return errors.New("agents.meta_data must be valid JSON") }
+	return nil
+}
+
+const ChannelsTable = "ai_agent_bridge.channels"
+const ChannelsSelectSQL = `select
+      id::text as id,
+      slug,
+      topic,
+      topic_summary,
+      embedding_model,
+      embedding,
+      embedding_dimensions,
+      status,
+      created_by,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from ai_agent_bridge.channels`
+
+var ChannelsStatusValues = []string{"active", "archived"}
+
+type ChannelsBun struct {
+	bun.BaseModel `bun:"table:ai_agent_bridge.channels"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	Slug string `bun:"slug,type:varchar(120)" json:"slug"`
+	Topic string `bun:"topic,type:text" json:"topic"`
+	TopicSummary *string `bun:"topic_summary,type:text,nullzero" json:"topicSummary,omitempty"`
+	EmbeddingModel string `bun:"embedding_model,type:varchar(120),default:'local-hash-v1'" json:"embeddingModel"`
+	Embedding json.RawMessage `bun:"embedding,type:jsonb,default:'[]'::jsonb" json:"embedding"`
+	EmbeddingDimensions int32 `bun:"embedding_dimensions,type:integer,default:0" json:"embeddingDimensions"`
+	Status string `bun:"status,type:varchar(32),default:'active'" json:"status"`
+	CreatedBy string `bun:"created_by,type:varchar(120),default:'system'" json:"createdBy"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value ChannelsBun) Validate() error {
+	if !channelsSlugPattern.MatchString(value.Slug) { return errors.New("channels.slug does not match the required pattern") }
+	if len([]byte(value.Topic)) > 8192 { return errors.New("channels.topic exceeds 8192 bytes") }
+	if len([]byte(value.Topic)) < 1 { return errors.New("channels.topic is below 1 bytes") }
+	if !validateRawJSON(value.Embedding) { return errors.New("channels.embedding must be valid JSON") }
+	if value.EmbeddingDimensions < 0 { return errors.New("channels.embedding_dimensions is below the minimum") }
+	if !containsString(ChannelsStatusValues, value.Status) { return errors.New("unsupported channels.status") }
+	if !validateRawJSON(value.MetaData) { return errors.New("channels.meta_data must be valid JSON") }
+	return nil
+}
+
+const MessagesTable = "ai_agent_bridge.messages"
+const MessagesSelectSQL = `select
+      id::text as id,
+      channel_slug,
+      channel_id::text as channel_id,
+      seq,
+      from_agent_key,
+      role,
+      content,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from ai_agent_bridge.messages`
+
+var MessagesRoleValues = []string{"user", "assistant", "system", "tool"}
+
+type MessagesBun struct {
+	bun.BaseModel `bun:"table:ai_agent_bridge.messages"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	ChannelSlug string `bun:"channel_slug,type:varchar(120)" json:"channelSlug"`
+	ChannelId *uuid.UUID `bun:"channel_id,type:uuid,nullzero" json:"channelId,omitempty"`
+	Seq int64 `bun:"seq,type:bigint" json:"seq"`
+	FromAgentKey string `bun:"from_agent_key,type:varchar(120)" json:"fromAgentKey"`
+	Role string `bun:"role,type:varchar(32),default:'user'" json:"role"`
+	Content string `bun:"content,type:text" json:"content"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+}
+
+func (value MessagesBun) Validate() error {
+	if !messagesChannelSlugPattern.MatchString(value.ChannelSlug) { return errors.New("messages.channel_slug does not match the required pattern") }
+	if value.Seq < 1 { return errors.New("messages.seq is below the minimum") }
+	if !messagesFromAgentKeyPattern.MatchString(value.FromAgentKey) { return errors.New("messages.from_agent_key does not match the required pattern") }
+	if !containsString(MessagesRoleValues, value.Role) { return errors.New("unsupported messages.role") }
+	if len([]byte(value.Content)) > 1048576 { return errors.New("messages.content exceeds 1048576 bytes") }
+	if len([]byte(value.Content)) < 1 { return errors.New("messages.content is below 1 bytes") }
+	if !validateRawJSON(value.MetaData) { return errors.New("messages.meta_data must be valid JSON") }
+	return nil
+}
+
+const ChannelMembersTable = "ai_agent_bridge.channel_members"
+const ChannelMembersSelectSQL = `select
+      id::text as id,
+      channel_slug,
+      channel_id::text as channel_id,
+      agent_key,
+      role,
+      to_char(joined_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as joined_at,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at,
+      meta_data
+    from ai_agent_bridge.channel_members`
+
+var ChannelMembersRoleValues = []string{"owner", "member", "observer"}
+
+type ChannelMembersBun struct {
+	bun.BaseModel `bun:"table:ai_agent_bridge.channel_members"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	ChannelSlug string `bun:"channel_slug,type:varchar(120)" json:"channelSlug"`
+	ChannelId *uuid.UUID `bun:"channel_id,type:uuid,nullzero" json:"channelId,omitempty"`
+	AgentKey string `bun:"agent_key,type:varchar(120)" json:"agentKey"`
+	Role string `bun:"role,type:varchar(32),default:'member'" json:"role"`
+	JoinedAt time.Time `bun:"joined_at,type:timestamptz,default:now()" json:"joinedAt"`
+	LastSeenAt time.Time `bun:"last_seen_at,type:timestamptz,default:now()" json:"lastSeenAt"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+}
+
+func (value ChannelMembersBun) Validate() error {
+	if !channelMembersChannelSlugPattern.MatchString(value.ChannelSlug) { return errors.New("channel_members.channel_slug does not match the required pattern") }
+	if !channelMembersAgentKeyPattern.MatchString(value.AgentKey) { return errors.New("channel_members.agent_key does not match the required pattern") }
+	if !containsString(ChannelMembersRoleValues, value.Role) { return errors.New("unsupported channel_members.role") }
+	if !validateRawJSON(value.MetaData) { return errors.New("channel_members.meta_data must be valid JSON") }
+	return nil
+}
+
+const SharedContextTable = "ai_agent_bridge.shared_context"
+const SharedContextSelectSQL = `select
+      id::text as id,
+      channel_slug,
+      channel_id::text as channel_id,
+      ctx_key,
+      value,
+      version,
+      updated_by,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from ai_agent_bridge.shared_context`
+
+type SharedContextBun struct {
+	bun.BaseModel `bun:"table:ai_agent_bridge.shared_context"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	ChannelSlug *string `bun:"channel_slug,type:varchar(120),nullzero" json:"channelSlug,omitempty"`
+	ChannelId *uuid.UUID `bun:"channel_id,type:uuid,nullzero" json:"channelId,omitempty"`
+	CtxKey string `bun:"ctx_key,type:varchar(200)" json:"ctxKey"`
+	Value json.RawMessage `bun:"value,type:jsonb,default:'{}'::jsonb" json:"value"`
+	Version int32 `bun:"version,type:integer,default:1" json:"version"`
+	UpdatedBy string `bun:"updated_by,type:varchar(120),default:'system'" json:"updatedBy"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value SharedContextBun) Validate() error {
+	if value.ChannelSlug != nil {
+		if !sharedContextChannelSlugPattern.MatchString(*value.ChannelSlug) { return errors.New("shared_context.channel_slug does not match the required pattern") }
+	}
+	if !sharedContextCtxKeyPattern.MatchString(value.CtxKey) { return errors.New("shared_context.ctx_key does not match the required pattern") }
+	if !validateRawJSON(value.Value) { return errors.New("shared_context.value must be valid JSON") }
+	if value.Version < 1 { return errors.New("shared_context.version is below the minimum") }
 	return nil
 }
 

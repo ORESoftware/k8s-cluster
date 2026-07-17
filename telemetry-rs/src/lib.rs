@@ -47,8 +47,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 
 /// In-cluster OTel collector OTLP/HTTP base URL, used when
 /// `OTEL_EXPORTER_OTLP_ENDPOINT` is not set in the environment.
-const DEFAULT_OTLP_ENDPOINT: &str =
-    "http://dd-otel-collector.observability.svc.cluster.local:4318";
+const DEFAULT_OTLP_ENDPOINT: &str = "http://dd-otel-collector.observability.svc.cluster.local:4318";
 
 /// Guard returned by [`init`]. Holds the tracer provider for the life of the process
 /// and flushes any buffered spans when it is dropped (i.e. on shutdown). Bind it for
@@ -178,9 +177,12 @@ pub fn init(service_name: &str) -> OtelGuard {
 /// naming it `"{METHOD} {path}"`, extracting any upstream W3C `traceparent` so the
 /// span links into the caller's trace, and recording the response status onto the
 /// span when it completes. Add to your axum `Router` via `.layer(...)`.
-pub fn http_trace_layer(
-) -> TraceLayer<SharedClassifier<ServerErrorsAsFailures>, OtelMakeSpan, DefaultOnRequest, OtelOnResponse>
-{
+pub fn http_trace_layer() -> TraceLayer<
+    SharedClassifier<ServerErrorsAsFailures>,
+    OtelMakeSpan,
+    DefaultOnRequest,
+    OtelOnResponse,
+> {
     TraceLayer::new_for_http()
         .make_span_with(OtelMakeSpan)
         .on_response(OtelOnResponse)
@@ -224,7 +226,10 @@ pub struct OtelOnResponse;
 impl<B> OnResponse<B> for OtelOnResponse {
     fn on_response(self, response: &Response<B>, _latency: Duration, span: &Span) {
         // Cast to u64: `tracing` records integer fields as i64/u64.
-        span.record("http.response.status_code", response.status().as_u16() as u64);
+        span.record(
+            "http.response.status_code",
+            response.status().as_u16() as u64,
+        );
     }
 }
 
@@ -281,8 +286,7 @@ fn build_tracer_provider(
 /// and `OTEL_RESOURCE_ATTRIBUTES` from the environment; we overlay an explicit
 /// `service.name` fallback plus the k8s pod/namespace from the downward-API env vars.
 fn resource(service_name: &str) -> Resource {
-    let service =
-        std::env::var("OTEL_SERVICE_NAME").unwrap_or_else(|_| service_name.to_string());
+    let service = std::env::var("OTEL_SERVICE_NAME").unwrap_or_else(|_| service_name.to_string());
     let mut attributes = vec![KeyValue::new(semconv::SERVICE_NAME, service)];
 
     if let Some(namespace) = first_env(&["POD_NAMESPACE", "K8S_NAMESPACE_NAME"]) {
@@ -332,7 +336,10 @@ mod tests {
     fn per_signal_endpoint_wins_and_is_verbatim() {
         // OTEL_EXPORTER_OTLP_TRACES_ENDPOINT takes precedence and is not suffixed.
         assert_eq!(
-            resolve_traces_endpoint(Some("http://other:4318/v1/traces"), Some("http://base:4318")),
+            resolve_traces_endpoint(
+                Some("http://other:4318/v1/traces"),
+                Some("http://base:4318")
+            ),
             "http://other:4318/v1/traces"
         );
     }

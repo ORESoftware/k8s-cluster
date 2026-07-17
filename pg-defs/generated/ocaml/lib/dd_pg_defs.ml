@@ -3,6 +3,79 @@
 (* Generated ORM/client code is an adapter only; do not infer migrations from it. *)
 (* MIGRATION SAFETY: never run or apply migrations automatically. Require explicit human review and approval before any database write. *)
 
+let accounts_table = "threefa.accounts"
+
+let accounts_columns = ["id"; "username"; "auth_secret"; "created_at"]
+
+let accounts_select_sql = "select\n      id::text as id,\n      username,\n      auth_secret,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from threefa.accounts"
+
+type accounts_row = {
+  accounts_id : string;
+  accounts_username : string;
+  accounts_auth_secret : string;
+  accounts_created_at : string;
+}
+
+let accounts_row_of_row ~(get : int -> string) ~is_null:(_ : int -> bool) : accounts_row =
+  {
+    accounts_id = get 0;
+    accounts_username = get 1;
+    accounts_auth_secret = get 2;
+    accounts_created_at = get 3;
+  }
+
+let devices_table = "threefa.devices"
+
+let devices_columns = ["id"; "account_id"; "device_name"; "sync_token_hash"; "revoked"; "created_at"]
+
+let devices_select_sql = "select\n      id::text as id,\n      account_id::text as account_id,\n      device_name,\n      sync_token_hash,\n      revoked,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from threefa.devices"
+
+type devices_row = {
+  devices_id : string;
+  devices_account_id : string;
+  devices_device_name : string;
+  devices_sync_token_hash : string;
+  devices_revoked : bool;
+  devices_created_at : string;
+}
+
+let devices_row_of_row ~(get : int -> string) ~is_null:(_ : int -> bool) : devices_row =
+  {
+    devices_id = get 0;
+    devices_account_id = get 1;
+    devices_device_name = get 2;
+    devices_sync_token_hash = get 3;
+    devices_revoked = (get 4 = "t");
+    devices_created_at = get 5;
+  }
+
+let vault_blobs_table = "threefa.vault_blobs"
+
+let vault_blobs_columns = ["account_id"; "ciphertext"; "nonce"; "kdf_salt"; "kdf_params"; "version"; "updated_at"]
+
+let vault_blobs_select_sql = "select\n      account_id::text as account_id,\n      ciphertext,\n      nonce,\n      kdf_salt,\n      kdf_params::text as kdf_params_json,\n      version::text as version_json,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from threefa.vault_blobs"
+
+type vault_blobs_row = {
+  vault_blobs_account_id : string;
+  vault_blobs_ciphertext : string;
+  vault_blobs_nonce : string;
+  vault_blobs_kdf_salt : string;
+  vault_blobs_kdf_params : string;
+  vault_blobs_version : string;
+  vault_blobs_updated_at : string;
+}
+
+let vault_blobs_row_of_row ~(get : int -> string) ~is_null:(_ : int -> bool) : vault_blobs_row =
+  {
+    vault_blobs_account_id = get 0;
+    vault_blobs_ciphertext = get 1;
+    vault_blobs_nonce = get 2;
+    vault_blobs_kdf_salt = get 3;
+    vault_blobs_kdf_params = get 4;
+    vault_blobs_version = get 5;
+    vault_blobs_updated_at = get 6;
+  }
+
 let app_config_table = "app_config"
 
 let app_config_columns = ["id"; "scope"; "key"; "value"; "version"; "status"; "labels"; "meta_data"; "is_soft_deleted"; "created_at"; "updated_at"; "created_by"; "updated_by"]
@@ -10259,4 +10332,287 @@ let validate_vcs_operations_duration_ms (value : int) : (int, string) result =
 
 let validate_vcs_operations_requested_by (value : string) : (string, string) result =
   if String.length value > 200 then Error "vcs_operations.requested_by must be at most 200 characters"
+  else Ok value
+
+let agents_table = "ai_agent_bridge.agents"
+
+let agents_columns = ["id"; "agent_key"; "display_name"; "kind"; "host"; "meta_data"; "created_at"; "updated_at"]
+
+let agents_select_sql = "select\n      id::text as id,\n      agent_key,\n      display_name,\n      kind,\n      host,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from ai_agent_bridge.agents"
+
+type agents_kind = [ `Claude | `Codex | `Human | `Other ]
+
+let agents_kind_to_string (value : agents_kind) : string =
+  match value with
+  | `Claude -> "claude"
+  | `Codex -> "codex"
+  | `Human -> "human"
+  | `Other -> "other"
+
+let parse_agents_kind (value : string) : (agents_kind, string) result =
+  match value with
+  | "claude" -> Ok `Claude
+  | "codex" -> Ok `Codex
+  | "human" -> Ok `Human
+  | "other" -> Ok `Other
+  | _ -> Error ("unsupported agents.kind: " ^ value)
+
+type agents_row = {
+  agents_id : string;
+  agents_agent_key : string;
+  agents_display_name : string;
+  agents_kind : string;
+  agents_host : string option;
+  agents_meta_data : string;
+  agents_created_at : string;
+  agents_updated_at : string;
+}
+
+let agents_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : agents_row =
+  {
+    agents_id = get 0;
+    agents_agent_key = get 1;
+    agents_display_name = get 2;
+    agents_kind = get 3;
+    agents_host = (if is_null 4 then None else Some (get 4));
+    agents_meta_data = get 5;
+    agents_created_at = get 6;
+    agents_updated_at = get 7;
+  }
+
+let validate_agents_agent_key (value : string) : (string, string) result =
+  if String.length value > 120 then Error "agents.agent_key must be at most 120 characters"
+  else Ok value
+
+let validate_agents_display_name (value : string) : (string, string) result =
+  if String.length value > 200 then Error "agents.display_name must be at most 200 characters"
+  else Ok value
+
+let validate_agents_host (value : string) : (string, string) result =
+  if String.length value > 255 then Error "agents.host must be at most 255 characters"
+  else Ok value
+
+let channels_table = "ai_agent_bridge.channels"
+
+let channels_columns = ["id"; "slug"; "topic"; "topic_summary"; "embedding_model"; "embedding"; "embedding_dimensions"; "status"; "created_by"; "meta_data"; "created_at"; "updated_at"]
+
+let channels_select_sql = "select\n      id::text as id,\n      slug,\n      topic,\n      topic_summary,\n      embedding_model,\n      embedding::text as embedding_json,\n      embedding_dimensions,\n      status,\n      created_by,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from ai_agent_bridge.channels"
+
+type channels_status = [ `Active | `Archived ]
+
+let channels_status_to_string (value : channels_status) : string =
+  match value with
+  | `Active -> "active"
+  | `Archived -> "archived"
+
+let parse_channels_status (value : string) : (channels_status, string) result =
+  match value with
+  | "active" -> Ok `Active
+  | "archived" -> Ok `Archived
+  | _ -> Error ("unsupported channels.status: " ^ value)
+
+type channels_row = {
+  channels_id : string;
+  channels_slug : string;
+  channels_topic : string;
+  channels_topic_summary : string option;
+  channels_embedding_model : string;
+  channels_embedding : string;
+  channels_embedding_dimensions : int;
+  channels_status : string;
+  channels_created_by : string;
+  channels_meta_data : string;
+  channels_created_at : string;
+  channels_updated_at : string;
+}
+
+let channels_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : channels_row =
+  {
+    channels_id = get 0;
+    channels_slug = get 1;
+    channels_topic = get 2;
+    channels_topic_summary = (if is_null 3 then None else Some (get 3));
+    channels_embedding_model = get 4;
+    channels_embedding = get 5;
+    channels_embedding_dimensions = int_of_string (get 6);
+    channels_status = get 7;
+    channels_created_by = get 8;
+    channels_meta_data = get 9;
+    channels_created_at = get 10;
+    channels_updated_at = get 11;
+  }
+
+let validate_channels_slug (value : string) : (string, string) result =
+  if String.length value > 120 then Error "channels.slug must be at most 120 characters"
+  else Ok value
+
+let validate_channels_embedding_model (value : string) : (string, string) result =
+  if String.length value > 120 then Error "channels.embedding_model must be at most 120 characters"
+  else Ok value
+
+let validate_channels_embedding_dimensions (value : int) : (int, string) result =
+  if value < 0 then Error "channels.embedding_dimensions is below the minimum"
+  else Ok value
+
+let validate_channels_created_by (value : string) : (string, string) result =
+  if String.length value > 120 then Error "channels.created_by must be at most 120 characters"
+  else Ok value
+
+let messages_table = "ai_agent_bridge.messages"
+
+let messages_columns = ["id"; "channel_slug"; "channel_id"; "seq"; "from_agent_key"; "role"; "content"; "meta_data"; "created_at"]
+
+let messages_select_sql = "select\n      id::text as id,\n      channel_slug,\n      channel_id::text as channel_id,\n      seq,\n      from_agent_key,\n      role,\n      content,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from ai_agent_bridge.messages"
+
+type messages_role = [ `User | `Assistant | `System | `Tool ]
+
+let messages_role_to_string (value : messages_role) : string =
+  match value with
+  | `User -> "user"
+  | `Assistant -> "assistant"
+  | `System -> "system"
+  | `Tool -> "tool"
+
+let parse_messages_role (value : string) : (messages_role, string) result =
+  match value with
+  | "user" -> Ok `User
+  | "assistant" -> Ok `Assistant
+  | "system" -> Ok `System
+  | "tool" -> Ok `Tool
+  | _ -> Error ("unsupported messages.role: " ^ value)
+
+type messages_row = {
+  messages_id : string;
+  messages_channel_slug : string;
+  messages_channel_id : string option;
+  messages_seq : int64;
+  messages_from_agent_key : string;
+  messages_role : string;
+  messages_content : string;
+  messages_meta_data : string;
+  messages_created_at : string;
+}
+
+let messages_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : messages_row =
+  {
+    messages_id = get 0;
+    messages_channel_slug = get 1;
+    messages_channel_id = (if is_null 2 then None else Some (get 2));
+    messages_seq = Int64.of_string (get 3);
+    messages_from_agent_key = get 4;
+    messages_role = get 5;
+    messages_content = get 6;
+    messages_meta_data = get 7;
+    messages_created_at = get 8;
+  }
+
+let validate_messages_channel_slug (value : string) : (string, string) result =
+  if String.length value > 120 then Error "messages.channel_slug must be at most 120 characters"
+  else Ok value
+
+let validate_messages_seq (value : int64) : (int64, string) result =
+  if Int64.compare value 1L < 0 then Error "messages.seq is below the minimum"
+  else Ok value
+
+let validate_messages_from_agent_key (value : string) : (string, string) result =
+  if String.length value > 120 then Error "messages.from_agent_key must be at most 120 characters"
+  else Ok value
+
+let channel_members_table = "ai_agent_bridge.channel_members"
+
+let channel_members_columns = ["id"; "channel_slug"; "channel_id"; "agent_key"; "role"; "joined_at"; "last_seen_at"; "meta_data"]
+
+let channel_members_select_sql = "select\n      id::text as id,\n      channel_slug,\n      channel_id::text as channel_id,\n      agent_key,\n      role,\n      to_char(joined_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as joined_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      meta_data::text as meta_data_json\n    from ai_agent_bridge.channel_members"
+
+type channel_members_role = [ `Owner | `Member | `Observer ]
+
+let channel_members_role_to_string (value : channel_members_role) : string =
+  match value with
+  | `Owner -> "owner"
+  | `Member -> "member"
+  | `Observer -> "observer"
+
+let parse_channel_members_role (value : string) : (channel_members_role, string) result =
+  match value with
+  | "owner" -> Ok `Owner
+  | "member" -> Ok `Member
+  | "observer" -> Ok `Observer
+  | _ -> Error ("unsupported channel_members.role: " ^ value)
+
+type channel_members_row = {
+  channel_members_id : string;
+  channel_members_channel_slug : string;
+  channel_members_channel_id : string option;
+  channel_members_agent_key : string;
+  channel_members_role : string;
+  channel_members_joined_at : string;
+  channel_members_last_seen_at : string;
+  channel_members_meta_data : string;
+}
+
+let channel_members_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : channel_members_row =
+  {
+    channel_members_id = get 0;
+    channel_members_channel_slug = get 1;
+    channel_members_channel_id = (if is_null 2 then None else Some (get 2));
+    channel_members_agent_key = get 3;
+    channel_members_role = get 4;
+    channel_members_joined_at = get 5;
+    channel_members_last_seen_at = get 6;
+    channel_members_meta_data = get 7;
+  }
+
+let validate_channel_members_channel_slug (value : string) : (string, string) result =
+  if String.length value > 120 then Error "channel_members.channel_slug must be at most 120 characters"
+  else Ok value
+
+let validate_channel_members_agent_key (value : string) : (string, string) result =
+  if String.length value > 120 then Error "channel_members.agent_key must be at most 120 characters"
+  else Ok value
+
+let shared_context_table = "ai_agent_bridge.shared_context"
+
+let shared_context_columns = ["id"; "channel_slug"; "channel_id"; "ctx_key"; "value"; "version"; "updated_by"; "created_at"; "updated_at"]
+
+let shared_context_select_sql = "select\n      id::text as id,\n      channel_slug,\n      channel_id::text as channel_id,\n      ctx_key,\n      value::text as value_json,\n      version,\n      updated_by,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from ai_agent_bridge.shared_context"
+
+type shared_context_row = {
+  shared_context_id : string;
+  shared_context_channel_slug : string option;
+  shared_context_channel_id : string option;
+  shared_context_ctx_key : string;
+  shared_context_value : string;
+  shared_context_version : int;
+  shared_context_updated_by : string;
+  shared_context_created_at : string;
+  shared_context_updated_at : string;
+}
+
+let shared_context_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : shared_context_row =
+  {
+    shared_context_id = get 0;
+    shared_context_channel_slug = (if is_null 1 then None else Some (get 1));
+    shared_context_channel_id = (if is_null 2 then None else Some (get 2));
+    shared_context_ctx_key = get 3;
+    shared_context_value = get 4;
+    shared_context_version = int_of_string (get 5);
+    shared_context_updated_by = get 6;
+    shared_context_created_at = get 7;
+    shared_context_updated_at = get 8;
+  }
+
+let validate_shared_context_channel_slug (value : string) : (string, string) result =
+  if String.length value > 120 then Error "shared_context.channel_slug must be at most 120 characters"
+  else Ok value
+
+let validate_shared_context_ctx_key (value : string) : (string, string) result =
+  if String.length value > 200 then Error "shared_context.ctx_key must be at most 200 characters"
+  else Ok value
+
+let validate_shared_context_version (value : int) : (int, string) result =
+  if value < 1 then Error "shared_context.version is below the minimum"
+  else Ok value
+
+let validate_shared_context_updated_by (value : string) : (string, string) result =
+  if String.length value > 120 then Error "shared_context.updated_by must be at most 120 characters"
   else Ok value

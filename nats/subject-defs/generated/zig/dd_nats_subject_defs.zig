@@ -294,6 +294,9 @@ pub const telemetry_mdp_subject: []const u8 = "dd.remote.telemetry.mdp";
 pub const telemetry_raw_subject: []const u8 = "dd.remote.telemetry.raw";
 pub const telemetry_raw_queue_group: []const u8 = "dd-ai-ml-pipeline";
 
+pub const thread_tasks_dead_letter_subject: []const u8 = "dd.remote.thread.tasks.deadletter";
+pub const thread_tasks_dead_letter_stream: []const u8 = "DD_REMOTE_TASKS_DLQ";
+
 pub const trading_decisions_subject: []const u8 = "dd.remote.trading.decisions";
 
 pub const trading_order_intents_subject: []const u8 = "dd.remote.trading.order_intents";
@@ -692,6 +695,12 @@ pub const dd_remote_evolution_stream_retention: []const u8 = "limits";
 pub const dd_remote_evolution_stream_storage: []const u8 = "file";
 pub const dd_remote_evolution_stream_ack: []const u8 = "explicit";
 
+pub const dd_remote_fabrication_stream_name: []const u8 = "DD_REMOTE_FABRICATION";
+pub const dd_remote_fabrication_stream_subjects = [_][]const u8{ "dd.remote.fabrication.>" };
+pub const dd_remote_fabrication_stream_retention: []const u8 = "limits";
+pub const dd_remote_fabrication_stream_storage: []const u8 = "file";
+pub const dd_remote_fabrication_stream_ack: []const u8 = "explicit";
+
 pub const dd_remote_mip_solver_stream_name: []const u8 = "DD_REMOTE_MIP_SOLVER";
 pub const dd_remote_mip_solver_stream_subjects = [_][]const u8{ "dd.remote.mip_solver.jobs", "dd.remote.mip_solver.results", "dd.remote.mip_solver.control", "dd.remote.mip_solver.events" };
 pub const dd_remote_mip_solver_stream_retention: []const u8 = "limits";
@@ -706,6 +715,12 @@ pub const dd_remote_routing_stream_ack: []const u8 = "explicit";
 
 pub const dd_remote_tasks_stream_name: []const u8 = "DD_REMOTE_TASKS";
 pub const dd_remote_tasks_stream_subjects = [_][]const u8{ "dd.remote.thread.*.tasks" };
-pub const dd_remote_tasks_stream_retention: []const u8 = "limits";
+pub const dd_remote_tasks_stream_retention: []const u8 = "workqueue";
 pub const dd_remote_tasks_stream_storage: []const u8 = "file";
 pub const dd_remote_tasks_stream_ack: []const u8 = "explicit";
+
+pub const dd_remote_tasks_dlq_stream_name: []const u8 = "DD_REMOTE_TASKS_DLQ";
+pub const dd_remote_tasks_dlq_stream_subjects = [_][]const u8{ "dd.remote.thread.tasks.deadletter" };
+pub const dd_remote_tasks_dlq_stream_retention: []const u8 = "limits";
+pub const dd_remote_tasks_dlq_stream_storage: []const u8 = "file";
+pub const dd_remote_tasks_dlq_stream_ack: []const u8 = "explicit";

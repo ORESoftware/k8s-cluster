@@ -24,6 +24,32 @@ public final class Tables {
     private Tables() {
     }
 
+    public static final Name ACCOUNTS_NAME = DSL.name("threefa", "accounts");
+    public static final Table<org.jooq.Record> ACCOUNTS = DSL.table(ACCOUNTS_NAME);
+    public static final Field<UUID> ACCOUNTS_ID = DSL.field(DSL.name("threefa", "accounts", "id"), SQLDataType.UUID);
+    public static final Field<String> ACCOUNTS_USERNAME = DSL.field(DSL.name("threefa", "accounts", "username"), SQLDataType.CLOB);
+    public static final Field<String> ACCOUNTS_AUTH_SECRET = DSL.field(DSL.name("threefa", "accounts", "auth_secret"), SQLDataType.CLOB);
+    public static final Field<OffsetDateTime> ACCOUNTS_CREATED_AT = DSL.field(DSL.name("threefa", "accounts", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
+    public static final Name DEVICES_NAME = DSL.name("threefa", "devices");
+    public static final Table<org.jooq.Record> DEVICES = DSL.table(DEVICES_NAME);
+    public static final Field<UUID> DEVICES_ID = DSL.field(DSL.name("threefa", "devices", "id"), SQLDataType.UUID);
+    public static final Field<UUID> DEVICES_ACCOUNT_ID = DSL.field(DSL.name("threefa", "devices", "account_id"), SQLDataType.UUID);
+    public static final Field<String> DEVICES_DEVICE_NAME = DSL.field(DSL.name("threefa", "devices", "device_name"), SQLDataType.CLOB);
+    public static final Field<String> DEVICES_SYNC_TOKEN_HASH = DSL.field(DSL.name("threefa", "devices", "sync_token_hash"), SQLDataType.CLOB);
+    public static final Field<Boolean> DEVICES_REVOKED = DSL.field(DSL.name("threefa", "devices", "revoked"), SQLDataType.BOOLEAN);
+    public static final Field<OffsetDateTime> DEVICES_CREATED_AT = DSL.field(DSL.name("threefa", "devices", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
+    public static final Name VAULT_BLOBS_NAME = DSL.name("threefa", "vault_blobs");
+    public static final Table<org.jooq.Record> VAULT_BLOBS = DSL.table(VAULT_BLOBS_NAME);
+    public static final Field<UUID> VAULT_BLOBS_ACCOUNT_ID = DSL.field(DSL.name("threefa", "vault_blobs", "account_id"), SQLDataType.UUID);
+    public static final Field<String> VAULT_BLOBS_CIPHERTEXT = DSL.field(DSL.name("threefa", "vault_blobs", "ciphertext"), SQLDataType.CLOB);
+    public static final Field<String> VAULT_BLOBS_NONCE = DSL.field(DSL.name("threefa", "vault_blobs", "nonce"), SQLDataType.CLOB);
+    public static final Field<String> VAULT_BLOBS_KDF_SALT = DSL.field(DSL.name("threefa", "vault_blobs", "kdf_salt"), SQLDataType.CLOB);
+    public static final Field<JSONB> VAULT_BLOBS_KDF_PARAMS = DSL.field(DSL.name("threefa", "vault_blobs", "kdf_params"), SQLDataType.JSONB);
+    public static final Field<JSONB> VAULT_BLOBS_VERSION = DSL.field(DSL.name("threefa", "vault_blobs", "version"), SQLDataType.JSONB);
+    public static final Field<OffsetDateTime> VAULT_BLOBS_UPDATED_AT = DSL.field(DSL.name("threefa", "vault_blobs", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
     public static final Name APP_CONFIG_NAME = DSL.name("app_config");
     public static final Table<org.jooq.Record> APP_CONFIG = DSL.table(APP_CONFIG_NAME);
     public static final Field<UUID> APP_CONFIG_ID = DSL.field(DSL.name("app_config", "id"), SQLDataType.UUID);
@@ -2107,5 +2133,66 @@ public final class Tables {
     public static final Field<String> VCS_OPERATIONS_REQUESTED_BY = DSL.field(DSL.name("vcs_operations", "requested_by"), SQLDataType.VARCHAR(200));
     public static final Field<OffsetDateTime> VCS_OPERATIONS_CREATED_AT = DSL.field(DSL.name("vcs_operations", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
     public static final Field<OffsetDateTime> VCS_OPERATIONS_UPDATED_AT = DSL.field(DSL.name("vcs_operations", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
+    public static final Name AGENTS_NAME = DSL.name("ai_agent_bridge", "agents");
+    public static final Table<org.jooq.Record> AGENTS = DSL.table(AGENTS_NAME);
+    public static final Field<UUID> AGENTS_ID = DSL.field(DSL.name("ai_agent_bridge", "agents", "id"), SQLDataType.UUID);
+    public static final Field<String> AGENTS_AGENT_KEY = DSL.field(DSL.name("ai_agent_bridge", "agents", "agent_key"), SQLDataType.VARCHAR(120));
+    public static final Field<String> AGENTS_DISPLAY_NAME = DSL.field(DSL.name("ai_agent_bridge", "agents", "display_name"), SQLDataType.VARCHAR(200));
+    public static final Field<String> AGENTS_KIND = DSL.field(DSL.name("ai_agent_bridge", "agents", "kind"), SQLDataType.VARCHAR(32));
+    public static final Field<String> AGENTS_HOST = DSL.field(DSL.name("ai_agent_bridge", "agents", "host"), SQLDataType.VARCHAR(255));
+    public static final Field<JSONB> AGENTS_META_DATA = DSL.field(DSL.name("ai_agent_bridge", "agents", "meta_data"), SQLDataType.JSONB);
+    public static final Field<OffsetDateTime> AGENTS_CREATED_AT = DSL.field(DSL.name("ai_agent_bridge", "agents", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> AGENTS_UPDATED_AT = DSL.field(DSL.name("ai_agent_bridge", "agents", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
+    public static final Name CHANNELS_NAME = DSL.name("ai_agent_bridge", "channels");
+    public static final Table<org.jooq.Record> CHANNELS = DSL.table(CHANNELS_NAME);
+    public static final Field<UUID> CHANNELS_ID = DSL.field(DSL.name("ai_agent_bridge", "channels", "id"), SQLDataType.UUID);
+    public static final Field<String> CHANNELS_SLUG = DSL.field(DSL.name("ai_agent_bridge", "channels", "slug"), SQLDataType.VARCHAR(120));
+    public static final Field<String> CHANNELS_TOPIC = DSL.field(DSL.name("ai_agent_bridge", "channels", "topic"), SQLDataType.CLOB);
+    public static final Field<String> CHANNELS_TOPIC_SUMMARY = DSL.field(DSL.name("ai_agent_bridge", "channels", "topic_summary"), SQLDataType.CLOB);
+    public static final Field<String> CHANNELS_EMBEDDING_MODEL = DSL.field(DSL.name("ai_agent_bridge", "channels", "embedding_model"), SQLDataType.VARCHAR(120));
+    public static final Field<JSONB> CHANNELS_EMBEDDING = DSL.field(DSL.name("ai_agent_bridge", "channels", "embedding"), SQLDataType.JSONB);
+    public static final Field<Integer> CHANNELS_EMBEDDING_DIMENSIONS = DSL.field(DSL.name("ai_agent_bridge", "channels", "embedding_dimensions"), SQLDataType.INTEGER);
+    public static final Field<String> CHANNELS_STATUS = DSL.field(DSL.name("ai_agent_bridge", "channels", "status"), SQLDataType.VARCHAR(32));
+    public static final Field<String> CHANNELS_CREATED_BY = DSL.field(DSL.name("ai_agent_bridge", "channels", "created_by"), SQLDataType.VARCHAR(120));
+    public static final Field<JSONB> CHANNELS_META_DATA = DSL.field(DSL.name("ai_agent_bridge", "channels", "meta_data"), SQLDataType.JSONB);
+    public static final Field<OffsetDateTime> CHANNELS_CREATED_AT = DSL.field(DSL.name("ai_agent_bridge", "channels", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> CHANNELS_UPDATED_AT = DSL.field(DSL.name("ai_agent_bridge", "channels", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
+    public static final Name MESSAGES_NAME = DSL.name("ai_agent_bridge", "messages");
+    public static final Table<org.jooq.Record> MESSAGES = DSL.table(MESSAGES_NAME);
+    public static final Field<UUID> MESSAGES_ID = DSL.field(DSL.name("ai_agent_bridge", "messages", "id"), SQLDataType.UUID);
+    public static final Field<String> MESSAGES_CHANNEL_SLUG = DSL.field(DSL.name("ai_agent_bridge", "messages", "channel_slug"), SQLDataType.VARCHAR(120));
+    public static final Field<UUID> MESSAGES_CHANNEL_ID = DSL.field(DSL.name("ai_agent_bridge", "messages", "channel_id"), SQLDataType.UUID);
+    public static final Field<Long> MESSAGES_SEQ = DSL.field(DSL.name("ai_agent_bridge", "messages", "seq"), SQLDataType.BIGINT);
+    public static final Field<String> MESSAGES_FROM_AGENT_KEY = DSL.field(DSL.name("ai_agent_bridge", "messages", "from_agent_key"), SQLDataType.VARCHAR(120));
+    public static final Field<String> MESSAGES_ROLE = DSL.field(DSL.name("ai_agent_bridge", "messages", "role"), SQLDataType.VARCHAR(32));
+    public static final Field<String> MESSAGES_CONTENT = DSL.field(DSL.name("ai_agent_bridge", "messages", "content"), SQLDataType.CLOB);
+    public static final Field<JSONB> MESSAGES_META_DATA = DSL.field(DSL.name("ai_agent_bridge", "messages", "meta_data"), SQLDataType.JSONB);
+    public static final Field<OffsetDateTime> MESSAGES_CREATED_AT = DSL.field(DSL.name("ai_agent_bridge", "messages", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
+    public static final Name CHANNEL_MEMBERS_NAME = DSL.name("ai_agent_bridge", "channel_members");
+    public static final Table<org.jooq.Record> CHANNEL_MEMBERS = DSL.table(CHANNEL_MEMBERS_NAME);
+    public static final Field<UUID> CHANNEL_MEMBERS_ID = DSL.field(DSL.name("ai_agent_bridge", "channel_members", "id"), SQLDataType.UUID);
+    public static final Field<String> CHANNEL_MEMBERS_CHANNEL_SLUG = DSL.field(DSL.name("ai_agent_bridge", "channel_members", "channel_slug"), SQLDataType.VARCHAR(120));
+    public static final Field<UUID> CHANNEL_MEMBERS_CHANNEL_ID = DSL.field(DSL.name("ai_agent_bridge", "channel_members", "channel_id"), SQLDataType.UUID);
+    public static final Field<String> CHANNEL_MEMBERS_AGENT_KEY = DSL.field(DSL.name("ai_agent_bridge", "channel_members", "agent_key"), SQLDataType.VARCHAR(120));
+    public static final Field<String> CHANNEL_MEMBERS_ROLE = DSL.field(DSL.name("ai_agent_bridge", "channel_members", "role"), SQLDataType.VARCHAR(32));
+    public static final Field<OffsetDateTime> CHANNEL_MEMBERS_JOINED_AT = DSL.field(DSL.name("ai_agent_bridge", "channel_members", "joined_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> CHANNEL_MEMBERS_LAST_SEEN_AT = DSL.field(DSL.name("ai_agent_bridge", "channel_members", "last_seen_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<JSONB> CHANNEL_MEMBERS_META_DATA = DSL.field(DSL.name("ai_agent_bridge", "channel_members", "meta_data"), SQLDataType.JSONB);
+
+    public static final Name SHARED_CONTEXT_NAME = DSL.name("ai_agent_bridge", "shared_context");
+    public static final Table<org.jooq.Record> SHARED_CONTEXT = DSL.table(SHARED_CONTEXT_NAME);
+    public static final Field<UUID> SHARED_CONTEXT_ID = DSL.field(DSL.name("ai_agent_bridge", "shared_context", "id"), SQLDataType.UUID);
+    public static final Field<String> SHARED_CONTEXT_CHANNEL_SLUG = DSL.field(DSL.name("ai_agent_bridge", "shared_context", "channel_slug"), SQLDataType.VARCHAR(120));
+    public static final Field<UUID> SHARED_CONTEXT_CHANNEL_ID = DSL.field(DSL.name("ai_agent_bridge", "shared_context", "channel_id"), SQLDataType.UUID);
+    public static final Field<String> SHARED_CONTEXT_CTX_KEY = DSL.field(DSL.name("ai_agent_bridge", "shared_context", "ctx_key"), SQLDataType.VARCHAR(200));
+    public static final Field<JSONB> SHARED_CONTEXT_VALUE = DSL.field(DSL.name("ai_agent_bridge", "shared_context", "value"), SQLDataType.JSONB);
+    public static final Field<Integer> SHARED_CONTEXT_VERSION = DSL.field(DSL.name("ai_agent_bridge", "shared_context", "version"), SQLDataType.INTEGER);
+    public static final Field<String> SHARED_CONTEXT_UPDATED_BY = DSL.field(DSL.name("ai_agent_bridge", "shared_context", "updated_by"), SQLDataType.VARCHAR(120));
+    public static final Field<OffsetDateTime> SHARED_CONTEXT_CREATED_AT = DSL.field(DSL.name("ai_agent_bridge", "shared_context", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> SHARED_CONTEXT_UPDATED_AT = DSL.field(DSL.name("ai_agent_bridge", "shared_context", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
 
 }
