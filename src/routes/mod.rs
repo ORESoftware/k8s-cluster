@@ -22,7 +22,7 @@ use dd_pg_defs_sea_orm::{
 use sea_orm::sea_query::{Alias, Asterisk, Expr, Func, OnConflict, SimpleExpr};
 use sea_orm::{
     ActiveValue::{NotSet, Set},
-    ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, Order, QueryFilter, QueryOrder,
+    ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, QueryFilter, QueryOrder,
     QuerySelect, Statement,
 };
 use serde_json::{json, Value};

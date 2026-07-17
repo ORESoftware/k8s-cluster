@@ -3,17 +3,18 @@
 
 use axum::extract::{Path, State};
 use axum::Form;
-use dd_pg_defs::{
-    validate_usacc_cases_insert, UsaccCaseStagesRow, UsaccCasesInsert, UsaccCasesRow,
-    UsaccElectionsRow, UsaccLedgerEntriesRow, USACC_CASES_SELECT_SQL, USACC_CASES_TABLE,
-    USACC_CASE_STAGES_SELECT_SQL, USACC_ELECTIONS_SELECT_SQL, USACC_LEDGER_ENTRIES_SELECT_SQL,
-};
+use dd_pg_defs::{validate_usacc_cases_insert, UsaccCasesInsert};
+use dd_pg_defs_sea_orm::{usacc_case_stages, usacc_cases, usacc_elections, usacc_ledger_entries};
 use maud::{html, Markup};
+use sea_orm::prelude::Uuid;
+use sea_orm::{
+    ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
+    QuerySelect,
+};
 use serde::Deserialize;
 use serde_json::json;
-use sqlx::PgPool;
 
-use crate::state::AppState;
+use crate::{db, state::AppState};
 
 use super::layout::{
     self, caption, empty_row, section_header, short_id, status_badge, NavSection, Ui,
@@ -116,20 +117,19 @@ pub async fn create(State(state): State<AppState>, Form(form): Form<CaseForm>) -
         return list_fragment(ui, pool, Some(layout::flash_error(e))).await;
     }
 
-    let sql = format!(
-        "insert into {USACC_CASES_TABLE} \
-         (case_number, title, status, filing_tier, defendant_summary, conduct_summary, priority_score_micros, meta_data) \
-         values ($1, $2, $3, $4, $5, $6, 0, '{{}}'::jsonb)"
-    );
-    let result = sqlx::query(&sql)
-        .bind(&form.case_number)
-        .bind(&form.title)
-        .bind(&form.status)
-        .bind(&form.filing_tier)
-        .bind(&form.defendant_summary)
-        .bind(&form.conduct_summary)
-        .execute(pool)
-        .await;
+    let result = usacc_cases::Entity::insert(usacc_cases::ActiveModel {
+        case_number: Set(form.case_number.clone()),
+        title: Set(form.title.clone()),
+        status: Set(form.status.clone()),
+        filing_tier: Set(form.filing_tier.clone()),
+        defendant_summary: Set(form.defendant_summary.clone()),
+        conduct_summary: Set(form.conduct_summary.clone()),
+        priority_score_micros: Set(0),
+        meta_data: Set(json!({})),
+        ..Default::default()
+    })
+    .exec_without_returning(pool)
+    .await;
 
     let flash = match result {
         Ok(_) => layout::flash_ok(format!("Filed case {}.", form.case_number)),
@@ -138,11 +138,13 @@ pub async fn create(State(state): State<AppState>, Form(form): Form<CaseForm>) -
     list_fragment(ui, pool, Some(flash)).await
 }
 
-async fn list_fragment(ui: Ui<'_>, pool: &PgPool, flash: Option<Markup>) -> Markup {
-    let sql = format!("{USACC_CASES_SELECT_SQL} order by created_at desc limit 100");
-    let rows = sqlx::query_as::<_, UsaccCasesRow>(&sql)
-        .fetch_all(pool)
+async fn list_fragment(ui: Ui<'_>, pool: &DatabaseConnection, flash: Option<Markup>) -> Markup {
+    let rows = usacc_cases::Entity::find()
+        .order_by_desc(usacc_cases::Column::CreatedAt)
+        .limit(100)
+        .all(pool)
         .await
+        .map(|models| models.into_iter().map(db::case_row).collect::<Vec<_>>())
         .unwrap_or_default();
     html! {
         div #case-list-wrap {
@@ -174,14 +176,17 @@ pub async fn detail_page(State(state): State<AppState>, Path(id): Path<String>) 
         return layout::page(ui, "Case", NavSection::Cases, super::no_db_body());
     };
 
-    let case = sqlx::query_as::<_, UsaccCasesRow>(&format!(
-        "{USACC_CASES_SELECT_SQL} where id = $1::uuid"
-    ))
-    .bind(&id)
-    .fetch_optional(pool)
-    .await
-    .ok()
-    .flatten();
+    // A malformed id behaves like the old `$1::uuid` cast failure: the
+    // lookup yields nothing and the not-found body renders.
+    let case = match Uuid::parse_str(&id) {
+        Ok(case_uuid) => usacc_cases::Entity::find_by_id(case_uuid)
+            .one(pool)
+            .await
+            .ok()
+            .flatten()
+            .map(db::case_row),
+        Err(_) => None,
+    };
 
     let Some(case) = case else {
         return layout::page(
@@ -196,29 +201,41 @@ pub async fn detail_page(State(state): State<AppState>, Path(id): Path<String>) 
         );
     };
 
-    let stages = sqlx::query_as::<_, UsaccCaseStagesRow>(&format!(
-        "{USACC_CASE_STAGES_SELECT_SQL} where case_id = $1::uuid order by stage_order asc"
-    ))
-    .bind(&id)
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default();
+    // The case rendered, so its canonical id round-trips as a uuid.
+    let case_uuid = Uuid::parse_str(&case.id).unwrap_or_default();
 
-    let elections = sqlx::query_as::<_, UsaccElectionsRow>(&format!(
-        "{USACC_ELECTIONS_SELECT_SQL} where case_id = $1::uuid order by created_at desc"
-    ))
-    .bind(&id)
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default();
+    let stages = usacc_case_stages::Entity::find()
+        .filter(usacc_case_stages::Column::CaseId.eq(case_uuid))
+        .order_by_asc(usacc_case_stages::Column::StageOrder)
+        .all(pool)
+        .await
+        .map(|models| {
+            models
+                .into_iter()
+                .map(db::case_stage_row)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
 
-    let ledger = sqlx::query_as::<_, UsaccLedgerEntriesRow>(&format!(
-        "{USACC_LEDGER_ENTRIES_SELECT_SQL} where case_id = $1::uuid"
-    ))
-    .bind(&id)
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default();
+    let elections = usacc_elections::Entity::find()
+        .filter(usacc_elections::Column::CaseId.eq(case_uuid))
+        .order_by_desc(usacc_elections::Column::CreatedAt)
+        .all(pool)
+        .await
+        .map(|models| models.into_iter().map(db::election_row).collect::<Vec<_>>())
+        .unwrap_or_default();
+
+    let ledger = usacc_ledger_entries::Entity::find()
+        .filter(usacc_ledger_entries::Column::CaseId.eq(case_uuid))
+        .all(pool)
+        .await
+        .map(|models| {
+            models
+                .into_iter()
+                .map(db::ledger_entry_row)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     let net_cents: i64 = ledger
         .iter()
         .map(|e| match e.direction.as_str() {

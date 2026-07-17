@@ -2,16 +2,14 @@
 
 use axum::extract::State;
 use axum::Form;
-use dd_pg_defs::{
-    validate_usacc_users_insert, UsaccUsersInsert, UsaccUsersRow, USACC_USERS_SELECT_SQL,
-    USACC_USERS_TABLE,
-};
+use dd_pg_defs::{validate_usacc_users_insert, UsaccUsersInsert};
+use dd_pg_defs_sea_orm::usacc_users;
 use maud::{html, Markup};
+use sea_orm::{ActiveValue::Set, DatabaseConnection, EntityTrait, QueryOrder, QuerySelect};
 use serde::Deserialize;
 use serde_json::json;
-use sqlx::PgPool;
 
-use crate::state::AppState;
+use crate::{db, state::AppState};
 
 use super::layout::{
     self, caption, empty_row, section_header, short_id, status_badge, NavSection, Ui,
@@ -108,20 +106,19 @@ pub async fn create(State(state): State<AppState>, Form(form): Form<UserForm>) -
         return list_fragment(ui, pool, Some(layout::flash_error(e))).await;
     }
 
-    let sql = format!(
-        "insert into {USACC_USERS_TABLE} \
-         (display_name, user_kind, status, kyc_level, roles, is_legal_entity, legal_region, meta_data) \
-         values ($1, $2, $3, $4, '{{}}'::jsonb, $5, $6, '{{}}'::jsonb)"
-    );
-    let result = sqlx::query(&sql)
-        .bind(&form.display_name)
-        .bind(&form.user_kind)
-        .bind(&form.status)
-        .bind(&form.kyc_level)
-        .bind(is_legal_entity)
-        .bind(&legal_region)
-        .execute(pool)
-        .await;
+    let result = usacc_users::Entity::insert(usacc_users::ActiveModel {
+        display_name: Set(form.display_name.clone()),
+        user_kind: Set(form.user_kind.clone()),
+        status: Set(form.status.clone()),
+        kyc_level: Set(form.kyc_level.clone()),
+        roles: Set(json!({})),
+        is_legal_entity: Set(is_legal_entity),
+        legal_region: Set(legal_region),
+        meta_data: Set(json!({})),
+        ..Default::default()
+    })
+    .exec_without_returning(pool)
+    .await;
 
     let flash = match result {
         Ok(_) => layout::flash_ok(format!("Created user {}.", form.display_name)),
@@ -130,11 +127,13 @@ pub async fn create(State(state): State<AppState>, Form(form): Form<UserForm>) -
     list_fragment(ui, pool, Some(flash)).await
 }
 
-async fn list_fragment(_ui: Ui<'_>, pool: &PgPool, flash: Option<Markup>) -> Markup {
-    let sql = format!("{USACC_USERS_SELECT_SQL} order by created_at desc limit 100");
-    let rows = sqlx::query_as::<_, UsaccUsersRow>(&sql)
-        .fetch_all(pool)
+async fn list_fragment(_ui: Ui<'_>, pool: &DatabaseConnection, flash: Option<Markup>) -> Markup {
+    let rows = usacc_users::Entity::find()
+        .order_by_desc(usacc_users::Column::CreatedAt)
+        .limit(100)
+        .all(pool)
         .await
+        .map(|models| models.into_iter().map(db::user_row).collect::<Vec<_>>())
         .unwrap_or_default();
     html! {
         div #user-list-wrap {

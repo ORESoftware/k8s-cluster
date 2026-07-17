@@ -8,6 +8,7 @@ use axum::extract::State;
 use axum::Form;
 use dd_pg_defs::USACC_SIMULATION_RUNS_TABLE;
 use maud::{html, Markup};
+use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -108,21 +109,31 @@ pub async fn run(State(state): State<AppState>, Form(form): Form<SimForm>) -> Ma
     if want_persist {
         if let Some(pool) = state.pool.as_ref() {
             let seed_i64 = response.seed.min(i64::MAX as u64) as i64;
+            // `started_at`/`finished_at` must stay on the database clock
+            // (`now()`), which the entity insert API cannot express, so this
+            // one stays a raw parameterized statement.
             let sql = format!(
                 "insert into {USACC_SIMULATION_RUNS_TABLE} \
                  (status, mode, seed, horizon_days, actor_count, event_count, metrics, trace, input, started_at, finished_at) \
                  values ('succeeded', 'sim', $1, $2, $3, $4, $5::jsonb, $6::jsonb, '{{}}'::jsonb, now(), now()) returning id::text"
             );
-            match sqlx::query_scalar::<_, String>(&sql)
-                .bind(seed_i64)
-                .bind(response.horizon_days)
-                .bind(response.actor_count)
-                .bind(response.event_count.min(i32::MAX as u64) as i32)
-                .bind(&response.metrics)
-                .bind(&response.trace)
-                .fetch_one(pool)
-                .await
-            {
+            let insert = Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                sql,
+                [
+                    seed_i64.into(),
+                    response.horizon_days.into(),
+                    response.actor_count.into(),
+                    (response.event_count.min(i32::MAX as u64) as i32).into(),
+                    response.metrics.clone().into(),
+                    response.trace.clone().into(),
+                ],
+            );
+            let persisted = pool.query_one(insert).await.and_then(|row| {
+                row.ok_or_else(|| sea_orm::DbErr::RecordNotFound("simulation run id".to_string()))?
+                    .try_get::<String>("", "id")
+            });
+            match persisted {
                 Ok(run_id) => {
                     response.persisted = true;
                     persist_note = Some(layout::flash_ok(format!("Persisted as run {run_id}.")));

@@ -4,16 +4,19 @@
 
 use axum::extract::{Path, State};
 use axum::Form;
-use dd_pg_defs::{
-    validate_usacc_elections_insert, UsaccElectionsInsert, UsaccElectionsRow, UsaccVotesRow,
-    USACC_ELECTIONS_SELECT_SQL, USACC_ELECTIONS_TABLE, USACC_VOTES_SELECT_SQL, USACC_VOTES_TABLE,
-};
+use dd_pg_defs::{validate_usacc_elections_insert, UsaccElectionsInsert};
+use dd_pg_defs_sea_orm::{usacc_elections, usacc_votes};
 use maud::{html, Markup};
+use sea_orm::prelude::Uuid;
+use sea_orm::sea_query::{Alias, Asterisk, Expr, Func, SimpleExpr};
+use sea_orm::{
+    ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, FromQueryResult, QueryFilter,
+    QueryOrder, QuerySelect,
+};
 use serde::Deserialize;
 use serde_json::json;
-use sqlx::{PgPool, Row};
 
-use crate::state::AppState;
+use crate::{db, state::AppState};
 
 use super::layout::{
     self, caption, empty_row, section_header, short_id, status_badge, NavSection, Ui,
@@ -119,20 +122,31 @@ pub async fn create(State(state): State<AppState>, Form(form): Form<ElectionForm
         return list_fragment(ui, pool, Some(layout::flash_error(e))).await;
     }
 
-    let sql = format!(
-        "insert into {USACC_ELECTIONS_TABLE} \
-         (case_id, election_kind, title, status, quorum_count, threshold_micros, meta_data) \
-         values ($1::uuid, $2, $3, $4, $5, $6, '{{}}'::jsonb)"
-    );
-    let result = sqlx::query(&sql)
-        .bind(&case_id)
-        .bind(&form.election_kind)
-        .bind(&form.title)
-        .bind(&form.status)
-        .bind(quorum)
-        .bind(threshold)
-        .execute(pool)
-        .await;
+    // A malformed case id previously failed the `$1::uuid` cast inside the
+    // database; parsing it here surfaces the same flash.
+    let case_uuid = match case_id.as_deref().map(Uuid::parse_str).transpose() {
+        Ok(case_uuid) => case_uuid,
+        Err(e) => {
+            return list_fragment(
+                ui,
+                pool,
+                Some(super::report_db_error("open the election", e)),
+            )
+            .await
+        }
+    };
+    let result = usacc_elections::Entity::insert(usacc_elections::ActiveModel {
+        case_id: Set(case_uuid),
+        election_kind: Set(form.election_kind.clone()),
+        title: Set(form.title.clone()),
+        status: Set(form.status.clone()),
+        quorum_count: Set(quorum),
+        threshold_micros: Set(threshold),
+        meta_data: Set(json!({})),
+        ..Default::default()
+    })
+    .exec_without_returning(pool)
+    .await;
 
     let flash = match result {
         Ok(_) => layout::flash_ok(format!("Opened election {}.", form.title)),
@@ -141,11 +155,13 @@ pub async fn create(State(state): State<AppState>, Form(form): Form<ElectionForm
     list_fragment(ui, pool, Some(flash)).await
 }
 
-async fn list_fragment(ui: Ui<'_>, pool: &PgPool, flash: Option<Markup>) -> Markup {
-    let sql = format!("{USACC_ELECTIONS_SELECT_SQL} order by created_at desc limit 100");
-    let rows = sqlx::query_as::<_, UsaccElectionsRow>(&sql)
-        .fetch_all(pool)
+async fn list_fragment(ui: Ui<'_>, pool: &DatabaseConnection, flash: Option<Markup>) -> Markup {
+    let rows = usacc_elections::Entity::find()
+        .order_by_desc(usacc_elections::Column::CreatedAt)
+        .limit(100)
+        .all(pool)
         .await
+        .map(|models| models.into_iter().map(db::election_row).collect::<Vec<_>>())
         .unwrap_or_default();
     html! {
         div #election-list-wrap {
@@ -176,14 +192,17 @@ pub async fn detail_page(State(state): State<AppState>, Path(id): Path<String>) 
         return layout::page(ui, "Election", NavSection::Elections, super::no_db_body());
     };
 
-    let election = sqlx::query_as::<_, UsaccElectionsRow>(&format!(
-        "{USACC_ELECTIONS_SELECT_SQL} where id = $1::uuid"
-    ))
-    .bind(&id)
-    .fetch_optional(pool)
-    .await
-    .ok()
-    .flatten();
+    // A malformed id behaves like the old `$1::uuid` cast failure: the
+    // lookup yields nothing and the not-found body renders.
+    let election = match Uuid::parse_str(&id) {
+        Ok(election_uuid) => usacc_elections::Entity::find_by_id(election_uuid)
+            .one(pool)
+            .await
+            .ok()
+            .flatten()
+            .map(db::election_row),
+        Err(_) => None,
+    };
 
     let Some(election) = election else {
         return layout::page(
@@ -198,13 +217,16 @@ pub async fn detail_page(State(state): State<AppState>, Path(id): Path<String>) 
         );
     };
 
-    let votes = sqlx::query_as::<_, UsaccVotesRow>(&format!(
-        "{USACC_VOTES_SELECT_SQL} where election_id = $1::uuid order by created_at desc"
-    ))
-    .bind(&id)
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default();
+    // The election rendered, so its canonical id round-trips as a uuid.
+    let election_uuid = Uuid::parse_str(&election.id).unwrap_or_default();
+
+    let votes = usacc_votes::Entity::find()
+        .filter(usacc_votes::Column::ElectionId.eq(election_uuid))
+        .order_by_desc(usacc_votes::Column::CreatedAt)
+        .all(pool)
+        .await
+        .map(|models| models.into_iter().map(db::vote_row).collect::<Vec<_>>())
+        .unwrap_or_default();
 
     let body = html! {
         p { a href=(ui.url("/app/elections")) { "← Back to ballots" } }
@@ -260,51 +282,56 @@ pub async fn tally(State(state): State<AppState>, Path(id): Path<String>) -> Mar
         return layout::flash_error("No database is configured.");
     };
 
-    let election = match sqlx::query_as::<_, UsaccElectionsRow>(&format!(
-        "{USACC_ELECTIONS_SELECT_SQL} where id = $1::uuid"
-    ))
-    .bind(&id)
-    .fetch_optional(pool)
-    .await
-    {
-        Ok(Some(e)) => e,
+    // A malformed id previously failed the `$1::uuid` cast inside the
+    // database; parsing it here surfaces the same flash.
+    let election_uuid = match Uuid::parse_str(&id) {
+        Ok(election_uuid) => election_uuid,
+        Err(e) => return super::report_db_error("tally the election", e),
+    };
+    let election = match usacc_elections::Entity::find_by_id(election_uuid).one(pool).await {
+        Ok(Some(e)) => db::election_row(e),
         Ok(None) => return layout::flash_error("Election not found."),
         Err(e) => return super::report_db_error("tally the election", e),
     };
 
-    let tally_sql = format!(
-        "select vote_value, count(*)::bigint as vote_count, coalesce(sum(weight_micros), 0)::bigint as weight_micros \
-         from {USACC_VOTES_TABLE} where election_id = $1::uuid group by vote_value \
-         order by weight_micros desc, vote_count desc, vote_value asc"
-    );
-    let rows = match sqlx::query(&tally_sql).bind(&id).fetch_all(pool).await {
+    #[derive(FromQueryResult)]
+    struct Choice {
+        vote_value: String,
+        vote_count: i64,
+        weight_micros: i64,
+    }
+    let weight_sum: SimpleExpr = Func::coalesce([
+        Expr::col(usacc_votes::Column::WeightMicros).sum(),
+        Expr::val(0i64).into(),
+    ])
+    .into();
+    let choices: Vec<Choice> = match usacc_votes::Entity::find()
+        .select_only()
+        .column(usacc_votes::Column::VoteValue)
+        .column_as(Expr::col(Asterisk).count(), "vote_count")
+        .column_as(weight_sum, "weight_micros")
+        .filter(usacc_votes::Column::ElectionId.eq(election_uuid))
+        .group_by(usacc_votes::Column::VoteValue)
+        .order_by_desc(Expr::col(Alias::new("weight_micros")))
+        .order_by_desc(Expr::col(Alias::new("vote_count")))
+        .order_by_asc(usacc_votes::Column::VoteValue)
+        .into_model::<Choice>()
+        .all(pool)
+        .await
+    {
         Ok(r) => r,
         Err(e) => return super::report_db_error("tally the election", e),
     };
-
-    struct Choice {
-        value: String,
-        count: i64,
-        weight: i64,
-    }
-    let choices: Vec<Choice> = rows
-        .into_iter()
-        .map(|row| Choice {
-            value: row.get("vote_value"),
-            count: row.get("vote_count"),
-            weight: row.get("weight_micros"),
-        })
-        .collect();
-    let total_votes: i64 = choices.iter().map(|c| c.count).sum();
-    let total_weight: i64 = choices.iter().map(|c| c.weight).sum();
+    let total_votes: i64 = choices.iter().map(|c| c.vote_count).sum();
+    let total_weight: i64 = choices.iter().map(|c| c.weight_micros).sum();
     let winner = choices.first();
     let passed = winner
         .map(|c| {
-            c.weight.saturating_mul(1_000_000)
+            c.weight_micros.saturating_mul(1_000_000)
                 >= total_weight.saturating_mul(election.threshold_micros as i64)
         })
         .unwrap_or(false);
-    let winning_value = winner.map(|c| c.value.clone());
+    let winning_value = winner.map(|c| c.vote_value.clone());
 
     let tally_json = json!({
         "ok": true,
@@ -315,17 +342,22 @@ pub async fn tally(State(state): State<AppState>, Path(id): Path<String>) -> Mar
         "winningValue": winning_value,
         "passed": passed,
         "choices": choices.iter().map(|c| json!({
-            "voteValue": c.value, "voteCount": c.count, "weightMicros": c.weight,
+            "voteValue": c.vote_value, "voteCount": c.vote_count, "weightMicros": c.weight_micros,
         })).collect::<Vec<_>>(),
     });
 
-    let update = format!(
-        "update {USACC_ELECTIONS_TABLE} set status = 'certified', tally = $2::jsonb, updated_at = now() where id = $1::uuid"
-    );
-    if let Err(e) = sqlx::query(&update)
-        .bind(&id)
-        .bind(&tally_json)
-        .execute(pool)
+    if let Err(e) = usacc_elections::Entity::update_many()
+        .set(usacc_elections::ActiveModel {
+            status: Set("certified".to_string()),
+            tally: Set(tally_json),
+            ..Default::default()
+        })
+        .col_expr(
+            usacc_elections::Column::UpdatedAt,
+            Expr::current_timestamp().into(),
+        )
+        .filter(usacc_elections::Column::Id.eq(election_uuid))
+        .exec(pool)
         .await
     {
         return super::report_db_error("persist the certified tally", e);
@@ -346,7 +378,7 @@ pub async fn tally(State(state): State<AppState>, Path(id): Path<String>) -> Mar
                 thead { tr { th { "Value" } th class="num" { "Votes" } th class="num" { "Weight" } } }
                 tbody {
                     @for c in &choices {
-                        tr { td { (c.value) } td class="num" { (c.count) } td class="num" { (c.weight) } }
+                        tr { td { (c.vote_value) } td class="num" { (c.vote_count) } td class="num" { (c.weight_micros) } }
                     }
                 }
             }

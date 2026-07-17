@@ -95,7 +95,7 @@ pub fn router(state: &AppState) -> Router<AppState> {
 }
 
 /// Log a database error in full server-side and return a generic flash, so
-/// raw `sqlx::Error` text (constraint names, column types, SQL fragments)
+/// raw `sea_orm::DbErr` text (constraint names, column types, SQL fragments)
 /// is never reflected to the client. `action` completes "Could not …".
 pub(super) fn report_db_error(action: &str, err: impl std::fmt::Display) -> Markup {
     tracing::error!(action, error = %err, "console database error");

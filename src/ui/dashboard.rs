@@ -1,14 +1,15 @@
 //! `/app` overview: at-a-glance counts, a live status pill, recent cases.
 
 use axum::extract::State;
-use dd_pg_defs::{
-    UsaccCasesRow, USACC_CASES_SELECT_SQL, USACC_CASES_TABLE, USACC_ELECTIONS_TABLE,
-    USACC_SIMULATION_RUNS_TABLE, USACC_USERS_TABLE,
+use dd_pg_defs::UsaccCasesRow;
+use dd_pg_defs_sea_orm::{
+    usacc_cases, UsaccCasesEntity, UsaccElectionsEntity, UsaccSimulationRunsEntity,
+    UsaccUsersEntity,
 };
 use maud::{html, Markup};
-use sqlx::PgPool;
+use sea_orm::{DatabaseConnection, EntityTrait, PaginatorTrait, QueryOrder, QuerySelect};
 
-use crate::state::AppState;
+use crate::{db, state::AppState};
 
 use super::layout::{
     self, caption, empty_row, section_header, short_id, stat_card, status_badge, NavSection, Ui,
@@ -33,10 +34,10 @@ pub async fn page(State(state): State<AppState>) -> Markup {
     };
 
     let (users, cases, elections, sims) = tokio::join!(
-        count(pool, USACC_USERS_TABLE),
-        count(pool, USACC_CASES_TABLE),
-        count(pool, USACC_ELECTIONS_TABLE),
-        count(pool, USACC_SIMULATION_RUNS_TABLE),
+        count::<UsaccUsersEntity>(pool),
+        count::<UsaccCasesEntity>(pool),
+        count::<UsaccElectionsEntity>(pool),
+        count::<UsaccSimulationRunsEntity>(pool),
     );
 
     let recent = recent_cases(pool).await.unwrap_or_else(|e| {
@@ -98,10 +99,7 @@ pub async fn status_fragment(State(state): State<AppState>) -> Markup {
             span { "no db" }
         };
     };
-    let ok = sqlx::query_scalar::<_, i32>("select 1")
-        .fetch_one(pool)
-        .await
-        .is_ok();
+    let ok = pool.ping().await.is_ok();
     if ok {
         html! { span class="dot dot-ok" {} span { "ready" } }
     } else {
@@ -109,17 +107,27 @@ pub async fn status_fragment(State(state): State<AppState>) -> Markup {
     }
 }
 
-async fn count(pool: &PgPool, table: &str) -> i64 {
-    let sql = format!("select count(*)::bigint from {table}");
-    sqlx::query_scalar::<_, i64>(&sql)
-        .fetch_one(pool)
+async fn count<E>(pool: &DatabaseConnection) -> i64
+where
+    E: EntityTrait,
+    E::Model: Send + Sync,
+{
+    E::find()
+        .count(pool)
         .await
+        .map(|value| value as i64)
         .unwrap_or(0)
 }
 
-async fn recent_cases(pool: &PgPool) -> Result<Vec<UsaccCasesRow>, sqlx::Error> {
-    let sql = format!("{USACC_CASES_SELECT_SQL} order by created_at desc limit 10");
-    sqlx::query_as::<_, UsaccCasesRow>(&sql).fetch_all(pool).await
+async fn recent_cases(pool: &DatabaseConnection) -> Result<Vec<UsaccCasesRow>, sea_orm::DbErr> {
+    Ok(usacc_cases::Entity::find()
+        .order_by_desc(usacc_cases::Column::CreatedAt)
+        .limit(10)
+        .all(pool)
+        .await?
+        .into_iter()
+        .map(db::case_row)
+        .collect())
 }
 
 fn fmt(n: i64) -> String {
