@@ -105,7 +105,17 @@ pub async fn run(listen: &str, secret: StaticSecret) -> Result<()> {
     let policy = Arc::new(Policy::from_env()?);
     let limit = Arc::new(Semaphore::new(max_circuits()?));
     let listener = TcpListener::bind(listen).await?;
-    info!(%listen, allow_private_exit = policy.allow_private_exit(), "relay listening");
+    if !policy.extend_allowlisted() && !is_loopback_listen(listen) {
+        warn!(
+            "relay is non-loopback and TOR_RELAY_PEERS is unset; Extend targets are unrestricted — pin the allowlist to prevent relay-to-arbitrary-host connections"
+        );
+    }
+    info!(
+        %listen,
+        allow_private_exit = policy.allow_private_exit(),
+        exit_enabled = policy.exit_enabled(),
+        "relay listening"
+    );
     loop {
         let (stream, peer) = match listener.accept().await {
             Ok(v) => v,
@@ -114,9 +124,12 @@ pub async fn run(listen: &str, secret: StaticSecret) -> Result<()> {
                 continue;
             }
         };
-        // Reject rather than queue when saturated, bounding memory/FD use.
+        // Reject rather than queue when saturated, bounding memory/FD use. The
+        // permit is shared (Arc) with the backward pump the circuit later spawns
+        // so a circuit only frees its slot once *both* directions have finished;
+        // a detached pump must not outlive the accounting.
         let permit = match limit.clone().try_acquire_owned() {
-            Ok(p) => p,
+            Ok(p) => Arc::new(p),
             Err(_) => {
                 debug!("at circuit capacity, dropping {peer}");
                 continue;
@@ -125,12 +138,19 @@ pub async fn run(listen: &str, secret: StaticSecret) -> Result<()> {
         let secret = secret.clone();
         let policy = policy.clone();
         tokio::spawn(async move {
-            if let Err(e) = handle_circuit(stream, secret, policy).await {
+            if let Err(e) = handle_circuit(stream, secret, policy, permit).await {
                 debug!("circuit from {peer} ended: {e:#}");
             }
-            drop(permit);
         });
     }
+}
+
+/// Loopback check mirroring `main::is_loopback_listener` for the relay warning.
+fn is_loopback_listen(listen: &str) -> bool {
+    return listen
+        .parse::<std::net::SocketAddr>()
+        .map(|a| a.ip().is_loopback())
+        .unwrap_or(false);
 }
 
 async fn handle_circuit(
