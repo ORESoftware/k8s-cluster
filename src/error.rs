@@ -16,6 +16,10 @@ pub enum ApiError {
     BadRequest,
     #[error("too many requests")]
     TooManyRequests,
+    // Returned when a route is disabled by configuration (e.g. `/v1/auth/supabase`
+    // when Supabase identity is not configured on this deployment).
+    #[error("not implemented")]
+    NotImplemented,
     #[error("internal error")]
     Internal,
 }
@@ -39,6 +43,7 @@ impl IntoResponse for ApiError {
             ApiError::Conflict => StatusCode::CONFLICT,
             ApiError::BadRequest => StatusCode::BAD_REQUEST,
             ApiError::TooManyRequests => StatusCode::TOO_MANY_REQUESTS,
+            ApiError::NotImplemented => StatusCode::NOT_IMPLEMENTED,
             ApiError::Internal => StatusCode::INTERNAL_SERVER_ERROR,
         };
         // Body intentionally minimal.

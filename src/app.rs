@@ -3,6 +3,8 @@
 //! Routes:
 //!   POST /v1/register        -> create account + first device, returns token
 //!   POST /v1/login           -> verify account, register a device, returns token
+//!   POST /v1/auth/supabase   -> enroll a device via a Supabase access JWT
+//!   GET  /v1/devices         -> list this account's devices   (auth)
 //!   POST /v1/devices/revoke  -> revoke a device   (auth)
 //!   GET  /v1/vault           -> pull sealed blob   (auth)
 //!   POST /v1/vault           -> push sealed blob   (auth)
@@ -15,10 +17,11 @@
 
 use crate::error::ApiError;
 use crate::protocol::{PullResponse, PushRequest, PushResponse};
+use crate::supabase::SupabaseVerifier;
 use crate::{auth, db, devices, metrics, telemetry, vault_blob};
 use axum::body::Body;
 use axum::extract::State;
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{header, HeaderMap, HeaderName, HeaderValue, StatusCode};
 use axum::middleware;
 use axum::response::Response;
 use axum::routing::{get, post};
@@ -33,6 +36,7 @@ use tower_governor::governor::GovernorConfigBuilder;
 use tower_governor::key_extractor::SmartIpKeyExtractor;
 use tower_governor::GovernorLayer;
 use tower_http::limit::RequestBodyLimitLayer;
+use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::timeout::TimeoutLayer;
 use uuid::Uuid;
 
@@ -51,6 +55,8 @@ pub struct AppState {
     pub pool: PgPool,
     pub metrics: Arc<metrics::Metrics>,
     auth_slots: Arc<Semaphore>,
+    /// `Some` when Supabase identity is configured; drives `/v1/auth/supabase`.
+    supabase: Option<SupabaseVerifier>,
 }
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
@@ -66,10 +72,12 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or(DEFAULT_AUTH_MAX_CONCURRENT);
 
     let pool = db::connect(&database_url).await?;
+    let supabase = SupabaseVerifier::from_env()?;
     let state = AppState {
         pool,
         metrics: Arc::new(metrics::Metrics::new()?),
         auth_slots: Arc::new(Semaphore::new(auth_max_concurrent)),
+        supabase: supabase.clone(),
     };
 
     let app = router(state);
@@ -77,6 +85,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!(
         %addr,
         auth_max_concurrent,
+        supabase_auth = supabase.is_some(),
         protocol_version = crate::protocol::PROTOCOL_VERSION,
         "3FA sync server listening"
     );
@@ -108,9 +117,13 @@ pub fn router(state: AppState) -> Router {
             .expect("valid rate-limit config"),
     );
 
+    // Unauthenticated, credential-bearing endpoints share the per-IP limiter.
+    // `/v1/auth/supabase` presents a Supabase JWT (not an account password) but is
+    // still an unauthenticated, account-minting surface, so it belongs here.
     let auth_routes = Router::new()
         .route("/v1/register", post(register))
         .route("/v1/login", post(login))
+        .route("/v1/auth/supabase", post(auth_supabase))
         .layer(GovernorLayer { config: governor });
 
     Router::new()
@@ -123,13 +136,33 @@ pub fn router(state: AppState) -> Router {
         .route("/readyz", get(readyz))
         .route("/metrics", get(metrics_http))
         .merge(auth_routes)
+        .route("/v1/devices", get(list_devices))
         .route("/v1/devices/revoke", post(revoke_device))
         .route("/v1/vault", get(pull_vault).post(push_vault))
-        // Outermost-to-innermost: request log, body cap, then a hard timeout.
+        // Outermost-to-innermost: request log, security headers, body cap, timeout.
         .layer(telemetry::http_trace_layer())
         .layer(middleware::from_fn_with_state(
             state.metrics.clone(),
             metrics::record_http_metrics,
+        ))
+        // Defense-in-depth response headers. This is a JSON API served behind a
+        // TLS-terminating ingress; these cost nothing and blunt sniffing/caching/
+        // framing of any error or token-bearing response.
+        .layer(SetResponseHeaderLayer::overriding(
+            header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("no-store"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::STRICT_TRANSPORT_SECURITY,
+            HeaderValue::from_static("max-age=63072000; includeSubDomains"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            HeaderName::from_static("x-frame-options"),
+            HeaderValue::from_static("DENY"),
         ))
         // Sealed blobs are small; cap bodies to 1 MiB to bound abuse.
         .layer(RequestBodyLimitLayer::new(1024 * 1024))
@@ -184,6 +217,14 @@ struct TokenResponse {
 #[derive(Deserialize)]
 struct RevokeRequest {
     device_id: Uuid,
+}
+
+/// Enroll a device against a Supabase-authenticated session. The access JWT is
+/// carried in the `Authorization: Bearer` header (not the body); the body only
+/// names the device.
+#[derive(Deserialize)]
+struct SupabaseEnrollRequest {
+    device_name: String,
 }
 
 // ---- handlers ----
@@ -272,12 +313,75 @@ async fn login(
         return Err(ApiError::Unauthorized);
     }
 
+    // Bound live devices per account so repeated logins can't accumulate an
+    // unbounded set of un-revocable tokens (each login enrolls a new device).
+    if devices::live_count(&st.pool, account_id).await? >= devices::MAX_DEVICES_PER_ACCOUNT {
+        return Err(ApiError::TooManyRequests);
+    }
+
     let (device_id, token) = devices::register(&st.pool, account_id, &req.device_name).await?;
     Ok(Json(TokenResponse {
         account_id,
         device_id,
         sync_token: token,
     }))
+}
+
+/// Enroll a device using a Supabase-issued access token. Verifies the JWT
+/// (signature + `exp`/`aud`/`iss`), maps `sub` onto a local account (creating it
+/// on first sight), enforces the per-account device cap, and returns a sync
+/// token. Identity lives in Supabase; the server never receives a password.
+async fn auth_supabase(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<SupabaseEnrollRequest>,
+) -> Result<Json<TokenResponse>, ApiError> {
+    let verifier = st.supabase.as_ref().ok_or(ApiError::NotImplemented)?;
+
+    if req.device_name.trim().is_empty()
+        || req.device_name != req.device_name.trim()
+        || req.device_name.len() > MAX_DEVICE_NAME_LEN
+    {
+        return Err(ApiError::BadRequest);
+    }
+
+    let token = auth::bearer(&headers)?;
+    let identity = verifier.verify(token).await?;
+
+    let mut tx = st.pool.begin().await?;
+
+    // Upsert the account keyed by the Supabase user id. On a returning user the
+    // stored email is refreshed; the row id is stable.
+    let account_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO threefa.accounts (supabase_user_id, email) VALUES ($1, $2) \
+         ON CONFLICT (supabase_user_id) DO UPDATE SET email = EXCLUDED.email \
+         RETURNING id",
+    )
+    .bind(identity.user_id)
+    .bind(identity.email.as_deref())
+    .fetch_one(&mut *tx)
+    .await?;
+
+    if devices::live_count(&mut *tx, account_id).await? >= devices::MAX_DEVICES_PER_ACCOUNT {
+        tx.rollback().await?;
+        return Err(ApiError::TooManyRequests);
+    }
+
+    let (device_id, sync_token) = devices::register(&mut *tx, account_id, &req.device_name).await?;
+    tx.commit().await?;
+    Ok(Json(TokenResponse {
+        account_id,
+        device_id,
+        sync_token,
+    }))
+}
+
+async fn list_devices(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<devices::DeviceInfo>>, ApiError> {
+    let who = auth::authenticate(&st.pool, &headers).await?;
+    Ok(Json(devices::list(&st.pool, who.account_id).await?))
 }
 
 async fn revoke_device(

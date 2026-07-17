@@ -29,6 +29,8 @@ seeds or your password. Written in Rust (axum + sqlx/Postgres).
 |--------|-----------------------|------|--------------------------------------|
 | POST   | `/v1/register`        | —    | Create account + first device, returns token |
 | POST   | `/v1/login`           | —    | Verify account, register a device, returns token |
+| POST   | `/v1/auth/supabase`   | JWT  | Enroll a device via a Supabase access token, returns sync token |
+| GET    | `/v1/devices`         | ✓    | List this account's devices (id, name, created, last-seen, revoked) |
 | GET    | `/v1/vault`           | ✓    | Pull the sealed vault blob           |
 | POST   | `/v1/vault`           | ✓    | Push a sealed vault blob (version-vector reconciled) |
 | POST   | `/v1/devices/revoke`  | ✓    | Revoke a device's sync token         |
@@ -36,16 +38,31 @@ seeds or your password. Written in Rust (axum + sqlx/Postgres).
 | GET    | `/readyz`             | —    | Postgres readiness                   |
 | GET    | `/metrics`            | —    | Prometheus metrics                   |
 
+"Auth ✓" is an account sync token (`Authorization: Bearer <sync_token>`). "Auth
+JWT" is a Supabase access token in the same header — the server verifies it and
+issues a sync token in exchange.
+
 ## Security model
 
 - **Zero-knowledge vault.** Clients E2E-encrypt the whole vault before upload
   (`protocol::SealedBlob`); the DB stores ciphertext only.
-- **Account auth.** Argon2id verifier + per-device bearer tokens (only the
-  token's SHA-256 is stored; login is constant-work to avoid user enumeration).
-  OPAQUE PAKE is the planned drop-in (`src/auth.rs`) so the password never
-  reaches the server at all.
+- **Account auth.** Two identity sources, both issuing the same per-device bearer
+  sync token (only the token's SHA-256 is stored):
+  - *Supabase (preferred).* Supabase Auth owns login (email/password, OAuth, MFA)
+    and mints a short-lived access JWT. `/v1/auth/supabase` verifies that JWT —
+    signature via the project JWKS (RS256/ES256, `kid`-selected, cached; legacy
+    HS256 shared-secret supported) plus strict `exp`/`aud`/`iss` — and maps `sub`
+    onto a local account. **The server never receives a password**, so login and
+    the E2E vault key are fully separated.
+  - *Legacy.* `/v1/register` + `/v1/login` with an Argon2id verifier; login is
+    constant-work to avoid user enumeration. Being phased out in favor of Supabase.
+- **Device lifecycle.** Live devices per account are capped
+  (`MAX_DEVICES_PER_ACCOUNT`), each authenticated request stamps `last_seen_at`,
+  and `GET /v1/devices` lets an owner audit and revoke enrollments.
 - **Sync.** Per-device version vectors give last-writer-wins-with-merge; a stale
-  push gets a `Conflict` and must pull/merge/retry.
+  push gets a `Conflict` and must pull/merge/retry. A push is accepted only if
+  its base vector is *causally reachable* — a device may advance only its own
+  counter, never fabricate a sibling's — so one device can't wedge another.
 
 ## Run locally
 
@@ -77,6 +94,26 @@ builder is pinned to the multi-architecture Rust 1.95 Bookworm image digest.
   and vault-conflict counts for Prometheus.
 - `THREEFA_AUTH_MAX_CONCURRENT` (default `2`) bounds concurrent Argon2 work;
   excess login/register requests fail with `429` instead of exhausting memory.
+
+## Supabase identity
+
+Set these to enable `/v1/auth/supabase` (unset ⇒ the route returns `501`, and the
+server runs legacy-auth only):
+
+- `SUPABASE_PROJECT_URL` — e.g. `https://<ref>.supabase.co`. The issuer
+  (`<url>/auth/v1`) and JWKS URL (`<url>/auth/v1/.well-known/jwks.json`) are
+  derived from it.
+- `SUPABASE_JWT_AUD` — expected audience (default `authenticated`).
+- `SUPABASE_JWT_LEGACY_SECRET` — only if the project still signs with the legacy
+  HS256 shared secret. Prefer asymmetric signing keys (RS256/ES256) and leave this
+  unset; the server resolves those from the JWKS automatically and needs no secret.
+
+The client obtains the access JWT from Supabase, then calls `POST
+/v1/auth/supabase` with `Authorization: Bearer <jwt>` and a `{"device_name":…}`
+body to receive a long-lived sync token. The sync token — not the JWT — is used
+for `/v1/vault` and `/v1/devices`, so an expired JWT does not force a full vault
+re-auth; the client silently refreshes its Supabase session (unlocked locally by
+the app's 6-digit PIN) and keeps its existing sync token.
 
 ## Layout
 
