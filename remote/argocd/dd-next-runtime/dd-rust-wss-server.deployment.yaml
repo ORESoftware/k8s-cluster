@@ -39,6 +39,9 @@ spec:
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
             seccompProfile:
               type: RuntimeDefault
           # Build-on-pod-start, identical to dd-webrtc-signaling. The
