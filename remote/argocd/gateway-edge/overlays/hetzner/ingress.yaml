@@ -28,11 +28,12 @@ spec:
   ingressClassName: nginx
   tls:
     # One cert-manager Certificate/Secret intentionally covers the diagnostic
-    # sslip host plus the two Fiducia application hosts. Cloudflare is DNS-only
+    # sslip host plus the three Fiducia application hosts. Cloudflare is DNS-only
     # for these records, so the origin must present a publicly trusted cert.
     - hosts:
         - hello.95-217-171-250.sslip.io
         - app.fiducia.cloud
+        - api.fiducia.cloud
         - admin.fiducia.cloud
       secretName: gateway-public-tls
   rules:
