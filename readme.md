@@ -1,4 +1,12 @@
-# dd-data-viz-rs
+# data-viz-server.rs — Claritas
+
+**[claritas-viz](https://github.com/claritas-viz)** · site: [claritas-viz.github.io](https://claritas-viz.github.io)
+
+> Extracted with full history from `ORESoftware/k8s-cluster`
+> (`remote/deployments/dd-data-viz-rs`) on 2026-07-17. **This repo is the source
+> of truth**; k8s-cluster vendors it back as a submodule at the same path. Path
+> deps (`../../libs`) resolve inside that superproject checkout — full builds
+> happen there. See [AGENTS.md](AGENTS.md) for repo rules.
 
 Rust columnar analytics and evolutionary data visualization server.
 
