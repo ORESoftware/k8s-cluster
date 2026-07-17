@@ -22,6 +22,7 @@ mod circuit;
 mod config;
 mod connector;
 mod crypto;
+mod http_connect;
 mod policy;
 mod relay;
 mod socks;
