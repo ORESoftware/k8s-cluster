@@ -319,6 +319,63 @@ async fn login(
     }))
 }
 
+/// Enroll a device using a Supabase-issued access token. Verifies the JWT
+/// (signature + `exp`/`aud`/`iss`), maps `sub` onto a local account (creating it
+/// on first sight), enforces the per-account device cap, and returns a sync
+/// token. Identity lives in Supabase; the server never receives a password.
+async fn auth_supabase(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<SupabaseEnrollRequest>,
+) -> Result<Json<TokenResponse>, ApiError> {
+    let verifier = st.supabase.as_ref().ok_or(ApiError::NotImplemented)?;
+
+    if req.device_name.trim().is_empty()
+        || req.device_name != req.device_name.trim()
+        || req.device_name.len() > MAX_DEVICE_NAME_LEN
+    {
+        return Err(ApiError::BadRequest);
+    }
+
+    let token = auth::bearer(&headers)?;
+    let identity = verifier.verify(token).await?;
+
+    let mut tx = st.pool.begin().await?;
+
+    // Upsert the account keyed by the Supabase user id. On a returning user the
+    // stored email is refreshed; the row id is stable.
+    let account_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO threefa.accounts (supabase_user_id, email) VALUES ($1, $2) \
+         ON CONFLICT (supabase_user_id) DO UPDATE SET email = EXCLUDED.email \
+         RETURNING id",
+    )
+    .bind(identity.user_id)
+    .bind(identity.email.as_deref())
+    .fetch_one(&mut *tx)
+    .await?;
+
+    if devices::live_count(&mut *tx, account_id).await? >= devices::MAX_DEVICES_PER_ACCOUNT {
+        tx.rollback().await?;
+        return Err(ApiError::TooManyRequests);
+    }
+
+    let (device_id, sync_token) = devices::register(&mut *tx, account_id, &req.device_name).await?;
+    tx.commit().await?;
+    Ok(Json(TokenResponse {
+        account_id,
+        device_id,
+        sync_token,
+    }))
+}
+
+async fn list_devices(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<devices::DeviceInfo>>, ApiError> {
+    let who = auth::authenticate(&st.pool, &headers).await?;
+    Ok(Json(devices::list(&st.pool, who.account_id).await?))
+}
+
 async fn revoke_device(
     State(st): State<AppState>,
     headers: HeaderMap,
