@@ -112,8 +112,10 @@ fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
 }
 
 fn set_cookie(name: &str, value: &str) -> HeaderValue {
-    HeaderValue::from_str(&format!("{name}={value}; Path=/; HttpOnly; SameSite=Lax"))
-        .expect("cookie header value")
+    HeaderValue::from_str(&format!(
+        "{name}={value}; Path=/; HttpOnly; SameSite=Lax; Secure"
+    ))
+    .expect("cookie header value")
 }
 
 fn hex(bytes: &[u8]) -> String {
