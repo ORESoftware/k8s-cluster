@@ -213,10 +213,12 @@ async fn handle_circuit(
                 let sealer = sealer_bwd
                     .take()
                     .ok_or_else(|| anyhow!("sealer already taken"))?;
+                let hold = permit.clone();
                 tokio::spawn(async move {
                     if let Err(e) = middle_pump(next_r, pw, sealer).await {
                         debug!("middle pump ended: {e:#}");
                     }
+                    drop(hold); // release the circuit slot only when this direction ends
                 });
             }
             Cell::Relay { payload } => {
