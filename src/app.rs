@@ -115,9 +115,13 @@ pub fn router(state: AppState) -> Router {
             .expect("valid rate-limit config"),
     );
 
+    // Unauthenticated, credential-bearing endpoints share the per-IP limiter.
+    // `/v1/auth/supabase` presents a Supabase JWT (not an account password) but is
+    // still an unauthenticated, account-minting surface, so it belongs here.
     let auth_routes = Router::new()
         .route("/v1/register", post(register))
         .route("/v1/login", post(login))
+        .route("/v1/auth/supabase", post(auth_supabase))
         .layer(GovernorLayer { config: governor });
 
     Router::new()
