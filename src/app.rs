@@ -70,10 +70,12 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or(DEFAULT_AUTH_MAX_CONCURRENT);
 
     let pool = db::connect(&database_url).await?;
+    let supabase = SupabaseVerifier::from_env()?;
     let state = AppState {
         pool,
         metrics: Arc::new(metrics::Metrics::new()?),
         auth_slots: Arc::new(Semaphore::new(auth_max_concurrent)),
+        supabase: supabase.clone(),
     };
 
     let app = router(state);
@@ -81,6 +83,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!(
         %addr,
         auth_max_concurrent,
+        supabase_auth = supabase.is_some(),
         protocol_version = crate::protocol::PROTOCOL_VERSION,
         "3FA sync server listening"
     );
