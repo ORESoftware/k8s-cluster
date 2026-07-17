@@ -233,7 +233,8 @@ async fn handle_circuit(
                 if next_w.is_some() || dest_w.is_some() {
                     bail!("Begin after this relay already has a next hop");
                 }
-                // Exit policy: resolve + reject private/loopback/metadata ranges.
+                // Exit policy: enforce exit-enabled, resolve + reject
+                // private/loopback/metadata ranges.
                 let addrs = policy.resolve_exit(&host, port).await?;
                 let dest = connect_resolved(&addrs).await?;
                 dest.set_nodelay(true).ok();
@@ -245,10 +246,12 @@ async fn handle_circuit(
                 let sealer = sealer_bwd
                     .take()
                     .ok_or_else(|| anyhow!("sealer already taken"))?;
+                let hold = permit.clone();
                 tokio::spawn(async move {
                     if let Err(e) = exit_pump(dest_r, pw, sealer).await {
                         debug!("exit pump ended: {e:#}");
                     }
+                    drop(hold); // release the circuit slot only when this direction ends
                 });
             }
             Cell::Data { bytes } => {
