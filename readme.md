@@ -39,6 +39,33 @@ Postgres. Always. The `postings` table is append-only (UPDATE/DELETE are
 forbidden by trigger), and every transaction's postings must sum to zero per
 currency (enforced by a deferred constraint trigger).
 
+## Database schema — declarative, via dpm
+
+[`schema/schema.sql`](./schema/schema.sql) is the schema source of truth for
+this service's own database (separate from the shared `pg-defs` RDS
+contract). The live database converges onto it with
+[dpm](https://github.com/declarative-migrations/declarative-postgres-migrate.rs)
+through [`scripts/dpm.sh`](./scripts/dpm.sh) — the same workflow as
+`remote/libs/pg-defs`:
+
+```sh
+export SHADOW_DATABASE_URL=postgres://...   # server where dpm may create throwaway DBs
+export TARGET_DATABASE_URL=postgres://...   # or BILLING_DATABASE_URL / DATABASE_URL
+
+scripts/dpm.sh diff        # print the migration SQL (never executes)
+scripts/dpm.sh verify      # rehearse on a shadow replica, prove convergence
+scripts/dpm.sh review      # diff + AI review
+scripts/dpm.sh apply       # generate + execute (interactive confirm)
+scripts/dpm.sh bootstrap   # full DDL for an empty database
+```
+
+The server **never migrates at boot** (the old `sqlx::migrate!` /
+`BILLING_RUN_MIGRATIONS` switch is gone); a human reviews and applies every
+schema change. `migrations/` is a frozen historical record — see
+[`migrations/README.md`](./migrations/README.md). Data access is SeaORM
+(entities in `src/entity/`, one module per table, hand-written against
+`schema/schema.sql`).
+
 Customer billing-state snapshots additionally serialize through the external
 live-mutex-rs broker when `BILLING_CUSTOMER_SNAPSHOT_LOCK_ENABLED=true`. The
 read path locks `billing:customer:<tenant_id>:<customer_id>` before rolling up
@@ -107,7 +134,8 @@ src/
   config.rs            # env config
   state.rs             # AppState (services + clients)
   error.rs             # AppError + IntoResponse
-  db.rs                # PG pool + migrations
+  db.rs                # SeaORM connection + raw-Statement helpers
+  entity/              # SeaORM entities (one module per table, schema mirror)
   crypto.rs            # per-tenant AES-GCM credential sealing
   money.rs             # Money / Currency (minor units, integer)
   shard.rs             # ShardKey + Region
@@ -122,11 +150,11 @@ src/
     connection.rs      # sealed-credential storage
   solana/              # anchor service + RPC client + merkle + verify
   api/                 # axum router + handlers
-migrations/
-  20260518000001_init.sql            # tenants, users, accounts, transactions, postings
-  20260518000002_connections.sql     # provider connections, OAuth state, webhook events
-  20260518000003_reconciliation.sql  # breaks, anchors
-  20260523000012_security_hardening.sql  # unique-active external account, slug lookup index
+schema/
+  schema.sql           # declarative schema source of truth (dpm converges onto it)
+scripts/
+  dpm.sh               # diff / verify / review / apply / bootstrap wrapper for dpm
+migrations/            # FROZEN historical sqlx migrations — never applied; see its README.md
 k8s/ec2/
   dd-billing-server.deployment.yaml
   dd-billing-server.service.yaml
@@ -146,8 +174,15 @@ The Argo CD Application is registered at
 docker run --rm -d --name billing-pg \
   -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:16
 
-# 2. Set env
+# 2. Create the schema (one-time; the server does NOT migrate at boot).
+#    Quick local path — pipe the bootstrap DDL into psql:
 export BILLING_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres
+export SHADOW_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres
+scripts/dpm.sh bootstrap | psql "$BILLING_DATABASE_URL"
+#    (against shared/long-lived databases use `scripts/dpm.sh diff` +
+#     `scripts/dpm.sh apply` so every change is reviewed first)
+
+# 3. Set env
 export BILLING_MASTER_SEAL_KEY="$(openssl rand -base64 32)"
 export SOLANA_RPC_URL=https://api.devnet.solana.com
 export SOLANA_CLUSTER=devnet
@@ -163,12 +198,13 @@ export BILLING_CUSTOMER_SNAPSHOT_LOCK_ENABLED=false # set true with live-mutex-r
 export BILLING_LIVE_MUTEX_ADDR=127.0.0.1:6970
 export RUST_LOG=info,sqlx=warn
 
-# 3. Run
+# 4. Run
 cargo run --release
 ```
 
-The server listens on `:8087` by default. Migrations run automatically on
-boot unless `BILLING_RUN_MIGRATIONS=false`.
+The server listens on `:8087` by default. It never runs migrations at boot;
+schema changes go through `scripts/dpm.sh` (see "Database schema —
+declarative, via dpm" above).
 
 ## Provider API tests
 

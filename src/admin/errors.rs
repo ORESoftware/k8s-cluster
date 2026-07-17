@@ -1,6 +1,6 @@
 //! Error sanitization for the admin UI.
 //!
-//! Raw `AppError`/`sqlx::Error` messages can include schema names, SQL
+//! Raw `AppError`/`sea_orm::DbErr` messages can include schema names, SQL
 //! fragments, file paths, and other internal detail that is fine in
 //! server logs but should not be rendered into an operator's browser tab.
 //! [`sanitized`] keeps a stable user-facing label per error class and

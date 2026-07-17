@@ -56,8 +56,9 @@ spec:
               value: json
             - name: RUST_LOG
               value: info,sqlx=warn,hyper=warn,tower_http=info
-            - name: BILLING_RUN_MIGRATIONS
-              value: 'true'
+            # Schema changes are applied out-of-band via scripts/dpm.sh
+            # (declarative source: schema/schema.sql). The server has no
+            # boot-time migration path.
             - name: BILLING_OAUTH_REDIRECT_BASE
               value: https://billing.dd.internal
             - name: BILLING_REQUIRE_WEBHOOK_SIGNATURES
