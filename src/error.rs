@@ -43,6 +43,7 @@ impl IntoResponse for ApiError {
             ApiError::Conflict => StatusCode::CONFLICT,
             ApiError::BadRequest => StatusCode::BAD_REQUEST,
             ApiError::TooManyRequests => StatusCode::TOO_MANY_REQUESTS,
+            ApiError::NotImplemented => StatusCode::NOT_IMPLEMENTED,
             ApiError::Internal => StatusCode::INTERNAL_SERVER_ERROR,
         };
         // Body intentionally minimal.
