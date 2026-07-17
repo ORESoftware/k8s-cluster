@@ -1,0 +1,33 @@
+# Dedicated public host for the Athlet-O shop app (submodule
+# remote/deployments/athleto-app-rs). Unlike the shared gateway Ingress
+# (gateway-edge), this routes app.athleto.store straight to the app's
+# ClusterIP Service — the app serves plain HTTP on 8145, so no
+# backend-protocol annotation. DNS lives in Cloudflare (athleto.store zone);
+# keep the record DNS-only until the cert-manager certificate is issued.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dd-athleto-app-rs
+  namespace: default
+  labels:
+    app: dd-athleto-app-rs
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - app.athleto.store
+      secretName: athleto-public-tls
+  rules:
+    - host: app.athleto.store
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: dd-athleto-app-rs
+                port:
+                  number: 8145
