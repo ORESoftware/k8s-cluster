@@ -1,0 +1,134 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dd-trading-server
+  namespace: default
+  labels:
+    app: dd-trading-server
+spec:
+  podSelector:
+    matchLabels:
+      app: dd-trading-server
+  policyTypes:
+    - Ingress
+    - Egress
+  # Ingress to :8103 is limited to the established callers. Trading signals
+  # arrive over NATS (an egress lane from this pod), so the only inbound HTTP
+  # is the gateway's proxied /trading surface, runtime-config pushes to
+  # /internal/update-runtime-config, and observability scrapes.
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: dd-remote-gateway
+        - podSelector:
+            matchLabels:
+              app: dd-runtime-config
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - dd-prometheus
+                  - dd-otel-collector
+      ports:
+        - protocol: TCP
+          port: 8103
+  egress:
+    # Allow OTLP trace export to the in-cluster OpenTelemetry collector.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
+    # DNS resolution.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # NATS signal/decision/order-intent lanes (NATS_URL).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: messaging
+          podSelector:
+            matchLabels:
+              app: dd-nats
+      ports:
+        - protocol: TCP
+          port: 4222
+    # runtime-config registration (POST /subscribers).
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dd-runtime-config
+      ports:
+        - protocol: TCP
+          port: 8110
+    # Market snapshots from the scraper (SCRAPER_BASE_URL).
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dd-web-scraper
+      ports:
+        - protocol: TCP
+          port: 8097
+    # Policy evaluations from the MDP optimizer (MDP_OPTIMIZER_BASE_URL).
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dd-mdp-optimizer
+      ports:
+        - protocol: TCP
+          port: 8096
+    # ML feature/prediction pipeline (ML_PIPELINE_BASE_URL).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ai-ml
+          podSelector:
+            matchLabels:
+              app: dd-ai-ml-pipeline
+      ports:
+        - protocol: TCP
+          port: 8099
+    # RDS Postgres app-config reads (sqlx; TRADING_APP_CONFIG_*). RDS resolves
+    # to a private VPC address; constrain the broad private ranges to Postgres
+    # only.
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+        - ipBlock:
+            cidr: 172.16.0.0/12
+        - ipBlock:
+            cidr: 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        # The deployment builds the Rust service from mounted source on cold
+        # start. Permit dependency fetches over public HTTPS without opening
+        # private, loopback, or cloud-metadata destinations.
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
