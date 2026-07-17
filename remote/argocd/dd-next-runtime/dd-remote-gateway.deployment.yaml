@@ -18,7 +18,7 @@ spec:
     metadata:
       annotations:
         dd.dev/telemetry-revision: '2026-06-07-gateway-quoted-regex'
-        dd.dev/gateway-config-revision: '2026-07-15-fiducia-public-hosts'
+        dd.dev/gateway-config-revision: '2026-07-17-fiducia-api-host'
       labels:
         app: dd-remote-gateway
     spec:
