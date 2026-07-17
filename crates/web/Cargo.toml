@@ -1,0 +1,32 @@
+[package]
+name = "t2v-web"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "t2v-v2t MASH web server: maud + axum + sea-orm + htmx over websockets."
+
+[[bin]]
+name = "t2v-web"
+path = "src/main.rs"
+
+[dependencies]
+t2v-entity = { workspace = true }
+t2v-migration = { workspace = true }
+
+axum = { workspace = true, features = ["ws", "multipart"] }
+maud = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sea-orm = { workspace = true }
+sea-orm-migration = { workspace = true }
+reqwest = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+chrono = { workspace = true }
+base64 = { workspace = true }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"

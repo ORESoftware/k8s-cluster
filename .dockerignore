@@ -1,0 +1,7 @@
+/target
+.git
+*.sqlite
+*.sqlite-*
+.env
+remote
+k8s

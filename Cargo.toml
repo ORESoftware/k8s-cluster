@@ -1,0 +1,66 @@
+# t2v-v2t.rs — text-to-voice / voice-to-text platform.
+#
+# Workspace layout (MASH fleet conventions: maud + axum + sea-orm, NOT raw sqlx):
+#   crates/core      t2v-core       zero-dependency DSP: custom FFTs, Goertzel/DTMF, WAV, mu-law, VAD
+#   crates/llm       t2v-llm        raw-HTTP clients for OpenAI / Gemini / Anthropic (+ Whisper STT, OpenAI TTS)
+#   crates/entity    t2v-entity     SeaORM entities
+#   crates/migration t2v-migration  SeaORM migrations
+#   crates/api       t2v-api        JSON API server: STT/TTS/translate pipelines + Vapi webhooks
+#   crates/web       t2v-web        MASH web server: maud + htmx + websockets dashboard
+#
+# The api and web servers are separate binaries and deploy separately.
+
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "crates/llm",
+    "crates/entity",
+    "crates/migration",
+    "crates/api",
+    "crates/web",
+]
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+license = "MIT"
+repository = "https://github.com/oresoftware/t2v-v2t.rs"
+
+[workspace.dependencies]
+axum = { version = "0.7", features = ["macros"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+maud = { version = "0.26", features = ["axum"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls"] }
+# Typed ORM per fleet convention. sea-orm drives sqlx internally, but no crate
+# in this workspace issues raw sqlx queries — all persistence goes through
+# SeaORM entities/queries.
+sea-orm = { version = "1.1", default-features = false, features = [
+    "sqlx-postgres",
+    "sqlx-sqlite",
+    "runtime-tokio-rustls",
+    "macros",
+    "with-uuid",
+    "with-chrono",
+    "with-json",
+] }
+sea-orm-migration = { version = "1.1", default-features = false, features = [
+    "sqlx-postgres",
+    "sqlx-sqlite",
+    "runtime-tokio-rustls",
+] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+uuid = { version = "1", features = ["serde", "v4"] }
+base64 = "0.22"
+
+t2v-core = { path = "crates/core" }
+t2v-llm = { path = "crates/llm" }
+t2v-entity = { path = "crates/entity" }
+t2v-migration = { path = "crates/migration" }
+
+[profile.release]
+strip = "symbols"
