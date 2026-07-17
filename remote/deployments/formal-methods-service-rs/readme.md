@@ -247,3 +247,5 @@ real axum router and post synthetic deliveries through it, asserting on
 the HTTP responses. They use generic placeholder repo names like
 `acme/widgets`; the service has no knowledge of any specific consumer
 repository.
+
+> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

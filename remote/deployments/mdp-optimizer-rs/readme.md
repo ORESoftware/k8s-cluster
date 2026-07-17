@@ -119,3 +119,5 @@ silently recommended.
 The reaper/cron deployment can publish optimization requests to NATS when it
 wants policy help for scheduling, worker warm pools, queue backoff, or resource
 allocation decisions.
+
+> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

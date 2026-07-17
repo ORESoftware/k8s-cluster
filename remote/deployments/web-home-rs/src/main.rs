@@ -9518,6 +9518,7 @@ const LAMBDA_FUNCTIONS_BODY: &str = r###"<div class="app">
               <option value="erlang">erlang</option>
               <option value="elixir">elixir</option>
               <option value="java">java</option>
+              <option value="browser">browser (Playwright/Puppeteer)</option>
             </select>
           </label>
           <label>
@@ -9532,6 +9533,7 @@ const LAMBDA_FUNCTIONS_BODY: &str = r###"<div class="app">
               <option value="erlang">erlang process</option>
               <option value="elixir">elixir process</option>
               <option value="java">java process</option>
+              <option value="browser">browser automation</option>
               <option value="rust">rust process</option>
               <option value="gleamlang">gleamlang process</option>
             </select>
@@ -9633,6 +9635,7 @@ const entryCommands = {
   erlang: "env -i PATH=\"$PATH\" LAMBDA_TARGET_RUNTIME=\"erlang\" NODE_NO_WARNINGS=1 node child-runtimes/polyglot-function-runner.mjs",
   elixir: "env -i PATH=\"$PATH\" LAMBDA_TARGET_RUNTIME=\"elixir\" NODE_NO_WARNINGS=1 node child-runtimes/polyglot-function-runner.mjs",
   java: "env -i PATH=\"$PATH\" LAMBDA_TARGET_RUNTIME=\"java\" NODE_NO_WARNINGS=1 node child-runtimes/polyglot-function-runner.mjs",
+  browser: "env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node child-runtimes/browser-function-runner.mjs",
 };
 const processProfiles = {
   nodejs: {
@@ -9708,6 +9711,13 @@ const processProfiles = {
       baseImages: [
         "docker.io/library/dd-lambda-java-runtime:dev",
         "docker.io/library/eclipse-temurin:21-jdk-alpine",
+      ],
+    },
+    browser: {
+      runtime: "browser",
+      poolSlug: "browser",
+      baseImages: [
+        "docker.io/library/dd-lambda-browser-runtime:dev",
       ],
     },
     rust: {
@@ -9901,6 +9911,7 @@ function ensureSelectValue(id, value) {
     if (value === "erl") return "erlang";
     if (value === "ex") return "elixir";
     if (value === "jvm") return "java";
+    if (["playwright", "puppeteer", "chromium", "headless", "scraper"].includes(value)) return "browser";
     return entryCommands[value] ? value : "nodejs";
   }
 
@@ -10192,6 +10203,12 @@ function containerPoolFunctionBody(profileName) {
           "    return \"{\\\"status\\\":200,\\\"body\\\":{\\\"ok\\\":true}}\";",
           "  }",
           "}",
+        ].join("\n");
+      case "browser":
+        return [
+          "const target = request.body?.url ?? request.url ?? \"https://example.com\";",
+          "await context.page.goto(target);",
+          "return { status: 200, body: { title: await context.page.title(), url: context.page.url() } };",
         ].join("\n");
       case "rust":
       case "gleamlang":

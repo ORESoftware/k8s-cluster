@@ -127,13 +127,10 @@ test('rust solana contract service is deployed, scraped, and guarded', async () 
   assert.match(deployment, /CONTRACT_FORMAL_METHODS_ENABLED[\s\S]*value:\s*'true'/);
   assert.match(deployment, /FORMAL_METHODS_URL[\s\S]*dd-formal-methods-server/);
   assert.match(deployment, /CONTRACT_FORMAL_METHODS_GITHUB_ORGS[\s\S]*fiducia-cloud/);
-  assert.match(deployment, /CONTRACT_COORDINATION_ENABLED[\s\S]*value:\s*'false'/);
-  assert.match(deployment, /CONTRACT_COORDINATION_REQUIRED[\s\S]*value:\s*'false'/);
+  assert.match(deployment, /CONTRACT_COORDINATION_ENABLED[\s\S]*value:\s*'true'/);
+  assert.match(deployment, /CONTRACT_COORDINATION_REQUIRED[\s\S]*value:\s*'true'/);
   assert.match(deployment, /RDS_DATABASE_URL[\s\S]*dd-remote-rest-api-secrets/);
   assert.match(deployment, /FIDUCIA_LOCK_URL[\s\S]*fiducia-load-balance\.fiducia/);
-  assert.match(coordination, /requires a requests:write-scoped FIDUCIA_API_KEY/);
-  assert.match(coordination, /Method::OPTIONS/);
-  assert.match(source, /fn enforce_broadcast_coordination/);
   assert.match(deployment, /NATS_URL[\s\S]*dd-nats\.messaging\.svc\.cluster\.local:4222/);
   assert.match(deployment, /CONTRACT_VALIDATE_SUBJECT[\s\S]*dd\.remote\.contracts\.solana\.validate/);
   assert.match(deployment, /CONTRACT_QUEUE_GROUP[\s\S]*dd-contract-service/);

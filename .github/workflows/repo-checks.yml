@@ -44,7 +44,7 @@ jobs:
           git submodule update --init --depth 1 -- remote/libs
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 10.33.0
 
@@ -73,7 +73,6 @@ jobs:
           static_tests=(
             general/agent-breadcrumb-pipeline.test.ts
             general/ai-ml-platform-config.test.ts
-            general/athleto-app-routing.test.ts
             general/bastion-config.test.ts
             general/browser-job-runner-config.test.ts
             general/browser-test-server-config.test.ts

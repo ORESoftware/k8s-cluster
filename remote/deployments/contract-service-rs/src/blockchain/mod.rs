@@ -140,13 +140,11 @@ impl BlockchainConfig {
         };
         let evm_network = crate::env_value("EVM_NETWORK", "sepolia");
 
-        let executor_execute_enabled =
-            crate::env_bool("BLOCKCHAIN_EXECUTOR_EXECUTE_ENABLED", false);
+        let executor_execute_enabled = crate::env_bool("BLOCKCHAIN_EXECUTOR_EXECUTE_ENABLED", false);
         let relayer_broadcast_enabled =
             crate::env_bool("BLOCKCHAIN_RELAYER_BROADCAST_ENABLED", false);
         let staking_execute_enabled = crate::env_bool("BLOCKCHAIN_STAKING_EXECUTE_ENABLED", false);
-        let bridge_broadcast_enabled =
-            crate::env_bool("BLOCKCHAIN_BRIDGE_BROADCAST_ENABLED", false);
+        let bridge_broadcast_enabled = crate::env_bool("BLOCKCHAIN_BRIDGE_BROADCAST_ENABLED", false);
         let mainnet_broadcast_enabled =
             crate::env_bool("CONTRACT_BLOCKCHAIN_MAINNET_ENABLED", false);
         let execute_auth_secret = crate::env_secret("CONTRACT_BLOCKCHAIN_AUTH_SECRET");
@@ -165,8 +163,8 @@ impl BlockchainConfig {
         }
 
         // Mainnet second gate: a single feature flag cannot move real funds.
-        let targets_mainnet =
-            solana_cluster == "mainnet-beta" || evm::is_evm_mainnet(evm_chain_id, &evm_network);
+        let targets_mainnet = solana_cluster == "mainnet-beta"
+            || evm::is_evm_mainnet(evm_chain_id, &evm_network);
         if any_broadcast && targets_mainnet && !mainnet_broadcast_enabled {
             return Err(
                 "blockchain execute/broadcast against a mainnet target requires CONTRACT_BLOCKCHAIN_MAINNET_ENABLED=true"
@@ -251,91 +249,23 @@ impl BlockchainMetrics {
     pub(super) fn render(&self, out: &mut String) {
         let load = |counter: &AtomicU64| counter.load(Ordering::Relaxed);
         let rows: [(&str, &str, u64); 17] = [
-            (
-                "dd_contract_service_blockchain_requests_total",
-                "Blockchain feature HTTP requests handled.",
-                load(&self.requests_total),
-            ),
-            (
-                "dd_contract_service_blockchain_rejected_disabled_total",
-                "Blockchain requests rejected because the feature is disabled.",
-                load(&self.rejected_disabled_total),
-            ),
-            (
-                "dd_contract_service_blockchain_auth_failures_total",
-                "Blockchain execute/broadcast auth failures.",
-                load(&self.auth_failures_total),
-            ),
-            (
-                "dd_contract_service_blockchain_broadcast_blocked_total",
-                "Blockchain broadcasts blocked by a disabled gate.",
-                load(&self.broadcast_blocked_total),
-            ),
-            (
-                "dd_contract_service_blockchain_evm_rpc_requests_total",
-                "EVM JSON-RPC requests issued.",
-                load(&self.evm_rpc_requests_total),
-            ),
-            (
-                "dd_contract_service_blockchain_evm_rpc_errors_total",
-                "EVM JSON-RPC requests that errored.",
-                load(&self.evm_rpc_errors_total),
-            ),
-            (
-                "dd_contract_service_blockchain_wallets_registered_total",
-                "Watch-only wallets registered.",
-                load(&self.wallets_registered_total),
-            ),
-            (
-                "dd_contract_service_blockchain_executor_simulations_total",
-                "Smart-contract executor simulations.",
-                load(&self.executor_simulations_total),
-            ),
-            (
-                "dd_contract_service_blockchain_relayer_submissions_total",
-                "Transaction relayer submissions accepted.",
-                load(&self.relayer_submissions_total),
-            ),
-            (
-                "dd_contract_service_blockchain_multisig_proposals_total",
-                "Multisig proposals created.",
-                load(&self.multisig_proposals_total),
-            ),
-            (
-                "dd_contract_service_blockchain_multisig_approvals_total",
-                "Multisig approvals collected.",
-                load(&self.multisig_approvals_total),
-            ),
-            (
-                "dd_contract_service_blockchain_index_events_total",
-                "Index events recorded.",
-                load(&self.index_events_total),
-            ),
-            (
-                "dd_contract_service_blockchain_mev_alerts_total",
-                "MEV/arbitrage monitoring alerts emitted.",
-                load(&self.mev_alerts_total),
-            ),
-            (
-                "dd_contract_service_blockchain_nft_media_stored_total",
-                "NFT media objects stored.",
-                load(&self.nft_media_stored_total),
-            ),
-            (
-                "dd_contract_service_blockchain_staking_validations_total",
-                "Staking intents validated.",
-                load(&self.staking_validations_total),
-            ),
-            (
-                "dd_contract_service_blockchain_bridge_transfers_total",
-                "Cross-chain bridge transfer intents created.",
-                load(&self.bridge_transfers_total),
-            ),
-            (
-                "dd_contract_service_blockchain_bridge_attestations_total",
-                "Cross-chain bridge attestations verified.",
-                load(&self.bridge_attestations_total),
-            ),
+            ("dd_contract_service_blockchain_requests_total", "Blockchain feature HTTP requests handled.", load(&self.requests_total)),
+            ("dd_contract_service_blockchain_rejected_disabled_total", "Blockchain requests rejected because the feature is disabled.", load(&self.rejected_disabled_total)),
+            ("dd_contract_service_blockchain_auth_failures_total", "Blockchain execute/broadcast auth failures.", load(&self.auth_failures_total)),
+            ("dd_contract_service_blockchain_broadcast_blocked_total", "Blockchain broadcasts blocked by a disabled gate.", load(&self.broadcast_blocked_total)),
+            ("dd_contract_service_blockchain_evm_rpc_requests_total", "EVM JSON-RPC requests issued.", load(&self.evm_rpc_requests_total)),
+            ("dd_contract_service_blockchain_evm_rpc_errors_total", "EVM JSON-RPC requests that errored.", load(&self.evm_rpc_errors_total)),
+            ("dd_contract_service_blockchain_wallets_registered_total", "Watch-only wallets registered.", load(&self.wallets_registered_total)),
+            ("dd_contract_service_blockchain_executor_simulations_total", "Smart-contract executor simulations.", load(&self.executor_simulations_total)),
+            ("dd_contract_service_blockchain_relayer_submissions_total", "Transaction relayer submissions accepted.", load(&self.relayer_submissions_total)),
+            ("dd_contract_service_blockchain_multisig_proposals_total", "Multisig proposals created.", load(&self.multisig_proposals_total)),
+            ("dd_contract_service_blockchain_multisig_approvals_total", "Multisig approvals collected.", load(&self.multisig_approvals_total)),
+            ("dd_contract_service_blockchain_index_events_total", "Index events recorded.", load(&self.index_events_total)),
+            ("dd_contract_service_blockchain_mev_alerts_total", "MEV/arbitrage monitoring alerts emitted.", load(&self.mev_alerts_total)),
+            ("dd_contract_service_blockchain_nft_media_stored_total", "NFT media objects stored.", load(&self.nft_media_stored_total)),
+            ("dd_contract_service_blockchain_staking_validations_total", "Staking intents validated.", load(&self.staking_validations_total)),
+            ("dd_contract_service_blockchain_bridge_transfers_total", "Cross-chain bridge transfer intents created.", load(&self.bridge_transfers_total)),
+            ("dd_contract_service_blockchain_bridge_attestations_total", "Cross-chain bridge attestations verified.", load(&self.bridge_attestations_total)),
         ];
         for (name, help, value) in rows {
             crate::push_counter(out, name, help, value);
@@ -478,10 +408,7 @@ pub(super) fn require_enabled(
 }
 
 /// Constant-time check of the shared blockchain execute/broadcast auth header.
-pub(super) fn authorize_execute(
-    state: &BlockchainState,
-    headers: &HeaderMap,
-) -> Result<(), Response> {
+pub(super) fn authorize_execute(state: &BlockchainState, headers: &HeaderMap) -> Result<(), Response> {
     let Some(secret) = &state.config().execute_auth_secret else {
         return Err(json_err(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -539,9 +466,7 @@ pub(super) fn validate_label(value: &str, field: &str) -> Result<String, String>
         return Err(format!("{field} must not be empty"));
     }
     if trimmed.chars().count() > MAX_BLOCKCHAIN_LABEL {
-        return Err(format!(
-            "{field} must be at most {MAX_BLOCKCHAIN_LABEL} characters"
-        ));
+        return Err(format!("{field} must be at most {MAX_BLOCKCHAIN_LABEL} characters"));
     }
     Ok(trimmed.to_string())
 }
@@ -561,9 +486,7 @@ pub(super) fn parse_chain(value: &str) -> Result<ChainKind, String> {
     match value.trim().to_ascii_lowercase().as_str() {
         "solana" | "sol" => Ok(ChainKind::Solana),
         "evm" | "eth" | "ethereum" => Ok(ChainKind::Evm),
-        other => Err(format!(
-            "unsupported chain: {other} (expected solana or evm)"
-        )),
+        other => Err(format!("unsupported chain: {other} (expected solana or evm)")),
     }
 }
 
@@ -576,10 +499,7 @@ pub(super) fn chain_label(kind: ChainKind) -> &'static str {
 
 /// Bumps the shared request counter; called at the top of each handler.
 pub(super) fn record_request(state: &BlockchainState) {
-    state
-        .metrics()
-        .requests_total
-        .fetch_add(1, Ordering::Relaxed);
+    state.metrics().requests_total.fetch_add(1, Ordering::Relaxed);
 }
 
 // ---- router -----------------------------------------------------------------
@@ -664,12 +584,8 @@ mod tests {
     use super::*;
 
     fn state() -> BlockchainState {
-        BlockchainState::from_env(
-            reqwest::Client::new(),
-            "https://api.devnet.solana.com",
-            "devnet",
-        )
-        .unwrap()
+        BlockchainState::from_env(reqwest::Client::new(), "https://api.devnet.solana.com", "devnet")
+            .unwrap()
     }
 
     #[test]

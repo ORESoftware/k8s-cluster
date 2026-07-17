@@ -96,3 +96,5 @@ not treat running workers as orphaned.
 ```bash
 docker build -t dd-idle-reaper:latest .
 ```
+
+> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

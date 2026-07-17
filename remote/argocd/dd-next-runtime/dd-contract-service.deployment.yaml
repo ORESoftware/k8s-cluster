@@ -87,17 +87,13 @@ spec:
                   optional: true
             - name: CONTRACT_FORMAL_METHODS_GITHUB_ORGS
               value: fiducia-cloud
-            # Every enabled Solana sendTransaction path must be fenced twice
-            # across both replicas: pg_try_advisory_xact_lock over the signed
-            # transaction digest, then Fiducia's durable idempotency lease and
-            # fencing token. Coordination remains off until fiducia-auth mints
-            # a requests:write-scoped key and an operator places it at
-            # dd-agent-secrets/FIDUCIA_API_KEY. Startup fails if coordination is
-            # enabled without that key, and all broadcast flags below stay off.
+            # Every Solana sendTransaction path is fenced twice across both
+            # replicas: pg_try_advisory_xact_lock over the signed transaction
+            # digest, then Fiducia's durable idempotency lease/fencing token.
             - name: CONTRACT_COORDINATION_ENABLED
-              value: 'false'
+              value: 'true'
             - name: CONTRACT_COORDINATION_REQUIRED
-              value: 'false'
+              value: 'true'
             - name: CONTRACT_COORDINATION_PG_POOL_SIZE
               value: '4'
             - name: RDS_DATABASE_URL

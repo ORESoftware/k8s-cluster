@@ -88,3 +88,5 @@ The runtime also caps active simulations at 8 concurrent jobs and exposes that l
 `dd_des_simulator_max_active_jobs`. The Kubernetes deployment runs without a service account
 token, drops Linux capabilities, disables privilege escalation, uses a read-only root filesystem,
 and points Cargo cache/build output at `/tmp` so the mounted repo can stay read-only.
+
+> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

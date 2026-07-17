@@ -176,3 +176,5 @@ The same page now exposes per-thread controls:
   created as drafts with `WIP - ...` titles and a body beginning with `WIP`.
 - `Terminal` wakes the worker and opens `/dd-thread/<thread-short>/terminal` inline in the response
   panel for a shell inside the Node.js worker container.
+
+> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

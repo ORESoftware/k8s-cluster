@@ -30,10 +30,13 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Postgres-backed search index (tsvector / pg_trgm / pgvector / structured /
-# graph). Runtime queries only — no `query!` macros — so the build needs no
-# database; `migrate!` embeds the SQL files at compile time. pgvector values
-# are bound as `$n::vector` literals, so no pgvector crate is needed.
-sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "migrate", "macros"] }
+# graph). SeaORM entity ops for plain CRUD; vector-similarity and dynamically
+# composed filter SQL go through parameterized `sea_orm::Statement`s. pgvector
+# values are bound as `$n::vector` literals, so no pgvector crate is needed.
+# The schema is dpm-managed (schema/schema.sql + scripts/dpm.sh) — the server
+# never migrates at boot. `sqlx-postgres` implies `postgres-array` (uuid[]
+# binds for graph seeds).
+sea-orm = { version = "1", default-features = false, features = ["macros", "runtime-tokio-rustls", "sqlx-postgres", "with-chrono", "with-json", "with-uuid"] }
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
 tower-http = { version = "0.6", features = ["trace", "cors", "timeout", "limit", "normalize-path", "set-header", "catch-panic"] }

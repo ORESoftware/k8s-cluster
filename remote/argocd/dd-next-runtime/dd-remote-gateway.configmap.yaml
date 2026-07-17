@@ -2566,41 +2566,6 @@ data:
       }
     }
 
-    # api.fiducia.cloud — the fiducia data-plane API (locks, semaphores, KV,
-    # rate limit, cron, elections, discovery) consumed by the generated client
-    # libraries (fiducia-clients). Routed to fiducia-load-balance, which fans
-    # out to fiducia-node and enforces API-key auth via fiducia-auth introspect;
-    # the gateway adds no auth gate of its own. Same cert lineage: add
-    # `-d api.fiducia.cloud`. Long read timeout: coordination clients hold
-    # long-poll waits (lock acquire) well past typical page loads.
-    server {
-      listen 443 ssl;
-      server_name api.fiducia.cloud;
-
-      ssl_certificate /etc/nginx/tls/tls.crt;
-      ssl_certificate_key /etc/nginx/tls/tls.key;
-      ssl_protocols TLSv1.2 TLSv1.3;
-      add_header Strict-Transport-Security "max-age=15552000" always;
-      resolver kube-dns.kube-system.svc.cluster.local valid=10s ipv6=off;
-      resolver_timeout 2s;
-
-      location / {
-        proxy_http_version 1.1;
-        proxy_buffering off;
-        proxy_read_timeout 300;
-        proxy_send_timeout 120;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection $connection_upgrade;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header Auth "";
-        set $fiducia_api_up fiducia-load-balance.fiducia.svc.cluster.local:8088;
-        proxy_pass http://$fiducia_api_up;
-      }
-    }
-
     # admin.fiducia.cloud — the operator-only fiducia admin dashboard
     # (fiducia-admin.rs). Same cert lineage: add `-d admin.fiducia.cloud`.
     # The app enforces its own operator authorization (Supabase role +

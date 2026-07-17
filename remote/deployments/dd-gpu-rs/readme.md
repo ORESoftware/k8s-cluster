@@ -61,3 +61,5 @@ Inflight-concurrency cap (`GPU_MAX_INFLIGHT`, default 16); HTTP returns `503`
 when saturated, NATS applies backpressure. Bounded to 2 000 jobs and 256 GPUs;
 per-job `vramMib`/`durationMs`/`releaseMs`, GPU `memoryMib`, and GPU `speed` are
 range-checked so the timeline and VRAM sums cannot overflow `u64`.
+
+> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

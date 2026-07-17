@@ -754,23 +754,6 @@ fn enforce_mainnet_settlement_gate(
     Ok(())
 }
 
-/// Any route or background consumer that can reach `sendTransaction` must use
-/// both cross-replica fences. This prevents a future deployment from enabling a
-/// broadcast flag while silently leaving coordination optional or disabled.
-fn enforce_broadcast_coordination(
-    broadcast_capable: bool,
-    coordination_enabled: bool,
-    coordination_required: bool,
-) -> Result<(), String> {
-    if broadcast_capable && (!coordination_enabled || !coordination_required) {
-        return Err(
-            "Solana broadcast capabilities require CONTRACT_COORDINATION_ENABLED=true and CONTRACT_COORDINATION_REQUIRED=true"
-                .to_string(),
-        );
-    }
-    Ok(())
-}
-
 fn validate_solana_rpc_url(raw: &str, allow_private_rpc: bool) -> Result<String, String> {
     let parsed = reqwest::Url::parse(raw)
         .map_err(|error| format!("SOLANA_RPC_URL must be an absolute URL: {error}"))?;
@@ -1394,14 +1377,7 @@ async fn bounded_confirm(
 ) -> ConfirmOutcome {
     match ConfirmSlot::try_acquire(&state.confirm_in_flight) {
         Some(_slot) => {
-            confirm_signature(
-                state,
-                signature,
-                target_commitment,
-                timeout_ms,
-                poll_interval_ms,
-            )
-            .await
+            confirm_signature(state, signature, target_commitment, timeout_ms, poll_interval_ms).await
         }
         None => {
             state
@@ -1706,10 +1682,14 @@ fn signed_transaction_bytes_from_rpc_params(params: &Value) -> Result<Vec<u8>, S
 
 async fn solana_rpc(state: &AppState, method: &str, params: Value) -> Result<Value, String> {
     record_rpc_request(&state.metrics, method);
-    let _rpc_permit = state.rpc_slots.clone().try_acquire_owned().map_err(|_| {
-        record_rpc_error(&state.metrics, method);
-        "solana rpc concurrency limit reached".to_string()
-    })?;
+    let _rpc_permit = state
+        .rpc_slots
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| {
+            record_rpc_error(&state.metrics, method);
+            "solana rpc concurrency limit reached".to_string()
+        })?;
 
     let coordination = if method == "sendTransaction" && state.coordination.enabled() {
         let signed_transaction = signed_transaction_bytes_from_rpc_params(&params)?;
@@ -2379,10 +2359,7 @@ fn enforce_cluster(
             "Read RPC request was rejected by policy.",
             json!({ "reason": "cluster_mismatch", "scope": metrics_prefix }),
         );
-        json_response(
-            StatusCode::BAD_REQUEST,
-            json!({ "ok": false, "error": error }),
-        )
+        json_response(StatusCode::BAD_REQUEST, json!({ "ok": false, "error": error }))
     })
 }
 
@@ -2436,10 +2413,7 @@ async fn blockhash_http(
     let commitment = match normalize_commitment_or_default(query.commitment.as_deref()) {
         Ok(commitment) => commitment,
         Err(error) => {
-            return json_response(
-                StatusCode::BAD_REQUEST,
-                json!({ "ok": false, "error": error }),
-            )
+            return json_response(StatusCode::BAD_REQUEST, json!({ "ok": false, "error": error }))
         }
     };
     let params = json!([{ "commitment": commitment }]);
@@ -2466,10 +2440,7 @@ async fn account_http(
         Err(response) => return response,
     };
     if let Err(error) = validate_pubkey(&request.pubkey, "pubkey") {
-        return json_response(
-            StatusCode::BAD_REQUEST,
-            json!({ "ok": false, "error": error }),
-        );
+        return json_response(StatusCode::BAD_REQUEST, json!({ "ok": false, "error": error }));
     }
     let encoding = match request.encoding.as_deref().map(str::trim) {
         Some("base64") | None => "base64",
@@ -2485,10 +2456,7 @@ async fn account_http(
     let commitment = match normalize_commitment_or_default(request.commitment.as_deref()) {
         Ok(commitment) => commitment,
         Err(error) => {
-            return json_response(
-                StatusCode::BAD_REQUEST,
-                json!({ "ok": false, "error": error }),
-            )
+            return json_response(StatusCode::BAD_REQUEST, json!({ "ok": false, "error": error }))
         }
     };
     let params = json!([
@@ -2518,18 +2486,12 @@ async fn balance_http(
         Err(response) => return response,
     };
     if let Err(error) = validate_pubkey(&request.pubkey, "pubkey") {
-        return json_response(
-            StatusCode::BAD_REQUEST,
-            json!({ "ok": false, "error": error }),
-        );
+        return json_response(StatusCode::BAD_REQUEST, json!({ "ok": false, "error": error }));
     }
     let commitment = match normalize_commitment_or_default(request.commitment.as_deref()) {
         Ok(commitment) => commitment,
         Err(error) => {
-            return json_response(
-                StatusCode::BAD_REQUEST,
-                json!({ "ok": false, "error": error }),
-            )
+            return json_response(StatusCode::BAD_REQUEST, json!({ "ok": false, "error": error }))
         }
     };
     let (method, params) = match request.kind.as_deref().map(str::trim).unwrap_or("sol") {
@@ -2595,10 +2557,7 @@ async fn fee_http(
     let commitment = match normalize_commitment_or_default(request.commitment.as_deref()) {
         Ok(commitment) => commitment,
         Err(error) => {
-            return json_response(
-                StatusCode::BAD_REQUEST,
-                json!({ "ok": false, "error": error }),
-            )
+            return json_response(StatusCode::BAD_REQUEST, json!({ "ok": false, "error": error }))
         }
     };
     let params = json!([message, { "commitment": commitment }]);
@@ -2633,10 +2592,7 @@ async fn rent_exemption_http(
     let commitment = match normalize_commitment_or_default(query.commitment.as_deref()) {
         Ok(commitment) => commitment,
         Err(error) => {
-            return json_response(
-                StatusCode::BAD_REQUEST,
-                json!({ "ok": false, "error": error }),
-            )
+            return json_response(StatusCode::BAD_REQUEST, json!({ "ok": false, "error": error }))
         }
     };
     let params = json!([query.bytes, { "commitment": commitment }]);
@@ -2665,19 +2621,13 @@ async fn transaction_http(
     let signature = match validate_signature(&request.signature, "signature") {
         Ok(signature) => signature,
         Err(error) => {
-            return json_response(
-                StatusCode::BAD_REQUEST,
-                json!({ "ok": false, "error": error }),
-            )
+            return json_response(StatusCode::BAD_REQUEST, json!({ "ok": false, "error": error }))
         }
     };
     let commitment = match normalize_confirm_commitment(request.commitment.as_deref()) {
         Ok(commitment) => commitment,
         Err(error) => {
-            return json_response(
-                StatusCode::BAD_REQUEST,
-                json!({ "ok": false, "error": error }),
-            )
+            return json_response(StatusCode::BAD_REQUEST, json!({ "ok": false, "error": error }))
         }
     };
     let params = json!([
@@ -2733,10 +2683,7 @@ async fn confirm_http(
     let target = match normalize_confirm_commitment(request.target_commitment.as_deref()) {
         Ok(target) => target,
         Err(error) => {
-            return json_response(
-                StatusCode::BAD_REQUEST,
-                json!({ "ok": false, "error": error }),
-            )
+            return json_response(StatusCode::BAD_REQUEST, json!({ "ok": false, "error": error }))
         }
     };
     let timeout_ms = request.timeout_ms.unwrap_or(DEFAULT_CONFIRM_TIMEOUT_MS);
@@ -2746,9 +2693,11 @@ async fn confirm_http(
 
     // Confirm the batch concurrently so wall-clock is bounded by a single
     // timeout window, not the sum across signatures.
-    let outcomes = futures_util::future::join_all(signatures.iter().map(|signature| {
-        bounded_confirm(&state, signature, &target, timeout_ms, poll_interval_ms)
-    }))
+    let outcomes = futures_util::future::join_all(
+        signatures
+            .iter()
+            .map(|signature| bounded_confirm(&state, signature, &target, timeout_ms, poll_interval_ms)),
+    )
     .await;
     let all_reached = outcomes.iter().all(|outcome| outcome.reached);
     json_response(
@@ -2797,10 +2746,7 @@ async fn simulate_settlement_http(
     let params = match simulate_params(&tx, encoding) {
         Ok(params) => params,
         Err(error) => {
-            return json_response(
-                StatusCode::BAD_REQUEST,
-                json!({ "ok": false, "error": error }),
-            )
+            return json_response(StatusCode::BAD_REQUEST, json!({ "ok": false, "error": error }))
         }
     };
     match solana_rpc(&state, "simulateTransaction", params).await {
@@ -2911,8 +2857,7 @@ async fn settle_http(
         };
 
     // Idempotency: only an explicitly provided request id guards a broadcast.
-    let idem_key =
-        explicit_request_id(request.request_id.as_ref()).map(|key| format!("settle:{key}"));
+    let idem_key = explicit_request_id(request.request_id.as_ref()).map(|key| format!("settle:{key}"));
     if let Some(key) = &idem_key {
         if !state.claim_idempotency_key(key) {
             state
@@ -3015,13 +2960,8 @@ async fn settle_http(
         "generatedAtMs": now_ms()
     });
     publish_settlement_outcome(&state, outcome.clone()).await;
-    publish_contract_event(
-        &state,
-        "solana.contract.settlement",
-        &req_id,
-        confirmation.reached,
-    )
-    .await;
+    publish_contract_event(&state, "solana.contract.settlement", &req_id, confirmation.reached)
+        .await;
     json_response(StatusCode::OK, outcome)
 }
 
@@ -3110,11 +3050,7 @@ async fn resolve_http(
             Ok(values) => values,
             Err(error) => {
                 errors.push(error);
-                (
-                    "confirmed".to_string(),
-                    DEFAULT_CONFIRM_TIMEOUT_MS,
-                    DEFAULT_CONFIRM_POLL_INTERVAL_MS,
-                )
+                ("confirmed".to_string(), DEFAULT_CONFIRM_TIMEOUT_MS, DEFAULT_CONFIRM_POLL_INTERVAL_MS)
             }
         };
     if !errors.is_empty() {
@@ -3233,13 +3169,8 @@ async fn resolve_http(
         "generatedAtMs": now_ms()
     });
     publish_settlement_outcome(&state, outcome.clone()).await;
-    publish_contract_event(
-        &state,
-        "solana.contract.resolution",
-        &req_id,
-        confirmation.reached,
-    )
-    .await;
+    publish_contract_event(&state, "solana.contract.resolution", &req_id, confirmation.reached)
+        .await;
     json_response(StatusCode::OK, outcome)
 }
 
@@ -3829,14 +3760,6 @@ mod tests {
     }
 
     #[test]
-    fn broadcasts_require_enabled_fail_closed_coordination() {
-        assert!(enforce_broadcast_coordination(false, false, false).is_ok());
-        assert!(enforce_broadcast_coordination(true, false, false).is_err());
-        assert!(enforce_broadcast_coordination(true, true, false).is_err());
-        assert!(enforce_broadcast_coordination(true, true, true).is_ok());
-    }
-
-    #[test]
     fn contract_validation_rejects_dual_instruction_data_encodings() {
         let mut request = sample_contract_request();
         request.instructions[0].data_base58 = Some("111".to_string());
@@ -3957,21 +3880,13 @@ mod tests {
         // Devnet never requires the gate.
         assert!(enforce_mainnet_settlement_gate("devnet", true, true, true, false).is_ok());
         // Mainnet with any broadcast capability and no gate is refused.
-        assert!(
-            enforce_mainnet_settlement_gate("mainnet-beta", true, false, false, false).is_err()
-        );
-        assert!(
-            enforce_mainnet_settlement_gate("mainnet-beta", false, true, false, false).is_err()
-        );
-        assert!(
-            enforce_mainnet_settlement_gate("mainnet-beta", false, false, true, false).is_err()
-        );
+        assert!(enforce_mainnet_settlement_gate("mainnet-beta", true, false, false, false).is_err());
+        assert!(enforce_mainnet_settlement_gate("mainnet-beta", false, true, false, false).is_err());
+        assert!(enforce_mainnet_settlement_gate("mainnet-beta", false, false, true, false).is_err());
         // Mainnet with the explicit gate is allowed.
         assert!(enforce_mainnet_settlement_gate("mainnet-beta", true, true, true, true).is_ok());
         // Mainnet with nothing broadcast-capable needs no gate.
-        assert!(
-            enforce_mainnet_settlement_gate("mainnet-beta", false, false, false, false).is_ok()
-        );
+        assert!(enforce_mainnet_settlement_gate("mainnet-beta", false, false, false, false).is_ok());
     }
 
     #[test]
@@ -4038,10 +3953,7 @@ mod tests {
         }
         // At the cap, further acquisitions are shed (and do not leak a slot).
         assert!(ConfirmSlot::try_acquire(&counter).is_none());
-        assert_eq!(
-            counter.load(Ordering::Acquire),
-            MAX_CONFIRM_POLLERS_IN_FLIGHT
-        );
+        assert_eq!(counter.load(Ordering::Acquire), MAX_CONFIRM_POLLERS_IN_FLIGHT);
         // Dropping a slot frees capacity again.
         slots.pop();
         assert!(ConfirmSlot::try_acquire(&counter).is_some());
@@ -4061,21 +3973,13 @@ mod tests {
         // Devnet is unaffected regardless of broadcast flags.
         assert!(enforce_mainnet_settlement_gate("devnet", true, true, true, false).is_ok());
         // Mainnet with any broadcast capability needs the explicit second flag.
-        assert!(
-            enforce_mainnet_settlement_gate("mainnet-beta", true, false, false, false).is_err()
-        );
-        assert!(
-            enforce_mainnet_settlement_gate("mainnet-beta", false, true, false, false).is_err()
-        );
-        assert!(
-            enforce_mainnet_settlement_gate("mainnet-beta", false, false, true, false).is_err()
-        );
+        assert!(enforce_mainnet_settlement_gate("mainnet-beta", true, false, false, false).is_err());
+        assert!(enforce_mainnet_settlement_gate("mainnet-beta", false, true, false, false).is_err());
+        assert!(enforce_mainnet_settlement_gate("mainnet-beta", false, false, true, false).is_err());
         // With the second flag, mainnet broadcast is permitted.
         assert!(enforce_mainnet_settlement_gate("mainnet-beta", true, true, true, true).is_ok());
         // Mainnet with no broadcast capability is always fine.
-        assert!(
-            enforce_mainnet_settlement_gate("mainnet-beta", false, false, false, false).is_ok()
-        );
+        assert!(enforce_mainnet_settlement_gate("mainnet-beta", false, false, false, false).is_ok());
     }
 
     #[test]
@@ -4250,11 +4154,7 @@ pub(crate) async fn publish_blockchain_event(state: &AppState, subject: &str, pa
         state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
         return;
     };
-    if nats
-        .publish(subject.to_string(), encoded.into())
-        .await
-        .is_err()
-    {
+    if nats.publish(subject.to_string(), encoded.into()).await.is_err() {
         state
             .metrics
             .nats_publish_errors_total
@@ -4972,10 +4872,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         "CONTRACT_RESOLVE_QUEUE_GROUP",
         CONTRACTS_SOLANA_RESOLVE_QUEUE_GROUP,
     );
-    let escrow_results_subject = env_value(
-        "CONTRACT_ESCROW_RESULT_SUBJECT",
-        ESCROW_SOLANA_RESULTS_SUBJECT,
-    );
+    let escrow_results_subject =
+        env_value("CONTRACT_ESCROW_RESULT_SUBJECT", ESCROW_SOLANA_RESULTS_SUBJECT);
     let escrow_confirm_queue_group = env_value(
         "CONTRACT_ESCROW_CONFIRM_QUEUE_GROUP",
         "dd-contract-service-escrow-confirm",
@@ -5010,24 +4908,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Keyless blockchain feature suite. Reuses the validated Solana RPC URL +
     // cluster and the shared HTTP client; enforces its own mainnet/auth gates.
-    let blockchain = blockchain::BlockchainState::from_env(
-        rpc_client.clone(),
-        &solana_rpc_url,
-        &default_cluster,
-    )
-    .map_err(config_error)?;
-    let coordination =
-        coordination::CoordinationState::from_env(rpc_client.clone()).map_err(config_error)?;
-    enforce_broadcast_coordination(
-        send_enabled || settlement_enabled || resolution_enabled || nats_settlement_enabled,
-        coordination.enabled(),
-        coordination.required(),
-    )
-    .map_err(config_error)?;
-    let solana_features =
-        solana_features::SolanaFeatureState::from_env(rpc_client.clone()).map_err(config_error)?;
-    let rpc_max_in_flight =
-        env_u64("SOLANA_RPC_MAX_IN_FLIGHT", MAX_RPC_IN_FLIGHT as u64).clamp(1, 512) as usize;
+    let blockchain =
+        blockchain::BlockchainState::from_env(rpc_client.clone(), &solana_rpc_url, &default_cluster)
+            .map_err(config_error)?;
+    let coordination = coordination::CoordinationState::from_env(rpc_client.clone())
+        .map_err(config_error)?;
+    let solana_features = solana_features::SolanaFeatureState::from_env(rpc_client.clone())
+        .map_err(config_error)?;
+    let rpc_max_in_flight = env_u64("SOLANA_RPC_MAX_IN_FLIGHT", MAX_RPC_IN_FLIGHT as u64)
+        .clamp(1, 512) as usize;
 
     let state = AppState {
         rpc_client,

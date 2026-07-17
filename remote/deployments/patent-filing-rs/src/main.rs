@@ -17,6 +17,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use maud::{html, Markup, PreEscaped, DOCTYPE};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tower_http::{
@@ -492,10 +493,12 @@ fn ui_auth_failure_response(state: &AppState, failure: AuthFailure) -> Response 
     };
     (
         StatusCode::UNAUTHORIZED,
-        Html(format!(
-            r#"<div class="result error"><strong>Auth required</strong><p>{}</p></div>"#,
-            escape_html(message)
-        )),
+        Html(
+            html! {
+                div class="result error" { strong { "Auth required" } p { (message) } }
+            }
+            .into_string(),
+        ),
     )
         .into_response()
 }
@@ -2252,7 +2255,7 @@ fn get_package(state: &AppState, matter_id: &str) -> Option<PatentMatterPackage>
 }
 
 async fn root() -> Html<String> {
-    Html(render_home())
+    Html(render_home().into_string())
 }
 
 async fn descriptor(State(state): State<AppState>) -> impl IntoResponse {
@@ -2426,16 +2429,18 @@ async fn package_form(
                 .package_requests_total
                 .fetch_add(1, Ordering::Relaxed);
             store_package(&state, package.clone());
-            Html(render_package_fragment(&package)).into_response()
+            Html(render_package_fragment(&package).into_string()).into_response()
         }
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
             (
                 StatusCode::BAD_REQUEST,
-                Html(format!(
-                    r#"<div class="result error"><strong>Package error</strong><p>{}</p></div>"#,
-                    escape_html(&error)
-                )),
+                Html(
+                    html! {
+                        div class="result error" { strong { "Package error" } p { (error) } }
+                    }
+                    .into_string(),
+                ),
             )
                 .into_response()
         }
@@ -2831,17 +2836,148 @@ async fn api_docs_json() -> impl IntoResponse {
     )
 }
 
-fn render_home() -> String {
-    format!(
-        r##"<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Patent Filing Workbench</title>
-  <script src="{htmx_src}" integrity="{htmx_sri}" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-  <style>
-    :root {{
+/// The home page shell. maud compile-checks the structure and auto-escapes any
+/// dynamic value, replacing the previous `format!` string template. The pinned
+/// htmx `src`/`integrity`/`crossorigin`/`referrerpolicy` wiring and every CSS
+/// rule are preserved verbatim.
+fn render_home() -> Markup {
+    html! {
+        (DOCTYPE)
+        html lang="en" {
+            head {
+                meta charset="utf-8";
+                meta name="viewport" content="width=device-width, initial-scale=1";
+                title { "Patent Filing Workbench" }
+                script src=(HTMX_SRC) integrity=(HTMX_SRI) crossorigin="anonymous" referrerpolicy="no-referrer" {}
+                style { (PreEscaped(HOME_CSS)) }
+            }
+            body {
+                header {
+                    div class="top" {
+                        h1 { "Patent Filing Workbench" }
+                        div class="status-rail" {
+                            span { "Intake" }
+                            span { "Readiness" }
+                            span { "Draft Package" }
+                            span { "Patent Center Handoff" }
+                        }
+                    }
+                }
+                main {
+                    section class="panel" {
+                        div class="panel-head" {
+                            h2 { "Invention Intake" }
+                            a href="docs/api" { "API docs" }
+                        }
+                        form hx-post="ui/packages" hx-target="#package-output" hx-swap="innerHTML" hx-indicator="#package-spinner" {
+                            div class="grid-two" {
+                                label { "Title"
+                                    input name="title" value="Adaptive thermal sensor array" required;
+                                }
+                                label { "Target filing"
+                                    select name="target_filing" {
+                                        option value="provisional" selected { "provisional" }
+                                        option value="non-provisional" { "non-provisional" }
+                                        option value="design" { "design" }
+                                        option value="pct" { "pct" }
+                                    }
+                                }
+                            }
+                            div class="grid-two" {
+                                label { "Inventors"
+                                    textarea name="inventor_names" required { "Avery Chen\nMorgan Patel" }
+                                }
+                                label { "Applicant"
+                                    input name="applicant" value="Example Robotics LLC";
+                                }
+                            }
+                            label { "Technical field"
+                                input name="technical_field" value="distributed sensing and thermal control";
+                            }
+                            label { "Summary"
+                                textarea class="tall" name="invention_summary" required { "A distributed sensor array combines low-cost temperature probes, edge calibration, and a controller that changes sampling frequency based on local thermal gradients. Each node reports confidence and drift estimates so the controller can prioritize high-risk zones without flooding the network." }
+                            }
+                            label { "Problem"
+                                textarea name="problem" required { "Existing thermal monitoring systems either sample too slowly to catch fast changes or sample every node constantly, which wastes network capacity and power in dense installations." }
+                            }
+                            label { "Solution"
+                                textarea name="solution" required { "The array estimates local gradients at each node, assigns an adaptive sampling budget, and routes high-confidence alerts through a compact priority protocol while slower regions remain in a low-power cadence." }
+                            }
+                            div class="grid-two" {
+                                label { "Novelty points"
+                                    textarea name="novelty_claims" required { "Node-level drift confidence changes sampling rates\nGradient-triggered priority routing reduces bandwidth\nController fuses confidence scores with thermal risk zones" }
+                                }
+                                label { "Embodiments"
+                                    textarea name="embodiments" { "Warehouse battery pack monitoring\nServer rack airflow diagnostics\nFactory motor enclosure monitoring" }
+                                }
+                            }
+                            div class="grid-two" {
+                                label { "Alternatives"
+                                    textarea name="alternatives" { "Wireless mesh nodes\nWired industrial bus nodes\nCloud or local controller deployment" }
+                                }
+                                label { "Advantages"
+                                    textarea name="advantages" { "Lower power usage\nReduced telemetry volume\nFaster high-risk thermal alerts" }
+                                }
+                            }
+                            div class="grid-two" {
+                                label { "Known prior art"
+                                    textarea name="known_prior_art" { "Static threshold thermal monitoring systems\nUniform polling sensor networks" }
+                                }
+                                label { "Figures and evidence"
+                                    textarea name="attachments" { "System block diagram\nSampling-state flow chart\nPrototype calibration notes" }
+                                }
+                            }
+                            div class="grid-two" {
+                                label { "Entity status"
+                                    select name="entity_status" {
+                                        option value="large" { "large" }
+                                        option value="small" { "small" }
+                                        option value="micro" selected { "micro" }
+                                    }
+                                }
+                                label { "Public disclosure date"
+                                    input name="public_disclosure_date" placeholder="YYYY-MM-DD";
+                                }
+                            }
+                            div class="grid-two" {
+                                label { "Provisional filing date"
+                                    input name="provisional_filing_date" placeholder="YYYY-MM-DD";
+                                }
+                                label { "Foreign priority date"
+                                    input name="foreign_priority_date" placeholder="YYYY-MM-DD";
+                                }
+                            }
+                            div class="grid-two" {
+                                label class="checkline" {
+                                    input type="checkbox" name="attorney_review" checked;
+                                    "Attorney review requested"
+                                }
+                            }
+                            div class="actions" {
+                                span id="package-spinner" class="htmx-indicator" { "Generating package..." }
+                                button type="submit" { "Generate Filing Package" }
+                            }
+                        }
+                    }
+                    section class="panel" {
+                        div class="panel-head" {
+                            h2 { "Package Preview" }
+                            a href="example" { "JSON example" }
+                        }
+                        div id="package-output" {
+                            div class="placeholder" {
+                                strong { "Pending intake" }
+                                p { "The package preview will show readiness, draft sections, claim seeds, drawing plan, search plan, and filing handoff." }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+const HOME_CSS: &str = r#":root {
       color-scheme: light;
       --bg: #f5f7f3;
       --ink: #172026;
@@ -2853,196 +2989,58 @@ fn render_home() -> String {
       --red: #9f3f32;
       --gold: #9a6b18;
       --code: #eef2f0;
-    }}
-    * {{ box-sizing: border-box; }}
-    body {{ margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
-    header {{ border-bottom: 1px solid var(--line); background: #ffffff; }}
-    .top {{ width: min(1240px, calc(100% - 28px)); margin: 0 auto; padding: 18px 0 14px; display: flex; justify-content: space-between; align-items: center; gap: 14px; }}
-    h1 {{ margin: 0; font-size: 22px; line-height: 1.1; letter-spacing: 0; }}
-    .status-rail {{ display: flex; gap: 8px; flex-wrap: wrap; color: var(--muted); font-size: 12px; }}
-    .status-rail span {{ border: 1px solid var(--line); background: #f9faf8; border-radius: 6px; padding: 5px 8px; }}
-    main {{ width: min(1240px, calc(100% - 28px)); margin: 16px auto 30px; display: grid; grid-template-columns: minmax(320px, 0.92fr) minmax(340px, 1.08fr); gap: 16px; align-items: start; }}
-    .panel {{ background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }}
-    .panel-head {{ padding: 12px 14px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 10px; align-items: center; }}
-    .panel-head h2 {{ margin: 0; font-size: 15px; letter-spacing: 0; }}
-    .panel-head a {{ color: var(--blue); text-decoration: none; font-size: 12px; }}
-    form {{ padding: 14px; display: grid; gap: 12px; }}
-    .grid-two {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }}
-    label {{ display: grid; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 700; }}
-    input, textarea, select {{ width: 100%; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink); padding: 9px 10px; font: inherit; letter-spacing: 0; }}
-    textarea {{ min-height: 74px; resize: vertical; }}
-    textarea.tall {{ min-height: 118px; }}
-    .checkline {{ display: flex; gap: 8px; align-items: center; color: var(--ink); font-weight: 600; }}
-    .checkline input {{ width: auto; }}
-    .actions {{ display: flex; justify-content: flex-end; gap: 10px; align-items: center; border-top: 1px solid var(--line); padding-top: 12px; }}
-    button {{ border: 0; border-radius: 6px; background: var(--green); color: white; padding: 10px 14px; font-weight: 800; cursor: pointer; }}
-    button:hover {{ background: #0e5a48; }}
-    .htmx-indicator {{ opacity: 0; color: var(--muted); font-size: 12px; }}
-    .htmx-request .htmx-indicator, .htmx-request.htmx-indicator {{ opacity: 1; }}
-    #package-output {{ min-height: 520px; }}
-    .placeholder {{ color: var(--muted); padding: 18px; }}
-    .result {{ padding: 14px; }}
-    .result.error {{ border-left: 4px solid var(--red); }}
-    .score-row {{ display: grid; grid-template-columns: 110px 1fr; gap: 14px; align-items: center; margin-bottom: 12px; }}
-    .score {{ width: 96px; height: 96px; border: 8px solid var(--green); border-radius: 50%; display: grid; place-items: center; font-size: 24px; font-weight: 900; color: var(--green); }}
-    .badge {{ display: inline-flex; align-items: center; border-radius: 6px; padding: 4px 8px; font-size: 12px; font-weight: 800; background: #e9f4ef; color: var(--green); }}
-    .badge.warn {{ background: #fff4d9; color: var(--gold); }}
-    .badge.blocked {{ background: #fbe8e4; color: var(--red); }}
-    h3 {{ margin: 14px 0 7px; font-size: 13px; text-transform: uppercase; color: var(--muted); letter-spacing: 0; }}
-    ul {{ margin: 0; padding-left: 18px; }}
-    li {{ margin: 4px 0; }}
-    .columns {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }}
-    .mini {{ border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: #fbfcfb; }}
-    code {{ background: var(--code); border-radius: 5px; padding: 2px 5px; font-family: ui-monospace, "SFMono-Regular", Consolas, monospace; font-size: 12px; overflow-wrap: anywhere; }}
-    @media (max-width: 880px) {{
-      .top {{ align-items: flex-start; flex-direction: column; }}
-      main {{ grid-template-columns: 1fr; }}
-      .grid-two, .columns, .score-row {{ grid-template-columns: 1fr; }}
-      .score {{ width: 82px; height: 82px; font-size: 21px; }}
-    }}
-  </style>
-</head>
-<body>
-  <header>
-    <div class="top">
-      <h1>Patent Filing Workbench</h1>
-      <div class="status-rail">
-        <span>Intake</span>
-        <span>Readiness</span>
-        <span>Draft Package</span>
-        <span>Patent Center Handoff</span>
-      </div>
-    </div>
-  </header>
-  <main>
-    <section class="panel">
-      <div class="panel-head">
-        <h2>Invention Intake</h2>
-        <a href="docs/api">API docs</a>
-      </div>
-      <form hx-post="ui/packages" hx-target="#package-output" hx-swap="innerHTML" hx-indicator="#package-spinner">
-        <div class="grid-two">
-          <label>Title
-            <input name="title" value="Adaptive thermal sensor array" required>
-          </label>
-          <label>Target filing
-            <select name="target_filing">
-              <option value="provisional" selected>provisional</option>
-              <option value="non-provisional">non-provisional</option>
-              <option value="design">design</option>
-              <option value="pct">pct</option>
-            </select>
-          </label>
-        </div>
-        <div class="grid-two">
-          <label>Inventors
-            <textarea name="inventor_names" required>Avery Chen
-Morgan Patel</textarea>
-          </label>
-          <label>Applicant
-            <input name="applicant" value="Example Robotics LLC">
-          </label>
-        </div>
-        <label>Technical field
-          <input name="technical_field" value="distributed sensing and thermal control">
-        </label>
-        <label>Summary
-          <textarea class="tall" name="invention_summary" required>A distributed sensor array combines low-cost temperature probes, edge calibration, and a controller that changes sampling frequency based on local thermal gradients. Each node reports confidence and drift estimates so the controller can prioritize high-risk zones without flooding the network.</textarea>
-        </label>
-        <label>Problem
-          <textarea name="problem" required>Existing thermal monitoring systems either sample too slowly to catch fast changes or sample every node constantly, which wastes network capacity and power in dense installations.</textarea>
-        </label>
-        <label>Solution
-          <textarea name="solution" required>The array estimates local gradients at each node, assigns an adaptive sampling budget, and routes high-confidence alerts through a compact priority protocol while slower regions remain in a low-power cadence.</textarea>
-        </label>
-        <div class="grid-two">
-          <label>Novelty points
-            <textarea name="novelty_claims" required>Node-level drift confidence changes sampling rates
-Gradient-triggered priority routing reduces bandwidth
-Controller fuses confidence scores with thermal risk zones</textarea>
-          </label>
-          <label>Embodiments
-            <textarea name="embodiments">Warehouse battery pack monitoring
-Server rack airflow diagnostics
-Factory motor enclosure monitoring</textarea>
-          </label>
-        </div>
-        <div class="grid-two">
-          <label>Alternatives
-            <textarea name="alternatives">Wireless mesh nodes
-Wired industrial bus nodes
-Cloud or local controller deployment</textarea>
-          </label>
-          <label>Advantages
-            <textarea name="advantages">Lower power usage
-Reduced telemetry volume
-Faster high-risk thermal alerts</textarea>
-          </label>
-        </div>
-        <div class="grid-two">
-          <label>Known prior art
-            <textarea name="known_prior_art">Static threshold thermal monitoring systems
-Uniform polling sensor networks</textarea>
-          </label>
-          <label>Figures and evidence
-            <textarea name="attachments">System block diagram
-Sampling-state flow chart
-Prototype calibration notes</textarea>
-          </label>
-        </div>
-        <div class="grid-two">
-          <label>Entity status
-            <select name="entity_status">
-              <option value="large">large</option>
-              <option value="small">small</option>
-              <option value="micro" selected>micro</option>
-            </select>
-          </label>
-          <label>Public disclosure date
-            <input name="public_disclosure_date" placeholder="YYYY-MM-DD">
-          </label>
-        </div>
-        <div class="grid-two">
-          <label>Provisional filing date
-            <input name="provisional_filing_date" placeholder="YYYY-MM-DD">
-          </label>
-          <label>Foreign priority date
-            <input name="foreign_priority_date" placeholder="YYYY-MM-DD">
-          </label>
-        </div>
-        <div class="grid-two">
-          <label class="checkline">
-            <input type="checkbox" name="attorney_review" checked>
-            Attorney review requested
-          </label>
-        </div>
-        <div class="actions">
-          <span id="package-spinner" class="htmx-indicator">Generating package...</span>
-          <button type="submit">Generate Filing Package</button>
-        </div>
-      </form>
-    </section>
-    <section class="panel">
-      <div class="panel-head">
-        <h2>Package Preview</h2>
-        <a href="example">JSON example</a>
-      </div>
-      <div id="package-output">
-        <div class="placeholder">
-          <strong>Pending intake</strong>
-          <p>The package preview will show readiness, draft sections, claim seeds, drawing plan, search plan, and filing handoff.</p>
-        </div>
-      </div>
-    </section>
-  </main>
-</body>
-</html>"##,
-        htmx_src = HTMX_SRC,
-        htmx_sri = HTMX_SRI,
-    )
-}
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    header { border-bottom: 1px solid var(--line); background: #ffffff; }
+    .top { width: min(1240px, calc(100% - 28px)); margin: 0 auto; padding: 18px 0 14px; display: flex; justify-content: space-between; align-items: center; gap: 14px; }
+    h1 { margin: 0; font-size: 22px; line-height: 1.1; letter-spacing: 0; }
+    .status-rail { display: flex; gap: 8px; flex-wrap: wrap; color: var(--muted); font-size: 12px; }
+    .status-rail span { border: 1px solid var(--line); background: #f9faf8; border-radius: 6px; padding: 5px 8px; }
+    main { width: min(1240px, calc(100% - 28px)); margin: 16px auto 30px; display: grid; grid-template-columns: minmax(320px, 0.92fr) minmax(340px, 1.08fr); gap: 16px; align-items: start; }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+    .panel-head { padding: 12px 14px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+    .panel-head h2 { margin: 0; font-size: 15px; letter-spacing: 0; }
+    .panel-head a { color: var(--blue); text-decoration: none; font-size: 12px; }
+    form { padding: 14px; display: grid; gap: 12px; }
+    .grid-two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    label { display: grid; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 700; }
+    input, textarea, select { width: 100%; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink); padding: 9px 10px; font: inherit; letter-spacing: 0; }
+    textarea { min-height: 74px; resize: vertical; }
+    textarea.tall { min-height: 118px; }
+    .checkline { display: flex; gap: 8px; align-items: center; color: var(--ink); font-weight: 600; }
+    .checkline input { width: auto; }
+    .actions { display: flex; justify-content: flex-end; gap: 10px; align-items: center; border-top: 1px solid var(--line); padding-top: 12px; }
+    button { border: 0; border-radius: 6px; background: var(--green); color: white; padding: 10px 14px; font-weight: 800; cursor: pointer; }
+    button:hover { background: #0e5a48; }
+    .htmx-indicator { opacity: 0; color: var(--muted); font-size: 12px; }
+    .htmx-request .htmx-indicator, .htmx-request.htmx-indicator { opacity: 1; }
+    #package-output { min-height: 520px; }
+    .placeholder { color: var(--muted); padding: 18px; }
+    .result { padding: 14px; }
+    .result.error { border-left: 4px solid var(--red); }
+    .score-row { display: grid; grid-template-columns: 110px 1fr; gap: 14px; align-items: center; margin-bottom: 12px; }
+    .score { width: 96px; height: 96px; border: 8px solid var(--green); border-radius: 50%; display: grid; place-items: center; font-size: 24px; font-weight: 900; color: var(--green); }
+    .badge { display: inline-flex; align-items: center; border-radius: 6px; padding: 4px 8px; font-size: 12px; font-weight: 800; background: #e9f4ef; color: var(--green); }
+    .badge.warn { background: #fff4d9; color: var(--gold); }
+    .badge.blocked { background: #fbe8e4; color: var(--red); }
+    h3 { margin: 14px 0 7px; font-size: 13px; text-transform: uppercase; color: var(--muted); letter-spacing: 0; }
+    ul { margin: 0; padding-left: 18px; }
+    li { margin: 4px 0; }
+    .columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .mini { border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: #fbfcfb; }
+    code { background: var(--code); border-radius: 5px; padding: 2px 5px; font-family: ui-monospace, "SFMono-Regular", Consolas, monospace; font-size: 12px; overflow-wrap: anywhere; }
+    @media (max-width: 880px) {
+      .top { align-items: flex-start; flex-direction: column; }
+      main { grid-template-columns: 1fr; }
+      .grid-two, .columns, .score-row { grid-template-columns: 1fr; }
+      .score { width: 82px; height: 82px; font-size: 21px; }
+    }"#;
 
-fn render_package_fragment(package: &PatentMatterPackage) -> String {
+/// The package-preview fragment swapped into `#package-output` by HTMX. maud
+/// auto-escapes every interpolated value, so the previous per-field
+/// `escape_html` calls (and their easy-to-forget failure mode) are gone.
+fn render_package_fragment(package: &PatentMatterPackage) -> Markup {
     let readiness_class = if !package.readiness.blockers.is_empty() {
         "blocked"
     } else if package.readiness.score < 82 {
@@ -3050,202 +3048,184 @@ fn render_package_fragment(package: &PatentMatterPackage) -> String {
     } else {
         ""
     };
-    let blockers = if package.readiness.blockers.is_empty() {
-        "<li>No blockers detected.</li>".to_string()
-    } else {
-        package
-            .readiness
-            .blockers
-            .iter()
-            .map(|item| format!("<li>{}</li>", escape_html(&item.message)))
-            .collect::<String>()
-    };
-    let sections = package
-        .draft
-        .sections
-        .iter()
-        .take(4)
-        .map(|section| {
-            format!(
-                "<li><strong>{}</strong>: {}</li>",
-                escape_html(&section.heading),
-                escape_html(&section.body.chars().take(220).collect::<String>())
-            )
-        })
-        .collect::<String>();
-    let claim_seeds = package
-        .draft
-        .claim_seeds
-        .iter()
-        .take(5)
-        .map(|item| format!("<li>{}</li>", escape_html(item)))
-        .collect::<String>();
-    let drawing_plan = package
-        .draft
-        .drawing_plan
-        .iter()
-        .take(5)
-        .map(|item| format!("<li>{}</li>", escape_html(item)))
-        .collect::<String>();
-    let checklist = package
-        .filing_checklist
-        .iter()
-        .map(|item| {
-            format!(
-                "<li><strong>{}</strong> <code>{}</code> - {}</li>",
-                escape_html(&item.label),
-                escape_html(&item.status),
-                escape_html(&item.notes)
-            )
-        })
-        .collect::<String>();
-    let search_queries = package
-        .search_plan
-        .queries
-        .iter()
-        .take(5)
-        .map(|item| {
-            format!(
-                "<li><code>{}</code> {}</li>",
-                escape_html(&item.label),
-                escape_html(&item.query)
-            )
-        })
-        .collect::<String>();
     let fee = &package.fee_estimate;
-    let fee_rows = fee
-        .line_items
-        .iter()
-        .map(|item| {
-            format!(
-                "<li>{} · {} × ${:.0} = <strong>${:.0}</strong></li>",
-                escape_html(&item.label),
-                item.quantity,
-                item.unit_usd,
-                item.amount_usd
-            )
-        })
-        .collect::<String>();
-    let deadline_rows = if package.deadlines.milestones.is_empty() {
-        "<li>No filing/disclosure/priority dates provided.</li>".to_string()
-    } else {
-        package
-            .deadlines
-            .milestones
-            .iter()
-            .map(|item| {
-                format!(
-                    "<li><code>{}</code> {} — due {} ({} days)</li>",
-                    escape_html(&item.status),
-                    escape_html(&item.label),
-                    escape_html(&item.due_date),
-                    item.days_remaining
-                )
-            })
-            .collect::<String>()
-    };
-    let claim_findings = if package.claim_audit.findings.is_empty() {
-        "<li>No claim formality findings.</li>".to_string()
-    } else {
-        package
-            .claim_audit
-            .findings
-            .iter()
-            .take(8)
-            .map(|item| {
-                format!(
-                    "<li><code>{}</code> {}</li>",
-                    escape_html(&item.severity),
-                    escape_html(&item.message)
-                )
-            })
-            .collect::<String>()
-    };
     let abstract_words = package
         .claim_audit
         .abstract_word_count
         .map(|count| format!("{count} words"))
         .unwrap_or_else(|| "n/a".to_string());
+    let multi = if package.claim_audit.has_multiple_dependent_claim {
+        " · multiple-dependent present"
+    } else {
+        ""
+    };
 
-    format!(
-        r#"<div class="result">
-  <div class="score-row">
-    <div class="score">{score}</div>
-    <div>
-      <span class="badge {readiness_class}">{status}</span>
-      <h2>{title}</h2>
-      <p><code>{matter_id}</code> · {track}</p>
-    </div>
-  </div>
-  <div class="columns">
-    <div class="mini">
-      <h3>Blockers</h3>
-      <ul>{blockers}</ul>
-    </div>
-    <div class="mini">
-      <h3>Attorney Handoff</h3>
-      <p>{handoff}</p>
-    </div>
-  </div>
-  <h3>Draft Sections</h3>
-  <ul>{sections}</ul>
-  <div class="columns">
-    <div class="mini">
-      <h3>Claim Seeds</h3>
-      <ul>{claim_seeds}</ul>
-    </div>
-    <div class="mini">
-      <h3>Drawing Plan</h3>
-      <ul>{drawing_plan}</ul>
-    </div>
-  </div>
-  <div class="columns">
-    <div class="mini">
-      <h3>USPTO Fee Estimate ({entity}, eff. {fee_date})</h3>
-      <ul>{fee_rows}</ul>
-      <p><strong>Estimated total: ${fee_total:.0} USD</strong></p>
-    </div>
-    <div class="mini">
-      <h3>Claim Audit · abstract {abstract_words}</h3>
-      <p>{ind} independent / {dep} dependent / {total} total{multi}</p>
-      <ul>{claim_findings}</ul>
-    </div>
-  </div>
-  <h3>Filing Deadlines (today {today})</h3>
-  <ul>{deadline_rows}</ul>
-  <h3>Search Queries</h3>
-  <ul>{search_queries}</ul>
-  <h3>Filing Checklist</h3>
-  <ul>{checklist}</ul>
-</div>"#,
-        score = package.readiness.score,
-        status = escape_html(&package.readiness.status),
-        title = escape_html(&package.title),
-        matter_id = escape_html(&package.matter_id),
-        track = escape_html(&package.filing_track),
-        handoff = escape_html(&package.attorney_handoff.summary),
-        entity = escape_html(&fee.entity),
-        fee_date = fee.effective_date,
-        fee_total = fee.total_usd,
-        today = escape_html(&package.deadlines.today),
-        ind = package.claim_audit.independent_claims,
-        dep = package.claim_audit.dependent_claims,
-        total = package.claim_audit.total_claims,
-        multi = if package.claim_audit.has_multiple_dependent_claim {
-            " · multiple-dependent present"
-        } else {
-            ""
-        },
-    )
+    html! {
+        div class="result" {
+            div class="score-row" {
+                div class="score" { (package.readiness.score) }
+                div {
+                    span class={ "badge " (readiness_class) } { (package.readiness.status) }
+                    h2 { (package.title) }
+                    p { code { (package.matter_id) } " · " (package.filing_track) }
+                }
+            }
+            div class="columns" {
+                div class="mini" {
+                    h3 { "Blockers" }
+                    ul {
+                        @if package.readiness.blockers.is_empty() {
+                            li { "No blockers detected." }
+                        } @else {
+                            @for item in &package.readiness.blockers {
+                                li { (item.message) }
+                            }
+                        }
+                    }
+                }
+                div class="mini" {
+                    h3 { "Attorney Handoff" }
+                    p { (package.attorney_handoff.summary) }
+                }
+            }
+            h3 { "Draft Sections" }
+            ul {
+                @for section in package.draft.sections.iter().take(4) {
+                    li { strong { (section.heading) } ": " (section.body.chars().take(220).collect::<String>()) }
+                }
+            }
+            div class="columns" {
+                div class="mini" {
+                    h3 { "Claim Seeds" }
+                    ul {
+                        @for item in package.draft.claim_seeds.iter().take(5) {
+                            li { (item) }
+                        }
+                    }
+                }
+                div class="mini" {
+                    h3 { "Drawing Plan" }
+                    ul {
+                        @for item in package.draft.drawing_plan.iter().take(5) {
+                            li { (item) }
+                        }
+                    }
+                }
+            }
+            div class="columns" {
+                div class="mini" {
+                    h3 { "USPTO Fee Estimate (" (fee.entity) ", eff. " (fee.effective_date) ")" }
+                    ul {
+                        @for item in &fee.line_items {
+                            li { (item.label) " · " (item.quantity) " × $" (format!("{:.0}", item.unit_usd)) " = " strong { "$" (format!("{:.0}", item.amount_usd)) } }
+                        }
+                    }
+                    p { strong { "Estimated total: $" (format!("{:.0}", fee.total_usd)) " USD" } }
+                }
+                div class="mini" {
+                    h3 { "Claim Audit · abstract " (abstract_words) }
+                    p { (package.claim_audit.independent_claims) " independent / " (package.claim_audit.dependent_claims) " dependent / " (package.claim_audit.total_claims) " total" (multi) }
+                    ul {
+                        @if package.claim_audit.findings.is_empty() {
+                            li { "No claim formality findings." }
+                        } @else {
+                            @for item in package.claim_audit.findings.iter().take(8) {
+                                li { code { (item.severity) } " " (item.message) }
+                            }
+                        }
+                    }
+                }
+            }
+            h3 { "Filing Deadlines (today " (package.deadlines.today) ")" }
+            ul {
+                @if package.deadlines.milestones.is_empty() {
+                    li { "No filing/disclosure/priority dates provided." }
+                } @else {
+                    @for item in &package.deadlines.milestones {
+                        li { code { (item.status) } " " (item.label) " — due " (item.due_date) " (" (item.days_remaining) " days)" }
+                    }
+                }
+            }
+            h3 { "Search Queries" }
+            ul {
+                @for item in package.search_plan.queries.iter().take(5) {
+                    li { code { (item.label) } " " (item.query) }
+                }
+            }
+            h3 { "Filing Checklist" }
+            ul {
+                @for item in &package.filing_checklist {
+                    li { strong { (item.label) } " " code { (item.status) } " - " (item.notes) }
+                }
+            }
+        }
+    }
 }
 
-fn escape_html(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&#39;")
+#[cfg(test)]
+mod maud_render_tests {
+    use super::*;
+
+    fn render_config() -> Config {
+        Config {
+            server_auth_secret: Some("secret".to_string()),
+            allow_unauthenticated: false,
+            patent_center_url: "https://patentcenter.uspto.gov/".to_string(),
+            max_matters: 10,
+            anthropic_api_key: None,
+            anthropic_base_url: "https://api.anthropic.com".to_string(),
+            ai_model: "claude-opus-4-8".to_string(),
+            ai_max_concurrency: 4,
+        }
+    }
+
+    #[test]
+    fn home_page_renders_htmx_shell() {
+        let html = render_home().into_string();
+        // maud emits an uppercase DOCTYPE for the same document type.
+        assert!(html.starts_with("<!DOCTYPE html>"));
+        // Pinned htmx asset and its Subresource Integrity attributes are preserved verbatim.
+        assert!(html.contains(
+            "src=\"https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js\""
+        ));
+        assert!(html.contains(
+            "integrity=\"sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2\""
+        ));
+        assert!(html.contains("crossorigin=\"anonymous\""));
+        assert!(html.contains("referrerpolicy=\"no-referrer\""));
+        // HTMX wiring on the intake form is preserved verbatim.
+        assert!(html.contains("hx-post=\"ui/packages\""));
+        assert!(html.contains("hx-target=\"#package-output\""));
+        assert!(html.contains("hx-swap=\"innerHTML\""));
+        assert!(html.contains("hx-indicator=\"#package-spinner\""));
+        // CSS embedded verbatim via PreEscaped.
+        assert!(html.contains("--green: #126d57;"));
+    }
+
+    #[test]
+    fn package_fragment_interpolates_dynamic_values() {
+        let package = build_package(&render_config(), example_request())
+            .expect("example intake should build a package");
+        let html = render_package_fragment(&package).into_string();
+        assert!(html.contains(&format!(
+            "<div class=\"score\">{}</div>",
+            package.readiness.score
+        )));
+        assert!(html.contains(&package.matter_id));
+        assert!(html.contains("class=\"badge"));
+    }
+
+    #[test]
+    fn package_fragment_auto_escapes_dynamic_values() {
+        let mut request = example_request();
+        request.title = "Sensor <script> & \"array\"".to_string();
+        let package = build_package(&render_config(), request)
+            .expect("intake should build a package");
+        let html = render_package_fragment(&package).into_string();
+        // maud auto-escapes the injected markup instead of emitting it raw.
+        assert!(html.contains("Sensor &lt;script&gt; &amp; &quot;array&quot;"));
+        assert!(!html.contains("<script>"));
+    }
 }
 
 fn example_request() -> PatentIntakeRequest {

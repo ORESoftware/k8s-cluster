@@ -260,3 +260,5 @@ Use `dd-remote-rest-api-secrets` for RDS-specific credentials when this moves of
 The Argo runtime also binds the `dd-remote-rest-api` ServiceAccount to the
 `dd-dev/dd-control-plane` Role so these lifecycle endpoints can manage only the per-thread
 Kubernetes resources in the `dd-dev` namespace.
+
+> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

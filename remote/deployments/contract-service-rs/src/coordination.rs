@@ -31,7 +31,7 @@ struct CoordinationInner {
     pool: PgPool,
     client: Client,
     fiducia_url: String,
-    fiducia_api_key: String,
+    fiducia_api_key: Option<String>,
     owner: String,
     lease_ms: u64,
     retention_ms: u64,
@@ -89,10 +89,6 @@ impl CoordinationState {
             "FIDUCIA_LOCK_URL",
             "http://fiducia-load-balance.fiducia.svc.cluster.local:8088",
         ))?;
-        let fiducia_api_key = crate::env_secret("FIDUCIA_API_KEY").ok_or_else(|| {
-            "CONTRACT_COORDINATION_ENABLED=true requires a requests:write-scoped FIDUCIA_API_KEY"
-                .to_string()
-        })?;
         let pool_size = crate::env_u64("CONTRACT_COORDINATION_PG_POOL_SIZE", 4).clamp(1, 16) as u32;
         let pool = PgPoolOptions::new()
             .max_connections(pool_size)
@@ -113,7 +109,7 @@ impl CoordinationState {
                 pool,
                 client,
                 fiducia_url,
-                fiducia_api_key,
+                fiducia_api_key: crate::env_secret("FIDUCIA_API_KEY"),
                 owner,
                 lease_ms,
                 retention_ms,
@@ -144,18 +140,10 @@ impl CoordinationState {
             std::time::Duration::from_secs(2),
             sqlx::query_scalar::<_, i32>("select 1").fetch_one(&inner.pool),
         );
-        // OPTIONS on the write-only claim route is non-mutating, but the Fiducia
-        // edge still applies the route's requests:write/admin:write scope check
-        // before forwarding it. Axum commonly answers 405 after authorization;
-        // that status therefore proves the credential reached the protected
-        // route without creating an idempotency record.
-        let fiducia_request = inner
-            .client
-            .request(
-                reqwest::Method::OPTIONS,
-                format!("{}/v1/idempotency/claim", inner.fiducia_url),
-            )
-            .bearer_auth(&inner.fiducia_api_key);
+        let mut fiducia_request = inner.client.get(format!("{}/readyz", inner.fiducia_url));
+        if let Some(api_key) = &inner.fiducia_api_key {
+            fiducia_request = fiducia_request.bearer_auth(api_key);
+        }
         let fiducia =
             tokio::time::timeout(std::time::Duration::from_secs(2), fiducia_request.send());
         let (postgres, fiducia) = tokio::join!(postgres, fiducia);
@@ -169,12 +157,7 @@ impl CoordinationState {
             Err(_) => return Err("postgres coordination readiness timed out".to_string()),
         }
         match fiducia {
-            Ok(Ok(response))
-                if response.status().is_success()
-                    || response.status() == reqwest::StatusCode::METHOD_NOT_ALLOWED =>
-            {
-                Ok(())
-            }
+            Ok(Ok(response)) if response.status().is_success() => Ok(()),
             Ok(Ok(response)) => Err(format!(
                 "Fiducia coordination readiness returned HTTP {}",
                 response.status()
@@ -397,11 +380,13 @@ async fn fiducia_post(
     path: &str,
     payload: Value,
 ) -> Result<Value, String> {
-    let request = inner
+    let mut request = inner
         .client
         .post(format!("{}{path}", inner.fiducia_url))
-        .bearer_auth(&inner.fiducia_api_key)
         .json(&payload);
+    if let Some(api_key) = &inner.fiducia_api_key {
+        request = request.bearer_auth(api_key);
+    }
     let response = request
         .send()
         .await

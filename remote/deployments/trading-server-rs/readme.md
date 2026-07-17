@@ -130,3 +130,5 @@ not-yet-built **executor** that must own broker secrets and add its own controls
 fill: per-venue idempotency/dedup of intents (NATS can redeliver), live notional/rate budgets,
 reconciliation against fills, and per-platform eligibility (e.g. geo, market rules). Until that
 executor exists and is signed off, keep `TRADING_MODE=paper` and `TRADING_ALLOW_LIVE_ORDERS=false`.
+
+> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).
