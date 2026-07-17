@@ -1,0 +1,7 @@
+{
+  "org": "scintilla-run",
+  "monorepo": "scintilla-monorepo",
+  "apps": [
+    "gleam-lambda-runner"
+  ]
+}

@@ -1,0 +1,4 @@
+[submodule "apps/gleam-lambda-runner"]
+	path = apps/gleam-lambda-runner
+	url = git@github.com:scintilla-run/gleam-lambda-runner.git
+	branch = main
