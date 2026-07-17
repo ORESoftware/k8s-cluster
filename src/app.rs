@@ -3,6 +3,8 @@
 //! Routes:
 //!   POST /v1/register        -> create account + first device, returns token
 //!   POST /v1/login           -> verify account, register a device, returns token
+//!   POST /v1/auth/supabase   -> enroll a device via a Supabase access JWT
+//!   GET  /v1/devices         -> list this account's devices   (auth)
 //!   POST /v1/devices/revoke  -> revoke a device   (auth)
 //!   GET  /v1/vault           -> pull sealed blob   (auth)
 //!   POST /v1/vault           -> push sealed blob   (auth)
