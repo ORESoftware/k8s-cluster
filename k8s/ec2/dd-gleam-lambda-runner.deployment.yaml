@@ -13,7 +13,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-05-20-lambda-backend-checks'
+        dd.dev/telemetry-revision: '2026-07-16-browser-runtime-hardening'
       labels:
         app: dd-gleam-lambda-runner
     spec:
@@ -170,7 +170,9 @@ spec:
             - name: LAMBDA_CONTAINER_NERDCTL
               value: /usr/local/bin/nerdctl
             - name: LAMBDA_CONTAINER_NAMESPACE
-              value: dd-lambda
+              # Runtime images are built into this namespace by the documented
+              # node workflow and exercised there by the EC2 integration test.
+              value: k8s.io
             - name: LAMBDA_CONTAINER_INVOKE_TIMEOUT_SECONDS
               value: '120'
             - name: LAMBDA_CONTAINER_NETWORK
@@ -191,6 +193,8 @@ spec:
               value: 256m
             - name: LAMBDA_BROWSER_CONTAINER_PIDS_LIMIT
               value: '256'
+            - name: LAMBDA_BROWSER_CONTAINER_PIDS
+              value: '256'
             - name: LAMBDA_NODEJS_CONTAINER_IMAGE
               value: docker.io/library/dd-lambda-nodejs-runtime:dev
             - name: LAMBDA_PYTHON3_CONTAINER_IMAGE
@@ -199,6 +203,24 @@ spec:
               value: docker.io/library/dd-lambda-ruby-runtime:dev
             - name: LAMBDA_BASH_CONTAINER_IMAGE
               value: docker.io/library/dd-lambda-bash-runtime:dev
+            - name: LAMBDA_BROWSER_CONTAINER_IMAGE
+              value: docker.io/library/dd-lambda-browser-runtime:dev
+            - name: LAMBDA_BROWSER_ENGINE
+              value: playwright
+            - name: LAMBDA_BROWSER_ALLOWED_HOSTS
+              value: ''
+            - name: LAMBDA_BROWSER_ALLOW_PRIVATE_NETWORKS
+              value: 'false'
+            - name: LAMBDA_SCRAPING_USER_AGENT
+              value: dd-lambda-browser/1.0 (+https://github.com/ORESoftware; respects robots.txt)
+            - name: LAMBDA_SCRAPING_MIN_DELAY_MS
+              value: '1000'
+            - name: LAMBDA_SCRAPING_ROBOTS_TTL_MS
+              value: '3600000'
+            - name: LAMBDA_SCRAPING_NAV_TIMEOUT_MS
+              value: '30000'
+            - name: LAMBDA_SCRAPING_ALLOW_ROBOTS_OVERRIDE
+              value: 'false'
             # dd-runtime-config subscriber wiring (Gleam helper:
             # `dd_runtime_config_client.start_registration_loop`).
             - name: RUNTIME_CONFIG_SERVICE_NAME

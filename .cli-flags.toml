@@ -134,6 +134,98 @@ env = "LAMBDA_BASH_HOST_COMMAND"
 aliases = ["lambda-bash-host-command"]
 type = "string"
 
+[flags.lambda_browser_host_command]
+env = "LAMBDA_BROWSER_HOST_COMMAND"
+aliases = ["lambda-browser-host-command"]
+type = "string"
+
+[flags.lambda_browser_container_image]
+env = "LAMBDA_BROWSER_CONTAINER_IMAGE"
+aliases = ["lambda-browser-container-image"]
+type = "string"
+
+[flags.lambda_browser_engine]
+env = "LAMBDA_BROWSER_ENGINE"
+aliases = ["lambda-browser-engine"]
+type = "string"
+default = "playwright"
+
+[flags.lambda_browser_container_memory]
+env = "LAMBDA_BROWSER_CONTAINER_MEMORY"
+aliases = ["lambda-browser-container-memory"]
+type = "string"
+default = "1g"
+
+[flags.lambda_browser_container_pids]
+env = "LAMBDA_BROWSER_CONTAINER_PIDS"
+aliases = ["lambda-browser-container-pids"]
+type = "string"
+default = "512"
+
+[flags.lambda_browser_container_shm_size]
+env = "LAMBDA_BROWSER_CONTAINER_SHM_SIZE"
+aliases = ["lambda-browser-container-shm-size"]
+type = "string"
+default = "256m"
+
+[flags.lambda_browser_container_tmpfs_size]
+env = "LAMBDA_BROWSER_CONTAINER_TMPFS_SIZE"
+aliases = ["lambda-browser-container-tmpfs-size"]
+type = "string"
+default = "256m"
+
+[flags.lambda_browser_container_nofile]
+env = "LAMBDA_BROWSER_CONTAINER_NOFILE"
+aliases = ["lambda-browser-container-nofile"]
+type = "string"
+default = "1024"
+
+[flags.lambda_browser_container_memory_bytes]
+env = "LAMBDA_BROWSER_CONTAINER_MEMORY_BYTES"
+aliases = ["lambda-browser-container-memory-bytes"]
+type = "string"
+default = "1073741824"
+
+[flags.lambda_browser_allowed_hosts]
+env = "LAMBDA_BROWSER_ALLOWED_HOSTS"
+aliases = ["lambda-browser-allowed-hosts"]
+type = "string"
+
+[flags.lambda_browser_allow_private_networks]
+env = "LAMBDA_BROWSER_ALLOW_PRIVATE_NETWORKS"
+aliases = ["lambda-browser-allow-private-networks"]
+type = "boolean"
+default = false
+
+[flags.lambda_scraping_user_agent]
+env = "LAMBDA_SCRAPING_USER_AGENT"
+aliases = ["lambda-scraping-user-agent"]
+type = "string"
+
+[flags.lambda_scraping_min_delay_ms]
+env = "LAMBDA_SCRAPING_MIN_DELAY_MS"
+aliases = ["lambda-scraping-min-delay-ms"]
+type = "integer"
+default = 1000
+
+[flags.lambda_scraping_robots_ttl_ms]
+env = "LAMBDA_SCRAPING_ROBOTS_TTL_MS"
+aliases = ["lambda-scraping-robots-ttl-ms"]
+type = "integer"
+default = 3600000
+
+[flags.lambda_scraping_nav_timeout_ms]
+env = "LAMBDA_SCRAPING_NAV_TIMEOUT_MS"
+aliases = ["lambda-scraping-nav-timeout-ms"]
+type = "integer"
+default = 30000
+
+[flags.lambda_scraping_allow_robots_override]
+env = "LAMBDA_SCRAPING_ALLOW_ROBOTS_OVERRIDE"
+aliases = ["lambda-scraping-allow-robots-override"]
+type = "boolean"
+default = false
+
 [flags.runtime_config_service_name]
 env = "RUNTIME_CONFIG_SERVICE_NAME"
 aliases = ["runtime-config-service-name"]

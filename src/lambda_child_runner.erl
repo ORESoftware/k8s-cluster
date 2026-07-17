@@ -417,8 +417,16 @@ command_for_definition(FallbackCommand, DefinitionJson) ->
 supported_runtime(Runtime) ->
     lists:member(Runtime, [
         <<"nodejs">>, <<"python3">>, <<"ruby">>, <<"bash">>,
-        <<"golang">>, <<"dart">>, <<"erlang">>, <<"elixir">>, <<"java">>
+        <<"golang">>, <<"dart">>, <<"erlang">>, <<"elixir">>, <<"java">>,
+        <<"browser">>
     ]).
+
+%% Runtimes whose child spawns a real browser (Chromium via Playwright or
+%% Puppeteer). They need a browser-shaped resource/isolation profile — more
+%% pids and memory, an executable tmpfs, and shared memory — that the
+%% general-purpose runtimes deliberately do without. See browser_run_profile/0.
+is_browser_runtime(<<"browser">>) -> true;
+is_browser_runtime(_Runtime) -> false.
 
 host_command(<<"nodejs">>) ->
     host_command_from_env(
@@ -439,6 +447,17 @@ host_command(<<"bash">>) ->
     host_command_from_env(
         "LAMBDA_BASH_HOST_COMMAND",
         <<"env -i PATH=\"$PATH\" NODE_NO_WARNINGS=1 node --permission --allow-net --allow-child-process child-runtimes/bash-function-runner.mjs">>
+    );
+host_command(<<"browser">>) ->
+    %% No `--permission` here: Playwright/Puppeteer must read browser binaries,
+    %% write a profile/cache dir, and fork the Chromium child, which Node's
+    %% permission model cannot express without effectively granting everything.
+    %% Host execution is therefore off by default (LAMBDA_ALLOW_HOST_RUNTIMES is
+    %% nodejs only); the real isolation is the hardened container image. Running
+    %% a browser directly on the host node is opt-in for local development.
+    host_command_from_env(
+        "LAMBDA_BROWSER_HOST_COMMAND",
+        <<"env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 NATS_URL=\"${NATS_URL:-}\" CONTAINER_POOL_NATS_URL=\"${CONTAINER_POOL_NATS_URL:-}\" CONTAINER_POOL_NATS_SUBJECT_PREFIX=\"${CONTAINER_POOL_NATS_SUBJECT_PREFIX:-dd.remote.container_pool}\" CONTAINER_POOL_NATS_TIMEOUT_MS=\"${CONTAINER_POOL_NATS_TIMEOUT_MS:-30000}\" LAMBDA_BROWSER_ENGINE=\"${LAMBDA_BROWSER_ENGINE:-playwright}\" LAMBDA_BROWSER_ALLOWED_HOSTS=\"${LAMBDA_BROWSER_ALLOWED_HOSTS:-}\" LAMBDA_BROWSER_ALLOW_PRIVATE_NETWORKS=\"${LAMBDA_BROWSER_ALLOW_PRIVATE_NETWORKS:-false}\" LAMBDA_SCRAPING_USER_AGENT=\"${LAMBDA_SCRAPING_USER_AGENT:-}\" LAMBDA_SCRAPING_MIN_DELAY_MS=\"${LAMBDA_SCRAPING_MIN_DELAY_MS:-1000}\" LAMBDA_SCRAPING_ROBOTS_TTL_MS=\"${LAMBDA_SCRAPING_ROBOTS_TTL_MS:-3600000}\" LAMBDA_SCRAPING_NAV_TIMEOUT_MS=\"${LAMBDA_SCRAPING_NAV_TIMEOUT_MS:-30000}\" LAMBDA_SCRAPING_ALLOW_ROBOTS_OVERRIDE=\"${LAMBDA_SCRAPING_ALLOW_ROBOTS_OVERRIDE:-false}\" node child-runtimes/browser-function-runner.mjs">>
     );
 host_command(Runtime) ->
     {error, iolist_to_binary(["unsupported lambda runtime: ", Runtime])}.
@@ -491,16 +510,16 @@ container_command(Runtime, DefinitionJson) ->
             case env_binary("LAMBDA_CONTAINER_RUNNER", <<"nerdctl">>) of
                 <<"ctr">> ->
                     Ctr = env_binary("LAMBDA_CONTAINER_CTR", <<"/usr/local/bin/ctr">>),
-                    {ok, wrap_with_timeout(TimeoutSecs, ctr_container_command(Ctr, Namespace, Network, MemoryBytes, Cpus, TmpfsSize, Image, Runtime))};
+                    {ok, wrap_with_timeout(TimeoutSecs, ctr_container_command(Ctr, Namespace, Network, MemoryBytes, Cpus, Image, Runtime))};
                 <<"docker">> ->
                     Docker = env_binary("LAMBDA_CONTAINER_DOCKER", <<"/usr/bin/docker">>),
-                    {ok, wrap_with_timeout(TimeoutSecs, docker_cli_container_command(Docker, Network, Memory, Cpus, TmpfsSize, PidsLimit, Image))};
+                    {ok, wrap_with_timeout(TimeoutSecs, docker_cli_container_command(Docker, Network, Memory, Cpus, Image, Runtime))};
                 <<"podman">> ->
                     Podman = env_binary("LAMBDA_CONTAINER_PODMAN", <<"/usr/bin/podman">>),
-                    {ok, wrap_with_timeout(TimeoutSecs, docker_cli_container_command(Podman, Network, Memory, Cpus, TmpfsSize, PidsLimit, Image))};
+                    {ok, wrap_with_timeout(TimeoutSecs, docker_cli_container_command(Podman, Network, Memory, Cpus, Image, Runtime))};
                 <<"nerdctl">> ->
                     Nerdctl = env_binary("LAMBDA_CONTAINER_NERDCTL", <<"/usr/local/bin/nerdctl">>),
-                    {ok, wrap_with_timeout(TimeoutSecs, nerdctl_container_command(Nerdctl, Namespace, Network, Memory, Cpus, TmpfsSize, PidsLimit, Image))};
+                    {ok, wrap_with_timeout(TimeoutSecs, nerdctl_container_command(Nerdctl, Namespace, Network, Memory, Cpus, Image, Runtime))};
                 Other ->
                     %% Fail closed: an unrecognized runner (typo, stale config) must not
                     %% silently fall back to a different runtime than the operator set.
@@ -532,55 +551,149 @@ safe_timeout_value(Value0) ->
         nomatch -> error
     end.
 
-nerdctl_container_command(Nerdctl, Namespace, Network, Memory, Cpus, TmpfsSize, PidsLimit, Image) ->
+nerdctl_container_command(Nerdctl, Namespace, Network, Memory, Cpus, Image, Runtime) ->
     %% nerdctl is Docker-CLI compatible but scopes everything to a containerd
     %% namespace via `-n`, which docker/podman do not have.
     iolist_to_binary([
         shell_word(Nerdctl),
         " -n ", shell_word(Namespace),
-        docker_compatible_run_args(Network, Memory, Cpus, TmpfsSize, PidsLimit, Image)
+        docker_compatible_run_args(Runtime, Network, Memory, Cpus, Image)
     ]).
 
 %% Shared by the Docker-CLI compatible runners (docker, podman). Same flag
 %% surface as nerdctl, minus the containerd `-n <namespace>` selector.
-docker_cli_container_command(Binary, Network, Memory, Cpus, TmpfsSize, PidsLimit, Image) ->
+docker_cli_container_command(Binary, Network, Memory, Cpus, Image, Runtime) ->
     iolist_to_binary([
         shell_word(Binary),
-        docker_compatible_run_args(Network, Memory, Cpus, TmpfsSize, PidsLimit, Image)
+        docker_compatible_run_args(Runtime, Network, Memory, Cpus, Image)
     ]).
 
-docker_compatible_run_args(Network, Memory, Cpus, TmpfsSize, PidsLimit, Image) ->
+docker_compatible_run_args(Runtime, Network, Memory, Cpus, Image) ->
+    case is_browser_runtime(Runtime) of
+        true -> browser_run_args(Network, Cpus, Image);
+        false -> standard_run_args(Network, Memory, Cpus, Image)
+    end.
+
+%% Locked-down default for the code-only runtimes: read-only rootfs, a small
+%% non-executable tmpfs, all capabilities dropped, tight pid/file/memory limits.
+standard_run_args(Network, Memory, Cpus, Image) ->
     [
         " run --rm -i --pull=never --read-only",
-        " --tmpfs ", shell_word(iolist_to_binary(["/tmp:rw,noexec,nosuid,size=", TmpfsSize])),
+        " --tmpfs /tmp:rw,noexec,nosuid,size=16m",
         " --network ", shell_word(Network),
         " --user 10001:10001",
         " --cap-drop ALL",
         " --security-opt no-new-privileges",
-        " --pids-limit ", shell_word(PidsLimit),
+        " --pids-limit 64",
         " --ulimit nofile=64:64",
+        " --memory ", shell_word(Memory),
+        " --cpus ", shell_word(Cpus),
+        browser_container_env_args(),
+        " ", shell_word(Image)
+    ].
+
+browser_container_env_args() ->
+    browser_container_env_args([
+        {"NATS_URL", <<>>},
+        {"CONTAINER_POOL_NATS_URL", <<>>},
+        {"CONTAINER_POOL_NATS_SUBJECT_PREFIX", <<"dd.remote.container_pool">>},
+        {"CONTAINER_POOL_NATS_TIMEOUT_MS", <<"30000">>},
+        {"LAMBDA_BROWSER_ENGINE", <<"playwright">>},
+        {"LAMBDA_BROWSER_ALLOWED_HOSTS", <<>>},
+        {"LAMBDA_BROWSER_ALLOW_PRIVATE_NETWORKS", <<"false">>},
+        {"LAMBDA_SCRAPING_USER_AGENT", <<>>},
+        {"LAMBDA_SCRAPING_MIN_DELAY_MS", <<"1000">>},
+        {"LAMBDA_SCRAPING_ROBOTS_TTL_MS", <<"3600000">>},
+        {"LAMBDA_SCRAPING_NAV_TIMEOUT_MS", <<"30000">>},
+        {"LAMBDA_SCRAPING_ALLOW_ROBOTS_OVERRIDE", <<"false">>}
+    ]).
+
+browser_container_env_args(Pairs) ->
+    lists:map(
+        fun({Name, Default}) ->
+            Value = env_binary(Name, Default),
+            [" --env ", shell_word(iolist_to_binary([Name, "=", Value]))]
+        end,
+        Pairs
+    ).
+
+%% Browser-shaped profile for Playwright/Puppeteer. Still non-root, read-only
+%% root, all caps dropped, and no-new-privileges — but Chromium forces a few
+%% relaxations the code runtimes avoid: it execs helper binaries from its temp
+%% dir (so the tmpfs keeps `exec`), uses real shared memory (`--shm-size`, else
+%% renderers crash), forks many short-lived processes (higher `--pids-limit`),
+%% and needs more RAM and file descriptors. Each limit is an env knob so an
+%% operator can tighten or loosen it per cluster.
+browser_run_args(Network, Cpus, Image) ->
+    Memory = env_binary("LAMBDA_BROWSER_CONTAINER_MEMORY", <<"1g">>),
+    Pids = env_binary("LAMBDA_BROWSER_CONTAINER_PIDS", <<"512">>),
+    ShmSize = env_binary("LAMBDA_BROWSER_CONTAINER_SHM_SIZE", <<"256m">>),
+    TmpfsSize = env_binary("LAMBDA_BROWSER_CONTAINER_TMPFS_SIZE", <<"256m">>),
+    NoFile = env_binary("LAMBDA_BROWSER_CONTAINER_NOFILE", <<"1024">>),
+    [
+        " run --rm -i --pull=never --read-only",
+        " --tmpfs ",
+        shell_word(iolist_to_binary(["/tmp:rw,nosuid,size=", TmpfsSize])),
+        " --shm-size ", shell_word(ShmSize),
+        " --network ", shell_word(Network),
+        " --user 10001:10001",
+        " --cap-drop ALL",
+        " --security-opt no-new-privileges",
+        " --pids-limit ", shell_word(Pids),
+        " --ulimit ", shell_word(iolist_to_binary(["nofile=", NoFile, ":", NoFile])),
         " --memory ", shell_word(Memory),
         " --cpus ", shell_word(Cpus),
         " ", shell_word(Image)
     ].
 
-ctr_container_command(Ctr, Namespace, Network, MemoryBytes, Cpus, TmpfsSize, Image, Runtime) ->
+ctr_container_command(Ctr, Namespace, Network, MemoryBytes0, Cpus, Image, Runtime) ->
     ContainerId = iolist_to_binary(["dd-lambda-", Runtime, "-$(date +%s%N)-$$"]),
+    %% Browsers need more RAM than the 256 MiB code-runtime default.
+    MemoryBytes = case is_browser_runtime(Runtime) of
+        true -> env_binary("LAMBDA_BROWSER_CONTAINER_MEMORY_BYTES", <<"1073741824">>);
+        false -> MemoryBytes0
+    end,
     iolist_to_binary([
         shell_word(Ctr),
         " -n ", shell_word(Namespace),
         " run --rm",
         ctr_network_args(Network),
         " --read-only",
-        " --mount ", shell_word(iolist_to_binary(["type=tmpfs,dst=/tmp,options=rw:noexec:nosuid:size=", TmpfsSize])),
+        ctr_tmpfs_mounts(Runtime),
         " --user 10001:10001",
         ctr_cap_drop_args(),
         " --seccomp",
         " --memory-limit ", shell_word(MemoryBytes),
         " --cpus ", shell_word(Cpus),
+        case is_browser_runtime(Runtime) of
+            true -> browser_container_env_args();
+            false -> ""
+        end,
         " ", shell_word(Image),
         " ", ContainerId
     ]).
+
+%% Code runtimes get one small non-executable /tmp. Browsers keep /tmp
+%% executable (Chromium execs helpers from it) and add a real /dev/shm so
+%% renderer processes do not crash on the container's tiny default shm.
+ctr_tmpfs_mounts(Runtime) ->
+    case is_browser_runtime(Runtime) of
+        true ->
+            TmpfsSize = env_binary("LAMBDA_BROWSER_CONTAINER_TMPFS_SIZE", <<"256m">>),
+            ShmSize = env_binary("LAMBDA_BROWSER_CONTAINER_SHM_SIZE", <<"256m">>),
+            [
+                " --mount ",
+                shell_word(iolist_to_binary([
+                    "type=tmpfs,dst=/tmp,options=rw:nosuid:size=", TmpfsSize
+                ])),
+                " --mount ",
+                shell_word(iolist_to_binary([
+                    "type=tmpfs,dst=/dev/shm,options=rw:nosuid:size=", ShmSize
+                ]))
+            ];
+        false ->
+            " --mount type=tmpfs,dst=/tmp,options=rw:noexec:nosuid:size=16m"
+    end.
 
 ctr_network_args(<<"none">>) -> "";
 ctr_network_args(<<"host">>) -> " --net-host";
@@ -611,6 +724,8 @@ default_container_image(<<"elixir">>) ->
     env_binary("LAMBDA_ELIXIR_CONTAINER_IMAGE", <<"docker.io/library/dd-lambda-elixir-runtime:dev">>);
 default_container_image(<<"java">>) ->
     env_binary("LAMBDA_JAVA_CONTAINER_IMAGE", <<"docker.io/library/dd-lambda-java-runtime:dev">>);
+default_container_image(<<"browser">>) ->
+    env_binary("LAMBDA_BROWSER_CONTAINER_IMAGE", <<"docker.io/library/dd-lambda-browser-runtime:dev">>);
 default_container_image(_Runtime) ->
     <<>>.
 
@@ -668,6 +783,16 @@ canonical_runtime(<<"ex">>) -> <<"elixir">>;
 canonical_runtime(<<"elixir">>) -> <<"elixir">>;
 canonical_runtime(<<"jvm">>) -> <<"java">>;
 canonical_runtime(<<"java">>) -> <<"java">>;
+%% Browser-automation runtime. Playwright and Puppeteer are both first-class:
+%% the child runner exposes both libraries, so any of these aliases resolves to
+%% the same hardened Chromium-capable image.
+canonical_runtime(<<"browser">>) -> <<"browser">>;
+canonical_runtime(<<"playwright">>) -> <<"browser">>;
+canonical_runtime(<<"puppeteer">>) -> <<"browser">>;
+canonical_runtime(<<"chromium">>) -> <<"browser">>;
+canonical_runtime(<<"headless">>) -> <<"browser">>;
+canonical_runtime(<<"scraper">>) -> <<"browser">>;
+canonical_runtime(<<"scraping">>) -> <<"browser">>;
 canonical_runtime(<<>>) -> <<"nodejs">>;
 canonical_runtime(Runtime) -> Runtime.
 

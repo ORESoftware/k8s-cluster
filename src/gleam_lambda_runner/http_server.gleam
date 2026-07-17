@@ -86,6 +86,12 @@ fn route(
       dd_runtime_config_client.handle_apply(req)
     Post, ["internal", "runtime-config", "reset"] ->
       dd_runtime_config_client.handle_reset(req)
+    _, ["invoke", _] -> method_not_allowed()
+    _, ["check"] -> method_not_allowed()
+    _, ["destroy", _] -> method_not_allowed()
+    _, ["workflows", "start"] -> method_not_allowed()
+    _, ["internal", "update-runtime-config"] -> method_not_allowed()
+    _, ["internal", "runtime-config", "reset"] -> method_not_allowed()
     _, _ -> not_found()
   }
 }
