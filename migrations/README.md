@@ -21,6 +21,10 @@ file ever disagrees with `schema.sql` + the runtime diff, **`schema.sql` and the
   `battery_level`, `charging`, `transfer_state_updated_at`, plus `CHECK`s and a partial index) so the
   app can pause cloud streaming (low battery / network policy) and have server-managed copies defer in
   lockstep. Idempotent, forward-only.
+- **`0003_segment_mirror_index.sql`** — performance-only partial index for the S3→R2 storage-mirror
+  drain (`/internal/storage-mirror/drain`). Mirror state lives in `segments.meta_data` (server-owned
+  keys), so there are no column changes; the backend works without this index, just slower at scale.
+  Idempotent, forward-only.
 
 Each file's header comment documents the exact `psql` invocation and the post-apply verification
 command.

@@ -6,8 +6,9 @@
 //! Drive / OneDrive / iCloud destinations, and emails short-lived alert
 //! "listen" links. Normal mobile transfer uses presigned URLs; bytes flow
 //! through this process only when the authenticated cloud-copy worker mirrors a
-//! segment to Google Drive or OneDrive. See `readme.md` for routes, environment
-//! variables, and the wider product/deployment context.
+//! segment to Google Drive or OneDrive, or when the storage-mirror worker
+//! copies a segment into the backup object store. See `readme.md` for routes,
+//! environment variables, and the wider product/deployment context.
 //!
 //! This is intentionally one large file. Its major sections, roughly in the
 //! order they appear below, are:
@@ -34,7 +35,12 @@
 //!   `send_alert_email` webhook payload.
 //! - **Account deletion** — `delete_account` and `delete_supabase_auth_user`
 //!   (Supabase service-role key), which purge backend metadata and revoke tokens.
-//! - **Retention** — `retention_sweep` marks expired (non-pinned) segment rows.
+//! - **Retention** — `retention_sweep` marks expired (non-pinned) segment rows
+//!   and physically deletes both the primary object and any mirror copy.
+//! - **Storage mirror** — `mirror_drain` (`/internal/storage-mirror/drain`)
+//!   asynchronously copies uploaded segments from the primary object store
+//!   into the `SOUND_RECORDER_MIRROR_*` backup store (e.g. Cloudflare R2 next
+//!   to AWS S3), recording per-segment mirror state in `meta_data`.
 //! - **Rate limiting & security** — the `rate_limit` and `add_security_headers`
 //!   middleware layers.
 //! - **`main` / router** — `Router::new()` wiring, TLS Postgres setup, and
@@ -54,6 +60,7 @@ use aws_config::retry::RetryConfig;
 use aws_sdk_s3::{
     config::Region,
     presigning::PresigningConfig,
+    primitives::ByteStream,
     types::{Delete, ObjectIdentifier, ServerSideEncryption},
 };
 use axum::{
@@ -142,6 +149,21 @@ static SEGMENT_PRESIGNS: Lazy<IntCounterVec> = Lazy::new(|| {
     counter
 });
 
+static MIRROR_COPIES: Lazy<IntCounterVec> = Lazy::new(|| {
+    let counter = IntCounterVec::new(
+        Opts::new(
+            "dd_sound_recorder_rs_mirror_copies_total",
+            "Segment mirror copy attempts by dd-sound-recorder-rs.",
+        ),
+        &["result"],
+    )
+    .expect("failed to create dd_sound_recorder_rs_mirror_copies_total");
+    prometheus::default_registry()
+        .register(Box::new(counter.clone()))
+        .expect("failed to register dd_sound_recorder_rs_mirror_copies_total");
+    counter
+});
+
 const SERVICE_NAME: &str = "dd-sound-recorder-rs";
 const DEFAULT_PORT: u16 = 8126;
 const DEFAULT_RETENTION_HOURS: i32 = 500;
@@ -173,6 +195,25 @@ const RETENTION_DELETE_PENDING_META_KEY: &str = "retentionDeletePending";
 const RETENTION_DELETE_CLAIM_ID_META_KEY: &str = "retentionDeleteClaimId";
 const RETENTION_DELETE_CLAIMED_AT_META_KEY: &str = "retentionDeleteClaimedAt";
 const RETENTION_PREVIOUS_STATUS_META_KEY: &str = "retentionPreviousStatus";
+// Server-owned mirror bookkeeping on `sound_recorder_segments.meta_data`. The
+// mirror is a real backup only when `mirrorState = mirrored` and the recorded
+// bucket/fingerprint match a deletable mirror target; retention and account
+// erasure refuse to finalize while a mirror copy may still exist.
+const MIRROR_STATE_META_KEY: &str = "mirrorState";
+const MIRROR_CLAIM_ID_META_KEY: &str = "mirrorClaimId";
+const MIRROR_CLAIMED_AT_META_KEY: &str = "mirrorClaimedAt";
+const MIRROR_BUCKET_META_KEY: &str = "mirrorBucket";
+const MIRROR_FINGERPRINT_META_KEY: &str = "mirrorFingerprint";
+const MIRROR_MIRRORED_AT_META_KEY: &str = "mirrorMirroredAt";
+const MIRROR_ATTEMPTS_META_KEY: &str = "mirrorAttempts";
+const MIRROR_LAST_ERROR_META_KEY: &str = "mirrorLastError";
+const MIRROR_NEXT_ATTEMPT_AT_META_KEY: &str = "mirrorNextAttemptAt";
+const DEFAULT_MIRROR_BATCH_SIZE: i64 = 50;
+const MAX_MIRROR_BATCH_SIZE: i64 = 500;
+const DEFAULT_MIRROR_COPY_MAX_ATTEMPTS: i32 = 5;
+/// A stale `copying` claim is reclaimable after this lease, far longer than the
+/// bounded object download + upload (2 × [`STORAGE_OBJECT_TIMEOUT`]).
+const MIRROR_CLAIM_LEASE: &str = "10 minutes";
 const MAX_CAPTURE_CLOCK_SKEW_SECONDS: i64 = 300;
 const DEFAULT_OAUTH_STATE_TTL_SECONDS: u64 = 600;
 const DEFAULT_CLOUD_COPY_BATCH_SIZE: i64 = 25;
@@ -223,6 +264,10 @@ type PgConn = PooledConnection<'static, PgManager>;
 struct AppState {
     config: Arc<Config>,
     s3: Option<aws_sdk_s3::Client>,
+    /// Client for the backup/mirror object store (R2 alongside a primary S3, or
+    /// vice versa). Never used to serve reads; only the mirror drain, retention
+    /// sweep, and account erasure touch it.
+    mirror: Option<aws_sdk_s3::Client>,
     http: reqwest::Client,
     cloud_sealer: Option<CloudTokenSealer>,
     supabase: Option<Arc<SupabaseVerifier>>,
@@ -243,6 +288,18 @@ struct Config {
     registration_bearer: Option<String>,
     allow_public_device_registration: bool,
     s3: S3StorageConfig,
+    /// Backup/mirror object store. Independent of the primary: its own bucket,
+    /// endpoint, and explicit credentials (no ambient AWS/R2 fallback, so a
+    /// misconfigured mirror can never silently sign with primary credentials).
+    mirror: S3StorageConfig,
+    /// When true, a configured mirror must pass its readiness probe for
+    /// `/readyz` to return 200. Default false: the mirror is a backup, not a
+    /// serving dependency, so a mirror outage alone should not pull the
+    /// service out of rotation. Misconfiguration (validation errors) always
+    /// fails readiness regardless of this flag.
+    mirror_readiness_required: bool,
+    mirror_batch_size: i64,
+    mirror_copy_max_attempts: i32,
     ios_app_store_url: Option<String>,
     android_play_store_url: Option<String>,
     default_retention_hours: i32,
@@ -496,6 +553,12 @@ struct HealthResponse {
     supabase_ready: Option<bool>,
     supabase_required: bool,
     retention_hours: i32,
+    mirror_configured: bool,
+    mirror_ready: Option<bool>,
+    mirror_probe_mode: &'static str,
+    mirror_backend: Option<&'static str>,
+    mirror_backend_fingerprint: Option<String>,
+    mirror_readiness_required: bool,
 }
 
 #[derive(Deserialize)]
@@ -547,7 +610,7 @@ impl Default for UserSettingsInput {
     fn default() -> Self {
         Self {
             preferred_use_case: "security".to_string(),
-            device_retention_hours: 50,
+            device_retention_hours: 100,
             cloud_retention_hours: 500,
             segment_minutes: 1,
             overlap_seconds: 2,
@@ -1713,6 +1776,230 @@ fn s3_storage_config_from_env() -> S3StorageConfig {
     }
 }
 
+/// Two storage targets conflict when they resolve to the same backend, endpoint,
+/// region, and bucket — a "mirror" that writes back into the primary bucket is
+/// not a backup and must be rejected at configuration time.
+fn mirror_targets_conflict(primary: &S3StorageConfig, mirror: &S3StorageConfig) -> bool {
+    !mirror.bucket.is_empty() && mirror.backend_fingerprint == primary.backend_fingerprint
+}
+
+/// Backup/mirror target configuration. Unlike the primary reader, this reads
+/// only `SOUND_RECORDER_MIRROR_*` names: the primary's generic `R2_*` / `AWS_*`
+/// alias chains are deliberately not consulted, so the mirror can never
+/// accidentally inherit the primary's credentials or endpoint. An empty
+/// `SOUND_RECORDER_MIRROR_S3_BUCKET` (and no mirror account id) disables the
+/// mirror entirely and produces no validation errors.
+fn mirror_storage_config_from_env(primary: &S3StorageConfig) -> S3StorageConfig {
+    let mut validation_errors = Vec::new();
+    let r2_account_id = first_env(&["SOUND_RECORDER_MIRROR_R2_ACCOUNT_ID"]);
+    if r2_account_id
+        .as_deref()
+        .is_some_and(|account_id| !is_valid_r2_account_id(account_id))
+    {
+        validation_errors.push(
+            "SOUND_RECORDER_MIRROR_R2_ACCOUNT_ID must be a 32-character hexadecimal account id"
+                .to_string(),
+        );
+    }
+    let derived_r2_endpoint = r2_account_id
+        .as_deref()
+        .filter(|account_id| is_valid_r2_account_id(account_id))
+        .map(|account_id| format!("https://{account_id}.r2.cloudflarestorage.com"));
+    let endpoint = first_env(&["SOUND_RECORDER_MIRROR_S3_ENDPOINT"])
+        .or(derived_r2_endpoint)
+        .map(|endpoint| endpoint.trim_end_matches('/').to_string());
+    let bucket = first_env(&["SOUND_RECORDER_MIRROR_S3_BUCKET"]).unwrap_or_default();
+    if bucket.is_empty() {
+        // Mirror disabled. Ignore every other mirror variable rather than
+        // validating a half-configured target into a readiness failure, but
+        // do flag a likely operator mistake: credentials without a bucket.
+        if endpoint.is_some() || first_env(&["SOUND_RECORDER_MIRROR_S3_ACCESS_KEY_ID"]).is_some() {
+            validation_errors.push(
+                "mirror storage is partially configured; set SOUND_RECORDER_MIRROR_S3_BUCKET to enable it or unset the other SOUND_RECORDER_MIRROR_* variables"
+                    .to_string(),
+            );
+        }
+        return S3StorageConfig {
+            bucket: String::new(),
+            key_prefix: primary.key_prefix.clone(),
+            cdn_base_url: None,
+            region: "auto".to_string(),
+            endpoint: None,
+            force_path_style: false,
+            send_sse_aes256: false,
+            max_attempts: DEFAULT_S3_MAX_ATTEMPTS,
+            readiness_object_key: None,
+            allow_signing_only_readiness: false,
+            allow_unmarked_storage_history: false,
+            backend_fingerprint: String::new(),
+            versioning_mode: "unversioned",
+            access_key_id: None,
+            secret_access_key: None,
+            session_token: None,
+            backend: ObjectStorageBackend::S3Compatible,
+            validation_errors,
+        };
+    }
+    if bucket.len() > 200
+        || bucket
+            .chars()
+            .any(|ch| ch.is_control() || ch.is_whitespace() || matches!(ch, '/' | '\\'))
+    {
+        validation_errors.push(
+            "SOUND_RECORDER_MIRROR_S3_BUCKET must be 1-200 characters without whitespace or slashes"
+                .to_string(),
+        );
+    }
+    if endpoint
+        .as_deref()
+        .is_some_and(|endpoint| !validate_service_url(endpoint, true))
+    {
+        validation_errors.push(
+            "SOUND_RECORDER_MIRROR_S3_ENDPOINT must be HTTPS (or loopback HTTP) with no path, credentials, query, or fragment"
+                .to_string(),
+        );
+    }
+    let backend = storage_backend_for_endpoint(endpoint.as_deref());
+    let region = if backend == ObjectStorageBackend::CloudflareR2 {
+        "auto".to_string()
+    } else {
+        first_env(&["SOUND_RECORDER_MIRROR_S3_REGION"]).unwrap_or_else(|| "us-east-1".to_string())
+    };
+    if region.len() > 80
+        || !region
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+    {
+        validation_errors.push("SOUND_RECORDER_MIRROR_S3_REGION is invalid".to_string());
+    }
+    let access_key_id = first_env(&["SOUND_RECORDER_MIRROR_S3_ACCESS_KEY_ID"]);
+    let secret_access_key = first_env(&["SOUND_RECORDER_MIRROR_S3_SECRET_ACCESS_KEY"]);
+    // The primary may fall back to the ambient AWS credential chain; the mirror
+    // must not, because in a mixed S3+R2 deployment the ambient chain belongs
+    // to the primary. Explicit credentials are therefore required.
+    if access_key_id.is_none() || secret_access_key.is_none() {
+        validation_errors.push(
+            "mirror storage requires explicit SOUND_RECORDER_MIRROR_S3_ACCESS_KEY_ID and SOUND_RECORDER_MIRROR_S3_SECRET_ACCESS_KEY"
+                .to_string(),
+        );
+    }
+    let readiness_object_key = first_env(&["SOUND_RECORDER_MIRROR_S3_READINESS_OBJECT_KEY"]);
+    if readiness_object_key
+        .as_deref()
+        .is_some_and(|key| key.len() > 2048 || key.chars().any(char::is_control))
+    {
+        validation_errors.push(
+            "SOUND_RECORDER_MIRROR_S3_READINESS_OBJECT_KEY must be at most 2048 non-control characters"
+                .to_string(),
+        );
+    }
+    let requested_sse = first_env(&["SOUND_RECORDER_MIRROR_S3_SERVER_SIDE_ENCRYPTION"])
+        .unwrap_or_else(|| "auto".to_string())
+        .to_ascii_lowercase();
+    let send_sse_aes256 = match requested_sse.as_str() {
+        "auto" => backend == ObjectStorageBackend::AmazonS3,
+        "aes256" | "aes-256" => {
+            if backend == ObjectStorageBackend::CloudflareR2 {
+                validation_errors.push(
+                    "SOUND_RECORDER_MIRROR_S3_SERVER_SIDE_ENCRYPTION=aes256 is incompatible with Cloudflare R2; use auto or none"
+                        .to_string(),
+                );
+                false
+            } else {
+                true
+            }
+        }
+        "none" | "off" | "disabled" => false,
+        _ => {
+            validation_errors.push(
+                "SOUND_RECORDER_MIRROR_S3_SERVER_SIDE_ENCRYPTION must be auto, aes256, or none"
+                    .to_string(),
+            );
+            false
+        }
+    };
+    // The mirror carries the same physical-erasure obligation as the primary:
+    // retention and account deletion must actually destroy the backup copy, so
+    // versioned mirror buckets (delete markers only) are equally unsupported.
+    let requested_versioning = first_env(&["SOUND_RECORDER_MIRROR_S3_VERSIONING_MODE"]);
+    let versioning_mode = if backend == ObjectStorageBackend::CloudflareR2 {
+        if requested_versioning.as_deref().is_some_and(|value| {
+            !matches!(
+                value.to_ascii_lowercase().as_str(),
+                "unversioned" | "disabled"
+            )
+        }) {
+            validation_errors.push(
+                "Cloudflare R2 does not support versioning; SOUND_RECORDER_MIRROR_S3_VERSIONING_MODE must be unversioned"
+                    .to_string(),
+            );
+        }
+        "unversioned"
+    } else {
+        match requested_versioning
+            .as_deref()
+            .map(str::trim)
+            .map(str::to_ascii_lowercase)
+            .as_deref()
+        {
+            Some("unversioned" | "disabled") => "unversioned",
+            Some(_) => {
+                validation_errors.push(
+                    "SOUND_RECORDER_MIRROR_S3_VERSIONING_MODE must be unversioned; versioned mirror buckets are unsupported"
+                        .to_string(),
+                );
+                "invalid"
+            }
+            None => {
+                validation_errors.push(
+                    "SOUND_RECORDER_MIRROR_S3_VERSIONING_MODE=unversioned must be explicitly set for a non-R2 mirror"
+                        .to_string(),
+                );
+                "unknown"
+            }
+        }
+    };
+    let force_path_style = env_bool(
+        "SOUND_RECORDER_MIRROR_S3_FORCE_PATH_STYLE",
+        backend == ObjectStorageBackend::S3Compatible,
+        &mut validation_errors,
+    );
+    let backend_fingerprint =
+        storage_backend_fingerprint(backend, endpoint.as_deref(), &region, &bucket);
+    let mirror = S3StorageConfig {
+        bucket,
+        key_prefix: primary.key_prefix.clone(),
+        cdn_base_url: None,
+        region,
+        endpoint,
+        force_path_style,
+        send_sse_aes256,
+        max_attempts: env_u64(
+            "SOUND_RECORDER_MIRROR_S3_MAX_ATTEMPTS",
+            DEFAULT_S3_MAX_ATTEMPTS as u64,
+        )
+        .clamp(1, 10) as u32,
+        readiness_object_key,
+        allow_signing_only_readiness: false,
+        allow_unmarked_storage_history: false,
+        backend_fingerprint,
+        versioning_mode,
+        access_key_id,
+        secret_access_key,
+        session_token: first_env(&["SOUND_RECORDER_MIRROR_S3_SESSION_TOKEN"]),
+        backend,
+        validation_errors,
+    };
+    let mut mirror = mirror;
+    if mirror_targets_conflict(primary, &mirror) {
+        mirror.validation_errors.push(
+            "mirror storage must target a different bucket/endpoint than the primary; a mirror into the same bucket is not a backup"
+                .to_string(),
+        );
+    }
+    mirror
+}
+
 fn config_from_env() -> Config {
     let mut validation_errors = Vec::new();
     let token_pepper = first_env(&["SOUND_RECORDER_DEVICE_TOKEN_PEPPER"]);
@@ -1759,6 +2046,13 @@ fn config_from_env() -> Config {
         true,
         &mut validation_errors,
     );
+    let mirror_readiness_required = env_bool(
+        "SOUND_RECORDER_MIRROR_READINESS_REQUIRED",
+        false,
+        &mut validation_errors,
+    );
+    let s3 = s3_storage_config_from_env();
+    let mirror = mirror_storage_config_from_env(&s3);
 
     Config {
         validation_errors,
@@ -1774,7 +2068,20 @@ fn config_from_env() -> Config {
         token_pepper_configured,
         registration_bearer: first_env(&["SOUND_RECORDER_REGISTRATION_BEARER"]),
         allow_public_device_registration,
-        s3: s3_storage_config_from_env(),
+        s3,
+        mirror,
+        mirror_readiness_required,
+        mirror_batch_size: env_i64_clamped(
+            "SOUND_RECORDER_MIRROR_BATCH_SIZE",
+            DEFAULT_MIRROR_BATCH_SIZE,
+            1,
+            MAX_MIRROR_BATCH_SIZE,
+        ),
+        mirror_copy_max_attempts: env_i32(
+            "SOUND_RECORDER_MIRROR_COPY_MAX_ATTEMPTS",
+            DEFAULT_MIRROR_COPY_MAX_ATTEMPTS,
+        )
+        .clamp(1, 20),
         ios_app_store_url: first_env(&["SOUND_RECORDER_IOS_APP_STORE_URL"]),
         android_play_store_url: first_env(&["SOUND_RECORDER_ANDROID_PLAY_STORE_URL"]),
         default_retention_hours,
@@ -1950,6 +2257,49 @@ fn supabase_config_from_env() -> SupabaseConfig {
     }
 }
 
+/// Builds one S3-compatible client from a validated storage config, or `None`
+/// when that target is unconfigured/invalid. `role` only labels the log line.
+async fn build_object_storage_client(
+    config: &S3StorageConfig,
+    role: &'static str,
+) -> Option<aws_sdk_s3::Client> {
+    if !config.is_configured() {
+        return None;
+    }
+    let retry_config = RetryConfig::standard().with_max_attempts(config.max_attempts);
+    let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest())
+        .region(Region::new(config.region.clone()))
+        .retry_config(retry_config);
+    if let (Some(access_key_id), Some(secret_access_key)) = (
+        config.access_key_id.as_deref(),
+        config.secret_access_key.as_deref(),
+    ) {
+        loader = loader.credentials_provider(aws_sdk_s3::config::Credentials::new(
+            access_key_id,
+            secret_access_key,
+            config.session_token.clone(),
+            None,
+            "sonus-auris-object-storage",
+        ));
+    }
+    let shared_config = loader.load().await;
+    let mut builder = aws_sdk_s3::config::Builder::from(&shared_config);
+    if let Some(endpoint) = &config.endpoint {
+        builder = builder.endpoint_url(endpoint);
+    }
+    builder = builder.force_path_style(config.force_path_style);
+    info!(
+        role,
+        backend = config.backend.as_str(),
+        region = %config.region,
+        custom_endpoint = config.endpoint.is_some(),
+        force_path_style = config.force_path_style,
+        max_attempts = config.max_attempts,
+        "object storage client configured"
+    );
+    Some(aws_sdk_s3::Client::from_conf(builder.build()))
+}
+
 async fn state_from_config(config: Config) -> AppState {
     for error in &config.validation_errors {
         warn!(error, "service configuration is invalid");
@@ -1960,41 +2310,8 @@ async fn state_from_config(config: Config) -> AppState {
     for error in &config.supabase.validation_errors {
         warn!(error, "Supabase configuration is invalid");
     }
-    let s3 = if config.s3.is_configured() {
-        let retry_config = RetryConfig::standard().with_max_attempts(config.s3.max_attempts);
-        let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest())
-            .region(Region::new(config.s3.region.clone()))
-            .retry_config(retry_config);
-        if let (Some(access_key_id), Some(secret_access_key)) = (
-            config.s3.access_key_id.as_deref(),
-            config.s3.secret_access_key.as_deref(),
-        ) {
-            loader = loader.credentials_provider(aws_sdk_s3::config::Credentials::new(
-                access_key_id,
-                secret_access_key,
-                config.s3.session_token.clone(),
-                None,
-                "sonus-auris-object-storage",
-            ));
-        }
-        let shared_config = loader.load().await;
-        let mut builder = aws_sdk_s3::config::Builder::from(&shared_config);
-        if let Some(endpoint) = &config.s3.endpoint {
-            builder = builder.endpoint_url(endpoint);
-        }
-        builder = builder.force_path_style(config.s3.force_path_style);
-        info!(
-            backend = config.s3.backend.as_str(),
-            region = %config.s3.region,
-            custom_endpoint = config.s3.endpoint.is_some(),
-            force_path_style = config.s3.force_path_style,
-            max_attempts = config.s3.max_attempts,
-            "object storage client configured"
-        );
-        Some(aws_sdk_s3::Client::from_conf(builder.build()))
-    } else {
-        None
-    };
+    let s3 = build_object_storage_client(&config.s3, "primary").await;
+    let mirror = build_object_storage_client(&config.mirror, "mirror").await;
 
     let cloud_sealer = match first_env(&["SOUND_RECORDER_CLOUD_TOKEN_ENCRYPTION_KEY"]) {
         Some(key) => match CloudTokenSealer::from_base64_key(&key) {
@@ -2023,6 +2340,7 @@ async fn state_from_config(config: Config) -> AppState {
     AppState {
         config: Arc::new(config),
         s3,
+        mirror,
         http,
         cloud_sealer,
         supabase,
@@ -2814,6 +3132,15 @@ fn attach_storage_metadata(
         RETENTION_DELETE_CLAIM_ID_META_KEY,
         RETENTION_DELETE_CLAIMED_AT_META_KEY,
         RETENTION_PREVIOUS_STATUS_META_KEY,
+        MIRROR_STATE_META_KEY,
+        MIRROR_CLAIM_ID_META_KEY,
+        MIRROR_CLAIMED_AT_META_KEY,
+        MIRROR_BUCKET_META_KEY,
+        MIRROR_FINGERPRINT_META_KEY,
+        MIRROR_MIRRORED_AT_META_KEY,
+        MIRROR_ATTEMPTS_META_KEY,
+        MIRROR_LAST_ERROR_META_KEY,
+        MIRROR_NEXT_ATTEMPT_AT_META_KEY,
     ] {
         object.remove(key);
     }
@@ -3524,6 +3851,7 @@ async fn healthz(State(state): State<AppState>) -> Json<HealthResponse> {
         storage_versioning_mode: state.config.s3.versioning_mode,
         configuration_valid: state.config.validation_errors.is_empty()
             && state.config.s3.validation_errors.is_empty()
+            && state.config.mirror.validation_errors.is_empty()
             && state.config.supabase.validation_errors.is_empty(),
         token_pepper_configured: state.config.token_pepper_configured,
         registration_configured: state.supabase.is_some()
@@ -3541,6 +3869,14 @@ async fn healthz(State(state): State<AppState>) -> Json<HealthResponse> {
         supabase_ready: None,
         supabase_required: state.config.require_supabase,
         retention_hours: state.config.default_retention_hours,
+        mirror_configured: state.mirror.is_some() && state.config.mirror.is_configured(),
+        mirror_ready: None,
+        mirror_probe_mode: mirror_probe_mode(&state.config.mirror),
+        mirror_backend: (!state.config.mirror.bucket.is_empty())
+            .then(|| state.config.mirror.backend.as_str()),
+        mirror_backend_fingerprint: (!state.config.mirror.bucket.is_empty())
+            .then(|| state.config.mirror.backend_fingerprint.clone()),
+        mirror_readiness_required: state.config.mirror_readiness_required,
     })
 }
 
@@ -3553,6 +3889,63 @@ async fn postgres_is_reachable(state: &AppState) -> bool {
         tokio::time::timeout(POSTGRES_PROBE_TIMEOUT, client.simple_query("select 1")).await,
         Ok(Ok(_))
     )
+}
+
+fn mirror_probe_mode(config: &S3StorageConfig) -> &'static str {
+    if config.bucket.is_empty() {
+        "unconfigured"
+    } else if config.readiness_object_key.is_some() {
+        "head_object"
+    } else {
+        "head_probe_not_found_ok"
+    }
+}
+
+/// `None` when no mirror is intended; otherwise whether the mirror target is
+/// reachable with the configured credentials.
+async fn mirror_is_ready(state: &AppState) -> Option<bool> {
+    if state.config.mirror.bucket.is_empty() && state.config.mirror.validation_errors.is_empty() {
+        return None;
+    }
+    let Some(mirror) = state.mirror.as_ref() else {
+        return Some(false);
+    };
+    if let Some(key) = state.config.mirror.readiness_object_key.as_deref() {
+        return Some(matches!(
+            tokio::time::timeout(
+                STORAGE_PROBE_TIMEOUT,
+                mirror
+                    .head_object()
+                    .bucket(&state.config.mirror.bucket)
+                    .key(key)
+                    .send()
+            )
+            .await,
+            Ok(Ok(_))
+        ));
+    }
+    // Without a sentinel object, HeadObject on a never-written probe key still
+    // proves endpoint, credentials, and bucket-level object access: an
+    // authorized miss is a clean 404, while bad credentials, a bad endpoint,
+    // or a missing bucket surface as other errors.
+    let key = format!("{}/.mirror-readiness-probe", state.config.mirror.key_prefix);
+    let result = tokio::time::timeout(
+        STORAGE_PROBE_TIMEOUT,
+        mirror
+            .head_object()
+            .bucket(&state.config.mirror.bucket)
+            .key(key)
+            .send(),
+    )
+    .await;
+    Some(match result {
+        Ok(Ok(_)) => true,
+        Ok(Err(err)) => err
+            .as_service_error()
+            .map(|service_error| service_error.is_not_found())
+            .unwrap_or(false),
+        Err(_) => false,
+    })
 }
 
 async fn storage_is_ready(state: &AppState) -> bool {
@@ -3741,16 +4134,33 @@ async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
             None
         }
     };
-    let (postgres_reachable, storage_ready, storage_history_compatible, supabase_ready) = tokio::join!(
+    let (
+        postgres_reachable,
+        storage_ready,
+        storage_history_compatible,
+        supabase_ready,
+        mirror_ready,
+    ) = tokio::join!(
         postgres_is_reachable(&state),
         storage_is_ready(&state),
         storage_history_is_compatible(&state),
-        supabase_probe
+        supabase_probe,
+        mirror_is_ready(&state)
     );
     let registration_configured = state.supabase.is_some()
         || state.config.registration_bearer.is_some()
         || state.config.allow_public_device_registration;
     let supabase_accounts_configured = state.config.supabase.account_features_configured();
+    // A configured-but-invalid mirror always fails readiness (misconfiguration
+    // must be caught at rollout); a probe failure of a valid mirror only fails
+    // readiness when the operator opted into gating on the backup target.
+    let mirror_intended =
+        !state.config.mirror.bucket.is_empty() || !state.config.mirror.validation_errors.is_empty();
+    let mirror_ok = state.config.mirror.validation_errors.is_empty()
+        && (!mirror_intended || state.mirror.is_some())
+        && (!state.config.mirror_readiness_required
+            || !mirror_intended
+            || mirror_ready == Some(true));
     let ready = state.config.database_url.is_some()
         && postgres_reachable
         && state.config.validation_errors.is_empty()
@@ -3758,6 +4168,7 @@ async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
         && state.config.s3.is_configured()
         && storage_ready
         && storage_history_compatible
+        && mirror_ok
         && state.config.token_pepper_configured
         && registration_configured
         && state.config.server_auth_secret.is_some()
@@ -3785,6 +4196,7 @@ async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
             storage_versioning_mode: state.config.s3.versioning_mode,
             configuration_valid: state.config.validation_errors.is_empty()
                 && state.config.s3.validation_errors.is_empty()
+                && state.config.mirror.validation_errors.is_empty()
                 && state.config.supabase.validation_errors.is_empty(),
             token_pepper_configured: state.config.token_pepper_configured,
             registration_configured,
@@ -3800,6 +4212,14 @@ async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
             supabase_ready,
             supabase_required: state.config.require_supabase,
             retention_hours: state.config.default_retention_hours,
+            mirror_configured: state.mirror.is_some() && state.config.mirror.is_configured(),
+            mirror_ready,
+            mirror_probe_mode: mirror_probe_mode(&state.config.mirror),
+            mirror_backend: (!state.config.mirror.bucket.is_empty())
+                .then(|| state.config.mirror.backend.as_str()),
+            mirror_backend_fingerprint: (!state.config.mirror.bucket.is_empty())
+                .then(|| state.config.mirror.backend_fingerprint.clone()),
+            mirror_readiness_required: state.config.mirror_readiness_required,
         }),
     )
 }
@@ -4223,13 +4643,13 @@ async fn delete_account_storage_objects(
     require_storage_history_compatible(state).await?;
     let rows = client
         .query(
-            "select storage_bucket, storage_key
+            "select storage_bucket, storage_key, meta_data->>($2::text) as mirror_bucket
              from sound_recorder_segments
              where account_id = $1::uuid
                and storage_bucket <> ''
                and storage_key <> ''
              order by storage_bucket, storage_key",
-            &[&account_id],
+            &[&account_id, &MIRROR_BUCKET_META_KEY],
         )
         .await
         .map_err(db_error)?;
@@ -4241,57 +4661,106 @@ async fn delete_account_storage_objects(
         .as_ref()
         .ok_or_else(|| ServiceError::Unavailable("S3 client is not configured".to_string()))?;
     let mut by_bucket: HashMap<String, Vec<String>> = HashMap::new();
+    let mut mirror_by_bucket: HashMap<String, Vec<String>> = HashMap::new();
+    let mut has_mirror_copies = false;
     for row in rows {
+        let key: String = row.get("storage_key");
+        let recorded_mirror: Option<String> = row.get("mirror_bucket");
+        if let Some(mirror_bucket) = recorded_mirror.filter(|value| !value.is_empty()) {
+            has_mirror_copies = true;
+            mirror_by_bucket
+                .entry(mirror_bucket)
+                .or_default()
+                .push(key.clone());
+        } else if !state.config.mirror.bucket.is_empty() {
+            // No bookkeeping, but a mirror is configured: erase the same key
+            // defensively (idempotent) in case a copy's meta_data update was
+            // lost between the mirror PUT and the bookkeeping write.
+            mirror_by_bucket
+                .entry(state.config.mirror.bucket.clone())
+                .or_default()
+                .push(key.clone());
+        }
         by_bucket
             .entry(row.get("storage_bucket"))
             .or_default()
-            .push(row.get("storage_key"));
+            .push(key);
+    }
+    // Account deletion is an erasure guarantee: refuse to report success while
+    // a recorded backup copy exists that we have no client to delete with.
+    if has_mirror_copies && state.mirror.is_none() {
+        warn!(
+            account_id,
+            "account has mirrored segments but no mirror storage client is configured"
+        );
+        return Err(ServiceError::Unavailable(
+            "mirrored account objects cannot be deleted; mirror storage is not configured"
+                .to_string(),
+        ));
     }
     let mut deleted = 0u64;
     for (bucket, keys) in by_bucket {
-        for chunk in keys.chunks(1000) {
-            let objects = chunk
-                .iter()
-                .map(|key| {
-                    ObjectIdentifier::builder().key(key).build().map_err(|_| {
-                        ServiceError::Internal(
-                            "failed to build object deletion request".to_string(),
-                        )
-                    })
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            let delete = Delete::builder()
-                .set_objects(Some(objects))
-                .quiet(true)
-                .build()
-                .map_err(|_| {
-                    ServiceError::Internal("failed to build object deletion request".to_string())
-                })?;
-            let output = tokio::time::timeout(
-                STORAGE_OBJECT_TIMEOUT,
-                s3.delete_objects().bucket(&bucket).delete(delete).send(),
-            )
-            .await
-            .map_err(|_| {
-                warn!(account_id, "account object deletion timed out");
-                ServiceError::Unavailable("account object deletion timed out".to_string())
-            })?
-            .map_err(|err| {
-                warn!(error = %err, account_id, "account object deletion failed");
-                ServiceError::Unavailable("account object deletion failed".to_string())
-            })?;
-            if !output.errors().is_empty() {
-                warn!(
-                    account_id,
-                    failures = output.errors().len(),
-                    "account object deletion returned per-object failures"
-                );
-                return Err(ServiceError::Unavailable(
-                    "one or more account objects could not be deleted".to_string(),
-                ));
-            }
-            deleted = deleted.saturating_add(chunk.len() as u64);
+        deleted =
+            deleted.saturating_add(delete_objects_in_bucket(s3, &bucket, &keys, account_id).await?);
+    }
+    if let Some(mirror) = state.mirror.as_ref() {
+        for (bucket, keys) in mirror_by_bucket {
+            delete_objects_in_bucket(mirror, &bucket, &keys, account_id).await?;
         }
+    }
+    Ok(deleted)
+}
+
+/// Batch-deletes `keys` from `bucket`, failing if any per-object delete fails.
+/// DeleteObjects on missing keys succeeds, so callers may pass defensive
+/// candidates that were never actually written.
+async fn delete_objects_in_bucket(
+    client: &aws_sdk_s3::Client,
+    bucket: &str,
+    keys: &[String],
+    account_id: &str,
+) -> Result<u64, ServiceError> {
+    let mut deleted = 0u64;
+    for chunk in keys.chunks(1000) {
+        let objects = chunk
+            .iter()
+            .map(|key| {
+                ObjectIdentifier::builder().key(key).build().map_err(|_| {
+                    ServiceError::Internal("failed to build object deletion request".to_string())
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let delete = Delete::builder()
+            .set_objects(Some(objects))
+            .quiet(true)
+            .build()
+            .map_err(|_| {
+                ServiceError::Internal("failed to build object deletion request".to_string())
+            })?;
+        let output = tokio::time::timeout(
+            STORAGE_OBJECT_TIMEOUT,
+            client.delete_objects().bucket(bucket).delete(delete).send(),
+        )
+        .await
+        .map_err(|_| {
+            warn!(account_id, "account object deletion timed out");
+            ServiceError::Unavailable("account object deletion timed out".to_string())
+        })?
+        .map_err(|err| {
+            warn!(error = %err, account_id, "account object deletion failed");
+            ServiceError::Unavailable("account object deletion failed".to_string())
+        })?;
+        if !output.errors().is_empty() {
+            warn!(
+                account_id,
+                failures = output.errors().len(),
+                "account object deletion returned per-object failures"
+            );
+            return Err(ServiceError::Unavailable(
+                "one or more account objects could not be deleted".to_string(),
+            ));
+        }
+        deleted = deleted.saturating_add(chunk.len() as u64);
     }
     Ok(deleted)
 }
@@ -6754,6 +7223,7 @@ async fn retention_sweep(
              from candidates
              where s.id = candidates.id and s.pinned_at is null
              returning s.id::text, s.storage_bucket, s.storage_key,
+                       s.meta_data->>($7::text) as mirror_bucket,
                        candidates.previous_status",
             &[
                 &SWEEP_BATCH,
@@ -6762,6 +7232,7 @@ async fn retention_sweep(
                 &RETENTION_DELETE_CLAIMED_AT_META_KEY,
                 &RETENTION_PREVIOUS_STATUS_META_KEY,
                 &claim_id,
+                &MIRROR_BUCKET_META_KEY,
             ],
         )
         .await
@@ -6778,8 +7249,9 @@ async fn retention_sweep(
         let id: String = row.get("id");
         let bucket: String = row.get("storage_bucket");
         let key: String = row.get("storage_key");
+        let mirror_bucket: Option<String> = row.get("mirror_bucket");
         let previous_status: String = row.get("previous_status");
-        let deleted = if bucket.is_empty() || key.is_empty() {
+        let primary_deleted = if bucket.is_empty() || key.is_empty() {
             true
         } else if let Some(s3) = state.s3.as_ref() {
             match tokio::time::timeout(
@@ -6811,6 +7283,40 @@ async fn retention_sweep(
             );
             false
         };
+        // Retention is a physical-erasure guarantee, so a row only finalizes
+        // once the backup copy is gone too. A recorded mirror copy with no
+        // mirror client keeps the row claimed (and retried) instead of
+        // silently leaving audio behind in the mirror bucket.
+        let mirror_deleted = if !primary_deleted || key.is_empty() {
+            primary_deleted
+        } else {
+            let recorded_bucket = mirror_bucket.as_deref().filter(|value| !value.is_empty());
+            match (recorded_bucket, state.mirror.as_ref()) {
+                (None, None) => true,
+                // No bookkeeping but a mirror is configured: delete the same
+                // key defensively. DeleteObject on a missing key succeeds, and
+                // this covers a copy whose meta_data update was lost between
+                // the mirror PUT and the bookkeeping write.
+                (None, Some(mirror)) => {
+                    delete_mirror_object(mirror, &state.config.mirror.bucket, &key, &id).await
+                }
+                (Some(recorded), Some(mirror)) => {
+                    delete_mirror_object(mirror, recorded, &key, &id).await
+                }
+                (Some(recorded), None) => {
+                    warn!(
+                        segment_id = id,
+                        mirror_bucket = recorded,
+                        "retention mirror delete skipped; mirror client unavailable"
+                    );
+                    false
+                }
+            }
+        };
+        if primary_deleted && !mirror_deleted {
+            delete_failures += 1;
+        }
+        let deleted = primary_deleted && mirror_deleted;
         if deleted {
             expired += client
                 .execute(
@@ -6885,6 +7391,381 @@ async fn retention_sweep(
         expired_segments: expired,
         deleted_objects,
         delete_failures,
+    }))
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MirrorDrainResponse {
+    ok: bool,
+    attempted: u64,
+    mirrored: u64,
+    failed: u64,
+    skipped: u64,
+}
+
+/// Exponential retry backoff for failed mirror copies, capped at one hour.
+fn mirror_retry_backoff(attempts: i32) -> ChronoDuration {
+    let exponent = attempts.clamp(0, 6) as u32;
+    let seconds = 60_i64.saturating_mul(1_i64 << exponent).min(3600);
+    ChronoDuration::seconds(seconds)
+}
+
+/// Idempotently deletes one mirror copy; DeleteObject on a missing key
+/// succeeds, so `true` means "no mirror copy remains at this bucket/key".
+async fn delete_mirror_object(
+    mirror: &aws_sdk_s3::Client,
+    bucket: &str,
+    key: &str,
+    segment_id: &str,
+) -> bool {
+    match tokio::time::timeout(
+        STORAGE_OBJECT_TIMEOUT,
+        mirror.delete_object().bucket(bucket).key(key).send(),
+    )
+    .await
+    {
+        Ok(Ok(_)) => true,
+        Ok(Err(err)) => {
+            warn!(error = %err, segment_id, "mirror object delete failed");
+            false
+        }
+        Err(_) => {
+            warn!(segment_id, "mirror object delete timed out");
+            false
+        }
+    }
+}
+
+async fn download_object_bytes(
+    state: &AppState,
+    segment_id: &str,
+    bucket: &str,
+    key: &str,
+) -> Result<Vec<u8>, ServiceError> {
+    let s3 = state
+        .s3
+        .as_ref()
+        .ok_or_else(|| ServiceError::Unavailable("S3 client is not configured".to_string()))?;
+    let object = tokio::time::timeout(
+        STORAGE_OBJECT_TIMEOUT,
+        s3.get_object().bucket(bucket).key(key).send(),
+    )
+    .await
+    .map_err(|_| ServiceError::Unavailable("primary object download timed out".to_string()))?
+    .map_err(|err| {
+        warn!(error = %err, segment_id, "primary object download failed");
+        ServiceError::Unavailable("primary object download failed".to_string())
+    })?;
+    let bytes = tokio::time::timeout(STORAGE_OBJECT_TIMEOUT, object.body.collect())
+        .await
+        .map_err(|_| ServiceError::Unavailable("primary object body read timed out".to_string()))?
+        .map_err(|err| {
+            warn!(error = %err, segment_id, "primary object body read failed");
+            ServiceError::Unavailable("primary object body read failed".to_string())
+        })?;
+    Ok(bytes.into_bytes().to_vec())
+}
+
+/// The primary-store location and recorded integrity expectations of one
+/// claimed segment awaiting a mirror copy.
+struct MirrorCopySource<'a> {
+    segment_id: &'a str,
+    bucket: &'a str,
+    key: &'a str,
+    content_type: &'a str,
+    byte_count: Option<i32>,
+    sha256_hex: Option<&'a str>,
+}
+
+/// Copies one claimed segment from the primary store into the mirror bucket
+/// under the same account-scoped key, verifying size and (when recorded)
+/// SHA-256 before the copy so a corrupted or tampered primary object can never
+/// silently poison the backup.
+async fn mirror_copy_segment(
+    state: &AppState,
+    mirror: &aws_sdk_s3::Client,
+    source: &MirrorCopySource<'_>,
+) -> Result<(), ServiceError> {
+    let MirrorCopySource {
+        segment_id,
+        bucket,
+        key,
+        content_type,
+        byte_count,
+        sha256_hex,
+    } = *source;
+    let bytes = download_object_bytes(state, segment_id, bucket, key).await?;
+    if let Some(expected) = byte_count {
+        if bytes.len() as i64 != expected as i64 {
+            return Err(ServiceError::Internal(format!(
+                "primary object size {} does not match recorded byteCount {expected}",
+                bytes.len()
+            )));
+        }
+    }
+    if let Some(expected) = sha256_hex.filter(|value| !value.is_empty()) {
+        let digest = Sha256::digest(&bytes);
+        let actual = digest
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        if !actual.eq_ignore_ascii_case(expected) {
+            return Err(ServiceError::Internal(
+                "primary object SHA-256 does not match the recorded segment hash".to_string(),
+            ));
+        }
+    }
+    let mut request = mirror
+        .put_object()
+        .bucket(&state.config.mirror.bucket)
+        .key(key)
+        .content_type(content_type)
+        .content_length(bytes.len() as i64)
+        .body(ByteStream::from(bytes));
+    if state.config.mirror.send_sse_aes256 {
+        request = request.server_side_encryption(ServerSideEncryption::Aes256);
+    }
+    tokio::time::timeout(STORAGE_OBJECT_TIMEOUT, request.send())
+        .await
+        .map_err(|_| ServiceError::Unavailable("mirror object upload timed out".to_string()))?
+        .map_err(|err| {
+            warn!(error = %err, segment_id, "mirror object upload failed");
+            ServiceError::Unavailable("mirror object upload failed".to_string())
+        })?;
+    Ok(())
+}
+
+/// Server-side backup job: copies settled (`uploaded`) segments from the
+/// primary object store into the configured mirror (e.g. Cloudflare R2 next to
+/// AWS S3) and records per-segment mirror state in `meta_data`. Cron-driven
+/// like the retention sweep — each call drains one bounded batch, claims rows
+/// with a reclaimable lease, and the cron re-invokes until nothing is left.
+async fn mirror_drain(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<MirrorDrainResponse>, ServiceError> {
+    require_internal_auth(&state.config, &headers)?;
+    if !state.config.mirror.is_configured() {
+        return Err(ServiceError::Unavailable(
+            "mirror storage is not configured".to_string(),
+        ));
+    }
+    let Some(mirror) = state.mirror.clone() else {
+        return Err(ServiceError::Unavailable(
+            "mirror storage client is not configured".to_string(),
+        ));
+    };
+    require_storage_history_compatible(&state).await?;
+    let client = db_conn(&state).await?;
+    let claim_id = Uuid::new_v4().to_string();
+    // meta_data values on legacy rows may predate the server-owned strip list,
+    // so every cast is guarded by a CASE + format check instead of trusting
+    // client-influenced text to be a number or timestamp.
+    let rows = client
+        .query(
+            "with candidates as (
+               select id
+               from sound_recorder_segments
+               where status = 'uploaded'
+                 and storage_bucket <> ''
+                 and storage_key <> ''
+                 and meta_data->>($2::text) is distinct from 'mirrored'
+                 and case
+                   when meta_data->>($2::text) is distinct from 'copying' then true
+                   when coalesce(meta_data->>($4::text), '') !~ '^\\d{4}-\\d{2}-\\d{2}' then true
+                   else (meta_data->>($4::text))::timestamptz < now() - ($9::text)::interval
+                 end
+                 and case
+                   when coalesce(meta_data->>($5::text), '') ~ '^\\d{1,9}$'
+                     then (meta_data->>($5::text))::int < $6
+                   else true
+                 end
+                 and case
+                   when coalesce(meta_data->>($7::text), '') !~ '^\\d{4}-\\d{2}-\\d{2}' then true
+                   else (meta_data->>($7::text))::timestamptz <= now()
+                 end
+               order by uploaded_at asc nulls last
+               limit $1
+               for update skip locked
+             )
+             update sound_recorder_segments s
+             set meta_data = coalesce(s.meta_data, '{}'::jsonb) || jsonb_build_object(
+                   $2::text, 'copying',
+                   $3::text, $8::text,
+                   $4::text, now()
+                 ),
+                 updated_at = now()
+             from candidates
+             where s.id = candidates.id
+             returning s.id::text, s.storage_bucket, s.storage_key, s.content_type,
+                       s.byte_count, s.sha256_hex,
+                       case
+                         when coalesce(s.meta_data->>($5::text), '') ~ '^\\d{1,9}$'
+                           then (s.meta_data->>($5::text))::int
+                         else 0
+                       end as attempts,
+                       s.meta_data->>($10::text) as storage_fingerprint",
+            &[
+                &state.config.mirror_batch_size,
+                &MIRROR_STATE_META_KEY,
+                &MIRROR_CLAIM_ID_META_KEY,
+                &MIRROR_CLAIMED_AT_META_KEY,
+                &MIRROR_ATTEMPTS_META_KEY,
+                &state.config.mirror_copy_max_attempts,
+                &MIRROR_NEXT_ATTEMPT_AT_META_KEY,
+                &claim_id,
+                &MIRROR_CLAIM_LEASE,
+                &STORAGE_FINGERPRINT_META_KEY,
+            ],
+        )
+        .await
+        .map_err(db_error)?;
+
+    let mut mirrored: u64 = 0;
+    let mut failed: u64 = 0;
+    let mut skipped: u64 = 0;
+    for row in &rows {
+        let id: String = row.get("id");
+        let bucket: String = row.get("storage_bucket");
+        let key: String = row.get("storage_key");
+        let content_type: String = row.get("content_type");
+        let byte_count: Option<i32> = row.get("byte_count");
+        let sha256_hex: Option<String> = row.get("sha256_hex");
+        let attempts: i32 = row.get("attempts");
+        let storage_fingerprint: Option<String> = row.get("storage_fingerprint");
+        // A row from a different (unacknowledged) backend must not be copied:
+        // the primary client would read the wrong store. Release the claim
+        // without consuming an attempt.
+        if !storage_record_is_compatible(&state.config.s3, storage_fingerprint.as_deref()) {
+            skipped += 1;
+            client
+                .execute(
+                    "update sound_recorder_segments
+                     set meta_data = coalesce(meta_data, '{}'::jsonb)
+                           - $3::text - $4::text - $5::text,
+                         updated_at = now()
+                     where id = $1::uuid and meta_data->>($4::text) = $2",
+                    &[
+                        &id,
+                        &claim_id,
+                        &MIRROR_STATE_META_KEY,
+                        &MIRROR_CLAIM_ID_META_KEY,
+                        &MIRROR_CLAIMED_AT_META_KEY,
+                    ],
+                )
+                .await
+                .map_err(db_error)?;
+            continue;
+        }
+        let copy_result = mirror_copy_segment(
+            &state,
+            &mirror,
+            &MirrorCopySource {
+                segment_id: &id,
+                bucket: &bucket,
+                key: &key,
+                content_type: &content_type,
+                byte_count,
+                sha256_hex: sha256_hex.as_deref(),
+            },
+        )
+        .await;
+        match copy_result {
+            Ok(()) => {
+                mirrored += 1;
+                MIRROR_COPIES.with_label_values(&["mirrored"]).inc();
+                client
+                    .execute(
+                        "update sound_recorder_segments
+                         set meta_data = (coalesce(meta_data, '{}'::jsonb)
+                               - $3::text - $4::text - $5::text - $6::text - $7::text)
+                             || jsonb_build_object(
+                               $8::text, 'mirrored',
+                               $9::text, now(),
+                               $10::text, $11::text,
+                               $12::text, $13::text
+                             ),
+                             updated_at = now()
+                         where id = $1::uuid and meta_data->>($4::text) = $2",
+                        &[
+                            &id,
+                            &claim_id,
+                            &MIRROR_CLAIMED_AT_META_KEY,
+                            &MIRROR_CLAIM_ID_META_KEY,
+                            &MIRROR_ATTEMPTS_META_KEY,
+                            &MIRROR_LAST_ERROR_META_KEY,
+                            &MIRROR_NEXT_ATTEMPT_AT_META_KEY,
+                            &MIRROR_STATE_META_KEY,
+                            &MIRROR_MIRRORED_AT_META_KEY,
+                            &MIRROR_BUCKET_META_KEY,
+                            &state.config.mirror.bucket,
+                            &MIRROR_FINGERPRINT_META_KEY,
+                            &state.config.mirror.backend_fingerprint,
+                        ],
+                    )
+                    .await
+                    .map_err(db_error)?;
+            }
+            Err(error) => {
+                failed += 1;
+                MIRROR_COPIES.with_label_values(&["failed"]).inc();
+                let attempts_next = attempts.saturating_add(1);
+                let next_attempt_at = Utc::now() + mirror_retry_backoff(attempts_next);
+                let message = service_error_message(&error);
+                warn!(segment_id = id, attempts = attempts_next, error = %message, "segment mirror copy failed");
+                client
+                    .execute(
+                        "update sound_recorder_segments
+                         set meta_data = (coalesce(meta_data, '{}'::jsonb)
+                               - $3::text - $4::text)
+                             || jsonb_build_object(
+                               $5::text, 'failed',
+                               $6::text, $7,
+                               $8::text, $9::text,
+                               $10::text, $11
+                             ),
+                             updated_at = now()
+                         where id = $1::uuid and meta_data->>($4::text) = $2",
+                        &[
+                            &id,
+                            &claim_id,
+                            &MIRROR_CLAIMED_AT_META_KEY,
+                            &MIRROR_CLAIM_ID_META_KEY,
+                            &MIRROR_STATE_META_KEY,
+                            &MIRROR_ATTEMPTS_META_KEY,
+                            &attempts_next,
+                            &MIRROR_LAST_ERROR_META_KEY,
+                            &message,
+                            &MIRROR_NEXT_ATTEMPT_AT_META_KEY,
+                            &next_attempt_at,
+                        ],
+                    )
+                    .await
+                    .map_err(db_error)?;
+            }
+        }
+    }
+    audit_event(
+        &client,
+        None,
+        None,
+        "sound_recorder.mirror.drained",
+        json!({
+            "attempted": rows.len() as u64,
+            "mirrored": mirrored,
+            "failed": failed,
+            "skipped": skipped,
+        }),
+    )
+    .await;
+    record_request("POST", "/internal/storage-mirror/drain", StatusCode::OK);
+    Ok(Json(MirrorDrainResponse {
+        ok: true,
+        attempted: rows.len() as u64,
+        mirrored,
+        failed,
+        skipped,
     }))
 }
 
@@ -7774,6 +8655,7 @@ fn app(state: AppState) -> Router {
         )
         .route("/internal/retention/sweep", post(retention_sweep))
         .route("/internal/cloud-copy/drain", post(drain_cloud_copy_jobs))
+        .route("/internal/storage-mirror/drain", post(mirror_drain))
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .route("/metrics", get(metrics))
@@ -8125,6 +9007,29 @@ mod tests {
                 backend: ObjectStorageBackend::AmazonS3,
                 validation_errors: Vec::new(),
             },
+            mirror: S3StorageConfig {
+                bucket: String::new(),
+                key_prefix: "sound-recorder/segments".to_string(),
+                cdn_base_url: None,
+                region: "auto".to_string(),
+                endpoint: None,
+                force_path_style: false,
+                send_sse_aes256: false,
+                max_attempts: DEFAULT_S3_MAX_ATTEMPTS,
+                readiness_object_key: None,
+                allow_signing_only_readiness: false,
+                allow_unmarked_storage_history: false,
+                backend_fingerprint: String::new(),
+                versioning_mode: "unversioned",
+                access_key_id: None,
+                secret_access_key: None,
+                session_token: None,
+                backend: ObjectStorageBackend::S3Compatible,
+                validation_errors: Vec::new(),
+            },
+            mirror_readiness_required: false,
+            mirror_batch_size: DEFAULT_MIRROR_BATCH_SIZE,
+            mirror_copy_max_attempts: DEFAULT_MIRROR_COPY_MAX_ATTEMPTS,
             ios_app_store_url: None,
             android_play_store_url: None,
             default_retention_hours: DEFAULT_RETENTION_HOURS,
@@ -8206,6 +9111,7 @@ mod tests {
         AppState {
             config: Arc::new(config),
             s3: None,
+            mirror: None,
             http: reqwest::Client::builder()
                 .timeout(Duration::from_secs(5))
                 .build()
@@ -8751,6 +9657,74 @@ mod tests {
         assert!(unmarked_history_acknowledgment(true, Some("old"), "current").is_err());
     }
 
+    #[test]
+    fn mirror_metadata_is_server_owned() {
+        let config = test_config().s3;
+        let meta = attach_storage_metadata(
+            json!({
+                MIRROR_STATE_META_KEY: "mirrored",
+                MIRROR_BUCKET_META_KEY: "attacker-bucket",
+                MIRROR_FINGERPRINT_META_KEY: "forged",
+                MIRROR_ATTEMPTS_META_KEY: "not-a-number",
+                MIRROR_CLAIM_ID_META_KEY: "stolen-claim",
+                "client": "kept"
+            }),
+            &config.backend_fingerprint,
+        )
+        .unwrap();
+        for key in [
+            MIRROR_STATE_META_KEY,
+            MIRROR_BUCKET_META_KEY,
+            MIRROR_FINGERPRINT_META_KEY,
+            MIRROR_ATTEMPTS_META_KEY,
+            MIRROR_CLAIM_ID_META_KEY,
+        ] {
+            assert!(
+                meta.get(key).is_none(),
+                "client-supplied {key} must be stripped"
+            );
+        }
+        assert_eq!(meta.get("client").and_then(Value::as_str), Some("kept"));
+    }
+
+    #[test]
+    fn mirror_must_target_a_different_store_than_primary() {
+        let primary = test_config().s3;
+        let mut mirror = primary.clone();
+        assert!(mirror_targets_conflict(&primary, &mirror));
+        mirror.bucket = "backup-bucket".to_string();
+        mirror.backend_fingerprint = storage_backend_fingerprint(
+            mirror.backend,
+            mirror.endpoint.as_deref(),
+            &mirror.region,
+            &mirror.bucket,
+        );
+        assert!(!mirror_targets_conflict(&primary, &mirror));
+        // An unconfigured mirror never conflicts.
+        mirror.bucket = String::new();
+        assert!(!mirror_targets_conflict(&primary, &mirror));
+    }
+
+    #[test]
+    fn mirror_retry_backoff_grows_and_caps() {
+        assert_eq!(mirror_retry_backoff(0), ChronoDuration::seconds(60));
+        assert_eq!(mirror_retry_backoff(1), ChronoDuration::seconds(120));
+        assert_eq!(mirror_retry_backoff(3), ChronoDuration::seconds(480));
+        assert_eq!(mirror_retry_backoff(6), ChronoDuration::seconds(3600));
+        assert_eq!(mirror_retry_backoff(100), ChronoDuration::seconds(3600));
+        assert_eq!(mirror_retry_backoff(-5), ChronoDuration::seconds(60));
+    }
+
+    #[test]
+    fn mirror_probe_mode_reflects_configuration() {
+        let mut mirror = test_config().mirror;
+        assert_eq!(mirror_probe_mode(&mirror), "unconfigured");
+        mirror.bucket = "backup-bucket".to_string();
+        assert_eq!(mirror_probe_mode(&mirror), "head_probe_not_found_ok");
+        mirror.readiness_object_key = Some("sound-recorder/segments/.sentinel".to_string());
+        assert_eq!(mirror_probe_mode(&mirror), "head_object");
+    }
+
     #[tokio::test]
     async fn sentinel_readiness_performs_remote_head_object() {
         let (endpoint, requests, handle) = spawn_json_server("");
@@ -9006,7 +9980,7 @@ mod tests {
             "2026-07-13T00:00:00Z".to_string(),
         );
         assert_eq!(row.preferred_use_case, "security");
-        assert_eq!(row.device_retention_hours, 50);
+        assert_eq!(row.device_retention_hours, 100);
         assert_eq!(row.capture_sample_rate, 48_000);
         assert_eq!(row.quiet_sample_rate, 16_000);
         assert_eq!(row.user_id, "11111111-1111-1111-1111-111111111111");
