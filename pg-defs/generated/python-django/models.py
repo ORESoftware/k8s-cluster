@@ -1165,8 +1165,8 @@ class DesSoccerLearningSetPlayRuns(models.Model):
 
 
 class DesSoccerLearningSetPlayRestartMix(models.Model):
-    run_id = models.UUIDField()
-    ordinal = models.IntegerField(validators=[MinValueValidator(0)])
+    run_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    ordinal = models.IntegerField(primary_key=True, validators=[MinValueValidator(0)])
     restart = models.CharField(max_length=40, choices=[("direct-free-kick", "direct-free-kick"), ("indirect-free-kick", "indirect-free-kick")])
 
     class Meta:
@@ -1176,8 +1176,8 @@ class DesSoccerLearningSetPlayRestartMix(models.Model):
 
 
 class DesSoccerLearningSetPlayEpisodeMetrics(models.Model):
-    run_id = models.UUIDField()
-    episode_index = models.IntegerField(validators=[MinValueValidator(0)])
+    run_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    episode_index = models.IntegerField(primary_key=True, validators=[MinValueValidator(0)])
     seed = models.BigIntegerField(validators=[MinValueValidator(0)])
     restart = models.CharField(max_length=40, choices=[("direct-free-kick", "direct-free-kick"), ("indirect-free-kick", "indirect-free-kick")])
     routine = models.CharField(max_length=80, null=True, blank=True)

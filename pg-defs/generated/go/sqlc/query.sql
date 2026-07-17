@@ -785,31 +785,31 @@ delete from des_soccer_learning_set_play_runs where run_id = $1;
 select run_id, ordinal, restart from des_soccer_learning_set_play_restart_mix;
 
 -- name: GetDesSoccerLearningSetPlayRestartMix :one
-select run_id, ordinal, restart from des_soccer_learning_set_play_restart_mix where id = $1 limit 1;
+select run_id, ordinal, restart from des_soccer_learning_set_play_restart_mix where run_id = $1 limit 1;
 
 -- name: CreateDesSoccerLearningSetPlayRestartMix :one
 insert into des_soccer_learning_set_play_restart_mix (run_id, ordinal, restart) values ($1, $2, $3) returning run_id, ordinal, restart;
 
 -- name: UpdateDesSoccerLearningSetPlayRestartMix :one
-update des_soccer_learning_set_play_restart_mix set run_id = $2, ordinal = $3, restart = $4 where id = $1 returning run_id, ordinal, restart;
+update des_soccer_learning_set_play_restart_mix set restart = $2 where run_id = $1 returning run_id, ordinal, restart;
 
 -- name: DeleteDesSoccerLearningSetPlayRestartMix :exec
-delete from des_soccer_learning_set_play_restart_mix where id = $1;
+delete from des_soccer_learning_set_play_restart_mix where run_id = $1;
 
 -- name: ListDesSoccerLearningSetPlayEpisodeMetrics :many
 select run_id, episode_index, seed, restart, routine, scored, score_delta_for_team, ticks, simulated_seconds_micros, policy_updates, home_policy_entries, home_policy_target_entries, away_policy_entries, away_policy_target_entries, neural_training_steps, neural_samples, neural_replay_samples, neural_last_loss_micros, cumulative_goals, goal_rate_so_far_micros from des_soccer_learning_set_play_episode_metrics;
 
 -- name: GetDesSoccerLearningSetPlayEpisodeMetrics :one
-select run_id, episode_index, seed, restart, routine, scored, score_delta_for_team, ticks, simulated_seconds_micros, policy_updates, home_policy_entries, home_policy_target_entries, away_policy_entries, away_policy_target_entries, neural_training_steps, neural_samples, neural_replay_samples, neural_last_loss_micros, cumulative_goals, goal_rate_so_far_micros from des_soccer_learning_set_play_episode_metrics where id = $1 limit 1;
+select run_id, episode_index, seed, restart, routine, scored, score_delta_for_team, ticks, simulated_seconds_micros, policy_updates, home_policy_entries, home_policy_target_entries, away_policy_entries, away_policy_target_entries, neural_training_steps, neural_samples, neural_replay_samples, neural_last_loss_micros, cumulative_goals, goal_rate_so_far_micros from des_soccer_learning_set_play_episode_metrics where run_id = $1 limit 1;
 
 -- name: CreateDesSoccerLearningSetPlayEpisodeMetrics :one
 insert into des_soccer_learning_set_play_episode_metrics (run_id, episode_index, seed, restart, routine, scored, score_delta_for_team, ticks, simulated_seconds_micros, policy_updates, home_policy_entries, home_policy_target_entries, away_policy_entries, away_policy_target_entries, neural_training_steps, neural_samples, neural_replay_samples, neural_last_loss_micros, cumulative_goals, goal_rate_so_far_micros) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) returning run_id, episode_index, seed, restart, routine, scored, score_delta_for_team, ticks, simulated_seconds_micros, policy_updates, home_policy_entries, home_policy_target_entries, away_policy_entries, away_policy_target_entries, neural_training_steps, neural_samples, neural_replay_samples, neural_last_loss_micros, cumulative_goals, goal_rate_so_far_micros;
 
 -- name: UpdateDesSoccerLearningSetPlayEpisodeMetrics :one
-update des_soccer_learning_set_play_episode_metrics set run_id = $2, episode_index = $3, seed = $4, restart = $5, routine = $6, scored = $7, score_delta_for_team = $8, ticks = $9, simulated_seconds_micros = $10, policy_updates = $11, home_policy_entries = $12, home_policy_target_entries = $13, away_policy_entries = $14, away_policy_target_entries = $15, neural_training_steps = $16, neural_samples = $17, neural_replay_samples = $18, neural_last_loss_micros = $19, cumulative_goals = $20, goal_rate_so_far_micros = $21 where id = $1 returning run_id, episode_index, seed, restart, routine, scored, score_delta_for_team, ticks, simulated_seconds_micros, policy_updates, home_policy_entries, home_policy_target_entries, away_policy_entries, away_policy_target_entries, neural_training_steps, neural_samples, neural_replay_samples, neural_last_loss_micros, cumulative_goals, goal_rate_so_far_micros;
+update des_soccer_learning_set_play_episode_metrics set seed = $2, restart = $3, routine = $4, scored = $5, score_delta_for_team = $6, ticks = $7, simulated_seconds_micros = $8, policy_updates = $9, home_policy_entries = $10, home_policy_target_entries = $11, away_policy_entries = $12, away_policy_target_entries = $13, neural_training_steps = $14, neural_samples = $15, neural_replay_samples = $16, neural_last_loss_micros = $17, cumulative_goals = $18, goal_rate_so_far_micros = $19 where run_id = $1 returning run_id, episode_index, seed, restart, routine, scored, score_delta_for_team, ticks, simulated_seconds_micros, policy_updates, home_policy_entries, home_policy_target_entries, away_policy_entries, away_policy_target_entries, neural_training_steps, neural_samples, neural_replay_samples, neural_last_loss_micros, cumulative_goals, goal_rate_so_far_micros;
 
 -- name: DeleteDesSoccerLearningSetPlayEpisodeMetrics :exec
-delete from des_soccer_learning_set_play_episode_metrics where id = $1;
+delete from des_soccer_learning_set_play_episode_metrics where run_id = $1;
 
 -- name: ListDesSoccerLearningNeuralRunMetrics :many
 select run_id, policy_version_id, enabled, backend, training_steps, samples, pending_batches, dropped_batches, replay_samples, replay_capacity, parameter_count, target_clip_micros, last_loss_micros, average_loss_micros, created_at from des_soccer_learning_neural_run_metrics;

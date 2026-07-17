@@ -2225,7 +2225,9 @@ function renderDieselCargo() {
     '',
     '[dependencies]',
     'chrono = { version = "0.4", features = ["serde"] }',
-    'diesel = { version = "2", features = ["postgres", "uuid", "serde_json", "chrono"] }',
+    // 64-column-tables: music_songs (45 cols) and benefactor_scrape_queries (43) exceed
+    // diesel's default 32-column table! limit.
+    'diesel = { version = "2", features = ["postgres", "uuid", "serde_json", "chrono", "64-column-tables"] }',
     'serde = { version = "1", features = ["derive"] }',
     'serde_json = "1"',
     'uuid = { version = "1", features = ["serde"] }',
@@ -2313,11 +2315,14 @@ function renderSeaOrmRust(contract) {
         : `#[sea_orm(table_name = ${JSON.stringify(table.name)})]`;
     lines.push(seaOrmTableAttr);
     lines.push('pub struct Model {');
+    const primaryKeyCount = table.columns.filter((column) => column.primaryKey).length;
     for (const column of table.columns) {
       const attrs = [];
       if (column.primaryKey) {
         attrs.push('primary_key');
-        if (column.sqlType === 'uuid') {
+        // Composite keys are never auto-increment; sea-orm defaults integer PKs to
+        // auto_increment = true, which mis-models `primary key (a, b)` tables.
+        if (column.sqlType === 'uuid' || primaryKeyCount > 1) {
           attrs.push('auto_increment = false');
         }
       }

@@ -4720,8 +4720,10 @@ class DesSoccerLearningSetPlayRestartMixObjectBox {
   @Id()
   int obxId = 0;
 
+  @Unique()
   String runId;
 
+  @Unique()
   int ordinal;
 
   String restart;
@@ -4753,8 +4755,10 @@ class DesSoccerLearningSetPlayEpisodeMetricsObjectBox {
   @Id()
   int obxId = 0;
 
+  @Unique()
   String runId;
 
+  @Unique()
   int episodeIndex;
 
   int seed;

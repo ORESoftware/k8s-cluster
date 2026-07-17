@@ -1013,6 +1013,8 @@ object DesSoccerLearningSetPlayRestartMix : Table("des_soccer_learning_set_play_
     val runId = uuid("run_id")
     val ordinal = integer("ordinal")
     val restart = varchar("restart", 40)
+
+    override val primaryKey = PrimaryKey(runId, ordinal)
 }
 
 object DesSoccerLearningSetPlayEpisodeMetrics : Table("des_soccer_learning_set_play_episode_metrics") {
@@ -1036,6 +1038,8 @@ object DesSoccerLearningSetPlayEpisodeMetrics : Table("des_soccer_learning_set_p
     val neuralLastLossMicros = long("neural_last_loss_micros").nullable()
     val cumulativeGoals = integer("cumulative_goals")
     val goalRateSoFarMicros = long("goal_rate_so_far_micros")
+
+    override val primaryKey = PrimaryKey(runId, episodeIndex)
 }
 
 object DesSoccerLearningNeuralRunMetrics : Table("des_soccer_learning_neural_run_metrics") {

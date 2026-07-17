@@ -1538,16 +1538,17 @@ class DesSoccerLearningSetPlayRuns extends Model
 class DesSoccerLearningSetPlayRestartMix extends Model
 {
     protected $table = 'des_soccer_learning_set_play_restart_mix';
+    protected $primaryKey = 'run_id';
+    public $incrementing = false;
+    protected $keyType = 'string';
     public $timestamps = false;
-    protected $fillable = ['run_id', 'ordinal', 'restart'];
+    protected $fillable = ['restart'];
     protected $casts = ['ordinal' => 'integer'];
 
     /** @return array<string, array<int, string>> */
     public static function rules(): array
     {
         return [
-            'run_id' => ['required', 'uuid'],
-            'ordinal' => ['required', 'integer', 'min:0'],
             'restart' => ['required', 'string', 'in:direct-free-kick,indirect-free-kick'],
         ];
     }
@@ -1556,16 +1557,17 @@ class DesSoccerLearningSetPlayRestartMix extends Model
 class DesSoccerLearningSetPlayEpisodeMetrics extends Model
 {
     protected $table = 'des_soccer_learning_set_play_episode_metrics';
+    protected $primaryKey = 'run_id';
+    public $incrementing = false;
+    protected $keyType = 'string';
     public $timestamps = false;
-    protected $fillable = ['run_id', 'episode_index', 'seed', 'restart', 'routine', 'scored', 'score_delta_for_team', 'ticks', 'simulated_seconds_micros', 'policy_updates', 'home_policy_entries', 'home_policy_target_entries', 'away_policy_entries', 'away_policy_target_entries', 'neural_training_steps', 'neural_samples', 'neural_replay_samples', 'neural_last_loss_micros', 'cumulative_goals', 'goal_rate_so_far_micros'];
+    protected $fillable = ['seed', 'restart', 'routine', 'scored', 'score_delta_for_team', 'ticks', 'simulated_seconds_micros', 'policy_updates', 'home_policy_entries', 'home_policy_target_entries', 'away_policy_entries', 'away_policy_target_entries', 'neural_training_steps', 'neural_samples', 'neural_replay_samples', 'neural_last_loss_micros', 'cumulative_goals', 'goal_rate_so_far_micros'];
     protected $casts = ['episode_index' => 'integer', 'seed' => 'integer', 'scored' => 'boolean', 'score_delta_for_team' => 'integer', 'ticks' => 'integer', 'simulated_seconds_micros' => 'integer', 'policy_updates' => 'integer', 'home_policy_entries' => 'integer', 'home_policy_target_entries' => 'integer', 'away_policy_entries' => 'integer', 'away_policy_target_entries' => 'integer', 'neural_training_steps' => 'integer', 'neural_samples' => 'integer', 'neural_replay_samples' => 'integer', 'neural_last_loss_micros' => 'integer', 'cumulative_goals' => 'integer', 'goal_rate_so_far_micros' => 'integer'];
 
     /** @return array<string, array<int, string>> */
     public static function rules(): array
     {
         return [
-            'run_id' => ['required', 'uuid'],
-            'episode_index' => ['required', 'integer', 'min:0'],
             'seed' => ['required', 'integer', 'min:0'],
             'restart' => ['required', 'string', 'in:direct-free-kick,indirect-free-kick'],
             'routine' => ['nullable', 'string', 'max:80'],

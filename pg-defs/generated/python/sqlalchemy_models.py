@@ -4718,8 +4718,8 @@ class DesSoccerLearningSetPlayRestartMix(Base):
         CheckConstraint("restart in ('direct-free-kick', 'indirect-free-kick')", name="des_soccer_learning_set_play_restart_mix_restart_chk"),
     )
 
-    run_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
-    ordinal: Mapped[int] = mapped_column(Integer(), nullable=False)
+    run_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
+    ordinal: Mapped[int] = mapped_column(Integer(), primary_key=True)
     restart: Mapped[str] = mapped_column(String(40), nullable=False)
 
 class DesSoccerLearningSetPlayRestartMixRow(BaseModel):
@@ -4754,8 +4754,8 @@ class DesSoccerLearningSetPlayEpisodeMetrics(Base):
         Index("des_soccer_learning_set_play_episode_restart_idx", "restart", "scored", "episode_index"),
     )
 
-    run_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
-    episode_index: Mapped[int] = mapped_column(Integer(), nullable=False)
+    run_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
+    episode_index: Mapped[int] = mapped_column(Integer(), primary_key=True)
     seed: Mapped[int] = mapped_column(BigInteger(), nullable=False)
     restart: Mapped[str] = mapped_column(String(40), nullable=False)
     routine: Mapped[str | None] = mapped_column(String(80), nullable=True)

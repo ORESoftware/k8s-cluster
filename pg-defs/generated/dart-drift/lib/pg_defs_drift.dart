@@ -1401,18 +1401,20 @@ class DesSoccerLearningSetPlayRunsTable extends Table {
 class DesSoccerLearningSetPlayRestartMixTable extends Table {
   @override String get tableName => "des_soccer_learning_set_play_restart_mix";
 
-  @override bool get withoutRowId => true;
-
   TextColumn get runId => text().named("run_id").customConstraint("UUID")();
   IntColumn get ordinal => integer().named("ordinal")();
   TextColumn get restart => text().named("restart")();
+
+  @override
+  Set<Column> get primaryKey => {
+        runId,
+        ordinal,
+  };
 }
 
 @DataClassName("DesSoccerLearningSetPlayEpisodeMetricsData")
 class DesSoccerLearningSetPlayEpisodeMetricsTable extends Table {
   @override String get tableName => "des_soccer_learning_set_play_episode_metrics";
-
-  @override bool get withoutRowId => true;
 
   TextColumn get runId => text().named("run_id").customConstraint("UUID")();
   IntColumn get episodeIndex => integer().named("episode_index")();
@@ -1434,6 +1436,12 @@ class DesSoccerLearningSetPlayEpisodeMetricsTable extends Table {
   Int64Column get neuralLastLossMicros => int64().named("neural_last_loss_micros").nullable()();
   IntColumn get cumulativeGoals => integer().named("cumulative_goals")();
   Int64Column get goalRateSoFarMicros => int64().named("goal_rate_so_far_micros")();
+
+  @override
+  Set<Column> get primaryKey => {
+        runId,
+        episodeIndex,
+  };
 }
 
 @DataClassName("DesSoccerLearningNeuralRunMetricsData")

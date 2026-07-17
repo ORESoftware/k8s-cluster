@@ -3121,9 +3121,13 @@ public class DesSoccerLearningSetPlayRuns
 [Table("des_soccer_learning_set_play_restart_mix")]
 public class DesSoccerLearningSetPlayRestartMix
 {
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
     [Column("run_id")]
     public Guid RunId { get; set; }
 
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
     [Column("ordinal")]
     [Range(0, 2147483647)]
     public int Ordinal { get; set; }
@@ -3138,9 +3142,13 @@ public class DesSoccerLearningSetPlayRestartMix
 [Table("des_soccer_learning_set_play_episode_metrics")]
 public class DesSoccerLearningSetPlayEpisodeMetrics
 {
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
     [Column("run_id")]
     public Guid RunId { get; set; }
 
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
     [Column("episode_index")]
     [Range(0, 2147483647)]
     public int EpisodeIndex { get; set; }

@@ -2536,10 +2536,10 @@ export class DesSoccerLearningSetPlayRunsEntity {
 
 @Entity({ name: "des_soccer_learning_set_play_restart_mix" })
 export class DesSoccerLearningSetPlayRestartMixEntity {
-  @Column({ name: "run_id", type: "uuid" })
+  @PrimaryColumn({ name: "run_id", type: "uuid" })
   runId!: string;
 
-  @Column({ name: "ordinal", type: "integer" })
+  @PrimaryColumn({ name: "ordinal", type: "integer" })
   ordinal!: number;
 
   @Column({ name: "restart", type: "varchar", length: 40 })
@@ -2550,10 +2550,10 @@ export class DesSoccerLearningSetPlayRestartMixEntity {
 @Index("des_soccer_learning_set_play_episode_restart_idx", ["restart", "scored", "episodeIndex"])
 @Entity({ name: "des_soccer_learning_set_play_episode_metrics" })
 export class DesSoccerLearningSetPlayEpisodeMetricsEntity {
-  @Column({ name: "run_id", type: "uuid" })
+  @PrimaryColumn({ name: "run_id", type: "uuid" })
   runId!: string;
 
-  @Column({ name: "episode_index", type: "integer" })
+  @PrimaryColumn({ name: "episode_index", type: "integer" })
   episodeIndex!: number;
 
   @Column({ name: "seed", type: "bigint" })

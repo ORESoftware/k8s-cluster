@@ -882,20 +882,16 @@ module DdPgDefs
 
   class DesSoccerLearningSetPlayRestartMix < ActiveRecord::Base
     self.table_name = "des_soccer_learning_set_play_restart_mix"
+    self.primary_key = "run_id"
 
-    validates :run_id, presence: true
-    validates :ordinal, presence: true
-    validates :ordinal, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
     validates :restart, presence: true
     validates :restart, inclusion: { in: ["direct-free-kick", "indirect-free-kick"] }
   end
 
   class DesSoccerLearningSetPlayEpisodeMetrics < ActiveRecord::Base
     self.table_name = "des_soccer_learning_set_play_episode_metrics"
+    self.primary_key = "run_id"
 
-    validates :run_id, presence: true
-    validates :episode_index, presence: true
-    validates :episode_index, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
     validates :seed, presence: true
     validates :seed, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
     validates :restart, presence: true

@@ -15,10 +15,12 @@ import java.util.UUID;
 @Entity
 @Table(name = "des_soccer_learning_set_play_episode_metrics")
 public class DesSoccerLearningSetPlayEpisodeMetricsEntity {
-    @Column(name = "run_id", nullable = false)
+    @Id
+    @Column(name = "run_id")
     private UUID runId;
 
-    @Column(name = "episode_index", nullable = false)
+    @Id
+    @Column(name = "episode_index")
     private Integer episodeIndex;
 
     @Column(name = "seed", nullable = false)

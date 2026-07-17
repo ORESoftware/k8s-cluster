@@ -2834,8 +2834,8 @@ var DesSoccerLearningSetPlayRestartMixRestartValues = []string{"direct-free-kick
 
 type DesSoccerLearningSetPlayRestartMixBun struct {
 	bun.BaseModel `bun:"table:des_soccer_learning_set_play_restart_mix"`
-	RunId uuid.UUID `bun:"run_id,type:uuid" json:"runId"`
-	Ordinal int32 `bun:"ordinal,type:integer" json:"ordinal"`
+	RunId uuid.UUID `bun:"run_id,type:uuid,pk" json:"runId"`
+	Ordinal int32 `bun:"ordinal,type:integer,pk" json:"ordinal"`
 	Restart string `bun:"restart,type:varchar(40)" json:"restart"`
 }
 
@@ -2873,8 +2873,8 @@ var DesSoccerLearningSetPlayEpisodeMetricsRestartValues = []string{"direct-free-
 
 type DesSoccerLearningSetPlayEpisodeMetricsBun struct {
 	bun.BaseModel `bun:"table:des_soccer_learning_set_play_episode_metrics"`
-	RunId uuid.UUID `bun:"run_id,type:uuid" json:"runId"`
-	EpisodeIndex int32 `bun:"episode_index,type:integer" json:"episodeIndex"`
+	RunId uuid.UUID `bun:"run_id,type:uuid,pk" json:"runId"`
+	EpisodeIndex int32 `bun:"episode_index,type:integer,pk" json:"episodeIndex"`
 	Seed int64 `bun:"seed,type:bigint" json:"seed"`
 	Restart string `bun:"restart,type:varchar(40)" json:"restart"`
 	Routine *string `bun:"routine,type:varchar(80),nullzero" json:"routine,omitempty"`

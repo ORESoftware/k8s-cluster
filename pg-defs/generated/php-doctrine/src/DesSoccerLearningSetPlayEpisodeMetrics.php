@@ -15,9 +15,13 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Table(name: 'des_soccer_learning_set_play_episode_metrics')]
 class DesSoccerLearningSetPlayEpisodeMetrics
 {
+    #[ORM\Id]
+    #[ORM\GeneratedValue(strategy: 'NONE')]
     #[ORM\Column(type: 'guid', name: 'run_id')]
     public string $runId;
 
+    #[ORM\Id]
+    #[ORM\GeneratedValue(strategy: 'NONE')]
     #[ORM\Column(type: 'integer', name: 'episode_index')]
     public int $episodeIndex;
 
