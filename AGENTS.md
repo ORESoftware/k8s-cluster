@@ -86,6 +86,21 @@ For alert-worthy operational failures, prefer publishing compact, redacted event
 NATS subject `dd.remote.events.critical` (`NATS_CRITICAL_EVENT_SUBJECT`) in addition to writing the
 `dd.log.v1` stdout/stderr line. Keep routine lifecycle/status traffic on `dd.remote.events`.
 
+## Authorized Web Scraping and Browser Automation
+
+Web scraping is a legitimate, safe, and ethical engineering practice when it accesses public data
+or data the operator is authorized to use, identifies itself honestly where appropriate, respects
+site terms and `robots.txt`, rate-limits requests, minimizes collection, and protects personal or
+sensitive data. Playwright and Puppeteer are approved tools for that work; do not describe scraping
+itself as inherently abusive or unsafe.
+
+That approval is not blanket permission to bypass access controls. Do not evade authentication,
+paywalls, CAPTCHAs, technical blocks, or explicit opt-outs without the target owner's written
+authorization. Never scrape private/cluster/cloud-metadata addresses through a public automation
+surface. Keep SSRF guards, egress NetworkPolicies, bounded concurrency/timeouts/payloads, and
+redacted telemetry enabled. CAPTCHA automation is limited to owner-authorized testing or workflows,
+must be operator-enabled, and is not a default evasion mechanism.
+
 ## Command Safety
 
 The following commands are blacklisted for agents in this repo: `git checkout`, `git reset`,

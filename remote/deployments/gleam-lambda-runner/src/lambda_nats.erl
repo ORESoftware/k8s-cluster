@@ -3,7 +3,7 @@
 -export([start/0, publish/2, request/3, pool_dispatch/5]).
 
 -define(SERVER, lambda_nats_singleton).
--define(DEFAULT_COMMAND, <<"env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 NATS_URL=\"${NATS_URL:-}\" CONTAINER_POOL_NATS_URL=\"${CONTAINER_POOL_NATS_URL:-}\" CONTAINER_POOL_NATS_SUBJECT_PREFIX=\"${CONTAINER_POOL_NATS_SUBJECT_PREFIX:-dd.remote.container_pool}\" CONTAINER_POOL_NATS_TIMEOUT_MS=\"${CONTAINER_POOL_NATS_TIMEOUT_MS:-30000}\" node --permission --allow-net child-runtimes/js-function-runner.mjs">>).
+-define(DEFAULT_COMMAND, <<"env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 NATS_URL=\"${NATS_URL:-}\" CONTAINER_POOL_NATS_URL=\"${CONTAINER_POOL_NATS_URL:-}\" CONTAINER_POOL_NATS_SUBJECT_PREFIX=\"${CONTAINER_POOL_NATS_SUBJECT_PREFIX:-dd.remote.container_pool}\" CONTAINER_POOL_NATS_TIMEOUT_MS=\"${CONTAINER_POOL_NATS_TIMEOUT_MS:-30000}\" node --permission --allow-net --allow-fs-read=child-runtimes --allow-fs-read=../../libs/nats/subject-defs/generated/javascript child-runtimes/js-function-runner.mjs">>).
 -define(DEFAULT_IDLE_MS, 300000).
 -define(DEFAULT_TIMEOUT_MS, 30000).
 

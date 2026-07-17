@@ -3,9 +3,9 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "build-server-rs",
   "language": "rust",
-  "routeCount": 12,
+  "routeCount": 13,
   "routeTypeCounts": {
-    "service": 6,
+    "service": 7,
     "user-generated": 3,
     "runtime-config": 3
   },
@@ -215,6 +215,23 @@
       "purpose": "Prometheus metrics.",
       "handlers": [
         "metrics"
+      ],
+      "sourceFiles": [
+        "remote/deployments/build-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/readyz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Readiness check.",
+      "handlers": [
+        "readyz"
       ],
       "sourceFiles": [
         "remote/deployments/build-server-rs/src/main.rs"

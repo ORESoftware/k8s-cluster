@@ -423,7 +423,7 @@ supported_runtime(Runtime) ->
 host_command(<<"nodejs">>) ->
     host_command_from_env(
         "LAMBDA_NODEJS_HOST_COMMAND",
-        <<"env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 NATS_URL=\"${NATS_URL:-}\" CONTAINER_POOL_NATS_URL=\"${CONTAINER_POOL_NATS_URL:-}\" CONTAINER_POOL_NATS_SUBJECT_PREFIX=\"${CONTAINER_POOL_NATS_SUBJECT_PREFIX:-dd.remote.container_pool}\" CONTAINER_POOL_NATS_TIMEOUT_MS=\"${CONTAINER_POOL_NATS_TIMEOUT_MS:-30000}\" node --permission --allow-net child-runtimes/js-function-runner.mjs">>
+        <<"env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 NATS_URL=\"${NATS_URL:-}\" CONTAINER_POOL_NATS_URL=\"${CONTAINER_POOL_NATS_URL:-}\" CONTAINER_POOL_NATS_SUBJECT_PREFIX=\"${CONTAINER_POOL_NATS_SUBJECT_PREFIX:-dd.remote.container_pool}\" CONTAINER_POOL_NATS_TIMEOUT_MS=\"${CONTAINER_POOL_NATS_TIMEOUT_MS:-30000}\" node --permission --allow-net --allow-fs-read=child-runtimes --allow-fs-read=../../libs/nats/subject-defs/generated/javascript child-runtimes/js-function-runner.mjs">>
     );
 host_command(<<"python3">>) ->
     host_command_from_env(
@@ -465,23 +465,42 @@ container_command(Runtime, DefinitionJson) ->
             %% CRI plugin and so periodic reapers can target our containers safely.
             Namespace = env_binary("LAMBDA_CONTAINER_NAMESPACE", <<"dd-lambda">>),
             Network = env_binary("LAMBDA_CONTAINER_NETWORK", <<"bridge">>),
-            Memory = env_binary("LAMBDA_CONTAINER_MEMORY", <<"256m">>),
-            Cpus = env_binary("LAMBDA_CONTAINER_CPUS", <<"0.50">>),
+            BrowserAutomation = Runtime =:= <<"nodejs">> andalso
+                json_bool_field(DefinitionJson, <<"browserAutomation">>, false),
+            Memory = case BrowserAutomation of
+                true -> env_binary("LAMBDA_BROWSER_CONTAINER_MEMORY", <<"1g">>);
+                false -> env_binary("LAMBDA_CONTAINER_MEMORY", <<"256m">>)
+            end,
+            MemoryBytes = case BrowserAutomation of
+                true -> env_binary("LAMBDA_BROWSER_CONTAINER_MEMORY_BYTES", <<"1073741824">>);
+                false -> env_binary("LAMBDA_CONTAINER_MEMORY_BYTES", <<"268435456">>)
+            end,
+            Cpus = case BrowserAutomation of
+                true -> env_binary("LAMBDA_BROWSER_CONTAINER_CPUS", <<"1.0">>);
+                false -> env_binary("LAMBDA_CONTAINER_CPUS", <<"0.50">>)
+            end,
+            TmpfsSize = case BrowserAutomation of
+                true -> env_binary("LAMBDA_BROWSER_CONTAINER_TMPFS_SIZE", <<"256m">>);
+                false -> env_binary("LAMBDA_CONTAINER_TMPFS_SIZE", <<"16m">>)
+            end,
+            PidsLimit = case BrowserAutomation of
+                true -> env_binary("LAMBDA_BROWSER_CONTAINER_PIDS_LIMIT", <<"256">>);
+                false -> env_binary("LAMBDA_CONTAINER_PIDS_LIMIT", <<"64">>)
+            end,
             TimeoutSecs = env_binary("LAMBDA_CONTAINER_INVOKE_TIMEOUT_SECONDS", <<"120">>),
             case env_binary("LAMBDA_CONTAINER_RUNNER", <<"nerdctl">>) of
                 <<"ctr">> ->
                     Ctr = env_binary("LAMBDA_CONTAINER_CTR", <<"/usr/local/bin/ctr">>),
-                    MemoryBytes = env_binary("LAMBDA_CONTAINER_MEMORY_BYTES", <<"268435456">>),
-                    {ok, wrap_with_timeout(TimeoutSecs, ctr_container_command(Ctr, Namespace, Network, MemoryBytes, Cpus, Image, Runtime))};
+                    {ok, wrap_with_timeout(TimeoutSecs, ctr_container_command(Ctr, Namespace, Network, MemoryBytes, Cpus, TmpfsSize, Image, Runtime))};
                 <<"docker">> ->
                     Docker = env_binary("LAMBDA_CONTAINER_DOCKER", <<"/usr/bin/docker">>),
-                    {ok, wrap_with_timeout(TimeoutSecs, docker_cli_container_command(Docker, Network, Memory, Cpus, Image))};
+                    {ok, wrap_with_timeout(TimeoutSecs, docker_cli_container_command(Docker, Network, Memory, Cpus, TmpfsSize, PidsLimit, Image))};
                 <<"podman">> ->
                     Podman = env_binary("LAMBDA_CONTAINER_PODMAN", <<"/usr/bin/podman">>),
-                    {ok, wrap_with_timeout(TimeoutSecs, docker_cli_container_command(Podman, Network, Memory, Cpus, Image))};
+                    {ok, wrap_with_timeout(TimeoutSecs, docker_cli_container_command(Podman, Network, Memory, Cpus, TmpfsSize, PidsLimit, Image))};
                 <<"nerdctl">> ->
                     Nerdctl = env_binary("LAMBDA_CONTAINER_NERDCTL", <<"/usr/local/bin/nerdctl">>),
-                    {ok, wrap_with_timeout(TimeoutSecs, nerdctl_container_command(Nerdctl, Namespace, Network, Memory, Cpus, Image))};
+                    {ok, wrap_with_timeout(TimeoutSecs, nerdctl_container_command(Nerdctl, Namespace, Network, Memory, Cpus, TmpfsSize, PidsLimit, Image))};
                 Other ->
                     %% Fail closed: an unrecognized runner (typo, stale config) must not
                     %% silently fall back to a different runtime than the operator set.
@@ -513,39 +532,39 @@ safe_timeout_value(Value0) ->
         nomatch -> error
     end.
 
-nerdctl_container_command(Nerdctl, Namespace, Network, Memory, Cpus, Image) ->
+nerdctl_container_command(Nerdctl, Namespace, Network, Memory, Cpus, TmpfsSize, PidsLimit, Image) ->
     %% nerdctl is Docker-CLI compatible but scopes everything to a containerd
     %% namespace via `-n`, which docker/podman do not have.
     iolist_to_binary([
         shell_word(Nerdctl),
         " -n ", shell_word(Namespace),
-        docker_compatible_run_args(Network, Memory, Cpus, Image)
+        docker_compatible_run_args(Network, Memory, Cpus, TmpfsSize, PidsLimit, Image)
     ]).
 
 %% Shared by the Docker-CLI compatible runners (docker, podman). Same flag
 %% surface as nerdctl, minus the containerd `-n <namespace>` selector.
-docker_cli_container_command(Binary, Network, Memory, Cpus, Image) ->
+docker_cli_container_command(Binary, Network, Memory, Cpus, TmpfsSize, PidsLimit, Image) ->
     iolist_to_binary([
         shell_word(Binary),
-        docker_compatible_run_args(Network, Memory, Cpus, Image)
+        docker_compatible_run_args(Network, Memory, Cpus, TmpfsSize, PidsLimit, Image)
     ]).
 
-docker_compatible_run_args(Network, Memory, Cpus, Image) ->
+docker_compatible_run_args(Network, Memory, Cpus, TmpfsSize, PidsLimit, Image) ->
     [
         " run --rm -i --pull=never --read-only",
-        " --tmpfs /tmp:rw,noexec,nosuid,size=16m",
+        " --tmpfs ", shell_word(iolist_to_binary(["/tmp:rw,noexec,nosuid,size=", TmpfsSize])),
         " --network ", shell_word(Network),
         " --user 10001:10001",
         " --cap-drop ALL",
         " --security-opt no-new-privileges",
-        " --pids-limit 64",
+        " --pids-limit ", shell_word(PidsLimit),
         " --ulimit nofile=64:64",
         " --memory ", shell_word(Memory),
         " --cpus ", shell_word(Cpus),
         " ", shell_word(Image)
     ].
 
-ctr_container_command(Ctr, Namespace, Network, MemoryBytes, Cpus, Image, Runtime) ->
+ctr_container_command(Ctr, Namespace, Network, MemoryBytes, Cpus, TmpfsSize, Image, Runtime) ->
     ContainerId = iolist_to_binary(["dd-lambda-", Runtime, "-$(date +%s%N)-$$"]),
     iolist_to_binary([
         shell_word(Ctr),
@@ -553,7 +572,7 @@ ctr_container_command(Ctr, Namespace, Network, MemoryBytes, Cpus, Image, Runtime
         " run --rm",
         ctr_network_args(Network),
         " --read-only",
-        " --mount type=tmpfs,dst=/tmp,options=rw:noexec:nosuid:size=16m",
+        " --mount ", shell_word(iolist_to_binary(["type=tmpfs,dst=/tmp,options=rw:noexec:nosuid:size=", TmpfsSize])),
         " --user 10001:10001",
         ctr_cap_drop_args(),
         " --seccomp",

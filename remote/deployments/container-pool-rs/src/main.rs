@@ -108,6 +108,7 @@ struct ServiceConfig {
     app_config_scope: String,
     nats_url: Option<String>,
     nats_subject: String,
+    nats_queue_group: String,
     nats_result_subject: String,
     nats_max_payload_bytes: usize,
     redis_url: Option<String>,
@@ -594,22 +595,29 @@ fn service_config_from_env() -> ServiceConfig {
     let network = env_value("CONTAINER_POOL_NETWORK", "host");
     let engine_raw = env_value("CONTAINER_POOL_ENGINE", "nerdctl");
     let engine = EngineKind::parse(&engine_raw);
+    let nats_queue_group_raw = env_value("CONTAINER_POOL_NATS_QUEUE_GROUP", "dd-container-pool");
+    let nats_queue_group = if safe_nats_queue_group(&nats_queue_group_raw) {
+        nats_queue_group_raw
+    } else {
+        tracing::warn!("invalid CONTAINER_POOL_NATS_QUEUE_GROUP; using dd-container-pool");
+        "dd-container-pool".to_string()
+    };
     if !engine_raw.trim().is_empty() && !engine_value_recognized(&engine_raw) {
-        tracing::error!(
+        tracing::warn!(
             "{SERVICE_NAME} warning: unrecognized CONTAINER_POOL_ENGINE={engine_raw:?}; defaulting to nerdctl"
         );
     }
-    let oci_runtime = match classify_oci_runtime(first_env(&["CONTAINER_POOL_OCI_RUNTIME"]).as_deref())
-    {
-        Ok(value) => value,
-        Err(message) => {
-            tracing::error!(
+    let oci_runtime =
+        match classify_oci_runtime(first_env(&["CONTAINER_POOL_OCI_RUNTIME"]).as_deref()) {
+            Ok(value) => value,
+            Err(message) => {
+                tracing::warn!(
                 "{SERVICE_NAME} warning: {message}; containers will use the engine default OCI \
                  runtime (no --runtime) — this may be weaker isolation than intended"
             );
-            None
-        }
-    };
+                None
+            }
+        };
     ServiceConfig {
         engine,
         engine_bin: first_env(&["CONTAINER_POOL_ENGINE_BIN", "CONTAINER_POOL_NERDCTL_BIN"])
@@ -641,6 +649,7 @@ fn service_config_from_env() -> ServiceConfig {
             "CONTAINER_POOL_NATS_SUBJECT",
             CONTAINER_POOL_REQUESTS_SUBJECT,
         ),
+        nats_queue_group,
         nats_result_subject: env_value(
             "CONTAINER_POOL_NATS_RESULT_SUBJECT",
             CONTAINER_POOL_RESULTS_SUBJECT,
@@ -877,6 +886,16 @@ fn safe_nats_subject(input: &str) -> bool {
         })
 }
 
+fn safe_nats_queue_group(input: &str) -> bool {
+    let bytes = input.as_bytes();
+    !bytes.is_empty()
+        && bytes.len() <= 128
+        && bytes[0].is_ascii_alphanumeric()
+        && bytes
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+}
+
 fn safe_env_value(input: &str) -> bool {
     input.len() <= 8192 && !input.contains('\0')
 }
@@ -1057,7 +1076,9 @@ fn mounts_from_json(value: &Value, slug: &str) -> Result<Vec<Mount>, String> {
         .as_array()
         .ok_or_else(|| format!("container pool {slug} mounts must be an array"))?;
     if array.len() > 16 {
-        return Err(format!("container pool {slug} has too many mounts (max 16)"));
+        return Err(format!(
+            "container pool {slug} has too many mounts (max 16)"
+        ));
     }
     let mut mounts = Vec::with_capacity(array.len());
     for item in array {
@@ -1082,7 +1103,10 @@ fn mounts_from_json(value: &Value, slug: &str) -> Result<Vec<Mount>, String> {
                 "container pool {slug} mount target {target} is reserved"
             ));
         }
-        if mounts.iter().any(|existing: &Mount| existing.target == target) {
+        if mounts
+            .iter()
+            .any(|existing: &Mount| existing.target == target)
+        {
             return Err(format!(
                 "container pool {slug} has duplicate mount target {target}"
             ));
@@ -1208,12 +1232,17 @@ fn classify_oci_runtime(raw: Option<&str>) -> Result<Option<String>, String> {
         None => Ok(None),
         Some(value) if value.trim().is_empty() => Ok(None),
         Some(value) if safe_oci_runtime(value) => Ok(Some(value.to_string())),
-        Some(value) => Err(format!("ignoring invalid CONTAINER_POOL_OCI_RUNTIME={value:?}")),
+        Some(value) => Err(format!(
+            "ignoring invalid CONTAINER_POOL_OCI_RUNTIME={value:?}"
+        )),
     }
 }
 
 fn engine_value_recognized(raw: &str) -> bool {
-    matches!(raw.trim().to_ascii_lowercase().as_str(), "nerdctl" | "docker" | "podman")
+    matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "nerdctl" | "docker" | "podman"
+    )
 }
 
 fn row_string(row: &tokio_postgres::Row, column: &str) -> String {
@@ -1756,7 +1785,13 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
         }
     }
 
-    let args = build_run_args(&state.config, &pool, &container.name, container.port, &container_env)?;
+    let args = build_run_args(
+        &state.config,
+        &pool,
+        &container.name,
+        container.port,
+        &container_env,
+    )?;
 
     let container_run_timeout = state.config.nerdctl_run_timeout;
     let scrubbed_args = args
@@ -1789,7 +1824,7 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
             }
         })
         .collect::<Vec<_>>();
-    tracing::error!(
+    tracing::info!(
         "dd-container-pool {engine} run for {name}: {bin} {scrubbed_args:?}",
         engine = state.config.engine.label(),
         name = container.name,
@@ -1808,7 +1843,7 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
     let worker_fanout_secret_present = container_env.contains_key("WORKER_FANOUT_WS_SECRET")
         || container_env.contains_key("GLEAM_WORKER_WS_SECRET")
         || container_env.contains_key("GLEAM_BROADCAST_SECRET");
-    tracing::error!(
+    tracing::info!(
         "dd-container-pool worker env for {name}: keys={env_keys:?} \
          event_ingest_url={event_ingest_url_present} \
          event_ingest_secret={event_ingest_secret_present} \
@@ -1820,7 +1855,7 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
         Ok(output) => {
             let trimmed = output.trim();
             if !trimmed.is_empty() {
-                tracing::error!(
+                tracing::debug!(
                     "dd-container-pool {engine} run -d output for {name}: {trimmed}",
                     engine = state.config.engine.label(),
                     name = container.name
@@ -1894,7 +1929,12 @@ async fn wait_container_ready(
 async fn remove_container(state: &AppState, name: &str) -> Result<(), String> {
     let mut args = engine_global_args(state.config.engine, &state.config.containerd_namespace);
     args.extend(["rm".to_string(), "-f".to_string(), name.to_string()]);
-    run_command(&state.config.engine_bin, &args, state.config.command_timeout).await?;
+    run_command(
+        &state.config.engine_bin,
+        &args,
+        state.config.command_timeout,
+    )
+    .await?;
     state
         .metrics
         .containers_removed_total
@@ -1945,10 +1985,12 @@ async fn run_command(
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stderr_trimmed = stderr.trim();
         if !stderr_trimmed.is_empty() && args.iter().any(|arg| arg == "run" || arg == "inspect") {
-            tracing::error!(
-                "{program} stderr (exit 0, args={args:?}): {}",
-                stderr_trimmed.chars().take(1500).collect::<String>()
-            );
+            let stderr = stderr_trimmed.chars().take(1500).collect::<String>();
+            if benign_success_stderr(&stderr) {
+                tracing::debug!("{program} benign stderr (exit 0, args={args:?}): {stderr}");
+            } else {
+                tracing::warn!("{program} stderr (exit 0, args={args:?}): {stderr}");
+            }
         }
         return Ok(String::from_utf8_lossy(&output.stdout).to_string());
     }
@@ -1960,6 +2002,13 @@ async fn run_command(
         "{program} exited with {}: {stderr}",
         output.status.code().unwrap_or(-1)
     ))
+}
+
+fn benign_success_stderr(stderr: &str) -> bool {
+    let lower = stderr.to_ascii_lowercase();
+    lower.contains("failed to inspect netns")
+        && lower.contains("/proc/")
+        && lower.contains("no such file or directory")
 }
 
 async fn inspect_container_running(state: &AppState, name: &str) -> Result<bool, String> {
@@ -2886,6 +2935,41 @@ async fn healthz(State(state): State<AppState>) -> impl IntoResponse {
     })
 }
 
+async fn container_pool_ready(state: &AppState) -> bool {
+    let config_ready = {
+        let registry = state.registry.lock().await;
+        registry.last_config_refresh_ms.is_some() && registry.last_config_error.is_none()
+    };
+    let nats_ready = state.nats.as_ref().is_some_and(|client| {
+        matches!(
+            client.connection_state(),
+            async_nats::connection::State::Connected
+        )
+    });
+    config_ready
+        && nats_ready
+        && state.config.server_auth_secret.is_some()
+        && std::path::Path::new(&state.config.engine_bin).exists()
+}
+
+async fn readyz(State(state): State<AppState>) -> Response {
+    let ready = container_pool_ready(&state).await;
+    let status = if ready {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    (
+        status,
+        Json(json!({
+            "ok": ready,
+            "service": SERVICE_NAME,
+            "dependenciesReady": ready,
+        })),
+    )
+        .into_response()
+}
+
 async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
     let registry = state.registry.lock().await;
     let warm = registry.containers.len();
@@ -2904,7 +2988,7 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
         .values()
         .filter(|container| container.status == ContainerStatus::Unhealthy)
         .count();
-    let body = format!(
+    let mut body = format!(
         "# HELP dd_container_pool_http_requests_total HTTP requests observed by dd-container-pool.\n\
          # TYPE dd_container_pool_http_requests_total counter\n\
          dd_container_pool_http_requests_total {}\n\
@@ -2976,6 +3060,13 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
         busy,
         unhealthy
     );
+    drop(registry);
+    body.push_str(&format!(
+        "# HELP dd_container_pool_dependencies_ready Whether config, NATS, auth, and the container engine are available.\n\
+         # TYPE dd_container_pool_dependencies_ready gauge\n\
+         dd_container_pool_dependencies_ready {}\n",
+        u8::from(container_pool_ready(&state).await)
+    ));
     (
         [(
             axum::http::header::CONTENT_TYPE,
@@ -3209,7 +3300,13 @@ async fn run_nats_loop(state: AppState) {
         return;
     };
     loop {
-        let mut subscriber = match client.subscribe(state.config.nats_subject.clone()).await {
+        let mut subscriber = match client
+            .queue_subscribe(
+                state.config.nats_subject.clone(),
+                state.config.nats_queue_group.clone(),
+            )
+            .await
+        {
             Ok(subscriber) => subscriber,
             Err(error) => {
                 tracing::error!("container pool nats subscribe failed: {error}; retrying in 5s");
@@ -3368,6 +3465,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let app = Router::new()
         .route("/healthz", get(healthz))
+        .route("/readyz", get(readyz))
         .route("/docs/api", get(api_docs_html))
         .route("/api/docs", get(api_docs_html))
         .route("/api/docs.json", get(api_docs_json))
@@ -3522,7 +3620,9 @@ mod tests {
         assert!(!mounts[1].read_only);
 
         assert!(mounts_from_json(&json!({}), "svc").unwrap().is_empty());
-        assert!(mounts_from_json(&json!({ "mounts": null }), "svc").unwrap().is_empty());
+        assert!(mounts_from_json(&json!({ "mounts": null }), "svc")
+            .unwrap()
+            .is_empty());
         assert!(mounts_from_json(&json!({ "mounts": "x" }), "svc").is_err());
         assert!(
             mounts_from_json(
@@ -3536,8 +3636,11 @@ mod tests {
             "duplicate target must be rejected"
         );
         assert!(
-            mounts_from_json(&json!({ "mounts": [{ "source": "a", "target": "/proc" }] }), "svc")
-                .is_err(),
+            mounts_from_json(
+                &json!({ "mounts": [{ "source": "a", "target": "/proc" }] }),
+                "svc"
+            )
+            .is_err(),
             "reserved target must be rejected"
         );
     }
@@ -3546,20 +3649,36 @@ mod tests {
     fn enforce_mount_policy_gates_host_paths_and_writes() {
         let allowlist = vec!["/srv/code".to_string()];
 
-        let named_ro = Mount { source: "dd-code".into(), target: "/opt/code".into(), read_only: true };
+        let named_ro = Mount {
+            source: "dd-code".into(),
+            target: "/opt/code".into(),
+            read_only: true,
+        };
         assert!(enforce_mount_policy(&allowlist, false, "svc", &named_ro).is_ok());
 
-        let host_allowed = Mount { source: "/srv/code/bin".into(), target: "/opt/bin".into(), read_only: true };
+        let host_allowed = Mount {
+            source: "/srv/code/bin".into(),
+            target: "/opt/bin".into(),
+            read_only: true,
+        };
         assert!(enforce_mount_policy(&allowlist, false, "svc", &host_allowed).is_ok());
 
         // Host path outside the allowlist is rejected.
-        let host_denied = Mount { source: "/etc".into(), target: "/opt/etc".into(), read_only: true };
+        let host_denied = Mount {
+            source: "/etc".into(),
+            target: "/opt/etc".into(),
+            read_only: true,
+        };
         assert!(enforce_mount_policy(&allowlist, false, "svc", &host_denied).is_err());
         // ...and rejected outright when no allowlist is configured.
         assert!(enforce_mount_policy(&[], false, "svc", &host_allowed).is_err());
 
         // Writable needs the explicit opt-in.
-        let writable = Mount { source: "dd-code".into(), target: "/opt/code".into(), read_only: false };
+        let writable = Mount {
+            source: "dd-code".into(),
+            target: "/opt/code".into(),
+            read_only: false,
+        };
         assert!(enforce_mount_policy(&allowlist, false, "svc", &writable).is_err());
         assert!(enforce_mount_policy(&allowlist, true, "svc", &writable).is_ok());
     }
@@ -3577,6 +3696,7 @@ mod tests {
             app_config_scope: "default".to_string(),
             nats_url: None,
             nats_subject: "dd.remote.container_pool.requests".to_string(),
+            nats_queue_group: "dd-container-pool".to_string(),
             nats_result_subject: "dd.remote.container_pool.results".to_string(),
             nats_max_payload_bytes: 1024,
             redis_url: None,
@@ -3641,18 +3761,54 @@ mod tests {
         // classpath, node/python/ruby/bash sources) and single compiled binaries
         // (go, rust) — all zero-copy, no per-function image build.
         let runtimes: [(&str, &str, &[&str]); 8] = [
-            ("nodejs-fn", "docker.io/library/dd-cp-nodejs:dev", &["node", "/opt/code/server.mjs"]),
-            ("python-fn", "docker.io/library/dd-cp-python3:dev", &["python3", "/opt/code/app.py"]),
-            ("ruby-fn", "docker.io/library/dd-cp-ruby:dev", &["ruby", "/opt/code/app.rb"]),
-            ("bash-fn", "docker.io/library/dd-cp-bash:dev", &["bash", "/opt/code/run.sh"]),
+            (
+                "nodejs-fn",
+                "docker.io/library/dd-cp-nodejs:dev",
+                &["node", "/opt/code/server.mjs"],
+            ),
+            (
+                "python-fn",
+                "docker.io/library/dd-cp-python3:dev",
+                &["python3", "/opt/code/app.py"],
+            ),
+            (
+                "ruby-fn",
+                "docker.io/library/dd-cp-ruby:dev",
+                &["ruby", "/opt/code/app.rb"],
+            ),
+            (
+                "bash-fn",
+                "docker.io/library/dd-cp-bash:dev",
+                &["bash", "/opt/code/run.sh"],
+            ),
             (
                 "erlang-fn",
                 "docker.io/library/dd-cp-erlang:dev",
-                &["erl", "-noshell", "-pa", "/opt/code/ebin", "-s", "myapp", "start"],
+                &[
+                    "erl",
+                    "-noshell",
+                    "-pa",
+                    "/opt/code/ebin",
+                    "-s",
+                    "myapp",
+                    "start",
+                ],
             ),
-            ("golang-fn", "docker.io/library/dd-cp-golang:dev", &["/opt/code/bin/server"]),
-            ("rust-fn", "docker.io/library/dd-cp-rust:dev", &["/opt/code/bin/svc"]),
-            ("java-fn", "docker.io/library/dd-cp-java:dev", &["java", "-cp", "/opt/code/classes", "Main"]),
+            (
+                "golang-fn",
+                "docker.io/library/dd-cp-golang:dev",
+                &["/opt/code/bin/server"],
+            ),
+            (
+                "rust-fn",
+                "docker.io/library/dd-cp-rust:dev",
+                &["/opt/code/bin/svc"],
+            ),
+            (
+                "java-fn",
+                "docker.io/library/dd-cp-java:dev",
+                &["java", "-cp", "/opt/code/classes", "Main"],
+            ),
         ];
         for (slug, image, command) in runtimes {
             let pool = code_pool(slug, image, command);
@@ -3664,20 +3820,34 @@ mod tests {
             );
             let mut tail = vec![image];
             tail.extend_from_slice(command);
-            assert!(tail_is(&args, &tail), "{slug} image+command tail wrong: {args:?}");
+            assert!(
+                tail_is(&args, &tail),
+                "{slug} image+command tail wrong: {args:?}"
+            );
             // Hardening still applies uniformly across runtimes.
             assert!(contains_pair(&args, "--cap-drop", "ALL"), "{slug} cap-drop");
-            assert!(args.iter().any(|arg| arg == "--read-only"), "{slug} read-only");
+            assert!(
+                args.iter().any(|arg| arg == "--read-only"),
+                "{slug} read-only"
+            );
         }
     }
 
     #[test]
     fn engine_kind_controls_namespace_flag() {
-        let pool = code_pool("nodejs-fn", "docker.io/library/x:dev", &["node", "/opt/code/s.mjs"]);
+        let pool = code_pool(
+            "nodejs-fn",
+            "docker.io/library/x:dev",
+            &["node", "/opt/code/s.mjs"],
+        );
 
         let nerd = test_service_config();
         let args = build_run_args(&nerd, &pool, "c1", 1, &BTreeMap::new()).unwrap();
-        assert_eq!(&args[0..4], &["-n", "k8s.io", "run", "-d"], "nerdctl scopes to a namespace");
+        assert_eq!(
+            &args[0..4],
+            &["-n", "k8s.io", "run", "-d"],
+            "nerdctl scopes to a namespace"
+        );
 
         for engine in [EngineKind::Docker, EngineKind::Podman] {
             let mut config = test_service_config();
@@ -3693,16 +3863,28 @@ mod tests {
         let pool = code_pool("svc", "docker.io/library/x:dev", &["/opt/code/bin/app"]);
         // runc/crun and the containerd Kata/gVisor handlers all flow through
         // --runtime under any engine.
-        for runtime in ["runc", "crun", "runsc", "io.containerd.kata.v2", "io.containerd.runsc.v1"] {
+        for runtime in [
+            "runc",
+            "crun",
+            "runsc",
+            "io.containerd.kata.v2",
+            "io.containerd.runsc.v1",
+        ] {
             let mut config = test_service_config();
             config.engine = EngineKind::Docker;
             config.oci_runtime = Some(runtime.to_string());
             let args = build_run_args(&config, &pool, "c1", 1, &BTreeMap::new()).unwrap();
-            assert!(contains_pair(&args, "--runtime", runtime), "{runtime}: {args:?}");
+            assert!(
+                contains_pair(&args, "--runtime", runtime),
+                "{runtime}: {args:?}"
+            );
         }
         let config = test_service_config();
         let args = build_run_args(&config, &pool, "c1", 1, &BTreeMap::new()).unwrap();
-        assert!(!args.iter().any(|arg| arg == "--runtime"), "no --runtime when unset");
+        assert!(
+            !args.iter().any(|arg| arg == "--runtime"),
+            "no --runtime when unset"
+        );
 
         assert!(safe_oci_runtime("crun"));
         assert!(safe_oci_runtime("io.containerd.kata.v2"));
@@ -3719,7 +3901,10 @@ mod tests {
         assert_eq!(classify_oci_runtime(Some("")), Ok(None));
         assert_eq!(classify_oci_runtime(Some("   ")), Ok(None));
         // Valid handlers pass through.
-        assert_eq!(classify_oci_runtime(Some("runsc")), Ok(Some("runsc".to_string())));
+        assert_eq!(
+            classify_oci_runtime(Some("runsc")),
+            Ok(Some("runsc".to_string()))
+        );
         assert_eq!(
             classify_oci_runtime(Some("io.containerd.kata.v2")),
             Ok(Some("io.containerd.kata.v2".to_string()))
@@ -3736,7 +3921,10 @@ mod tests {
             assert!(engine_value_recognized(ok), "{ok} should be recognized");
         }
         for bad in ["dcoker", "lxd", "crio", "containerd-shim"] {
-            assert!(!engine_value_recognized(bad), "{bad} should not be recognized");
+            assert!(
+                !engine_value_recognized(bad),
+                "{bad} should not be recognized"
+            );
         }
         // Parser still falls back to nerdctl for unknown values.
         assert_eq!(EngineKind::parse("dcoker"), EngineKind::Nerdctl);
@@ -3753,7 +3941,10 @@ mod tests {
         // A pool that mounts external code must still be confined.
         let pool = code_pool("svc", "docker.io/library/x:dev", &["/opt/code/app"]);
         let args = build_run_args(&config, &pool, "c1", 1, &BTreeMap::new()).unwrap();
-        assert!(contains_pair(&args, "--cap-drop", "ALL"), "mounted pool must drop caps: {args:?}");
+        assert!(
+            contains_pair(&args, "--cap-drop", "ALL"),
+            "mounted pool must drop caps: {args:?}"
+        );
         assert!(
             contains_pair(&args, "--security-opt", "no-new-privileges"),
             "mounted pool must set no-new-privileges: {args:?}"
@@ -3775,7 +3966,10 @@ mod tests {
         }))
         .unwrap();
         let args = build_run_args(&config, &pool, "c1", 1, &BTreeMap::new()).unwrap();
-        assert!(!args.iter().any(|a| a == "--cap-drop"), "unconfined opts out of cap-drop: {args:?}");
+        assert!(
+            !args.iter().any(|a| a == "--cap-drop"),
+            "unconfined opts out of cap-drop: {args:?}"
+        );
         assert!(
             !args.iter().any(|a| a == "--security-opt"),
             "unconfined opts out of no-new-privileges: {args:?}"
@@ -3800,7 +3994,14 @@ mod tests {
         assert!(!args.iter().any(|a| a == "--security-opt"));
 
         // Service flags on => strict flags, exactly as before.
-        let args = build_run_args(&test_service_config(), &mountless, "c1", 1, &BTreeMap::new()).unwrap();
+        let args = build_run_args(
+            &test_service_config(),
+            &mountless,
+            "c1",
+            1,
+            &BTreeMap::new(),
+        )
+        .unwrap();
         assert!(contains_pair(&args, "--cap-drop", "ALL"));
         assert!(contains_pair(&args, "--security-opt", "no-new-privileges"));
     }
@@ -3813,5 +4014,26 @@ mod tests {
         let args = build_run_args(&config, &pool, "c1", 23_456, &BTreeMap::new()).unwrap();
         assert!(contains_pair(&args, "--network", "bridge"));
         assert!(contains_pair(&args, "--publish", "127.0.0.1:23456:8080"));
+    }
+
+    #[test]
+    fn classifies_only_known_success_stderr_as_benign() {
+        assert!(benign_success_stderr(
+            "failed to inspect NetNS: failed to Statfs /proc/123/ns/net: no such file or directory"
+        ));
+        assert!(!benign_success_stderr(
+            "permission denied opening containerd socket"
+        ));
+        assert!(!benign_success_stderr(
+            "failed to inspect NetNS: operation not permitted"
+        ));
+    }
+
+    #[test]
+    fn nats_queue_groups_are_bounded_and_wildcard_free() {
+        assert!(safe_nats_queue_group("dd-container-pool.v1"));
+        assert!(!safe_nats_queue_group("dd.container.*"));
+        assert!(!safe_nats_queue_group("contains whitespace"));
+        assert!(!safe_nats_queue_group(""));
     }
 }

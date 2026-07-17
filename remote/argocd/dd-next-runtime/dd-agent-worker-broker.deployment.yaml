@@ -44,9 +44,19 @@ spec:
             - |
               set -euo pipefail
               export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              export HOME=/tmp
+              export CARGO_HOME=/tmp/cargo
+              export CARGO_TARGET_DIR=/tmp/dd-agent-worker-broker-target
+              mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR"
               cd /opt/dd-next-1/remote/deployments/agent-worker-broker-rs
               exec /usr/local/cargo/bin/cargo run --release
           env:
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /tmp/cargo
+            - name: CARGO_TARGET_DIR
+              value: /tmp/dd-agent-worker-broker-target
             - name: HOST
               value: 0.0.0.0
             - name: PORT
@@ -111,10 +121,10 @@ spec:
               path: /healthz
               port: http
             periodSeconds: 5
-            failureThreshold: 60
+            failureThreshold: 600
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: http
             periodSeconds: 5
             timeoutSeconds: 3
@@ -129,8 +139,13 @@ spec:
           volumeMounts:
             - name: repo
               mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: repo
           hostPath:
             path: /home/ec2-user/codes/dd/dd-next-1
             type: Directory
+        - name: tmp
+          emptyDir: {}

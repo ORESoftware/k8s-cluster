@@ -20,6 +20,71 @@ spec:
       serviceAccountName: dd-gleam-lambda-runner
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
+      initContainers:
+        - name: build-gleam-lambda-runner
+          image: ghcr.io/gleam-lang/gleam:v1.16.0-erlang-alpine
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -lc
+          args:
+            - |
+              set -eu
+              if ! apk add --no-cache \
+                --repository=https://dl-cdn.alpinelinux.org/alpine/edge/main \
+                --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community \
+                rebar3 >/tmp/dd-lambda-build-apk.log 2>&1; then
+                cat /tmp/dd-lambda-build-apk.log
+                exit 1
+              fi
+              # Compile from a clean, pod-local projection. Host-mounted macOS
+              # AppleDouble files (._*) are not source modules and otherwise
+              # cause Gleam/Erlang compilation failures on the Linux node.
+              clean_root=/work/dd-next-1
+              mkdir -p "$clean_root"
+              tar \
+                --exclude='._*' \
+                --exclude='*/._*' \
+                --exclude='*/build' \
+                -C /opt/dd-next-1 \
+                -cf - \
+                remote/deployments/gleam-lambda-runner \
+                remote/libs/nats/subject-defs/generated/gleam \
+                remote/libs/nats/subject-defs/generated/javascript \
+                remote/libs/cli-config-client-gleam \
+                remote/libs/otel-client-gleam \
+                remote/libs/pg-defs/generated/gleam \
+                remote/libs/runtime-config-client-gleam \
+                | tar -C "$clean_root" -xf -
+              cd "$clean_root/remote/deployments/gleam-lambda-runner"
+              gleam deps download || { sleep 10; gleam deps download; } || { sleep 10; gleam deps download; }
+              gleam build
+              if [ -d build/dev/erlang/hpack/src ] && [ ! -f build/dev/erlang/hpack/ebin/hpack.app ]; then
+                mkdir -p build/dev/erlang/hpack/ebin
+                erlc -o build/dev/erlang/hpack/ebin build/dev/erlang/hpack/src/*.erl
+                cp build/dev/erlang/hpack/src/hpack.app.src build/dev/erlang/hpack/ebin/hpack.app
+              fi
+              test -f build/dev/erlang/gleam_lambda_runner/ebin/gleam_lambda_runner@@main.beam
+          env:
+            - name: ERL_FLAGS
+              value: '+S 2:2 +SDcpu 1:1 +SDio 1 +Q 4096 +P 65536 +sbwt none +sbwtdcpu none +sbwtdio none'
+            - name: ERL_COMPILER_OPTIONS
+              value: '[nowarn_deprecated_catch]'
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+              ephemeral-storage: 512Mi
+            limits:
+              cpu: '2'
+              memory: 8Gi
+              ephemeral-storage: 4Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: work
+              mountPath: /work
       containers:
         - name: gleam-lambda-runner
           image: ghcr.io/gleam-lang/gleam:v1.16.0-erlang-alpine
@@ -41,25 +106,29 @@ spec:
                 bash \
                 gcompat \
                 libc6-compat \
-                rebar3 \
                 postgresql-client >/tmp/dd-lambda-runner-apk.log 2>&1; then
                 cat /tmp/dd-lambda-runner-apk.log
                 exit 1
               fi
-              cd /opt/dd-next-1/remote/deployments/gleam-lambda-runner
-              gleam deps download || { sleep 10; gleam deps download; } || { sleep 10; gleam deps download; }
-              gleam build
-              if [ -d build/dev/erlang/hpack/src ] && [ ! -f build/dev/erlang/hpack/ebin/hpack.app ]; then
-                mkdir -p build/dev/erlang/hpack/ebin
-                erlc -o build/dev/erlang/hpack/ebin build/dev/erlang/hpack/src/*.erl
-                cp build/dev/erlang/hpack/src/hpack.app.src build/dev/erlang/hpack/ebin/hpack.app
+              cd /work/dd-next-1/remote/deployments/gleam-lambda-runner
+              if [ ! -f build/dev/erlang/gleam_lambda_runner/ebin/gleam_lambda_runner@@main.beam ]; then
+                echo "boot: missing Gleam BEAM artifacts from build init container"
+                exit 1
               fi
-              exec gleam run
+              exec erl -pa build/dev/erlang/*/ebin -noshell \
+                -eval 'gleam_lambda_runner@@main:run(gleam_lambda_runner).'
           env:
             - name: HOST
               value: 0.0.0.0
             - name: PORT
               value: '8083'
+            # Match Erlang scheduler discovery to the container CPU limit so
+            # dependency compilation and the runtime do not size themselves
+            # for every host core.
+            - name: ERL_FLAGS
+              value: '+S 2:2 +SDcpu 1:1 +SDio 1 +Q 4096 +P 65536 +sbwt none +sbwtdcpu none +sbwtdio none'
+            - name: ERL_COMPILER_OPTIONS
+              value: '[nowarn_deprecated_catch]'
             - name: NATS_URL
               value: nats://dd-nats.messaging.svc.cluster.local:4222
             - name: NATS_LAMBDA_INVOKE_SUBJECT
@@ -112,6 +181,16 @@ spec:
               value: /usr/local/bin/ctr
             - name: LAMBDA_CONTAINER_MEMORY_BYTES
               value: '268435456'
+            - name: LAMBDA_BROWSER_CONTAINER_MEMORY
+              value: 1g
+            - name: LAMBDA_BROWSER_CONTAINER_MEMORY_BYTES
+              value: '1073741824'
+            - name: LAMBDA_BROWSER_CONTAINER_CPUS
+              value: '1.0'
+            - name: LAMBDA_BROWSER_CONTAINER_TMPFS_SIZE
+              value: 256m
+            - name: LAMBDA_BROWSER_CONTAINER_PIDS_LIMIT
+              value: '256'
             - name: LAMBDA_NODEJS_CONTAINER_IMAGE
               value: docker.io/library/dd-lambda-nodejs-runtime:dev
             - name: LAMBDA_PYTHON3_CONTAINER_IMAGE
@@ -174,10 +253,13 @@ spec:
               memory: 512Mi
             limits:
               cpu: '2'
-              memory: 2560Mi
+              memory: 2Gi
           volumeMounts:
             - name: repo
               mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: work
+              mountPath: /work
             - name: containerd-run
               mountPath: /run/containerd
               mountPropagation: Bidirectional
@@ -195,6 +277,9 @@ spec:
           hostPath:
             path: /home/ec2-user/codes/dd/dd-next-1
             type: Directory
+        - name: work
+          emptyDir:
+            sizeLimit: 4Gi
         - name: containerd-run
           hostPath:
             path: /run/containerd

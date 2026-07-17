@@ -646,6 +646,22 @@ spec:
               value: '8113'
             - name: NATS_URL
               value: nats://dd-nats.messaging.svc.cluster.local:4222
+            - name: NATS_REQUIRE_TLS
+              value: 'false'
+            - name: FABRICATION_STREAM_NAME
+              value: DD_REMOTE_FABRICATION
+            - name: FABRICATION_STREAM_MAX_AGE_SECONDS
+              value: '1209600'
+            - name: FABRICATION_STREAM_MAX_BYTES
+              value: '5368709120'
+            - name: FABRICATION_NATS_ACK_WAIT_SECONDS
+              value: '900'
+            - name: FABRICATION_NATS_MAX_DELIVER
+              value: '5'
+            - name: FABRICATION_NATS_MAX_INFLIGHT
+              value: '8'
+            - name: FABRICATION_NATS_NAK_DELAY_SECONDS
+              value: '10'
             - name: FABRICATION_REQUEST_SUBJECT
               value: dd.remote.fabrication.requests
             - name: FABRICATION_QUEUE_GROUP

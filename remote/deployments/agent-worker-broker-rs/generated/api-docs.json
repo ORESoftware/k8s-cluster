@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "agent-worker-broker-rs",
   "language": "rust",
-  "routeCount": 9,
+  "routeCount": 10,
   "routeTypeCounts": {
     "user-generated": 1,
-    "service": 5,
+    "service": 6,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -162,6 +162,23 @@
       "purpose": "Prometheus metrics.",
       "handlers": [
         "metrics"
+      ],
+      "sourceFiles": [
+        "remote/deployments/agent-worker-broker-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/readyz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Readiness check.",
+      "handlers": [
+        "readyz"
       ],
       "sourceFiles": [
         "remote/deployments/agent-worker-broker-rs/src/main.rs"

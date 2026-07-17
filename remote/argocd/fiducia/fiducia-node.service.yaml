@@ -37,3 +37,6 @@ spec:
     - name: http
       port: 8090
       targetPort: http
+    - name: raft
+      port: 9090
+      targetPort: raft

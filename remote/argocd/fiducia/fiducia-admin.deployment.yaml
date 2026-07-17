@@ -32,7 +32,8 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: fiducia-admin
-          image: docker.io/library/rust:1.90-bookworm
+          # The admin source tracks stable; pin the deployed stable toolchain.
+          image: docker.io/library/rust:1.97.0-bookworm
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -49,7 +50,7 @@ spec:
               export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
               # Clone PUBLIC app repos as siblings (the monorepo is private).
               rm -rf /tmp/src && mkdir -p /tmp/src && cd /tmp/src
-              for repo in fiducia-admin.rs fiducia-interfaces; do git clone --depth 1 --branch main "https://github.com/fiducia-cloud/${repo}.git"; done
+              for repo in fiducia-admin.rs fiducia-interfaces fiducia-sync; do git clone --depth 1 --branch main "https://github.com/fiducia-cloud/${repo}.git"; done
               cd /tmp/src/fiducia-admin.rs
               exec /usr/local/cargo/bin/cargo run --release
           env:
@@ -102,6 +103,7 @@ spec:
             - { name: CARGO_HOME, value: /tmp/cargo }
             - { name: CARGO_TARGET_DIR, value: /tmp/target }
             - { name: CARGO_BUILD_JOBS, value: '1' }
+            - { name: RUSTUP_TOOLCHAIN, value: '1.97.0' }
           ports:
             - { name: http, containerPort: 8096 }
           resources:

@@ -28,7 +28,7 @@ always lives at `~/codes/ores/k8s-cluster/<submodule path>`.
 | `remote/submodules/live-mutex.distributed` | [ORESoftware/live-mutex.distributed](https://github.com/ORESoftware/live-mutex.distributed) | `main` | `~/codes/ores/live-mutex.distributed` |
 | `remote/submodules/soccer-sim-game-engine.rs` | [ORESoftware/soccer-sim-game-engine.rs](https://github.com/ORESoftware/soccer-sim-game-engine.rs) | `main` | `~/codes/ores/soccer-sim-game-engine.rs` |
 | `remote/deployments/dd-sound-recorder-rs` | [sonus-auris/sonus-auris-backend.rs](https://github.com/sonus-auris/sonus-auris-backend.rs) | `main` | `~/codes/sonus-auris/sonus-auris-backend.rs` |
-| `remote/deployments/3fa-backend` | [ORESoftware/3fa-backend.rs](https://github.com/ORESoftware/3fa-backend.rs) | `main` | `~/codes/3FA-app/3fa-backend.rs` |
+| `remote/deployments/3fa-backend` | [3FA-app/3fa-backend.rs](https://github.com/3FA-app/3fa-backend.rs) | `main` | `~/codes/3FA-app/3fa-backend.rs` |
 | `remote/libs` | [ORESoftware/k8s-libs-and-shared-defs](https://github.com/ORESoftware/k8s-libs-and-shared-defs) | `main` | `~/codes/ores/k8s-libs-and-shared-defs` |
 | `remote/deployments/benefactor-backend-rs` | [benefactor-cc/backend.rs](https://github.com/benefactor-cc/backend.rs) | `main` | — _(submodule checkout only)_ |
 | `remote/submodules/sonus-auris-site.web` | [sonus-auris/sonus-auris-site.web](https://github.com/sonus-auris/sonus-auris-site.web) | `main` | `~/codes/sonus-auris/sonus-auris-site.web` |

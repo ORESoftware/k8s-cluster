@@ -1,0 +1,9 @@
+{
+  "name": "dd-lambda-nodejs-browser-runtime",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "playwright-core": "1.56.0",
+    "puppeteer-core": "24.22.3"
+  }
+}

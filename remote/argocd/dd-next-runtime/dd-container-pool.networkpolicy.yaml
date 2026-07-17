@@ -17,6 +17,9 @@ spec:
         - podSelector:
             matchLabels:
               app: dd-remote-gateway
+        - podSelector:
+            matchLabels:
+              app: dd-runtime-config
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: observability
@@ -25,6 +28,13 @@ spec:
           port: 8102
   egress:
     # Allow OTLP trace export to the in-cluster OpenTelemetry collector.
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dd-runtime-config
+      ports:
+        - protocol: TCP
+          port: 8110
     - to:
         - namespaceSelector:
             matchLabels:

@@ -1280,13 +1280,51 @@ async fn healthz(State(state): State<AppState>) -> impl IntoResponse {
     })
 }
 
+fn build_dependencies_ready(config: &Config) -> bool {
+    config.server_auth_secret.is_some()
+        && config.work_root.exists()
+        && executable_available(&config.git_bin)
+        && executable_available(&config.nerdctl_bin)
+        && (!config.deploy_enabled || executable_available(&config.kubectl_bin))
+}
+
+fn executable_available(value: &str) -> bool {
+    let path = Path::new(value);
+    if path.is_absolute() || path.components().count() > 1 {
+        return path.is_file();
+    }
+    env::var_os("PATH").is_some_and(|paths| {
+        env::split_paths(&paths)
+            .map(|directory| directory.join(value))
+            .any(|candidate| candidate.is_file())
+    })
+}
+
+async fn readyz(State(state): State<AppState>) -> Response {
+    let ready = build_dependencies_ready(&state.config);
+    let status = if ready {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    (
+        status,
+        Json(json!({
+            "ok": ready,
+            "service": SERVICE_NAME,
+            "dependenciesReady": ready,
+        })),
+    )
+        .into_response()
+}
+
 async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
     let jobs = state.jobs.read().await;
     let queued = jobs
         .values()
         .filter(|job| matches!(job.status, BuildStatus::Queued))
         .count();
-    let body = format!(
+    let mut body = format!(
         "# HELP dd_build_server_jobs_submitted_total Build jobs accepted by the build server.\n\
          # TYPE dd_build_server_jobs_submitted_total counter\n\
          dd_build_server_jobs_submitted_total {}\n\
@@ -1324,6 +1362,12 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
         state.counters.ecr_logins.load(Ordering::Relaxed),
         state.counters.ecr_login_failures.load(Ordering::Relaxed),
     );
+    body.push_str(&format!(
+        "# HELP dd_build_server_dependencies_ready Whether auth, work storage, and required build tools are available.\n\
+         # TYPE dd_build_server_dependencies_ready gauge\n\
+         dd_build_server_dependencies_ready {}\n",
+        u8::from(build_dependencies_ready(&state.config))
+    ));
     (
         [(
             header::CONTENT_TYPE,
@@ -1481,6 +1525,7 @@ async fn main() {
     let app = Router::new()
         .route("/", get(descriptor))
         .route("/healthz", get(healthz))
+        .route("/readyz", get(readyz))
         .route("/docs/api", get(api_docs_html))
         .route("/api/docs", get(api_docs_html))
         .route("/api/docs.json", get(api_docs_json))
@@ -1528,5 +1573,42 @@ async fn shutdown_signal() {
     tokio::select! {
         _ = ctrl_c => {},
         _ = terminate => {},
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repository_and_path_validation_blocks_command_and_path_injection() {
+        assert!(validate_repo_url("https://github.com/ORESoftware/example.git").is_ok());
+        assert!(validate_repo_url("file:///etc/passwd").is_err());
+        assert!(validate_repo_url("https://github.com/example.git\n--upload-pack=evil").is_err());
+        assert!(validate_relative_path("contextDir", "services/api").is_ok());
+        assert!(validate_relative_path("contextDir", "../../etc").is_err());
+        assert!(validate_relative_path("contextDir", "/etc").is_err());
+    }
+
+    #[test]
+    fn build_args_reject_secret_like_keys() {
+        let safe = Some(BTreeMap::from([(
+            "BUILD_PROFILE".to_string(),
+            "release".to_string(),
+        )]));
+        let unsafe_args = Some(BTreeMap::from([(
+            "GITHUB_TOKEN".to_string(),
+            "do-not-pass-secrets-as-build-args".to_string(),
+        )]));
+        assert!(validate_build_args(&safe).is_ok());
+        assert!(validate_build_args(&unsafe_args).is_err());
+    }
+
+    #[test]
+    fn executable_lookup_accepts_path_commands_and_rejects_missing_tools() {
+        assert!(executable_available("sh"));
+        assert!(!executable_available(
+            "dd-build-server-tool-that-does-not-exist"
+        ));
     }
 }

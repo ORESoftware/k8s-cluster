@@ -2,10 +2,11 @@ import { createHash, randomUUID } from 'node:crypto';
 import { Buffer } from 'node:buffer';
 import { connect as connectTcp } from 'node:net';
 import { env, stdin, stderr, stdout } from 'node:process';
+import { compileFunction as compileVmFunction, createContext } from 'node:vm';
 
-// Source-of-truth NATS subject constants. The repo is mounted at
-// /opt/dd-next-1 inside the pod so this relative path resolves identically
-// in dev, CI, and prod containers.
+// Source-of-truth NATS subject constants. The runner's working directory is
+// the service root in dev, CI, the pod's clean projection, and runtime images,
+// so this relative path resolves identically on every execution path.
 import {
   containerPoolLanguageRequestsSubject,
 } from '../../../libs/nats/subject-defs/generated/javascript/index.mjs';
@@ -20,6 +21,15 @@ const containerPoolNatsUrl = env.CONTAINER_POOL_NATS_URL || env.NATS_URL || '';
 // layout always tracks the source-of-truth schema.
 const containerPoolSubjectPrefix = env.CONTAINER_POOL_NATS_SUBJECT_PREFIX || '';
 const containerPoolNatsTimeoutMs = positiveInt(env.CONTAINER_POOL_NATS_TIMEOUT_MS, 30_000);
+const browserExecutablePath = env.LAMBDA_BROWSER_EXECUTABLE_PATH || '/usr/bin/chromium-browser';
+const browserLaunchArgs = Object.freeze([
+  '--disable-crash-reporter',
+  '--disable-crashpad',
+  '--disable-dev-shm-usage',
+  '--disable-gpu',
+  '--disable-setuid-sandbox',
+  '--no-sandbox',
+]);
 
 const compiledFunctions = new Map();
 let buffer = '';
@@ -44,17 +54,32 @@ const safeConsole = Object.freeze(
 );
 
 globalThis.console = safeConsole;
-Object.defineProperty(globalThis, 'process', {
-  configurable: false,
-  enumerable: false,
-  value: undefined,
-  writable: false,
+
+// User functions execute in a context with an explicit safe-global surface.
+// This keeps process/require/Buffer and host module loading unavailable without
+// mutating globals that Playwright, Puppeteer, and their dependencies require.
+const lambdaGlobals = Object.assign(Object.create(null), {
+  AbortController,
+  AbortSignal,
+  Headers,
+  Request,
+  Response,
+  TextDecoder,
+  TextEncoder,
+  URL,
+  URLSearchParams,
+  clearInterval,
+  clearTimeout,
+  console: safeConsole,
+  fetch,
+  queueMicrotask,
+  setInterval,
+  setTimeout,
+  structuredClone,
 });
-Object.defineProperty(globalThis, 'Buffer', {
-  configurable: false,
-  enumerable: false,
-  value: undefined,
-  writable: false,
+const lambdaContext = createContext(lambdaGlobals, {
+  name: 'dd-lambda-user-code',
+  codeGeneration: { strings: false, wasm: false },
 });
 
 function hashBody(body) {
@@ -68,14 +93,10 @@ function compileFunction(functionBody) {
     return cached;
   }
 
-  const fn = new Function(
-    'request',
-    'context',
-    'console',
-    'process',
-    'require',
-    'Buffer',
+  const fn = compileVmFunction(
     `"use strict"; return (async () => {\n${functionBody}\n})();`,
+    ['request', 'context', 'console', 'process', 'require', 'Buffer'],
+    { parsingContext: lambdaContext },
   );
   compiledFunctions.set(cacheKey, fn);
   while (compiledFunctions.size > maxCompiledFunctions) {
@@ -83,6 +104,55 @@ function compileFunction(functionBody) {
     compiledFunctions.delete(oldestKey);
   }
   return fn;
+}
+
+function browserAutomationEnabled(definition) {
+  return (
+    definition.containerized === true &&
+    (definition.browserAutomation === true || definition.metaData?.browserAutomation === true)
+  );
+}
+
+async function createBrowserSession() {
+  const [playwright, puppeteerModule] = await Promise.all([
+    import('playwright-core'),
+    import('puppeteer-core'),
+  ]);
+  const puppeteer = puppeteerModule.default ?? puppeteerModule;
+  const launched = new Set();
+  const track = async (promise) => {
+    const browser = await promise;
+    launched.add(browser);
+    return browser;
+  };
+
+  return {
+    api: Object.freeze({
+      engines: Object.freeze(['playwright', 'puppeteer']),
+      executablePath: browserExecutablePath,
+      launchPlaywright: () =>
+        track(
+          playwright.chromium.launch({
+            args: [...browserLaunchArgs],
+            executablePath: browserExecutablePath,
+            headless: true,
+          }),
+        ),
+      launchPuppeteer: () =>
+        track(
+          puppeteer.launch({
+            args: [...browserLaunchArgs],
+            executablePath: browserExecutablePath,
+            headless: true,
+          }),
+        ),
+    }),
+    closeAll: async () => {
+      const browsers = [...launched];
+      launched.clear();
+      await Promise.allSettled(browsers.map((browser) => browser.close()));
+    },
+  };
 }
 
 function assertSlug(slug) {
@@ -257,6 +327,7 @@ async function invoke(line) {
   const definition = resolveDefinition(envelope);
   const functionBody = String(definition.functionBody || '');
   const request = envelope.request || {};
+  const browserAutomation = browserAutomationEnabled(definition);
   const context = {
     id: definition.id,
     invocationId: envelope.invocationId,
@@ -264,6 +335,10 @@ async function invoke(line) {
     containerPool: Object.freeze({
       dispatch: dispatchContainerPool,
       request: dispatchContainerPool,
+    }),
+    capabilities: Object.freeze({
+      browserAutomation,
+      browserEngines: browserAutomation ? Object.freeze(['playwright', 'puppeteer']) : Object.freeze([]),
     }),
     meta: {
       runtime: definition.runtime,
@@ -287,18 +362,26 @@ async function invoke(line) {
       check: {
         runtime: definition.runtime,
         slug: definition.slug || envelope.slug,
+        browserAutomation,
+        browserEngines: browserAutomation ? ['playwright', 'puppeteer'] : [],
       },
       cachedFunctions: compiledFunctions.size,
     };
   }
 
-  const result = await fn(request, context, safeConsole, undefined, undefined, undefined);
-  return {
-    ok: true,
-    result: result ?? null,
-    invocationId: context.invocationId,
-    cachedFunctions: compiledFunctions.size,
-  };
+  const browserSession = browserAutomation ? await createBrowserSession() : null;
+  context.browser = browserSession?.api;
+  try {
+    const result = await fn(request, context, safeConsole, undefined, undefined, undefined);
+    return {
+      ok: true,
+      result: result ?? null,
+      invocationId: context.invocationId,
+      cachedFunctions: compiledFunctions.size,
+    };
+  } finally {
+    await browserSession?.closeAll();
+  }
 }
 
 async function handleLine(line) {

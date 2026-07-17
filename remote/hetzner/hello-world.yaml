@@ -11,6 +11,14 @@ metadata:
     app: hello-world
 spec:
   replicas: 3
+  # The hard one-pod-per-node spread leaves no fourth placement slot. Disable
+  # surge so updates replace one diagnostic pod at a time instead of deadlocking
+  # with an unschedulable fourth pod.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: hello-world
@@ -42,7 +50,9 @@ spec:
           resources:
             requests:
               cpu: 50m
-              memory: 32Mi
+              # Static nginx diagnostic page; keep enough headroom over its
+              # observed footprint without reserving scarce cluster memory.
+              memory: 8Mi
             limits:
               cpu: 200m
               memory: 128Mi

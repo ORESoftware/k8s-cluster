@@ -77,12 +77,15 @@ fn segments_at(mesh: &Mesh, z: f64) -> Vec<((f64, f64), (f64, f64))> {
     segs
 }
 
-fn dist(a: (f64, f64), b: (f64, f64)) -> f64 {
+type Point2 = (f64, f64);
+type Segment2 = (Point2, Point2);
+
+fn dist(a: Point2, b: Point2) -> f64 {
     ((a.0 - b.0).powi(2) + (a.1 - b.1).powi(2)).sqrt()
 }
 
 /// Quantize a point to a STITCH_EPS grid cell for spatial bucketing.
-fn cell(p: (f64, f64)) -> (i64, i64) {
+fn cell(p: Point2) -> (i64, i64) {
     (
         (p.0 / STITCH_EPS).round() as i64,
         (p.1 / STITCH_EPS).round() as i64,
@@ -93,7 +96,7 @@ fn cell(p: (f64, f64)) -> (i64, i64) {
 /// within `STITCH_EPS`. Endpoints are indexed in a spatial hash so chaining is
 /// near-linear in the segment count rather than O(segments^2) — this removes a
 /// quadratic-time DoS for layers with many cross-section segments.
-fn stitch(segments: &[((f64, f64), (f64, f64))], z: f64) -> Vec<Contour> {
+fn stitch(segments: &[Segment2], z: f64) -> Vec<Contour> {
     // Bucket every segment endpoint by grid cell.
     let mut buckets: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
     for (i, seg) in segments.iter().enumerate() {
@@ -103,7 +106,7 @@ fn stitch(segments: &[((f64, f64), (f64, f64))], z: f64) -> Vec<Contour> {
     // Find an unused segment with an endpoint within STITCH_EPS of `tail`,
     // searching the 3x3 cell neighborhood so matches near a cell boundary are
     // not missed. Returns the segment index and its far endpoint.
-    let find = |tail: (f64, f64), used: &[bool]| -> Option<(usize, (f64, f64))> {
+    let find = |tail: Point2, used: &[bool]| -> Option<(usize, Point2)> {
         let (cx, cy) = cell(tail);
         for dx in -1..=1 {
             for dy in -1..=1 {
@@ -167,7 +170,7 @@ fn stitch(segments: &[((f64, f64), (f64, f64))], z: f64) -> Vec<Contour> {
 /// Slice `mesh` into perimeter contours at the given `layer_height` (mm).
 /// Layers are sampled at half-height offsets to avoid coplanar-face ambiguity.
 pub fn slice(mesh: &Mesh, layer_height: f64) -> Result<SliceResult, String> {
-    if !(layer_height > 0.0) {
+    if !layer_height.is_finite() || layer_height <= 0.0 {
         return Err("layerHeightMm must be > 0".into());
     }
     if mesh.triangles.is_empty() {

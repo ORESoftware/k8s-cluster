@@ -40,7 +40,10 @@ spec:
           # published image is wired. The path-deps (../fiducia-routing.rs,
           # ../fiducia-interfaces) resolve because we build from the monorepo's
           # apps/ sibling layout.
-          image: docker.io/library/rust:1.90-bookworm
+          # Matches fiducia-node.rs/rust-toolchain.toml. RUSTUP_TOOLCHAIN below
+          # keeps cargo from attempting a writable toolchain sync on this
+          # read-only root filesystem.
+          image: docker.io/library/rust:1.95.0-bookworm
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -71,9 +74,9 @@ spec:
               for i in 0 1 2; do
                 n="fiducia-node-$i"
                 [ "$n" = "${POD_NAME}" ] && continue
-                peers="${peers:+$peers,}${n}.${suffix}:8090"
+                peers="${peers:+$peers,}${n}.${suffix}:9090"
               done
-              export FIDUCIA_NODE_ID="http://${POD_NAME}.${suffix}:8090"
+              export FIDUCIA_NODE_ID="http://${POD_NAME}.${suffix}:9090"
               export FIDUCIA_PEERS="$peers"
               echo "[fiducia-node] id=${FIDUCIA_NODE_ID} peers=${FIDUCIA_PEERS} shards=${FIDUCIA_SHARD_COUNT}"
               cd /tmp/src/fiducia-node.rs
@@ -109,9 +112,15 @@ spec:
               value: /tmp/target
             - name: CARGO_BUILD_JOBS
               value: '1'
+            - name: RUSTUP_TOOLCHAIN
+              value: '1.95.0'
+            - name: FIDUCIA_PEER_PORT
+              value: '9090'
           ports:
             - name: http
               containerPort: 8090
+            - name: raft
+              containerPort: 9090
           resources:
             requests:
               memory: 768Mi
@@ -140,6 +149,11 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            # Raft's durable store must not land on the read-only root filesystem.
+            # This emptyDir survives container restarts; a future PVC migration can
+            # retain state across pod replacement without changing the API path.
+            - name: data
+              mountPath: /var/lib/fiducia
         # Per-node operational sidecar: scrapes the local node's /v1/status and
         # heartbeats it (+ failure domain) to fiducia-brain, so the control plane
         # actually learns membership. Without this the brain's membership is empty.
@@ -255,3 +269,6 @@ spec:
             # Two in-pod Rust builds (node + sidecar) share this; sized for both
             # target dirs plus the shared cargo registry cache.
             sizeLimit: 12Gi
+        - name: data
+          emptyDir:
+            sizeLimit: 10Gi

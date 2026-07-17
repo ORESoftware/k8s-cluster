@@ -672,19 +672,18 @@ jobs:
           sync_checkout = f'''set -euo pipefail
           cd /home/ec2-user/codes/dd/dd-next-1
           echo "=== sync EC2 checkout ==="
-          git -c status.showUntrackedFiles=no status --short || true
-          stash_name="remote-k8s-maintenance-pre-merge-$(date -u +%Y%m%dT%H%M%SZ)"
-          echo "stashing tracked/untracked repo content before merge: $stash_name"
-          # Scope the stash to repository content that this workflow mutates.
-          # The EC2 checkout also carries machine-local state such as .kube/,
-          # which can be unreadable to ec2-user and should never be removed by git.
-          git stash push --include-untracked -m "$stash_name" -- remote .github || true
-          echo "stashing submodule worktrees before merge"
-          git submodule foreach --recursive 'git stash push --include-untracked -m remote-k8s-maintenance-pre-merge-submodule || true' || true
-          git submodule update --init --recursive || true
+          # Never hide host-local work in an automated stash. Refuse to update
+          # tracked root content when it is dirty, and ignore submodule status:
+          # legacy hosts can retain a damaged submodule gitdir even though the
+          # root manifests required by this operation are healthy.
+          if ! git diff --quiet --ignore-submodules=all -- remote .github || \
+             ! git diff --cached --quiet --ignore-submodules=all -- remote .github; then
+            echo "refusing to overwrite tracked changes in remote/.github" >&2
+            git status --short --untracked-files=no --ignore-submodules=all -- remote .github >&2
+            exit 1
+          fi
           git fetch origin {rev}
-          git merge --ff-only origin/{rev}
-          git submodule update --init --recursive
+          git -c submodule.recurse=false merge --ff-only origin/{rev}
           git rev-parse --short HEAD
           '''
           commands = [

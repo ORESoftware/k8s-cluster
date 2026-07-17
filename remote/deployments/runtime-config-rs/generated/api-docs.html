@@ -42,9 +42,9 @@
     <h1>runtime-config-rs API docs</h1>
     <p>Generated from route declarations in source. Standard routes: <code>/docs/api</code>, <code>/api/docs</code>, <code>/api/docs.json</code>.</p>
     <div class="summary">
-      <span>18 routes</span>
+      <span>19 routes</span>
       <span>rust</span>
-      <span>6 service</span>
+      <span>7 service</span>
       <span>12 user-generated</span>
     </div>
   </header>
@@ -155,6 +155,14 @@
   <td data-label="Purpose">Custom code-first route derived from the service router.</td>
   <td data-label="Handlers"><code>push_now</code></td>
   <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/readyz</code></td>
+  <td data-label="Purpose">Readiness check.</td>
+  <td data-label="Handlers"><code>readyz</code></td>
+  <td data-label="Auth">public</td>
 </tr>
 <tr>
   <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>

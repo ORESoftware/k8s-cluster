@@ -25,13 +25,24 @@ spec:
         app: dd-remote-rest-api
     spec:
       serviceAccountName: dd-remote-rest-api
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
       terminationGracePeriodSeconds: 20
       containers:
         - name: remote-rest-api
           image: docker.io/library/rust:1.90-bookworm
           imagePullPolicy: IfNotPresent
           securityContext:
-            privileged: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
           command:
             - /bin/bash
             - -lc
@@ -39,13 +50,27 @@ spec:
             - |
               set -euo pipefail
               export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              export HOME=/tmp
+              export CARGO_HOME=/tmp/cargo
+              export CARGO_TARGET_DIR=/tmp/dd-remote-rest-api-target
+              mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR"
               cd /opt/dd-next-1/remote/deployments/rest-api-rs
               exec /usr/local/cargo/bin/cargo run --release
           env:
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /tmp/cargo
+            - name: CARGO_TARGET_DIR
+              value: /tmp/dd-remote-rest-api-target
             - name: HOST
               value: 0.0.0.0
             - name: PORT
               value: '8082'
+            - name: IMAGE_BUILD_DELEGATE_URL
+              value: http://dd-image-builder.default.svc.cluster.local:8082
+            - name: IMAGE_BUILD_DELEGATE_TIMEOUT_SECONDS
+              value: '1200'
             - name: NATS_URL
               value: nats://dd-nats.messaging.svc.cluster.local:4222
             - name: NATS_TASK_SUBJECT
@@ -78,16 +103,8 @@ spec:
               value: '4'
             - name: LAMBDA_IMAGE_BUILD_ENABLED
               value: 'true'
-            - name: LAMBDA_IMAGE_BUILD_ROOT
-              value: /var/lib/dd-lambdas
-            - name: LAMBDA_IMAGE_REPO_ROOT
-              value: /opt/dd-next-1
             - name: LAMBDA_IMAGE_REPOSITORY
               value: docker.io/library/dd-lambda-function
-            - name: LAMBDA_IMAGE_BUILD_NERDCTL
-              value: /usr/local/bin/nerdctl
-            - name: LAMBDA_IMAGE_BUILD_NAMESPACE
-              value: k8s.io
             - name: LAMBDA_ALLOW_HOST_RUNTIMES
               value: nodejs
             - name: CONTAINER_POOL_IMAGE_BUILDS_ENABLED
@@ -96,22 +113,6 @@ spec:
               value: 'true'
             - name: CONTAINER_POOL_IMAGE_CUSTOM_TEST_COMMANDS_ENABLED
               value: 'false'
-            - name: CONTAINER_POOL_IMAGE_BUILD_ROOT
-              value: /var/lib/dd-container-pool-images
-            # Builds run in the same containerd namespace as the host
-            # buildkitd (k8s.io), matching LAMBDA_IMAGE_BUILD_NAMESPACE and the
-            # idle-reaper worker-image build. With dd-pool, nerdctl could not
-            # locate a buildkit socket and aborted before invoking buildctl.
-            - name: CONTAINER_POOL_IMAGE_BUILD_NAMESPACE
-              value: k8s.io
-            - name: CONTAINER_POOL_IMAGE_BUILD_NERDCTL
-              value: /usr/local/bin/nerdctl
-            - name: CONTAINER_POOL_IMAGE_REPO_ROOT
-              value: /opt/dd-next-1
-            - name: CONTAINER_POOL_IMAGE_BUILD_TIMEOUT_SECONDS
-              value: '1200'
-            - name: CONTAINER_POOL_IMAGE_TEST_TIMEOUT_SECONDS
-              value: '120'
             # Base URL the /api/runtime-config/snapshot/* proxy forwards to.
             # See remote/deployments/runtime-config-rs/readme.md.
             - name: RUNTIME_CONFIG_BASE_URL
@@ -152,13 +153,16 @@ spec:
               memory: 128Mi
             limits:
               cpu: '1'
-              memory: 1Gi
+              # Rust + sqlx/async-graphql codegen can exceed 1 GiB during a
+              # cold in-pod source build even though steady-state use is lower.
+              memory: 2Gi
           startupProbe:
             httpGet:
               path: /healthz
               port: http
             periodSeconds: 5
-            failureThreshold: 60
+            # Preserve the pod through cold Cargo builds and dependency fetches.
+            failureThreshold: 600
           readinessProbe:
             httpGet:
               path: /healthz
@@ -176,72 +180,13 @@ spec:
           volumeMounts:
             - name: repo
               mountPath: /opt/dd-next-1
-            - name: lambda-image-builds
-              mountPath: /var/lib/dd-lambdas
-            - name: container-pool-image-builds
-              mountPath: /var/lib/dd-container-pool-images
-            - name: containerd-sock
-              mountPath: /run/containerd/containerd.sock
-            - name: containerd-root
-              mountPath: /var/lib/containerd
-              mountPropagation: Bidirectional
-            - name: nerdctl-bin
-              mountPath: /usr/local/bin/nerdctl
               readOnly: true
-            # buildctl + the host buildkitd socket dir are required so nerdctl
-            # can shell out for `nerdctl build`. Both are baked on the host but
-            # absent inside the rust:1.90 image, which caused container-pool
-            # build-test rows to instantly fail with: `buildctl` executable
-            # file not found in $PATH.
-            - name: buildctl-bin
-              mountPath: /usr/local/bin/buildctl
-              readOnly: true
-            - name: buildkit-run
-              mountPath: /run/buildkit
-              readOnly: true
-            # nerdctl writes per-container etchosts + meta to /var/lib/nerdctl.
-            # Without this mount, `nerdctl run` fails immediately with:
-            #   failed to fulfil mount request: open
-            #   /var/lib/nerdctl/<id>/etchosts/<ns>/<cid>/hosts: no such file
-            # The dd-container-pool deployment already mounts this with
-            # Bidirectional propagation; mirror it here for build smoke tests.
-            - name: nerdctl-state
-              mountPath: /var/lib/nerdctl
-              mountPropagation: Bidirectional
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: repo
           hostPath:
             path: /home/ec2-user/codes/dd/dd-next-1
             type: Directory
-        - name: lambda-image-builds
-          hostPath:
-            path: /var/lib/dd-lambdas
-            type: DirectoryOrCreate
-        - name: container-pool-image-builds
-          hostPath:
-            path: /var/lib/dd-container-pool-images
-            type: DirectoryOrCreate
-        - name: containerd-sock
-          hostPath:
-            path: /run/containerd/containerd.sock
-            type: Socket
-        - name: containerd-root
-          hostPath:
-            path: /var/lib/containerd
-            type: Directory
-        - name: nerdctl-bin
-          hostPath:
-            path: /usr/local/bin/nerdctl
-            type: File
-        - name: buildctl-bin
-          hostPath:
-            path: /usr/local/bin/buildctl
-            type: File
-        - name: buildkit-run
-          hostPath:
-            path: /run/buildkit
-            type: Directory
-        - name: nerdctl-state
-          hostPath:
-            path: /var/lib/nerdctl
-            type: DirectoryOrCreate
+        - name: tmp
+          emptyDir: {}

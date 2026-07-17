@@ -1,6 +1,7 @@
-# Allowlist build context for `docker build -f deployments/dd-document-rs/Dockerfile .`
-# (run from this repo root). Ignore everything, then re-include only the
-# dd-document-rs crate and the Cargo path-dependencies it needs.
+# Allowlist build context for Dockerfiles that use `remote/` as their context.
+# Ignore everything, then re-include only the deployment sources and shared
+# path dependencies required by those builds. Keep this list in sync with every
+# `nerdctl build ... remote` invocation in the maintenance workflows.
 #
 # This file only affects `docker build` runs that use this directory as their
 # context; the sibling services build from their own directories.
@@ -9,10 +10,18 @@
 !deployments/dd-document-rs/**
 !deployments/dd-ocr-rs/**
 !deployments/dd-git-rs/**
+!deployments/web-home-rs/**
+!deployments/gleam-lambda-runner/runtime-images/nodejs/**
+!deployments/gleam-lambda-runner/child-runtimes/js-function-runner.mjs
+!deployments/generated-api-docs-index.html
+!deployments/generated-api-docs-index.json
 !libs/nats/subject-defs/generated/rust/**
+!libs/nats/subject-defs/generated/javascript/**
 !libs/runtime-config-client-rs/**
 !libs/interfaces/shared/generated/rust/**
 !libs/pg-defs/generated/rust/**
+!libs/telemetry-rs/**
+!libs/browser/service-worker.js
 
 # Drop build artifacts back out of the re-included trees.
 **/target/**

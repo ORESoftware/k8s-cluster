@@ -10,7 +10,10 @@ spec:
   minReadySeconds: 5
   progressDeadlineSeconds: 1800
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: usacc-rest-api-backend-rs
@@ -110,16 +113,16 @@ spec:
           resources:
             requests:
               cpu: 25m
-              memory: 256Mi
+              memory: 1Gi
             limits:
               cpu: '1'
-              memory: 1Gi
+              memory: 4Gi
           startupProbe:
             httpGet:
               path: /healthz
               port: http
             periodSeconds: 5
-            failureThreshold: 90
+            failureThreshold: 600
           readinessProbe:
             httpGet:
               path: /healthz

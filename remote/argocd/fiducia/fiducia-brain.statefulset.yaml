@@ -68,9 +68,9 @@ spec:
               for i in 0 1 2; do
                 n="fiducia-brain-$i"
                 [ "$n" = "${POD_NAME}" ] && continue
-                peers="${peers:+$peers,}http://${n}.${suffix}:8095"
+                peers="${peers:+$peers,}http://${n}.${suffix}:9095"
               done
-              export FIDUCIA_BRAIN_ID="http://${POD_NAME}.${suffix}:8095"
+              export FIDUCIA_BRAIN_ID="http://${POD_NAME}.${suffix}:9095"
               export FIDUCIA_BRAIN_PEERS="$peers"
               echo "[fiducia-brain] id=${FIDUCIA_BRAIN_ID} peers=${FIDUCIA_BRAIN_PEERS}"
               cd /tmp/src/fiducia-brain.rs
@@ -94,6 +94,8 @@ spec:
               value: '3'
             - name: FIDUCIA_REPLICATION_FACTOR
               value: '3'
+            - name: FIDUCIA_BRAIN_PEER_PORT
+              value: '9095'
             # Cluster-internal trusted-hop secret (shared, identical across node,
             # brain, sidecar, admin). Brain fails closed on /v1 without it, so it
             # will CrashLoop until the Secret exists:
@@ -124,6 +126,8 @@ spec:
           ports:
             - name: http
               containerPort: 8095
+            - name: peer
+              containerPort: 9095
           resources:
             requests:
               memory: 768Mi
@@ -272,6 +276,9 @@ spec:
     - name: http
       port: 8095
       targetPort: http
+    - name: peer
+      port: 9095
+      targetPort: peer
 ---
 # Headless peer service — stable DNS per member
 # (fiducia-brain-0.fiducia-brain-peer.fiducia.svc.cluster.local) for Raft peer RPC
