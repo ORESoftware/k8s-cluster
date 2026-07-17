@@ -1,0 +1,138 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fiducia-load-balance
+  namespace: fiducia
+  labels:
+    app: fiducia-load-balance
+spec:
+  podSelector:
+    matchLabels:
+      app: fiducia-load-balance
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # The LB is the KV/lock entry point. Known callers:
+    #   - fiducia-auth (in-namespace) — durable API-key KV writes.
+    #   - dd-contract-service + dd-billing-server (namespace `default`) —
+    #     idempotency leases / fencing tokens (their manifests point
+    #     FIDUCIA_* at fiducia-load-balance.fiducia:8088); new in-cluster
+    #     clients advertise the dd.dev/fiducia-client=true pod label.
+    #   - observability scrapers.
+    # The public gateway does NOT route to the LB (only app./admin.fiducia.cloud
+    # exist), so no dd-remote-gateway ingress here.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: fiducia-auth
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: default
+          podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - dd-contract-service
+                  - dd-billing-server
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: default
+          podSelector:
+            matchLabels:
+              dd.dev/fiducia-client: 'true'
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - dd-prometheus
+                  - dd-otel-collector
+      ports:
+        - protocol: TCP
+          port: 8088
+  egress:
+    # Data-plane fan-out: the seed node list (FIDUCIA_NODES) is the three
+    # fiducia-node pods' :8090, followed through NotLeader redirects.
+    - to:
+        - podSelector:
+            matchLabels:
+              app: fiducia-node
+      ports:
+        - protocol: TCP
+          port: 8090
+    # Control-plane reads (FIDUCIA_BRAIN_URL).
+    - to:
+        - podSelector:
+            matchLabels:
+              app: fiducia-brain
+      ports:
+        - protocol: TCP
+          port: 8095
+    # Edge auth: JWKS fetch + API-key introspection via fiducia-auth
+    # (FIDUCIA_AUTH_URL).
+    - to:
+        - podSelector:
+            matchLabels:
+              app: fiducia-auth
+      ports:
+        - protocol: TCP
+          port: 8097
+    # DNS resolution.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Public HTTP(S) for the cold in-pod build (git clone GitHub, crates.io) —
+    # public internet only, private ranges excluded. No OTLP egress: this
+    # deployment sets no OTEL_EXPORTER_OTLP_ENDPOINT.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 0.0.0.0/8
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.0.0.0/24
+              - 192.168.0.0/16
+              - 192.0.2.0/24
+              - 198.18.0.0/15
+              - 198.51.100.0/24
+              - 203.0.113.0/24
+              - 224.0.0.0/4
+              - 240.0.0.0/4
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
+    - to:
+        - ipBlock:
+            cidr: ::/0
+            except:
+              - ::/128
+              - ::1/128
+              - 64:ff9b:1::/48
+              - 100::/64
+              - 2001:2::/48
+              - 2001:db8::/32
+              - fc00::/7
+              - fe80::/10
+              - ff00::/8
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
