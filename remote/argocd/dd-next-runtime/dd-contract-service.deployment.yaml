@@ -20,7 +20,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-07-16-solana-purpose-formal-fiducia'
+        dd.dev/telemetry-revision: '2026-07-16-solana-formal-rs-filter'
       labels:
         app: dd-contract-service
     spec:
