@@ -46,12 +46,23 @@ issues a sync token in exchange.
 
 - **Zero-knowledge vault.** Clients E2E-encrypt the whole vault before upload
   (`protocol::SealedBlob`); the DB stores ciphertext only.
-- **Account auth.** Argon2id verifier + per-device bearer tokens (only the
-  token's SHA-256 is stored; login is constant-work to avoid user enumeration).
-  OPAQUE PAKE is the planned drop-in (`src/auth.rs`) so the password never
-  reaches the server at all.
+- **Account auth.** Two identity sources, both issuing the same per-device bearer
+  sync token (only the token's SHA-256 is stored):
+  - *Supabase (preferred).* Supabase Auth owns login (email/password, OAuth, MFA)
+    and mints a short-lived access JWT. `/v1/auth/supabase` verifies that JWT —
+    signature via the project JWKS (RS256/ES256, `kid`-selected, cached; legacy
+    HS256 shared-secret supported) plus strict `exp`/`aud`/`iss` — and maps `sub`
+    onto a local account. **The server never receives a password**, so login and
+    the E2E vault key are fully separated.
+  - *Legacy.* `/v1/register` + `/v1/login` with an Argon2id verifier; login is
+    constant-work to avoid user enumeration. Being phased out in favor of Supabase.
+- **Device lifecycle.** Live devices per account are capped
+  (`MAX_DEVICES_PER_ACCOUNT`), each authenticated request stamps `last_seen_at`,
+  and `GET /v1/devices` lets an owner audit and revoke enrollments.
 - **Sync.** Per-device version vectors give last-writer-wins-with-merge; a stale
-  push gets a `Conflict` and must pull/merge/retry.
+  push gets a `Conflict` and must pull/merge/retry. A push is accepted only if
+  its base vector is *causally reachable* — a device may advance only its own
+  counter, never fabricate a sibling's — so one device can't wedge another.
 
 ## Run locally
 
