@@ -176,6 +176,7 @@ struct Metrics {
     errors_total: AtomicU64,
     nats_messages_total: AtomicU64,
     nats_published_total: AtomicU64,
+    nats_publish_failures_total: AtomicU64,
     nats_results_published_total: AtomicU64,
     mdp_published_total: AtomicU64,
     jobs_stored_total: AtomicU64,
@@ -61744,10 +61745,31 @@ fn learning_policy_snapshot(state: &AppState) -> Result<LearningPolicySnapshot, 
     }
 }
 
-async fn publish_event(state: &AppState, event_type: &str, request_id: &str, ok: bool) {
+async fn publish_nats_payload(
+    state: &AppState,
+    subject: &str,
+    payload: String,
+) -> Result<(), String> {
     let Some(nats) = state.nats.as_ref() else {
-        return;
+        return Err("NATS is not configured".to_string());
     };
+    nats.publish(subject.to_string(), payload.into())
+        .await
+        .map_err(|error| format!("publish failed: {error}"))?;
+    nats.flush()
+        .await
+        .map_err(|error| format!("broker flush failed: {error}"))?;
+    state
+        .metrics
+        .nats_published_total
+        .fetch_add(1, Ordering::Relaxed);
+    Ok(())
+}
+
+async fn publish_event(state: &AppState, event_type: &str, request_id: &str, ok: bool) {
+    if state.nats.is_none() {
+        return;
+    }
     let payload = json!({
         "schema": "dd.log.v1",
         "source": SERVICE_NAME,
@@ -61756,47 +61778,29 @@ async fn publish_event(state: &AppState, event_type: &str, request_id: &str, ok:
         "ok": ok,
         "generatedAtMs": now_ms(),
     });
-    match nats
-        .publish(state.event_subject.clone(), payload.to_string().into())
-        .await
+    if let Err(error) = publish_nats_payload(state, &state.event_subject, payload.to_string()).await
     {
-        Ok(()) => {
-            state
-                .metrics
-                .nats_published_total
-                .fetch_add(1, Ordering::Relaxed);
-        }
-        Err(error) => {
-            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            tracing::error!("{SERVICE_NAME} failed to publish runtime event: {error}");
-        }
+        state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+        state
+            .metrics
+            .nats_publish_failures_total
+            .fetch_add(1, Ordering::Relaxed);
+        tracing::error!("{SERVICE_NAME} failed to publish runtime event: {error}");
     }
 }
 
 async fn publish_json_to_nats(state: &AppState, subject: &str, payload: Value) -> bool {
-    let Some(nats) = state.nats.as_ref() else {
+    if state.nats.is_none() {
         return false;
-    };
-    match nats
-        .publish(subject.to_string(), payload.to_string().into())
-        .await
-    {
-        Ok(()) => {
-            if let Err(error) = nats.flush().await {
-                state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                tracing::error!(
-                    "{SERVICE_NAME} failed to confirm publish to {subject} with NATS: {error}"
-                );
-                return false;
-            }
-            state
-                .metrics
-                .nats_published_total
-                .fetch_add(1, Ordering::Relaxed);
-            true
-        }
+    }
+    match publish_nats_payload(state, subject, payload.to_string()).await {
+        Ok(()) => true,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            state
+                .metrics
+                .nats_publish_failures_total
+                .fetch_add(1, Ordering::Relaxed);
             tracing::error!("{SERVICE_NAME} failed to publish to {subject}: {error}");
             false
         }
@@ -63139,6 +63143,8 @@ fn root_response() -> Value {
         "POST /fabrication/slicers/result",
         "GET /mesh-repair/catalog",
         "GET /fabrication/mesh-repair/catalog",
+        "POST /mesh-repair/plan",
+        "POST /fabrication/mesh-repair/plan",
         "POST /mesh-repair/result",
         "POST /fabrication/mesh-repair/result",
         "GET /formats/catalog",
@@ -63207,6 +63213,8 @@ fn root_response() -> Value {
         "GET /fabrication/toolpaths/catalog",
         "POST /toolpaths/plan",
         "POST /fabrication/toolpaths/plan",
+        "POST /toolpaths/generate",
+        "POST /fabrication/toolpaths/generate",
         "POST /toolpaths/result",
         "POST /fabrication/toolpaths/result",
         "GET /improvements/catalog",
@@ -63297,6 +63305,8 @@ fn root_response() -> Value {
         "POST /fabrication/dispositions/result",
         "GET /costing/catalog",
         "GET /fabrication/costing/catalog",
+        "POST /costing/estimate",
+        "POST /fabrication/costing/estimate",
         "POST /costing/result",
         "POST /fabrication/costing/result",
         "GET /utilities/catalog",
@@ -121057,6 +121067,9 @@ async fn metrics(State(state): State<AppState>) -> Response {
          # HELP dd_fabrication_server_nats_published_total NATS messages published by the fabrication server.\n\
          # TYPE dd_fabrication_server_nats_published_total counter\n\
          dd_fabrication_server_nats_published_total {}\n\
+         # HELP dd_fabrication_server_nats_publish_failures_total NATS publishes or broker flushes that failed.\n\
+         # TYPE dd_fabrication_server_nats_publish_failures_total counter\n\
+         dd_fabrication_server_nats_publish_failures_total {}\n\
          # HELP dd_fabrication_server_nats_results_published_total Fabrication result messages published to NATS.\n\
          # TYPE dd_fabrication_server_nats_results_published_total counter\n\
          dd_fabrication_server_nats_results_published_total {}\n\
@@ -121114,6 +121127,10 @@ async fn metrics(State(state): State<AppState>) -> Response {
         state.metrics.errors_total.load(Ordering::Relaxed),
         state.metrics.nats_messages_total.load(Ordering::Relaxed),
         state.metrics.nats_published_total.load(Ordering::Relaxed),
+        state
+            .metrics
+            .nats_publish_failures_total
+            .load(Ordering::Relaxed),
         state
             .metrics
             .nats_results_published_total
