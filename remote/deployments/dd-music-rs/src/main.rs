@@ -23,6 +23,7 @@ use dd_nats_subject_defs::{
     MUSIC_GENERATION_REQUESTS_QUEUE_GROUP, MUSIC_GENERATION_REQUESTS_SUBJECT,
     MUSIC_GENERATION_RESULTS_SUBJECT, MUSIC_SONGS_PUBLISHED_SUBJECT, MUSIC_VOTES_EVENTS_SUBJECT,
 };
+use dd_pg_defs_sea_orm::music_songs;
 use des_engine::des::general::music_production::{
     generate_microtonal_song, generate_track_structure_plan, ArrangementSummary, AudioBuffer,
     MusicGenre, SongSpec, StylePalette, DEFAULT_SAMPLE_RATE,
@@ -32,11 +33,15 @@ use maud::{html, Markup, PreEscaped, DOCTYPE};
 use once_cell::sync::Lazy;
 use prometheus::{Encoder, IntCounterVec, IntGauge, Opts, TextEncoder};
 use redis::AsyncCommands;
+use sea_orm::{
+    sea_query::{Expr, NullOrdering},
+    ColumnTrait, ConnectionTrait, Database, DatabaseBackend, DatabaseConnection, DbErr,
+    EntityTrait, Order, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Statement,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use tokio::sync::{broadcast, Mutex};
-use tokio_postgres::types::ToSql;
 use uuid::Uuid;
 
 mod pg_contract {
@@ -510,30 +515,15 @@ fn now_ms() -> u128 {
         .as_millis()
 }
 
-async fn connect_postgres(config: &Config) -> Result<tokio_postgres::Client, ServiceError> {
+async fn connect_postgres(config: &Config) -> Result<DatabaseConnection, ServiceError> {
     let database_url = config
         .database_url
         .as_deref()
         .ok_or_else(|| ServiceError::Unavailable("music service is not ready".to_string()))?;
-    let mut root_store = rustls::RootCertStore::empty();
-    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-    let tls_config = rustls::ClientConfig::builder()
-        .with_root_certificates(root_store)
-        .with_no_client_auth();
-    let tls = tokio_postgres_rustls::MakeRustlsConnect::new(tls_config);
-    let (client, connection) =
-        tokio_postgres::connect(database_url, tls)
-            .await
-            .map_err(|error| {
-                tracing::error!("dd-music-rs postgres connect failed: {error}");
-                ServiceError::Unavailable("postgres connect failed".to_string())
-            })?;
-    tokio::spawn(async move {
-        if let Err(error) = connection.await {
-            tracing::error!("dd-music-rs postgres connection error: {error}");
-        }
-    });
-    Ok(client)
+    Database::connect(database_url).await.map_err(|error| {
+        tracing::error!("dd-music-rs postgres connect failed: {error}");
+        ServiceError::Unavailable("postgres connect failed".to_string())
+    })
 }
 
 fn require_server_auth(headers: &HeaderMap, config: &Config) -> Result<(), ServiceError> {
@@ -633,8 +623,8 @@ async fn songs_shelf(
 ) -> impl IntoResponse {
     let limit = query.limit.unwrap_or(36).clamp(1, MAX_LIST_LIMIT);
     let result = async {
-        let client = connect_postgres(&state.config).await?;
-        fetch_published_songs(&client, limit).await
+        let db = connect_postgres(&state.config).await?;
+        fetch_published_songs(&db, limit).await
     }
     .await;
 
@@ -661,8 +651,8 @@ async fn list_songs(
 ) -> Result<Json<SongsResponse>, ServiceError> {
     let limit = query.limit.unwrap_or(24).clamp(1, MAX_LIST_LIMIT);
     let songs = match async {
-        let client = connect_postgres(&state.config).await?;
-        fetch_published_songs(&client, limit).await
+        let db = connect_postgres(&state.config).await?;
+        fetch_published_songs(&db, limit).await
     }
     .await
     {
@@ -685,8 +675,8 @@ async fn get_song(
     Path(song_id): Path<String>,
 ) -> Result<Json<SongRow>, ServiceError> {
     validate_song_id(&song_id)?;
-    let client = connect_postgres(&state.config).await?;
-    let song = fetch_song(&client, &song_id).await?;
+    let db = connect_postgres(&state.config).await?;
+    let song = fetch_song(&db, &song_id).await?;
     record_request("GET", "/songs/:song_id", StatusCode::OK);
     Ok(Json(song))
 }
@@ -696,21 +686,26 @@ async fn song_audio(
     Path(song_id): Path<String>,
 ) -> Result<Redirect, ServiceError> {
     validate_song_id(&song_id)?;
-    let client = connect_postgres(&state.config).await?;
-    let sql = format!(
-        "update {songs}
-            set play_count = play_count + 1, updated_at = now()
-          where id = $1::uuid and status = 'published'
-          returning audio_url",
-        songs = pg_contract::MUSIC_SONGS_TABLE
-    );
-    let row = client
-        .query_opt(&sql, &[&song_id])
+    let db = connect_postgres(&state.config).await?;
+    let updated = music_songs::Entity::update_many()
+        .col_expr(
+            music_songs::Column::PlayCount,
+            Expr::col(music_songs::Column::PlayCount).add(1),
+        )
+        .col_expr(
+            music_songs::Column::UpdatedAt,
+            Expr::current_timestamp().into(),
+        )
+        .filter(music_songs::Column::Id.eq(parse_song_uuid(&song_id)?))
+        .filter(music_songs::Column::Status.eq("published"))
+        .exec_with_returning(&db)
         .await
-        .map_err(db_error)?
+        .map_err(db_error)?;
+    let song = updated
+        .into_iter()
+        .next()
         .ok_or_else(|| ServiceError::NotFound("song not found".to_string()))?;
-    let audio_url: Option<String> = row.get("audio_url");
-    let Some(audio_url) = audio_url else {
+    let Some(audio_url) = song.audio_url else {
         return Err(ServiceError::NotFound("song has no audio URL".to_string()));
     };
     if !is_allowed_audio_url(&state.config.storage, &audio_url) {
@@ -740,9 +735,9 @@ async fn vote_song(
     let visitor_hash = visitor_hash(&headers, &state.config.vote_hash_salt);
     throttle_vote(&state, &song_id, &visitor_hash).await?;
     let user_agent_hash = optional_header_hash(&headers, header::USER_AGENT.as_str());
-    let client = connect_postgres(&state.config).await?;
+    let db = connect_postgres(&state.config).await?;
     let song = upsert_vote(
-        &client,
+        &db,
         &song_id,
         &visitor_hash,
         user_agent_hash.as_deref(),
@@ -825,75 +820,38 @@ async fn generate_internal(
 }
 
 async fn fetch_published_songs(
-    client: &tokio_postgres::Client,
+    db: &DatabaseConnection,
     limit: i64,
 ) -> Result<Vec<SongRow>, ServiceError> {
-    let sql = format!(
-        "select
-            id::text as id,
-            title,
-            slug,
-            genre,
-            status,
-            audio_url,
-            content_type,
-            duration_millis,
-            bpm_millis,
-            listenability_score_micros,
-            vote_score,
-            up_votes,
-            down_votes,
-            play_count,
-            summary,
-            to_char(published_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as published_at,
-            to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at
-          from {songs}
-          where status = 'published'
-          order by published_at desc nulls last, created_at desc
-          limit $1",
-        songs = pg_contract::MUSIC_SONGS_TABLE
-    );
-    let rows = client.query(&sql, &[&limit]).await.map_err(db_error)?;
-    Ok(rows.iter().map(song_from_row).collect())
+    let songs = music_songs::Entity::find()
+        .filter(music_songs::Column::Status.eq("published"))
+        .order_by_with_nulls(
+            music_songs::Column::PublishedAt,
+            Order::Desc,
+            NullOrdering::Last,
+        )
+        .order_by_desc(music_songs::Column::CreatedAt)
+        .limit(limit as u64)
+        .all(db)
+        .await
+        .map_err(db_error)?;
+    Ok(songs.iter().map(song_from_model).collect())
 }
 
-async fn fetch_song(
-    client: &tokio_postgres::Client,
-    song_id: &str,
-) -> Result<SongRow, ServiceError> {
-    let sql = format!(
-        "select
-            id::text as id,
-            title,
-            slug,
-            genre,
-            status,
-            audio_url,
-            content_type,
-            duration_millis,
-            bpm_millis,
-            listenability_score_micros,
-            vote_score,
-            up_votes,
-            down_votes,
-            play_count,
-            summary,
-            to_char(published_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as published_at,
-            to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at
-          from {songs}
-          where id = $1::uuid",
-        songs = pg_contract::MUSIC_SONGS_TABLE
-    );
-    let row = client
-        .query_opt(&sql, &[&song_id])
+async fn fetch_song(db: &DatabaseConnection, song_id: &str) -> Result<SongRow, ServiceError> {
+    let song = music_songs::Entity::find_by_id(parse_song_uuid(song_id)?)
+        .one(db)
         .await
         .map_err(db_error)?
         .ok_or_else(|| ServiceError::NotFound("song not found".to_string()))?;
-    Ok(song_from_row(&row))
+    Ok(song_from_model(&song))
 }
 
+/// The vote upsert, per-song stats recompute, and songs-row refresh must stay a
+/// single atomic statement, which the entity API cannot express; keep the CTE
+/// as a parameterized raw statement returning the full songs row.
 async fn upsert_vote(
-    client: &tokio_postgres::Client,
+    db: &DatabaseConnection,
     song_id: &str,
     visitor_hash: &str,
     user_agent_hash: Option<&str>,
@@ -924,34 +882,26 @@ async fn upsert_vote(
                  updated_at = now()
             from stats
            where songs.id = stats.song_id
-           returning
-            songs.id::text as id,
-            songs.title,
-            songs.slug,
-            songs.genre,
-            songs.status,
-            songs.audio_url,
-            songs.content_type,
-            songs.duration_millis,
-            songs.bpm_millis,
-            songs.listenability_score_micros,
-            songs.vote_score,
-            songs.up_votes,
-            songs.down_votes,
-            songs.play_count,
-            songs.summary,
-            to_char(songs.published_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as published_at,
-            to_char(songs.created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at",
+           returning songs.*",
         songs = pg_contract::MUSIC_SONGS_TABLE,
         votes = pg_contract::MUSIC_SONG_VOTES_TABLE
     );
-    let params: &[&(dyn ToSql + Sync)] = &[&song_id, &visitor_hash, &user_agent_hash, &vote_value];
-    let row = client
-        .query_opt(&sql, params)
+    let song = music_songs::Entity::find()
+        .from_raw_sql(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            sql,
+            [
+                song_id.into(),
+                visitor_hash.into(),
+                user_agent_hash.map(str::to_string).into(),
+                vote_value.into(),
+            ],
+        ))
+        .one(db)
         .await
         .map_err(db_error)?
         .ok_or_else(|| ServiceError::NotFound("song not found".to_string()))?;
-    Ok(song_from_row(&row))
+    Ok(song_from_model(&song))
 }
 
 /// Best-effort fan-out of a `dd.music.v1` envelope onto NATS. No-ops when
@@ -1031,7 +981,7 @@ async fn generate_and_publish_songs(
     count: i64,
     min_score: f64,
 ) -> Result<GenerateResponse, ServiceError> {
-    let client = connect_postgres(&state.config).await?;
+    let db = connect_postgres(&state.config).await?;
     let mut published = Vec::new();
     let mut discarded = 0usize;
     let mut attempts = 0usize;
@@ -1050,12 +1000,12 @@ async fn generate_and_publish_songs(
             })?;
         if song.listenability_score < min_score {
             discarded += 1;
-            insert_discarded_song(&client, &song, "listenability_score_below_threshold").await?;
+            insert_discarded_song(&db, &song, "listenability_score_below_threshold").await?;
             SONG_GENERATIONS.with_label_values(&["discarded"]).inc();
             continue;
         }
         let stored = store_audio(state, &song).await?;
-        let row = insert_published_song(&client, &song, &stored).await?;
+        let row = insert_published_song(&db, &song, &stored).await?;
         publish_music_event(state, MUSIC_SONGS_PUBLISHED_SUBJECT, song_published_event(&row)).await;
         published.push(row);
         SONG_GENERATIONS.with_label_values(&["published"]).inc();
@@ -1182,8 +1132,11 @@ async fn store_audio(state: &AppState, song: &GeneratedSong) -> Result<StoredObj
     }
 }
 
+/// generation_date and published_at are computed server-side (current_date /
+/// now()), which ActiveModel inserts cannot express; keep the insert as a
+/// parameterized raw statement returning the full row.
 async fn insert_published_song(
-    client: &tokio_postgres::Client,
+    db: &DatabaseConnection,
     song: &GeneratedSong,
     stored: &StoredObject,
 ) -> Result<SongRow, ServiceError> {
@@ -1216,24 +1169,7 @@ async fn insert_published_song(
             $1::uuid, $2, $3, 'published', $4, to_char(current_date, 'YYYY-MM-DD'), $5, $6, $7, $8, 'audio/wav',
             $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, now()
           )
-          returning
-            id::text as id,
-            title,
-            slug,
-            genre,
-            status,
-            audio_url,
-            content_type,
-            duration_millis,
-            bpm_millis,
-            listenability_score_micros,
-            vote_score,
-            up_votes,
-            down_votes,
-            play_count,
-            summary,
-            to_char(published_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as published_at,
-            to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at",
+          returning *",
         songs = pg_contract::MUSIC_SONGS_TABLE
     );
     let meta = json!({
@@ -1248,32 +1184,42 @@ async fn insert_published_song(
     let rms_micros = micros_i32(song.summary.rms);
     let spectral_centroid_millihz = millihz_i64(song.summary.spectral_centroid_hz);
     let listenability_score_micros = micros_i32(song.listenability_score);
-    let params: &[&(dyn ToSql + Sync)] = &[
-        &song.id,
-        &song.title,
-        &song.slug,
-        &song.seed,
-        &stored.provider,
-        &stored.bucket,
-        &stored.key,
-        &stored.url,
-        &duration_millis,
-        &sample_rate,
-        &bpm_millis,
-        &song.genre,
-        &peak_micros,
-        &rms_micros,
-        &spectral_centroid_millihz,
-        &listenability_score_micros,
-        &song.summary_json,
-        &meta,
-    ];
-    let row = client.query_one(&sql, params).await.map_err(db_error)?;
-    Ok(song_from_row(&row))
+    let row = music_songs::Entity::find()
+        .from_raw_sql(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            sql,
+            [
+                song.id.as_str().into(),
+                song.title.as_str().into(),
+                song.slug.as_str().into(),
+                song.seed.into(),
+                stored.provider.as_str().into(),
+                stored.bucket.clone().into(),
+                stored.key.as_str().into(),
+                stored.url.as_str().into(),
+                duration_millis.into(),
+                sample_rate.into(),
+                bpm_millis.into(),
+                song.genre.as_str().into(),
+                peak_micros.into(),
+                rms_micros.into(),
+                spectral_centroid_millihz.into(),
+                listenability_score_micros.into(),
+                song.summary_json.clone().into(),
+                meta.into(),
+            ],
+        ))
+        .one(db)
+        .await
+        .map_err(db_error)?
+        .ok_or_else(|| ServiceError::Internal("postgres query failed".to_string()))?;
+    Ok(song_from_model(&row))
 }
 
+/// generation_date is computed server-side (current_date), which ActiveModel
+/// inserts cannot express; keep the insert as a parameterized raw statement.
 async fn insert_discarded_song(
-    client: &tokio_postgres::Client,
+    db: &DatabaseConnection,
     song: &GeneratedSong,
     reason: &str,
 ) -> Result<(), ServiceError> {
@@ -1314,23 +1260,28 @@ async fn insert_discarded_song(
     let rms_micros = micros_i32(song.summary.rms);
     let spectral_centroid_millihz = millihz_i64(song.summary.spectral_centroid_hz);
     let listenability_score_micros = micros_i32(song.listenability_score);
-    let params: &[&(dyn ToSql + Sync)] = &[
-        &song.id,
-        &song.title,
-        &song.slug,
-        &song.seed,
-        &duration_millis,
-        &sample_rate,
-        &bpm_millis,
-        &song.genre,
-        &peak_micros,
-        &rms_micros,
-        &spectral_centroid_millihz,
-        &listenability_score_micros,
-        &song.summary_json,
-        &meta,
-    ];
-    client.execute(&sql, params).await.map_err(db_error)?;
+    db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        sql,
+        [
+            song.id.as_str().into(),
+            song.title.as_str().into(),
+            song.slug.as_str().into(),
+            song.seed.into(),
+            duration_millis.into(),
+            sample_rate.into(),
+            bpm_millis.into(),
+            song.genre.as_str().into(),
+            peak_micros.into(),
+            rms_micros.into(),
+            spectral_centroid_millihz.into(),
+            listenability_score_micros.into(),
+            song.summary_json.clone().into(),
+            meta.into(),
+        ],
+    ))
+    .await
+    .map_err(db_error)?;
     Ok(())
 }
 
@@ -1442,14 +1393,14 @@ async fn handle_generation_request(state: &AppState, payload: &[u8]) {
     // Respect the daily song budget so the on-demand lane can't exceed the
     // configured daily target (the scheduled sweep shares the same cap). This
     // bounds total cost regardless of how many requests arrive.
-    let client = match connect_postgres(&state.config).await {
-        Ok(client) => client,
+    let db = match connect_postgres(&state.config).await {
+        Ok(db) => db,
         Err(error) => {
             tracing::error!("dd-music-rs NATS generation request skipped (postgres): {error:?}");
             return;
         }
     };
-    let remaining = match (daily_target(state).await, published_today_count(&client).await) {
+    let remaining = match (daily_target(state).await, published_today_count(&db).await) {
         (Ok(target), Ok(published)) => (target - published).max(0),
         (Err(error), _) | (_, Err(error)) => {
             tracing::error!("dd-music-rs NATS generation request skipped (daily budget): {error:?}");
@@ -1482,9 +1433,9 @@ async fn run_generator_sweep(state: &AppState) -> Result<(), ServiceError> {
     if !acquire_generation_lock(state, &lock_token).await? {
         return Ok(());
     }
-    let client = connect_postgres(&state.config).await?;
+    let db = connect_postgres(&state.config).await?;
     let target = daily_target(state).await?;
-    let published_today = published_today_count(&client).await?;
+    let published_today = published_today_count(&db).await?;
     let remaining = (target - published_today).max(0);
     if remaining == 0 {
         return Ok(());
@@ -1551,16 +1502,17 @@ async fn daily_target(state: &AppState) -> Result<i64, ServiceError> {
     ))
 }
 
-async fn published_today_count(client: &tokio_postgres::Client) -> Result<i64, ServiceError> {
-    let sql = format!(
-        "select count(*)::bigint as count
-           from {songs}
-          where status = 'published'
-            and generation_date = to_char(current_date, 'YYYY-MM-DD')",
-        songs = pg_contract::MUSIC_SONGS_TABLE
-    );
-    let row = client.query_one(&sql, &[]).await.map_err(db_error)?;
-    Ok(row.get("count"))
+async fn published_today_count(db: &DatabaseConnection) -> Result<i64, ServiceError> {
+    let count = music_songs::Entity::find()
+        .filter(music_songs::Column::Status.eq("published"))
+        .filter(
+            Expr::col(music_songs::Column::GenerationDate)
+                .eq(Expr::cust("to_char(current_date, 'YYYY-MM-DD')")),
+        )
+        .count(db)
+        .await
+        .map_err(db_error)?;
+    Ok(count as i64)
 }
 
 fn deterministic_daily_target(today: &str, min: i64, max: i64) -> i64 {
@@ -1568,32 +1520,39 @@ fn deterministic_daily_target(today: &str, min: i64, max: i64) -> i64 {
     min + (hash32(today.as_bytes()) as i64 % span)
 }
 
-fn song_from_row(row: &tokio_postgres::Row) -> SongRow {
-    let id: String = row.get("id");
-    let duration_millis: i32 = row.get("duration_millis");
-    let bpm_millis: i32 = row.get("bpm_millis");
-    let listenability_score_micros: i32 = row.get("listenability_score_micros");
+fn song_from_model(model: &music_songs::Model) -> SongRow {
+    let id = model.id.to_string();
     SongRow {
-        audio_url: row
-            .get::<_, Option<String>>("audio_url")
+        audio_url: model
+            .audio_url
+            .as_ref()
             .map(|_| format!("songs/{id}/audio")),
         id,
-        title: row.get("title"),
-        slug: row.get("slug"),
-        genre: row.get("genre"),
-        status: row.get("status"),
-        content_type: row.get("content_type"),
-        duration_seconds: duration_millis as f64 / 1000.0,
-        bpm: bpm_millis as f64 / 1000.0,
-        listenability_score: listenability_score_micros as f64 / 1_000_000.0,
-        vote_score: row.get("vote_score"),
-        up_votes: row.get("up_votes"),
-        down_votes: row.get("down_votes"),
-        play_count: row.get("play_count"),
-        summary: row.get("summary"),
-        published_at: row.get("published_at"),
-        created_at: row.get("created_at"),
+        title: model.title.clone(),
+        slug: model.slug.clone(),
+        genre: model.genre.clone(),
+        status: model.status.clone(),
+        content_type: model.content_type.clone(),
+        duration_seconds: model.duration_millis as f64 / 1000.0,
+        bpm: model.bpm_millis as f64 / 1000.0,
+        listenability_score: model.listenability_score_micros as f64 / 1_000_000.0,
+        vote_score: model.vote_score,
+        up_votes: model.up_votes,
+        down_votes: model.down_votes,
+        play_count: model.play_count,
+        summary: model.summary.clone(),
+        published_at: model.published_at.map(format_utc_timestamp),
+        created_at: format_utc_timestamp(model.created_at),
     }
+}
+
+/// Matches the previous SQL rendering:
+/// `to_char(x at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')`.
+fn format_utc_timestamp(value: chrono::DateTime<chrono::FixedOffset>) -> String {
+    value
+        .with_timezone(&Utc)
+        .format("%Y-%m-%dT%H:%M:%SZ")
+        .to_string()
 }
 
 fn vote_request_from_parts(
@@ -1937,8 +1896,11 @@ fn join_url(base: &str, key: &str) -> String {
 }
 
 fn validate_song_id(song_id: &str) -> Result<(), ServiceError> {
+    parse_song_uuid(song_id).map(|_| ())
+}
+
+fn parse_song_uuid(song_id: &str) -> Result<Uuid, ServiceError> {
     Uuid::parse_str(song_id)
-        .map(|_| ())
         .map_err(|_| ServiceError::BadRequest("song id must be a UUID".to_string()))
 }
 
@@ -2000,7 +1962,7 @@ fn storage_provider_name(storage: &StorageConfig) -> &'static str {
     }
 }
 
-fn db_error(error: tokio_postgres::Error) -> ServiceError {
+fn db_error(error: DbErr) -> ServiceError {
     tracing::error!("dd-music-rs postgres query failed: {error}");
     ServiceError::Internal("postgres query failed".to_string())
 }
