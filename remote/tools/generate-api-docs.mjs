@@ -123,6 +123,11 @@ function findRepoRoot() {
 
 const repoRoot = findRepoRoot();
 const checkOnly = process.argv.includes('--check');
+const serviceFlagIndex = process.argv.indexOf('--service');
+const serviceFilter = serviceFlagIndex >= 0 ? process.argv[serviceFlagIndex + 1] : undefined;
+if (serviceFlagIndex >= 0 && (!serviceFilter || serviceFilter.startsWith('--'))) {
+  throw new Error('--service requires a deployment directory name');
+}
 
 async function pathExists(path) {
   return existsSync(path);
@@ -743,6 +748,13 @@ async function discoverRustServices() {
         }
       }
     }
+    if (entry.name === 'contract-service-rs' && source.includes('solana_features::router()')) {
+      const featuresFile = join(deploymentDir, 'src/solana_features.rs');
+      if (await pathExists(featuresFile)) {
+        const featuresSource = await readUtf8(featuresFile);
+        rawRoutes.push(...extractAxumRoutesFromSource(featuresSource, featuresFile));
+      }
+    }
     if (await rustDependsOnRuntimeConfigClient(deploymentDir)) {
       injectRuntimeConfigRoutes(rawRoutes, join(repoRoot, 'remote/libs/runtime-config-client-rs/src/lib.rs'));
     }
@@ -1174,7 +1186,11 @@ async function writeOrCheck(path, content) {
 async function main() {
   const services = [...await discoverRustServices(), ...await discoverExtraServices()]
     .filter((service) => service.routes.length > 0)
+    .filter((service) => !serviceFilter || service.service === serviceFilter)
     .sort((left, right) => left.service.localeCompare(right.service));
+  if (serviceFilter && services.length === 0) {
+    throw new Error(`unknown or route-less API docs service: ${serviceFilter}`);
+  }
   const index = [];
   const indexItems = [];
   for (const service of services) {
@@ -1209,14 +1225,16 @@ async function main() {
     standardDocsRoutes: STANDARD_DOCS_ROUTES,
     services: index,
   };
-  await writeOrCheck(
-    resolve(repoRoot, 'remote/deployments/generated-api-docs-index.json'),
-    `${JSON.stringify(indexPayload, null, 2)}\n`,
-  );
-  await writeOrCheck(
-    resolve(repoRoot, 'remote/deployments/generated-api-docs-index.html'),
-    renderDocsIndexHtml(indexItems),
-  );
+  if (!serviceFilter) {
+    await writeOrCheck(
+      resolve(repoRoot, 'remote/deployments/generated-api-docs-index.json'),
+      `${JSON.stringify(indexPayload, null, 2)}\n`,
+    );
+    await writeOrCheck(
+      resolve(repoRoot, 'remote/deployments/generated-api-docs-index.html'),
+      renderDocsIndexHtml(indexItems),
+    );
+  }
   console.log(`${checkOnly ? 'checked' : 'generated'} API docs for ${services.length} service(s)`);
 }
 

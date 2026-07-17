@@ -412,7 +412,7 @@ fn config_from_env() -> Config {
         // marketing apexes (fiducia.cloud, canonical.cloud) it fronts.
         domains: env_csv_bounded(
             "DD_MCP_DOMAINS",
-            "fiducia.cloud,app.fiducia.cloud,admin.fiducia.cloud,canonical.cloud",
+            "fiducia.cloud,app.fiducia.cloud,admin.fiducia.cloud,canonical.cloud,athleto.store,app.athleto.store",
             MAX_CONFIGURED_DOMAINS,
         ),
         expected_ingress_ips: env_csv_bounded(

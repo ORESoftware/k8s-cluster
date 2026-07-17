@@ -20,7 +20,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-10-blockchain-suite-scaffold'
+        dd.dev/telemetry-revision: '2026-07-16-solana-formal-rs-filter'
       labels:
         app: dd-contract-service
     spec:
@@ -68,8 +68,52 @@ spec:
               value: https://api.devnet.solana.com
             - name: SOLANA_RPC_TIMEOUT_SECONDS
               value: '20'
+            - name: SOLANA_RPC_MAX_IN_FLIGHT
+              value: '64'
             - name: SOLANA_ALLOW_PRIVATE_RPC
               value: 'false'
+            # Stateless source/program verification delegates to the internal
+            # formal-methods service. Repository jobs are restricted in-process
+            # to credential-free github.com/fiducia-cloud URLs.
+            - name: CONTRACT_FORMAL_METHODS_ENABLED
+              value: 'true'
+            - name: FORMAL_METHODS_URL
+              value: http://dd-formal-methods-server.default.svc.cluster.local:8110
+            - name: FORMAL_METHODS_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
+            - name: CONTRACT_FORMAL_METHODS_GITHUB_ORGS
+              value: fiducia-cloud
+            # Every Solana sendTransaction path is fenced twice across both
+            # replicas: pg_try_advisory_xact_lock over the signed transaction
+            # digest, then Fiducia's durable idempotency lease/fencing token.
+            - name: CONTRACT_COORDINATION_ENABLED
+              value: 'true'
+            - name: CONTRACT_COORDINATION_REQUIRED
+              value: 'true'
+            - name: CONTRACT_COORDINATION_PG_POOL_SIZE
+              value: '4'
+            - name: RDS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-remote-rest-api-secrets
+                  key: RDS_DATABASE_URL
+                  optional: true
+            - name: FIDUCIA_LOCK_URL
+              value: http://fiducia-load-balance.fiducia.svc.cluster.local:8088
+            - name: FIDUCIA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: FIDUCIA_API_KEY
+                  optional: true
+            - name: FIDUCIA_IDEMPOTENCY_LEASE_MS
+              value: '300000'
+            - name: FIDUCIA_IDEMPOTENCY_RETENTION_MS
+              value: '604800000'
             - name: SOLANA_SEND_ENABLED
               value: 'false'
             - name: SOLANA_ALLOW_SKIP_PREFLIGHT
@@ -216,14 +260,16 @@ spec:
               path: /healthz
               port: http
             periodSeconds: 5
-            failureThreshold: 60
+            # First boot compiles the service and SQLx dependency graph into the
+            # pod-local cache; observed cold builds can exceed five minutes.
+            failureThreshold: 240
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: http
             periodSeconds: 5
-            timeoutSeconds: 3
-            failureThreshold: 2
+            timeoutSeconds: 5
+            failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /healthz

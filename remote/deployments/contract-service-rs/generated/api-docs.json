@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "contract-service-rs",
   "language": "rust",
-  "routeCount": 52,
+  "routeCount": 59,
   "routeTypeCounts": {
-    "service": 6,
-    "user-generated": 43,
+    "service": 7,
+    "user-generated": 49,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -169,6 +169,23 @@
       "notes": ""
     },
     {
+      "path": "/capabilities",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "capabilities_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/solana_features.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/chain/:id/status",
       "methods": [
         "GET"
@@ -182,6 +199,40 @@
       ],
       "sourceFiles": [
         "remote/deployments/contract-service-rs/src/blockchain/mod.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/chain/priority-fees",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "priority_fees_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/solana_features.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/chain/signatures",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "signature_history_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/solana_features.rs"
       ],
       "notes": ""
     },
@@ -233,6 +284,23 @@
       ],
       "sourceFiles": [
         "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/escrow/inspect",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "escrow_inspect_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/solana_features.rs"
       ],
       "notes": ""
     },
@@ -556,6 +624,57 @@
       ],
       "sourceFiles": [
         "remote/deployments/contract-service-rs/src/blockchain/nft.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/program/inspect",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "program_inspect_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/solana_features.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/program/verify",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "program_verify_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/solana_features.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/readyz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Readiness check.",
+      "handlers": [
+        "readyz"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
       ],
       "notes": ""
     },

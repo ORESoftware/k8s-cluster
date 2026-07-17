@@ -137,3 +137,7 @@
 	path = remote/deployments/3fa-web-server-rs
 	url = git@github.com:3FA-app/3fa-web-server.rs.git
 	branch = main
+[submodule "remote/deployments/athleto-app-rs"]
+	path = remote/deployments/athleto-app-rs
+	url = git@github.com:athlet-o/athleto-app-rs.git
+	branch = main

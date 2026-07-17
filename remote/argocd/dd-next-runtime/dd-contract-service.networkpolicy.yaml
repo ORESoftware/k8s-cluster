@@ -69,6 +69,38 @@ spec:
       ports:
         - protocol: TCP
           port: 8110
+    # Source/program verification through the in-cluster formal-methods service.
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dd-formal-methods-server
+      ports:
+        - protocol: TCP
+          port: 8110
+    # Durable idempotency leases and fencing tokens from fiducia.cloud's
+    # fiducia-node.rs data plane, reached through its load balancer.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: fiducia
+          podSelector:
+            matchLabels:
+              app: fiducia-load-balance
+      ports:
+        - protocol: TCP
+          port: 8088
+    # RDS Postgres advisory transaction locks. RDS resolves to a private VPC
+    # address; constrain the broad private ranges to Postgres only.
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+        - ipBlock:
+            cidr: 172.16.0.0/12
+        - ipBlock:
+            cidr: 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 5432
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
