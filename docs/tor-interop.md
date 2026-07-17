@@ -23,7 +23,7 @@ specifications, which differ from this project at every layer:
 | Concern            | Tor                                                  | tor-server.rs                          |
 | ------------------ | ---------------------------------------------------- | -------------------------------------- |
 | Link layer         | TLS "OR connections" with specific cert handling     | plain TCP, length-prefixed frames      |
-| Cell format        | Fixed 514-byte cells, `RELAY` cells, stream IDs      | variable-length bincode cells, 1 stream/circuit |
+| Cell format        | Fixed 514-byte cells, `RELAY` cells, stream IDs      | bounded variable-length tagged cells, 1 stream/circuit |
 | Handshake          | `ntor` / `ntor v3` (formally analyzed)               | ntor-*like* (X25519 + HKDF + HMAC)     |
 | Directory          | Directory authorities + signed hourly consensus      | a static TOML file you distribute      |
 | Onion services     | `.onion` v3 (rendezvous, HSDir, descriptors)         | none                                   |
@@ -50,6 +50,20 @@ layer, ntor handshake, directory consensus, path selection, flow control, and
 onion services for you. The alternative is the C `tor` daemon; either way the
 *client interface* (SOCKS5) is identical to this project's overlay mode — only
 the *network* underneath differs.
+
+### Bridges and traffic obfuscation
+
+Builds with `--features arti` include Arti bridge and pluggable-transport
+support. Set `TOR_ARTI_CONFIG` to a client TOML containing `[bridges]` and
+`[[bridges.transports]]` entries, and install/mount the referenced obfs4proxy or
+Snowflake client binary. This obfuscates the Tor client-to-bridge link for
+censorship circumvention. It does not add padding/obfuscation to this project's
+custom overlay, conceal destination traffic from the exit, or provide VPN
+packet routing.
+
+See [`arti-client.example.toml`](../arti-client.example.toml) for the expected
+shape. Replace every placeholder with a current bridge line and make the
+configured transport binary available to the process.
 
 ## When this project is the right tool
 

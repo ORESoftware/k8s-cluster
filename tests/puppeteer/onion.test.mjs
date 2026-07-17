@@ -37,7 +37,11 @@ describe('puppeteer · onion surfing', () => {
       // Use the `localhost` hostname (not an IP) so the SOCKS proxy performs
       // remote DNS resolution at the exit — exercising DNS-through-proxy.
       const url = bustUrl(`http://localhost:${overlay.originPort}/page`, i);
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      try {
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      } catch (error) {
+        throw new Error(`${error.message}\n${overlay.dumpLogs()}`);
+      }
 
       const marker = await page.$eval('#marker', (e) => e.textContent);
       assert.equal(marker, 'onion-origin', 'origin page loaded through the proxy');

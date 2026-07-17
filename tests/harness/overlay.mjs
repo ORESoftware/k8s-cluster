@@ -97,7 +97,7 @@ export async function startOverlay({ hops = 3, allowPrivate = true } = {}) {
       TOR_LISTEN: `127.0.0.1:${r.port}`,
       TOR_KEY_FILE: r.keyFile,
       TOR_EXIT_ALLOW_PRIVATE: allowPrivate ? '1' : '',
-      RUST_LOG: 'warn',
+      RUST_LOG: process.env.TOR_E2E_RUST_LOG || 'warn',
     }, r.name);
   }
 
@@ -109,7 +109,7 @@ export async function startOverlay({ hops = 3, allowPrivate = true } = {}) {
     TOR_DIRECTORY: dirFile,
     TOR_HOPS: String(hops),
     TOR_DOCS_DIR: path.join(REPO_DIR, 'docs'),
-    RUST_LOG: 'warn',
+    RUST_LOG: process.env.TOR_E2E_RUST_LOG || 'warn',
   }, 'client');
 
   // Local origin server: counts hits per path and forbids caching so we can

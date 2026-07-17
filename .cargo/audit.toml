@@ -1,0 +1,7 @@
+[advisories]
+# Arti 0.44 pulls rsa 0.9.10 for Tor's legacy RSA support. RUSTSEC-2023-0071
+# concerns observable RSA private-key operations. This program embeds Arti only
+# as a client and never creates, loads, or uses an RSA private key; the custom
+# overlay uses X25519. Keep this exact exception visible until upstream ships a
+# fixed RSA dependency. See docs/security.md.
+ignore = ["RUSTSEC-2023-0071"]

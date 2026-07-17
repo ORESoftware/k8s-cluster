@@ -17,6 +17,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
+use subtle::ConstantTimeEq;
 
 use anyhow::{bail, Result};
 use axum::extract::{Path as AxPath, Query, State};
@@ -158,15 +159,7 @@ fn authorized(cfg: &WebConfig, headers: &HeaderMap, q: &HashMap<String, String>)
 /// folding, but differing lengths return false immediately — the token length
 /// is not itself secret).
 fn ct_str_eq(a: &str, b: &str) -> bool {
-    let (a, b) = (a.as_bytes(), b.as_bytes());
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut diff = 0u8;
-    for i in 0..a.len() {
-        diff |= a[i] ^ b[i];
-    }
-    return diff == 0;
+    return bool::from(a.as_bytes().ct_eq(b.as_bytes()));
 }
 
 /// Open a stream through the active backend and perform one plaintext HTTP GET.
@@ -201,9 +194,20 @@ async fn onion_get(cfg: &WebConfig, url: &str) -> Result<serde_json::Value> {
         || content_type.contains("xml")
         || content_type.contains("javascript");
     let body_preview = if is_text {
-        String::from_utf8_lossy(&body).chars().take(200_000).collect::<String>()
+        String::from_utf8_lossy(&body)
+            .chars()
+            .take(200_000)
+            .collect::<String>()
     } else {
-        format!("[{} bytes of {}]", body.len(), if content_type.is_empty() { "binary data" } else { &content_type })
+        format!(
+            "[{} bytes of {}]",
+            body.len(),
+            if content_type.is_empty() {
+                "binary data"
+            } else {
+                &content_type
+            }
+        )
     };
 
     return Ok(serde_json::json!({
@@ -258,10 +262,17 @@ fn parse_http_url(url: &str) -> Result<(String, u16, String)> {
         bail!("could not parse host from URL");
     }
     let (host, port) = match authority.rsplit_once(':') {
-        Some((h, p)) => (h.to_string(), p.parse().map_err(|_| anyhow::anyhow!("bad port"))?),
+        Some((h, p)) => (
+            h.to_string(),
+            p.parse().map_err(|_| anyhow::anyhow!("bad port"))?,
+        ),
         None => (authority.to_string(), 80u16),
     };
-    let path = if path.is_empty() { "/".to_string() } else { path.to_string() };
+    let path = if path.is_empty() {
+        "/".to_string()
+    } else {
+        path.to_string()
+    };
 
     // The host and path are interpolated into a raw HTTP request; any control
     // character (notably CR/LF) would allow header injection / request
@@ -284,7 +295,11 @@ fn split_http_response(raw: &[u8]) -> (String, u16, Vec<(String, String)>, Vec<u
         .map(|i| i + 4)
         .unwrap_or(raw.len());
     let head = String::from_utf8_lossy(&raw[..split_at.min(raw.len())]);
-    let body = if split_at <= raw.len() { raw[split_at..].to_vec() } else { Vec::new() };
+    let body = if split_at <= raw.len() {
+        raw[split_at..].to_vec()
+    } else {
+        Vec::new()
+    };
 
     let mut lines = head.lines();
     let status_line = lines.next().unwrap_or("").trim().to_string();
@@ -294,7 +309,10 @@ fn split_http_response(raw: &[u8]) -> (String, u16, Vec<(String, String)>, Vec<u
         .and_then(|c| c.parse().ok())
         .unwrap_or(0);
     let headers: Vec<(String, String)> = lines
-        .filter_map(|l| l.split_once(':').map(|(k, v)| (k.trim().to_string(), v.trim().to_string())))
+        .filter_map(|l| {
+            l.split_once(':')
+                .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+        })
         .collect();
     return (status_line, status_code, headers, body);
 }
@@ -317,7 +335,10 @@ async fn docs_index(State(cfg): State<AppState>) -> Response {
 
 async fn docs_page(State(cfg): State<AppState>, AxPath(name): AxPath<String>) -> Response {
     // Sanitize: only a bare doc slug, no path traversal.
-    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
         return (StatusCode::BAD_REQUEST, "invalid doc name").into_response();
     }
     let file = cfg.docs_dir.join(format!("{name}.md"));

@@ -1,0 +1,38 @@
+# Default-deny ingress to the Tor overlay. Relays accept onion links only from
+# the client and other relays. The SOCKS/UI service accepts traffic only from
+# pods in this namespace; add a narrowly scoped ingress rule for an authorized
+# workload namespace instead of making the proxy cluster-wide.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tor-relay-ingress
+  namespace: anon-proxy
+spec:
+  podSelector:
+    matchLabels: { app: tor-relay }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values: [tor-client, tor-relay]
+      ports:
+        - { protocol: TCP, port: 9001 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tor-client-ingress
+  namespace: anon-proxy
+spec:
+  podSelector:
+    matchLabels: { app: tor-client }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {}
+      ports:
+        - { protocol: TCP, port: 9050 }
+        - { protocol: TCP, port: 9060 }

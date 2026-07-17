@@ -12,6 +12,12 @@ a drop-in Tor client, and not interoperable with the real Tor network. It is
 meant for running your own private overlay of relays (e.g. across your own
 clusters/regions) to anonymize outbound traffic.
 
+It is a **TCP application proxy, not a VPN**: only applications explicitly
+configured for SOCKS5 use it. It does not create a TUN interface, route arbitrary
+IP packets, or carry UDP/ICMP. For a cloud-hosted whole-device tunnel, put this
+SOCKS service behind WireGuard/SSH or use a real VPN; do not expose port 9050
+directly to the public internet.
+
 ## How it works
 
 One binary, three modes (selected by `argv[1]` or the `TOR_ROLE` env var):
@@ -54,6 +60,8 @@ An ntor-like construction (simplified, not the formally analyzed Tor ntor):
 - The relay returns its ephemeral public key and an HMAC-SHA256 over the
   transcript; the client verifies it, proving the relay holds the static secret
   matching the directory.
+- The `TSR2` protocol marker, relay static public key, both ephemeral keys, and
+  role label are transcript-bound; non-contributory X25519 results are rejected.
 
 ### Layered data encryption
 
@@ -140,6 +148,11 @@ curl -x socks5h://127.0.0.1:9050 https://duckduckgogg42xjoc72x3sjasowoarfbgcmvfi
 
 With `arti`, `TOR_DIRECTORY` is not needed (Tor's directory authorities provide
 the consensus). The dashboard's backend badge shows which mode is active.
+Set `TOR_ARTI_CONFIG=/path/to/arti-client.toml` to load Arti bridge and
+pluggable-transport settings (for example obfs4 or Snowflake). The transport
+binary must also be installed/mounted. This can disguise the client-to-bridge
+Tor link for censorship circumvention; it does not make the custom overlay
+obfuscated or turn the service into a VPN.
 
 ## Hardening
 
@@ -147,17 +160,23 @@ the consensus). The dashboard's backend badge shows which mode is active.
   (RFC1918/CGNAT/ULA), link-local, and cloud-metadata (`169.254.169.254`)
   destinations by default — including IPv4-mapped/6to4/NAT64 IPv6 forms that
   embed a private v4 (e.g. `::ffff:127.0.0.1`). Override for local testing with
-  `TOR_EXIT_ALLOW_PRIVATE=1`.
-- **Dashboard `/api/fetch` guard:** this endpoint is a server-side proxy; set
-  `TOR_UI_TOKEN` when the dashboard is bound to a non-loopback address (required
-  via `?token=`/`Authorization: Bearer`). Host/path with control characters are
+  `TOR_EXIT_ALLOW_PRIVATE=1`. Outbound SMTP port 25 is denied by default.
+- **Remote listeners fail closed:** a non-loopback SOCKS listener requires
+  `TOR_SOCKS_ALLOW_REMOTE=1` plus RFC 1929 credentials. A non-loopback relay
+  requires a strong overlay secret unless `TOR_ALLOW_OPEN_RELAY=1` explicitly
+  acknowledges the risk. RFC 1929 does not encrypt the client link, so remote
+  SOCKS still belongs behind WireGuard, SSH, mTLS, or a private network.
+- **Dashboard `/api/fetch` guard:** this endpoint is a server-side proxy;
+  `TOR_UI_TOKEN` is required when the dashboard is bound to a non-loopback address
+  (via `?token=`/`Authorization: Bearer`). Host/path with control characters are
   rejected (no CRLF header injection).
 - **Overlay pre-shared key:** `TOR_NETWORK_SECRET` (or `…_FILE`) is folded into
   every handshake, so only nodes/clients sharing it can build circuits.
 - **Extend allowlist:** `TOR_RELAY_PEERS` pins which peers a relay will extend to.
 - **Limits & timeouts:** handshake (20 s), dial (15–60 s), and SOCKS-negotiation
-  (30 s) timeouts; `TOR_MAX_CIRCUITS` cap; optional `TOR_CIRCUIT_IDLE_TIMEOUT_SECS`;
-  1 MiB frame cap; path-traversal-sanitized doc names; relay key file is `0600`.
+  (30 s) timeouts; relay and SOCKS connection caps; optional circuit idle timeout;
+  1 MiB frame/parser cap; path-traversal-sanitized doc names; relay key creation
+  is atomic and owner-only (`0600`).
 
 See [docs/security.md](docs/security.md) for the full model.
 
@@ -167,17 +186,26 @@ See [docs/security.md](docs/security.md) for the full model.
 | ------------------- | ------ | ------------------ | ---------------------------------------- |
 | `TOR_ROLE`          | all    | (from argv[1])     | `relay` \| `client` \| `keygen`          |
 | `TOR_BACKEND`       | client | `overlay`          | `overlay` (own relays) \| `arti` (real Tor; needs `--features arti`) |
-| `TOR_NETWORK_SECRET`| all    | (empty = open)     | Overlay pre-shared key folded into handshakes |
+| `TOR_NETWORK_SECRET`| all    | (empty = open)     | Overlay PSK; if set, at least 32 high-entropy bytes |
+| `TOR_ALLOW_OPEN_RELAY` | relay | `0`              | Explicitly allow a non-loopback relay without a PSK |
 | `TOR_LISTEN`        | relay  | `0.0.0.0:9001`     | Relay listen address                     |
 | `TOR_KEY_FILE`      | relay  | `./relay.key`      | Static identity key file (created if absent) |
 | `TOR_EXIT_ALLOW_PRIVATE` | relay | `0`           | Allow exits to private/loopback ranges   |
+| `TOR_EXIT_DENY_PORTS` | relay | `25`               | Comma-separated outbound port denylist   |
 | `TOR_RELAY_PEERS`   | relay  | (any)              | Comma-separated `host:port` extend allowlist |
 | `TOR_MAX_CIRCUITS`  | relay  | `1024`             | Max concurrent circuits before rejecting |
 | `TOR_CIRCUIT_IDLE_TIMEOUT_SECS` | relay | `0` (off) | Close circuits idle for this long        |
 | `TOR_NETWORK_SECRET_FILE` | all | (unset)           | Read overlay PSK from a file (not env)   |
 | `TOR_UI_TOKEN` / `TOR_UI_TOKEN_FILE` | client | (unset) | Require token for `/api/fetch` (guard exposed dashboard) |
+| `TOR_UI_ALLOW_REMOTE_UNAUTHENTICATED` | client | `0` | Explicitly allow an open non-loopback dashboard |
 | `TOR_SOCKS_LISTEN`  | client | `127.0.0.1:9050`   | Local SOCKS5 listen address              |
+| `TOR_SOCKS_ALLOW_REMOTE` | client | `0`            | Permit a non-loopback SOCKS bind (also requires password) |
+| `TOR_SOCKS_USERNAME` | client | `tor`             | RFC 1929 username                        |
+| `TOR_SOCKS_PASSWORD` / `_FILE` | client | (unset) | RFC 1929 password                        |
+| `TOR_MAX_SOCKS_CONNECTIONS` | client | `256`        | Max concurrent SOCKS connections         |
 | `TOR_UI_LISTEN`     | client | `127.0.0.1:9060`   | Dashboard/docs listen address            |
+| `TOR_ARTI_CONFIG`   | client | (Arti defaults)    | Arti client TOML, including bridges/transports |
+| `TOR_ARTI_ISOLATE_STREAMS` | client | `0`          | Force a fresh Arti circuit per stream (low volume only) |
 | `TOR_DIRECTORY`     | client | (required)         | Path to the relay directory TOML         |
 | `TOR_HOPS`          | client | `3`                | Number of relays per circuit             |
 | `TOR_DOCS_DIR`      | client | `./docs`           | Directory of markdown docs to serve      |
@@ -204,8 +232,8 @@ docker build -t oresoftware/tor-server:0.1.0 .
 ```
 
 See the `Dockerfile` header and `k8s/` for relay and client deployments. The
-relay `StatefulSet` persists each pod's identity key on a volume so its public
-key is stable across restarts.
+relay Deployments mount pre-generated identity keys from Secrets so public keys
+remain stable across restarts.
 
 ## Scope & security caveats
 
@@ -220,6 +248,8 @@ production Tor:
   you distribute; there is no reputation, flagging, or bandwidth weighting.
 - **CONNECT only**; no SOCKS UDP associate, no `.onion`-style hidden services.
 - **Handshake** is ntor-*like* but not the formally verified Tor ntor.
+- **Not a VPN**; applications can bypass it and leak traffic unless separately
+  sandboxed/routed. See [cloud/VPN/obfuscation guidance](docs/cloud-vpn-obfuscation.md).
 
 Run relays only on infrastructure you are authorized to use, and be mindful that
 the exit node makes connections on your behalf.

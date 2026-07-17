@@ -33,6 +33,9 @@ spec:
           env:
             - { name: TOR_LISTEN, value: "0.0.0.0:9001" }
             - { name: TOR_KEY_FILE, value: "/keys/relay.key" }
+            - { name: TOR_NETWORK_SECRET_FILE, value: "/secrets/network/network.secret" }
+            - { name: TOR_RELAY_PEERS, value: "tor-relay-a.anon-proxy.svc.cluster.local:9001,tor-relay-b.anon-proxy.svc.cluster.local:9001,tor-relay-c.anon-proxy.svc.cluster.local:9001" }
+            - { name: TOR_EXIT_DENY_PORTS, value: "25" }
             - { name: RUST_LOG, value: "info" }
           ports:
             - { name: onion, containerPort: 9001 }
@@ -45,11 +48,17 @@ spec:
             limits: { memory: "128Mi" }
           volumeMounts:
             - { name: key, mountPath: /keys, readOnly: true }
+            - { name: network-secret, mountPath: /secrets/network, readOnly: true }
       volumes:
         - name: key
           secret:
             secretName: tor-relay-a-key
+            defaultMode: 0440
             items: [{ key: relay.key, path: relay.key }]
+        - name: network-secret
+          secret:
+            secretName: tor-network-secret
+            defaultMode: 0440
 ---
 apiVersion: v1
 kind: Service
@@ -89,6 +98,9 @@ spec:
           env:
             - { name: TOR_LISTEN, value: "0.0.0.0:9001" }
             - { name: TOR_KEY_FILE, value: "/keys/relay.key" }
+            - { name: TOR_NETWORK_SECRET_FILE, value: "/secrets/network/network.secret" }
+            - { name: TOR_RELAY_PEERS, value: "tor-relay-a.anon-proxy.svc.cluster.local:9001,tor-relay-b.anon-proxy.svc.cluster.local:9001,tor-relay-c.anon-proxy.svc.cluster.local:9001" }
+            - { name: TOR_EXIT_DENY_PORTS, value: "25" }
             - { name: RUST_LOG, value: "info" }
           ports:
             - { name: onion, containerPort: 9001 }
@@ -101,11 +113,17 @@ spec:
             limits: { memory: "128Mi" }
           volumeMounts:
             - { name: key, mountPath: /keys, readOnly: true }
+            - { name: network-secret, mountPath: /secrets/network, readOnly: true }
       volumes:
         - name: key
           secret:
             secretName: tor-relay-b-key
+            defaultMode: 0440
             items: [{ key: relay.key, path: relay.key }]
+        - name: network-secret
+          secret:
+            secretName: tor-network-secret
+            defaultMode: 0440
 ---
 apiVersion: v1
 kind: Service
@@ -145,6 +163,9 @@ spec:
           env:
             - { name: TOR_LISTEN, value: "0.0.0.0:9001" }
             - { name: TOR_KEY_FILE, value: "/keys/relay.key" }
+            - { name: TOR_NETWORK_SECRET_FILE, value: "/secrets/network/network.secret" }
+            - { name: TOR_RELAY_PEERS, value: "tor-relay-a.anon-proxy.svc.cluster.local:9001,tor-relay-b.anon-proxy.svc.cluster.local:9001,tor-relay-c.anon-proxy.svc.cluster.local:9001" }
+            - { name: TOR_EXIT_DENY_PORTS, value: "25" }
             - { name: RUST_LOG, value: "info" }
           ports:
             - { name: onion, containerPort: 9001 }
@@ -157,11 +178,17 @@ spec:
             limits: { memory: "128Mi" }
           volumeMounts:
             - { name: key, mountPath: /keys, readOnly: true }
+            - { name: network-secret, mountPath: /secrets/network, readOnly: true }
       volumes:
         - name: key
           secret:
             secretName: tor-relay-c-key
+            defaultMode: 0440
             items: [{ key: relay.key, path: relay.key }]
+        - name: network-secret
+          secret:
+            secretName: tor-network-secret
+            defaultMode: 0440
 ---
 apiVersion: v1
 kind: Service

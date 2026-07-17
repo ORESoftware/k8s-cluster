@@ -39,11 +39,17 @@ const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(20);
 /// pin a circuit slot during connect.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 
-fn max_circuits() -> usize {
-    return std::env::var("TOR_MAX_CIRCUITS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(1024);
+fn max_circuits() -> Result<usize> {
+    let value = match std::env::var("TOR_MAX_CIRCUITS") {
+        Ok(raw) => raw
+            .parse::<usize>()
+            .map_err(|_| anyhow!("TOR_MAX_CIRCUITS must be a positive integer"))?,
+        Err(_) => 1024,
+    };
+    if value == 0 || value > 1_000_000 {
+        bail!("TOR_MAX_CIRCUITS must be between 1 and 1000000");
+    }
+    return Ok(value);
 }
 
 /// Optional idle timeout on the forward read loop (0 = disabled). Bounds
@@ -54,7 +60,11 @@ fn idle_timeout() -> Option<Duration> {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
-    return if secs == 0 { None } else { Some(Duration::from_secs(secs)) };
+    return if secs == 0 {
+        None
+    } else {
+        Some(Duration::from_secs(secs))
+    };
 }
 
 /// Connect to `addr` with a bounded timeout.
@@ -65,10 +75,35 @@ async fn connect_timeout(addr: impl tokio::net::ToSocketAddrs) -> Result<TcpStre
         .map_err(|e| anyhow!("connect failed: {e}"));
 }
 
+/// Try every permitted DNS answer within one bounded deadline. This avoids an
+/// unreachable IPv6 answer preventing a usable IPv4 connection (or vice versa).
+async fn connect_resolved(addrs: &[std::net::SocketAddr]) -> Result<TcpStream> {
+    let attempt = async {
+        let mut last_error = None;
+        for addr in addrs {
+            match TcpStream::connect(addr).await {
+                Ok(stream) => return Ok(stream),
+                Err(error) => last_error = Some(error),
+            }
+        }
+        return Err(anyhow!(
+            "all {} resolved destination addresses failed{}",
+            addrs.len(),
+            last_error
+                .map(|error| format!(": {error}"))
+                .unwrap_or_default()
+        ));
+    };
+
+    return timeout(CONNECT_TIMEOUT, attempt)
+        .await
+        .map_err(|_| anyhow!("connect timed out"))?;
+}
+
 pub async fn run(listen: &str, secret: StaticSecret) -> Result<()> {
     let secret = Arc::new(secret);
-    let policy = Arc::new(Policy::from_env());
-    let limit = Arc::new(Semaphore::new(max_circuits()));
+    let policy = Arc::new(Policy::from_env()?);
+    let limit = Arc::new(Semaphore::new(max_circuits()?));
     let listener = TcpListener::bind(listen).await?;
     info!(%listen, allow_private_exit = policy.allow_private_exit(), "relay listening");
     loop {
@@ -98,7 +133,11 @@ pub async fn run(listen: &str, secret: StaticSecret) -> Result<()> {
     }
 }
 
-async fn handle_circuit(prev: TcpStream, secret: Arc<StaticSecret>, policy: Arc<Policy>) -> Result<()> {
+async fn handle_circuit(
+    prev: TcpStream,
+    secret: Arc<StaticSecret>,
+    policy: Arc<Policy>,
+) -> Result<()> {
     prev.set_nodelay(true).ok();
     let (mut prev_r, mut prev_w) = prev.into_split();
 
@@ -126,8 +165,8 @@ async fn handle_circuit(prev: TcpStream, secret: Arc<StaticSecret>, policy: Arc<
         let frame = match idle {
             Some(d) => match timeout(d, read).await {
                 Ok(Ok(f)) => f,
-                Ok(Err(_)) => break,           // previous hop closed
-                Err(_) => break,               // idle timeout
+                Ok(Err(_)) => break, // previous hop closed
+                Err(_) => break,     // idle timeout
             },
             None => match read.await {
                 Ok(f) => f,
@@ -147,8 +186,12 @@ async fn handle_circuit(prev: TcpStream, secret: Arc<StaticSecret>, policy: Arc<
                 let (next_r, mut nw) = next.into_split();
                 write_frame(&mut nw, &create).await?;
                 next_w = Some(nw);
-                let pw = prev_w.take().ok_or_else(|| anyhow!("prev_w already taken"))?;
-                let sealer = sealer_bwd.take().ok_or_else(|| anyhow!("sealer already taken"))?;
+                let pw = prev_w
+                    .take()
+                    .ok_or_else(|| anyhow!("prev_w already taken"))?;
+                let sealer = sealer_bwd
+                    .take()
+                    .ok_or_else(|| anyhow!("sealer already taken"))?;
                 tokio::spawn(async move {
                     if let Err(e) = middle_pump(next_r, pw, sealer).await {
                         debug!("middle pump ended: {e:#}");
@@ -168,13 +211,17 @@ async fn handle_circuit(prev: TcpStream, secret: Arc<StaticSecret>, policy: Arc<
                     bail!("Begin after this relay already has a next hop");
                 }
                 // Exit policy: resolve + reject private/loopback/metadata ranges.
-                let addr = policy.resolve_exit(&host, port).await?;
-                let dest = connect_timeout(addr).await?;
+                let addrs = policy.resolve_exit(&host, port).await?;
+                let dest = connect_resolved(&addrs).await?;
                 dest.set_nodelay(true).ok();
                 let (dest_r, dw) = dest.into_split();
                 dest_w = Some(dw);
-                let pw = prev_w.take().ok_or_else(|| anyhow!("prev_w already taken"))?;
-                let sealer = sealer_bwd.take().ok_or_else(|| anyhow!("sealer already taken"))?;
+                let pw = prev_w
+                    .take()
+                    .ok_or_else(|| anyhow!("prev_w already taken"))?;
+                let sealer = sealer_bwd
+                    .take()
+                    .ok_or_else(|| anyhow!("sealer already taken"))?;
                 tokio::spawn(async move {
                     if let Err(e) = exit_pump(dest_r, pw, sealer).await {
                         debug!("exit pump ended: {e:#}");
@@ -210,7 +257,7 @@ async fn middle_pump(
         let cell = Cell::Relay {
             payload: frame_bytes(&frame),
         };
-        let ct = sealer.seal(&cell.encode())?;
+        let ct = sealer.seal(&cell.encode()?)?;
         write_frame(&mut prev_w, &ct).await?;
     }
     return Ok(());
@@ -228,7 +275,7 @@ async fn exit_pump(
     loop {
         let n = match dest_r.read(&mut buf).await {
             Ok(0) => {
-                let ct = sealer.seal(&Cell::End.encode())?;
+                let ct = sealer.seal(&Cell::End.encode()?)?;
                 let _ = write_frame(&mut prev_w, &ct).await;
                 break;
             }
@@ -238,7 +285,7 @@ async fn exit_pump(
         let cell = Cell::Data {
             bytes: buf[..n].to_vec(),
         };
-        let ct = sealer.seal(&cell.encode())?;
+        let ct = sealer.seal(&cell.encode()?)?;
         write_frame(&mut prev_w, &ct).await?;
     }
     return Ok(());

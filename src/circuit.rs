@@ -167,16 +167,19 @@ impl Circuit {
 /// shallower hop down to the entry. Returns the outermost ciphertext to write.
 fn wrap_forward(sealers: &mut [Sealer], target: usize, cell: &Cell) -> Result<Vec<u8>> {
     if target >= sealers.len() {
-        bail!("wrap_forward target {target} out of range {}", sealers.len());
+        bail!(
+            "wrap_forward target {target} out of range {}",
+            sealers.len()
+        );
     }
-    let mut ct = sealers[target].seal(&cell.encode())?;
+    let mut ct = sealers[target].seal(&cell.encode()?)?;
     let mut m = target;
     while m > 0 {
         m -= 1;
         let relay_cell = Cell::Relay {
             payload: frame_bytes(&ct),
         };
-        ct = sealers[m].seal(&relay_cell.encode())?;
+        ct = sealers[m].seal(&relay_cell.encode()?)?;
     }
     return Ok(ct);
 }

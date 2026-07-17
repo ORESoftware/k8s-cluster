@@ -20,13 +20,14 @@ use tokio::net::lookup_host;
 #[derive(Clone)]
 pub struct Policy {
     allow_private_exit: bool,
+    denied_exit_ports: HashSet<u16>,
     /// If `Some`, `Extend` targets must appear in this set (exact string match
     /// on the `host:port` the client requested).
     relay_peers: Option<HashSet<String>>,
 }
 
 impl Policy {
-    pub fn from_env() -> Policy {
+    pub fn from_env() -> Result<Policy> {
         let allow_private_exit = env_flag("TOR_EXIT_ALLOW_PRIVATE");
         let relay_peers = std::env::var("TOR_RELAY_PEERS").ok().and_then(|raw| {
             let set: HashSet<String> = raw
@@ -40,18 +41,36 @@ impl Policy {
                 Some(set)
             }
         });
-        return Policy {
+        let denied_exit_ports = parse_ports(
+            &std::env::var("TOR_EXIT_DENY_PORTS").unwrap_or_else(|_| "25".to_string()),
+        )?;
+        return Ok(Policy {
             allow_private_exit,
+            denied_exit_ports,
             relay_peers,
-        };
+        });
     }
 
     pub fn allow_private_exit(&self) -> bool {
         return self.allow_private_exit;
     }
 
-    /// Resolve `host:port` and return the first address the exit policy permits.
-    pub async fn resolve_exit(&self, host: &str, port: u16) -> Result<SocketAddr> {
+    /// Resolve `host:port` and return every address the exit policy permits.
+    ///
+    /// Keeping all permitted results lets the caller fall back between IPv6 and
+    /// IPv4 when the resolver's first answer is unreachable.
+    pub async fn resolve_exit(&self, host: &str, port: u16) -> Result<Vec<SocketAddr>> {
+        if host.is_empty()
+            || host.len() > 253
+            || host
+                .chars()
+                .any(|c| c.is_ascii_control() || c.is_ascii_whitespace())
+        {
+            bail!("exit destination host is invalid");
+        }
+        if port == 0 || self.denied_exit_ports.contains(&port) {
+            bail!("exit policy blocks destination port {port}");
+        }
         let addrs: Vec<SocketAddr> = lookup_host((host, port))
             .await
             .map_err(|e| anyhow::anyhow!("DNS resolution for {host}:{port} failed: {e}"))?
@@ -60,18 +79,28 @@ impl Policy {
             bail!("no addresses resolved for {host}:{port}");
         }
         if self.allow_private_exit {
-            return Ok(addrs[0]);
+            return Ok(addrs);
         }
-        for addr in &addrs {
-            if !is_blocked(addr.ip()) {
-                return Ok(*addr);
-            }
+        let permitted: Vec<SocketAddr> = addrs
+            .into_iter()
+            .filter(|addr| !is_blocked(addr.ip()))
+            .collect();
+        if permitted.is_empty() {
+            bail!("exit policy blocked all resolved addresses for {host}:{port} (private/loopback/link-local)");
         }
-        bail!("exit policy blocked all resolved addresses for {host}:{port} (private/loopback/link-local)");
+        return Ok(permitted);
     }
 
     /// Validate an `Extend` target against the optional relay-peer allowlist.
     pub fn check_extend(&self, addr: &str) -> Result<()> {
+        if addr.is_empty()
+            || addr.len() > 512
+            || addr
+                .chars()
+                .any(|c| c.is_ascii_control() || c.is_ascii_whitespace())
+        {
+            bail!("extend target is invalid");
+        }
         if let Some(peers) = &self.relay_peers {
             if !peers.contains(addr) {
                 bail!("extend target {addr} not in TOR_RELAY_PEERS allowlist");
@@ -79,6 +108,24 @@ impl Policy {
         }
         return Ok(());
     }
+}
+
+fn parse_ports(raw: &str) -> Result<HashSet<u16>> {
+    let mut ports = HashSet::new();
+    for part in raw
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+    {
+        let port = part
+            .parse::<u16>()
+            .map_err(|_| anyhow::anyhow!("TOR_EXIT_DENY_PORTS contains invalid port '{part}'"))?;
+        if port == 0 {
+            bail!("TOR_EXIT_DENY_PORTS must not contain port 0");
+        }
+        ports.insert(port);
+    }
+    return Ok(ports);
 }
 
 fn env_flag(key: &str) -> bool {
@@ -100,6 +147,9 @@ fn is_blocked_v4(v4: Ipv4Addr) -> bool {
     let o = v4.octets();
     // 100.64.0.0/10 carrier-grade NAT (not covered by is_private).
     let is_cgnat = o[0] == 100 && (o[1] & 0xc0) == 0x40;
+    let is_this_network = o[0] == 0; // 0.0.0.0/8
+    let is_benchmark = o[0] == 198 && (o[1] == 18 || o[1] == 19); // 198.18.0.0/15
+    let is_reserved = o[0] >= 240; // 240.0.0.0/4
     return v4.is_loopback()
         || v4.is_private()
         || v4.is_link_local()
@@ -107,31 +157,56 @@ fn is_blocked_v4(v4: Ipv4Addr) -> bool {
         || v4.is_documentation()
         || v4.is_unspecified()
         || v4.is_multicast()
-        || is_cgnat;
+        || is_cgnat
+        || is_this_network
+        || is_benchmark
+        || is_reserved;
 }
 
 fn is_blocked_v6(v6: Ipv6Addr) -> bool {
     // IPv4-mapped (::ffff:a.b.c.d) embeds a v4 address that is reachable as v4;
     // without this, `::ffff:127.0.0.1` would bypass the v4 loopback/private
     // checks entirely. Apply the v4 rules to the embedded address.
-    if let Some(v4) = v6.to_ipv4_mapped() {
+    if let Some(v4) = v6.to_ipv4() {
         return is_blocked_v4(v4);
     }
     // 6to4 (2002:V4::/16) and NAT64 well-known prefix (64:ff9b::/96) likewise
     // embed a v4 destination; block if that embedded v4 is private/loopback.
     let seg = v6.segments();
     if seg[0] == 0x2002 {
-        let v4 = Ipv4Addr::new((seg[1] >> 8) as u8, seg[1] as u8, (seg[2] >> 8) as u8, seg[2] as u8);
+        let v4 = Ipv4Addr::new(
+            (seg[1] >> 8) as u8,
+            seg[1] as u8,
+            (seg[2] >> 8) as u8,
+            seg[2] as u8,
+        );
         return is_blocked_v4(v4);
     }
-    if seg[0] == 0x0064 && seg[1] == 0xff9b && seg[2] == 0 && seg[3] == 0 && seg[4] == 0 && seg[5] == 0 {
-        let v4 = Ipv4Addr::new((seg[6] >> 8) as u8, seg[6] as u8, (seg[7] >> 8) as u8, seg[7] as u8);
+    if seg[0] == 0x0064
+        && seg[1] == 0xff9b
+        && seg[2] == 0
+        && seg[3] == 0
+        && seg[4] == 0
+        && seg[5] == 0
+    {
+        let v4 = Ipv4Addr::new(
+            (seg[6] >> 8) as u8,
+            seg[6] as u8,
+            (seg[7] >> 8) as u8,
+            seg[7] as u8,
+        );
         return is_blocked_v4(v4);
     }
     let seg0 = seg[0];
     let is_ula = (seg0 & 0xfe00) == 0xfc00; // fc00::/7 unique local
     let is_link_local = (seg0 & 0xffc0) == 0xfe80; // fe80::/10
-    return v6.is_loopback() || v6.is_unspecified() || v6.is_multicast() || is_ula || is_link_local;
+    let is_site_local = (seg0 & 0xffc0) == 0xfec0; // fec0::/10 (deprecated but routable)
+    return v6.is_loopback()
+        || v6.is_unspecified()
+        || v6.is_multicast()
+        || is_ula
+        || is_link_local
+        || is_site_local;
 }
 
 #[cfg(test)]
@@ -146,9 +221,13 @@ mod tests {
         assert!(is_blocked("172.16.4.9".parse().unwrap()));
         assert!(is_blocked("169.254.169.254".parse().unwrap())); // cloud metadata
         assert!(is_blocked("100.100.0.1".parse().unwrap())); // CGNAT
+        assert!(is_blocked("0.1.2.3".parse().unwrap()));
+        assert!(is_blocked("198.18.0.1".parse().unwrap()));
+        assert!(is_blocked("240.0.0.1".parse().unwrap()));
         assert!(is_blocked("::1".parse().unwrap()));
         assert!(is_blocked("fd00::1".parse().unwrap()));
         assert!(is_blocked("fe80::1".parse().unwrap()));
+        assert!(is_blocked("fec0::1".parse().unwrap()));
     }
 
     #[test]
@@ -164,10 +243,19 @@ mod tests {
         assert!(is_blocked("::ffff:127.0.0.1".parse().unwrap()));
         assert!(is_blocked("::ffff:169.254.169.254".parse().unwrap())); // metadata
         assert!(is_blocked("::ffff:10.0.0.1".parse().unwrap()));
+        assert!(is_blocked("::127.0.0.1".parse().unwrap()));
         // 6to4 and NAT64 wrapping a private v4.
         assert!(is_blocked("2002:0a00:0001::1".parse().unwrap())); // 6to4 of 10.0.0.1
         assert!(is_blocked("64:ff9b::7f00:1".parse().unwrap())); // NAT64 of 127.0.0.1
-        // A mapped public address is still allowed.
+                                                                 // A mapped public address is still allowed.
         assert!(!is_blocked("::ffff:1.1.1.1".parse().unwrap()));
+    }
+
+    #[test]
+    fn parses_default_exit_port_denylist() {
+        let ports = parse_ports("25, 2525,25").unwrap();
+        assert_eq!(ports.len(), 2);
+        assert!(ports.contains(&25));
+        assert!(parse_ports("25,nope").is_err());
     }
 }
