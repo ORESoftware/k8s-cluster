@@ -1,0 +1,103 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fiducia-auth
+  namespace: fiducia
+  labels:
+    app: fiducia-auth
+spec:
+  podSelector:
+    matchLabels:
+      app: fiducia-auth
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Auth is never exposed through the gateway; its only callers are
+    # in-namespace: fiducia-admin (login/session, FIDUCIA_AUTH_URL) and
+    # fiducia-load-balance (JWKS fetch + API-key introspection,
+    # FIDUCIA_AUTH_URL) — plus the observability scrapers.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: fiducia-admin
+        - podSelector:
+            matchLabels:
+              app: fiducia-load-balance
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - dd-prometheus
+                  - dd-otel-collector
+      ports:
+        - protocol: TCP
+          port: 8097
+  egress:
+    # Durable API-key storage in fiducia's own KV, written through the load
+    # balancer (FIDUCIA_KV_URL) so writes follow the NotLeader redirect.
+    - to:
+        - podSelector:
+            matchLabels:
+              app: fiducia-load-balance
+      ports:
+        - protocol: TCP
+          port: 8088
+    # DNS resolution.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Public HTTP(S) for the cold in-pod build (git clone GitHub, crates.io) —
+    # public internet only, private ranges excluded. No OTLP egress: this
+    # deployment sets no OTEL_EXPORTER_OTLP_ENDPOINT.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 0.0.0.0/8
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.0.0.0/24
+              - 192.168.0.0/16
+              - 192.0.2.0/24
+              - 198.18.0.0/15
+              - 198.51.100.0/24
+              - 203.0.113.0/24
+              - 224.0.0.0/4
+              - 240.0.0.0/4
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
+    - to:
+        - ipBlock:
+            cidr: ::/0
+            except:
+              - ::/128
+              - ::1/128
+              - 64:ff9b:1::/48
+              - 100::/64
+              - 2001:2::/48
+              - 2001:db8::/32
+              - fc00::/7
+              - fe80::/10
+              - ff00::/8
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
