@@ -230,8 +230,19 @@ async fn run_client() -> Result<()> {
         socks_listen: socks_listen.clone(),
         connector: connector.clone(),
         stats: stats.clone(),
-        auth: socks_auth,
+        auth: socks_auth.clone(),
         max_connections: max_socks_connections,
+    });
+    // Built before web_cfg consumes `connector`/`stats` so the HTTP front-end
+    // shares the same backend, counters, and proxy credential.
+    let http_cfg = http_listen.map(|listen| {
+        Arc::new(http_connect::HttpProxyConfig {
+            listen,
+            connector: connector.clone(),
+            stats: stats.clone(),
+            auth: socks_auth,
+            max_connections: max_socks_connections,
+        })
     });
     let web_cfg = Arc::new(web::WebConfig {
         ui_listen: ui_listen.clone(),
@@ -244,14 +255,18 @@ async fn run_client() -> Result<()> {
         ui_token,
     });
 
-    // Run the SOCKS proxy and the web dashboard concurrently; if either exits,
-    // the process exits with its error.
-    let socks_task = tokio::spawn(async move { socks::run(client_cfg).await });
-    let web_task = tokio::spawn(async move { web::run(web_cfg).await });
-    tokio::select! {
-        r = socks_task => r.context("socks task panicked")?,
-        r = web_task => r.context("web task panicked")?,
+    // Run the front-ends and dashboard concurrently; if any exits, the process
+    // exits with its error.
+    let mut tasks = tokio::task::JoinSet::new();
+    tasks.spawn(async move { socks::run(client_cfg).await });
+    tasks.spawn(async move { web::run(web_cfg).await });
+    if let Some(http_cfg) = http_cfg {
+        tasks.spawn(async move { http_connect::run(http_cfg).await });
     }
+    if let Some(res) = tasks.join_next().await {
+        return res.context("client task panicked")?;
+    }
+    return Ok(());
 }
 
 fn run_keygen() -> Result<()> {
