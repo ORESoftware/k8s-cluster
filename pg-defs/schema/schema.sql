@@ -6107,7 +6107,12 @@ $$;
 -- Lock the plane clock at statement start, before target-row locks. This keeps
 -- multi-row/multi-table writes from deadlocking in the row trigger while
 -- retaining commit-ordered sequence allocation.
-create or replace function fiducia.lock_sync_clock() returns trigger as $$
+create or replace function fiducia.lock_sync_clock()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, fiducia
+as $$
 begin
   perform 1 from fiducia.sync_clock where singleton = true for update;
   if not found then
@@ -6115,7 +6120,7 @@ begin
   end if;
   return null;
 end;
-$$ language plpgsql security definer set search_path = pg_catalog, fiducia;
+$$;
 
 -- Shared trigger: stamp the global cursor on INSERT; bump version, timestamp,
 -- and cursor on every UPDATE. Caller-supplied sync_sequence values are
