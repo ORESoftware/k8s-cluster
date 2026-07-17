@@ -16,6 +16,10 @@ pub enum ApiError {
     BadRequest,
     #[error("too many requests")]
     TooManyRequests,
+    // Returned when a route is disabled by configuration (e.g. `/v1/auth/supabase`
+    // when Supabase identity is not configured on this deployment).
+    #[error("not implemented")]
+    NotImplemented,
     #[error("internal error")]
     Internal,
 }
