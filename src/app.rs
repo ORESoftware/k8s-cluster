@@ -15,10 +15,11 @@
 
 use crate::error::ApiError;
 use crate::protocol::{PullResponse, PushRequest, PushResponse};
+use crate::supabase::SupabaseVerifier;
 use crate::{auth, db, devices, metrics, telemetry, vault_blob};
 use axum::body::Body;
 use axum::extract::State;
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::middleware;
 use axum::response::Response;
 use axum::routing::{get, post};
@@ -33,6 +34,7 @@ use tower_governor::governor::GovernorConfigBuilder;
 use tower_governor::key_extractor::SmartIpKeyExtractor;
 use tower_governor::GovernorLayer;
 use tower_http::limit::RequestBodyLimitLayer;
+use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::timeout::TimeoutLayer;
 use uuid::Uuid;
 
