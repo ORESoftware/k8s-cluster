@@ -165,6 +165,7 @@ resources:
   - dd-webrtc-media.deployment.yaml
   - dd-webrtc-media.service.yaml
   - dd-rust-wss-server.deployment.yaml
+  - dd-rust-wss-server.networkpolicy.yaml
   - dd-rust-wss-server.service.yaml
   - dd-go-wss-server.deployment.yaml
   - dd-go-wss-server.service.yaml
