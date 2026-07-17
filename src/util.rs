@@ -122,4 +122,59 @@ mod tests {
         assert_eq!(scalar_to_label(&Value::from(42)), "42");
         assert_eq!(scalar_to_label(&Value::Null), "null");
     }
+
+    #[test]
+    fn clean_identifier_enforces_length_and_charset() {
+        let max = "a".repeat(128);
+        assert_eq!(clean_identifier(&max), Some(max.clone()));
+        assert!(clean_identifier(&"a".repeat(129)).is_none());
+        assert_eq!(clean_identifier("\"quoted\""), Some("quoted".to_string()));
+        assert_eq!(
+            clean_identifier("ns:table.col_1-x"),
+            Some("ns:table.col_1-x".to_string())
+        );
+        assert!(clean_identifier("   ").is_none());
+        assert!(clean_identifier("semi;colon").is_none());
+        assert!(clean_identifier("emoji\u{1F600}").is_none());
+    }
+
+    #[test]
+    fn clean_field_extracts_terminal_segment() {
+        assert_eq!(
+            clean_field("schema.table.revenue"),
+            Some("revenue".to_string())
+        );
+        assert_eq!(clean_field("revenue,"), Some("revenue".to_string()));
+        assert_eq!(clean_field("(region)"), Some("region".to_string()));
+        assert_eq!(
+            clean_field("\"schema\".\"col\""),
+            Some("col".to_string())
+        );
+        assert!(clean_field("").is_none());
+        assert!(clean_field("a.b c").is_none());
+    }
+
+    #[test]
+    fn escaping_covers_html_and_xml_metacharacters() {
+        assert_eq!(
+            html_escape("<a href=\"x\">&"),
+            "&lt;a href=&quot;x&quot;&gt;&amp;"
+        );
+        assert_eq!(html_escape("it's"), "it's");
+        assert_eq!(xml_escape("it's <b>"), "it&apos;s &lt;b&gt;");
+        assert_eq!(html_escape("plain text"), "plain text");
+    }
+
+    #[test]
+    fn round4_and_case_insensitive_search_behave() {
+        assert_eq!(round4(2.0 / 3.0), 0.6667);
+        assert_eq!(round4(1.00006), 1.0001);
+        assert_eq!(round4(1.00004), 1.0);
+        assert_eq!(round4(-2.0 / 3.0), -0.6667);
+        assert_eq!(round4(3.0), 3.0);
+
+        assert_eq!(find_ascii_case("SELECT * FROM Sales", "from"), Some(9));
+        assert_eq!(find_ascii_case("abc", "ABC"), Some(0));
+        assert_eq!(find_ascii_case("abc", "abcd"), None);
+    }
 }

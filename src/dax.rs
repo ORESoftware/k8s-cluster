@@ -937,4 +937,102 @@ mod tests {
 
         assert!(error.contains("expects two or three"));
     }
+
+    fn dax_request(expression: &str, kind: Option<DaxExpressionKind>) -> CompileDaxRequest {
+        CompileDaxRequest {
+            dataset_id: "sales".to_string(),
+            expression: expression.to_string(),
+            expression_kind: kind,
+        }
+    }
+
+    #[test]
+    fn dax_arithmetic_precedence_survives_normalization_and_sql() {
+        let response = compile(dax_request("[revenue] + [cost] * 2", None), &fields())
+            .expect("expression compiles");
+
+        assert_eq!(
+            response.compiled.normalized_expression,
+            "([revenue] + ([cost] * 2))"
+        );
+        assert_eq!(
+            response.compiled.sql_expression,
+            "(\"revenue\" + (\"cost\" * 2))"
+        );
+        assert_eq!(response.compiled.dependencies, vec!["cost", "revenue"]);
+        assert!(response.warnings.is_empty());
+    }
+
+    #[test]
+    fn dax_logical_hint_flags_calculate_and_row_context() {
+        let calculate = compile(
+            dax_request("CALCULATE(SUM([revenue]), [region] = \"west\")", None),
+            &fields(),
+        )
+        .expect("CALCULATE compiles");
+        assert_eq!(
+            calculate.compiled.logical_hint.calculation,
+            "filtered-measure"
+        );
+        assert!(!calculate.compiled.logical_hint.can_push_down);
+
+        let column = compile(
+            dax_request(
+                "[revenue] - [cost]",
+                Some(DaxExpressionKind::CalculatedColumn),
+            ),
+            &fields(),
+        )
+        .expect("calculated column compiles");
+        assert!(column.compiled.logical_hint.requires_row_context);
+        assert_eq!(
+            column.compiled.logical_hint.calculation,
+            "arithmetic-or-filter"
+        );
+
+        let countrows = compile(dax_request("COUNTROWS(sales)", None), &fields())
+            .expect("COUNTROWS compiles");
+        assert_eq!(
+            countrows.compiled.logical_hint.aggregation.as_deref(),
+            Some("count")
+        );
+        assert!(countrows.compiled.logical_hint.field.is_none());
+        assert!(countrows.compiled.logical_hint.can_push_down);
+    }
+
+    #[test]
+    fn dax_compile_fails_closed_on_malformed_input() {
+        let cases = [
+            ("SUM([revenue]) /* sneak */", "comments"),
+            ("SUM([revenue", "unterminated"),
+            ("SUM([revenue]) @ 2", "unsupported DAX character"),
+            ("SUM([revenue]) 5", "trailing"),
+            ("MEDIAN([revenue])", "unsupported DAX function"),
+        ];
+        for (expression, needle) in cases {
+            let error = compile(dax_request(expression, None), &fields())
+                .expect_err("malformed expression must be rejected");
+            assert!(
+                error.contains(needle),
+                "expression `{expression}` produced `{error}`, expected it to mention `{needle}`"
+            );
+        }
+
+        let deep = format!("{}1{}", "(".repeat(40), ")".repeat(40));
+        let error = compile(dax_request(&deep, None), &fields())
+            .expect_err("deep nesting must be bounded");
+        assert!(error.contains("max depth"));
+    }
+
+    #[test]
+    fn dax_multi_table_reference_produces_warning() {
+        let response = compile(
+            dax_request("SUM('sales'[revenue]) + SUM('other'[cost])", None),
+            &fields(),
+        )
+        .expect("cross-table expression compiles");
+
+        assert_eq!(response.warnings.len(), 1);
+        assert!(response.warnings[0].contains("2 tables"));
+    }
 }

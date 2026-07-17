@@ -417,4 +417,128 @@ mod tests {
 
         assert!(error.message.contains("joins"));
     }
+
+    fn sql_request(query: &str, dataset_id: Option<&str>) -> QueryRequest {
+        QueryRequest {
+            dialect: QueryDialect::Sql,
+            query: query.to_string(),
+            dataset_id: dataset_id.map(str::to_string),
+            limit: None,
+        }
+    }
+
+    #[test]
+    fn select_where_group_by_compiles_expected_plan_shape() {
+        let plan = parse_select(
+            &sql_request(
+                "SELECT region, COUNT(*) FROM sales WHERE region = 'west' GROUP BY region",
+                None,
+            ),
+            50,
+        )
+        .expect("plan compiles");
+
+        assert_eq!(plan.schema_version, SCHEMA_VERSION);
+        assert_eq!(plan.source, "sales");
+        assert_eq!(plan.projections, vec!["region"]);
+        assert_eq!(plan.group_by, vec!["region"]);
+        assert_eq!(plan.aggregations.len(), 1);
+        assert_eq!(plan.aggregations[0].op, AggregationOp::Count);
+        assert_eq!(plan.aggregations[0].alias, "count");
+        assert_eq!(plan.aggregations[0].field, None);
+        let filter = plan.filter.expect("filter is present");
+        assert_eq!(filter.field, "region");
+        assert_eq!(filter.op, "=");
+        assert_eq!(filter.value, Value::from("west"));
+        assert_eq!(plan.limit, 50, "no LIMIT clause falls back to default");
+    }
+
+    #[test]
+    fn bare_aggregate_projection_defaults_alias_and_promotes_group_key() {
+        let plan = parse_select(
+            &sql_request("SELECT SUM(revenue), region FROM sales", None),
+            100,
+        )
+        .expect("plan compiles");
+
+        assert_eq!(plan.aggregations[0].alias, "sum_revenue");
+        assert_eq!(plan.aggregations[0].op, AggregationOp::Sum);
+        assert_eq!(plan.aggregations[0].field.as_deref(), Some("revenue"));
+        assert_eq!(
+            plan.group_by,
+            vec!["region"],
+            "bare field next to an aggregate becomes an implicit group key"
+        );
+        assert_eq!(plan.projections, vec!["region"]);
+    }
+
+    #[test]
+    fn missing_from_falls_back_to_dataset_id_or_fails_closed() {
+        let plan = parse_select(&sql_request("SELECT COUNT(*)", Some("events")), 10)
+            .expect("datasetId supplies the missing source");
+        assert_eq!(plan.source, "events");
+
+        let error = parse_select(&sql_request("SELECT COUNT(*)", None), 10)
+            .expect_err("no FROM and no datasetId is rejected");
+        assert!(error.message.contains("FROM or datasetId"));
+    }
+
+    #[test]
+    fn limit_is_clamped_to_query_row_bounds() {
+        let plan = parse_select(
+            &sql_request("SELECT COUNT(*) FROM sales LIMIT 999999", None),
+            100,
+        )
+        .expect("plan compiles");
+        assert_eq!(plan.limit, MAX_QUERY_ROWS);
+
+        let plan = parse_select(&sql_request("SELECT COUNT(*) FROM sales LIMIT 0", None), 100)
+            .expect("plan compiles");
+        assert_eq!(plan.limit, 1);
+
+        let error = parse_select(
+            &sql_request("SELECT COUNT(*) FROM sales LIMIT -1", None),
+            100,
+        )
+        .expect_err("negative limit is rejected");
+        assert!(error.message.contains("LIMIT"));
+    }
+
+    #[test]
+    fn unsupported_sql_constructs_fail_closed() {
+        let cases = [
+            ("WITH t AS (SELECT 1) SELECT * FROM t", "CTEs"),
+            ("SELECT region FROM sales ORDER BY region", "ORDER BY"),
+            (
+                "SELECT region FROM sales GROUP BY region HAVING COUNT(*) > 1",
+                "HAVING",
+            ),
+            (
+                "SELECT region FROM a UNION SELECT region FROM b",
+                "set operations",
+            ),
+            (
+                "SELECT MEDIAN(revenue) FROM sales",
+                "unsupported aggregate function",
+            ),
+            (
+                "SELECT region FROM sales WHERE a = 1 AND b = 2",
+                "left side must be a field",
+            ),
+            ("INSERT INTO sales VALUES (1)", "SELECT"),
+            ("SELECT 1; SELECT 2", "exactly one SELECT"),
+        ];
+        for (query, needle) in cases {
+            let result = parse_select(&sql_request(query, None), 100);
+            let error = match result {
+                Err(error) => error,
+                Ok(_) => panic!("query `{query}` should be rejected"),
+            };
+            assert!(
+                error.message.contains(needle),
+                "query `{query}` produced `{}`, expected it to mention `{needle}`",
+                error.message
+            );
+        }
+    }
 }
