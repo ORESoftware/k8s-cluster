@@ -16,11 +16,12 @@ dd-runtime-config-client = { path = "../../libs/runtime-config-client-rs" }
 bs58 = "0.5"
 futures-util = "0.3"
 hex = "0.4"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 # keccak256 for the EVM module (EIP-55 address checksums + log-topic hashing).
 # RustCrypto family, consistent with sha2 above.
 sha3 = "0.10"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
