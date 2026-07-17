@@ -4,3 +4,11 @@ metadata:
   name: fiducia
   labels:
     app.kubernetes.io/part-of: fiducia
+    # Pod Security Admission. Every fiducia pod is baseline-clean (no privileged,
+    # no host namespaces/ports, no hostPath — the in-pod cargo/npm builds run in
+    # emptyDirs), so baseline is safe to ENFORCE. Restricted is audit+warn only
+    # (the dd-next-runtime house posture): fiducia-backend's build-ui init
+    # container runs as root for the Astro build, which restricted forbids.
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
