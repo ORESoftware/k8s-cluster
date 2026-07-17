@@ -126,8 +126,8 @@ async function doFetch() {
       return;
     }
     meta.className = 'ok';
-    meta.innerHTML = `<span data-testid="result-status">${d.status_line}</span> · via <span class="pill">${d.backend||'?'}</span>` +
-      ` · ${d.body_len} bytes · ${d.elapsed_ms} ms`;
+    meta.innerHTML = `<span data-testid="result-status">${esc(d.status_line)}</span> · via <span class="pill">${esc(d.backend||'?')}</span>` +
+      ` · ${Number(d.body_len)||0} bytes · ${Number(d.elapsed_ms)||0} ms`;
     pre.style.display = 'block';
     pre.textContent = (d.headers||[]).join('\n') + '\n\n' + (d.body_preview||'');
     if (d.is_text && /html/i.test(d.content_type||'')) {
