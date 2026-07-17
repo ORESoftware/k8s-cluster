@@ -154,6 +154,7 @@ resources:
   - dd-browser-job-runner.deployment.yaml
   - dd-browser-job-runner.service.yaml
   - dd-remote-web-home.deployment.yaml
+  - dd-remote-web-home.networkpolicy.yaml
   - dd-remote-web-home.pdb.yaml
   - dd-remote-web-home.service.yaml
   - dd-sonus-auris-site.configmap.yaml
