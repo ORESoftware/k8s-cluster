@@ -39,6 +39,12 @@ spec:
             - { name: RUST_LOG, value: "info" }
           ports:
             - { name: onion, containerPort: 9001 }
+          readinessProbe:
+            tcpSocket: { port: onion }
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: { port: onion }
+            periodSeconds: 20
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -104,6 +110,12 @@ spec:
             - { name: RUST_LOG, value: "info" }
           ports:
             - { name: onion, containerPort: 9001 }
+          readinessProbe:
+            tcpSocket: { port: onion }
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: { port: onion }
+            periodSeconds: 20
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -169,6 +181,12 @@ spec:
             - { name: RUST_LOG, value: "info" }
           ports:
             - { name: onion, containerPort: 9001 }
+          readinessProbe:
+            tcpSocket: { port: onion }
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: { port: onion }
+            periodSeconds: 20
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
