@@ -430,6 +430,18 @@ mod tests {
     }
 
     #[test]
+    fn doc_slug_rejects_traversal_and_markup() {
+        assert!(is_doc_slug("security"));
+        assert!(is_doc_slug("tor-interop"));
+        assert!(is_doc_slug("cloud_vpn_obfuscation"));
+        assert!(!is_doc_slug("")); // empty
+        assert!(!is_doc_slug("../secret")); // path traversal
+        assert!(!is_doc_slug("a/b")); // separator
+        assert!(!is_doc_slug("<img src=x>")); // html
+        assert!(!is_doc_slug("a.b")); // dotted
+    }
+
+    #[test]
     fn ct_str_eq_matches_and_differs() {
         assert!(ct_str_eq("s3cret", "s3cret"));
         assert!(!ct_str_eq("s3cret", "s3creT"));
