@@ -6186,7 +6186,7 @@ begin
         deleted_at = excluded.deleted_at;
   return old;
 end;
-$$ language plpgsql security definer set search_path = pg_catalog, fiducia;
+$$;
 
 create table if not exists fiducia.orgs (
   id uuid primary key default gen_random_uuid(),
