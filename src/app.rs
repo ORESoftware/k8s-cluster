@@ -53,6 +53,8 @@ pub struct AppState {
     pub pool: PgPool,
     pub metrics: Arc<metrics::Metrics>,
     auth_slots: Arc<Semaphore>,
+    /// `Some` when Supabase identity is configured; drives `/v1/auth/supabase`.
+    supabase: Option<SupabaseVerifier>,
 }
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
