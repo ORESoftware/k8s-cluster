@@ -6125,7 +6125,12 @@ $$;
 -- Shared trigger: stamp the global cursor on INSERT; bump version, timestamp,
 -- and cursor on every UPDATE. Caller-supplied sync_sequence values are
 -- overwritten.
-create or replace function fiducia.bump_row_version() returns trigger as $$
+create or replace function fiducia.bump_row_version()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, fiducia
+as $$
 begin
   if tg_op = 'UPDATE' then
     new.version := old.version + 1;
@@ -6134,7 +6139,7 @@ begin
   new.sync_sequence := fiducia.allocate_sync_sequence();
   return new;
 end;
-$$ language plpgsql security definer set search_path = pg_catalog, fiducia;
+$$;
 
 -- Trigger arguments: primary-key column, tenant column (or ''), owner-user
 -- column (or ''). Extracting through to_jsonb keeps this one function usable
