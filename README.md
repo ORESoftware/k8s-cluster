@@ -29,12 +29,18 @@ seeds or your password. Written in Rust (axum + sqlx/Postgres).
 |--------|-----------------------|------|--------------------------------------|
 | POST   | `/v1/register`        | —    | Create account + first device, returns token |
 | POST   | `/v1/login`           | —    | Verify account, register a device, returns token |
+| POST   | `/v1/auth/supabase`   | JWT  | Enroll a device via a Supabase access token, returns sync token |
+| GET    | `/v1/devices`         | ✓    | List this account's devices (id, name, created, last-seen, revoked) |
 | GET    | `/v1/vault`           | ✓    | Pull the sealed vault blob           |
 | POST   | `/v1/vault`           | ✓    | Push a sealed vault blob (version-vector reconciled) |
 | POST   | `/v1/devices/revoke`  | ✓    | Revoke a device's sync token         |
 | GET    | `/healthz`            | —    | Liveness                             |
 | GET    | `/readyz`             | —    | Postgres readiness                   |
 | GET    | `/metrics`            | —    | Prometheus metrics                   |
+
+"Auth ✓" is an account sync token (`Authorization: Bearer <sync_token>`). "Auth
+JWT" is a Supabase access token in the same header — the server verifies it and
+issues a sync token in exchange.
 
 ## Security model
 
