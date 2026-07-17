@@ -215,3 +215,16 @@ resources:
   # both AWS and Hetzner via the dd-next-runtime app.
   - dd-ai-agent-bridge.deployment.yaml
   - dd-ai-agent-bridge.service.yaml
+  # t2v-v2t: voice-to-text / text-to-voice / translation. Two separately
+  # deployed binaries built in-pod from the remote/deployments/t2v-v2t.rs
+  # submodule: the JSON API (:8130, Vapi.ai webhooks, custom-FFT audio analysis)
+  # and the MASH (maud+axum+seaorm+htmx) web dashboard (:8131). Owns the `t2v`
+  # Postgres namespace in pg-defs (dpm-migrated).
+  - dd-t2v-api.deployment.yaml
+  - dd-t2v-api.networkpolicy.yaml
+  - dd-t2v-api.pdb.yaml
+  - dd-t2v-api.service.yaml
+  - dd-t2v-web.deployment.yaml
+  - dd-t2v-web.networkpolicy.yaml
+  - dd-t2v-web.pdb.yaml
+  - dd-t2v-web.service.yaml
