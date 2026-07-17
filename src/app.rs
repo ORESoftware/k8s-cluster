@@ -217,6 +217,14 @@ struct RevokeRequest {
     device_id: Uuid,
 }
 
+/// Enroll a device against a Supabase-authenticated session. The access JWT is
+/// carried in the `Authorization: Bearer` header (not the body); the body only
+/// names the device.
+#[derive(Deserialize)]
+struct SupabaseEnrollRequest {
+    device_name: String,
+}
+
 // ---- handlers ----
 
 async fn register(
