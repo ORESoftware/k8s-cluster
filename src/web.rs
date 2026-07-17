@@ -333,12 +333,19 @@ async fn docs_index(State(cfg): State<AppState>) -> Response {
     return Html(body).into_response();
 }
 
+/// A safe documentation slug: a non-empty name of `[A-Za-z0-9_-]` only. This is
+/// the single gate for both serving a doc and listing it, so no filename can
+/// escape the docs directory (path traversal) or carry HTML into the index.
+fn is_doc_slug(name: &str) -> bool {
+    return !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+}
+
 async fn docs_page(State(cfg): State<AppState>, AxPath(name): AxPath<String>) -> Response {
     // Sanitize: only a bare doc slug, no path traversal.
-    if !name
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-    {
+    if !is_doc_slug(&name) {
         return (StatusCode::BAD_REQUEST, "invalid doc name").into_response();
     }
     let file = cfg.docs_dir.join(format!("{name}.md"));
