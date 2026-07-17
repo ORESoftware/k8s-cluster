@@ -122,3 +122,106 @@ impl ShardKey {
         ShardKey(unsigned as i64)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_codes_us_requires_state() {
+        let err = Region::from_codes("US", None).unwrap_err();
+        assert!(err.to_string().contains("us_state is required"));
+        assert_eq!(
+            Region::from_codes("US", Some("NY")).unwrap(),
+            Region::Us { state: *b"NY" }
+        );
+    }
+
+    #[test]
+    fn from_codes_normalizes_lowercase() {
+        assert_eq!(
+            Region::from_codes("us", Some("ca")).unwrap(),
+            Region::Us { state: *b"CA" }
+        );
+        assert_eq!(
+            Region::from_codes("de", None).unwrap(),
+            Region::Eu { country: *b"DE" }
+        );
+    }
+
+    #[test]
+    fn from_codes_classifies_eu_members_and_others() {
+        for cc in ["FR", "IT", "SE", "IE"] {
+            assert!(matches!(
+                Region::from_codes(cc, None).unwrap(),
+                Region::Eu { .. }
+            ));
+        }
+        // Not EU members (GB post-Brexit, CH never, JP): fall to Other.
+        for cc in ["GB", "CH", "JP"] {
+            assert!(matches!(
+                Region::from_codes(cc, None).unwrap(),
+                Region::Other { .. }
+            ));
+        }
+    }
+
+    #[test]
+    fn from_codes_rejects_malformed_codes() {
+        assert!(Region::from_codes("", None).is_err());
+        assert!(Region::from_codes("U", None).is_err());
+        assert!(Region::from_codes("USA", None).is_err());
+        assert!(Region::from_codes("U1", None).is_err());
+        // Bad state code on a US tenant is also rejected.
+        assert!(Region::from_codes("US", Some("C4")).is_err());
+        assert!(Region::from_codes("US", Some("CAL")).is_err());
+    }
+
+    #[test]
+    fn region_tags() {
+        assert_eq!(Region::Us { state: *b"TX" }.tag(), "us");
+        assert_eq!(Region::Eu { country: *b"NL" }.tag(), "eu");
+        assert_eq!(Region::Other { country: *b"BR" }.tag(), "ot");
+    }
+
+    #[test]
+    fn derive_is_deterministic() {
+        let tenant = Uuid::from_u128(0xDEADBEEF_0000_0000_0000_000000000042);
+        let region = Region::Us { state: *b"WA" };
+        assert_eq!(ShardKey::derive(tenant, region), ShardKey::derive(tenant, region));
+    }
+
+    #[test]
+    fn derive_encodes_region_in_high_nibble() {
+        let tenant = Uuid::from_u128(7);
+        let us = ShardKey::derive(tenant, Region::Us { state: *b"NY" });
+        let eu = ShardKey::derive(tenant, Region::Eu { country: *b"DE" });
+        let other = ShardKey::derive(tenant, Region::Other { country: *b"JP" });
+        assert_eq!((us.0 as u64) >> 60, 0x1);
+        assert_eq!((eu.0 as u64) >> 60, 0x2);
+        assert_eq!((other.0 as u64) >> 60, 0x3);
+    }
+
+    #[test]
+    fn derive_region_prefix_matches_packed_code() {
+        // Same state must always produce the same 16-bit prefix regardless of tenant.
+        let a = ShardKey::derive(Uuid::from_u128(1), Region::Us { state: *b"CA" });
+        let b = ShardKey::derive(Uuid::from_u128(2), Region::Us { state: *b"CA" });
+        assert_eq!((a.0 as u64) >> 48, (b.0 as u64) >> 48);
+        let expected = 0x1000u64 | (((b'C' as u64) & 0x3F) << 6) | ((b'A' as u64) & 0x3F);
+        assert_eq!((a.0 as u64) >> 48, expected);
+    }
+
+    #[test]
+    fn derive_spreads_tenants_and_regions() {
+        let t1 = Uuid::from_u128(1);
+        let t2 = Uuid::from_u128(2);
+        let region = Region::Eu { country: *b"FR" };
+        assert_ne!(ShardKey::derive(t1, region), ShardKey::derive(t2, region));
+        // Same tenant, different regulatory region: different shard key.
+        assert_ne!(
+            ShardKey::derive(t1, Region::Eu { country: *b"FR" }),
+            ShardKey::derive(t1, Region::Other { country: *b"FR" })
+        );
+    }
+}
