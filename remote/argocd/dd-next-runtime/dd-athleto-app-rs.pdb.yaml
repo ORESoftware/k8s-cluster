@@ -1,0 +1,12 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-athleto-app-rs
+  namespace: default
+  labels:
+    app: dd-athleto-app-rs
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dd-athleto-app-rs
