@@ -43,14 +43,28 @@ pub fn bump(base: &VersionVector, device: &str) -> VersionVector {
     out
 }
 
+/// True if `base_version` is *causally reachable* by `pushing_device`: it may
+/// advance its own counter freely but must not claim any counter for another
+/// device beyond what the server already stored. Merely dominating the stored
+/// vector is not enough — a device could otherwise inflate a sibling's counter
+/// (e.g. `devB: 9999`), poisoning the vector so the sibling's next honest push is
+/// forever seen as stale. This restores the vector-clock invariant that an entry
+/// only ever grows via its own device.
+fn is_causal(stored: &VersionVector, base_version: &VersionVector, pushing_device: &str) -> bool {
+    base_version.iter().all(|entry| {
+        entry.device_id == pushing_device || entry.counter <= counter_for(stored, &entry.device_id)
+    })
+}
+
 /// Decide the outcome of a push given the currently-stored version.
 pub fn reconcile(
     stored: &VersionVector,
     base_version: &VersionVector,
     pushing_device: &str,
 ) -> Result<VersionVector, VersionVector> {
-    // The client must have seen the server's latest before overwriting it.
-    if dominates(base_version, stored) {
+    // The client must have seen the server's latest before overwriting it, and
+    // may only advance its own counter (not fabricate a sibling's).
+    if dominates(base_version, stored) && is_causal(stored, base_version, pushing_device) {
         Ok(bump(base_version, pushing_device))
     } else {
         Err(stored.clone())
