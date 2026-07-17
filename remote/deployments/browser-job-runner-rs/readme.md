@@ -176,5 +176,3 @@ cargo build --release
 # worker
 cd worker && pnpm install && pnpm run typecheck
 ```
-
-> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

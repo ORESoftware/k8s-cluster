@@ -178,12 +178,6 @@ data:
               static_configs:
                 - targets:
                     - dd-web-scraper.default.svc.cluster.local:8097
-            - job_name: dd-remote-queue-consumer
-              scrape_interval: 10s
-              metrics_path: /metrics
-              static_configs:
-                - targets:
-                    - dd-remote-queue-consumer.default.svc.cluster.local:8120
             - job_name: dd-build-server
               scrape_interval: 10s
               metrics_path: /metrics
@@ -369,26 +363,10 @@ data:
         endpoint: dd-tempo.observability.svc.cluster.local:4317
         tls:
           insecure: true
-      # Jaeger all-in-one is a best-effort secondary trace sink; Tempo is the
-      # authoritative trace store. When jaeger stalls (in-memory storage
-      # backpressure or a slow Query), the default 5s timeout + 5m retry
-      # window fills the 1000-batch queue in seconds and pins it there,
-      # dropping ~all incoming spans until the retry backoff clears — while
-      # Tempo, on the same batch input, drops zero. Cap the timeout, add
-      # concurrency for burst drain, and disable retries so failed batches
-      # release their queue slot immediately instead of being replayed until
-      # they expire. Spans still make it to Tempo either way.
       otlp/jaeger:
         endpoint: dd-jaeger.observability.svc.cluster.local:4317
         tls:
           insecure: true
-        timeout: 3s
-        sending_queue:
-          enabled: true
-          num_consumers: 4
-          queue_size: 2000
-        retry_on_failure:
-          enabled: false
       debug:
         verbosity: basic
 

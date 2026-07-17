@@ -64,5 +64,3 @@ worker can subscribe to `dd.remote.knowledge_graph.pipeline.jobs` and map each e
   NATS subjects.
 
 Secrets belong in AWS Secrets Manager / Kubernetes secrets, not Git.
-
-> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

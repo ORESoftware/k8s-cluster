@@ -65,8 +65,7 @@ test('web scraper service supports browser, DOM, fetch, and Browserless strategi
   assert.match(source, /SCRAPER_CAPTURE_FAILURE_SCREENSHOTS/);
   assert.match(source, /failureScreenshot/);
   assert.match(source, /page\.screenshot/);
-  assert.match(source, /new Worker\(workerEntry/);
-  assert.match(source, /tsx\/esm\/api/);
+  assert.match(source, /new Worker\(workerUrl/);
   assert.match(source, /resourceLimits/);
   assert.match(source, /parserWorkerSemaphore/);
   assert.match(source, /redirect:\s*'manual'/);

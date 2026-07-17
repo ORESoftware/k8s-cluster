@@ -152,5 +152,3 @@ web-home service directory (`/home`) links to it as the `dd-des-rs` deployment /
 > The submodule pins the engine's `origin/main`. Bump the pointer
 > (`git -C remote/submodules/discrete-event-system.rs pull && git add` the
 > submodule) to deploy a newer engine revision.
-
-> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

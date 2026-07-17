@@ -199,5 +199,3 @@ secret with `optional: true`, so enabling auth is a one-key secret edit.
 
 Run the tests with `cargo test` (covers eval/simplify/derivative correctness and
 end-to-end recovery of a quadratic, a line, and `sin`).
-
-> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

@@ -84,5 +84,3 @@ Current hardening in the Argo deployment:
 - no Secret, Pod, ServiceAccount, Job, DaemonSet, StatefulSet, or NetworkPolicy write permissions
 - NetworkPolicy restricts ingress to the gateway/observability paths and egress to DNS, kube API,
   and public git/ECR endpoints
-
-> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

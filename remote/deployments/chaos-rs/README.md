@@ -94,5 +94,3 @@ kubectl apply -k remote/deployments/chaos-rs/k8s
 
 It deploys **disarmed** (`CHAOS_ENABLED=false`); only the read-only NATS probe is active
 until you arm it.
-
-> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

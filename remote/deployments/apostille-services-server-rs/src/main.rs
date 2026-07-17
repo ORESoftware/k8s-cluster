@@ -17,7 +17,6 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use maud::{html, Markup, PreEscaped, DOCTYPE};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -838,101 +837,31 @@ fn connector_status(state: &AppState) -> Vec<Value> {
 }
 
 async fn home(State(state): State<AppState>) -> Html<String> {
-    let connector_count = state.config.provider_configs.len();
+    let configured = state.config.provider_configs.len();
     let translation = if state.config.translation_provider.is_some() {
         "configured"
     } else {
         "not configured"
     };
-    Html(render_home(jurisdiction_catalog().len(), connector_count, translation).into_string())
+    let mut html = HOME_HTML.to_string();
+    html = html.replace(
+        "__JURISDICTION_COUNT__",
+        &jurisdiction_catalog().len().to_string(),
+    );
+    html = html.replace("__CONNECTOR_COUNT__", &configured.to_string());
+    html = html.replace("__TRANSLATION_STATUS__", translation);
+    Html(html)
 }
 
-/// The home page shell. maud compile-checks the structure and auto-escapes any
-/// dynamic value, replacing the previous `HOME_HTML` string-replace template.
-fn render_home(jurisdiction_count: usize, connector_count: usize, translation: &str) -> Markup {
-    html! {
-        (DOCTYPE)
-        html lang="en" {
-            head {
-                meta charset="utf-8";
-                meta name="viewport" content="width=device-width, initial-scale=1";
-                title { "Apostille, Notary, Immigration Services" }
-                script src="https://unpkg.com/htmx.org@1.9.12" {}
-                style { (PreEscaped(HOME_CSS)) }
-            }
-            body {
-                header {
-                    div class="wrap hero" {
-                        span class="eyebrow" { "Rust Axum service" }
-                        h1 { "Apostille, Notary, Immigration Services" }
-                        p class="lead" {
-                            "A normalized intake and orchestration server for document legalization, "
-                            "notarial workflows, immigration support, English translation handoff, "
-                            "government-provider submissions, and inbound status webhooks."
-                        }
-                        div class="stats" {
-                            div class="stat" { strong { (jurisdiction_count) } span { "jurisdictions in the catalog" } }
-                            div class="stat" { strong { (connector_count) } span { "provider connectors configured at boot" } }
-                            div class="stat" { strong { (translation) } span { "translation provider" } }
-                        }
-                    }
-                }
-                nav {
-                    div class="wrap tabs" {
-                        button hx-get="/home/flow" hx-target="#home-panel" hx-swap="innerHTML" { "Workflow" }
-                        button hx-get="/home/jurisdictions" hx-target="#home-panel" hx-swap="innerHTML" { "Jurisdictions" }
-                        button hx-get="/home/webhooks" hx-target="#home-panel" hx-swap="innerHTML" { "Webhooks" }
-                        button hx-get="/home/examples" hx-target="#home-panel" hx-swap="innerHTML" { "Payloads" }
-                        button onclick="location.href='/docs/api'" { "API Docs" }
-                    }
-                }
-                main class="wrap grid" {
-                    section id="home-panel" hx-get="/home/flow" hx-trigger="load" hx-swap="innerHTML" {
-                        p { "Loading workflow..." }
-                    }
-                    aside class="panel" {
-                        h2 { "Runtime Contract" }
-                        div class="aside-list" {
-                            div {
-                                strong { "Auth" }
-                                p {
-                                    "Operator routes accept " code { "X-Server-Auth" } " or legacy "
-                                    code { "Auth" } ". Government callbacks use "
-                                    code { "X-Apostille-Webhook-Secret" } "."
-                                }
-                            }
-                            div {
-                                strong { "Translation" }
-                                p {
-                                    "Every non-English document field is queued through the configured "
-                                    "translation provider. Without a provider, the case is marked "
-                                    "translation-pending."
-                                }
-                            }
-                            div {
-                                strong { "Interop" }
-                                p {
-                                    "Government API calls are made only for jurisdictions with explicit "
-                                    "provider base URLs and credentials from environment or secret-backed "
-                                    "JSON config."
-                                }
-                            }
-                            div {
-                                strong { "Storage" }
-                                p {
-                                    "This first slice keeps a bounded in-memory case ledger. Add a "
-                                    "Postgres contract before storing legal case data durably."
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-const HOME_CSS: &str = r##":root { color-scheme: light; --bg:#f4f5f3; --ink:#17201a; --muted:#617067; --panel:#ffffff; --line:#d8ded7; --accent:#1f6f5b; --accent-2:#7b3f2a; --soft:#edf3ef; --code:#eef2f0; }
+const HOME_HTML: &str = r##"<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Apostille, Notary, Immigration Services</title>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <style>
+    :root { color-scheme: light; --bg:#f4f5f3; --ink:#17201a; --muted:#617067; --panel:#ffffff; --line:#d8ded7; --accent:#1f6f5b; --accent-2:#7b3f2a; --soft:#edf3ef; --code:#eef2f0; }
     * { box-sizing:border-box; }
     body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.55 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     header { min-height:66vh; display:grid; align-items:end; background:linear-gradient(180deg, rgba(23,32,26,.18), rgba(244,245,243,.98)), url("https://images.unsplash.com/photo-1450101499163-c8848c66ca85?auto=format&fit=crop&w=1800&q=80") center/cover; }
@@ -974,91 +903,125 @@ const HOME_CSS: &str = r##":root { color-scheme: light; --bg:#f4f5f3; --ink:#172
       thead { display:none; }
       tr { border-bottom:1px solid var(--line); padding:7px 0; }
       td { border-bottom:0; padding:4px 0; }
-    }"##;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap hero">
+      <span class="eyebrow">Rust Axum service</span>
+      <h1>Apostille, Notary, Immigration Services</h1>
+      <p class="lead">A normalized intake and orchestration server for document legalization, notarial workflows, immigration support, English translation handoff, government-provider submissions, and inbound status webhooks.</p>
+      <div class="stats">
+        <div class="stat"><strong>__JURISDICTION_COUNT__</strong><span>jurisdictions in the catalog</span></div>
+        <div class="stat"><strong>__CONNECTOR_COUNT__</strong><span>provider connectors configured at boot</span></div>
+        <div class="stat"><strong>__TRANSLATION_STATUS__</strong><span>translation provider</span></div>
+      </div>
+    </div>
+  </header>
+  <nav>
+    <div class="wrap tabs">
+      <button hx-get="/home/flow" hx-target="#home-panel" hx-swap="innerHTML">Workflow</button>
+      <button hx-get="/home/jurisdictions" hx-target="#home-panel" hx-swap="innerHTML">Jurisdictions</button>
+      <button hx-get="/home/webhooks" hx-target="#home-panel" hx-swap="innerHTML">Webhooks</button>
+      <button hx-get="/home/examples" hx-target="#home-panel" hx-swap="innerHTML">Payloads</button>
+      <button onclick="location.href='/docs/api'">API Docs</button>
+    </div>
+  </nav>
+  <main class="wrap grid">
+    <section id="home-panel" hx-get="/home/flow" hx-trigger="load" hx-swap="innerHTML">
+      <p>Loading workflow...</p>
+    </section>
+    <aside class="panel">
+      <h2>Runtime Contract</h2>
+      <div class="aside-list">
+        <div><strong>Auth</strong><p>Operator routes accept <code>X-Server-Auth</code> or legacy <code>Auth</code>. Government callbacks use <code>X-Apostille-Webhook-Secret</code>.</p></div>
+        <div><strong>Translation</strong><p>Every non-English document field is queued through the configured translation provider. Without a provider, the case is marked translation-pending.</p></div>
+        <div><strong>Interop</strong><p>Government API calls are made only for jurisdictions with explicit provider base URLs and credentials from environment or secret-backed JSON config.</p></div>
+        <div><strong>Storage</strong><p>This first slice keeps a bounded in-memory case ledger. Add a Postgres contract before storing legal case data durably.</p></div>
+      </div>
+    </aside>
+  </main>
+</body>
+</html>"##;
 
-async fn home_flow_fragment() -> Html<String> {
+async fn home_flow_fragment() -> Html<&'static str> {
     Html(
-        html! {
-            h2 { "How It Works" }
-            div class="flow" {
-                div class="step" { strong { "1. Intake" } span { "Clients post one normalized case to " code { "POST /cases" } " with service type, jurisdiction, applicant data, consent, and document metadata or text." } }
-                div class="step" { strong { "2. Normalize" } span { "The server canonicalizes jurisdictions, service types, language codes, document ids, and public file URLs. It rejects unknown jurisdictions and unsafe outbound URLs." } }
-                div class="step" { strong { "3. Translate To English" } span { "When source language differs from the configured target language, document titles and text are sent to " code { "APOSTILLE_TRANSLATION_BASE_URL" } ". If no translator is configured, the case remains translation-pending." } }
-                div class="step" { strong { "4. Submit Through Approved Connectors" } span { code { "POST /cases/:case_id/submit" } ", or " code { "workflow.autoSubmit=true" } ", posts to the jurisdiction provider configured through " code { "APOSTILLE_PROVIDER_CONFIG_JSON" } " or per-country env vars." } }
-                div class="step" { strong { "5. Receive Government Webhooks" } span { "Providers call " code { "POST /webhooks/government" } " or " code { "POST /webhooks/government/:jurisdiction" } ". The server appends status events and updates the matching case." } }
-            }
-        }
-        .into_string(),
+        r#"<h2>How It Works</h2>
+<div class="flow">
+  <div class="step"><strong>1. Intake</strong><span>Clients post one normalized case to <code>POST /cases</code> with service type, jurisdiction, applicant data, consent, and document metadata or text.</span></div>
+  <div class="step"><strong>2. Normalize</strong><span>The server canonicalizes jurisdictions, service types, language codes, document ids, and public file URLs. It rejects unknown jurisdictions and unsafe outbound URLs.</span></div>
+  <div class="step"><strong>3. Translate To English</strong><span>When source language differs from the configured target language, document titles and text are sent to <code>APOSTILLE_TRANSLATION_BASE_URL</code>. If no translator is configured, the case remains translation-pending.</span></div>
+  <div class="step"><strong>4. Submit Through Approved Connectors</strong><span><code>POST /cases/:case_id/submit</code>, or <code>workflow.autoSubmit=true</code>, posts to the jurisdiction provider configured through <code>APOSTILLE_PROVIDER_CONFIG_JSON</code> or per-country env vars.</span></div>
+  <div class="step"><strong>5. Receive Government Webhooks</strong><span>Providers call <code>POST /webhooks/government</code> or <code>POST /webhooks/government/:jurisdiction</code>. The server appends status events and updates the matching case.</span></div>
+</div>"#,
     )
 }
 
 async fn home_jurisdictions_fragment(State(state): State<AppState>) -> Html<String> {
-    // maud auto-escapes every interpolated value, so the manual escape_html
-    // calls (and their easy-to-forget failure mode) are gone.
-    Html(
-        html! {
-            h2 { "Jurisdiction Coverage" }
-            p { "The catalog covers the requested countries and regions. Each government API connector is opt-in, credential-backed, and configured by operators rather than hard-coded in source." }
-            table {
-                thead { tr { th { "Jurisdiction" } th { "Languages" } th { "Connector" } th { "Notes" } } }
-                tbody {
-                    @for jurisdiction in jurisdiction_catalog() {
-                        @let configured = state
-                            .config
-                            .provider_configs
-                            .get(&jurisdiction.slug)
-                            .map(|provider| if provider.enabled { "configured" } else { "disabled" })
-                            .unwrap_or("not configured");
-                        tr {
-                            td { strong { (jurisdiction.display_name) } div class="muted" { code { (jurisdiction.slug) } } }
-                            td { (jurisdiction.primary_languages.join(", ")) }
-                            td { (configured) }
-                            td { (jurisdiction.notes) }
-                        }
-                    }
-                }
-            }
-        }
-        .into_string(),
-    )
+    let rows = jurisdiction_catalog()
+        .into_iter()
+        .map(|jurisdiction| {
+            let configured = state
+                .config
+                .provider_configs
+                .get(&jurisdiction.slug)
+                .map(|provider| if provider.enabled { "configured" } else { "disabled" })
+                .unwrap_or("not configured");
+            format!(
+                "<tr><td><strong>{}</strong><div class=\"muted\"><code>{}</code></div></td><td>{}</td><td>{}</td><td>{}</td></tr>",
+                escape_html(&jurisdiction.display_name),
+                escape_html(&jurisdiction.slug),
+                escape_html(&jurisdiction.primary_languages.join(", ")),
+                escape_html(configured),
+                escape_html(&jurisdiction.notes)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("");
+    Html(format!(
+        r#"<h2>Jurisdiction Coverage</h2>
+<p>The catalog covers the requested countries and regions. Each government API connector is opt-in, credential-backed, and configured by operators rather than hard-coded in source.</p>
+<table>
+  <thead><tr><th>Jurisdiction</th><th>Languages</th><th>Connector</th><th>Notes</th></tr></thead>
+  <tbody>{rows}</tbody>
+</table>"#
+    ))
 }
 
-async fn home_webhooks_fragment() -> Html<String> {
+async fn home_webhooks_fragment() -> Html<&'static str> {
     Html(
-        html! {
-            h2 { "Webhook Flow" }
-            p { "Government agencies and approved intermediaries usually expose different callback formats. This service accepts one normalized envelope and stores only compact status metadata in the case ledger." }
-            h3 { "Callback URL" }
-            pre { code { "POST /webhooks/government\nPOST /webhooks/government/:jurisdiction" } }
-            h3 { "Authentication" }
-            p { "Set " code { "APOSTILLE_WEBHOOK_SECRET" } " and require providers to send one of these headers:" }
-            pre { code { "X-Apostille-Webhook-Secret: ...\nX-Government-Webhook-Secret: ...\nX-Webhook-Secret: ..." } }
-            h3 { "Envelope" }
-            pre { code {
-"{
-  \"caseId\": \"case_...\",
-  \"jurisdiction\": \"peru\",
-  \"providerReference\": \"gov-reference-123\",
-  \"eventType\": \"status.changed\",
-  \"status\": \"approved\",
-  \"payload\": {
-    \"rawProviderStatus\": \"approved\",
-    \"receivedAt\": \"2026-06-07T18:00:00Z\"
+        r#"<h2>Webhook Flow</h2>
+<p>Government agencies and approved intermediaries usually expose different callback formats. This service accepts one normalized envelope and stores only compact status metadata in the case ledger.</p>
+<h3>Callback URL</h3>
+<pre><code>POST /webhooks/government
+POST /webhooks/government/:jurisdiction</code></pre>
+<h3>Authentication</h3>
+<p>Set <code>APOSTILLE_WEBHOOK_SECRET</code> and require providers to send one of these headers:</p>
+<pre><code>X-Apostille-Webhook-Secret: ...
+X-Government-Webhook-Secret: ...
+X-Webhook-Secret: ...</code></pre>
+<h3>Envelope</h3>
+<pre><code>{
+  "caseId": "case_...",
+  "jurisdiction": "peru",
+  "providerReference": "gov-reference-123",
+  "eventType": "status.changed",
+  "status": "approved",
+  "payload": {
+    "rawProviderStatus": "approved",
+    "receivedAt": "2026-06-07T18:00:00Z"
   }
-}" } }
-            p { "When " code { "caseId" } " is present, the case status becomes " code { "government_<status>" } ". Orphan callbacks are accepted and reported as unmatched so providers can retry with a corrected id." }
-        }
-        .into_string(),
+}</code></pre>
+<p>When <code>caseId</code> is present, the case status becomes <code>government_&lt;status&gt;</code>. Orphan callbacks are accepted and reported as unmatched so providers can retry with a corrected id.</p>"#,
     )
 }
 
-async fn home_examples_fragment() -> Html<String> {
+async fn home_examples_fragment() -> Html<&'static str> {
     Html(
-        html! {
-            h2 { "Payload Examples" }
-            h3 { "Create And Auto-Submit A Case" }
-            pre { code {
-r#"curl -sS http://127.0.0.1:8122/cases \
+        r#"<h2>Payload Examples</h2>
+<h3>Create And Auto-Submit A Case</h3>
+<pre><code>curl -sS http://127.0.0.1:8122/cases \
   -H 'content-type: application/json' \
   -H "X-Server-Auth: $SERVER_AUTH_SECRET" \
   -d '{
@@ -1081,10 +1044,9 @@ r#"curl -sS http://127.0.0.1:8122/cases \
       "dataUseAccepted": true,
       "governmentTermsAccepted": true
     }
-  }'"# } }
-            h3 { "Provider Config Shape" }
-            pre { code {
-r#"{
+  }'</code></pre>
+<h3>Provider Config Shape</h3>
+<pre><code>{
   "peru": {
     "baseUrl": "https://approved-provider.example",
     "submitPath": "/apostille/submit",
@@ -1093,61 +1055,17 @@ r#"{
     "authKind": "bearer",
     "tokenEnv": "APOSTILLE_PROVIDER_PERU_TOKEN"
   }
-}"# } }
-        }
-        .into_string(),
+}</code></pre>"#,
     )
 }
 
-#[cfg(test)]
-mod maud_render_tests {
-    use super::*;
-
-    #[test]
-    fn home_page_renders_htmx_shell_and_counts() {
-        let html = render_home(7, 3, "configured").into_string();
-        assert!(html.starts_with("<!DOCTYPE html>"));
-        // HTMX wiring preserved verbatim from the original template.
-        assert!(html.contains("src=\"https://unpkg.com/htmx.org@1.9.12\""));
-        assert!(html.contains("hx-get=\"/home/flow\""));
-        assert!(html.contains("hx-target=\"#home-panel\""));
-        assert!(html.contains("hx-trigger=\"load\""));
-        // Dynamic counts are interpolated into the stat tiles.
-        assert!(html.contains("<strong>7</strong>"));
-        assert!(html.contains("<strong>3</strong>"));
-        assert!(html.contains("<strong>configured</strong>"));
-        // CSS embedded verbatim via PreEscaped.
-        assert!(html.contains("--accent:#1f6f5b"));
-    }
-
-    #[test]
-    fn webhooks_fragment_auto_escapes_angle_brackets() {
-        // The old hand-written template wrote `&lt;status&gt;` by hand; maud must
-        // produce the same escaped output from the literal `government_<status>`.
-        let html = tokio_test_block(home_webhooks_fragment());
-        assert!(html.contains("government_&lt;status&gt;"));
-        assert!(!html.contains("government_<status>"));
-    }
-
-    // Minimal executor so the async fragment can be rendered without pulling in
-    // a full tokio runtime dependency for the test.
-    fn tokio_test_block(fut: impl std::future::Future<Output = Html<String>>) -> String {
-        use std::pin::pin;
-        use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
-        fn noop(_: *const ()) {}
-        fn clone(_: *const ()) -> RawWaker {
-            RawWaker::new(std::ptr::null(), &VTABLE)
-        }
-        static VTABLE: RawWakerVTable = RawWakerVTable::new(clone, noop, noop, noop);
-        let waker = unsafe { Waker::from_raw(RawWaker::new(std::ptr::null(), &VTABLE)) };
-        let mut cx = Context::from_waker(&waker);
-        let mut fut = pin!(fut);
-        loop {
-            if let Poll::Ready(Html(body)) = fut.as_mut().poll(&mut cx) {
-                return body;
-            }
-        }
-    }
+fn escape_html(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
 }
 
 async fn descriptor(State(state): State<AppState>) -> Json<Value> {

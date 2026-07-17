@@ -648,5 +648,3 @@ strict `tokio::time::timeout` budget.
   $SERVER_AUTH_SECRET` (the JSON API) or a valid `X-Hub-Signature-256` HMAC
   over the body (the GitHub webhook).
 * Public introspection (`/`, `/healthz`, `/metrics`) is open.
-
-> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

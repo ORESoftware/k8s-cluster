@@ -94,5 +94,3 @@ kubectl apply -f remote/argocd/apps/dd-cluster-mcp-rs.application.yaml
 The deployment uses read-only RBAC and runs from the EC2 host checkout with
 `cargo run --release --locked`, matching the current Rust runtime pattern. The
 checked-in Dockerfile is ready for a later prebuilt image path.
-
-> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

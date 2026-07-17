@@ -54,9 +54,6 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   const polyglotRunner = await readRepoFile(
     'remote/deployments/gleam-lambda-runner/child-runtimes/polyglot-function-runner.mjs',
   );
-  const browserRunner = await readRepoFile(
-    'remote/deployments/gleam-lambda-runner/child-runtimes/browser-function-runner.mjs',
-  );
   const restApi = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
   const webHome = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
   const webHomeReadme = await readRepoFile('remote/deployments/web-home-rs/readme.md');
@@ -91,9 +88,6 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   );
   const javaRuntimeDockerfile = await readRepoFile(
     'remote/deployments/gleam-lambda-runner/runtime-images/java.Dockerfile',
-  );
-  const browserRuntimeDockerfile = await readRepoFile(
-    'remote/deployments/gleam-lambda-runner/runtime-images/browser.Dockerfile',
   );
 
   assert.match(gleamToml, /name = "gleam_lambda_runner"/);
@@ -157,7 +151,7 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(httpServer, /x-agent-auth/);
   assert.match(httpServer, /authConfigured/);
   assert.match(runtimeEnv, /-module\(lambda_runtime_env\)/);
-  assert.match(runtimeEnv, /dd_cli_config_client_ffi:getenv\(Name, <<>>\)/);
+  assert.match(runtimeEnv, /os:getenv\(Name\)/);
   assert.match(httpServer, /NODE_NO_WARNINGS=1/);
   assert.match(httpServer, /node --permission --allow-net child-runtimes\/js-function-runner\.mjs/);
   assert.match(
@@ -241,10 +235,6 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(erlPort, /<<"erlang">>/);
   assert.match(erlPort, /<<"elixir">>/);
   assert.match(erlPort, /<<"java">>/);
-  assert.match(erlPort, /canonical_runtime\(<<"playwright">>\) -> <<"browser">>/);
-  assert.match(erlPort, /canonical_runtime\(<<"puppeteer">>\) -> <<"browser">>/);
-  assert.match(erlPort, /LAMBDA_BROWSER_CONTAINER_IMAGE/);
-  assert.match(erlPort, /LAMBDA_SCRAPING_ALLOW_ROBOTS_OVERRIDE/);
   assert.match(erlPort, /host_command_from_env/);
   assert.match(erlPort, /LAMBDA_NODEJS_HOST_COMMAND/);
   assert.match(erlPort, /NODE_NO_WARNINGS=1/);
@@ -269,7 +259,7 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(erlPort, /--cap-drop ALL/);
   assert.match(erlPort, /--ulimit nofile=64:64/);
   assert.match(erlPort, /prewarm_workers/);
-  assert.match(erlPort, /dd_cli_config_client_ffi:getenv\(<<"LAMBDA_DATABASE_URL">>, <<>>\)/);
+  assert.match(erlPort, /os:getenv\("LAMBDA_DATABASE_URL"\)/);
   assert.doesNotMatch(erlPort, /AGENT_TASKS_RDS_DATABASE_URL|AGENT_TASKS_DATABASE_URL|RDS_DATABASE_URL/);
   assert.match(erlPort, /identifier_kind/);
   assert.match(erlPort, /erlang:monitor\(process, Pid\)/);
@@ -322,20 +312,11 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(polyglotRunner, /function runJava/);
   assert.match(polyglotRunner, /LAMBDA_TARGET_RUNTIME/);
   assert.match(polyglotRunner, /runtime\/image mismatch/);
-  assert.match(browserRunner, /createContext/);
-  assert.match(browserRunner, /ctx\.route\('\*\*\/\*'/);
-  assert.match(browserRunner, /loadLibrary\('robots-parser'\)/);
-  assert.match(browserRunner, /LAMBDA_BROWSER_ALLOW_PRIVATE_NETWORKS/);
-  assert.match(browserRunner, /LAMBDA_SCRAPING_MIN_DELAY_MS/);
-  assert.match(browserRuntimeDockerfile, /mcr\.microsoft\.com\/playwright:v1\.56\.0-noble@sha256:/);
-  assert.match(browserRuntimeDockerfile, /puppeteer-core@24\.43\.1/);
-  assert.match(browserRuntimeDockerfile, /robots-parser@3\.0\.1/);
-  assert.match(browserRuntimeDockerfile, /USER 10001:10001/);
   assert.match(restApi, /\/api\/lambdas\/functions/);
   assert.match(restApi, /get\(lambda_functions\)\.post\(create_lambda_function\)/);
   assert.match(restApi, /patch\(update_lambda_function\)/);
   assert.match(restApi, /validate_lambda_runtime/);
-  assert.match(restApi, /browser \(Playwright\/Puppeteer\)/);
+  assert.match(restApi, /runtime must be one of nodejs, python3, ruby, bash, golang, dart, erlang, elixir, or java/);
   assert.match(restApi, /validate_lambda_reuse_key/);
   assert.match(restApi, /reuseKey may contain only ASCII letters/);
   assert.match(restApi, /validate_lambda_image_build_root/);
@@ -350,11 +331,6 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(restApi, /"erlang"/);
   assert.match(restApi, /"elixir"/);
   assert.match(restApi, /"java"/);
-  assert.match(restApi, /"playwright" \| "puppeteer"/);
-  assert.match(restApi, /browser-function-runner\.mjs/);
-  assert.match(restApi, /dd-lambda-browser-runtime:dev/);
-  assert.match(webHome, /browser \(Playwright\/Puppeteer\)/);
-  assert.match(webHome, /dd-lambda-browser-runtime:dev/);
   assert.match(restApi, /maybe_package_lambda_image/);
   assert.match(restApi, /LAMBDA_IMAGE_BUILD_ENABLED/);
   assert.match(restApi, /LAMBDA_ALLOW_HOST_RUNTIMES/);
@@ -513,7 +489,7 @@ test('gleam lambda runner ships ec2 service manifests', async () => {
   assert.match(ec2Deployment, /erlc -o build\/dev\/erlang\/hpack\/ebin/);
   assert.match(ec2Deployment, /containerPort:\s*8083/);
   assert.match(ec2Deployment, /requests:[\s\S]*memory:\s*512Mi/);
-  assert.match(ec2Deployment, /limits:[\s\S]*memory:\s*2560Mi/);
+  assert.match(ec2Deployment, /limits:[\s\S]*memory:\s*4Gi/);
   assert.match(ec2Deployment, /path:\s*\/home\/ec2-user\/codes\/dd\/dd-next-1/);
   assert.match(ec2Deployment, /dd-gleam-lambda-runner-secrets/);
   assert.match(ec2Deployment, /name:\s*LAMBDA_DATABASE_URL[\s\S]*key:\s*LAMBDA_DATABASE_URL/);
@@ -534,11 +510,7 @@ test('gleam lambda runner ships ec2 service manifests', async () => {
   assert.match(ec2Deployment, /mountPropagation:\s*Bidirectional/);
   assert.match(ec2Deployment, /mountPath:\s*\/usr\/local\/bin\/nerdctl/);
   assert.match(ec2Deployment, /LAMBDA_CONTAINER_RUNNER[\s\S]*value:\s*ctr/);
-  assert.match(ec2Deployment, /LAMBDA_CONTAINER_NAMESPACE[\s\S]*value:\s*k8s\.io/);
   assert.match(ec2Deployment, /LAMBDA_CONTAINER_NETWORK[\s\S]*value:\s*host/);
-  assert.match(ec2Deployment, /LAMBDA_BROWSER_CONTAINER_IMAGE[\s\S]*dd-lambda-browser-runtime:dev/);
-  assert.match(ec2Deployment, /LAMBDA_BROWSER_ALLOW_PRIVATE_NETWORKS[\s\S]*value:\s*'false'/);
-  assert.match(ec2Deployment, /LAMBDA_SCRAPING_ALLOW_ROBOTS_OVERRIDE[\s\S]*value:\s*'false'/);
   assert.match(ec2Deployment, /mountPath:\s*\/usr\/local\/bin\/ctr/);
   assert.match(ec2Deployment, /startupProbe:[\s\S]*path:\s*\/healthz[\s\S]*failureThreshold:\s*60/);
   assert.doesNotMatch(ec2Deployment, /mountPath:\s*\/opt\/cni\/bin/);

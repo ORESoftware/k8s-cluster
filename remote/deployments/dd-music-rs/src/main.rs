@@ -1,5 +1,6 @@
 use std::{
     env,
+    fmt::Write as _,
     net::SocketAddr,
     sync::Arc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -9,10 +10,7 @@ use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_s3::{config::Region, primitives::ByteStream, types::ServerSideEncryption};
 use axum::{
     body::Bytes,
-    extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
-        Path, Query, State,
-    },
+    extract::{Path, Query, State},
     http::{header, HeaderMap, StatusCode},
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
@@ -23,25 +21,19 @@ use dd_nats_subject_defs::{
     MUSIC_GENERATION_REQUESTS_QUEUE_GROUP, MUSIC_GENERATION_REQUESTS_SUBJECT,
     MUSIC_GENERATION_RESULTS_SUBJECT, MUSIC_SONGS_PUBLISHED_SUBJECT, MUSIC_VOTES_EVENTS_SUBJECT,
 };
-use dd_pg_defs_sea_orm::music_songs;
 use des_engine::des::general::music_production::{
     generate_microtonal_song, generate_track_structure_plan, ArrangementSummary, AudioBuffer,
     MusicGenre, SongSpec, StylePalette, DEFAULT_SAMPLE_RATE,
 };
 use futures_util::StreamExt;
-use maud::{html, Markup, PreEscaped, DOCTYPE};
 use once_cell::sync::Lazy;
 use prometheus::{Encoder, IntCounterVec, IntGauge, Opts, TextEncoder};
 use redis::AsyncCommands;
-use sea_orm::{
-    sea_query::{Expr, NullOrdering},
-    ColumnTrait, ConnectionTrait, Database, DatabaseBackend, DatabaseConnection, DbErr,
-    EntityTrait, Order, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Statement,
-};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::Mutex;
+use tokio_postgres::types::ToSql;
 use uuid::Uuid;
 
 mod pg_contract {
@@ -124,12 +116,6 @@ struct AppState {
     redis_connection: Arc<Mutex<Option<redis::aio::MultiplexedConnection>>>,
     s3: Option<aws_sdk_s3::Client>,
     nats: Option<async_nats::Client>,
-    /// Realtime fan-out hub. Each connected `/ws` client subscribes; the vote
-    /// handler broadcasts a re-rendered song card (as an htmx out-of-band swap
-    /// fragment) so every open page sees the new vote count live, without
-    /// waiting for the 120s shelf poll. Server-initiated push over WebSockets,
-    /// reusing the same maud template the HTTP fragment routes render.
-    vote_hub: broadcast::Sender<String>,
 }
 
 #[derive(Clone)]
@@ -465,17 +451,12 @@ async fn state_from_config(config: Config) -> Result<AppState, String> {
         None => None,
     };
 
-    // Capacity 256: a burst of votes buffers briefly; a client that falls
-    // further behind gets a Lagged error and simply skips to the latest, which
-    // is fine because each message is a full self-contained card snapshot.
-    let (vote_hub, _) = broadcast::channel(256);
     Ok(AppState {
         config: Arc::new(config),
         redis,
         redis_connection: Arc::new(Mutex::new(None)),
         s3,
         nats,
-        vote_hub,
     })
 }
 
@@ -515,15 +496,30 @@ fn now_ms() -> u128 {
         .as_millis()
 }
 
-async fn connect_postgres(config: &Config) -> Result<DatabaseConnection, ServiceError> {
+async fn connect_postgres(config: &Config) -> Result<tokio_postgres::Client, ServiceError> {
     let database_url = config
         .database_url
         .as_deref()
         .ok_or_else(|| ServiceError::Unavailable("music service is not ready".to_string()))?;
-    Database::connect(database_url).await.map_err(|error| {
-        tracing::error!("dd-music-rs postgres connect failed: {error}");
-        ServiceError::Unavailable("postgres connect failed".to_string())
-    })
+    let mut root_store = rustls::RootCertStore::empty();
+    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    let tls_config = rustls::ClientConfig::builder()
+        .with_root_certificates(root_store)
+        .with_no_client_auth();
+    let tls = tokio_postgres_rustls::MakeRustlsConnect::new(tls_config);
+    let (client, connection) =
+        tokio_postgres::connect(database_url, tls)
+            .await
+            .map_err(|error| {
+                tracing::error!("dd-music-rs postgres connect failed: {error}");
+                ServiceError::Unavailable("postgres connect failed".to_string())
+            })?;
+    tokio::spawn(async move {
+        if let Err(error) = connection.await {
+            tracing::error!("dd-music-rs postgres connection error: {error}");
+        }
+    });
+    Ok(client)
 }
 
 fn require_server_auth(headers: &HeaderMap, config: &Config) -> Result<(), ServiceError> {
@@ -612,9 +608,9 @@ async fn api_docs_json() -> impl IntoResponse {
     )
 }
 
-async fn home() -> Html<String> {
+async fn home() -> Html<&'static str> {
     record_request("GET", "/", StatusCode::OK);
-    Html(render_home().into_string())
+    Html(HOME_HTML)
 }
 
 async fn songs_shelf(
@@ -623,24 +619,20 @@ async fn songs_shelf(
 ) -> impl IntoResponse {
     let limit = query.limit.unwrap_or(36).clamp(1, MAX_LIST_LIMIT);
     let result = async {
-        let db = connect_postgres(&state.config).await?;
-        fetch_published_songs(&db, limit).await
+        let client = connect_postgres(&state.config).await?;
+        fetch_published_songs(&client, limit).await
     }
     .await;
 
     match result {
         Ok(songs) => {
             record_request("GET", "/songs/shelf", StatusCode::OK);
-            (
-                StatusCode::OK,
-                Html(render_song_shelf(&songs).into_string()),
-            )
-                .into_response()
+            (StatusCode::OK, Html(render_song_shelf(&songs))).into_response()
         }
         Err(error) => {
             tracing::error!("dd-music-rs song shelf unavailable: {error:?}");
             record_request("GET", "/songs/shelf", StatusCode::OK);
-            (StatusCode::OK, Html(render_shelf_error().into_string())).into_response()
+            (StatusCode::OK, Html(render_shelf_error())).into_response()
         }
     }
 }
@@ -651,8 +643,8 @@ async fn list_songs(
 ) -> Result<Json<SongsResponse>, ServiceError> {
     let limit = query.limit.unwrap_or(24).clamp(1, MAX_LIST_LIMIT);
     let songs = match async {
-        let db = connect_postgres(&state.config).await?;
-        fetch_published_songs(&db, limit).await
+        let client = connect_postgres(&state.config).await?;
+        fetch_published_songs(&client, limit).await
     }
     .await
     {
@@ -675,8 +667,8 @@ async fn get_song(
     Path(song_id): Path<String>,
 ) -> Result<Json<SongRow>, ServiceError> {
     validate_song_id(&song_id)?;
-    let db = connect_postgres(&state.config).await?;
-    let song = fetch_song(&db, &song_id).await?;
+    let client = connect_postgres(&state.config).await?;
+    let song = fetch_song(&client, &song_id).await?;
     record_request("GET", "/songs/:song_id", StatusCode::OK);
     Ok(Json(song))
 }
@@ -686,26 +678,21 @@ async fn song_audio(
     Path(song_id): Path<String>,
 ) -> Result<Redirect, ServiceError> {
     validate_song_id(&song_id)?;
-    let db = connect_postgres(&state.config).await?;
-    let updated = music_songs::Entity::update_many()
-        .col_expr(
-            music_songs::Column::PlayCount,
-            Expr::col(music_songs::Column::PlayCount).add(1),
-        )
-        .col_expr(
-            music_songs::Column::UpdatedAt,
-            Expr::current_timestamp().into(),
-        )
-        .filter(music_songs::Column::Id.eq(parse_song_uuid(&song_id)?))
-        .filter(music_songs::Column::Status.eq("published"))
-        .exec_with_returning(&db)
+    let client = connect_postgres(&state.config).await?;
+    let sql = format!(
+        "update {songs}
+            set play_count = play_count + 1, updated_at = now()
+          where id = $1::uuid and status = 'published'
+          returning audio_url",
+        songs = pg_contract::MUSIC_SONGS_TABLE
+    );
+    let row = client
+        .query_opt(&sql, &[&song_id])
         .await
-        .map_err(db_error)?;
-    let song = updated
-        .into_iter()
-        .next()
+        .map_err(db_error)?
         .ok_or_else(|| ServiceError::NotFound("song not found".to_string()))?;
-    let Some(audio_url) = song.audio_url else {
+    let audio_url: Option<String> = row.get("audio_url");
+    let Some(audio_url) = audio_url else {
         return Err(ServiceError::NotFound("song has no audio URL".to_string()));
     };
     if !is_allowed_audio_url(&state.config.storage, &audio_url) {
@@ -735,9 +722,9 @@ async fn vote_song(
     let visitor_hash = visitor_hash(&headers, &state.config.vote_hash_salt);
     throttle_vote(&state, &song_id, &visitor_hash).await?;
     let user_agent_hash = optional_header_hash(&headers, header::USER_AGENT.as_str());
-    let db = connect_postgres(&state.config).await?;
+    let client = connect_postgres(&state.config).await?;
     let song = upsert_vote(
-        &db,
+        &client,
         &song_id,
         &visitor_hash,
         user_agent_hash.as_deref(),
@@ -748,58 +735,11 @@ async fn vote_song(
         .with_label_values(&[if request.value > 0 { "up" } else { "down" }])
         .inc();
     publish_music_event(&state, MUSIC_VOTES_EVENTS_SUBJECT, vote_event(&song, request.value)).await;
-    // Push the updated card to every open page over WebSockets as an OOB swap.
-    // send() only errors when there are no subscribers, which is not a problem.
-    let _ = state
-        .vote_hub
-        .send(render_song_card_oob(&song).into_string());
     record_request("POST", "/songs/:song_id/votes", StatusCode::OK);
     if is_htmx_request(&headers) {
-        Ok(Html(render_song_card(&song).into_string()).into_response())
+        Ok(Html(render_song_card(&song)).into_response())
     } else {
         Ok(Json(VoteResponse { ok: true, song }).into_response())
-    }
-}
-
-/// WebSocket upgrade for the live vote stream. The home page is public and
-/// vote counts are public data, so this read-only stream is unauthenticated
-/// like the HTTP GET pages. For a stream carrying per-user or privileged data,
-/// authenticate/authorize HERE, before `on_upgrade` — WebSocket upgrades skip
-/// the normal request middleware, so the check cannot be assumed elsewhere.
-async fn ws_votes(State(state): State<AppState>, ws: WebSocketUpgrade) -> Response {
-    ws.on_upgrade(move |socket| ws_votes_connection(socket, state.vote_hub.subscribe()))
-}
-
-async fn ws_votes_connection(mut socket: WebSocket, mut updates: broadcast::Receiver<String>) {
-    // Heartbeat so idle connections and dead peers are detected and reaped
-    // rather than lingering; browsers answer Ping with Pong automatically.
-    let mut heartbeat = tokio::time::interval(Duration::from_secs(30));
-    heartbeat.tick().await; // consume the immediate first tick
-    loop {
-        tokio::select! {
-            update = updates.recv() => match update {
-                Ok(html) => {
-                    if socket.send(Message::Text(html)).await.is_err() {
-                        break; // client went away
-                    }
-                }
-                // A slow client that fell behind skips to the latest; each
-                // message is a full card snapshot, so no state is lost.
-                Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                Err(broadcast::error::RecvError::Closed) => break,
-            },
-            _ = heartbeat.tick() => {
-                if socket.send(Message::Ping(Vec::new())).await.is_err() {
-                    break;
-                }
-            }
-            incoming = socket.recv() => match incoming {
-                // Read-only stream: ignore any client frames except close/EOF.
-                Some(Ok(Message::Close(_))) | None => break,
-                Some(Ok(_)) => {}
-                Some(Err(_)) => break,
-            },
-        }
     }
 }
 
@@ -820,38 +760,75 @@ async fn generate_internal(
 }
 
 async fn fetch_published_songs(
-    db: &DatabaseConnection,
+    client: &tokio_postgres::Client,
     limit: i64,
 ) -> Result<Vec<SongRow>, ServiceError> {
-    let songs = music_songs::Entity::find()
-        .filter(music_songs::Column::Status.eq("published"))
-        .order_by_with_nulls(
-            music_songs::Column::PublishedAt,
-            Order::Desc,
-            NullOrdering::Last,
-        )
-        .order_by_desc(music_songs::Column::CreatedAt)
-        .limit(limit as u64)
-        .all(db)
-        .await
-        .map_err(db_error)?;
-    Ok(songs.iter().map(song_from_model).collect())
+    let sql = format!(
+        "select
+            id::text as id,
+            title,
+            slug,
+            genre,
+            status,
+            audio_url,
+            content_type,
+            duration_millis,
+            bpm_millis,
+            listenability_score_micros,
+            vote_score,
+            up_votes,
+            down_votes,
+            play_count,
+            summary,
+            to_char(published_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as published_at,
+            to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at
+          from {songs}
+          where status = 'published'
+          order by published_at desc nulls last, created_at desc
+          limit $1",
+        songs = pg_contract::MUSIC_SONGS_TABLE
+    );
+    let rows = client.query(&sql, &[&limit]).await.map_err(db_error)?;
+    Ok(rows.iter().map(song_from_row).collect())
 }
 
-async fn fetch_song(db: &DatabaseConnection, song_id: &str) -> Result<SongRow, ServiceError> {
-    let song = music_songs::Entity::find_by_id(parse_song_uuid(song_id)?)
-        .one(db)
+async fn fetch_song(
+    client: &tokio_postgres::Client,
+    song_id: &str,
+) -> Result<SongRow, ServiceError> {
+    let sql = format!(
+        "select
+            id::text as id,
+            title,
+            slug,
+            genre,
+            status,
+            audio_url,
+            content_type,
+            duration_millis,
+            bpm_millis,
+            listenability_score_micros,
+            vote_score,
+            up_votes,
+            down_votes,
+            play_count,
+            summary,
+            to_char(published_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as published_at,
+            to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at
+          from {songs}
+          where id = $1::uuid",
+        songs = pg_contract::MUSIC_SONGS_TABLE
+    );
+    let row = client
+        .query_opt(&sql, &[&song_id])
         .await
         .map_err(db_error)?
         .ok_or_else(|| ServiceError::NotFound("song not found".to_string()))?;
-    Ok(song_from_model(&song))
+    Ok(song_from_row(&row))
 }
 
-/// The vote upsert, per-song stats recompute, and songs-row refresh must stay a
-/// single atomic statement, which the entity API cannot express; keep the CTE
-/// as a parameterized raw statement returning the full songs row.
 async fn upsert_vote(
-    db: &DatabaseConnection,
+    client: &tokio_postgres::Client,
     song_id: &str,
     visitor_hash: &str,
     user_agent_hash: Option<&str>,
@@ -882,26 +859,34 @@ async fn upsert_vote(
                  updated_at = now()
             from stats
            where songs.id = stats.song_id
-           returning songs.*",
+           returning
+            songs.id::text as id,
+            songs.title,
+            songs.slug,
+            songs.genre,
+            songs.status,
+            songs.audio_url,
+            songs.content_type,
+            songs.duration_millis,
+            songs.bpm_millis,
+            songs.listenability_score_micros,
+            songs.vote_score,
+            songs.up_votes,
+            songs.down_votes,
+            songs.play_count,
+            songs.summary,
+            to_char(songs.published_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as published_at,
+            to_char(songs.created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at",
         songs = pg_contract::MUSIC_SONGS_TABLE,
         votes = pg_contract::MUSIC_SONG_VOTES_TABLE
     );
-    let song = music_songs::Entity::find()
-        .from_raw_sql(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            sql,
-            [
-                song_id.into(),
-                visitor_hash.into(),
-                user_agent_hash.map(str::to_string).into(),
-                vote_value.into(),
-            ],
-        ))
-        .one(db)
+    let params: &[&(dyn ToSql + Sync)] = &[&song_id, &visitor_hash, &user_agent_hash, &vote_value];
+    let row = client
+        .query_opt(&sql, params)
         .await
         .map_err(db_error)?
         .ok_or_else(|| ServiceError::NotFound("song not found".to_string()))?;
-    Ok(song_from_model(&song))
+    Ok(song_from_row(&row))
 }
 
 /// Best-effort fan-out of a `dd.music.v1` envelope onto NATS. No-ops when
@@ -981,7 +966,7 @@ async fn generate_and_publish_songs(
     count: i64,
     min_score: f64,
 ) -> Result<GenerateResponse, ServiceError> {
-    let db = connect_postgres(&state.config).await?;
+    let client = connect_postgres(&state.config).await?;
     let mut published = Vec::new();
     let mut discarded = 0usize;
     let mut attempts = 0usize;
@@ -1000,12 +985,12 @@ async fn generate_and_publish_songs(
             })?;
         if song.listenability_score < min_score {
             discarded += 1;
-            insert_discarded_song(&db, &song, "listenability_score_below_threshold").await?;
+            insert_discarded_song(&client, &song, "listenability_score_below_threshold").await?;
             SONG_GENERATIONS.with_label_values(&["discarded"]).inc();
             continue;
         }
         let stored = store_audio(state, &song).await?;
-        let row = insert_published_song(&db, &song, &stored).await?;
+        let row = insert_published_song(&client, &song, &stored).await?;
         publish_music_event(state, MUSIC_SONGS_PUBLISHED_SUBJECT, song_published_event(&row)).await;
         published.push(row);
         SONG_GENERATIONS.with_label_values(&["published"]).inc();
@@ -1132,11 +1117,8 @@ async fn store_audio(state: &AppState, song: &GeneratedSong) -> Result<StoredObj
     }
 }
 
-/// generation_date and published_at are computed server-side (current_date /
-/// now()), which ActiveModel inserts cannot express; keep the insert as a
-/// parameterized raw statement returning the full row.
 async fn insert_published_song(
-    db: &DatabaseConnection,
+    client: &tokio_postgres::Client,
     song: &GeneratedSong,
     stored: &StoredObject,
 ) -> Result<SongRow, ServiceError> {
@@ -1169,7 +1151,24 @@ async fn insert_published_song(
             $1::uuid, $2, $3, 'published', $4, to_char(current_date, 'YYYY-MM-DD'), $5, $6, $7, $8, 'audio/wav',
             $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, now()
           )
-          returning *",
+          returning
+            id::text as id,
+            title,
+            slug,
+            genre,
+            status,
+            audio_url,
+            content_type,
+            duration_millis,
+            bpm_millis,
+            listenability_score_micros,
+            vote_score,
+            up_votes,
+            down_votes,
+            play_count,
+            summary,
+            to_char(published_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as published_at,
+            to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at",
         songs = pg_contract::MUSIC_SONGS_TABLE
     );
     let meta = json!({
@@ -1184,42 +1183,32 @@ async fn insert_published_song(
     let rms_micros = micros_i32(song.summary.rms);
     let spectral_centroid_millihz = millihz_i64(song.summary.spectral_centroid_hz);
     let listenability_score_micros = micros_i32(song.listenability_score);
-    let row = music_songs::Entity::find()
-        .from_raw_sql(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            sql,
-            [
-                song.id.as_str().into(),
-                song.title.as_str().into(),
-                song.slug.as_str().into(),
-                song.seed.into(),
-                stored.provider.as_str().into(),
-                stored.bucket.clone().into(),
-                stored.key.as_str().into(),
-                stored.url.as_str().into(),
-                duration_millis.into(),
-                sample_rate.into(),
-                bpm_millis.into(),
-                song.genre.as_str().into(),
-                peak_micros.into(),
-                rms_micros.into(),
-                spectral_centroid_millihz.into(),
-                listenability_score_micros.into(),
-                song.summary_json.clone().into(),
-                meta.into(),
-            ],
-        ))
-        .one(db)
-        .await
-        .map_err(db_error)?
-        .ok_or_else(|| ServiceError::Internal("postgres query failed".to_string()))?;
-    Ok(song_from_model(&row))
+    let params: &[&(dyn ToSql + Sync)] = &[
+        &song.id,
+        &song.title,
+        &song.slug,
+        &song.seed,
+        &stored.provider,
+        &stored.bucket,
+        &stored.key,
+        &stored.url,
+        &duration_millis,
+        &sample_rate,
+        &bpm_millis,
+        &song.genre,
+        &peak_micros,
+        &rms_micros,
+        &spectral_centroid_millihz,
+        &listenability_score_micros,
+        &song.summary_json,
+        &meta,
+    ];
+    let row = client.query_one(&sql, params).await.map_err(db_error)?;
+    Ok(song_from_row(&row))
 }
 
-/// generation_date is computed server-side (current_date), which ActiveModel
-/// inserts cannot express; keep the insert as a parameterized raw statement.
 async fn insert_discarded_song(
-    db: &DatabaseConnection,
+    client: &tokio_postgres::Client,
     song: &GeneratedSong,
     reason: &str,
 ) -> Result<(), ServiceError> {
@@ -1260,28 +1249,23 @@ async fn insert_discarded_song(
     let rms_micros = micros_i32(song.summary.rms);
     let spectral_centroid_millihz = millihz_i64(song.summary.spectral_centroid_hz);
     let listenability_score_micros = micros_i32(song.listenability_score);
-    db.execute(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        sql,
-        [
-            song.id.as_str().into(),
-            song.title.as_str().into(),
-            song.slug.as_str().into(),
-            song.seed.into(),
-            duration_millis.into(),
-            sample_rate.into(),
-            bpm_millis.into(),
-            song.genre.as_str().into(),
-            peak_micros.into(),
-            rms_micros.into(),
-            spectral_centroid_millihz.into(),
-            listenability_score_micros.into(),
-            song.summary_json.clone().into(),
-            meta.into(),
-        ],
-    ))
-    .await
-    .map_err(db_error)?;
+    let params: &[&(dyn ToSql + Sync)] = &[
+        &song.id,
+        &song.title,
+        &song.slug,
+        &song.seed,
+        &duration_millis,
+        &sample_rate,
+        &bpm_millis,
+        &song.genre,
+        &peak_micros,
+        &rms_micros,
+        &spectral_centroid_millihz,
+        &listenability_score_micros,
+        &song.summary_json,
+        &meta,
+    ];
+    client.execute(&sql, params).await.map_err(db_error)?;
     Ok(())
 }
 
@@ -1393,14 +1377,14 @@ async fn handle_generation_request(state: &AppState, payload: &[u8]) {
     // Respect the daily song budget so the on-demand lane can't exceed the
     // configured daily target (the scheduled sweep shares the same cap). This
     // bounds total cost regardless of how many requests arrive.
-    let db = match connect_postgres(&state.config).await {
-        Ok(db) => db,
+    let client = match connect_postgres(&state.config).await {
+        Ok(client) => client,
         Err(error) => {
             tracing::error!("dd-music-rs NATS generation request skipped (postgres): {error:?}");
             return;
         }
     };
-    let remaining = match (daily_target(state).await, published_today_count(&db).await) {
+    let remaining = match (daily_target(state).await, published_today_count(&client).await) {
         (Ok(target), Ok(published)) => (target - published).max(0),
         (Err(error), _) | (_, Err(error)) => {
             tracing::error!("dd-music-rs NATS generation request skipped (daily budget): {error:?}");
@@ -1433,9 +1417,9 @@ async fn run_generator_sweep(state: &AppState) -> Result<(), ServiceError> {
     if !acquire_generation_lock(state, &lock_token).await? {
         return Ok(());
     }
-    let db = connect_postgres(&state.config).await?;
+    let client = connect_postgres(&state.config).await?;
     let target = daily_target(state).await?;
-    let published_today = published_today_count(&db).await?;
+    let published_today = published_today_count(&client).await?;
     let remaining = (target - published_today).max(0);
     if remaining == 0 {
         return Ok(());
@@ -1502,17 +1486,16 @@ async fn daily_target(state: &AppState) -> Result<i64, ServiceError> {
     ))
 }
 
-async fn published_today_count(db: &DatabaseConnection) -> Result<i64, ServiceError> {
-    let count = music_songs::Entity::find()
-        .filter(music_songs::Column::Status.eq("published"))
-        .filter(
-            Expr::col(music_songs::Column::GenerationDate)
-                .eq(Expr::cust("to_char(current_date, 'YYYY-MM-DD')")),
-        )
-        .count(db)
-        .await
-        .map_err(db_error)?;
-    Ok(count as i64)
+async fn published_today_count(client: &tokio_postgres::Client) -> Result<i64, ServiceError> {
+    let sql = format!(
+        "select count(*)::bigint as count
+           from {songs}
+          where status = 'published'
+            and generation_date = to_char(current_date, 'YYYY-MM-DD')",
+        songs = pg_contract::MUSIC_SONGS_TABLE
+    );
+    let row = client.query_one(&sql, &[]).await.map_err(db_error)?;
+    Ok(row.get("count"))
 }
 
 fn deterministic_daily_target(today: &str, min: i64, max: i64) -> i64 {
@@ -1520,39 +1503,32 @@ fn deterministic_daily_target(today: &str, min: i64, max: i64) -> i64 {
     min + (hash32(today.as_bytes()) as i64 % span)
 }
 
-fn song_from_model(model: &music_songs::Model) -> SongRow {
-    let id = model.id.to_string();
+fn song_from_row(row: &tokio_postgres::Row) -> SongRow {
+    let id: String = row.get("id");
+    let duration_millis: i32 = row.get("duration_millis");
+    let bpm_millis: i32 = row.get("bpm_millis");
+    let listenability_score_micros: i32 = row.get("listenability_score_micros");
     SongRow {
-        audio_url: model
-            .audio_url
-            .as_ref()
+        audio_url: row
+            .get::<_, Option<String>>("audio_url")
             .map(|_| format!("songs/{id}/audio")),
         id,
-        title: model.title.clone(),
-        slug: model.slug.clone(),
-        genre: model.genre.clone(),
-        status: model.status.clone(),
-        content_type: model.content_type.clone(),
-        duration_seconds: model.duration_millis as f64 / 1000.0,
-        bpm: model.bpm_millis as f64 / 1000.0,
-        listenability_score: model.listenability_score_micros as f64 / 1_000_000.0,
-        vote_score: model.vote_score,
-        up_votes: model.up_votes,
-        down_votes: model.down_votes,
-        play_count: model.play_count,
-        summary: model.summary.clone(),
-        published_at: model.published_at.map(format_utc_timestamp),
-        created_at: format_utc_timestamp(model.created_at),
+        title: row.get("title"),
+        slug: row.get("slug"),
+        genre: row.get("genre"),
+        status: row.get("status"),
+        content_type: row.get("content_type"),
+        duration_seconds: duration_millis as f64 / 1000.0,
+        bpm: bpm_millis as f64 / 1000.0,
+        listenability_score: listenability_score_micros as f64 / 1_000_000.0,
+        vote_score: row.get("vote_score"),
+        up_votes: row.get("up_votes"),
+        down_votes: row.get("down_votes"),
+        play_count: row.get("play_count"),
+        summary: row.get("summary"),
+        published_at: row.get("published_at"),
+        created_at: row.get("created_at"),
     }
-}
-
-/// Matches the previous SQL rendering:
-/// `to_char(x at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')`.
-fn format_utc_timestamp(value: chrono::DateTime<chrono::FixedOffset>) -> String {
-    value
-        .with_timezone(&Utc)
-        .format("%Y-%m-%dT%H:%M:%SZ")
-        .to_string()
 }
 
 fn vote_request_from_parts(
@@ -1602,61 +1578,57 @@ fn is_htmx_request(headers: &HeaderMap) -> bool {
         .unwrap_or(false)
 }
 
-fn render_song_shelf(songs: &[SongRow]) -> Markup {
-    html! {
-        div class="shelf-head" {
-            div {
-                p class="eyebrow" { "Latest transmissions" }
-                h2 { "Generated today and recently" }
-            }
-            div class="shelf-actions" {
-                span { (songs.len()) " published tracks" }
-                button type="button" hx-get="songs/shelf?limit=36" hx-target="#shelf" hx-swap="innerHTML" { "Refresh" }
-            }
-        }
-        @if songs.is_empty() {
-            div class="empty" { "No published songs yet. The generator will fill this shelf once Postgres and storage are ready." }
-        } @else {
-            div class="grid" {
-                @for song in songs {
-                    (render_song_card(song))
-                }
-            }
-        }
+fn render_song_shelf(songs: &[SongRow]) -> String {
+    let mut html = String::new();
+    let _ = write!(
+        html,
+        r##"<div class="shelf-head">
+  <div>
+    <p class="eyebrow">Latest transmissions</p>
+    <h2>Generated today and recently</h2>
+  </div>
+  <div class="shelf-actions">
+    <span>{} published tracks</span>
+    <button type="button" hx-get="songs/shelf?limit=36" hx-target="#shelf" hx-swap="innerHTML">Refresh</button>
+  </div>
+</div>"##,
+        songs.len()
+    );
+
+    if songs.is_empty() {
+        html.push_str(
+            r#"<div class="empty">No published songs yet. The generator will fill this shelf once Postgres and storage are ready.</div>"#,
+        );
+        return html;
     }
-}
 
-fn render_shelf_error() -> Markup {
-    html! {
-        div class="shelf-head" {
-            div {
-                p class="eyebrow" { "Latest transmissions" }
-                h2 { "Generated today and recently" }
-            }
-            div class="shelf-actions" {
-                span { "Offline" }
-                button type="button" hx-get="songs/shelf?limit=36" hx-target="#shelf" hx-swap="innerHTML" { "Retry" }
-            }
-        }
-        div class="empty error" { "Songs are unavailable right now." }
+    html.push_str(r#"<div class="grid">"#);
+    for song in songs {
+        html.push_str(&render_song_card(song));
     }
+    html.push_str("</div>");
+    html
 }
 
-// maud auto-escapes every interpolated value, so the manual escape_html helper
-// (and its easy-to-forget failure mode on any missed field) is gone: song
-// titles, ids, genres, and audio URLs are hardened against HTML/attribute
-// injection by construction.
-fn render_song_card(song: &SongRow) -> Markup {
-    render_song_card_markup(song, false)
+fn render_shelf_error() -> String {
+    r##"<div class="shelf-head">
+  <div>
+    <p class="eyebrow">Latest transmissions</p>
+    <h2>Generated today and recently</h2>
+  </div>
+  <div class="shelf-actions">
+    <span>Offline</span>
+    <button type="button" hx-get="songs/shelf?limit=36" hx-target="#shelf" hx-swap="innerHTML">Retry</button>
+  </div>
+</div>
+<div class="empty error">Songs are unavailable right now.</div>"##
+        .to_string()
 }
 
-/// The same card marked as an htmx out-of-band swap, so a WebSocket push
-/// replaces the existing `#song-<id>` element in place rather than appending.
-fn render_song_card_oob(song: &SongRow) -> Markup {
-    render_song_card_markup(song, true)
-}
-
-fn render_song_card_markup(song: &SongRow, oob: bool) -> Markup {
+fn render_song_card(song: &SongRow) -> String {
+    let id = escape_html(&song.id);
+    let title = escape_html(&song.title);
+    let genre = escape_html(&song.genre);
     let duration = format!("{:.0}s", song.duration_seconds);
     let bpm = format!("{:.1} bpm", song.bpm);
     let quality = format!("{:.2}", song.listenability_score);
@@ -1665,41 +1637,71 @@ fn render_song_card_markup(song: &SongRow, oob: bool) -> Markup {
         "{:.0} Hz",
         summary_number(&song.summary, "spectralCentroidHz")
     );
-    let published = song.published_at.as_deref().unwrap_or("recent");
-    html! {
-        article id={ "song-" (song.id) } class="song" hx-swap-oob=[oob.then_some("true")] {
-            div {
-                h3 { (song.title) }
-                div class="meta" {
-                    span class="pill" { (song.genre) }
-                    span class="pill" { (duration) }
-                    span class="pill" { (bpm) }
-                }
-            }
-            @if let Some(url) = song.audio_url.as_deref() {
-                audio controls preload="none" src=(url) {}
-            } @else {
-                div class="empty mini" { "Audio not available" }
-            }
-            div class="quality" {
-                span { "quality " (quality) }
-                span { "plays " (song.play_count) }
-                span { "rms " (rms) }
-                span { "centroid " (centroid) }
-            }
-            div class="votes" {
-                button type="button" hx-post={ "songs/" (song.id) "/votes?value=1" } hx-target={ "#song-" (song.id) } hx-swap="outerHTML" aria-label={ "Upvote " (song.title) } { "Up" }
-                strong class="score" { (song.vote_score) }
-                button type="button" hx-post={ "songs/" (song.id) "/votes?value=-1" } hx-target={ "#song-" (song.id) } hx-swap="outerHTML" aria-label={ "Downvote " (song.title) } { "Down" }
-                span class="sub" { (song.up_votes) " up / " (song.down_votes) " down" }
-            }
-            p class="published" { "Published " (published) }
-        }
-    }
+    let published = song
+        .published_at
+        .as_deref()
+        .map(escape_html)
+        .unwrap_or_else(|| "recent".to_string());
+    let audio = song
+        .audio_url
+        .as_deref()
+        .map(|url| {
+            format!(
+                r#"<audio controls preload="none" src="{}"></audio>"#,
+                escape_html(url)
+            )
+        })
+        .unwrap_or_else(|| r#"<div class="empty mini">Audio not available</div>"#.to_string());
+
+    format!(
+        r##"<article id="song-{id}" class="song">
+  <div>
+    <h3>{title}</h3>
+    <div class="meta">
+      <span class="pill">{genre}</span>
+      <span class="pill">{duration}</span>
+      <span class="pill">{bpm}</span>
+    </div>
+  </div>
+  {audio}
+  <div class="quality">
+    <span>quality {quality}</span>
+    <span>plays {plays}</span>
+    <span>rms {rms}</span>
+    <span>centroid {centroid}</span>
+  </div>
+  <div class="votes">
+    <button type="button" hx-post="songs/{id}/votes?value=1" hx-target="#song-{id}" hx-swap="outerHTML" aria-label="Upvote {title}">Up</button>
+    <strong class="score">{score}</strong>
+    <button type="button" hx-post="songs/{id}/votes?value=-1" hx-target="#song-{id}" hx-swap="outerHTML" aria-label="Downvote {title}">Down</button>
+    <span class="sub">{up} up / {down} down</span>
+  </div>
+  <p class="published">Published {published}</p>
+</article>"##,
+        plays = song.play_count,
+        score = song.vote_score,
+        up = song.up_votes,
+        down = song.down_votes
+    )
 }
 
 fn summary_number(summary: &Value, key: &str) -> f64 {
     summary.get(key).and_then(Value::as_f64).unwrap_or(0.0)
+}
+
+fn escape_html(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '"' => escaped.push_str("&quot;"),
+            '\'' => escaped.push_str("&#39;"),
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
 }
 
 fn client_ip_for_hash(headers: &HeaderMap) -> String {
@@ -1896,11 +1898,8 @@ fn join_url(base: &str, key: &str) -> String {
 }
 
 fn validate_song_id(song_id: &str) -> Result<(), ServiceError> {
-    parse_song_uuid(song_id).map(|_| ())
-}
-
-fn parse_song_uuid(song_id: &str) -> Result<Uuid, ServiceError> {
     Uuid::parse_str(song_id)
+        .map(|_| ())
         .map_err(|_| ServiceError::BadRequest("song id must be a UUID".to_string()))
 }
 
@@ -1962,7 +1961,7 @@ fn storage_provider_name(storage: &StorageConfig) -> &'static str {
     }
 }
 
-fn db_error(error: DbErr) -> ServiceError {
+fn db_error(error: tokio_postgres::Error) -> ServiceError {
     tracing::error!("dd-music-rs postgres query failed: {error}");
     ServiceError::Internal("postgres query failed".to_string())
 }
@@ -1975,7 +1974,6 @@ fn app(state: AppState) -> Router {
         .route("/songs/:song_id", get(get_song))
         .route("/songs/:song_id/audio", get(song_audio))
         .route("/songs/:song_id/votes", post(vote_song))
-        .route("/ws", get(ws_votes))
         .route("/internal/generate", post(generate_internal))
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
@@ -2043,82 +2041,15 @@ async fn shutdown_signal() {
     let _ = tokio::signal::ctrl_c().await;
 }
 
-/// The static home page shell. maud compile-checks the markup structure and
-/// emits `<!DOCTYPE html>`; the large stylesheet lives in `HOME_CSS` and is
-/// injected verbatim via `PreEscaped`. HTMX wiring (hx-get / hx-target /
-/// hx-swap / hx-trigger) is preserved exactly from the previous `HOME_HTML`.
-fn render_home() -> Markup {
-    html! {
-        (DOCTYPE)
-        html lang="en" {
-            head {
-                meta charset="utf-8";
-                meta name="viewport" content="width=device-width, initial-scale=1";
-                title { "dd music" }
-                script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js" {}
-                script src="https://unpkg.com/htmx-ext-ws@2.0.2/ws.js" {}
-                style { (PreEscaped(HOME_CSS)) }
-            }
-            // hx-ext="ws" + ws-connect opens the live vote stream on load; the
-            // server pushes OOB song-card fragments that htmx swaps into the
-            // matching #song-<id> elements, so vote counts update in realtime
-            // between the shelf's 120s polls.
-            body hx-ext="ws" ws-connect="/ws" {
-                nav class="page-nav" aria-label="Primary" {
-                    a class="brand" href="." { "dd music" }
-                    div class="nav-links" {
-                        a href="#shelf-section" { "Tracks" }
-                        a class="button" href="#shelf-section" { "Listen" }
-                    }
-                }
-                header class="hero" {
-                    div class="hero-inner" {
-                        div {
-                            p class="eyebrow" { "Rust generated music server" }
-                            h1 { "dd music" }
-                            p class="lede" { "Microtonal tracks from the DES music engine, published as a daily shelf with native browser playback and anonymous voting." }
-                            div class="hero-actions" {
-                                a class="button primary" href="#shelf-section" { "Listen now" }
-                                button type="button" hx-get="songs/shelf?limit=36" hx-target="#shelf" hx-swap="innerHTML" { "Refresh shelf" }
-                            }
-                            div class="stats" aria-label="Service profile" {
-                                div class="stat" { strong { "3-5" } span { "new tracks targeted per day" } }
-                                div class="stat" { strong { "DES" } span { "in-process Rust generation" } }
-                                div class="stat" { strong { "S3" } span { "encrypted published audio" } }
-                            }
-                        }
-                        div class="visual" aria-hidden="true" {
-                            div class="wave" {
-                                @for _ in 0..24 {
-                                    span class="bar" {}
-                                }
-                            }
-                            div class="visual-caption" { span { "daily generator" } span { "vote-shaped shelf" } }
-                        }
-                    }
-                }
-                main {
-                    section id="shelf-section" class="shelf-band" {
-                        div class="section-inner" {
-                            div id="shelf" hx-get="songs/shelf?limit=36" hx-trigger="load, every 120s" hx-swap="innerHTML" {
-                                div class="shelf-head" {
-                                    div {
-                                        p class="eyebrow" { "Latest transmissions" }
-                                        h2 { "Generated today and recently" }
-                                    }
-                                    div class="shelf-actions" { span { "Loading" } }
-                                }
-                                div class="empty" { "Loading songs." }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-const HOME_CSS: &str = r##"    :root {
+const HOME_HTML: &str = r##"<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>dd music</title>
+  <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js"></script>
+  <style>
+    :root {
       color-scheme: light;
       --bg:#f6f7f4;
       --ink:#14181c;
@@ -2304,7 +2235,65 @@ const HOME_CSS: &str = r##"    :root {
       .shelf-head { align-items:flex-start; flex-direction:column; }
       .shelf-actions { white-space:normal; }
       h1 { font-size:52px; }
-    }"##;
+    }
+  </style>
+</head>
+<body>
+  <nav class="page-nav" aria-label="Primary">
+    <a class="brand" href=".">dd music</a>
+    <div class="nav-links">
+      <a href="#shelf-section">Tracks</a>
+      <a class="button" href="#shelf-section">Listen</a>
+    </div>
+  </nav>
+  <header class="hero">
+    <div class="hero-inner">
+      <div>
+        <p class="eyebrow">Rust generated music server</p>
+        <h1>dd music</h1>
+        <p class="lede">Microtonal tracks from the DES music engine, published as a daily shelf with native browser playback and anonymous voting.</p>
+        <div class="hero-actions">
+          <a class="button primary" href="#shelf-section">Listen now</a>
+          <button type="button" hx-get="songs/shelf?limit=36" hx-target="#shelf" hx-swap="innerHTML">Refresh shelf</button>
+        </div>
+        <div class="stats" aria-label="Service profile">
+          <div class="stat"><strong>3-5</strong><span>new tracks targeted per day</span></div>
+          <div class="stat"><strong>DES</strong><span>in-process Rust generation</span></div>
+          <div class="stat"><strong>S3</strong><span>encrypted published audio</span></div>
+        </div>
+      </div>
+      <div class="visual" aria-hidden="true">
+        <div class="wave">
+          <span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span>
+          <span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span>
+          <span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span>
+          <span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span>
+          <span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span>
+          <span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span>
+        </div>
+        <div class="visual-caption"><span>daily generator</span><span>vote-shaped shelf</span></div>
+      </div>
+    </div>
+  </header>
+  <main>
+    <section id="shelf-section" class="shelf-band">
+      <div class="section-inner">
+        <div id="shelf" hx-get="songs/shelf?limit=36" hx-trigger="load, every 120s" hx-swap="innerHTML">
+          <div class="shelf-head">
+            <div>
+              <p class="eyebrow">Latest transmissions</p>
+              <h2>Generated today and recently</h2>
+            </div>
+            <div class="shelf-actions"><span>Loading</span></div>
+          </div>
+          <div class="empty">Loading songs.</div>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
+"##;
 
 #[cfg(test)]
 mod tests {
@@ -2409,10 +2398,12 @@ mod tests {
         assert_eq!(json_request.value, -1);
     }
 
-    fn sample_song(id: &str, title: &str) -> SongRow {
-        SongRow {
-            id: id.to_string(),
-            title: title.to_string(),
+    #[test]
+    fn render_song_card_escapes_content_and_uses_htmx_votes() {
+        let id = "12345678-aaaa-bbbb-cccc-123456789abc".to_string();
+        let song = SongRow {
+            id: id.clone(),
+            title: "Signal <Bloom>".to_string(),
             slug: "signal-bloom".to_string(),
             genre: "House & Bass".to_string(),
             status: "published".to_string(),
@@ -2431,89 +2422,12 @@ mod tests {
             }),
             published_at: Some("2026-06-07T12:00:00Z".to_string()),
             created_at: "2026-06-07T12:00:00Z".to_string(),
-        }
-    }
+        };
 
-    #[test]
-    fn render_song_card_escapes_content_and_uses_htmx_votes() {
-        let id = "12345678-aaaa-bbbb-cccc-123456789abc";
-        let song = sample_song(id, "Signal <Bloom>");
-
-        let html = render_song_card(&song).into_string();
-        // maud auto-escaping hardens against injection in both text and attributes.
+        let html = render_song_card(&song);
         assert!(html.contains("Signal &lt;Bloom&gt;"));
         assert!(html.contains("House &amp; Bass"));
         assert!(html.contains(&format!(r##"hx-post="songs/{id}/votes?value=1""##)));
-        assert!(html.contains(&format!(r##"hx-post="songs/{id}/votes?value=-1""##)));
         assert!(html.contains(&format!(r##"hx-target="#song-{id}""##)));
-        assert!(html.contains(r#"hx-swap="outerHTML""#));
-        assert!(html.contains(&format!(r##"id="song-{id}""##)));
-    }
-
-    #[test]
-    fn render_song_card_auto_escapes_script_title() {
-        // XSS hardening: a malicious song title must never reach the browser as
-        // live markup. maud escapes the angle brackets by construction.
-        let song = sample_song(
-            "12345678-aaaa-bbbb-cccc-123456789abc",
-            "<script>alert('xss')</script>",
-        );
-        let html = render_song_card(&song).into_string();
-        assert!(html.contains("&lt;script&gt;alert('xss')&lt;/script&gt;"));
-        assert!(!html.contains("<script>alert"));
-    }
-
-    #[test]
-    fn render_song_shelf_wires_htmx_and_grid() {
-        let song = sample_song("12345678-aaaa-bbbb-cccc-123456789abc", "Signal Bloom");
-        let html = render_song_shelf(std::slice::from_ref(&song)).into_string();
-        assert!(html.contains(r#"hx-get="songs/shelf?limit=36""#));
-        assert!(html.contains(r##"hx-target="#shelf""##));
-        assert!(html.contains(r#"<div class="grid">"#));
-        assert!(html.contains("1 published tracks"));
-
-        let empty = render_song_shelf(&[]).into_string();
-        assert!(empty.contains(r#"<div class="empty">No published songs yet."#));
-        assert!(!empty.contains(r#"<div class="grid">"#));
-    }
-
-    #[test]
-    fn render_home_emits_doctype_and_htmx_shell() {
-        let html = render_home().into_string();
-        // maud emits an uppercase DOCTYPE.
-        assert!(html.starts_with("<!DOCTYPE html>"));
-        assert!(html.contains(r#"<html lang="en">"#));
-        // HTMX wiring preserved verbatim from the original template.
-        assert!(html.contains(r#"src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js""#));
-        assert!(html.contains(r#"hx-get="songs/shelf?limit=36""#));
-        assert!(html.contains(r#"hx-trigger="load, every 120s""#));
-        assert!(html.contains(r##"hx-target="#shelf""##));
-        assert!(html.contains(r#"hx-swap="innerHTML""#));
-        // CSS embedded verbatim via PreEscaped.
-        assert!(html.contains("--green:#236b4b"));
-        // 24 waveform bars rendered.
-        assert_eq!(html.matches(r#"<span class="bar">"#).count(), 24);
-        // WebSocket live-vote stream is wired: the ws extension is loaded and the
-        // body connects to /ws so pushed OOB card fragments get swapped in.
-        assert!(html.contains(r#"src="https://unpkg.com/htmx-ext-ws@2.0.2/ws.js""#));
-        assert!(html.contains(r#"hx-ext="ws""#));
-        assert!(html.contains(r#"ws-connect="/ws""#));
-    }
-
-    #[test]
-    fn oob_card_targets_same_id_for_websocket_swap() {
-        let id = "12345678-aaaa-bbbb-cccc-123456789abc";
-        let song = sample_song(id, "Signal Bloom");
-        let oob = render_song_card_oob(&song).into_string();
-        let normal = render_song_card(&song).into_string();
-        // The OOB variant carries hx-swap-oob and the SAME #song-<id> the normal
-        // card renders, so a WS push replaces exactly that element in place.
-        assert!(oob.contains(r#"hx-swap-oob="true""#));
-        assert!(oob.contains(&format!(r##"id="song-{id}""##)));
-        assert!(normal.contains(&format!(r##"id="song-{id}""##)));
-        // The normal (HTTP fragment / shelf) card must NOT be an OOB swap.
-        assert!(!normal.contains("hx-swap-oob"));
-        // Same card body otherwise (auto-escaping still applies).
-        assert!(oob.contains("Signal Bloom"));
     }
 }

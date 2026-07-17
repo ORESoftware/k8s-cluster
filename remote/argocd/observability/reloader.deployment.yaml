@@ -48,15 +48,7 @@ rules:
     verbs: ["get", "list", "watch", "patch", "update"]
   - apiGroups: ["batch"]
     resources:
-      # `jobs` is required in addition to `cronjobs`: stakater/reloader v1.4.x
-      # lists Jobs cluster-wide during every reconcile even with
-      # `--auto-reload-all=false`, and if the list call is forbidden the
-      # whole reconcile bails out — silently blocking every configmap-driven
-      # restart (observed via repeated "Failed to list jobs jobs.batch is
-      # forbidden" errors from the reloader pod, which is why prometheus
-      # kept running with a stale scrape config after the configmap edit).
       - cronjobs
-      - jobs
     verbs: ["get", "list", "watch", "patch", "update"]
   - apiGroups: ["argoproj.io"]
     resources:

@@ -23,7 +23,6 @@ use dd_nats_subject_defs::{
     PUBLIC_DATA_PIPELINE_JOBS_SUBJECT, PUBLIC_DATA_WEBHOOK_EVENTS_SUBJECT, RUNTIME_EVENTS_SUBJECT,
 };
 use futures_util::StreamExt;
-use maud::{html, Markup, PreEscaped, DOCTYPE};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -601,6 +600,21 @@ impl UiScrapeForm {
             pipeline,
         })
     }
+}
+
+fn html_escape(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            _ => out.push(ch),
+        }
+    }
+    out
 }
 
 fn durable_token(prefix: &str, source: &str, suffix: &str) -> String {
@@ -2009,43 +2023,16 @@ fn markdown_brief(
     lines.join("\n")
 }
 
-async fn root() -> Html<String> {
-    Html(render_root().into_string())
-}
-
-/// Landing page. maud compile-checks the structure and auto-escapes any dynamic
-/// value, replacing the previous hand-written HTML string literal.
-fn render_root() -> Markup {
-    html! {
-        (DOCTYPE)
-        html lang="en" {
-            head {
-                meta charset="utf-8";
-                meta name="viewport" content="width=device-width, initial-scale=1";
-                title { "dd-public-data-server" }
-                style { (PreEscaped(ROOT_CSS)) }
-            }
-            body {
-                main {
-                    h1 { "dd-public-data-server" }
-                    p { "Rust public-data ingestion service for webhooks, scraper orchestration, public/government source normalization, grant matching, trend/correlation graph data, white-paper evidence briefs, and Spark/Airflow pipeline job intents." }
-                    div class="actions" {
-                        a class="button" href="./ui" { "Operator UI" }
-                        a class="link" href="./docs/api" { "API docs" }
-                    }
-                    div class="grid" {
-                        div class="card" { strong { "Sources" } p { code { "GET /sources" } } }
-                        div class="card" { strong { "Ingest" } p { code { "POST /ingest" } " and " code { "POST /webhooks/ingest" } } }
-                        div class="card" { strong { "Analysis" } p { code { "POST /analysis/trends" } ", " code { "/analysis/correlations" } } }
-                        div class="card" { strong { "Docs" } p { code { "GET /docs/api" } } }
-                    }
-                }
-            }
-        }
-    }
-}
-
-const ROOT_CSS: &str = r#"body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #172026; background: #f7f8fb; }
+async fn root() -> Html<&'static str> {
+    Html(
+        r#"<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>dd-public-data-server</title>
+  <style>
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #172026; background: #f7f8fb; }
     main { max-width: 1040px; margin: 0 auto; padding: 40px 24px; }
     h1 { margin: 0 0 8px; font-size: 32px; letter-spacing: 0; }
     p { line-height: 1.5; max-width: 780px; }
@@ -2054,89 +2041,41 @@ const ROOT_CSS: &str = r#"body { margin: 0; font-family: ui-sans-serif, system-u
     .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
     .button { color: white; background: #1f6f70; border-radius: 6px; padding: 10px 14px; text-decoration: none; font-weight: 700; }
     .link { color: #1f5f87; font-weight: 700; }
-    code { background: #eef1f5; border-radius: 4px; padding: 2px 5px; }"#;
-
-/// The operator dashboard shell. HTMX wiring (hx-get/hx-post/hx-target/hx-swap/
-/// hx-trigger/hx-disabled-elt) and the exact CSS are preserved; the initial
-/// fragment bodies are embedded as already-rendered maud `Markup`.
-fn render_ui_shell(state: &AppState) -> Markup {
-    html! {
-        (DOCTYPE)
-        html lang="en" {
-            head {
-                meta charset="utf-8";
-                meta name="viewport" content="width=device-width, initial-scale=1";
-                title { "Public Data Operations" }
-                script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js" defer {}
-                style { (PreEscaped(UI_SHELL_CSS)) }
-            }
-            body {
-                header {
-                    div {
-                        p class="kicker" { "Public data" }
-                        h1 { "Evidence Operations" }
-                        p class="muted" { "Scrapes, webhooks, grants, model evidence, and pipeline handoffs." }
-                    }
-                    nav aria-label="Public data navigation" {
-                        a href="./" { "Home" }
-                        a href="./docs/api" { "API docs" }
-                        a href="./metrics" { "Metrics" }
-                    }
-                }
-                main {
-                    section id="summary" hx-get="./ui/fragments/summary" hx-trigger="load, every 15s" hx-swap="innerHTML" {
-                        (render_ui_summary(state))
-                    }
-                    div class="grid split" {
-                        section class="panel" {
-                            h2 { "Scrape Intake" }
-                            form hx-post="./ui/actions/scrape" hx-target="#scrape-result" hx-swap="innerHTML" hx-disabled-elt="button" {
-                                label { "Source"
-                                    input name="source" value="sbir" autocomplete="off";
-                                }
-                                label { "Public URL"
-                                    input name="url" type="url" value="https://www.sbir.gov/" required;
-                                }
-                                label { "Dataset"
-                                    input name="dataset_id" value="sbir-opportunities" autocomplete="off";
-                                }
-                                label { "Strategy"
-                                    select name="strategy" {
-                                        option value="auto" { "auto" }
-                                        option value="native-fetch" { "native-fetch" }
-                                        option value="cheerio" { "cheerio" }
-                                        option value="browser" { "browser" }
-                                    }
-                                }
-                                label { "Selector"
-                                    input name="selector" autocomplete="off" placeholder="main";
-                                }
-                                label { "Tags"
-                                    input name="tags" value="grants, public-data" autocomplete="off";
-                                }
-                                div class="checks" {
-                                    label class="check" { input type="checkbox" name="include_links" checked; " Links" }
-                                    label class="check" { input type="checkbox" name="render_javascript"; " JavaScript" }
-                                    label class="check" { input type="checkbox" name="pipeline_enabled" checked; " Pipeline" }
-                                }
-                                button class="primary" type="submit" { "Run Scrape" }
-                            }
-                            div id="scrape-result" class="result" aria-live="polite" {}
-                        }
-                        section id="sources" class="panel" hx-get="./ui/fragments/sources" hx-trigger="load" hx-swap="innerHTML" {
-                            (render_ui_sources())
-                        }
-                    }
-                    section id="recent-records" class="panel" style="margin-top:16px" hx-get="./ui/fragments/recent-records" hx-trigger="load, every 20s" hx-swap="innerHTML" {
-                        (render_ui_recent_records(state))
-                    }
-                }
-            }
-        }
-    }
+    code { background: #eef1f5; border-radius: 4px; padding: 2px 5px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>dd-public-data-server</h1>
+    <p>Rust public-data ingestion service for webhooks, scraper orchestration, public/government source normalization, grant matching, trend/correlation graph data, white-paper evidence briefs, and Spark/Airflow pipeline job intents.</p>
+    <div class="actions">
+      <a class="button" href="./ui">Operator UI</a>
+      <a class="link" href="./docs/api">API docs</a>
+    </div>
+    <div class="grid">
+      <div class="card"><strong>Sources</strong><p><code>GET /sources</code></p></div>
+      <div class="card"><strong>Ingest</strong><p><code>POST /ingest</code> and <code>POST /webhooks/ingest</code></p></div>
+      <div class="card"><strong>Analysis</strong><p><code>POST /analysis/trends</code>, <code>/analysis/correlations</code></p></div>
+      <div class="card"><strong>Docs</strong><p><code>GET /docs/api</code></p></div>
+    </div>
+  </main>
+</body>
+</html>"#,
+    )
 }
 
-const UI_SHELL_CSS: &str = r#":root { color-scheme: light; --ink: #172026; --muted: #5d6975; --line: #d8dde6; --panel: #ffffff; --page: #f5f7f8; --teal: #1f6f70; --blue: #1f5f87; --amber: #9a6615; --danger: #a43d3d; }
+fn render_ui_shell(state: &AppState) -> String {
+    let mut html = String::new();
+    html.push_str(
+        r#"<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Public Data Operations</title>
+  <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js" defer></script>
+  <style>
+    :root { color-scheme: light; --ink: #172026; --muted: #5d6975; --line: #d8dde6; --panel: #ffffff; --page: #f5f7f8; --teal: #1f6f70; --blue: #1f5f87; --amber: #9a6615; --danger: #a43d3d; }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--ink); background: var(--page); }
     header, main { max-width: 1180px; margin: 0 auto; padding: 0 24px; }
@@ -2177,25 +2116,106 @@ const UI_SHELL_CSS: &str = r#":root { color-scheme: light; --ink: #172026; --mut
     th { color: #35414d; font-size: 12px; text-transform: uppercase; }
     code { background: #eef1f5; border-radius: 4px; padding: 2px 5px; }
     .empty { border: 1px dashed var(--line); border-radius: 8px; color: var(--muted); padding: 14px; background: #ffffff; }
-    @media (max-width: 820px) { header { align-items: flex-start; flex-direction: column; } nav { justify-content: flex-start; } .split { grid-template-columns: 1fr; } }"#;
-
-fn render_stat(label: &str, value: impl ToString, note: &str) -> Markup {
-    html! {
-        div class="stat" {
-            span class="muted" { (label) }
-            strong { (value.to_string()) }
-            span class="muted" { (note) }
-        }
-    }
+    @media (max-width: 820px) { header { align-items: flex-start; flex-direction: column; } nav { justify-content: flex-start; } .split { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <p class="kicker">Public data</p>
+      <h1>Evidence Operations</h1>
+      <p class="muted">Scrapes, webhooks, grants, model evidence, and pipeline handoffs.</p>
+    </div>
+    <nav aria-label="Public data navigation">
+      <a href="./">Home</a>
+      <a href="./docs/api">API docs</a>
+      <a href="./metrics">Metrics</a>
+    </nav>
+  </header>
+  <main>
+    <section id="summary" hx-get="./ui/fragments/summary" hx-trigger="load, every 15s" hx-swap="innerHTML">
+"#,
+    );
+    html.push_str(&render_ui_summary(state));
+    html.push_str(
+        r##"
+    </section>
+    <div class="grid split">
+      <section class="panel">
+        <h2>Scrape Intake</h2>
+        <form hx-post="./ui/actions/scrape" hx-target="#scrape-result" hx-swap="innerHTML" hx-disabled-elt="button">
+          <label>Source
+            <input name="source" value="sbir" autocomplete="off">
+          </label>
+          <label>Public URL
+            <input name="url" type="url" value="https://www.sbir.gov/" required>
+          </label>
+          <label>Dataset
+            <input name="dataset_id" value="sbir-opportunities" autocomplete="off">
+          </label>
+          <label>Strategy
+            <select name="strategy">
+              <option value="auto">auto</option>
+              <option value="native-fetch">native-fetch</option>
+              <option value="cheerio">cheerio</option>
+              <option value="browser">browser</option>
+            </select>
+          </label>
+          <label>Selector
+            <input name="selector" autocomplete="off" placeholder="main">
+          </label>
+          <label>Tags
+            <input name="tags" value="grants, public-data" autocomplete="off">
+          </label>
+          <div class="checks">
+            <label class="check"><input type="checkbox" name="include_links" checked> Links</label>
+            <label class="check"><input type="checkbox" name="render_javascript"> JavaScript</label>
+            <label class="check"><input type="checkbox" name="pipeline_enabled" checked> Pipeline</label>
+          </div>
+          <button class="primary" type="submit">Run Scrape</button>
+        </form>
+        <div id="scrape-result" class="result" aria-live="polite"></div>
+      </section>
+      <section id="sources" class="panel" hx-get="./ui/fragments/sources" hx-trigger="load" hx-swap="innerHTML">
+"##,
+    );
+    html.push_str(&render_ui_sources());
+    html.push_str(
+        r#"
+      </section>
+    </div>
+    <section id="recent-records" class="panel" style="margin-top:16px" hx-get="./ui/fragments/recent-records" hx-trigger="load, every 20s" hx-swap="innerHTML">
+"#,
+    );
+    html.push_str(&render_ui_recent_records(state));
+    html.push_str(
+        r#"
+    </section>
+  </main>
+</body>
+</html>"#,
+    );
+    html
 }
 
-fn render_badge(label: &str, tone: &str) -> Markup {
-    html! {
-        span class={ "badge " (tone) } { (label) }
-    }
+fn render_stat(label: &str, value: impl ToString, note: &str) -> String {
+    format!(
+        r#"<div class="stat"><span class="muted">{}</span><strong>{}</strong><span class="muted">{}</span></div>"#,
+        html_escape(label),
+        html_escape(&value.to_string()),
+        html_escape(note)
+    )
 }
 
-fn render_ui_summary(state: &AppState) -> Markup {
+fn render_badge(label: &str, tone: &str) -> String {
+    format!(
+        r#"<span class="badge {}">{}</span>"#,
+        html_escape(tone),
+        html_escape(label)
+    )
+}
+
+fn render_ui_summary(state: &AppState) -> String {
     let store = state.store.read().unwrap_or_else(|lock| lock.into_inner());
     let dataset_count = store
         .records
@@ -2228,42 +2248,57 @@ fn render_ui_summary(state: &AppState) -> Markup {
     } else {
         render_badge("auth missing", "danger")
     };
-    html! {
-        div class="grid stats" {
-            (render_stat("Records", record_count, "bounded in-process ledger"))
-            (render_stat("Datasets", dataset_count, "normalized collections"))
-            (render_stat("Grants", grant_count, "records with funding data"))
-            (render_stat("Webhooks", webhook_count, "provider receipts"))
-            (render_stat("Analyses", analysis_count, "trend/correlation/brief outputs"))
-            (render_stat("Jobs", job_count, "pipeline intents"))
-        }
-        div class="status-row" {
-            div class="panel" {
-                h3 { "Runtime" }
-                (nats) " " (auth) " "
-                p class="muted" {
-                    "NATS messages: " (state.metrics.nats_messages_total.load(Ordering::Relaxed))
-                    "; published: " (state.metrics.nats_published_total.load(Ordering::Relaxed))
-                }
-            }
-            div class="panel" {
-                h3 { "Last Analysis" }
-                @if let Some(analysis) = last_analysis {
-                    div { strong { (analysis.kind) } p class="muted" { (analysis.summary) } }
-                } @else {
-                    div class="muted" { "No analyses yet." }
-                }
-            }
-            div class="panel" {
-                h3 { "Last Pipeline Job" }
-                @if let Some(job) = last_job {
-                    div { strong { (job.job_type) } p class="muted" { code { (job.job_id) } " " (job.status) } }
-                } @else {
-                    div class="muted" { "No pipeline jobs yet." }
-                }
-            }
-        }
-    }
+    let last_analysis_html = last_analysis
+        .map(|analysis| {
+            format!(
+                r#"<div><strong>{}</strong><p class="muted">{}</p></div>"#,
+                html_escape(&analysis.kind),
+                html_escape(&analysis.summary)
+            )
+        })
+        .unwrap_or_else(|| r#"<div class="muted">No analyses yet.</div>"#.to_string());
+    let last_job_html = last_job
+        .map(|job| {
+            format!(
+                r#"<div><strong>{}</strong><p class="muted"><code>{}</code> {}</p></div>"#,
+                html_escape(&job.job_type),
+                html_escape(&job.job_id),
+                html_escape(&job.status)
+            )
+        })
+        .unwrap_or_else(|| r#"<div class="muted">No pipeline jobs yet.</div>"#.to_string());
+
+    format!(
+        r#"<div class="grid stats">
+  {}
+  {}
+  {}
+  {}
+  {}
+  {}
+</div>
+<div class="status-row">
+  <div class="panel"><h3>Runtime</h3>{} {} <p class="muted">NATS messages: {}; published: {}</p></div>
+  <div class="panel"><h3>Last Analysis</h3>{}</div>
+  <div class="panel"><h3>Last Pipeline Job</h3>{}</div>
+</div>"#,
+        render_stat("Records", record_count, "bounded in-process ledger"),
+        render_stat("Datasets", dataset_count, "normalized collections"),
+        render_stat("Grants", grant_count, "records with funding data"),
+        render_stat("Webhooks", webhook_count, "provider receipts"),
+        render_stat(
+            "Analyses",
+            analysis_count,
+            "trend/correlation/brief outputs"
+        ),
+        render_stat("Jobs", job_count, "pipeline intents"),
+        nats,
+        auth,
+        state.metrics.nats_messages_total.load(Ordering::Relaxed),
+        state.metrics.nats_published_total.load(Ordering::Relaxed),
+        last_analysis_html,
+        last_job_html
+    )
 }
 
 fn source_str(source: &Value, key: &str) -> String {
@@ -2274,92 +2309,94 @@ fn source_str(source: &Value, key: &str) -> String {
         .to_string()
 }
 
-fn render_ui_sources() -> Markup {
-    html! {
-        h2 { "Source Catalog" }
-        table {
-            thead { tr { th { "Source" } th { "Base URL" } th { "Strategy" } th { "Notes" } } }
-            tbody {
-                @for source in source_catalog() {
-                    tr {
-                        td {
-                            strong { (source_str(&source, "name")) }
-                            div class="muted" { (source_str(&source, "kind")) }
-                        }
-                        td { (source_str(&source, "baseUrl")) }
-                        td { code { (source_str(&source, "defaultStrategy")) } }
-                        td { (source_str(&source, "notes")) }
-                    }
-                }
-            }
-        }
+fn render_ui_sources() -> String {
+    let mut rows = String::new();
+    for source in source_catalog() {
+        rows.push_str(&format!(
+            r#"<tr><td><strong>{}</strong><div class="muted">{}</div></td><td>{}</td><td><code>{}</code></td><td>{}</td></tr>"#,
+            html_escape(&source_str(&source, "name")),
+            html_escape(&source_str(&source, "kind")),
+            html_escape(&source_str(&source, "baseUrl")),
+            html_escape(&source_str(&source, "defaultStrategy")),
+            html_escape(&source_str(&source, "notes"))
+        ));
     }
+    format!(
+        r#"<h2>Source Catalog</h2>
+<table>
+  <thead><tr><th>Source</th><th>Base URL</th><th>Strategy</th><th>Notes</th></tr></thead>
+  <tbody>{rows}</tbody>
+</table>"#
+    )
 }
 
-fn render_pills(values: &[String]) -> Markup {
-    html! {
-        @if values.is_empty() {
-            span class="muted" { "none" }
-        } @else {
-            @for value in values.iter().take(8) {
-                span class="pill" { (value) }
-            }
-        }
+fn render_pills(values: &[String]) -> String {
+    if values.is_empty() {
+        return r#"<span class="muted">none</span>"#.to_string();
     }
+    values
+        .iter()
+        .take(8)
+        .map(|value| format!(r#"<span class="pill">{}</span>"#, html_escape(value)))
+        .collect::<Vec<_>>()
+        .join("")
 }
 
-fn render_metric_pills(metrics: &BTreeMap<String, f64>) -> Markup {
-    html! {
-        @if metrics.is_empty() {
-            span class="muted" { "none" }
-        } @else {
-            @for (key, value) in metrics.iter().take(8) {
-                span class="pill" { (key) " " (format!("{value:.2}")) }
-            }
-        }
+fn render_metric_pills(metrics: &BTreeMap<String, f64>) -> String {
+    if metrics.is_empty() {
+        return r#"<span class="muted">none</span>"#.to_string();
     }
+    metrics
+        .iter()
+        .take(8)
+        .map(|(key, value)| {
+            format!(
+                r#"<span class="pill">{} {}</span>"#,
+                html_escape(key),
+                html_escape(&format!("{value:.2}"))
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("")
 }
 
-fn render_ui_recent_records(state: &AppState) -> Markup {
+fn render_ui_recent_records(state: &AppState) -> String {
     let store = state.store.read().unwrap_or_else(|lock| lock.into_inner());
-    html! {
-        h2 { "Recent Records" }
-        @if store.records.is_empty() {
-            div class="empty" { "No records yet." }
-        } @else {
-            table {
-                thead { tr { th { "Record" } th { "Dataset" } th { "Source" } th { "Tags" } th { "Metrics" } } }
-                tbody {
-                    @for record in store.records.iter().rev().take(12) {
-                        @let title = record.title.as_deref().unwrap_or(&record.record_id);
-                        tr {
-                            td {
-                                strong { (title) }
-                                div class="muted" { code { (record.record_id) } }
-                            }
-                            td { (record.dataset_id) }
-                            td { (record.source) }
-                            td { (render_pills(&record.tags)) }
-                            td { (render_metric_pills(&record.metrics)) }
-                        }
-                    }
-                }
-            }
-        }
+    if store.records.is_empty() {
+        return r#"<h2>Recent Records</h2><div class="empty">No records yet.</div>"#.to_string();
     }
+    let mut rows = String::new();
+    for record in store.records.iter().rev().take(12) {
+        let title = record.title.as_deref().unwrap_or(&record.record_id);
+        rows.push_str(&format!(
+            r#"<tr><td><strong>{}</strong><div class="muted"><code>{}</code></div></td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>"#,
+            html_escape(title),
+            html_escape(&record.record_id),
+            html_escape(&record.dataset_id),
+            html_escape(&record.source),
+            render_pills(&record.tags),
+            render_metric_pills(&record.metrics)
+        ));
+    }
+    format!(
+        r#"<h2>Recent Records</h2>
+<table>
+  <thead><tr><th>Record</th><th>Dataset</th><th>Source</th><th>Tags</th><th>Metrics</th></tr></thead>
+  <tbody>{rows}</tbody>
+</table>"#
+    )
 }
 
-fn render_ui_notice(title: &str, detail: &str, error: bool) -> Markup {
+fn render_ui_notice(title: &str, detail: &str, error: bool) -> String {
     let class_name = if error { "notice error" } else { "notice" };
-    html! {
-        div class=(class_name) {
-            strong { (title) }
-            p class="muted" { (detail) }
-        }
-    }
+    format!(
+        r#"<div class="{class_name}"><strong>{}</strong><p class="muted">{}</p></div>"#,
+        html_escape(title),
+        html_escape(detail)
+    )
 }
 
-fn render_ui_scrape_result(value: &Value) -> Markup {
+fn render_ui_scrape_result(value: &Value) -> String {
     let request_id = value
         .get("requestId")
         .and_then(Value::as_str)
@@ -2378,15 +2415,17 @@ fn render_ui_scrape_result(value: &Value) -> Markup {
         .and_then(Value::as_u64)
         .map(|status| status.to_string())
         .unwrap_or_else(|| "ok".to_string());
-    html! {
-        div class="notice" {
-            strong { "Scrape accepted" }
-            p class="muted" {
-                code { (request_id) } " stored " code { (record_title) } " in " code { (dataset_id) } "; scraper status " (status) "."
-            }
-            button type="button" hx-get="./ui/fragments/summary" hx-target="#summary" hx-swap="innerHTML" { "Refresh Board" }
-        }
-    }
+    format!(
+        r##"<div class="notice">
+  <strong>Scrape accepted</strong>
+  <p class="muted"><code>{}</code> stored <code>{}</code> in <code>{}</code>; scraper status {}.</p>
+  <button type="button" hx-get="./ui/fragments/summary" hx-target="#summary" hx-swap="innerHTML">Refresh Board</button>
+</div>"##,
+        html_escape(request_id),
+        html_escape(record_title),
+        html_escape(dataset_id),
+        html_escape(&status)
+    )
 }
 
 fn ui_auth_failure_response(state: &AppState, failure: AuthFailure) -> Response {
@@ -2400,7 +2439,7 @@ fn ui_auth_failure_response(state: &AppState, failure: AuthFailure) -> Response 
     };
     (
         StatusCode::UNAUTHORIZED,
-        Html(render_ui_notice("Unauthorized", message, true).into_string()),
+        Html(render_ui_notice("Unauthorized", message, true)),
     )
         .into_response()
 }
@@ -2413,7 +2452,7 @@ async fn ui_dashboard(State(state): State<AppState>, headers: HeaderMap) -> Resp
     if let Err(failure) = require_auth(&headers, &state) {
         return ui_auth_failure_response(&state, failure);
     }
-    Html(render_ui_shell(&state).into_string()).into_response()
+    Html(render_ui_shell(&state)).into_response()
 }
 
 async fn ui_summary_fragment(State(state): State<AppState>, headers: HeaderMap) -> Response {
@@ -2424,7 +2463,7 @@ async fn ui_summary_fragment(State(state): State<AppState>, headers: HeaderMap) 
     if let Err(failure) = require_auth(&headers, &state) {
         return ui_auth_failure_response(&state, failure);
     }
-    Html(render_ui_summary(&state).into_string()).into_response()
+    Html(render_ui_summary(&state)).into_response()
 }
 
 async fn ui_sources_fragment(State(state): State<AppState>, headers: HeaderMap) -> Response {
@@ -2435,7 +2474,7 @@ async fn ui_sources_fragment(State(state): State<AppState>, headers: HeaderMap) 
     if let Err(failure) = require_auth(&headers, &state) {
         return ui_auth_failure_response(&state, failure);
     }
-    Html(render_ui_sources().into_string()).into_response()
+    Html(render_ui_sources()).into_response()
 }
 
 async fn ui_recent_records_fragment(State(state): State<AppState>, headers: HeaderMap) -> Response {
@@ -2446,7 +2485,7 @@ async fn ui_recent_records_fragment(State(state): State<AppState>, headers: Head
     if let Err(failure) = require_auth(&headers, &state) {
         return ui_auth_failure_response(&state, failure);
     }
-    Html(render_ui_recent_records(&state).into_string()).into_response()
+    Html(render_ui_recent_records(&state)).into_response()
 }
 
 async fn ui_scrape_action(
@@ -2467,18 +2506,18 @@ async fn ui_scrape_action(
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
             return (
                 StatusCode::BAD_REQUEST,
-                Html(render_ui_notice("Scrape rejected", &error, true).into_string()),
+                Html(render_ui_notice("Scrape rejected", &error, true)),
             )
                 .into_response();
         }
     };
     match process_scrape_request(&state, request).await {
-        Ok(value) => Html(render_ui_scrape_result(&value).into_string()).into_response(),
+        Ok(value) => Html(render_ui_scrape_result(&value)).into_response(),
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
             (
                 StatusCode::BAD_REQUEST,
-                Html(render_ui_notice("Scrape failed", &error, true).into_string()),
+                Html(render_ui_notice("Scrape failed", &error, true)),
             )
                 .into_response()
         }
@@ -2960,17 +2999,6 @@ async fn run_nats_loop(state: AppState) {
         state.config.queue_group,
         state.config.ingest_result_subject
     );
-    // Bound in-flight handlers. Each message can trigger a scrape (outbound HTTP)
-    // or ingest (DB writes); previously every one was `tokio::spawn`ed with no
-    // ceiling, so a burst could spawn unbounded concurrent scrapes and exhaust
-    // the pod. Acquiring a permit before spawning also backpressures the
-    // subscription instead of piling work on. Kept modest since scrapes are heavy.
-    let max_concurrency = env::var("PUBLIC_DATA_NATS_MAX_CONCURRENCY")
-        .ok()
-        .and_then(|value| value.trim().parse::<usize>().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(32);
-    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(max_concurrency));
     loop {
         let mut subscription = match nats
             .queue_subscribe(
@@ -3000,14 +3028,8 @@ async fn run_nats_loop(state: AppState) {
                 );
                 continue;
             }
-            // Backpressure point: wait for a concurrency permit before spawning.
-            let permit = match semaphore.clone().acquire_owned().await {
-                Ok(permit) => permit,
-                Err(_) => break,
-            };
             let task_state = state.clone();
             tokio::spawn(async move {
-                let _permit = permit; // released when this handler finishes
                 match serde_json::from_slice::<Value>(&payload) {
                     Ok(value) => {
                         let result = if value.get("scrape").is_some() {
@@ -3295,12 +3317,10 @@ mod tests {
 
     #[test]
     fn ui_helpers_escape_html_and_build_scrape_requests() {
-        // maud auto-escapes every interpolated value, so the old manual
-        // html_escape helper is gone; assert the same escaping via a real
-        // render path instead.
-        let notice = render_ui_notice("SBIR <grant> & \"quotes\"", "detail", false).into_string();
-        assert!(notice.contains("SBIR &lt;grant&gt; &amp; &quot;quotes&quot;"));
-        assert!(!notice.contains("<grant>"));
+        assert_eq!(
+            html_escape("SBIR <grant> & \"quotes\""),
+            "SBIR &lt;grant&gt; &amp; &quot;quotes&quot;"
+        );
 
         let request = UiScrapeForm {
             source: Some("SBIR".to_string()),
@@ -3325,75 +3345,5 @@ mod tests {
         assert_eq!(request.include_links, Some(true));
         assert_eq!(request.render_javascript, Some(false));
         assert!(request.pipeline.is_some());
-    }
-
-    fn test_state() -> AppState {
-        AppState {
-            config: Arc::new(Config {
-                server_auth_secret: Some("secret".to_string()),
-                webhook_secret: None,
-                allow_unauthenticated: false,
-                allow_unauthenticated_webhooks: false,
-                scraper_base_url: "http://127.0.0.1:9000".to_string(),
-                scraper_auth_secret: None,
-                ingest_request_subject: PUBLIC_DATA_INGEST_REQUESTS_SUBJECT.to_string(),
-                ingest_result_subject: PUBLIC_DATA_INGEST_RESULTS_SUBJECT.to_string(),
-                webhook_event_subject: PUBLIC_DATA_WEBHOOK_EVENTS_SUBJECT.to_string(),
-                pipeline_job_subject: PUBLIC_DATA_PIPELINE_JOBS_SUBJECT.to_string(),
-                analysis_result_subject: PUBLIC_DATA_ANALYSIS_RESULTS_SUBJECT.to_string(),
-                runtime_event_subject: RUNTIME_EVENTS_SUBJECT.to_string(),
-                queue_group: PUBLIC_DATA_INGEST_REQUESTS_QUEUE_GROUP.to_string(),
-            }),
-            metrics: Arc::new(Metrics::default()),
-            nats: None,
-            http: reqwest::Client::new(),
-            store: Arc::new(RwLock::new(PublicDataStore::default())),
-        }
-    }
-
-    #[test]
-    fn root_page_renders_doctype_and_actions() {
-        let html = render_root().into_string();
-        assert!(html.starts_with("<!DOCTYPE html>"));
-        assert!(html.contains("<title>dd-public-data-server</title>"));
-        assert!(html.contains("href=\"./ui\""));
-        // CSS embedded verbatim via PreEscaped.
-        assert!(html.contains("background: #1f6f70"));
-    }
-
-    #[tokio::test]
-    async fn ui_shell_renders_htmx_wiring_and_css() {
-        let state = test_state();
-        let html = render_ui_shell(&state).into_string();
-        assert!(html.starts_with("<!DOCTYPE html>"));
-        // HTMX script tag and fragment/action wiring preserved verbatim.
-        assert!(html.contains("src=\"https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js\""));
-        assert!(html.contains("hx-get=\"./ui/fragments/summary\""));
-        assert!(html.contains("hx-trigger=\"load, every 15s\""));
-        assert!(html.contains("hx-post=\"./ui/actions/scrape\""));
-        assert!(html.contains("hx-target=\"#scrape-result\""));
-        assert!(html.contains("hx-swap=\"innerHTML\""));
-        assert!(html.contains("hx-disabled-elt=\"button\""));
-        assert!(html.contains("hx-trigger=\"load, every 20s\""));
-        // CSS embedded verbatim via PreEscaped.
-        assert!(html.contains("--teal: #1f6f70"));
-    }
-
-    #[test]
-    fn scrape_result_wires_refresh_button_and_escapes_dynamic_values() {
-        let value = json!({
-            "requestId": "req-1",
-            "datasetId": "sbir-ui",
-            "record": { "title": "Grant <x> & \"y\"" },
-            "scraper": { "status": 200 }
-        });
-        let html = render_ui_scrape_result(&value).into_string();
-        assert!(html.contains("hx-get=\"./ui/fragments/summary\""));
-        assert!(html.contains("hx-target=\"#summary\""));
-        assert!(html.contains("hx-swap=\"innerHTML\""));
-        // Dynamic values are auto-escaped and interpolated.
-        assert!(html.contains("Grant &lt;x&gt; &amp; &quot;y&quot;"));
-        assert!(!html.contains("Grant <x>"));
-        assert!(html.contains("scraper status 200."));
     }
 }

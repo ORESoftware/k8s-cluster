@@ -211,7 +211,6 @@ spec:
                 '"path": "/fabrication/slicers/plan"' \
                 '"path": "/fabrication/slicers/result"' \
                 '"path": "/fabrication/mesh-repair/catalog"' \
-                '"path": "/fabrication/mesh-repair/plan"' \
                 '"path": "/fabrication/mesh-repair/result"' \
                 '"path": "/fabrication/design/import/catalog"' \
                 '"path": "/fabrication/design/preflight/catalog"' \
@@ -246,7 +245,6 @@ spec:
                 '"path": "/fabrication/machine-code/result"' \
                 '"path": "/fabrication/toolpaths/catalog"' \
                 '"path": "/fabrication/toolpaths/plan"' \
-                '"path": "/fabrication/toolpaths/generate"' \
                 '"path": "/fabrication/toolpaths/result"' \
                 '"path": "/fabrication/improvements/catalog"' \
                 '"path": "/fabrication/improvements/preflight/catalog"' \
@@ -286,7 +284,6 @@ spec:
                 '"path": "/fabrication/dispositions/catalog"' \
                 '"path": "/fabrication/dispositions/result"' \
                 '"path": "/fabrication/costing/catalog"' \
-                '"path": "/fabrication/costing/estimate"' \
                 '"path": "/fabrication/costing/result"' \
                 '"path": "/fabrication/utilities/catalog"' \
                 '"path": "/fabrication/energy/catalog"' \

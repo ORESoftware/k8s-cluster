@@ -196,5 +196,3 @@ cargo test public_source_templates_fetch_live_external_data_when_available -- --
 The ignored test uses live public Treasury, World Bank, and CoinGecko endpoints. It is intentionally
 manual so CI does not fail when an external provider is down, rate-limited, or changes its public
 access policy.
-
-> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

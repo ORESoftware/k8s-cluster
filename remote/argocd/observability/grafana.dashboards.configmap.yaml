@@ -378,7 +378,7 @@ data:
               "refId": "D"
             }
           ],
-          "title": "Gleam MCP Runtime and Cluster MCP Runtime",
+          "title": "Cluster MCP Runtime",
           "type": "timeseries"
         },
         {
@@ -1065,7 +1065,6 @@ data:
             { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/slicers/plan\" [$__interval]))", "legendFormat": "slicer planning", "refId": "SPP" },
             { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/slicers/result\" [$__interval]))", "legendFormat": "slicer profile result review", "refId": "SPR" },
             { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/mesh-repair/catalog\" [$__interval]))", "legendFormat": "mesh repair catalog", "refId": "CB" },
-            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/mesh-repair/plan\" [$__interval]))", "legendFormat": "mesh repair planning", "refId": "MRP" },
             { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/mesh-repair/result\" [$__interval]))", "legendFormat": "mesh repair result review", "refId": "MRR" },
             { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/machines/catalog\" [$__interval]))", "legendFormat": "machine catalog", "refId": "AO" },
             { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/printers/catalog\" [$__interval]))", "legendFormat": "printer catalog", "refId": "PRN" },
@@ -1167,7 +1166,6 @@ data:
             { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/machine-code/result\" [$__interval]))", "legendFormat": "machine-code result review", "refId": "BW" },
             { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/toolpaths/catalog\" [$__interval]))", "legendFormat": "toolpath catalog", "refId": "TPC" },
             { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/toolpaths/plan\" [$__interval]))", "legendFormat": "toolpath planning", "refId": "P" },
-            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/toolpaths/generate\" [$__interval]))", "legendFormat": "toolpath generation", "refId": "TPG" },
             { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/toolpaths/result\" [$__interval]))", "legendFormat": "toolpath result review", "refId": "BL" },
             { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/improvements/catalog\" [$__interval]))", "legendFormat": "improvement catalog", "refId": "AS" },
             { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/improvements/preflight/catalog\" [$__interval]))", "legendFormat": "improvement preflight catalog", "refId": "IPF" },
@@ -1200,7 +1198,6 @@ data:
             { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/dispositions/catalog\" [$__interval]))", "legendFormat": "disposition catalog", "refId": "DISP" },
             { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/dispositions/result\" [$__interval]))", "legendFormat": "disposition result review", "refId": "DSR" },
             { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/costing/catalog\" [$__interval]))", "legendFormat": "costing catalog", "refId": "COST" },
-            { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/costing/estimate\" [$__interval]))", "legendFormat": "cost estimate", "refId": "CE" },
             { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/costing/result\" [$__interval]))", "legendFormat": "costing result review", "refId": "CTR" },
             { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/utilities/catalog\" [$__interval]))", "legendFormat": "utilities catalog", "refId": "UTIL" },
             { "expr": "sum(count_over_time({deployment=\"dd-remote-gateway\"} |= \"\\\"service\\\":\\\"dd-remote-gateway\\\"\" |= \"\\\"uri\\\":\\\"/fabrication/energy/catalog\" [$__interval]))", "legendFormat": "energy catalog", "refId": "ENG" },

@@ -79,25 +79,6 @@ stripped). Prometheus exposes `dd_web_scraper_proxy_pool_size`,
 `dd_web_scraper_proxy_pool_available`, `dd_web_scraper_proxy_selections_total`,
 and `dd_web_scraper_proxy_failures_total`.
 
-## Responsible scraping policy
-
-Browser automation and scraping are safe, ethical engineering techniques when
-used on public resources or systems the operator owns or is authorized to
-access, within the target's terms and applicable law. This project policy is
-not blanket permission or legal advice. Prefer an official API when practical,
-collect only what the job needs, avoid personal/sensitive data, and never use
-the service to bypass unauthorized authentication, paywalls, or rate limits.
-
-The service identifies itself with `SCRAPER_USER_AGENT`, checks `robots.txt` by
-default (`SCRAPER_RESPECT_ROBOTS=true`), honors a declared crawl delay, and
-spaces top-level requests to each origin by at least
-`SCRAPER_MIN_ORIGIN_DELAY_MS` (default 1 second). A request can set
-`"respectRobots": false` only when an operator has deliberately enabled
-`SCRAPER_ALLOW_ROBOTS_OVERRIDE=true` for an owned or contractually authorized
-target. Robots documents are fetched through the same SSRF-safe/proxy path and
-cached for `SCRAPER_ROBOTS_CACHE_TTL_MS`. Prometheus exposes checks, denials,
-and overrides as `dd_web_scraper_robots_*` counters.
-
 ## CAPTCHA solving orchestration
 
 For every scrape the fetched page is scanned for a challenge — reCAPTCHA v2/v3,
@@ -107,12 +88,12 @@ and the result is reported as `response.captcha` (`detected`, `type`, `sitekey`,
 override with `"detectCaptcha": false`.
 
 On the browser strategies (`playwright`/`puppeteer`) the service can also solve
-a challenge on an owned or explicitly authorized test system. Solving requires
-all three controls: `SCRAPER_ALLOW_CAPTCHA_SOLVING=true`,
-`SCRAPER_CAPTCHA_AUTOSOLVE=true` (or request `"solveCaptcha": true`), and a
-solver API key. The service submits the sitekey, injects the returned token,
-fires the widget callback, and continues to extraction. `solved: true` means a
-token was obtained and applied. Static strategies report detection only.
+the challenge for owner-authorized testing: when the operator sets
+`SCRAPER_CAPTCHA_AUTOSOLVE=true` and a solver API key is present, it submits the sitekey to
+the provider, injects the returned token into the page's response field, fires the
+widget callback, and continues to extraction. `solved: true` means a token was
+obtained and applied. Static strategies report detection only — they have no page
+to inject into, so retry through a browser strategy.
 
 The solver client speaks the 2captcha `in.php`/`res.php` protocol, which CapSolver,
 CapMonster, and Anti-Captcha expose a compatible surface for, so the vendor is
@@ -127,8 +108,10 @@ and `type`.
 - **Cost amplification.** A solve holds the in-flight slot and the browser page
   for up to `SCRAPER_CAPTCHA_TIMEOUT_MS` (longer than the request timeout) and
   costs money per solve. A hostile target can serve a fake sitekey to trigger
-  this. Solver use and auto-solve are therefore both off by default, and
-  `SCRAPER_CAPTCHA_MAX_CONCURRENT` caps simultaneous solves — excess challenges are reported as detected-only
+  this. Auto-solve is therefore off by default and cannot be enabled by a request;
+  `"solveCaptcha": false` may only disable an operator-enabled solve.
+  `SCRAPER_CAPTCHA_MAX_CONCURRENT`
+  caps simultaneous solves — excess challenges are reported as detected-only
   (`captcha.error = "captcha solver concurrency limit reached"`) rather than
   queued. Keep auto-solve scoped to trusted target sets.
 - **Per-request proxy.** `"proxy"` lets an authenticated caller route through an

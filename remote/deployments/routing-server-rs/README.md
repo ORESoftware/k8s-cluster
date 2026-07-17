@@ -88,5 +88,3 @@ kubectl apply -k remote/deployments/routing-server-rs/k8s
 ```
 
 `cargo test` runs the TSP/VRP core's determinism + 2-opt convergence unit tests.
-
-> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

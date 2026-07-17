@@ -244,4 +244,3 @@ should be reverted to a clean state):**
       `/dd-next-1`, tcp liveness, and the `.built_sig` skip-rebuild cache.
 - [ ] Stand up the Cloudflare Worker + routes + Origin CA cert (Cloudflare account —
       not doable from the cluster side).
-foobar

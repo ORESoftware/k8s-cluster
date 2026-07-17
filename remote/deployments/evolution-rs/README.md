@@ -89,5 +89,3 @@ kubectl apply -k remote/deployments/evolution-rs/k8s
 ```
 
 `cargo test` runs the GA core's determinism/convergence unit tests.
-
-> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

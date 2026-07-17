@@ -244,5 +244,3 @@ ArgoCD manifests live in
 `dd-document-rs.deployment.yaml`, `.service.yaml`, `.networkpolicy.yaml`. Unlike
 the cargo-run siblings, the Deployment runs the image built from this `Dockerfile`
 because the Haskell bridge must be compiled and linked ahead of time.
-
-> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

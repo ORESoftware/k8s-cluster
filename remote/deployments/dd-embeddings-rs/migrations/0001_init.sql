@@ -1,10 +1,6 @@
--- FROZEN — historical record only (see README.md in this directory). This
--- migration is no longer executed; the sqlx::migrate! boot path was removed.
--- The declarative source of truth is ../schema/schema.sql, applied via
--- ../scripts/dpm.sh (dpm — declarative-postgres-migrate).
---
 -- dd-embeddings-rs search index — owned by this service (separate from the
--- shared pg-defs contract).
+-- shared pg-defs contract). Hand-authored migration, run via sqlx::migrate!
+-- when SEARCH_RUN_MIGRATIONS=true.
 --
 -- Prereqs: the database user must be able to CREATE EXTENSION `vector` and
 -- `pg_trgm` (rds_superuser, or have an operator pre-create them). HNSW indexing

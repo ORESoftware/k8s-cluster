@@ -12,27 +12,21 @@
 //! contributes an additional ranked list, and an optional rerank stage reorders
 //! the fused top-N via the existing rerank providers.
 
-mod entities;
 pub mod filters;
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
-use sea_orm::sea_query::OnConflict;
-use sea_orm::{
-    ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseConnection, EntityTrait, QueryFilter,
-    QueryOrder, QuerySelect, Set, Statement, TransactionTrait,
-};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::embedder::Embedder;
 use crate::error::ApiError;
 use crate::providers::rerank::{RerankRegistry, RerankRequest};
 use crate::providers::{EmbedRequest, InputType};
-use entities::{search_documents, search_edges};
-use filters::{push, to_values, Bound};
+use filters::{push, to_args, Bound};
 
 const RRF_K: f64 = 60.0;
 /// How many fused candidates to hand the reranker before truncating to top_k.
@@ -184,7 +178,7 @@ pub struct DeleteRequest {
 // --- service ----------------------------------------------------------------
 
 pub struct SearchService {
-    pool: DatabaseConnection,
+    pool: PgPool,
     embedder: Arc<Embedder>,
     rerank: Arc<RerankRegistry>,
     search_dim: u32,
@@ -192,8 +186,8 @@ pub struct SearchService {
     max_hops: u32,
 }
 
-fn db_err(e: sea_orm::DbErr) -> ApiError {
-    ApiError::from(e)
+fn db_err(e: sqlx::Error) -> ApiError {
+    ApiError::Db(e.to_string())
 }
 
 fn vector_literal(v: &[f32]) -> String {
@@ -211,7 +205,7 @@ fn vector_literal(v: &[f32]) -> String {
 
 impl SearchService {
     pub fn new(
-        pool: DatabaseConnection,
+        pool: PgPool,
         embedder: Arc<Embedder>,
         rerank: Arc<RerankRegistry>,
         search_dim: u32,
@@ -222,8 +216,8 @@ impl SearchService {
     }
 
     pub async fn health(&self) -> Result<(), ApiError> {
-        self.pool
-            .query_one(Statement::from_string(DatabaseBackend::Postgres, "select 1"))
+        sqlx::query_scalar::<_, i32>("select 1")
+            .fetch_one(&self.pool)
             .await
             .map_err(db_err)?;
         Ok(())
@@ -264,16 +258,12 @@ impl SearchService {
         let contents: Vec<String> = req.documents.iter().map(|d| d.content.clone()).collect();
         let vectors = self.embed(&req.provider, &req.model, contents, InputType::Document).await?;
 
-        let tx = self.pool.begin().await.map_err(db_err)?;
+        let mut tx = self.pool.begin().await.map_err(db_err)?;
 
         // external_id -> id for edge resolution within this batch.
         let mut id_by_ext: HashMap<String, Uuid> = HashMap::new();
         let mut doc_ids: Vec<Uuid> = Vec::with_capacity(req.documents.len());
 
-        // The document upserts stay raw parameterized SQL: the `embedding`
-        // column takes a `$n::vector` bind and the `on conflict` target is the
-        // partial unique index (`where external_id is not null`), neither of
-        // which the entity insert API can express.
         for (doc, vec) in req.documents.iter().zip(vectors.iter()) {
             let lit = vector_literal(vec);
             let attrs = if doc.attributes.is_null() {
@@ -282,48 +272,36 @@ impl SearchService {
                 doc.attributes.clone()
             };
             let id: Uuid = if let Some(ext) = &doc.external_id {
-                let stmt = Statement::from_sql_and_values(
-                    DatabaseBackend::Postgres,
+                let row_id: Uuid = sqlx::query_scalar(
                     "insert into search_documents (collection, external_id, content, attributes, embedding) \
                      values ($1, $2, $3, $4, $5::vector) \
                      on conflict (collection, external_id) where external_id is not null \
                      do update set content = excluded.content, attributes = excluded.attributes, \
                        embedding = excluded.embedding, updated_at = now() \
                      returning id",
-                    [
-                        req.collection.clone().into(),
-                        ext.clone().into(),
-                        doc.content.clone().into(),
-                        attrs.into(),
-                        lit.into(),
-                    ],
-                );
-                let row = tx
-                    .query_one(stmt)
-                    .await
-                    .map_err(db_err)?
-                    .ok_or_else(|| ApiError::Db("insert returning id produced no row".into()))?;
-                let row_id: Uuid = row.try_get("", "id").map_err(db_err)?;
+                )
+                .bind(&req.collection)
+                .bind(ext)
+                .bind(&doc.content)
+                .bind(sqlx::types::Json(attrs))
+                .bind(&lit)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(db_err)?;
                 id_by_ext.insert(ext.clone(), row_id);
                 row_id
             } else {
-                let stmt = Statement::from_sql_and_values(
-                    DatabaseBackend::Postgres,
+                sqlx::query_scalar(
                     "insert into search_documents (collection, content, attributes, embedding) \
                      values ($1, $2, $3, $4::vector) returning id",
-                    [
-                        req.collection.clone().into(),
-                        doc.content.clone().into(),
-                        attrs.into(),
-                        lit.into(),
-                    ],
-                );
-                let row = tx
-                    .query_one(stmt)
-                    .await
-                    .map_err(db_err)?
-                    .ok_or_else(|| ApiError::Db("insert returning id produced no row".into()))?;
-                row.try_get("", "id").map_err(db_err)?
+                )
+                .bind(&req.collection)
+                .bind(&doc.content)
+                .bind(sqlx::types::Json(attrs))
+                .bind(&lit)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(db_err)?
             };
             doc_ids.push(id);
         }
@@ -334,19 +312,23 @@ impl SearchService {
             for edge in &doc.edges {
                 let dst = match id_by_ext.get(&edge.to) {
                     Some(id) => *id,
-                    None => match self.resolve_one(&tx, &req.collection, &edge.to).await? {
+                    None => match self.resolve_one(&mut tx, &req.collection, &edge.to).await? {
                         Some(id) => id,
                         None => continue, // unknown target — skip
                     },
                 };
-                upsert_edge(
-                    &tx,
-                    *src_id,
-                    dst,
-                    edge.relation.clone().unwrap_or_else(|| "related".into()),
-                    edge.weight.unwrap_or(1.0),
+                sqlx::query(
+                    "insert into search_edges (src_id, dst_id, relation, weight) \
+                     values ($1, $2, $3, $4) \
+                     on conflict (src_id, dst_id, relation) do update set weight = excluded.weight",
                 )
-                .await?;
+                .bind(src_id)
+                .bind(dst)
+                .bind(edge.relation.clone().unwrap_or_else(|| "related".into()))
+                .bind(edge.weight.unwrap_or(1.0))
+                .execute(&mut *tx)
+                .await
+                .map_err(db_err)?;
                 edge_count += 1;
             }
         }
@@ -355,45 +337,41 @@ impl SearchService {
         Ok(IndexResponse { collection: req.collection, indexed: doc_ids.len(), edges: edge_count })
     }
 
-    async fn resolve_one<C: ConnectionTrait>(
+    async fn resolve_one(
         &self,
-        conn: &C,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         collection: &str,
         external_id: &str,
     ) -> Result<Option<Uuid>, ApiError> {
-        search_documents::Entity::find()
-            .select_only()
-            .column(search_documents::Column::Id)
-            .filter(search_documents::Column::Collection.eq(collection))
-            .filter(search_documents::Column::ExternalId.eq(external_id))
-            .into_tuple::<Uuid>()
-            .one(conn)
-            .await
-            .map_err(db_err)
+        let id: Option<Uuid> = sqlx::query_scalar(
+            "select id from search_documents where collection = $1 and external_id = $2",
+        )
+        .bind(collection)
+        .bind(external_id)
+        .fetch_optional(tx.as_mut())
+        .await
+        .map_err(db_err)?;
+        Ok(id)
     }
 
     async fn resolve_ids(&self, collection: &str, externals: &[String]) -> Result<Vec<Uuid>, ApiError> {
-        search_documents::Entity::find()
-            .select_only()
-            .column(search_documents::Column::Id)
-            .filter(search_documents::Column::Collection.eq(collection))
-            .filter(search_documents::Column::ExternalId.is_in(externals.iter().cloned()))
-            .into_tuple::<Uuid>()
-            .all(&self.pool)
-            .await
-            .map_err(db_err)
+        let rows = sqlx::query(
+            "select id from search_documents where collection = $1 and external_id = any($2)",
+        )
+        .bind(collection)
+        .bind(externals)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db_err)?;
+        Ok(rows.iter().map(|r| r.get::<Uuid, _>("id")).collect())
     }
 
     /// Run a candidate query (selecting `id`) built from a SQL string + ordered
-    /// binds, returning ids in rank order. Raw SQL by design: these queries are
-    /// dynamically composed (rendered filter predicates, optional clauses) and
-    /// use pgvector/tsquery/pg_trgm operators the entity API cannot express.
+    /// binds, returning ids in rank order.
     async fn candidates(&self, sql: &str, binds: Vec<Bound>) -> Result<Vec<Uuid>, ApiError> {
-        let stmt = Statement::from_sql_and_values(DatabaseBackend::Postgres, sql, to_values(&binds));
-        let rows = self.pool.query_all(stmt).await.map_err(db_err)?;
-        rows.iter()
-            .map(|r| r.try_get::<Uuid>("", "id").map_err(db_err))
-            .collect()
+        let args = to_args(&binds)?;
+        let rows = sqlx::query_with(sql, args).fetch_all(&self.pool).await.map_err(db_err)?;
+        Ok(rows.iter().map(|r| r.get::<Uuid, _>("id")).collect())
     }
 
     pub async fn query(&self, req: SearchRequest) -> Result<SearchResponse, ApiError> {
@@ -553,29 +531,24 @@ impl SearchService {
         if ids.is_empty() {
             return Ok(Vec::new());
         }
-        let rows: Vec<(Uuid, Option<String>, String, Value)> = search_documents::Entity::find()
-            .select_only()
-            .columns([
-                search_documents::Column::Id,
-                search_documents::Column::ExternalId,
-                search_documents::Column::Content,
-                search_documents::Column::Attributes,
-            ])
-            .filter(search_documents::Column::Id.is_in(ids.iter().copied()))
-            .into_tuple()
-            .all(&self.pool)
-            .await
-            .map_err(db_err)?;
+        let rows = sqlx::query(
+            "select id, external_id, content, attributes from search_documents where id = any($1)",
+        )
+        .bind(ids)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db_err)?;
 
         let mut by_id: HashMap<Uuid, Hit> = HashMap::new();
-        for (id, external_id, content, attributes) in rows {
+        for r in &rows {
+            let id: Uuid = r.get("id");
             by_id.insert(
                 id,
                 Hit {
                     id: id.to_string(),
-                    external_id,
-                    content,
-                    attributes,
+                    external_id: r.get("external_id"),
+                    content: r.get("content"),
+                    attributes: r.get::<Value, _>("attributes"),
                     score: *score_by_id.get(&id).unwrap_or(&0.0),
                     signals: per_signal.get(&id).cloned().unwrap_or_default(),
                 },
@@ -587,19 +560,22 @@ impl SearchService {
 
     pub async fn add_edges(&self, req: AddEdgesRequest) -> Result<usize, ApiError> {
         let mut added = 0usize;
-        let tx = self.pool.begin().await.map_err(db_err)?;
+        let mut tx = self.pool.begin().await.map_err(db_err)?;
         for e in &req.edges {
-            let src = self.resolve_one(&tx, &req.collection, &e.from).await?;
-            let dst = self.resolve_one(&tx, &req.collection, &e.to).await?;
+            let src = self.resolve_one(&mut tx, &req.collection, &e.from).await?;
+            let dst = self.resolve_one(&mut tx, &req.collection, &e.to).await?;
             let (Some(src), Some(dst)) = (src, dst) else { continue };
-            upsert_edge(
-                &tx,
-                src,
-                dst,
-                e.relation.clone().unwrap_or_else(|| "related".into()),
-                e.weight.unwrap_or(1.0),
+            sqlx::query(
+                "insert into search_edges (src_id, dst_id, relation, weight) values ($1,$2,$3,$4) \
+                 on conflict (src_id, dst_id, relation) do update set weight = excluded.weight",
             )
-            .await?;
+            .bind(src)
+            .bind(dst)
+            .bind(e.relation.clone().unwrap_or_else(|| "related".into()))
+            .bind(e.weight.unwrap_or(1.0))
+            .execute(&mut *tx)
+            .await
+            .map_err(db_err)?;
             added += 1;
         }
         tx.commit().await.map_err(db_err)?;
@@ -607,66 +583,33 @@ impl SearchService {
     }
 
     pub async fn delete(&self, req: DeleteRequest) -> Result<u64, ApiError> {
-        let res = search_documents::Entity::delete_many()
-            .filter(search_documents::Column::Collection.eq(req.collection.as_str()))
-            .filter(search_documents::Column::ExternalId.is_in(req.external_ids.iter().cloned()))
-            .exec(&self.pool)
-            .await
-            .map_err(db_err)?;
-        Ok(res.rows_affected)
+        let res = sqlx::query(
+            "delete from search_documents where collection = $1 and external_id = any($2)",
+        )
+        .bind(&req.collection)
+        .bind(&req.external_ids)
+        .execute(&self.pool)
+        .await
+        .map_err(db_err)?;
+        Ok(res.rows_affected())
     }
 
     pub async fn list_collections(&self) -> Result<Vec<String>, ApiError> {
-        search_documents::Entity::find()
-            .select_only()
-            .column(search_documents::Column::Collection)
-            .distinct()
-            .order_by_asc(search_documents::Column::Collection)
-            .into_tuple::<String>()
-            .all(&self.pool)
+        let rows = sqlx::query("select distinct collection from search_documents order by collection")
+            .fetch_all(&self.pool)
             .await
-            .map_err(db_err)
+            .map_err(db_err)?;
+        Ok(rows.iter().map(|r| r.get::<String, _>("collection")).collect())
     }
 
     pub async fn delete_collection(&self, collection: &str) -> Result<u64, ApiError> {
-        let res = search_documents::Entity::delete_many()
-            .filter(search_documents::Column::Collection.eq(collection))
-            .exec(&self.pool)
+        let res = sqlx::query("delete from search_documents where collection = $1")
+            .bind(collection)
+            .execute(&self.pool)
             .await
             .map_err(db_err)?;
-        Ok(res.rows_affected)
+        Ok(res.rows_affected())
     }
-}
-
-/// Upsert one graph edge (`on conflict (src_id, dst_id, relation) do update
-/// set weight = excluded.weight`), on a transaction or the pool.
-async fn upsert_edge<C: ConnectionTrait>(
-    conn: &C,
-    src_id: Uuid,
-    dst_id: Uuid,
-    relation: String,
-    weight: f64,
-) -> Result<(), ApiError> {
-    let edge = search_edges::ActiveModel {
-        src_id: Set(src_id),
-        dst_id: Set(dst_id),
-        relation: Set(relation),
-        weight: Set(weight),
-    };
-    search_edges::Entity::insert(edge)
-        .on_conflict(
-            OnConflict::columns([
-                search_edges::Column::SrcId,
-                search_edges::Column::DstId,
-                search_edges::Column::Relation,
-            ])
-            .update_column(search_edges::Column::Weight)
-            .to_owned(),
-        )
-        .exec_without_returning(conn)
-        .await
-        .map_err(db_err)?;
-    Ok(())
 }
 
 fn placeholder_hit() -> Hit {

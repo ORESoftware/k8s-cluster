@@ -20,7 +20,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-07-16-responsible-scraping'
+        dd.dev/telemetry-revision: '2026-05-16-web-scraper'
       labels:
         app: dd-web-scraper
     spec:
@@ -99,14 +99,6 @@ spec:
               value: '5'
             - name: SCRAPER_MAX_HTML_CHARS
               value: '1000000'
-            - name: SCRAPER_USER_AGENT
-              value: dd-web-scraper/0.1 (+https://github.com/ORESoftware/k8s-cluster)
-            - name: SCRAPER_RESPECT_ROBOTS
-              value: 'true'
-            - name: SCRAPER_ALLOW_ROBOTS_OVERRIDE
-              value: 'false'
-            - name: SCRAPER_MIN_ORIGIN_DELAY_MS
-              value: '1000'
             - name: SCRAPER_ALLOW_PRIVATE_NETWORKS
               value: 'false'
             - name: SCRAPER_ALLOW_SENSITIVE_HEADERS
@@ -135,8 +127,6 @@ spec:
             - name: SCRAPER_DETECT_CAPTCHAS
               value: 'true'
             - name: SCRAPER_CAPTCHA_AUTOSOLVE
-              value: 'false'
-            - name: SCRAPER_ALLOW_CAPTCHA_SOLVING
               value: 'false'
             - name: SCRAPER_CAPTCHA_PROVIDER_URL
               value: https://2captcha.com

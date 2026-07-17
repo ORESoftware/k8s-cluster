@@ -1,0 +1,18 @@
+[package]
+name = "dd-fabrication-server"
+version = "0.1.0"
+edition = "2021"
+description = "Rust fabrication planner and instruction validator for 3D printers, CNC mills, routers, and lathes."
+
+[dependencies]
+dd-telemetry = { path = "../../libs/telemetry-rs" }
+tracing = "0.1"
+async-nats = "=0.38.0"
+axum = { version = "0.7", features = ["macros"] }
+des_engine = { path = "../../submodules/discrete-event-system.rs" }
+dd-nats-subject-defs = { path = "../../libs/nats/subject-defs/generated/rust" }
+dd-runtime-config-client = { path = "../../libs/runtime-config-client-rs" }
+futures-util = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }

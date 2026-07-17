@@ -58,7 +58,8 @@ async fn register_http(
 ) -> axum::response::Response {
     let bc = &state.blockchain;
     record_request(bc);
-    if let Err(resp) = require_enabled(bc, bc.config().wallet_enabled, "BLOCKCHAIN_WALLET_ENABLED") {
+    if let Err(resp) = require_enabled(bc, bc.config().wallet_enabled, "BLOCKCHAIN_WALLET_ENABLED")
+    {
         return resp;
     }
     let chain = match parse_chain(&body.chain) {
@@ -86,7 +87,10 @@ async fn register_http(
             .values()
             .any(|w| w.chain == chain && w.address == address)
         {
-            return json_err(StatusCode::CONFLICT, "wallet already registered for this chain");
+            return json_err(
+                StatusCode::CONFLICT,
+                "wallet already registered for this chain",
+            );
         }
         evict_oldest(&mut wallets, MAX_WALLETS, |w| w.created_ms);
         wallets.insert(
@@ -113,7 +117,8 @@ async fn register_http(
 async fn list_http(State(state): State<AppState>) -> axum::response::Response {
     let bc = &state.blockchain;
     record_request(bc);
-    if let Err(resp) = require_enabled(bc, bc.config().wallet_enabled, "BLOCKCHAIN_WALLET_ENABLED") {
+    if let Err(resp) = require_enabled(bc, bc.config().wallet_enabled, "BLOCKCHAIN_WALLET_ENABLED")
+    {
         return resp;
     }
     let wallets = match bc.inner().wallets.lock() {
@@ -140,7 +145,8 @@ async fn balance_http(
 ) -> axum::response::Response {
     let bc = &state.blockchain;
     record_request(bc);
-    if let Err(resp) = require_enabled(bc, bc.config().wallet_enabled, "BLOCKCHAIN_WALLET_ENABLED") {
+    if let Err(resp) = require_enabled(bc, bc.config().wallet_enabled, "BLOCKCHAIN_WALLET_ENABLED")
+    {
         return resp;
     }
     let (chain, address) = {
@@ -170,7 +176,10 @@ async fn balance_http(
                     "EVM RPC is not configured (set EVM_RPC_URL)",
                 );
             }
-            match bc.evm_rpc("eth_getBalance", json!([address, "latest"])).await {
+            match bc
+                .evm_rpc("eth_getBalance", json!([address, "latest"]))
+                .await
+            {
                 Ok(result) => json_ok(json!({
                     "ok": true, "chain": "evm", "address": address, "weiHex": result,
                 })),

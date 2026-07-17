@@ -39,17 +39,8 @@ always lives at `~/codes/ores/k8s-cluster/<submodule path>`.
 | `remote/deployments/canonical-cloud` | [canonical-cloud/canonical.cloud](https://github.com/canonical-cloud/canonical.cloud) | `main` | `~/codes/canonical.cloud` |
 | `remote/deployments/fiducia-customer.rs` | [fiducia-cloud/fiducia-customer.rs](https://github.com/fiducia-cloud/fiducia-customer.rs) | `main` | `~/codes/fiducia.cloud/fiducia-customer.rs` |
 | `remote/deployments/fiducia-marketing.web` | [fiducia-cloud/fiducia-marketing.web](https://github.com/fiducia-cloud/fiducia-marketing.web) | `main` | `~/codes/fiducia.cloud/fiducia-marketing.web` |
-| `remote/deployments/fiducia-monorepo` | [fiducia-cloud/fiducia-monorepo](https://github.com/fiducia-cloud/fiducia-monorepo) | `main` | — _(submodule checkout only)_ |
 | `remote/deployments/tor-server.rs` | [ORESoftware/tor-server.rs](https://github.com/ORESoftware/tor-server.rs) | `main` | `~/codes/ores/tor-server.rs` |
 | `remote/deployments/ai-agent-bridge` | [ORESoftware/ai-agent-bridge.rs](https://github.com/ORESoftware/ai-agent-bridge.rs) | `main` | `~/codes/ores/ai-agent-bridge` |
-| `remote/deployments/fabrication-server-rs` | [daedalus-fab/fabrication-server.rs](https://github.com/daedalus-fab/fabrication-server.rs) | `main` | — _(submodule checkout only)_ |
-| `remote/deployments/gleam-lambda-runner` | [scintilla-run/gleam-lambda-runner](https://github.com/scintilla-run/gleam-lambda-runner) | `main` | — _(submodule checkout only)_ |
-| `remote/deployments/billing-server-rs` | [quaestor-ledger/billing-server.rs](https://github.com/quaestor-ledger/billing-server.rs) | `main` | — _(submodule checkout only)_ |
-| `remote/deployments/dart-server` | [sagitta-stack/dart-server](https://github.com/sagitta-stack/dart-server) | `main` | — _(submodule checkout only)_ |
-| `remote/deployments/dd-data-viz-rs` | [claritas-viz/data-viz-server.rs](https://github.com/claritas-viz/data-viz-server.rs) | `main` | — _(submodule checkout only)_ |
-| `remote/deployments/athleto-backend-rs` | [athlet-o/athleto-backend.rs](https://github.com/athlet-o/athleto-backend.rs) | `main` | — _(submodule checkout only)_ |
-| `remote/deployments/usacc-rest-api-backend-rs` | [usa-acc/rest-api-backend.rs](https://github.com/usa-acc/rest-api-backend.rs) | `main` | — _(submodule checkout only)_ |
-| `remote/deployments/3fa-web-server-rs` | [3FA-app/3fa-web-server.rs](https://github.com/3FA-app/3fa-web-server.rs) | `main` | — _(submodule checkout only)_ |
 
 ---
 

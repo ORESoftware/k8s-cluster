@@ -148,5 +148,3 @@ the image must be present on the node (built locally or pulled from a registry
 the node can reach), matching the `dd-document-rs` image workflow. Only the
 mounted repo-storage volume and `/tmp` are writable; everything else is
 read-only, all Linux capabilities are dropped, and the process runs as UID 1000.
-
-> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).
