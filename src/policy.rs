@@ -77,6 +77,9 @@ impl Policy {
     /// Keeping all permitted results lets the caller fall back between IPv6 and
     /// IPv4 when the resolver's first answer is unreachable.
     pub async fn resolve_exit(&self, host: &str, port: u16) -> Result<Vec<SocketAddr>> {
+        if !self.exit_enabled {
+            bail!("exit disabled on this relay (TOR_DISABLE_EXIT); it serves as a middle relay only");
+        }
         if host.is_empty()
             || host.len() > 253
             || host
