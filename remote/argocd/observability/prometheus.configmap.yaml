@@ -506,6 +506,60 @@ data:
             annotations:
               summary: Fabrication server errors are increasing
               description: "dd-fabrication-server has recorded request or background-event errors in the last five minutes."
+          - alert: DDFabricationServerNatsPublishFailuresIncreasing
+            expr: sum(increase(dd_fabrication_server_nats_publish_failures_total[5m])) > 0
+            for: 1m
+            labels:
+              severity: warning
+              service: dd-fabrication-server
+            annotations:
+              summary: Fabrication server NATS publishes are failing
+              description: "dd-fabrication-server could not publish and flush one or more NATS result, runtime-event, or learning messages; inspect its dd.log.v1 records in Loki and the dd-nats target before trusting downstream fan-out."
+          - alert: DDWebScraperRobotsOverridesIncreasing
+            expr: sum(increase(dd_web_scraper_robots_overrides_total[15m])) > 0
+            for: 1m
+            labels:
+              severity: warning
+              service: dd-web-scraper
+            annotations:
+              summary: Web scraper robots policy overrides are being used
+              description: "dd-web-scraper accepted one or more explicit robots.txt overrides; verify that the target is owned or authorized and inspect the corresponding structured audit records in Loki."
+          - alert: DDQueueConsumerTargetDown
+            expr: up{job="dd-remote-queue-consumer"} == 0
+            for: 2m
+            labels:
+              severity: warning
+              service: dd-remote-queue-consumer
+            annotations:
+              summary: Queue consumer metrics target is down
+              description: "OpenTelemetry cannot scrape dd-remote-queue-consumer /metrics; task handoff, acknowledgement-heartbeat, and dead-letter evidence may be unavailable."
+          - alert: DDQueueConsumerNotReady
+            expr: dd_queue_consumer_ready == 0
+            for: 2m
+            labels:
+              severity: warning
+              service: dd-remote-queue-consumer
+            annotations:
+              summary: Queue consumer is not ready
+              description: "dd-remote-queue-consumer has not established its JetStream streams and durable consumer, so queued thread tasks cannot be handed off."
+          - alert: DDQueueConsumerDeadLettersIncreasing
+            expr: sum(increase(dd_queue_consumer_dead_lettered_total[15m])) > 0
+            for: 1m
+            labels:
+              severity: warning
+              service: dd-remote-queue-consumer
+            annotations:
+              summary: Queue tasks are being dead-lettered
+              description: "One or more queued tasks exhausted JetStream redelivery and were terminated from DD_REMOTE_TASKS; inspect DD_REMOTE_TASKS_DLQ and the correlated dd.log.v1 critical events in Loki."
+          - alert: DDQueueConsumerDlqPublishFailuresIncreasing
+            expr: sum(increase(dd_queue_consumer_dlq_publish_failures_total[5m])) > 0
+            for: 1m
+            labels:
+              severity: critical
+              service: dd-remote-queue-consumer
+            annotations:
+              summary: Queue consumer cannot persist dead letters
+              description: "dd-remote-queue-consumer failed to receive a JetStream publish acknowledgement from DD_REMOTE_TASKS_DLQ; terminal task evidence may be present only in the critical-event stream and Loki."
           - alert: DDFabricationServerValidationFindingsIncreasing
             expr: sum(rate(dd_fabrication_server_validation_findings_total[10m])) > 0
             for: 5m

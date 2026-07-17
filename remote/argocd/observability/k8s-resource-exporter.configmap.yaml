@@ -25,7 +25,7 @@ data:
     PORT = os.environ.get("KUBERNETES_SERVICE_PORT", "443")
     BASE_URL = "https://%s:%s" % (HOST, PORT)
     SCRAPE_TIMEOUT = float(os.environ.get("SCRAPE_TIMEOUT_SECONDS", "5"))
-    DEFAULT_WATCH_NAMESPACES = "ai-ml,airbyte,big-data,default,headlamp,kafka,messaging,observability,presence,spark,vpn"
+    DEFAULT_WATCH_NAMESPACES = "ai-ml,airbyte,anon-proxy,big-data,default,fiducia,headlamp,kafka,messaging,observability,presence,spark,threefa,vpn"
     DEFAULT_WATCH_APPS = (
         "dd-agent-worker-broker,dd-ai-ml-pipeline,dd-akka-ws-server,dd-apostille-services-server,dd-bastion,"
         "dd-airbyte-postgresql,dd-billing-server,dd-browser-job-runner,dd-browser-test-server,dd-build-server,"
@@ -51,7 +51,17 @@ data:
         "dd-ws-loadtest-rs-dart,dd-ws-loadtest-rs-fsharp-rx,dd-ws-loadtest-rs-gcs,"
         "dd-ws-loadtest-rs-go-wss,dd-ws-loadtest-rs-rust-wss,gcs,gcs-kafka,"
         "gcs-mongodb,gcs-rabbitmq,gcs-router,headlamp,minio,presence,reloader,"
-        "spark,spark-master,spark-worker,airflow"
+        "spark,spark-master,spark-worker,airflow,benefactor-backend-rs,dd-agent-sim-server,"
+        "dd-ai-agent-bridge,dd-akrion-web-server-rs,dd-alertmanager,dd-benefactor-marketing-rs,"
+        "dd-canonical-cloud,dd-chaos,dd-constraint-scheduler,dd-data-viz-rs,dd-dataset-labeling,"
+        "dd-document-rs,dd-email-sms-contact-rs,dd-embeddings-rs,dd-evolution-optimizer-island,"
+        "dd-evolution-optimizer-master,dd-fiducia-rs,dd-func-approx-rs,dd-git-rs,dd-gpu-rs,"
+        "dd-image-builder,dd-knowledge-graph-builder,dd-monte-carlo-server,dd-next-1-js,dd-ocr-rs,"
+        "dd-quantum-compute-rs,dd-raft-consensus,dd-route-optimizer,dd-routing-server-master,"
+        "dd-routing-server-worker,dd-sat-smt-server,dd-soccer-rs,dd-sonus-auris-site,"
+        "fiducia-admin,fiducia-auth,fiducia-backend,fiducia-brain,fiducia-load-balance,fiducia-node,"
+        "fiducia-otel-agent,threefa-sync-server,tor-client,tor-relay-a,tor-relay-b,tor-relay-c,"
+        "usacc-rest-api-backend-rs"
     )
     WATCH_NAMESPACES = [v.strip() for v in os.environ.get("WATCH_NAMESPACES", DEFAULT_WATCH_NAMESPACES).split(",") if v.strip()]
     WATCH_APPS = set(v.strip() for v in os.environ.get("WATCH_APPS", DEFAULT_WATCH_APPS).split(",") if v.strip())

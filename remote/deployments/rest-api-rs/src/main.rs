@@ -2571,6 +2571,9 @@ fn normalize_lambda_runtime_alias(input: &str) -> Option<&'static str> {
         "erlang" | "erl" => Some("erlang"),
         "elixir" | "ex" => Some("elixir"),
         "java" | "jvm" => Some("java"),
+        "browser" | "playwright" | "puppeteer" | "chromium" | "headless" | "scraper" => {
+            Some("browser")
+        }
         _ => None,
     }
 }
@@ -2580,7 +2583,7 @@ fn validate_lambda_runtime(input: Option<&str>) -> Result<String, String> {
     normalize_lambda_runtime_alias(value)
         .map(ToString::to_string)
         .ok_or_else(|| {
-            "runtime must be one of nodejs, python3, ruby, bash, golang, dart, erlang, elixir, or java"
+            "runtime must be one of nodejs, python3, ruby, bash, golang, dart, erlang, elixir, java, or browser (Playwright/Puppeteer)"
                 .to_string()
         })
 }
@@ -3791,6 +3794,9 @@ fn lambda_entry_command_for_runtime(runtime: &str) -> String {
                 "env -i PATH=\"$PATH\" LAMBDA_TARGET_RUNTIME=\"{runtime}\" NODE_NO_WARNINGS=1 node child-runtimes/polyglot-function-runner.mjs"
             );
         }
+        "browser" => {
+            "env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node child-runtimes/browser-function-runner.mjs"
+        }
         _ => {
             "env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs"
         }
@@ -3801,6 +3807,7 @@ fn lambda_entry_command_for_runtime(runtime: &str) -> String {
 fn managed_lambda_entry_command(value: &str) -> bool {
     [
         "nodejs", "python3", "ruby", "bash", "golang", "dart", "erlang", "elixir", "java",
+        "browser",
     ]
     .iter()
     .map(|runtime| lambda_entry_command_for_runtime(runtime))
@@ -4169,6 +4176,7 @@ fn lambda_runner_source(runtime: &str) -> (&'static str, &'static str) {
         "golang" | "dart" | "erlang" | "elixir" | "java" => {
             ("polyglot-function-runner.mjs", "runner.mjs")
         }
+        "browser" => ("browser-function-runner.mjs", "runner.mjs"),
         _ => ("js-function-runner.mjs", "runner.mjs"),
     }
 }
@@ -4287,6 +4295,18 @@ ENTRYPOINT ["node", "--permission", "--allow-net", "--allow-child-process", "/op
   nodejs-current"#,
               r#"RUN addgroup -S lambda && adduser -S -G lambda -u 10001 lambda"#,
               &label,
+          ),
+          "browser" => format!(
+              r#"FROM docker.io/library/dd-lambda-browser-runtime:dev
+USER root
+WORKDIR /opt/dd-lambda
+COPY runner.mjs ./runner.mjs
+COPY definition.json ./definition.json
+{label}
+RUN chown 10001:10001 /opt/dd-lambda/runner.mjs /opt/dd-lambda/definition.json
+USER 10001:10001
+ENTRYPOINT ["node", "/opt/dd-lambda/runner.mjs"]
+"#
           ),
           _ => format!(
               r#"FROM docker.io/library/alpine:edge

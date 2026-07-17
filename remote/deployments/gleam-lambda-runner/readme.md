@@ -51,10 +51,39 @@ The Rust REST API is responsible for CRUD/read models over Postgres. Invocation 
  directly through the load balancer/gateway to this Gleam service. The BEAM runner loads the active
  function definition from Postgres by immutable function UUID, then maps the function runtime to a
  reusable worker actor. The managed host runtime is `nodejs`; `python3`, `ruby`, `bash`, `golang`,
- `dart`, `erlang`, `elixir`, and `java` are supported as managed container runtimes. Legacy
+ `dart`, `erlang`, `elixir`, `java`, and `browser` are supported as managed container runtimes. Legacy
  `javascript`, `typescript`, `python`, `shell`, `go`, `erl`, `ex`, and `jvm` values normalize to
- those runtime pools. Each child receives the definition over stdio, so it does not need database
- credentials or `psql`.
+ those runtime pools, and `playwright`, `puppeteer`, `chromium`, `headless`, `scraper`, and `scraping`
+ all normalize to the `browser` runtime. Each child receives the definition over stdio, so it does not
+ need database credentials or `psql`.
+
+### Browser runtime (Playwright + Puppeteer)
+
+The `browser` runtime runs a real headless Chromium for scraping, screenshotting, PDF rendering, and
+end-to-end checks. Both **Playwright and Puppeteer are first-class** runtime values and use their native
+Page API through `context.page` / `context.newPage()`. The default engine is set by
+`LAMBDA_BROWSER_ENGINE` (`playwright` | `puppeteer`) and can be overridden per definition via
+`browserEngine`. Because the parent keeps the child process warm, the browser launched on the first
+invoke stays hot for later ones, while each invoke gets an isolated context so cookies/storage never
+leak between lambdas. Raw browser/library launch handles are deliberately not exposed to function code.
+
+Unlike the code runtimes, the browser child does **not** run under `node --permission` because Chromium
+needs the filesystem, child processes, and shared memory. Function bodies still run in a VM context
+without `process`, `Buffer`, dynamic import, or string/wasm code generation. The primary isolation
+boundary is the hardened container: non-root (`10001:10001`), read-only rootfs, all
+capabilities dropped, `no-new-privileges`, with a browser-shaped resource profile (executable tmpfs,
+`--shm-size`, higher `--pids-limit`, more memory — all env-tunable via `LAMBDA_BROWSER_CONTAINER_*`).
+Host execution is therefore off by default: `browser` is containerized-by-default and only runs on the
+host node if an operator explicitly adds it to `LAMBDA_ALLOW_HOST_RUNTIMES` (opt-in, dev only).
+
+**Responsible-scraping defaults are built in** (see AGENTS.md → "Web scraping (Playwright/Puppeteer)").
+`context.scraping` provides `isAllowed(url)` / `assertAllowed(url)` (standards-aware, cached) and
+`politeGoto(page, url)`, which checks robots.txt and applies a serialized per-origin minimum delay
+(`LAMBDA_SCRAPING_MIN_DELAY_MS`, default 1s) before navigating. A conservative identifying User-Agent
+(`LAMBDA_SCRAPING_USER_AGENT`) is set on every context. Browser requests and robots redirects reject
+credentials, local/private addresses, and DNS names that resolve privately. Robots/network failures
+fail closed. A function can pass `respectRobots: false` only when an operator has also set
+`LAMBDA_SCRAPING_ALLOW_ROBOTS_OVERRIDE=true`, for a site the operator owns or is authorized to crawl.
 `POST /check` uses the same runtime mapping and host/container policy as invocation: containerized
 definitions are checked inside their managed runtime image, while host checks are limited by
 `LAMBDA_ALLOW_HOST_RUNTIMES`.
@@ -212,6 +241,7 @@ nerdctl -n dd-lambda build -f remote/deployments/gleam-lambda-runner/runtime-ima
 nerdctl -n dd-lambda build -f remote/deployments/gleam-lambda-runner/runtime-images/erlang.Dockerfile -t docker.io/library/dd-lambda-erlang-runtime:dev remote/deployments/gleam-lambda-runner
 nerdctl -n dd-lambda build -f remote/deployments/gleam-lambda-runner/runtime-images/elixir.Dockerfile -t docker.io/library/dd-lambda-elixir-runtime:dev remote/deployments/gleam-lambda-runner
 nerdctl -n dd-lambda build -f remote/deployments/gleam-lambda-runner/runtime-images/java.Dockerfile -t docker.io/library/dd-lambda-java-runtime:dev remote/deployments/gleam-lambda-runner
+nerdctl -n dd-lambda build -f remote/deployments/gleam-lambda-runner/runtime-images/browser.Dockerfile -t docker.io/library/dd-lambda-browser-runtime:dev remote/deployments/gleam-lambda-runner
 ```
 
 When the REST API has `LAMBDA_IMAGE_BUILD_ENABLED=true`, saving a containerized function also writes
