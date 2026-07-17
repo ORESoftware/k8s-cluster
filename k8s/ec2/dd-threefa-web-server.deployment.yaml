@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-threefa-web-server
+  namespace: default
+  labels:
+    app: dd-threefa-web-server
+spec:
+  replicas: 1
+  # Zero-surge rollout: the single-node EC2 cluster cannot host two replicas
+  # during a rolling deploy (same shape as dd-billing-server).
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: dd-threefa-web-server
+  template:
+    metadata:
+      labels:
+        app: dd-threefa-web-server
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: threefa-web-server
+          image: docker.io/library/rust:1.95-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              cd /opt/dd-next-1/remote/deployments/threefa-web-server-rs
+              if [ ! -x target/release/threefa-web-server ]; then
+                cargo build --release
+              fi
+              exec target/release/threefa-web-server
+          env:
+            - name: PORT
+              value: '8080'
+          # SUPABASE_URL / SUPABASE_ANON_KEY / SERVER_SECRET come from an
+          # optional secret so the pod still boots (with login disabled)
+          # before the secret exists.
+          envFrom:
+            - secretRef:
+                name: dd-threefa-web-server-env
+                optional: true
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
