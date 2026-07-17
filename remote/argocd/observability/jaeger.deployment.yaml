@@ -30,6 +30,19 @@ spec:
           env:
             - name: COLLECTOR_OTLP_ENABLED
               value: "true"
+            # Jaeger all-in-one uses in-memory storage. With no bound it
+            # accumulates traces until the pod exhausts its 1Gi limit and
+            # goes unresponsive on the Query API (16686) while still
+            # accepting OTLP grpc connections — which then stall the
+            # otel-collector's otlp/jaeger sending queue (observed:
+            # queue_size pinned at capacity 1000, enqueue_failed_spans
+            # rate ~7.7/s, send_failed_spans ~9.5k accumulated, while
+            # otlp/tempo on the same pipeline dropped zero). Cap the
+            # in-memory trace ring so old traces evict instead of pinning
+            # memory. 50k traces fits comfortably under the 1Gi limit for
+            # typical span sizes here.
+            - name: MEMORY_MAX_TRACES
+              value: "50000"
           ports:
             - name: query
               containerPort: 16686
