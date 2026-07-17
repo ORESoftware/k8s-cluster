@@ -1,9 +1,10 @@
 use chrono::Utc;
-use sqlx::{PgPool, Row};
+use sea_orm::{ConnectionTrait, DatabaseConnection};
 use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
 
+use crate::db::{decode_enum, require_row, stmt};
 use crate::error::AppResult;
 
 use super::handler::{HandlerRegistry, JobContext};
@@ -13,14 +14,14 @@ use super::types::ScheduleKind;
 /// The dispatcher loop. Spawn this once per pod; PG-level SKIP LOCKED makes
 /// running N pods safe — each due job is claimed exactly once per tick.
 pub struct SchedulerRunner {
-    pool: PgPool,
+    pool: DatabaseConnection,
     handlers: HandlerRegistry,
     worker_id: String,
     poll_interval: Duration,
 }
 
 impl SchedulerRunner {
-    pub fn new(pool: PgPool, handlers: HandlerRegistry) -> Self {
+    pub fn new(pool: DatabaseConnection, handlers: HandlerRegistry) -> Self {
         let worker_id = format!(
             "{}-{}",
             std::env::var("HOSTNAME").unwrap_or_else(|_| "local".into()),
@@ -34,6 +35,7 @@ impl SchedulerRunner {
         }
     }
 
+    #[allow(dead_code)]
     pub fn with_poll_interval(mut self, d: Duration) -> Self {
         self.poll_interval = d;
         self
@@ -60,11 +62,21 @@ impl SchedulerRunner {
     }
 
     /// One sweep: claim up to N due jobs, run each, advance schedules.
+    ///
+    /// Raw SQL (SeaORM Statement) on purpose: the claim is a single writable
+    /// CTE — `SELECT ... FOR UPDATE SKIP LOCKED` feeding an `UPDATE ... FROM`
+    /// with per-row interval arithmetic — which the entity API (even with
+    /// `lock_with_behavior`) cannot express as one atomic statement.
+    /// Splitting it into an entity select + update would need an explicit
+    /// transaction to keep the row locks, so the proven statement is kept
+    /// verbatim (only `schedule_kind` gains a `::TEXT` cast for decoding).
     pub async fn tick(&self) -> AppResult<usize> {
         let batch_size: i64 = 32;
 
-        let claims = sqlx::query(
-            r#"
+        let claims = self
+            .pool
+            .query_all(stmt(
+                r#"
             WITH due AS (
                 SELECT id
                 FROM scheduled_jobs
@@ -79,31 +91,31 @@ impl SchedulerRunner {
             FROM due
             WHERE sj.id = due.id
             RETURNING sj.id, sj.tenant_id, sj.kind, sj.name, sj.payload,
-                      sj.schedule_kind,
+                      sj.schedule_kind::TEXT AS schedule_kind,
                       sj.cron_expr, sj.interval_seconds, sj.one_shot_at,
                       sj.timezone, sj.max_attempts, sj.retry_backoff_secs,
                       sj.timeout_seconds
             "#,
-        )
-        .bind(batch_size)
-        .fetch_all(&self.pool)
-        .await?;
+                [batch_size.into()],
+            ))
+            .await?;
 
         let n = claims.len();
         for row in claims {
-            let job_id: Uuid = row.try_get("id")?;
-            let tenant_id: Option<Uuid> = row.try_get("tenant_id")?;
-            let kind: String = row.try_get("kind")?;
-            let name: String = row.try_get("name")?;
-            let payload: serde_json::Value = row.try_get("payload")?;
-            let max_attempts: i32 = row.try_get("max_attempts")?;
-            let retry_backoff_secs: i32 = row.try_get("retry_backoff_secs")?;
-            let sched_kind: ScheduleKind = row.try_get("schedule_kind")?;
-            let cron_expr: Option<String> = row.try_get("cron_expr")?;
-            let interval_seconds: Option<i32> = row.try_get("interval_seconds")?;
-            let one_shot_at: Option<chrono::DateTime<Utc>> = row.try_get("one_shot_at")?;
-            let timezone: String = row.try_get("timezone")?;
-            let timeout_seconds: i32 = row.try_get("timeout_seconds")?;
+            let job_id: Uuid = row.try_get("", "id")?;
+            let tenant_id: Option<Uuid> = row.try_get("", "tenant_id")?;
+            let kind: String = row.try_get("", "kind")?;
+            let name: String = row.try_get("", "name")?;
+            let payload: serde_json::Value = row.try_get("", "payload")?;
+            let max_attempts: i32 = row.try_get("", "max_attempts")?;
+            let retry_backoff_secs: i32 = row.try_get("", "retry_backoff_secs")?;
+            let sched_kind_label: String = row.try_get("", "schedule_kind")?;
+            let sched_kind: ScheduleKind = decode_enum("schedule_kind", &sched_kind_label)?;
+            let cron_expr: Option<String> = row.try_get("", "cron_expr")?;
+            let interval_seconds: Option<i32> = row.try_get("", "interval_seconds")?;
+            let one_shot_at: Option<chrono::DateTime<Utc>> = row.try_get("", "one_shot_at")?;
+            let timezone: String = row.try_get("", "timezone")?;
+            let timeout_seconds: i32 = row.try_get("", "timeout_seconds")?;
 
             self.dispatch_one(
                 job_id,
@@ -206,24 +218,24 @@ impl SchedulerRunner {
                 let next = next.unwrap_or_else(|_| Utc::now() + chrono::Duration::minutes(5));
 
                 if sched_kind == ScheduleKind::OneShot {
-                    let _ = sqlx::query(
-                        r#"UPDATE scheduled_jobs
+                    let _ = self
+                        .pool
+                        .execute(stmt(
+                            r#"UPDATE scheduled_jobs
                            SET enabled = false, next_run_at = $2, updated_at = now()
                            WHERE id = $1"#,
-                    )
-                    .bind(job_id)
-                    .bind(next)
-                    .execute(&self.pool)
-                    .await;
+                            [job_id.into(), next.into()],
+                        ))
+                        .await;
                 } else {
-                    let _ = sqlx::query(
-                        r#"UPDATE scheduled_jobs SET next_run_at = $2, updated_at = now()
+                    let _ = self
+                        .pool
+                        .execute(stmt(
+                            r#"UPDATE scheduled_jobs SET next_run_at = $2, updated_at = now()
                            WHERE id = $1"#,
-                    )
-                    .bind(job_id)
-                    .bind(next)
-                    .execute(&self.pool)
-                    .await;
+                            [job_id.into(), next.into()],
+                        ))
+                        .await;
                 }
             }
             Err(e) => {
@@ -243,27 +255,27 @@ impl SchedulerRunner {
                         Utc::now(),
                     );
                     let next = next.unwrap_or_else(|_| Utc::now() + chrono::Duration::hours(1));
-                    let _ = sqlx::query(
-                        r#"UPDATE scheduled_jobs SET next_run_at = $2, updated_at = now()
+                    let _ = self
+                        .pool
+                        .execute(stmt(
+                            r#"UPDATE scheduled_jobs SET next_run_at = $2, updated_at = now()
                            WHERE id = $1"#,
-                    )
-                    .bind(job_id)
-                    .bind(next)
-                    .execute(&self.pool)
-                    .await;
+                            [job_id.into(), next.into()],
+                        ))
+                        .await;
                 } else {
                     let backoff = e
                         .retry_after_seconds()
                         .unwrap_or_else(|| exponential_backoff(retry_backoff_secs, attempt) as i64);
                     let retry_at = Utc::now() + chrono::Duration::seconds(backoff as i64);
-                    let _ = sqlx::query(
-                        r#"UPDATE scheduled_jobs SET next_run_at = $2, updated_at = now()
+                    let _ = self
+                        .pool
+                        .execute(stmt(
+                            r#"UPDATE scheduled_jobs SET next_run_at = $2, updated_at = now()
                            WHERE id = $1"#,
-                    )
-                    .bind(job_id)
-                    .bind(retry_at)
-                    .execute(&self.pool)
-                    .await;
+                            [job_id.into(), retry_at.into()],
+                        ))
+                        .await;
                 }
             }
         }
@@ -271,8 +283,10 @@ impl SchedulerRunner {
 
     async fn next_attempt(&self, job_id: Uuid) -> AppResult<i32> {
         // attempt = (consecutive failed runs since last success) + 1
-        let row = sqlx::query(
-            r#"
+        let row = require_row(
+            self.pool
+                .query_one(stmt(
+                    r#"
             WITH last_success AS (
                 SELECT MAX(scheduled_for) AS ts
                 FROM job_runs WHERE job_id = $1 AND status = 'succeeded'
@@ -283,11 +297,11 @@ impl SchedulerRunner {
               AND r.status = 'failed'
               AND (ls.ts IS NULL OR r.scheduled_for > ls.ts)
             "#,
-        )
-        .bind(job_id)
-        .fetch_one(&self.pool)
-        .await?;
-        let fails: i32 = row.try_get("fails")?;
+                    [job_id.into()],
+                ))
+                .await?,
+        )?;
+        let fails: i32 = row.try_get("", "fails")?;
         Ok(fails + 1)
     }
 
@@ -299,23 +313,28 @@ impl SchedulerRunner {
         scheduled_for: chrono::DateTime<Utc>,
         idem: &str,
     ) -> AppResult<i64> {
-        let id: i64 = sqlx::query_scalar(
-            r#"
+        let row = require_row(
+            self.pool
+                .query_one(stmt(
+                    r#"
             INSERT INTO job_runs
                 (job_id, tenant_id, attempt, status, scheduled_for,
                  claimed_at, claimed_by, idempotency_key)
             VALUES ($1, $2, $3, 'claimed'::job_run_status, $4, now(), $5, $6)
             RETURNING id
             "#,
-        )
-        .bind(job_id)
-        .bind(tenant_id)
-        .bind(attempt)
-        .bind(scheduled_for)
-        .bind(&self.worker_id)
-        .bind(idem)
-        .fetch_one(&self.pool)
-        .await?;
+                    [
+                        job_id.into(),
+                        tenant_id.into(),
+                        attempt.into(),
+                        scheduled_for.into(),
+                        self.worker_id.clone().into(),
+                        idem.into(),
+                    ],
+                ))
+                .await?,
+        )?;
+        let id: i64 = row.try_get("", "id")?;
         Ok(id)
     }
 
@@ -325,8 +344,9 @@ impl SchedulerRunner {
         duration_ms: i32,
         out: &super::handler::JobOutput,
     ) -> AppResult<()> {
-        sqlx::query(
-            r#"
+        self.pool
+            .execute(stmt(
+                r#"
             UPDATE job_runs
             SET status = 'succeeded'::job_run_status,
                 finished_at = now(),
@@ -334,18 +354,22 @@ impl SchedulerRunner {
                 output = $3
             WHERE id = $1
             "#,
-        )
-        .bind(run_id)
-        .bind(duration_ms)
-        .bind(serde_json::to_value(out).unwrap_or(serde_json::Value::Null))
-        .execute(&self.pool)
-        .await?;
+                [
+                    run_id.into(),
+                    duration_ms.into(),
+                    serde_json::to_value(out)
+                        .unwrap_or(serde_json::Value::Null)
+                        .into(),
+                ],
+            ))
+            .await?;
         Ok(())
     }
 
     async fn mark_run_failed(&self, run_id: i64, duration_ms: i32, error: &str) -> AppResult<()> {
-        sqlx::query(
-            r#"
+        self.pool
+            .execute(stmt(
+                r#"
             UPDATE job_runs
             SET status = 'failed'::job_run_status,
                 finished_at = now(),
@@ -353,12 +377,9 @@ impl SchedulerRunner {
                 error = $3
             WHERE id = $1
             "#,
-        )
-        .bind(run_id)
-        .bind(duration_ms)
-        .bind(error)
-        .execute(&self.pool)
-        .await?;
+                [run_id.into(), duration_ms.into(), error.into()],
+            ))
+            .await?;
         Ok(())
     }
 
@@ -370,28 +391,30 @@ impl SchedulerRunner {
         final_attempt: i32,
         error: &str,
     ) -> AppResult<()> {
-        sqlx::query(
-            r#"
+        self.pool
+            .execute(stmt(
+                r#"
             INSERT INTO dead_letter_jobs
                 (job_id, tenant_id, last_run_id, final_attempt, error)
             VALUES ($1, $2, $3, $4, $5)
             "#,
-        )
-        .bind(job_id)
-        .bind(tenant_id)
-        .bind(last_run_id)
-        .bind(final_attempt)
-        .bind(error)
-        .execute(&self.pool)
-        .await?;
+                [
+                    job_id.into(),
+                    tenant_id.into(),
+                    last_run_id.into(),
+                    final_attempt.into(),
+                    error.into(),
+                ],
+            ))
+            .await?;
 
         // Mark the run row as dead-lettered for clear status semantics.
-        sqlx::query(
-            r#"UPDATE job_runs SET status = 'dead_lettered'::job_run_status WHERE id = $1"#,
-        )
-        .bind(last_run_id)
-        .execute(&self.pool)
-        .await?;
+        self.pool
+            .execute(stmt(
+                r#"UPDATE job_runs SET status = 'dead_lettered'::job_run_status WHERE id = $1"#,
+                [last_run_id.into()],
+            ))
+            .await?;
         Ok(())
     }
 }

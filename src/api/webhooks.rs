@@ -15,6 +15,8 @@ use serde::Serialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
+use sea_orm::ConnectionTrait;
+
 use crate::error::{AppError, AppResult};
 use crate::providers::connection::ProviderConnection;
 use crate::providers::{
@@ -275,8 +277,13 @@ async fn record_event(
     let payload_sealed =
         serde_json::to_value(&sealed).map_err(|e| AppError::Other(anyhow::anyhow!(e)))?;
 
-    sqlx::query(
-        r#"
+    // Raw SQL (SeaORM Statement): merge-style upsert whose DO UPDATE arm
+    // mixes OR / COALESCE / CASE over EXCLUDED plus `received_at = now()` —
+    // kept verbatim from the sqlx original.
+    state
+        .pool
+        .execute(crate::db::stmt(
+            r#"
         INSERT INTO webhook_events
             (provider, external_event_id, event_type, payload_sealed, signature_ok,
              tenant_id, connection_id, payload_sha256, verification_error,
@@ -295,19 +302,20 @@ async fn record_event(
             external_account_id = COALESCE(webhook_events.external_account_id, EXCLUDED.external_account_id),
             received_at = now()
         "#,
-    )
-    .bind(provider.tag())
-    .bind(&external_event_id)
-    .bind(&event_type)
-    .bind(&payload_sealed)
-    .bind(signature_ok)
-    .bind(tenant_id)
-    .bind(connection_id)
-    .bind(&payload_sha256)
-    .bind(&verification_error)
-    .bind(&external_account_id)
-    .execute(&state.pool)
-    .await?;
+            [
+                provider.tag().into(),
+                external_event_id.clone().into(),
+                event_type.clone().into(),
+                payload_sealed.clone().into(),
+                signature_ok.into(),
+                tenant_id.into(),
+                connection_id.into(),
+                payload_sha256.clone().into(),
+                verification_error.clone().into(),
+                external_account_id.clone().into(),
+            ],
+        ))
+        .await?;
 
     if state.cfg.require_webhook_signatures {
         if !signature_ok {

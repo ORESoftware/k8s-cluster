@@ -6,11 +6,16 @@
 //! `Credential` struct).
 
 use chrono::{DateTime, Utc};
+use sea_orm::{
+    ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
+    QueryResult,
+};
 use serde::{Deserialize, Serialize};
-use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::crypto::{SealedEnvelope, Sealer};
+use crate::db::{decode_enum, require_row, stmt};
+use crate::entity::provider_connections;
 use crate::error::{AppError, AppResult};
 use crate::shard::{Region, ShardKey};
 
@@ -62,14 +67,14 @@ pub struct CreateConnection {
 
 #[derive(Clone)]
 pub struct ConnectionService {
-    pool: PgPool,
+    pool: DatabaseConnection,
     sealer: std::sync::Arc<Sealer>,
     events: std::sync::Arc<crate::events::EventBus>,
 }
 
 impl ConnectionService {
     pub fn new(
-        pool: PgPool,
+        pool: DatabaseConnection,
         sealer: std::sync::Arc<Sealer>,
         events: std::sync::Arc<crate::events::EventBus>,
     ) -> Self {
@@ -90,30 +95,37 @@ impl ConnectionService {
         let shard = ShardKey::derive(tenant_id, region).0;
         let auth_kind = input.provider.auth_kind();
 
-        let row = sqlx::query(
-            r#"
+        // Raw SQL (SeaORM Statement): INSERT with the `'pending'` enum
+        // literal; the RETURNING enum columns gain `::TEXT` casts for
+        // decoding (labels unchanged).
+        let row = require_row(
+            self.pool
+                .query_one(stmt(
+                    r#"
             INSERT INTO provider_connections
                 (tenant_id, shard_key, provider, auth_kind, external_account_id,
                  display_label, status, metadata)
             VALUES ($1, $2, $3::provider_kind, $4::provider_auth_kind, $5, $6,
                     'pending'::connection_status, $7)
-            RETURNING id, tenant_id, provider,
-                      auth_kind,
+            RETURNING id, tenant_id, provider::TEXT AS provider,
+                      auth_kind::TEXT AS auth_kind,
                       external_account_id, display_label,
-                      status, scopes,
+                      status::TEXT AS status, scopes,
                       expires_at, refreshed_at, last_sync_at, last_sync_cursor, last_error,
                       metadata, created_at
             "#,
-        )
-        .bind(tenant_id)
-        .bind(shard)
-        .bind(input.provider.tag())
-        .bind(auth_kind_tag(auth_kind))
-        .bind(&input.external_account_id)
-        .bind(&input.display_label)
-        .bind(&input.metadata)
-        .fetch_one(&self.pool)
-        .await?;
+                    [
+                        tenant_id.into(),
+                        shard.into(),
+                        input.provider.tag().into(),
+                        auth_kind_tag(auth_kind).into(),
+                        input.external_account_id.clone().into(),
+                        input.display_label.clone().into(),
+                        input.metadata.clone().into(),
+                    ],
+                ))
+                .await?,
+        )?;
 
         let conn = row_to_connection(&row)?;
         self.events
@@ -130,16 +142,20 @@ impl ConnectionService {
         connection_id: Uuid,
         cred: UpsertCredential,
     ) -> AppResult<ProviderConnection> {
-        let provider: ProviderKind = sqlx::query_scalar::<_, ProviderKind>(
-            r#"SELECT provider
+        let provider: ProviderKind = {
+            let row = self
+                .pool
+                .query_one(stmt(
+                    r#"SELECT provider::TEXT AS provider
                FROM provider_connections
                WHERE id = $1 AND tenant_id = $2"#,
-        )
-        .bind(connection_id)
-        .bind(tenant_id)
-        .fetch_optional(&self.pool)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("connection {connection_id}")))?;
+                    [connection_id.into(), tenant_id.into()],
+                ))
+                .await?
+                .ok_or_else(|| AppError::NotFound(format!("connection {connection_id}")))?;
+            let label: String = row.try_get("", "provider")?;
+            decode_enum("provider", &label)?
+        };
 
         let envelope = self
             .sealer
@@ -147,8 +163,10 @@ impl ConnectionService {
         let sealed_json =
             serde_json::to_value(&envelope).map_err(|e| AppError::Other(anyhow::anyhow!(e)))?;
 
-        let row = sqlx::query(
-            r#"
+        let row = require_row(
+            self.pool
+                .query_one(stmt(
+                    r#"
             UPDATE provider_connections
             SET sealed_credential = $3,
                 scopes            = $4,
@@ -158,21 +176,23 @@ impl ConnectionService {
                 last_error        = NULL,
                 updated_at        = now()
             WHERE id = $1 AND tenant_id = $2
-            RETURNING id, tenant_id, provider,
-                      auth_kind,
+            RETURNING id, tenant_id, provider::TEXT AS provider,
+                      auth_kind::TEXT AS auth_kind,
                       external_account_id, display_label,
-                      status, scopes,
+                      status::TEXT AS status, scopes,
                       expires_at, refreshed_at, last_sync_at, last_sync_cursor, last_error,
                       metadata, created_at
             "#,
-        )
-        .bind(connection_id)
-        .bind(tenant_id)
-        .bind(&sealed_json)
-        .bind(&cred.scopes)
-        .bind(cred.expires_at)
-        .fetch_one(&self.pool)
-        .await?;
+                    [
+                        connection_id.into(),
+                        tenant_id.into(),
+                        sealed_json.into(),
+                        cred.scopes.clone().into(),
+                        cred.expires_at.into(),
+                    ],
+                ))
+                .await?,
+        )?;
 
         let conn = row_to_connection(&row)?;
         self.events
@@ -188,22 +208,23 @@ impl ConnectionService {
         tenant_id: Uuid,
         connection_id: Uuid,
     ) -> AppResult<Vec<u8>> {
-        let row = sqlx::query(
-            r#"
-            SELECT provider, sealed_credential
+        let row = self
+            .pool
+            .query_one(stmt(
+                r#"
+            SELECT provider::TEXT AS provider, sealed_credential
             FROM provider_connections
             WHERE id = $1 AND tenant_id = $2
               AND status = 'active'::connection_status
             "#,
-        )
-        .bind(connection_id)
-        .bind(tenant_id)
-        .fetch_optional(&self.pool)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("active connection {connection_id}")))?;
+                [connection_id.into(), tenant_id.into()],
+            ))
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("active connection {connection_id}")))?;
 
-        let provider: ProviderKind = row.try_get("provider")?;
-        let sealed_json: Option<serde_json::Value> = row.try_get("sealed_credential")?;
+        let provider_label: String = row.try_get("", "provider")?;
+        let provider: ProviderKind = decode_enum("provider", &provider_label)?;
+        let sealed_json: Option<serde_json::Value> = row.try_get("", "sealed_credential")?;
         let sealed_json = sealed_json
             .ok_or_else(|| AppError::BadRequest("connection has no credential".into()))?;
         let envelope: SealedEnvelope = serde_json::from_value(sealed_json)
@@ -214,10 +235,12 @@ impl ConnectionService {
 
     /// `(total, active, failing)` for the admin dashboard.
     pub async fn counts(&self, tenant_id: Option<Uuid>) -> AppResult<ConnectionCounts> {
+        // Raw SQL (SeaORM Statement): `COUNT(*) FILTER (WHERE ...)` aggregates.
         let row = match tenant_id {
-            Some(tid) => {
-                sqlx::query(
-                    r#"
+            Some(tid) => require_row(
+                self.pool
+                    .query_one(stmt(
+                        r#"
                     SELECT COUNT(*)                                              AS total,
                            COUNT(*) FILTER (WHERE status = 'active')             AS active,
                            COUNT(*) FILTER (WHERE status = 'token_refresh_failed'
@@ -225,51 +248,40 @@ impl ConnectionService {
                     FROM provider_connections
                     WHERE tenant_id = $1
                     "#,
-                )
-                .bind(tid)
-                .fetch_one(&self.pool)
-                .await?
-            }
-            None => {
-                sqlx::query(
-                    r#"
+                        [tid.into()],
+                    ))
+                    .await?,
+            )?,
+            None => require_row(
+                self.pool
+                    .query_one(stmt(
+                        r#"
                     SELECT COUNT(*)                                              AS total,
                            COUNT(*) FILTER (WHERE status = 'active')             AS active,
                            COUNT(*) FILTER (WHERE status = 'token_refresh_failed'
                                                   OR last_error IS NOT NULL)    AS failing
                     FROM provider_connections
                     "#,
-                )
-                .fetch_one(&self.pool)
-                .await?
-            }
+                        [],
+                    ))
+                    .await?,
+            )?,
         };
         Ok(ConnectionCounts {
-            total: row.try_get("total")?,
-            active: row.try_get("active")?,
-            failing: row.try_get("failing")?,
+            total: row.try_get("", "total")?,
+            active: row.try_get("", "active")?,
+            failing: row.try_get("", "failing")?,
         })
     }
 
     pub async fn list_for_tenant(&self, tenant_id: Uuid) -> AppResult<Vec<ProviderConnection>> {
-        let rows = sqlx::query(
-            r#"
-            SELECT id, tenant_id, provider,
-                   auth_kind,
-                   external_account_id, display_label,
-                   status, scopes,
-                   expires_at, refreshed_at, last_sync_at, last_sync_cursor, last_error,
-                   metadata, created_at
-            FROM provider_connections
-            WHERE tenant_id = $1
-            ORDER BY created_at DESC
-            "#,
-        )
-        .bind(tenant_id)
-        .fetch_all(&self.pool)
-        .await?;
+        let models = provider_connections::Entity::find()
+            .filter(provider_connections::Column::TenantId.eq(tenant_id))
+            .order_by_desc(provider_connections::Column::CreatedAt)
+            .all(&self.pool)
+            .await?;
 
-        rows.iter().map(row_to_connection).collect()
+        models.into_iter().map(model_to_connection).collect()
     }
 
     /// Mark a connection as token-refresh-failed.
@@ -290,20 +302,18 @@ impl ConnectionService {
         connection_id: Uuid,
         error: &str,
     ) -> AppResult<()> {
-        sqlx::query(
-            r#"
+        self.pool
+            .execute(stmt(
+                r#"
             UPDATE provider_connections
             SET status = 'token_refresh_failed'::connection_status,
                 last_error = $3,
                 updated_at = now()
             WHERE id = $1 AND tenant_id = $2
             "#,
-        )
-        .bind(connection_id)
-        .bind(tenant_id)
-        .bind(error)
-        .execute(&self.pool)
-        .await?;
+                [connection_id.into(), tenant_id.into(), error.into()],
+            ))
+            .await?;
         Ok(())
     }
 
@@ -313,19 +323,17 @@ impl ConnectionService {
         connection_id: Uuid,
         error: &str,
     ) -> AppResult<()> {
-        sqlx::query(
-            r#"
+        self.pool
+            .execute(stmt(
+                r#"
             UPDATE provider_connections
             SET last_error = $3,
                 updated_at = now()
             WHERE id = $1 AND tenant_id = $2
             "#,
-        )
-        .bind(connection_id)
-        .bind(tenant_id)
-        .bind(error)
-        .execute(&self.pool)
-        .await?;
+                [connection_id.into(), tenant_id.into(), error.into()],
+            ))
+            .await?;
         Ok(())
     }
 
@@ -339,19 +347,18 @@ impl ConnectionService {
         connection_id: Uuid,
         patch: serde_json::Value,
     ) -> AppResult<()> {
-        sqlx::query(
-            r#"
+        // Raw SQL (SeaORM Statement): jsonb `||` shallow-merge.
+        self.pool
+            .execute(stmt(
+                r#"
             UPDATE provider_connections
             SET metadata = metadata || $3,
                 updated_at = now()
             WHERE id = $1 AND tenant_id = $2
             "#,
-        )
-        .bind(connection_id)
-        .bind(tenant_id)
-        .bind(&patch)
-        .execute(&self.pool)
-        .await?;
+                [connection_id.into(), tenant_id.into(), patch.into()],
+            ))
+            .await?;
         Ok(())
     }
 
@@ -367,19 +374,21 @@ impl ConnectionService {
         connection_id: Uuid,
         external_account_id: &str,
     ) -> AppResult<()> {
-        sqlx::query(
-            r#"
+        self.pool
+            .execute(stmt(
+                r#"
             UPDATE provider_connections
             SET external_account_id = $3,
                 updated_at = now()
             WHERE id = $1 AND tenant_id = $2
             "#,
-        )
-        .bind(connection_id)
-        .bind(tenant_id)
-        .bind(external_account_id)
-        .execute(&self.pool)
-        .await?;
+                [
+                    connection_id.into(),
+                    tenant_id.into(),
+                    external_account_id.into(),
+                ],
+            ))
+            .await?;
         Ok(())
     }
 
@@ -392,12 +401,16 @@ impl ConnectionService {
         tenant_id: Uuid,
         provider: ProviderKind,
     ) -> AppResult<Option<ProviderConnection>> {
-        let row = sqlx::query(
-            r#"
-            SELECT id, tenant_id, provider,
-                   auth_kind,
+        // Raw SQL (SeaORM Statement): `ORDER BY (status = 'pending') DESC`
+        // preference expression.
+        let row = self
+            .pool
+            .query_one(stmt(
+                r#"
+            SELECT id, tenant_id, provider::TEXT AS provider,
+                   auth_kind::TEXT AS auth_kind,
                    external_account_id, display_label,
-                   status, scopes,
+                   status::TEXT AS status, scopes,
                    expires_at, refreshed_at, last_sync_at, last_sync_cursor, last_error,
                    metadata, created_at
             FROM provider_connections
@@ -406,11 +419,9 @@ impl ConnectionService {
                      created_at DESC
             LIMIT 1
             "#,
-        )
-        .bind(tenant_id)
-        .bind(provider.tag())
-        .fetch_optional(&self.pool)
-        .await?;
+                [tenant_id.into(), provider.tag().into()],
+            ))
+            .await?;
         row.as_ref().map(row_to_connection).transpose()
     }
 
@@ -419,12 +430,14 @@ impl ConnectionService {
         provider: ProviderKind,
         external_account_id: &str,
     ) -> AppResult<Option<ProviderConnection>> {
-        let row = sqlx::query(
-            r#"
-            SELECT id, tenant_id, provider,
-                   auth_kind,
+        let row = self
+            .pool
+            .query_one(stmt(
+                r#"
+            SELECT id, tenant_id, provider::TEXT AS provider,
+                   auth_kind::TEXT AS auth_kind,
                    external_account_id, display_label,
-                   status, scopes,
+                   status::TEXT AS status, scopes,
                    expires_at, refreshed_at, last_sync_at, last_sync_cursor, last_error,
                    metadata, created_at
             FROM provider_connections
@@ -434,11 +447,9 @@ impl ConnectionService {
             ORDER BY updated_at DESC
             LIMIT 1
             "#,
-        )
-        .bind(provider.tag())
-        .bind(external_account_id)
-        .fetch_optional(&self.pool)
-        .await?;
+                [provider.tag().into(), external_account_id.into()],
+            ))
+            .await?;
         row.as_ref().map(row_to_connection).transpose()
     }
 
@@ -448,8 +459,9 @@ impl ConnectionService {
         connection_id: Uuid,
         next_cursor: Option<&str>,
     ) -> AppResult<()> {
-        sqlx::query(
-            r#"
+        self.pool
+            .execute(stmt(
+                r#"
             UPDATE provider_connections
             SET last_sync_at = now(),
                 last_sync_cursor = COALESCE($3, last_sync_cursor),
@@ -457,34 +469,20 @@ impl ConnectionService {
                 updated_at = now()
             WHERE id = $1 AND tenant_id = $2
             "#,
-        )
-        .bind(connection_id)
-        .bind(tenant_id)
-        .bind(next_cursor)
-        .execute(&self.pool)
-        .await?;
+                [connection_id.into(), tenant_id.into(), next_cursor.into()],
+            ))
+            .await?;
         Ok(())
     }
 
     pub async fn get(&self, tenant_id: Uuid, connection_id: Uuid) -> AppResult<ProviderConnection> {
-        let row = sqlx::query(
-            r#"
-            SELECT id, tenant_id, provider,
-                   auth_kind,
-                   external_account_id, display_label,
-                   status, scopes,
-                   expires_at, refreshed_at, last_sync_at, last_sync_cursor, last_error,
-                   metadata, created_at
-            FROM provider_connections
-            WHERE id = $1 AND tenant_id = $2
-            "#,
-        )
-        .bind(connection_id)
-        .bind(tenant_id)
-        .fetch_optional(&self.pool)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("connection {connection_id}")))?;
-        row_to_connection(&row)
+        let model = provider_connections::Entity::find()
+            .filter(provider_connections::Column::Id.eq(connection_id))
+            .filter(provider_connections::Column::TenantId.eq(tenant_id))
+            .one(&self.pool)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("connection {connection_id}")))?;
+        model_to_connection(model)
     }
 }
 
@@ -497,22 +495,45 @@ fn auth_kind_tag(k: ProviderAuthKind) -> &'static str {
     }
 }
 
-fn row_to_connection(row: &sqlx::postgres::PgRow) -> AppResult<ProviderConnection> {
+fn model_to_connection(m: provider_connections::Model) -> AppResult<ProviderConnection> {
     Ok(ProviderConnection {
-        id: row.try_get("id")?,
-        tenant_id: row.try_get("tenant_id")?,
-        provider: row.try_get("provider")?,
-        auth_kind: row.try_get("auth_kind")?,
-        external_account_id: row.try_get("external_account_id")?,
-        display_label: row.try_get("display_label")?,
-        status: row.try_get("status")?,
-        scopes: row.try_get("scopes")?,
-        expires_at: row.try_get("expires_at")?,
-        refreshed_at: row.try_get("refreshed_at")?,
-        last_sync_at: row.try_get("last_sync_at")?,
-        last_sync_cursor: row.try_get("last_sync_cursor")?,
-        last_error: row.try_get("last_error")?,
-        metadata: row.try_get("metadata")?,
-        created_at: row.try_get("created_at")?,
+        id: m.id,
+        tenant_id: m.tenant_id,
+        provider: decode_enum("provider", &m.provider)?,
+        auth_kind: decode_enum("auth_kind", &m.auth_kind)?,
+        external_account_id: m.external_account_id,
+        display_label: m.display_label,
+        status: decode_enum("status", &m.status)?,
+        scopes: m.scopes,
+        expires_at: m.expires_at.map(|t| t.with_timezone(&Utc)),
+        refreshed_at: m.refreshed_at.map(|t| t.with_timezone(&Utc)),
+        last_sync_at: m.last_sync_at.map(|t| t.with_timezone(&Utc)),
+        last_sync_cursor: m.last_sync_cursor,
+        last_error: m.last_error,
+        metadata: m.metadata,
+        created_at: m.created_at.with_timezone(&Utc),
+    })
+}
+
+fn row_to_connection(row: &QueryResult) -> AppResult<ProviderConnection> {
+    let provider_label: String = row.try_get("", "provider")?;
+    let auth_kind_label: String = row.try_get("", "auth_kind")?;
+    let status_label: String = row.try_get("", "status")?;
+    Ok(ProviderConnection {
+        id: row.try_get("", "id")?,
+        tenant_id: row.try_get("", "tenant_id")?,
+        provider: decode_enum("provider", &provider_label)?,
+        auth_kind: decode_enum("auth_kind", &auth_kind_label)?,
+        external_account_id: row.try_get("", "external_account_id")?,
+        display_label: row.try_get("", "display_label")?,
+        status: decode_enum("status", &status_label)?,
+        scopes: row.try_get("", "scopes")?,
+        expires_at: row.try_get("", "expires_at")?,
+        refreshed_at: row.try_get("", "refreshed_at")?,
+        last_sync_at: row.try_get("", "last_sync_at")?,
+        last_sync_cursor: row.try_get("", "last_sync_cursor")?,
+        last_error: row.try_get("", "last_error")?,
+        metadata: row.try_get("", "metadata")?,
+        created_at: row.try_get("", "created_at")?,
     })
 }

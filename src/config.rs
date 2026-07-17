@@ -6,8 +6,10 @@ pub const DEFAULT_STRIPE_API_VERSION: &str = "2026-04-22.dahlia";
 pub struct Config {
     pub host: String,
     pub port: u16,
+    /// Connection string for the service's OWN database (separate from the
+    /// shared pg-defs RDS contract). Schema changes are managed out-of-band
+    /// via `scripts/dpm.sh`; there is no boot-time migration switch.
     pub database_url: String,
-    pub run_migrations: bool,
 
     pub master_seal_key_b64: String,
 
@@ -155,9 +157,6 @@ impl Config {
             database_url: env::var("BILLING_DATABASE_URL")
                 .or_else(|_| env::var("DATABASE_URL"))
                 .map_err(|_| anyhow::anyhow!("BILLING_DATABASE_URL or DATABASE_URL must be set"))?,
-            run_migrations: env::var("BILLING_RUN_MIGRATIONS")
-                .map(|s| s != "0" && !s.eq_ignore_ascii_case("false"))
-                .unwrap_or(true),
 
             master_seal_key_b64: env::var("BILLING_MASTER_SEAL_KEY").map_err(|_| {
                 anyhow::anyhow!(
@@ -316,7 +315,6 @@ impl Config {
             host: "127.0.0.1".into(),
             port: 0,
             database_url: "postgres://test".into(),
-            run_migrations: false,
             master_seal_key_b64: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".into(),
             solana_rpc_url: "http://localhost".into(),
             solana_anchor_keypair_b58: None,

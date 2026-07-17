@@ -1,7 +1,12 @@
 use chrono::{DateTime, Utc};
-use sqlx::{PgPool, Row};
+use sea_orm::{
+    ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
+    QuerySelect,
+};
 use uuid::Uuid;
 
+use crate::db::{decode_enum, require_row, stmt};
+use crate::entity::{job_runs, scheduled_jobs};
 use crate::error::{AppError, AppResult};
 use crate::shard::{Region, ShardKey};
 
@@ -9,11 +14,11 @@ use super::types::*;
 
 #[derive(Clone)]
 pub struct SchedulerService {
-    pool: PgPool,
+    pool: DatabaseConnection,
 }
 
 impl SchedulerService {
-    pub fn new(pool: PgPool) -> Self {
+    pub fn new(pool: DatabaseConnection) -> Self {
         Self { pool }
     }
 
@@ -39,8 +44,16 @@ impl SchedulerService {
             Utc::now(),
         )?;
 
-        let row = sqlx::query(
-            r#"
+        // Raw SQL (SeaORM Statement): the DO UPDATE arm needs
+        // `LEAST(scheduled_jobs.next_run_at, EXCLUDED.next_run_at)` and
+        // `updated_at = now()`, which the entity OnConflict API cannot
+        // express. Only change from the sqlx original: `schedule_kind` in
+        // RETURNING gains a `::TEXT` cast (the driver cannot decode a
+        // custom enum OID into `String`).
+        let row = require_row(
+            self.pool
+                .query_one(stmt(
+                    r#"
             INSERT INTO scheduled_jobs
                 (tenant_id, shard_key, kind, name, schedule_kind, cron_expr,
                  interval_seconds, one_shot_at, timezone, payload, enabled,
@@ -60,130 +73,82 @@ impl SchedulerService {
                     next_run_at        = LEAST(scheduled_jobs.next_run_at, EXCLUDED.next_run_at),
                     updated_at         = now()
             RETURNING id, tenant_id, shard_key, kind, name,
-                      schedule_kind,
+                      schedule_kind::TEXT AS schedule_kind,
                       cron_expr, interval_seconds, one_shot_at, timezone,
                       payload, enabled, max_attempts, retry_backoff_secs,
                       timeout_seconds, next_run_at, last_run_at, created_at
             "#,
-        )
-        .bind(tenant_id)
-        .bind(shard)
-        .bind(&input.kind)
-        .bind(&input.name)
-        .bind(schedule_kind_tag(input.schedule_kind))
-        .bind(&input.cron_expr)
-        .bind(input.interval_seconds)
-        .bind(input.one_shot_at)
-        .bind(&input.timezone)
-        .bind(&input.payload)
-        .bind(input.enabled)
-        .bind(input.max_attempts)
-        .bind(input.retry_backoff_secs)
-        .bind(input.timeout_seconds)
-        .bind(next_run_at)
-        .fetch_one(&self.pool)
-        .await?;
+                    [
+                        tenant_id.into(),
+                        shard.into(),
+                        input.kind.clone().into(),
+                        input.name.clone().into(),
+                        schedule_kind_tag(input.schedule_kind).into(),
+                        input.cron_expr.clone().into(),
+                        input.interval_seconds.into(),
+                        input.one_shot_at.into(),
+                        input.timezone.clone().into(),
+                        input.payload.clone().into(),
+                        input.enabled.into(),
+                        input.max_attempts.into(),
+                        input.retry_backoff_secs.into(),
+                        input.timeout_seconds.into(),
+                        next_run_at.into(),
+                    ],
+                ))
+                .await?,
+        )?;
 
         row_to_job(&row)
     }
 
     pub async fn list(&self, tenant_id: Option<Uuid>) -> AppResult<Vec<ScheduledJob>> {
-        let rows = match tenant_id {
-            Some(tid) => {
-                sqlx::query(
-                    r#"
-                    SELECT id, tenant_id, shard_key, kind, name,
-                           schedule_kind,
-                           cron_expr, interval_seconds, one_shot_at, timezone,
-                           payload, enabled, max_attempts, retry_backoff_secs,
-                           timeout_seconds, next_run_at, last_run_at, created_at
-                    FROM scheduled_jobs
-                    WHERE tenant_id = $1
-                    ORDER BY kind, name
-                    "#,
-                )
-                .bind(tid)
-                .fetch_all(&self.pool)
-                .await?
-            }
-            None => {
-                sqlx::query(
-                    r#"
-                    SELECT id, tenant_id, shard_key, kind, name,
-                           schedule_kind,
-                           cron_expr, interval_seconds, one_shot_at, timezone,
-                           payload, enabled, max_attempts, retry_backoff_secs,
-                           timeout_seconds, next_run_at, last_run_at, created_at
-                    FROM scheduled_jobs
-                    ORDER BY kind, name
-                    "#,
-                )
-                .fetch_all(&self.pool)
-                .await?
-            }
-        };
+        let mut query = scheduled_jobs::Entity::find();
+        if let Some(tid) = tenant_id {
+            query = query.filter(scheduled_jobs::Column::TenantId.eq(tid));
+        }
+        let models = query
+            .order_by_asc(scheduled_jobs::Column::Kind)
+            .order_by_asc(scheduled_jobs::Column::Name)
+            .all(&self.pool)
+            .await?;
 
-        rows.iter().map(row_to_job).collect()
+        models.into_iter().map(model_to_job).collect()
     }
 
     /// Global lookup, only used by admin and the scheduler runner (which
     /// has already proven ownership via `job_runs.tenant_id`). API
     /// callers MUST go through [`Self::get_for_tenant`].
     pub async fn get(&self, id: Uuid) -> AppResult<ScheduledJob> {
-        let row = sqlx::query(
-            r#"
-            SELECT id, tenant_id, shard_key, kind, name,
-                   schedule_kind,
-                   cron_expr, interval_seconds, one_shot_at, timezone,
-                   payload, enabled, max_attempts, retry_backoff_secs,
-                   timeout_seconds, next_run_at, last_run_at, created_at
-            FROM scheduled_jobs WHERE id = $1
-            "#,
-        )
-        .bind(id)
-        .fetch_optional(&self.pool)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("scheduled_job {id}")))?;
-
-        row_to_job(&row)
+        let model = scheduled_jobs::Entity::find_by_id(id)
+            .one(&self.pool)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("scheduled_job {id}")))?;
+        model_to_job(model)
     }
 
     /// Tenant-scoped lookup. `tenant_id=NULL` jobs (system jobs) are
     /// not visible through this accessor — those are admin-only.
     /// Returns NotFound (not Forbidden) on cross-tenant access to
     /// avoid leaking whether a given job UUID exists.
-    pub async fn get_for_tenant(
-        &self,
-        tenant_id: Uuid,
-        id: Uuid,
-    ) -> AppResult<ScheduledJob> {
-        let row = sqlx::query(
-            r#"
-            SELECT id, tenant_id, shard_key, kind, name,
-                   schedule_kind,
-                   cron_expr, interval_seconds, one_shot_at, timezone,
-                   payload, enabled, max_attempts, retry_backoff_secs,
-                   timeout_seconds, next_run_at, last_run_at, created_at
-            FROM scheduled_jobs
-            WHERE id = $1 AND tenant_id = $2
-            "#,
-        )
-        .bind(id)
-        .bind(tenant_id)
-        .fetch_optional(&self.pool)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("scheduled_job {id}")))?;
-
-        row_to_job(&row)
+    pub async fn get_for_tenant(&self, tenant_id: Uuid, id: Uuid) -> AppResult<ScheduledJob> {
+        let model = scheduled_jobs::Entity::find()
+            .filter(scheduled_jobs::Column::Id.eq(id))
+            .filter(scheduled_jobs::Column::TenantId.eq(tenant_id))
+            .one(&self.pool)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("scheduled_job {id}")))?;
+        model_to_job(model)
     }
 
     /// Admin-only: unscoped enable/disable. API callers must use
     /// [`Self::set_enabled_for_tenant`].
     pub async fn set_enabled(&self, id: Uuid, enabled: bool) -> AppResult<()> {
-        sqlx::query(r#"UPDATE scheduled_jobs SET enabled = $2, updated_at = now() WHERE id = $1"#)
-            .bind(id)
-            .bind(enabled)
-            .execute(&self.pool)
+        self.pool
+            .execute(stmt(
+                r#"UPDATE scheduled_jobs SET enabled = $2, updated_at = now() WHERE id = $1"#,
+                [id.into(), enabled.into()],
+            ))
             .await?;
         Ok(())
     }
@@ -196,19 +161,18 @@ impl SchedulerService {
         id: Uuid,
         enabled: bool,
     ) -> AppResult<()> {
-        let n = sqlx::query(
-            r#"
+        let n = self
+            .pool
+            .execute(stmt(
+                r#"
             UPDATE scheduled_jobs
             SET enabled = $3, updated_at = now()
             WHERE id = $1 AND tenant_id = $2
             "#,
-        )
-        .bind(id)
-        .bind(tenant_id)
-        .bind(enabled)
-        .execute(&self.pool)
-        .await?
-        .rows_affected();
+                [id.into(), tenant_id.into(), enabled.into()],
+            ))
+            .await?
+            .rows_affected();
         if n == 0 {
             return Err(AppError::NotFound(format!("scheduled_job {id}")));
         }
@@ -256,33 +220,29 @@ impl SchedulerService {
     /// Force the next_run_at to "now" so the next dispatcher tick will
     /// pick it up. Admin/system path — bypasses tenant ownership.
     pub async fn run_now(&self, id: Uuid) -> AppResult<()> {
-        sqlx::query(
-            r#"UPDATE scheduled_jobs SET next_run_at = now(), updated_at = now() WHERE id = $1"#,
-        )
-        .bind(id)
-        .execute(&self.pool)
-        .await?;
+        self.pool
+            .execute(stmt(
+                r#"UPDATE scheduled_jobs SET next_run_at = now(), updated_at = now() WHERE id = $1"#,
+                [id.into()],
+            ))
+            .await?;
         Ok(())
     }
 
     /// Tenant-scoped variant of [`Self::run_now`].
-    pub async fn run_now_for_tenant(
-        &self,
-        tenant_id: Uuid,
-        id: Uuid,
-    ) -> AppResult<()> {
-        let n = sqlx::query(
-            r#"
+    pub async fn run_now_for_tenant(&self, tenant_id: Uuid, id: Uuid) -> AppResult<()> {
+        let n = self
+            .pool
+            .execute(stmt(
+                r#"
             UPDATE scheduled_jobs
             SET next_run_at = now(), updated_at = now()
             WHERE id = $1 AND tenant_id = $2
             "#,
-        )
-        .bind(id)
-        .bind(tenant_id)
-        .execute(&self.pool)
-        .await?
-        .rows_affected();
+                [id.into(), tenant_id.into()],
+            ))
+            .await?
+            .rows_affected();
         if n == 0 {
             return Err(AppError::NotFound(format!("scheduled_job {id}")));
         }
@@ -291,59 +251,28 @@ impl SchedulerService {
 
     /// Recent runs across all jobs for a tenant (or globally if `tenant_id`
     /// is `None`). Used by the admin dashboard for an at-a-glance health view.
-    pub async fn recent_runs(
-        &self,
-        tenant_id: Option<Uuid>,
-        limit: i64,
-    ) -> AppResult<Vec<JobRun>> {
+    pub async fn recent_runs(&self, tenant_id: Option<Uuid>, limit: i64) -> AppResult<Vec<JobRun>> {
         let limit = limit.clamp(1, 500);
-        // NB: runtime `sqlx::query()` does NOT understand the
-        // `AS "col: Type"` cast hint syntax (that's only for the `query_as!`
-        // macro). Aliasing without it lets `row_to_run` decode the enum
-        // via the `sqlx::Type` derive on `JobRunStatus`.
-        let rows = match tenant_id {
-            Some(tid) => {
-                sqlx::query(
-                    r#"
-                    SELECT id, job_id, tenant_id, attempt, status,
-                           scheduled_for, claimed_at, claimed_by, finished_at,
-                           duration_ms, output, error, idempotency_key
-                    FROM job_runs
-                    WHERE tenant_id = $1
-                    ORDER BY scheduled_for DESC
-                    LIMIT $2
-                    "#,
-                )
-                .bind(tid)
-                .bind(limit)
-                .fetch_all(&self.pool)
-                .await?
-            }
-            None => {
-                sqlx::query(
-                    r#"
-                    SELECT id, job_id, tenant_id, attempt, status,
-                           scheduled_for, claimed_at, claimed_by, finished_at,
-                           duration_ms, output, error, idempotency_key
-                    FROM job_runs
-                    ORDER BY scheduled_for DESC
-                    LIMIT $1
-                    "#,
-                )
-                .bind(limit)
-                .fetch_all(&self.pool)
-                .await?
-            }
-        };
-        rows.iter().map(row_to_run).collect()
+        let mut query = job_runs::Entity::find();
+        if let Some(tid) = tenant_id {
+            query = query.filter(job_runs::Column::TenantId.eq(tid));
+        }
+        let models = query
+            .order_by_desc(job_runs::Column::ScheduledFor)
+            .limit(limit as u64)
+            .all(&self.pool)
+            .await?;
+        models.into_iter().map(model_to_run).collect()
     }
 
     /// Aggregate counts for the admin dashboard: `(total, enabled, due_now)`.
     pub async fn counts(&self, tenant_id: Option<Uuid>) -> AppResult<JobCounts> {
+        // Raw SQL (SeaORM Statement): `COUNT(*) FILTER (WHERE ...)` aggregates.
         let row = match tenant_id {
-            Some(tid) => {
-                sqlx::query(
-                    r#"
+            Some(tid) => require_row(
+                self.pool
+                    .query_one(stmt(
+                        r#"
                     SELECT COUNT(*)                                AS total,
                            COUNT(*) FILTER (WHERE enabled)         AS enabled,
                            COUNT(*) FILTER (WHERE enabled
@@ -352,14 +281,14 @@ impl SchedulerService {
                     FROM scheduled_jobs
                     WHERE tenant_id = $1
                     "#,
-                )
-                .bind(tid)
-                .fetch_one(&self.pool)
-                .await?
-            }
-            None => {
-                sqlx::query(
-                    r#"
+                        [tid.into()],
+                    ))
+                    .await?,
+            )?,
+            None => require_row(
+                self.pool
+                    .query_one(stmt(
+                        r#"
                     SELECT COUNT(*)                                AS total,
                            COUNT(*) FILTER (WHERE enabled)         AS enabled,
                            COUNT(*) FILTER (WHERE enabled
@@ -367,15 +296,15 @@ impl SchedulerService {
                                                                    AS due_now
                     FROM scheduled_jobs
                     "#,
-                )
-                .fetch_one(&self.pool)
-                .await?
-            }
+                        [],
+                    ))
+                    .await?,
+            )?,
         };
         Ok(JobCounts {
-            total: row.try_get("total")?,
-            enabled: row.try_get("enabled")?,
-            due_now: row.try_get("due_now")?,
+            total: row.try_get("", "total")?,
+            enabled: row.try_get("", "enabled")?,
+            due_now: row.try_get("", "due_now")?,
         })
     }
 
@@ -384,24 +313,13 @@ impl SchedulerService {
     /// keep it for the planned per-job admin drill-down.
     #[allow(dead_code)]
     pub async fn list_runs(&self, job_id: Uuid, limit: i64) -> AppResult<Vec<JobRun>> {
-        let rows = sqlx::query(
-            r#"
-            SELECT id, job_id, tenant_id, attempt,
-                   status,
-                   scheduled_for, claimed_at, claimed_by, finished_at,
-                   duration_ms, output, error, idempotency_key
-            FROM job_runs
-            WHERE job_id = $1
-            ORDER BY scheduled_for DESC
-            LIMIT $2
-            "#,
-        )
-        .bind(job_id)
-        .bind(limit)
-        .fetch_all(&self.pool)
-        .await?;
-
-        rows.iter().map(row_to_run).collect()
+        let models = job_runs::Entity::find()
+            .filter(job_runs::Column::JobId.eq(job_id))
+            .order_by_desc(job_runs::Column::ScheduledFor)
+            .limit(limit.max(0) as u64)
+            .all(&self.pool)
+            .await?;
+        models.into_iter().map(model_to_run).collect()
     }
 
     /// Tenant-scoped list_runs. Filters job_runs by both `job_id` AND
@@ -413,24 +331,14 @@ impl SchedulerService {
         job_id: Uuid,
         limit: i64,
     ) -> AppResult<Vec<JobRun>> {
-        let rows = sqlx::query(
-            r#"
-            SELECT id, job_id, tenant_id, attempt,
-                   status,
-                   scheduled_for, claimed_at, claimed_by, finished_at,
-                   duration_ms, output, error, idempotency_key
-            FROM job_runs
-            WHERE job_id = $1 AND tenant_id = $2
-            ORDER BY scheduled_for DESC
-            LIMIT $3
-            "#,
-        )
-        .bind(job_id)
-        .bind(tenant_id)
-        .bind(limit)
-        .fetch_all(&self.pool)
-        .await?;
-        rows.iter().map(row_to_run).collect()
+        let models = job_runs::Entity::find()
+            .filter(job_runs::Column::JobId.eq(job_id))
+            .filter(job_runs::Column::TenantId.eq(tenant_id))
+            .order_by_desc(job_runs::Column::ScheduledFor)
+            .limit(limit.max(0) as u64)
+            .all(&self.pool)
+            .await?;
+        models.into_iter().map(model_to_run).collect()
     }
 }
 
@@ -513,42 +421,65 @@ fn schedule_kind_tag(k: ScheduleKind) -> &'static str {
     }
 }
 
-fn row_to_job(row: &sqlx::postgres::PgRow) -> AppResult<ScheduledJob> {
+fn model_to_job(m: scheduled_jobs::Model) -> AppResult<ScheduledJob> {
     Ok(ScheduledJob {
-        id: row.try_get("id")?,
-        tenant_id: row.try_get("tenant_id")?,
-        kind: row.try_get("kind")?,
-        name: row.try_get("name")?,
-        schedule_kind: row.try_get("schedule_kind")?,
-        cron_expr: row.try_get("cron_expr")?,
-        interval_seconds: row.try_get("interval_seconds")?,
-        one_shot_at: row.try_get("one_shot_at")?,
-        timezone: row.try_get("timezone")?,
-        payload: row.try_get("payload")?,
-        enabled: row.try_get("enabled")?,
-        max_attempts: row.try_get("max_attempts")?,
-        retry_backoff_secs: row.try_get("retry_backoff_secs")?,
-        timeout_seconds: row.try_get("timeout_seconds")?,
-        next_run_at: row.try_get("next_run_at")?,
-        last_run_at: row.try_get("last_run_at")?,
-        created_at: row.try_get("created_at")?,
+        id: m.id,
+        tenant_id: m.tenant_id,
+        kind: m.kind,
+        name: m.name,
+        schedule_kind: decode_enum("schedule_kind", &m.schedule_kind)?,
+        cron_expr: m.cron_expr,
+        interval_seconds: m.interval_seconds,
+        one_shot_at: m.one_shot_at.map(|t| t.with_timezone(&Utc)),
+        timezone: m.timezone,
+        payload: m.payload,
+        enabled: m.enabled,
+        max_attempts: m.max_attempts,
+        retry_backoff_secs: m.retry_backoff_secs,
+        timeout_seconds: m.timeout_seconds,
+        next_run_at: m.next_run_at.with_timezone(&Utc),
+        last_run_at: m.last_run_at.map(|t| t.with_timezone(&Utc)),
+        created_at: m.created_at.with_timezone(&Utc),
     })
 }
 
-fn row_to_run(row: &sqlx::postgres::PgRow) -> AppResult<JobRun> {
+fn model_to_run(m: job_runs::Model) -> AppResult<JobRun> {
     Ok(JobRun {
-        id: row.try_get("id")?,
-        job_id: row.try_get("job_id")?,
-        tenant_id: row.try_get("tenant_id")?,
-        attempt: row.try_get("attempt")?,
-        status: row.try_get("status")?,
-        scheduled_for: row.try_get("scheduled_for")?,
-        claimed_at: row.try_get("claimed_at")?,
-        claimed_by: row.try_get("claimed_by")?,
-        finished_at: row.try_get("finished_at")?,
-        duration_ms: row.try_get("duration_ms")?,
-        output: row.try_get("output")?,
-        error: row.try_get("error")?,
-        idempotency_key: row.try_get("idempotency_key")?,
+        id: m.id,
+        job_id: m.job_id,
+        tenant_id: m.tenant_id,
+        attempt: m.attempt,
+        status: decode_enum("status", &m.status)?,
+        scheduled_for: m.scheduled_for.with_timezone(&Utc),
+        claimed_at: m.claimed_at.map(|t| t.with_timezone(&Utc)),
+        claimed_by: m.claimed_by,
+        finished_at: m.finished_at.map(|t| t.with_timezone(&Utc)),
+        duration_ms: m.duration_ms,
+        output: m.output,
+        error: m.error,
+        idempotency_key: m.idempotency_key,
+    })
+}
+
+fn row_to_job(row: &sea_orm::QueryResult) -> AppResult<ScheduledJob> {
+    let kind_label: String = row.try_get("", "schedule_kind")?;
+    Ok(ScheduledJob {
+        id: row.try_get("", "id")?,
+        tenant_id: row.try_get("", "tenant_id")?,
+        kind: row.try_get("", "kind")?,
+        name: row.try_get("", "name")?,
+        schedule_kind: decode_enum("schedule_kind", &kind_label)?,
+        cron_expr: row.try_get("", "cron_expr")?,
+        interval_seconds: row.try_get("", "interval_seconds")?,
+        one_shot_at: row.try_get("", "one_shot_at")?,
+        timezone: row.try_get("", "timezone")?,
+        payload: row.try_get("", "payload")?,
+        enabled: row.try_get("", "enabled")?,
+        max_attempts: row.try_get("", "max_attempts")?,
+        retry_backoff_secs: row.try_get("", "retry_backoff_secs")?,
+        timeout_seconds: row.try_get("", "timeout_seconds")?,
+        next_run_at: row.try_get("", "next_run_at")?,
+        last_run_at: row.try_get("", "last_run_at")?,
+        created_at: row.try_get("", "created_at")?,
     })
 }

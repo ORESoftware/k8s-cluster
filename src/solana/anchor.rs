@@ -12,7 +12,7 @@
 //! runs in a background tokio task.
 
 use chrono::Utc;
-use sqlx::{PgPool, Row};
+use sea_orm::{ConnectionTrait, DatabaseConnection};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -23,7 +23,7 @@ use super::client::SolanaClient;
 use super::merkle::{merkle_root, posting_leaf_hash};
 
 pub struct AnchorService {
-    pool: PgPool,
+    pool: DatabaseConnection,
     solana: SolanaClient,
     events: Arc<EventBus>,
     pub max_batch: i64,
@@ -43,7 +43,7 @@ pub struct AnchorResult {
 }
 
 impl AnchorService {
-    pub fn new(pool: PgPool, solana: SolanaClient, events: Arc<EventBus>) -> Self {
+    pub fn new(pool: DatabaseConnection, solana: SolanaClient, events: Arc<EventBus>) -> Self {
         Self {
             pool,
             solana,
@@ -56,15 +56,21 @@ impl AnchorService {
     /// Compute and submit the next anchor batch for one tenant.
     /// Returns None if there are no new postings to anchor.
     pub async fn anchor_tenant_once(&self, tenant_id: Uuid) -> AppResult<Option<AnchorResult>> {
-        let last_to_id: Option<i64> =
-            sqlx::query_scalar(r#"SELECT MAX(to_posting_id) FROM anchors WHERE tenant_id = $1"#)
-                .bind(tenant_id)
-                .fetch_one(&self.pool)
-                .await?;
+        let last_to_id: Option<i64> = crate::db::require_row(
+            self.pool
+                .query_one(crate::db::stmt(
+                    r#"SELECT MAX(to_posting_id) FROM anchors WHERE tenant_id = $1"#,
+                    [tenant_id.into()],
+                ))
+                .await?,
+        )?
+        .try_get_by_index(0)?;
         let start_after = last_to_id.unwrap_or(0);
 
-        let rows = sqlx::query(
-            r#"
+        let rows = self
+            .pool
+            .query_all(crate::db::stmt(
+                r#"
             SELECT p.id, p.transaction_id, p.account_id,
                    p.direction::TEXT AS direction_t,
                    p.amount_minor::TEXT AS amount_t,
@@ -77,12 +83,9 @@ impl AnchorService {
             ORDER BY p.id ASC
             LIMIT $3
             "#,
-        )
-        .bind(tenant_id)
-        .bind(start_after)
-        .bind(self.max_batch)
-        .fetch_all(&self.pool)
-        .await?;
+                [tenant_id.into(), start_after.into(), self.max_batch.into()],
+            ))
+            .await?;
 
         if rows.is_empty() {
             return Ok(None);
@@ -90,19 +93,19 @@ impl AnchorService {
 
         // Build leaves
         let mut leaves: Vec<[u8; 32]> = Vec::with_capacity(rows.len());
-        let from_id: i64 = rows.first().unwrap().try_get("id")?;
+        let from_id: i64 = rows.first().unwrap().try_get("", "id")?;
         let mut to_id: i64 = from_id;
         for row in &rows {
-            let posting_id: i64 = row.try_get("id")?;
+            let posting_id: i64 = row.try_get("", "id")?;
             to_id = posting_id;
-            let txid: Uuid = row.try_get("transaction_id")?;
-            let acct_id: Uuid = row.try_get("account_id")?;
-            let dir: String = row.try_get("direction_t")?;
-            let amt: String = row.try_get("amount_t")?;
-            let cur: String = row.try_get("currency")?;
-            let src: String = row.try_get("source")?;
-            let src_evt: String = row.try_get("source_event_id")?;
-            let posted_unix_ms: i64 = row.try_get("posted_unix_ms")?;
+            let txid: Uuid = row.try_get("", "transaction_id")?;
+            let acct_id: Uuid = row.try_get("", "account_id")?;
+            let dir: String = row.try_get("", "direction_t")?;
+            let amt: String = row.try_get("", "amount_t")?;
+            let cur: String = row.try_get("", "currency")?;
+            let src: String = row.try_get("", "source")?;
+            let src_evt: String = row.try_get("", "source_event_id")?;
+            let posted_unix_ms: i64 = row.try_get("", "posted_unix_ms")?;
 
             leaves.push(posting_leaf_hash(
                 posting_id,
@@ -135,8 +138,12 @@ impl AnchorService {
 
         let root_hex = hex::encode(root);
 
-        let anchor_id: i64 = sqlx::query_scalar(
-            r#"
+        // Raw SQL (SeaORM Statement): INSERT ... SELECT sourcing shard_key
+        // from the first posting row, with an upsert on the anchor range.
+        let anchor_id: i64 = crate::db::require_row(
+            self.pool
+                .query_one(crate::db::stmt(
+                    r#"
             INSERT INTO anchors
                 (tenant_id, shard_key, from_posting_id, to_posting_id,
                  posting_count, merkle_root, chain, tx_signature, slot, submitted_at)
@@ -147,16 +154,19 @@ impl AnchorService {
                 DO UPDATE SET submitted_at = now()
             RETURNING id
             "#,
-        )
-        .bind(tenant_id)
-        .bind(from_id)
-        .bind(to_id)
-        .bind(count)
-        .bind(root.as_slice())
-        .bind(&tx_signature)
-        .bind(slot)
-        .fetch_one(&self.pool)
-        .await?;
+                    [
+                        tenant_id.into(),
+                        from_id.into(),
+                        to_id.into(),
+                        count.into(),
+                        root.to_vec().into(),
+                        tx_signature.clone().into(),
+                        slot.into(),
+                    ],
+                ))
+                .await?,
+        )?
+        .try_get("", "id")?;
 
         let result = AnchorResult {
             anchor_id,
@@ -199,10 +209,16 @@ impl AnchorService {
     }
 
     pub async fn sweep_all_tenants(&self) -> AppResult<()> {
-        let tenants: Vec<Uuid> =
-            sqlx::query_scalar(r#"SELECT id FROM tenants WHERE status = 'active'"#)
-                .fetch_all(&self.pool)
-                .await?;
+        let tenants: Vec<Uuid> = self
+            .pool
+            .query_all(crate::db::stmt(
+                r#"SELECT id FROM tenants WHERE status = 'active'"#,
+                [],
+            ))
+            .await?
+            .iter()
+            .map(|r| r.try_get_by_index::<Uuid>(0))
+            .collect::<Result<_, _>>()?;
 
         for tid in tenants {
             match self.anchor_tenant_once(tid).await {

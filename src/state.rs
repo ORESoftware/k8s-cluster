@@ -1,4 +1,4 @@
-use sqlx::PgPool;
+use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 
 use crate::config::Config;
@@ -19,7 +19,7 @@ use crate::vendors::VendorService;
 #[derive(Clone)]
 pub struct AppState {
     pub cfg: Arc<Config>,
-    pub pool: PgPool,
+    pub pool: DatabaseConnection,
     pub tenants: TenantService,
     pub users: UserService,
     pub ledger: LedgerService,
@@ -43,7 +43,12 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(cfg: Arc<Config>, pool: PgPool, sealer: Arc<Sealer>, events: Arc<EventBus>) -> Self {
+    pub fn new(
+        cfg: Arc<Config>,
+        pool: DatabaseConnection,
+        sealer: Arc<Sealer>,
+        events: Arc<EventBus>,
+    ) -> Self {
         let tenants = TenantService::new(pool.clone());
         let users = UserService::new(pool.clone());
         let customer_locks = CustomerLockBroker::from_config(&cfg);

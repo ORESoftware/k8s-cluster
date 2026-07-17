@@ -6,6 +6,8 @@
 //! Cursor lives on `provider_connection.last_sync_cursor` (canonical
 //! Plaid `next_cursor`). Idempotency via `plaid:tx:<transaction_id>`.
 
+use sea_orm::ConnectionTrait;
+
 use crate::error::{AppError, AppResult};
 use crate::ledger::{AccountKind, Direction, DraftPosting, DraftTransaction};
 use crate::money::Currency;
@@ -206,8 +208,10 @@ async fn open_modified_break(
     conn: &ProviderConnection,
     tx: &PlaidTransaction,
 ) -> AppResult<()> {
-    let inserted = sqlx::query(
-        r#"
+    let inserted = ctx
+        .pool
+        .execute(crate::db::stmt(
+            r#"
         INSERT INTO reconciliation_breaks
             (tenant_id, shard_key, provider, connection_id, break_type,
              expected_minor, actual_minor, currency, external_ref, metadata)
@@ -215,22 +219,27 @@ async fn open_modified_break(
                 0::NUMERIC(38,0), 0::NUMERIC(38,0), $5, $6, $7)
         ON CONFLICT DO NOTHING
         "#,
-    )
-    .bind(ctx.tenant_id)
-    .bind(crate::shard::ShardKey::derive(ctx.tenant_id, ctx.region).0)
-    .bind(conn.provider.tag())
-    .bind(conn.id)
-    .bind(tx.iso_currency_code.clone().unwrap_or_else(|| "USD".into()))
-    .bind(&tx.transaction_id)
-    .bind(serde_json::json!({
-        "plaid_tx_id": tx.transaction_id,
-        "reason": "plaid /transactions/sync returned this in `modified`; \
+            [
+                ctx.tenant_id.into(),
+                crate::shard::ShardKey::derive(ctx.tenant_id, ctx.region).0.into(),
+                conn.provider.tag().into(),
+                conn.id.into(),
+                tx.iso_currency_code
+                    .clone()
+                    .unwrap_or_else(|| "USD".into())
+                    .into(),
+                tx.transaction_id.clone().into(),
+                serde_json::json!({
+                    "plaid_tx_id": tx.transaction_id,
+                    "reason": "plaid /transactions/sync returned this in `modified`; \
                    manual reconciliation needed (we do not auto-reverse)",
-    }))
-    .execute(ctx.pool)
-    .await
-    .map(|r| r.rows_affected() > 0)
-    .unwrap_or(false);
+                })
+                .into(),
+            ],
+        ))
+        .await
+        .map(|r| r.rows_affected() > 0)
+        .unwrap_or(false);
 
     // Only emit on a genuinely-new break; ON CONFLICT means a re-sync that
     // re-encounters the same modified tx inserts nothing, and must not
@@ -257,8 +266,10 @@ async fn open_removed_break(
     conn: &ProviderConnection,
     tx: &crate::providers::plaid::PlaidRemovedTx,
 ) -> AppResult<()> {
-    let inserted = sqlx::query(
-        r#"
+    let inserted = ctx
+        .pool
+        .execute(crate::db::stmt(
+            r#"
         INSERT INTO reconciliation_breaks
             (tenant_id, shard_key, provider, connection_id, break_type,
              expected_minor, actual_minor, currency, external_ref, metadata)
@@ -266,22 +277,24 @@ async fn open_removed_break(
                 0::NUMERIC(38,0), 0::NUMERIC(38,0), 'USD', $5, $6)
         ON CONFLICT DO NOTHING
         "#,
-    )
-    .bind(ctx.tenant_id)
-    .bind(crate::shard::ShardKey::derive(ctx.tenant_id, ctx.region).0)
-    .bind(conn.provider.tag())
-    .bind(conn.id)
-    .bind(&tx.transaction_id)
-    .bind(serde_json::json!({
-        "plaid_tx_id": tx.transaction_id,
-        "plaid_account_id": tx.account_id,
-        "reason": "plaid /transactions/sync removed this transaction; \
+            [
+                ctx.tenant_id.into(),
+                crate::shard::ShardKey::derive(ctx.tenant_id, ctx.region).0.into(),
+                conn.provider.tag().into(),
+                conn.id.into(),
+                tx.transaction_id.clone().into(),
+                serde_json::json!({
+                    "plaid_tx_id": tx.transaction_id,
+                    "plaid_account_id": tx.account_id,
+                    "reason": "plaid /transactions/sync removed this transaction; \
                    manual reconciliation needed",
-    }))
-    .execute(ctx.pool)
-    .await
-    .map(|r| r.rows_affected() > 0)
-    .unwrap_or(false);
+                })
+                .into(),
+            ],
+        ))
+        .await
+        .map(|r| r.rows_affected() > 0)
+        .unwrap_or(false);
 
     if inserted {
         ctx.events

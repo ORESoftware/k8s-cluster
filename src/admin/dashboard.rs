@@ -123,10 +123,14 @@ pub async fn page(State(state): State<AppState>) -> Markup {
 
 /// The little pill in the navbar — refreshed via `hx-trigger="every 5s"`.
 pub async fn status_fragment(State(state): State<AppState>) -> Markup {
-    let ok = sqlx::query_scalar::<_, i32>("SELECT 1")
-        .fetch_one(&state.pool)
-        .await
-        .is_ok();
+    let ok = {
+        use sea_orm::ConnectionTrait;
+        state
+            .pool
+            .query_one(crate::db::stmt("SELECT 1", []))
+            .await
+            .is_ok()
+    };
     if ok {
         html! {
             span class="dot dot-ok" {}

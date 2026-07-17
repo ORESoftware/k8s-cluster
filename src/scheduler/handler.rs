@@ -1,6 +1,6 @@
 use async_trait::async_trait;
+use sea_orm::DatabaseConnection;
 use serde::Serialize;
-use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -9,7 +9,7 @@ use crate::error::AppResult;
 
 /// Context handed to a [`JobHandler`] when its kind is dispatched.
 pub struct JobContext {
-    pub pool: PgPool,
+    pub pool: DatabaseConnection,
     pub job_id: Uuid,
     pub tenant_id: Option<Uuid>,
     pub kind: String,

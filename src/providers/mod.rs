@@ -50,8 +50,11 @@ pub(crate) mod mock_http;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
-#[sqlx(type_name = "provider_kind", rename_all = "snake_case")]
+// The serde rename table below doubles as the Postgres enum label mapping
+// (`provider_kind`): rows select the column with a `::TEXT` cast and decode
+// through `crate::db::decode_enum`; writes bind `ProviderKind::tag()` with a
+// `::provider_kind` cast.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderKind {
     Stripe,
@@ -73,37 +76,28 @@ pub enum ProviderKind {
     Bridge,
     // The DB stores `gocardless` (one word) while heck snake_case would
     // produce `go_cardless`. Pin the variant explicitly.
-    #[sqlx(rename = "gocardless")]
     #[serde(rename = "gocardless")]
     GoCardless,
     // Crypto houses (added 2026-05-22)
     Fireblocks,
     Circle,
     // Remittance / money-transfer partners (added 2026-06-06)
-    #[sqlx(rename = "moneygram")]
     #[serde(rename = "moneygram")]
     MoneyGram,
-    #[sqlx(rename = "western_union")]
     #[serde(rename = "western_union")]
     WesternUnion,
     // Bank-sponsored Zelle disbursement APIs (added 2026-06-07).
-    #[sqlx(rename = "us_bank_zelle")]
     #[serde(rename = "us_bank_zelle")]
     UsBankZelle,
-    #[sqlx(rename = "jpmorgan_zelle")]
     #[serde(rename = "jpmorgan_zelle")]
     JpmorganZelle,
-    #[sqlx(rename = "bofa_cashpro_gdd")]
     #[serde(rename = "bofa_cashpro_gdd")]
     BofaCashProGdd,
     // Faster payment and on-chain observer rails (added 2026-06-07).
-    #[sqlx(rename = "modern_treasury")]
     #[serde(rename = "modern_treasury")]
     ModernTreasury,
-    #[sqlx(rename = "dwolla")]
     #[serde(rename = "dwolla")]
     Dwolla,
-    #[sqlx(rename = "ethereum_wallet")]
     #[serde(rename = "ethereum_wallet")]
     EthereumWallet,
     // Card acquiring partners (added 2026-06-09): real connection +
@@ -230,14 +224,12 @@ pub enum ProviderMaturity {
     LimitedFit,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
-#[sqlx(type_name = "provider_auth_kind", rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderAuthKind {
     // The DB stores `oauth2` (no underscore), but heck's snake_case turns
-    // `OAuth2` into `o_auth2`. Pin the variant explicitly so sqlx decodes
-    // the existing column values correctly.
-    #[sqlx(rename = "oauth2")]
+    // `OAuth2` into `o_auth2`. Pin the variant explicitly so the serde-based
+    // enum decode maps the existing column values correctly.
     #[serde(rename = "oauth2")]
     OAuth2,
     ApiKey,
@@ -245,8 +237,7 @@ pub enum ProviderAuthKind {
     WalletPubkey,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
-#[sqlx(type_name = "connection_status", rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ConnectionStatus {
     Pending,

@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use sqlx::{PgPool, Row};
+use sea_orm::{ConnectionTrait, DatabaseConnection};
 use uuid::Uuid;
 
 use crate::error::AppResult;
@@ -7,7 +7,7 @@ use crate::providers::ProviderKind;
 
 #[derive(Clone)]
 pub struct ProviderRateLimiter {
-    pool: PgPool,
+    pool: DatabaseConnection,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -25,7 +25,7 @@ pub struct RateLimitReservation {
 }
 
 impl ProviderRateLimiter {
-    pub fn new(pool: PgPool) -> Self {
+    pub fn new(pool: DatabaseConnection) -> Self {
         Self { pool }
     }
 
@@ -38,8 +38,12 @@ impl ProviderRateLimiter {
         let now = Utc::now();
         let window_start = floor_to_window(now, budget.window_seconds);
 
-        let row = sqlx::query(
-            r#"
+        // Raw SQL (SeaORM Statement): atomic take-a-token upsert — the
+        // DO UPDATE arm increments the existing counter in place.
+        let row = crate::db::require_row(
+            self.pool
+                .query_one(crate::db::stmt(
+                    r#"
             INSERT INTO provider_rate_limit_buckets
                 (tenant_id, provider, window_start, window_seconds,
                  request_limit, requests_used)
@@ -51,17 +55,19 @@ impl ProviderRateLimiter {
                 updated_at = now()
             RETURNING requests_used, request_limit
             "#,
-        )
-        .bind(tenant_id)
-        .bind(provider.tag())
-        .bind(window_start)
-        .bind(budget.window_seconds)
-        .bind(budget.request_limit)
-        .fetch_one(&self.pool)
-        .await?;
+                    [
+                        tenant_id.into(),
+                        provider.tag().into(),
+                        window_start.into(),
+                        budget.window_seconds.into(),
+                        budget.request_limit.into(),
+                    ],
+                ))
+                .await?,
+        )?;
 
-        let used: i32 = row.try_get("requests_used")?;
-        let limit: i32 = row.try_get("request_limit")?;
+        let used: i32 = row.try_get("", "requests_used")?;
+        let limit: i32 = row.try_get("", "request_limit")?;
         let allowed = used <= limit;
         let remaining = (limit - used).max(0);
         let window_end = window_start + chrono::Duration::seconds(budget.window_seconds as i64);

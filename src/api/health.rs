@@ -2,6 +2,7 @@ use axum::Json;
 use axum::extract::State;
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
+use sea_orm::ConnectionTrait;
 use serde::Serialize;
 
 use crate::state::AppState;
@@ -22,8 +23,9 @@ pub async fn healthz() -> Json<HealthBody> {
 }
 
 pub async fn readyz(State(state): State<AppState>) -> (StatusCode, Json<HealthBody>) {
-    match sqlx::query_scalar::<_, i32>("SELECT 1")
-        .fetch_one(&state.pool)
+    match state
+        .pool
+        .query_one(crate::db::stmt("SELECT 1", []))
         .await
     {
         Ok(_) => (
@@ -46,8 +48,9 @@ pub async fn readyz(State(state): State<AppState>) -> (StatusCode, Json<HealthBo
 }
 
 pub async fn metrics(State(state): State<AppState>) -> Response {
-    let db_ready = match sqlx::query_scalar::<_, i32>("SELECT 1")
-        .fetch_one(&state.pool)
+    let db_ready = match state
+        .pool
+        .query_one(crate::db::stmt("SELECT 1", []))
         .await
     {
         Ok(_) => 1,

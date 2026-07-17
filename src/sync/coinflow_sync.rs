@@ -2,6 +2,7 @@
 //! delivery log) so we catch anything we missed from direct webhook
 //! deliveries. Idempotent via `coinflow:evt:<event_id>` keys.
 
+use sea_orm::ConnectionTrait;
 use chrono::{Duration, Utc};
 use uuid::Uuid;
 
@@ -188,20 +189,24 @@ async fn open_recon_break(
     conn: &ProviderConnection,
     evt: &coinflow::CoinflowWebhookEvent,
 ) -> AppResult<()> {
-    let exists: Option<i64> = sqlx::query_scalar(
-        r#"
+    let exists: Option<i64> = ctx
+        .pool
+        .query_one(crate::db::stmt(
+            r#"
         SELECT id FROM reconciliation_breaks
         WHERE tenant_id = $1 AND provider = $2::provider_kind AND external_ref = $3
         LIMIT 1
         "#,
-    )
-    .bind(ctx.tenant_id)
-    .bind(conn.provider.tag())
-    .bind(&evt.id)
-    .fetch_optional(ctx.pool)
-    .await
-    .ok()
-    .flatten();
+            [
+                ctx.tenant_id.into(),
+                conn.provider.tag().into(),
+                evt.id.clone().into(),
+            ],
+        ))
+        .await
+        .ok()
+        .flatten()
+        .and_then(|row| row.try_get_by_index::<i64>(0).ok());
     if exists.is_some() {
         return Ok(());
     }
@@ -215,8 +220,10 @@ async fn open_recon_break(
         "raw": evt.raw,
         "reason": "no posting template for this coinflow event type"
     });
-    let _ = sqlx::query(
-        r#"
+    let _ = ctx
+        .pool
+        .execute(crate::db::stmt(
+            r#"
         INSERT INTO reconciliation_breaks
             (tenant_id, shard_key, provider, connection_id, break_type,
              expected_minor, actual_minor, currency, external_ref, metadata)
@@ -224,22 +231,22 @@ async fn open_recon_break(
                 ($5)::NUMERIC(38,0), 0::NUMERIC(38,0), $6, $7, $8)
         ON CONFLICT DO NOTHING
         "#,
-    )
-    .bind(ctx.tenant_id)
-    .bind(shard_for(ctx.tenant_id, ctx.region))
-    .bind(conn.provider.tag())
-    .bind(conn.id)
-    .bind(&amount_text)
-    .bind(
-        evt.currency
-            .clone()
-            .unwrap_or_else(|| "USD".into())
-            .to_uppercase(),
-    )
-    .bind(&evt.id)
-    .bind(&detail)
-    .execute(ctx.pool)
-    .await;
+            [
+                ctx.tenant_id.into(),
+                shard_for(ctx.tenant_id, ctx.region).into(),
+                conn.provider.tag().into(),
+                conn.id.into(),
+                amount_text.clone().into(),
+                evt.currency
+                    .clone()
+                    .unwrap_or_else(|| "USD".into())
+                    .to_uppercase()
+                    .into(),
+                evt.id.clone().into(),
+                detail.clone().into(),
+            ],
+        ))
+        .await;
 
     ctx.events
         .publish_reconciliation_break(

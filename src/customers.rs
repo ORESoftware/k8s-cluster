@@ -5,8 +5,8 @@
 //! `BillingState` response.
 
 use chrono::{DateTime, Utc};
+use sea_orm::{ConnectionTrait, DatabaseConnection};
 use serde::Serialize;
-use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::customer_locks::{CustomerLockBroker, CustomerSnapshotLockInfo};
@@ -83,13 +83,17 @@ pub enum Confidence {
 
 #[derive(Clone)]
 pub struct CustomerService {
-    pool: PgPool,
+    pool: DatabaseConnection,
     users: UserService,
     customer_locks: CustomerLockBroker,
 }
 
 impl CustomerService {
-    pub fn new(pool: PgPool, users: UserService, customer_locks: CustomerLockBroker) -> Self {
+    pub fn new(
+        pool: DatabaseConnection,
+        users: UserService,
+        customer_locks: CustomerLockBroker,
+    ) -> Self {
         Self {
             pool,
             users,
@@ -163,10 +167,14 @@ impl CustomerService {
         let credit_memos_code = format!("credit_memos/{user_id}");
         let customer_prefix = format!("customer/{user_id}/%");
 
-        let rows = sqlx::query(
-            r#"
+        // Raw SQL (SeaORM Statement): aggregate roll-up. `a.kind::TEXT`
+        // replaces the old native enum decode — same labels on the wire.
+        let rows = self
+            .pool
+            .query_all(crate::db::stmt(
+                r#"
             SELECT a.code,
-                   a.kind,
+                   a.kind::TEXT AS kind,
                    COALESCE(SUM(
                        CASE
                            WHEN a.normal_side = 'debit'  AND p.direction = 'debit'  THEN  p.amount_minor
@@ -190,23 +198,25 @@ impl CustomerService {
             GROUP BY a.code, a.kind
             ORDER BY a.code
             "#,
-        )
-        .bind(tenant_id)
-        .bind(&cur)
-        .bind(user_id)
-        .bind(&ar_code)
-        .bind(&unallocated_code)
-        .bind(&credit_memo_code)
-        .bind(&credit_memos_code)
-        .bind(&customer_prefix)
-        .fetch_all(&self.pool)
-        .await?;
+                [
+                    tenant_id.into(),
+                    cur.clone().into(),
+                    user_id.into(),
+                    ar_code.clone().into(),
+                    unallocated_code.clone().into(),
+                    credit_memo_code.clone().into(),
+                    credit_memos_code.clone().into(),
+                    customer_prefix.clone().into(),
+                ],
+            ))
+            .await?;
 
         rows.iter()
             .map(|row| {
-                let account_code: String = row.try_get("code")?;
-                let account_kind: AccountKind = row.try_get("kind")?;
-                let balance_text: String = row.try_get("balance_t")?;
+                let account_code: String = row.try_get("", "code")?;
+                let kind_label: String = row.try_get("", "kind")?;
+                let account_kind: AccountKind = crate::db::decode_enum("kind", &kind_label)?;
+                let balance_text: String = row.try_get("", "balance_t")?;
                 let balance_minor = balance_text.parse().unwrap_or(0);
                 let contribution_minor =
                     customer_balance_contribution(account_kind, &account_code, balance_minor);
@@ -230,8 +240,11 @@ impl CustomerService {
         let ar_code = format!("ar/{}", user_id);
         let cur = currency.as_str().to_string();
 
-        let row = sqlx::query(
-            r#"
+        // Raw SQL (SeaORM Statement): CTE + bucketed aggregates.
+        let row = crate::db::require_row(
+            self.pool
+                .query_one(crate::db::stmt(
+                    r#"
             WITH ar AS (
                 SELECT p.amount_minor,
                        p.direction,
@@ -253,15 +266,13 @@ impl CustomerService {
                 FROM ar
             ) s
             "#,
-        )
-        .bind(tenant_id)
-        .bind(&ar_code)
-        .bind(&cur)
-        .fetch_one(&self.pool)
-        .await?;
+                    [tenant_id.into(), ar_code.clone().into(), cur.into()],
+                ))
+                .await?,
+        )?;
 
         let parse = |k: &str| -> i128 {
-            row.try_get::<String, _>(k)
+            row.try_get::<String>("", k)
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(0)
@@ -285,8 +296,10 @@ impl CustomerService {
         let ar_code = format!("ar/{}", user_id);
         let cur = currency.as_str().to_string();
 
-        let row = sqlx::query(
-            r#"
+        let row = self
+            .pool
+            .query_one(crate::db::stmt(
+                r#"
             SELECT p.amount_minor::TEXT AS amount_t, p.posted_at, p.source, p.source_event_id
             FROM accounts a
             JOIN postings p ON p.account_id = a.id
@@ -297,33 +310,33 @@ impl CustomerService {
             ORDER BY p.posted_at DESC
             LIMIT 1
             "#,
-        )
-        .bind(tenant_id)
-        .bind(&ar_code)
-        .bind(&cur)
-        .fetch_optional(&self.pool)
-        .await?;
+                [tenant_id.into(), ar_code.clone().into(), cur.into()],
+            ))
+            .await?;
 
         Ok(row.map(|r| LastPayment {
-            received_on: r.try_get("posted_at").unwrap_or_else(|_| Utc::now()),
+            received_on: r.try_get("", "posted_at").unwrap_or_else(|_| Utc::now()),
             amount_minor: r
-                .try_get::<String, _>("amount_t")
+                .try_get::<String>("", "amount_t")
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(0),
-            via: r.try_get("source").unwrap_or_default(),
-            external_id: r.try_get("source_event_id").unwrap_or_default(),
+            via: r.try_get("", "source").unwrap_or_default(),
+            external_id: r.try_get("", "source_event_id").unwrap_or_default(),
         }))
     }
 
     async fn recon_status(&self, tenant_id: Uuid) -> AppResult<ReconciliationStatus> {
-        let count: i64 = sqlx::query_scalar(
-            r#"SELECT COUNT(*) FROM reconciliation_breaks
+        let row = crate::db::require_row(
+            self.pool
+                .query_one(crate::db::stmt(
+                    r#"SELECT COUNT(*) FROM reconciliation_breaks
                WHERE tenant_id = $1 AND status = 'open'"#,
-        )
-        .bind(tenant_id)
-        .fetch_one(&self.pool)
-        .await?;
+                    [tenant_id.into()],
+                ))
+                .await?,
+        )?;
+        let count: i64 = row.try_get_by_index(0)?;
         Ok(if count == 0 {
             ReconciliationStatus::Clean
         } else {

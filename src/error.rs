@@ -37,7 +37,7 @@ pub enum AppError {
     Crypto(String),
 
     #[error("database error: {0}")]
-    Database(#[from] sqlx::Error),
+    Database(#[from] sea_orm::DbErr),
 
     #[error(transparent)]
     Other(#[from] anyhow::Error),

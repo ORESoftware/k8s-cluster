@@ -12,7 +12,7 @@
 //! the next time the evaluator job runs.
 
 use async_trait::async_trait;
-use sqlx::{PgPool, Row};
+use sea_orm::{ConnectionTrait, DatabaseConnection};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -26,14 +26,14 @@ use super::service::NotificationService;
 use super::types::*;
 
 pub struct RuleEvaluatorJob {
-    pool: PgPool,
+    pool: DatabaseConnection,
     notifications: Arc<NotificationService>,
     cfg: Arc<Config>,
 }
 
 impl RuleEvaluatorJob {
     pub fn new(
-        pool: PgPool,
+        pool: DatabaseConnection,
         notifications: Arc<NotificationService>,
         cfg: Arc<Config>,
     ) -> Self {
@@ -52,11 +52,16 @@ impl JobHandler for RuleEvaluatorJob {
         // or tenant-scoped (tenant_id Some -> just that one).
         let tenant_ids: Vec<Uuid> = match ctx.tenant_id {
             Some(t) => vec![t],
-            None => {
-                sqlx::query_scalar(r#"SELECT id FROM tenants WHERE status = 'active'"#)
-                    .fetch_all(&self.pool)
-                    .await?
-            }
+            None => self
+                .pool
+                .query_all(crate::db::stmt(
+                    r#"SELECT id FROM tenants WHERE status = 'active'"#,
+                    [],
+                ))
+                .await?
+                .iter()
+                .map(|r| r.try_get_by_index::<Uuid>(0))
+                .collect::<Result<_, _>>()?,
         };
 
         let mut total_evaluated: i64 = 0;
@@ -175,13 +180,16 @@ struct Match {
 
 impl RuleEvaluatorJob {
     async fn tenant_region(&self, tenant_id: Uuid) -> AppResult<Region> {
-        let row = sqlx::query(r#"SELECT country_code, us_state FROM tenants WHERE id = $1"#)
-            .bind(tenant_id)
-            .fetch_optional(&self.pool)
+        let row = self
+            .pool
+            .query_one(crate::db::stmt(
+                r#"SELECT country_code, us_state FROM tenants WHERE id = $1"#,
+                [tenant_id.into()],
+            ))
             .await?
             .ok_or_else(|| AppError::NotFound(format!("tenant {tenant_id}")))?;
-        let cc: String = row.try_get("country_code")?;
-        let st: Option<String> = row.try_get("us_state")?;
+        let cc: String = row.try_get("", "country_code")?;
+        let st: Option<String> = row.try_get("", "us_state")?;
         Region::from_codes(&cc, st.as_deref()).map_err(|e| AppError::BadRequest(e.to_string()))
     }
 
@@ -192,8 +200,10 @@ impl RuleEvaluatorJob {
     ) -> AppResult<Vec<Match>> {
         // Negative balance on any user's AR account (i.e., they paid more than
         // they owe — a credit balance on a debit-normal account).
-        let rows = sqlx::query(
-            r#"
+        let rows = self
+            .pool
+            .query_all(crate::db::stmt(
+                r#"
             SELECT u.id AS user_id, u.email::TEXT AS email, a.code,
                    COALESCE(SUM(
                        CASE WHEN p.direction = 'debit' THEN p.amount_minor
@@ -209,17 +219,16 @@ impl RuleEvaluatorJob {
                             ELSE -p.amount_minor END
                    ), 0) < 0
             "#,
-        )
-        .bind(tenant_id)
-        .fetch_all(&self.pool)
-        .await?;
+                [tenant_id.into()],
+            ))
+            .await?;
 
         Ok(rows
             .into_iter()
             .map(|r| {
-                let user_id: Uuid = r.try_get("user_id").unwrap_or(Uuid::nil());
-                let email: String = r.try_get("email").unwrap_or_default();
-                let balance: String = r.try_get("balance_t").unwrap_or_else(|_| "0".into());
+                let user_id: Uuid = r.try_get("", "user_id").unwrap_or(Uuid::nil());
+                let email: String = r.try_get("", "email").unwrap_or_default();
+                let balance: String = r.try_get("", "balance_t").unwrap_or_else(|_| "0".into());
                 Match {
                     target_resource: Some(user_id.to_string()),
                     payload: serde_json::json!({
@@ -246,8 +255,10 @@ impl RuleEvaluatorJob {
             .and_then(|v| v.as_i64())
             .unwrap_or(30);
 
-        let rows = sqlx::query(
-            r#"
+        let rows = self
+            .pool
+            .query_all(crate::db::stmt(
+                r#"
             SELECT u.id AS user_id, u.email::TEXT AS email,
                    COALESCE(SUM(
                        CASE WHEN p.direction = 'debit' THEN p.amount_minor
@@ -264,18 +275,16 @@ impl RuleEvaluatorJob {
                             ELSE -p.amount_minor END
                    ), 0) > 0
             "#,
-        )
-        .bind(tenant_id)
-        .bind(days.to_string())
-        .fetch_all(&self.pool)
-        .await?;
+                [tenant_id.into(), days.to_string().into()],
+            ))
+            .await?;
 
         Ok(rows
             .into_iter()
             .map(|r| {
-                let user_id: Uuid = r.try_get("user_id").unwrap_or(Uuid::nil());
-                let email: String = r.try_get("email").unwrap_or_default();
-                let overdue: String = r.try_get("overdue_t").unwrap_or_else(|_| "0".into());
+                let user_id: Uuid = r.try_get("", "user_id").unwrap_or(Uuid::nil());
+                let email: String = r.try_get("", "email").unwrap_or_default();
+                let overdue: String = r.try_get("", "overdue_t").unwrap_or_else(|_| "0".into());
                 Match {
                     target_resource: Some(user_id.to_string()),
                     payload: serde_json::json!({
@@ -297,25 +306,26 @@ impl RuleEvaluatorJob {
         tenant_id: Uuid,
         rule: &NotificationRule,
     ) -> AppResult<Vec<Match>> {
-        let rows = sqlx::query(
-            r#"
+        let rows = self
+            .pool
+            .query_all(crate::db::stmt(
+                r#"
             SELECT id, break_type, expected_minor::TEXT AS expected_t,
                    actual_minor::TEXT AS actual_t, currency, provider::TEXT AS provider_t
             FROM reconciliation_breaks
             WHERE tenant_id = $1 AND status = 'open'
               AND detected_at > now() - interval '1 hour'
             "#,
-        )
-        .bind(tenant_id)
-        .fetch_all(&self.pool)
-        .await?;
+                [tenant_id.into()],
+            ))
+            .await?;
 
         Ok(rows
             .into_iter()
             .map(|r| {
-                let id: i64 = r.try_get("id").unwrap_or(0);
-                let bt: String = r.try_get("break_type").unwrap_or_default();
-                let prov: String = r.try_get("provider_t").unwrap_or_default();
+                let id: i64 = r.try_get("", "id").unwrap_or(0);
+                let bt: String = r.try_get("", "break_type").unwrap_or_default();
+                let prov: String = r.try_get("", "provider_t").unwrap_or_default();
                 Match {
                     target_resource: Some(format!("break:{id}")),
                     payload: serde_json::json!({
@@ -325,9 +335,9 @@ impl RuleEvaluatorJob {
                         "break_id": id,
                         "break_type": bt,
                         "provider": prov,
-                        "expected_minor": r.try_get::<String, _>("expected_t").ok(),
-                        "actual_minor": r.try_get::<String, _>("actual_t").ok(),
-                        "currency": r.try_get::<Option<String>, _>("currency").ok().flatten(),
+                        "expected_minor": r.try_get::<Option<String>>("", "expected_t").ok().flatten(),
+                        "actual_minor": r.try_get::<Option<String>>("", "actual_t").ok().flatten(),
+                        "currency": r.try_get::<Option<String>>("", "currency").ok().flatten(),
                     }),
                 }
             })

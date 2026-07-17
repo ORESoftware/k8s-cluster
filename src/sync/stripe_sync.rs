@@ -16,6 +16,7 @@
 //!     The ledger layer short-circuits replays so re-processing the same
 //!     Stripe id is a safe no-op.
 
+use sea_orm::ConnectionTrait;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
@@ -234,26 +235,32 @@ async fn open_recon_break(
     // Skip duplicates: a break with the same (tenant, provider, external_ref)
     // means we've already surfaced this id; the cursor will advance past it
     // either way.
-    let exists: Option<i64> = sqlx::query_scalar(
-        r#"
+    let exists: Option<i64> = ctx
+        .pool
+        .query_one(crate::db::stmt(
+            r#"
         SELECT id FROM reconciliation_breaks
         WHERE tenant_id = $1 AND provider = $2::provider_kind AND external_ref = $3
         LIMIT 1
         "#,
-    )
-    .bind(ctx.tenant_id)
-    .bind(conn.provider.tag())
-    .bind(&bt.id)
-    .fetch_optional(ctx.pool)
-    .await
-    .ok()
-    .flatten();
+            [
+                ctx.tenant_id.into(),
+                conn.provider.tag().into(),
+                bt.id.clone().into(),
+            ],
+        ))
+        .await
+        .ok()
+        .flatten()
+        .and_then(|row| row.try_get_by_index::<i64>(0).ok());
     if exists.is_some() {
         return Ok(());
     }
 
-    let _ = sqlx::query(
-        r#"
+    let _ = ctx
+        .pool
+        .execute(crate::db::stmt(
+            r#"
         INSERT INTO reconciliation_breaks
             (tenant_id, shard_key, provider, connection_id, break_type,
              expected_minor, actual_minor, currency, external_ref, metadata)
@@ -261,17 +268,18 @@ async fn open_recon_break(
                 ($5)::NUMERIC(38,0), 0::NUMERIC(38,0), $6, $7, $8)
         ON CONFLICT DO NOTHING
         "#,
-    )
-    .bind(ctx.tenant_id)
-    .bind(shard_for(ctx.tenant_id, ctx.region))
-    .bind(conn.provider.tag())
-    .bind(conn.id)
-    .bind(&amount_text)
-    .bind(bt.currency.to_uppercase())
-    .bind(&bt.id)
-    .bind(&detail)
-    .execute(ctx.pool)
-    .await;
+            [
+                ctx.tenant_id.into(),
+                shard_for(ctx.tenant_id, ctx.region).into(),
+                conn.provider.tag().into(),
+                conn.id.into(),
+                amount_text.clone().into(),
+                bt.currency.to_uppercase().into(),
+                bt.id.clone().into(),
+                detail.clone().into(),
+            ],
+        ))
+        .await;
 
     ctx.events
         .publish_reconciliation_break(

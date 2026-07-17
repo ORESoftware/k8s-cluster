@@ -1,8 +1,8 @@
 //! Public verification: anyone can prove a posting is included in an anchor
 //! that was committed to Solana. No platform trust required.
 
+use sea_orm::{ConnectionTrait, DatabaseConnection};
 use serde::Serialize;
-use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
@@ -42,12 +42,12 @@ pub enum VerifyStatus {
 }
 
 pub struct Verifier {
-    pool: PgPool,
+    pool: DatabaseConnection,
     solana: SolanaClient,
 }
 
 impl Verifier {
-    pub fn new(pool: PgPool, solana: SolanaClient) -> Self {
+    pub fn new(pool: DatabaseConnection, solana: SolanaClient) -> Self {
         Self { pool, solana }
     }
 
@@ -56,8 +56,10 @@ impl Verifier {
         tenant_id: Uuid,
         posting_id: i64,
     ) -> AppResult<VerifyResult> {
-        let post = sqlx::query(
-            r#"
+        let post = self
+            .pool
+            .query_one(crate::db::stmt(
+                r#"
             SELECT p.id, p.transaction_id, p.account_id,
                    p.direction::TEXT AS direction_t,
                    p.amount_minor::TEXT AS amount_t,
@@ -66,11 +68,9 @@ impl Verifier {
             FROM postings p
             WHERE p.tenant_id = $1 AND p.id = $2
             "#,
-        )
-        .bind(tenant_id)
-        .bind(posting_id)
-        .fetch_optional(&self.pool)
-        .await?;
+                [tenant_id.into(), posting_id.into()],
+            ))
+            .await?;
 
         let Some(p) = post else {
             return Ok(VerifyResult {
@@ -89,14 +89,14 @@ impl Verifier {
             });
         };
 
-        let txid: Uuid = p.try_get("transaction_id")?;
-        let acct_id: Uuid = p.try_get("account_id")?;
-        let dir: String = p.try_get("direction_t")?;
-        let amt: String = p.try_get("amount_t")?;
-        let cur: String = p.try_get("currency")?;
-        let src: String = p.try_get("source")?;
-        let src_evt: String = p.try_get("source_event_id")?;
-        let posted_unix_ms: i64 = p.try_get("posted_unix_ms")?;
+        let txid: Uuid = p.try_get("", "transaction_id")?;
+        let acct_id: Uuid = p.try_get("", "account_id")?;
+        let dir: String = p.try_get("", "direction_t")?;
+        let amt: String = p.try_get("", "amount_t")?;
+        let cur: String = p.try_get("", "currency")?;
+        let src: String = p.try_get("", "source")?;
+        let src_evt: String = p.try_get("", "source_event_id")?;
+        let posted_unix_ms: i64 = p.try_get("", "posted_unix_ms")?;
 
         let leaf = posting_leaf_hash(
             posting_id,
@@ -111,8 +111,10 @@ impl Verifier {
         );
         let leaf_hex = hex::encode(leaf);
 
-        let anchor = sqlx::query(
-            r#"
+        let anchor = self
+            .pool
+            .query_one(crate::db::stmt(
+                r#"
             SELECT id, from_posting_id, to_posting_id, merkle_root,
                    tx_signature, slot
             FROM anchors
@@ -120,11 +122,9 @@ impl Verifier {
             ORDER BY submitted_at DESC
             LIMIT 1
             "#,
-        )
-        .bind(tenant_id)
-        .bind(posting_id)
-        .fetch_optional(&self.pool)
-        .await?;
+                [tenant_id.into(), posting_id.into()],
+            ))
+            .await?;
 
         let Some(a) = anchor else {
             return Ok(VerifyResult {
@@ -143,16 +143,18 @@ impl Verifier {
             });
         };
 
-        let from_id: i64 = a.try_get("from_posting_id")?;
-        let to_id: i64 = a.try_get("to_posting_id")?;
-        let stored_root: Vec<u8> = a.try_get("merkle_root")?;
-        let tx_signature: Option<String> = a.try_get("tx_signature")?;
-        let slot: Option<i64> = a.try_get("slot")?;
-        let anchor_id: i64 = a.try_get("id")?;
+        let from_id: i64 = a.try_get("", "from_posting_id")?;
+        let to_id: i64 = a.try_get("", "to_posting_id")?;
+        let stored_root: Vec<u8> = a.try_get("", "merkle_root")?;
+        let tx_signature: Option<String> = a.try_get("", "tx_signature")?;
+        let slot: Option<i64> = a.try_get("", "slot")?;
+        let anchor_id: i64 = a.try_get("", "id")?;
 
         // Recompute root over the same range.
-        let rows = sqlx::query(
-            r#"
+        let rows = self
+            .pool
+            .query_all(crate::db::stmt(
+                r#"
             SELECT p.id, p.transaction_id, p.account_id,
                    p.direction::TEXT AS direction_t,
                    p.amount_minor::TEXT AS amount_t,
@@ -162,24 +164,21 @@ impl Verifier {
             WHERE p.tenant_id = $1 AND p.id BETWEEN $2 AND $3
             ORDER BY p.id ASC
             "#,
-        )
-        .bind(tenant_id)
-        .bind(from_id)
-        .bind(to_id)
-        .fetch_all(&self.pool)
-        .await?;
+                [tenant_id.into(), from_id.into(), to_id.into()],
+            ))
+            .await?;
 
         let mut leaves: Vec<[u8; 32]> = Vec::with_capacity(rows.len());
         for r in &rows {
-            let pid: i64 = r.try_get("id")?;
-            let tx: Uuid = r.try_get("transaction_id")?;
-            let acc: Uuid = r.try_get("account_id")?;
-            let d: String = r.try_get("direction_t")?;
-            let am: String = r.try_get("amount_t")?;
-            let c: String = r.try_get("currency")?;
-            let s: String = r.try_get("source")?;
-            let se: String = r.try_get("source_event_id")?;
-            let pms: i64 = r.try_get("posted_unix_ms")?;
+            let pid: i64 = r.try_get("", "id")?;
+            let tx: Uuid = r.try_get("", "transaction_id")?;
+            let acc: Uuid = r.try_get("", "account_id")?;
+            let d: String = r.try_get("", "direction_t")?;
+            let am: String = r.try_get("", "amount_t")?;
+            let c: String = r.try_get("", "currency")?;
+            let s: String = r.try_get("", "source")?;
+            let se: String = r.try_get("", "source_event_id")?;
+            let pms: i64 = r.try_get("", "posted_unix_ms")?;
             leaves.push(posting_leaf_hash(pid, tx, acc, &d, &am, &c, &s, &se, pms));
         }
         let recomputed = merkle_root(&leaves);

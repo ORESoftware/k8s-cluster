@@ -2,8 +2,11 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
-#[sqlx(type_name = "schedule_kind", rename_all = "snake_case")]
+// The serde rename tables double as the Postgres enum label mapping: rows
+// select these columns with a `::TEXT` cast (or via the entity's select_as)
+// and decode through `crate::db::decode_enum`.
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ScheduleKind {
     Cron,
@@ -11,8 +14,7 @@ pub enum ScheduleKind {
     OneShot,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
-#[sqlx(type_name = "job_run_status", rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum JobRunStatus {
     Pending,

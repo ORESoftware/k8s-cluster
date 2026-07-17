@@ -1,8 +1,9 @@
 use chrono::{DateTime, Utc};
+use sea_orm::{ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryResult};
 use serde::{Deserialize, Serialize};
-use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
+use crate::entity::users;
 use crate::error::{AppError, AppResult};
 use crate::shard::{Region, ShardKey};
 
@@ -36,11 +37,11 @@ pub struct CreateUser {
 
 #[derive(Clone)]
 pub struct UserService {
-    pool: PgPool,
+    pool: DatabaseConnection,
 }
 
 impl UserService {
-    pub fn new(pool: PgPool) -> Self {
+    pub fn new(pool: DatabaseConnection) -> Self {
         Self { pool }
     }
 
@@ -57,8 +58,14 @@ impl UserService {
             input.external_refs
         };
 
-        let row = sqlx::query(
-            r#"
+        // Raw SQL (SeaORM Statement): the DO UPDATE arm uses COALESCE over
+        // EXCLUDED, boolean OR-merge, and the jsonb `||` merge operator —
+        // none of which the entity OnConflict API can express without
+        // hand-built expressions, so the proven statement is kept verbatim.
+        let row = self
+            .pool
+            .query_one(crate::db::stmt(
+                r#"
             INSERT INTO users
                 (tenant_id, shard_key, email, display_name, country_code,
                  us_state, is_customer, is_vendor, external_refs)
@@ -75,72 +82,80 @@ impl UserService {
                       country_code, us_state, is_customer, is_vendor,
                       external_refs, created_at
             "#,
-        )
-        .bind(tenant_id)
-        .bind(shard)
-        .bind(&input.email)
-        .bind(&input.display_name)
-        .bind(&input.country_code)
-        .bind(&input.us_state)
-        .bind(input.is_customer)
-        .bind(input.is_vendor)
-        .bind(&external_refs)
-        .fetch_one(&self.pool)
-        .await?;
+                [
+                    tenant_id.into(),
+                    shard.into(),
+                    input.email.into(),
+                    input.display_name.into(),
+                    input.country_code.into(),
+                    input.us_state.into(),
+                    input.is_customer.into(),
+                    input.is_vendor.into(),
+                    external_refs.into(),
+                ],
+            ))
+            .await?;
+        let row = crate::db::require_row(row)?;
 
         row_to_user(&row)
     }
 
     pub async fn by_email(&self, tenant_id: Uuid, email: &str) -> AppResult<User> {
-        let row = sqlx::query(
-            r#"
+        // Raw SQL (SeaORM Statement): `$2::citext` keeps the lookup
+        // case-insensitive; a bare text bind would degrade to the
+        // case-sensitive text `=` operator.
+        let row = self
+            .pool
+            .query_one(crate::db::stmt(
+                r#"
             SELECT id, tenant_id, email::TEXT AS email, display_name,
                    country_code, us_state, is_customer, is_vendor,
                    external_refs, created_at
             FROM users
             WHERE tenant_id = $1 AND email = $2::citext
             "#,
-        )
-        .bind(tenant_id)
-        .bind(email)
-        .fetch_optional(&self.pool)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("user {email}")))?;
+                [tenant_id.into(), email.into()],
+            ))
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("user {email}")))?;
 
         row_to_user(&row)
     }
 
     pub async fn by_id(&self, tenant_id: Uuid, id: Uuid) -> AppResult<User> {
-        let row = sqlx::query(
-            r#"
-            SELECT id, tenant_id, email::TEXT AS email, display_name,
-                   country_code, us_state, is_customer, is_vendor,
-                   external_refs, created_at
-            FROM users
-            WHERE tenant_id = $1 AND id = $2
-            "#,
-        )
-        .bind(tenant_id)
-        .bind(id)
-        .fetch_optional(&self.pool)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("user {id}")))?;
+        let model = users::Entity::find()
+            .filter(users::Column::TenantId.eq(tenant_id))
+            .filter(users::Column::Id.eq(id))
+            .one(&self.pool)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("user {id}")))?;
 
-        row_to_user(&row)
+        Ok(User {
+            id: model.id,
+            tenant_id: model.tenant_id,
+            email: model.email,
+            display_name: model.display_name,
+            country_code: model.country_code,
+            us_state: model.us_state,
+            is_customer: model.is_customer,
+            is_vendor: model.is_vendor,
+            external_refs: model.external_refs,
+            created_at: model.created_at.with_timezone(&Utc),
+        })
     }
 }
 
-fn row_to_user(row: &sqlx::postgres::PgRow) -> AppResult<User> {
+fn row_to_user(row: &QueryResult) -> AppResult<User> {
     Ok(User {
-        id: row.try_get("id")?,
-        tenant_id: row.try_get("tenant_id")?,
-        email: row.try_get("email")?,
-        display_name: row.try_get("display_name")?,
-        country_code: row.try_get("country_code")?,
-        us_state: row.try_get("us_state")?,
-        is_customer: row.try_get("is_customer")?,
-        is_vendor: row.try_get("is_vendor")?,
-        external_refs: row.try_get("external_refs")?,
-        created_at: row.try_get("created_at")?,
+        id: row.try_get("", "id")?,
+        tenant_id: row.try_get("", "tenant_id")?,
+        email: row.try_get("", "email")?,
+        display_name: row.try_get("", "display_name")?,
+        country_code: row.try_get("", "country_code")?,
+        us_state: row.try_get("", "us_state")?,
+        is_customer: row.try_get("", "is_customer")?,
+        is_vendor: row.try_get("", "is_vendor")?,
+        external_refs: row.try_get("", "external_refs")?,
+        created_at: row.try_get("", "created_at")?,
     })
 }

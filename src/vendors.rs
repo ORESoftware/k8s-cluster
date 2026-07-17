@@ -5,8 +5,8 @@
 //! vendor's accepted payout methods and the tenant's enabled providers.
 
 use chrono::{DateTime, NaiveDate, Utc};
+use sea_orm::{ConnectionTrait, DatabaseConnection};
 use serde::Serialize;
-use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::error::AppResult;
@@ -68,13 +68,13 @@ pub enum DuplicateRisk {
 
 #[derive(Clone)]
 pub struct VendorService {
-    pool: PgPool,
+    pool: DatabaseConnection,
     users: UserService,
     ledger: LedgerService,
 }
 
 impl VendorService {
-    pub fn new(pool: PgPool, users: UserService, ledger: LedgerService) -> Self {
+    pub fn new(pool: DatabaseConnection, users: UserService, ledger: LedgerService) -> Self {
         Self {
             pool,
             users,
@@ -125,8 +125,12 @@ impl VendorService {
         let ap_code = format!("ap/{}", user_id);
         let cur = currency.as_str().to_string();
 
-        let row = sqlx::query(
-            r#"
+        // Raw SQL (SeaORM Statement): CTE + jsonb `->>` due-date extraction +
+        // interval arithmetic — outside the entity API by design.
+        let row = crate::db::require_row(
+            self.pool
+                .query_one(crate::db::stmt(
+                    r#"
             WITH ap AS (
                 SELECT p.amount_minor,
                        p.direction,
@@ -152,15 +156,13 @@ impl VendorService {
                 FROM ap
             ) s
             "#,
-        )
-        .bind(tenant_id)
-        .bind(&ap_code)
-        .bind(&cur)
-        .fetch_one(&self.pool)
-        .await?;
+                    [tenant_id.into(), ap_code.clone().into(), cur.into()],
+                ))
+                .await?,
+        )?;
 
         let parse = |k: &str| -> i128 {
-            row.try_get::<String, _>(k)
+            row.try_get::<String>("", k)
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(0)

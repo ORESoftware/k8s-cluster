@@ -1,10 +1,16 @@
 use chrono::Utc;
-use sqlx::{PgPool, Row};
+use sea_orm::sea_query::OnConflict;
+use sea_orm::{
+    ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter, Set,
+    TransactionTrait,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::customer_locks::{CustomerLockBroker, customer_lock_targets_from_account_code};
+use crate::db::{decode_enum, require_row, stmt};
+use crate::entity::accounts;
 use crate::error::{AppError, AppResult};
 use crate::events::EventBus;
 use crate::money::Currency;
@@ -14,13 +20,17 @@ use super::types::*;
 
 #[derive(Clone)]
 pub struct LedgerService {
-    pool: PgPool,
+    pool: DatabaseConnection,
     customer_locks: CustomerLockBroker,
     events: Arc<EventBus>,
 }
 
 impl LedgerService {
-    pub fn new(pool: PgPool, customer_locks: CustomerLockBroker, events: Arc<EventBus>) -> Self {
+    pub fn new(
+        pool: DatabaseConnection,
+        customer_locks: CustomerLockBroker,
+        events: Arc<EventBus>,
+    ) -> Self {
         Self {
             pool,
             customer_locks,
@@ -44,45 +54,44 @@ impl LedgerService {
         let currency_str = currency.as_str().to_string();
 
         // Try fetch first; create if missing.
-        if let Some(acct) = sqlx::query(
-            r#"
-            SELECT id, tenant_id, shard_key, user_id, kind,
-                   normal_side, code, currency,
-                   metadata, created_at
-            FROM accounts
-            WHERE tenant_id = $1 AND code = $2 AND currency = $3
-            "#,
-        )
-        .bind(tenant_id)
-        .bind(code)
-        .bind(&currency_str)
-        .fetch_optional(&self.pool)
-        .await?
+        if let Some(acct) = accounts::Entity::find()
+            .filter(accounts::Column::TenantId.eq(tenant_id))
+            .filter(accounts::Column::Code.eq(code))
+            .filter(accounts::Column::Currency.eq(currency_str.clone()))
+            .one(&self.pool)
+            .await?
         {
-            return Ok(row_to_account(&acct)?);
+            return model_to_account(acct);
         }
 
-        let row = sqlx::query(
-            r#"
-            INSERT INTO accounts
-                (tenant_id, shard_key, user_id, kind, normal_side, code, currency)
-            VALUES ($1, $2, $3, $4::account_kind, $5::account_normal_side, $6, $7)
-            ON CONFLICT (tenant_id, code, currency) DO UPDATE SET code = EXCLUDED.code
-            RETURNING id, tenant_id, shard_key, user_id, kind, normal_side, code,
-                      currency, metadata, created_at
-            "#,
+        // INSERT ... ON CONFLICT (tenant_id, code, currency)
+        //        DO UPDATE SET code = EXCLUDED.code
+        // RETURNING <all columns>, matching the previous hand-written upsert.
+        // The entity's save_as casts write the enum labels through
+        // `::account_kind` / `::account_normal_side` exactly as before.
+        let model = accounts::Entity::insert(accounts::ActiveModel {
+            tenant_id: Set(tenant_id),
+            shard_key: Set(shard),
+            user_id: Set(user_id),
+            kind: Set(kind_to_str(kind).to_string()),
+            normal_side: Set(normal_side_to_str(normal_side).to_string()),
+            code: Set(code.to_string()),
+            currency: Set(currency_str),
+            ..Default::default()
+        })
+        .on_conflict(
+            OnConflict::columns([
+                accounts::Column::TenantId,
+                accounts::Column::Code,
+                accounts::Column::Currency,
+            ])
+            .update_column(accounts::Column::Code)
+            .to_owned(),
         )
-        .bind(tenant_id)
-        .bind(shard)
-        .bind(user_id)
-        .bind(kind_to_str(kind))
-        .bind(normal_side_to_str(normal_side))
-        .bind(code)
-        .bind(&currency_str)
-        .fetch_one(&self.pool)
+        .exec_with_returning(&self.pool)
         .await?;
 
-        row_to_account(&row)
+        model_to_account(model)
     }
 
     /// Post a draft transaction. Atomic, idempotent, and zero-sum-checked.
@@ -184,7 +193,7 @@ impl LedgerService {
 
         let shard = ShardKey::derive(draft.tenant_id, region).0;
 
-        let mut tx = self.pool.begin().await?;
+        let tx = self.pool.begin().await?;
 
         // Serialize concurrent calls with the same (tenant_id,
         // idempotency_key). Two callers racing this code path used to
@@ -201,87 +210,100 @@ impl LedgerService {
         // tenant_hi XOR key_hash)` so the lock space is partitioned
         // by tenant — keeps the global lock count linear in tenants
         // and prevents one noisy tenant from starving others.
+        //
+        // SeaORM note: this MUST stay a raw Statement executed on the
+        // transaction handle — the advisory lock is scoped to the
+        // transaction's connection.
         let key_hash = idempotency_lock_hash(&draft.idempotency_key);
         let tenant_lo = (draft.tenant_id.as_u128() & 0xFFFF_FFFF) as i32;
         let tenant_hi = ((draft.tenant_id.as_u128() >> 32) & 0xFFFF_FFFF) as i32;
-        sqlx::query("SELECT pg_advisory_xact_lock($1, $2)")
-            .bind(tenant_lo ^ tenant_hi)
-            .bind(key_hash)
-            .execute(&mut *tx)
-            .await?;
+        tx.execute(stmt(
+            "SELECT pg_advisory_xact_lock($1, $2)",
+            [(tenant_lo ^ tenant_hi).into(), key_hash.into()],
+        ))
+        .await?;
 
         // Idempotency short-circuit. With the advisory lock above, the
         // winner has fully committed (or rolled back) before we read,
         // so the `EXISTS` check is now race-free.
-        if let Some(existing) = sqlx::query_scalar::<_, Uuid>(
-            r#"SELECT id FROM transactions
+        if let Some(row) = tx
+            .query_one(stmt(
+                r#"SELECT id FROM transactions
                WHERE tenant_id = $1 AND idempotency_key = $2"#,
-        )
-        .bind(draft.tenant_id)
-        .bind(&draft.idempotency_key)
-        .fetch_optional(&mut *tx)
-        .await?
+                [draft.tenant_id.into(), draft.idempotency_key.clone().into()],
+            ))
+            .await?
         {
+            let existing: Uuid = row.try_get("", "id")?;
             tx.commit().await?;
             return Ok((existing, false));
         }
 
         let proposed_tx_id = Uuid::new_v4();
-        let inserted_tx_id = sqlx::query_scalar::<_, Uuid>(
-            r#"
+        let inserted_tx_id: Option<Uuid> = tx
+            .query_one(stmt(
+                r#"
             INSERT INTO transactions
                 (id, tenant_id, shard_key, kind, idempotency_key, description, metadata)
             VALUES ($1, $2, $3, $4, $5, $6, $7)
             ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
             RETURNING id
             "#,
-        )
-        .bind(proposed_tx_id)
-        .bind(draft.tenant_id)
-        .bind(shard)
-        .bind(&draft.kind)
-        .bind(&draft.idempotency_key)
-        .bind(&draft.description)
-        .bind(&draft.metadata)
-        .fetch_optional(&mut *tx)
-        .await?;
+                [
+                    proposed_tx_id.into(),
+                    draft.tenant_id.into(),
+                    shard.into(),
+                    draft.kind.clone().into(),
+                    draft.idempotency_key.clone().into(),
+                    draft.description.clone().into(),
+                    draft.metadata.clone().into(),
+                ],
+            ))
+            .await?
+            .map(|row| row.try_get("", "id"))
+            .transpose()?;
 
         let Some(tx_id) = inserted_tx_id else {
-            let existing: Uuid = sqlx::query_scalar(
-                r#"SELECT id FROM transactions
+            let row = require_row(
+                tx.query_one(stmt(
+                    r#"SELECT id FROM transactions
                    WHERE tenant_id = $1 AND idempotency_key = $2"#,
-            )
-            .bind(draft.tenant_id)
-            .bind(&draft.idempotency_key)
-            .fetch_one(&mut *tx)
-            .await?;
+                    [draft.tenant_id.into(), draft.idempotency_key.clone().into()],
+                ))
+                .await?,
+            )?;
+            let existing: Uuid = row.try_get("", "id")?;
             tx.commit().await?;
             return Ok((existing, false));
         };
 
         for p in &draft.postings {
             // Resolve account by code (per-tenant, per-currency unique).
-            let acct_id: Uuid = sqlx::query_scalar(
-                r#"SELECT id FROM accounts
+            let acct_id: Uuid = tx
+                .query_one(stmt(
+                    r#"SELECT id FROM accounts
                    WHERE tenant_id = $1 AND code = $2 AND currency = $3"#,
-            )
-            .bind(draft.tenant_id)
-            .bind(&p.account_code)
-            .bind(&p.currency)
-            .fetch_optional(&mut *tx)
-            .await?
-            .ok_or_else(|| {
-                AppError::BadRequest(format!(
-                    "account not found for code={} currency={}",
-                    p.account_code, p.currency
+                    [
+                        draft.tenant_id.into(),
+                        p.account_code.clone().into(),
+                        p.currency.clone().into(),
+                    ],
                 ))
-            })?;
+                .await?
+                .map(|row| row.try_get("", "id"))
+                .transpose()?
+                .ok_or_else(|| {
+                    AppError::BadRequest(format!(
+                        "account not found for code={} currency={}",
+                        p.account_code, p.currency
+                    ))
+                })?;
 
-            // Bind amount as text and cast to NUMERIC in SQL — avoids requiring
-            // sqlx's rust_decimal/bigdecimal feature for i128 transport.
+            // Bind amount as text and cast to NUMERIC in SQL — i128 covers the
+            // full numeric(38, 0) domain, which rust_decimal's Decimal cannot.
             let amount_text = p.amount_minor.to_string();
 
-            sqlx::query(
+            tx.execute(stmt(
                 r#"
                 INSERT INTO postings
                     (transaction_id, tenant_id, shard_key, account_id, direction,
@@ -289,18 +311,19 @@ impl LedgerService {
                 VALUES ($1, $2, $3, $4, $5::posting_direction,
                         ($6)::NUMERIC(38, 0), $7, $8, $9, $10)
                 "#,
-            )
-            .bind(tx_id)
-            .bind(draft.tenant_id)
-            .bind(shard)
-            .bind(acct_id)
-            .bind(direction_to_str(p.direction))
-            .bind(&amount_text)
-            .bind(&p.currency)
-            .bind(&p.source)
-            .bind(&p.source_event_id)
-            .bind(&p.metadata)
-            .execute(&mut *tx)
+                [
+                    tx_id.into(),
+                    draft.tenant_id.into(),
+                    shard.into(),
+                    acct_id.into(),
+                    direction_to_str(p.direction).into(),
+                    amount_text.into(),
+                    p.currency.clone().into(),
+                    p.source.clone().into(),
+                    p.source_event_id.clone().into(),
+                    p.metadata.clone().into(),
+                ],
+            ))
             .await
             .map_err(map_pg_constraint_err)?;
         }
@@ -321,8 +344,10 @@ impl LedgerService {
     ) -> AppResult<AccountBalance> {
         let cur = currency.as_str().to_string();
 
-        let row = sqlx::query(
-            r#"
+        let row = self
+            .pool
+            .query_one(stmt(
+                r#"
             SELECT a.id,
                    a.normal_side,
                    COALESCE(SUM(
@@ -338,16 +363,13 @@ impl LedgerService {
             WHERE a.tenant_id = $1 AND a.code = $2 AND a.currency = $3
             GROUP BY a.id, a.normal_side
             "#,
-        )
-        .bind(tenant_id)
-        .bind(account_code)
-        .bind(&cur)
-        .fetch_optional(&self.pool)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("account {account_code}/{cur}")))?;
+                [tenant_id.into(), account_code.into(), cur.clone().into()],
+            ))
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("account {account_code}/{cur}")))?;
 
-        let account_id: Uuid = row.try_get("id")?;
-        let balance_text: String = row.try_get("balance_text")?;
+        let account_id: Uuid = row.try_get("", "id")?;
+        let balance_text: String = row.try_get("", "balance_text")?;
         let balance_minor: i128 = balance_text.parse().unwrap_or(0);
 
         Ok(AccountBalance {
@@ -368,8 +390,10 @@ impl LedgerService {
         currency: Currency,
     ) -> AppResult<i128> {
         let cur = currency.as_str().to_string();
-        let row = sqlx::query(
-            r#"
+        let row = require_row(
+            self.pool
+                .query_one(stmt(
+                    r#"
             SELECT COALESCE(SUM(
                 CASE
                     WHEN a.normal_side = 'debit'  AND p.direction = 'debit'  THEN  p.amount_minor
@@ -382,33 +406,28 @@ impl LedgerService {
             JOIN postings p ON p.account_id = a.id
             WHERE a.tenant_id = $1 AND a.code LIKE $2 AND a.currency = $3
             "#,
-        )
-        .bind(tenant_id)
-        .bind(account_code_like)
-        .bind(&cur)
-        .fetch_one(&self.pool)
-        .await?;
+                    [tenant_id.into(), account_code_like.into(), cur.into()],
+                ))
+                .await?,
+        )?;
 
-        let net_text: String = row.try_get("net")?;
+        let net_text: String = row.try_get("", "net")?;
         Ok(net_text.parse().unwrap_or(0))
     }
 }
 
-fn row_to_account(row: &sqlx::postgres::PgRow) -> AppResult<Account> {
-    let currency_str: String = row.try_get("currency")?;
-    let metadata: serde_json::Value = row.try_get("metadata")?;
-
+fn model_to_account(m: accounts::Model) -> AppResult<Account> {
     Ok(Account {
-        id: row.try_get("id")?,
-        tenant_id: row.try_get("tenant_id")?,
-        shard_key: row.try_get("shard_key")?,
-        user_id: row.try_get("user_id")?,
-        kind: row.try_get("kind")?,
-        normal_side: row.try_get("normal_side")?,
-        code: row.try_get("code")?,
-        currency: Currency::new(&currency_str).map_err(|e| AppError::Other(anyhow::anyhow!(e)))?,
-        metadata,
-        created_at: row.try_get("created_at")?,
+        id: m.id,
+        tenant_id: m.tenant_id,
+        shard_key: m.shard_key,
+        user_id: m.user_id,
+        kind: decode_enum("kind", &m.kind)?,
+        normal_side: decode_enum("normal_side", &m.normal_side)?,
+        code: m.code,
+        currency: Currency::new(&m.currency).map_err(|e| AppError::Other(anyhow::anyhow!(e)))?,
+        metadata: m.metadata,
+        created_at: m.created_at.with_timezone(&Utc),
     })
 }
 
@@ -436,22 +455,14 @@ fn direction_to_str(d: Direction) -> &'static str {
     }
 }
 
-fn map_pg_constraint_err(e: sqlx::Error) -> AppError {
-    if let sqlx::Error::Database(ref db_err) = e {
-        if let Some(code) = db_err.code() {
-            if code == "23505" {
-                return AppError::Conflict(format!(
-                    "posting already exists (idempotent replay): {}",
-                    db_err.message()
-                ));
-            }
-        }
+fn map_pg_constraint_err(e: sea_orm::DbErr) -> AppError {
+    if let Some(sea_orm::SqlErr::UniqueConstraintViolation(message)) = e.sql_err() {
+        return AppError::Conflict(format!(
+            "posting already exists (idempotent replay): {message}"
+        ));
     }
     AppError::Database(e)
 }
-
-#[allow(dead_code)]
-fn _silence_unused_jsonvalue(_: JsonValue) {}
 
 /// Stable 32-bit hash of the idempotency key, used as the second
 /// argument to `pg_advisory_xact_lock(tenant_part, key_part)`.

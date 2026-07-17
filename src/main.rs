@@ -13,6 +13,7 @@ mod crypto;
 mod customer_locks;
 mod customers;
 mod db;
+mod entity;
 mod error;
 mod events;
 mod jobs;

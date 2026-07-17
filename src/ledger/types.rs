@@ -1,12 +1,15 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::types::Json;
 use uuid::Uuid;
 
 use crate::money::{Currency, Money};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
-#[sqlx(type_name = "account_kind", rename_all = "lowercase")]
+// The serde rename tables below double as the Postgres enum label mapping:
+// rows select enum columns with a `::TEXT` cast and decode through
+// `crate::db::decode_enum`, and writes bind the same labels with a
+// `::<enum>` cast — exactly the labels serde produces.
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AccountKind {
     Asset,
@@ -16,8 +19,7 @@ pub enum AccountKind {
     Receivable,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
-#[sqlx(type_name = "account_normal_side", rename_all = "lowercase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum NormalSide {
     Debit,
@@ -33,8 +35,7 @@ impl AccountKind {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
-#[sqlx(type_name = "posting_direction", rename_all = "lowercase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Direction {
     Debit,
@@ -134,6 +135,3 @@ pub struct AccountBalance {
     pub balance_minor: i128,
     pub as_of: DateTime<Utc>,
 }
-
-// Helper newtype so sqlx can decode JSONB into serde_json::Value via Json<T>.
-pub(crate) type JsonValue = Json<serde_json::Value>;

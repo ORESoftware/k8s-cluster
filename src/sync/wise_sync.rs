@@ -5,6 +5,7 @@
 //! reconciliation breaks for unseen monetary activity and leave exact posting
 //! to the balance-statement parser.
 
+use sea_orm::ConnectionTrait;
 use chrono::{Duration, Utc};
 use uuid::Uuid;
 
@@ -109,19 +110,20 @@ async fn open_activity_break(
     conn: &ProviderConnection,
     activity: &WiseActivity,
 ) -> AppResult<bool> {
-    let exists: Option<i64> = sqlx::query_scalar(
-        r#"
+    let exists: Option<i64> = ctx
+        .pool
+        .query_one(crate::db::stmt(
+            r#"
         SELECT id FROM reconciliation_breaks
         WHERE tenant_id = $1 AND provider = 'wise'::provider_kind AND external_ref = $2
         LIMIT 1
         "#,
-    )
-    .bind(ctx.tenant_id)
-    .bind(&activity.id)
-    .fetch_optional(ctx.pool)
-    .await
-    .ok()
-    .flatten();
+            [ctx.tenant_id.into(), activity.id.clone().into()],
+        ))
+        .await
+        .ok()
+        .flatten()
+        .and_then(|row| row.try_get_by_index::<i64>(0).ok());
     if exists.is_some() {
         return Ok(false);
     }
@@ -142,8 +144,9 @@ async fn open_activity_break(
         "reason": "Wise activity detected; balance statement parser must post exact ledger entries"
     });
 
-    sqlx::query(
-        r#"
+    ctx.pool
+        .execute(crate::db::stmt(
+            r#"
         INSERT INTO reconciliation_breaks
             (tenant_id, shard_key, provider, connection_id, break_type,
              external_ref, metadata)
@@ -151,14 +154,15 @@ async fn open_activity_break(
                 'unposted_wise_activity', $4, $5)
         ON CONFLICT DO NOTHING
         "#,
-    )
-    .bind(ctx.tenant_id)
-    .bind(shard_for(ctx.tenant_id, ctx.region))
-    .bind(conn.id)
-    .bind(&activity.id)
-    .bind(&metadata)
-    .execute(ctx.pool)
-    .await?;
+            [
+                ctx.tenant_id.into(),
+                shard_for(ctx.tenant_id, ctx.region).into(),
+                conn.id.into(),
+                activity.id.clone().into(),
+                metadata.clone().into(),
+            ],
+        ))
+        .await?;
 
     ctx.events
         .publish_reconciliation_break(

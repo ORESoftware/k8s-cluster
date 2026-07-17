@@ -1,6 +1,6 @@
 use async_trait::async_trait;
+use sea_orm::{ConnectionTrait, DatabaseConnection};
 use serde::Deserialize;
-use sqlx::Row;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -35,7 +35,7 @@ struct SyncPayload {
 
 /// Shared context passed to each provider's sync function.
 pub struct SyncCtx<'a> {
-    pub pool: &'a sqlx::PgPool,
+    pub pool: &'a DatabaseConnection,
     pub cfg: &'a Config,
     pub ledger: &'a LedgerService,
     pub connections: &'a ConnectionService,
@@ -45,7 +45,7 @@ pub struct SyncCtx<'a> {
 }
 
 pub struct ConnectionSyncJob {
-    pool: sqlx::PgPool,
+    pool: DatabaseConnection,
     cfg: Arc<Config>,
     ledger: LedgerService,
     locks: LockService,
@@ -57,7 +57,7 @@ pub struct ConnectionSyncJob {
 
 impl ConnectionSyncJob {
     pub fn new(
-        pool: sqlx::PgPool,
+        pool: DatabaseConnection,
         cfg: Arc<Config>,
         ledger: LedgerService,
         locks: LockService,
@@ -261,14 +261,16 @@ pub struct SyncSummary {
     pub summary: String,
 }
 
-async fn tenant_region(pool: &sqlx::PgPool, tenant_id: Uuid) -> AppResult<Region> {
-    let row = sqlx::query(r#"SELECT country_code, us_state FROM tenants WHERE id = $1"#)
-        .bind(tenant_id)
-        .fetch_optional(pool)
+async fn tenant_region(pool: &DatabaseConnection, tenant_id: Uuid) -> AppResult<Region> {
+    let row = pool
+        .query_one(crate::db::stmt(
+            r#"SELECT country_code, us_state FROM tenants WHERE id = $1"#,
+            [tenant_id.into()],
+        ))
         .await?
         .ok_or_else(|| AppError::NotFound(format!("tenant {tenant_id}")))?;
-    let cc: String = row.try_get("country_code")?;
-    let st: Option<String> = row.try_get("us_state")?;
+    let cc: String = row.try_get("", "country_code")?;
+    let st: Option<String> = row.try_get("", "us_state")?;
     Region::from_codes(&cc, st.as_deref()).map_err(|e| AppError::BadRequest(e.to_string()))
 }
 

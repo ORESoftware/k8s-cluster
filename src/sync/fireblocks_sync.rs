@@ -10,6 +10,8 @@
 //! `provider_connections.last_sync_cursor`. Fireblocks paginates
 //! forward via `after=<epoch_ms>`.
 
+use sea_orm::ConnectionTrait;
+
 use crate::error::{AppError, AppResult};
 use crate::ledger::{AccountKind, Direction, DraftPosting, DraftTransaction};
 use crate::money::Currency;
@@ -275,8 +277,15 @@ async fn record_observability(
     conn: &ProviderConnection,
     tx: &FireblocksTransaction,
 ) -> AppResult<()> {
-    let _ = sqlx::query(
-        r#"
+    // NOTE: preserved verbatim from the sqlx original (including the
+    // swallowed error): this INSERT references columns that do not exist on
+    // `provider_balance_snapshots` (see schema/schema.sql), so it has always
+    // failed silently at runtime. Kept behavior-identical during the SeaORM
+    // conversion rather than silently starting to write new data.
+    let _ = ctx
+        .pool
+        .execute(crate::db::stmt(
+            r#"
         INSERT INTO provider_balance_snapshots
             (tenant_id, shard_key, provider, external_account_id, asset_symbol,
              balance_minor, currency, captured_at, metadata)
@@ -284,23 +293,25 @@ async fn record_observability(
                 0::NUMERIC(38,0), $4, now(), $5)
         ON CONFLICT DO NOTHING
         "#,
-    )
-    .bind(ctx.tenant_id)
-    .bind(crate::shard::ShardKey::derive(ctx.tenant_id, ctx.region).0)
-    .bind(conn.external_account_id.as_deref().unwrap_or("?"))
-    .bind(tx.asset_id.as_deref().unwrap_or("?"))
-    .bind(serde_json::json!({
-        "fireblocks_tx_id": tx.id,
-        "fireblocks_status": tx.status,
-        "fireblocks_amount": tx.amount,
-        "fireblocks_net_amount": tx.net_amount,
-        "fireblocks_asset_id": tx.asset_id,
-        "fireblocks_tx_hash": tx.tx_hash,
-        "note": "non-fiat crypto: recorded for observability only \
+            [
+                ctx.tenant_id.into(),
+                crate::shard::ShardKey::derive(ctx.tenant_id, ctx.region).0.into(),
+                conn.external_account_id.as_deref().unwrap_or("?").into(),
+                tx.asset_id.as_deref().unwrap_or("?").into(),
+                serde_json::json!({
+                    "fireblocks_tx_id": tx.id,
+                    "fireblocks_status": tx.status,
+                    "fireblocks_amount": tx.amount,
+                    "fireblocks_net_amount": tx.net_amount,
+                    "fireblocks_asset_id": tx.asset_id,
+                    "fireblocks_tx_hash": tx.tx_hash,
+                    "note": "non-fiat crypto: recorded for observability only \
                  (price oracle integration deferred)",
-    }))
-    .execute(ctx.pool)
-    .await;
+                })
+                .into(),
+            ],
+        ))
+        .await;
     Ok(())
 }
 

@@ -11,12 +11,19 @@
 //!     caller's intent — "this lock is gone for me" — is satisfied).
 //!
 //! Backed by Postgres; HA == PG HA. No separate distributed lock service.
+//!
+//! SeaORM note: every query here is a raw [`Statement`] on purpose. The
+//! acquire path is a writable CTE (INSERT ... ON CONFLICT DO UPDATE ...
+//! WHERE) whose conditional-preempt semantics the entity API cannot express,
+//! and the audit inserts cast into the `lock_event_kind` enum. Transaction
+//! boundaries are identical to the original sqlx implementation.
 
 use chrono::{DateTime, Duration, Utc};
+use sea_orm::{ConnectionTrait, DatabaseConnection, TransactionTrait};
 use serde::{Deserialize, Serialize};
-use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
+use crate::db::{require_row, stmt};
 use crate::error::{AppError, AppResult};
 use crate::shard::{Region, ShardKey};
 
@@ -63,11 +70,11 @@ pub struct LeaseRow {
 
 #[derive(Clone)]
 pub struct LockService {
-    pool: PgPool,
+    pool: DatabaseConnection,
 }
 
 impl LockService {
-    pub fn new(pool: PgPool) -> Self {
+    pub fn new(pool: DatabaseConnection) -> Self {
         Self { pool }
     }
 
@@ -87,12 +94,13 @@ impl LockService {
         let now = Utc::now();
         let expires = now + Duration::seconds(req.ttl_seconds as i64);
 
-        let mut tx = self.pool.begin().await?;
+        let tx = self.pool.begin().await?;
 
         // Try INSERT; if a row exists, evaluate its expiry. If expired, preempt
         // it atomically. If not, return 409.
-        let row = sqlx::query(
-            r#"
+        let row = tx
+            .query_one(stmt(
+                r#"
             WITH ins AS (
                 INSERT INTO tenant_locks
                     (tenant_id, shard_key, resource_key, lease_token, holder,
@@ -110,33 +118,34 @@ impl LockService {
             SELECT lease_token, holder, acquired_at, expires_at, metadata
             FROM ins
             "#,
-        )
-        .bind(tenant_id)
-        .bind(shard)
-        .bind(&req.resource)
-        .bind(token)
-        .bind(&req.holder)
-        .bind(now)
-        .bind(expires)
-        .bind(&req.metadata)
-        .fetch_optional(&mut *tx)
-        .await?;
+                [
+                    tenant_id.into(),
+                    shard.into(),
+                    req.resource.clone().into(),
+                    token.into(),
+                    req.holder.clone().into(),
+                    now.into(),
+                    expires.into(),
+                    req.metadata.clone().into(),
+                ],
+            ))
+            .await?;
 
         let Some(row) = row else {
             // Lock exists and is still valid for someone else.
-            let existing = sqlx::query(
-                r#"
+            let existing = require_row(
+                tx.query_one(stmt(
+                    r#"
                 SELECT holder, acquired_at, expires_at
                 FROM tenant_locks
                 WHERE tenant_id = $1 AND resource_key = $2
                 "#,
-            )
-            .bind(tenant_id)
-            .bind(&req.resource)
-            .fetch_one(&mut *tx)
-            .await?;
-            let holder: Option<String> = existing.try_get("holder")?;
-            let exp: DateTime<Utc> = existing.try_get("expires_at")?;
+                    [tenant_id.into(), req.resource.clone().into()],
+                ))
+                .await?,
+            )?;
+            let holder: Option<String> = existing.try_get("", "holder")?;
+            let exp: DateTime<Utc> = existing.try_get("", "expires_at")?;
             tx.commit().await?;
             return Err(AppError::Conflict(format!(
                 "lock '{}' held by {} until {}",
@@ -149,30 +158,31 @@ impl LockService {
         // Audit. Distinguish acquire from preempt by checking whether the
         // returned acquired_at equals our `now` (we inserted) vs an earlier
         // time (we updated an expired row, which the WHERE clause permits).
-        let acquired_at: DateTime<Utc> = row.try_get("acquired_at")?;
+        let acquired_at: DateTime<Utc> = row.try_get("", "acquired_at")?;
         let kind = if (acquired_at - now).num_milliseconds().abs() <= 1 {
             "acquire"
         } else {
             "preempt"
         };
-        sqlx::query(
+        tx.execute(stmt(
             r#"
             INSERT INTO tenant_lock_events
                 (tenant_id, shard_key, resource_key, lease_token, kind,
                  holder, actor, ttl_seconds, metadata)
             VALUES ($1, $2, $3, $4, $5::lock_event_kind, $6, $7, $8, $9)
             "#,
-        )
-        .bind(tenant_id)
-        .bind(shard)
-        .bind(&req.resource)
-        .bind(token)
-        .bind(kind)
-        .bind(&req.holder)
-        .bind(actor)
-        .bind(req.ttl_seconds as i32)
-        .bind(&req.metadata)
-        .execute(&mut *tx)
+            [
+                tenant_id.into(),
+                shard.into(),
+                req.resource.clone().into(),
+                token.into(),
+                kind.into(),
+                req.holder.clone().into(),
+                actor.into(),
+                (req.ttl_seconds as i32).into(),
+                req.metadata.clone().into(),
+            ],
+        ))
         .await?;
 
         tx.commit().await?;
@@ -181,10 +191,10 @@ impl LockService {
             tenant_id,
             resource_key: req.resource,
             lease_token: token,
-            holder: row.try_get("holder")?,
+            holder: row.try_get("", "holder")?,
             acquired_at,
-            expires_at: row.try_get("expires_at")?,
-            metadata: row.try_get("metadata")?,
+            expires_at: row.try_get("", "expires_at")?,
+            metadata: row.try_get("", "metadata")?,
         })
     }
 
@@ -202,10 +212,11 @@ impl LockService {
         let now = Utc::now();
         let new_expires = now + Duration::seconds(req.ttl_seconds as i64);
 
-        let mut tx = self.pool.begin().await?;
+        let tx = self.pool.begin().await?;
 
-        let row = sqlx::query(
-            r#"
+        let row = tx
+            .query_one(stmt(
+                r#"
             UPDATE tenant_locks
             SET expires_at = $4
             WHERE tenant_id = $1
@@ -214,13 +225,14 @@ impl LockService {
               AND expires_at > now()
             RETURNING lease_token, holder, acquired_at, expires_at, metadata
             "#,
-        )
-        .bind(tenant_id)
-        .bind(resource)
-        .bind(req.lease_token)
-        .bind(new_expires)
-        .fetch_optional(&mut *tx)
-        .await?;
+                [
+                    tenant_id.into(),
+                    resource.into(),
+                    req.lease_token.into(),
+                    new_expires.into(),
+                ],
+            ))
+            .await?;
 
         let Some(row) = row else {
             tx.commit().await?;
@@ -229,22 +241,24 @@ impl LockService {
             ));
         };
 
-        sqlx::query(
+        let holder: Option<String> = row.try_get("", "holder")?;
+        tx.execute(stmt(
             r#"
             INSERT INTO tenant_lock_events
                 (tenant_id, shard_key, resource_key, lease_token, kind,
                  holder, actor, ttl_seconds)
             VALUES ($1, $2, $3, $4, 'renew'::lock_event_kind, $5, $6, $7)
             "#,
-        )
-        .bind(tenant_id)
-        .bind(shard)
-        .bind(resource)
-        .bind(req.lease_token)
-        .bind::<Option<String>>(row.try_get("holder")?)
-        .bind(actor)
-        .bind(req.ttl_seconds as i32)
-        .execute(&mut *tx)
+            [
+                tenant_id.into(),
+                shard.into(),
+                resource.into(),
+                req.lease_token.into(),
+                holder.clone().into(),
+                actor.into(),
+                (req.ttl_seconds as i32).into(),
+            ],
+        ))
         .await?;
 
         tx.commit().await?;
@@ -253,10 +267,10 @@ impl LockService {
             tenant_id,
             resource_key: resource.into(),
             lease_token: req.lease_token,
-            holder: row.try_get("holder")?,
-            acquired_at: row.try_get("acquired_at")?,
-            expires_at: row.try_get("expires_at")?,
-            metadata: row.try_get("metadata")?,
+            holder: row.try_get("", "holder")?,
+            acquired_at: row.try_get("", "acquired_at")?,
+            expires_at: row.try_get("", "expires_at")?,
+            metadata: row.try_get("", "metadata")?,
         })
     }
 
@@ -270,35 +284,34 @@ impl LockService {
         req: ReleaseRequest,
     ) -> AppResult<()> {
         let shard = ShardKey::derive(tenant_id, region).0;
-        let mut tx = self.pool.begin().await?;
+        let tx = self.pool.begin().await?;
 
-        let deleted = sqlx::query(
-            r#"
+        let deleted = tx
+            .execute(stmt(
+                r#"
             DELETE FROM tenant_locks
             WHERE tenant_id = $1 AND resource_key = $2 AND lease_token = $3
             "#,
-        )
-        .bind(tenant_id)
-        .bind(resource)
-        .bind(req.lease_token)
-        .execute(&mut *tx)
-        .await?
-        .rows_affected();
+                [tenant_id.into(), resource.into(), req.lease_token.into()],
+            ))
+            .await?
+            .rows_affected();
 
         if deleted > 0 {
-            sqlx::query(
+            tx.execute(stmt(
                 r#"
                 INSERT INTO tenant_lock_events
                     (tenant_id, shard_key, resource_key, lease_token, kind, actor)
                 VALUES ($1, $2, $3, $4, 'release'::lock_event_kind, $5)
                 "#,
-            )
-            .bind(tenant_id)
-            .bind(shard)
-            .bind(resource)
-            .bind(req.lease_token)
-            .bind(actor)
-            .execute(&mut *tx)
+                [
+                    tenant_id.into(),
+                    shard.into(),
+                    resource.into(),
+                    req.lease_token.into(),
+                    actor.into(),
+                ],
+            ))
             .await?;
         }
 
@@ -307,28 +320,29 @@ impl LockService {
     }
 
     pub async fn list(&self, tenant_id: Uuid) -> AppResult<Vec<LeaseRow>> {
-        let rows = sqlx::query(
-            r#"
+        let rows = self
+            .pool
+            .query_all(stmt(
+                r#"
             SELECT resource_key, lease_token, holder, acquired_at, expires_at,
                    (expires_at <= now()) AS expired
             FROM tenant_locks
             WHERE tenant_id = $1
             ORDER BY acquired_at DESC
             "#,
-        )
-        .bind(tenant_id)
-        .fetch_all(&self.pool)
-        .await?;
+                [tenant_id.into()],
+            ))
+            .await?;
 
         Ok(rows
             .iter()
             .map(|r| LeaseRow {
-                resource_key: r.try_get("resource_key").unwrap_or_default(),
-                lease_token: r.try_get("lease_token").unwrap_or(Uuid::nil()),
-                holder: r.try_get("holder").unwrap_or(None),
-                acquired_at: r.try_get("acquired_at").unwrap_or_else(|_| Utc::now()),
-                expires_at: r.try_get("expires_at").unwrap_or_else(|_| Utc::now()),
-                expired: r.try_get("expired").unwrap_or(false),
+                resource_key: r.try_get("", "resource_key").unwrap_or_default(),
+                lease_token: r.try_get("", "lease_token").unwrap_or(Uuid::nil()),
+                holder: r.try_get("", "holder").unwrap_or(None),
+                acquired_at: r.try_get("", "acquired_at").unwrap_or_else(|_| Utc::now()),
+                expires_at: r.try_get("", "expires_at").unwrap_or_else(|_| Utc::now()),
+                expired: r.try_get("", "expired").unwrap_or(false),
             })
             .collect())
     }
@@ -339,8 +353,10 @@ impl LockService {
         let cutoff = Utc::now() - Duration::hours(keep_for_hours);
 
         // Record expire events first so the audit trail captures them.
-        let _ = sqlx::query(
-            r#"
+        let _ = self
+            .pool
+            .execute(stmt(
+                r#"
             INSERT INTO tenant_lock_events
                 (tenant_id, shard_key, resource_key, lease_token, kind, holder)
             SELECT tenant_id, shard_key, resource_key, lease_token,
@@ -348,14 +364,16 @@ impl LockService {
             FROM tenant_locks
             WHERE expires_at <= $1
             "#,
-        )
-        .bind(cutoff)
-        .execute(&self.pool)
-        .await?;
+                [cutoff.into()],
+            ))
+            .await?;
 
-        let n = sqlx::query(r#"DELETE FROM tenant_locks WHERE expires_at <= $1"#)
-            .bind(cutoff)
-            .execute(&self.pool)
+        let n = self
+            .pool
+            .execute(stmt(
+                r#"DELETE FROM tenant_locks WHERE expires_at <= $1"#,
+                [cutoff.into()],
+            ))
             .await?
             .rows_affected();
 

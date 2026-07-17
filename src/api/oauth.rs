@@ -2,6 +2,7 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::response::{IntoResponse, Redirect, Response};
 use chrono::{Duration, Utc};
+use sea_orm::ConnectionTrait;
 use rand::{RngExt, rng};
 use serde::Deserialize;
 use uuid::Uuid;
@@ -36,19 +37,22 @@ pub async fn start(
     let return_to = validate_return_to(&state, q.return_to.as_deref())?;
 
     let provider_tag = provider.as_str();
-    sqlx::query(
-        r#"
+    state
+        .pool
+        .execute(crate::db::stmt(
+            r#"
         INSERT INTO oauth_states (state, tenant_id, provider, return_to, expires_at)
         VALUES ($1, $2, $3::provider_kind, $4, $5)
         "#,
-    )
-    .bind(&state_token)
-    .bind(q.tenant_id)
-    .bind(provider_tag)
-    .bind(&return_to)
-    .bind(Utc::now() + Duration::minutes(15))
-    .execute(&state.pool)
-    .await?;
+            [
+                state_token.clone().into(),
+                q.tenant_id.into(),
+                provider_tag.into(),
+                return_to.clone().into(),
+                (Utc::now() + Duration::minutes(15)).into(),
+            ],
+        ))
+        .await?;
 
     let url = match provider.as_str() {
         "stripe" => stripe::StripeOAuth::new(&state.cfg).authorize_url(&state_token)?,
@@ -101,26 +105,25 @@ pub async fn callback(
 
     // Consume the one-time CSRF state row. Same-tx delete-returning gives
     // single-use semantics.
-    let row = sqlx::query(
-        r#"
+    let row = state
+        .pool
+        .query_one(crate::db::stmt(
+            r#"
         DELETE FROM oauth_states
         WHERE state = $1
           AND provider = $2::provider_kind
           AND expires_at > now()
         RETURNING tenant_id, return_to
         "#,
-    )
-    .bind(&q.state)
-    .bind(provider_str.as_str())
-    .fetch_optional(&state.pool)
-    .await?;
+            [q.state.clone().into(), provider_str.as_str().into()],
+        ))
+        .await?;
 
     let row = row.ok_or_else(|| {
         AppError::BadRequest("oauth state unknown, expired, or provider mismatch".into())
     })?;
-    use sqlx::Row;
-    let tenant_id: Uuid = row.try_get("tenant_id")?;
-    let return_to: Option<String> = row.try_get("return_to")?;
+    let tenant_id: Uuid = row.try_get("", "tenant_id")?;
+    let return_to: Option<String> = row.try_get("", "return_to")?;
 
     let code = q
         .code

@@ -40,7 +40,14 @@ rust_decimal = { version = "1.42.0", features = ["serde"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 sha2 = "0.11.0"
-sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "migrate", "macros"] }
+# SeaORM over the sqlx-postgres driver. Schema management is declarative
+# (schema/schema.sql + scripts/dpm.sh); the server never migrates at boot,
+# so no `migrate`-style feature is needed. `sqlx-postgres` transitively
+# enables `postgres-array` (needed for the TEXT[] scopes columns).
+sea-orm = { version = "1", default-features = false, features = ["macros", "runtime-tokio-rustls", "sqlx-postgres", "with-chrono", "with-json", "with-uuid", "with-rust_decimal"] }
+# LevelFilter for ConnectOptions::sqlx_logging_level — keeps driver-level
+# statement logging at DEBUG, matching the bare-sqlx behavior we had before.
+log = "0.4"
 thiserror = "2.0.18"
 tokio = { version = "1.52.3", features = ["full"] }
 tower = { version = "0.5.3", features = ["util"] }
