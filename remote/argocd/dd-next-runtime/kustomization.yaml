@@ -182,6 +182,7 @@ resources:
   - dd-athleto-app-rs.deployment.yaml
   - dd-athleto-app-rs.ingress.yaml
   - dd-athleto-app-rs.networkpolicy.yaml
+  - dd-athleto-app-rs.ciliumnetworkpolicy.yaml
   - dd-athleto-app-rs.pdb.yaml
   - dd-athleto-app-rs.service.yaml
   - jello-ws.service.yaml
