@@ -278,4 +278,28 @@ mod tests {
         assert!(ports.contains(&25));
         assert!(parse_ports("25,nope").is_err());
     }
+
+    fn policy(exit_enabled: bool, relay_peers: Option<HashSet<String>>) -> Policy {
+        Policy {
+            allow_private_exit: false,
+            exit_enabled,
+            denied_exit_ports: HashSet::new(),
+            relay_peers,
+        }
+    }
+
+    #[tokio::test]
+    async fn middle_only_relay_refuses_exit() {
+        let p = policy(false, None);
+        assert!(!p.exit_enabled());
+        // Rejected before any DNS resolution is attempted.
+        assert!(p.resolve_exit("example.com", 443).await.is_err());
+    }
+
+    #[test]
+    fn extend_allowlist_presence_is_reported() {
+        assert!(!policy(true, None).extend_allowlisted());
+        let peers = HashSet::from(["relay-b:9001".to_string()]);
+        assert!(policy(true, Some(peers)).extend_allowlisted());
+    }
 }
