@@ -134,13 +134,33 @@ pub fn router(state: AppState) -> Router {
         .route("/readyz", get(readyz))
         .route("/metrics", get(metrics_http))
         .merge(auth_routes)
+        .route("/v1/devices", get(list_devices))
         .route("/v1/devices/revoke", post(revoke_device))
         .route("/v1/vault", get(pull_vault).post(push_vault))
-        // Outermost-to-innermost: request log, body cap, then a hard timeout.
+        // Outermost-to-innermost: request log, security headers, body cap, timeout.
         .layer(telemetry::http_trace_layer())
         .layer(middleware::from_fn_with_state(
             state.metrics.clone(),
             metrics::record_http_metrics,
+        ))
+        // Defense-in-depth response headers. This is a JSON API served behind a
+        // TLS-terminating ingress; these cost nothing and blunt sniffing/caching/
+        // framing of any error or token-bearing response.
+        .layer(SetResponseHeaderLayer::overriding(
+            header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("no-store"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::STRICT_TRANSPORT_SECURITY,
+            HeaderValue::from_static("max-age=63072000; includeSubDomains"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            HeaderName::from_static("x-frame-options"),
+            HeaderValue::from_static("DENY"),
         ))
         // Sealed blobs are small; cap bodies to 1 MiB to bound abuse.
         .layer(RequestBodyLimitLayer::new(1024 * 1024))
