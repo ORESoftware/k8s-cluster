@@ -7,6 +7,7 @@ mod devices;
 mod error;
 mod metrics;
 mod protocol;
+mod supabase;
 mod telemetry;
 mod vault_blob;
 
