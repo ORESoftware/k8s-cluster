@@ -19,7 +19,7 @@ use crate::supabase::SupabaseVerifier;
 use crate::{auth, db, devices, metrics, telemetry, vault_blob};
 use axum::body::Body;
 use axum::extract::State;
-use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+use axum::http::{header, HeaderMap, HeaderName, HeaderValue, StatusCode};
 use axum::middleware;
 use axum::response::Response;
 use axum::routing::{get, post};
