@@ -173,6 +173,13 @@ obfuscated or turn the service into a VPN.
 - **Overlay pre-shared key:** `TOR_NETWORK_SECRET` (or `…_FILE`) is folded into
   every handshake, so only nodes/clients sharing it can build circuits.
 - **Extend allowlist:** `TOR_RELAY_PEERS` pins which peers a relay will extend to.
+  A non-loopback relay with no allowlist logs a startup warning, since `Extend`
+  targets are otherwise unrestricted.
+- **Middle-only relays:** `TOR_DISABLE_EXIT=1` makes a relay refuse `Begin`, so it
+  never opens connections to real destinations. Confine exiting to designated
+  nodes to limit which hosts make outbound connections on your behalf. (Only
+  meaningful when the directory has more relays than `TOR_HOPS`, so a middle-only
+  relay is not forced into the exit position.)
 - **Limits & timeouts:** handshake (20 s), dial (15–60 s), and SOCKS-negotiation
   (30 s) timeouts; relay and SOCKS connection caps; optional circuit idle timeout;
   1 MiB frame/parser cap; path-traversal-sanitized doc names; relay key creation
