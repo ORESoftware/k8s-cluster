@@ -45,8 +45,13 @@
   into a closed one.
 - **Fail-closed exposed listeners.** Non-loopback relays require a PSK unless
   `TOR_ALLOW_OPEN_RELAY=1` is set. Non-loopback SOCKS requires an explicit remote
-  opt-in and RFC 1929 credentials. Non-loopback dashboard proxying requires a
-  token unless the unsafe override is explicit.
+  opt-in and RFC 1929 credentials. The optional HTTP `CONNECT` front-end
+  (`TOR_HTTP_LISTEN`) inherits the identical posture: loopback by default, and a
+  non-loopback bind requires `TOR_HTTP_ALLOW_REMOTE=1` plus the shared proxy
+  password, with `Proxy-Authorization: Basic` checked in constant time. It
+  supports `CONNECT` only (no absolute-URI forwarding) and applies the backend's
+  exit policy to every destination, so it is never an open proxy. Non-loopback
+  dashboard proxying requires a token unless the unsafe override is explicit.
 - **Timeouts & circuit cap.** Half-open handshakes are dropped after 20 s; dialing
   the next hop/destination is bounded (15 s relay, 60 s client); the SOCKS
   negotiation must finish in 30 s; `TOR_MAX_CIRCUITS` bounds concurrent circuits
