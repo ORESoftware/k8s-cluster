@@ -228,6 +228,26 @@ mod tests {
     }
 
     #[test]
+    fn cannot_inflate_a_sibling_counter() {
+        // Stored has devA:1, devB:1. devA tries to push a base that dominates but
+        // fabricates devB:9999 — this must be rejected as non-causal, not stored.
+        let stored = vv(&[("devA", 1), ("devB", 1)]);
+        let base = vv(&[("devA", 1), ("devB", 9999)]);
+        let err = reconcile(&stored, &base, "devA").unwrap_err();
+        assert_eq!(err, stored, "sibling-inflating push must conflict, not win");
+    }
+
+    #[test]
+    fn may_still_advance_own_counter_past_stored() {
+        // devA legitimately advancing only its own counter is causal and accepted.
+        let stored = vv(&[("devA", 5), ("devB", 2)]);
+        let base = vv(&[("devA", 5), ("devB", 2)]);
+        let out = reconcile(&stored, &base, "devA").unwrap();
+        assert_eq!(counter_for(&out, "devA"), 6);
+        assert_eq!(counter_for(&out, "devB"), 2);
+    }
+
+    #[test]
     fn dominates_basics() {
         assert!(dominates(&vv(&[("a", 2)]), &vv(&[("a", 1)])));
         assert!(!dominates(&vv(&[("a", 1)]), &vv(&[("a", 2)])));
