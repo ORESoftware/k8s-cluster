@@ -1,0 +1,66 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dd-rust-wss-server
+  namespace: default
+  labels:
+    app: dd-rust-wss-server
+spec:
+  podSelector:
+    matchLabels:
+      app: dd-rust-wss-server
+  policyTypes:
+    - Ingress
+    - Egress
+  # Benchmark-only WSS pod: it is not gateway-fronted. The WS gateway port
+  # (:8097) is reachable only from the dedicated loadtest deployment; the admin
+  # port (:8098, /metrics + probes) only from the observability scrapers.
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: dd-ws-loadtest-rs-rust-wss
+      ports:
+        - protocol: TCP
+          port: 8097
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - dd-prometheus
+                  - dd-otel-collector
+      ports:
+        - protocol: TCP
+          port: 8098
+  # No NATS, database, or runtime-config wiring — egress is DNS plus the
+  # cold-build dependency fetches only.
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        # The deployment builds the Rust service from mounted source on cold
+        # start. Permit dependency fetches over public HTTPS without opening
+        # private, loopback, or cloud-metadata destinations.
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
