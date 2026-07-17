@@ -157,6 +157,7 @@ async fn handle_circuit(
     prev: TcpStream,
     secret: Arc<StaticSecret>,
     policy: Arc<Policy>,
+    permit: Arc<OwnedSemaphorePermit>,
 ) -> Result<()> {
     prev.set_nodelay(true).ok();
     let (mut prev_r, mut prev_w) = prev.into_split();
