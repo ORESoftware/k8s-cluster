@@ -1,0 +1,7 @@
+{
+  "org": "daedalus-fab",
+  "monorepo": "daedalus-monorepo",
+  "apps": [
+    "fabrication-server.rs"
+  ]
+}

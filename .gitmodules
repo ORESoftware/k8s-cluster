@@ -1,0 +1,4 @@
+[submodule "apps/fabrication-server.rs"]
+	path = apps/fabrication-server.rs
+	url = git@github.com:daedalus-fab/fabrication-server.rs.git
+	branch = main
