@@ -140,3 +140,5 @@ probes and Prometheus. Rejections return `401` and increment
 Run the tests with `cargo test` (covers gate correctness, a Bell state, Grover
 amplification, QAOA MaxCut on a triangle, and VQE ground energies of `Z`, `X`,
 and `Z⊗Z`).
+
+> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

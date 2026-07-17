@@ -206,3 +206,5 @@ failures publish compact critical events to `dd.remote.events.critical`.
   }
 }
 ```
+
+> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

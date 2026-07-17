@@ -267,3 +267,5 @@ then `exec`s it. Secrets come from AWS Secrets Manager via ESO
 
 The `Dockerfile` builds a standalone slim image for environments that prefer a
 pushed artifact over the in-cluster build.
+
+> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

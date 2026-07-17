@@ -126,3 +126,5 @@ The consumer also keeps an in-memory taskId set and writes JSON receipts under
 skipped after the first successful prepare call. The Node.js worker has its own
 task receipt map/files too, so direct REST and future queue execution can remain
 idempotent at the container boundary.
+
+> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

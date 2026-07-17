@@ -1,7 +1,0 @@
-# Flutter expects four PNG icons here:
-#   Icon-192.png, Icon-512.png, Icon-maskable-192.png, Icon-maskable-512.png
-#
-# `flutter create` populates them. The Dockerfile and scripts/build-and-run.sh
-# both run `flutter create .` inside this directory before `flutter build web`,
-# which restores any missing template files (icons + favicon + flutter_bootstrap
-# stub).
