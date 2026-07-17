@@ -76,3 +76,50 @@ async fn proxy_json(state: &AppState, path: &str, payload: &Value) -> ApiResult<
         ))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn digest_read_from_top_level() {
+        let value = json!({ "digest": "0xabc123" });
+        assert_eq!(
+            digest_from_contract_response(&value),
+            Some("0xabc123".to_string())
+        );
+    }
+
+    #[test]
+    fn digest_falls_back_to_nested_validation_digest() {
+        let value = json!({ "validation": { "digest": "0xnested" } });
+        assert_eq!(
+            digest_from_contract_response(&value),
+            Some("0xnested".to_string())
+        );
+    }
+
+    #[test]
+    fn top_level_digest_wins_over_nested() {
+        let value = json!({
+            "digest": "0xtop",
+            "validation": { "digest": "0xnested" }
+        });
+        assert_eq!(
+            digest_from_contract_response(&value),
+            Some("0xtop".to_string())
+        );
+    }
+
+    #[test]
+    fn missing_or_non_string_digest_yields_none() {
+        assert_eq!(digest_from_contract_response(&json!({})), None);
+        assert_eq!(digest_from_contract_response(&json!({ "digest": 42 })), None);
+        assert_eq!(
+            digest_from_contract_response(&json!({ "validation": { "digest": null } })),
+            None
+        );
+        assert_eq!(digest_from_contract_response(&json!("just a string")), None);
+    }
+}

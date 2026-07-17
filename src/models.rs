@@ -217,3 +217,127 @@ pub fn json_object_or_default(value: Option<Value>) -> Value {
         Some(_) | None => serde_json::json!({}),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn page_query_limit_defaults_and_clamps() {
+        let q: PageQuery = serde_json::from_value(json!({})).unwrap();
+        assert_eq!(q.limit(200), 50);
+
+        let q: PageQuery = serde_json::from_value(json!({ "limit": 0 })).unwrap();
+        assert_eq!(q.limit(200), 1);
+
+        let q: PageQuery = serde_json::from_value(json!({ "limit": -10 })).unwrap();
+        assert_eq!(q.limit(200), 1);
+
+        let q: PageQuery = serde_json::from_value(json!({ "limit": 9999 })).unwrap();
+        assert_eq!(q.limit(200), 200);
+    }
+
+    #[test]
+    fn page_query_offset_defaults_and_floors_at_zero() {
+        let q: PageQuery = serde_json::from_value(json!({})).unwrap();
+        assert_eq!(q.offset(), 0);
+
+        let q: PageQuery = serde_json::from_value(json!({ "offset": -3 })).unwrap();
+        assert_eq!(q.offset(), 0);
+
+        let q: PageQuery = serde_json::from_value(json!({ "offset": 120 })).unwrap();
+        assert_eq!(q.offset(), 120);
+    }
+
+    #[test]
+    fn create_user_request_deserializes_camel_case() {
+        let req: CreateUserRequest = serde_json::from_value(json!({
+            "externalSubject": "sub-1",
+            "displayName": "Ada",
+            "userKind": "citizen",
+            "isLegalEntity": false,
+            "legalRegion": "US-NY",
+            "metaData": { "k": "v" }
+        }))
+        .unwrap();
+        assert_eq!(req.external_subject.as_deref(), Some("sub-1"));
+        assert_eq!(req.display_name, "Ada");
+        assert_eq!(req.user_kind.as_deref(), Some("citizen"));
+        assert_eq!(req.is_legal_entity, Some(false));
+        assert_eq!(req.meta_data, Some(json!({ "k": "v" })));
+    }
+
+    #[test]
+    fn create_user_request_requires_display_name() {
+        let result: Result<CreateUserRequest, _> =
+            serde_json::from_value(json!({ "externalSubject": "sub-1" }));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn cast_vote_request_deserializes_optional_fields() {
+        let req: CastVoteRequest = serde_json::from_value(json!({
+            "voterUserId": "user-9",
+            "voteValue": "guilty",
+            "weightMicros": 1_000_000,
+            "sealedPayload": { "cipher": "abc" }
+        }))
+        .unwrap();
+        assert_eq!(req.voter_user_id, "user-9");
+        assert_eq!(req.vote_value, "guilty");
+        assert_eq!(req.weight_micros, Some(1_000_000));
+        assert!(req.vote_kind.is_none());
+        assert!(req.contract_envelope.is_none());
+    }
+
+    #[test]
+    fn ledger_entry_request_deserializes_amount_cents() {
+        let req: LedgerEntryRequest = serde_json::from_value(json!({
+            "entryKind": "pledge",
+            "direction": "debit",
+            "amountCents": -2_500_000_000i64
+        }))
+        .unwrap();
+        assert_eq!(req.entry_kind, "pledge");
+        assert_eq!(req.direction, "debit");
+        assert_eq!(req.amount_cents, -2_500_000_000);
+        assert!(req.currency.is_none());
+    }
+
+    #[test]
+    fn simulation_run_response_serializes_camel_case() {
+        let response = SimulationRunResponse {
+            ok: true,
+            persisted: false,
+            run_id: Some("run-1".to_string()),
+            case_id: None,
+            seed: 42,
+            horizon_days: 180,
+            actor_count: 100,
+            event_count: 7,
+            metrics: json!({}),
+            trace: json!([]),
+        };
+        let value = serde_json::to_value(&response).unwrap();
+        assert_eq!(value["runId"], "run-1");
+        assert_eq!(value["horizonDays"], 180);
+        assert_eq!(value["actorCount"], 100);
+        assert_eq!(value["eventCount"], 7);
+        assert!(value.get("run_id").is_none());
+    }
+
+    #[test]
+    fn json_object_or_default_passes_objects_through() {
+        let obj = json!({ "a": 1 });
+        assert_eq!(json_object_or_default(Some(obj.clone())), obj);
+    }
+
+    #[test]
+    fn json_object_or_default_replaces_non_objects() {
+        assert_eq!(json_object_or_default(None), json!({}));
+        assert_eq!(json_object_or_default(Some(json!([1, 2]))), json!({}));
+        assert_eq!(json_object_or_default(Some(json!("str"))), json!({}));
+        assert_eq!(json_object_or_default(Some(json!(null))), json!({}));
+    }
+}

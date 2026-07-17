@@ -67,3 +67,51 @@ impl From<reqwest::Error> for ApiError {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn constructors_map_to_expected_status_codes() {
+        assert_eq!(ApiError::bad_request("x").status, StatusCode::BAD_REQUEST);
+        assert_eq!(ApiError::unauthorized("x").status, StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            ApiError::unavailable("x").status,
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+        assert_eq!(
+            ApiError::internal("x").status,
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+    }
+
+    #[test]
+    fn display_uses_message_only() {
+        let err = ApiError::bad_request("missing field: caseId");
+        assert_eq!(err.to_string(), "missing field: caseId");
+    }
+
+    #[test]
+    fn db_record_not_found_maps_to_404() {
+        let err = ApiError::from(sea_orm::DbErr::RecordNotFound("cases".to_string()));
+        assert_eq!(err.status, StatusCode::NOT_FOUND);
+        assert_eq!(err.message, "row not found");
+    }
+
+    #[test]
+    fn other_db_errors_map_to_500_with_context() {
+        let err = ApiError::from(sea_orm::DbErr::Custom("boom".to_string()));
+        assert_eq!(err.status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(err.message.contains("database error"));
+        assert!(err.message.contains("boom"));
+    }
+
+    #[test]
+    fn into_response_preserves_status() {
+        let response = ApiError::unavailable("down").into_response();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let response = ApiError::bad_request("nope").into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+}

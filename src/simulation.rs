@@ -298,3 +298,95 @@ mod tests {
         assert_eq!(response.metrics["guiltyVotes"], 15);
     }
 }
+
+#[cfg(test)]
+mod config_tests {
+    use super::*;
+
+    fn empty_request() -> SimulationRunRequest {
+        SimulationRunRequest {
+            case_id: None,
+            seed: None,
+            horizon_days: None,
+            actor_count: None,
+            target_signatures: None,
+            sponsor_response_rate: None,
+            admission_approval_rate: None,
+            judge_conviction_rate: None,
+            panel_size: None,
+            conviction_threshold_count: None,
+            persist: None,
+            input: None,
+        }
+    }
+
+    #[test]
+    fn defaults_applied_when_request_is_empty() {
+        let config = config_from_request(empty_request());
+        assert_eq!(config.seed, 42);
+        assert_eq!(config.horizon_days, 180);
+        assert_eq!(config.actor_count, 100);
+        // Default target = min(actor_count, 1000).
+        assert_eq!(config.target_signatures, 100);
+        assert_eq!(config.panel_size, 15);
+        // Default threshold = ceil(0.8 * panel_size) = 12.
+        assert_eq!(config.conviction_threshold_count, 12);
+        assert_eq!(config.input, json!({}));
+    }
+
+    #[test]
+    fn out_of_range_values_are_clamped() {
+        let config = config_from_request(SimulationRunRequest {
+            actor_count: Some(-5),
+            horizon_days: Some(1_000_000),
+            panel_size: Some(500),
+            target_signatures: Some(0),
+            conviction_threshold_count: Some(9_999),
+            ..empty_request()
+        });
+        assert_eq!(config.actor_count, 1);
+        assert_eq!(config.horizon_days, 3650);
+        assert_eq!(config.panel_size, 101);
+        assert_eq!(config.target_signatures, 1);
+        // Threshold can never exceed the panel size.
+        assert_eq!(config.conviction_threshold_count, 101);
+    }
+
+    #[test]
+    fn probabilities_are_clamped_and_nan_is_zeroed() {
+        assert_eq!(clamp_probability(0.5), 0.5);
+        assert_eq!(clamp_probability(-0.2), 0.0);
+        assert_eq!(clamp_probability(1.7), 1.0);
+        assert_eq!(clamp_probability(f64::NAN), 0.0);
+        assert_eq!(clamp_probability(f64::INFINITY), 0.0);
+        assert_eq!(clamp_probability(f64::NEG_INFINITY), 0.0);
+    }
+
+    #[test]
+    fn lcg_stream_is_deterministic_and_in_unit_range() {
+        let mut a = Lcg::new(99);
+        let mut b = Lcg::new(99);
+        for _ in 0..1000 {
+            let next = a.next_unit();
+            assert_eq!(next, b.next_unit());
+            assert!((0.0..1.0).contains(&next), "out of range: {next}");
+        }
+        // Zero seed is coerced to a nonzero state rather than a frozen stream.
+        let mut zero_seeded = Lcg::new(0);
+        let mut one_seeded = Lcg::new(1);
+        assert_eq!(zero_seeded.next_unit(), one_seeded.next_unit());
+    }
+
+    #[test]
+    fn zero_response_rate_never_collects_signatures() {
+        let response = run_simulation(SimulationRunRequest {
+            seed: Some(11),
+            horizon_days: Some(30),
+            sponsor_response_rate: Some(0.0),
+            ..empty_request()
+        });
+        assert_eq!(response.metrics["signaturesCollected"], 0);
+        assert_eq!(response.metrics["admitted"], false);
+        assert_eq!(response.metrics["convicted"], false);
+    }
+}
