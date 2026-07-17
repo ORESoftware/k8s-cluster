@@ -370,7 +370,11 @@ fn list_docs(dir: &std::path::Path) -> Vec<String> {
             let p = e.path();
             if p.extension().and_then(|s| s.to_str()) == Some("md") {
                 if let Some(stem) = p.file_stem().and_then(|s| s.to_str()) {
-                    out.push(stem.to_string());
+                    // Only list docs that are also serveable by `docs_page`;
+                    // this keeps unescaped filenames out of the HTML index.
+                    if is_doc_slug(stem) {
+                        out.push(stem.to_string());
+                    }
                 }
             }
         }
