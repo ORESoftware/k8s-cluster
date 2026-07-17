@@ -66,18 +66,27 @@ pub fn token_hash(token: &str) -> String {
     hex::encode(h.finalize())
 }
 
-/// Resolve the `Authorization: Bearer <token>` header to an [`AuthedDevice`],
-/// rejecting revoked or unknown tokens. Constant-ish: lookup is by token hash.
-pub async fn authenticate(pool: &PgPool, headers: &HeaderMap) -> Result<AuthedDevice, ApiError> {
-    let token = headers
+/// Extract the raw bearer token from an `Authorization: Bearer <token>` header.
+pub fn bearer(headers: &HeaderMap) -> Result<&str, ApiError> {
+    headers
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
-        .ok_or(ApiError::Unauthorized)?;
+        .ok_or(ApiError::Unauthorized)
+}
+
+/// Resolve the `Authorization: Bearer <token>` header to an [`AuthedDevice`],
+/// rejecting revoked or unknown tokens. Constant-ish: lookup is by token hash.
+/// Also stamps the device's `last_seen_at` so an owner can spot stale devices;
+/// the update is best-effort and never fails the request.
+pub async fn authenticate(pool: &PgPool, headers: &HeaderMap) -> Result<AuthedDevice, ApiError> {
+    let token = bearer(headers)?;
 
     let hash = token_hash(token);
     let row: Option<(Uuid, Uuid)> = sqlx::query_as(
-        "SELECT id, account_id FROM threefa.devices WHERE sync_token_hash = $1 AND revoked = FALSE",
+        "UPDATE threefa.devices SET last_seen_at = now() \
+         WHERE sync_token_hash = $1 AND revoked = FALSE \
+         RETURNING id, account_id",
     )
     .bind(&hash)
     .fetch_optional(pool)
