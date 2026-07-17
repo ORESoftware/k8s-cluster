@@ -20,7 +20,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/athleto-app-revision: 'initial-gitops-source'
+        dd.dev/athleto-app-revision: '7e8ebe9'
       labels:
         app: dd-athleto-app-rs
     spec:
