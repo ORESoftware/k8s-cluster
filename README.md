@@ -101,6 +101,25 @@ curl -x socks5h://127.0.0.1:9050 https://example.com/
 
 The client also serves a **web dashboard** at <http://127.0.0.1:9060/>.
 
+## Proxy front-ends: SOCKS5 and HTTP CONNECT
+
+The client exposes **SOCKS5** on `TOR_SOCKS_LISTEN` (default `127.0.0.1:9050`).
+Optionally it also runs an **HTTP `CONNECT`** proxy when `TOR_HTTP_LISTEN` is set,
+for apps and OS "HTTP proxy" settings that don't speak SOCKS (browsers, Docker,
+`curl -x http://…`, corporate-proxy fields). Both front-ends tunnel through the
+same backend, share the same proxy credential, and enforce the same fail-closed
+posture (loopback by default; a non-loopback bind needs an explicit opt-in plus a
+password). `CONNECT` carries TLS end-to-end — the proxy never sees plaintext; for
+plaintext `http://` use SOCKS.
+
+```sh
+# Enable the HTTP CONNECT proxy alongside SOCKS.
+TOR_DIRECTORY=./directory.toml TOR_HTTP_LISTEN=127.0.0.1:9080 cargo run -- client &
+
+# Point an HTTPS request at it (CONNECT tunnels TLS through the overlay).
+curl -x http://127.0.0.1:9080 https://example.com/
+```
+
 ## Web dashboard & docs
 
 In `client` mode a small web server runs alongside the SOCKS proxy
