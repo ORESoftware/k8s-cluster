@@ -3,8 +3,28 @@
 
 use crate::auth;
 use crate::error::ApiError;
+use serde::Serialize;
 use sqlx::{Executor, PgPool, Postgres};
+use time::OffsetDateTime;
 use uuid::Uuid;
+
+/// Per-account cap on live (non-revoked) devices. Bounds the token/attack-surface
+/// growth from repeated logins (each login enrolls a device). A user hitting this
+/// should revoke a stale device via `GET`/`POST /v1/devices`.
+pub const MAX_DEVICES_PER_ACCOUNT: i64 = 25;
+
+/// A device as surfaced to its owner so they can recognize and revoke it. The
+/// sync-token hash is deliberately never exposed.
+#[derive(Debug, Serialize)]
+pub struct DeviceInfo {
+    pub device_id: Uuid,
+    pub device_name: String,
+    pub revoked: bool,
+    #[serde(with = "time::serde::rfc3339")]
+    pub created_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub last_seen_at: Option<OffsetDateTime>,
+}
 
 /// Insert a new device for an account and return `(device_id, raw_token)`.
 /// The raw token is shown to the client exactly once.
