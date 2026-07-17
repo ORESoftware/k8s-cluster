@@ -1,4 +1,14 @@
-# `remote/deployments/usacc-rest-api-backend-rs`
+# rest-api-backend.rs — USACC
+
+**[usa-acc](https://github.com/usa-acc)** · site: [usa-acc.github.io](https://usa-acc.github.io)
+
+> Extracted with full history from `ORESoftware/k8s-cluster`
+> (`remote/deployments/usacc-rest-api-backend-rs`) on 2026-07-17. **This repo is
+> the source of truth**; k8s-cluster vendors it back as a submodule at the same
+> path. Path deps (`../../libs`, `../../submodules`) resolve inside that
+> superproject checkout — full builds happen there. See [AGENTS.md](AGENTS.md)
+> for repo rules.
+
 
 Rust/Axum REST backend for the US Anti-Corruption Court project.
 
