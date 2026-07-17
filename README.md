@@ -95,6 +95,26 @@ builder is pinned to the multi-architecture Rust 1.95 Bookworm image digest.
 - `THREEFA_AUTH_MAX_CONCURRENT` (default `2`) bounds concurrent Argon2 work;
   excess login/register requests fail with `429` instead of exhausting memory.
 
+## Supabase identity
+
+Set these to enable `/v1/auth/supabase` (unset ⇒ the route returns `501`, and the
+server runs legacy-auth only):
+
+- `SUPABASE_PROJECT_URL` — e.g. `https://<ref>.supabase.co`. The issuer
+  (`<url>/auth/v1`) and JWKS URL (`<url>/auth/v1/.well-known/jwks.json`) are
+  derived from it.
+- `SUPABASE_JWT_AUD` — expected audience (default `authenticated`).
+- `SUPABASE_JWT_LEGACY_SECRET` — only if the project still signs with the legacy
+  HS256 shared secret. Prefer asymmetric signing keys (RS256/ES256) and leave this
+  unset; the server resolves those from the JWKS automatically and needs no secret.
+
+The client obtains the access JWT from Supabase, then calls `POST
+/v1/auth/supabase` with `Authorization: Bearer <jwt>` and a `{"device_name":…}`
+body to receive a long-lived sync token. The sync token — not the JWT — is used
+for `/v1/vault` and `/v1/devices`, so an expired JWT does not force a full vault
+re-auth; the client silently refreshes its Supabase session (unlocked locally by
+the app's 6-digit PIN) and keeps its existing sync token.
+
 ## Layout
 
 ```
