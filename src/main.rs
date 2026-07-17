@@ -268,6 +268,17 @@ async fn run_client() -> Result<()> {
             max_connections: max_socks_connections,
         })
     });
+    let forward_cfgs: Vec<Arc<forward::ForwardConfig>> = forward_routes
+        .into_iter()
+        .map(|route| {
+            Arc::new(forward::ForwardConfig {
+                route,
+                connector: connector.clone(),
+                stats: stats.clone(),
+                max_connections: max_socks_connections,
+            })
+        })
+        .collect();
     let web_cfg = Arc::new(web::WebConfig {
         ui_listen: ui_listen.clone(),
         socks_listen,
@@ -286,6 +297,9 @@ async fn run_client() -> Result<()> {
     tasks.spawn(async move { web::run(web_cfg).await });
     if let Some(http_cfg) = http_cfg {
         tasks.spawn(async move { http_connect::run(http_cfg).await });
+    }
+    for fwd_cfg in forward_cfgs {
+        tasks.spawn(async move { forward::run(fwd_cfg).await });
     }
     if let Some(res) = tasks.join_next().await {
         return res.context("client task panicked")?;
