@@ -31,6 +31,14 @@
   will extend to, preventing relays from being used to reach arbitrary internal
   hosts. In untrusted deployments (relays reachable by parties you don't
   control) this should be set, since `Extend` targets are otherwise unrestricted.
+  A non-loopback relay started without an allowlist logs a warning at startup.
+- **Middle-only relays.** `TOR_DISABLE_EXIT=1` makes a relay refuse `Begin`
+  outright, so it never resolves or connects to a real destination. Any client
+  can otherwise turn *any* reachable relay into its exit by sending `Begin`;
+  this flag lets an operator confine exiting to designated nodes and keep other
+  relays purely as onion-forwarding middles. (Effective only when the directory
+  holds more relays than `TOR_HOPS`, or a middle-only relay would be forced into
+  the exit slot and its circuits would fail.)
 - **Overlay pre-shared key.** `TOR_NETWORK_SECRET` (or `TOR_NETWORK_SECRET_FILE`,
   which keeps it out of the process environment) is folded into every handshake,
   so only nodes/clients sharing it can build circuits — turning the open overlay
