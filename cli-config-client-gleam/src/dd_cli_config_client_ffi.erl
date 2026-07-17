@@ -71,25 +71,43 @@ source(Name) ->
     Key = to_binary(Name),
     maps:get(Key, persistent_term:get(?SOURCES_KEY, #{}), <<"missing">>).
 
+%% The values map also carries the ENTIRE process environment (config lookups
+%% fall back to plain env vars), so the snapshot must never dump `Values`
+%% wholesale — that would hand every DATABASE_URL / *_SECRET the pod holds to
+%% whatever debug route exposes it. Only flags declared in .cli-flags.toml are
+%% listed, and secret-looking keys are redacted on top.
 snapshot_json() ->
     load_once(),
     Values = persistent_term:get(?VALUES_KEY, #{}),
     Sources = persistent_term:get(?SOURCES_KEY, #{}),
     Path = persistent_term:get(?CONFIG_PATH_KEY, undefined),
-    Entries = maps:fold(
-        fun(Key, Value, Acc) ->
-            Source = maps:get(Key, Sources, <<"missing">>),
-            [
-                [
-                    "{\"key\":\"", escape_json(Key),
-                    "\",\"value\":\"", escape_json(Value),
-                    "\",\"source\":\"", escape_json(Source), "\"}"
-                ]
-                | Acc
-            ]
+    Flags = persistent_term:get(?FLAGS_KEY, []),
+    DeclaredKeys = lists:usort([
+        maps:get(env, Flag)
+        || Flag <- Flags, maps:get(env, Flag, undefined) =/= undefined
+    ]),
+    Entries = lists:foldl(
+        fun(Key, Acc) ->
+            case maps:find(Key, Values) of
+                error -> Acc;
+                {ok, Value} ->
+                    Source = maps:get(Key, Sources, <<"missing">>),
+                    Shown = case secret_key(Key) of
+                        true -> <<"[redacted]">>;
+                        false -> Value
+                    end,
+                    [
+                        [
+                            "{\"key\":\"", escape_json(Key),
+                            "\",\"value\":\"", escape_json(Shown),
+                            "\",\"source\":\"", escape_json(Source), "\"}"
+                        ]
+                        | Acc
+                    ]
+            end
         end,
         [],
-        Values
+        DeclaredKeys
     ),
     EntryJson = join_iolist(lists:reverse(Entries), ","),
     PathJson = case Path of
@@ -100,6 +118,18 @@ snapshot_json() ->
         "{\"ok\":true,\"configPath\":", PathJson,
         ",\"entries\":[", EntryJson, "]}"
     ]).
+
+%% A config key whose name suggests it holds a credential. Redacted in
+%% snapshot_json regardless of being a declared flag.
+secret_key(Key) when is_binary(Key) ->
+    Upper = string:uppercase(binary_to_list(Key)),
+    lists:any(
+        fun(Pattern) -> string:find(Upper, Pattern) =/= nomatch end,
+        [
+            "SECRET", "TOKEN", "PASSWORD", "PASSWD", "PRIVATE",
+            "CREDENTIAL", "API_KEY", "APIKEY", "_KEY", "DATABASE_URL", "DSN"
+        ]
+    ).
 
 %% ---------- owner -------------------------------------------------------
 

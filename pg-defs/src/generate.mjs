@@ -22,10 +22,22 @@ async function main() {
 
   const outputs = renderOutputs(schema, sourceSql);
 
+  // Every output must resolve inside generated/. Table/class names are
+  // parser-constrained to [A-Za-z0-9_] today, but nothing at the write site
+  // enforced that — this guard makes path escape structurally impossible.
+  const generatedRoot = path.join(packageRoot, 'generated') + path.sep;
+  const resolveOutputPath = (relativePath) => {
+    const absolutePath = path.join(packageRoot, relativePath);
+    if (!absolutePath.startsWith(generatedRoot)) {
+      throw new Error(`generated output path escapes generated/: ${relativePath}`);
+    }
+    return absolutePath;
+  };
+
   if (args.has('--check')) {
     const stale = [];
     for (const [relativePath, contents] of outputs) {
-      const absolutePath = path.join(packageRoot, relativePath);
+      const absolutePath = resolveOutputPath(relativePath);
       let existing = '';
       try {
         existing = await readFile(absolutePath, 'utf8');
@@ -51,7 +63,7 @@ async function main() {
   }
 
   for (const [relativePath, contents] of outputs) {
-    const absolutePath = path.join(packageRoot, relativePath);
+    const absolutePath = resolveOutputPath(relativePath);
     await mkdir(path.dirname(absolutePath), { recursive: true });
     await writeFile(absolutePath, contents);
   }
@@ -5854,11 +5866,22 @@ function screaming(value) {
 }
 
 function escapeTemplate(value) {
-  return value.replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
+  // Backslashes first — a trailing `\` would otherwise escape the closing
+  // backtick of the emitted template literal.
+  return value
+    .replace(/\\/g, '\\\\')
+    .replace(/`/g, '\\`')
+    .replace(/\$\{/g, '\\${');
 }
 
 function rustRawString(value) {
-  return `r###"${value}"###`;
+  // Grow the fence until it cannot appear in the value, so no input can
+  // terminate the raw string early (same trick as dartRawRegexString).
+  let fence = '###';
+  while (value.includes(`"${fence}`)) {
+    fence += '#';
+  }
+  return `r${fence}"${value}"${fence}`;
 }
 
 function goRawString(value) {

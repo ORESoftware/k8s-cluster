@@ -41,7 +41,8 @@ schema_sql="$pg_defs_dir/schema/schema.sql"
 if ! command -v dpm >/dev/null 2>&1; then
   echo "error: dpm not found on PATH." >&2
   echo "install: brew install declarative-migrations/tap/dpm" >&2
-  echo "     or: curl -fsSL https://raw.githubusercontent.com/declarative-migrations/declarative-postgres-migrate.rs/main/scripts/install.sh | bash" >&2
+  echo "     or (pin the ref before piping to bash):" >&2
+  echo "         curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/declarative-migrations/declarative-postgres-migrate.rs/f7180770fc0c7a3dbf9b83dcdc2ac6255da31ffc/scripts/install.sh | bash" >&2
   exit 1
 fi
 

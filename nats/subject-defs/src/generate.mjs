@@ -167,6 +167,20 @@ const DIRECTIONS = new Set(['publish', 'subscribe', 'both']);
  * }} Stream
  */
 
+// Names that become code identifiers across the generated targets (via
+// pascal()/upperSnake()/camelToSnake()) must be plain identifiers — the
+// casing helpers pass through anything that isn't [_\s-], so a name like
+// `Foo";x` or one with a newline would emit broken/injectable source.
+const IDENTIFIER_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+function assertIdentifierName(kind, value, context) {
+  if (typeof value !== 'string' || !IDENTIFIER_NAME.test(value)) {
+    throw new Error(
+      `${context}: ${kind} ${JSON.stringify(value)} must match [A-Za-z_][A-Za-z0-9_]* — it becomes a code identifier in generated output`,
+    );
+  }
+}
+
 function buildModel(schemaFiles) {
   /** @type {Subject[]} */ const subjects = [];
   /** @type {QueueGroup[]} */ const queueGroups = [];
@@ -178,10 +192,13 @@ function buildModel(schemaFiles) {
   for (const { filename, doc } of schemaFiles) {
     const ext = doc['$dd:nats'];
     if (!ext) continue;
+    // `service` is only ever emitted into doc comments (Service: ...), which
+    // splitDoc neutralizes — so it is not identifier-gated here.
     const service = ext.service;
 
     for (const subj of ext.subjects ?? []) {
       if (!subj.name) throw new Error(`${filename}: subject is missing 'name'`);
+      assertIdentifierName('subject name', subj.name, filename);
       if (seenSubjects.has(subj.name)) {
         throw new Error(`Duplicate subject name across schemas: ${subj.name}`);
       }
@@ -258,6 +275,7 @@ function buildModel(schemaFiles) {
       if (seenQueueGroupNames.has(qg.name)) {
         throw new Error(`Duplicate queueGroup name across schemas: ${qg.name}`);
       }
+      assertIdentifierName('queueGroup name', qg.name, filename);
       seenQueueGroupNames.add(qg.name);
       queueGroups.push({
         name: qg.name,
@@ -272,6 +290,7 @@ function buildModel(schemaFiles) {
       if (seenStreams.has(st.name)) {
         throw new Error(`Duplicate stream name across schemas: ${st.name}`);
       }
+      assertIdentifierName('stream name', st.name, filename);
       seenStreams.add(st.name);
       if (!Array.isArray(st.subjects) || st.subjects.length === 0) {
         throw new Error(`${st.name}: stream needs non-empty 'subjects'`);
@@ -2610,7 +2629,18 @@ function upperSnake(name) {
 }
 
 function splitDoc(text) {
-  return text.split(/\n+/).map((line) => line.trim()).filter((line) => line.length > 0);
+  // `*/` must never survive into a block comment (it would terminate the
+  // emitted JSDoc/Javadoc early and leak the rest of the line as source),
+  // and control characters have no business in generated docs.
+  return text
+    .split(/\n+/)
+    .map((line) =>
+      line
+        .replace(/\*\//g, '*\\/')
+        .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+        .trim(),
+    )
+    .filter((line) => line.length > 0);
 }
 
 function parsePattern(pattern) {

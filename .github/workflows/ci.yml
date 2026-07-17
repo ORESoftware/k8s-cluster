@@ -19,8 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
       - name: pg-defs generated output in sync with schema.sql
@@ -59,9 +59,11 @@ jobs:
       SHADOW_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
       TARGET_DATABASE_URL: postgres://postgres:postgres@localhost:5432/pg_defs_target
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: Install dpm
-        run: curl -fsSL https://raw.githubusercontent.com/declarative-migrations/declarative-postgres-migrate.rs/main/scripts/install.sh | bash
+        # Pinned to a reviewed commit of the installer, not `main`, so an
+        # upstream compromise can't inject into this job. Bump deliberately.
+        run: curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/declarative-migrations/declarative-postgres-migrate.rs/f7180770fc0c7a3dbf9b83dcdc2ac6255da31ffc/scripts/install.sh | bash
       - name: schema.sql applies cleanly to a fresh Postgres 17
         run: |
           psql "$SHADOW_DATABASE_URL" -c 'create database pg_defs_target'
