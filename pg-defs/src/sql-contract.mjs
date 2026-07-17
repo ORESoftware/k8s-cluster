@@ -499,8 +499,10 @@ function parseCreateFunction(statement) {
 }
 
 function parseCreateTrigger(statement) {
+  // Table and function references may be schema-qualified (fiducia.orgs,
+  // fiducia.lock_sync_clock); trigger names themselves are never qualified.
   const match = statement.match(
-    /^create\s+trigger\s+("?[\w]+"?)\s+(before|after|instead\s+of)\s+([\s\S]+?)\s+on\s+("?[\w]+"?)\s+for\s+each\s+(row|statement)\s+execute\s+(?:function|procedure)\s+("?[\w]+"?)\s*\(([\s\S]*?)\)\s*;?$/i,
+    /^create\s+trigger\s+("?[\w]+"?)\s+(before|after|instead\s+of)\s+([\s\S]+?)\s+on\s+("?[\w]+"?(?:\."?[\w]+"?)?)\s+for\s+each\s+(row|statement)\s+execute\s+(?:function|procedure)\s+("?[\w]+"?(?:\."?[\w]+"?)?)\s*\(([\s\S]*?)\)\s*;?$/i,
   );
   if (!match) {
     return null;
