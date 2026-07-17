@@ -11490,3 +11490,44 @@ async fn shutdown_signal() {
         _ = terminate => {},
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn jello_sample_markup_renders_each_product() {
+        let athlet = jello_sample_markup(Some("athlet")).into_string();
+        assert!(athlet.contains("sample-card athlet"));
+        assert!(athlet.contains("Athlet-O starter box"));
+        assert!(athlet.contains("20g gelatin protein"));
+
+        let recover = jello_sample_markup(Some("recover")).into_string();
+        assert!(recover.contains("sample-card recover"));
+        assert!(recover.contains("Recover-O cooldown box"));
+        assert!(recover.contains("Magnesium"));
+
+        let pregame = jello_sample_markup(Some("pregame")).into_string();
+        assert!(pregame.contains("sample-card pregame"));
+        assert!(pregame.contains("Pre-Game-O tunnel box"));
+        assert!(pregame.contains("Zero sugar"));
+    }
+
+    #[test]
+    fn jello_sample_markup_falls_back_to_athlet() {
+        for product in [None, Some("unknown-product"), Some("")] {
+            let markup = jello_sample_markup(product).into_string();
+            assert!(markup.contains("Athlet-O starter box"), "fallback for {product:?}");
+        }
+    }
+
+    #[test]
+    fn jello_document_serves_athlet_o_branding() {
+        let Html(page) = jello_document();
+        assert!(page.contains("<title>Athlet-O performance gelatin</title>"));
+        assert!(page.contains("Wobble hard. Recover clean."));
+        assert!(page.contains("/jello/sample?product=athlet"));
+        assert!(page.contains("Recover-O"));
+        assert!(page.contains("Pre-Game-O"));
+    }
+}
