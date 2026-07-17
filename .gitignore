@@ -1,2 +1,6 @@
 /build/
 /erl_crash.dump
+.direnv/
+.env
+node_modules/
+result

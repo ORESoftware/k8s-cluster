@@ -1,4 +1,12 @@
-# `remote/deployments/gleam-lambda-runner`
+# gleam-lambda-runner — Scintilla
+
+**[scintilla-run](https://github.com/scintilla-run)** · site: [scintilla-run.github.io](https://scintilla-run.github.io)
+
+> Extracted with full history from `ORESoftware/k8s-cluster`
+> (`remote/deployments/gleam-lambda-runner`) on 2026-07-17. **This repo is the
+> source of truth**; k8s-cluster vendors it back as a submodule at the same path.
+> Path deps (`../../libs`) resolve inside that superproject checkout — full
+> builds happen there. See [AGENTS.md](AGENTS.md) for repo rules.
 
 Gleam HTTP service for running user-defined lambda functions in reusable child processes and
 optional non-root containers.

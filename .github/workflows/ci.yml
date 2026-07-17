@@ -1,0 +1,27 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No build artifacts or env files tracked
+        run: |
+          bad=$(git ls-files | grep -E '(^|/)(build/|\.direnv/|\.env$|node_modules/|erl_crash\.dump$)' || true)
+          if [ -n "$bad" ]; then echo "forbidden tracked files:"; echo "$bad"; exit 1; fi
+  fmt:
+    # Informational: full builds require the k8s-cluster superproject (path deps).
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27"
+          gleam-version: "1.17.0"
+      - run: gleam format --check src test
