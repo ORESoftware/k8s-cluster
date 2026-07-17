@@ -6,6 +6,7 @@ use crate::crypto::Sealer;
 use crate::customer_locks::CustomerLockBroker;
 use crate::customers::CustomerService;
 use crate::events::EventBus;
+use crate::fiducia::FiduciaCoordinator;
 use crate::ledger::LedgerService;
 use crate::locks::LockService;
 use crate::providers::connection::ConnectionService;
@@ -27,6 +28,7 @@ pub struct AppState {
     pub vendors: VendorService,
     pub connections: ConnectionService,
     pub locks: LockService,
+    pub fiducia: FiduciaCoordinator,
     pub solana_client: SolanaClient,
     pub anchor: Arc<AnchorService>,
     pub verifier: Arc<Verifier>,
@@ -43,15 +45,21 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(cfg: Arc<Config>, pool: PgPool, sealer: Arc<Sealer>, events: Arc<EventBus>) -> Self {
+    pub fn new(
+        cfg: Arc<Config>,
+        pool: PgPool,
+        sealer: Arc<Sealer>,
+        events: Arc<EventBus>,
+    ) -> anyhow::Result<Self> {
         let tenants = TenantService::new(pool.clone());
         let users = UserService::new(pool.clone());
-        let customer_locks = CustomerLockBroker::from_config(&cfg);
+        let fiducia = FiduciaCoordinator::from_config(&cfg)?;
+        let customer_locks = CustomerLockBroker::from_config(&cfg, fiducia.clone());
         let ledger = LedgerService::new(pool.clone(), customer_locks.clone(), events.clone());
         let customers = CustomerService::new(pool.clone(), users.clone(), customer_locks.clone());
         let vendors = VendorService::new(pool.clone(), users.clone(), ledger.clone());
         let connections = ConnectionService::new(pool.clone(), sealer.clone(), events.clone());
-        let locks = LockService::new(pool.clone());
+        let locks = LockService::new(pool.clone(), fiducia.clone());
         let notifications = Arc::new(crate::notifications::NotificationService::new(pool.clone()));
         let scheduler = Arc::new(crate::scheduler::SchedulerService::new(pool.clone()));
 
@@ -63,7 +71,7 @@ impl AppState {
         ));
         let verifier = Arc::new(Verifier::new(pool.clone(), solana_client.clone()));
 
-        Self {
+        Ok(Self {
             cfg,
             pool,
             tenants,
@@ -73,6 +81,7 @@ impl AppState {
             vendors,
             connections,
             locks,
+            fiducia,
             solana_client,
             anchor,
             verifier,
@@ -81,6 +90,6 @@ impl AppState {
             plaid_webhook_verifier: PlaidWebhookVerifier::new(),
             events,
             sealer,
-        }
+        })
     }
 }

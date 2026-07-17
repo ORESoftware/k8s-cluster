@@ -1,8 +1,8 @@
-use std::env;
+use std::{env, fmt};
 
 pub const DEFAULT_STRIPE_API_VERSION: &str = "2026-04-22.dahlia";
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Config {
     pub host: String,
     pub port: u16,
@@ -85,20 +85,24 @@ pub struct Config {
     /// integration tests against a local mock server).
     pub block_private_outbound: bool,
 
-    /// Gate customer billing-state snapshots and customer-account ledger
-    /// writes with the external live-mutex-rs broker. Defaults off for local
-    /// development; production manifests turn this on.
-    pub customer_snapshot_lock_enabled: bool,
+    /// Use fiducia.cloud as the fenced coordination authority for customer
+    /// snapshot locks and tenant leases. Defaults off for local development;
+    /// production manifests turn this on and must provide credentials.
+    pub fiducia_enabled: bool,
 
-    /// live-mutex TCP broker address, usually
-    /// `dd-rust-network-mutex.default.svc.cluster.local:6970`.
-    pub live_mutex_addr: String,
+    /// Fiducia edge/load-balancer base URL. The in-cluster service is the
+    /// production default; public deployments should use HTTPS.
+    pub fiducia_base_url: String,
 
-    /// TTL hint sent to the broker for customer snapshot/write locks.
-    pub live_mutex_lock_ttl_ms: u64,
+    /// Scoped public API key sent as a bearer token. The key resolves its own
+    /// org scope and must grant `locks:write` (which also authorizes elections).
+    pub fiducia_api_key: Option<String>,
 
-    /// Timeout for connect/acquire/release broker operations.
-    pub live_mutex_request_timeout_ms: u64,
+    /// TTL used for short customer snapshot/write critical sections.
+    pub fiducia_lock_ttl_ms: u64,
+
+    /// Timeout budget for Fiducia acquire/release/lease operations.
+    pub fiducia_request_timeout_ms: u64,
 
     /// NATS server URL for the domain-event feed + inbound sync commands.
     /// `BILLING_NATS_URL`, falling back to the shared `NATS_URL`. When unset
@@ -120,6 +124,37 @@ pub struct Config {
     /// Hard ceiling on published payload bytes and accepted inbound command
     /// bytes (defense against a malformed / hostile message). Default 1 MiB.
     pub nats_max_payload_bytes: usize,
+}
+
+// Config holds database credentials, the master sealing key, provider
+// credentials, webhook secrets, API bearer tokens, and the Fiducia key. Keep
+// its Debug surface deliberately small so an incidental structured log cannot
+// exfiltrate any of them.
+impl fmt::Debug for Config {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Config")
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("database_url", &"<redacted>")
+            .field("run_migrations", &self.run_migrations)
+            .field("oauth_redirect_base", &self.oauth_redirect_base)
+            .field(
+                "require_webhook_signatures",
+                &self.require_webhook_signatures,
+            )
+            .field("admin_ui_enabled", &self.admin_ui_enabled)
+            .field("block_private_outbound", &self.block_private_outbound)
+            .field("fiducia_enabled", &self.fiducia_enabled)
+            .field("fiducia_base_url", &self.fiducia_base_url)
+            .field("fiducia_credentials", &"<redacted>")
+            .field("fiducia_lock_ttl_ms", &self.fiducia_lock_ttl_ms)
+            .field(
+                "fiducia_request_timeout_ms",
+                &self.fiducia_request_timeout_ms,
+            )
+            .field("nats_publish_enabled", &self.nats_publish_enabled)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -146,6 +181,21 @@ impl Config {
     pub fn from_env() -> anyhow::Result<Self> {
         let _ = dotenvy::dotenv();
 
+        let fiducia_enabled = env_bool("BILLING_FIDUCIA_ENABLED", false);
+        let fiducia_base_url = env::var("BILLING_FIDUCIA_BASE_URL").unwrap_or_else(|_| {
+            "http://fiducia-load-balance.fiducia.svc.cluster.local:8088".into()
+        });
+        let fiducia_api_key = optional_trimmed_env("BILLING_FIDUCIA_API_KEY")
+            .or_else(|| optional_trimmed_env("FIDUCIA_API_KEY"));
+        if fiducia_enabled {
+            validate_fiducia_base_url(&fiducia_base_url)?;
+            if fiducia_api_key.is_none() {
+                anyhow::bail!(
+                    "BILLING_FIDUCIA_ENABLED=true requires a locks:write-scoped BILLING_FIDUCIA_API_KEY/FIDUCIA_API_KEY"
+                );
+            }
+        }
+
         Ok(Self {
             host: env::var("BILLING_HOST").unwrap_or_else(|_| "0.0.0.0".into()),
             port: env::var("BILLING_PORT")
@@ -157,7 +207,9 @@ impl Config {
                 .map_err(|_| anyhow::anyhow!("BILLING_DATABASE_URL or DATABASE_URL must be set"))?,
             run_migrations: env::var("BILLING_RUN_MIGRATIONS")
                 .map(|s| s != "0" && !s.eq_ignore_ascii_case("false"))
-                .unwrap_or(true),
+                // Production schema convergence is an operator-reviewed dpm
+                // workflow. Embedded migrations are opt-in for isolated dev.
+                .unwrap_or(false),
 
             master_seal_key_b64: env::var("BILLING_MASTER_SEAL_KEY").map_err(|_| {
                 anyhow::anyhow!(
@@ -239,15 +291,12 @@ impl Config {
             // private-IP traffic is dev/integration. Production callers
             // should hit the public webhook URL of their tenant.
             block_private_outbound: env_bool("BILLING_BLOCK_PRIVATE_OUTBOUND", true),
-            customer_snapshot_lock_enabled: env_bool(
-                "BILLING_CUSTOMER_SNAPSHOT_LOCK_ENABLED",
-                false,
-            ),
-            live_mutex_addr: env::var("BILLING_LIVE_MUTEX_ADDR")
-                .unwrap_or_else(|_| "dd-rust-network-mutex.default.svc.cluster.local:6970".into()),
-            live_mutex_lock_ttl_ms: env_u64("BILLING_LIVE_MUTEX_LOCK_TTL_MS", 60_000)
-                .clamp(1_000, 60_000),
-            live_mutex_request_timeout_ms: env_u64("BILLING_LIVE_MUTEX_REQUEST_TIMEOUT_MS", 30_000)
+            fiducia_enabled,
+            fiducia_base_url,
+            fiducia_api_key,
+            fiducia_lock_ttl_ms: env_u64("BILLING_FIDUCIA_LOCK_TTL_MS", 60_000)
+                .clamp(1_000, 86_400_000),
+            fiducia_request_timeout_ms: env_u64("BILLING_FIDUCIA_REQUEST_TIMEOUT_MS", 30_000)
                 .clamp(100, 30_000),
             nats_url: optional_trimmed_env("BILLING_NATS_URL")
                 .or_else(|| optional_trimmed_env("NATS_URL")),
@@ -355,10 +404,11 @@ impl Config {
             api_auth_bearer: None,
             // Tests sometimes hit localhost; default-allow keeps them simple.
             block_private_outbound: false,
-            customer_snapshot_lock_enabled: false,
-            live_mutex_addr: "127.0.0.1:6970".into(),
-            live_mutex_lock_ttl_ms: 60_000,
-            live_mutex_request_timeout_ms: 30_000,
+            fiducia_enabled: false,
+            fiducia_base_url: "http://127.0.0.1:8090".into(),
+            fiducia_api_key: None,
+            fiducia_lock_ttl_ms: 60_000,
+            fiducia_request_timeout_ms: 30_000,
             nats_url: None,
             nats_publish_enabled: false,
             nats_queue_group: None,
@@ -439,4 +489,73 @@ fn parse_csv_env(name: &str) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+fn validate_fiducia_base_url(raw: &str) -> anyhow::Result<()> {
+    let parsed = url::Url::parse(raw)
+        .map_err(|err| anyhow::anyhow!("invalid BILLING_FIDUCIA_BASE_URL: {err}"))?;
+    if parsed.username() != ""
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        anyhow::bail!("BILLING_FIDUCIA_BASE_URL must not contain credentials, query, or fragment");
+    }
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| anyhow::anyhow!("BILLING_FIDUCIA_BASE_URL must include a host"))?;
+    let local_http = host == "localhost"
+        || host == "127.0.0.1"
+        || host == "::1"
+        || host.ends_with(".svc")
+        || host.ends_with(".svc.cluster.local");
+    if parsed.scheme() != "https" && !(parsed.scheme() == "http" && local_http) {
+        anyhow::bail!(
+            "BILLING_FIDUCIA_BASE_URL must use HTTPS outside localhost or Kubernetes service DNS"
+        );
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Config, validate_fiducia_base_url};
+
+    #[test]
+    fn fiducia_url_allows_https_and_private_cluster_dns() {
+        validate_fiducia_base_url("https://api.fiducia.cloud").unwrap();
+        validate_fiducia_base_url("http://fiducia-load-balance.fiducia.svc.cluster.local:8088")
+            .unwrap();
+        validate_fiducia_base_url("http://127.0.0.1:8090").unwrap();
+    }
+
+    #[test]
+    fn fiducia_url_rejects_public_cleartext_and_embedded_secrets() {
+        assert!(validate_fiducia_base_url("http://api.fiducia.cloud").is_err());
+        assert!(validate_fiducia_base_url("https://token@api.fiducia.cloud?debug=1").is_err());
+    }
+
+    #[test]
+    fn debug_output_redacts_every_credential_class() {
+        let mut config = Config::for_tests();
+        config.database_url = "postgres://billing:db-secret@example.invalid/billing".into();
+        config.master_seal_key_b64 = "master-seal-secret".into();
+        config.stripe_api_key = Some("stripe-secret".into());
+        config.api_auth_bearer = Some("api-bearer-secret".into());
+        config.admin_auth_bearer = Some("admin-bearer-secret".into());
+        config.fiducia_api_key = Some("fiducia-secret".into());
+
+        let output = format!("{config:?}");
+        for secret in [
+            "db-secret",
+            "master-seal-secret",
+            "stripe-secret",
+            "api-bearer-secret",
+            "admin-bearer-secret",
+            "fiducia-secret",
+        ] {
+            assert!(!output.contains(secret));
+        }
+        assert!(output.contains("<redacted>"));
+    }
 }

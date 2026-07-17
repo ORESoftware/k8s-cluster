@@ -32,11 +32,7 @@ pub struct RuleEvaluatorJob {
 }
 
 impl RuleEvaluatorJob {
-    pub fn new(
-        pool: PgPool,
-        notifications: Arc<NotificationService>,
-        cfg: Arc<Config>,
-    ) -> Self {
+    pub fn new(pool: PgPool, notifications: Arc<NotificationService>, cfg: Arc<Config>) -> Self {
         Self {
             pool,
             notifications,
@@ -92,22 +88,9 @@ impl JobHandler for RuleEvaluatorJob {
                 };
 
                 for m in matches {
-                    if self
-                        .notifications
-                        .would_throttle(
-                            rule.id,
-                            m.target_resource.as_deref(),
-                            rule.throttle_per_day,
-                        )
-                        .await?
-                    {
-                        total_throttled += 1;
-                        continue;
-                    }
-
                     let dispatch_id = self
                         .notifications
-                        .create_dispatch(
+                        .create_dispatch_unless_throttled(
                             rule.id,
                             tid,
                             region,
@@ -115,8 +98,13 @@ impl JobHandler for RuleEvaluatorJob {
                             rule.channel,
                             &rule.target,
                             m.payload.clone(),
+                            rule.throttle_per_day,
                         )
                         .await?;
+                    let Some(dispatch_id) = dispatch_id else {
+                        total_throttled += 1;
+                        continue;
+                    };
 
                     let block_private = self.cfg.block_private_outbound;
                     let result = match rule.channel {

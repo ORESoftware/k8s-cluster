@@ -194,7 +194,6 @@ impl SchedulerRunner {
 
         match outcome {
             Ok(out) => {
-                let _ = self.mark_run_succeeded(run_id, duration_ms, &out).await;
                 let next = compute_next_run(
                     sched_kind,
                     cron_expr,
@@ -204,66 +203,63 @@ impl SchedulerRunner {
                     Utc::now(),
                 );
                 let next = next.unwrap_or_else(|_| Utc::now() + chrono::Duration::minutes(5));
-
-                if sched_kind == ScheduleKind::OneShot {
-                    let _ = sqlx::query(
-                        r#"UPDATE scheduled_jobs
-                           SET enabled = false, next_run_at = $2, updated_at = now()
-                           WHERE id = $1"#,
+                if let Err(error) = self
+                    .finish_succeeded(
+                        run_id,
+                        job_id,
+                        duration_ms,
+                        &out,
+                        next,
+                        sched_kind == ScheduleKind::OneShot,
                     )
-                    .bind(job_id)
-                    .bind(next)
-                    .execute(&self.pool)
-                    .await;
-                } else {
-                    let _ = sqlx::query(
-                        r#"UPDATE scheduled_jobs SET next_run_at = $2, updated_at = now()
-                           WHERE id = $1"#,
-                    )
-                    .bind(job_id)
-                    .bind(next)
-                    .execute(&self.pool)
-                    .await;
+                    .await
+                {
+                    tracing::error!(
+                        job_id = %job_id,
+                        run_id,
+                        error = %error,
+                        "failed to atomically persist successful job outcome"
+                    );
                 }
             }
             Err(e) => {
                 let err_str = e.to_string();
-                let _ = self.mark_run_failed(run_id, duration_ms, &err_str).await;
-
-                if attempt >= max_attempts {
-                    let _ = self
-                        .dead_letter(job_id, tenant_id, run_id, attempt, &err_str)
-                        .await;
-                    let next = compute_next_run(
+                let dead_letter = attempt >= max_attempts;
+                let next = if dead_letter {
+                    compute_next_run(
                         sched_kind,
                         cron_expr,
                         interval_seconds,
                         one_shot_at,
                         timezone,
                         Utc::now(),
-                    );
-                    let next = next.unwrap_or_else(|_| Utc::now() + chrono::Duration::hours(1));
-                    let _ = sqlx::query(
-                        r#"UPDATE scheduled_jobs SET next_run_at = $2, updated_at = now()
-                           WHERE id = $1"#,
                     )
-                    .bind(job_id)
-                    .bind(next)
-                    .execute(&self.pool)
-                    .await;
+                    .unwrap_or_else(|_| Utc::now() + chrono::Duration::hours(1))
                 } else {
                     let backoff = e
                         .retry_after_seconds()
                         .unwrap_or_else(|| exponential_backoff(retry_backoff_secs, attempt) as i64);
-                    let retry_at = Utc::now() + chrono::Duration::seconds(backoff as i64);
-                    let _ = sqlx::query(
-                        r#"UPDATE scheduled_jobs SET next_run_at = $2, updated_at = now()
-                           WHERE id = $1"#,
+                    Utc::now() + chrono::Duration::seconds(backoff)
+                };
+                if let Err(error) = self
+                    .finish_failed(
+                        run_id,
+                        job_id,
+                        tenant_id,
+                        attempt,
+                        duration_ms,
+                        &err_str,
+                        next,
+                        dead_letter,
                     )
-                    .bind(job_id)
-                    .bind(retry_at)
-                    .execute(&self.pool)
-                    .await;
+                    .await
+                {
+                    tracing::error!(
+                        job_id = %job_id,
+                        run_id,
+                        error = %error,
+                        "failed to atomically persist failed job outcome"
+                    );
                 }
             }
         }
@@ -319,12 +315,16 @@ impl SchedulerRunner {
         Ok(id)
     }
 
-    async fn mark_run_succeeded(
+    async fn finish_succeeded(
         &self,
         run_id: i64,
+        job_id: Uuid,
         duration_ms: i32,
         out: &super::handler::JobOutput,
+        next_run_at: chrono::DateTime<Utc>,
+        disable: bool,
     ) -> AppResult<()> {
+        let mut tx = self.pool.begin().await?;
         sqlx::query(
             r#"
             UPDATE job_runs
@@ -338,16 +338,45 @@ impl SchedulerRunner {
         .bind(run_id)
         .bind(duration_ms)
         .bind(serde_json::to_value(out).unwrap_or(serde_json::Value::Null))
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await?;
+        sqlx::query(
+            r#"
+            UPDATE scheduled_jobs
+            SET enabled = CASE WHEN $3 THEN false ELSE enabled END,
+                next_run_at = $2,
+                updated_at = now()
+            WHERE id = $1
+            "#,
+        )
+        .bind(job_id)
+        .bind(next_run_at)
+        .bind(disable)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
         Ok(())
     }
 
-    async fn mark_run_failed(&self, run_id: i64, duration_ms: i32, error: &str) -> AppResult<()> {
+    #[allow(clippy::too_many_arguments)]
+    async fn finish_failed(
+        &self,
+        run_id: i64,
+        job_id: Uuid,
+        tenant_id: Option<Uuid>,
+        attempt: i32,
+        duration_ms: i32,
+        error: &str,
+        next_run_at: chrono::DateTime<Utc>,
+        dead_letter: bool,
+    ) -> AppResult<()> {
+        let mut tx = self.pool.begin().await?;
         sqlx::query(
             r#"
             UPDATE job_runs
-            SET status = 'failed'::job_run_status,
+            SET status = CASE WHEN $4
+                              THEN 'dead_lettered'::job_run_status
+                              ELSE 'failed'::job_run_status END,
                 finished_at = now(),
                 duration_ms = $2,
                 error = $3
@@ -357,41 +386,33 @@ impl SchedulerRunner {
         .bind(run_id)
         .bind(duration_ms)
         .bind(error)
-        .execute(&self.pool)
+        .bind(dead_letter)
+        .execute(&mut *tx)
         .await?;
-        Ok(())
-    }
-
-    async fn dead_letter(
-        &self,
-        job_id: Uuid,
-        tenant_id: Option<Uuid>,
-        last_run_id: i64,
-        final_attempt: i32,
-        error: &str,
-    ) -> AppResult<()> {
+        if dead_letter {
+            sqlx::query(
+                r#"
+                INSERT INTO dead_letter_jobs
+                    (job_id, tenant_id, last_run_id, final_attempt, error)
+                VALUES ($1, $2, $3, $4, $5)
+                "#,
+            )
+            .bind(job_id)
+            .bind(tenant_id)
+            .bind(run_id)
+            .bind(attempt)
+            .bind(error)
+            .execute(&mut *tx)
+            .await?;
+        }
         sqlx::query(
-            r#"
-            INSERT INTO dead_letter_jobs
-                (job_id, tenant_id, last_run_id, final_attempt, error)
-            VALUES ($1, $2, $3, $4, $5)
-            "#,
+            r#"UPDATE scheduled_jobs SET next_run_at = $2, updated_at = now() WHERE id = $1"#,
         )
         .bind(job_id)
-        .bind(tenant_id)
-        .bind(last_run_id)
-        .bind(final_attempt)
-        .bind(error)
-        .execute(&self.pool)
+        .bind(next_run_at)
+        .execute(&mut *tx)
         .await?;
-
-        // Mark the run row as dead-lettered for clear status semantics.
-        sqlx::query(
-            r#"UPDATE job_runs SET status = 'dead_lettered'::job_run_status WHERE id = $1"#,
-        )
-        .bind(last_run_id)
-        .execute(&self.pool)
-        .await?;
+        tx.commit().await?;
         Ok(())
     }
 }

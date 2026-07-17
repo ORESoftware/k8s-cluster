@@ -31,14 +31,30 @@ Postgres. Always. The `postings` table is append-only (UPDATE/DELETE are
 forbidden by trigger), and every transaction's postings must sum to zero per
 currency (enforced by a deferred constraint trigger).
 
-Customer billing-state snapshots additionally serialize through the external
-live-mutex-rs broker when `BILLING_CUSTOMER_SNAPSHOT_LOCK_ENABLED=true`. The
-read path locks `billing:customer:<tenant_id>:<customer_id>` before rolling up
-customer accounts, and `LedgerService::post_transaction` locks the same broker
-key for every customer account code it mutates (`ar/<id>`,
-`unallocated_cash/<id>`, `credit_memo(s)/<id>`, `customer/<id>/...`). This is
-what makes the snapshot true across pods: provider sync jobs, API writes, and
-the billing-state read all contend on the same external customer id.
+Customer billing-state snapshots additionally serialize through
+[fiducia.cloud](https://fiducia.cloud) when `BILLING_FIDUCIA_ENABLED=true`. The
+read path atomically acquires the union of
+`billing:customer:<tenant_id>:<customer_id>` keys before rolling up customer
+accounts, and `LedgerService::post_transaction` locks the same keys for every
+customer account code it mutates (`ar/<id>`, `unallocated_cash/<id>`,
+`credit_memo(s)/<id>`, `customer/<id>/...`). The snapshot queries run in one
+Postgres `REPEATABLE READ READ ONLY` transaction, so the result cannot stitch
+together multiple database snapshots even if a non-cooperating writer exists.
+
+Tenant leases use Fiducia leader elections: campaign = acquire, renew = extend,
+and resign = release. The durable billing mirror and audit event commit together
+in Postgres under a transaction-scoped advisory lock. External HTTP calls never
+run inside a database transaction. If the Postgres commit fails after a Fiducia
+campaign or renewal, the service compensates by resigning the remote lease.
+Customer critical sections keep the independent Postgres advisory lock already
+used by ledger idempotency.
+
+The Rust request/response types are pinned to the canonical
+[`fiducia-cloud/fiducia-interfaces`](https://github.com/fiducia-cloud/fiducia-interfaces)
+Git revision in `Cargo.lock`. Production requires a least-privilege Fiducia API
+key with `locks:write` scope (that scope also authorizes election reads/writes).
+Every Fiducia mutation carries an `Idempotency-Key`; credentials are never
+logged, and readiness fails closed while coordination is enabled but unavailable.
 
 The `anchors` table records Merkle roots committed to Solana so any third
 party can independently verify a posting was present at a given on-chain
@@ -101,6 +117,7 @@ src/
   error.rs             # AppError + IntoResponse
   db.rs                # PG pool + migrations
   crypto.rs            # per-tenant AES-GCM credential sealing
+  fiducia.rs           # async locks/election-leases client using canonical Git contracts
   money.rs             # Money / Currency (minor units, integer)
   shard.rs             # ShardKey + Region
   ledger/              # double-entry posting + balance + invariants
@@ -151,16 +168,20 @@ export STRIPE_API_KEY=...
 # Provider webhook secrets are optional locally; set strict mode in shared envs.
 export STRIPE_WEBHOOK_SECRET=whsec_...
 export BILLING_REQUIRE_WEBHOOK_SIGNATURES=false
-export BILLING_CUSTOMER_SNAPSHOT_LOCK_ENABLED=false # set true with live-mutex-rs available
-export BILLING_LIVE_MUTEX_ADDR=127.0.0.1:6970
+export BILLING_FIDUCIA_ENABLED=false # set true with a local/public Fiducia endpoint
+# export BILLING_FIDUCIA_BASE_URL=http://127.0.0.1:8088
+# export BILLING_FIDUCIA_API_KEY=fdc_... # requires locks:write
 export RUST_LOG=info,sqlx=warn
 
 # 3. Run
 cargo run --release
 ```
 
-The server listens on `:8087` by default. Migrations run automatically on
-boot unless `BILLING_RUN_MIGRATIONS=false`.
+The server listens on `:8087` by default. Embedded migrations are disabled by
+default and are only an opt-in isolated-development convenience
+(`BILLING_RUN_MIGRATIONS=true`). Production schema changes go through the
+operator-reviewed `pg-defs`/`dpm` workflow; application startup never applies
+DDL.
 
 ## Provider API tests
 
@@ -357,6 +378,17 @@ via SealedSecrets / ExternalSecrets.
   `pg_advisory_xact_lock(tenant_part, hash(idempotency_key))` so two
   concurrent calls with the same key always see the same (committed)
   result.
+- **Customer snapshots are transactionally consistent.** Fiducia excludes
+  cooperating cross-service writers while a Postgres repeatable-read, read-only
+  transaction gives all component queries one MVCC snapshot.
+- **Tenant lease mirrors and audit events are atomic.** Acquire, renew, release,
+  and expiry sweep mutations use Postgres transactions plus transaction-scoped
+  advisory locks, with bounded compensation for Fiducia/Postgres split outcomes.
+- **Scheduler outcomes are atomic.** A run status, dead-letter insertion, and
+  next schedule timestamp commit together instead of leaving partial state.
+- **Notification throttling is atomic.** A per-rule advisory lock protects the
+  daily count-and-insert transaction so concurrent evaluators cannot exceed the
+  configured limit.
 - **OAuth `return_to` requires an explicit allowlist.** The previous
   "any path starting with `/`" auto-permit is gone; protocol-relative
   values (`//evil.example/...`) are also rejected.
