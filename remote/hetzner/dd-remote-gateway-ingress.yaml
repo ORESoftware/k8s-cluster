@@ -13,6 +13,7 @@ spec:
     - hosts:
         - hello.95-217-171-250.sslip.io
         - app.fiducia.cloud
+        - api.fiducia.cloud
         - admin.fiducia.cloud
       secretName: gateway-public-tls
   rules:
