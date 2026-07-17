@@ -129,3 +129,7 @@
 	path = remote/deployments/athleto-backend-rs
 	url = git@github.com:athlet-o/athleto-backend.rs.git
 	branch = main
+[submodule "remote/deployments/usacc-rest-api-backend-rs"]
+	path = remote/deployments/usacc-rest-api-backend-rs
+	url = git@github.com:usa-acc/rest-api-backend.rs.git
+	branch = main
