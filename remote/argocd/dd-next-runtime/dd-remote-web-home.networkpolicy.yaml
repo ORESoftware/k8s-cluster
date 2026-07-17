@@ -1,0 +1,62 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dd-remote-web-home
+  namespace: default
+  labels:
+    app: dd-remote-web-home
+spec:
+  podSelector:
+    matchLabels:
+      app: dd-remote-web-home
+  policyTypes:
+    - Ingress
+    - Egress
+  # Ingress to :8080 is limited to the established callers:
+  #   - dd-remote-gateway — proxies /, /home, /jello, /agents/*, /lambdas/functions,
+  #                         /container-pool/config and the other HTML pages.
+  #   - dd-runtime-config — pushes /internal/update-runtime-config.
+  #   - observability     — Prometheus / OTel collector scraping /metrics.
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: dd-remote-gateway
+        - podSelector:
+            matchLabels:
+              app: dd-runtime-config
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - dd-prometheus
+                  - dd-otel-collector
+      ports:
+        - protocol: TCP
+          port: 8080
+  # This pod runs a prebuilt image (no cold in-pod cargo build), so unlike the
+  # cargo-run-from-hostPath dd-*-rs deployments it needs no public HTTPS
+  # egress. It only resolves DNS and self-registers with the runtime-config
+  # control plane.
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # runtime-config registration (POST /subscribers).
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dd-runtime-config
+      ports:
+        - protocol: TCP
+          port: 8110
