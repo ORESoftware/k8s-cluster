@@ -438,3 +438,120 @@ pub(crate) fn weld(mesh: &Mesh, tol: f64) -> (Mesh, usize) {
     let merged = mesh.vertices.len().saturating_sub(welded.vertices.len());
     (welded, merged)
 }
+
+#[cfg(test)]
+mod mesh_unit_tests {
+    use super::*;
+
+    /// Unit tetrahedron at the origin with outward-wound faces.
+    /// Volume = 1/6, surface area = 3 * 0.5 + sqrt(3)/2.
+    fn tetra() -> Mesh {
+        Mesh {
+            vertices: vec![
+                Vec3::new(0.0, 0.0, 0.0), // 0: o
+                Vec3::new(1.0, 0.0, 0.0), // 1: a
+                Vec3::new(0.0, 1.0, 0.0), // 2: b
+                Vec3::new(0.0, 0.0, 1.0), // 3: c
+            ],
+            triangles: vec![[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]],
+        }
+    }
+
+    #[test]
+    fn tetra_volume_area_bbox() {
+        let m = tetra();
+        let expected_area = 1.5 + 3.0f64.sqrt() / 2.0;
+        assert!((m.signed_volume() - 1.0 / 6.0).abs() < 1e-12);
+        assert!((m.surface_area() - expected_area).abs() < 1e-12);
+        let (min, max) = m.bounding_box();
+        assert_eq!(min, Vec3::new(0.0, 0.0, 0.0));
+        assert_eq!(max, Vec3::new(1.0, 1.0, 1.0));
+
+        // Reversing every winding must exactly negate the signed volume.
+        let mut flipped = m.clone();
+        for tri in &mut flipped.triangles {
+            tri.swap(1, 2);
+        }
+        assert!((flipped.signed_volume() + 1.0 / 6.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn binary_stl_round_trip_preserves_geometry() {
+        let m = tetra();
+        let stl = m.to_binary_stl();
+        assert_eq!(stl.len(), 84 + 50 * m.triangles.len());
+        let parsed = parse_stl(&stl).expect("round-tripped binary STL must parse");
+        // Parsed STL is a vertex soup: one vertex per triangle corner.
+        assert_eq!(parsed.triangles.len(), 4);
+        assert_eq!(parsed.vertices.len(), 12);
+        // f32 storage loses precision, but these coordinates are exact in f32.
+        assert!((parsed.signed_volume() - 1.0 / 6.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn ascii_stl_parses_and_rejects_truncation() {
+        let text = "solid t\n facet normal 0 0 1\n  outer loop\n   vertex 0 0 0\n   vertex 1 0 0\n   vertex 0 1 0\n  endloop\n endfacet\nendsolid t\n";
+        let mesh = parse_stl(text.as_bytes()).expect("valid ascii stl");
+        assert_eq!(mesh.triangles.len(), 1);
+        assert!((mesh.triangle_area(0) - 0.5).abs() < 1e-12);
+
+        // Dropping the last coordinate leaves a non-whole number of triangles.
+        let truncated = "solid t\n facet\n outer loop\n vertex 0 0 0\n vertex 1 0 0\n vertex 0 1\n";
+        assert!(parse_stl(truncated.as_bytes()).is_err());
+
+        // Non-finite coordinates are rejected, not propagated into metrics.
+        let nan = "solid t\n vertex 0 0 0 vertex 1 0 0 vertex 0 1 NaN endsolid";
+        assert!(parse_stl(nan.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn base64_round_trip_whitespace_and_errors() {
+        assert_eq!(encode_base64(b"hello"), "aGVsbG8=");
+        assert_eq!(decode_base64("aGVsbG8=").unwrap(), b"hello");
+        // Embedded whitespace/newlines are tolerated.
+        assert_eq!(decode_base64(" aGVs\nbG8= ").unwrap(), b"hello");
+        // All byte values survive an encode/decode round trip.
+        let bytes: Vec<u8> = (0u8..=255).collect();
+        assert_eq!(decode_base64(&encode_base64(&bytes)).unwrap(), bytes);
+        // Invalid characters and empty payloads fail closed.
+        assert!(decode_base64("aGV!bG8=").is_err());
+        assert!(decode_base64("").is_err());
+    }
+
+    #[test]
+    fn fnv1a_matches_reference_vectors() {
+        // Published FNV-1a 64-bit test vectors.
+        assert_eq!(fnv1a_64(b""), 0xcbf29ce484222325);
+        assert_eq!(fnv1a_64(b"a"), 0xaf63dc4c8601ec8c);
+        assert_eq!(fnv1a_64(b"foobar"), 0x85944171f73967e8);
+    }
+
+    #[test]
+    fn weld_merges_within_tolerance_only() {
+        // Two triangles sharing an edge, but the shared corners are offset by
+        // float noise far below the weld tolerance.
+        let eps = 1e-5;
+        let m = Mesh {
+            vertices: vec![
+                Vec3::new(0.0, 0.0, 0.0),
+                Vec3::new(1.0, 0.0, 0.0),
+                Vec3::new(0.0, 1.0, 0.0),
+                Vec3::new(1.0 + eps, 0.0, 0.0),
+                Vec3::new(0.0, 1.0 + eps, 0.0),
+                Vec3::new(1.0, 1.0, 0.0),
+            ],
+            triangles: vec![[0, 1, 2], [3, 5, 4]],
+        };
+        let (welded, merged) = weld(&m, 1e-3);
+        assert_eq!(merged, 2);
+        assert_eq!(welded.vertices.len(), 4);
+        // Distinct features (0.1 mm apart) must NOT merge at a 1e-3 tolerance.
+        let far = Mesh {
+            vertices: vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.1, 0.0, 0.0)],
+            triangles: vec![],
+        };
+        let (w2, merged2) = weld(&far, 1e-3);
+        assert_eq!(merged2, 0);
+        assert_eq!(w2.vertices.len(), 2);
+    }
+}

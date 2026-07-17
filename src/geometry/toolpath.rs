@@ -271,3 +271,86 @@ pub fn to_gcode(slice: &SliceResult, feedrate_mm_per_min: f64, max_layers: usize
     }
     (out, truncated)
 }
+
+#[cfg(test)]
+mod toolpath_unit_tests {
+    use super::super::mesh::{Mesh, Vec3};
+    use super::*;
+
+    /// Axis-aligned cube of edge `s` mm at the origin, outward-wound.
+    fn cube(s: f64) -> Mesh {
+        let v = |x: f64, y: f64, z: f64| Vec3::new(x * s, y * s, z * s);
+        Mesh {
+            vertices: vec![
+                v(0.0, 0.0, 0.0),
+                v(1.0, 0.0, 0.0),
+                v(1.0, 1.0, 0.0),
+                v(0.0, 1.0, 0.0),
+                v(0.0, 0.0, 1.0),
+                v(1.0, 0.0, 1.0),
+                v(1.0, 1.0, 1.0),
+                v(0.0, 1.0, 1.0),
+            ],
+            triangles: vec![
+                [0, 2, 1],
+                [0, 3, 2], // bottom
+                [4, 5, 6],
+                [4, 6, 7], // top
+                [0, 1, 5],
+                [0, 5, 4], // front
+                [3, 6, 2],
+                [3, 7, 6], // back
+                [0, 4, 7],
+                [0, 7, 3], // left
+                [1, 2, 6],
+                [1, 6, 5], // right
+            ],
+        }
+    }
+
+    #[test]
+    fn slice_cube_yields_closed_square_perimeters() {
+        let m = cube(10.0);
+        let result = slice(&m, 1.0).expect("cube slices cleanly");
+        assert_eq!(result.layer_count, 10);
+        assert!((result.z_min - 0.0).abs() < 1e-12);
+        assert!((result.z_max - 10.0).abs() < 1e-12);
+        // Every layer stitches into exactly one closed 10x10 square.
+        assert_eq!(result.contours.len(), 10);
+        assert_eq!(result.closed_contours, 10);
+        assert_eq!(result.open_contours, 0);
+        for contour in &result.contours {
+            assert!(contour.closed);
+            assert!((contour.length - 40.0).abs() < 1e-6);
+        }
+        assert!((result.total_path_length - 400.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn slice_rejects_invalid_inputs() {
+        let m = cube(10.0);
+        assert!(slice(&m, 0.0).is_err());
+        assert!(slice(&m, -1.0).is_err());
+        assert!(slice(&m, f64::NAN).is_err());
+        // A part must be taller than one layer.
+        let err = slice(&m, 20.0).unwrap_err();
+        assert!(err.contains("not taller"), "unexpected error: {err}");
+        // An empty mesh has nothing to slice.
+        assert!(slice(&Mesh::default(), 1.0).is_err());
+    }
+
+    #[test]
+    fn gcode_sample_reports_layer_truncation() {
+        let m = cube(10.0);
+        let result = slice(&m, 1.0).unwrap();
+        let (full, truncated_full) = to_gcode(&result, 1800.0, 100);
+        assert!(!truncated_full);
+        assert!(full.contains("G21"));
+        assert!(full.contains("G0 Z0.500"));
+        // 10 layers into a 3-layer budget must set the truncation flag.
+        let (sample, truncated) = to_gcode(&result, 1800.0, 3);
+        assert!(truncated);
+        assert!(sample.len() < full.len());
+        assert!(!sample.contains("G0 Z9.500"));
+    }
+}

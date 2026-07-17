@@ -102,3 +102,71 @@ pub fn estimate(
         total,
     }
 }
+
+#[cfg(test)]
+mod cost_unit_tests {
+    use super::super::mesh::Vec3;
+    use super::*;
+
+    fn inputs() -> CostInputs {
+        CostInputs {
+            material_density_g_cm3: 2.0,
+            material_price_per_kg: 100.0,
+            machine_rate_per_hour: 40.0,
+            setup_cost: 10.0,
+            infill_fraction: 0.5,
+            feedrate_mm_per_min: 6000.0,
+            layer_change_seconds: 90.0,
+            overhead_fraction: 0.5,
+        }
+    }
+
+    fn bbox() -> (Vec3, Vec3) {
+        (Vec3::new(0.0, 0.0, 0.0), Vec3::new(10.0, 20.0, 30.0))
+    }
+
+    #[test]
+    fn estimate_is_deterministic_arithmetic() {
+        // 10 cm^3 part, 180 m of perimeter at 6 m/min = 30 min cutting,
+        // 40 layers * 90 s = 1 h of layer changes.
+        let est = estimate(10_000.0, bbox(), 180_000.0, 40, &inputs());
+        assert!((est.part_volume_cm3 - 10.0).abs() < 1e-12);
+        assert!((est.bbox_volume_cm3 - 6.0).abs() < 1e-12);
+        // mass = 10 cm^3 * 0.5 infill * 2 g/cm^3 = 10 g -> 0.01 kg * 100/kg = 1.
+        assert!((est.material_mass_g - 10.0).abs() < 1e-12);
+        assert!((est.material_cost - 1.0).abs() < 1e-12);
+        // machine time = 0.5 h cutting + 1.0 h layer changes = 1.5 h * 40/h.
+        assert!((est.machine_time_hours - 1.5).abs() < 1e-12);
+        assert!((est.machine_cost - 60.0).abs() < 1e-12);
+        // subtotal 71, +50% overhead = 106.5.
+        assert!((est.subtotal - 71.0).abs() < 1e-12);
+        assert!((est.overhead - 35.5).abs() < 1e-12);
+        assert!((est.total - 106.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn estimate_clamps_hostile_inputs() {
+        // Infill above 1.0 clamps to solid; negative clamps to zero mass.
+        let mut inp = inputs();
+        inp.infill_fraction = 3.0;
+        let est = estimate(10_000.0, bbox(), 0.0, 0, &inp);
+        assert!((est.material_mass_g - 20.0).abs() < 1e-12);
+        inp.infill_fraction = -1.0;
+        let est = estimate(10_000.0, bbox(), 0.0, 0, &inp);
+        assert_eq!(est.material_mass_g, 0.0);
+        assert_eq!(est.material_cost, 0.0);
+
+        // A zero/negative feedrate must not divide by zero or go negative:
+        // the guard substitutes 1 mm/min.
+        inp.feedrate_mm_per_min = 0.0;
+        let est = estimate(0.0, bbox(), 60.0, 0, &inp);
+        assert!((est.machine_time_hours - 1.0).abs() < 1e-12);
+        assert!(est.machine_time_hours.is_finite());
+
+        // Negative overhead fractions are floored at zero, never a discount.
+        inp.overhead_fraction = -0.5;
+        let est = estimate(0.0, bbox(), 0.0, 0, &inp);
+        assert_eq!(est.overhead, 0.0);
+        assert!((est.total - est.subtotal).abs() < 1e-12);
+    }
+}

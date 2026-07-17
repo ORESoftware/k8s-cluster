@@ -321,3 +321,100 @@ pub fn repair(input: &Mesh, weld_tol: f64) -> (Mesh, RepairReport) {
 
     (mesh, report)
 }
+
+#[cfg(test)]
+mod repair_unit_tests {
+    use super::super::mesh::{Mesh, Vec3};
+    use super::*;
+
+    /// Outward-wound unit tetrahedron faces as raw corner coordinates.
+    fn tetra_faces() -> [[Vec3; 3]; 4] {
+        let o = Vec3::new(0.0, 0.0, 0.0);
+        let a = Vec3::new(1.0, 0.0, 0.0);
+        let b = Vec3::new(0.0, 1.0, 0.0);
+        let c = Vec3::new(0.0, 0.0, 1.0);
+        [[o, b, a], [o, a, c], [o, c, b], [a, b, c]]
+    }
+
+    /// Build an STL-style vertex soup (three unshared vertices per face).
+    fn soup(faces: &[[Vec3; 3]]) -> Mesh {
+        let mut m = Mesh::default();
+        for face in faces {
+            let base = m.vertices.len();
+            m.vertices.extend_from_slice(face);
+            m.triangles.push([base, base + 1, base + 2]);
+        }
+        m
+    }
+
+    #[test]
+    fn repair_welds_soup_into_watertight_shell() {
+        let input = soup(&tetra_faces());
+        assert_eq!(input.vertices.len(), 12);
+        let (mesh, report) = repair(&input, 1e-3);
+        // Twelve soup corners collapse onto four shared vertices.
+        assert_eq!(report.welded_vertices, 8);
+        assert_eq!(report.output_vertices, 4);
+        assert_eq!(report.output_triangles, 4);
+        assert_eq!(report.boundary_edges_after, 0);
+        assert_eq!(report.non_manifold_edges, 0);
+        assert!(report.watertight);
+        // Faces were already outward: volume is positive and no global flip ran.
+        assert!(!report.flipped_global_outward);
+        assert!((mesh.signed_volume() - 1.0 / 6.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn repair_fills_single_missing_face() {
+        // Tetrahedron with the far face removed: one 3-edge hole.
+        let faces = tetra_faces();
+        let input = soup(&faces[0..3]);
+        let (mesh, report) = repair(&input, 1e-3);
+        assert_eq!(report.boundary_edges_before, 3);
+        assert_eq!(report.holes_detected, 1);
+        assert_eq!(report.holes_filled, 1);
+        assert_eq!(report.triangles_added_filling, 1);
+        assert!(report.watertight);
+        assert_eq!(report.output_triangles, 4);
+        // The patch winds with its neighbours, closing the positive volume.
+        assert!((mesh.signed_volume() - 1.0 / 6.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn repair_drops_duplicate_and_degenerate_faces() {
+        let faces = tetra_faces();
+        let mut input = soup(&faces);
+        // Duplicate of face 3 with a different winding — still a duplicate.
+        let dup = [faces[3][0], faces[3][2], faces[3][1]];
+        // A sliver: three collinear points, i.e. a zero-area triangle.
+        let sliver = [
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.5, 0.0, 0.0),
+            Vec3::new(1.0, 0.0, 0.0),
+        ];
+        for face in [dup, sliver] {
+            let base = input.vertices.len();
+            input.vertices.extend_from_slice(&face);
+            input.triangles.push([base, base + 1, base + 2]);
+        }
+        let (_, report) = repair(&input, 1e-3);
+        assert_eq!(report.removed_degenerate, 1);
+        assert_eq!(report.removed_duplicate, 1);
+        assert!(report.watertight);
+        assert_eq!(report.output_triangles, 4);
+    }
+
+    #[test]
+    fn repair_flips_inside_out_shell_outward() {
+        // Reverse every face so all normals point inward (negative volume).
+        let mut faces = tetra_faces();
+        for f in faces.iter_mut() {
+            f.swap(1, 2);
+        }
+        let input = soup(&faces);
+        let (mesh, report) = repair(&input, 1e-3);
+        assert!(report.flipped_global_outward);
+        assert!(report.watertight);
+        assert!(mesh.signed_volume() > 0.0);
+    }
+}
