@@ -47,3 +47,5 @@ Inflight-concurrency cap (`AGENT_SIM_MAX_INFLIGHT`, default 8); HTTP returns `50
 ## Authentication
 
 Optional and **off by default** (matching the sibling compute services). Set `AGENT_SIM_AUTH_SECRET` (or the shared `SERVER_AUTH_SECRET`) to require callers of `/simulate` to present a matching `x-server-auth: <secret>` (or `auth: <secret>`) header; the comparison is constant-time. When the secret is unset the endpoint is open. `/healthz` and `/metrics` are always open (for probes and Prometheus). Rejections return `401` and increment `*_auth_failures_total`. The deployment manifest wires `AGENT_SIM_AUTH_SECRET` from the `dd-agent-secrets` secret with `optional: true`, so enabling auth is a one-key secret edit.
+
+> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

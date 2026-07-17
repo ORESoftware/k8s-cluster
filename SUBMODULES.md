@@ -45,6 +45,7 @@ always lives at `~/codes/ores/k8s-cluster/<submodule path>`.
 | `remote/deployments/billing-server-rs` | [quaestor-ledger/billing-server.rs](https://github.com/quaestor-ledger/billing-server.rs) | `main` | — _(submodule checkout only)_ |
 | `remote/deployments/dart-server` | [sagitta-stack/dart-server](https://github.com/sagitta-stack/dart-server) | `main` | — _(submodule checkout only)_ |
 | `remote/deployments/dd-data-viz-rs` | [claritas-viz/data-viz-server.rs](https://github.com/claritas-viz/data-viz-server.rs) | `main` | — _(submodule checkout only)_ |
+| `remote/deployments/athleto-backend-rs` | [athlet-o/athleto-backend.rs](https://github.com/athlet-o/athleto-backend.rs) | `main` | — _(submodule checkout only)_ |
 
 ---
 

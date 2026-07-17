@@ -101,3 +101,5 @@ at the dedicated `usacc` database through `USACC_DATABASE_URL`.
 
 Do not generate SQL from the Rust route code. Schema changes go through
 `remote/libs/pg-defs/schema/schema.sql`, followed by `node remote/libs/pg-defs/src/generate.mjs`.
+
+> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

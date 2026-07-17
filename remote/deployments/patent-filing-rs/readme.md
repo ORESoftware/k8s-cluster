@@ -157,3 +157,5 @@ docker build -f remote/deployments/patent-filing-rs/Dockerfile -t dd-patent-fili
 Manifests in `k8s/ec2/` (`kubectl apply -k k8s/ec2`) deploy the service with
 non-root securityContext, dropped capabilities, `RuntimeDefault` seccomp, and
 startup/readiness/liveness probes, matching the sibling deployments.
+
+> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

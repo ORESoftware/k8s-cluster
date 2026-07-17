@@ -125,3 +125,7 @@
 	path = remote/deployments/dd-data-viz-rs
 	url = git@github.com:claritas-viz/data-viz-server.rs.git
 	branch = main
+[submodule "remote/deployments/athleto-backend-rs"]
+	path = remote/deployments/athleto-backend-rs
+	url = git@github.com:athlet-o/athleto-backend.rs.git
+	branch = main
