@@ -191,6 +191,7 @@ See [docs/security.md](docs/security.md) for the full model.
 | `TOR_LISTEN`        | relay  | `0.0.0.0:9001`     | Relay listen address                     |
 | `TOR_KEY_FILE`      | relay  | `./relay.key`      | Static identity key file (created if absent) |
 | `TOR_EXIT_ALLOW_PRIVATE` | relay | `0`           | Allow exits to private/loopback ranges   |
+| `TOR_DISABLE_EXIT`  | relay  | `0`                | Refuse `Begin`; run as a middle-only relay (never exits) |
 | `TOR_EXIT_DENY_PORTS` | relay | `25`               | Comma-separated outbound port denylist   |
 | `TOR_RELAY_PEERS`   | relay  | (any)              | Comma-separated `host:port` extend allowlist |
 | `TOR_MAX_CIRCUITS`  | relay  | `1024`             | Max concurrent circuits before rejecting |
