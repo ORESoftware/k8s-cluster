@@ -13,15 +13,20 @@ use dd_pg_defs::{
     validate_usacc_users_insert, validate_usacc_votes_insert, UsaccCaseStagesInsert,
     UsaccCaseStagesRow, UsaccCasesInsert, UsaccCasesRow, UsaccElectionsInsert, UsaccElectionsRow,
     UsaccLedgerEntriesInsert, UsaccLedgerEntriesRow, UsaccSimulationRunsRow, UsaccUsersInsert,
-    UsaccUsersRow, UsaccVotesInsert, UsaccVotesRow, USACC_CASES_SELECT_SQL, USACC_CASES_TABLE,
-    USACC_CASE_STAGES_SELECT_SQL, USACC_CASE_STAGES_TABLE, USACC_CONTRACT_OPERATIONS_TABLE,
-    USACC_ELECTIONS_SELECT_SQL, USACC_ELECTIONS_TABLE, USACC_LEDGER_ENTRIES_SELECT_SQL,
-    USACC_LEDGER_ENTRIES_TABLE, USACC_SIMULATION_RUNS_SELECT_SQL, USACC_SIMULATION_RUNS_TABLE,
-    USACC_USERS_SELECT_SQL, USACC_USERS_TABLE, USACC_VOTES_SELECT_SQL, USACC_VOTES_TABLE,
+    UsaccUsersRow, UsaccVotesInsert, UsaccVotesRow, USACC_SIMULATION_RUNS_TABLE,
+};
+use dd_pg_defs_sea_orm::{
+    usacc_case_stages, usacc_cases, usacc_contract_operations, usacc_elections,
+    usacc_ledger_entries, usacc_simulation_runs, usacc_users, usacc_votes,
+};
+use sea_orm::sea_query::{Alias, Asterisk, Expr, Func, OnConflict, SimpleExpr};
+use sea_orm::{
+    ActiveValue::{NotSet, Set},
+    ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, Order, QueryFilter, QueryOrder,
+    QuerySelect, Statement,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use sqlx::Row;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 use crate::{
@@ -154,13 +159,16 @@ async fn list_users(
     state.metrics.inc_http();
     require_auth(&headers, &state)?;
     let pool = db::pool(&state)?;
-    let sql = format!("{USACC_USERS_SELECT_SQL} order by created_at desc limit $1 offset $2");
     state.metrics.inc_db_query();
-    let rows = sqlx::query_as::<_, UsaccUsersRow>(&sql)
-        .bind(page.limit(state.config.max_page_limit))
-        .bind(page.offset())
-        .fetch_all(pool)
-        .await?;
+    let rows = usacc_users::Entity::find()
+        .order_by_desc(usacc_users::Column::CreatedAt)
+        .limit(page.limit(state.config.max_page_limit) as u64)
+        .offset(page.offset() as u64)
+        .all(pool)
+        .await?
+        .into_iter()
+        .map(db::user_row)
+        .collect();
     Ok(Json(rows))
 }
 
@@ -200,26 +208,27 @@ async fn create_user(
     })
     .map_err(ApiError::bad_request)?;
 
-    let sql = format!(
-        "insert into {USACC_USERS_TABLE} \
-         (external_subject, email_hash, display_name, user_kind, status, kyc_level, roles, is_legal_entity, legal_region, meta_data) \
-         values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10::jsonb) returning id::text"
-    );
     state.metrics.inc_db_query();
-    let id = sqlx::query_scalar::<_, String>(&sql)
-        .bind(body.external_subject)
-        .bind(body.email_hash)
-        .bind(body.display_name)
-        .bind(user_kind)
-        .bind(status)
-        .bind(kyc_level)
-        .bind(roles)
-        .bind(is_legal_entity)
-        .bind(body.legal_region)
-        .bind(meta_data)
-        .fetch_one(pool)
-        .await?;
-    Ok((StatusCode::CREATED, Json(fetch_user(&state, &id).await?)))
+    let id = usacc_users::Entity::insert(usacc_users::ActiveModel {
+        external_subject: Set(body.external_subject),
+        email_hash: Set(body.email_hash),
+        display_name: Set(body.display_name),
+        user_kind: Set(user_kind),
+        status: Set(status),
+        kyc_level: Set(kyc_level),
+        roles: Set(roles),
+        is_legal_entity: Set(is_legal_entity),
+        legal_region: Set(body.legal_region),
+        meta_data: Set(meta_data),
+        ..Default::default()
+    })
+    .exec(pool)
+    .await?
+    .last_insert_id;
+    Ok((
+        StatusCode::CREATED,
+        Json(fetch_user(&state, &id.to_string()).await?),
+    ))
 }
 
 async fn get_user(
@@ -251,42 +260,42 @@ async fn patch_user(
             return Err(ApiError::bad_request("metaData must be a JSON object"));
         }
     }
-    let sql = format!(
-        "update {USACC_USERS_TABLE} set \
-         display_name = coalesce($2, display_name), \
-         status = coalesce($3, status), \
-         kyc_level = coalesce($4, kyc_level), \
-         roles = coalesce($5::jsonb, roles), \
-         legal_region = coalesce($6, legal_region), \
-         meta_data = coalesce($7::jsonb, meta_data), \
-         updated_at = now() \
-         where id = $1::uuid returning id::text"
-    );
+    // Absent fields stay `NotSet`, matching the old `coalesce($n, column)`
+    // update that left them untouched.
+    let user_id = db::parse_uuid(&id)?;
     state.metrics.inc_db_query();
-    let updated = sqlx::query_scalar::<_, String>(&sql)
-        .bind(&id)
-        .bind(body.display_name)
-        .bind(body.status)
-        .bind(body.kyc_level)
-        .bind(body.roles)
-        .bind(body.legal_region)
-        .bind(body.meta_data)
-        .fetch_optional(pool)
+    let updated = usacc_users::Entity::update_many()
+        .set(usacc_users::ActiveModel {
+            display_name: body.display_name.map_or(NotSet, Set),
+            status: body.status.map_or(NotSet, Set),
+            kyc_level: body.kyc_level.map_or(NotSet, Set),
+            roles: body.roles.map_or(NotSet, Set),
+            legal_region: body.legal_region.map_or(NotSet, |value| Set(Some(value))),
+            meta_data: body.meta_data.map_or(NotSet, Set),
+            ..Default::default()
+        })
+        .col_expr(
+            usacc_users::Column::UpdatedAt,
+            Expr::current_timestamp().into(),
+        )
+        .filter(usacc_users::Column::Id.eq(user_id))
+        .exec(pool)
         .await?;
-    let Some(id) = updated else {
+    if updated.rows_affected == 0 {
         return Err(ApiError::new(StatusCode::NOT_FOUND, "user not found"));
-    };
+    }
     Ok(Json(fetch_user(&state, &id).await?))
 }
 
 async fn fetch_user(state: &AppState, id: &str) -> ApiResult<UsaccUsersRow> {
     let pool = db::pool(state)?;
-    let sql = format!("{USACC_USERS_SELECT_SQL} where id = $1::uuid");
+    let user_id = db::parse_uuid(id)?;
     state.metrics.inc_db_query();
-    Ok(sqlx::query_as::<_, UsaccUsersRow>(&sql)
-        .bind(id)
-        .fetch_one(pool)
-        .await?)
+    let user = usacc_users::Entity::find_by_id(user_id)
+        .one(pool)
+        .await?
+        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "row not found"))?;
+    Ok(db::user_row(user))
 }
 
 async fn list_cases(
@@ -297,13 +306,16 @@ async fn list_cases(
     state.metrics.inc_http();
     require_auth(&headers, &state)?;
     let pool = db::pool(&state)?;
-    let sql = format!("{USACC_CASES_SELECT_SQL} order by created_at desc limit $1 offset $2");
     state.metrics.inc_db_query();
-    let rows = sqlx::query_as::<_, UsaccCasesRow>(&sql)
-        .bind(page.limit(state.config.max_page_limit))
-        .bind(page.offset())
-        .fetch_all(pool)
-        .await?;
+    let rows = usacc_cases::Entity::find()
+        .order_by_desc(usacc_cases::Column::CreatedAt)
+        .limit(page.limit(state.config.max_page_limit) as u64)
+        .offset(page.offset() as u64)
+        .all(pool)
+        .await?
+        .into_iter()
+        .map(db::case_row)
+        .collect();
     Ok(Json(rows))
 }
 
@@ -337,28 +349,34 @@ async fn create_case(
     })
     .map_err(ApiError::bad_request)?;
 
-    let sql = format!(
-        "insert into {USACC_CASES_TABLE} \
-         (case_number, title, status, filing_tier, plaintiff_user_id, defendant_summary, conduct_summary, conduct_fingerprint, conduct_window_start, conduct_window_end, priority_score_micros, meta_data) \
-         values ($1, $2, $3, $4, $5::uuid, $6, $7, $8, $9, $10, $11, $12::jsonb) returning id::text"
-    );
+    let plaintiff_user_id = body
+        .plaintiff_user_id
+        .as_deref()
+        .map(db::parse_uuid)
+        .transpose()?;
     state.metrics.inc_db_query();
-    let id = sqlx::query_scalar::<_, String>(&sql)
-        .bind(body.case_number)
-        .bind(body.title)
-        .bind(status)
-        .bind(filing_tier)
-        .bind(body.plaintiff_user_id)
-        .bind(body.defendant_summary)
-        .bind(body.conduct_summary)
-        .bind(body.conduct_fingerprint)
-        .bind(body.conduct_window_start)
-        .bind(body.conduct_window_end)
-        .bind(priority_score_micros)
-        .bind(meta_data)
-        .fetch_one(pool)
-        .await?;
-    Ok((StatusCode::CREATED, Json(fetch_case(&state, &id).await?)))
+    let id = usacc_cases::Entity::insert(usacc_cases::ActiveModel {
+        case_number: Set(body.case_number),
+        title: Set(body.title),
+        status: Set(status),
+        filing_tier: Set(filing_tier),
+        plaintiff_user_id: Set(plaintiff_user_id),
+        defendant_summary: Set(body.defendant_summary),
+        conduct_summary: Set(body.conduct_summary),
+        conduct_fingerprint: Set(body.conduct_fingerprint),
+        conduct_window_start: Set(body.conduct_window_start),
+        conduct_window_end: Set(body.conduct_window_end),
+        priority_score_micros: Set(priority_score_micros),
+        meta_data: Set(meta_data),
+        ..Default::default()
+    })
+    .exec(pool)
+    .await?
+    .last_insert_id;
+    Ok((
+        StatusCode::CREATED,
+        Json(fetch_case(&state, &id.to_string()).await?),
+    ))
 }
 
 async fn get_case(
@@ -385,40 +403,41 @@ async fn patch_case(
             return Err(ApiError::bad_request("metaData must be a JSON object"));
         }
     }
-    let sql = format!(
-        "update {USACC_CASES_TABLE} set \
-         title = coalesce($2, title), \
-         status = coalesce($3, status), \
-         filing_tier = coalesce($4, filing_tier), \
-         priority_score_micros = coalesce($5, priority_score_micros), \
-         meta_data = coalesce($6::jsonb, meta_data), \
-         updated_at = now() \
-         where id = $1::uuid returning id::text"
-    );
+    // Absent fields stay `NotSet`, matching the old `coalesce($n, column)`
+    // update that left them untouched.
+    let case_id = db::parse_uuid(&id)?;
     state.metrics.inc_db_query();
-    let updated = sqlx::query_scalar::<_, String>(&sql)
-        .bind(&id)
-        .bind(body.title)
-        .bind(body.status)
-        .bind(body.filing_tier)
-        .bind(body.priority_score_micros)
-        .bind(body.meta_data)
-        .fetch_optional(pool)
+    let updated = usacc_cases::Entity::update_many()
+        .set(usacc_cases::ActiveModel {
+            title: body.title.map_or(NotSet, Set),
+            status: body.status.map_or(NotSet, Set),
+            filing_tier: body.filing_tier.map_or(NotSet, Set),
+            priority_score_micros: body.priority_score_micros.map_or(NotSet, Set),
+            meta_data: body.meta_data.map_or(NotSet, Set),
+            ..Default::default()
+        })
+        .col_expr(
+            usacc_cases::Column::UpdatedAt,
+            Expr::current_timestamp().into(),
+        )
+        .filter(usacc_cases::Column::Id.eq(case_id))
+        .exec(pool)
         .await?;
-    let Some(id) = updated else {
+    if updated.rows_affected == 0 {
         return Err(ApiError::new(StatusCode::NOT_FOUND, "case not found"));
-    };
+    }
     Ok(Json(fetch_case(&state, &id).await?))
 }
 
 async fn fetch_case(state: &AppState, id: &str) -> ApiResult<UsaccCasesRow> {
     let pool = db::pool(state)?;
-    let sql = format!("{USACC_CASES_SELECT_SQL} where id = $1::uuid");
+    let case_id = db::parse_uuid(id)?;
     state.metrics.inc_db_query();
-    Ok(sqlx::query_as::<_, UsaccCasesRow>(&sql)
-        .bind(id)
-        .fetch_one(pool)
-        .await?)
+    let case = usacc_cases::Entity::find_by_id(case_id)
+        .one(pool)
+        .await?
+        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "row not found"))?;
+    Ok(db::case_row(case))
 }
 
 async fn list_case_stages(
@@ -429,13 +448,16 @@ async fn list_case_stages(
     state.metrics.inc_http();
     require_auth(&headers, &state)?;
     let pool = db::pool(&state)?;
-    let sql =
-        format!("{USACC_CASE_STAGES_SELECT_SQL} where case_id = $1::uuid order by stage_order asc");
+    let case_id = db::parse_uuid(&case_id)?;
     state.metrics.inc_db_query();
-    let rows = sqlx::query_as::<_, UsaccCaseStagesRow>(&sql)
-        .bind(case_id)
-        .fetch_all(pool)
-        .await?;
+    let rows = usacc_case_stages::Entity::find()
+        .filter(usacc_case_stages::Column::CaseId.eq(case_id))
+        .order_by_asc(usacc_case_stages::Column::StageOrder)
+        .all(pool)
+        .await?
+        .into_iter()
+        .map(db::case_stage_row)
+        .collect();
     Ok(Json(rows))
 }
 
@@ -462,34 +484,42 @@ async fn create_case_stage(
         ..Default::default()
     })
     .map_err(ApiError::bad_request)?;
-    let sql = format!(
-        "insert into {USACC_CASE_STAGES_TABLE} \
-         (case_id, stage_key, stage_order, title, status, assigned_user_id, decision_summary, meta_data) \
-         values ($1::uuid, $2, $3, $4, $5, $6::uuid, $7, $8::jsonb) returning id::text"
-    );
+    let case_id = db::parse_uuid(&case_id)?;
+    let assigned_user_id = body
+        .assigned_user_id
+        .as_deref()
+        .map(db::parse_uuid)
+        .transpose()?;
     state.metrics.inc_db_query();
-    let id = sqlx::query_scalar::<_, String>(&sql)
-        .bind(case_id)
-        .bind(body.stage_key)
-        .bind(body.stage_order)
-        .bind(body.title)
-        .bind(status)
-        .bind(body.assigned_user_id)
-        .bind(body.decision_summary)
-        .bind(meta_data)
-        .fetch_one(pool)
-        .await?;
-    Ok((StatusCode::CREATED, Json(fetch_stage(&state, &id).await?)))
+    let id = usacc_case_stages::Entity::insert(usacc_case_stages::ActiveModel {
+        case_id: Set(case_id),
+        stage_key: Set(body.stage_key),
+        stage_order: Set(body.stage_order),
+        title: Set(body.title),
+        status: Set(status),
+        assigned_user_id: Set(assigned_user_id),
+        decision_summary: Set(body.decision_summary),
+        meta_data: Set(meta_data),
+        ..Default::default()
+    })
+    .exec(pool)
+    .await?
+    .last_insert_id;
+    Ok((
+        StatusCode::CREATED,
+        Json(fetch_stage(&state, &id.to_string()).await?),
+    ))
 }
 
 async fn fetch_stage(state: &AppState, id: &str) -> ApiResult<UsaccCaseStagesRow> {
     let pool = db::pool(state)?;
-    let sql = format!("{USACC_CASE_STAGES_SELECT_SQL} where id = $1::uuid");
+    let stage_id = db::parse_uuid(id)?;
     state.metrics.inc_db_query();
-    Ok(sqlx::query_as::<_, UsaccCaseStagesRow>(&sql)
-        .bind(id)
-        .fetch_one(pool)
-        .await?)
+    let stage = usacc_case_stages::Entity::find_by_id(stage_id)
+        .one(pool)
+        .await?
+        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "row not found"))?;
+    Ok(db::case_stage_row(stage))
 }
 
 async fn list_elections(
@@ -500,13 +530,16 @@ async fn list_elections(
     state.metrics.inc_http();
     require_auth(&headers, &state)?;
     let pool = db::pool(&state)?;
-    let sql = format!("{USACC_ELECTIONS_SELECT_SQL} order by created_at desc limit $1 offset $2");
     state.metrics.inc_db_query();
-    let rows = sqlx::query_as::<_, UsaccElectionsRow>(&sql)
-        .bind(page.limit(state.config.max_page_limit))
-        .bind(page.offset())
-        .fetch_all(pool)
-        .await?;
+    let rows = usacc_elections::Entity::find()
+        .order_by_desc(usacc_elections::Column::CreatedAt)
+        .limit(page.limit(state.config.max_page_limit) as u64)
+        .offset(page.offset() as u64)
+        .all(pool)
+        .await?
+        .into_iter()
+        .map(db::election_row)
+        .collect();
     Ok(Json(rows))
 }
 
@@ -535,37 +568,38 @@ async fn create_election(
         ..Default::default()
     })
     .map_err(ApiError::bad_request)?;
-    let sql = format!(
-        "insert into {USACC_ELECTIONS_TABLE} \
-         (case_id, stage_id, election_kind, title, status, quorum_count, threshold_micros, meta_data) \
-         values ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8::jsonb) returning id::text"
-    );
+    let case_id = body.case_id.as_deref().map(db::parse_uuid).transpose()?;
+    let stage_id = body.stage_id.as_deref().map(db::parse_uuid).transpose()?;
     state.metrics.inc_db_query();
-    let id = sqlx::query_scalar::<_, String>(&sql)
-        .bind(body.case_id)
-        .bind(body.stage_id)
-        .bind(body.election_kind)
-        .bind(body.title)
-        .bind(status)
-        .bind(quorum_count)
-        .bind(threshold_micros)
-        .bind(meta_data)
-        .fetch_one(pool)
-        .await?;
+    let id = usacc_elections::Entity::insert(usacc_elections::ActiveModel {
+        case_id: Set(case_id),
+        stage_id: Set(stage_id),
+        election_kind: Set(body.election_kind),
+        title: Set(body.title),
+        status: Set(status),
+        quorum_count: Set(quorum_count),
+        threshold_micros: Set(threshold_micros),
+        meta_data: Set(meta_data),
+        ..Default::default()
+    })
+    .exec(pool)
+    .await?
+    .last_insert_id;
     Ok((
         StatusCode::CREATED,
-        Json(fetch_election(&state, &id).await?),
+        Json(fetch_election(&state, &id.to_string()).await?),
     ))
 }
 
 async fn fetch_election(state: &AppState, id: &str) -> ApiResult<UsaccElectionsRow> {
     let pool = db::pool(state)?;
-    let sql = format!("{USACC_ELECTIONS_SELECT_SQL} where id = $1::uuid");
+    let election_id = db::parse_uuid(id)?;
     state.metrics.inc_db_query();
-    Ok(sqlx::query_as::<_, UsaccElectionsRow>(&sql)
-        .bind(id)
-        .fetch_one(pool)
-        .await?)
+    let election = usacc_elections::Entity::find_by_id(election_id)
+        .one(pool)
+        .await?
+        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "row not found"))?;
+    Ok(db::election_row(election))
 }
 
 async fn list_votes(
@@ -576,13 +610,16 @@ async fn list_votes(
     state.metrics.inc_http();
     require_auth(&headers, &state)?;
     let pool = db::pool(&state)?;
-    let sql =
-        format!("{USACC_VOTES_SELECT_SQL} where election_id = $1::uuid order by created_at desc");
+    let election_id = db::parse_uuid(&election_id)?;
     state.metrics.inc_db_query();
-    let rows = sqlx::query_as::<_, UsaccVotesRow>(&sql)
-        .bind(election_id)
-        .fetch_all(pool)
-        .await?;
+    let rows = usacc_votes::Entity::find()
+        .filter(usacc_votes::Column::ElectionId.eq(election_id))
+        .order_by_desc(usacc_votes::Column::CreatedAt)
+        .all(pool)
+        .await?
+        .into_iter()
+        .map(db::vote_row)
+        .collect();
     Ok(Json(rows))
 }
 
@@ -618,45 +655,62 @@ async fn cast_vote(
     })
     .map_err(ApiError::bad_request)?;
 
-    let sql = format!(
-        "insert into {USACC_VOTES_TABLE} \
-         (election_id, case_id, voter_user_id, vote_kind, vote_value, weight_micros, commitment_hash, sealed_payload, contract_digest, meta_data) \
-         values ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8::jsonb, $9, $10::jsonb) \
-         on conflict (election_id, voter_user_id) do update set \
-           vote_kind = excluded.vote_kind, vote_value = excluded.vote_value, weight_micros = excluded.weight_micros, \
-           commitment_hash = excluded.commitment_hash, sealed_payload = excluded.sealed_payload, \
-           contract_digest = excluded.contract_digest, meta_data = excluded.meta_data, updated_at = now() \
-         returning id::text"
-    );
+    let election_id = db::parse_uuid(&election_id)?;
+    let case_id = body.case_id.as_deref().map(db::parse_uuid).transpose()?;
+    let voter_user_id = db::parse_uuid(&body.voter_user_id)?;
     state.metrics.inc_db_query();
-    let id = sqlx::query_scalar::<_, String>(&sql)
-        .bind(election_id)
-        .bind(body.case_id)
-        .bind(body.voter_user_id)
-        .bind(vote_kind)
-        .bind(body.vote_value)
-        .bind(weight_micros)
-        .bind(body.commitment_hash)
-        .bind(body.sealed_payload)
-        .bind(contract_digest)
-        .bind(meta_data)
-        .fetch_one(pool)
-        .await?;
+    let id = usacc_votes::Entity::insert(usacc_votes::ActiveModel {
+        election_id: Set(election_id),
+        case_id: Set(case_id),
+        voter_user_id: Set(voter_user_id),
+        vote_kind: Set(vote_kind),
+        vote_value: Set(body.vote_value),
+        weight_micros: Set(weight_micros),
+        commitment_hash: Set(body.commitment_hash),
+        sealed_payload: Set(body.sealed_payload),
+        contract_digest: Set(contract_digest),
+        meta_data: Set(meta_data),
+        ..Default::default()
+    })
+    .on_conflict(
+        OnConflict::columns([
+            usacc_votes::Column::ElectionId,
+            usacc_votes::Column::VoterUserId,
+        ])
+        .update_columns([
+            usacc_votes::Column::VoteKind,
+            usacc_votes::Column::VoteValue,
+            usacc_votes::Column::WeightMicros,
+            usacc_votes::Column::CommitmentHash,
+            usacc_votes::Column::SealedPayload,
+            usacc_votes::Column::ContractDigest,
+            usacc_votes::Column::MetaData,
+        ])
+        .value(usacc_votes::Column::UpdatedAt, Expr::current_timestamp())
+        .to_owned(),
+    )
+    .exec(pool)
+    .await?
+    .last_insert_id;
     state
         .metrics
         .votes_cast_total
         .fetch_add(1, Ordering::Relaxed);
-    Ok((StatusCode::CREATED, Json(fetch_vote(&state, &id).await?)))
+    Ok((
+        StatusCode::CREATED,
+        Json(fetch_vote(&state, &id.to_string()).await?),
+    ))
 }
 
 async fn fetch_vote(state: &AppState, id: &str) -> ApiResult<UsaccVotesRow> {
     let pool = db::pool(state)?;
-    let sql = format!("{USACC_VOTES_SELECT_SQL} where id = $1::uuid");
+    let vote_id = db::parse_uuid(id)?;
     state.metrics.inc_db_query();
-    Ok(sqlx::query_as::<_, UsaccVotesRow>(&sql)
-        .bind(id)
-        .fetch_one(pool)
-        .await?)
+    let vote = usacc_votes::Entity::find_by_id(vote_id)
+        .one(pool)
+        .await?
+        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "row not found"))?;
+    Ok(db::vote_row(vote))
 }
 
 async fn tally_election(
@@ -669,24 +723,26 @@ async fn tally_election(
     let pool = db::pool(&state)?;
 
     let election = fetch_election(&state, &election_id).await?;
-    let tally_sql = format!(
-        "select vote_value, count(*)::bigint as vote_count, coalesce(sum(weight_micros), 0)::bigint as weight_micros \
-         from {USACC_VOTES_TABLE} where election_id = $1::uuid group by vote_value order by weight_micros desc, vote_count desc, vote_value asc"
-    );
+    let election_uuid = db::parse_uuid(&election_id)?;
+    let weight_sum: SimpleExpr = Func::coalesce([
+        Expr::col(usacc_votes::Column::WeightMicros).sum(),
+        Expr::val(0i64).into(),
+    ])
+    .into();
     state.metrics.inc_db_query();
-    let rows = sqlx::query(&tally_sql)
-        .bind(&election_id)
-        .fetch_all(pool)
+    let choices: Vec<TallyChoice> = usacc_votes::Entity::find()
+        .select_only()
+        .column(usacc_votes::Column::VoteValue)
+        .column_as(Expr::col(Asterisk).count(), "vote_count")
+        .column_as(weight_sum, "weight_micros")
+        .filter(usacc_votes::Column::ElectionId.eq(election_uuid))
+        .group_by(usacc_votes::Column::VoteValue)
+        .order_by_desc(Expr::col(Alias::new("weight_micros")))
+        .order_by_desc(Expr::col(Alias::new("vote_count")))
+        .order_by_asc(usacc_votes::Column::VoteValue)
+        .into_model::<TallyChoice>()
+        .all(pool)
         .await?;
-
-    let choices: Vec<TallyChoice> = rows
-        .into_iter()
-        .map(|row| TallyChoice {
-            vote_value: row.get("vote_value"),
-            vote_count: row.get("vote_count"),
-            weight_micros: row.get("weight_micros"),
-        })
-        .collect();
     let total_votes = choices.iter().map(|choice| choice.vote_count).sum::<i64>();
     let total_weight_micros = choices
         .iter()
@@ -711,14 +767,19 @@ async fn tally_election(
         choices,
     };
     let tally = serde_json::to_value(&response).unwrap_or_else(|_| json!({}));
-    let sql = format!(
-        "update {USACC_ELECTIONS_TABLE} set status = 'certified', tally = $2::jsonb, updated_at = now() where id = $1::uuid"
-    );
     state.metrics.inc_db_query();
-    sqlx::query(&sql)
-        .bind(&election_id)
-        .bind(tally)
-        .execute(pool)
+    usacc_elections::Entity::update_many()
+        .set(usacc_elections::ActiveModel {
+            status: Set("certified".to_string()),
+            tally: Set(tally),
+            ..Default::default()
+        })
+        .col_expr(
+            usacc_elections::Column::UpdatedAt,
+            Expr::current_timestamp().into(),
+        )
+        .filter(usacc_elections::Column::Id.eq(election_uuid))
+        .exec(pool)
         .await?;
     state.metrics.tallies_total.fetch_add(1, Ordering::Relaxed);
     Ok(Json(response))
@@ -749,28 +810,33 @@ async fn create_ledger_entry(
     })
     .map_err(ApiError::bad_request)?;
 
-    let sql = format!(
-        "insert into {USACC_LEDGER_ENTRIES_TABLE} \
-         (case_id, escrow_account_id, user_id, entry_kind, direction, amount_cents, currency, provider_ref, contract_digest, meta_data) \
-         values ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9, $10::jsonb) returning id::text"
-    );
+    let case_id = body.case_id.as_deref().map(db::parse_uuid).transpose()?;
+    let escrow_account_id = body
+        .escrow_account_id
+        .as_deref()
+        .map(db::parse_uuid)
+        .transpose()?;
+    let user_id = body.user_id.as_deref().map(db::parse_uuid).transpose()?;
     state.metrics.inc_db_query();
-    let id = sqlx::query_scalar::<_, String>(&sql)
-        .bind(body.case_id)
-        .bind(body.escrow_account_id)
-        .bind(body.user_id)
-        .bind(body.entry_kind)
-        .bind(body.direction)
-        .bind(body.amount_cents)
-        .bind(currency)
-        .bind(body.provider_ref)
-        .bind(body.contract_digest)
-        .bind(meta_data)
-        .fetch_one(pool)
-        .await?;
+    let id = usacc_ledger_entries::Entity::insert(usacc_ledger_entries::ActiveModel {
+        case_id: Set(case_id),
+        escrow_account_id: Set(escrow_account_id),
+        user_id: Set(user_id),
+        entry_kind: Set(body.entry_kind),
+        direction: Set(body.direction),
+        amount_cents: Set(body.amount_cents),
+        currency: Set(currency),
+        provider_ref: Set(body.provider_ref),
+        contract_digest: Set(body.contract_digest),
+        meta_data: Set(meta_data),
+        ..Default::default()
+    })
+    .exec(pool)
+    .await?
+    .last_insert_id;
     Ok((
         StatusCode::CREATED,
-        Json(fetch_ledger_entry(&state, &id).await?),
+        Json(fetch_ledger_entry(&state, &id.to_string()).await?),
     ))
 }
 
@@ -782,14 +848,16 @@ async fn case_ledger(
     state.metrics.inc_http();
     require_auth(&headers, &state)?;
     let pool = db::pool(&state)?;
-    let sql = format!(
-        "{USACC_LEDGER_ENTRIES_SELECT_SQL} where case_id = $1::uuid order by created_at desc"
-    );
+    let case_uuid = db::parse_uuid(&case_id)?;
     state.metrics.inc_db_query();
-    let entries = sqlx::query_as::<_, UsaccLedgerEntriesRow>(&sql)
-        .bind(&case_id)
-        .fetch_all(pool)
-        .await?;
+    let entries = usacc_ledger_entries::Entity::find()
+        .filter(usacc_ledger_entries::Column::CaseId.eq(case_uuid))
+        .order_by_desc(usacc_ledger_entries::Column::CreatedAt)
+        .all(pool)
+        .await?
+        .into_iter()
+        .map(db::ledger_entry_row)
+        .collect::<Vec<_>>();
     let summary = summarize_ledger(&case_id, &entries);
     Ok(Json(json!({
         "ok": true,
@@ -800,12 +868,13 @@ async fn case_ledger(
 
 async fn fetch_ledger_entry(state: &AppState, id: &str) -> ApiResult<UsaccLedgerEntriesRow> {
     let pool = db::pool(state)?;
-    let sql = format!("{USACC_LEDGER_ENTRIES_SELECT_SQL} where id = $1::uuid");
+    let entry_id = db::parse_uuid(id)?;
     state.metrics.inc_db_query();
-    Ok(sqlx::query_as::<_, UsaccLedgerEntriesRow>(&sql)
-        .bind(id)
-        .fetch_one(pool)
-        .await?)
+    let entry = usacc_ledger_entries::Entity::find_by_id(entry_id)
+        .one(pool)
+        .await?
+        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "row not found"))?;
+    Ok(db::ledger_entry_row(entry))
 }
 
 fn summarize_ledger(case_id: &str, entries: &[UsaccLedgerEntriesRow]) -> LedgerSummary {
@@ -919,26 +988,38 @@ async fn persist_contract_operation(
         .get("programId")
         .and_then(Value::as_str)
         .map(ToString::to_string);
-    let sql = format!(
-        "insert into {USACC_CONTRACT_OPERATIONS_TABLE} \
-         (case_id, election_id, vote_id, request_id, operation_kind, status, program_id, digest, envelope, response) \
-         values ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb) \
-         on conflict (request_id) do update set status = excluded.status, digest = excluded.digest, response = excluded.response, updated_at = now()"
-    );
+    let case_id = case_id.as_deref().map(db::parse_uuid).transpose()?;
+    let election_id = election_id.as_deref().map(db::parse_uuid).transpose()?;
+    let vote_id = vote_id.as_deref().map(db::parse_uuid).transpose()?;
     state.metrics.inc_db_query();
-    sqlx::query(&sql)
-        .bind(case_id)
-        .bind(election_id)
-        .bind(vote_id)
-        .bind(request_id)
-        .bind(operation_kind)
-        .bind(status)
-        .bind(program_id)
-        .bind(digest)
-        .bind(envelope.clone())
-        .bind(response.clone())
-        .execute(pool)
-        .await?;
+    usacc_contract_operations::Entity::insert(usacc_contract_operations::ActiveModel {
+        case_id: Set(case_id),
+        election_id: Set(election_id),
+        vote_id: Set(vote_id),
+        request_id: Set(request_id),
+        operation_kind: Set(operation_kind),
+        status: Set(status.to_string()),
+        program_id: Set(program_id),
+        digest: Set(digest),
+        envelope: Set(envelope.clone()),
+        response: Set(response.clone()),
+        ..Default::default()
+    })
+    .on_conflict(
+        OnConflict::column(usacc_contract_operations::Column::RequestId)
+            .update_columns([
+                usacc_contract_operations::Column::Status,
+                usacc_contract_operations::Column::Digest,
+                usacc_contract_operations::Column::Response,
+            ])
+            .value(
+                usacc_contract_operations::Column::UpdatedAt,
+                Expr::current_timestamp(),
+            )
+            .to_owned(),
+    )
+    .exec_without_returning(pool)
+    .await?;
     Ok(())
 }
 
@@ -960,6 +1041,9 @@ async fn run_simulation_route(
         if let Some(pool) = state.pool.as_ref() {
             let seed_i64 = response.seed.min(i64::MAX as u64) as i64;
             let input = body.input.unwrap_or_else(|| json!({}));
+            // `started_at`/`finished_at` must stay on the database clock
+            // (`now()`), which the entity insert API cannot express, so this
+            // one stays a raw parameterized statement.
             let sql = format!(
                 "insert into {USACC_SIMULATION_RUNS_TABLE} \
                  (case_id, status, mode, seed, horizon_days, actor_count, event_count, metrics, trace, input, started_at, finished_at) \
@@ -967,17 +1051,26 @@ async fn run_simulation_route(
                  returning id::text"
             );
             state.metrics.inc_db_query();
-            let id = sqlx::query_scalar::<_, String>(&sql)
-                .bind(response.case_id.clone())
-                .bind(seed_i64)
-                .bind(response.horizon_days)
-                .bind(response.actor_count)
-                .bind(response.event_count.min(i32::MAX as u64) as i32)
-                .bind(response.metrics.clone())
-                .bind(response.trace.clone())
-                .bind(input)
-                .fetch_one(pool)
-                .await?;
+            let row = pool
+                .query_one(Statement::from_sql_and_values(
+                    DatabaseBackend::Postgres,
+                    sql,
+                    [
+                        response.case_id.clone().into(),
+                        seed_i64.into(),
+                        response.horizon_days.into(),
+                        response.actor_count.into(),
+                        (response.event_count.min(i32::MAX as u64) as i32).into(),
+                        response.metrics.clone().into(),
+                        response.trace.clone().into(),
+                        input.into(),
+                    ],
+                ))
+                .await?
+                .ok_or_else(|| {
+                    ApiError::internal("database error: simulation insert returned no row")
+                })?;
+            let id: String = row.try_get("", "id").map_err(ApiError::from)?;
             response.persisted = true;
             response.run_id = Some(id);
         }
@@ -993,13 +1086,13 @@ async fn get_simulation_run(
     state.metrics.inc_http();
     require_auth(&headers, &state)?;
     let pool = db::pool(&state)?;
-    let sql = format!("{USACC_SIMULATION_RUNS_SELECT_SQL} where id = $1::uuid");
+    let run_id = db::parse_uuid(&id)?;
     state.metrics.inc_db_query();
-    let row = sqlx::query_as::<_, UsaccSimulationRunsRow>(&sql)
-        .bind(id)
-        .fetch_one(pool)
-        .await?;
-    Ok(Json(row))
+    let run = usacc_simulation_runs::Entity::find_by_id(run_id)
+        .one(pool)
+        .await?
+        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "row not found"))?;
+    Ok(Json(db::simulation_run_row(run)))
 }
 
 fn nowish_hash(value: &Value) -> String {

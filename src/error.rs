@@ -50,10 +50,10 @@ impl IntoResponse for ApiError {
     }
 }
 
-impl From<sqlx::Error> for ApiError {
-    fn from(error: sqlx::Error) -> Self {
+impl From<sea_orm::DbErr> for ApiError {
+    fn from(error: sea_orm::DbErr) -> Self {
         match error {
-            sqlx::Error::RowNotFound => Self::new(StatusCode::NOT_FOUND, "row not found"),
+            sea_orm::DbErr::RecordNotFound(_) => Self::new(StatusCode::NOT_FOUND, "row not found"),
             other => Self::internal(format!("database error: {other}")),
         }
     }

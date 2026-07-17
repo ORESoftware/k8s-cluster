@@ -1,20 +1,20 @@
 use std::sync::Arc;
 
 use reqwest::Client;
-use sqlx::PgPool;
+use sea_orm::DatabaseConnection;
 
 use crate::{config::Config, metrics::Metrics};
 
 #[derive(Clone)]
 pub struct AppState {
     pub config: Arc<Config>,
-    pub pool: Option<PgPool>,
+    pub pool: Option<DatabaseConnection>,
     pub http: Client,
     pub metrics: Arc<Metrics>,
 }
 
 impl AppState {
-    pub fn new(config: Config, pool: Option<PgPool>, http: Client) -> Self {
+    pub fn new(config: Config, pool: Option<DatabaseConnection>, http: Client) -> Self {
         Self {
             config: Arc::new(config),
             pool,

@@ -190,7 +190,7 @@ pub struct LedgerSummary {
     pub disbursement_cents: i64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, sea_orm::FromQueryResult)]
 #[serde(rename_all = "camelCase")]
 pub struct TallyChoice {
     pub vote_value: String,
