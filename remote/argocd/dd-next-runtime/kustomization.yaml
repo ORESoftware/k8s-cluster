@@ -43,6 +43,7 @@ resources:
   - dd-route-optimizer.deployment.yaml
   - dd-route-optimizer.service.yaml
   - dd-agent-sim-server.deployment.yaml
+  - dd-agent-sim-server.networkpolicy.yaml
   - dd-agent-sim-server.service.yaml
   - dd-monte-carlo-server.deployment.yaml
   - dd-monte-carlo-server.service.yaml
