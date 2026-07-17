@@ -175,6 +175,7 @@ resources:
   # and the whole gateway crashloops.
   - dd-soccer-feature-gates.configmap.yaml
   - dd-soccer-rs.deployment.yaml
+  - dd-soccer-rs.networkpolicy.yaml
   - dd-soccer-rs.service.yaml
   # Akrion Sim web portal: Maud/HTMX pages and Supabase browser-login shell,
   # mounted by the gateway at /akrion-sim.
