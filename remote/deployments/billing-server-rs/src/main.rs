@@ -15,6 +15,7 @@ mod customers;
 mod db;
 mod error;
 mod events;
+mod fiducia;
 mod jobs;
 mod ledger;
 mod locks;
@@ -59,7 +60,7 @@ async fn main() -> anyhow::Result<()> {
     // rather than blocking startup. See src/events.rs.
     let events = Arc::new(build_event_bus(&cfg).await);
 
-    let state = AppState::new(cfg.clone(), pool, sealer, events);
+    let state = AppState::new(cfg.clone(), pool, sealer, events)?;
 
     // Seed the built-in system jobs (idempotent) and start the scheduler.
     if let Err(e) = jobs::seed_system_jobs(&state.scheduler).await {

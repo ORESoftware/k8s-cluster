@@ -1,23 +1,20 @@
-//! Tenant-scoped lease service.
+//! Tenant-scoped renewable leases.
 //!
-//! Semantics:
-//!   - `acquire`: atomically take a lease on `(tenant_id, resource_key)`.
-//!     If an existing lease is unexpired, return 409 Conflict. If expired,
-//!     preempt it (recorded as `preempt` in the audit log).
-//!   - `renew`: extend the TTL. Requires the original `lease_token`. Fails
-//!     if the lease was already preempted/expired; the caller must `acquire`
-//!     again and re-validate whatever work they had in flight.
-//!   - `release`: drop the lease. Token mismatch is a no-op success (the
-//!     caller's intent — "this lock is gone for me" — is satisfied).
-//!
-//! Backed by Postgres; HA == PG HA. No separate distributed lock service.
+//! Fiducia leader-election leases are the cross-service authority when enabled:
+//! campaign = acquire, renew = extend, resign = release. PostgreSQL keeps the
+//! durable billing-facing mirror and append-only audit history. Every mirror
+//! mutation runs in a transaction under a transaction-scoped advisory lock;
+//! network calls are deliberately outside those transactions.
+
+use std::collections::BTreeMap;
 
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{PgPool, Row};
+use sqlx::{PgPool, Row, Transaction};
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
+use crate::fiducia::FiduciaCoordinator;
 use crate::shard::{Region, ShardKey};
 
 #[derive(Clone, Debug, Serialize)]
@@ -64,14 +61,17 @@ pub struct LeaseRow {
 #[derive(Clone)]
 pub struct LockService {
     pool: PgPool,
+    fiducia: FiduciaCoordinator,
 }
 
 impl LockService {
-    pub fn new(pool: PgPool) -> Self {
-        Self { pool }
+    pub fn new(pool: PgPool, fiducia: FiduciaCoordinator) -> Self {
+        Self { pool, fiducia }
     }
 
-    /// Atomic acquire with TTL. Returns 409 (Conflict) if held + not expired.
+    /// Acquire a renewable lease. Fiducia wins the cross-service race first;
+    /// the PostgreSQL mirror then commits atomically with its audit event. A DB
+    /// failure is compensated by resigning the newly won Fiducia lease.
     pub async fn acquire(
         &self,
         tenant_id: Uuid,
@@ -82,33 +82,298 @@ impl LockService {
         validate_ttl(req.ttl_seconds)?;
         validate_resource_key(&req.resource)?;
 
-        let shard = ShardKey::derive(tenant_id, region).0;
         let token = Uuid::new_v4();
         let now = Utc::now();
-        let expires = now + Duration::seconds(req.ttl_seconds as i64);
+        let name = fiducia_lease_name(tenant_id, &req.resource);
+        let candidate = fiducia_candidate(tenant_id, token);
+        let ttl_ms = ttl_ms(req.ttl_seconds);
 
+        let remote = if self.fiducia.enabled() {
+            let mut metadata = BTreeMap::new();
+            metadata.insert("service".into(), "billing-server-rs".into());
+            metadata.insert("tenant_id".into(), tenant_id.to_string());
+            metadata.insert("resource".into(), req.resource.clone());
+            if let Some(holder) = &req.holder {
+                metadata.insert("holder".into(), holder.clone());
+            }
+            let Some(leadership) = self
+                .fiducia
+                .campaign_lease(&name, &candidate, ttl_ms, metadata)
+                .await?
+            else {
+                return Err(AppError::Conflict(format!(
+                    "lease '{}' is held in fiducia.cloud",
+                    req.resource
+                )));
+            };
+            Some(leadership)
+        } else {
+            None
+        };
+
+        let expires_at = match &remote {
+            Some(leadership) => timestamp_millis(leadership.lease_expires_ms)?,
+            None => now + Duration::seconds(req.ttl_seconds as i64),
+        };
+        let result = self
+            .persist_acquire(tenant_id, region, actor, &req, token, now, expires_at)
+            .await;
+
+        if result.is_err() {
+            if let Some(leadership) = &remote {
+                self.compensate_resign(leadership, &name, &candidate, "acquire")
+                    .await;
+            }
+        }
+        result
+    }
+
+    pub async fn renew(
+        &self,
+        tenant_id: Uuid,
+        region: Region,
+        actor: Option<&str>,
+        resource: &str,
+        req: RenewRequest,
+    ) -> AppResult<Lease> {
+        validate_ttl(req.ttl_seconds)?;
+        validate_resource_key(resource)?;
+
+        // Avoid touching Fiducia for an obviously stale/foreign token.
+        let local_exists = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS(
+                SELECT 1 FROM tenant_locks
+                WHERE tenant_id = $1 AND resource_key = $2
+                  AND lease_token = $3 AND expires_at > now()
+            )
+            "#,
+        )
+        .bind(tenant_id)
+        .bind(resource)
+        .bind(req.lease_token)
+        .fetch_one(&self.pool)
+        .await?;
+        if !local_exists {
+            return Err(AppError::Conflict(
+                "lease not found, token mismatch, or already expired".into(),
+            ));
+        }
+
+        let name = fiducia_lease_name(tenant_id, resource);
+        let candidate = fiducia_candidate(tenant_id, req.lease_token);
+        let ttl_ms = ttl_ms(req.ttl_seconds);
+        let remote = if self.fiducia.enabled() {
+            let leadership = self.current_remote_lease(&name, &candidate).await?;
+            let fencing_token = u64::try_from(leadership.fencing_token)
+                .map_err(|_| fiducia_protocol_error("negative lease fencing token"))?;
+            let Some(renewed) = self
+                .fiducia
+                .renew_lease(&name, &candidate, fencing_token, ttl_ms)
+                .await?
+            else {
+                return Err(AppError::Conflict(
+                    "Fiducia lease expired, changed holder, or was already released".into(),
+                ));
+            };
+            Some(renewed)
+        } else {
+            None
+        };
+
+        let new_expires = match &remote {
+            Some(leadership) => timestamp_millis(leadership.lease_expires_ms)?,
+            None => Utc::now() + Duration::seconds(req.ttl_seconds as i64),
+        };
+        let result = self
+            .persist_renew(tenant_id, region, actor, resource, &req, new_expires)
+            .await;
+
+        if result.is_err() {
+            // A remotely renewed lease without a durable local mirror is not a
+            // valid billing lease. Resign it so the failure is fail-closed and
+            // bounded instead of leaving an invisible holder.
+            if let Some(leadership) = &remote {
+                self.compensate_resign(leadership, &name, &candidate, "renew")
+                    .await;
+            }
+        }
+        result
+    }
+
+    /// Release a lease. Token mismatch remains a no-op success. PostgreSQL is
+    /// committed first; if the subsequent Fiducia resign fails, its TTL bounds
+    /// the stale remote hold and the caller receives an explicit provider error.
+    pub async fn release(
+        &self,
+        tenant_id: Uuid,
+        region: Region,
+        actor: Option<&str>,
+        resource: &str,
+        req: ReleaseRequest,
+    ) -> AppResult<()> {
+        validate_resource_key(resource)?;
+        let local_exists = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS(
+                SELECT 1 FROM tenant_locks
+                WHERE tenant_id = $1 AND resource_key = $2 AND lease_token = $3
+            )
+            "#,
+        )
+        .bind(tenant_id)
+        .bind(resource)
+        .bind(req.lease_token)
+        .fetch_one(&self.pool)
+        .await?;
+        if !local_exists {
+            return Ok(());
+        }
+
+        let name = fiducia_lease_name(tenant_id, resource);
+        let candidate = fiducia_candidate(tenant_id, req.lease_token);
+        let remote = if self.fiducia.enabled() {
+            let observed = self.fiducia.get_lease(&name).await?;
+            observed
+                .leadership
+                .filter(|leadership| leadership.leader == candidate)
+        } else {
+            None
+        };
+
+        let deleted = self
+            .persist_release(tenant_id, region, actor, resource, req.lease_token)
+            .await?;
+        if !deleted {
+            return Ok(());
+        }
+        if let Some(leadership) = remote {
+            let fencing_token = u64::try_from(leadership.fencing_token)
+                .map_err(|_| fiducia_protocol_error("negative lease fencing token"))?;
+            self.fiducia
+                .resign_lease(&name, &candidate, fencing_token)
+                .await?;
+        }
+        Ok(())
+    }
+
+    pub async fn list(&self, tenant_id: Uuid) -> AppResult<Vec<LeaseRow>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT resource_key, lease_token, holder, acquired_at, expires_at,
+                   (expires_at <= now()) AS expired
+            FROM tenant_locks
+            WHERE tenant_id = $1
+            ORDER BY acquired_at DESC
+            "#,
+        )
+        .bind(tenant_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        rows.iter()
+            .map(|row| {
+                Ok(LeaseRow {
+                    resource_key: row.try_get("resource_key")?,
+                    lease_token: row.try_get("lease_token")?,
+                    holder: row.try_get("holder")?,
+                    acquired_at: row.try_get("acquired_at")?,
+                    expires_at: row.try_get("expires_at")?,
+                    expired: row.try_get("expired")?,
+                })
+            })
+            .collect()
+    }
+
+    /// Atomically delete old mirrors and write their expiry audit events. The
+    /// previous two-autocommit implementation could record an expiry without
+    /// deleting it (or delete rows inserted between statements).
+    pub async fn sweep_expired(&self, keep_for_hours: i64) -> AppResult<u64> {
+        let cutoff = Utc::now() - Duration::hours(keep_for_hours.max(0));
+        let count: i64 = sqlx::query_scalar(
+            r#"
+            WITH expired AS (
+                DELETE FROM tenant_locks
+                WHERE expires_at <= $1
+                RETURNING tenant_id, shard_key, resource_key, lease_token, holder
+            ), audited AS (
+                INSERT INTO tenant_lock_events
+                    (tenant_id, shard_key, resource_key, lease_token, kind, holder)
+                SELECT tenant_id, shard_key, resource_key, lease_token,
+                       'expire'::lock_event_kind, holder
+                FROM expired
+                RETURNING 1
+            )
+            SELECT COUNT(*)::BIGINT FROM audited
+            "#,
+        )
+        .bind(cutoff)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(count as u64)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn persist_acquire(
+        &self,
+        tenant_id: Uuid,
+        region: Region,
+        actor: Option<&str>,
+        req: &AcquireRequest,
+        token: Uuid,
+        now: DateTime<Utc>,
+        expires_at: DateTime<Utc>,
+    ) -> AppResult<Lease> {
+        let shard = ShardKey::derive(tenant_id, region).0;
         let mut tx = self.pool.begin().await?;
+        advisory_lock(&mut tx, tenant_id, &req.resource).await?;
 
-        // Try INSERT; if a row exists, evaluate its expiry. If expired, preempt
-        // it atomically. If not, return 409.
+        let previous = sqlx::query(
+            r#"
+            SELECT holder, acquired_at, expires_at
+            FROM tenant_locks
+            WHERE tenant_id = $1 AND resource_key = $2
+            FOR UPDATE
+            "#,
+        )
+        .bind(tenant_id)
+        .bind(&req.resource)
+        .fetch_optional(&mut *tx)
+        .await?;
+
+        if let Some(existing) = &previous {
+            let existing_expires: DateTime<Utc> = existing.try_get("expires_at")?;
+            if existing_expires > now {
+                let holder: Option<String> = existing.try_get("holder")?;
+                tx.commit().await?;
+                return Err(AppError::Conflict(format!(
+                    "lock '{}' held by {} until {}",
+                    req.resource,
+                    holder.as_deref().unwrap_or("(unknown)"),
+                    existing_expires.to_rfc3339()
+                )));
+            }
+        }
+        let kind = if previous.is_some() {
+            "preempt"
+        } else {
+            "acquire"
+        };
+
         let row = sqlx::query(
             r#"
-            WITH ins AS (
-                INSERT INTO tenant_locks
-                    (tenant_id, shard_key, resource_key, lease_token, holder,
-                     acquired_at, expires_at, metadata)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                ON CONFLICT (tenant_id, resource_key) DO UPDATE
-                    SET lease_token = EXCLUDED.lease_token,
-                        holder      = EXCLUDED.holder,
-                        acquired_at = EXCLUDED.acquired_at,
-                        expires_at  = EXCLUDED.expires_at,
-                        metadata    = EXCLUDED.metadata
-                    WHERE tenant_locks.expires_at <= EXCLUDED.acquired_at
-                RETURNING lease_token, holder, acquired_at, expires_at, metadata
-            )
-            SELECT lease_token, holder, acquired_at, expires_at, metadata
-            FROM ins
+            INSERT INTO tenant_locks
+                (tenant_id, shard_key, resource_key, lease_token, holder,
+                 acquired_at, expires_at, metadata)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT (tenant_id, resource_key) DO UPDATE
+                SET shard_key   = EXCLUDED.shard_key,
+                    lease_token = EXCLUDED.lease_token,
+                    holder      = EXCLUDED.holder,
+                    acquired_at = EXCLUDED.acquired_at,
+                    expires_at  = EXCLUDED.expires_at,
+                    metadata    = EXCLUDED.metadata
+            RETURNING lease_token, holder, acquired_at, expires_at, metadata
             "#,
         )
         .bind(tenant_id)
@@ -117,44 +382,11 @@ impl LockService {
         .bind(token)
         .bind(&req.holder)
         .bind(now)
-        .bind(expires)
+        .bind(expires_at)
         .bind(&req.metadata)
-        .fetch_optional(&mut *tx)
+        .fetch_one(&mut *tx)
         .await?;
 
-        let Some(row) = row else {
-            // Lock exists and is still valid for someone else.
-            let existing = sqlx::query(
-                r#"
-                SELECT holder, acquired_at, expires_at
-                FROM tenant_locks
-                WHERE tenant_id = $1 AND resource_key = $2
-                "#,
-            )
-            .bind(tenant_id)
-            .bind(&req.resource)
-            .fetch_one(&mut *tx)
-            .await?;
-            let holder: Option<String> = existing.try_get("holder")?;
-            let exp: DateTime<Utc> = existing.try_get("expires_at")?;
-            tx.commit().await?;
-            return Err(AppError::Conflict(format!(
-                "lock '{}' held by {} until {}",
-                req.resource,
-                holder.as_deref().unwrap_or("(unknown)"),
-                exp.to_rfc3339()
-            )));
-        };
-
-        // Audit. Distinguish acquire from preempt by checking whether the
-        // returned acquired_at equals our `now` (we inserted) vs an earlier
-        // time (we updated an expired row, which the WHERE clause permits).
-        let acquired_at: DateTime<Utc> = row.try_get("acquired_at")?;
-        let kind = if (acquired_at - now).num_milliseconds().abs() <= 1 {
-            "acquire"
-        } else {
-            "preempt"
-        };
         sqlx::query(
             r#"
             INSERT INTO tenant_lock_events
@@ -174,35 +406,31 @@ impl LockService {
         .bind(&req.metadata)
         .execute(&mut *tx)
         .await?;
-
         tx.commit().await?;
 
         Ok(Lease {
             tenant_id,
-            resource_key: req.resource,
+            resource_key: req.resource.clone(),
             lease_token: token,
             holder: row.try_get("holder")?,
-            acquired_at,
+            acquired_at: row.try_get("acquired_at")?,
             expires_at: row.try_get("expires_at")?,
             metadata: row.try_get("metadata")?,
         })
     }
 
-    pub async fn renew(
+    async fn persist_renew(
         &self,
         tenant_id: Uuid,
         region: Region,
         actor: Option<&str>,
         resource: &str,
-        req: RenewRequest,
+        req: &RenewRequest,
+        new_expires: DateTime<Utc>,
     ) -> AppResult<Lease> {
-        validate_ttl(req.ttl_seconds)?;
-
         let shard = ShardKey::derive(tenant_id, region).0;
-        let now = Utc::now();
-        let new_expires = now + Duration::seconds(req.ttl_seconds as i64);
-
         let mut tx = self.pool.begin().await?;
+        advisory_lock(&mut tx, tenant_id, resource).await?;
 
         let row = sqlx::query(
             r#"
@@ -229,6 +457,7 @@ impl LockService {
             ));
         };
 
+        let holder: Option<String> = row.try_get("holder")?;
         sqlx::query(
             r#"
             INSERT INTO tenant_lock_events
@@ -241,37 +470,35 @@ impl LockService {
         .bind(shard)
         .bind(resource)
         .bind(req.lease_token)
-        .bind::<Option<String>>(row.try_get("holder")?)
+        .bind(&holder)
         .bind(actor)
         .bind(req.ttl_seconds as i32)
         .execute(&mut *tx)
         .await?;
-
         tx.commit().await?;
 
         Ok(Lease {
             tenant_id,
             resource_key: resource.into(),
             lease_token: req.lease_token,
-            holder: row.try_get("holder")?,
+            holder,
             acquired_at: row.try_get("acquired_at")?,
             expires_at: row.try_get("expires_at")?,
             metadata: row.try_get("metadata")?,
         })
     }
 
-    /// Release a lease. Token mismatch is a no-op success.
-    pub async fn release(
+    async fn persist_release(
         &self,
         tenant_id: Uuid,
         region: Region,
         actor: Option<&str>,
         resource: &str,
-        req: ReleaseRequest,
-    ) -> AppResult<()> {
+        lease_token: Uuid,
+    ) -> AppResult<bool> {
         let shard = ShardKey::derive(tenant_id, region).0;
         let mut tx = self.pool.begin().await?;
-
+        advisory_lock(&mut tx, tenant_id, resource).await?;
         let deleted = sqlx::query(
             r#"
             DELETE FROM tenant_locks
@@ -280,7 +507,7 @@ impl LockService {
         )
         .bind(tenant_id)
         .bind(resource)
-        .bind(req.lease_token)
+        .bind(lease_token)
         .execute(&mut *tx)
         .await?
         .rows_affected();
@@ -296,70 +523,98 @@ impl LockService {
             .bind(tenant_id)
             .bind(shard)
             .bind(resource)
-            .bind(req.lease_token)
+            .bind(lease_token)
             .bind(actor)
             .execute(&mut *tx)
             .await?;
         }
-
         tx.commit().await?;
-        Ok(())
+        Ok(deleted > 0)
     }
 
-    pub async fn list(&self, tenant_id: Uuid) -> AppResult<Vec<LeaseRow>> {
-        let rows = sqlx::query(
-            r#"
-            SELECT resource_key, lease_token, holder, acquired_at, expires_at,
-                   (expires_at <= now()) AS expired
-            FROM tenant_locks
-            WHERE tenant_id = $1
-            ORDER BY acquired_at DESC
-            "#,
-        )
-        .bind(tenant_id)
-        .fetch_all(&self.pool)
-        .await?;
-
-        Ok(rows
-            .iter()
-            .map(|r| LeaseRow {
-                resource_key: r.try_get("resource_key").unwrap_or_default(),
-                lease_token: r.try_get("lease_token").unwrap_or(Uuid::nil()),
-                holder: r.try_get("holder").unwrap_or(None),
-                acquired_at: r.try_get("acquired_at").unwrap_or_else(|_| Utc::now()),
-                expires_at: r.try_get("expires_at").unwrap_or_else(|_| Utc::now()),
-                expired: r.try_get("expired").unwrap_or(false),
-            })
-            .collect())
+    async fn current_remote_lease(
+        &self,
+        name: &str,
+        candidate: &str,
+    ) -> AppResult<fiducia_interfaces::Leadership> {
+        let observed = self.fiducia.get_lease(name).await?;
+        let Some(leadership) = observed.leadership else {
+            return Err(AppError::Conflict("Fiducia lease is not held".into()));
+        };
+        if leadership.leader != candidate {
+            return Err(AppError::Conflict(
+                "Fiducia lease fencing token belongs to another holder".into(),
+            ));
+        }
+        Ok(leadership)
     }
 
-    /// Garbage collect leases that expired more than `keep_for_hours` ago.
-    /// Recorded in the audit log as `expire` events for completeness.
-    pub async fn sweep_expired(&self, keep_for_hours: i64) -> AppResult<u64> {
-        let cutoff = Utc::now() - Duration::hours(keep_for_hours);
+    async fn compensate_resign(
+        &self,
+        leadership: &fiducia_interfaces::Leadership,
+        name: &str,
+        candidate: &str,
+        operation: &str,
+    ) {
+        let fencing_token = match u64::try_from(leadership.fencing_token) {
+            Ok(token) => token,
+            Err(_) => {
+                tracing::error!(lease = name, operation, "negative Fiducia fencing token");
+                return;
+            }
+        };
+        if let Err(err) = self
+            .fiducia
+            .resign_lease(name, candidate, fencing_token)
+            .await
+        {
+            tracing::error!(
+                error = %err,
+                lease = name,
+                operation,
+                "failed to compensate Fiducia lease after Postgres failure"
+            );
+        }
+    }
+}
 
-        // Record expire events first so the audit trail captures them.
-        let _ = sqlx::query(
-            r#"
-            INSERT INTO tenant_lock_events
-                (tenant_id, shard_key, resource_key, lease_token, kind, holder)
-            SELECT tenant_id, shard_key, resource_key, lease_token,
-                   'expire'::lock_event_kind, holder
-            FROM tenant_locks
-            WHERE expires_at <= $1
-            "#,
-        )
-        .bind(cutoff)
-        .execute(&self.pool)
+async fn advisory_lock(
+    tx: &mut Transaction<'_, sqlx::Postgres>,
+    tenant_id: Uuid,
+    resource: &str,
+) -> AppResult<()> {
+    // The one-bigint advisory-lock namespace is independent from the ledger's
+    // two-int idempotency namespace. PostgreSQL releases it automatically on
+    // commit/rollback, including early error paths.
+    let identity = format!("billing-lease:{tenant_id}:{resource}");
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+        .bind(identity)
+        .execute(&mut **tx)
         .await?;
+    Ok(())
+}
 
-        let n = sqlx::query(r#"DELETE FROM tenant_locks WHERE expires_at <= $1"#)
-            .bind(cutoff)
-            .execute(&self.pool)
-            .await?
-            .rows_affected();
+fn fiducia_lease_name(tenant_id: Uuid, resource: &str) -> String {
+    format!("billing/tenant/{tenant_id}/{resource}")
+}
 
-        Ok(n)
+fn fiducia_candidate(tenant_id: Uuid, lease_token: Uuid) -> String {
+    format!("billing-server-rs:{tenant_id}:{lease_token}")
+}
+
+fn ttl_ms(ttl_seconds: u32) -> u64 {
+    u64::from(ttl_seconds) * 1_000
+}
+
+fn timestamp_millis(value: i64) -> AppResult<DateTime<Utc>> {
+    DateTime::<Utc>::from_timestamp_millis(value)
+        .ok_or_else(|| fiducia_protocol_error("lease expiry is outside Chrono's timestamp range"))
+}
+
+fn fiducia_protocol_error(message: &str) -> AppError {
+    AppError::Provider {
+        provider: "fiducia.cloud".into(),
+        message: message.into(),
     }
 }
 
@@ -387,4 +642,37 @@ fn validate_resource_key(key: &str) -> AppResult<()> {
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fiducia_names_are_tenant_scoped_and_stable() {
+        let tenant = Uuid::parse_str("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa").unwrap();
+        let token = Uuid::parse_str("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb").unwrap();
+        assert_eq!(
+            fiducia_lease_name(tenant, "invoice/42"),
+            "billing/tenant/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/invoice/42"
+        );
+        assert_eq!(
+            fiducia_candidate(tenant, token),
+            "billing-server-rs:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+        );
+    }
+
+    #[test]
+    fn ttl_validation_bounds_fiducia_leases() {
+        assert!(validate_ttl(0).is_err());
+        assert!(validate_ttl(1).is_ok());
+        assert!(validate_ttl(86_400).is_ok());
+        assert!(validate_ttl(86_401).is_err());
+    }
+
+    #[test]
+    fn resource_validation_rejects_control_characters() {
+        assert!(validate_resource_key("invoice/42").is_ok());
+        assert!(validate_resource_key("invoice\n42").is_err());
+    }
 }

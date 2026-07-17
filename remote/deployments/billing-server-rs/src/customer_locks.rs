@@ -1,26 +1,24 @@
-//! External customer-scoped snapshot locks.
+//! External customer-scoped snapshot locks backed by fiducia.cloud.
 //!
-//! The broker is `live-mutex-rs`/`dd-rust-network-mutex`, reached over the
-//! live-mutex TCP protocol. This is intentionally not an in-process mutex:
-//! billing-state reads and all ledger writes that touch customer accounts use
-//! the same broker keys so pods agree on one customer snapshot at a time.
+//! Billing-state reads and every ledger write that touches a customer account
+//! contend on the same atomic Fiducia union-lock keys. PostgreSQL remains the
+//! ledger source of truth and still uses transaction-scoped advisory locks for
+//! idempotency; Fiducia provides cross-service leases and fencing.
 
 use std::collections::BTreeSet;
-use std::time::Duration;
 
-use live_mutex_client::{Client, ClientError, LockOpts};
 use serde::Serialize;
+use tokio::time::{Instant, sleep};
 use uuid::Uuid;
 
 use crate::config::Config;
 use crate::error::{AppError, AppResult};
+use crate::fiducia::FiduciaCoordinator;
 
 #[derive(Clone, Debug)]
 pub struct CustomerLockBroker {
-    enabled: bool,
-    addr: String,
+    coordinator: FiduciaCoordinator,
     ttl_ms: u64,
-    request_timeout: Duration,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -41,18 +39,15 @@ pub struct CustomerFencingToken {
 
 enum CustomerLockGuardInner {
     Disabled,
-    Single {
-        client: Client,
-        resource: String,
-        lock_uuid: String,
-        fencing_token: Option<u64>,
-    },
-    Many {
-        client: Client,
-        resources: Vec<String>,
-        lock_uuid: String,
-        fencing_tokens: Vec<CustomerFencingToken>,
-    },
+    Held(Box<HeldCustomerLock>),
+}
+
+struct HeldCustomerLock {
+    coordinator: FiduciaCoordinator,
+    holder: String,
+    fencing_token: u64,
+    resources: Vec<String>,
+    fencing_tokens: Vec<CustomerFencingToken>,
 }
 
 pub struct CustomerLockGuard {
@@ -61,22 +56,18 @@ pub struct CustomerLockGuard {
 }
 
 impl CustomerLockBroker {
-    pub fn from_config(cfg: &Config) -> Self {
+    pub fn from_config(cfg: &Config, coordinator: FiduciaCoordinator) -> Self {
         Self {
-            enabled: cfg.customer_snapshot_lock_enabled,
-            addr: cfg.live_mutex_addr.clone(),
-            ttl_ms: cfg.live_mutex_lock_ttl_ms,
-            request_timeout: Duration::from_millis(cfg.live_mutex_request_timeout_ms),
+            coordinator,
+            ttl_ms: cfg.fiducia_lock_ttl_ms,
         }
     }
 
     #[cfg(test)]
     pub fn disabled() -> Self {
         Self {
-            enabled: false,
-            addr: "disabled".into(),
-            ttl_ms: 0,
-            request_timeout: Duration::from_millis(1),
+            coordinator: FiduciaCoordinator::disabled(),
+            ttl_ms: 60_000,
         }
     }
 
@@ -97,7 +88,7 @@ impl CustomerLockBroker {
         reason: &str,
     ) -> AppResult<CustomerLockGuard> {
         let targets = normalized_customer_ids(customer_ids)?;
-        if !self.enabled || targets.is_empty() {
+        if !self.coordinator.enabled() || targets.is_empty() {
             return Ok(CustomerLockGuard::disabled());
         }
 
@@ -105,85 +96,60 @@ impl CustomerLockBroker {
             .into_iter()
             .map(|customer_id| customer_lock_key(tenant_id, &customer_id))
             .collect::<Vec<_>>();
+        let holder = format!(
+            "billing-customer:{}:{}:{}",
+            tenant_id,
+            std::process::id(),
+            Uuid::new_v4()
+        );
+        let deadline = Instant::now() + self.coordinator.request_timeout();
 
-        let client = self.connect(reason).await?;
-        if resources.len() == 1 {
-            let resource = resources.into_iter().next().expect("len checked");
-            let opts = LockOpts {
-                ttl_ms: Some(self.ttl_ms),
-                max: Some(1),
-            };
-            let grant =
-                tokio::time::timeout(self.request_timeout, client.acquire(&resource, Some(opts)))
-                    .await
-                    .map_err(|_| self.timeout_error("acquire", reason))?
-                    .map_err(|e| self.client_error("acquire", reason, e))?;
+        loop {
+            if let Some(grant) = self
+                .coordinator
+                .acquire_lock(resources.clone(), &holder, self.ttl_ms)
+                .await?
+            {
+                let fencing_tokens = resources
+                    .iter()
+                    .map(|resource| CustomerFencingToken {
+                        resource: resource.clone(),
+                        token: grant.fencing_token,
+                    })
+                    .collect();
+                tracing::debug!(
+                    reason,
+                    holder,
+                    fencing_token = grant.fencing_token,
+                    lease_expires_ms = grant.lease_expires_ms,
+                    resources = ?resources,
+                    "acquired Fiducia customer lock"
+                );
+                return Ok(CustomerLockGuard {
+                    broker_addr: Some(self.coordinator.base_url().to_string()),
+                    inner: CustomerLockGuardInner::Held(Box::new(HeldCustomerLock {
+                        coordinator: self.coordinator.clone(),
+                        holder,
+                        fencing_token: grant.fencing_token,
+                        resources,
+                        fencing_tokens,
+                    })),
+                });
+            }
 
-            Ok(CustomerLockGuard {
-                broker_addr: Some(self.addr.clone()),
-                inner: CustomerLockGuardInner::Single {
-                    client,
-                    resource,
-                    lock_uuid: grant.lock_uuid,
-                    fencing_token: grant.fencing_token,
-                },
-            })
-        } else {
-            let resource_refs = resources.iter().map(String::as_str).collect::<Vec<_>>();
-            let grant = tokio::time::timeout(
-                self.request_timeout,
-                client.acquire_many(&resource_refs, Some(self.ttl_ms)),
-            )
-            .await
-            .map_err(|_| self.timeout_error("acquire_many", reason))?
-            .map_err(|e| self.client_error("acquire_many", reason, e))?;
-
-            let fencing_tokens = grant
-                .fencing_tokens
-                .iter()
-                .map(|(resource, token)| CustomerFencingToken {
-                    resource: resource.clone(),
-                    token: *token,
-                })
-                .collect::<Vec<_>>();
-
-            Ok(CustomerLockGuard {
-                broker_addr: Some(self.addr.clone()),
-                inner: CustomerLockGuardInner::Many {
-                    client,
-                    resources,
-                    lock_uuid: grant.lock_uuid,
-                    fencing_tokens,
-                },
-            })
-        }
-    }
-
-    async fn connect(&self, reason: &str) -> AppResult<Client> {
-        tokio::time::timeout(
-            self.request_timeout,
-            Client::connect_with_timeout(&self.addr, self.request_timeout),
-        )
-        .await
-        .map_err(|_| self.timeout_error("connect", reason))?
-        .map_err(|e| self.client_error("connect", reason, e))
-    }
-
-    fn timeout_error(&self, op: &str, reason: &str) -> AppError {
-        AppError::Provider {
-            provider: "live_mutex_rs".into(),
-            message: format!(
-                "{op} timed out after {}ms for {reason} at {}",
-                self.request_timeout.as_millis(),
-                self.addr
-            ),
-        }
-    }
-
-    fn client_error(&self, op: &str, reason: &str, err: ClientError) -> AppError {
-        AppError::Provider {
-            provider: "live_mutex_rs".into(),
-            message: format!("{op} failed for {reason} at {}: {err}", self.addr),
+            let now = Instant::now();
+            if now >= deadline {
+                return Err(AppError::Provider {
+                    provider: "fiducia.cloud".into(),
+                    message: format!(
+                        "customer lock acquisition timed out for {reason} after {}ms",
+                        self.coordinator.request_timeout().as_millis()
+                    ),
+                });
+            }
+            // Try-lock polling deliberately avoids Fiducia's durable wait queue:
+            // if this caller times out, it must not be granted a lease later.
+            sleep((deadline - now).min(std::time::Duration::from_millis(50))).await;
         }
     }
 }
@@ -204,31 +170,11 @@ impl CustomerLockGuard {
                 resources: Vec::new(),
                 fencing_tokens: Vec::new(),
             },
-            CustomerLockGuardInner::Single {
-                resource,
-                fencing_token,
-                ..
-            } => CustomerSnapshotLockInfo {
+            CustomerLockGuardInner::Held(held) => CustomerSnapshotLockInfo {
                 enabled: true,
                 broker_addr: self.broker_addr.clone(),
-                resources: vec![resource.clone()],
-                fencing_tokens: fencing_token
-                    .map(|token| CustomerFencingToken {
-                        resource: resource.clone(),
-                        token,
-                    })
-                    .into_iter()
-                    .collect(),
-            },
-            CustomerLockGuardInner::Many {
-                resources,
-                fencing_tokens,
-                ..
-            } => CustomerSnapshotLockInfo {
-                enabled: true,
-                broker_addr: self.broker_addr.clone(),
-                resources: resources.clone(),
-                fencing_tokens: fencing_tokens.clone(),
+                resources: held.resources.clone(),
+                fencing_tokens: held.fencing_tokens.clone(),
             },
         }
     }
@@ -236,18 +182,12 @@ impl CustomerLockGuard {
     pub async fn release(self) -> AppResult<()> {
         match self.inner {
             CustomerLockGuardInner::Disabled => Ok(()),
-            CustomerLockGuardInner::Single {
-                client,
-                resource,
-                lock_uuid,
-                ..
-            } => client
-                .release(&resource, &lock_uuid, false)
-                .await
-                .map_err(release_error),
-            CustomerLockGuardInner::Many {
-                client, lock_uuid, ..
-            } => client.release_many(&lock_uuid).await.map_err(release_error),
+            CustomerLockGuardInner::Held(held) => {
+                held.coordinator
+                    .release_lock(&held.holder, held.fencing_token)
+                    .await?;
+                Ok(())
+            }
         }
     }
 }
@@ -302,13 +242,6 @@ fn validate_customer_id(value: &str) -> AppResult<()> {
         ));
     }
     Ok(())
-}
-
-fn release_error(err: ClientError) -> AppError {
-    AppError::Provider {
-        provider: "live_mutex_rs".into(),
-        message: format!("release failed: {err}"),
-    }
 }
 
 #[cfg(test)]

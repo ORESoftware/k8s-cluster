@@ -408,4 +408,3 @@ mod tests {
         assert_eq!(r.status(), StatusCode::UNAUTHORIZED);
     }
 }
-

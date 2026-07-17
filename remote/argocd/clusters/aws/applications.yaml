@@ -25,6 +25,30 @@ spec:
       - CreateNamespace=true
       - ServerSideApply=true
 ---
+# Billing ledger/API. Coordination is fail-closed against the in-cluster
+# fiducia-load-balance and its least-privilege API key is supplied by ESO.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-billing-server
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:ORESoftware/k8s-cluster.git
+    targetRevision: dev
+    path: remote/deployments/billing-server-rs/k8s/ec2
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
