@@ -22,8 +22,21 @@ spec:
     - hosts:
         - app.athleto.store
       secretName: athleto-public-tls
+    - hosts:
+        - biz.athleto.store
+      secretName: athleto-biz-tls
   rules:
     - host: app.athleto.store
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: jello-ws
+                port:
+                  number: 8145
+    - host: biz.athleto.store
       http:
         paths:
           - path: /
