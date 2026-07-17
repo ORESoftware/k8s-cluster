@@ -49,6 +49,45 @@ where
     Ok((device_id, token))
 }
 
+/// List every device (revoked and live) for an account, newest first, so the
+/// owner can audit enrollments and pick a `device_id` to revoke.
+pub async fn list(pool: &PgPool, account_id: Uuid) -> Result<Vec<DeviceInfo>, ApiError> {
+    let rows = sqlx::query_as::<_, (Uuid, String, bool, OffsetDateTime, Option<OffsetDateTime>)>(
+        "SELECT id, device_name, revoked, created_at, last_seen_at \
+         FROM threefa.devices WHERE account_id = $1 ORDER BY created_at DESC",
+    )
+    .bind(account_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(
+            |(device_id, device_name, revoked, created_at, last_seen_at)| DeviceInfo {
+                device_id,
+                device_name,
+                revoked,
+                created_at,
+                last_seen_at,
+            },
+        )
+        .collect())
+}
+
+/// Count an account's live (non-revoked) devices, to enforce the per-account cap
+/// before enrolling another.
+pub async fn live_count<'e, E>(executor: E, account_id: Uuid) -> Result<i64, ApiError>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM threefa.devices WHERE account_id = $1 AND revoked = FALSE",
+    )
+    .bind(account_id)
+    .fetch_one(executor)
+    .await?;
+    Ok(count)
+}
+
 /// Revoke a device (its sync token stops working immediately).
 pub async fn revoke(pool: &PgPool, account_id: Uuid, device_id: Uuid) -> Result<(), ApiError> {
     let res =
