@@ -6144,7 +6144,12 @@ $$;
 -- Trigger arguments: primary-key column, tenant column (or ''), owner-user
 -- column (or ''). Extracting through to_jsonb keeps this one function usable
 -- for the customer_preferences user_id primary key and ordinary id primary keys.
-create or replace function fiducia.record_sync_tombstone() returns trigger as $$
+create or replace function fiducia.record_sync_tombstone()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, fiducia
+as $$
 declare
   allocated bigint;
   deleted_row jsonb;
