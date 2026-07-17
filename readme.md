@@ -477,3 +477,5 @@ the SSO layer in front.
 
 These are all deliberately structured as "fill in the function body" tasks
 rather than "rearchitect the module" — the boundaries and types are stable.
+
+> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).
