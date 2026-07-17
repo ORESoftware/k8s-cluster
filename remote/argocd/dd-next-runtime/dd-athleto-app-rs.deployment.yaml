@@ -1,0 +1,190 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-athleto-app-rs
+  namespace: default
+  labels:
+    app: dd-athleto-app-rs
+spec:
+  replicas: 1
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: dd-athleto-app-rs
+  template:
+    metadata:
+      annotations:
+        dd.dev/athleto-app-revision: 'initial-gitops-source'
+      labels:
+        app: dd-athleto-app-rs
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        - name: athleto-app-rs
+          image: docker.io/library/rust:1.91.1-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              export CARGO_HOME=/var/cache/dd-athleto-app-rs/cargo
+              export CARGO_TARGET_DIR=/var/cache/dd-athleto-app-rs/target
+              export HOME=/tmp
+              mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR"
+
+              git_auth_args=()
+              if [ -n "${GH_PAT:-}" ]; then
+                authhdr="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_PAT" | base64 | tr -d '\n')"
+                git_auth_args=(-c "http.https://github.com/.extraheader=${authhdr}")
+                git config --global url."https://github.com/".insteadOf "git@github.com:"
+              fi
+
+              source_root=/opt/dd-next-1
+              mounted_app_dir="$source_root/remote/deployments/athleto-app-rs"
+              app_dir="$mounted_app_dir"
+              if [ -n "${ATHLETO_GIT_URL:-}" ]; then
+                clone_root="$(mktemp -d /tmp/dd-athleto-app-rs-source.XXXXXX)"
+                if git clone --depth 1 \
+                     --branch "${ATHLETO_GIT_REF:-dev}" "${ATHLETO_GIT_URL}" "$clone_root" &&
+                   git -C "$clone_root" submodule init remote/deployments/athleto-app-rs &&
+                   git -C "$clone_root" config "submodule.remote/deployments/athleto-app-rs.url" "https://github.com/athlet-o/athleto-app-rs.git" &&
+                   git -C "$clone_root" "${git_auth_args[@]}" submodule update --depth 1 remote/deployments/athleto-app-rs; then
+                  source_root="$clone_root"
+                  app_dir="$source_root/remote/deployments/athleto-app-rs"
+                  sub_sha="$(git -C "$app_dir" rev-parse --short HEAD 2>/dev/null || echo '?')"
+                  echo "[dd-athleto-app-rs] source: cloned ${ATHLETO_GIT_URL}@${ATHLETO_GIT_REF:-dev}; app submodule ${sub_sha}"
+                else
+                  echo "[dd-athleto-app-rs] source clone failed; using mounted source at ${source_root}" >&2
+                fi
+              fi
+              if [ "$app_dir" = "$mounted_app_dir" ] && [ -f "$app_dir/Cargo.toml" ]; then
+                echo "[dd-athleto-app-rs] source: using mounted app at ${app_dir}"
+              fi
+
+              if [ ! -f "$app_dir/Cargo.toml" ]; then
+                echo "[dd-athleto-app-rs] FATAL: app submodule not populated at $app_dir." >&2
+                echo "[dd-athleto-app-rs] If using mounted source, run on the host: git -C \"$source_root\" submodule update --init remote/deployments/athleto-app-rs" >&2
+                echo "[dd-athleto-app-rs] If using the git clone path, ensure GH_PAT can read the superproject." >&2
+                exit 1
+              fi
+
+              cd "$app_dir"
+              exec /usr/local/cargo/bin/cargo run --release --locked
+          env:
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /var/cache/dd-athleto-app-rs/cargo
+            - name: CARGO_TARGET_DIR
+              value: /var/cache/dd-athleto-app-rs/target
+            - name: CARGO_BUILD_JOBS
+              value: '1'
+            - name: ATHLETO_GIT_URL
+              value: https://github.com/ORESoftware/k8s-cluster.git
+            - name: ATHLETO_GIT_REF
+              value: dev
+            - name: GH_PAT
+              valueFrom:
+                secretKeyRef:
+                  name: dd-git-clone-token
+                  key: token
+                  optional: true
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8145'
+            - name: RUST_LOG
+              value: info,athleto_app_rs=info,tower_http=info
+            # Supabase project for Athlet-O; keys land in the dd-agent-secrets
+            # bundle (all optional — the app boots in degraded mode without them).
+            - name: SUPABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ATHLETO_SUPABASE_URL
+                  optional: true
+            - name: SUPABASE_ANON_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ATHLETO_SUPABASE_ANON_KEY
+                  optional: true
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ATHLETO_DATABASE_URL
+                  optional: true
+          ports:
+            - name: http
+              containerPort: 8145
+          resources:
+            requests:
+              cpu: 10m
+              memory: 512Mi
+            limits:
+              cpu: '2'
+              memory: 2Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 240
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: build-cache
+              mountPath: /var/cache/dd-athleto-app-rs
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: DirectoryOrCreate
+        - name: build-cache
+          emptyDir:
+            sizeLimit: 4Gi
+        - name: tmp
+          emptyDir: {}
