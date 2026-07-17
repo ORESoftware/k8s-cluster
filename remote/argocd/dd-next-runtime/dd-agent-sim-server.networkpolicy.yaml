@@ -1,0 +1,91 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dd-agent-sim-server
+  namespace: default
+  labels:
+    app: dd-agent-sim-server
+spec:
+  podSelector:
+    matchLabels:
+      app: dd-agent-sim-server
+  policyTypes:
+    - Ingress
+    - Egress
+  # Simulation requests arrive over NATS (an egress lane from this pod) and
+  # the service is not gateway-fronted, so the only inbound HTTP to :8133 is
+  # the runtime-config control plane (which pushes config to
+  # /internal/update-runtime-config) and the observability scrapers.
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: dd-runtime-config
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - dd-prometheus
+                  - dd-otel-collector
+      ports:
+        - protocol: TCP
+          port: 8133
+  egress:
+    # Allow OTLP trace export to the in-cluster OpenTelemetry collector.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
+    # DNS resolution.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # NATS simulate request/result + frame lanes (NATS_URL).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: messaging
+          podSelector:
+            matchLabels:
+              app: dd-nats
+      ports:
+        - protocol: TCP
+          port: 4222
+    # runtime-config registration (POST /subscribers).
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dd-runtime-config
+      ports:
+        - protocol: TCP
+          port: 8110
+    - to:
+        # The deployment builds the Rust service from mounted source on cold
+        # start. Permit dependency fetches over public HTTPS without opening
+        # private, loopback, or cloud-metadata destinations.
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443

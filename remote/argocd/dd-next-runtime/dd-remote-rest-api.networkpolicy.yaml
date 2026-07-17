@@ -1,0 +1,152 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dd-remote-rest-api
+  namespace: default
+  labels:
+    app: dd-remote-rest-api
+spec:
+  podSelector:
+    matchLabels:
+      app: dd-remote-rest-api
+  policyTypes:
+    - Ingress
+    - Egress
+  # Ingress to :8082 is limited to the established callers:
+  #   - dd-remote-gateway        — proxies /api/lambdas, /api/container-pool,
+  #                                /api/runtime-config and /api/agents.
+  #   - dd-runtime-config        — pushes /internal/update-runtime-config.
+  #   - dd-container-pool        — posts /api/agents/events and pulls config
+  #                                snapshots (AGENTS_EVENTS_URL / REST API URL).
+  #   - dd-remote-queue-consumer — dispatches queued tasks to the REST API.
+  #   - dd-dev-server-api        — dev server home proxies agent APIs.
+  #   - dd-idle-reaper           — NATS-watch capacity checks against the API.
+  #   - observability            — Prometheus / OTel collector scraping /metrics.
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: dd-remote-gateway
+        - podSelector:
+            matchLabels:
+              app: dd-runtime-config
+        - podSelector:
+            matchLabels:
+              app: dd-container-pool
+        - podSelector:
+            matchLabels:
+              app: dd-remote-queue-consumer
+        - podSelector:
+            matchLabels:
+              app: dd-dev-server-api
+        - podSelector:
+            matchLabels:
+              app: dd-idle-reaper
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - dd-prometheus
+                  - dd-otel-collector
+      ports:
+        - protocol: TCP
+          port: 8082
+  # Kubernetes API access for the thread-runtime scaling RBAC
+  # (dd-remote-rest-api-rbac.yaml) is apiserver/host-identity traffic, handled
+  # the same way as dd-agent-worker-broker's — no pod-selector rule applies.
+  egress:
+    # Allow OTLP trace export to the in-cluster OpenTelemetry collector.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
+    # DNS resolution.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # NATS task dispatch lane (NATS_URL).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: messaging
+          podSelector:
+            matchLabels:
+              app: dd-nats
+      ports:
+        - protocol: TCP
+          port: 4222
+    # runtime-config registration (POST /subscribers) + snapshot pull-proxy
+    # (RUNTIME_CONFIG_BASE_URL).
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dd-runtime-config
+      ports:
+        - protocol: TCP
+          port: 8110
+    # Delegated image builds (IMAGE_BUILD_DELEGATE_URL).
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dd-image-builder
+      ports:
+        - protocol: TCP
+          port: 8082
+    # Status broadcast fan-out (REST_STATUS_GLEAM_BROADCAST_URL).
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dd-gleamlang-server
+      ports:
+        - protocol: TCP
+          port: 8081
+    # Status broadcast fan-out (REST_STATUS_RUST_BROADCAST_URL).
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dd-webrtc-signaling
+      ports:
+        - protocol: TCP
+          port: 8095
+    # RDS Postgres (sqlx). RDS resolves to a private VPC address; constrain
+    # the broad private ranges to Postgres only.
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+        - ipBlock:
+            cidr: 172.16.0.0/12
+        - ipBlock:
+            cidr: 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        # The deployment builds the Rust service from mounted source on cold
+        # start. Permit dependency fetches over public HTTPS without opening
+        # private, loopback, or cloud-metadata destinations.
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
