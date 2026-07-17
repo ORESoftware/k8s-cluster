@@ -83,6 +83,10 @@
 </main>
 
 <script>
+// Escape text that is interpolated into innerHTML. `status_line` comes verbatim
+// from the fetched remote server and `name`/`addr` from the directory, so both
+// are untrusted here; render them as text, never markup.
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 async function refresh() {
   try {
     const r = await fetch('/api/status');
