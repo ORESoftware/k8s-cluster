@@ -120,6 +120,22 @@ TOR_DIRECTORY=./directory.toml TOR_HTTP_LISTEN=127.0.0.1:9080 cargo run -- clien
 curl -x http://127.0.0.1:9080 https://example.com/
 ```
 
+## Forward tunnels (fixed-upstream port forwarding)
+
+For an app that speaks **no** proxy at all, `TOR_FORWARD` binds local listeners
+that carry every connection through the overlay to a pinned upstream — `ssh -L`
+over onion routing. The operator chooses the destination, not the client.
+
+```sh
+# Anything hitting localhost:8443 is tunneled through the overlay to example.com:443.
+TOR_DIRECTORY=./directory.toml TOR_FORWARD=127.0.0.1:8443=example.com:443 cargo run -- client &
+curl --resolve example.com:8443:127.0.0.1 https://example.com:8443/   # via the tunnel
+```
+
+Listeners are loopback by default; a non-loopback bind requires
+`TOR_FORWARD_ALLOW_REMOTE=1` (the tunnel is unauthenticated to its fixed target).
+A private/internal upstream still needs `TOR_EXIT_ALLOW_PRIVATE` at the exit.
+
 ## Web dashboard & docs
 
 In `client` mode a small web server runs alongside the SOCKS proxy
