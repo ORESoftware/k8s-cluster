@@ -1,6 +1,6 @@
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
-    QuerySelect,
+    QuerySelect, TransactionTrait,
 };
 use uuid::Uuid;
 
@@ -145,9 +145,12 @@ impl NotificationService {
             .collect()
     }
 
-    /// Insert a dispatch row in `pending` status. The actual send is the
-    /// channel driver's job (called by the evaluator). Returns the row id.
-    pub async fn create_dispatch(
+    /// Atomically enforce the daily throttle and insert a `pending` dispatch.
+    /// A transaction-scoped advisory lock serializes every target for a rule,
+    /// preventing concurrent evaluators from both passing a count-then-insert
+    /// check. `None` means the rule is already at its daily limit.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn create_dispatch_unless_throttled(
         &self,
         rule_id: Uuid,
         tenant_id: Uuid,
@@ -156,31 +159,62 @@ impl NotificationService {
         channel: NotificationChannel,
         target: &str,
         payload: serde_json::Value,
-    ) -> AppResult<i64> {
+        throttle_per_day: i32,
+    ) -> AppResult<Option<i64>> {
         let shard = ShardKey::derive(tenant_id, region).0;
-        let row = require_row(
-            self.pool
-                .query_one(stmt(
+        let tx = self.pool.begin().await?;
+        let lock_identity = format!("billing-notification-throttle:{rule_id}");
+        tx.execute(stmt(
+            "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+            [lock_identity.into()],
+        ))
+        .await?;
+
+        if throttle_per_day > 0 {
+            let count_row = require_row(
+                tx.query_one(stmt(
                     r#"
+                SELECT COUNT(*)::BIGINT FROM notification_dispatches
+                WHERE rule_id = $1
+                  AND ($2::TEXT IS NULL OR target_resource = $2)
+                  AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+                  AND created_at <  (date_trunc('day', now() AT TIME ZONE 'UTC') + interval '1 day') AT TIME ZONE 'UTC'
+                  AND status IN ('sent', 'pending', 'sending')
+                "#,
+                    [rule_id.into(), target_resource.into()],
+                ))
+                .await?,
+            )?;
+            let count: i64 = count_row.try_get_by_index(0)?;
+            if count >= i64::from(throttle_per_day) {
+                tx.commit().await?;
+                return Ok(None);
+            }
+        }
+
+        let row = require_row(
+            tx.query_one(stmt(
+                r#"
             INSERT INTO notification_dispatches
                 (rule_id, tenant_id, shard_key, target_resource, channel, target, payload)
             VALUES ($1, $2, $3, $4, $5::notification_channel, $6, $7)
             RETURNING id
             "#,
-                    [
-                        rule_id.into(),
-                        tenant_id.into(),
-                        shard.into(),
-                        target_resource.into(),
-                        channel_tag(channel).into(),
-                        target.into(),
-                        payload.into(),
-                    ],
-                ))
-                .await?,
+                [
+                    rule_id.into(),
+                    tenant_id.into(),
+                    shard.into(),
+                    target_resource.into(),
+                    channel_tag(channel).into(),
+                    target.into(),
+                    payload.into(),
+                ],
+            ))
+            .await?,
         )?;
         let id: i64 = row.try_get("", "id")?;
-        Ok(id)
+        tx.commit().await?;
+        Ok(Some(id))
     }
 
     pub async fn mark_dispatch_sent(
@@ -216,36 +250,6 @@ impl NotificationService {
             ))
             .await?;
         Ok(())
-    }
-
-    /// Throttle check — returns true if `(rule_id, target_resource)` has
-    /// already produced >= `throttle_per_day` dispatches today.
-    pub async fn would_throttle(
-        &self,
-        rule_id: Uuid,
-        target_resource: Option<&str>,
-        throttle_per_day: i32,
-    ) -> AppResult<bool> {
-        if throttle_per_day <= 0 {
-            return Ok(false); // throttling disabled
-        }
-        let row = require_row(
-            self.pool
-                .query_one(stmt(
-                    r#"
-            SELECT COUNT(*)::BIGINT FROM notification_dispatches
-            WHERE rule_id = $1
-              AND ($2::TEXT IS NULL OR target_resource = $2)
-              AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
-              AND created_at <  (date_trunc('day', now() AT TIME ZONE 'UTC') + interval '1 day') AT TIME ZONE 'UTC'
-              AND status IN ('sent', 'pending', 'sending')
-            "#,
-                    [rule_id.into(), target_resource.into()],
-                ))
-                .await?,
-        )?;
-        let count: i64 = row.try_get_by_index(0)?;
-        Ok(count >= throttle_per_day as i64)
     }
 }
 

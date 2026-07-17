@@ -23,28 +23,39 @@ pub async fn healthz() -> Json<HealthBody> {
 }
 
 pub async fn readyz(State(state): State<AppState>) -> (StatusCode, Json<HealthBody>) {
-    match state
+    if state
         .pool
         .query_one(crate::db::stmt("SELECT 1", []))
         .await
+        .is_err()
     {
-        Ok(_) => (
-            StatusCode::OK,
-            Json(HealthBody {
-                status: "ready",
-                service: "billing-server-rs",
-                version: env!("CARGO_PKG_VERSION"),
-            }),
-        ),
-        Err(_) => (
+        return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(HealthBody {
                 status: "db_unavailable",
                 service: "billing-server-rs",
                 version: env!("CARGO_PKG_VERSION"),
             }),
-        ),
+        );
     }
+    if !fiducia_ready(&state).await {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(HealthBody {
+                status: "fiducia_unavailable",
+                service: "billing-server-rs",
+                version: env!("CARGO_PKG_VERSION"),
+            }),
+        );
+    }
+    (
+        StatusCode::OK,
+        Json(HealthBody {
+            status: "ready",
+            service: "billing-server-rs",
+            version: env!("CARGO_PKG_VERSION"),
+        }),
+    )
 }
 
 pub async fn metrics(State(state): State<AppState>) -> Response {
@@ -58,6 +69,7 @@ pub async fn metrics(State(state): State<AppState>) -> Response {
     };
     let (published, dropped_oversize, failed) = state.events.counters();
     let nats_enabled = u8::from(state.events.is_enabled());
+    let fiducia_ready = u8::from(fiducia_ready(&state).await);
     let body = format!(
         concat!(
             "# HELP dd_billing_server_build_info Billing server build metadata.\n",
@@ -66,6 +78,9 @@ pub async fn metrics(State(state): State<AppState>) -> Response {
             "# HELP dd_billing_server_ready Database readiness state.\n",
             "# TYPE dd_billing_server_ready gauge\n",
             "dd_billing_server_ready {}\n",
+            "# HELP dd_billing_server_fiducia_ready Fiducia coordination readiness state.\n",
+            "# TYPE dd_billing_server_fiducia_ready gauge\n",
+            "dd_billing_server_fiducia_ready {}\n",
             "# HELP dd_billing_server_nats_enabled Whether the NATS event bus is connected.\n",
             "# TYPE dd_billing_server_nats_enabled gauge\n",
             "dd_billing_server_nats_enabled {}\n",
@@ -81,6 +96,7 @@ pub async fn metrics(State(state): State<AppState>) -> Response {
         ),
         env!("CARGO_PKG_VERSION"),
         db_ready,
+        fiducia_ready,
         nats_enabled,
         published,
         dropped_oversize,
@@ -96,4 +112,13 @@ pub async fn metrics(State(state): State<AppState>) -> Response {
         body,
     )
         .into_response()
+}
+
+async fn fiducia_ready(state: &AppState) -> bool {
+    // Keep probes and Prometheus scrapes bounded independently of the longer
+    // mutation timeout used for contended locks.
+    matches!(
+        tokio::time::timeout(std::time::Duration::from_secs(2), state.fiducia.health()).await,
+        Ok(Ok(()))
+    )
 }

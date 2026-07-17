@@ -5,7 +5,7 @@
 //! `BillingState` response.
 
 use chrono::{DateTime, Utc};
-use sea_orm::{ConnectionTrait, DatabaseConnection};
+use sea_orm::{ConnectionTrait, DatabaseConnection, DatabaseTransaction, TransactionTrait};
 use serde::Serialize;
 use uuid::Uuid;
 
@@ -115,8 +115,17 @@ impl CustomerService {
         let snapshot_lock = lock_guard.info();
 
         let result = async {
+            // The distributed lock excludes cooperating writers, while the
+            // repeatable-read, read-only transaction guarantees every query in
+            // this multi-query response observes one PostgreSQL snapshot.
+            let tx = self.pool.begin().await?;
+            tx.execute(crate::db::stmt(
+                "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+                [],
+            ))
+            .await?;
             let components = self
-                .customer_balance_components(tenant_id, user.id, currency)
+                .customer_balance_components(&tx, tenant_id, user.id, currency)
                 .await?;
 
             let outstanding = components.iter().map(|c| c.contribution_minor).sum();
@@ -125,11 +134,15 @@ impl CustomerService {
             let credit_memos = component_balance(&components, &format!("credit_memo/{}", user.id))
                 + component_balance(&components, &format!("credit_memos/{}", user.id));
 
-            let aging = self.compute_aging(tenant_id, user.id, currency).await?;
-            let last_payment = self.last_payment(tenant_id, user.id, currency).await?;
-            let recon = self.recon_status(tenant_id).await?;
+            let aging = self
+                .compute_aging(&tx, tenant_id, user.id, currency)
+                .await?;
+            let last_payment = self
+                .last_payment(&tx, tenant_id, user.id, currency)
+                .await?;
+            let recon = self.recon_status(&tx, tenant_id).await?;
 
-            Ok(BillingState {
+            let state = BillingState {
                 user_id: user.id,
                 email: user.email,
                 as_of: Utc::now(),
@@ -144,7 +157,9 @@ impl CustomerService {
                 last_payment,
                 reconciliation_status: recon,
                 as_of_confidence: Confidence::Finalized,
-            })
+            };
+            tx.commit().await?;
+            Ok(state)
         }
         .await;
 
@@ -156,6 +171,7 @@ impl CustomerService {
 
     async fn customer_balance_components(
         &self,
+        tx: &DatabaseTransaction,
         tenant_id: Uuid,
         user_id: Uuid,
         currency: Currency,
@@ -169,8 +185,7 @@ impl CustomerService {
 
         // Raw SQL (SeaORM Statement): aggregate roll-up. `a.kind::TEXT`
         // replaces the old native enum decode — same labels on the wire.
-        let rows = self
-            .pool
+        let rows = tx
             .query_all(crate::db::stmt(
                 r#"
             SELECT a.code,
@@ -233,6 +248,7 @@ impl CustomerService {
 
     async fn compute_aging(
         &self,
+        tx: &DatabaseTransaction,
         tenant_id: Uuid,
         user_id: Uuid,
         currency: Currency,
@@ -242,7 +258,7 @@ impl CustomerService {
 
         // Raw SQL (SeaORM Statement): CTE + bucketed aggregates.
         let row = crate::db::require_row(
-            self.pool
+            tx
                 .query_one(crate::db::stmt(
                     r#"
             WITH ar AS (
@@ -289,6 +305,7 @@ impl CustomerService {
 
     async fn last_payment(
         &self,
+        tx: &DatabaseTransaction,
         tenant_id: Uuid,
         user_id: Uuid,
         currency: Currency,
@@ -296,8 +313,7 @@ impl CustomerService {
         let ar_code = format!("ar/{}", user_id);
         let cur = currency.as_str().to_string();
 
-        let row = self
-            .pool
+        let row = tx
             .query_one(crate::db::stmt(
                 r#"
             SELECT p.amount_minor::TEXT AS amount_t, p.posted_at, p.source, p.source_event_id
@@ -326,15 +342,18 @@ impl CustomerService {
         }))
     }
 
-    async fn recon_status(&self, tenant_id: Uuid) -> AppResult<ReconciliationStatus> {
+    async fn recon_status(
+        &self,
+        tx: &DatabaseTransaction,
+        tenant_id: Uuid,
+    ) -> AppResult<ReconciliationStatus> {
         let row = crate::db::require_row(
-            self.pool
-                .query_one(crate::db::stmt(
-                    r#"SELECT COUNT(*) FROM reconciliation_breaks
+            tx.query_one(crate::db::stmt(
+                r#"SELECT COUNT(*) FROM reconciliation_breaks
                WHERE tenant_id = $1 AND status = 'open'"#,
-                    [tenant_id.into()],
-                ))
-                .await?,
+                [tenant_id.into()],
+            ))
+            .await?,
         )?;
         let count: i64 = row.try_get_by_index(0)?;
         Ok(if count == 0 {

@@ -1,5 +1,5 @@
 use chrono::Utc;
-use sea_orm::{ConnectionTrait, DatabaseConnection};
+use sea_orm::{ConnectionTrait, DatabaseConnection, TransactionTrait};
 use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
@@ -206,7 +206,6 @@ impl SchedulerRunner {
 
         match outcome {
             Ok(out) => {
-                let _ = self.mark_run_succeeded(run_id, duration_ms, &out).await;
                 let next = compute_next_run(
                     sched_kind,
                     cron_expr,
@@ -216,66 +215,63 @@ impl SchedulerRunner {
                     Utc::now(),
                 );
                 let next = next.unwrap_or_else(|_| Utc::now() + chrono::Duration::minutes(5));
-
-                if sched_kind == ScheduleKind::OneShot {
-                    let _ = self
-                        .pool
-                        .execute(stmt(
-                            r#"UPDATE scheduled_jobs
-                           SET enabled = false, next_run_at = $2, updated_at = now()
-                           WHERE id = $1"#,
-                            [job_id.into(), next.into()],
-                        ))
-                        .await;
-                } else {
-                    let _ = self
-                        .pool
-                        .execute(stmt(
-                            r#"UPDATE scheduled_jobs SET next_run_at = $2, updated_at = now()
-                           WHERE id = $1"#,
-                            [job_id.into(), next.into()],
-                        ))
-                        .await;
+                if let Err(error) = self
+                    .finish_succeeded(
+                        run_id,
+                        job_id,
+                        duration_ms,
+                        &out,
+                        next,
+                        sched_kind == ScheduleKind::OneShot,
+                    )
+                    .await
+                {
+                    tracing::error!(
+                        job_id = %job_id,
+                        run_id,
+                        error = %error,
+                        "failed to atomically persist successful job outcome"
+                    );
                 }
             }
             Err(e) => {
                 let err_str = e.to_string();
-                let _ = self.mark_run_failed(run_id, duration_ms, &err_str).await;
-
-                if attempt >= max_attempts {
-                    let _ = self
-                        .dead_letter(job_id, tenant_id, run_id, attempt, &err_str)
-                        .await;
-                    let next = compute_next_run(
+                let dead_letter = attempt >= max_attempts;
+                let next = if dead_letter {
+                    compute_next_run(
                         sched_kind,
                         cron_expr,
                         interval_seconds,
                         one_shot_at,
                         timezone,
                         Utc::now(),
-                    );
-                    let next = next.unwrap_or_else(|_| Utc::now() + chrono::Duration::hours(1));
-                    let _ = self
-                        .pool
-                        .execute(stmt(
-                            r#"UPDATE scheduled_jobs SET next_run_at = $2, updated_at = now()
-                           WHERE id = $1"#,
-                            [job_id.into(), next.into()],
-                        ))
-                        .await;
+                    )
+                    .unwrap_or_else(|_| Utc::now() + chrono::Duration::hours(1))
                 } else {
                     let backoff = e
                         .retry_after_seconds()
                         .unwrap_or_else(|| exponential_backoff(retry_backoff_secs, attempt) as i64);
-                    let retry_at = Utc::now() + chrono::Duration::seconds(backoff as i64);
-                    let _ = self
-                        .pool
-                        .execute(stmt(
-                            r#"UPDATE scheduled_jobs SET next_run_at = $2, updated_at = now()
-                           WHERE id = $1"#,
-                            [job_id.into(), retry_at.into()],
-                        ))
-                        .await;
+                    Utc::now() + chrono::Duration::seconds(backoff)
+                };
+                if let Err(error) = self
+                    .finish_failed(
+                        run_id,
+                        job_id,
+                        tenant_id,
+                        attempt,
+                        duration_ms,
+                        &err_str,
+                        next,
+                        dead_letter,
+                    )
+                    .await
+                {
+                    tracing::error!(
+                        job_id = %job_id,
+                        run_id,
+                        error = %error,
+                        "failed to atomically persist failed job outcome"
+                    );
                 }
             }
         }
@@ -338,15 +334,18 @@ impl SchedulerRunner {
         Ok(id)
     }
 
-    async fn mark_run_succeeded(
+    async fn finish_succeeded(
         &self,
         run_id: i64,
+        job_id: Uuid,
         duration_ms: i32,
         out: &super::handler::JobOutput,
+        next_run_at: chrono::DateTime<Utc>,
+        disable: bool,
     ) -> AppResult<()> {
-        self.pool
-            .execute(stmt(
-                r#"
+        let tx = self.pool.begin().await?;
+        tx.execute(stmt(
+            r#"
             UPDATE job_runs
             SET status = 'succeeded'::job_run_status,
                 finished_at = now(),
@@ -354,67 +353,85 @@ impl SchedulerRunner {
                 output = $3
             WHERE id = $1
             "#,
-                [
-                    run_id.into(),
-                    duration_ms.into(),
-                    serde_json::to_value(out)
-                        .unwrap_or(serde_json::Value::Null)
-                        .into(),
-                ],
-            ))
-            .await?;
+            [
+                run_id.into(),
+                duration_ms.into(),
+                serde_json::to_value(out)
+                    .unwrap_or(serde_json::Value::Null)
+                    .into(),
+            ],
+        ))
+        .await?;
+        tx.execute(stmt(
+            r#"
+            UPDATE scheduled_jobs
+            SET enabled = CASE WHEN $3 THEN false ELSE enabled END,
+                next_run_at = $2,
+                updated_at = now()
+            WHERE id = $1
+            "#,
+            [job_id.into(), next_run_at.into(), disable.into()],
+        ))
+        .await?;
+        tx.commit().await?;
         Ok(())
     }
 
-    async fn mark_run_failed(&self, run_id: i64, duration_ms: i32, error: &str) -> AppResult<()> {
-        self.pool
-            .execute(stmt(
-                r#"
+    #[allow(clippy::too_many_arguments)]
+    async fn finish_failed(
+        &self,
+        run_id: i64,
+        job_id: Uuid,
+        tenant_id: Option<Uuid>,
+        attempt: i32,
+        duration_ms: i32,
+        error: &str,
+        next_run_at: chrono::DateTime<Utc>,
+        dead_letter: bool,
+    ) -> AppResult<()> {
+        let tx = self.pool.begin().await?;
+        tx.execute(stmt(
+            r#"
             UPDATE job_runs
-            SET status = 'failed'::job_run_status,
+            SET status = CASE WHEN $4
+                              THEN 'dead_lettered'::job_run_status
+                              ELSE 'failed'::job_run_status END,
                 finished_at = now(),
                 duration_ms = $2,
                 error = $3
             WHERE id = $1
             "#,
-                [run_id.into(), duration_ms.into(), error.into()],
-            ))
-            .await?;
-        Ok(())
-    }
-
-    async fn dead_letter(
-        &self,
-        job_id: Uuid,
-        tenant_id: Option<Uuid>,
-        last_run_id: i64,
-        final_attempt: i32,
-        error: &str,
-    ) -> AppResult<()> {
-        self.pool
-            .execute(stmt(
+            [
+                run_id.into(),
+                duration_ms.into(),
+                error.into(),
+                dead_letter.into(),
+            ],
+        ))
+        .await?;
+        if dead_letter {
+            tx.execute(stmt(
                 r#"
-            INSERT INTO dead_letter_jobs
-                (job_id, tenant_id, last_run_id, final_attempt, error)
-            VALUES ($1, $2, $3, $4, $5)
-            "#,
+                INSERT INTO dead_letter_jobs
+                    (job_id, tenant_id, last_run_id, final_attempt, error)
+                VALUES ($1, $2, $3, $4, $5)
+                "#,
                 [
                     job_id.into(),
                     tenant_id.into(),
-                    last_run_id.into(),
-                    final_attempt.into(),
+                    run_id.into(),
+                    attempt.into(),
                     error.into(),
                 ],
             ))
             .await?;
-
-        // Mark the run row as dead-lettered for clear status semantics.
-        self.pool
-            .execute(stmt(
-                r#"UPDATE job_runs SET status = 'dead_lettered'::job_run_status WHERE id = $1"#,
-                [last_run_id.into()],
-            ))
-            .await?;
+        }
+        tx.execute(stmt(
+            r#"UPDATE scheduled_jobs SET next_run_at = $2, updated_at = now() WHERE id = $1"#,
+            [job_id.into(), next_run_at.into()],
+        ))
+        .await?;
+        tx.commit().await?;
         Ok(())
     }
 }
