@@ -475,8 +475,9 @@ function parseCreateFunction(statement) {
   }
 
   const header = statement.slice(0, bodyMatch.index).trim();
+  // Function names may be schema-qualified (e.g. fiducia.bump_row_version).
   const headerMatch = header.match(
-    /^create\s+or\s+replace\s+function\s+("?[\w]+"?)\s*\(([\s\S]*?)\)\s*returns\s+([\s\S]+?)\s+language\s+(\w+)([\s\S]*)$/i,
+    /^create\s+or\s+replace\s+function\s+("?[\w]+"?(?:\."?[\w]+"?)?)\s*\(([\s\S]*?)\)\s*returns\s+([\s\S]+?)\s+language\s+(\w+)([\s\S]*)$/i,
   );
   if (!headerMatch) {
     return null;
