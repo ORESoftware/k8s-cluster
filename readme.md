@@ -7453,3 +7453,5 @@ cargo run --release
 ```
 
 The default local port is `8113`; set `PORT` to override it.
+
+> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).
