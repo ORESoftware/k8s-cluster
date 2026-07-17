@@ -219,6 +219,29 @@ async fn run_client() -> Result<()> {
         }
     }
 
+    // Optional static forward tunnels: local listeners that carry every
+    // connection through the overlay to a fixed upstream (ssh -L semantics).
+    let forward_routes = match std::env::var("TOR_FORWARD").ok().filter(|s| !s.is_empty()) {
+        Some(raw) => forward::parse_routes(&raw)?,
+        None => Vec::new(),
+    };
+    for route in &forward_routes {
+        let route_is_remote = !is_loopback_listener(&route.listen);
+        if route_is_remote && !env_flag("TOR_FORWARD_ALLOW_REMOTE") {
+            bail!(
+                "refusing non-loopback forward tunnel {}; set TOR_FORWARD_ALLOW_REMOTE=1 only behind a trusted network (the tunnel is unauthenticated to its fixed target)",
+                route.listen
+            );
+        }
+        if route_is_remote {
+            tracing::warn!(
+                listen = %route.listen,
+                target = %format!("{}:{}", route.target_host, route.target_port),
+                "remote forward tunnel enabled; it is an unauthenticated path to its fixed upstream — restrict to a trusted network"
+            );
+        }
+    }
+
     // The overlay backend needs a relay directory; arti does not.
     let directory = match std::env::var("TOR_DIRECTORY") {
         Ok(p) => Some(config::Directory::load(&PathBuf::from(&p))?),
