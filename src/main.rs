@@ -194,6 +194,30 @@ async fn run_client() -> Result<()> {
         bail!("TOR_UI_TOKEN must contain at least 32 bytes when the dashboard is non-loopback");
     }
 
+    // Optional HTTP CONNECT front-end (runs alongside SOCKS). Same fail-closed
+    // posture: loopback by default; a non-loopback bind needs an explicit opt-in
+    // and the shared proxy credential, and is never an open proxy.
+    let http_listen = std::env::var("TOR_HTTP_LISTEN").ok().filter(|s| !s.is_empty());
+    if let Some(listen) = &http_listen {
+        let http_is_remote = !is_loopback_listener(listen);
+        if http_is_remote && !env_flag("TOR_HTTP_ALLOW_REMOTE") {
+            bail!(
+                "refusing non-loopback HTTP proxy {listen}; set TOR_HTTP_ALLOW_REMOTE=1 only behind a trusted network or encrypted tunnel"
+            );
+        }
+        if http_is_remote && socks_auth.is_none() {
+            bail!(
+                "non-loopback HTTP proxy {listen} requires proxy credentials (TOR_SOCKS_PASSWORD or TOR_SOCKS_PASSWORD_FILE)"
+            );
+        }
+        if http_is_remote {
+            tracing::warn!(
+                listen = %listen,
+                "remote HTTP CONNECT proxy enabled; Basic auth does not encrypt the client-to-proxy link, so use a VPN, SSH tunnel, or private network"
+            );
+        }
+    }
+
     // The overlay backend needs a relay directory; arti does not.
     let directory = match std::env::var("TOR_DIRECTORY") {
         Ok(p) => Some(config::Directory::load(&PathBuf::from(&p))?),
