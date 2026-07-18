@@ -141,3 +141,7 @@
 	path = remote/deployments/athleto-app-rs
 	url = git@github.com:athlet-o/athleto-app-rs.git
 	branch = main
+[submodule "remote/deployments/t2v-v2t.rs"]
+	path = remote/deployments/t2v-v2t.rs
+	url = git@github.com:ORESoftware/t2v-v2t.rs.git
+	branch = main

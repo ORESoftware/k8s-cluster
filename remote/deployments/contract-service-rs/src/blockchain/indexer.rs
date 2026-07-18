@@ -70,8 +70,11 @@ async fn watch_http(
 ) -> axum::response::Response {
     let bc = &state.blockchain;
     record_request(bc);
-    if let Err(resp) = require_enabled(bc, bc.config().indexer_enabled, "BLOCKCHAIN_INDEXER_ENABLED")
-    {
+    if let Err(resp) = require_enabled(
+        bc,
+        bc.config().indexer_enabled,
+        "BLOCKCHAIN_INDEXER_ENABLED",
+    ) {
         return resp;
     }
     let chain = match parse_chain(&body.chain) {
@@ -90,7 +93,10 @@ async fn watch_http(
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
         };
-        if watches.iter().any(|w| w.chain == chain && w.address == address) {
+        if watches
+            .iter()
+            .any(|w| w.chain == chain && w.address == address)
+        {
             return json_err(StatusCode::CONFLICT, "address already watched");
         }
         if watches.len() >= MAX_WATCHES {
@@ -125,12 +131,19 @@ async fn query_http(
 ) -> axum::response::Response {
     let bc = &state.blockchain;
     record_request(bc);
-    if let Err(resp) = require_enabled(bc, bc.config().indexer_enabled, "BLOCKCHAIN_INDEXER_ENABLED")
-    {
+    if let Err(resp) = require_enabled(
+        bc,
+        bc.config().indexer_enabled,
+        "BLOCKCHAIN_INDEXER_ENABLED",
+    ) {
         return resp;
     }
     let limit = params.limit.unwrap_or(50).clamp(1, MAX_QUERY_LIMIT);
-    let filter = params.address.as_deref().map(str::trim).filter(|a| !a.is_empty());
+    let filter = params
+        .address
+        .as_deref()
+        .map(str::trim)
+        .filter(|a| !a.is_empty());
 
     let events = match bc.inner().index_events.lock() {
         Ok(guard) => guard,
@@ -177,7 +190,8 @@ async fn poll_address(state: &AppState, chain: ChainKind, address: &str) -> Resu
             if !bc.config().evm_configured() {
                 return Err("EVM RPC is not configured (set EVM_RPC_URL)".to_string());
             }
-            let filter = json!([{ "address": address, "fromBlock": "latest", "toBlock": "latest" }]);
+            let filter =
+                json!([{ "address": address, "fromBlock": "latest", "toBlock": "latest" }]);
             let result = bc.evm_rpc("eth_getLogs", filter).await?;
             result
                 .as_array()

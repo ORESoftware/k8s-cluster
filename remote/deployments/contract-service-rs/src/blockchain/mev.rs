@@ -57,7 +57,10 @@ async fn opportunities_http(
         .iter()
         .any(|q| !q.price.is_finite() || q.price <= 0.0)
     {
-        return json_err(StatusCode::BAD_REQUEST, "each quote price must be a positive number");
+        return json_err(
+            StatusCode::BAD_REQUEST,
+            "each quote price must be a positive number",
+        );
     }
 
     // Lowest ask vs highest bid across venues.
@@ -81,7 +84,9 @@ async fn opportunities_http(
         .unwrap_or(DEFAULT_THRESHOLD_BPS);
     let opportunity = spread_bps >= threshold;
     if opportunity {
-        bc.metrics().mev_alerts_total.fetch_add(1, Ordering::Relaxed);
+        bc.metrics()
+            .mev_alerts_total
+            .fetch_add(1, Ordering::Relaxed);
         // Monitoring-only: emit an observation alert. There is no execution path.
         crate::publish_blockchain_event(
             &state,

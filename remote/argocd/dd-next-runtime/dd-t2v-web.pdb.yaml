@@ -1,0 +1,12 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-t2v-web
+  namespace: default
+  labels:
+    app: dd-t2v-web
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dd-t2v-web

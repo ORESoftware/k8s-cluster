@@ -1,12 +1,16 @@
 use std::{
+    collections::HashMap,
     env,
-    net::SocketAddr,
-    sync::atomic::{AtomicU64, Ordering},
-    time::{SystemTime, UNIX_EPOCH},
+    net::{IpAddr, SocketAddr},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex,
+    },
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use axum::{
-    extract::{Form, Query},
+    extract::{ConnectInfo, Extension, Form, Query},
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{Html, IntoResponse, Response},
     routing::get,
@@ -20,6 +24,105 @@ use sha1::Sha1;
 static HTTP_REQUESTS_TOTAL: AtomicU64 = AtomicU64::new(0);
 static AUTH_SUCCESSES_TOTAL: AtomicU64 = AtomicU64::new(0);
 static AUTH_FAILURES_TOTAL: AtomicU64 = AtomicU64::new(0);
+static AUTH_RATE_LIMITED_TOTAL: AtomicU64 = AtomicU64::new(0);
+
+const DEFAULT_AUTH_FAILURE_LIMIT: u32 = 5;
+const DEFAULT_AUTH_LOCKOUT_SECONDS: u64 = 15 * 60;
+const MAX_AUTH_FAILURE_LIMIT: u32 = 20;
+const MIN_AUTH_LOCKOUT_SECONDS: u64 = 60;
+const MAX_AUTH_LOCKOUT_SECONDS: u64 = 24 * 60 * 60;
+const AUTH_ATTEMPT_ENTRY_TTL: Duration = Duration::from_secs(24 * 60 * 60);
+
+#[derive(Clone)]
+struct AuthAttemptLimiter {
+    entries: Arc<Mutex<HashMap<IpAddr, AuthAttempt>>>,
+    failure_limit: u32,
+    lockout: Duration,
+}
+
+struct AuthAttempt {
+    failures: u32,
+    locked_until: Option<Instant>,
+    last_seen: Instant,
+}
+
+impl AuthAttemptLimiter {
+    fn from_env() -> Self {
+        let failure_limit = env::var("DD_AUTH_FAILURE_LIMIT")
+            .ok()
+            .and_then(|value| value.trim().parse::<u32>().ok())
+            .filter(|value| *value > 0 && *value <= MAX_AUTH_FAILURE_LIMIT)
+            .unwrap_or(DEFAULT_AUTH_FAILURE_LIMIT);
+        let lockout_seconds = env::var("DD_AUTH_LOCKOUT_SECONDS")
+            .ok()
+            .and_then(|value| value.trim().parse::<u64>().ok())
+            .filter(|value| {
+                *value >= MIN_AUTH_LOCKOUT_SECONDS && *value <= MAX_AUTH_LOCKOUT_SECONDS
+            })
+            .unwrap_or(DEFAULT_AUTH_LOCKOUT_SECONDS);
+        Self::new(failure_limit, Duration::from_secs(lockout_seconds))
+    }
+
+    fn new(failure_limit: u32, lockout: Duration) -> Self {
+        Self {
+            entries: Arc::new(Mutex::new(HashMap::new())),
+            failure_limit,
+            lockout,
+        }
+    }
+
+    fn retry_after(&self, client_ip: IpAddr) -> Option<Duration> {
+        let now = Instant::now();
+        let mut entries = match self.entries.lock() {
+            Ok(entries) => entries,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        entries.retain(|_, entry| {
+            entry.locked_until.is_some_and(|until| until > now)
+                || now.duration_since(entry.last_seen) <= AUTH_ATTEMPT_ENTRY_TTL
+        });
+        let entry = entries.get_mut(&client_ip)?;
+        entry.last_seen = now;
+        entry
+            .locked_until
+            .filter(|until| *until > now)
+            .map(|until| until.duration_since(now))
+    }
+
+    fn record_failure(&self, client_ip: IpAddr) -> Option<Duration> {
+        let now = Instant::now();
+        let mut entries = match self.entries.lock() {
+            Ok(entries) => entries,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        entries.retain(|_, entry| {
+            entry.locked_until.is_some_and(|until| until > now)
+                || now.duration_since(entry.last_seen) <= AUTH_ATTEMPT_ENTRY_TTL
+        });
+        let entry = entries.entry(client_ip).or_insert(AuthAttempt {
+            failures: 0,
+            locked_until: None,
+            last_seen: now,
+        });
+        entry.last_seen = now;
+        entry.failures = entry.failures.saturating_add(1);
+        if entry.failures >= self.failure_limit {
+            entry.failures = 0;
+            entry.locked_until = Some(now + self.lockout);
+            Some(self.lockout)
+        } else {
+            None
+        }
+    }
+
+    fn record_success(&self, client_ip: IpAddr) {
+        let mut entries = match self.entries.lock() {
+            Ok(entries) => entries,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        entries.remove(&client_ip);
+    }
+}
 
 #[derive(Deserialize)]
 struct AuthQuery {
@@ -227,6 +330,36 @@ fn safe_return_to(value: Option<String>) -> String {
     } else {
         "/home".to_string()
     }
+}
+
+// The public gateway appends the observed peer to X-Forwarded-For, so the last
+// valid address cannot be supplied by the browser. If the service is reached
+// directly, fall back to the TCP peer address.
+fn client_ip(headers: &HeaderMap, peer_ip: IpAddr) -> IpAddr {
+    headers
+        .get("x-forwarded-for")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| {
+            value
+                .rsplit(',')
+                .map(str::trim)
+                .find_map(|value| value.parse::<IpAddr>().ok())
+        })
+        .unwrap_or(peer_ip)
+}
+
+fn too_many_attempts(retry_after: Duration) -> Response {
+    AUTH_RATE_LIMITED_TOTAL.fetch_add(1, Ordering::Relaxed);
+    let mut response = (
+        StatusCode::TOO_MANY_REQUESTS,
+        "Too many failed sign-in attempts. Please try again later.",
+    )
+        .into_response();
+    let seconds = retry_after.as_secs().max(1).to_string();
+    if let Ok(value) = HeaderValue::from_str(&seconds) {
+        response.headers_mut().insert(header::RETRY_AFTER, value);
+    }
+    response
 }
 
 fn escape_html(value: &str) -> String {
@@ -443,12 +576,24 @@ async fn auth_form(Query(query): Query<AuthQuery>, headers: HeaderMap) -> impl I
     )
 }
 
-async fn auth_submit(headers: HeaderMap, Form(form): Form<PinForm>) -> Response {
+async fn auth_submit(
+    Extension(attempts): Extension<AuthAttemptLimiter>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Form(form): Form<PinForm>,
+) -> Response {
     HTTP_REQUESTS_TOTAL.fetch_add(1, Ordering::Relaxed);
+    let client_ip = client_ip(&headers, peer.ip());
+    if let Some(retry_after) = attempts.retry_after(client_ip) {
+        return too_many_attempts(retry_after);
+    }
     let return_to = safe_return_to(form.return_to.clone());
     let already_authenticated = caller_is_authenticated(&headers);
     if !auth_form_is_valid(&form) {
         AUTH_FAILURES_TOTAL.fetch_add(1, Ordering::Relaxed);
+        if let Some(retry_after) = attempts.record_failure(client_ip) {
+            return too_many_attempts(retry_after);
+        }
         let error_message = if totp_required() {
             "Incorrect operator passphrase or one-time code. Please try again."
         } else {
@@ -466,6 +611,7 @@ async fn auth_submit(headers: HeaderMap, Form(form): Form<PinForm>) -> Response 
             .into_response();
     }
     AUTH_SUCCESSES_TOTAL.fetch_add(1, Ordering::Relaxed);
+    attempts.record_success(client_ip);
 
     let cookie = format!(
         "{}={}; Path=/; Max-Age={}; HttpOnly; SameSite=Lax; Secure",
@@ -473,8 +619,7 @@ async fn auth_submit(headers: HeaderMap, Form(form): Form<PinForm>) -> Response 
         cookie_value(),
         cookie_max_age_seconds()
     );
-    let cookie_header =
-        HeaderValue::from_str(&cookie).expect("auth cookie header should be valid");
+    let cookie_header = HeaderValue::from_str(&cookie).expect("auth cookie header should be valid");
 
     // Programmatic callers (curl, scripts) can keep the old immediate-redirect
     // behavior by posting `immediate=1`. The default browser flow is now a
@@ -488,12 +633,16 @@ async fn auth_submit(headers: HeaderMap, Form(form): Form<PinForm>) -> Response 
             header::LOCATION,
             HeaderValue::from_str(&return_to).unwrap_or_else(|_| HeaderValue::from_static("/home")),
         );
-        response.headers_mut().insert(header::SET_COOKIE, cookie_header);
+        response
+            .headers_mut()
+            .insert(header::SET_COOKIE, cookie_header);
         return response;
     }
 
     let mut response = success_page(&return_to).into_response();
-    response.headers_mut().insert(header::SET_COOKIE, cookie_header);
+    response
+        .headers_mut()
+        .insert(header::SET_COOKIE, cookie_header);
     response
 }
 
@@ -518,22 +667,26 @@ async fn metrics() -> Response {
     HTTP_REQUESTS_TOTAL.fetch_add(1, Ordering::Relaxed);
     let body = format!(
         concat!(
-            "# HELP dd_remote_auth_build_info Remote auth build metadata.\n",
-            "# TYPE dd_remote_auth_build_info gauge\n",
-            "dd_remote_auth_build_info{{service=\"dd-remote-auth\"}} 1\n",
-            "# HELP dd_remote_auth_http_requests_total HTTP requests handled by remote auth.\n",
-            "# TYPE dd_remote_auth_http_requests_total counter\n",
-            "dd_remote_auth_http_requests_total {}\n",
-            "# HELP dd_remote_auth_successes_total Successful auth submissions.\n",
-            "# TYPE dd_remote_auth_successes_total counter\n",
-            "dd_remote_auth_successes_total {}\n",
-            "# HELP dd_remote_auth_failures_total Failed auth submissions.\n",
-            "# TYPE dd_remote_auth_failures_total counter\n",
-            "dd_remote_auth_failures_total {}\n"
+        "# HELP dd_remote_auth_build_info Remote auth build metadata.\n",
+        "# TYPE dd_remote_auth_build_info gauge\n",
+        "dd_remote_auth_build_info{{service=\"dd-remote-auth\"}} 1\n",
+        "# HELP dd_remote_auth_http_requests_total HTTP requests handled by remote auth.\n",
+        "# TYPE dd_remote_auth_http_requests_total counter\n",
+        "dd_remote_auth_http_requests_total {}\n",
+        "# HELP dd_remote_auth_successes_total Successful auth submissions.\n",
+        "# TYPE dd_remote_auth_successes_total counter\n",
+        "dd_remote_auth_successes_total {}\n",
+        "# HELP dd_remote_auth_failures_total Failed auth submissions.\n",
+        "# TYPE dd_remote_auth_failures_total counter\n",
+            "dd_remote_auth_failures_total {}\n",
+            "# HELP dd_remote_auth_rate_limited_total Authentication submissions rejected by the server-side lockout.\n",
+            "# TYPE dd_remote_auth_rate_limited_total counter\n",
+            "dd_remote_auth_rate_limited_total {}\n"
         ),
         HTTP_REQUESTS_TOTAL.load(Ordering::Relaxed),
         AUTH_SUCCESSES_TOTAL.load(Ordering::Relaxed),
-        AUTH_FAILURES_TOTAL.load(Ordering::Relaxed)
+        AUTH_FAILURES_TOTAL.load(Ordering::Relaxed),
+        AUTH_RATE_LIMITED_TOTAL.load(Ordering::Relaxed)
     );
 
     (
@@ -558,6 +711,37 @@ async fn api_docs_json() -> impl axum::response::IntoResponse {
     )
 }
 
+async fn add_security_headers(mut response: Response) -> Response {
+    let headers = response.headers_mut();
+    headers.insert(
+        axum::http::HeaderName::from_static("strict-transport-security"),
+        HeaderValue::from_static("max-age=31536000; includeSubDomains"),
+    );
+    headers.insert(
+        axum::http::HeaderName::from_static("content-security-policy"),
+        HeaderValue::from_static(
+            "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; object-src 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data:",
+        ),
+    );
+    headers.insert(
+        axum::http::HeaderName::from_static("x-content-type-options"),
+        HeaderValue::from_static("nosniff"),
+    );
+    headers.insert(
+        axum::http::HeaderName::from_static("x-frame-options"),
+        HeaderValue::from_static("DENY"),
+    );
+    headers.insert(
+        axum::http::HeaderName::from_static("referrer-policy"),
+        HeaderValue::from_static("no-referrer"),
+    );
+    headers.insert(
+        axum::http::HeaderName::from_static("permissions-policy"),
+        HeaderValue::from_static("camera=(), geolocation=(), microphone=()"),
+    );
+    response
+}
+
 #[tokio::main]
 async fn main() {
     let _otel = dd_telemetry::init("dd-remote-auth");
@@ -579,7 +763,9 @@ async fn main() {
         .route("/api/docs", get(api_docs_html))
         .route("/api/docs.json", get(api_docs_json))
         .route("/metrics", get(metrics))
-        .merge(dd_runtime_config_client::router());
+        .merge(dd_runtime_config_client::router())
+        .layer(Extension(AuthAttemptLimiter::from_env()))
+        .layer(axum::middleware::map_response(add_security_headers));
 
     tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
@@ -591,10 +777,14 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind(address)
         .await
         .expect("failed to bind tcp listener");
-    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .expect("axum server crashed");
+    axum::serve(
+        listener,
+        app.layer(dd_telemetry::http_trace_layer())
+            .into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await
+    .expect("axum server crashed");
 }
 
 async fn shutdown_signal() {
@@ -616,5 +806,38 @@ async fn shutdown_signal() {
     tokio::select! {
         _ = ctrl_c => {},
         _ = terminate => {},
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn auth_attempt_limiter_locks_after_configured_failures() {
+        let limiter = AuthAttemptLimiter::new(2, Duration::from_secs(60));
+        let ip = "203.0.113.10".parse().unwrap();
+
+        assert!(limiter.record_failure(ip).is_none());
+        assert!(limiter.record_failure(ip).is_some());
+        assert!(limiter.retry_after(ip).is_some());
+
+        limiter.record_success(ip);
+        assert!(limiter.retry_after(ip).is_none());
+    }
+
+    #[test]
+    fn gateway_client_ip_uses_the_last_forwarded_hop() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-forwarded-for",
+            HeaderValue::from_static("198.51.100.9, 203.0.113.25"),
+        );
+        let peer = "10.0.0.4".parse().unwrap();
+
+        assert_eq!(
+            client_ip(&headers, peer),
+            "203.0.113.25".parse::<IpAddr>().unwrap()
+        );
     }
 }
