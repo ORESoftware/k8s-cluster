@@ -43,14 +43,28 @@ pub fn bump(base: &VersionVector, device: &str) -> VersionVector {
     out
 }
 
+/// True if `base_version` is *causally reachable* by `pushing_device`: it may
+/// advance its own counter freely but must not claim any counter for another
+/// device beyond what the server already stored. Merely dominating the stored
+/// vector is not enough — a device could otherwise inflate a sibling's counter
+/// (e.g. `devB: 9999`), poisoning the vector so the sibling's next honest push is
+/// forever seen as stale. This restores the vector-clock invariant that an entry
+/// only ever grows via its own device.
+fn is_causal(stored: &VersionVector, base_version: &VersionVector, pushing_device: &str) -> bool {
+    base_version.iter().all(|entry| {
+        entry.device_id == pushing_device || entry.counter <= counter_for(stored, &entry.device_id)
+    })
+}
+
 /// Decide the outcome of a push given the currently-stored version.
 pub fn reconcile(
     stored: &VersionVector,
     base_version: &VersionVector,
     pushing_device: &str,
 ) -> Result<VersionVector, VersionVector> {
-    // The client must have seen the server's latest before overwriting it.
-    if dominates(base_version, stored) {
+    // The client must have seen the server's latest before overwriting it, and
+    // may only advance its own counter (not fabricate a sibling's).
+    if dominates(base_version, stored) && is_causal(stored, base_version, pushing_device) {
         Ok(bump(base_version, pushing_device))
     } else {
         Err(stored.clone())
@@ -211,6 +225,26 @@ mod tests {
         let out = reconcile(&stored, &base, "devA").unwrap();
         assert_eq!(counter_for(&out, "devA"), 2);
         assert_eq!(counter_for(&out, "devB"), 1);
+    }
+
+    #[test]
+    fn cannot_inflate_a_sibling_counter() {
+        // Stored has devA:1, devB:1. devA tries to push a base that dominates but
+        // fabricates devB:9999 — this must be rejected as non-causal, not stored.
+        let stored = vv(&[("devA", 1), ("devB", 1)]);
+        let base = vv(&[("devA", 1), ("devB", 9999)]);
+        let err = reconcile(&stored, &base, "devA").unwrap_err();
+        assert_eq!(err, stored, "sibling-inflating push must conflict, not win");
+    }
+
+    #[test]
+    fn may_still_advance_own_counter_past_stored() {
+        // devA legitimately advancing only its own counter is causal and accepted.
+        let stored = vv(&[("devA", 5), ("devB", 2)]);
+        let base = vv(&[("devA", 5), ("devB", 2)]);
+        let out = reconcile(&stored, &base, "devA").unwrap();
+        assert_eq!(counter_for(&out, "devA"), 6);
+        assert_eq!(counter_for(&out, "devB"), 2);
     }
 
     #[test]
