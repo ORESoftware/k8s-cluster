@@ -161,6 +161,8 @@ spec:
               value: '900'
             - name: SOUND_RECORDER_S3_KEY_PREFIX
               value: sound-recorder/segments
+            - name: SOUND_RECORDER_S3_VERSIONING_MODE
+              value: unversioned
             - name: SOUND_RECORDER_OAUTH_STATE_TTL_SECONDS
               value: '600'
             - name: SOUND_RECORDER_CLOUD_COPY_BATCH_SIZE
@@ -270,6 +272,18 @@ spec:
                 secretKeyRef:
                   name: dd-agent-secrets
                   key: SOUND_RECORDER_SUPABASE_URL
+                  optional: true
+            - name: SOUND_RECORDER_SUPABASE_PUBLISHABLE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SOUND_RECORDER_SUPABASE_PUBLISHABLE_KEY
+                  optional: true
+            - name: SOUND_RECORDER_SUPABASE_SERVICE_ROLE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SOUND_RECORDER_SUPABASE_SERVICE_ROLE_KEY
                   optional: true
             - name: SOUND_RECORDER_SUPABASE_JWT_SECRET
               valueFrom:
