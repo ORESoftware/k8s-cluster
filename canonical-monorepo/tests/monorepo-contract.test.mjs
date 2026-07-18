@@ -95,6 +95,8 @@ test("env template exposes the runtime knobs and keeps values placeholder-only",
     "LOGIN_AUTH_MAX_CONCURRENCY",
     "BEARER_AUTH_MAX_CONCURRENCY",
     "DATABASE_URL",
+    "OTEL_EXPORTER_OTLP_ENDPOINT",
+    "OTEL_RESOURCE_ATTRIBUTES",
     "SESSION_REVOCATION_DATABASE_URL",
     "SESSION_REVOCATION_DATABASE_MAX_CONNECTIONS",
     "MIGRATION_DATABASE_URL",
@@ -140,6 +142,10 @@ test("full-stack build includes both browser clients before all locked Rust work
   assert.match(build, /canonical-web-server serve/);
   assert.match(build, /canonical-session-revoker run/);
   assert.doesNotMatch(build, /\brm\b|\bcp\b/);
+
+  const ci = read(".github/workflows/ci.yml");
+  assert.match(ci, /cargo test --locked/);
+  assert.match(ci, /--test architecture --test modularization/);
 });
 
 test("architecture docs keep migration, RLS, process, WebSocket, and backplane boundaries explicit", () => {

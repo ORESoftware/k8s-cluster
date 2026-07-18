@@ -80,6 +80,11 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: apps/canonical-web-server.rs
+      - name: Rust modularization contracts
+        run: >-
+          cargo test --locked
+          --manifest-path apps/canonical-web-server.rs/Cargo.toml
+          --test architecture --test modularization
       - name: Build the pinned stack
         run: ./build.sh
       # Boot the freshly built server with both built asset trees and prove the

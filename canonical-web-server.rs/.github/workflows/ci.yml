@@ -234,8 +234,9 @@ jobs:
           TEST_COCKROACH_ADMIN_URL: postgresql://root@127.0.0.1:26257/defaultdb?sslmode=disable
         run: cargo test --locked -p canonical-web-server --test cockroach_rls -- --nocapture
 
-  # Browser e2e (Playwright + Puppeteer) driving a real `serve` process on
-  # in-memory SQLite — the same boot recipe as container-smoke, but exercised
+  # Browser e2e (Playwright + Puppeteer) driving a real `serve` process on a
+  # temporary file-backed SQLite database — the same explicit migrate-then-serve
+  # recipe as container-smoke, but exercised
   # through Chrome so the maud/htmx pages, redirects, and security headers are
   # verified as a browser actually sees them. Blocking on ubuntu-latest; the
   # opt-in self-hosted variant (browser-e2e-selfhosted.yml) runs the identical
