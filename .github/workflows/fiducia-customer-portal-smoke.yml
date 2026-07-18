@@ -1,0 +1,60 @@
+# fiducia.cloud customer portal — deployed browser smoke on the remote/tests
+# runner. Drives a DEPLOYED portal through Playwright AND Puppeteer
+# (remote/tests/fiducia-customer-portal-smoke.mjs). The target URL comes from
+# the `FIDUCIA_CUSTOMER_TEST_URL` repo variable; when it is unset the smoke
+# SKIPS cleanly (exit 0), so this workflow is safe to keep enabled before a
+# portal is deployed. Manual dispatch plus a daily schedule once a URL exists.
+name: fiducia customer portal smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: "Deployed portal base URL (overrides the FIDUCIA_CUSTOMER_TEST_URL variable)"
+        required: false
+        type: string
+  schedule:
+    - cron: "17 7 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fiducia-customer-portal-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: portal smoke (playwright + puppeteer)
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Install remote test dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: remote/tests
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+        working-directory: remote/tests
+
+      - name: Customer portal smoke (both engines)
+        working-directory: remote/tests
+        env:
+          # Manual input wins; otherwise the repo variable. Empty => the smoke skips.
+          FIDUCIA_CUSTOMER_TEST_URL: ${{ inputs.target_url || vars.FIDUCIA_CUSTOMER_TEST_URL }}
+        run: pnpm run test:ui:fiducia-customer

@@ -15,7 +15,7 @@ use axum::{
     extract::{Path as AxumPath, State},
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
@@ -24,6 +24,7 @@ use reqwest::header::{HeaderMap as ReqwestHeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
+use subtle::ConstantTimeEq;
 use time::OffsetDateTime;
 use tokio::{
     fs::{self, OpenOptions},
@@ -32,6 +33,14 @@ use tokio::{
     sync::{RwLock, Semaphore},
     time::timeout,
 };
+
+mod db;
+mod entity;
+mod events;
+mod fiducia;
+mod gh_secrets;
+mod lambda_exec;
+mod webhooks;
 
 const SERVICE_NAME: &str = "dd-build-server";
 const DEFAULT_PORT: u16 = 8100;
@@ -43,6 +52,15 @@ struct AppState {
     jobs: Arc<RwLock<HashMap<String, BuildJobRecord>>>,
     semaphore: Arc<Semaphore>,
     counters: Arc<Counters>,
+    /// Optional Postgres persistence (own database `dd_build_server` on RDS).
+    db: Option<sea_orm::DatabaseConnection>,
+    /// Optional NATS client for lifecycle events and request intake.
+    nats: Option<async_nats::Client>,
+    /// Stable per-process holder identity for fiducia locks/leases.
+    holder: String,
+    /// Local dedupe of NATS/webhook requestIds (fiducia + JetStream Nats-Msg-Id
+    /// are the distributed guards; this catches quick same-process redelivery).
+    recent_request_ids: Arc<RwLock<HashSet<String>>>,
 }
 
 #[derive(Clone)]
@@ -60,9 +78,59 @@ struct Config {
     ecr_login_enabled: bool,
     aws_region: String,
     job_timeout: Duration,
+    /// Overall wall-clock deadline for one job (all commands together);
+    /// job_timeout still bounds each individual command.
+    job_deadline: Duration,
     max_log_bytes: u64,
     max_jobs: usize,
+    /// Reject new submissions once this many jobs are queued (backpressure —
+    /// authenticated callers must not be able to grow memory unboundedly).
+    max_queued: usize,
+    /// Keep cloned repos on disk after the job finishes (default: remove;
+    /// build logs are always kept).
+    keep_workdirs: bool,
     server_auth_secret: Option<String>,
+
+    // --- Postgres (own database dd_build_server; see src/db.rs) ---
+    database_url: Option<String>,
+
+    // --- fiducia.cloud coordination (see src/fiducia.rs) ---
+    fiducia_url: String,
+    fiducia_api_key: Option<String>,
+    coordination_enabled: bool,
+    coordination_required: bool,
+    lock_ttl: Duration,
+    lock_wait_budget: Duration,
+    lock_retry_interval: Duration,
+    idempotency_lease: Duration,
+    idempotency_retention: Duration,
+
+    // --- NATS MQ (see src/events.rs) ---
+    nats_url: String,
+    nats_enabled: bool,
+    nats_intake_enabled: bool,
+    nats_event_subject: String,
+    nats_result_subject: String,
+    nats_image_subject: String,
+    nats_request_subject: String,
+    nats_critical_subject: String,
+
+    // --- Webhooks (see src/webhooks.rs) ---
+    github_webhook_secret: Option<String>,
+    registry_webhook_secret: Option<String>,
+    webhook_rules: Vec<webhooks::WebhookRule>,
+
+    // --- GitHub Actions secret sync (see src/gh_secrets.rs) ---
+    gh_sync_enabled: bool,
+    gh_sync_token: Option<String>,
+    gh_sync_rules: Vec<gh_secrets::SyncRule>,
+    gh_sync_interval: Duration,
+
+    // --- gleam-lambda-runner executor (see src/lambda_exec.rs) ---
+    lambda_executor_enabled: bool,
+    lambda_url: String,
+    lambda_function_id: Option<String>,
+    lambda_auth_secret: Option<String>,
 }
 
 #[derive(Default)]
@@ -75,6 +143,14 @@ struct Counters {
     command_failures: AtomicU64,
     ecr_logins: AtomicU64,
     ecr_login_failures: AtomicU64,
+    locks_acquired: AtomicU64,
+    lock_failures: AtomicU64,
+    webhooks_received: AtomicU64,
+    webhooks_rejected: AtomicU64,
+    nats_published: AtomicU64,
+    nats_publish_failures: AtomicU64,
+    gh_secrets_synced: AtomicU64,
+    gh_secret_sync_failures: AtomicU64,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -90,6 +166,12 @@ struct BuildRequest {
     build_args: Option<BTreeMap<String, String>>,
     push: Option<bool>,
     deploy: Option<DeployRequest>,
+    /// "local" (default: git + nerdctl + kubectl on this node) or "lambda"
+    /// (forward to the gleam-lambda-runner build function).
+    executor: Option<String>,
+    /// Caller-supplied idempotency id for at-least-once transports
+    /// (NATS/webhooks); duplicate ids are accepted-and-ignored.
+    request_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -108,11 +190,18 @@ struct BuildJobRecord {
     id: String,
     status: BuildStatus,
     request: BuildRequest,
+    /// Where the job came from: http | webhook | nats.
+    source: String,
+    /// Which executor runs it: local | lambda.
+    executor: String,
     created_at_ms: u128,
     started_at_ms: Option<u128>,
     finished_at_ms: Option<u128>,
     log_path: String,
     error: Option<String>,
+    /// fiducia.cloud lock key + fencing token, when coordination is enabled.
+    lock_key: Option<String>,
+    fencing_token: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -229,7 +318,65 @@ fn parse_csv(value: &str) -> Vec<String> {
         .collect()
 }
 
+/// Inline JSON env var, or a file path env var (mounted ConfigMap), or None.
+fn env_or_file(inline_key: &str, path_key: &str) -> Option<String> {
+    if let Some(inline) = first_env(&[inline_key]) {
+        return Some(inline);
+    }
+    let path = first_env(&[path_key])?;
+    match std::fs::read_to_string(&path) {
+        Ok(contents) => Some(contents),
+        Err(error) => {
+            tracing::error!("failed to read {path_key}={path}: {error}");
+            None
+        }
+    }
+}
+
 fn config_from_env() -> Config {
+    let webhook_rules = env_or_file(
+        "BUILD_SERVER_WEBHOOK_RULES",
+        "BUILD_SERVER_WEBHOOK_RULES_PATH",
+    )
+    .map(|raw| match webhooks::parse_rules(&raw) {
+        Ok(rules) => rules,
+        Err(error) => {
+            tracing::error!("ignoring webhook rules: {error}");
+            Vec::new()
+        }
+    })
+    .unwrap_or_default();
+
+    let gh_sync_rules = env_or_file(
+        "BUILD_SERVER_GH_SYNC_RULES",
+        "BUILD_SERVER_GH_SYNC_RULES_PATH",
+    )
+    .map(|raw| match gh_secrets::parse_rules(&raw) {
+        Ok(rules) => rules,
+        Err(error) => {
+            tracing::error!("ignoring gh secret sync rules: {error}");
+            Vec::new()
+        }
+    })
+    .unwrap_or_default();
+
+    let coordination_enabled = env_bool("BUILD_SERVER_COORDINATION_ENABLED", false);
+    let fiducia_url = env_value(
+        "FIDUCIA_LOCK_URL",
+        "http://fiducia-load-balance.fiducia.svc.cluster.local:8088",
+    );
+    let coordination_enabled = if coordination_enabled {
+        match fiducia::validate_lock_url(&fiducia_url) {
+            Ok(()) => true,
+            Err(error) => {
+                tracing::error!("disabling fiducia coordination: {error}");
+                false
+            }
+        }
+    } else {
+        false
+    };
+
     Config {
         work_root: PathBuf::from(env_value(
             "BUILD_SERVER_WORK_ROOT",
@@ -251,9 +398,75 @@ fn config_from_env() -> Config {
         aws_region: first_env(&["AWS_REGION", "AWS_DEFAULT_REGION"])
             .unwrap_or_else(|| "us-east-1".to_string()),
         job_timeout: Duration::from_secs(env_u64("BUILD_SERVER_JOB_TIMEOUT_SECONDS", 1_800)),
+        job_deadline: Duration::from_secs(env_u64("BUILD_SERVER_JOB_DEADLINE_SECONDS", 3_600)),
         max_log_bytes: env_u64("BUILD_SERVER_MAX_LOG_BYTES", 4 * 1024 * 1024),
         max_jobs: env_usize("BUILD_SERVER_MAX_JOBS", 200),
+        max_queued: env_usize("BUILD_SERVER_MAX_QUEUED", 32),
+        keep_workdirs: env_bool("BUILD_SERVER_KEEP_WORKDIRS", false),
         server_auth_secret: first_env(&["BUILD_SERVER_AUTH_SECRET", "SERVER_AUTH_SECRET"]),
+
+        database_url: first_env(&["BUILD_SERVER_DATABASE_URL", "DATABASE_URL"]),
+
+        fiducia_url,
+        fiducia_api_key: first_env(&["FIDUCIA_API_KEY"]),
+        coordination_enabled,
+        coordination_required: env_bool("BUILD_SERVER_COORDINATION_REQUIRED", false),
+        lock_ttl: Duration::from_millis(env_u64("BUILD_SERVER_LOCK_TTL_MS", 3_900_000)),
+        lock_wait_budget: Duration::from_millis(env_u64("BUILD_SERVER_LOCK_WAIT_MS", 120_000)),
+        lock_retry_interval: Duration::from_millis(env_u64("BUILD_SERVER_LOCK_RETRY_MS", 3_000)),
+        idempotency_lease: Duration::from_millis(env_u64(
+            "BUILD_SERVER_IDEMPOTENCY_LEASE_MS",
+            300_000,
+        )),
+        idempotency_retention: Duration::from_millis(env_u64(
+            "BUILD_SERVER_IDEMPOTENCY_RETENTION_MS",
+            7 * 24 * 3_600_000,
+        )),
+
+        nats_url: env_value("NATS_URL", "nats://dd-nats.messaging.svc.cluster.local:4222"),
+        nats_enabled: env_bool("BUILD_SERVER_NATS_ENABLED", true),
+        nats_intake_enabled: env_bool("BUILD_SERVER_NATS_INTAKE_ENABLED", false),
+        nats_event_subject: env_value(
+            "BUILD_SERVER_NATS_EVENT_SUBJECT",
+            dd_nats_subject_defs::BUILD_SERVER_EVENTS_SUBJECT,
+        ),
+        nats_result_subject: env_value(
+            "BUILD_SERVER_NATS_RESULT_SUBJECT",
+            dd_nats_subject_defs::BUILD_SERVER_RESULTS_SUBJECT,
+        ),
+        nats_image_subject: env_value(
+            "BUILD_SERVER_NATS_IMAGE_SUBJECT",
+            dd_nats_subject_defs::BUILD_SERVER_IMAGES_SUBJECT,
+        ),
+        nats_request_subject: env_value(
+            "BUILD_SERVER_NATS_REQUEST_SUBJECT",
+            dd_nats_subject_defs::BUILD_SERVER_REQUESTS_SUBJECT,
+        ),
+        nats_critical_subject: env_value(
+            "NATS_CRITICAL_EVENT_SUBJECT",
+            dd_nats_subject_defs::RUNTIME_CRITICAL_EVENTS_SUBJECT,
+        ),
+
+        github_webhook_secret: first_env(&["BUILD_SERVER_GITHUB_WEBHOOK_SECRET"]),
+        registry_webhook_secret: first_env(&["BUILD_SERVER_REGISTRY_WEBHOOK_SECRET"]),
+        webhook_rules,
+
+        gh_sync_enabled: env_bool("BUILD_SERVER_GH_SYNC_ENABLED", false),
+        gh_sync_token: first_env(&["GH_SECRETS_SYNC_TOKEN", "GH_PAT", "GITHUB_TOKEN"]),
+        gh_sync_rules,
+        gh_sync_interval: Duration::from_secs(
+            first_env(&["BUILD_SERVER_GH_SYNC_INTERVAL_SECONDS"])
+                .and_then(|value| value.parse::<u64>().ok())
+                .unwrap_or(0),
+        ),
+
+        lambda_executor_enabled: env_bool("BUILD_SERVER_LAMBDA_ENABLED", false),
+        lambda_url: env_value(
+            "BUILD_SERVER_LAMBDA_URL",
+            "http://dd-gleam-lambda-runner.default.svc.cluster.local:8083",
+        ),
+        lambda_function_id: first_env(&["BUILD_SERVER_LAMBDA_FUNCTION_ID"]),
+        lambda_auth_secret: first_env(&["BUILD_SERVER_LAMBDA_AUTH_SECRET"]),
     }
 }
 
@@ -263,7 +476,13 @@ fn request_is_authorized(headers: &HeaderMap, secret: &str) -> bool {
         .or_else(|| headers.get("x-build-server-auth"))
         .or_else(|| headers.get("x-agent-auth"))
         .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value == secret)
+        // Constant-time comparison of digests: no timing side channel and no
+        // length leak from the shared secret.
+        .is_some_and(|value| {
+            let presented = Sha256::digest(value.as_bytes());
+            let expected = Sha256::digest(secret.as_bytes());
+            presented.as_slice().ct_eq(expected.as_slice()).into()
+        })
 }
 
 fn require_auth(headers: &HeaderMap, state: &AppState) -> Result<(), Response> {
@@ -540,6 +759,21 @@ fn validate_build_request(config: &Config, request: &BuildRequest) -> Result<(),
     validate_build_args(&request.build_args)?;
     if request.push.unwrap_or(false) && !config.push_enabled {
         return Err("push is disabled by BUILD_SERVER_PUSH_ENABLED=false".to_string());
+    }
+    match request.executor.as_deref() {
+        None | Some("local") => {}
+        Some("lambda") => {
+            if !config.lambda_executor_enabled {
+                return Err(
+                    "executor \"lambda\" is disabled by BUILD_SERVER_LAMBDA_ENABLED=false"
+                        .to_string(),
+                );
+            }
+        }
+        Some(other) => return Err(format!("executor {other:?} must be local or lambda")),
+    }
+    if let Some(request_id) = clean_optional(request.request_id.as_deref()) {
+        validate_no_whitespace("requestId", &request_id, 128)?;
     }
     validate_deploy(config, &request.deploy)
 }
@@ -976,9 +1210,21 @@ async fn update_job<F>(state: &AppState, id: &str, mutate: F)
 where
     F: FnOnce(&mut BuildJobRecord),
 {
-    let mut jobs = state.jobs.write().await;
-    if let Some(job) = jobs.get_mut(id) {
-        mutate(job);
+    let updated = {
+        let mut jobs = state.jobs.write().await;
+        match jobs.get_mut(id) {
+            Some(job) => {
+                mutate(job);
+                Some(job.clone())
+            }
+            None => None,
+        }
+    };
+    if let Some(job) = updated {
+        if let Some(db) = state.db.as_ref() {
+            db::persist_job(db, &job).await;
+        }
+        events::publish_lifecycle(state, &job).await;
     }
 }
 
@@ -1028,11 +1274,25 @@ async fn execute_build(state: &AppState, job: &BuildJobRecord) -> Result<(), Str
     )
     .await;
 
-    let mut clone_args = vec!["clone".to_string(), "--depth".to_string(), "1".to_string()];
+    // Locked-down clone: no non-network transports, no tags, and an explicit
+    // `--` so nothing user-supplied can ever be parsed as a git option.
+    let mut clone_args = vec![
+        "-c".to_string(),
+        "protocol.ext.allow=never".to_string(),
+        "-c".to_string(),
+        "protocol.file.allow=never".to_string(),
+        "-c".to_string(),
+        "protocol.local.allow=never".to_string(),
+        "clone".to_string(),
+        "--depth".to_string(),
+        "1".to_string(),
+        "--no-tags".to_string(),
+    ];
     if let Some(git_ref) = clean_optional(request.git_ref.as_deref()) {
         clone_args.push("--branch".to_string());
         clone_args.push(git_ref);
     }
+    clone_args.push("--".to_string());
     clone_args.push(request.repo_url.clone());
     clone_args.push(repo_dir.to_string_lossy().to_string());
     run_logged_command(config, &log_path, &job_dir, &config.git_bin, clone_args).await?;
@@ -1178,10 +1438,66 @@ async fn run_job(state: AppState, id: String) {
         }
     };
 
+    // Distributed mutual exclusion (fiducia.cloud): one lock per image ref, so
+    // concurrent builds of the same image serialize across replicas. The local
+    // semaphore above only bounds this process.
+    let image = {
+        let jobs = state.jobs.read().await;
+        jobs.get(&id).map(|job| job.request.image.clone())
+    };
+    let lock_key = image.map(|image| format!("build-server/image/{image}"));
+    let mut grant: Option<fiducia::LockGrant> = None;
+    if let Some(lock_key) = lock_key.as_deref() {
+        match fiducia::acquire_lock(&state.http, &state.config, lock_key, &state.holder).await {
+            fiducia::LockOutcome::Disabled => {}
+            fiducia::LockOutcome::Acquired(acquired) => {
+                state.counters.locks_acquired.fetch_add(1, Ordering::Relaxed);
+                grant = Some(acquired);
+            }
+            fiducia::LockOutcome::Busy { key } => {
+                state.counters.lock_failures.fetch_add(1, Ordering::Relaxed);
+                state.counters.failed.fetch_add(1, Ordering::Relaxed);
+                update_job(&state, &id, |job| {
+                    job.status = BuildStatus::Failed;
+                    job.finished_at_ms = Some(now_ms());
+                    job.error = Some(format!(
+                        "another build holds the fiducia lock for {key}; retry later"
+                    ));
+                })
+                .await;
+                drop(permit);
+                return;
+            }
+            fiducia::LockOutcome::Unavailable { error } => {
+                state.counters.lock_failures.fetch_add(1, Ordering::Relaxed);
+                if state.config.coordination_required {
+                    state.counters.failed.fetch_add(1, Ordering::Relaxed);
+                    update_job(&state, &id, |job| {
+                        job.status = BuildStatus::Failed;
+                        job.finished_at_ms = Some(now_ms());
+                        job.error = Some(format!(
+                            "fiducia coordination is required but unavailable: {error}"
+                        ));
+                    })
+                    .await;
+                    drop(permit);
+                    return;
+                }
+                tracing::warn!(
+                    "fiducia coordination unavailable, continuing with local semaphore only: {error}"
+                );
+            }
+        }
+    }
+
     state.counters.running.fetch_add(1, Ordering::Relaxed);
+    let grant_key = grant.as_ref().map(|grant| grant.key.clone());
+    let grant_token = grant.as_ref().map(|grant| grant.fencing_token);
     update_job(&state, &id, |job| {
         job.status = BuildStatus::Running;
         job.started_at_ms = Some(now_ms());
+        job.lock_key = grant_key.clone();
+        job.fencing_token = grant_token;
     })
     .await;
 
@@ -1191,9 +1507,39 @@ async fn run_job(state: AppState, id: String) {
     };
 
     let result = match job {
-        Some(job) => execute_build(&state, &job).await,
+        Some(job) => {
+            // Hard wall-clock deadline for the whole job, on top of the
+            // per-command timeout inside the executors.
+            let deadline = state.config.job_deadline;
+            let execution = async {
+                if job.executor == "lambda" {
+                    lambda_exec::execute(&state, &job, Path::new(&job.log_path)).await
+                } else {
+                    execute_build(&state, &job).await
+                }
+            };
+            match timeout(deadline, execution).await {
+                Ok(result) => result,
+                Err(_) => Err(format!("job exceeded overall deadline of {deadline:?}")),
+            }
+        }
         None => Err("job disappeared before execution".to_string()),
     };
+
+    if let Some(grant) = grant.as_ref() {
+        fiducia::release_lock(&state.http, &state.config, grant).await;
+    }
+
+    // Workdir GC: the cloned repo is scratch space; keep only the build log
+    // unless the operator opts into keeping workdirs for debugging.
+    if !state.config.keep_workdirs {
+        let repo_dir = state.config.work_root.join(&id).join("repo");
+        if let Err(error) = fs::remove_dir_all(&repo_dir).await {
+            if error.kind() != std::io::ErrorKind::NotFound {
+                tracing::warn!("failed to remove workdir {}: {error}", repo_dir.display());
+            }
+        }
+    }
 
     state.counters.running.fetch_sub(1, Ordering::Relaxed);
     drop(permit);
@@ -1224,15 +1570,20 @@ async fn run_job(state: AppState, id: String) {
     }
 }
 
-async fn descriptor() -> impl IntoResponse {
+async fn descriptor(State(state): State<AppState>) -> impl IntoResponse {
+    let config = &state.config;
     Json(json!({
         "service": SERVICE_NAME,
-        "description": "Authenticated Rust build server for repo image builds and controlled Kubernetes deploys.",
+        "description": "Authenticated Rust build server for repo image builds and controlled Kubernetes deploys, with fiducia.cloud build locks, Postgres persistence, NATS events, webhooks, and GitHub secret sync.",
         "endpoints": {
             "submit": "POST /builds",
             "list": "GET /builds",
             "status": "GET /builds/<jobId>",
             "logs": "GET /builds/<jobId>/logs",
+            "githubWebhook": "POST /webhooks/github",
+            "registryWebhook": "POST /webhooks/registry",
+            "syncSecrets": "POST /secrets/sync",
+            "syncSecretsStatus": "GET /secrets/sync/status",
             "healthz": "GET /healthz",
             "metrics": "GET /metrics"
         },
@@ -1240,10 +1591,29 @@ async fn descriptor() -> impl IntoResponse {
             "schemaVersion": "build-server.v1",
             "jobKind": ["build-image", "build-and-deploy"],
             "required": ["repoUrl", "image"],
-            "optional": ["gitRef", "contextDir", "dockerfile", "buildArgs", "push", "deploy"]
+            "optional": ["gitRef", "contextDir", "dockerfile", "buildArgs", "push", "deploy", "executor", "requestId"]
         },
+        "executors": ["local", "lambda"],
         "pushRegistries": ["amazon-ecr"],
-        "deployKinds": ["kustomize", "manifest", "none"]
+        "deployKinds": ["kustomize", "manifest", "none"],
+        "coordination": {
+            "provider": "fiducia.cloud",
+            "enabled": config.coordination_enabled,
+            "required": config.coordination_required
+        },
+        "persistence": { "postgres": config.database_url.is_some(), "database": "dd_build_server" },
+        "messaging": {
+            "nats": config.nats_enabled,
+            "intake": config.nats_intake_enabled,
+            "eventSubject": config.nats_event_subject,
+            "requestSubject": config.nats_request_subject
+        },
+        "webhooks": {
+            "github": config.github_webhook_secret.is_some(),
+            "registry": config.registry_webhook_secret.is_some(),
+            "rules": config.webhook_rules.len()
+        },
+        "secretSync": { "enabled": config.gh_sync_enabled, "rules": config.gh_sync_rules.len() }
     }))
 }
 
@@ -1363,6 +1733,40 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
         state.counters.ecr_login_failures.load(Ordering::Relaxed),
     );
     body.push_str(&format!(
+        "# HELP dd_build_server_locks_acquired_total fiducia.cloud build locks acquired.\n\
+         # TYPE dd_build_server_locks_acquired_total counter\n\
+         dd_build_server_locks_acquired_total {}\n\
+         # HELP dd_build_server_lock_failures_total fiducia lock contention or unavailability.\n\
+         # TYPE dd_build_server_lock_failures_total counter\n\
+         dd_build_server_lock_failures_total {}\n\
+         # HELP dd_build_server_webhooks_received_total Inbound webhooks accepted (after auth).\n\
+         # TYPE dd_build_server_webhooks_received_total counter\n\
+         dd_build_server_webhooks_received_total {}\n\
+         # HELP dd_build_server_webhooks_rejected_total Inbound webhooks rejected (bad signature/secret).\n\
+         # TYPE dd_build_server_webhooks_rejected_total counter\n\
+         dd_build_server_webhooks_rejected_total {}\n\
+         # HELP dd_build_server_nats_published_total NATS events published.\n\
+         # TYPE dd_build_server_nats_published_total counter\n\
+         dd_build_server_nats_published_total {}\n\
+         # HELP dd_build_server_nats_publish_failures_total NATS publish failures.\n\
+         # TYPE dd_build_server_nats_publish_failures_total counter\n\
+         dd_build_server_nats_publish_failures_total {}\n\
+         # HELP dd_build_server_gh_secrets_synced_total GitHub Actions secrets synced.\n\
+         # TYPE dd_build_server_gh_secrets_synced_total counter\n\
+         dd_build_server_gh_secrets_synced_total {}\n\
+         # HELP dd_build_server_gh_secret_sync_failures_total GitHub Actions secret sync failures.\n\
+         # TYPE dd_build_server_gh_secret_sync_failures_total counter\n\
+         dd_build_server_gh_secret_sync_failures_total {}\n",
+        state.counters.locks_acquired.load(Ordering::Relaxed),
+        state.counters.lock_failures.load(Ordering::Relaxed),
+        state.counters.webhooks_received.load(Ordering::Relaxed),
+        state.counters.webhooks_rejected.load(Ordering::Relaxed),
+        state.counters.nats_published.load(Ordering::Relaxed),
+        state.counters.nats_publish_failures.load(Ordering::Relaxed),
+        state.counters.gh_secrets_synced.load(Ordering::Relaxed),
+        state.counters.gh_secret_sync_failures.load(Ordering::Relaxed),
+    ));
+    body.push_str(&format!(
         "# HELP dd_build_server_dependencies_ready Whether auth, work storage, and required build tools are available.\n\
          # TYPE dd_build_server_dependencies_ready gauge\n\
          dd_build_server_dependencies_ready {}\n",
@@ -1377,19 +1781,66 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
     )
 }
 
-async fn submit_build(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(request): Json<BuildRequest>,
-) -> Response {
-    if let Err(response) = require_auth(&headers, &state) {
-        return response;
-    }
+/// Failure classes for the NATS intake path (drives ack vs term vs nak).
+pub enum NatsSubmitError {
+    /// Permanently invalid — the message can never succeed (bad JSON/schema).
+    Invalid(String),
+    /// Transient — queue full or a dependency is down; redeliver later.
+    Transient(String),
+}
+
+/// Validate + enqueue a build, shared by the HTTP, webhook, and NATS paths.
+/// Applies queue backpressure and best-effort in-process requestId dedupe.
+async fn enqueue_build(
+    state: &AppState,
+    request: BuildRequest,
+    source: &str,
+) -> Result<BuildJobRecord, (StatusCode, String)> {
     if let Err(error) = validate_build_request(&state.config, &request) {
         state.counters.rejected.fetch_add(1, Ordering::Relaxed);
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response();
+        return Err((StatusCode::BAD_REQUEST, error));
     }
 
+    // In-process dedupe for at-least-once transports. fiducia idempotency
+    // leases and the JetStream Nats-Msg-Id are the cross-replica guards; this
+    // just collapses a burst of same-process redelivery.
+    if let Some(request_id) = clean_optional(request.request_id.as_deref()) {
+        let mut seen = state.recent_request_ids.write().await;
+        if !seen.insert(request_id.clone()) {
+            return Err((
+                StatusCode::CONFLICT,
+                format!("requestId {request_id} was already accepted"),
+            ));
+        }
+        if seen.len() > 4096 {
+            seen.clear();
+        }
+    }
+
+    // Backpressure: bound the queue so authenticated callers cannot grow
+    // memory (and the on-disk job tree) without limit.
+    {
+        let jobs = state.jobs.read().await;
+        let queued = jobs
+            .values()
+            .filter(|job| matches!(job.status, BuildStatus::Queued))
+            .count();
+        if queued >= state.config.max_queued {
+            state.counters.rejected.fetch_add(1, Ordering::Relaxed);
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                format!(
+                    "build queue is full ({queued} queued; limit {})",
+                    state.config.max_queued
+                ),
+            ));
+        }
+    }
+
+    let executor = request
+        .executor
+        .clone()
+        .unwrap_or_else(|| "local".to_string());
     let counter = state.counters.submitted.fetch_add(1, Ordering::Relaxed) + 1;
     let id = job_id(counter);
     let job_dir = state.config.work_root.join(&id);
@@ -1398,25 +1849,92 @@ async fn submit_build(
         id: id.clone(),
         status: BuildStatus::Queued,
         request,
+        source: source.to_string(),
+        executor,
         created_at_ms: now_ms(),
         started_at_ms: None,
         finished_at_ms: None,
         log_path: log_path.to_string_lossy().to_string(),
         error: None,
+        lock_key: None,
+        fencing_token: None,
     };
 
     {
         let mut jobs = state.jobs.write().await;
         jobs.insert(id.clone(), record.clone());
     }
-    prune_jobs(&state).await;
+    if let Some(db) = state.db.as_ref() {
+        db::persist_job(db, &record).await;
+    }
+    prune_jobs(state).await;
 
     let task_state = state.clone();
+    let task_id = id.clone();
     tokio::spawn(async move {
-        run_job(task_state, id).await;
+        run_job(task_state, task_id).await;
     });
 
-    (StatusCode::ACCEPTED, Json(record)).into_response()
+    Ok(record)
+}
+
+/// NATS intake: parse a build-server.v1 document and enqueue it.
+async fn submit_from_nats(state: &AppState, payload: &[u8]) -> Result<(), NatsSubmitError> {
+    let request: BuildRequest = serde_json::from_slice(payload)
+        .map_err(|error| NatsSubmitError::Invalid(format!("invalid build request JSON: {error}")))?;
+    match enqueue_build(state, request, "nats").await {
+        Ok(_) => Ok(()),
+        Err((StatusCode::CONFLICT, message)) => {
+            tracing::info!("nats build request deduped: {message}");
+            Ok(())
+        }
+        Err((StatusCode::SERVICE_UNAVAILABLE, message)) => {
+            Err(NatsSubmitError::Transient(message))
+        }
+        Err((_, message)) => Err(NatsSubmitError::Invalid(message)),
+    }
+}
+
+async fn submit_build(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<BuildRequest>,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return response;
+    }
+    match enqueue_build(&state, request, "http").await {
+        Ok(record) => (StatusCode::ACCEPTED, Json(record)).into_response(),
+        Err((status, message)) => {
+            (status, Json(json!({ "error": message }))).into_response()
+        }
+    }
+}
+
+async fn sync_secrets(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return response;
+    }
+    if !state.config.gh_sync_enabled {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "gh secret sync is disabled by BUILD_SERVER_GH_SYNC_ENABLED=false" })),
+        )
+            .into_response();
+    }
+    let outcomes = gh_secrets::sync_all(&state).await;
+    (StatusCode::OK, Json(json!({ "outcomes": outcomes }))).into_response()
+}
+
+async fn sync_secrets_status(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return response;
+    }
+    let runs = match state.db.as_ref() {
+        Some(db) => db::recent_secret_sync_runs(db, 100).await,
+        None => Vec::new(),
+    };
+    (StatusCode::OK, Json(json!({ "runs": runs }))).into_response()
 }
 
 async fn list_builds(State(state): State<AppState>, headers: HeaderMap) -> Response {
@@ -1430,7 +1948,37 @@ async fn list_builds(State(state): State<AppState>, headers: HeaderMap) -> Respo
         .values()
         .cloned()
         .collect::<Vec<_>>();
-    jobs.sort_by(|a, b| b.created_at_ms.cmp(&a.created_at_ms));
+    jobs.sort_by_key(|job| std::cmp::Reverse(job.created_at_ms));
+    // With persistence on, also surface recent jobs from prior processes
+    // (the in-memory map only holds this process's jobs).
+    if let Some(db) = state.db.as_ref() {
+        let known: HashSet<String> = jobs.iter().map(|job| job.id.clone()).collect();
+        let persisted = db::recent_jobs(db, 200).await;
+        let mut merged = persisted
+            .into_iter()
+            .filter(|row| !known.contains(&row.id))
+            .map(|row| {
+                json!({
+                    "id": row.id,
+                    "status": row.status,
+                    "jobKind": row.job_kind,
+                    "source": row.source,
+                    "executor": row.executor,
+                    "repoUrl": row.repo_url,
+                    "gitRef": row.git_ref,
+                    "image": row.image,
+                    "error": row.error,
+                    "persisted": true,
+                })
+            })
+            .collect::<Vec<_>>();
+        let mut live = jobs
+            .iter()
+            .map(|job| serde_json::to_value(job).unwrap_or(serde_json::Value::Null))
+            .collect::<Vec<_>>();
+        live.append(&mut merged);
+        return Json(live).into_response();
+    }
     Json(jobs).into_response()
 }
 
@@ -1514,13 +2062,59 @@ async fn main() {
         panic!("failed to create build server work root: {error}");
     }
 
+    // Optional Postgres persistence (own database dd_build_server on RDS). A
+    // connection failure is fatal only when a URL was configured — it signals
+    // misconfiguration; with no URL the server runs in-memory as before.
+    let db = match config.database_url.as_deref() {
+        Some(url) => match db::connect(url).await {
+            Ok(connection) => {
+                db::fail_interrupted_jobs(&connection).await;
+                Some(connection)
+            }
+            Err(error) => panic!("BUILD_SERVER_DATABASE_URL was set but connect failed: {error}"),
+        },
+        None => {
+            tracing::info!("no BUILD_SERVER_DATABASE_URL configured; running with in-memory jobs only");
+            None
+        }
+    };
+
+    // Optional NATS (on by default; failure is non-fatal — the server still
+    // serves HTTP, it just won't publish/consume events).
+    let nats = if config.nats_enabled {
+        match events::connect(&config.nats_url).await {
+            Ok(client) => Some(client),
+            Err(error) => {
+                tracing::warn!("NATS disabled: {error}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    let holder = format!("dd-build-server/{}", uuid::Uuid::new_v4());
+
     let state = AppState {
-        config,
+        config: config.clone(),
         http: reqwest::Client::new(),
         jobs: Arc::new(RwLock::new(HashMap::new())),
         semaphore: Arc::new(Semaphore::new(max_concurrent)),
         counters: Arc::new(Counters::default()),
+        db,
+        nats,
+        holder,
+        recent_request_ids: Arc::new(RwLock::new(HashSet::new())),
     };
+
+    // Durable JetStream build-request intake (opt-in).
+    if config.nats_intake_enabled && state.nats.is_some() {
+        tokio::spawn(events::run_request_intake(state.clone()));
+    }
+    // Periodic GitHub Actions secret sync (opt-in; 0 interval = manual only).
+    if config.gh_sync_enabled && !config.gh_sync_interval.is_zero() {
+        tokio::spawn(gh_secrets::run_periodic_sync(state.clone()));
+    }
 
     let app = Router::new()
         .route("/", get(descriptor))
@@ -1533,6 +2127,10 @@ async fn main() {
         .route("/builds", get(list_builds).post(submit_build))
         .route("/builds/:job_id", get(get_build))
         .route("/builds/:job_id/logs", get(get_build_logs))
+        .route("/webhooks/github", post(webhooks::github_webhook))
+        .route("/webhooks/registry", post(webhooks::registry_webhook))
+        .route("/secrets/sync", post(sync_secrets))
+        .route("/secrets/sync/status", get(sync_secrets_status))
         .with_state(state)
         .merge(dd_runtime_config_client::router());
 

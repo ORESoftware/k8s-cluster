@@ -10,6 +10,9 @@
     "audit:gateway-pages": "node ui-gateway-sweep.mjs",
     "test:cli": "node cli-smoke.mjs",
     "test:cli:ai-ml-platform": "pnpm exec tsx --test general/ai-ml-platform-config.test.ts",
+    "test:cli:athleto-app-config": "pnpm exec tsx --test general/athleto-app-config.test.ts",
+    "test:cli:athleto-app-routing": "pnpm exec tsx --test general/athleto-app-routing.test.ts",
+    "test:cli:athleto-backend-config": "pnpm exec tsx --test general/athleto-backend-config.test.ts",
     "test:cli:bastion-config": "pnpm exec tsx --test general/bastion-config.test.ts",
     "test:cli:browser-job-runner-config": "pnpm exec tsx --test general/browser-job-runner-config.test.ts",
     "test:cli:browser-test-server-config": "pnpm exec tsx --test general/browser-test-server-config.test.ts",
@@ -60,9 +63,14 @@
     "test:cli:ws-loadtest-config": "pnpm exec tsx --test general/ws-loadtest-config.test.ts",
     "test:ui:playwright": "node ui-playwright-smoke.mjs",
     "test:ui:puppeteer": "node ui-puppeteer-smoke.mjs",
+    "test:ui:fiducia-customer": "node fiducia-customer-portal-smoke.mjs",
     "test:ui:sweep": "node ui-gateway-sweep.mjs",
     "test:ui:benefactor": "node benefactor-site-smoke.mjs",
-    "test:all": "pnpm run test:cli && pnpm run test:ui:playwright && pnpm run test:ui:puppeteer"
+    "test:ui:athleto": "node --test ui/*.test.mjs",
+    "test:ui:athleto:marketing": "node --test ui/athleto-marketing.playwright.test.mjs ui/athleto-marketing.puppeteer.test.mjs",
+    "test:ui:athleto:app": "node --test ui/athleto-app.playwright.test.mjs",
+    "test:athleto": "pnpm run test:cli:athleto-backend-config && pnpm run test:cli:athleto-app-config && pnpm run test:cli:athleto-app-routing && pnpm run test:ui:athleto",
+    "test:all": "pnpm run test:cli && pnpm run test:ui:playwright && pnpm run test:ui:puppeteer && pnpm run test:ui:fiducia-customer && pnpm run test:ui:benefactor && pnpm run test:athleto"
   },
   "devDependencies": {
     "playwright": "^1.60.0",

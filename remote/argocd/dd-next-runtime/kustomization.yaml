@@ -22,6 +22,7 @@ resources:
   - dd-container-pool.networkpolicy.yaml
   - dd-container-pool.service.yaml
   - dd-build-server-rbac.yaml
+  - dd-build-server.configmap.yaml
   - dd-build-server.deployment.yaml
   - dd-build-server.service.yaml
   - dd-build-server.networkpolicy.yaml
