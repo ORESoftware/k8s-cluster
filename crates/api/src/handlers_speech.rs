@@ -185,6 +185,7 @@ async fn run_tts(
         None => AudioFormat::Wav,
     };
 
+    let _permit = state.acquire_llm()?;
     let (bytes, voice_used, model) = state
         .llm
         .synthesize(&SpeechRequest {
