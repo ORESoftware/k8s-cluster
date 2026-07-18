@@ -70,7 +70,13 @@ case "$cmd" in
       echo "BUILD_SERVER_DATABASE_URL, DATABASE_URL)." >&2
       exit 1
     fi
-    exec dpm "$cmd" --source "$schema_sql" --target "$target" "$@"
+    # Hand the target (which carries the password) to dpm via the environment,
+    # not `--target` on its argv — argv is world-readable via `ps`/procfs, and
+    # SHADOW_DATABASE_URL already reaches dpm the same way. dpm reads
+    # TARGET_DATABASE_URL directly, so the credential never appears in a process
+    # listing.
+    export TARGET_DATABASE_URL="$target"
+    exec dpm "$cmd" --source "$schema_sql" "$@"
     ;;
   *)
     exec dpm "$cmd" "$@"
