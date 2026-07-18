@@ -348,11 +348,9 @@ mod tests {
 
     #[test]
     fn auth_client_rejects_privileged_api_keys() {
-        assert!(SupabaseAuth::new(
-            "https://example.supabase.co".into(),
-            "sb_secret_x".into(),
-        )
-        .is_err());
+        assert!(
+            SupabaseAuth::new("https://example.supabase.co".into(), "sb_secret_x".into(),).is_err()
+        );
 
         let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"HS256"}"#);
         let payload = URL_SAFE_NO_PAD.encode(br#"{"role":"service_role"}"#);
