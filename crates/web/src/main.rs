@@ -8,15 +8,23 @@
 //!
 //! Deploys separately from t2v-api.
 
+mod assets;
 mod db;
 mod routes;
 mod state;
 mod views;
 
+use axum::middleware::from_fn;
 use axum::routing::get;
 use axum::Router;
 use state::AppState;
 use std::net::SocketAddr;
+use std::time::Duration;
+use tower_http::timeout::TimeoutLayer;
+
+/// Backstop request timeout. The action proxy to t2v-api has its own 190s
+/// client timeout; this bounds everything else (including slow request bodies).
+const REQUEST_TIMEOUT_SECS: u64 = 200;
 
 fn init_tracing() {
     use tracing_subscriber::{fmt, prelude::*, EnvFilter};
