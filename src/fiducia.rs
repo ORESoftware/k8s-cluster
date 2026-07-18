@@ -224,14 +224,14 @@ impl FiduciaCoordinator {
         i64::try_from(ttl_ms)
             .map_err(|_| AppError::BadRequest("lease TTL exceeds i64 milliseconds".into()))?;
         let name = name.to_string();
-        let candidate = candidate.to_string();
-        let candidate_for_request = candidate.clone();
+        let expected_candidate = candidate.to_string();
+        let request_candidate = expected_candidate.clone();
         let control = self.mutation_control();
         let response = self
             .call(move |client| {
                 client.election_campaign_with_options(
                     &name,
-                    &candidate_for_request,
+                    &request_candidate,
                     ttl_ms,
                     Some(json!(metadata)),
                     control,
@@ -243,7 +243,11 @@ impl FiduciaCoordinator {
             let leadership = output
                 .leadership
                 .ok_or_else(|| protocol_error("lease campaign won without leadership details"))?;
-            Ok(Some(validate_leadership(leadership, &candidate, None)?))
+            Ok(Some(validate_leadership(
+                leadership,
+                &expected_candidate,
+                None,
+            )?))
         } else {
             Ok(None)
         }
@@ -269,14 +273,14 @@ impl FiduciaCoordinator {
         i64::try_from(ttl_ms)
             .map_err(|_| AppError::BadRequest("lease TTL exceeds i64 milliseconds".into()))?;
         let name = name.to_string();
-        let candidate = candidate.to_string();
-        let candidate_for_request = candidate.clone();
+        let expected_candidate = candidate.to_string();
+        let request_candidate = expected_candidate.clone();
         let control = self.mutation_control();
         let response = self
             .call(move |client| {
                 client.election_renew_with_options(
                     &name,
-                    &candidate_for_request,
+                    &request_candidate,
                     fencing_token,
                     Some(ttl_ms),
                     control,
@@ -290,7 +294,7 @@ impl FiduciaCoordinator {
             })?;
             Ok(Some(validate_leadership(
                 leadership,
-                &candidate,
+                &expected_candidate,
                 Some(fencing_token),
             )?))
         } else {
