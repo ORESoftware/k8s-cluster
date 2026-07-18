@@ -554,6 +554,17 @@ acknowledged for redelivery. Generated
 machine code is intentionally advisory: responses are draft planning artifacts
 and are not marked machine-ready.
 
+When both `FIDUCIA_URL` and `FIDUCIA_API_KEY` are set, the server fills missing
+`NATS_URL`, `NATS_TOKEN`, and `NATS_NKEY` values from the allowlisted Fiducia KV
+keys `secrets/daedalus/<ENV_NAME>`. Direct environment variables always win, and
+`NATS_CREDENTIALS_FILE` remains environment-only. The client requires HTTPS for
+public endpoints, permits HTTP only for loopback/private/cluster hosts, disables
+redirects, bounds response size and time, and never logs returned values. Fiducia
+may report either node-encrypted or explicitly plaintext storage; encryption
+keys belong in its external Vault Transit backend or versioned injected keyring,
+not in this service. Partial Fiducia configuration is rejected and a provider
+outage leaves the existing environment configuration active.
+
 Outbound Core NATS publishes are followed by a broker `flush()` before they are
 counted as delivered. `dd_fabrication_server_nats_publish_failures_total`
 records either publish or flush failure, while structured error logs flow to
@@ -7452,6 +7463,70 @@ runtime inspection boundary while the database contract is still being designed.
   `monitoringPlan`, `interfaceControlPlan`, and `releasePackagePlan` for
   one-payload handoff review.
 
+## Service Architecture
+
+`src/main.rs` is only the Tokio executable boundary and delegates to the
+library. Runtime concerns are kept in focused modules:
+
+- `config.rs` owns environment parsing and the Kubernetes-facing service
+  defaults.
+- `persistence.rs` owns the optional SeaORM Postgres pool and readiness check.
+- `observability.rs` owns service telemetry initialization and structured
+  lifecycle fields.
+- `metrics.rs` owns the low-cardinality counters rendered by `/metrics`.
+- `secrets.rs` owns the allowlisted Fiducia overlay.
+- `geometry/` and the catalog content modules own their respective domain
+  surfaces.
+
+The library root still composes the existing route and planning surface, but
+the binary no longer contains application, persistence, or telemetry behavior.
+
+## Persistence
+
+Database access is through **SeaORM**; the service has no direct `sqlx`
+dependency. SeaORM's Postgres driver uses its own transitive driver internals,
+but application code imports and exposes only SeaORM types.
+
+The connection is optional until the canonical fabrication tables are added to
+`k8s-cluster/remote/libs/pg-defs/schema/schema.sql`. The current bounded job and
+learning ledgers therefore remain in process; the service does not create
+tables or run migrations. Configure the connection, in precedence order, with
+`FABRICATION_DATABASE_URL`, `RDS_DATABASE_URL`, or `DATABASE_URL`.
+`FABRICATION_DATABASE_REQUIRED=true` makes a missing URL a startup error.
+`FABRICATION_DATABASE_MIN_CONNECTIONS` and
+`FABRICATION_DATABASE_MAX_CONNECTIONS` bound the pool. When enabled, `/readyz`
+performs a bounded SeaORM ping and reports the database check without returning
+connection details.
+
+## Observability
+
+The service follows the ORES Kubernetes telemetry boundary:
+
+- structured `tracing` JSON goes to the container stream, where Promtail ships
+  it to Loki;
+- inbound HTTP, SeaORM readiness, and NATS publish/consume work create explicit
+  OpenTelemetry spans exported through the configured OTLP collector;
+- low-cardinality service metrics remain pull-based at `/metrics` for
+  Prometheus, including `dd_fabrication_server_persistence_enabled`.
+
+This intentionally does not push logs directly to Loki or duplicate the
+Prometheus scrape through an application-side exporter. Configure OTLP with
+`OTEL_EXPORTER_OTLP_ENDPOINT` or the signal-specific OpenTelemetry variables;
+the deployment collector and Prometheus scrape definitions live in
+`~/codes/ores/k8s-cluster/remote/argocd/observability`.
+
+## Kubernetes And Submodules
+
+This repository is canonical. The runtime checkout at
+`~/codes/ores/k8s-cluster/remote/deployments/fabrication-server-rs` is a
+secondary git submodule and must not be edited directly. After these changes
+are reviewed and merged here, update that superproject's submodule pointer on
+its normal integration branch. The deployment already mounts the complete
+source tree, builds the locked Rust binary, permits OTLP egress, and exposes
+`/metrics` to Prometheus; enabling database persistence additionally requires a
+reviewed `pg-defs` schema, a narrow database secret projection, and matching
+NetworkPolicy egress.
+
 ## Local Build
 
 ```bash
@@ -7462,4 +7537,5 @@ cargo run --release
 
 The default local port is `8113`; set `PORT` to override it.
 
-> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).
+> **ORM policy:** application database code uses **SeaORM**, not direct sqlx
+> (MASH stack: maud, axum, SeaORM, supabase, htmx).
