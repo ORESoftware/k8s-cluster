@@ -1,0 +1,91 @@
+name: browser e2e
+
+# Hermetic browser end-to-end tests: real in-repo front-end assets (the
+# dd-browser-drafts service worker and the dd-func-approx UI) are served from a
+# throwaway localhost server and driven through node:test. The suite runs under
+# BOTH Puppeteer and Playwright — one matrix job per engine, so a regression in
+# either engine's runner shows up as its own red check.
+
+on:
+  pull_request:
+    paths:
+      - 'remote/tests/browser/**'
+      - 'remote/tests/package.json'
+      - 'remote/tests/pnpm-lock.yaml'
+      - 'remote/deployments/func-approx-rs/ui.html'
+      - 'remote/libs'
+      - '.github/workflows/browser-e2e.yml'
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - 'remote/tests/browser/**'
+      - 'remote/tests/package.json'
+      - 'remote/tests/pnpm-lock.yaml'
+      - 'remote/deployments/func-approx-rs/ui.html'
+      - 'remote/libs'
+      - '.github/workflows/browser-e2e.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-e2e-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  browser:
+    name: ${{ matrix.engine }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [puppeteer, playwright]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The service worker under test lives in the remote/libs submodule
+      # (ORESoftware/k8s-libs-and-shared-defs). Only that submodule is needed;
+      # its nested async-java submodule is pinned to an SSH URL, so rewrite
+      # git@github.com: to HTTPS (checkout's persisted token authenticates the
+      # HTTPS fetch). The func-approx UI is a plain in-repo file.
+      - name: Init remote/libs submodule only
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule update --init --recursive --depth 1 remote/libs
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Install test dependencies
+        working-directory: remote/tests
+        run: pnpm install --frozen-lockfile
+
+      # Playwright's Chromium ships the system libraries (fonts, libnss, etc.)
+      # that Puppeteer's Chromium also needs, so `--with-deps` provisions both
+      # engines. Puppeteer's own browser is fetched too, so the puppeteer job
+      # exercises Puppeteer's binary (with a Playwright-Chromium fallback baked
+      # into the harness if that download ever fails).
+      - name: Install browsers
+        working-directory: remote/tests
+        run: |
+          pnpm exec playwright install --with-deps chromium
+          pnpm exec puppeteer browsers install chrome
+
+      - name: Run browser E2E (${{ matrix.engine }})
+        working-directory: remote/tests
+        env:
+          BROWSER_ENGINES: ${{ matrix.engine }}
+        run: node --test browser/service-worker.test.mjs browser/func-approx-ui.test.mjs
