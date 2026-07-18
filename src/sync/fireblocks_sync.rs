@@ -10,8 +10,6 @@
 //! `provider_connections.last_sync_cursor`. Fireblocks paginates
 //! forward via `after=<epoch_ms>`.
 
-use sea_orm::ConnectionTrait;
-
 use crate::error::{AppError, AppResult};
 use crate::ledger::{AccountKind, Direction, DraftPosting, DraftTransaction};
 use crate::money::Currency;
@@ -277,41 +275,21 @@ async fn record_observability(
     conn: &ProviderConnection,
     tx: &FireblocksTransaction,
 ) -> AppResult<()> {
-    // NOTE: preserved verbatim from the sqlx original (including the
-    // swallowed error): this INSERT references columns that do not exist on
-    // `provider_balance_snapshots` (see schema/schema.sql), so it has always
-    // failed silently at runtime. Kept behavior-identical during the SeaORM
-    // conversion rather than silently starting to write new data.
-    let _ = ctx
-        .pool
-        .execute(crate::db::stmt(
-            r#"
-        INSERT INTO provider_balance_snapshots
-            (tenant_id, shard_key, provider, external_account_id, asset_symbol,
-             balance_minor, currency, captured_at, metadata)
-        VALUES ($1, $2, 'fireblocks'::provider_kind, $3, $4,
-                0::NUMERIC(38,0), $4, now(), $5)
-        ON CONFLICT DO NOTHING
-        "#,
-            [
-                ctx.tenant_id.into(),
-                crate::shard::ShardKey::derive(ctx.tenant_id, ctx.region).0.into(),
-                conn.external_account_id.as_deref().unwrap_or("?").into(),
-                tx.asset_id.as_deref().unwrap_or("?").into(),
-                serde_json::json!({
-                    "fireblocks_tx_id": tx.id,
-                    "fireblocks_status": tx.status,
-                    "fireblocks_amount": tx.amount,
-                    "fireblocks_net_amount": tx.net_amount,
-                    "fireblocks_asset_id": tx.asset_id,
-                    "fireblocks_tx_hash": tx.tx_hash,
-                    "note": "non-fiat crypto: recorded for observability only \
-                 (price oracle integration deferred)",
-                })
-                .into(),
-            ],
-        ))
-        .await;
+    // Non-fiat crypto flows have no fiat amount to snapshot until the price
+    // oracle integration lands, and `provider_balance_snapshots` is a
+    // connection-keyed fiat balance table — so this observability record goes
+    // to the structured log stream, not the database.
+    tracing::info!(
+        tenant_id = %ctx.tenant_id,
+        external_account_id = conn.external_account_id.as_deref().unwrap_or("?"),
+        fireblocks_tx_id = %tx.id,
+        fireblocks_status = %tx.status,
+        fireblocks_asset_id = tx.asset_id.as_deref().unwrap_or("?"),
+        fireblocks_amount = tx.amount,
+        fireblocks_net_amount = tx.net_amount,
+        fireblocks_tx_hash = tx.tx_hash.as_deref().unwrap_or("?"),
+        "skipped non-fiat fireblocks transaction (price oracle deferred); recorded for observability"
+    );
     Ok(())
 }
 
