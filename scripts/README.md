@@ -17,6 +17,9 @@ scripts are `bash`, start with `set -euo pipefail`, never `git push`, and offer
   unlocked Cargo commands, dependency lifecycle hooks, moving sibling refs,
   non-digest base images, missing Docker Dependabot coverage, unsafe runtime
   identities, unreproducible README commands, readme app-list drift, and
-  visibility-policy drift. Rust services are distroless/nonroot by default;
+  visibility-policy drift. It also requires an exact `README.md` in every
+  non-ignored directory containing tracked files (generated build output,
+  vendored gitlinks, `target`, `dist`, and `node_modules` are excluded). Rust
+  services are distroless/nonroot by default;
   OS-tool runners require the explicit `tool-runner-nonroot` profile and uid/gid
   `65532:65532`.

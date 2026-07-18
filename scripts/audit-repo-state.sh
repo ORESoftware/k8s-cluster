@@ -5,7 +5,8 @@ set -euo pipefail
 # checkouts, conflict markers, tracked/committed secrets, mutable or fail-open
 # workflows, dependency lifecycle hooks, unpinned container bases, unsafe
 # runtime identities, missing Docker update automation, unreproducible README
-# commands, readme app-list drift, and visibility-policy drift. Rust tool runners
+# commands, tracked directories without README entrypoints, readme app-list drift,
+# and visibility-policy drift. Rust tool runners
 # may use the explicit audited `tool-runner-nonroot` profile when their contract
 # requires OS executables.
 
@@ -127,17 +128,36 @@ scan_action_pins() {
   local label="$2"
   local action_output
 
+  # Immutable pins come in two shapes: a 40-hex commit SHA for repo actions,
+  # and a sha256 content digest for `docker://` actions (a digest is at least
+  # as immutable as a commit — the registry resolves it content-addressed).
   action_output="$(
     git -C "$repo" grep -n -E \
       'uses:[[:space:]]*[^[:space:]#]+@[^[:space:]#]+' -- \
       '.github/workflows/*.yml' '.github/workflows/*.yaml' 2>/dev/null \
       | grep -v -E \
-        'uses:[[:space:]]*[^[:space:]#]+@[0-9a-f]{40}([[:space:]]|$)' \
+        'uses:[[:space:]]*[^[:space:]#]+@[0-9a-f]{40}([[:space:]]|$)|uses:[[:space:]]*docker://[^[:space:]#]+@sha256:[0-9a-f]{64}([[:space:]]|$)' \
       || true
   )"
   if [[ -n "$action_output" ]]; then
-    fail "$label has GitHub Actions that are not pinned to full commit SHAs"
+    fail "$label has GitHub Actions that are not pinned to full commit SHAs (or docker digests)"
     printf '%s\n' "$action_output" >&2
+  fi
+
+  # A `docker://image:tag` reference carries no `@` at all, so the primary scan
+  # above never sees it — catch digestless docker actions explicitly.
+  local docker_output
+  docker_output="$(
+    git -C "$repo" grep -n -E \
+      'uses:[[:space:]]*docker://[^[:space:]#]+' -- \
+      '.github/workflows/*.yml' '.github/workflows/*.yaml' 2>/dev/null \
+      | grep -v -E \
+        'docker://[^[:space:]#]+@sha256:[0-9a-f]{64}([[:space:]]|$)' \
+      || true
+  )"
+  if [[ -n "$docker_output" ]]; then
+    fail "$label has docker:// actions without an immutable sha256 digest"
+    printf '%s\n' "$docker_output" >&2
   fi
 }
 
@@ -148,6 +168,64 @@ scan_workflow_hardening() {
   local lifecycle_script_output
   local unlocked_cargo_output
   local moving_ref_output
+  local workflow
+  local runs_on_count
+  local timeout_count
+  local checkout_count
+  local nonpersisting_checkout_count
+  local mutation_output
+  local -a workflow_files=()
+
+  shopt -s nullglob
+  workflow_files=(
+    "$repo"/.github/workflows/*.yml
+    "$repo"/.github/workflows/*.yaml
+  )
+  shopt -u nullglob
+
+  if [[ ${#workflow_files[@]} -eq 0 ]]; then
+    fail "$label has no executable GitHub Actions workflow"
+  fi
+
+  for workflow in "${workflow_files[@]}"; do
+    if ! grep -q '^permissions:' "$workflow"; then
+      fail "$label workflow ${workflow#$repo/} has no explicit top-level permissions"
+    fi
+    if ! grep -q '^concurrency:' "$workflow"; then
+      fail "$label workflow ${workflow#$repo/} has no concurrency policy"
+    fi
+
+    runs_on_count="$(grep -c '^[[:space:]]*runs-on:' "$workflow" || true)"
+    timeout_count="$(grep -c '^[[:space:]]*timeout-minutes:' "$workflow" || true)"
+    if [[ "$runs_on_count" -ne "$timeout_count" ]]; then
+      fail "$label workflow ${workflow#$repo/} does not bound every runner job"
+    fi
+
+    checkout_count="$(grep -c 'uses:[[:space:]]*actions/checkout@' "$workflow" || true)"
+    nonpersisting_checkout_count="$(grep -c 'persist-credentials:[[:space:]]*false' "$workflow" || true)"
+    if [[ "$checkout_count" -ne "$nonpersisting_checkout_count" ]]; then
+      fail "$label workflow ${workflow#$repo/} persists checkout credentials"
+    fi
+
+    if grep -q -E 'pull_request_target:|workflow_run:|issue_comment:' "$workflow"; then
+      fail "$label workflow ${workflow#$repo/} uses a privileged untrusted-code trigger"
+    fi
+    if grep -q -E 'ghcr\.io/fiducia-cloud/[^[:space:]]+:(latest|main|edge)([[:space:]]|$)' "$workflow"; then
+      fail "$label workflow ${workflow#$repo/} publishes or consumes a mutable image tag"
+    fi
+  done
+
+  if [[ "$label" != "superproject" ]]; then
+    mutation_output="$(
+      grep -n -E \
+        'KUBE_CONFIG|kubectl[[:space:]].*(apply|set[[:space:]]+image)|wrangler.*deploy|npm[[:space:]]+run[[:space:]]+deploy' \
+        "${workflow_files[@]}" 2>/dev/null || true
+    )"
+    if [[ -n "$mutation_output" ]]; then
+      fail "$label contains component-repository deployment commands"
+      printf '%s\n' "$mutation_output" >&2
+    fi
+  fi
 
   scan_action_pins "$repo" "$label"
 
@@ -277,10 +355,55 @@ scan_readme_reproducibility() {
   fi
 }
 
+scan_directory_readmes() {
+  local repo="$1"
+  local label="$2"
+  local tracked_path dir gitlink skip
+  local -a gitlinks=()
+  local -a dirs=()
+
+  while IFS= read -r gitlink; do
+    [[ -n "$gitlink" ]] && gitlinks+=("$gitlink")
+  done < <(git -C "$repo" ls-files --stage | awk '$1 == "160000" { sub(/^[^\t]*\t/, ""); print }')
+
+  while IFS= read -r tracked_path; do
+    dir="${tracked_path%/*}"
+    [[ "$dir" == "$tracked_path" || "$dir" == "." ]] && continue
+    case "/$dir/" in
+      */target/*|*/node_modules/*|*/dist/*|*/tmp/*|*/vendor/*) continue ;;
+    esac
+    if git -C "$repo" check-ignore --no-index -q -- "$dir"; then
+      continue
+    fi
+    skip=0
+    # Bash 3.2 (the macOS system Bash) raises an unbound-variable error for an
+    # empty array expansion under `set -u`, even when the array was declared.
+    if [[ ${#gitlinks[@]} -gt 0 ]]; then
+      for gitlink in "${gitlinks[@]}"; do
+        if [[ "$dir" == "$gitlink" || "$dir" == "$gitlink/"* ]]; then
+          skip=1
+          break
+        fi
+      done
+    fi
+    [[ "$skip" == 1 ]] && continue
+    dirs+=("$dir")
+  done < <(git -C "$repo" ls-files)
+
+  [[ ${#dirs[@]} -eq 0 ]] && return
+  while IFS= read -r dir; do
+    [[ -z "$dir" ]] && continue
+    if [[ ! -f "$repo/$dir/README.md" ]]; then
+      fail "$label tracked directory '$dir' is missing README.md"
+    fi
+  done < <(printf '%s\n' "${dirs[@]}" | LC_ALL=C sort -u)
+}
+
 scan_git_repo "$repo_root" "superproject"
 scan_workflow_hardening "$repo_root" "superproject"
 scan_container_hardening "$repo_root" "superproject"
 scan_readme_reproducibility "$repo_root" "superproject"
+scan_directory_readmes "$repo_root" "superproject"
 
 if git submodule status --recursive | grep -Eq '^[+U-]'; then
   fail "submodule checkout does not exactly match an initialized reviewed gitlink"
@@ -339,6 +462,7 @@ for i in "${!module_paths[@]}"; do
   scan_git_repo "$module_path" "$module_path"
   scan_workflow_hardening "$module_path" "$module_path"
   scan_readme_reproducibility "$module_path" "$module_path"
+  scan_directory_readmes "$module_path" "$module_path"
 done
 
 if [[ -f docs/repo-boundaries.md ]]; then

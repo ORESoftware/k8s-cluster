@@ -9,7 +9,7 @@ applied state-machine snapshot on each `fiducia-node`.
 Use embedded RocksDB per node for production durability:
 
 - `fiducia-node.rs`: Raft log, Raft metadata, snapshots, applied coordination
-  state, and watch indexes under `FIDUCIA_NODE_DATA_DIR`.
+  state, and watch indexes under `FIDUCIA_DATA_DIR` (default `/var/lib/fiducia`).
 - `fiducia-interfaces`: Supabase/Postgres schema only for business-plane data:
   orgs, projects, users, RBAC, API keys, mTLS identities, audit, billing, and
   dashboard metadata.
@@ -111,7 +111,7 @@ The useful Fiducia role is ceremony coordination:
   such as production API-key issuance or org-owner transfer.
 
 This track fits `fiducia-auth.rs`, `fiducia-interfaces`, `fiducia-admin.rs`,
-`fiducia-customer-ui.web`, and `fiducia-node.rs`. The product should emphasize
+`fiducia-customer.rs`, and `fiducia-node.rs`. The product should emphasize
 phishing-resistant factors like passkeys/WebAuthn where possible, while using
 Fiducia to make the surrounding lifecycle auditable, race-free, and recoverable.
 
@@ -446,7 +446,7 @@ Additional tracks worth exploring:
 12. **Incident response, legal, healthcare, and regulated workflows**
 
    Owner repos: `fiducia-admin.rs`, `fiducia-auth.rs`,
-   `fiducia-interfaces`, `fiducia-node.rs`, `fiducia-customer-ui.web`.
+   `fiducia-interfaces`, `fiducia-node.rs`, `fiducia-customer.rs`.
 
    Regulated workflows often need auditable handoffs rather than raw storage.
    Fiducia can coordinate who is allowed to act, whose approval is still

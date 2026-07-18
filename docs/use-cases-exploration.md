@@ -277,13 +277,19 @@ problem onto. Grouped by the primitive that powers it.
 - Dynamic endpoint registry replacing stale DNS; health-aware routing;
 - Blue-green / canary member sets; sidecar-mesh membership; locality-aware lookup.
 
-### Composed primitives (need the `future-work.md` build-out)
+### Composed primitives
 
-Higher-level recipes that layer on the above but aren't shipped yet — flag them
-as roadmap, not available today: **distributed barrier / gang scheduling**,
-**countdown latch** (fan-in), **distributed FIFO queue** on the Raft log,
-**sequencer / monotonic ID** service, **saga / workflow** coordinator, **2PC /
-distributed-transaction** coordinator, atomic **multi-key CAS** (same shard), and
+Several of these have since shipped as first-class node primitives
+(fiducia-node.rs `main.rs` mounts them under `/v1`): **fan-in barriers** incl.
+quorum/weighted/veto policies (`/v1/barriers` — covers the countdown-latch
+shape), a **claimable FIFO work queue** (`/v1/tasks` over the indexed queue),
+**counter CAS** (`/v1/counters` with `prev_revision` — single-key CAS), and an
+**approval-escrow effect** flow (`/v1/effects` — the 2PC-adjacent
+prepare/approve/commit shape).
+
+Still roadmap, not available today: **gang scheduling** on top of barriers, a
+**sequencer / monotonic ID** service, a general **saga / workflow** coordinator,
+true **cross-shard 2PC / multi-key CAS** (same-shard only today), and
 **fencing-token-as-a-service** for external stateful systems (DB rows, S3,
 payment idempotency tables).
 

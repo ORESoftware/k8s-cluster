@@ -14,6 +14,9 @@ reports it for an explicit owner decision rather than mutating visibility.
 Individual app repos keep their own visibility boundaries; see
 `docs/repo-boundaries.md`.
 
+The fleet reliability contract for Raft, NATS, and telemetry is
+[`docs/messaging-consensus-observability.md`](docs/messaging-consensus-observability.md).
+
 ## Clone
 
 ```sh
@@ -69,7 +72,8 @@ The audit checks for dirty submodules, stale conflict markers, tracked secret
 files, secret-looking values, mutable or fail-open workflows, unlocked Cargo
 commands, enabled npm dependency hooks, moving sibling refs, container bases
 without immutable digests, unsafe runtime identities, missing Docker update
-automation, unreproducible README examples, README app-list drift, and
+automation, unreproducible README examples, missing tracked-directory READMEs,
+README app-list drift, and
 visibility-policy drift. Workflow actions must use an immutable 40-character
 commit SHA; retain a version comment so dependency automation can keep the pin
 current.
@@ -142,9 +146,3 @@ visibility boundary (see `docs/repo-boundaries.md`), so public SDK/protocol
 repos can coexist with private control-plane/infra/customer repos under one
 integration view. Per-app security posture lives in each submodule's own README;
 submodule internals are never edited from here.
-
-Cross-repo security findings are tracked in two companion docs:
-`docs/SECURITY-AUDIT.md` (flag-based / CI / visibility findings) and
-`docs/architectural-security-findings.md` (open architectural items needing
-cross-repo design — shared-secret identity, web-tier login rate-limiting, infra
-hardening, plus the 2026-07-14 messaging/node code findings).
