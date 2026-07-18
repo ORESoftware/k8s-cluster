@@ -20,7 +20,21 @@ visibility, so public repos (UI, marketing site) coexist with private ones
 | Shared interfaces | [`apps/sonus-auris-interfaces`](apps/sonus-auris-interfaces) | `sonus-auris/sonus-auris-interfaces` |
 | Marketing site | [`apps/sonus-auris-site.web`](apps/sonus-auris-site.web) | `sonus-auris/sonus-auris-site.web` |
 | Desktop app (Rust) | [`apps/desktop.app.rs`](apps/desktop.app.rs) | `sonus-auris/desktop.app.rs` |
+| Console app (Dart/Flutter, desktop + web) | [`apps/sonus-auris-web-desktop.dart`](apps/sonus-auris-web-desktop.dart) | `sonus-auris/sonus-auris-web-desktop.dart` |
+| API server (Rust, JSON + billing webhooks) | [`apps/sonus-auris-api-server.rs`](apps/sonus-auris-api-server.rs) | `sonus-auris/sonus-auris-api-server.rs` |
+| Cloudflare proxy for `sonusauris.app` | [`apps/sonusauris-app-proxy`](apps/sonusauris-app-proxy) | `ORESoftware/sonusauris-app-proxy` |
 | Infra (k8s) | [`apps/sonus-auris.infra`](apps/sonus-auris.infra) | `sonus-auris/sonus-auris.infra` |
+
+## Docs
+
+- [`docs/DEPLOY.md`](docs/DEPLOY.md) — how each app deploys.
+- [`docs/FOLLOWUPS.md`](docs/FOLLOWUPS.md) — what still needs finishing (the
+  paid-tier server enforcement, mobile passwordless UI, web MFA screen, …),
+  prioritized with how-to.
+- [`docs/HARDENING.md`](docs/HARDENING.md) — security / robustness / supply-chain
+  shore-up list.
+- [`docs/SUPABASE_SETUP.md`](docs/SUPABASE_SETUP.md) — the dashboard config that
+  must be done by hand (MFA, SMS, email template).
 
 ## Shared CLI flags
 
