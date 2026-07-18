@@ -93,6 +93,12 @@ spec:
           port: 80
         - protocol: TCP
           port: 443
+        # Supabase Postgres (session pooler) + AWS RDS are public endpoints on
+        # 5432/6543; the customer plane connects out over the public internet.
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 6543
     - to:
         - ipBlock:
             cidr: ::/0
