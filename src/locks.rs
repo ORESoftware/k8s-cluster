@@ -15,6 +15,7 @@
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, Duration, Utc};
+use fiducia_client::types::Leadership;
 use sea_orm::{ConnectionTrait, DatabaseConnection, DatabaseTransaction, TransactionTrait};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -550,11 +551,7 @@ impl LockService {
         Ok(deleted > 0)
     }
 
-    async fn current_remote_lease(
-        &self,
-        name: &str,
-        candidate: &str,
-    ) -> AppResult<fiducia_interfaces::Leadership> {
+    async fn current_remote_lease(&self, name: &str, candidate: &str) -> AppResult<Leadership> {
         let observed = self.fiducia.get_lease(name).await?;
         let Some(leadership) = observed.leadership else {
             return Err(AppError::Conflict("Fiducia lease is not held".into()));
@@ -569,7 +566,7 @@ impl LockService {
 
     async fn compensate_resign(
         &self,
-        leadership: &fiducia_interfaces::Leadership,
+        leadership: &Leadership,
         name: &str,
         candidate: &str,
         operation: &str,
@@ -596,11 +593,7 @@ impl LockService {
     }
 }
 
-async fn advisory_lock(
-    tx: &DatabaseTransaction,
-    tenant_id: Uuid,
-    resource: &str,
-) -> AppResult<()> {
+async fn advisory_lock(tx: &DatabaseTransaction, tenant_id: Uuid, resource: &str) -> AppResult<()> {
     // The one-bigint advisory-lock namespace is independent from the ledger's
     // two-int idempotency namespace. PostgreSQL releases it automatically on
     // commit/rollback, including early error paths.
