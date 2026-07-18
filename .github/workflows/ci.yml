@@ -41,12 +41,16 @@ jobs:
         run: |
           set -euo pipefail
           src=apps/sonus-auris-interfaces/generated/dart/lib/sonus_auris_interfaces.dart
+          # Compare content ignoring whitespace: a vendored copy may be run
+          # through `dart format` (multi-line arrays, blank lines) yet still be
+          # the same contract. Only a real schema/value drift should fail.
+          normalize() { tr -d '[:space:]' < "$1"; }
           fail=0
           for copy in \
             apps/sonus-auris-ui.dart/packages/sonus_auris_interfaces/lib/sonus_auris_interfaces.dart \
             apps/sonus-auris-web-desktop.dart/packages/sonus_auris_interfaces/lib/sonus_auris_interfaces.dart; do
             if [ -f "$copy" ]; then
-              if ! diff -u "$src" "$copy"; then
+              if [ "$(normalize "$src")" != "$(normalize "$copy")" ]; then
                 echo "::error::$copy is stale — re-copy generated/dart from sonus-auris-interfaces"
                 fail=1
               fi
