@@ -13,8 +13,11 @@ pub struct DashboardStats {
     pub vapi_calls: u64,
 }
 
-const HTMX: &str = "https://unpkg.com/htmx.org@1.9.12";
-const HTMX_WS: &str = "https://unpkg.com/htmx.org@1.9.12/dist/ext/ws.js";
+// htmx is vendored and served from our own origin (see assets.rs) so the page
+// needs no external CDN and can run under a strict `script-src 'self'` CSP.
+const HTMX: &str = "/assets/htmx.min.js";
+const HTMX_WS: &str = "/assets/htmx-ws.js";
+const APP_CSS: &str = "/assets/app.css";
 
 pub fn layout(title: &str, body: Markup) -> Markup {
     html! {
