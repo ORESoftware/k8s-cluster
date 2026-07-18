@@ -16,6 +16,24 @@ test('generated outputs are up to date with schema source', () => {
   });
 });
 
+test('single-output checks accept known targets and reject unknown targets', () => {
+  execFileSync(
+    process.execPath,
+    [generatorPath, '--check', '--output=generated/javascript/index.mjs'],
+    { cwd: packageRoot, stdio: ['ignore', 'pipe', 'pipe'] },
+  );
+  for (const output of ['', 'generated/unknown']) {
+    assert.throws(() => execFileSync(
+      process.execPath,
+      [generatorPath, '--check', `--output=${output}`],
+      { cwd: packageRoot, stdio: ['ignore', 'pipe', 'pipe'] },
+    ), (error) => {
+      assert.match(String(error.stderr), /Unknown generated output/);
+      return true;
+    });
+  }
+});
+
 test('typescript output exposes constants for known static subjects', async () => {
   const ts = await readFile(
     path.join(packageRoot, 'generated', 'typescript', 'index.ts'),
@@ -26,6 +44,12 @@ test('typescript output exposes constants for known static subjects', async () =
     'export const RUNTIME_CRITICAL_EVENTS_SUBJECT = "dd.remote.events.critical";',
     'export const ORCHESTRATOR_WAKEUP_SUBJECT = "dd.remote.orchestrator.wakeup";',
     'export const CRON_PROMPTS_SUBJECT = "dd.remote.cron.prompts";',
+    'export const BROWSER_JOB_RESULTS_SUBJECT = "dd.remote.browser_jobs.results";',
+    'export const DOCUMENT_CONVERT_REQUESTS_SUBJECT = "dd.remote.document.convert";',
+    'export const DOCUMENT_CONVERT_RESULTS_SUBJECT = "dd.remote.document.results";',
+    'export const OCR_REQUESTS_SUBJECT = "dd.remote.ocr.requests";',
+    'export const OCR_RESULTS_SUBJECT = "dd.remote.ocr.results";',
+    'export const PUBLIC_DATA_INGEST_DEAD_LETTER_SUBJECT = "dd.remote.public_data.ingest.deadletter";',
     'export const TRADING_SIGNALS_SUBJECT = "dd.remote.trading.signals";',
     'export const LAMBDAS_FUNCTIONS_SUBJECT = "dd.remote.lambdas.functions";',
     'export const WEBSOCKET_EVENTS_SUBJECT = "dd.remote.websocket.events";',
@@ -78,6 +102,8 @@ test('typescript output exposes formatter + parser + wildcard for known paramete
     'presenceBroadcastConvSubject',
     'containerPoolLanguageRequestsSubject',
     'containerPoolEventsSubject',
+    'browserJobEventsSubject',
+    'browserJobResultSubject',
     'cdcRowChangeSubject',
   ]) {
     assert.match(ts, new RegExp(`export function ${fn}\\(`), `missing TS formatter: ${fn}`);
@@ -96,6 +122,8 @@ test('typescript output exposes formatter + parser + wildcard for known paramete
     'export const THREAD_CONTROL_WILDCARD = "dd.remote.thread.*.control";',
     'export const LAMBDAS_INVOKE_WILDCARD = "dd.remote.lambdas.invoke.*";',
     'export const PRESENCE_BROADCAST_CONV_WILDCARD = "presence.broadcast.conv.>";',
+    'export const BROWSER_JOB_EVENTS_WILDCARD = "dd.remote.browser_jobs.*.events";',
+    'export const BROWSER_JOB_RESULT_WILDCARD = "dd.remote.browser_jobs.*.result";',
     'export const CDC_ROW_CHANGE_WILDCARD = "{prefix}.>";',
   ]) {
     assert.ok(ts.includes(wildcard), `missing TS wildcard: ${wildcard}`);
@@ -103,6 +131,8 @@ test('typescript output exposes formatter + parser + wildcard for known paramete
   for (const qg of [
     'export const THREAD_TASKS_QUEUE_GROUP = "dd-remote-thread-preparer";',
     'export const LAMBDAS_INVOKE_QUEUE_GROUP = "dd-gleam-lambda-runner";',
+    'export const DOCUMENT_CONVERT_REQUESTS_QUEUE_GROUP = "dd-document-rs";',
+    'export const OCR_REQUESTS_QUEUE_GROUP = "dd-ocr-rs";',
   ]) {
     assert.ok(ts.includes(qg), `missing TS queue group: ${qg}`);
   }
