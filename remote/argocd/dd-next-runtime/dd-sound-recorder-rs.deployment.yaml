@@ -161,6 +161,8 @@ spec:
               value: '900'
             - name: SOUND_RECORDER_S3_KEY_PREFIX
               value: sound-recorder/segments
+            - name: SOUND_RECORDER_S3_READINESS_OBJECT_KEY
+              value: sound-recorder/segments/.readiness
             - name: SOUND_RECORDER_S3_VERSIONING_MODE
               value: unversioned
             - name: SOUND_RECORDER_OAUTH_STATE_TTL_SECONDS
