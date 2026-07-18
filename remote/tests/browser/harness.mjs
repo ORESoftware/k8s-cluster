@@ -26,8 +26,17 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 export const repoRoot = path.resolve(here, "..", "..", "..");
 export const fixturesDir = path.join(here, "fixtures");
 
-/** The two engines every scenario runs against. */
-export const ENGINES = ["puppeteer", "playwright"];
+// The engines every scenario runs against. Defaults to both; a CI matrix job
+// (or a local run) can narrow it to one with BROWSER_ENGINES=puppeteer, so the
+// "puppeteer" and "playwright" runners are independent jobs over the same suite.
+const ALL_ENGINES = ["puppeteer", "playwright"];
+export const ENGINES = (() => {
+  const requested = (process.env.BROWSER_ENGINES ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (requested.length === 0) return ALL_ENGINES;
+  const unknown = requested.filter((e) => !ALL_ENGINES.includes(e));
+  if (unknown.length) throw new Error(`BROWSER_ENGINES has unknown engine(s): ${unknown.join(", ")}`);
+  return requested;
+})();
 
 const CONTENT_TYPES = {
   ".html": "text/html; charset=utf-8",
