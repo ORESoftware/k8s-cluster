@@ -5,6 +5,9 @@
 > [ORESoftware/k8s-cluster](https://github.com/ORESoftware/k8s-cluster) at
 > `remote/deployments/3fa-web-server-rs` — make changes here, not in that
 > submodule checkout.
+>
+> On disk: source clone `~/codes/3FA-app/3fa-web-server.rs` · submodule checkout
+> `~/codes/ores/k8s-cluster/remote/deployments/3fa-web-server-rs`.
 <!-- END k8s-cluster-submodule-notice -->
 
 # 3fa-web-server.rs — 3FA
@@ -43,7 +46,9 @@ Sibling repos:
   `otpauth://` URI (no external requests), base32 fallback, code form.
   Requires the session cookie; full JWT verification is a documented TODO.
 - `POST /enroll/verify` — RFC 6238 verification (SHA-1, 30 s step, ±1 step skew)
-- `GET /healthz` — liveness
+- `GET /livez`, `GET /healthz` — process liveness (`healthz` is the compatibility alias)
+- `GET /readyz` — traffic readiness
+- `GET /metrics` — bounded Prometheus request metrics
 
 TOTP + base32 are implemented by hand on `hmac` + `sha1` (no `totp-rs`); the
 RFC 6238 test vectors run in `cargo test`.
@@ -56,6 +61,9 @@ RFC 6238 test vectors run in `cargo test`.
 | `SUPABASE_ANON_KEY` | for login | Supabase anon (public) API key                                    |
 | `SERVER_SECRET`     | no       | HMAC key for the enrollment cookie; random at boot if unset        |
 | `PORT`              | no       | Listen port, default `8080`                                        |
+| `BIND_ADDR`         | no       | Full listen address; overrides `PORT`                              |
+| `RUST_LOG`          | no       | Structured-log filter, default `info`                              |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | no | OTLP/HTTP collector base URL                                 |
 
 Without the Supabase vars the site still renders (with a notice) and `POST
 /login` answers `503 Supabase not configured`.
@@ -66,3 +74,37 @@ Without the Supabase vars the site still renders (with a notice) and `POST
 cargo run            # binds 0.0.0.0:8080 (override with PORT)
 cargo test           # TOTP vectors, base32, otpauth URI, route tests
 ```
+
+## Observability
+
+- Structured JSON records go to stdout for Promtail/Loki and contain the active
+  OTEL `trace_id`/`span_id`; passwords, access tokens, TOTP secrets, and email
+  addresses are never logged.
+- Incoming W3C `traceparent` is preserved and server spans export over
+  OTLP/HTTP to the in-cluster collector.
+- `/metrics` exposes low-cardinality request totals, latency, and in-flight
+  counts for Prometheus scraping.
+
+## Layout
+
+```text
+src/main.rs        Minimal binary entrypoint
+src/server.rs      Listener lifecycle and graceful SIGTERM shutdown
+src/config.rs      Environment/Supabase configuration
+src/state.rs       Shared HTTP client, secret, and metrics
+src/app.rs         Routes, middleware, and route integration tests
+src/login.rs       Supabase login flow
+src/enrollment.rs  TOTP enrollment flow
+src/cookies.rs     Signed-cookie helpers
+src/views.rs       Maud page rendering and styles
+src/totp.rs        RFC 4648/6238 primitives
+src/telemetry.rs   OTLP traces and Loki-compatible JSON logs
+src/metrics.rs     Prometheus metrics
+```
+
+## Deployment boundary
+
+Develop and validate in this standalone clone. After the canonical change is
+merged, bump `remote/deployments/3fa-web-server-rs` in `k8s-cluster`; never edit
+the secondary checkout directly. The Kubernetes manifest builds/runs from that
+submodule path and exposes OTLP, Prometheus, and health configuration explicitly.

@@ -75,6 +75,7 @@ pub fn hotp(secret: &[u8], counter: u64, digits: u32) -> String {
 }
 
 /// Six-digit TOTP code for the step containing `unix_seconds`.
+#[cfg(test)]
 pub fn totp_code(secret: &[u8], unix_seconds: u64) -> String {
     hotp(secret, unix_seconds / STEP_SECONDS, 6)
 }

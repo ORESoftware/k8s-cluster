@@ -1,0 +1,125 @@
+//! TOTP enrollment and verification routes.
+
+use crate::cookies::{cookie_value, set_cookie, sign, EMAIL_COOKIE, ENROLL_COOKIE, SESSION_COOKIE};
+use crate::state::AppState;
+use crate::totp;
+use crate::views::page;
+use axum::extract::{Form, State};
+use axum::http::{header, HeaderMap, StatusCode};
+use axum::response::{Html, IntoResponse, Redirect, Response};
+use maud::{html, PreEscaped};
+use rand::RngCore;
+use serde::Deserialize;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Session gate. Full Supabase JWT verification remains the next auth step.
+fn session_token(headers: &HeaderMap) -> Option<String> {
+    cookie_value(headers, SESSION_COOKIE).filter(|token| !token.trim().is_empty())
+}
+
+pub(crate) async fn page_handler(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if session_token(&headers).is_none() {
+        return Redirect::to("/login").into_response();
+    }
+
+    let mut secret = [0u8; 20];
+    rand::thread_rng().fill_bytes(&mut secret);
+    let secret_b32 = totp::base32_encode(&secret);
+    let email = cookie_value(&headers, EMAIL_COOKIE)
+        .filter(|email| !email.is_empty())
+        .unwrap_or_else(|| "user".to_owned());
+    let uri = totp::otpauth_uri(&email, &secret_b32);
+    let qr_svg = qrcode::QrCode::new(uri.as_bytes())
+        .map(|code| {
+            code.render::<qrcode::render::svg::Color>()
+                .min_dimensions(200, 200)
+                .build()
+        })
+        .unwrap_or_default();
+
+    let body = html! {
+        div class="card" id="enroll-box" {
+            h1 { "Scan with your authenticator" }
+            p class="sub" {
+                "Scan the QR code with Authy, Google Authenticator, 1Password, or any TOTP app, then enter the 6-digit code it shows."
+            }
+            div class="qr" { (PreEscaped(qr_svg)) }
+            p class="sub" { "Can't scan? Enter this secret manually:" }
+            code class="secret" { (secret_b32) }
+            form hx-post="/enroll/verify" hx-target="#verify-result" hx-swap="innerHTML" {
+                label for="code" { "6-digit code" }
+                input id="code" name="code" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" required;
+                button type="submit" { "Verify" }
+            }
+            div id="verify-result" {}
+        }
+    };
+
+    let mut response = page("Enroll", body).into_response();
+    let signed = format!("{secret_b32}.{}", sign(&state.server_secret, &secret_b32));
+    response
+        .headers_mut()
+        .append(header::SET_COOKIE, set_cookie(ENROLL_COOKIE, &signed));
+    response
+}
+
+#[derive(Deserialize)]
+pub(crate) struct VerifyForm {
+    code: String,
+}
+
+pub(crate) async fn verify(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Form(form): Form<VerifyForm>,
+) -> Response {
+    let fragment =
+        |class: &str, text: &str| Html(html! { p class=(class) { (text) } }.into_string());
+    let Some(cookie) = cookie_value(&headers, ENROLL_COOKIE) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            fragment("error", "No enrollment in progress — reload the page."),
+        )
+            .into_response();
+    };
+    let Some((secret_b32, mac)) = cookie.split_once('.') else {
+        return (
+            StatusCode::BAD_REQUEST,
+            fragment("error", "Enrollment cookie is malformed — reload the page."),
+        )
+            .into_response();
+    };
+    if sign(&state.server_secret, secret_b32) != mac {
+        return (
+            StatusCode::BAD_REQUEST,
+            fragment(
+                "error",
+                "Enrollment cookie failed verification — reload the page.",
+            ),
+        )
+            .into_response();
+    }
+    let Some(secret) = totp::base32_decode(secret_b32) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            fragment("error", "Enrollment cookie is malformed — reload the page."),
+        )
+            .into_response();
+    };
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    if totp::verify_totp(&secret, &form.code, now) {
+        tracing::info!(enrollment.outcome = "accepted", "TOTP enrollment verified");
+        fragment("success", "Device enrolled — your authenticator is linked.").into_response()
+    } else {
+        tracing::info!(enrollment.outcome = "rejected", "TOTP enrollment rejected");
+        fragment(
+            "error",
+            "That code didn't match — wait for a fresh code and try again.",
+        )
+        .into_response()
+    }
+}
