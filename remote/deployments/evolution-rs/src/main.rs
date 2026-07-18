@@ -546,6 +546,11 @@ async fn run_island(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>>
     publish_event(&state, "island-started", json!({"consumer": consumer_name})).await;
 
     let mut messages = consumer.messages().await?;
+    // An island evolve can run longer than the consumer ack_wait; heartbeat the
+    // ack deadline at a third of it (floored at 5s) so JetStream doesn't treat a
+    // still-running job as stalled and redeliver it to another worker.
+    let ack_progress_every =
+        Duration::from_secs((env_u64("EVOLUTION_ACK_WAIT_SECONDS", 600) / 3).max(5));
     while let Some(message) = messages.next().await {
         let message = match message {
             Ok(message) => message,
@@ -577,7 +582,13 @@ async fn run_island(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>>
             }
         };
         let node = state.node_id.clone();
-        let result = match tokio::task::spawn_blocking(move || job.run(&node)).await {
+        let result = match solve_with_ack_progress(
+            &message,
+            ack_progress_every,
+            tokio::task::spawn_blocking(move || job.run(&node)),
+        )
+        .await
+        {
             Ok(result) => result,
             Err(error) => {
                 state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -611,6 +622,30 @@ async fn run_island(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>>
 }
 
 // ---------------------------------------------------------------------------
+/// Await a blocking solve `task` while extending the JetStream ack deadline for
+/// `message` with AckKind::Progress every `interval`. Returns the task's
+/// JoinResult unchanged so the caller's success/error handling is untouched.
+async fn solve_with_ack_progress<T>(
+    message: &async_nats::jetstream::Message,
+    interval: Duration,
+    mut task: tokio::task::JoinHandle<T>,
+) -> Result<T, tokio::task::JoinError> {
+    let mut ticker = tokio::time::interval(interval);
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    ticker.tick().await; // consume the immediate first tick
+    loop {
+        tokio::select! {
+            biased;
+            joined = &mut task => return joined,
+            _ = ticker.tick() => {
+                let _ = message
+                    .ack_with(async_nats::jetstream::AckKind::Progress)
+                    .await;
+            }
+        }
+    }
+}
+
 // HTTP handlers
 // ---------------------------------------------------------------------------
 
