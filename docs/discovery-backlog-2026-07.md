@@ -9,6 +9,12 @@ step. CONFIRMED = a code path was traced end-to-end; SUSPECTED = needs live repr
 
 **Already fixed this pass:** the P0 MFA bypass (C1 below) — `fiducia-customer.rs@d755ecf`.
 
+**Also fixed (2026-07-18 tier-2 emulation + test-hardening pass):** the ops-CP rollout
+crash-resume data-integrity bug — `fiducia-operations-control-plane@3254b03`. It was a
+sibling of **M4** (same complete-before-effect pattern). See **Addendum A** for that fix,
+a **live reproduction of the H10 blackhole class** in the local 3-cluster emulation, and
+the tooling/testing gaps that surfaced running the fleet end-to-end.
+
 ---
 
 ## P0 — Critical (data-loss / auth-bypass / split-brain), do first
@@ -82,7 +88,7 @@ table. Effort M.
 - **M1** Compat outbox relay holds a DB tx across NATS publish+flush for the whole batch (lock-across-IO); crash re-publishes the sent prefix — `messaging/src/transactional.rs:112,148,177`. → commit-claim / publish-outside-tx / mark-per-row. S-M
 - **M2** Compat relay unbounded retry, no dead-letter/park — `messaging/src/transactional.rs:20,96`. → add `max_attempts` + park. S-M
 - **M3** `inbox_try_insert` (pool path) claim-before-effect silent-effect-loss, used by real consumers — `messaging/src/db.rs:345`. → `#[deprecated]` toward `PgInbox`; audit 3 call sites. M
-- **M4** Scheduler `claim_due` completes idempotency before dispatch → crash drops a scheduled run — `operations-control-plane/src/scheduler.rs:90-108`. → split claim from complete. M
+- **M4** Scheduler `claim_due` completes idempotency before dispatch → crash drops a scheduled run — `operations-control-plane/src/scheduler.rs:90-108`. → split claim from complete. M **(STILL OPEN — this is the exact pattern fixed in the rollout path at `@3254b03`; the scheduler is the last `complete-before-effect` site in this repo. Apply the same claim→dispatch→complete reorder; see Addendum A.)**
 - **M5** No integrity checksum on any persisted file (node + brain) + brain's one-directional base_index validation — `node/persist.rs`, `brain/raft_store.rs:26,165`. → blake3 header verified on load. M
 - **M6** `peers` never de-duplicated → inflated quorum / commit-without-quorum (node) and no-leader-electable (brain) — `node/consensus.rs:296`, `brain/raft.rs:323`. → dedup + self-exclude at parse. S
 - **M7** Brain follower splices AppendEntries with no contiguity/base-index check (node validates; brain doesn't) — `brain/raft.rs:588`. → reject gapped/at-or-below-base entries. S
@@ -146,6 +152,91 @@ Staging invariant: additive env first (flags-2-env), then a per-env boolean flip
 enforcement, then legacy removed last — so no synchronized cross-service cutover.
 
 ---
+
+## Addendum A — 2026-07-18 tier-2 emulation + test-hardening pass
+
+This pass added ≥2 behavioural tests to every active repo (54 new tests, all green,
+pushed) and stood the **local 3-cluster emulation** (`fiducia-infra/kind/multicluster`)
+up end-to-end for the first time — three separate Kind clusters, cross-cluster Raft,
+WAN-latency + partition injection. Running the real fleet (not just unit tests)
+confirmed several backlog items live and surfaced a few new ones.
+
+### A1 — FIXED: ops-CP rollout was permanently un-resumable after a coordinator crash (data integrity)
+`fiducia-operations-control-plane/src/workflows.rs` `run_rollout`, fixed at `@3254b03`.
+
+Root cause — the two-phase idempotency contract is: `claim_idempotency` returns
+`Ok(false)` for a *claimed-but-uncompleted* key and `Err(AlreadyCompleted)` for a
+*completed* one. This holds for **both** `MemoryCoordination` **and the production
+`FiduciaCoordination`** (which maps fiducia-node's completed idempotency record to
+`AlreadyCompleted` — verified in `src/fiducia_coordination.rs`). `run_rollout` drove
+each batch through `fenced_effect`, which (a) **completed the key *before*
+`executor.deploy` ran** and (b) **propagated `Err(AlreadyCompleted)` via `?`**. So the
+instant any batch finished, its key was completed — and a replacement coordinator
+re-invoking `run_rollout` hit `AlreadyCompleted` on the first done batch and aborted
+the entire resume. The advertised dedup path (`!fresh => continue`) only ever saw
+`Ok(false)`, a state the natural flow never produced. Net effect: the crash-recovery
+the module is *built around* did not work — a coordinator that died mid-rollout left
+the operation impossible to resume.
+
+The fix mirrors `run_migration` (which was already correct): **claim → deploy →
+complete** (complete only after the batch lands and clears its health barrier, so a
+crash mid-deploy leaves the key *claimable* rather than marking a never-deployed batch
+done); treat **both** `Ok(false)` and `Err(AlreadyCompleted)` as "skip this batch"; and
+make the final transition idempotent (guard `Completed→Completed`) so re-invoking a
+finished rollout is a clean no-op. Two regression tests exercise the *natural* resume
+the prior test missed (it injected a claimed-but-uncompleted key; a batch that actually
+finished is *completed*).
+
+**Follow-up (open):** `fenced_effect` is now used only by a test — it is a `pub` method
+whose sole remaining caller is `tests/rollout_failover.rs`. Either delete it, or if it
+is meant as an external primitive, its complete-immediately-after-claim shape is the
+wrong bracketing for any effect that can crash mid-flight (same lesson as M4). Decide
+and either remove or re-shape it. Effort S.
+
+### A2 — CONFIRMED LIVE: H10 non-dialable / stale peer address blackhole
+H10 (brain/node id set to non-dialable `$(POD_NAME).$(CLUSTER)`) was static-analysis
+"SUSPECTED"; the emulation reproduced its **class** live. After a host/Docker restart,
+Kind container IPs change but the deployed `fiducia-cluster` ConfigMap keeps the old
+peer IPs, and the pods snapshot env at start — so one cluster's LB returned
+`502 {"error":"no_leader","detail":"exhausted redirects/retries"}` for every write
+while its route table showed all 16 leaders (it had leaders, it just could not *reach*
+them). Raft still converged through the one correct peer, which is exactly why the
+failure is silent at the consensus layer and only visible at the request path. This is
+the same failure mode H10 predicts for prod when the id is a non-dialable name. The
+prod fix is H10 (dialable `host:port` from `topology.toml`); the emulation fix is A3.
+
+### A3 — NEW (tooling): `multicluster/up.sh` reuse path doesn't restart pods after rewriting peer config
+`fiducia-infra/kind/multicluster/up.sh`. On a re-run it re-discovers container IPs and
+rewrites each cluster's `topology.env`/ConfigMap, but does **not** roll the
+statefulsets/deployments — so pods keep the stale peer env until a manual
+`kubectl rollout restart`. That is what makes A2 sticky across a Docker restart. Fix:
+after applying the refreshed ConfigMap, `kubectl --context … rollout restart
+statefulset/fiducia-node statefulset/fiducia-brain deployment/fiducia-load-balance` (all
+three clusters) and wait for readiness. Effort S. Also worth a one-line troubleshooting
+note in `kind/multicluster/README.md` so the next operator recognises the
+`no_leader/exhausted redirects` symptom (not added there yet — infra had in-flight work
+at the time of writing).
+
+### A4 — Test capability added: the e2e client can now drive nodes directly (Tier-2 usable)
+`fiducia-e2e/src/client.mjs` `@0b98177`. The conformance client gained (env-gated, off
+by default so LB-fronted runs are untouched) trusted-hop headers
+(`FIDUCIA_E2E_INTERNAL_SECRET` → `x-fiducia-internal-auth` + `x-fiducia-org-id`) and a
+bounded NotLeader (`307`) failover across `FIDUCIA_E2E_ENDPOINTS` — a kind follower
+redirects to a bridge IP the host can't reach, so following the redirect fails; retrying
+the other endpoints is the SDK's documented behaviour anyway. With this, the full
+conformance suite runs green against the live 3-cluster tier (58 pass / 0 fail / 4
+undeployed-route skips). This also gives P3 item 10 (cross-repo trusted-hop contract,
+"no cross-check") a live exerciser it lacked — worth promoting into CI against a
+Tier-1 kind bring-up.
+
+### A5 — Minor: OTLP batch-export error noise when no collector is reachable
+Seen in LB logs under the emulation (no otel gateway deployed in the Raft-only slice):
+`opentelemetry_sdk … BatchSpanProcessor.Flush.ExportError reason="ExportTimedOut(30s)"`
+every export cycle. `fiducia-telemetry::init` already degrades correctly (traces are
+best-effort), but the 30s-timeout error line is repetitive noise that could mask real
+errors in a log scan. → shorten the batch export timeout and/or log the first export
+failure then suppress until recovery (mirror the sidecar's scrape-failure escalation).
+Effort S.
 
 ## Themes for whoever picks this up
 
