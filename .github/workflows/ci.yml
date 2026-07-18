@@ -97,13 +97,11 @@ jobs:
       # dpm verify replays the migration on a shadow replica and proves an empty
       # re-diff (true convergence, catching bugs the source-vs-target diff can't).
       # The deparse fixed-point bug that made this fail on varchar IN-list CHECK
-      # constraints was fixed upstream (declarative-postgres-migrate.rs commit
-      # 3fcb17b, server-side canonicalization). It stays advisory only until a
-      # tagged dpm release ships that fix: the installer above pulls the latest
-      # *release* binary, still 0.3.0. To enforce: cut a dpm release, bump the
-      # installer commit pin above to it, then drop this continue-on-error.
-      - name: dpm verify (bootstrap convergence proof — advisory pending dpm release)
-        continue-on-error: true
+      # constraints, generated columns, and view bodies was fixed upstream
+      # (declarative-postgres-migrate.rs 3fcb17b + 16e2c9b, server-side
+      # canonicalization) and shipped in dpm v0.3.2. The installer above pulls
+      # the latest release, so this is now enforcing.
+      - name: dpm verify (bootstrap convergence proof)
         env:
           TARGET_DATABASE_URL: postgres://postgres:postgres@localhost:5432/pg_defs_verify
         run: |
