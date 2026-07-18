@@ -20,14 +20,13 @@ pub enum ApiError {
     Internal,
 }
 
-// Note: a Postgres unique-violation (SQLSTATE 23505) is folded to a coarse 409
-// `Conflict` at the one site that can hit it — `register` in `app.rs`, via an
-// explicit `is_unique_violation()` match. Every other sqlx error flows through
-// the blanket `From` below to an opaque `Internal` (logged server-side).
+// Note: a Postgres unique violation is folded to a coarse 409 at registration.
+// Every other SeaORM error flows through this conversion to an opaque 500 and
+// is logged only on the server side.
 
-impl From<sqlx::Error> for ApiError {
-    fn from(e: sqlx::Error) -> Self {
-        tracing::error!(error = %e, "database error");
+impl From<sea_orm::DbErr> for ApiError {
+    fn from(error: sea_orm::DbErr) -> Self {
+        tracing::error!(error = %error, "database error");
         ApiError::Internal
     }
 }

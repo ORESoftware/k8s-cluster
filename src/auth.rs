@@ -10,14 +10,15 @@
 //! this is a localized change. Either way the *vault* is zero-knowledge: clients
 //! E2E-encrypt before upload (`shared::SealedBlob`).
 
+use crate::entity::device;
 use crate::error::ApiError;
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 use argon2::{Algorithm, Argon2, Params, Version};
 use axum::http::HeaderMap;
 use base64::Engine;
 use rand::RngCore;
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use sha2::{Digest, Sha256};
-use sqlx::PgPool;
 use uuid::Uuid;
 
 /// An authenticated device, resolved from a bearer token.
@@ -68,7 +69,10 @@ pub fn token_hash(token: &str) -> String {
 
 /// Resolve the `Authorization: Bearer <token>` header to an [`AuthedDevice`],
 /// rejecting revoked or unknown tokens. Constant-ish: lookup is by token hash.
-pub async fn authenticate(pool: &PgPool, headers: &HeaderMap) -> Result<AuthedDevice, ApiError> {
+pub async fn authenticate(
+    db: &DatabaseConnection,
+    headers: &HeaderMap,
+) -> Result<AuthedDevice, ApiError> {
     let token = headers
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
@@ -76,17 +80,16 @@ pub async fn authenticate(pool: &PgPool, headers: &HeaderMap) -> Result<AuthedDe
         .ok_or(ApiError::Unauthorized)?;
 
     let hash = token_hash(token);
-    let row: Option<(Uuid, Uuid)> = sqlx::query_as(
-        "SELECT id, account_id FROM threefa.devices WHERE sync_token_hash = $1 AND revoked = FALSE",
-    )
-    .bind(&hash)
-    .fetch_optional(pool)
-    .await?;
+    let row = device::Entity::find()
+        .filter(device::Column::SyncTokenHash.eq(hash))
+        .filter(device::Column::Revoked.eq(false))
+        .one(db)
+        .await?;
 
-    let (device_id, account_id) = row.ok_or(ApiError::Unauthorized)?;
+    let device = row.ok_or(ApiError::Unauthorized)?;
     Ok(AuthedDevice {
-        account_id,
-        device_id,
+        account_id: device.account_id,
+        device_id: device.id,
     })
 }
 

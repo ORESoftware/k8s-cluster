@@ -1,6 +1,6 @@
-# ArgoCD Application for the 3FA sync server. Mirrors the cluster's existing
-# remote/argocd/apps/*.application.yaml pattern. The repoURL/path point at this
-# repo once it is wired into k8s-cluster as a submodule (see deploy/README.md).
+# Argo CD Application for the 3FA sync server. The k8s-cluster repo inventories
+# this source as a submodule, while Argo tracks the upstream directly because
+# recursive submodule checkout is disabled on repo-server (see deploy/README.md).
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:

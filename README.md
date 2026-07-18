@@ -12,7 +12,7 @@
 
 Zero-knowledge sync for the 3FA authenticator. The server stores only an opaque,
 client-encrypted vault blob plus a version vector — it can never read your OTP
-seeds or your password. Written in Rust (axum + sqlx/Postgres).
+seeds or your password. Written in Rust (axum + SeaORM/Postgres).
 
 > One of three repos:
 > - **`3fa-desktop.rs`** — desktop app (Rust + Slint)
@@ -56,20 +56,23 @@ seeds or your password. Written in Rust (axum + sqlx/Postgres).
 ## Run locally
 
 ```bash
-DATABASE_URL=postgres://user:pass@localhost/threefa sqlx migrate run
-DATABASE_URL=postgres://user:pass@localhost/threefa cargo run
+export DATABASE_URL=postgres://user:pass@localhost/threefa
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/0001_init.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/0002_isolate_threefa_schema.sql
+cargo run
 # serves on :8080 (override with BIND_ADDR)
 ```
 
-Migrations are an explicit operator step: the server never applies DDL on
-startup. Review the SQL before running `sqlx migrate run`, and use the shared
-declarative Postgres contract when deploying into the ORES cluster. Migration
-`0002_isolate_threefa_schema.sql` moves the legacy public tables into the
-service-owned `threefa` schema; confirm that the source tables belong to 3FA
-before applying it to a shared database.
+Database changes are an explicit operator step: the server never applies DDL on
+startup. The ORES cluster's declarative pg-defs contract at
+`remote/libs/pg-defs/schema/schema.sql` is production's source of truth and is
+applied only through a reviewed declarative migration. The frozen SQL files in
+this repo remain useful for local bootstrap and upgrading older standalone
+installs; `0002_isolate_threefa_schema.sql` moves legacy public tables into the
+service-owned `threefa` schema.
 
-`sqlx` uses runtime (non-macro) queries, so **no live database is needed to
-build** — only to run.
+SeaORM entities compile without a live database. A database is needed only to
+run the service or database-backed integration tests.
 
 The dependency lock currently requires Rust 1.88 or newer. The deployment
 builder is pinned to the multi-architecture Rust 1.95 Bookworm image digest.
@@ -79,30 +82,43 @@ builder is pinned to the multi-architecture Rust 1.95 Bookworm image digest.
 - JSON `tracing` records go to stdout for Promtail/Loki collection.
 - HTTP spans preserve W3C `traceparent` and export over OTLP/HTTP. Configure
   `OTEL_EXPORTER_OTLP_ENDPOINT` or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`.
+- JSON records include the active OTEL `trace_id` and `span_id`, allowing direct
+  correlation from Loki logs to distributed traces.
 - The default-deny NetworkPolicy permits OTLP only to TCP `4318` in the
   `observability` namespace; no general Internet egress is opened.
 - `/metrics` exposes bounded route/status counters, request latency histograms,
-  and vault-conflict counts for Prometheus.
+  in-flight requests, SeaORM query count/latency, and vault-conflict counts for
+  Prometheus. SQL statements and user identifiers are never metric labels.
 - `THREEFA_AUTH_MAX_CONCURRENT` (default `2`) bounds concurrent Argon2 work;
   excess login/register requests fail with `429` instead of exhausting memory.
 
 ## Layout
 
 ```
-src/app.rs        Router, handlers, app state
-src/auth.rs       Argon2id verifier + bearer tokens (OPAQUE seam)
-src/vault_blob.rs Sealed-blob store + version-vector reconciliation
-src/devices.rs    Device registration / revocation
-src/db.rs         Bounded Postgres pool (DDL stays operator-owned)
-src/protocol.rs   Wire-protocol DTOs (duplicated with the frontend)
-migrations/       sqlx Postgres migrations
-deploy/           Dockerfile + k8s/ArgoCD manifests
+src/main.rs        Minimal binary entrypoint
+src/server.rs      Listener lifecycle and graceful SIGTERM shutdown
+src/config.rs      Environment configuration
+src/app.rs         HTTP router and middleware composition
+src/accounts.rs    Registration/login handlers and account persistence
+src/auth.rs        Argon2id verifier + bearer tokens (OPAQUE seam)
+src/devices.rs     Device handlers and persistence
+src/vault_blob.rs  Sealed-blob handlers and reconciliation
+src/entity.rs      SeaORM models for the `threefa` schema
+src/telemetry.rs   OTEL traces and Loki-compatible JSON logs
+src/metrics.rs     Prometheus HTTP, database, and domain metrics
+src/protocol.rs    Wire-protocol DTOs (duplicated with the frontend)
+migrations/        Frozen local/legacy bootstrap SQL
+deploy/            Dockerfile + Kubernetes/Argo CD manifests
 ```
 
 ## Deploy
 
-To the ORES `k8s-cluster` as a git submodule — see
-[`deploy/README.md`](deploy/README.md).
+The canonical repo is already registered in ORES `k8s-cluster` as the secondary
+submodule `remote/deployments/3fa-backend`. Develop and validate here, push the
+canonical commit, then bump only that submodule pointer in the cluster repo.
+Argo CD tracks the private upstream repo directly because the cluster repo-server
+currently has recursive submodule checkout disabled. See
+[`deploy/README.md`](deploy/README.md) for the exact boundary.
 
 ## License
 
