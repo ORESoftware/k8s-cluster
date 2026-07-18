@@ -34,3 +34,11 @@
 	url = git@github.com:ORESoftware/sonusauris-app-proxy.git
 	branch = main
 	path = apps/sonusauris-app-proxy
+[submodule "apps/sonus-auris-api-server.rs"]
+	path = apps/sonus-auris-api-server.rs
+	url = git@github.com:sonus-auris/sonus-auris-api-server.rs.git
+	branch = main
+[submodule "apps/sonus-auris-web-desktop.dart"]
+	path = apps/sonus-auris-web-desktop.dart
+	url = git@github.com:sonus-auris/sonus-auris-web-desktop.dart.git
+	branch = main
