@@ -30,7 +30,10 @@ const targetFiles = {
 };
 
 function commandAvailable(command) {
-  return !spawnSync(command, ['--version'], { stdio: 'ignore' }).error;
+  // macOS can expose compiler shims (notably `javac`) even when no matching
+  // runtime is installed. A spawned process is usable only when its version
+  // probe succeeds, not merely when the executable path resolves.
+  return spawnSync(command, ['--version'], { stdio: 'ignore' }).status === 0;
 }
 
 function camelToSnake(name) {
