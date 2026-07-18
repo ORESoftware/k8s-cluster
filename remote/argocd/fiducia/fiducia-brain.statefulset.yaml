@@ -119,6 +119,11 @@ spec:
               value: /tmp
             - name: CARGO_HOME
               value: /tmp/cargo
+            # rustup writes channel-sync temp files under RUSTUP_HOME; the source
+            # pins a toolchain, so keep it on the writable /tmp emptyDir instead
+            # of the read-only /usr/local/rustup default (readOnlyRootFilesystem).
+            - name: RUSTUP_HOME
+              value: /tmp/rustup
             - name: CARGO_TARGET_DIR
               value: /tmp/target
             - name: CARGO_BUILD_JOBS
@@ -216,6 +221,11 @@ spec:
               value: /tmp
             - name: CARGO_HOME
               value: /tmp/cargo
+            # rustup writes channel-sync temp files under RUSTUP_HOME; the source
+            # pins a toolchain, so keep it on the writable /tmp emptyDir instead
+            # of the read-only /usr/local/rustup default (readOnlyRootFilesystem).
+            - name: RUSTUP_HOME
+              value: /tmp/rustup
             - name: CARGO_TARGET_DIR
               value: /tmp/sidecar-target
             - name: CARGO_BUILD_JOBS
