@@ -41,7 +41,7 @@ is_zero() { case "$1" in *[!0]*) return 1 ;; *) return 0 ;; esac; }
 # Resolve a submodule path to (gitdir, url). Works for an initialized submodule
 # and for one that is configured + has a modules/ object store but no worktree.
 resolve_gitdir() {
-    local path="$1" gd
+    local path="$1" gd common_dir
     # Git exports the superproject's GIT_DIR / GIT_WORK_TREE while running
     # hooks.  They must not leak into this nested invocation or Git resolves
     # the parent repository again and treats every gitlink as if it belonged to
@@ -55,7 +55,15 @@ resolve_gitdir() {
             git -C "$repo_root/$path" rev-parse --absolute-git-dir 2>/dev/null)" \
             && { printf '%s\n' "$gd"; return 0; }
     fi
-    gd="$(git -C "$repo_root" rev-parse --git-path "modules/$path" 2>/dev/null)"
+    # `--git-path` is worktree-local for a linked worktree. Submodule object
+    # stores live under the superproject's common gitdir, so resolve that
+    # explicitly before looking for `modules/<path>`.
+    common_dir="$(git -C "$repo_root" rev-parse --git-common-dir 2>/dev/null)" || return 1
+    case "$common_dir" in
+        /*) ;;
+        *) common_dir="$repo_root/$common_dir" ;;
+    esac
+    gd="$common_dir/modules/$path"
     [ -n "$gd" ] && [ -d "$gd" ] && { printf '%s\n' "$gd"; return 0; }
     return 1
 }
