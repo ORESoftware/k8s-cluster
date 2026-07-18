@@ -2,8 +2,8 @@
 //!
 //! Request payloads come from the generated `fiducia-interfaces` crate pinned
 //! to `github.com/fiducia-cloud/fiducia-interfaces`. The upstream native Rust
-//! transport is intentionally blocking and does not yet support public bearer
-//! tokens, so this service keeps Tokio's executor non-blocking with `reqwest`
+//! client supports secure public bearer calls, but its transport is intentionally
+//! blocking. This service keeps Tokio's executor non-blocking with `reqwest`
 //! while consuming the canonical shared contract types.
 
 use std::collections::BTreeMap;
@@ -11,7 +11,7 @@ use std::fmt;
 use std::time::Duration;
 
 use fiducia_interfaces::{
-    CampaignRequest, ElectionGetResponse, HoldRequest,
+    CampaignRequest, ElectionGetResponse, HoldRequest, Leadership,
     LockAcquireManyRequest as FiduciaLockAcquireManyRequest,
     LockReleaseRequest as FiduciaLockReleaseRequest, RenewRequest as ElectionRenewRequest,
 };
@@ -243,9 +243,10 @@ impl FiduciaCoordinator {
             )
             .await?;
         if output.won {
-            Ok(Some(output.leadership.ok_or_else(|| {
-                protocol_error("lease campaign won without leadership details")
-            })?))
+            let leadership = output
+                .leadership
+                .ok_or_else(|| protocol_error("lease campaign won without leadership details"))?;
+            Ok(Some(validate_leadership(leadership, candidate, None)?))
         } else {
             Ok(None)
         }
@@ -283,9 +284,14 @@ impl FiduciaCoordinator {
             .commit(Method::POST, &["v1", "elections", name, "renew"], &request)
             .await?;
         if output.renewed {
-            Ok(Some(output.leadership.ok_or_else(|| {
+            let leadership = output.leadership.ok_or_else(|| {
                 protocol_error("lease renew succeeded without leadership details")
-            })?))
+            })?;
+            Ok(Some(validate_leadership(
+                leadership,
+                candidate,
+                Some(fencing_token),
+            )?))
         } else {
             tracing::debug!(reason = ?output.reason, "Fiducia lease was not renewed");
             Ok(None)
@@ -419,6 +425,36 @@ fn protocol_error(message: &str) -> AppError {
     }
 }
 
+/// Accept a leadership response only when it proves the caller still owns the
+/// same fenced term. A stale, malformed, or cross-tenant response must never be
+/// converted into a valid local billing lease.
+fn validate_leadership(
+    leadership: Leadership,
+    candidate: &str,
+    expected_fencing_token: Option<u64>,
+) -> AppResult<Leadership> {
+    if leadership.leader != candidate {
+        return Err(protocol_error(
+            "Fiducia leadership response names a different candidate",
+        ));
+    }
+    let fencing_token = u64::try_from(leadership.fencing_token)
+        .map_err(|_| protocol_error("Fiducia leadership response has a negative fencing token"))?;
+    if fencing_token == 0 {
+        return Err(protocol_error(
+            "Fiducia leadership response has a zero fencing token",
+        ));
+    }
+    if let Some(expected) = expected_fencing_token {
+        if fencing_token != expected {
+            return Err(protocol_error(
+                "Fiducia lease renew changed the fencing token",
+            ));
+        }
+    }
+    Ok(leadership)
+}
+
 fn status_error(status: StatusCode, body: Option<Value>) -> AppError {
     let detail = body
         .and_then(|value| {
@@ -471,6 +507,34 @@ mod tests {
         let debug = format!("{coordinator:?}");
         assert!(!debug.contains("fdc_live_secret"));
         assert!(debug.contains("<redacted>"));
+    }
+
+    #[test]
+    fn leadership_validation_requires_the_expected_candidate_and_term() {
+        let leadership = Leadership {
+            leader: "billing-worker-a".into(),
+            fencing_token: 41,
+            lease_expires_ms: 1_900_000_000_000,
+            ttl_ms: 60_000,
+            metadata: BTreeMap::new(),
+        };
+        assert!(validate_leadership(leadership.clone(), "billing-worker-a", Some(41)).is_ok());
+        assert!(validate_leadership(leadership.clone(), "billing-worker-b", None).is_err());
+        assert!(validate_leadership(leadership, "billing-worker-a", Some(42)).is_err());
+    }
+
+    #[test]
+    fn leadership_validation_rejects_invalid_fencing_tokens() {
+        let mut leadership = Leadership {
+            leader: "billing-worker-a".into(),
+            fencing_token: 0,
+            lease_expires_ms: 1_900_000_000_000,
+            ttl_ms: 60_000,
+            metadata: BTreeMap::new(),
+        };
+        assert!(validate_leadership(leadership.clone(), "billing-worker-a", None).is_err());
+        leadership.fencing_token = -1;
+        assert!(validate_leadership(leadership, "billing-worker-a", None).is_err());
     }
 
     #[tokio::test]
