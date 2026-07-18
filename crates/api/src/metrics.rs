@@ -76,6 +76,11 @@ impl Metrics {
             self.vapi_tool_calls_total.load(Ordering::Relaxed),
         );
         emit(
+            "t2v_api_llm_overloaded_total",
+            "Requests shed because the LLM concurrency limit was reached.",
+            self.llm_overloaded_total.load(Ordering::Relaxed),
+        );
+        emit(
             "t2v_api_errors_total",
             "Requests that ended in an error response.",
             self.errors_total.load(Ordering::Relaxed),
