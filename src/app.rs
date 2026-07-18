@@ -352,9 +352,16 @@ async fn auth_supabase(
 
     // Upsert the account keyed by the Supabase user id. On a returning user the
     // stored email is refreshed; the row id is stable.
+    //
+    // The conflict target repeats the index predicate (`WHERE supabase_user_id IS
+    // NOT NULL`): `accounts_supabase_user_idx` is a *partial* unique index, and
+    // Postgres only infers a partial index when the ON CONFLICT clause restates
+    // its predicate — otherwise it errors with "no unique or exclusion constraint
+    // matching the ON CONFLICT specification".
     let account_id: Uuid = sqlx::query_scalar(
         "INSERT INTO threefa.accounts (supabase_user_id, email) VALUES ($1, $2) \
-         ON CONFLICT (supabase_user_id) DO UPDATE SET email = EXCLUDED.email \
+         ON CONFLICT (supabase_user_id) WHERE supabase_user_id IS NOT NULL \
+         DO UPDATE SET email = EXCLUDED.email \
          RETURNING id",
     )
     .bind(identity.user_id)
