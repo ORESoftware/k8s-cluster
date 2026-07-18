@@ -1,0 +1,217 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-t2v-api
+  namespace: default
+  labels:
+    app: dd-t2v-api
+spec:
+  replicas: 1
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: dd-t2v-api
+  template:
+    metadata:
+      annotations:
+        dd.dev/t2v-api-revision: 'gitops-source'
+      labels:
+        app: dd-t2v-api
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        - name: t2v-api
+          image: docker.io/library/rust:1.91.1-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              export CARGO_HOME=/var/cache/dd-t2v-api/cargo
+              export CARGO_TARGET_DIR=/var/cache/dd-t2v-api/target
+              export HOME=/tmp
+              mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR"
+
+              git_auth_args=()
+              if [ -n "${GH_PAT:-}" ]; then
+                authhdr="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_PAT" | base64 | tr -d '\n')"
+                git_auth_args=(-c "http.https://github.com/.extraheader=${authhdr}")
+                git config --global url."https://github.com/".insteadOf "git@github.com:"
+              fi
+
+              source_root=/opt/dd-next-1
+              mounted_app_dir="$source_root/remote/deployments/t2v-v2t.rs"
+              app_dir="$mounted_app_dir"
+              if [ -n "${T2V_GIT_URL:-}" ]; then
+                clone_root="$(mktemp -d /tmp/dd-t2v-source.XXXXXX)"
+                if git clone --depth 1 \
+                     --branch "${T2V_GIT_REF:-main}" "${T2V_GIT_URL}" "$clone_root" &&
+                   git -C "$clone_root" submodule init remote/deployments/t2v-v2t.rs &&
+                   git -C "$clone_root" config "submodule.remote/deployments/t2v-v2t.rs.url" "https://github.com/oresoftware/t2v-v2t.rs.git" &&
+                   git -C "$clone_root" "${git_auth_args[@]}" submodule update --depth 1 remote/deployments/t2v-v2t.rs; then
+                  source_root="$clone_root"
+                  app_dir="$source_root/remote/deployments/t2v-v2t.rs"
+                  sub_sha="$(git -C "$app_dir" rev-parse --short HEAD 2>/dev/null || echo '?')"
+                  echo "[dd-t2v-api] source: cloned ${T2V_GIT_URL}@${T2V_GIT_REF:-main}; submodule ${sub_sha}"
+                else
+                  echo "[dd-t2v-api] source clone failed; using mounted source at ${source_root}" >&2
+                fi
+              fi
+              if [ "$app_dir" = "$mounted_app_dir" ] && [ -f "$app_dir/Cargo.toml" ]; then
+                echo "[dd-t2v-api] source: using mounted workspace at ${app_dir}"
+              fi
+
+              if [ ! -f "$app_dir/Cargo.toml" ]; then
+                echo "[dd-t2v-api] FATAL: t2v-v2t.rs submodule not populated at $app_dir." >&2
+                echo "[dd-t2v-api] On the host: git -C \"$source_root\" submodule update --init remote/deployments/t2v-v2t.rs" >&2
+                exit 1
+              fi
+
+              cd "$app_dir"
+              exec /usr/local/cargo/bin/cargo run --release --locked --bin t2v-api
+          env:
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /var/cache/dd-t2v-api/cargo
+            - name: CARGO_TARGET_DIR
+              value: /var/cache/dd-t2v-api/target
+            - name: CARGO_BUILD_JOBS
+              value: '1'
+            - name: T2V_GIT_URL
+              value: https://github.com/ORESoftware/k8s-cluster.git
+            - name: T2V_GIT_REF
+              value: dev
+            - name: GH_PAT
+              valueFrom:
+                secretKeyRef:
+                  name: dd-git-clone-token
+                  key: token
+                  optional: true
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8130'
+            - name: RUST_LOG
+              value: info,t2v_api=info,tower_http=info
+            # Shared cluster Postgres; the app connects with search_path=t2v and
+            # never runs DDL (schema owned by pg-defs/dpm).
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-remote-rest-api-secrets
+                  key: RDS_DATABASE_URL
+                  optional: true
+            - name: DB_MAX_CONNECTIONS
+              value: '10'
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: OPENAI_API_KEY
+                  optional: true
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ANTHROPIC_API_KEY
+                  optional: true
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: GEMINI_API_KEY
+                  optional: true
+            - name: GOOGLE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: GOOGLE_API_KEY
+                  optional: true
+            # Vapi.ai: operator REST passthrough + webhook secret. The webhook
+            # rejects posts without a matching x-vapi-secret when this is set.
+            - name: VAPI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: VAPI_API_KEY
+                  optional: true
+            - name: VAPI_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: T2V_VAPI_WEBHOOK_SECRET
+                  optional: true
+          ports:
+            - name: http
+              containerPort: 8130
+          resources:
+            requests:
+              cpu: 10m
+              memory: 512Mi
+            limits:
+              cpu: '2'
+              memory: 2Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 240
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: build-cache
+              mountPath: /var/cache/dd-t2v-api
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: DirectoryOrCreate
+        - name: build-cache
+          emptyDir:
+            sizeLimit: 4Gi
+        - name: tmp
+          emptyDir: {}
