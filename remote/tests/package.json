@@ -62,6 +62,9 @@
     "test:ui:puppeteer": "node ui-puppeteer-smoke.mjs",
     "test:ui:sweep": "node ui-gateway-sweep.mjs",
     "test:ui:benefactor": "node benefactor-site-smoke.mjs",
+    "test:ui:athleto": "node --test ui/*.test.mjs",
+    "test:ui:athleto:marketing": "node --test ui/athleto-marketing.playwright.test.mjs ui/athleto-marketing.puppeteer.test.mjs",
+    "test:ui:athleto:app": "node --test ui/athleto-app.playwright.test.mjs",
     "test:all": "pnpm run test:cli && pnpm run test:ui:playwright && pnpm run test:ui:puppeteer"
   },
   "devDependencies": {
