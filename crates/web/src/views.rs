@@ -1,7 +1,7 @@
 //! maud templates. Server-rendered HTML with htmx for interactivity and a
 //! websocket (`hx-ext="ws"`) for the live stats ticker.
 
-use maud::{html, Markup, PreEscaped, DOCTYPE};
+use maud::{html, Markup, DOCTYPE};
 use t2v_entity::{translation, vapi_call};
 
 /// Live counters rendered both on first paint and pushed over the websocket.
