@@ -1451,7 +1451,7 @@ data:
       }
 
       location /sound-recorder/api/mobile/ {
-        if ($request_method !~ ^(GET|HEAD|POST)$) {
+        if ($request_method !~ ^(GET|HEAD|POST|DELETE)$) {
           return 405;
         }
         limit_req zone=dd_sound_recorder_mobile_write burst=120 nodelay;
