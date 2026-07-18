@@ -67,6 +67,19 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+    # The shared AWS RDS endpoint resolves to a private VPC address. Keep that
+    # private reachability constrained to PostgreSQL only; Supabase's hosted
+    # direct/pooler endpoints remain covered by the public rule below.
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+        - ipBlock:
+            cidr: 172.16.0.0/12
+        - ipBlock:
+            cidr: 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 5432
     # Public HTTP(S) for the cold in-pod builds: git clone (GitHub), the npm
     # registry (build-ui init container) and crates.io — public internet only,
     # private ranges excluded so this does not widen in-cluster reachability.
@@ -93,8 +106,7 @@ spec:
           port: 80
         - protocol: TCP
           port: 443
-        # Supabase Postgres (session pooler) + AWS RDS are public endpoints on
-        # 5432/6543; the customer plane connects out over the public internet.
+        # Supabase's hosted direct/pooler endpoints are public on 5432/6543.
         - protocol: TCP
           port: 5432
         - protocol: TCP
