@@ -10,14 +10,16 @@
 //! this is a localized change. Either way the *vault* is zero-knowledge: clients
 //! E2E-encrypt before upload (`shared::SealedBlob`).
 
+use crate::entity::device;
 use crate::error::ApiError;
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 use argon2::{Algorithm, Argon2, Params, Version};
 use axum::http::HeaderMap;
 use base64::Engine;
 use rand::RngCore;
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 use sha2::{Digest, Sha256};
-use sqlx::PgPool;
+use time::OffsetDateTime;
 use uuid::Uuid;
 
 /// An authenticated device, resolved from a bearer token.
@@ -66,28 +68,49 @@ pub fn token_hash(token: &str) -> String {
     hex::encode(h.finalize())
 }
 
-/// Resolve the `Authorization: Bearer <token>` header to an [`AuthedDevice`],
-/// rejecting revoked or unknown tokens. Constant-ish: lookup is by token hash.
-pub async fn authenticate(pool: &PgPool, headers: &HeaderMap) -> Result<AuthedDevice, ApiError> {
-    let token = headers
+/// Extract the raw bearer token from an `Authorization: Bearer <token>` header.
+pub fn bearer(headers: &HeaderMap) -> Result<&str, ApiError> {
+    headers
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
-        .ok_or(ApiError::Unauthorized)?;
+        .ok_or(ApiError::Unauthorized)
+}
+
+/// Resolve the `Authorization: Bearer <token>` header to an [`AuthedDevice`],
+/// rejecting revoked or unknown tokens. Constant-ish: lookup is by token hash.
+/// Also stamps the device's `last_seen_at` so an owner can spot stale devices;
+/// the update is best-effort and never fails the request.
+pub async fn authenticate(
+    db: &DatabaseConnection,
+    headers: &HeaderMap,
+) -> Result<AuthedDevice, ApiError> {
+    let token = bearer(headers)?;
 
     let hash = token_hash(token);
-    let row: Option<(Uuid, Uuid)> = sqlx::query_as(
-        "SELECT id, account_id FROM threefa.devices WHERE sync_token_hash = $1 AND revoked = FALSE",
-    )
-    .bind(&hash)
-    .fetch_optional(pool)
-    .await?;
+    let row = device::Entity::find()
+        .filter(device::Column::SyncTokenHash.eq(hash))
+        .filter(device::Column::Revoked.eq(false))
+        .one(db)
+        .await?;
 
-    let (device_id, account_id) = row.ok_or(ApiError::Unauthorized)?;
-    Ok(AuthedDevice {
-        account_id,
-        device_id,
-    })
+    let device = row.ok_or(ApiError::Unauthorized)?;
+    let authed = AuthedDevice {
+        account_id: device.account_id,
+        device_id: device.id,
+    };
+
+    let mut active: device::ActiveModel = device.into();
+    active.last_seen_at = Set(Some(OffsetDateTime::now_utc()));
+    if let Err(error) = active.update(db).await {
+        tracing::warn!(
+            device_id = %authed.device_id,
+            error = %error,
+            "failed to update device last_seen_at"
+        );
+    }
+
+    Ok(authed)
 }
 
 #[cfg(test)]
@@ -107,5 +130,43 @@ mod tests {
         assert_eq!(token_hash(&tok), hash);
         let (tok2, _) = issue_token();
         assert_ne!(tok, tok2);
+    }
+
+    #[test]
+    fn token_hash_matches_known_sha256_vectors() {
+        // SHA-256("") and SHA-256("abc") — pins the digest algorithm so a stored
+        // sync_token_hash never silently changes meaning.
+        assert_eq!(
+            token_hash(""),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+        assert_eq!(
+            token_hash("abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
+
+    #[test]
+    fn issued_token_is_urlsafe_base64_of_32_bytes() {
+        let (tok, hash) = issue_token();
+        let raw = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(&tok)
+            .expect("token must be url-safe base64 without padding");
+        assert_eq!(raw.len(), 32);
+        // Stored digest is lowercase hex of a SHA-256 (64 chars).
+        assert_eq!(hash.len(), 64);
+        assert!(hash.bytes().all(|b| b.is_ascii_hexdigit()));
+        assert_eq!(hash, hash.to_lowercase());
+    }
+
+    #[test]
+    fn verify_password_rejects_malformed_phc() {
+        // A corrupt or empty verifier string must fail closed, never panic.
+        assert!(!verify_password(b"whatever", ""));
+        assert!(!verify_password(b"whatever", "not-a-phc-string"));
+        assert!(!verify_password(
+            b"whatever",
+            "$argon2id$v=19$m=65536,t=3,p=1$corrupt"
+        ));
     }
 }
