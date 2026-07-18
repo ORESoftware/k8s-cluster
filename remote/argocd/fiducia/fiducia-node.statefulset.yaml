@@ -43,7 +43,7 @@ spec:
           # Matches fiducia-node.rs/rust-toolchain.toml. RUSTUP_TOOLCHAIN below
           # keeps cargo from attempting a writable toolchain sync on this
           # read-only root filesystem.
-          image: docker.io/library/rust:1.95-bookworm
+          image: docker.io/library/rust:1.95.0-bookworm
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -108,11 +108,6 @@ spec:
               value: /tmp
             - name: CARGO_HOME
               value: /tmp/cargo
-            # rustup writes channel-sync temp files under RUSTUP_HOME; the source
-            # pins a toolchain, so keep it on the writable /tmp emptyDir instead
-            # of the read-only /usr/local/rustup default (readOnlyRootFilesystem).
-            - name: RUSTUP_HOME
-              value: /tmp/rustup
             - name: CARGO_TARGET_DIR
               value: /tmp/target
             - name: CARGO_BUILD_JOBS
@@ -136,10 +131,7 @@ spec:
               path: /healthz
               port: http
             periodSeconds: 5
-            # Cold in-pod build (toolchain download + full cargo compile at 1 job)
-            # runs ~30 min and longer on a busy node; 600*5s = 50 min of headroom
-            # so a slow-but-healthy build is not startup-killed mid-compile.
-            failureThreshold: 600
+            failureThreshold: 240
           readinessProbe:
             httpGet:
               path: /readyz
@@ -168,7 +160,7 @@ spec:
         # Co-located (localhost to the node) by design; builds from source in-pod
         # like everything else, sharing the /tmp build volume + cargo dep cache.
         - name: fiducia-node-sidecar
-          image: docker.io/library/rust:1.95-bookworm
+          image: docker.io/library/rust:1.90-bookworm
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -232,11 +224,6 @@ spec:
               value: /tmp
             - name: CARGO_HOME
               value: /tmp/cargo
-            # rustup writes channel-sync temp files under RUSTUP_HOME; the source
-            # pins a toolchain, so keep it on the writable /tmp emptyDir instead
-            # of the read-only /usr/local/rustup default (readOnlyRootFilesystem).
-            - name: RUSTUP_HOME
-              value: /tmp/rustup
             - name: CARGO_TARGET_DIR
               value: /tmp/sidecar-target
             - name: CARGO_BUILD_JOBS

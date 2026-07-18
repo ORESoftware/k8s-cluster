@@ -40,7 +40,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: fiducia-brain
-          image: docker.io/library/rust:1.95-bookworm
+          image: docker.io/library/rust:1.90-bookworm
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -119,11 +119,6 @@ spec:
               value: /tmp
             - name: CARGO_HOME
               value: /tmp/cargo
-            # rustup writes channel-sync temp files under RUSTUP_HOME; the source
-            # pins a toolchain, so keep it on the writable /tmp emptyDir instead
-            # of the read-only /usr/local/rustup default (readOnlyRootFilesystem).
-            - name: RUSTUP_HOME
-              value: /tmp/rustup
             - name: CARGO_TARGET_DIR
               value: /tmp/target
             - name: CARGO_BUILD_JOBS
@@ -143,10 +138,7 @@ spec:
               path: /healthz
               port: http
             periodSeconds: 5
-            # Cold in-pod build (toolchain download + full cargo compile at 1 job)
-            # runs ~30 min and longer on a busy node; 600*5s = 50 min of headroom
-            # so a slow-but-healthy build is not startup-killed mid-compile.
-            failureThreshold: 600
+            failureThreshold: 240
           readinessProbe:
             httpGet:
               path: /readyz
@@ -170,7 +162,7 @@ spec:
         # brain's /v1/status rollup into Prometheus text on :8091/metrics, scraped
         # by the fiducia-brain-sidecar job. Builds from source in-pod like the rest.
         - name: fiducia-brain-sidecar
-          image: docker.io/library/rust:1.95-bookworm
+          image: docker.io/library/rust:1.90-bookworm
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -224,11 +216,6 @@ spec:
               value: /tmp
             - name: CARGO_HOME
               value: /tmp/cargo
-            # rustup writes channel-sync temp files under RUSTUP_HOME; the source
-            # pins a toolchain, so keep it on the writable /tmp emptyDir instead
-            # of the read-only /usr/local/rustup default (readOnlyRootFilesystem).
-            - name: RUSTUP_HOME
-              value: /tmp/rustup
             - name: CARGO_TARGET_DIR
               value: /tmp/sidecar-target
             - name: CARGO_BUILD_JOBS
