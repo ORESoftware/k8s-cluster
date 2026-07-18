@@ -1955,31 +1955,31 @@ delete from fiducia.users where id = $1;
 select org_id, user_id, role, created_at from fiducia.org_members;
 
 -- name: GetOrgMembers :one
-select org_id, user_id, role, created_at from fiducia.org_members where id = $1 limit 1;
+select org_id, user_id, role, created_at from fiducia.org_members where org_id = $1 limit 1;
 
 -- name: CreateOrgMembers :one
 insert into fiducia.org_members (org_id, user_id, role, created_at) values ($1, $2, $3, $4) returning org_id, user_id, role, created_at;
 
 -- name: UpdateOrgMembers :one
-update fiducia.org_members set org_id = $2, user_id = $3, role = $4 where id = $1 returning org_id, user_id, role, created_at;
+update fiducia.org_members set role = $2 where org_id = $1 returning org_id, user_id, role, created_at;
 
 -- name: DeleteOrgMembers :exec
-delete from fiducia.org_members where id = $1;
+delete from fiducia.org_members where org_id = $1;
 
 -- name: ListProjectMembers :many
 select project_id, user_id, role, created_at from fiducia.project_members;
 
 -- name: GetProjectMembers :one
-select project_id, user_id, role, created_at from fiducia.project_members where id = $1 limit 1;
+select project_id, user_id, role, created_at from fiducia.project_members where project_id = $1 limit 1;
 
 -- name: CreateProjectMembers :one
 insert into fiducia.project_members (project_id, user_id, role, created_at) values ($1, $2, $3, $4) returning project_id, user_id, role, created_at;
 
 -- name: UpdateProjectMembers :one
-update fiducia.project_members set project_id = $2, user_id = $3, role = $4 where id = $1 returning project_id, user_id, role, created_at;
+update fiducia.project_members set role = $2 where project_id = $1 returning project_id, user_id, role, created_at;
 
 -- name: DeleteProjectMembers :exec
-delete from fiducia.project_members where id = $1;
+delete from fiducia.project_members where project_id = $1;
 
 -- name: ListApiKeys :many
 select id, key_id, org_id, project_id, created_by_user_id, name, secret_hash, scopes, env, require_idempotency, mtls_required, revoked, created_at, updated_at, version, sync_sequence, last_used_at, expires_at from fiducia.api_keys;

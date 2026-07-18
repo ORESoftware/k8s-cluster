@@ -15,10 +15,12 @@ import java.util.UUID;
 @Entity
 @Table(name = "org_members", schema = "fiducia")
 public class OrgMembersEntity {
-    @Column(name = "org_id", nullable = false)
+    @Id
+    @Column(name = "org_id")
     private UUID orgId;
 
-    @Column(name = "user_id", nullable = false)
+    @Id
+    @Column(name = "user_id")
     private UUID userId;
 
     @Column(name = "role", length = 32, nullable = false)

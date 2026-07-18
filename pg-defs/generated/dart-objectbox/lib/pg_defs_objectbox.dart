@@ -11781,8 +11781,10 @@ class OrgMembersObjectBox {
   @Id()
   int obxId = 0;
 
+  @Unique()
   String orgId;
 
+  @Unique()
   String userId;
 
   String role;
@@ -11819,8 +11821,10 @@ class ProjectMembersObjectBox {
   @Id()
   int obxId = 0;
 
+  @Unique()
   String projectId;
 
+  @Unique()
   String userId;
 
   String role;

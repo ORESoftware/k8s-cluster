@@ -10,22 +10,20 @@ defmodule DdPgDefs.OrgMembers do
   @table "org_members"
   @schema_prefix "fiducia"
 
-  @primary_key false
+  @primary_key {:id, :binary_id, autogenerate: true}
+  @foreign_key_type :binary_id
 
   schema @table do
-    field :org_id, :binary_id
-    field :user_id, :binary_id
     field :role, :string, default: "member"
   end
 
-  @required_fields ~w(org_id user_id)a
+  @required_fields ~w()a
   @optional_fields ~w(role)a
 
   @doc "Builds an Ecto changeset enforcing every constraint exposed in schema.sql."
   def changeset(struct, attrs) do
     struct
     |> cast(attrs, @required_fields ++ @optional_fields)
-    |> validate_required(@required_fields)
     |> validate_inclusion(:role, ["owner", "admin", "member"])
   end
 end

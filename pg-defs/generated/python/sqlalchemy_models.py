@@ -11351,8 +11351,8 @@ class OrgMembers(Base):
         {"schema": "fiducia"},
     )
 
-    org_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
-    user_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    org_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
+    user_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
     role: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'member'"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
 
@@ -11382,8 +11382,8 @@ class ProjectMembers(Base):
         {"schema": "fiducia"},
     )
 
-    project_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
-    user_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    project_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
+    user_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
     role: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'viewer'"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
 

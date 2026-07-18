@@ -7781,9 +7781,13 @@ public class Users
 [Table("org_members", Schema = "fiducia")]
 public class OrgMembers
 {
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
     [Column("org_id")]
     public Guid OrgId { get; set; }
 
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
     [Column("user_id")]
     public Guid UserId { get; set; }
 
@@ -7800,9 +7804,13 @@ public class OrgMembers
 [Table("project_members", Schema = "fiducia")]
 public class ProjectMembers
 {
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
     [Column("project_id")]
     public Guid ProjectId { get; set; }
 
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
     [Column("user_id")]
     public Guid UserId { get; set; }
 

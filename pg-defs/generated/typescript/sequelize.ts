@@ -2229,15 +2229,15 @@ export function defineDdModels(sequelize: Sequelize) {
   }, { tableName: "users", schema: "fiducia", timestamps: false, freezeTableName: true });
 
   const OrgMembers = sequelize.define("OrgMembers", {
-    org_id: { type: DataTypes.UUID, allowNull: false },
-    user_id: { type: DataTypes.UUID, allowNull: false },
+    org_id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    user_id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
     role: { type: DataTypes.STRING(32), allowNull: false, defaultValue: "member", validate: { isIn: [["owner", "admin", "member"]] } },
     created_at: { type: DataTypes.DATE, allowNull: false },
   }, { tableName: "org_members", schema: "fiducia", timestamps: false, freezeTableName: true });
 
   const ProjectMembers = sequelize.define("ProjectMembers", {
-    project_id: { type: DataTypes.UUID, allowNull: false },
-    user_id: { type: DataTypes.UUID, allowNull: false },
+    project_id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    user_id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
     role: { type: DataTypes.STRING(32), allowNull: false, defaultValue: "viewer", validate: { isIn: [["admin", "operator", "viewer"]] } },
     created_at: { type: DataTypes.DATE, allowNull: false },
   }, { tableName: "project_members", schema: "fiducia", timestamps: false, freezeTableName: true });

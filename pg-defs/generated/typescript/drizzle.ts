@@ -9812,8 +9812,8 @@ export type OrgMembersRole = z.infer<typeof orgMembersRoleSchema>;
 export const orgMembers = fiduciaSchema.table(
   "org_members",
   {
-    orgId: uuid("org_id").notNull(),
-    userId: uuid("user_id").notNull(),
+    orgId: uuid("org_id").primaryKey(),
+    userId: uuid("user_id").primaryKey(),
     role: varchar("role", { length: 32 }).default(sql`'member'`).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
   },
@@ -9849,8 +9849,8 @@ export type ProjectMembersRole = z.infer<typeof projectMembersRoleSchema>;
 export const projectMembers = fiduciaSchema.table(
   "project_members",
   {
-    projectId: uuid("project_id").notNull(),
-    userId: uuid("user_id").notNull(),
+    projectId: uuid("project_id").primaryKey(),
+    userId: uuid("user_id").primaryKey(),
     role: varchar("role", { length: 32 }).default(sql`'viewer'`).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
   },

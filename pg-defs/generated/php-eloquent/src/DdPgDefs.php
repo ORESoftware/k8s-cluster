@@ -3817,16 +3817,17 @@ class Users extends Model
 class OrgMembers extends Model
 {
     protected $table = 'fiducia.org_members';
+    protected $primaryKey = 'org_id';
+    public $incrementing = false;
+    protected $keyType = 'string';
     public $timestamps = false;
-    protected $fillable = ['org_id', 'user_id', 'role', 'created_at'];
+    protected $fillable = ['role', 'created_at'];
     protected $casts = ['created_at' => 'datetime'];
 
     /** @return array<string, array<int, string>> */
     public static function rules(): array
     {
         return [
-            'org_id' => ['required', 'uuid'],
-            'user_id' => ['required', 'uuid'],
             'role' => ['nullable', 'string', 'in:owner,admin,member'],
         ];
     }
@@ -3835,16 +3836,17 @@ class OrgMembers extends Model
 class ProjectMembers extends Model
 {
     protected $table = 'fiducia.project_members';
+    protected $primaryKey = 'project_id';
+    public $incrementing = false;
+    protected $keyType = 'string';
     public $timestamps = false;
-    protected $fillable = ['project_id', 'user_id', 'role', 'created_at'];
+    protected $fillable = ['role', 'created_at'];
     protected $casts = ['created_at' => 'datetime'];
 
     /** @return array<string, array<int, string>> */
     public static function rules(): array
     {
         return [
-            'project_id' => ['required', 'uuid'],
-            'user_id' => ['required', 'uuid'],
             'role' => ['nullable', 'string', 'in:admin,operator,viewer'],
         ];
     }

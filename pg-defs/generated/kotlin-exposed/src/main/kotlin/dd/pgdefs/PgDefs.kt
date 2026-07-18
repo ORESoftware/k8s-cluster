@@ -2498,6 +2498,8 @@ object OrgMembers : Table("fiducia.org_members") {
     val userId = uuid("user_id")
     val role = varchar("role", 32)
     val createdAt = timestampWithTimeZone("created_at")
+
+    override val primaryKey = PrimaryKey(orgId, userId)
 }
 
 object ProjectMembers : Table("fiducia.project_members") {
@@ -2505,6 +2507,8 @@ object ProjectMembers : Table("fiducia.project_members") {
     val userId = uuid("user_id")
     val role = varchar("role", 32)
     val createdAt = timestampWithTimeZone("created_at")
+
+    override val primaryKey = PrimaryKey(projectId, userId)
 }
 
 object ApiKeys : Table("fiducia.api_keys") {

@@ -2883,8 +2883,8 @@ class Users(models.Model):
 
 
 class OrgMembers(models.Model):
-    org_id = models.UUIDField()
-    user_id = models.UUIDField()
+    org_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     role = models.CharField(max_length=32, choices=[("owner", "owner"), ("admin", "admin"), ("member", "member")], default="member")
     created_at = models.DateTimeField()
 
@@ -2895,8 +2895,8 @@ class OrgMembers(models.Model):
 
 
 class ProjectMembers(models.Model):
-    project_id = models.UUIDField()
-    user_id = models.UUIDField()
+    project_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     role = models.CharField(max_length=32, choices=[("admin", "admin"), ("operator", "operator"), ("viewer", "viewer")], default="viewer")
     created_at = models.DateTimeField()
 

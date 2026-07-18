@@ -6326,10 +6326,10 @@ export class UsersEntity {
 @Index("fiducia_org_members_user_idx", ["userId"])
 @Entity({ schema: "fiducia", name: "org_members" })
 export class OrgMembersEntity {
-  @Column({ name: "org_id", type: "uuid" })
+  @PrimaryColumn({ name: "org_id", type: "uuid" })
   orgId!: string;
 
-  @Column({ name: "user_id", type: "uuid" })
+  @PrimaryColumn({ name: "user_id", type: "uuid" })
   userId!: string;
 
   @Column({ name: "role", type: "varchar", length: 32, default: () => "'member'" })
@@ -6343,10 +6343,10 @@ export class OrgMembersEntity {
 @Index("fiducia_project_members_user_idx", ["userId"])
 @Entity({ schema: "fiducia", name: "project_members" })
 export class ProjectMembersEntity {
-  @Column({ name: "project_id", type: "uuid" })
+  @PrimaryColumn({ name: "project_id", type: "uuid" })
   projectId!: string;
 
-  @Column({ name: "user_id", type: "uuid" })
+  @PrimaryColumn({ name: "user_id", type: "uuid" })
   userId!: string;
 
   @Column({ name: "role", type: "varchar", length: 32, default: () => "'viewer'" })

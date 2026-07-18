@@ -2809,8 +2809,8 @@ model Users {
 }
 
 model OrgMembers {
-  orgId String @map("org_id") @db.Uuid
-  userId String @map("user_id") @db.Uuid
+  orgId String @map("org_id") @id @db.Uuid
+  userId String @map("user_id") @id @db.Uuid
   role String @default("member") @db.VarChar(32)
   createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
   @@index([userId], map: "fiducia_org_members_user_idx")
@@ -2819,8 +2819,8 @@ model OrgMembers {
 }
 
 model ProjectMembers {
-  projectId String @map("project_id") @db.Uuid
-  userId String @map("user_id") @db.Uuid
+  projectId String @map("project_id") @id @db.Uuid
+  userId String @map("user_id") @id @db.Uuid
   role String @default("viewer") @db.VarChar(32)
   createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
   @@index([userId], map: "fiducia_project_members_user_idx")

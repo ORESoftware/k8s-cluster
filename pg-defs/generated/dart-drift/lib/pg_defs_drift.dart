@@ -3513,6 +3513,12 @@ class OrgMembersTable extends Table {
   TextColumn get userId => text().named("user_id").customConstraint("UUID")();
   TextColumn get role => text().named("role").clientDefault(() => 'member')();
   DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        orgId,
+        userId,
+  };
 }
 
 @DataClassName("ProjectMembersData")
@@ -3525,6 +3531,12 @@ class ProjectMembersTable extends Table {
   TextColumn get userId => text().named("user_id").customConstraint("UUID")();
   TextColumn get role => text().named("role").clientDefault(() => 'viewer')();
   DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        projectId,
+        userId,
+  };
 }
 
 @DataClassName("ApiKeysData")

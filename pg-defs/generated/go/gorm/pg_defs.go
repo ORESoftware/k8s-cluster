@@ -7014,8 +7014,8 @@ const OrgMembersSelectSQL = `select
 var OrgMembersRoleValues = []string{"owner", "admin", "member"}
 
 type OrgMembersGorm struct {
-	OrgId uuid.UUID `gorm:"column:org_id;type:uuid;not null" json:"orgId"`
-	UserId uuid.UUID `gorm:"column:user_id;type:uuid;not null" json:"userId"`
+	OrgId uuid.UUID `gorm:"column:org_id;type:uuid;primaryKey" json:"orgId"`
+	UserId uuid.UUID `gorm:"column:user_id;type:uuid;primaryKey" json:"userId"`
 	Role string `gorm:"column:role;type:varchar(32);default:'member';not null" json:"role"`
 	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
 }
@@ -7038,8 +7038,8 @@ const ProjectMembersSelectSQL = `select
 var ProjectMembersRoleValues = []string{"admin", "operator", "viewer"}
 
 type ProjectMembersGorm struct {
-	ProjectId uuid.UUID `gorm:"column:project_id;type:uuid;not null" json:"projectId"`
-	UserId uuid.UUID `gorm:"column:user_id;type:uuid;not null" json:"userId"`
+	ProjectId uuid.UUID `gorm:"column:project_id;type:uuid;primaryKey" json:"projectId"`
+	UserId uuid.UUID `gorm:"column:user_id;type:uuid;primaryKey" json:"userId"`
 	Role string `gorm:"column:role;type:varchar(32);default:'viewer';not null" json:"role"`
 	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
 }

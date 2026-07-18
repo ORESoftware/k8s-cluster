@@ -7556,7 +7556,7 @@ pub struct UsersDieselInsert {
 
 diesel::table! {
     use diesel::sql_types::*;
-    org_members (org_id) {
+    org_members (org_id, user_id) {
         org_id -> Uuid,
         user_id -> Uuid,
         role -> Varchar,
@@ -7584,7 +7584,7 @@ pub struct OrgMembersDieselInsert {
 
 diesel::table! {
     use diesel::sql_types::*;
-    project_members (project_id) {
+    project_members (project_id, user_id) {
         project_id -> Uuid,
         user_id -> Uuid,
         role -> Varchar,

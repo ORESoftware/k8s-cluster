@@ -2660,8 +2660,8 @@ class Users(BaseModel):
 
 
 class OrgMembers(BaseModel):
-    org_id = UUIDField()
-    user_id = UUIDField()
+    org_id = UUIDField(primary_key=True)
+    user_id = UUIDField(primary_key=True)
     role = CharField(max_length=32)
     created_at = DateTimeField()
 
@@ -2671,8 +2671,8 @@ class OrgMembers(BaseModel):
 
 
 class ProjectMembers(BaseModel):
-    project_id = UUIDField()
-    user_id = UUIDField()
+    project_id = UUIDField(primary_key=True)
+    user_id = UUIDField(primary_key=True)
     role = CharField(max_length=32)
     created_at = DateTimeField()
 

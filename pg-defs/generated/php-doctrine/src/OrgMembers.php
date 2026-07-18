@@ -15,9 +15,13 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Table(name: 'org_members', schema: 'fiducia')]
 class OrgMembers
 {
+    #[ORM\Id]
+    #[ORM\GeneratedValue(strategy: 'NONE')]
     #[ORM\Column(type: 'guid', name: 'org_id')]
     public string $orgId;
 
+    #[ORM\Id]
+    #[ORM\GeneratedValue(strategy: 'NONE')]
     #[ORM\Column(type: 'guid', name: 'user_id')]
     public string $userId;
 

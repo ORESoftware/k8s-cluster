@@ -5626,9 +5626,9 @@ pub mod org_members {
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(schema_name = "fiducia", table_name = "org_members")]
 pub struct Model {
-    #[sea_orm(column_name = "org_id")]
+    #[sea_orm(primary_key, auto_increment = false, column_name = "org_id")]
     pub org_id: Uuid,
-    #[sea_orm(column_name = "user_id")]
+    #[sea_orm(primary_key, auto_increment = false, column_name = "user_id")]
     pub user_id: Uuid,
     pub role: String,
     #[sea_orm(column_name = "created_at")]
@@ -5651,9 +5651,9 @@ pub mod project_members {
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(schema_name = "fiducia", table_name = "project_members")]
 pub struct Model {
-    #[sea_orm(column_name = "project_id")]
+    #[sea_orm(primary_key, auto_increment = false, column_name = "project_id")]
     pub project_id: Uuid,
-    #[sea_orm(column_name = "user_id")]
+    #[sea_orm(primary_key, auto_increment = false, column_name = "user_id")]
     pub user_id: Uuid,
     pub role: String,
     #[sea_orm(column_name = "created_at")]

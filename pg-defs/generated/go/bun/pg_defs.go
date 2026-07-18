@@ -6885,8 +6885,8 @@ var OrgMembersRoleValues = []string{"owner", "admin", "member"}
 
 type OrgMembersBun struct {
 	bun.BaseModel `bun:"table:fiducia.org_members"`
-	OrgId uuid.UUID `bun:"org_id,type:uuid" json:"orgId"`
-	UserId uuid.UUID `bun:"user_id,type:uuid" json:"userId"`
+	OrgId uuid.UUID `bun:"org_id,type:uuid,pk" json:"orgId"`
+	UserId uuid.UUID `bun:"user_id,type:uuid,pk" json:"userId"`
 	Role string `bun:"role,type:varchar(32),default:'member'" json:"role"`
 	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
 }
@@ -6908,8 +6908,8 @@ var ProjectMembersRoleValues = []string{"admin", "operator", "viewer"}
 
 type ProjectMembersBun struct {
 	bun.BaseModel `bun:"table:fiducia.project_members"`
-	ProjectId uuid.UUID `bun:"project_id,type:uuid" json:"projectId"`
-	UserId uuid.UUID `bun:"user_id,type:uuid" json:"userId"`
+	ProjectId uuid.UUID `bun:"project_id,type:uuid,pk" json:"projectId"`
+	UserId uuid.UUID `bun:"user_id,type:uuid,pk" json:"userId"`
 	Role string `bun:"role,type:varchar(32),default:'viewer'" json:"role"`
 	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
 }

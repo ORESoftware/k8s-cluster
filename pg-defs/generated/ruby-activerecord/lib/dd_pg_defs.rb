@@ -2058,17 +2058,15 @@ module DdPgDefs
 
   class OrgMembers < ActiveRecord::Base
     self.table_name = "fiducia.org_members"
+    self.primary_key = "org_id"
 
-    validates :org_id, presence: true
-    validates :user_id, presence: true
     validates :role, inclusion: { in: ["owner", "admin", "member"] }
   end
 
   class ProjectMembers < ActiveRecord::Base
     self.table_name = "fiducia.project_members"
+    self.primary_key = "project_id"
 
-    validates :project_id, presence: true
-    validates :user_id, presence: true
     validates :role, inclusion: { in: ["admin", "operator", "viewer"] }
   end
 
