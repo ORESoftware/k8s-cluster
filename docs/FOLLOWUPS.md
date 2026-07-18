@@ -9,6 +9,31 @@ missing, and concrete acceptance criteria. Priorities:
 
 Paths are relative to each app's repo (see the [apps table](../README.md)).
 
+## Build & test baseline (2026-07-18)
+
+Every repo currently compiles and its tests pass on `main`; all pins are pushed
+and resolve. This is the green baseline the items below build on — if any of
+these regress, fix that before starting new follow-up work.
+
+| Repo | Check | Status |
+| --- | --- | --- |
+| interfaces | `npm test` + `generate --check` | 14 pass, 23 artifacts in sync |
+| ui.dart | `flutter analyze` + `test` | clean, 321 pass |
+| web-desktop.dart | `flutter analyze` + `test` | clean, 34 pass |
+| audio-recording (audio_dashcam) | `flutter analyze` + `test` | clean, 299 pass |
+| web-server.rs | `cargo test` + `clippy -D warnings` | 29 pass, clippy clean |
+| api-server.rs | `cargo test` | 10 pass |
+| backend.rs | `cargo test` | 46 pass |
+| desktop.app.rs | `cargo test` | 20 pass |
+| mcp-server.rs | `cargo test` | 10 pass |
+| app-proxy | `node --test` | 12 pass |
+| site.web | `astro build` | 4 pages built |
+
+Note on web-server.rs: `clippy -D warnings` passes only because the MFA surface
+in `src/auth.rs` carries `#[allow(dead_code)]` markers. Item 1.2 removes those as
+the web second-factor screen gets wired — do not delete the markers without
+wiring the callers, or CI's `-D warnings` breaks.
+
 ---
 
 ## P0 — the paid tier is not enforced anywhere server-side
@@ -121,10 +146,13 @@ magic-link email template carries `{{ .Token }}`.
 
 ## P2 — coverage, consistency, ops
 
-- **Push the new repos.** `sonus-auris-web-desktop.dart` and
-  `sonus-auris-api-server.rs` have `origin` remotes configured but the GitHub
-  repos may not exist / aren't pushed; the monorepo pins reference local commits.
-  Create the repos, push, then re-verify the monorepo submodule pins resolve.
+- ~~**Push the new repos.**~~ **Done (2026-07-18).** `sonus-auris-api-server.rs`
+  and `sonus-auris-web-desktop.dart` were created as **private** `sonus-auris`
+  repos, pushed, and wired in as submodules. All 11 monorepo submodule pins now
+  resolve on their respective `origin/main` (verified with
+  `git submodule foreach 'git merge-base --is-ancestor HEAD origin/main'`). Keep
+  this invariant: never pin a submodule to a commit you haven't pushed, or the
+  `integration` CI checkout fails.
 - **CI secrets.** proxy `deploy.yml` needs `CLOUDFLARE_API_TOKEN` (Workers
   Scripts: Edit); monorepo `integration` CI needs `SUBMODULE_SSH_KEY` for the
   private submodules; api-server/console CI are self-contained.
