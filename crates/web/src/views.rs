@@ -228,7 +228,7 @@ pub fn history_page(translations: &[translation::Model], calls: &[vapi_call::Mod
     )
 }
 
-const STYLE: &str = r#"
+pub const STYLE: &str = r#"
 :root { color-scheme: light dark; --bg:#0f1220; --panel:#181c2e; --card:#1e2338; --ink:#e7e9f3; --dim:#9aa0bf; --accent:#7c5cff; --ok:#3ad29f; --err:#ff6b6b; --line:#2a3050; }
 * { box-sizing: border-box; }
 body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--ink); }
