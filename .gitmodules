@@ -30,3 +30,7 @@
 	path = tools/flags-2-env
 	url = https://github.com/ORESoftware/flags-2-env.git
 	branch = main
+[submodule "apps/sonusauris-app-proxy"]
+	url = git@github.com:ORESoftware/sonusauris-app-proxy.git
+	branch = main
+	path = apps/sonusauris-app-proxy

@@ -20,6 +20,9 @@ visibility, so public repos (UI, marketing site) coexist with private ones
 | Shared interfaces | [`apps/sonus-auris-interfaces`](apps/sonus-auris-interfaces) | `sonus-auris/sonus-auris-interfaces` |
 | Marketing site | [`apps/sonus-auris-site.web`](apps/sonus-auris-site.web) | `sonus-auris/sonus-auris-site.web` |
 | Desktop app (Rust) | [`apps/desktop.app.rs`](apps/desktop.app.rs) | `sonus-auris/desktop.app.rs` |
+| Console app (Dart/Flutter, desktop + web) | [`apps/sonus-auris-web-desktop.dart`](apps/sonus-auris-web-desktop.dart) | `sonus-auris/sonus-auris-web-desktop.dart` |
+| API server (Rust, JSON + billing webhooks) | [`apps/sonus-auris-api-server.rs`](apps/sonus-auris-api-server.rs) | `sonus-auris/sonus-auris-api-server.rs` |
+| Cloudflare proxy for `sonusauris.app` | [`apps/sonusauris-app-proxy`](apps/sonusauris-app-proxy) | `ORESoftware/sonusauris-app-proxy` |
 | Infra (k8s) | [`apps/sonus-auris.infra`](apps/sonus-auris.infra) | `sonus-auris/sonus-auris.infra` |
 
 ## Shared CLI flags

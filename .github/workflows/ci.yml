@@ -1,0 +1,55 @@
+name: integration
+
+# Monorepo-level checks: fast cross-repo invariants only. Each app repo runs
+# its own full CI (flutter/cargo/wrangler); deploys are documented in
+# docs/DEPLOY.md (proxy deploys from its repo, servers via k8s-cluster gitops).
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          # Private submodules need a read key: create an SSH deploy key with
+          # read access to the private repos and store it as SUBMODULE_SSH_KEY.
+          ssh-key: ${{ secrets.SUBMODULE_SSH_KEY }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Interfaces contract is self-consistent
+        working-directory: apps/sonus-auris-interfaces
+        run: |
+          npm test
+          node src/generate.mjs --check
+
+      - name: Proxy worker tests
+        working-directory: apps/sonusauris-app-proxy
+        run: |
+          npm ci
+          npm test
+
+      - name: Vendored interfaces copies match the generator output
+        run: |
+          set -euo pipefail
+          src=apps/sonus-auris-interfaces/generated/dart/lib/sonus_auris_interfaces.dart
+          fail=0
+          for copy in \
+            apps/sonus-auris-ui.dart/packages/sonus_auris_interfaces/lib/sonus_auris_interfaces.dart \
+            apps/sonus-auris-web-desktop.dart/packages/sonus_auris_interfaces/lib/sonus_auris_interfaces.dart; do
+            if [ -f "$copy" ]; then
+              if ! diff -u "$src" "$copy"; then
+                echo "::error::$copy is stale — re-copy generated/dart from sonus-auris-interfaces"
+                fail=1
+              fi
+            fi
+          done
+          exit "$fail"
