@@ -6870,6 +6870,16 @@ async fn run_nats_loop(state: AppState) {
             "resultSubject": state.config.result_subject
         }),
     );
+    // Bound in-flight forecast handlers. Previously every message was
+    // tokio::spawn'ed with no ceiling, so a burst could spawn unbounded
+    // concurrent forecasts; acquiring a permit before spawning also backpressures
+    // the subscription instead of piling work on.
+    let max_concurrency = env::var("ECONOMICS_NATS_MAX_CONCURRENCY")
+        .ok()
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(64);
+    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(max_concurrency));
     loop {
         let mut subscription = match nats
             .queue_subscribe(
@@ -6913,8 +6923,14 @@ async fn run_nats_loop(state: AppState) {
                 );
                 continue;
             }
+            // Backpressure point: wait for a permit before spawning more work.
+            let permit = match semaphore.clone().acquire_owned().await {
+                Ok(permit) => permit,
+                Err(_) => break,
+            };
             let task_state = state.clone();
             tokio::spawn(async move {
+                let _permit = permit; // released when this handler finishes
                 match serde_json::from_slice::<ForecastRequest>(&payload) {
                     Ok(request) => match forecast_from_request(&task_state, request) {
                         Ok(response) => {
