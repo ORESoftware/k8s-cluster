@@ -47,43 +47,9 @@ const SUBJECT_LITERAL = new RegExp(
 );
 const SUBJECT_PREFIX_CONTEXT = /(?:SUBJECT_PREFIX|subject[_-]?prefix|subjectPrefix)/i;
 
-// These routes are real cluster usages that are waiting for the next remote/libs
-// pin containing their canonical definitions. Exceptions are exact, must remain
-// observable, and fail as stale as soon as the pinned schema covers them.
-const KNOWN_PINNED_SCHEMA_DEBT = new Map<string, string>([
-  [
-    'dd.remote.browser_jobs.{job_id}.events',
-    'BrowserJobEvents is pending in the pinned remote/libs schema.',
-  ],
-  [
-    'dd.remote.browser_jobs.{job_id}.result',
-    'BrowserJobResult is pending in the pinned remote/libs schema.',
-  ],
-  [
-    'dd.remote.browser_jobs.results',
-    'BrowserJobResults is pending in the pinned remote/libs schema.',
-  ],
-  [
-    'dd.remote.document.convert',
-    'DocumentConvertRequests is pending in the pinned remote/libs schema.',
-  ],
-  [
-    'dd.remote.document.results',
-    'DocumentConvertResults is pending in the pinned remote/libs schema.',
-  ],
-  [
-    'dd.remote.ocr.requests',
-    'OcrRequests is pending in the pinned remote/libs schema.',
-  ],
-  [
-    'dd.remote.ocr.results',
-    'OcrResults is pending in the pinned remote/libs schema.',
-  ],
-  [
-    'dd.remote.public_data.ingest.deadletter',
-    'PublicDataIngestDeadLetter is pending in the pinned remote/libs schema.',
-  ],
-]);
+// Keep exceptions exact and temporary. The current pinned schema covers every
+// observed cluster subject, so any future uncovered usage must fail immediately.
+const KNOWN_PINNED_SCHEMA_DEBT = new Map<string, string>();
 
 function findRepoRoot(): string {
   const candidates = [

@@ -182,7 +182,7 @@ function assertGrafanaCoversFabricationRootRoutes(source: string, grafanaDashboa
 
 test('rust fabrication server exposes planning, analysis, nats, and learning hooks', async () => {
   const cargo = await readRepoFile('remote/deployments/fabrication-server-rs/Cargo.toml');
-  const source = await readRepoFile('remote/deployments/fabrication-server-rs/src/main.rs');
+  const source = await readRepoFile('remote/deployments/fabrication-server-rs/src/lib.rs');
   const assemblyCatalogContentSource = await readRepoFile(
     'remote/deployments/fabrication-server-rs/src/assembly_catalog_content.rs',
   );
@@ -961,8 +961,12 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /"desMdpSolution": des_mdp_solution/);
   assert.match(source, /"desPomdpSpec": des_pomdp_spec/);
   assert.match(source, /"desPomdpSolution": des_pomdp_solution/);
+  assert.match(source, /async fn build_fabrication_consumer/);
   assert.match(source, /async fn run_nats_loop/);
-  assert.match(source, /queue_subscribe\(state\.request_subject\.clone\(\), state\.queue_group\.clone\(\)\)/);
+  assert.match(source, /durable_name: Some\(state\.queue_group\.clone\(\)\)/);
+  assert.match(source, /filter_subject: state\.request_subject\.clone\(\)/);
+  assert.match(source, /ack_policy: async_nats::jetstream::consumer::AckPolicy::Explicit/);
+  assert.match(source, /consumer\.messages\(\)\.await/);
   assert.match(source, /enum FabricationNatsRequest/);
   assert.match(source, /fn parse_fabrication_nats_request/);
   assert.match(source, /FabricationNatsRequest::InstructionAnalysis/);
@@ -11547,7 +11551,7 @@ assert.match(source, /sheet-forming-evidence-missing/);
 });
 
 test('fabrication server is deployed through runtime manifests, gateway, and observability', async () => {
-  const source = await readRepoFile('remote/deployments/fabrication-server-rs/src/main.rs');
+  const source = await readRepoFile('remote/deployments/fabrication-server-rs/src/lib.rs');
   const deployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-fabrication-server.deployment.yaml',
   );

@@ -435,7 +435,7 @@ test("supporting runtime services expose prometheus metrics", async () => {
   assert.match(lockLoadtest, /dd_lock_loadtest_trigger_runs_started_total/);
   assert.match(agentWorkerDeployment, /dd\.dev\/telemetry-revision:\s*'2026-05-18-observability'/);
   assert.match(authDeployment, /dd\.dev\/telemetry-revision:\s*'2026-05-18-observability'/);
-  assert.match(billingDeployment, /dd\.dev\/telemetry-revision:\s*'2026-06-05-customer-snapshot-locks'/);
+  assert.match(billingDeployment, /dd\.dev\/telemetry-revision:\s*'2026-07-16-fiducia-coordination'/);
   assert.match(formalDeployment, /dd\.dev\/telemetry-revision:\s*'2026-05-18-observability'/);
   assert.match(lockDeployment, /dd\.dev\/telemetry-revision:\s*'2026-05-18-observability'/);
 });

@@ -151,7 +151,7 @@ test('gleam services expose a single pg_contract module rather than hand-rolling
   assert.match(lambdaContract, /pg_defs\.lambda_functions_select_sql/);
 });
 
-test('every gleam runtime deployment can reach RDS Postgres via an optional secret env', async () => {
+test('gleam runtimes with database code receive a narrow optional Postgres secret', async () => {
   const services: ReadonlyArray<{
     name: string;
     ec2: string;
@@ -163,12 +163,6 @@ test('every gleam runtime deployment can reach RDS Postgres via an optional secr
       ec2: 'remote/deployments/gleam-lambda-runner/k8s/ec2/dd-gleam-lambda-runner.deployment.yaml',
       secret: 'dd-gleam-lambda-runner-secrets',
       primaryUrlKey: 'LAMBDA_DATABASE_URL',
-    },
-    {
-      name: 'dd-gleam-mcp-server',
-      ec2: 'remote/deployments/gleam-mcp-server/k8s/ec2/dd-gleam-mcp-server.deployment.yaml',
-      secret: 'dd-gleam-mcp-server-secrets',
-      primaryUrlKey: 'RDS_DATABASE_URL',
     },
     {
       name: 'dd-gleamlang-server',
@@ -202,6 +196,19 @@ test('every gleam runtime deployment can reach RDS Postgres via an optional secr
   }
 });
 
+test('gleam MCP does not receive unused database credentials', async () => {
+  const deployment = await readRepoFile(
+    'remote/deployments/gleam-mcp-server/k8s/ec2/dd-gleam-mcp-server.deployment.yaml',
+  );
+  const source = await readRepoFile(
+    'remote/deployments/gleam-mcp-server/src/gleam_mcp_server.gleam',
+  );
+
+  assert.doesNotMatch(deployment, /name:\s*(?:RDS_DATABASE_URL|AGENT_TASKS_RDS_DATABASE_URL)/);
+  assert.doesNotMatch(source, /RDS_DATABASE_URL|AGENT_TASKS_RDS_DATABASE_URL/);
+  assert.match(deployment, /Mounting unused DB[\s\S]*credentials[\s\S]*needless blast radius/);
+});
+
 test('each gleam runtime secret has an ExternalSecret backing it', async () => {
   const externalSecrets = await readRepoFile('remote/argocd/secrets/common/external-secrets.yaml');
   for (const secret of [
@@ -212,7 +219,7 @@ test('each gleam runtime secret has an ExternalSecret backing it', async () => {
     assert.match(
       externalSecrets,
       new RegExp(`name:\\s*${secret}`),
-      `${secret} must be created by an ExternalSecret in remote/argocd/secrets/common/external-secrets.yaml so RDS_DATABASE_URL et al. flow from the selected secret backend.`,
+      `${secret} must be created by an ExternalSecret in remote/argocd/secrets/common/external-secrets.yaml so service-scoped credentials flow from the selected secret backend.`,
     );
   }
 });

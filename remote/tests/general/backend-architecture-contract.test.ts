@@ -24,52 +24,16 @@ const IGNORED_SOURCE_DIRECTORIES = new Set([
 // as stale until its exception is removed here.
 const KNOWN_DIRECT_SQLX_DEBT = new Map<string, string>([
   [
-    'remote/deployments/3fa-backend/Cargo.toml',
-    'Migrate the 3FA persistence layer in the upstream submodule to SeaORM.',
-  ],
-  [
     'remote/deployments/ai-agent-bridge/Cargo.toml',
     'Replace the optional Postgres SQLx feature with SeaORM upstream.',
-  ],
-  [
-    'remote/deployments/athleto-app-rs/Cargo.toml',
-    'Move the remaining SQLx migration path behind SeaORM migration upstream.',
-  ],
-  [
-    'remote/deployments/benefactor-backend-rs/Cargo.toml',
-    'Replace direct sqlx-core/sqlx-postgres driver use with SeaORM upstream.',
   ],
   [
     'remote/deployments/contract-service-rs/Cargo.toml',
     'Move advisory-lock coordination from direct SQLx to SeaORM.',
   ],
   [
-    'remote/deployments/fiducia-customer.rs/Cargo.toml',
-    'Move the remaining direct SQLx migration dependency to SeaORM upstream.',
-  ],
-  [
-    'remote/deployments/fiducia-monorepo/apps/fiducia-ai-agent-bridge.rs/Cargo.toml',
-    'Replace the optional Postgres SQLx feature with SeaORM upstream.',
-  ],
-  [
-    'remote/deployments/fiducia-monorepo/apps/fiducia-ai-agent-control-plane/Cargo.toml',
-    'Migrate control-plane persistence to SeaORM upstream.',
-  ],
-  [
-    'remote/deployments/fiducia-monorepo/apps/fiducia-customer.rs/Cargo.toml',
-    'Move the remaining direct SQLx migration dependency to SeaORM upstream.',
-  ],
-  [
     'remote/deployments/fiducia-monorepo/apps/fiducia-interfaces/generated/rust-db/Cargo.toml',
     'Replace generated SQLx row bindings with the canonical SeaORM bindings upstream.',
-  ],
-  [
-    'remote/deployments/fiducia-monorepo/apps/fiducia-memory.rs/Cargo.toml',
-    'Migrate durable memory persistence and migrations to SeaORM upstream.',
-  ],
-  [
-    'remote/deployments/fiducia-monorepo/apps/fiducia-operations-control-plane/Cargo.toml',
-    'Migrate operations persistence to SeaORM upstream.',
   ],
   [
     'remote/deployments/mip-solver-node.rs/Cargo.toml',
@@ -82,10 +46,6 @@ const KNOWN_DIRECT_SQLX_DEBT = new Map<string, string>([
 ]);
 const KNOWN_DIRECT_SQLX_HIT_COUNTS = new Map(
   [...KNOWN_DIRECT_SQLX_DEBT.keys()].map((file) => [file, 1]),
-);
-KNOWN_DIRECT_SQLX_HIT_COUNTS.set(
-  'remote/deployments/benefactor-backend-rs/Cargo.toml',
-  2,
 );
 
 function findRepoRoot(): string {
