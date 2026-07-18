@@ -17,12 +17,16 @@ repo's main branch.
 | `apps/canonical-interfaces`          | JSON Schema / SQL          | [canonical-interfaces](https://github.com/canonical-cloud/canonical-interfaces) |
 
 `canonical-marketing-site.web` is the static public site.
-`canonical-web-server.rs` is the dynamic sMASH application: Supabase Auth and
-Postgres, Maud, Axum, SeaORM, and HTMX. It serves server-rendered application
-pages, a versioned REST API, and authenticated WebSockets. Its TypeScript client
-uses IndexedDB for optimistic/offline state and reconciles with authoritative
-Supabase Postgres through the REST API. The Maud shell gives HTMX ownership of
-the dashboard WebSocket, while PostgreSQL `LISTEN`/`NOTIFY` relays disposable,
+`canonical-web-server.rs` is a modular Rust workspace. Its customer-facing
+sMASH binary uses Supabase Auth/Postgres, Maud, Axum, SeaORM, and HTMX to serve
+server-rendered application pages, a versioned REST API, and authenticated
+WebSockets. A separate no-ingress `canonical-session-revoker` binary retries
+durable upstream logout work with its own least-privilege database identity.
+Shared auth, configuration, session, and persistence code lives in focused
+workspace crates rather than inside either process. The TypeScript client uses
+IndexedDB for optimistic/offline state and reconciles with authoritative
+Supabase Postgres through REST. The Maud shell gives HTMX ownership of the
+dashboard WebSocket, while PostgreSQL `LISTEN`/`NOTIFY` relays disposable,
 owner-scoped invalidation hints between server instances. `canonical-interfaces`
 remains the typed-IO source of truth. See `docs/repo-boundaries.md`.
 
@@ -41,24 +45,39 @@ git submodule update --init --recursive
 ## Build the full stack
 
 ```sh
-./build.sh            # builds Astro, the HTMX/IndexedDB client, and the locked
-                      # Rust application server in their own submodules
+./build.sh            # builds Astro, the HTMX/IndexedDB client, and all locked
+                      # Rust workspace binaries in their own submodules
 ```
 
-To run the result, copy `.env.example` to an ignored `.env.local`, replace all
-placeholders, and load it into the environment. Apply migrations with the
-privileged migration-only URL, remove that URL from the environment, then start
-the long-lived process with only the least-privilege runtime URL:
+To run the result, derive three ignored environment files from `.env.example`:
+one for the migration job, one for the customer web process, and one for the
+no-ingress revoker. Never load all three database credentials into one process.
+Apply migrations and bootstrap both runtime roles with the privileged
+migration-only URL:
 
 ```sh
-set -a; source .env.local; set +a
+set -a; source .env.migration; set +a
 ./apps/canonical-web-server.rs/target/release/canonical-web-server migrate
+psql "$MIGRATION_DATABASE_URL" \
+  --file apps/canonical-web-server.rs/deploy/postgres/bootstrap_runtime_role.sql
+psql "$MIGRATION_DATABASE_URL" \
+  --file apps/canonical-web-server.rs/deploy/postgres/bootstrap_session_revoker_role.sql
 unset MIGRATION_DATABASE_URL MIGRATION_DATABASE_MAX_CONNECTIONS
-./apps/canonical-web-server.rs/target/release/canonical-web-server serve
 ```
 
-After the first migration, apply the explicit runtime-role grants in
-`apps/canonical-web-server.rs/deploy/postgres/bootstrap_runtime_role.sql`.
+Then launch the long-lived processes independently. The web environment has
+only `DATABASE_URL`; the worker environment has only
+`SESSION_REVOCATION_DATABASE_URL` and receives no network ingress:
+
+```sh
+set -a; source .env.web; set +a
+./apps/canonical-web-server.rs/target/release/canonical-web-server serve
+
+# Separate shell/container/process:
+set -a; source .env.revoker; set +a
+./apps/canonical-web-server.rs/target/release/canonical-session-revoker run
+```
+
 Production requires Supabase session/direct pooling; transaction pooling cannot
 support the dedicated PostgreSQL listener connection.
 
@@ -99,5 +118,5 @@ scripts/               # pin / checkout / audit helpers (no destructive git)
 tests/                 # node --test superproject contract specs
 docs/                  # repo-boundaries, deploy
 .github/               # CI + dependabot
-build.sh               # Astro + app client + locked Rust application build
+build.sh               # Astro + app client + locked Rust workspace build
 ```

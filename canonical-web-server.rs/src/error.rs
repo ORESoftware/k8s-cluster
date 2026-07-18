@@ -22,10 +22,16 @@ pub enum AppError {
     AuthUpstream,
     #[error("request rate limit exceeded")]
     RateLimited { retry_after_seconds: u64 },
+    #[error("password authentication capacity is temporarily exhausted")]
+    LoginAuthBusy,
+    #[error("bearer authentication capacity is temporarily exhausted")]
+    AuthBusy,
     #[error("database error")]
     Database(#[from] sea_orm::DbErr),
     #[error("HTTP client configuration failed")]
     HttpClient(#[from] reqwest::Error),
+    #[error("Supabase Auth client configuration failed")]
+    AuthClient(#[from] canonical_auth::SupabaseAuthBuildError),
     #[error("I/O error")]
     Io(#[from] std::io::Error),
     #[error("session cryptography failed")]
@@ -34,12 +40,25 @@ pub enum AppError {
     Serialization(#[from] serde_json::Error),
 }
 
+impl From<canonical_session::SessionError> for AppError {
+    fn from(error: canonical_session::SessionError) -> Self {
+        match error {
+            canonical_session::SessionError::Unauthorized => Self::Unauthorized,
+            canonical_session::SessionError::BadRequest(message) => Self::BadRequest(message),
+            canonical_session::SessionError::AuthUpstream => Self::AuthUpstream,
+            canonical_session::SessionError::Database(error) => Self::Database(error),
+            canonical_session::SessionError::Crypto => Self::Crypto,
+        }
+    }
+}
+
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let retry_after_seconds = match &self {
             Self::RateLimited {
                 retry_after_seconds,
             } => Some(*retry_after_seconds),
+            Self::LoginAuthBusy | Self::AuthBusy => Some(1),
             _ => None,
         };
         let (status, code, message) = match &self {
@@ -65,6 +84,16 @@ impl IntoResponse for AppError {
                 StatusCode::TOO_MANY_REQUESTS,
                 "rate_limited",
                 "too many requests; retry later",
+            ),
+            Self::LoginAuthBusy => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "login_auth_busy",
+                "authentication is temporarily busy; retry later",
+            ),
+            Self::AuthBusy => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "auth_verification_busy",
+                "authentication verification is temporarily busy; retry later",
             ),
             _ => {
                 tracing::error!(error = %self, "request failed");

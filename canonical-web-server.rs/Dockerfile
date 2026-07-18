@@ -1,25 +1,41 @@
 # syntax=docker/dockerfile:1
 
-FROM node:26-bookworm-slim AS client-build
+FROM node:26-bookworm-slim@sha256:2d49d876e96237d76de412761cf05dbfe5aee325cc4406a4d41d5824c5bb8beb AS client-build
 WORKDIR /build/client
 COPY client/package.json client/package-lock.json ./
 RUN npm ci
 COPY client/ ./
 RUN npm run typecheck && npm test && npm run build
 
-FROM rust:1.97-slim-bookworm AS rust-build
+FROM rust:1.95-slim-bookworm@sha256:d7482085ff5b415f84dba5647ae71606650bdef00db7aeb69f4b3d170c3e4082 AS rust-base
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update \
     && apt-get install --yes --no-install-recommends build-essential cmake
 WORKDIR /build/canonical-web-server.rs
+
+# The no-ingress worker build intentionally has no dependency on the browser
+# bundle or the customer HTTP binary.
+FROM rust-base AS revoker-build
+COPY . .
+RUN cargo build --locked --release -p canonical-session-revoker \
+    && strip target/release/canonical-session-revoker
+
+FROM rust-base AS web-build
 COPY . .
 COPY --from=client-build /build/client/dist ./client/dist
-RUN cargo build --locked --release \
+RUN cargo build --locked --release -p canonical-web-server --bin canonical-web-server \
     && strip target/release/canonical-web-server
 
-FROM gcr.io/distroless/cc-debian12:nonroot
-COPY --from=rust-build --chown=65532:65532 \
+FROM gcr.io/distroless/cc-debian12:nonroot@sha256:66aa873a4a14fb164aa01296058efd8253744606d72715e45acface073359faa AS revoker
+COPY --from=revoker-build --chown=65532:65532 \
+    /build/canonical-web-server.rs/target/release/canonical-session-revoker \
+    /usr/local/bin/canonical-session-revoker
+USER 65532:65532
+ENTRYPOINT ["/usr/local/bin/canonical-session-revoker"]
+
+FROM gcr.io/distroless/cc-debian12:nonroot@sha256:66aa873a4a14fb164aa01296058efd8253744606d72715e45acface073359faa AS web
+COPY --from=web-build --chown=65532:65532 \
     /build/canonical-web-server.rs/target/release/canonical-web-server \
     /usr/local/bin/canonical-web-server
 COPY --from=client-build --chown=65532:65532 /build/client/dist /app/client

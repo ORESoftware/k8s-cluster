@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 
 const page = await readFile(new URL("../src/pages/index.astro", import.meta.url), "utf8");
 const layout = await readFile(new URL("../src/layouts/BaseLayout.astro", import.meta.url), "utf8");
+const globalCss = await readFile(new URL("../src/styles/global.css", import.meta.url), "utf8");
 
 test("landing page keeps the compliance services visible", () => {
   for (const label of [
@@ -57,11 +58,21 @@ test("static image supplies the same defensive headers as the server fallback", 
   ]) {
     assert.match(nginx, new RegExp(`add_header ${header}`));
   }
+  assert.match(nginx, /script-src 'self';/);
+  assert.doesNotMatch(nginx, /script-src 'self' 'unsafe-inline'/);
 });
 
 test("layout keeps base-aware links so the site works behind a gateway prefix", () => {
   assert.match(layout, /import\.meta\.env\.BASE_URL/);
   assert.match(layout, /const homeHref = /);
+  assert.match(layout, /const siteScriptHref = /);
+});
+
+test("source assets do not require third-party CSP exceptions", () => {
+  assert.doesNotMatch(globalCss, /@import\s+(?:url\()?['"]?https?:\/\//i);
+  assert.doesNotMatch(globalCss, /url\(\s*['"]?(?:https?:|\/\/|blob:)/i);
+  assert.match(layout, /<script type="module" src=\{siteScriptHref\}><\/script>/);
+  assert.doesNotMatch(layout, /\son[a-z]+\s*=/i);
 });
 
 test("nav exposes the section links", () => {

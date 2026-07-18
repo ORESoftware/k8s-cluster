@@ -36,8 +36,11 @@ DO $bootstrap$
 DECLARE
   runtime_oid oid := (SELECT oid FROM pg_roles WHERE rolname = 'canonical_web_server');
 BEGIN
-  IF EXISTS (SELECT 1 FROM pg_auth_members WHERE member = runtime_oid) THEN
-    RAISE EXCEPTION 'canonical_web_server must not be a member of another role';
+  IF EXISTS (
+    SELECT 1 FROM pg_auth_members
+    WHERE member = runtime_oid OR roleid = runtime_oid
+  ) THEN
+    RAISE EXCEPTION 'canonical_web_server must have no role memberships or members';
   END IF;
   IF EXISTS (
     SELECT 1 FROM pg_database
@@ -49,12 +52,14 @@ BEGIN
     SELECT 1
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
-    WHERE n.nspname = 'public'
-      AND c.relname IN (
-        'user_profile', 'web_session', 'sync_record', 'sync_clock',
-        'sync_change', 'sync_receipt'
-      )
+    WHERE n.nspname IN ('public', 'auth')
       AND c.relowner = runtime_oid
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname IN ('public', 'auth')
+      AND p.proowner = runtime_oid
   ) THEN
     RAISE EXCEPTION 'canonical_web_server must not own the database, schemas, or application tables';
   END IF;
@@ -90,7 +95,67 @@ $bootstrap$;
 -- role does not own these objects and cannot bypass their forced RLS policies.
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM canonical_web_server;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM canonical_web_server;
+REVOKE ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public FROM canonical_web_server;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA auth FROM canonical_web_server;
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA auth FROM canonical_web_server;
+REVOKE ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA auth FROM canonical_web_server;
+
+-- PUBLIC and parent-role grants are additive and cannot be negated for only
+-- this login. Validate effective privileges after direct grants are cleared,
+-- before rebuilding the exact table/function allow-list below. auth.uid() is
+-- the sole inherited helper accepted because every RLS policy depends on it.
+DO $bootstrap$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname IN ('public', 'auth')
+      AND has_schema_privilege('canonical_web_server', n.oid, 'USAGE')
+      AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
+      AND (
+        has_table_privilege('canonical_web_server', c.oid, 'SELECT')
+        OR has_table_privilege('canonical_web_server', c.oid, 'INSERT')
+        OR has_table_privilege('canonical_web_server', c.oid, 'UPDATE')
+        OR has_table_privilege('canonical_web_server', c.oid, 'DELETE')
+        OR has_table_privilege('canonical_web_server', c.oid, 'TRUNCATE')
+        OR has_table_privilege('canonical_web_server', c.oid, 'REFERENCES')
+        OR has_table_privilege('canonical_web_server', c.oid, 'TRIGGER')
+      )
+  ) THEN
+    RAISE EXCEPTION
+      'canonical_web_server inherits a public/auth table privilege; revoke PUBLIC/parent grants before bootstrapping';
+  END IF;
+  IF EXISTS (
+    SELECT 1
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname IN ('public', 'auth')
+      AND has_schema_privilege('canonical_web_server', n.oid, 'USAGE')
+      AND c.relkind = 'S'
+      AND (
+        has_sequence_privilege('canonical_web_server', c.oid, 'USAGE')
+        OR has_sequence_privilege('canonical_web_server', c.oid, 'SELECT')
+        OR has_sequence_privilege('canonical_web_server', c.oid, 'UPDATE')
+      )
+  ) THEN
+    RAISE EXCEPTION
+      'canonical_web_server inherits a public/auth sequence privilege; revoke PUBLIC/parent grants before bootstrapping';
+  END IF;
+  IF EXISTS (
+    SELECT 1
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname IN ('public', 'auth')
+      AND has_schema_privilege('canonical_web_server', n.oid, 'USAGE')
+      AND NOT (n.nspname = 'auth' AND p.oid = 'auth.uid()'::regprocedure)
+      AND has_function_privilege('canonical_web_server', p.oid, 'EXECUTE')
+  ) THEN
+    RAISE EXCEPTION
+      'canonical_web_server inherits EXECUTE on a non-allow-listed public/auth function; revoke PUBLIC/parent EXECUTE before bootstrapping';
+  END IF;
+END
+$bootstrap$;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
   public.user_profile,
@@ -103,10 +168,13 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
   public.engagement_note
 TO canonical_web_server;
 
--- No current table uses a sequence, but granting only sequence value access
--- keeps this bootstrap compatible with an explicitly approved future serial
--- key without granting ownership or DDL privileges.
-GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public
-TO canonical_web_server;
+-- No current customer table uses a sequence. A future sequence must be
+-- reviewed and granted by exact name; never grant every current/future public
+-- sequence to the customer process.
 
 GRANT EXECUTE ON FUNCTION auth.uid() TO canonical_web_server;
+
+-- Deliberately absent from the allow-list above: admin_role_assignment,
+-- admin_audit_event, and both canonical_admin_* SECURITY DEFINER functions.
+-- The customer application can never convert an authenticated user into an
+-- administrative database actor.

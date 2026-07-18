@@ -11,6 +11,8 @@ pub struct Model {
     pub encrypted_access_token: String,
     pub encrypted_refresh_token: String,
     pub access_expires_at: DateTimeUtc,
+    pub refresh_lease_id: Option<Uuid>,
+    pub refresh_lease_expires_at: Option<DateTimeUtc>,
     pub csrf_token: String,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,
@@ -20,6 +22,8 @@ pub struct Model {
     pub revocation_next_attempt_at: Option<DateTimeUtc>,
     pub revocation_attempts: i32,
     pub upstream_revoked_at: Option<DateTimeUtc>,
+    pub revocation_abandoned_at: Option<DateTimeUtc>,
+    pub revocation_failure_kind: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -21,18 +21,32 @@ credentials or the server's Supabase token pair.
 
 ## Architecture
 
-- `src/auth/` — Supabase GoTrue HTTP client, encrypted server-side token
-  storage, opaque browser sessions, bearer/session extraction, CSRF and Origin
-  checks.
-- `src/db/` — SeaORM entities and a versioned migration for profiles, web
-  sessions, records, commit-ordered sync clocks, change rows, and mutation
-  receipts.
+- `crates/canonical-auth/` — transport-neutral Supabase GoTrue client and
+  verified identity/token types; it rejects secret/service-role keys.
+- `crates/canonical-config/` — isolated configuration loaders for the web,
+  migration, and revoker processes, with redacted debug output.
+- `crates/canonical-session/` — opaque session crypto, refresh rotation,
+  local bearer revocation, and the durable logout state machine.
+- `crates/canonical-store/` — SeaORM entities, migrations, connection policy,
+  and exact user/admin/revoker transaction boundaries.
+- `src/auth/` — Axum extractors, CSRF/Origin checks, and bounded login
+  throttling. It adapts the lower-level auth/session crates to HTTP.
+- `src/main.rs` / `src/command.rs` — minimal process bootstrap and explicit
+  `serve` / `migrate` command dispatch.
+- `src/app.rs` / `src/server.rs` — application state, router assembly, network
+  listener, PostgreSQL backplane lifecycle, and graceful shutdown.
+- `src/database.rs` — SeaORM connection policy and the explicit migration
+  entry point; application modules do not construct pools themselves.
+- `src/telemetry.rs` — JSON stdout logs for Promtail/Loki plus explicit OTLP
+  HTTP spans and low-cardinality metrics for the collector/Prometheus.
 - `src/routes/` — probes, Maud/HTMX pages, versioned REST, and authenticated
   WebSocket upgrade handling.
 - `src/sync/` — compare-and-swap mutations, durable idempotency, tombstones,
   owner-bound encrypted cursors, and pull pagination.
 - `src/ws/` — owner-scoped in-process fanout plus a bounded PostgreSQL
   `LISTEN`/`NOTIFY` invalidation backplane for multi-instance deployments.
+- `services/canonical-session-revoker/` — no-ingress worker binary with no
+  dependency on Axum, Maud, customer routes, or WebSockets.
 - `client/` — TypeScript, HTMX 2, IndexedDB (`idb`), Web Locks,
   BroadcastChannel, retry/backoff, conflict storage, and WebSocket reconnects.
 - `static/` — optional built marketing site supplied through `STATIC_DIR`; it
@@ -91,21 +105,57 @@ it with the authenticating `/auth/v1/user` request rather than trusting decoded
 claims.
 
 `/auth/login` accepts only a 16 KiB form and has a bounded, normalized-account
-throttle before it contacts Supabase. Configure a stronger trusted-client-IP
-limit at the edge; this process intentionally does not trust forwarded-IP
-headers. Production origins fail startup unless cookies are secure and
-`__Host-` prefixed, and session lifetime is limited to 1–30 days.
+throttle before it contacts Supabase. `LOGIN_AUTH_MAX_CONCURRENCY` (default 16)
+also caps the complete password exchange plus local session insert; excess work
+gets a fail-closed `429` with `Retry-After` instead of waiting in an unbounded
+queue. Configure a stronger trusted-client-IP limit at the edge; this process
+intentionally does not trust forwarded-IP headers. Production origins fail
+startup unless cookies are secure and `__Host-` prefixed, and session lifetime
+is limited to 1–30 days.
 
 Logout revokes the opaque local session first, then confirms Supabase sign-out.
 An upstream outage creates a durable, encrypted-token-backed retry record. The
-server's narrowly scoped worker retries it with a short database lease and
-backoff, revokes expired local sessions, and prunes confirmed revocations after
-seven days. It is not a general background-job privilege boundary.
+separately deployed `canonical-session-revoker` retries it with a short
+database lease and backoff, revokes expired local sessions, and prunes terminal
+records only after their access JWT has expired plus the retention window.
+Rejected credentials enter an explicit dead-letter state rather than being
+misreported as a successful logout. A revoked Supabase `session_id` is also
+denied locally while its JWT could still be valid.
+
+| Process | Ingress | Database identity | Supabase key | Responsibility |
+| --- | --- | --- | --- | --- |
+| `canonical-web-server` | HTTP/HTMX/REST/WebSocket | `canonical_web_server` | publishable only | Customer requests and durable logout enqueue |
+| `canonical-session-revoker` | none | `canonical_session_revoker` | publishable only | Bounded logout reconciliation only |
+| `canonical-web-server migrate` | deploy job only | migration owner | none | Schema migration only |
+| future admin service | separate origin | `canonical_admin_server` | isolated admin credential only if required | MFA/AAL2 capability functions and audit |
 
 Before adding an admin surface, create a separate origin/service with MFA or
 reauthentication, an immutable audit trail, and a narrowly scoped deployment
 credential. Do not add an owner-RLS bypass or a Supabase service-role key to the
 customer-facing server.
+
+The database boundary for that future service is already fail-closed. Bounded
+`admin_role_assignment` rows map four roles to explicit capabilities, while
+`admin_audit_event` is append-only from the runtime's perspective. Both tables
+use forced RLS with no customer policy, and `canonical_web_server` receives no
+table or function grants for them. Run `bootstrap_admin_role.sql` only for a
+separate deployment: it creates a non-owner, non-`BYPASSRLS`
+`canonical_admin_server` login with no direct table access and grants only
+capability lookup plus audit append. Adding a real admin operation requires a
+new capability-checking function and an explicit bootstrap grant; customer
+owner policies remain unchanged.
+
+See [`docs/process-boundaries.md`](docs/process-boundaries.md) for the
+compile-time, credential, database-role, and deployment contracts shared by
+these workspace packages without collapsing their authorities.
+
+The future admin server must verify a fresh Supabase access token before every
+privileged transaction, require its `aal` claim to equal `aal2`, and install the
+verified `sub` plus the complete claims JSON with transaction-local
+`set_config` calls. The database functions derive the actor from `auth.uid()`;
+there is no caller-supplied actor argument, so audit events cannot impersonate
+another operator through the function API. Never accept these settings from an
+HTTP parameter or an unverified JWT.
 
 The runtime `DATABASE_URL` must use a dedicated least-privilege Postgres role,
 not `postgres`, the table owner, or a role with `BYPASSRLS`. User-owned SeaORM
@@ -114,6 +164,13 @@ operations install the validated user ID in transaction-local
 and forces owner RLS. Supavisor session mode or a direct connection is required
 for the long-lived SeaORM pool and the dedicated PostgreSQL `LISTEN` connection;
 transaction mode cannot preserve listener session state.
+
+Every long-lived PostgreSQL process verifies both `session_user` and
+`current_user`, the expected login's unsafe attributes, role memberships, and
+ownership of the database or application objects before starting work. A
+mistakenly mounted owner credential, `SET ROLE` impersonation, or drifted web,
+admin, or revoker login therefore fails closed. (SQLite skips this catalog
+check only for isolated local tests.)
 
 Use the migration-only command during deployment. It loads
 `MIGRATION_DATABASE_URL` instead of the runtime `DATABASE_URL` and does not
@@ -124,7 +181,19 @@ MIGRATION_DATABASE_URL='postgresql://PRIVILEGED_CONNECTION' \
   canonical-web-server migrate
 psql "$MIGRATION_DATABASE_URL" \
   --file deploy/postgres/bootstrap_runtime_role.sql
+psql "$MIGRATION_DATABASE_URL" \
+  --file deploy/postgres/bootstrap_session_revoker_role.sql
 canonical-web-server serve
+canonical-session-revoker check
+canonical-session-revoker run
+```
+
+If and only if the separate admin service is deployed, bootstrap its independent
+database identity in the migration job and configure its password outside Git:
+
+```sh
+psql "$MIGRATION_DATABASE_URL" \
+  --file deploy/postgres/bootstrap_admin_role.sql
 ```
 
 Supabase schema changes are managed declaratively with
@@ -148,18 +217,24 @@ commented out otherwise; grants are out of dpm's scope and stay in
 The migrations are also proven against **CockroachDB** (v25.2+, which speaks
 the Postgres wire protocol and supports forced RLS): the `cockroach-rls` CI
 job applies the full chain to a single-node cluster and asserts the same
-owner-isolation contract. Two documented divergences: CockroachDB validates
+owner-isolation contract. Three documented divergences: CockroachDB validates
 foreign keys with the inserting role's privileges (grant the app role SELECT
 on `auth.users`), and it has no LISTEN/NOTIFY, so the WebSocket invalidation
-backplane is Postgres-only — REST pull remains authoritative either way.
+backplane is Postgres-only — REST pull remains authoritative either way. It
+also does not implement the PostgreSQL SECURITY DEFINER function forms used by
+the admin capability/audit boundary; those functions are intentionally absent
+there, while forced RLS with no admin-table policies keeps access fail-closed.
 
 The bootstrap creates `canonical_web_server` as a non-owner,
 non-`BYPASSRLS` login without a password and grants only the application's
-current tables. Set its password or another authentication mechanism through
+current tables. It grants no blanket sequence access and fails if an effective
+`PUBLIC` or parent-role table, sequence, or function privilege would widen any
+process's reviewed object surface. Set its password or another authentication mechanism through
 the deployment secret manager, never in this repository, then use that role in
-`DATABASE_URL`. Re-run the bootstrap after future migrations change the table
-allow-list. Keep `AUTO_MIGRATE=false` in production so the long-lived process
-never needs owner credentials.
+`DATABASE_URL`. Startup rechecks the exact login, unsafe attributes,
+memberships, and application-object ownership. Re-run the bootstrap after
+future migrations change an allow-list. The long-lived `serve` process has no
+automatic migration path and therefore never needs owner credentials.
 
 Copy `.env.example` to an ignored local environment file and replace every
 placeholder. `APP_SESSION_ENCRYPTION_KEY` must be standard-base64 for exactly
@@ -171,8 +246,14 @@ placeholder. `APP_SESSION_ENCRYPTION_KEY` must be standard-base64 for exactly
 direnv allow                       # or: nix develop ./.nix / ./shell
 npm ci --prefix client
 npm run build --prefix client
-AUTO_MIGRATE=true cargo run
+cargo run -- migrate               # local/fresh database only
+cargo run -- serve
 ```
+
+PostgreSQL startup requires the exact non-DDL `canonical_web_server` role, so
+apply migrations first with `canonical-web-server migrate` and
+`MIGRATION_DATABASE_URL`, run the runtime/revoker bootstrap scripts, then
+serve with the runtime URL.
 
 For the full local stack, build the sibling marketing site and set:
 
@@ -183,12 +264,26 @@ STATIC_DIR=../canonical-marketing-site.web/dist
 SQLite is compiled in for focused local/integration tests. Production should
 use Supabase Postgres with TLS.
 
+## Observability
+
+The server always writes compact JSON logs to stdout, which Kubernetes exposes
+as CRI logs for Promtail and Loki. Set `RUST_LOG` to tune filtering; credentials,
+cookies, bearer tokens, request bodies, and database URLs are never span fields.
+
+Set `OTEL_EXPORTER_OTLP_ENDPOINT` to an OTLP/gRPC collector endpoint (port 4317
+in the target cluster) to enable batched traces and metrics. Every HTTP request
+gets a W3C-parent-aware server span with route, method, request ID, response
+status, trace ID, and span ID. The service exports request count and duration
+with only bounded status attributes; the cluster collector publishes those
+metrics on its Prometheus exporter. If OTLP is not configured or exporter setup
+fails, the service continues with stdout logging.
+
 ## Verify
 
 ```sh
-cargo fmt --check
-cargo clippy --all-targets -- -D warnings
-cargo test --all-targets
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --all-targets --locked
 npm test --prefix client
 npm run typecheck --prefix client
 npm run build --prefix client
@@ -213,13 +308,16 @@ TEST_POSTGRES_ADMIN_URL=postgresql://postgres:password@127.0.0.1:5432/postgres \
 
 ## Container
 
-The multi-stage image builds and tests the TypeScript client, builds the locked
-Rust binary, and copies only the binary plus application assets into a
-distroless non-root image. Supply the marketing build at `/app/static` and all
-required runtime environment variables.
+The multi-stage Dockerfile exposes separate least-privilege `web` and
+`revoker` targets. The web image contains only the HTTP binary and client
+assets; the revoker image contains only the no-ingress worker. Both run as the
+distroless non-root user, and every base image is pinned by digest.
 
 ```sh
-docker build -t canonical-web-server .
+docker build --target web -t canonical-web-server .
+docker build --target revoker -t canonical-session-revoker .
 docker run --env-file .env.local -p 8081:8081 \
   -v "$PWD/static:/app/static:ro" canonical-web-server
+docker run --env-file .env.revoker.local canonical-session-revoker check
+docker run --env-file .env.revoker.local canonical-session-revoker run
 ```

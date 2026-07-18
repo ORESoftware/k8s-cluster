@@ -1,0 +1,11 @@
+[package]
+name = "canonical-config"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+
+[dependencies]
+base64 = "0.22.1"
+reqwest = { version = "0.13.4", default-features = false }
+serde_json = "1.0.150"
+thiserror = "2.0.18"

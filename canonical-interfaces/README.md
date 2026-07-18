@@ -60,18 +60,41 @@ The compliance domain (`schema/compliance.schema.json`, mirrored by
 
 `sql/schema.sql` documents the owner-aware `user_profile`, `sync_clock`,
 `sync_record`, `sync_change`, and `sync_receipt` shapes used by the web server,
-alongside the legacy compliance table, which is deny-by-default until it gains
-an owner policy. The executable SeaORM migration in the web-server repository
-remains the runtime migration.
+the owner-scoped compliance tables, and the server-only `web_session` shape.
+The executable SeaORM migration in the web-server repository remains the
+runtime migration.
 
 Owner-scoped tables enable and force RLS with `auth.uid()` policies. The web
 server must set verified `request.jwt.claims` locally inside every user
 transaction and lock the owner's `sync_clock` row while it mutates the record,
 advances the clock, appends the change, and writes the idempotency receipt. That
 single transaction gives pull cursors commit order without gaps. The browser
-receives neither database credentials nor Supabase token pairs; server session
-tokens live only in the web server's encrypted session storage and are
-deliberately absent from this shared SQL file.
+receives neither database credentials nor Supabase token pairs. The shared SQL
+file names only the encrypted-at-rest credential columns so schema drift is
+detectable; `web_session` is absent from generated wire adapters and customer
+database grants. Its forced-RLS process policy permits the customer web server,
+or the no-ingress revocation worker only while its transaction-local
+`canonical.system_task = session_revocation` marker is present. Retry,
+abandonment, and failure-kind columns distinguish pending upstream sign-out
+from terminal dead-letter outcomes without weakening immediate local logout.
+Nullable refresh-lease identity and expiry columns fence token rotation across
+server replicas without keeping a database transaction open during an upstream
+authentication request.
+The custom setting is an audit/accidental-code-path guard, not a secret
+capability; authorization rests on the exact isolated revoker login and its
+one-table grant.
+
+Administrative authorization is a separate data plane. The SQL reference also
+defines bounded `admin_role_assignment` rows and append-only
+`admin_audit_event` evidence, but deliberately adds no customer RLS policy or
+customer grant for either table. A future separately deployed admin server uses
+an independent non-`BYPASSRLS` database role and only two reviewed
+`SECURITY DEFINER` functions: capability lookup and audit append. Owner policies
+never grow a generic `OR is_admin` escape hatch, and no admin wire API is
+generated until concrete endpoints exist. Both functions bind the actor to
+`auth.uid()` from a server-verified, transaction-local claims context and reject
+privileged access unless the Supabase `aal` claim is `aal2`; callers cannot pass
+an arbitrary actor ID.
 
 ## Use
 

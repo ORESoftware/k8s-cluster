@@ -29,13 +29,13 @@ jobs:
         with:
           toolchain: "1.95.0"
       - name: Build server binary
-        run: cargo build --bin canonical-web-server
+        run: cargo build --locked --bin canonical-web-server
       - name: Build client bundle
         run: |
           npm ci --prefix client
           npm run build --prefix client
       - name: Install browser e2e dependencies
-        run: npm install --prefix tests/browser
+        run: npm ci --prefix tests/browser
       # No `playwright install`: the runner image's Chromium is picked up via
       # PLAYWRIGHT_CHROMIUM / PUPPETEER_EXECUTABLE_PATH.
       - name: browser e2e (playwright + puppeteer)

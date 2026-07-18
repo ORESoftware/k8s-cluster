@@ -95,10 +95,11 @@ test("playwright: application and marketing routes carry their tailored security
     assert.match(headers["referrer-policy"], /strict-origin/);
   }
 
-  // The application CSP locks scripts to 'self' (no inline); the marketing CSP
-  // must allow the inline bootstrap Astro emits. This is the key divergence.
+  // Both surfaces use same-origin external scripts. The marketing build has a
+  // contract test preventing Astro regressions back to inline executable code.
   assert.match(appHeaders["content-security-policy"], /script-src 'self';/);
   assert.match(appHeaders["content-security-policy"], /connect-src 'self'/);
-  assert.match(marketingHeaders["content-security-policy"], /script-src 'self' 'unsafe-inline'/);
+  assert.match(marketingHeaders["content-security-policy"], /script-src 'self';/);
   assert.doesNotMatch(appHeaders["content-security-policy"], /script-src 'self' 'unsafe-inline'/);
+  assert.doesNotMatch(marketingHeaders["content-security-policy"], /script-src 'self' 'unsafe-inline'/);
 });

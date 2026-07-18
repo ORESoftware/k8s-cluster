@@ -3,7 +3,7 @@
 //! CockroachDB speaks the Postgres wire protocol and (since v25.2) supports
 //! forced row-level security and policies, so the same SeaORM migrations that
 //! target Supabase Postgres must apply cleanly and enforce the same
-//! owner-isolation contract. Two deliberate differences from Postgres are
+//! owner-isolation contract. Three deliberate differences from Postgres are
 //! encoded here:
 //!
 //! - CockroachDB validates foreign keys with the *inserting* role's
@@ -12,6 +12,10 @@
 //! - There is no LISTEN/NOTIFY, so the WebSocket invalidation backplane is a
 //!   Postgres-only feature and is not exercised here; REST pull remains
 //!   authoritative either way.
+//! - CockroachDB does not implement the PostgreSQL SECURITY DEFINER function
+//!   forms used by the admin capability/audit boundary. Those functions stay
+//!   absent while the admin tables remain protected by forced RLS with no
+//!   policies, so the boundary fails closed.
 //!
 //! Gated on TEST_COCKROACH_ADMIN_URL (e.g.
 //! postgresql://root@127.0.0.1:26257/defaultdb?sslmode=disable) pointing at a
@@ -63,8 +67,8 @@ async fn migrations_and_owner_rls_hold_on_cockroachdb() -> Result<(), Box<dyn Er
     run_migrations(&privileged_url, 2).await?;
     run_migrations(&privileged_url, 2).await?;
 
-    // Catalog shape: every owner policy exists and RLS is enabled + forced on
-    // the engagement tables.
+    // Catalog shape: every customer owner policy exists, admin tables have no
+    // customer policy, and RLS is enabled + forced everywhere.
     let policy_count = privileged
         .query_one(Statement::from_string(
             DatabaseBackend::Postgres,
@@ -73,7 +77,66 @@ async fn migrations_and_owner_rls_hold_on_cockroachdb() -> Result<(), Box<dyn Er
         .await?
         .ok_or_else(|| io::Error::other("policy count returned no row"))?
         .try_get::<i64>("", "count")?;
-    assert_eq!(policy_count, 7, "expected one owner policy per app table");
+    assert_eq!(
+        policy_count, 8,
+        "expected seven owner policies plus the web-session process boundary"
+    );
+
+    let admin_policy_count = privileged
+        .query_one(Statement::from_string(
+            DatabaseBackend::Postgres,
+            r#"
+            SELECT count(*)::bigint AS count
+            FROM pg_policies
+            WHERE schemaname = 'public'
+              AND tablename IN ('admin_role_assignment', 'admin_audit_event')
+            "#,
+        ))
+        .await?
+        .ok_or_else(|| io::Error::other("admin policy count returned no row"))?
+        .try_get::<i64>("", "count")?;
+    assert_eq!(admin_policy_count, 0, "admin tables must fail closed");
+
+    let admin_function_count = privileged
+        .query_one(Statement::from_string(
+            DatabaseBackend::Postgres,
+            r#"
+            SELECT count(*)::bigint AS count
+            FROM pg_proc AS proc
+            JOIN pg_namespace AS namespace ON namespace.oid = proc.pronamespace
+            WHERE namespace.nspname = 'public'
+              AND proc.proname IN (
+                'canonical_admin_has_capability',
+                'canonical_admin_append_audit'
+              )
+            "#,
+        ))
+        .await?
+        .ok_or_else(|| io::Error::other("admin function count returned no row"))?
+        .try_get::<i64>("", "count")?;
+    assert_eq!(
+        admin_function_count, 0,
+        "PostgreSQL-only admin functions must remain absent on CockroachDB"
+    );
+
+    let admin_fk_count = privileged
+        .query_one(Statement::from_string(
+            DatabaseBackend::Postgres,
+            r#"
+            SELECT count(*)::bigint AS count
+            FROM pg_constraint
+            WHERE contype = 'f'
+              AND conname IN (
+                'admin_role_assignment_user_fk',
+                'admin_role_assignment_granted_by_fk',
+                'admin_audit_event_actor_fk'
+              )
+            "#,
+        ))
+        .await?
+        .ok_or_else(|| io::Error::other("admin FK count returned no row"))?
+        .try_get::<i64>("", "count")?;
+    assert_eq!(admin_fk_count, 3, "admin auth-user FKs must be installed");
 
     let unforced = privileged
         .query_one(Statement::from_string(
@@ -81,14 +144,22 @@ async fn migrations_and_owner_rls_hold_on_cockroachdb() -> Result<(), Box<dyn Er
             r#"
             SELECT count(*)::bigint AS count
             FROM pg_class
-            WHERE relname IN ('audit_engagement', 'engagement_note')
+            WHERE relname IN (
+              'user_profile', 'sync_record', 'sync_clock',
+              'sync_change', 'sync_receipt', 'audit_engagement',
+              'engagement_note', 'admin_role_assignment', 'admin_audit_event'
+              , 'web_session'
+            )
               AND NOT (relrowsecurity AND relforcerowsecurity)
             "#,
         ))
         .await?
         .ok_or_else(|| io::Error::other("rls flag query returned no row"))?
         .try_get::<i64>("", "count")?;
-    assert_eq!(unforced, 0, "engagement tables must have forced RLS");
+    assert_eq!(
+        unforced, 0,
+        "customer-data and admin-boundary tables must have forced RLS"
+    );
 
     // Least-privilege app role. SELECT on auth.users is REQUIRED on
     // CockroachDB (unlike Postgres) because FK checks run with the inserting
@@ -138,6 +209,20 @@ async fn migrations_and_owner_rls_hold_on_cockroachdb() -> Result<(), Box<dyn Er
 
     let runtime_url = database_url(&admin_url, &database_name, Some(&app_role))?;
     let runtime = Database::connect(&runtime_url).await?;
+
+    for query in [
+        "SELECT user_id FROM admin_role_assignment LIMIT 1",
+        "SELECT id FROM admin_audit_event LIMIT 1",
+        "SELECT canonical_admin_has_capability('audit.read')",
+    ] {
+        assert!(
+            runtime
+                .query_one(Statement::from_string(DatabaseBackend::Postgres, query))
+                .await
+                .is_err(),
+            "customer role unexpectedly crossed the admin boundary with: {query}"
+        );
+    }
 
     // Without an installed JWT context, auth.uid() is NULL and forced RLS
     // must hide every row.
@@ -243,6 +328,84 @@ async fn migrations_and_owner_rls_hold_on_cockroachdb() -> Result<(), Box<dyn Er
         .await;
     assert!(rejected.is_err());
     bad_framework.rollback().await?;
+
+    // The sync upgrade's invariants are enforced by CockroachDB, not merely
+    // represented in the declarative PostgreSQL schema.
+    let negative_clock = privileged
+        .execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "INSERT INTO sync_clock (owner_id, cursor) VALUES ($1, -1)",
+            [user_a.into()],
+        ))
+        .await;
+    assert!(negative_clock.is_err(), "negative sync clock was accepted");
+
+    let non_positive_record_version = privileged
+        .execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            INSERT INTO sync_record (
+              owner_id, collection, record_id, version, payload, deleted_at, updated_at
+            ) VALUES ($1, 'engagements', $2, 0, '{}'::jsonb, NULL, now())
+            "#,
+            [user_a.into(), Uuid::new_v4().into()],
+        ))
+        .await;
+    assert!(
+        non_positive_record_version.is_err(),
+        "non-positive sync-record version was accepted"
+    );
+
+    let non_positive_change_cursor = privileged
+        .execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            INSERT INTO sync_change (
+              owner_id, cursor, collection, record_id, version,
+              operation, payload, changed_at
+            ) VALUES ($1, 0, 'engagements', $2, 1, 'put', '{}'::jsonb, now())
+            "#,
+            [user_a.into(), Uuid::new_v4().into()],
+        ))
+        .await;
+    assert!(
+        non_positive_change_cursor.is_err(),
+        "non-positive sync-change cursor was accepted"
+    );
+
+    let non_positive_change_version = privileged
+        .execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            INSERT INTO sync_change (
+              owner_id, cursor, collection, record_id, version,
+              operation, payload, changed_at
+            ) VALUES ($1, 1, 'engagements', $2, 0, 'put', '{}'::jsonb, now())
+            "#,
+            [user_a.into(), Uuid::new_v4().into()],
+        ))
+        .await;
+    assert!(
+        non_positive_change_version.is_err(),
+        "non-positive sync-change version was accepted"
+    );
+
+    let invalid_change_operation = privileged
+        .execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            INSERT INTO sync_change (
+              owner_id, cursor, collection, record_id, version,
+              operation, payload, changed_at
+            ) VALUES ($1, 2, 'engagements', $2, 1, 'patch', '{}'::jsonb, now())
+            "#,
+            [user_a.into(), Uuid::new_v4().into()],
+        ))
+        .await;
+    assert!(
+        invalid_change_operation.is_err(),
+        "invalid sync-change operation was accepted"
+    );
 
     // Deleting the auth user cascades through engagements to notes.
     privileged
