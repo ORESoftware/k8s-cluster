@@ -36,7 +36,7 @@ always lives at `~/codes/ores/k8s-cluster/<submodule path>`.
 | `remote/deployments/soccer-rs` | [akrion-sim/akrion-backend.rs](https://github.com/akrion-sim/akrion-backend.rs) | `main` | `~/codes/akrion-sim/akrion-backend.rs` |
 | `remote/deployments/akrion-web-server-rs` | [akrion-sim/akrion-web-server.rs](https://github.com/akrion-sim/akrion-web-server.rs) | `main` | `~/codes/akrion-sim/akrion-web-server.rs` |
 | `remote/deployments/athleto-app-rs` | [athlet-o/athleto-app-rs](https://github.com/athlet-o/athleto-app-rs) | `main` | `~/codes/athlet-o/athleto-app-rs` |
-| `remote/deployments/canonical-cloud` | [canonical-cloud/canonical.cloud](https://github.com/canonical-cloud/canonical.cloud) | `main` | `~/codes/canonical.cloud` |
+| `remote/deployments/canonical-cloud` | [canonical-cloud/canonical.cloud](https://github.com/canonical-cloud/canonical.cloud) | `main` | `~/codes/canonical-cloud/canonical.cloud` |
 | `remote/deployments/fiducia-customer.rs` | [fiducia-cloud/fiducia-customer.rs](https://github.com/fiducia-cloud/fiducia-customer.rs) | `main` | `~/codes/fiducia.cloud/fiducia-customer.rs` |
 | `remote/deployments/fiducia-marketing.web` | [fiducia-cloud/fiducia-marketing.web](https://github.com/fiducia-cloud/fiducia-marketing.web) | `main` | `~/codes/fiducia.cloud/fiducia-marketing.web` |
 | `remote/deployments/fiducia-monorepo` | [fiducia-cloud/fiducia-monorepo](https://github.com/fiducia-cloud/fiducia-monorepo) | `main` | — _(submodule checkout only)_ |
