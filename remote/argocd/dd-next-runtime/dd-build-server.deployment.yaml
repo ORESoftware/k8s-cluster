@@ -99,12 +99,87 @@ spec:
               value: '1'
             - name: BUILD_SERVER_JOB_TIMEOUT_SECONDS
               value: '1800'
+            - name: BUILD_SERVER_JOB_DEADLINE_SECONDS
+              value: '3600'
+            - name: BUILD_SERVER_MAX_QUEUED
+              value: '32'
             - name: BUILD_SERVER_MAX_LOG_BYTES
               value: '4194304'
             - name: AWS_REGION
               value: us-east-1
             - name: AWS_DEFAULT_REGION
               value: us-east-1
+            # --- Postgres persistence (own database dd_build_server on RDS).
+            # Optional: with no URL the server keeps in-memory job state.
+            # Schema contract:
+            # remote/libs/pg-defs/schema/databases/dd_build_server/schema.sql
+            # converged with build-server-rs/scripts/dpm.sh (never at boot).
+            - name: BUILD_SERVER_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-build-server-secrets
+                  key: BUILD_SERVER_DATABASE_URL
+                  optional: true
+            # --- fiducia.cloud coordination (build locks + idempotency leases).
+            - name: BUILD_SERVER_COORDINATION_ENABLED
+              value: 'true'
+            - name: BUILD_SERVER_COORDINATION_REQUIRED
+              value: 'false'
+            - name: FIDUCIA_LOCK_URL
+              value: http://fiducia-load-balance.fiducia.svc.cluster.local:8088
+            - name: FIDUCIA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-build-server-secrets
+                  key: FIDUCIA_API_KEY
+                  optional: true
+            # --- NATS MQ (lifecycle events + optional durable request intake).
+            - name: NATS_URL
+              value: nats://dd-nats.messaging.svc.cluster.local:4222
+            - name: BUILD_SERVER_NATS_ENABLED
+              value: 'true'
+            - name: BUILD_SERVER_NATS_INTAKE_ENABLED
+              value: 'false'
+            # --- Webhooks (GitHub push/workflow_run + registry image events).
+            - name: BUILD_SERVER_GITHUB_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-build-server-secrets
+                  key: BUILD_SERVER_GITHUB_WEBHOOK_SECRET
+                  optional: true
+            - name: BUILD_SERVER_REGISTRY_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-build-server-secrets
+                  key: BUILD_SERVER_REGISTRY_WEBHOOK_SECRET
+                  optional: true
+            - name: BUILD_SERVER_WEBHOOK_RULES_PATH
+              value: /etc/dd-build-server/webhook-rules.json
+            # --- GitHub Actions secret sync (AWS SM/ESO -> GitHub repo secrets).
+            # GH_PAT is provided by dd-agent-secrets (repo scope).
+            - name: BUILD_SERVER_GH_SYNC_ENABLED
+              value: 'false'
+            - name: GH_PAT
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: GH_PAT
+                  optional: true
+            - name: BUILD_SERVER_GH_SYNC_RULES_PATH
+              value: /etc/dd-build-server/gh-sync-rules.json
+            - name: BUILD_SERVER_GH_SYNC_INTERVAL_SECONDS
+              value: '0'
+            # --- gleam-lambda-runner build executor (opt-in per job).
+            - name: BUILD_SERVER_LAMBDA_ENABLED
+              value: 'false'
+            - name: BUILD_SERVER_LAMBDA_URL
+              value: http://dd-gleam-lambda-runner.default.svc.cluster.local:8083
+            - name: BUILD_SERVER_LAMBDA_FUNCTION_ID
+              valueFrom:
+                secretKeyRef:
+                  name: dd-build-server-secrets
+                  key: BUILD_SERVER_LAMBDA_FUNCTION_ID
+                  optional: true
             - name: SERVER_AUTH_SECRET
               valueFrom:
                 secretKeyRef:
@@ -178,6 +253,9 @@ spec:
             timeoutSeconds: 5
             failureThreshold: 3
           volumeMounts:
+            - name: rules
+              mountPath: /etc/dd-build-server
+              readOnly: true
             - name: repo
               mountPath: /opt/dd-next-1
               readOnly: true
@@ -194,6 +272,10 @@ spec:
               mountPath: /usr/bin/kubectl
               readOnly: true
       volumes:
+        - name: rules
+          configMap:
+            name: dd-build-server-rules
+            optional: true
         - name: repo
           hostPath:
             path: /home/ec2-user/codes/dd/dd-next-1

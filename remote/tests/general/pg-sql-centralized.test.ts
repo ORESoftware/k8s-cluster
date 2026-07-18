@@ -39,6 +39,12 @@ const ALLOWED_OTHER_DIRS: ReadonlyArray<string> = [
   // this idempotent schema at boot. It is intentionally disjoint from shared
   // RDS pg-defs tables.
   'remote/deployments/fsharp-ws-server/sql',
+  // Per-database declarative schema contracts for services that own a database
+  // separate from the shared pg-defs RDS schema (e.g. dd-build-server's
+  // dd_build_server). These live with the shared defs but target their own
+  // database namespace and are converged with each service's scripts/dpm.sh,
+  // not with the shared schema.sql. They are NOT fed to the code generator.
+  'remote/libs/pg-defs/schema/databases',
 ];
 
 const IGNORED_DIRS = new Set([
