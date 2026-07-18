@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 const MAX_USERNAME_LEN: usize = 256;
-const MAX_DEVICE_NAME_LEN: usize = 200;
+pub(crate) const MAX_DEVICE_NAME_LEN: usize = 200;
 const MAX_PASSWORD_LEN: usize = 1024;
 
 #[derive(Deserialize)]
@@ -27,10 +27,10 @@ pub(crate) struct CredsRequest {
 
 #[derive(Serialize)]
 pub(crate) struct TokenResponse {
-    account_id: Uuid,
-    device_id: Uuid,
+    pub(crate) account_id: Uuid,
+    pub(crate) device_id: Uuid,
     /// Bearer token — shown once. Lost tokens require re-login.
-    sync_token: String,
+    pub(crate) sync_token: String,
 }
 
 pub(crate) async fn register(
@@ -46,8 +46,8 @@ pub(crate) async fn register(
     let account_id = Uuid::new_v4();
     let inserted = account::ActiveModel {
         id: Set(account_id),
-        username: Set(request.username),
-        auth_secret: Set(auth_secret),
+        username: Set(Some(request.username)),
+        auth_secret: Set(Some(auth_secret)),
         ..Default::default()
     }
     .insert(&transaction)
@@ -84,12 +84,16 @@ pub(crate) async fn login(
     // Always run exactly one Argon2 verify to avoid a username-enumeration
     // timing oracle, whether or not the account exists.
     let (account_id, secret) = match row {
-        Some(account) => (account.id, Some(account.auth_secret)),
+        Some(account) => (account.id, account.auth_secret),
         None => (Uuid::nil(), None),
     };
     let ok = verify_password_bounded(&state, request.password, secret).await?;
     if !ok || account_id.is_nil() {
         return Err(ApiError::Unauthorized);
+    }
+    if devices::live_count(state.database(), account_id).await? >= devices::MAX_DEVICES_PER_ACCOUNT
+    {
+        return Err(ApiError::TooManyRequests);
     }
 
     let (device_id, token) =
@@ -110,10 +114,14 @@ fn credentials_are_valid(request: &CredsRequest, require_minimum_password: bool)
     !request.username.trim().is_empty()
         && request.username == request.username.trim()
         && request.username.len() <= MAX_USERNAME_LEN
-        && !request.device_name.trim().is_empty()
-        && request.device_name == request.device_name.trim()
-        && request.device_name.len() <= MAX_DEVICE_NAME_LEN
+        && device_name_is_valid(&request.device_name)
         && password_len_valid
+}
+
+pub(crate) fn device_name_is_valid(device_name: &str) -> bool {
+    !device_name.trim().is_empty()
+        && device_name == device_name.trim()
+        && device_name.len() <= MAX_DEVICE_NAME_LEN
 }
 
 async fn hash_password_bounded(state: &AppState, password: String) -> Result<String, ApiError> {

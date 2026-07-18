@@ -17,8 +17,9 @@ use argon2::{Algorithm, Argon2, Params, Version};
 use axum::http::HeaderMap;
 use base64::Engine;
 use rand::RngCore;
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 use sha2::{Digest, Sha256};
+use time::OffsetDateTime;
 use uuid::Uuid;
 
 /// An authenticated device, resolved from a bearer token.
@@ -67,17 +68,24 @@ pub fn token_hash(token: &str) -> String {
     hex::encode(h.finalize())
 }
 
+/// Extract the raw bearer token from an `Authorization: Bearer <token>` header.
+pub fn bearer(headers: &HeaderMap) -> Result<&str, ApiError> {
+    headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .ok_or(ApiError::Unauthorized)
+}
+
 /// Resolve the `Authorization: Bearer <token>` header to an [`AuthedDevice`],
 /// rejecting revoked or unknown tokens. Constant-ish: lookup is by token hash.
+/// Also stamps the device's `last_seen_at` so an owner can spot stale devices;
+/// the update is best-effort and never fails the request.
 pub async fn authenticate(
     db: &DatabaseConnection,
     headers: &HeaderMap,
 ) -> Result<AuthedDevice, ApiError> {
-    let token = headers
-        .get(axum::http::header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .ok_or(ApiError::Unauthorized)?;
+    let token = bearer(headers)?;
 
     let hash = token_hash(token);
     let row = device::Entity::find()
@@ -87,10 +95,22 @@ pub async fn authenticate(
         .await?;
 
     let device = row.ok_or(ApiError::Unauthorized)?;
-    Ok(AuthedDevice {
+    let authed = AuthedDevice {
         account_id: device.account_id,
         device_id: device.id,
-    })
+    };
+
+    let mut active: device::ActiveModel = device.into();
+    active.last_seen_at = Set(Some(OffsetDateTime::now_utc()));
+    if let Err(error) = active.update(db).await {
+        tracing::warn!(
+            device_id = %authed.device_id,
+            error = %error,
+            "failed to update device last_seen_at"
+        );
+    }
+
+    Ok(authed)
 }
 
 #[cfg(test)]

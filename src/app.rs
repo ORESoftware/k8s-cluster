@@ -1,21 +1,22 @@
-//! HTTP surface: router, shared state, and request handlers.
+//! HTTP surface: router composition and cross-cutting middleware.
 //!
 //! Routes:
 //!   POST /v1/register        -> create account + first device, returns token
 //!   POST /v1/login           -> verify account, register a device, returns token
+//!   POST /v1/auth/supabase   -> enroll a device via a Supabase access JWT
+//!   GET  /v1/devices         -> list this account's devices   (auth)
 //!   POST /v1/devices/revoke  -> revoke a device   (auth)
 //!   GET  /v1/vault           -> pull sealed blob   (auth)
 //!   POST /v1/vault           -> push sealed blob   (auth)
 //!   GET  /livez              -> liveness (no DB)   (/healthz: back-compat alias)
 //!   GET  /readyz             -> readiness (DB ping)
 //!
-//! The unauthenticated `/v1/register` and `/v1/login` routes are per-client
-//! rate-limited; all routes are body-size capped and wrapped in a request
-//! timeout (see [`router`]).
+//! Unauthenticated identity routes are per-client rate-limited; all routes are
+//! body-size capped and wrapped in a request timeout (see [`router`]).
 
 use crate::state::AppState;
-use crate::{accounts, devices, health, metrics, telemetry, vault_blob};
-use axum::http::StatusCode;
+use crate::{accounts, devices, health, metrics, supabase_auth, telemetry, vault_blob};
+use axum::http::{header, HeaderName, HeaderValue, StatusCode};
 use axum::middleware;
 use axum::routing::{get, post};
 use axum::Router;
@@ -25,16 +26,15 @@ use tower_governor::governor::GovernorConfigBuilder;
 use tower_governor::key_extractor::SmartIpKeyExtractor;
 use tower_governor::GovernorLayer;
 use tower_http::limit::RequestBodyLimitLayer;
+use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::timeout::TimeoutLayer;
+
 /// Per-request wall-clock budget. Bounds slow/stuck handlers.
 const REQUEST_TIMEOUT_SECS: u64 = 15;
 
 pub fn router(state: AppState) -> Router {
-    // Per-client rate limit for the *unauthenticated* credential endpoints, which
-    // are the online-brute-force / account-spam surface. GCRA: replenish ~1 req/s
-    // with a small burst. The key is the client IP taken from `X-Forwarded-For` /
-    // `X-Real-IP` (set by the trusted ingress) so all clients aren't collapsed to
-    // the ingress pod's source address; it falls back to the socket peer.
+    // GCRA: replenish ~1 request/s with a small burst. SmartIpKeyExtractor uses
+    // trusted ingress forwarding headers and falls back to the socket peer.
     let governor = Arc::new(
         GovernorConfigBuilder::default()
             .key_extractor(SmartIpKeyExtractor)
@@ -47,34 +47,46 @@ pub fn router(state: AppState) -> Router {
     let auth_routes = Router::new()
         .route("/v1/register", post(accounts::register))
         .route("/v1/login", post(accounts::login))
+        .route("/v1/auth/supabase", post(supabase_auth::enroll))
         // Route-only layering preserves the outer router's normal 404 fallback.
         .route_layer(GovernorLayer { config: governor });
 
     Router::new()
-        // Liveness: process is up. Must NOT depend on the DB, or a transient DB
-        // blip would get the pod killed instead of merely pulled from rotation.
+        // Liveness must not depend on the DB; readiness does.
         .route("/livez", get(health::live))
-        // Back-compat alias for the old liveness path.
         .route("/healthz", get(health::live))
-        // Readiness: only serve traffic if the DB pool is actually usable.
         .route("/readyz", get(health::ready))
         .route("/metrics", get(health::prometheus))
         .merge(auth_routes)
+        .route("/v1/devices", get(devices::list_handler))
         .route("/v1/devices/revoke", post(devices::revoke_handler))
         .route(
             "/v1/vault",
             get(vault_blob::pull_handler).post(vault_blob::push_handler),
         )
-        // Outermost-to-innermost: request log, body cap, then a hard timeout.
         .layer(telemetry::http_trace_layer())
         .layer(middleware::from_fn_with_state(
             state.metrics.clone(),
             metrics::record_http_metrics,
         ))
-        // Sealed blobs are small; cap bodies to 1 MiB to bound abuse.
+        // Defense-in-depth headers for a JSON API behind TLS ingress.
+        .layer(SetResponseHeaderLayer::overriding(
+            header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("no-store"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::STRICT_TRANSPORT_SECURITY,
+            HeaderValue::from_static("max-age=63072000; includeSubDomains"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            HeaderName::from_static("x-frame-options"),
+            HeaderValue::from_static("DENY"),
+        ))
         .layer(RequestBodyLimitLayer::new(1024 * 1024))
-        // Bound every request's lifetime so slow/hung clients can't pin the small
-        // connection pool (slowloris-style exhaustion).
         .layer(TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,
             Duration::from_secs(REQUEST_TIMEOUT_SECS),
@@ -114,7 +126,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn router_middleware_records_requests_for_prometheus() {
+    async fn router_middleware_records_requests_and_sets_security_headers() {
         let app = router(test_state());
         let response = app
             .clone()
@@ -127,6 +139,11 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+        assert_eq!(
+            response.headers()[header::X_CONTENT_TYPE_OPTIONS],
+            "nosniff"
+        );
 
         let response = app
             .oneshot(
@@ -156,6 +173,7 @@ mod tests {
             "prometheus.io/path: /metrics",
             "OTEL_EXPORTER_OTLP_ENDPOINT",
             "DEPLOYMENT_ENVIRONMENT",
+            "SUPABASE_PROJECT_URL",
             "sea_orm=warn",
         ] {
             assert!(manifest.contains(required), "manifest missing {required}");

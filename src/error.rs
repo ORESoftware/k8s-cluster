@@ -16,6 +16,10 @@ pub enum ApiError {
     BadRequest,
     #[error("too many requests")]
     TooManyRequests,
+    // Returned when a route is disabled by configuration (e.g. `/v1/auth/supabase`
+    // when Supabase identity is not configured on this deployment).
+    #[error("not implemented")]
+    NotImplemented,
     #[error("internal error")]
     Internal,
 }
@@ -38,6 +42,7 @@ impl IntoResponse for ApiError {
             ApiError::Conflict => StatusCode::CONFLICT,
             ApiError::BadRequest => StatusCode::BAD_REQUEST,
             ApiError::TooManyRequests => StatusCode::TOO_MANY_REQUESTS,
+            ApiError::NotImplemented => StatusCode::NOT_IMPLEMENTED,
             ApiError::Internal => StatusCode::INTERNAL_SERVER_ERROR,
         };
         // Body intentionally minimal.
@@ -56,6 +61,7 @@ mod tests {
             (ApiError::Conflict, StatusCode::CONFLICT),
             (ApiError::BadRequest, StatusCode::BAD_REQUEST),
             (ApiError::TooManyRequests, StatusCode::TOO_MANY_REQUESTS),
+            (ApiError::NotImplemented, StatusCode::NOT_IMPLEMENTED),
             (ApiError::Internal, StatusCode::INTERNAL_SERVER_ERROR),
         ];
         for (err, expected) in cases {
@@ -64,9 +70,9 @@ mod tests {
     }
 
     #[test]
-    fn sqlx_errors_fold_to_opaque_internal() {
+    fn database_errors_fold_to_opaque_internal() {
         // Any DB error must surface as a leak-free 500, never a detailed body.
-        let err: ApiError = sqlx::Error::RowNotFound.into();
+        let err: ApiError = sea_orm::DbErr::RecordNotFound("missing".to_owned()).into();
         assert!(matches!(err, ApiError::Internal));
         assert_eq!(
             err.into_response().status(),

@@ -13,6 +13,8 @@ mod metrics;
 mod protocol;
 mod server;
 mod state;
+mod supabase;
+mod supabase_auth;
 mod telemetry;
 mod vault_blob;
 

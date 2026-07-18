@@ -12,8 +12,10 @@ pub mod account {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: Uuid,
         #[sea_orm(unique)]
-        pub username: String,
-        pub auth_secret: String,
+        pub username: Option<String>,
+        pub auth_secret: Option<String>,
+        pub supabase_user_id: Option<Uuid>,
+        pub email: Option<String>,
         pub created_at: TimeDateTimeWithTimeZone,
     }
 
@@ -36,6 +38,7 @@ pub mod device {
         pub sync_token_hash: String,
         pub revoked: bool,
         pub created_at: TimeDateTimeWithTimeZone,
+        pub last_seen_at: Option<TimeDateTimeWithTimeZone>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
