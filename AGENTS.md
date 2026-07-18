@@ -42,6 +42,23 @@ by **dpm** — the app never runs DDL against Postgres; it connects with
 regenerate; do not add Postgres migrations here. Avoid IN-list CHECK constraints
 (dpm has a known fixed-point bug on them).
 
+## Security invariants — do not regress
+
+- **Operator + history endpoints fail closed.** `/vapi/call*` and `/v1/history/*`
+  sit behind the `require_server_auth` bearer middleware; with no
+  `T2V_SERVER_AUTH_SECRET` they must return 503, never run unauthenticated.
+  `/vapi/call` spends real money via the server's Vapi key.
+- **Vapi webhook fails closed.** No `VAPI_WEBHOOK_SECRET` ⇒ reject, unless
+  `T2V_ALLOW_INSECURE_WEBHOOK=true`. Secret checks are constant-time
+  (`auth::constant_time_eq`).
+- **Body limits stay explicit**: 25 MB audio, 1 MB JSON/webhook. Decoded audio
+  must pass `validate_sample_rate`.
+- **LLM calls hold a concurrency permit** (`state.acquire_llm()`), so any new
+  upstream-calling path must acquire one too.
+- **Web dashboard is self-contained**: htmx is vendored under `crates/web/assets/`
+  and served from our origin. Keep the strict CSP (`script-src 'self'`) — do not
+  reintroduce a CDN `<script src>` or inline scripts.
+
 ## Before committing
 
 ```sh

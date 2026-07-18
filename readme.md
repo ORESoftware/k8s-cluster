@@ -96,8 +96,20 @@ Both servers read config from the environment.
 | `OPENAI_STT_MODEL` / `OPENAI_TTS_MODEL` / `OPENAI_TTS_VOICE` | api | `whisper-1` / `tts-1` / `alloy` | speech models |
 | `*_BASE_URL` | api | provider defaults | override endpoints (tests, proxies) |
 | `VAPI_API_KEY` | api | — | operator REST passthrough |
-| `VAPI_WEBHOOK_SECRET` | api | — | required `x-vapi-secret`; unset = open (dev only) |
+| `VAPI_WEBHOOK_SECRET` | api | — | required `x-vapi-secret`; **unset = webhook fails closed** |
+| `T2V_ALLOW_INSECURE_WEBHOOK` | api | `false` | opt into an unauthenticated webhook when the secret is unset (dev only) |
+| `T2V_SERVER_AUTH_SECRET` | api | — | bearer token for operator (`/vapi/call`) + `/v1/history/*`; **unset = those routes return 503** |
+| `T2V_MAX_INFLIGHT_LLM` | api | `32` | max concurrent upstream LLM calls; excess → 503 |
+| `T2V_REQUEST_TIMEOUT_SECS` | api | `300` | backstop request timeout |
 | `API_BASE_URL` | web | `http://localhost:8130` | where the dashboard sends actions |
+
+### Security posture
+
+- **Operator + history endpoints fail closed.** `POST /vapi/call`, `GET /vapi/call/{id}`, and every `/v1/history/*` route require `Authorization: Bearer $T2V_SERVER_AUTH_SECRET`; with no secret configured they return 503, never an unauthenticated call that spends money or leaks stored transcripts.
+- **The Vapi webhook fails closed.** With no `VAPI_WEBHOOK_SECRET` it rejects all posts unless `T2V_ALLOW_INSECURE_WEBHOOK=true`. With a secret it checks `x-vapi-secret` in constant time.
+- **Request body limits:** 25 MB on audio uploads (Whisper's cap), 1 MB on JSON and the webhook.
+- **LLM concurrency ceiling** sheds load with 503 instead of piling up unbounded upstream calls.
+- **Web dashboard** ships a strict CSP (`default-src 'self'`, no external hosts), `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and a Permissions-Policy. htmx is **vendored into the binary** and served from our own origin — no CDN, so the page needs no third-party script source.
 
 Missing provider keys are tolerated at startup and reported per-request, so a
 deployment with only one key still serves that provider.

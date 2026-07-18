@@ -3,6 +3,7 @@
 //! contacting external providers. `main.rs` is a thin wrapper over this.
 
 pub mod audio_io;
+pub mod auth;
 pub mod db;
 pub mod error;
 pub mod handlers_speech;
@@ -12,31 +13,81 @@ pub mod metrics;
 pub mod state;
 pub mod vapi_client;
 
+use axum::extract::DefaultBodyLimit;
+use axum::middleware::from_fn_with_state;
 use axum::routing::{get, post};
 use axum::Router;
 use state::AppState;
+use std::time::Duration;
+use tower_http::timeout::TimeoutLayer;
+
+/// Max request body for audio uploads — matches OpenAI Whisper's 25 MB cap and
+/// bounds the DSP/FFT work a single request can trigger.
+const MAX_AUDIO_BODY: usize = 25 * 1024 * 1024;
+/// Max request body for JSON endpoints and the Vapi webhook.
+const MAX_JSON_BODY: usize = 1024 * 1024;
+/// Backstop request timeout (whole request, including a slow body). Generous so
+/// the speech-to-speech pipeline is never cut off; tunable via env.
+const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 300;
+
+fn request_timeout() -> Duration {
+    let secs = std::env::var("T2V_REQUEST_TIMEOUT_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .filter(|n| *n > 0)
+        .unwrap_or(DEFAULT_REQUEST_TIMEOUT_SECS);
+    Duration::from_secs(secs)
+}
 
 pub fn app(state: AppState) -> Router {
-    Router::new()
-        .route("/", get(banner))
-        .route("/healthz", get(healthz))
-        .route("/readyz", get(readyz))
-        .route("/metrics", get(metrics_handler))
+    // Audio uploads: larger body limit; run through the custom-FFT DSP core.
+    let audio = Router::new()
         .route("/v1/stt", post(handlers_speech::stt))
-        .route("/v1/tts", post(handlers_speech::tts))
-        .route("/v1/translate", post(handlers_speech::translate))
+        .route("/v1/analyze", post(handlers_speech::analyze_audio))
         .route(
             "/v1/speech-to-speech",
             post(handlers_speech::speech_to_speech),
         )
-        .route("/v1/analyze", post(handlers_speech::analyze_audio))
+        .layer(DefaultBodyLimit::max(MAX_AUDIO_BODY));
+
+    // JSON action endpoints.
+    let json_actions = Router::new()
+        .route("/v1/tts", post(handlers_speech::tts))
+        .route("/v1/translate", post(handlers_speech::translate))
+        .layer(DefaultBodyLimit::max(MAX_JSON_BODY));
+
+    // Vapi webhook: authenticated inside the handler via x-vapi-secret.
+    let webhook = Router::new()
+        .route("/vapi/webhook", post(handlers_vapi::webhook))
+        .layer(DefaultBodyLimit::max(MAX_JSON_BODY));
+
+    // Operator + history endpoints: guarded by the server-auth bearer secret,
+    // and they expose stored transcripts/translations, so they fail closed.
+    let protected = Router::new()
         .route("/v1/history/transcriptions", get(history::transcriptions))
         .route("/v1/history/translations", get(history::translations))
         .route("/v1/history/syntheses", get(history::syntheses))
         .route("/v1/history/vapi-calls", get(history::vapi_calls))
-        .route("/vapi/webhook", post(handlers_vapi::webhook))
         .route("/vapi/call", post(handlers_vapi::create_call))
         .route("/vapi/call/{id}", get(handlers_vapi::get_call))
+        .layer(from_fn_with_state(state.clone(), auth::require_server_auth))
+        .layer(DefaultBodyLimit::max(MAX_JSON_BODY));
+
+    let public = Router::new()
+        .route("/", get(banner))
+        .route("/healthz", get(healthz))
+        .route("/readyz", get(readyz))
+        .route("/metrics", get(metrics_handler));
+
+    public
+        .merge(audio)
+        .merge(json_actions)
+        .merge(webhook)
+        .merge(protected)
+        .layer(TimeoutLayer::with_status_code(
+            axum::http::StatusCode::REQUEST_TIMEOUT,
+            request_timeout(),
+        ))
         .with_state(state)
 }
 
@@ -96,6 +147,12 @@ pub mod testkit {
         /// Require this shared secret on the Vapi webhook.
         pub fn with_vapi_secret(mut self, secret: &str) -> Self {
             self.state.vapi_webhook_secret = Some(Arc::from(secret));
+            self
+        }
+
+        /// Configure the server-auth bearer secret for operator/history routes.
+        pub fn with_server_auth(mut self, secret: &str) -> Self {
+            self.state.server_auth_secret = Some(Arc::from(secret));
             self
         }
     }

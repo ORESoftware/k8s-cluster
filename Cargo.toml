@@ -34,6 +34,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 maud = { version = "0.26", features = ["axum"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls"] }
+tower-http = { version = "0.6", features = ["timeout", "set-header"] }
 # Typed ORM per fleet convention. sea-orm drives sqlx internally, but no crate
 # in this workspace issues raw sqlx queries — all persistence goes through
 # SeaORM entities/queries.

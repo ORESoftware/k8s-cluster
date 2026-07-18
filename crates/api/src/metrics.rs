@@ -14,6 +14,7 @@ pub struct Metrics {
     pub vapi_webhook_events_total: AtomicU64,
     pub vapi_webhook_unauthorized_total: AtomicU64,
     pub vapi_tool_calls_total: AtomicU64,
+    pub llm_overloaded_total: AtomicU64,
     pub errors_total: AtomicU64,
 }
 
@@ -73,6 +74,11 @@ impl Metrics {
             "t2v_api_vapi_tool_calls_total",
             "Vapi tool calls executed.",
             self.vapi_tool_calls_total.load(Ordering::Relaxed),
+        );
+        emit(
+            "t2v_api_llm_overloaded_total",
+            "Requests shed because the LLM concurrency limit was reached.",
+            self.llm_overloaded_total.load(Ordering::Relaxed),
         );
         emit(
             "t2v_api_errors_total",

@@ -49,6 +49,50 @@ pub async fn healthz() -> &'static str {
     "ok\n"
 }
 
+/// Response-header hardening applied to every route.
+///
+/// The CSP is strict: everything loads from our own origin (htmx is vendored,
+/// see [`crate::assets`]), the live-stats websocket is same-origin
+/// (`connect-src 'self'`), and synthesized speech is inlined as `data:` audio
+/// (`media-src data:`). No external hosts, no inline/eval scripts, no framing.
+pub async fn security_headers(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    use axum::http::HeaderValue;
+    const CSP: &str = "default-src 'self'; \
+         script-src 'self'; \
+         style-src 'self'; \
+         img-src 'self' data:; \
+         media-src data:; \
+         connect-src 'self'; \
+         base-uri 'none'; \
+         form-action 'self'; \
+         frame-ancestors 'none'; \
+         object-src 'none'";
+
+    let mut response = next.run(request).await;
+    let headers = response.headers_mut();
+    headers.insert(
+        axum::http::header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static(CSP),
+    );
+    headers.insert(
+        axum::http::header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    headers.insert("x-frame-options", HeaderValue::from_static("DENY"));
+    headers.insert(
+        axum::http::header::REFERRER_POLICY,
+        HeaderValue::from_static("no-referrer"),
+    );
+    headers.insert(
+        "permissions-policy",
+        HeaderValue::from_static("geolocation=(), microphone=(), camera=()"),
+    );
+    response
+}
+
 pub async fn readyz(State(state): State<AppState>) -> Response {
     use axum::http::StatusCode;
     match state.db.ping().await {

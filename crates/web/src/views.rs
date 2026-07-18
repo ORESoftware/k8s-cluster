@@ -1,7 +1,7 @@
 //! maud templates. Server-rendered HTML with htmx for interactivity and a
 //! websocket (`hx-ext="ws"`) for the live stats ticker.
 
-use maud::{html, Markup, PreEscaped, DOCTYPE};
+use maud::{html, Markup, DOCTYPE};
 use t2v_entity::{translation, vapi_call};
 
 /// Live counters rendered both on first paint and pushed over the websocket.
@@ -13,8 +13,11 @@ pub struct DashboardStats {
     pub vapi_calls: u64,
 }
 
-const HTMX: &str = "https://unpkg.com/htmx.org@1.9.12";
-const HTMX_WS: &str = "https://unpkg.com/htmx.org@1.9.12/dist/ext/ws.js";
+// htmx is vendored and served from our own origin (see assets.rs) so the page
+// needs no external CDN and can run under a strict `script-src 'self'` CSP.
+const HTMX: &str = "/assets/htmx.min.js";
+const HTMX_WS: &str = "/assets/htmx-ws.js";
+const APP_CSS: &str = "/assets/app.css";
 
 pub fn layout(title: &str, body: Markup) -> Markup {
     html! {
@@ -24,9 +27,9 @@ pub fn layout(title: &str, body: Markup) -> Markup {
                 meta charset="utf-8";
                 meta name="viewport" content="width=device-width, initial-scale=1";
                 title { (title) }
+                link rel="stylesheet" href=(APP_CSS);
                 script src=(HTMX) {}
                 script src=(HTMX_WS) {}
-                style { (PreEscaped(STYLE)) }
             }
             body {
                 header .topbar {
@@ -225,7 +228,7 @@ pub fn history_page(translations: &[translation::Model], calls: &[vapi_call::Mod
     )
 }
 
-const STYLE: &str = r#"
+pub const STYLE: &str = r#"
 :root { color-scheme: light dark; --bg:#0f1220; --panel:#181c2e; --card:#1e2338; --ink:#e7e9f3; --dim:#9aa0bf; --accent:#7c5cff; --ok:#3ad29f; --err:#ff6b6b; --line:#2a3050; }
 * { box-sizing: border-box; }
 body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--ink); }

@@ -31,25 +31,14 @@ fn json_response(status: StatusCode, body: Value) -> Response {
     (status, Json(body)).into_response()
 }
 
-fn constant_time_eq(a: &str, b: &str) -> bool {
-    let (a, b) = (a.as_bytes(), b.as_bytes());
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut diff = 0u8;
-    for (x, y) in a.iter().zip(b.iter()) {
-        diff |= x ^ y;
-    }
-    diff == 0
-}
-
 fn webhook_authorized(headers: &HeaderMap, state: &AppState) -> bool {
     match &state.vapi_webhook_secret {
-        None => true, // dev mode; warned about at startup
+        // Fail closed unless an operator explicitly opted into insecure dev mode.
+        None => state.allow_insecure_webhook,
         Some(expected) => headers
             .get(VAPI_SECRET_HEADER)
             .and_then(|v| v.to_str().ok())
-            .map(|got| constant_time_eq(got, expected))
+            .map(|got| crate::auth::constant_time_eq(got, expected))
             .unwrap_or(false),
     }
 }
@@ -409,13 +398,6 @@ pub async fn get_call(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn constant_time_eq_matches_std() {
-        assert!(constant_time_eq("secret", "secret"));
-        assert!(!constant_time_eq("secret", "secreT"));
-        assert!(!constant_time_eq("secret", "secret2"));
-    }
 
     #[test]
     fn extracts_tool_call_from_toolcalllist() {

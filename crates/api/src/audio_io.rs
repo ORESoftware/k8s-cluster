@@ -5,6 +5,12 @@ use crate::error::ApiError;
 use serde::Deserialize;
 use t2v_core::audio::{decode_mulaw, parse_wav, AudioClip};
 
+/// Accepted sample-rate window for any decoded clip. Bounds the FFT/resample
+/// work and keeps a crafted header from wrapping the `i32` column or tripping
+/// the database CHECK constraint (which would surface as a 500).
+const MIN_SAMPLE_RATE: u32 = 4000;
+const MAX_SAMPLE_RATE: u32 = 384_000;
+
 /// Query params shared by the audio-accepting endpoints.
 #[derive(Debug, Clone, Deserialize)]
 pub struct AudioParams {
@@ -19,12 +25,14 @@ pub fn decode_body(params: &AudioParams, body: &[u8]) -> Result<AudioClip, ApiEr
         return Err(ApiError::bad_request("empty audio body"));
     }
     match params.format.as_deref().unwrap_or("wav") {
-        "wav" => Ok(parse_wav(body)?),
+        "wav" => {
+            let clip = parse_wav(body)?;
+            validate_sample_rate(clip.sample_rate)?;
+            Ok(clip)
+        }
         "mulaw" | "ulaw" | "g711" => {
             let sample_rate = params.rate.unwrap_or(8000);
-            if !(4000..=48000).contains(&sample_rate) {
-                return Err(ApiError::bad_request("rate must be within 4000..=48000"));
-            }
+            validate_sample_rate(sample_rate)?;
             Ok(AudioClip {
                 sample_rate,
                 samples: decode_mulaw(body),
@@ -35,6 +43,15 @@ pub fn decode_body(params: &AudioParams, body: &[u8]) -> Result<AudioClip, ApiEr
             "unsupported audio format '{other}' (wav|mulaw)"
         ))),
     }
+}
+
+fn validate_sample_rate(rate: u32) -> Result<(), ApiError> {
+    if !(MIN_SAMPLE_RATE..=MAX_SAMPLE_RATE).contains(&rate) {
+        return Err(ApiError::bad_request(format!(
+            "sample rate {rate} out of range ({MIN_SAMPLE_RATE}..={MAX_SAMPLE_RATE})"
+        )));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

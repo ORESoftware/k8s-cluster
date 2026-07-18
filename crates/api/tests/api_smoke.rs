@@ -132,6 +132,79 @@ async fn translate_rejects_empty_text() {
 }
 
 #[tokio::test]
+async fn operator_endpoint_fails_closed_without_server_auth_secret() {
+    // No T2V_SERVER_AUTH_SECRET configured → 503, never an unauthenticated call.
+    let state = test_state().await;
+    let resp = state
+        .app()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/vapi/call")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"phoneNumberId":"x"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+}
+
+#[tokio::test]
+async fn history_requires_bearer_token() {
+    let state = test_state().await.with_server_auth("op-secret");
+
+    // Missing token → 401.
+    let resp = state
+        .app()
+        .oneshot(
+            Request::builder()
+                .uri("/v1/history/translations")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+    // Correct token → 200 with an (empty) result set.
+    let resp = state
+        .app()
+        .oneshot(
+            Request::builder()
+                .uri("/v1/history/translations")
+                .header("authorization", "Bearer op-secret")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let v: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(v["ok"], true);
+}
+
+#[tokio::test]
+async fn webhook_fails_closed_when_no_secret_configured() {
+    // No webhook secret and no insecure override → reject.
+    let state = test_state().await;
+    let resp = state
+        .app()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/vapi/webhook")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"message":{"type":"status-update"}}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
 async fn vapi_webhook_rejects_bad_secret() {
     let state = test_state().await.with_vapi_secret("s3cr3t");
     let resp = state
