@@ -42,7 +42,13 @@ is_zero() { case "$1" in *[!0]*) return 1 ;; *) return 0 ;; esac; }
 # and for one that is configured + has a modules/ object store but no worktree.
 resolve_gitdir() {
     local path="$1" gd
-    gd="$(git -C "$repo_root/$path" rev-parse --absolute-git-dir 2>/dev/null)" && { printf '%s\n' "$gd"; return 0; }
+    # Git exports the superproject's GIT_DIR / GIT_WORK_TREE while running
+    # hooks.  They must not leak into this nested invocation or Git resolves
+    # the parent repository again and treats every gitlink as if it belonged to
+    # the superproject remote.
+    gd="$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_COMMON_DIR -u GIT_INDEX_FILE \
+        git -C "$repo_root/$path" rev-parse --absolute-git-dir 2>/dev/null)" \
+        && { printf '%s\n' "$gd"; return 0; }
     gd="$(git -C "$repo_root" rev-parse --git-path "modules/$path" 2>/dev/null)"
     [ -n "$gd" ] && [ -d "$gd" ] && { printf '%s\n' "$gd"; return 0; }
     return 1
