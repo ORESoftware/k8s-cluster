@@ -226,6 +226,45 @@ jobs:
           TEST_COCKROACH_ADMIN_URL: postgresql://root@127.0.0.1:26257/defaultdb?sslmode=disable
         run: cargo test --test cockroach_rls -- --nocapture
 
+  # Browser e2e (Playwright + Puppeteer) driving a real `serve` process on
+  # in-memory SQLite — the same boot recipe as container-smoke, but exercised
+  # through Chrome so the maud/htmx pages, redirects, and security headers are
+  # verified as a browser actually sees them. Blocking on ubuntu-latest; the
+  # opt-in self-hosted variant (browser-e2e-selfhosted.yml) runs the identical
+  # specs on the k8s Chromium runner scale set.
+  browser-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: "1.95.0"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          key: browser-e2e
+      - name: Build server binary
+        run: cargo build --bin canonical-web-server
+      - name: Build client bundle
+        run: |
+          npm ci --prefix client
+          npm run build --prefix client
+      - name: Install browser e2e dependencies
+        run: npm install --prefix tests/browser
+      - name: Install Chromium
+        run: npx --prefix tests/browser playwright install --with-deps chromium
+      - name: Browser e2e (playwright + puppeteer)
+        env:
+          CANONICAL_WEB_SERVER_BIN: ${{ github.workspace }}/target/debug/canonical-web-server
+        run: npm run test:browser --prefix tests/browser
+
   container-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 25

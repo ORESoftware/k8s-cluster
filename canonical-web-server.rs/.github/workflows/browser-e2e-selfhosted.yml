@@ -1,0 +1,44 @@
+name: browser-e2e-selfhosted
+
+# Opt-in only: the same browser e2e as the blocking `browser-e2e` job in ci.yml,
+# on the canonical.cloud self-hosted Chromium runner scale set (Actions Runner
+# Controller on the k8s-cluster). Manual trigger so normal CI never waits on the
+# runners; deploy them first — k8s-cluster: remote/argocd/ci-runners/README.md.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-e2e-selfhosted-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser-e2e:
+    # runnerScaleSetName from the gha-runner-scale-set Application.
+    runs-on: canonical-browser
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      # Rust is not in the runner image; install it at job time (Node 22 and
+      # Chromium already ship in the image).
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: "1.95.0"
+      - name: Build server binary
+        run: cargo build --bin canonical-web-server
+      - name: Build client bundle
+        run: |
+          npm ci --prefix client
+          npm run build --prefix client
+      - name: Install browser e2e dependencies
+        run: npm install --prefix tests/browser
+      # No `playwright install`: the runner image's Chromium is picked up via
+      # PLAYWRIGHT_CHROMIUM / PUPPETEER_EXECUTABLE_PATH.
+      - name: browser e2e (playwright + puppeteer)
+        env:
+          CANONICAL_WEB_SERVER_BIN: ${{ github.workspace }}/target/debug/canonical-web-server
+        run: npm run test:browser --prefix tests/browser

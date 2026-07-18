@@ -1,0 +1,33 @@
+name: browser-e2e-selfhosted
+
+# Opt-in only: runs the exact same Playwright + Puppeteer specs as the blocking
+# `browser-e2e` job in ci.yml, but on the canonical.cloud self-hosted Chromium
+# runner scale set (Actions Runner Controller on the k8s-cluster). Manual
+# trigger so nothing depends on the runners existing; deploy them first via
+# k8s-cluster: remote/argocd/ci-runners/README.md.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-e2e-selfhosted-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser-e2e:
+    # runnerScaleSetName from the gha-runner-scale-set Application.
+    runs-on: canonical-browser
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      # The runner image ships Node 22 and Chromium and exports
+      # PLAYWRIGHT_CHROMIUM / PUPPETEER_EXECUTABLE_PATH, so there is no
+      # setup-node and no `playwright install` step — the harness reuses the OS
+      # Chromium via chromeExecutablePath().
+      - run: npm ci
+      - name: browser e2e (playwright + puppeteer)
+        run: npm run test:browser
