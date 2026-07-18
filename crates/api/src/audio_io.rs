@@ -5,6 +5,12 @@ use crate::error::ApiError;
 use serde::Deserialize;
 use t2v_core::audio::{decode_mulaw, parse_wav, AudioClip};
 
+/// Accepted sample-rate window for any decoded clip. Bounds the FFT/resample
+/// work and keeps a crafted header from wrapping the `i32` column or tripping
+/// the database CHECK constraint (which would surface as a 500).
+const MIN_SAMPLE_RATE: u32 = 4000;
+const MAX_SAMPLE_RATE: u32 = 384_000;
+
 /// Query params shared by the audio-accepting endpoints.
 #[derive(Debug, Clone, Deserialize)]
 pub struct AudioParams {
