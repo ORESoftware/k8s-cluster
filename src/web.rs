@@ -117,8 +117,35 @@ async fn status(State(cfg): State<AppState>) -> Json<serde_json::Value> {
 /// WebSocket that pushes the live counters to the dashboard grid every couple of
 /// seconds. The initial values are also server-rendered into the page, so the
 /// dashboard is correct even before the socket delivers its first frame.
-async fn ws_stats(State(cfg): State<AppState>, ws: WebSocketUpgrade) -> Response {
+async fn ws_stats(
+    State(cfg): State<AppState>,
+    headers: HeaderMap,
+    ws: WebSocketUpgrade,
+) -> Response {
+    // WebSockets are not subject to the same-origin read protection that blocks
+    // a cross-site page from reading `/api/status`. Without this check a page the
+    // user visits could open ws://<dashboard>/ws/stats and exfiltrate the relay
+    // list + counters. Browsers always send Origin on a WS handshake; reject when
+    // it is present and does not match Host. Non-browser clients (no Origin) pass.
+    if !same_origin(&headers) {
+        return (StatusCode::FORBIDDEN, "cross-origin websocket rejected").into_response();
+    }
     return ws.on_upgrade(move |socket| stats_socket(socket, cfg));
+}
+
+/// True unless the request carries an `Origin` whose host:port differs from the
+/// `Host` header (cross-site WebSocket hijacking).
+fn same_origin(headers: &HeaderMap) -> bool {
+    let origin = match headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()) {
+        Some(o) => o,
+        None => return true, // non-browser client
+    };
+    let host = headers
+        .get(header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let origin_hostport = origin.split_once("://").map(|(_, rest)| rest).unwrap_or(origin);
+    return !host.is_empty() && origin_hostport == host;
 }
 
 async fn stats_socket(mut socket: WebSocket, cfg: AppState) {
