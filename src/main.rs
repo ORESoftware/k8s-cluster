@@ -22,6 +22,8 @@ mod circuit;
 mod config;
 mod connector;
 mod crypto;
+mod forward;
+mod http_connect;
 mod policy;
 mod relay;
 mod socks;
@@ -193,6 +195,55 @@ async fn run_client() -> Result<()> {
         bail!("TOR_UI_TOKEN must contain at least 32 bytes when the dashboard is non-loopback");
     }
 
+    // Optional HTTP CONNECT front-end (runs alongside SOCKS). Same fail-closed
+    // posture: loopback by default; a non-loopback bind needs an explicit opt-in
+    // and the shared proxy credential, and is never an open proxy.
+    let http_listen = std::env::var("TOR_HTTP_LISTEN")
+        .ok()
+        .filter(|s| !s.is_empty());
+    if let Some(listen) = &http_listen {
+        let http_is_remote = !is_loopback_listener(listen);
+        if http_is_remote && !env_flag("TOR_HTTP_ALLOW_REMOTE") {
+            bail!(
+                "refusing non-loopback HTTP proxy {listen}; set TOR_HTTP_ALLOW_REMOTE=1 only behind a trusted network or encrypted tunnel"
+            );
+        }
+        if http_is_remote && socks_auth.is_none() {
+            bail!(
+                "non-loopback HTTP proxy {listen} requires proxy credentials (TOR_SOCKS_PASSWORD or TOR_SOCKS_PASSWORD_FILE)"
+            );
+        }
+        if http_is_remote {
+            tracing::warn!(
+                listen = %listen,
+                "remote HTTP CONNECT proxy enabled; Basic auth does not encrypt the client-to-proxy link, so use a VPN, SSH tunnel, or private network"
+            );
+        }
+    }
+
+    // Optional static forward tunnels: local listeners that carry every
+    // connection through the overlay to a fixed upstream (ssh -L semantics).
+    let forward_routes = match std::env::var("TOR_FORWARD").ok().filter(|s| !s.is_empty()) {
+        Some(raw) => forward::parse_routes(&raw)?,
+        None => Vec::new(),
+    };
+    for route in &forward_routes {
+        let route_is_remote = !is_loopback_listener(&route.listen);
+        if route_is_remote && !env_flag("TOR_FORWARD_ALLOW_REMOTE") {
+            bail!(
+                "refusing non-loopback forward tunnel {}; set TOR_FORWARD_ALLOW_REMOTE=1 only behind a trusted network (the tunnel is unauthenticated to its fixed target)",
+                route.listen
+            );
+        }
+        if route_is_remote {
+            tracing::warn!(
+                listen = %route.listen,
+                target = %format!("{}:{}", route.target_host, route.target_port),
+                "remote forward tunnel enabled; it is an unauthenticated path to its fixed upstream — restrict to a trusted network"
+            );
+        }
+    }
+
     // The overlay backend needs a relay directory; arti does not.
     let directory = match std::env::var("TOR_DIRECTORY") {
         Ok(p) => Some(config::Directory::load(&PathBuf::from(&p))?),
@@ -205,9 +256,31 @@ async fn run_client() -> Result<()> {
         socks_listen: socks_listen.clone(),
         connector: connector.clone(),
         stats: stats.clone(),
-        auth: socks_auth,
+        auth: socks_auth.clone(),
         max_connections: max_socks_connections,
     });
+    // Built before web_cfg consumes `connector`/`stats` so the HTTP front-end
+    // shares the same backend, counters, and proxy credential.
+    let http_cfg = http_listen.map(|listen| {
+        Arc::new(http_connect::HttpProxyConfig {
+            listen,
+            connector: connector.clone(),
+            stats: stats.clone(),
+            auth: socks_auth,
+            max_connections: max_socks_connections,
+        })
+    });
+    let forward_cfgs: Vec<Arc<forward::ForwardConfig>> = forward_routes
+        .into_iter()
+        .map(|route| {
+            Arc::new(forward::ForwardConfig {
+                route,
+                connector: connector.clone(),
+                stats: stats.clone(),
+                max_connections: max_socks_connections,
+            })
+        })
+        .collect();
     let web_cfg = Arc::new(web::WebConfig {
         ui_listen: ui_listen.clone(),
         socks_listen,
@@ -219,14 +292,21 @@ async fn run_client() -> Result<()> {
         ui_token,
     });
 
-    // Run the SOCKS proxy and the web dashboard concurrently; if either exits,
-    // the process exits with its error.
-    let socks_task = tokio::spawn(async move { socks::run(client_cfg).await });
-    let web_task = tokio::spawn(async move { web::run(web_cfg).await });
-    tokio::select! {
-        r = socks_task => r.context("socks task panicked")?,
-        r = web_task => r.context("web task panicked")?,
+    // Run the front-ends and dashboard concurrently; if any exits, the process
+    // exits with its error.
+    let mut tasks = tokio::task::JoinSet::new();
+    tasks.spawn(async move { socks::run(client_cfg).await });
+    tasks.spawn(async move { web::run(web_cfg).await });
+    if let Some(http_cfg) = http_cfg {
+        tasks.spawn(async move { http_connect::run(http_cfg).await });
     }
+    for fwd_cfg in forward_cfgs {
+        tasks.spawn(async move { forward::run(fwd_cfg).await });
+    }
+    if let Some(res) = tasks.join_next().await {
+        return res.context("client task panicked")?;
+    }
+    return Ok(());
 }
 
 fn run_keygen() -> Result<()> {

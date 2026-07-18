@@ -51,6 +51,13 @@ impl SocksAuth {
             password: password.into_bytes(),
         });
     }
+
+    /// Constant-time check of a presented username+password against the
+    /// configured credentials. Shared by the SOCKS (RFC 1929) and HTTP CONNECT
+    /// (Proxy-Authorization: Basic) front-ends.
+    pub fn verify(&self, username: &[u8], password: &[u8]) -> bool {
+        return bool::from(username.ct_eq(&self.username) & password.ct_eq(&self.password));
+    }
 }
 
 pub async fn run(cfg: Arc<ClientConfig>) -> Result<()> {

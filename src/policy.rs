@@ -20,6 +20,10 @@ use tokio::net::lookup_host;
 #[derive(Clone)]
 pub struct Policy {
     allow_private_exit: bool,
+    /// When false (`TOR_DISABLE_EXIT`), this relay refuses `Begin`: it will only
+    /// ever act as an entry/middle hop and never open a connection to a real
+    /// destination on a client's behalf.
+    exit_enabled: bool,
     denied_exit_ports: HashSet<u16>,
     /// If `Some`, `Extend` targets must appear in this set (exact string match
     /// on the `host:port` the client requested).
@@ -29,6 +33,7 @@ pub struct Policy {
 impl Policy {
     pub fn from_env() -> Result<Policy> {
         let allow_private_exit = env_flag("TOR_EXIT_ALLOW_PRIVATE");
+        let exit_enabled = !env_flag("TOR_DISABLE_EXIT");
         let relay_peers = std::env::var("TOR_RELAY_PEERS").ok().and_then(|raw| {
             let set: HashSet<String> = raw
                 .split(',')
@@ -46,6 +51,7 @@ impl Policy {
         )?;
         return Ok(Policy {
             allow_private_exit,
+            exit_enabled,
             denied_exit_ports,
             relay_peers,
         });
@@ -55,11 +61,27 @@ impl Policy {
         return self.allow_private_exit;
     }
 
+    /// Whether this relay is permitted to serve as an exit (open connections to
+    /// real destinations). False makes it a middle-only relay.
+    pub fn exit_enabled(&self) -> bool {
+        return self.exit_enabled;
+    }
+
+    /// Whether an `Extend` allowlist (`TOR_RELAY_PEERS`) is configured.
+    pub fn extend_allowlisted(&self) -> bool {
+        return self.relay_peers.is_some();
+    }
+
     /// Resolve `host:port` and return every address the exit policy permits.
     ///
     /// Keeping all permitted results lets the caller fall back between IPv6 and
     /// IPv4 when the resolver's first answer is unreachable.
     pub async fn resolve_exit(&self, host: &str, port: u16) -> Result<Vec<SocketAddr>> {
+        if !self.exit_enabled {
+            bail!(
+                "exit disabled on this relay (TOR_DISABLE_EXIT); it serves as a middle relay only"
+            );
+        }
         if host.is_empty()
             || host.len() > 253
             || host
@@ -257,5 +279,29 @@ mod tests {
         assert_eq!(ports.len(), 2);
         assert!(ports.contains(&25));
         assert!(parse_ports("25,nope").is_err());
+    }
+
+    fn policy(exit_enabled: bool, relay_peers: Option<HashSet<String>>) -> Policy {
+        Policy {
+            allow_private_exit: false,
+            exit_enabled,
+            denied_exit_ports: HashSet::new(),
+            relay_peers,
+        }
+    }
+
+    #[tokio::test]
+    async fn middle_only_relay_refuses_exit() {
+        let p = policy(false, None);
+        assert!(!p.exit_enabled());
+        // Rejected before any DNS resolution is attempted.
+        assert!(p.resolve_exit("example.com", 443).await.is_err());
+    }
+
+    #[test]
+    fn extend_allowlist_presence_is_reported() {
+        assert!(!policy(true, None).extend_allowlisted());
+        let peers = HashSet::from(["relay-b:9001".to_string()]);
+        assert!(policy(true, Some(peers)).extend_allowlisted());
     }
 }

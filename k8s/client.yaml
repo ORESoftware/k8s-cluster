@@ -44,6 +44,12 @@ spec:
           ports:
             - { name: socks, containerPort: 9050 }
             - { name: ui, containerPort: 9060 }
+          readinessProbe:
+            httpGet: { path: /healthz, port: ui }
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: { port: socks }
+            periodSeconds: 20
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

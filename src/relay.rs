@@ -17,7 +17,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::Semaphore;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::{timeout, Duration};
 use tracing::{debug, info, warn};
 use x25519_dalek::StaticSecret;
@@ -105,7 +105,17 @@ pub async fn run(listen: &str, secret: StaticSecret) -> Result<()> {
     let policy = Arc::new(Policy::from_env()?);
     let limit = Arc::new(Semaphore::new(max_circuits()?));
     let listener = TcpListener::bind(listen).await?;
-    info!(%listen, allow_private_exit = policy.allow_private_exit(), "relay listening");
+    if !policy.extend_allowlisted() && !is_loopback_listen(listen) {
+        warn!(
+            "relay is non-loopback and TOR_RELAY_PEERS is unset; Extend targets are unrestricted — pin the allowlist to prevent relay-to-arbitrary-host connections"
+        );
+    }
+    info!(
+        %listen,
+        allow_private_exit = policy.allow_private_exit(),
+        exit_enabled = policy.exit_enabled(),
+        "relay listening"
+    );
     loop {
         let (stream, peer) = match listener.accept().await {
             Ok(v) => v,
@@ -114,9 +124,12 @@ pub async fn run(listen: &str, secret: StaticSecret) -> Result<()> {
                 continue;
             }
         };
-        // Reject rather than queue when saturated, bounding memory/FD use.
+        // Reject rather than queue when saturated, bounding memory/FD use. The
+        // permit is shared (Arc) with the backward pump the circuit later spawns
+        // so a circuit only frees its slot once *both* directions have finished;
+        // a detached pump must not outlive the accounting.
         let permit = match limit.clone().try_acquire_owned() {
-            Ok(p) => p,
+            Ok(p) => Arc::new(p),
             Err(_) => {
                 debug!("at circuit capacity, dropping {peer}");
                 continue;
@@ -125,18 +138,26 @@ pub async fn run(listen: &str, secret: StaticSecret) -> Result<()> {
         let secret = secret.clone();
         let policy = policy.clone();
         tokio::spawn(async move {
-            if let Err(e) = handle_circuit(stream, secret, policy).await {
+            if let Err(e) = handle_circuit(stream, secret, policy, permit).await {
                 debug!("circuit from {peer} ended: {e:#}");
             }
-            drop(permit);
         });
     }
+}
+
+/// Loopback check mirroring `main::is_loopback_listener` for the relay warning.
+fn is_loopback_listen(listen: &str) -> bool {
+    return listen
+        .parse::<std::net::SocketAddr>()
+        .map(|a| a.ip().is_loopback())
+        .unwrap_or(false);
 }
 
 async fn handle_circuit(
     prev: TcpStream,
     secret: Arc<StaticSecret>,
     policy: Arc<Policy>,
+    permit: Arc<OwnedSemaphorePermit>,
 ) -> Result<()> {
     prev.set_nodelay(true).ok();
     let (mut prev_r, mut prev_w) = prev.into_split();
@@ -192,10 +213,12 @@ async fn handle_circuit(
                 let sealer = sealer_bwd
                     .take()
                     .ok_or_else(|| anyhow!("sealer already taken"))?;
+                let hold = permit.clone();
                 tokio::spawn(async move {
                     if let Err(e) = middle_pump(next_r, pw, sealer).await {
                         debug!("middle pump ended: {e:#}");
                     }
+                    drop(hold); // release the circuit slot only when this direction ends
                 });
             }
             Cell::Relay { payload } => {
@@ -210,7 +233,8 @@ async fn handle_circuit(
                 if next_w.is_some() || dest_w.is_some() {
                     bail!("Begin after this relay already has a next hop");
                 }
-                // Exit policy: resolve + reject private/loopback/metadata ranges.
+                // Exit policy: enforce exit-enabled, resolve + reject
+                // private/loopback/metadata ranges.
                 let addrs = policy.resolve_exit(&host, port).await?;
                 let dest = connect_resolved(&addrs).await?;
                 dest.set_nodelay(true).ok();
@@ -222,10 +246,12 @@ async fn handle_circuit(
                 let sealer = sealer_bwd
                     .take()
                     .ok_or_else(|| anyhow!("sealer already taken"))?;
+                let hold = permit.clone();
                 tokio::spawn(async move {
                     if let Err(e) = exit_pump(dest_r, pw, sealer).await {
                         debug!("exit pump ended: {e:#}");
                     }
+                    drop(hold); // release the circuit slot only when this direction ends
                 });
             }
             Cell::Data { bytes } => {

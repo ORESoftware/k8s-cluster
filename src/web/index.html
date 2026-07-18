@@ -83,6 +83,10 @@
 </main>
 
 <script>
+// Escape text that is interpolated into innerHTML. `status_line` comes verbatim
+// from the fetched remote server and `name`/`addr` from the directory, so both
+// are untrusted here; render them as text, never markup.
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 async function refresh() {
   try {
     const r = await fetch('/api/status');
@@ -96,7 +100,7 @@ async function refresh() {
     document.getElementById('socks-addr').textContent = s.socks_listen;
     document.querySelectorAll('.socks').forEach(e => e.textContent = s.socks_listen.replace('0.0.0.0','127.0.0.1'));
     document.getElementById('relays').innerHTML =
-      (s.relays||[]).map(x => `<span class="pill" data-testid="relay-pill">${x.name} · ${x.addr}</span>`).join('');
+      (s.relays||[]).map(x => `<span class="pill" data-testid="relay-pill">${esc(x.name)} · ${esc(x.addr)}</span>`).join('');
   } catch (e) { /* transient */ }
 }
 function setUrl(u){ document.getElementById('url').value = u; }
@@ -122,8 +126,8 @@ async function doFetch() {
       return;
     }
     meta.className = 'ok';
-    meta.innerHTML = `<span data-testid="result-status">${d.status_line}</span> · via <span class="pill">${d.backend||'?'}</span>` +
-      ` · ${d.body_len} bytes · ${d.elapsed_ms} ms`;
+    meta.innerHTML = `<span data-testid="result-status">${esc(d.status_line)}</span> · via <span class="pill">${esc(d.backend||'?')}</span>` +
+      ` · ${Number(d.body_len)||0} bytes · ${Number(d.elapsed_ms)||0} ms`;
     pre.style.display = 'block';
     pre.textContent = (d.headers||[]).join('\n') + '\n\n' + (d.body_preview||'');
     if (d.is_text && /html/i.test(d.content_type||'')) {

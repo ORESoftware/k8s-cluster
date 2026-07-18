@@ -31,20 +31,36 @@
   will extend to, preventing relays from being used to reach arbitrary internal
   hosts. In untrusted deployments (relays reachable by parties you don't
   control) this should be set, since `Extend` targets are otherwise unrestricted.
+  A non-loopback relay started without an allowlist logs a warning at startup.
+- **Middle-only relays.** `TOR_DISABLE_EXIT=1` makes a relay refuse `Begin`
+  outright, so it never resolves or connects to a real destination. Any client
+  can otherwise turn *any* reachable relay into its exit by sending `Begin`;
+  this flag lets an operator confine exiting to designated nodes and keep other
+  relays purely as onion-forwarding middles. (Effective only when the directory
+  holds more relays than `TOR_HOPS`, or a middle-only relay would be forced into
+  the exit slot and its circuits would fail.)
 - **Overlay pre-shared key.** `TOR_NETWORK_SECRET` (or `TOR_NETWORK_SECRET_FILE`,
   which keeps it out of the process environment) is folded into every handshake,
   so only nodes/clients sharing it can build circuits — turning the open overlay
   into a closed one.
 - **Fail-closed exposed listeners.** Non-loopback relays require a PSK unless
   `TOR_ALLOW_OPEN_RELAY=1` is set. Non-loopback SOCKS requires an explicit remote
-  opt-in and RFC 1929 credentials. Non-loopback dashboard proxying requires a
-  token unless the unsafe override is explicit.
+  opt-in and RFC 1929 credentials. The optional HTTP `CONNECT` front-end
+  (`TOR_HTTP_LISTEN`) inherits the identical posture: loopback by default, and a
+  non-loopback bind requires `TOR_HTTP_ALLOW_REMOTE=1` plus the shared proxy
+  password, with `Proxy-Authorization: Basic` checked in constant time. It
+  supports `CONNECT` only (no absolute-URI forwarding) and applies the backend's
+  exit policy to every destination, so it is never an open proxy. Non-loopback
+  dashboard proxying requires a token unless the unsafe override is explicit.
 - **Timeouts & circuit cap.** Half-open handshakes are dropped after 20 s; dialing
   the next hop/destination is bounded (15 s relay, 60 s client); the SOCKS
   negotiation must finish in 30 s; `TOR_MAX_CIRCUITS` bounds concurrent circuits
   (reject, don't queue); `TOR_CIRCUIT_IDLE_TIMEOUT_SECS` optionally closes idle
   circuits (0 = off, to avoid breaking legitimately long-idle streams).
-  `TOR_MAX_SOCKS_CONNECTIONS` separately bounds accepted application streams.
+  `TOR_MAX_SOCKS_CONNECTIONS` separately bounds accepted application streams. A
+  circuit holds its `TOR_MAX_CIRCUITS` slot until *both* its forward handler and
+  its detached backward pump finish, so the cap reflects real resource use and a
+  long-lived stream cannot free a slot while its sockets are still open.
 - **Dashboard `/api/fetch` auth.** The fetch endpoint is a server-side proxy
   primitive. When the dashboard is bound to a non-loopback address, set
   `TOR_UI_TOKEN` (or `TOR_UI_TOKEN_FILE`); requests must then present it via
@@ -52,6 +68,9 @@
   `/api/fetch` is an unauthenticated proxy — the process logs a warning if bound
   non-loopback with no token. The URL's host/path are also rejected if they
   contain control characters, preventing CRLF header-injection/request smuggling.
+  The dashboard renders the fetched response's status line and the directory's
+  relay names/addresses as text (HTML-escaped), so a malicious exit destination
+  or directory entry cannot inject script into the dashboard origin.
 - **Relay key file safety.** The static identity secret is atomically created
   with `create_new`; on Unix its `0600` mode is applied at creation time.
 - **Framer/parser bounds.** Frames and the explicit cell codec are capped at

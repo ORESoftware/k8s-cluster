@@ -101,6 +101,41 @@ curl -x socks5h://127.0.0.1:9050 https://example.com/
 
 The client also serves a **web dashboard** at <http://127.0.0.1:9060/>.
 
+## Proxy front-ends: SOCKS5 and HTTP CONNECT
+
+The client exposes **SOCKS5** on `TOR_SOCKS_LISTEN` (default `127.0.0.1:9050`).
+Optionally it also runs an **HTTP `CONNECT`** proxy when `TOR_HTTP_LISTEN` is set,
+for apps and OS "HTTP proxy" settings that don't speak SOCKS (browsers, Docker,
+`curl -x http://…`, corporate-proxy fields). Both front-ends tunnel through the
+same backend, share the same proxy credential, and enforce the same fail-closed
+posture (loopback by default; a non-loopback bind needs an explicit opt-in plus a
+password). `CONNECT` carries TLS end-to-end — the proxy never sees plaintext; for
+plaintext `http://` use SOCKS.
+
+```sh
+# Enable the HTTP CONNECT proxy alongside SOCKS.
+TOR_DIRECTORY=./directory.toml TOR_HTTP_LISTEN=127.0.0.1:9080 cargo run -- client &
+
+# Point an HTTPS request at it (CONNECT tunnels TLS through the overlay).
+curl -x http://127.0.0.1:9080 https://example.com/
+```
+
+## Forward tunnels (fixed-upstream port forwarding)
+
+For an app that speaks **no** proxy at all, `TOR_FORWARD` binds local listeners
+that carry every connection through the overlay to a pinned upstream — `ssh -L`
+over onion routing. The operator chooses the destination, not the client.
+
+```sh
+# Anything hitting localhost:8443 is tunneled through the overlay to example.com:443.
+TOR_DIRECTORY=./directory.toml TOR_FORWARD=127.0.0.1:8443=example.com:443 cargo run -- client &
+curl --resolve example.com:8443:127.0.0.1 https://example.com:8443/   # via the tunnel
+```
+
+Listeners are loopback by default; a non-loopback bind requires
+`TOR_FORWARD_ALLOW_REMOTE=1` (the tunnel is unauthenticated to its fixed target).
+A private/internal upstream still needs `TOR_EXIT_ALLOW_PRIVATE` at the exit.
+
 ## Web dashboard & docs
 
 In `client` mode a small web server runs alongside the SOCKS proxy
@@ -173,6 +208,13 @@ obfuscated or turn the service into a VPN.
 - **Overlay pre-shared key:** `TOR_NETWORK_SECRET` (or `…_FILE`) is folded into
   every handshake, so only nodes/clients sharing it can build circuits.
 - **Extend allowlist:** `TOR_RELAY_PEERS` pins which peers a relay will extend to.
+  A non-loopback relay with no allowlist logs a startup warning, since `Extend`
+  targets are otherwise unrestricted.
+- **Middle-only relays:** `TOR_DISABLE_EXIT=1` makes a relay refuse `Begin`, so it
+  never opens connections to real destinations. Confine exiting to designated
+  nodes to limit which hosts make outbound connections on your behalf. (Only
+  meaningful when the directory has more relays than `TOR_HOPS`, so a middle-only
+  relay is not forced into the exit position.)
 - **Limits & timeouts:** handshake (20 s), dial (15–60 s), and SOCKS-negotiation
   (30 s) timeouts; relay and SOCKS connection caps; optional circuit idle timeout;
   1 MiB frame/parser cap; path-traversal-sanitized doc names; relay key creation
@@ -191,6 +233,7 @@ See [docs/security.md](docs/security.md) for the full model.
 | `TOR_LISTEN`        | relay  | `0.0.0.0:9001`     | Relay listen address                     |
 | `TOR_KEY_FILE`      | relay  | `./relay.key`      | Static identity key file (created if absent) |
 | `TOR_EXIT_ALLOW_PRIVATE` | relay | `0`           | Allow exits to private/loopback ranges   |
+| `TOR_DISABLE_EXIT`  | relay  | `0`                | Refuse `Begin`; run as a middle-only relay (never exits) |
 | `TOR_EXIT_DENY_PORTS` | relay | `25`               | Comma-separated outbound port denylist   |
 | `TOR_RELAY_PEERS`   | relay  | (any)              | Comma-separated `host:port` extend allowlist |
 | `TOR_MAX_CIRCUITS`  | relay  | `1024`             | Max concurrent circuits before rejecting |
@@ -203,6 +246,10 @@ See [docs/security.md](docs/security.md) for the full model.
 | `TOR_SOCKS_USERNAME` | client | `tor`             | RFC 1929 username                        |
 | `TOR_SOCKS_PASSWORD` / `_FILE` | client | (unset) | RFC 1929 password                        |
 | `TOR_MAX_SOCKS_CONNECTIONS` | client | `256`        | Max concurrent SOCKS connections         |
+| `TOR_HTTP_LISTEN`   | client | (unset = off)      | Also run an HTTP `CONNECT` proxy here (shares the proxy credential) |
+| `TOR_HTTP_ALLOW_REMOTE` | client | `0`            | Permit a non-loopback HTTP proxy bind (also requires a password) |
+| `TOR_FORWARD`       | client | (unset = off)      | Static tunnels `listen=host:port[,…]` carried through the overlay |
+| `TOR_FORWARD_ALLOW_REMOTE` | client | `0`         | Permit a non-loopback forward-tunnel bind |
 | `TOR_UI_LISTEN`     | client | `127.0.0.1:9060`   | Dashboard/docs listen address            |
 | `TOR_ARTI_CONFIG`   | client | (Arti defaults)    | Arti client TOML, including bridges/transports |
 | `TOR_ARTI_ISOLATE_STREAMS` | client | `0`          | Force a fresh Arti circuit per stream (low volume only) |

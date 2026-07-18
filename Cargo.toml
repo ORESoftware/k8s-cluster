@@ -32,7 +32,8 @@ toml = "0.8"
 anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-axum = "0.8"
+axum = { version = "0.8", features = ["ws"] }
+maud = "0.27"
 pulldown-cmark = { version = "0.12", default-features = false, features = ["html"] }
 
 # Real-Tor backend (TOR_BACKEND=arti). Off by default because it pulls the full
