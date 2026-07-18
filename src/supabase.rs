@@ -168,17 +168,23 @@ impl SupabaseVerifier {
             .map_err(|_| ApiError::Unauthorized)
     }
 
-    /// Resolve a signing key by `kid`, using the cache and refreshing on a miss or
-    /// expiry. A `kid` that is still unknown after a fresh fetch is rejected.
+    /// Resolve a signing key by `kid`. A **fresh** cache is authoritative: if it
+    /// doesn't contain the `kid`, the token is rejected immediately. Only a stale
+    /// or absent cache triggers a network refetch.
+    ///
+    /// This matters for DoS resistance: without it, a stream of tokens carrying
+    /// random unknown `kid`s would force one JWKS fetch *per request* (an
+    /// amplified fan-out to Supabase), because a fresh-but-missing lookup would
+    /// keep falling through to refetch. The cost is that a genuinely rotated key
+    /// is only picked up after the TTL (≤ `JWKS_TTL`), which is acceptable.
     async fn decoding_key(&self, kid: &str) -> Result<DecodingKey, ApiError> {
         if let Some(cached) = self.inner.cache.read().await.as_ref() {
             if cached.fetched_at.elapsed() < JWKS_TTL {
-                if let Some(key) = cached.keys.get(kid) {
-                    return Ok(key.clone());
-                }
+                // Fresh cache is the source of truth — hit or miss, no refetch.
+                return cached.keys.get(kid).cloned().ok_or(ApiError::Unauthorized);
             }
         }
-        // Miss, stale, or unknown kid: refetch once and retry.
+        // Stale or absent cache: refetch once, then decide.
         let keys = self.fetch_jwks().await?;
         let key = keys.get(kid).cloned();
         *self.inner.cache.write().await = Some(CachedJwks {
