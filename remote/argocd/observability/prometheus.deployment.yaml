@@ -18,7 +18,12 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/config-revision: "2026-05-15-gateway-paths"
+        # Bump this after prometheus-config edits so argocd rolls the pod
+        # even if the stakater reloader is degraded (see reloader RBAC fix
+        # for `jobs.batch`). This pickup is what materializes the
+        # dd-k8s-resource-exporter scrape_timeout: 25s change into the
+        # running config and clears DDObservabilityTargetDown.
+        dd.dev/config-revision: "2026-07-16-k8s-exporter-scrape-timeout"
       labels:
         app: dd-prometheus
     spec:

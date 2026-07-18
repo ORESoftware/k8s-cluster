@@ -253,3 +253,5 @@ caller's responsibility (callers pass pre-encoded `data`).
 failures, blocked broadcasts, EVM RPC requests/errors, and per-feature activity). The three
 publish-only subjects above are defined in `remote/libs/nats/subject-defs/schema/contracts.schema.json`
 and consumed through the generated `dd_nats_subject_defs` constants (never hand-written strings).
+
+> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

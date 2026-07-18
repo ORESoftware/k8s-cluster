@@ -6,14 +6,36 @@ edition = "2021"
 [dependencies]
 dd-telemetry = { path = "../../libs/telemetry-rs" }
 tracing = "0.1"
+# NATS MQ integration: lifecycle events on dd.remote.build_server.* and the
+# optional durable JetStream request intake. Version pinned to the fleet-wide
+# =0.38.0 (see remote/libs/nats/subject-defs consumers).
+async-nats = "=0.38.0"
 axum = { version = "0.7", features = ["macros"] }
 base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+# GitHub Actions secret sync: repo secrets must be encrypted with the repo's
+# libsodium sealed-box public key before PUT /repos/{repo}/actions/secrets.
+crypto_box = { version = "0.9", features = ["seal", "std"] }
+# Generated cross-language NATS subject constants (schema lives in
+# remote/libs/nats/subject-defs/schema/build-server.schema.json).
+dd-nats-subject-defs = { path = "../../libs/nats/subject-defs/generated/rust" }
 dd-runtime-config-client = { path = "../../libs/runtime-config-client-rs" }
+futures-util = "0.3"
 hex = "0.4"
 hmac = "0.12"
+# LevelFilter for ConnectOptions::sqlx_logging_level (billing-server pattern).
+log = "0.4"
 reqwest = { version = "=0.12.9", default-features = false, features = ["json", "rustls-tls"] }
+# SeaORM over the sqlx-postgres driver against the service's OWN database
+# (dd_build_server). Schema management is declarative (contract at
+# remote/libs/pg-defs/schema/databases/dd_build_server/schema.sql +
+# scripts/dpm.sh); the server never migrates at boot.
+sea-orm = { version = "1", default-features = false, features = ["macros", "runtime-tokio-rustls", "sqlx-postgres", "with-chrono", "with-json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
+# Constant-time comparison for the API auth header and webhook HMACs.
+subtle = "2"
 time = "=0.3.44"
 tokio = { version = "1", features = ["fs", "io-util", "macros", "process", "rt-multi-thread", "signal", "sync", "time"] }
+uuid = { version = "1", features = ["v4"] }

@@ -105,6 +105,38 @@
 	path = remote/deployments/ai-agent-bridge
 	url = git@github.com:ORESoftware/ai-agent-bridge.rs.git
 	branch = main
+[submodule "remote/deployments/fabrication-server-rs"]
+	path = remote/deployments/fabrication-server-rs
+	url = git@github.com:daedalus-fab/fabrication-server.rs.git
+	branch = main
+[submodule "remote/deployments/gleam-lambda-runner"]
+	path = remote/deployments/gleam-lambda-runner
+	url = git@github.com:scintilla-run/gleam-lambda-runner.git
+	branch = main
+[submodule "remote/deployments/billing-server-rs"]
+	path = remote/deployments/billing-server-rs
+	url = git@github.com:quaestor-ledger/billing-server.rs.git
+	branch = main
+[submodule "remote/deployments/dart-server"]
+	path = remote/deployments/dart-server
+	url = git@github.com:sagitta-stack/dart-server.git
+	branch = main
+[submodule "remote/deployments/dd-data-viz-rs"]
+	path = remote/deployments/dd-data-viz-rs
+	url = git@github.com:claritas-viz/data-viz-server.rs.git
+	branch = main
+[submodule "remote/deployments/athleto-backend-rs"]
+	path = remote/deployments/athleto-backend-rs
+	url = git@github.com:athlet-o/athleto-backend.rs.git
+	branch = main
+[submodule "remote/deployments/usacc-rest-api-backend-rs"]
+	path = remote/deployments/usacc-rest-api-backend-rs
+	url = git@github.com:usa-acc/rest-api-backend.rs.git
+	branch = main
+[submodule "remote/deployments/3fa-web-server-rs"]
+	path = remote/deployments/3fa-web-server-rs
+	url = git@github.com:3FA-app/3fa-web-server.rs.git
+	branch = main
 [submodule "remote/deployments/athleto-app-rs"]
 	path = remote/deployments/athleto-app-rs
 	url = git@github.com:athlet-o/athleto-app-rs.git

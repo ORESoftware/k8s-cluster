@@ -85,8 +85,10 @@ async fn main() -> anyhow::Result<()> {
     let rag = Arc::new(RagService::new(embedder.clone(), qdrant.clone()));
 
     // Optional Postgres search subsystem — only when DATABASE_URL is set.
+    // Schema is dpm-managed (schema/schema.sql + scripts/dpm.sh), never
+    // applied at boot.
     let search = if let Some(url) = &cfg.database_url {
-        let pool = db::connect(url, cfg.run_migrations).await?;
+        let pool = db::connect(url).await?;
         tracing::info!(search_dim = cfg.search_dim, "postgres search subsystem enabled");
         Some(Arc::new(SearchService::new(
             pool,

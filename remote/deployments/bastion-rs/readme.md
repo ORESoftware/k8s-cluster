@@ -30,3 +30,5 @@ access without disturbing the inventory routes that the homepage relies on.
 
 The Kubernetes manifests live in `remote/argocd/vpn/` because the bastion remains a narrow access
 broker even when the public gateway proxies authenticated `/bastion/...` browser requests to it.
+
+> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

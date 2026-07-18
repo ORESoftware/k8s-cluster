@@ -29,6 +29,7 @@ resources:
   - dd-image-builder.service.yaml
   - dd-image-builder.networkpolicy.yaml
   - dd-remote-queue-consumer.deployment.yaml
+  - dd-remote-queue-consumer.service.yaml
   - dd-remote-queue-consumer.scaledobject.yaml
   - dd-mdp-optimizer.deployment.yaml
   - dd-mdp-optimizer.service.yaml
