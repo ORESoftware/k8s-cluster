@@ -1,0 +1,47 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: canonical-ci-arc-controller
+  namespace: argocd
+  annotations:
+    # Controller must exist before any gha-runner-scale-set is reconciled.
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  source:
+    # GitHub's official Actions Runner Controller (ARC), OCI Helm chart. The
+    # repo may need registering as an OCI Helm repository in Argo CD first
+    # (see remote/argocd/ci-runners/README.md).
+    repoURL: ghcr.io/actions/actions-runner-controller-charts
+    chart: gha-runner-scale-set-controller
+    targetRevision: 0.12.1
+    helm:
+      skipTests: true
+      values: |
+        replicaCount: 1
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+          seccompProfile:
+            type: RuntimeDefault
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: "1"
+            memory: 512Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: arc-systems
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
