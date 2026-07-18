@@ -190,7 +190,7 @@ for i in "${!module_paths[@]}"; do
   fi
 
   if [[ "$is_rust_service" -eq 1 && -f "$module_path/Dockerfile" ]]; then
-    if ! grep -q '^FROM gcr.io/distroless/cc-debian12:nonroot$' "$module_path/Dockerfile"; then
+    if ! grep -Eq '^FROM gcr\.io/distroless/cc-debian12:nonroot(@sha256:[0-9a-f]{64})?( AS [A-Za-z0-9_-]+)?$' "$module_path/Dockerfile"; then
       fail "$module_path Rust runtime image is not distroless nonroot"
     fi
 

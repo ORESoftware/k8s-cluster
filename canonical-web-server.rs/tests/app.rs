@@ -6,6 +6,7 @@ use axum::{
     routing::post,
     Json, Router,
 };
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use canonical_web_server::{
     auth::{
         AuthProvider, AuthProviderError, AuthTokens, SessionService, SupabaseAuth, SupabaseUser,
@@ -13,13 +14,12 @@ use canonical_web_server::{
     build_app,
     config::Config,
     db::{entity::web_session, migration::Migrator},
-    error::AppError,
     AppState,
 };
 use chrono::{Duration as ChronoDuration, Utc};
 use futures_util::{SinkExt, StreamExt};
 use http_body_util::BodyExt;
-use sea_orm::{Database, DatabaseConnection, EntityTrait};
+use sea_orm::{ConnectOptions, Database, DatabaseConnection, EntityTrait};
 use sea_orm_migration::MigratorTrait;
 use std::{
     collections::HashSet,
@@ -30,6 +30,7 @@ use std::{
     },
     time::Duration,
 };
+use tokio::sync::{Barrier, Notify};
 use tokio_tungstenite::tungstenite::{client::IntoClientRequest, Message};
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -96,6 +97,30 @@ struct RotatingAuth {
 #[derive(Clone)]
 struct UnavailableLogoutAuth;
 
+struct BlockingRefreshAuth {
+    calls: AtomicUsize,
+    started: Arc<Barrier>,
+    release: Arc<Notify>,
+}
+
+struct BlockingUnavailableRefreshAuth {
+    calls: AtomicUsize,
+    started: Arc<Notify>,
+    release: Arc<Notify>,
+}
+
+struct BlockingBearerAuth {
+    calls: AtomicUsize,
+    started: Arc<Barrier>,
+    release: Arc<Notify>,
+}
+
+struct BlockingLoginAuth {
+    calls: AtomicUsize,
+    started: Arc<Barrier>,
+    release: Arc<Notify>,
+}
+
 #[async_trait]
 impl AuthProvider for UnavailableLogoutAuth {
     async fn password_sign_in(
@@ -116,6 +141,112 @@ impl AuthProvider for UnavailableLogoutAuth {
 
     async fn sign_out(&self, _access_token: &str) -> Result<(), AuthProviderError> {
         Err(AuthProviderError::Unavailable)
+    }
+}
+
+#[async_trait]
+impl AuthProvider for BlockingRefreshAuth {
+    async fn password_sign_in(
+        &self,
+        _email: &str,
+        _password: &str,
+    ) -> Result<AuthTokens, AuthProviderError> {
+        unreachable!("the refresh fixture creates tokens directly")
+    }
+
+    async fn refresh(&self, _refresh_token: &str) -> Result<AuthTokens, AuthProviderError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        self.started.wait().await;
+        self.release.notified().await;
+        Ok(tokens())
+    }
+
+    async fn user_for_token(&self, _access_token: &str) -> Result<SupabaseUser, AuthProviderError> {
+        unreachable!("the refresh fixture authenticates only session cookies")
+    }
+
+    async fn sign_out(&self, _access_token: &str) -> Result<(), AuthProviderError> {
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl AuthProvider for BlockingUnavailableRefreshAuth {
+    async fn password_sign_in(
+        &self,
+        _email: &str,
+        _password: &str,
+    ) -> Result<AuthTokens, AuthProviderError> {
+        unreachable!("the refresh fixture creates tokens directly")
+    }
+
+    async fn refresh(&self, _refresh_token: &str) -> Result<AuthTokens, AuthProviderError> {
+        let call = self.calls.fetch_add(1, Ordering::SeqCst);
+        if call == 0 {
+            self.started.notify_one();
+            self.release.notified().await;
+        }
+        Err(AuthProviderError::Unavailable)
+    }
+
+    async fn user_for_token(&self, _access_token: &str) -> Result<SupabaseUser, AuthProviderError> {
+        unreachable!("the refresh fixture authenticates only session cookies")
+    }
+
+    async fn sign_out(&self, _access_token: &str) -> Result<(), AuthProviderError> {
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl AuthProvider for BlockingBearerAuth {
+    async fn password_sign_in(
+        &self,
+        _email: &str,
+        _password: &str,
+    ) -> Result<AuthTokens, AuthProviderError> {
+        unreachable!("the bearer fixture does not sign in")
+    }
+
+    async fn refresh(&self, _refresh_token: &str) -> Result<AuthTokens, AuthProviderError> {
+        unreachable!("the bearer fixture does not refresh")
+    }
+
+    async fn user_for_token(&self, _access_token: &str) -> Result<SupabaseUser, AuthProviderError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        self.started.wait().await;
+        self.release.notified().await;
+        Ok(user())
+    }
+
+    async fn sign_out(&self, _access_token: &str) -> Result<(), AuthProviderError> {
+        unreachable!("the bearer fixture does not sign out")
+    }
+}
+
+#[async_trait]
+impl AuthProvider for BlockingLoginAuth {
+    async fn password_sign_in(
+        &self,
+        _email: &str,
+        _password: &str,
+    ) -> Result<AuthTokens, AuthProviderError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        self.started.wait().await;
+        self.release.notified().await;
+        Ok(tokens())
+    }
+
+    async fn refresh(&self, _refresh_token: &str) -> Result<AuthTokens, AuthProviderError> {
+        unreachable!("the login fixture does not refresh")
+    }
+
+    async fn user_for_token(&self, _access_token: &str) -> Result<SupabaseUser, AuthProviderError> {
+        unreachable!("the login fixture does not authenticate bearer tokens")
+    }
+
+    async fn sign_out(&self, _access_token: &str) -> Result<(), AuthProviderError> {
+        unreachable!("the login fixture does not sign out")
     }
 }
 
@@ -244,13 +375,16 @@ async fn app() -> Router {
 async fn state() -> AppState {
     let db = Database::connect("sqlite::memory:").await.unwrap();
     Migrator::up(&db, None).await.unwrap();
-    let config = Config {
+    AppState::new(test_config(), db, Arc::new(FakeAuth)).unwrap()
+}
+
+fn test_config() -> Config {
+    Config {
         port: 8081,
         static_dir: PathBuf::from("test-fixtures/no-marketing-site"),
         app_asset_dir: PathBuf::from("client/dist"),
         database_url: "[test connection is injected]".into(),
         database_max_connections: 1,
-        auto_migrate: false,
         app_base_url: "http://localhost:8081".into(),
         allowed_origins: HashSet::from(["http://localhost:8081".into()]),
         session_cookie: "canonical_session".into(),
@@ -258,12 +392,14 @@ async fn state() -> AppState {
         session_encryption_key: vec![7; 32],
         session_ttl: Duration::from_secs(30 * 24 * 60 * 60),
         login_rate_limit_attempts: 5,
+        login_rate_limit_global_attempts: 500,
         login_rate_limit_window: Duration::from_secs(600),
         login_rate_limit_max_keys: 4_096,
+        login_auth_max_concurrency: 16,
+        bearer_auth_max_concurrency: 32,
         supabase_url: "http://localhost:9999".into(),
         supabase_publishable_key: "test-publishable-key".into(),
-    };
-    AppState::new(config, db, Arc::new(FakeAuth)).unwrap()
+    }
 }
 
 async fn body_json(response: axum::response::Response) -> serde_json::Value {
@@ -306,6 +442,33 @@ async fn api_not_found_is_json_and_does_not_fall_into_marketing_site() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     assert_eq!(body_json(response).await["error"]["code"], "not_found");
+}
+
+#[tokio::test]
+async fn customer_server_reserves_the_admin_namespaces() {
+    let app = app().await;
+    for path in ["/admin", "/admin/users"] {
+        let response = app
+            .clone()
+            .oneshot(Request::get(path).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert!(body_text(response)
+            .await
+            .contains("That application page does not exist."));
+    }
+
+    let api_response = app
+        .oneshot(
+            Request::get("/api/admin/users")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(api_response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(body_json(api_response).await["error"]["code"], "not_found");
 }
 
 #[tokio::test]
@@ -495,6 +658,82 @@ async fn password_login_rate_limits_repeated_attempts_without_exposing_the_accou
 }
 
 #[tokio::test]
+async fn password_login_saturation_rejects_before_upstream_or_session_insert() {
+    let db = Database::connect("sqlite::memory:").await.unwrap();
+    Migrator::up(&db, None).await.unwrap();
+    let started = Arc::new(Barrier::new(2));
+    let release = Arc::new(Notify::new());
+    let auth = Arc::new(BlockingLoginAuth {
+        calls: AtomicUsize::new(0),
+        started: started.clone(),
+        release: release.clone(),
+    });
+    let mut config = test_config();
+    config.login_auth_max_concurrency = 1;
+    let app = build_app(AppState::new(config, db.clone(), auth.clone()).unwrap());
+
+    let login_page = app
+        .clone()
+        .oneshot(Request::get("/login").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let csrf_cookie = cookie_value(&login_page, "canonical_login_csrf").unwrap();
+    let first_app = app.clone();
+    let first_csrf = csrf_cookie.clone();
+    let first = tokio::spawn(async move {
+        first_app
+            .oneshot(
+                Request::post("/auth/login")
+                    .header(header::ORIGIN, "http://localhost:8081")
+                    .header(header::COOKIE, format!("canonical_login_csrf={first_csrf}"))
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .body(Body::from(format!(
+                        "email=user%40example.com&password=secret&csrf={first_csrf}"
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+    });
+    started.wait().await;
+
+    let saturated = app
+        .oneshot(
+            Request::post("/auth/login")
+                .header(header::ORIGIN, "http://localhost:8081")
+                .header(
+                    header::COOKIE,
+                    format!("canonical_login_csrf={csrf_cookie}"),
+                )
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "email=user%40example.com&password=secret&csrf={csrf_cookie}"
+                )))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(saturated.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(saturated.headers().get(header::RETRY_AFTER).unwrap(), "1");
+    let saturated = body_text(saturated).await;
+    assert!(saturated.contains("login_auth_busy"));
+    assert!(!saturated.contains("user@example.com"));
+    assert!(!saturated.contains("secret"));
+    assert!(!saturated.contains(USER_ID.to_string().as_str()));
+    assert_eq!(auth.calls.load(Ordering::SeqCst), 1);
+    assert!(web_session::Entity::find()
+        .all(&db)
+        .await
+        .unwrap()
+        .is_empty());
+
+    release.notify_waiters();
+    assert_eq!(first.await.unwrap().status(), StatusCode::SEE_OTHER);
+    assert_eq!(auth.calls.load(Ordering::SeqCst), 1);
+    assert_eq!(web_session::Entity::find().all(&db).await.unwrap().len(), 1);
+}
+
+#[tokio::test]
 async fn application_and_marketing_routes_receive_tailored_security_headers() {
     let app = app().await;
     let app_page = app
@@ -517,21 +756,49 @@ async fn application_and_marketing_routes_receive_tailored_security_headers() {
         "DENY"
     );
     assert_eq!(
+        app_page
+            .headers()
+            .get(header::STRICT_TRANSPORT_SECURITY)
+            .unwrap(),
+        "max-age=31536000"
+    );
+    assert_eq!(
         app_page.headers().get("permissions-policy").unwrap(),
         "camera=(), geolocation=(), microphone=(), payment=(), usb=()"
+    );
+    assert_eq!(
+        app_page.headers().get(header::CACHE_CONTROL).unwrap(),
+        "no-store"
+    );
+
+    let private_api = app
+        .clone()
+        .oneshot(
+            Request::get("/api/v1/sync/changes")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(private_api.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        private_api.headers().get(header::CACHE_CONTROL).unwrap(),
+        "no-store"
     );
 
     let marketing_fallback = app
         .oneshot(Request::get("/").body(Body::empty()).unwrap())
         .await
         .unwrap();
-    assert!(marketing_fallback
+    let marketing_csp = marketing_fallback
         .headers()
         .get(header::CONTENT_SECURITY_POLICY)
         .unwrap()
         .to_str()
-        .unwrap()
-        .contains("frame-ancestors 'none'"));
+        .unwrap();
+    assert!(marketing_csp.contains("frame-ancestors 'none'"));
+    assert!(marketing_csp.contains("script-src 'self'"));
+    assert!(!marketing_csp.contains("script-src 'self' 'unsafe-inline'"));
     assert_eq!(
         marketing_fallback
             .headers()
@@ -545,6 +812,21 @@ async fn application_and_marketing_routes_receive_tailored_security_headers() {
             .get(header::REFERRER_POLICY)
             .unwrap(),
         "strict-origin-when-cross-origin"
+    );
+    assert_eq!(
+        marketing_fallback
+            .headers()
+            .get(header::STRICT_TRANSPORT_SECURITY)
+            .unwrap(),
+        "max-age=31536000"
+    );
+    assert_ne!(
+        marketing_fallback
+            .headers()
+            .get(header::CACHE_CONTROL)
+            .and_then(|value| value.to_str().ok()),
+        Some("no-store"),
+        "marketing responses must retain an independent cache policy"
     );
 }
 
@@ -625,8 +907,12 @@ async fn capture_password_token_request(
     headers: HeaderMap,
 ) -> Json<serde_json::Value> {
     capture.sender.send(headers).unwrap();
+    let access_token = supabase_jwt(
+        USER_ID,
+        Uuid::from_u128(0x93cf3f87_027f_442c_a855_57a12ca37087),
+    );
     Json(serde_json::json!({
-        "access_token": "captured-access-token",
+        "access_token": access_token,
         "refresh_token": "captured-refresh-token",
         "expires_in": 3600,
         "user": {
@@ -652,16 +938,25 @@ async fn supabase_password_token_request_uses_apikey_without_bearer_authorizatio
         .unwrap();
     });
 
-    let auth =
-        SupabaseAuth::new(format!("http://{address}"), "test-publishable-key".into()).unwrap();
+    let auth = SupabaseAuth::new(
+        format!("http://{address}"),
+        "sb_publishable_test_only".into(),
+    )
+    .unwrap();
     let tokens = auth
         .password_sign_in("user@example.com", "secret")
         .await
         .unwrap();
-    assert_eq!(tokens.access_token, "captured-access-token");
+    assert_eq!(
+        tokens.access_token,
+        supabase_jwt(
+            USER_ID,
+            Uuid::from_u128(0x93cf3f87_027f_442c_a855_57a12ca37087)
+        )
+    );
 
     let headers = receiver.recv().await.unwrap();
-    assert_eq!(headers.get("apikey").unwrap(), "test-publishable-key");
+    assert_eq!(headers.get("apikey").unwrap(), "sb_publishable_test_only");
     assert!(!headers.contains_key(header::AUTHORIZATION));
     server.abort();
 }
@@ -673,7 +968,7 @@ async fn rejected_refresh_token_revokes_the_local_session_once() {
 
     assert!(matches!(
         sessions.authenticate(&raw_id).await,
-        Err(AppError::Unauthorized)
+        Err(canonical_session::SessionError::Unauthorized)
     ));
     let model = web_session::Entity::find_by_id(&session_hash)
         .one(&db)
@@ -681,10 +976,12 @@ async fn rejected_refresh_token_revokes_the_local_session_once() {
         .unwrap()
         .unwrap();
     assert!(model.revoked_at.is_some());
+    assert!(model.revocation_pending_at.is_some());
+    assert!(model.upstream_revoked_at.is_none());
 
     assert!(matches!(
         sessions.authenticate(&raw_id).await,
-        Err(AppError::Unauthorized)
+        Err(canonical_session::SessionError::Unauthorized)
     ));
     assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
@@ -696,7 +993,7 @@ async fn transient_refresh_failure_keeps_the_local_session_retryable() {
 
     assert!(matches!(
         sessions.authenticate(&raw_id).await,
-        Err(AppError::AuthUpstream)
+        Err(canonical_session::SessionError::AuthUpstream)
     ));
     let model = web_session::Entity::find_by_id(&session_hash)
         .one(&db)
@@ -704,12 +1001,205 @@ async fn transient_refresh_failure_keeps_the_local_session_retryable() {
         .unwrap()
         .unwrap();
     assert!(model.revoked_at.is_none());
+    assert!(model.refresh_lease_id.is_none());
+    assert!(model.refresh_lease_expires_at.is_none());
 
     assert!(matches!(
         sessions.authenticate(&raw_id).await,
-        Err(AppError::AuthUpstream)
+        Err(canonical_session::SessionError::AuthUpstream)
     ));
     assert_eq!(calls.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn concurrent_refresh_is_fenced_without_holding_the_database_connection() {
+    let mut options = ConnectOptions::new("sqlite::memory:");
+    options
+        .max_connections(1)
+        .min_connections(1)
+        .acquire_timeout(Duration::from_millis(500));
+    let db = Database::connect(options).await.unwrap();
+    Migrator::up(&db, None).await.unwrap();
+    let started = Arc::new(Barrier::new(2));
+    let release = Arc::new(Notify::new());
+    let auth = Arc::new(BlockingRefreshAuth {
+        calls: AtomicUsize::new(0),
+        started: started.clone(),
+        release: release.clone(),
+    });
+    let sessions = SessionService::new(
+        db.clone(),
+        auth.clone(),
+        &[7; 32],
+        Duration::from_secs(3_600),
+    )
+    .unwrap();
+    let mut expired = tokens();
+    expired.expires_at = Utc::now() - ChronoDuration::minutes(1);
+    let created = sessions.create(expired).await.unwrap();
+
+    let first_sessions = sessions.clone();
+    let first_id = created.raw_id.clone();
+    let first = tokio::spawn(async move { first_sessions.authenticate(&first_id).await });
+    started.wait().await;
+
+    // A one-connection pool remains usable while Supabase is blocked, proving
+    // that refresh committed its short claim transaction before network I/O.
+    tokio::time::timeout(
+        Duration::from_millis(250),
+        web_session::Entity::find().one(&db),
+    )
+    .await
+    .expect("refresh must not hold the only database connection")
+    .unwrap()
+    .unwrap();
+
+    let mut followers = Vec::new();
+    for _ in 0..32 {
+        let follower_sessions = sessions.clone();
+        let follower_id = created.raw_id.clone();
+        followers.push(tokio::spawn(async move {
+            follower_sessions.authenticate(&follower_id).await
+        }));
+    }
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(auth.calls.load(Ordering::SeqCst), 1);
+
+    release.notify_waiters();
+    let first_context = tokio::time::timeout(Duration::from_secs(2), first)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    for follower in followers {
+        let follower_context = tokio::time::timeout(Duration::from_secs(2), follower)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert_eq!(first_context.user_id, follower_context.user_id);
+    }
+    assert_eq!(auth.calls.load(Ordering::SeqCst), 1);
+    let stored = web_session::Entity::find_by_id(created.context.session_hash.unwrap())
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(stored.refresh_lease_id.is_none());
+    assert!(stored.refresh_lease_expires_at.is_none());
+}
+
+#[tokio::test]
+async fn failed_refresh_burst_has_one_upstream_leader_and_keeps_the_pool_healthy() {
+    let mut options = ConnectOptions::new("sqlite::memory:");
+    options
+        .max_connections(1)
+        .min_connections(1)
+        .acquire_timeout(Duration::from_millis(500));
+    let db = Database::connect(options).await.unwrap();
+    Migrator::up(&db, None).await.unwrap();
+    let started = Arc::new(Notify::new());
+    let release = Arc::new(Notify::new());
+    let auth = Arc::new(BlockingUnavailableRefreshAuth {
+        calls: AtomicUsize::new(0),
+        started: started.clone(),
+        release: release.clone(),
+    });
+    let sessions = SessionService::new(
+        db.clone(),
+        auth.clone(),
+        &[7; 32],
+        Duration::from_secs(3_600),
+    )
+    .unwrap();
+    let mut expired = tokens();
+    expired.expires_at = Utc::now() - ChronoDuration::minutes(1);
+    let created = sessions.create(expired).await.unwrap();
+
+    let mut requests = Vec::new();
+    for _ in 0..32 {
+        let request_sessions = sessions.clone();
+        let request_id = created.raw_id.clone();
+        requests.push(tokio::spawn(async move {
+            request_sessions.authenticate(&request_id).await
+        }));
+    }
+    started.notified().await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(auth.calls.load(Ordering::SeqCst), 1);
+
+    tokio::time::timeout(
+        Duration::from_millis(250),
+        web_session::Entity::find().one(&db),
+    )
+    .await
+    .expect("refresh waiters must not exhaust the only database connection")
+    .unwrap()
+    .unwrap();
+
+    release.notify_waiters();
+    for request in requests {
+        let result = tokio::time::timeout(Duration::from_secs(5), request)
+            .await
+            .expect("coalesced refresh request timed out")
+            .unwrap();
+        assert!(matches!(
+            result,
+            Err(canonical_session::SessionError::AuthUpstream)
+        ));
+    }
+    assert_eq!(auth.calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn bearer_verification_saturation_returns_stable_redacted_429() {
+    let db = Database::connect("sqlite::memory:").await.unwrap();
+    Migrator::up(&db, None).await.unwrap();
+    let started = Arc::new(Barrier::new(2));
+    let release = Arc::new(Notify::new());
+    let auth = Arc::new(BlockingBearerAuth {
+        calls: AtomicUsize::new(0),
+        started: started.clone(),
+        release: release.clone(),
+    });
+    let mut config = test_config();
+    config.bearer_auth_max_concurrency = 1;
+    let app = build_app(AppState::new(config, db, auth.clone()).unwrap());
+
+    let first_app = app.clone();
+    let first = tokio::spawn(async move {
+        first_app
+            .oneshot(
+                Request::get("/api/v1/me")
+                    .header(header::AUTHORIZATION, "Bearer first-sensitive-token")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+    });
+    started.wait().await;
+
+    let saturated = app
+        .oneshot(
+            Request::get("/api/v1/me")
+                .header(header::AUTHORIZATION, "Bearer second-sensitive-token")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(saturated.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(saturated.headers().get(header::RETRY_AFTER).unwrap(), "1");
+    let saturated = body_text(saturated).await;
+    assert!(saturated.contains("auth_verification_busy"));
+    assert!(!saturated.contains("first-sensitive-token"));
+    assert!(!saturated.contains("second-sensitive-token"));
+    assert!(!saturated.contains(USER_ID.to_string().as_str()));
+    assert_eq!(auth.calls.load(Ordering::SeqCst), 1);
+
+    release.notify_waiters();
+    assert_eq!(first.await.unwrap().status(), StatusCode::OK);
 }
 
 #[tokio::test]
@@ -967,6 +1457,40 @@ async fn websocket_authentication_happens_before_upgrade() {
 }
 
 #[tokio::test]
+async fn session_websocket_requires_the_exact_allowed_origin() {
+    let state = state().await;
+    let session = state.sessions.create(tokens()).await.unwrap().raw_id;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        axum::serve(listener, build_app(state)).await.unwrap();
+    });
+
+    for origin in [None, Some("https://attacker.example")] {
+        let error =
+            tokio_tungstenite::connect_async(session_websocket_request(address, &session, origin))
+                .await
+                .unwrap_err();
+        let tokio_tungstenite::tungstenite::Error::Http(response) = error else {
+            panic!("expected an HTTP rejection, got {error:?}");
+        };
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    let (mut socket, response) = tokio_tungstenite::connect_async(session_websocket_request(
+        address,
+        &session,
+        Some("http://localhost:8081"),
+    ))
+    .await
+    .unwrap();
+    assert_eq!(response.status(), StatusCode::SWITCHING_PROTOCOLS);
+    assert_eq!(next_text(&mut socket).await["type"], "hello");
+    socket.close(None).await.unwrap();
+    server.abort();
+}
+
+#[tokio::test]
 async fn authenticated_websocket_receives_typed_invalidation_hints() {
     let state = state().await;
     let hub = state.hub.clone();
@@ -1024,6 +1548,36 @@ fn cookie_value(response: &axum::response::Response, name: &str) -> Option<Strin
                 .and_then(|value| value.split(';').next())
                 .map(str::to_owned)
         })
+}
+
+fn session_websocket_request(
+    address: std::net::SocketAddr,
+    session: &str,
+    origin: Option<&str>,
+) -> tokio_tungstenite::tungstenite::http::Request<()> {
+    let mut request = format!("ws://{address}/ws").into_client_request().unwrap();
+    request.headers_mut().insert(
+        header::COOKIE,
+        format!("canonical_session={session}").parse().unwrap(),
+    );
+    if let Some(origin) = origin {
+        request
+            .headers_mut()
+            .insert(header::ORIGIN, origin.parse().unwrap());
+    } else {
+        request.headers_mut().remove(header::ORIGIN);
+    }
+    request
+}
+
+fn supabase_jwt(user_id: Uuid, session_id: Uuid) -> String {
+    let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"HS256","typ":"JWT"}"#);
+    let payload = URL_SAFE_NO_PAD.encode(
+        serde_json::json!({ "sub": user_id, "session_id": session_id })
+            .to_string()
+            .as_bytes(),
+    );
+    format!("{header}.{payload}.fixture-signature")
 }
 
 async fn next_text<S>(socket: &mut tokio_tungstenite::WebSocketStream<S>) -> serde_json::Value

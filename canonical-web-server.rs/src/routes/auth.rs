@@ -75,6 +75,20 @@ async fn login(
         });
     }
 
+    // Reject immediately instead of allowing an unbounded queue to accumulate
+    // behind Supabase or the session database. The attempt budget is consumed
+    // first so saturation cannot be used to bypass the account/global throttle.
+    // The owned permit remains live through both upstream authentication and
+    // the local session insert, including across cloned router state.
+    let login_auth_permit = state
+        .login_auth_semaphore
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| {
+            tracing::warn!("password login capacity exhausted");
+            AppError::LoginAuthBusy
+        })?;
+
     let tokens = match state
         .auth
         .password_sign_in(&form.email, &form.password)
@@ -102,6 +116,7 @@ async fn login(
         }
     };
     let created = state.sessions.create(tokens).await?;
+    drop(login_auth_permit);
     tracing::info!(user_id = %created.context.user_id, "password login succeeded");
     let max_age = time::Duration::seconds(
         state

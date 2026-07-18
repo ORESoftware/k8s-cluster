@@ -12,6 +12,7 @@ const { title, description = "canonical.cloud — SOC 2, FedRAMP & HIPAA complia
 const baseNoSlash = import.meta.env.BASE_URL.replace(/\/+$/, '');
 const homeHref = `${baseNoSlash}/`;
 const faviconHref = `${baseNoSlash}/favicon.svg`;
+const siteScriptHref = `${baseNoSlash}/site.js`;
 ---
 
 <!doctype html>
@@ -318,27 +319,6 @@ const faviconHref = `${baseNoSlash}/favicon.svg`;
       }
     </style>
 
-    <script>
-      // Navbar scroll effect
-      const nav = document.getElementById('main-nav');
-      if (nav) {
-        window.addEventListener('scroll', () => {
-          if (window.scrollY > 10) {
-            nav.style.borderBottomColor = 'rgba(255,255,255,0.1)';
-          } else {
-            nav.style.borderBottomColor = 'rgba(255,255,255,0.06)';
-          }
-        });
-      }
-
-      // Mobile toggle
-      const toggle = document.getElementById('nav-toggle');
-      const links = document.getElementById('nav-links');
-      if (toggle && links) {
-        toggle.addEventListener('click', () => {
-          links.classList.toggle('nav__links--open');
-        });
-      }
-    </script>
+    <script type="module" src={siteScriptHref}></script>
   </body>
 </html>

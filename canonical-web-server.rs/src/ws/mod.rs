@@ -24,6 +24,7 @@ const STABLE_LISTENER_WINDOW: Duration = Duration::from_secs(60);
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(25);
 const PONG_TIMEOUT: Duration = Duration::from_secs(10);
 const SOCKET_WRITE_TIMEOUT: Duration = Duration::from_secs(10);
+const PING_NONCE_BYTES: usize = 16;
 const MAX_SOCKETS_PER_USER: usize = 4;
 const MAX_SOCKETS_PER_INSTANCE: usize = 1_024;
 
@@ -261,16 +262,74 @@ enum ServerMessage {
     Pong,
 }
 
-pub async fn serve(mut socket: WebSocket, actor: AuthContext, sessions: SessionService, hub: Hub) {
+#[derive(Clone, Copy, Debug)]
+struct PendingPong {
+    payload: [u8; PING_NONCE_BYTES],
+    deadline: TokioInstant,
+}
+
+#[derive(Debug, Default)]
+struct PongTracker {
+    pending: Option<PendingPong>,
+}
+
+impl PongTracker {
+    fn expect(&mut self, payload: [u8; PING_NONCE_BYTES], now: TokioInstant, timeout: Duration) {
+        debug_assert!(self.pending.is_none());
+        self.pending = Some(PendingPong {
+            payload,
+            deadline: now + timeout,
+        });
+    }
+
+    fn acknowledge(&mut self, payload: &[u8]) -> bool {
+        let matches = self
+            .pending
+            .is_some_and(|pending| pending.payload.as_slice() == payload);
+        if matches {
+            self.pending = None;
+        }
+        matches
+    }
+
+    fn deadline(&self) -> Option<TokioInstant> {
+        self.pending.map(|pending| pending.deadline)
+    }
+
+    fn is_waiting(&self) -> bool {
+        self.pending.is_some()
+    }
+}
+
+pub async fn serve(socket: WebSocket, actor: AuthContext, sessions: SessionService, hub: Hub) {
+    serve_with_heartbeat_timing(
+        socket,
+        actor,
+        sessions,
+        hub,
+        HEARTBEAT_INTERVAL,
+        PONG_TIMEOUT,
+    )
+    .await;
+}
+
+async fn serve_with_heartbeat_timing(
+    mut socket: WebSocket,
+    actor: AuthContext,
+    sessions: SessionService,
+    hub: Hub,
+    heartbeat_interval: Duration,
+    pong_timeout: Duration,
+) {
     let mut invalidations = hub.subscribe();
-    let mut heartbeat = time::interval(HEARTBEAT_INTERVAL);
+    let mut heartbeat = time::interval(heartbeat_interval);
     heartbeat.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
-    let mut pong_deadline = None;
+    let mut pong_tracker = PongTracker::default();
     if send_json(
         &mut socket,
         &ServerMessage::Hello {
             protocol_version: 1,
-            heartbeat_seconds: HEARTBEAT_INTERVAL.as_secs(),
+            heartbeat_seconds: heartbeat_interval.as_secs(),
         },
     )
     .await
@@ -295,7 +354,9 @@ pub async fn serve(mut socket: WebSocket, actor: AuthContext, sessions: SessionS
                             break;
                         }
                     }
-                    Some(Ok(Message::Pong(_))) => pong_deadline = None,
+                    Some(Ok(Message::Pong(payload))) => {
+                        pong_tracker.acknowledge(payload.as_ref());
+                    }
                     Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break,
                     Some(Ok(Message::Binary(_))) => {}
                 }
@@ -324,7 +385,7 @@ pub async fn serve(mut socket: WebSocket, actor: AuthContext, sessions: SessionS
                     Err(broadcast::error::RecvError::Closed) => break,
                 }
             }
-            _ = pong_deadline_wait(pong_deadline) => {
+            _ = pong_deadline_wait(pong_tracker.deadline()) => {
                 let _ = send_frame(
                     &mut socket,
                     Message::Close(Some(CloseFrame {
@@ -346,13 +407,19 @@ pub async fn serve(mut socket: WebSocket, actor: AuthContext, sessions: SessionS
                     .await;
                     break;
                 }
-                if send_frame(&mut socket, Message::Ping(Vec::new().into()))
+                // A delayed interval tick must never replace an unanswered
+                // challenge and extend its deadline.
+                if pong_tracker.is_waiting() {
+                    continue;
+                }
+                let ping_payload = rand::random::<[u8; PING_NONCE_BYTES]>();
+                if send_frame(&mut socket, Message::Ping(ping_payload.to_vec().into()))
                     .await
                     .is_err()
                 {
                     break;
                 }
-                pong_deadline = Some(TokioInstant::now() + PONG_TIMEOUT);
+                pong_tracker.expect(ping_payload, TokioInstant::now(), pong_timeout);
             }
         }
     }
@@ -380,6 +447,94 @@ async fn pong_deadline_wait(deadline: Option<TokioInstant>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
+    use axum::{
+        extract::{ws::WebSocketUpgrade, State},
+        http::{header, HeaderMap, StatusCode},
+        response::{IntoResponse, Response},
+        routing::get,
+        Router,
+    };
+    use canonical_auth::{
+        AuthProvider, AuthProviderError, AuthTokens, CredentialSource, SupabaseUser,
+    };
+    use canonical_session::SessionService;
+    use chrono::Duration as ChronoDuration;
+    use futures_util::StreamExt;
+    use sea_orm::Database;
+    use tokio::sync::oneshot;
+    use tokio_tungstenite::tungstenite::{
+        client::IntoClientRequest, protocol::frame::coding::CloseCode,
+    };
+
+    #[derive(Clone)]
+    struct HeartbeatTestState {
+        actor: AuthContext,
+        sessions: SessionService,
+        hub: Hub,
+    }
+
+    #[derive(Clone)]
+    struct UnusedAuth;
+
+    #[async_trait]
+    impl AuthProvider for UnusedAuth {
+        async fn password_sign_in(
+            &self,
+            _email: &str,
+            _password: &str,
+        ) -> Result<AuthTokens, AuthProviderError> {
+            Err(AuthProviderError::Unavailable)
+        }
+
+        async fn refresh(&self, _refresh_token: &str) -> Result<AuthTokens, AuthProviderError> {
+            Err(AuthProviderError::Unavailable)
+        }
+
+        async fn user_for_token(
+            &self,
+            _access_token: &str,
+        ) -> Result<SupabaseUser, AuthProviderError> {
+            Err(AuthProviderError::Unavailable)
+        }
+
+        async fn sign_out(&self, _access_token: &str) -> Result<(), AuthProviderError> {
+            Err(AuthProviderError::Unavailable)
+        }
+    }
+
+    async fn heartbeat_test_upgrade(
+        State(state): State<HeartbeatTestState>,
+        headers: HeaderMap,
+        websocket: WebSocketUpgrade,
+    ) -> Response {
+        if headers
+            .get(header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            != Some("Bearer heartbeat-test")
+        {
+            return StatusCode::UNAUTHORIZED.into_response();
+        }
+
+        let permit = state
+            .hub
+            .try_acquire_socket(state.actor.user_id)
+            .expect("test socket capacity");
+        websocket
+            .on_upgrade(move |socket| async move {
+                let _permit = permit;
+                serve_with_heartbeat_timing(
+                    socket,
+                    state.actor,
+                    state.sessions,
+                    state.hub,
+                    Duration::from_millis(20),
+                    Duration::from_millis(50),
+                )
+                .await;
+            })
+            .into_response()
+    }
 
     #[tokio::test]
     async fn backplane_payloads_are_bounded_strict_and_self_deduplicated() {
@@ -424,5 +579,110 @@ mod tests {
         assert!(hub.try_acquire_socket(owner).is_none());
         drop(permits.pop());
         assert!(hub.try_acquire_socket(owner).is_some());
+    }
+
+    #[test]
+    fn only_the_matching_pong_clears_the_liveness_deadline() {
+        let now = TokioInstant::now();
+        let timeout = Duration::from_millis(25);
+        let expected = [7; PING_NONCE_BYTES];
+        let mut tracker = PongTracker::default();
+        tracker.expect(expected, now, timeout);
+
+        assert_eq!(tracker.deadline(), Some(now + timeout));
+        assert!(!tracker.acknowledge(&[8; PING_NONCE_BYTES]));
+        assert_eq!(tracker.deadline(), Some(now + timeout));
+        assert!(!tracker.acknowledge(&expected[..PING_NONCE_BYTES - 1]));
+        assert_eq!(tracker.deadline(), Some(now + timeout));
+        assert!(tracker.acknowledge(&expected));
+        assert_eq!(tracker.deadline(), None);
+    }
+
+    #[tokio::test]
+    async fn authenticated_socket_that_ignores_ping_is_closed_and_releases_capacity() {
+        let db = Database::connect("sqlite::memory:").await.unwrap();
+        let sessions = SessionService::new(
+            db.clone(),
+            Arc::new(UnusedAuth),
+            &[7; 32],
+            Duration::from_secs(60),
+        )
+        .unwrap();
+        let owner_id = Uuid::new_v4();
+        let hub = Hub::new(8);
+        let state = HeartbeatTestState {
+            actor: AuthContext {
+                user_id: owner_id,
+                email: "heartbeat@example.com".into(),
+                source: CredentialSource::Bearer,
+                supabase_session_id: None,
+                session_hash: None,
+                csrf_token: None,
+                expires_at: Utc::now() + ChronoDuration::minutes(5),
+            },
+            sessions,
+            hub: hub.clone(),
+        };
+        let app = Router::new()
+            .route("/ws", get(heartbeat_test_upgrade))
+            .with_state(state);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app)
+                .with_graceful_shutdown(async move {
+                    let _ = shutdown_rx.await;
+                })
+                .await
+                .unwrap();
+        });
+
+        let mut request = format!("ws://{address}/ws").into_client_request().unwrap();
+        request.headers_mut().insert(
+            header::AUTHORIZATION,
+            "Bearer heartbeat-test".parse().unwrap(),
+        );
+        let (mut socket, response) = tokio_tungstenite::connect_async(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::SWITCHING_PROTOCOLS);
+
+        // Do not poll the client while the Ping deadline elapses. This prevents
+        // tungstenite from auto-queuing a Pong and exercises the server's real
+        // timeout/close path over a TCP connection.
+        time::sleep(Duration::from_millis(150)).await;
+        let close = time::timeout(Duration::from_secs(1), async {
+            loop {
+                match socket.next().await {
+                    Some(Ok(tokio_tungstenite::tungstenite::Message::Close(frame))) => break frame,
+                    Some(Ok(_)) => {}
+                    Some(Err(error)) => panic!("WebSocket read failed before close: {error}"),
+                    None => panic!("WebSocket ended without a close frame"),
+                }
+            }
+        })
+        .await
+        .expect("heartbeat close deadline")
+        .expect("server close frame");
+        assert_eq!(close.code, CloseCode::Policy);
+        assert_eq!(close.reason, "heartbeat timeout");
+
+        time::timeout(Duration::from_secs(1), async {
+            loop {
+                let released = {
+                    let counts = hub.connections.lock().unwrap();
+                    counts.total == 0 && !counts.by_owner.contains_key(&owner_id)
+                };
+                if released {
+                    break;
+                }
+                time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("socket capacity permit should be released");
+
+        let _ = shutdown_tx.send(());
+        server.await.unwrap();
+        db.close().await.unwrap();
     }
 }

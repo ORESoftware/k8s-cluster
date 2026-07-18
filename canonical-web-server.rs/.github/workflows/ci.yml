@@ -40,11 +40,19 @@ jobs:
       - name: client build
         run: npm run build --prefix client
       - name: fmt
-        run: cargo fmt --check
+        run: cargo fmt --all --check
       - name: clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: test
-        run: cargo test --all-targets
+        run: cargo test --workspace --all-targets --locked
+      - name: Revoker dependency boundary
+        shell: bash
+        run: |
+          tree="$(cargo tree --locked -p canonical-session-revoker)"
+          if printf '%s\n' "$tree" | grep -E '(^| )((canonical-web-server)|(axum)|(maud)) v'; then
+            echo "revoker must not depend on customer HTTP/view packages" >&2
+            exit 1
+          fi
 
   audit:
     runs-on: ubuntu-latest
@@ -66,7 +74,7 @@ jobs:
           # RUSTSEC-2023-0071 is allowed below only because Cargo.lock records
           # SQLx's disabled optional MySQL/RSA edge. If that edge ever becomes
           # active, this gate fails before the advisory allow-list is applied.
-          rsa_path="$(cargo tree --invert rsa 2>/dev/null)"
+          rsa_path="$(cargo tree --workspace --invert rsa 2>/dev/null)"
           if [ -n "$rsa_path" ]; then
             echo "rsa unexpectedly entered the active dependency graph" >&2
             exit 1
@@ -112,7 +120,7 @@ jobs:
         with:
           key: postgres-rls
       - name: PostgreSQL runtime-role and RLS integration test
-        run: cargo test --test postgres_rls -- --nocapture
+        run: cargo test --locked -p canonical-web-server --test postgres_rls -- --nocapture
 
   # deploy/postgres/schema.sql is the declarative source of truth for the
   # Supabase public schema, migrated with dpm (declarative-postgres-migrate).
@@ -180,7 +188,7 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
           SUPABASE_URL: http://127.0.0.1:54321
           SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_only
-        run: cargo run --quiet -- migrate
+        run: cargo run --locked --quiet --bin canonical-web-server -- migrate
       - name: Declarative schema convergence (dpm verify)
         run: >
           dpm verify
@@ -224,7 +232,7 @@ jobs:
       - name: CockroachDB migration and RLS integration test
         env:
           TEST_COCKROACH_ADMIN_URL: postgresql://root@127.0.0.1:26257/defaultdb?sslmode=disable
-        run: cargo test --test cockroach_rls -- --nocapture
+        run: cargo test --locked -p canonical-web-server --test cockroach_rls -- --nocapture
 
   # Browser e2e (Playwright + Puppeteer) driving a real `serve` process on
   # in-memory SQLite — the same boot recipe as container-smoke, but exercised
@@ -251,13 +259,13 @@ jobs:
         with:
           key: browser-e2e
       - name: Build server binary
-        run: cargo build --bin canonical-web-server
+        run: cargo build --locked --bin canonical-web-server
       - name: Build client bundle
         run: |
           npm ci --prefix client
           npm run build --prefix client
       - name: Install browser e2e dependencies
-        run: npm install --prefix tests/browser
+        run: npm ci --prefix tests/browser
       - name: Install Chromium
         run: npx --prefix tests/browser playwright install --with-deps chromium
       - name: Browser e2e (playwright + puppeteer)
@@ -275,23 +283,33 @@ jobs:
         with:
           persist-credentials: false
       - name: Build production image
-        run: docker build --tag canonical-web-server:ci .
+        run: |
+          docker build --target web --tag canonical-web-server:ci .
+          docker build --target revoker --tag canonical-session-revoker:ci .
       - name: Run non-root health smoke
         shell: bash
         run: |
           trap 'docker stop canonical-web-server-ci >/dev/null 2>&1 || true' EXIT
+          database_dir="$(mktemp -d)"
+          chmod 0777 "$database_dir"
+          docker run --rm \
+            --read-only \
+            --mount "type=bind,source=$database_dir,target=/data" \
+            --env MIGRATION_DATABASE_URL='sqlite:///data/canonical.db?mode=rwc' \
+            --env MIGRATION_DATABASE_MAX_CONNECTIONS=1 \
+            canonical-web-server:ci migrate
           docker run --detach \
             --name canonical-web-server-ci \
             --read-only \
+            --mount "type=bind,source=$database_dir,target=/data" \
             --publish 18081:8081 \
             --env PORT=8081 \
             --env APP_BASE_URL=http://127.0.0.1:8081 \
             --env APP_ALLOWED_ORIGINS=http://127.0.0.1:8081 \
             --env APP_SESSION_ENCRYPTION_KEY=AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE= \
             --env COOKIE_SECURE=false \
-            --env DATABASE_URL=sqlite::memory: \
+            --env DATABASE_URL='sqlite:///data/canonical.db?mode=rwc' \
             --env DATABASE_MAX_CONNECTIONS=1 \
-            --env AUTO_MIGRATE=true \
             --env SUPABASE_URL=http://127.0.0.1:54321 \
             --env SUPABASE_PUBLISHABLE_KEY=sb_publishable_ci_only \
             canonical-web-server:ci
@@ -306,3 +324,16 @@ jobs:
             fi
             sleep 1
           done
+      - name: Check isolated revoker binary
+        shell: bash
+        run: |
+          test "$(docker image inspect --format '{{.Config.User}}' canonical-session-revoker:ci)" = "65532:65532"
+          test "$(docker image inspect --format '{{json .Config.ExposedPorts}}' canonical-session-revoker:ci)" = "null"
+          docker run --rm \
+            --read-only \
+            --env APP_SESSION_ENCRYPTION_KEY=AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE= \
+            --env SESSION_REVOCATION_DATABASE_URL=sqlite::memory: \
+            --env SESSION_REVOCATION_DATABASE_MAX_CONNECTIONS=1 \
+            --env SUPABASE_URL=http://127.0.0.1:54321 \
+            --env SUPABASE_PUBLISHABLE_KEY=sb_publishable_ci_only \
+            canonical-session-revoker:ci check

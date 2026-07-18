@@ -9,7 +9,7 @@
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro",
-    "test": "node --test tests/site-contract.test.mjs",
+    "test": "npm run build && node --test tests/site-contract.test.mjs tests/csp-contract.test.mjs",
     "test:browser": "npm run build && node --test --test-concurrency=1 --test-timeout=120000 tests/*-playwright.test.mjs tests/*-puppeteer.test.mjs"
   },
   "dependencies": {

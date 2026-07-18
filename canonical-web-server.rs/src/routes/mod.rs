@@ -5,54 +5,51 @@ mod websocket;
 
 pub mod api;
 
-use crate::AppState;
+use crate::{views, AppState};
 use axum::{
-    http::{header, HeaderValue},
-    routing::get,
+    http::{header, HeaderValue, StatusCode},
+    response::{IntoResponse, Response},
+    routing::{any, get},
     Router,
 };
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::set_header::SetResponseHeaderLayer;
 
-const APP_CONTENT_SECURITY_POLICY_PREFIX: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'";
-const MARKETING_CONTENT_SECURITY_POLICY: &str = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'";
+const APP_CONTENT_SECURITY_POLICY_PREFIX: &str =
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:";
+const MARKETING_CONTENT_SECURITY_POLICY: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'";
 
 pub fn router(state: AppState) -> Router {
     let marketing_files = ServeDir::new(&state.config.static_dir)
         .append_index_html_on_directories(true)
         .fallback(ServeFile::new(state.config.static_dir.join("index.html")));
     let app_assets = ServeDir::new(&state.config.app_asset_dir);
-    let mut websocket_sources = state
-        .config
-        .allowed_origins
-        .iter()
-        .map(|origin| {
-            origin
-                .strip_prefix("https://")
-                .map(|rest| format!("wss://{rest}"))
-                .or_else(|| {
-                    origin
-                        .strip_prefix("http://")
-                        .map(|rest| format!("ws://{rest}"))
-                })
-                .expect("validated application origin")
-        })
-        .collect::<Vec<_>>();
-    websocket_sources.sort();
-    let content_security_policy = HeaderValue::from_str(&format!(
-        "{APP_CONTENT_SECURITY_POLICY_PREFIX} {}; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
-        websocket_sources.join(" ")
-    ))
-    .expect("validated origins produce a valid CSP header");
+    let content_security_policy =
+        application_content_security_policy(&state.config.allowed_origins);
 
-    let application = Router::new()
-        .route("/healthz", get(health::healthz))
-        .route("/readyz", get(health::readyz))
+    let private_application = Router::new()
         .route("/login", get(auth::login_page))
         .route("/ws", axum::routing::any(websocket::upgrade))
         .nest("/api", api::router())
         .nest("/auth", auth::router())
         .nest("/app", pages::router())
+        // These responses can contain identity, CSRF tokens, or customer
+        // records. Keep them out of browser and shared intermediary caches;
+        // static application assets and the marketing fallback stay outside
+        // this layer so their independent cache policy remains available.
+        .layer(SetResponseHeaderLayer::overriding(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("no-store"),
+        ));
+    let application = Router::new()
+        .route("/healthz", get(health::healthz))
+        .route("/readyz", get(health::readyz))
+        .merge(private_application)
+        // Administrative UI/API lives on a separate future origin and
+        // process. Reserve this namespace so it can never be answered by the
+        // marketing SPA fallback on the customer server.
+        .route("/admin", any(admin_not_found))
+        .route("/admin/{*path}", any(admin_not_found))
         .nest_service("/app-assets", app_assets)
         .layer(SetResponseHeaderLayer::if_not_present(
             header::CONTENT_SECURITY_POLICY,
@@ -69,4 +66,67 @@ pub fn router(state: AppState) -> Router {
         .merge(application)
         .fallback_service(marketing)
         .with_state(state)
+}
+
+async fn admin_not_found() -> Response {
+    (StatusCode::NOT_FOUND, views::html_not_found()).into_response()
+}
+
+fn application_content_security_policy(
+    allowed_origins: &std::collections::HashSet<String>,
+) -> HeaderValue {
+    let mut websocket_sources = allowed_origins
+        .iter()
+        .map(|origin| {
+            origin
+                .strip_prefix("https://")
+                .map(|rest| format!("wss://{rest}"))
+                .or_else(|| {
+                    origin
+                        .strip_prefix("http://")
+                        .map(|rest| format!("ws://{rest}"))
+                })
+                .expect("validated application origin")
+        })
+        .collect::<Vec<_>>();
+    websocket_sources.sort();
+    HeaderValue::from_str(&format!(
+        "{APP_CONTENT_SECURITY_POLICY_PREFIX}; connect-src 'self' {}; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+        websocket_sources.join(" ")
+    ))
+    .expect("validated origins produce a valid CSP header")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn application_csp_places_websockets_only_in_connect_src() {
+        let origins = HashSet::from([
+            "https://app.example.com".to_owned(),
+            "http://localhost:8081".to_owned(),
+        ]);
+        let header = application_content_security_policy(&origins);
+        let policy = header.to_str().unwrap();
+        let directives = policy
+            .split(';')
+            .map(str::trim)
+            .filter(|directive| !directive.is_empty())
+            .collect::<Vec<_>>();
+
+        assert!(
+            directives.contains(&"connect-src 'self' ws://localhost:8081 wss://app.example.com")
+        );
+        assert!(directives.contains(&"object-src 'none'"));
+        assert_eq!(
+            directives
+                .iter()
+                .filter(|directive| directive.starts_with("object-src "))
+                .copied()
+                .collect::<Vec<_>>(),
+            vec!["object-src 'none'"]
+        );
+    }
 }

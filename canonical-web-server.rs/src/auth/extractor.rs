@@ -62,7 +62,20 @@ async fn authenticate(
             .filter(|token| !token.is_empty())
             .ok_or(AppError::Unauthorized)?;
         // An invalid bearer never falls back to a cookie.
-        return state.sessions.authenticate_bearer(token).await;
+        // Fail closed before calling `/auth/v1/user` when this process has
+        // exhausted its bounded verification capacity. The permit spans the
+        // upstream call and local revocation check, and no token-derived data
+        // is included in the stable 429 response.
+        let _permit = state
+            .bearer_auth_semaphore
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| AppError::AuthBusy)?;
+        return state
+            .sessions
+            .authenticate_bearer(token)
+            .await
+            .map_err(AppError::from);
     }
 
     let jar = CookieJar::from_headers(&parts.headers);
@@ -70,7 +83,11 @@ async fn authenticate(
         .get(&state.config.session_cookie)
         .map(|cookie| cookie.value())
         .ok_or(AppError::Unauthorized)?;
-    state.sessions.authenticate(raw_id).await
+    state
+        .sessions
+        .authenticate(raw_id)
+        .await
+        .map_err(AppError::from)
 }
 
 pub fn require_origin(headers: &HeaderMap, state: &AppState) -> Result<(), AppError> {

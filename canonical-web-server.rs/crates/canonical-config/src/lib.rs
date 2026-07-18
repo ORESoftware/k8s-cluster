@@ -1,4 +1,7 @@
-use base64::{engine::general_purpose::STANDARD, Engine as _};
+use base64::{
+    engine::general_purpose::{STANDARD, URL_SAFE, URL_SAFE_NO_PAD},
+    Engine as _,
+};
 use std::{collections::HashSet, env, path::PathBuf, time::Duration};
 use thiserror::Error;
 
@@ -9,7 +12,6 @@ pub struct Config {
     pub app_asset_dir: PathBuf,
     pub database_url: String,
     pub database_max_connections: u32,
-    pub auto_migrate: bool,
     pub app_base_url: String,
     pub allowed_origins: HashSet<String>,
     pub session_cookie: String,
@@ -17,8 +19,11 @@ pub struct Config {
     pub session_encryption_key: Vec<u8>,
     pub session_ttl: Duration,
     pub login_rate_limit_attempts: u32,
+    pub login_rate_limit_global_attempts: u32,
     pub login_rate_limit_window: Duration,
     pub login_rate_limit_max_keys: usize,
+    pub login_auth_max_concurrency: usize,
+    pub bearer_auth_max_concurrency: usize,
     pub supabase_url: String,
     pub supabase_publishable_key: String,
 }
@@ -29,12 +34,35 @@ pub struct MigrationConfig {
     pub database_max_connections: u32,
 }
 
+/// Configuration loaded only by the separately deployed session revoker.
+#[derive(Clone)]
+pub struct SessionRevokerConfig {
+    pub database_url: String,
+    pub database_max_connections: u32,
+    pub session_encryption_key: Vec<u8>,
+    pub supabase_url: String,
+    pub supabase_publishable_key: String,
+}
+
 impl std::fmt::Debug for MigrationConfig {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("MigrationConfig")
             .field("database_url", &"[REDACTED]")
             .field("database_max_connections", &self.database_max_connections)
+            .finish()
+    }
+}
+
+impl std::fmt::Debug for SessionRevokerConfig {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("SessionRevokerConfig")
+            .field("database_url", &"[REDACTED]")
+            .field("database_max_connections", &self.database_max_connections)
+            .field("session_encryption_key", &"[REDACTED]")
+            .field("supabase_url", &self.supabase_url)
+            .field("supabase_publishable_key", &"[REDACTED]")
             .finish()
     }
 }
@@ -48,7 +76,6 @@ impl std::fmt::Debug for Config {
             .field("app_asset_dir", &self.app_asset_dir)
             .field("database_url", &"[REDACTED]")
             .field("database_max_connections", &self.database_max_connections)
-            .field("auto_migrate", &self.auto_migrate)
             .field("app_base_url", &self.app_base_url)
             .field("allowed_origins", &self.allowed_origins)
             .field("session_cookie", &self.session_cookie)
@@ -56,8 +83,20 @@ impl std::fmt::Debug for Config {
             .field("session_encryption_key", &"[REDACTED]")
             .field("session_ttl", &self.session_ttl)
             .field("login_rate_limit_attempts", &self.login_rate_limit_attempts)
+            .field(
+                "login_rate_limit_global_attempts",
+                &self.login_rate_limit_global_attempts,
+            )
             .field("login_rate_limit_window", &self.login_rate_limit_window)
             .field("login_rate_limit_max_keys", &self.login_rate_limit_max_keys)
+            .field(
+                "login_auth_max_concurrency",
+                &self.login_auth_max_concurrency,
+            )
+            .field(
+                "bearer_auth_max_concurrency",
+                &self.bearer_auth_max_concurrency,
+            )
             .field("supabase_url", &self.supabase_url)
             .field("supabase_publishable_key", &"[REDACTED]")
             .finish()
@@ -107,26 +146,7 @@ impl Config {
             });
         }
 
-        let key_text = required("APP_SESSION_ENCRYPTION_KEY")?;
-        let session_encryption_key =
-            STANDARD
-                .decode(key_text)
-                .map_err(|_| ConfigError::Invalid {
-                    name: "APP_SESSION_ENCRYPTION_KEY",
-                    message: "expected standard base64".into(),
-                })?;
-        if session_encryption_key.len() != 32 {
-            return Err(ConfigError::Invalid {
-                name: "APP_SESSION_ENCRYPTION_KEY",
-                message: "decoded key must be exactly 32 bytes".into(),
-            });
-        }
-        if session_encryption_key.iter().all(|byte| *byte == 0) {
-            return Err(ConfigError::Invalid {
-                name: "APP_SESSION_ENCRYPTION_KEY",
-                message: "replace the all-zero example with a random key".into(),
-            });
-        }
+        let session_encryption_key = session_encryption_key_from_env()?;
 
         let supabase_url = validated_supabase_url(required("SUPABASE_URL")?)?;
 
@@ -182,6 +202,33 @@ impl Config {
                 message: "must be between 128 and 65536".into(),
             });
         }
+        let login_rate_limit_global_attempts =
+            optional_parse("LOGIN_RATE_LIMIT_GLOBAL_ATTEMPTS", 500)?;
+        if !(10..=100_000).contains(&login_rate_limit_global_attempts) {
+            return Err(ConfigError::Invalid {
+                name: "LOGIN_RATE_LIMIT_GLOBAL_ATTEMPTS",
+                message: "must be between 10 and 100000".into(),
+            });
+        }
+        let login_auth_max_concurrency = validated_login_auth_max_concurrency(optional_parse(
+            "LOGIN_AUTH_MAX_CONCURRENCY",
+            16,
+        )?)?;
+        let bearer_auth_max_concurrency = optional_parse("BEARER_AUTH_MAX_CONCURRENCY", 32)?;
+        if !(1..=256).contains(&bearer_auth_max_concurrency) {
+            return Err(ConfigError::Invalid {
+                name: "BEARER_AUTH_MAX_CONCURRENCY",
+                message: "must be between 1 and 256".into(),
+            });
+        }
+
+        let database_max_connections = optional_parse("DATABASE_MAX_CONNECTIONS", 10)?;
+        if !(1..=100).contains(&database_max_connections) {
+            return Err(ConfigError::Invalid {
+                name: "DATABASE_MAX_CONNECTIONS",
+                message: "must be between 1 and 100".into(),
+            });
+        }
 
         Ok(Self {
             port: optional_parse("PORT", 8081)?,
@@ -192,8 +239,7 @@ impl Config {
                 .map(PathBuf::from)
                 .unwrap_or_else(|| PathBuf::from("client/dist")),
             database_url: required("DATABASE_URL")?,
-            database_max_connections: optional_parse("DATABASE_MAX_CONNECTIONS", 10)?,
-            auto_migrate: optional_bool("AUTO_MIGRATE", false)?,
+            database_max_connections,
             app_base_url,
             allowed_origins,
             session_cookie,
@@ -201,10 +247,15 @@ impl Config {
             session_encryption_key,
             session_ttl,
             login_rate_limit_attempts,
+            login_rate_limit_global_attempts,
             login_rate_limit_window: Duration::from_secs(login_rate_limit_window_seconds),
             login_rate_limit_max_keys,
+            login_auth_max_concurrency,
+            bearer_auth_max_concurrency,
             supabase_url,
-            supabase_publishable_key: required("SUPABASE_PUBLISHABLE_KEY")?,
+            supabase_publishable_key: validated_supabase_publishable_key(required(
+                "SUPABASE_PUBLISHABLE_KEY",
+            )?)?,
         })
     }
 }
@@ -258,11 +309,65 @@ impl MigrationConfig {
     /// Keeping this separate from `Config` means a deploy job never needs the
     /// HTTP server's Supabase or session-encryption settings.
     pub fn from_env() -> Result<Self, ConfigError> {
+        let database_max_connections = optional_parse("MIGRATION_DATABASE_MAX_CONNECTIONS", 2)?;
+        if !(1..=16).contains(&database_max_connections) {
+            return Err(ConfigError::Invalid {
+                name: "MIGRATION_DATABASE_MAX_CONNECTIONS",
+                message: "must be between 1 and 16".into(),
+            });
+        }
         Ok(Self {
             database_url: required("MIGRATION_DATABASE_URL")?,
-            database_max_connections: optional_parse("MIGRATION_DATABASE_MAX_CONNECTIONS", 2)?,
+            database_max_connections,
         })
     }
+}
+
+impl SessionRevokerConfig {
+    /// Loads no customer HTTP, cookie, static-asset, or migration settings.
+    /// The worker credential is intentionally distinct from `DATABASE_URL`.
+    pub fn from_env() -> Result<Self, ConfigError> {
+        let database_max_connections =
+            optional_parse("SESSION_REVOCATION_DATABASE_MAX_CONNECTIONS", 2)?;
+        if !(1..=8).contains(&database_max_connections) {
+            return Err(ConfigError::Invalid {
+                name: "SESSION_REVOCATION_DATABASE_MAX_CONNECTIONS",
+                message: "must be between 1 and 8".into(),
+            });
+        }
+        Ok(Self {
+            database_url: required("SESSION_REVOCATION_DATABASE_URL")?,
+            database_max_connections,
+            session_encryption_key: session_encryption_key_from_env()?,
+            supabase_url: validated_supabase_url(required("SUPABASE_URL")?)?,
+            supabase_publishable_key: validated_supabase_publishable_key(required(
+                "SUPABASE_PUBLISHABLE_KEY",
+            )?)?,
+        })
+    }
+}
+
+fn session_encryption_key_from_env() -> Result<Vec<u8>, ConfigError> {
+    let key_text = required("APP_SESSION_ENCRYPTION_KEY")?;
+    let key = STANDARD
+        .decode(key_text)
+        .map_err(|_| ConfigError::Invalid {
+            name: "APP_SESSION_ENCRYPTION_KEY",
+            message: "expected standard base64".into(),
+        })?;
+    if key.len() != 32 {
+        return Err(ConfigError::Invalid {
+            name: "APP_SESSION_ENCRYPTION_KEY",
+            message: "decoded key must be exactly 32 bytes".into(),
+        });
+    }
+    if key.iter().all(|byte| *byte == 0) {
+        return Err(ConfigError::Invalid {
+            name: "APP_SESSION_ENCRYPTION_KEY",
+            message: "replace the all-zero example with a random key".into(),
+        });
+    }
+    Ok(key)
 }
 
 fn session_ttl_from_days(days: u64) -> Result<Duration, ConfigError> {
@@ -275,6 +380,17 @@ fn session_ttl_from_days(days: u64) -> Result<Duration, ConfigError> {
             message: "value is too large".into(),
         })?;
     Ok(Duration::from_secs(seconds))
+}
+
+fn validated_login_auth_max_concurrency(value: usize) -> Result<usize, ConfigError> {
+    if (1..=256).contains(&value) {
+        Ok(value)
+    } else {
+        Err(ConfigError::Invalid {
+            name: "LOGIN_AUTH_MAX_CONCURRENCY",
+            message: "must be between 1 and 256".into(),
+        })
+    }
 }
 
 fn validated_supabase_url(value: String) -> Result<String, ConfigError> {
@@ -321,6 +437,55 @@ fn validated_supabase_url(value: String) -> Result<String, ConfigError> {
     Ok(parsed.as_str().trim_end_matches('/').to_owned())
 }
 
+/// Accepts only Supabase's low-privilege API-key forms.
+///
+/// New projects should use an opaque `sb_publishable_...` key. Legacy projects
+/// may still use the JWT-shaped `anon` key, but a legacy `service_role` JWT or
+/// an opaque `sb_secret_...` key must fail closed if it is accidentally mounted
+/// into the customer-facing server.
+fn validated_supabase_publishable_key(value: String) -> Result<String, ConfigError> {
+    let value = value.trim();
+    if value
+        .strip_prefix("sb_publishable_")
+        .is_some_and(|suffix| !suffix.is_empty())
+    {
+        return Ok(value.to_owned());
+    }
+
+    let invalid = || {
+        ConfigError::Invalid {
+        name: "SUPABASE_PUBLISHABLE_KEY",
+        message: "expected an sb_publishable_ key or a legacy anon JWT; secret/service-role keys are forbidden"
+            .into(),
+    }
+    };
+    if value.starts_with("sb_secret_") {
+        return Err(invalid());
+    }
+
+    let mut segments = value.split('.');
+    let (Some(header), Some(payload), Some(signature), None) = (
+        segments.next(),
+        segments.next(),
+        segments.next(),
+        segments.next(),
+    ) else {
+        return Err(invalid());
+    };
+    if header.is_empty() || payload.is_empty() || signature.is_empty() {
+        return Err(invalid());
+    }
+    let payload = URL_SAFE_NO_PAD
+        .decode(payload)
+        .or_else(|_| URL_SAFE.decode(payload))
+        .map_err(|_| invalid())?;
+    let claims: serde_json::Value = serde_json::from_slice(&payload).map_err(|_| invalid())?;
+    if claims.get("role").and_then(serde_json::Value::as_str) != Some("anon") {
+        return Err(invalid());
+    }
+    Ok(value.to_owned())
+}
+
 fn required(name: &'static str) -> Result<String, ConfigError> {
     env::var(name)
         .map_err(|_| ConfigError::Missing(name))
@@ -363,8 +528,22 @@ fn optional_bool(name: &'static str, default: bool) -> Result<bool, ConfigError>
 
 #[cfg(test)]
 mod tests {
-    use super::{session_ttl_from_days, validated_origin, validated_supabase_url};
+    use super::{
+        session_ttl_from_days, validated_login_auth_max_concurrency, validated_origin,
+        validated_supabase_publishable_key, validated_supabase_url,
+    };
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
     use std::time::Duration;
+
+    fn legacy_key(role: &str) -> String {
+        let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"HS256","typ":"JWT"}"#);
+        let payload = URL_SAFE_NO_PAD.encode(
+            serde_json::json!({ "role": role, "iss": "supabase" })
+                .to_string()
+                .as_bytes(),
+        );
+        format!("{header}.{payload}.test-signature")
+    }
 
     #[test]
     fn supabase_url_requires_https_except_for_exact_loopback_hosts() {
@@ -388,12 +567,38 @@ mod tests {
     }
 
     #[test]
+    fn supabase_publishable_key_accepts_only_low_privilege_forms() {
+        assert_eq!(
+            validated_supabase_publishable_key("sb_publishable_example".into()).unwrap(),
+            "sb_publishable_example"
+        );
+        let anon = legacy_key("anon");
+        assert_eq!(
+            validated_supabase_publishable_key(anon.clone()).unwrap(),
+            anon
+        );
+
+        assert!(validated_supabase_publishable_key("sb_secret_example".into()).is_err());
+        assert!(validated_supabase_publishable_key(legacy_key("service_role")).is_err());
+        assert!(validated_supabase_publishable_key("test-publishable-key".into()).is_err());
+        assert!(validated_supabase_publishable_key("sb_publishable_".into()).is_err());
+    }
+
+    #[test]
     fn session_ttl_days_cannot_overflow_seconds() {
         assert_eq!(
             session_ttl_from_days(30).unwrap(),
             Duration::from_secs(30 * 24 * 60 * 60)
         );
         assert!(session_ttl_from_days(u64::MAX).is_err());
+    }
+
+    #[test]
+    fn login_auth_concurrency_is_bounded() {
+        assert_eq!(validated_login_auth_max_concurrency(1).unwrap(), 1);
+        assert_eq!(validated_login_auth_max_concurrency(256).unwrap(), 256);
+        assert!(validated_login_auth_max_concurrency(0).is_err());
+        assert!(validated_login_auth_max_concurrency(257).is_err());
     }
 
     #[test]

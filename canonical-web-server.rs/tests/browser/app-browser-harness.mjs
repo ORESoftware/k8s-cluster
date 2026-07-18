@@ -3,8 +3,9 @@
 // The router-level Rust tests (tests/app.rs) drive the app with tower's
 // `oneshot` and never bind a socket. Puppeteer/Playwright need a real HTTP
 // origin, so this harness compiles the binary once and runs `serve` exactly the
-// way the container-smoke CI job does: SQLite in-memory, a single pooled
-// connection, and auto-migrate on boot — no Postgres, Supabase, or secrets.
+// way the container-smoke CI job does: explicitly migrate a temporary SQLite
+// file, then serve it with a single pooled connection. No Postgres, Supabase,
+// privileged runtime credential, or automatic migration path is involved.
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -125,8 +126,26 @@ export async function startServer() {
   const binary = resolveBinary();
   ensureClientBundle();
   const staticDir = makeStaticFixture();
+  const databaseDir = mkdtempSync(join(tmpdir(), "canonical-db-"));
+  const databaseUrl = `sqlite://${join(databaseDir, "browser.sqlite")}?mode=rwc`;
   const port = await freePort();
   const url = `http://127.0.0.1:${port}`;
+
+  const migration = spawnSync(binary, ["migrate"], {
+    cwd: REPO_ROOT,
+    stdio: "ignore",
+    env: {
+      ...process.env,
+      RUST_LOG: "off",
+      MIGRATION_DATABASE_URL: databaseUrl,
+      MIGRATION_DATABASE_MAX_CONNECTIONS: "1",
+    },
+  });
+  if (migration.status !== 0) {
+    rmSync(staticDir, { recursive: true, force: true });
+    rmSync(databaseDir, { recursive: true, force: true });
+    throw new Error(`database migration failed (exit ${migration.status})`);
+  }
 
   const child = spawn(binary, ["serve"], {
     cwd: REPO_ROOT,
@@ -142,33 +161,40 @@ export async function startServer() {
       APP_SESSION_ENCRYPTION_KEY: "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
       COOKIE_SECURE: "false",
       APP_SESSION_COOKIE: "canonical_session",
-      // In-memory SQLite with a single pooled connection keeps the schema
-      // stable across acquisitions; AUTO_MIGRATE builds it on boot.
-      DATABASE_URL: "sqlite::memory:",
+      // The separate command above created this schema. The web process only
+      // receives its unprivileged runtime-shaped connection setting.
+      DATABASE_URL: databaseUrl,
       DATABASE_MAX_CONNECTIONS: "1",
-      AUTO_MIGRATE: "true",
       SUPABASE_URL: "http://127.0.0.1:54321",
       SUPABASE_PUBLISHABLE_KEY: "sb_publishable_ci_only",
       STATIC_DIR: staticDir,
       APP_ASSET_DIR: join(REPO_ROOT, "client", "dist"),
     },
   });
+  const exited = new Promise((resolve) => child.once("exit", resolve));
   child.unref();
 
-  const stop = () => {
-    try {
-      rmSync(staticDir, { recursive: true, force: true });
-    } catch {
-      // best effort
-    }
-    if (child.pid === undefined) return;
-    try {
-      process.kill(-child.pid, "SIGTERM");
-    } catch {
+  const stop = async () => {
+    if (child.pid !== undefined && child.exitCode === null) {
       try {
-        child.kill("SIGTERM");
+        process.kill(-child.pid, "SIGTERM");
       } catch {
-        // already gone
+        try {
+          child.kill("SIGTERM");
+        } catch {
+          // already gone
+        }
+      }
+      await Promise.race([
+        exited,
+        new Promise((resolve) => setTimeout(resolve, 5000)),
+      ]);
+    }
+    for (const directory of [staticDir, databaseDir]) {
+      try {
+        rmSync(directory, { recursive: true, force: true });
+      } catch {
+        // best effort
       }
     }
   };
@@ -176,7 +202,7 @@ export async function startServer() {
   try {
     await waitForReady(`${url}/healthz`, 60000);
   } catch (error) {
-    stop();
+    await stop();
     throw error;
   }
 

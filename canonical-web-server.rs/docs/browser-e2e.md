@@ -5,10 +5,11 @@ and run via the `browser-e2e` CI job (ubuntu-latest, blocking) and the opt-in
 `browser-e2e-selfhosted.yml` (self-hosted Chromium runners; see k8s-cluster
 `docs/canonical-ci-runners-followups.md`).
 
-The harness (`app-browser-harness.mjs`) compiles the binary once and runs
-`serve` on **in-memory SQLite** with `DATABASE_MAX_CONNECTIONS=1` +
-`AUTO_MIGRATE=true` — the same boot recipe the `container-smoke` CI job proves.
-No Postgres, Supabase, or secrets required.
+The harness (`app-browser-harness.mjs`) compiles the binary once, runs the
+explicit `migrate` command against a unique file-backed SQLite database, then
+runs `serve` with `DATABASE_MAX_CONNECTIONS=1` against that same file. This is
+the same privilege-separated boot recipe the `container-smoke` CI job proves.
+No Postgres, Supabase, privileged runtime credential, or secrets are required.
 
 **Covered today (6 tests, unauthenticated surface):** login page render + form
 wiring, `/app` → `/login` redirect, maud 404, `/api/v1/{health,info}` JSON
@@ -42,15 +43,11 @@ create-engagement htmx swap, and a note round-trip. Keep SQLite for the shell
 tests; use the Postgres service (already in CI for `postgres-rls`) if a test
 needs RLS-faithful behavior.
 
-## 2. Dependency reproducibility in CI (MED)
+## 2. Dependency reproducibility in CI (closed)
 
-`tests/browser/` ships **no lockfile** (`.gitignore` excludes it) and CI runs
-`npm install`, so Playwright/Puppeteer float within the `^` ranges — a silent
-version drift risk and a supply-chain surface. Marketing-site e2e, by contrast,
-commits `package-lock.json` and uses `npm ci`.
-
-**Fix:** commit `tests/browser/package-lock.json`, drop it from `.gitignore`,
-and switch the CI step + `browser-e2e-selfhosted.yml` to `npm ci --prefix tests/browser`.
+`tests/browser/package-lock.json` is committed, and both hosted and self-hosted
+jobs use `npm ci --prefix tests/browser`, so Playwright/Puppeteer resolution is
+reproducible.
 
 ## 3. Double Chromium provisioning in CI (LOW, wasteful)
 

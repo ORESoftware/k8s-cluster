@@ -1,8 +1,20 @@
+[workspace]
+members = [
+    ".",
+    "crates/canonical-auth",
+    "crates/canonical-config",
+    "crates/canonical-session",
+    "crates/canonical-store",
+    "services/canonical-session-revoker",
+]
+resolver = "2"
+
 [package]
 name = "canonical-web-server"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.88"
+default-run = "canonical-web-server"
 
 [dependencies]
 aes-gcm = "0.11.0"
@@ -10,9 +22,17 @@ async-trait = "0.1.89"
 axum = { version = "0.8.9", features = ["macros", "ws"] }
 axum-extra = { version = "0.12.6", features = ["cookie"] }
 base64 = "0.22.1"
+canonical-auth = { path = "crates/canonical-auth" }
+canonical-config = { path = "crates/canonical-config" }
+canonical-session = { path = "crates/canonical-session" }
+canonical-store = { path = "crates/canonical-store" }
 chrono = { version = "0.4.42", features = ["serde"] }
 futures-util = "0.3.32"
 maud = { version = "0.27.0", features = ["axum"] }
+opentelemetry = "0.27"
+opentelemetry-http = "0.27"
+opentelemetry-otlp = { version = "0.27", features = ["grpc-tonic", "metrics", "trace"] }
+opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"] }
 rand = "0.10.2"
 reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls"] }
 sea-orm = { version = "1.1.20", default-features = false, features = ["macros", "runtime-tokio-rustls", "sqlx-postgres", "sqlx-sqlite", "with-chrono", "with-json", "with-uuid"] }
@@ -25,7 +45,8 @@ time = "0.3.53"
 tokio = { version = "1.52.3", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 tower-http = { version = "0.7.0", features = ["compression-gzip", "fs", "request-id", "sensitive-headers", "set-header", "timeout", "trace"] }
 tracing = "0.1.44"
-tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+tracing-opentelemetry = "0.28"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt", "json"] }
 uuid = { version = "1.23.0", features = ["serde", "v4"] }
 
 [dev-dependencies]

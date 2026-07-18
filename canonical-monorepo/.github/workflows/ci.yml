@@ -52,7 +52,7 @@ jobs:
   # release, and docs/deploy.md defines "checkout + ./build.sh" as the
   # reproducible shipped stack. Prove that contract on every pin change by
   # building the whole stack (Astro site, app client with its tests, locked
-  # Rust release binary) at exactly the pinned submodule SHAs.
+  # Rust workspace binaries) at exactly the pinned submodule SHAs.
   integration-build:
     # Gate on the audit job: it enforces that every submodule URL stays inside
     # canonical-cloud BEFORE this job checks out submodules recursively and
@@ -84,7 +84,7 @@ jobs:
         run: ./build.sh
       # Boot the freshly built server with both built asset trees and prove the
       # cross-repo runtime contracts: marketing fallback, /app-assets mount,
-      # health/readiness, JSON 404s, and /api/v1/{health,info} conformance to
-      # the canonical-interfaces schema pinned in apps/canonical-interfaces.
+      # health/readiness, JSON 404s, interface conformance, and isolated
+      # no-ingress revoker startup.
       - name: Stack smoke (runtime contracts vs pinned interfaces)
         run: bash scripts/stack-smoke.sh
