@@ -19,6 +19,11 @@ spec:
       app: dd-threefa-web-server
   template:
     metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /metrics
+        prometheus.io/port: "8080"
+        prometheus.io/scheme: http
       labels:
         app: dd-threefa-web-server
     spec:
@@ -38,7 +43,7 @@ spec:
           args:
             - |
               set -euo pipefail
-              cd /opt/dd-next-1/remote/deployments/threefa-web-server-rs
+              cd /opt/dd-next-1/remote/deployments/3fa-web-server-rs
               if [ ! -x target/release/threefa-web-server ]; then
                 cargo build --release
               fi
@@ -46,6 +51,24 @@ spec:
           env:
             - name: PORT
               value: '8080'
+            - name: RUST_LOG
+              value: info,tower_http=info,hyper=warn
+            - name: DEPLOYMENT_ENVIRONMENT
+              value: production
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://dd-otel-collector.observability.svc.cluster.local:4318
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
           # SUPABASE_URL / SUPABASE_ANON_KEY / SERVER_SECRET come from an
           # optional secret so the pod still boots (with login disabled)
           # before the secret exists.
@@ -58,9 +81,9 @@ spec:
               containerPort: 8080
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: http
           livenessProbe:
             httpGet:
-              path: /healthz
+              path: /livez
               port: http
