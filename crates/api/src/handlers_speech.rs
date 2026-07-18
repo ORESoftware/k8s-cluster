@@ -115,6 +115,7 @@ async fn run_stt(
 
     let resampled = resample_linear(&samples, sample_rate, STT_SAMPLE_RATE);
     let wav = encode_wav_pcm16(&resampled, STT_SAMPLE_RATE);
+    let _permit = state.acquire_llm()?;
     let outcome = state.llm.transcribe(wav, language).await?;
 
     let row_id = Uuid::new_v4();
