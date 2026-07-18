@@ -18,6 +18,9 @@ behavior live in library modules.
   object storage, cloud-copy workers, middleware, and unit tests. This remains
   a large domain module and is the next extraction boundary as individual API
   areas move to the dedicated API service.
+- **`supabase_auth.rs`** — Supabase JWT verification and JWKS caching: explicit
+  HS256/RS256/ES256 allowlisting, issuer/audience/expiry validation, signing-key
+  algorithm/use matching, a bounded cache, and single-flight refresh throttling.
 
 ## Notes
 

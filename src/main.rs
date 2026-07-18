@@ -11,8 +11,9 @@
 //! environment variables, and the wider product/deployment context.
 //!
 //! The process entry point and telemetry setup live in focused sibling
-//! modules. This module contains the HTTP application and its domain behavior;
-//! its major sections, roughly in the order they appear below, are:
+//! modules. This module contains the HTTP application and its domain behavior,
+//! while the security-sensitive Supabase JWT verifier lives in
+//! `src/supabase_auth.rs`. Its major sections, roughly in order, are:
 //!
 //! - **Metrics** — Prometheus `Lazy` collectors (`HTTP_REQUESTS`,
 //!   `SEGMENT_PRESIGNS`, `RATE_LIMITED`, uptime) exposed at `GET /metrics`.
@@ -23,10 +24,10 @@
 //!   builds the shared `AppState` (Postgres pool, S3 client, token sealer).
 //! - **Types** — `ServiceError` (→ HTTP responses) plus the request/response
 //!   DTO structs for every route.
-//! - **Auth / JWT** — Supabase JWT verification (`SupabaseVerifier` with cached
-//!   JWKS, HS256 + RS256/ES256), `authenticate_supabase_account`, opaque device
-//!   bearer tokens (`authenticate_device`, SHA-256 + pepper), the registration
-//!   bearer, and internal server-auth secret for `/internal/*` routes.
+//! - **Auth / JWT** — `authenticate_supabase_account`, opaque device bearer
+//!   tokens (`authenticate_device`, SHA-256 + pepper), the registration bearer,
+//!   and internal server-auth secret for `/internal/*` routes. The Supabase JWT
+//!   verifier with cached JWKS is isolated in `supabase_auth`.
 //! - **Presign** — upload-session lifecycle, `presign_segment`, and the
 //!   `presign_put` / `presign_get` S3 URL builders (short-lived PUT/GET).
 //! - **Cloud connections** — OAuth link start/complete, AES-256-GCM
@@ -44,7 +45,7 @@
 //!   to AWS S3), recording per-segment mirror state in `meta_data`.
 //! - **Rate limiting & security** — the `rate_limit` and `add_security_headers`
 //!   middleware layers.
-//! - **`main` / router** — `Router::new()` wiring, TLS Postgres setup, and
+//! - **Runtime / router** — `Router::new()` wiring, SeaORM setup, and
 //!   graceful shutdown. Unit tests live in the trailing `#[cfg(test)]` module.
 
 use std::{
@@ -77,7 +78,8 @@ use base64::{
     Engine as _,
 };
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
-use jsonwebtoken::{decode, decode_header, jwk::JwkSet, Algorithm, DecodingKey, Validation};
+#[cfg(test)]
+use jsonwebtoken::Algorithm;
 use once_cell::sync::Lazy;
 use prometheus::{Encoder, IntCounter, IntCounterVec, IntGauge, Opts, TextEncoder};
 use rand::{rngs::OsRng, RngCore};
@@ -95,6 +97,11 @@ use tracing::{error, field, info, warn, Instrument};
 use uuid::Uuid;
 
 use crate::database::{DbClient, Row};
+mod supabase_auth;
+
+#[cfg(test)]
+use supabase_auth::is_supported_supabase_algorithm;
+use supabase_auth::{SupabaseIdentity, SupabaseVerifier};
 
 static STARTED_AT: Lazy<Instant> = Lazy::new(Instant::now);
 static HTTP_REQUESTS: Lazy<IntCounterVec> = Lazy::new(|| {
@@ -230,15 +237,6 @@ const MAX_CLOUD_BACKFILL_SEGMENTS: i64 = 1000;
 const GOOGLE_DRIVE_SCOPE: &str = "https://www.googleapis.com/auth/drive.file";
 const MICROSOFT_ONEDRIVE_SCOPE: &str = "offline_access Files.ReadWrite.AppFolder";
 const SUPABASE_DEFAULT_AUDIENCE: &str = "authenticated";
-const SUPABASE_SUBJECT_PREFIX: &str = "supabase:";
-// Supabase's JWKS edge cache is ten minutes. Do not retain keys longer here or
-// emergency key revocation could remain trusted well beyond the provider cache.
-const JWKS_CACHE_TTL: Duration = Duration::from_secs(600);
-/// Minimum wall-clock between Supabase JWKS fetches. A flood of tokens bearing
-/// unknown `kid`s (random or post-rotation) must not amplify into one outbound
-/// JWKS request per token; once the cache is warm, legitimate tokens are served
-/// from it and never reach the network, so throttling only bounds the misses.
-const JWKS_MIN_REFRESH_INTERVAL: Duration = Duration::from_secs(30);
 const DEFAULT_USE_CASE: &str = "security";
 const SUPPORTED_USE_CASES: &[&str] = &["security", "music", "meeting", "voice_note", "ambient"];
 const MAX_PERMANENT_SAVE_SEGMENTS: usize = 1000;
@@ -1315,6 +1313,14 @@ struct CloudCopyWorkItem {
     job: CloudCopyJobRecord,
     connection: CloudConnectionRecord,
     segment: SegmentResponse,
+}
+
+/// The monotonically increasing attempt number returned while claiming a job.
+/// It doubles as a fencing token: a worker may only finalize the exact attempt
+/// it claimed, so a worker that outlives its lease cannot overwrite a later
+/// worker's result.
+struct CloudCopyClaim {
+    attempts: i32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -2651,219 +2657,6 @@ fn apply_opt_in_segment_decryption(
         Some(dek) => segment_job_cipher::decrypt_segment(dek, &bytes),
         None => Ok(bytes),
     }
-}
-
-/// Verified Supabase identity derived from an access-token JWT.
-#[derive(Clone, Debug)]
-struct SupabaseIdentity {
-    subject: String,
-    email: Option<String>,
-}
-
-impl SupabaseIdentity {
-    /// Namespaced external subject stored on the account so a Supabase `sub`
-    /// can never collide with subjects minted by another identity source.
-    fn external_subject(&self) -> String {
-        format!("{SUPABASE_SUBJECT_PREFIX}{}", self.subject)
-    }
-}
-
-#[derive(Debug, Deserialize)]
-struct SupabaseClaims {
-    sub: String,
-    #[serde(default)]
-    email: Option<String>,
-}
-
-struct JwksCacheEntry {
-    fetched_at: Instant,
-    set: JwkSet,
-}
-
-/// Verifies Supabase-issued access tokens (HS256 legacy secret or asymmetric
-/// JWKS keys) so device registration and cloud linking can be tied to a real,
-/// server-verified identity instead of a client-asserted subject string.
-struct SupabaseVerifier {
-    audience: String,
-    issuer: Option<String>,
-    jwt_secret: Option<String>,
-    jwks_url: Option<String>,
-    jwks_cache: RwLock<Option<JwksCacheEntry>>,
-    /// When the last JWKS refresh was *attempted* (success or failure), used to
-    /// rate-limit outbound fetches. See [`JWKS_MIN_REFRESH_INTERVAL`].
-    jwks_last_refresh: RwLock<Option<Instant>>,
-    /// Single-flight guard: concurrent cache misses wait for the same refresh
-    /// instead of racing and incorrectly returning 401 while a valid key is
-    /// still being fetched.
-    jwks_refresh_lock: AsyncMutex<()>,
-}
-
-impl SupabaseVerifier {
-    fn from_config(config: &SupabaseConfig) -> Option<Self> {
-        if !config.is_enabled() {
-            return None;
-        }
-        Some(Self {
-            audience: config.audience.clone(),
-            issuer: config.issuer.clone(),
-            jwt_secret: config.jwt_secret.clone(),
-            jwks_url: config.jwks_url.clone(),
-            jwks_cache: RwLock::new(None),
-            jwks_last_refresh: RwLock::new(None),
-            jwks_refresh_lock: AsyncMutex::new(()),
-        })
-    }
-
-    fn validation(&self, alg: Algorithm) -> Validation {
-        let mut validation = Validation::new(alg);
-        validation.set_audience(&[self.audience.as_str()]);
-        if let Some(issuer) = &self.issuer {
-            validation.set_issuer(&[issuer.as_str()]);
-        }
-        validation.validate_exp = true;
-        validation
-    }
-
-    async fn verify(
-        &self,
-        http: &reqwest::Client,
-        token: &str,
-    ) -> Result<SupabaseIdentity, ServiceError> {
-        let header = decode_header(token).map_err(|_| ServiceError::Unauthorized)?;
-        if !is_supported_supabase_algorithm(header.alg) {
-            return Err(ServiceError::Unauthorized);
-        }
-        let claims = if matches!(header.alg, Algorithm::HS256) {
-            let secret = self.jwt_secret.as_deref().ok_or_else(|| {
-                ServiceError::Unavailable(
-                    "Supabase HS256 token received but SOUND_RECORDER_SUPABASE_JWT_SECRET is not configured".to_string(),
-                )
-            })?;
-            decode::<SupabaseClaims>(
-                token,
-                &DecodingKey::from_secret(secret.as_bytes()),
-                &self.validation(Algorithm::HS256),
-            )
-            .map_err(|_| ServiceError::Unauthorized)?
-            .claims
-        } else {
-            let kid = header.kid.ok_or(ServiceError::Unauthorized)?;
-            let jwk = self.jwk_for_kid(http, &kid).await?;
-            let key = DecodingKey::from_jwk(&jwk).map_err(|_| ServiceError::Unauthorized)?;
-            decode::<SupabaseClaims>(token, &key, &self.validation(header.alg))
-                .map_err(|_| ServiceError::Unauthorized)?
-                .claims
-        };
-        let subject = claims.sub.trim().to_string();
-        if subject.is_empty()
-            || subject.len() > 160
-            || subject
-                .chars()
-                .any(|ch| ch.is_control() || matches!(ch, '/' | '\\'))
-        {
-            return Err(ServiceError::Unauthorized);
-        }
-        Ok(SupabaseIdentity {
-            subject,
-            email: claims
-                .email
-                .map(|email| email.trim().to_string())
-                .filter(|email| !email.is_empty() && email.len() <= 320),
-        })
-    }
-
-    async fn jwk_for_kid(
-        &self,
-        http: &reqwest::Client,
-        kid: &str,
-    ) -> Result<jsonwebtoken::jwk::Jwk, ServiceError> {
-        if let Some(jwk) = self.cached_jwk(kid).await {
-            return Ok(jwk);
-        }
-        // Cache miss: the kid is unknown or the cache aged out. Refresh at most
-        // once per JWKS_MIN_REFRESH_INTERVAL so a burst of unknown-kid tokens
-        // cannot turn into a burst of outbound JWKS fetches.
-        let refreshed = self.try_refresh_jwks(http).await?;
-        if let Some(jwk) = self.cached_jwk(kid).await {
-            return Ok(jwk);
-        }
-        if refreshed || self.jwks_cache.read().await.is_some() {
-            Err(ServiceError::Unauthorized)
-        } else {
-            // No cache exists and a prior refresh failed or is throttled. This
-            // is an identity-provider availability failure, not bad caller auth.
-            Err(ServiceError::Unavailable(
-                "Supabase signing keys are temporarily unavailable".to_string(),
-            ))
-        }
-    }
-
-    /// Refreshes the JWKS cache unless a refresh was attempted within the last
-    /// [`JWKS_MIN_REFRESH_INTERVAL`]. Returns `Ok(true)` if a refresh ran (so the
-    /// caller should re-check the cache) and `Ok(false)` if it was throttled.
-    async fn try_refresh_jwks(&self, http: &reqwest::Client) -> Result<bool, ServiceError> {
-        let _refresh_guard = self.jwks_refresh_lock.lock().await;
-        {
-            // Fast path: reserve the refresh slot under the write lock and bail
-            // out (without an HTTP call) if another task refreshed recently.
-            let mut last = self.jwks_last_refresh.write().await;
-            if let Some(at) = *last {
-                if at.elapsed() < JWKS_MIN_REFRESH_INTERVAL {
-                    return Ok(false);
-                }
-            }
-            *last = Some(Instant::now());
-        }
-        self.refresh_jwks(http).await?;
-        Ok(true)
-    }
-
-    async fn cached_jwk(&self, kid: &str) -> Option<jsonwebtoken::jwk::Jwk> {
-        let guard = self.jwks_cache.read().await;
-        let entry = guard.as_ref()?;
-        if entry.fetched_at.elapsed() > JWKS_CACHE_TTL {
-            return None;
-        }
-        entry.set.find(kid).cloned()
-    }
-
-    async fn refresh_jwks(&self, http: &reqwest::Client) -> Result<(), ServiceError> {
-        let jwks_url = self.jwks_url.as_deref().ok_or_else(|| {
-            ServiceError::Unavailable("Supabase JWKS URL is not configured".to_string())
-        })?;
-        let response = http.get(jwks_url).send().await.map_err(|err| {
-            error!(error = %err, "Supabase JWKS fetch failed");
-            ServiceError::Unavailable("Supabase JWKS fetch failed".to_string())
-        })?;
-        if !response.status().is_success() {
-            return Err(ServiceError::Unavailable(format!(
-                "Supabase JWKS fetch returned status {}",
-                response.status().as_u16()
-            )));
-        }
-        let set = response.json::<JwkSet>().await.map_err(|err| {
-            error!(error = %err, "Supabase JWKS decode failed");
-            ServiceError::Unavailable("Supabase JWKS response was invalid".to_string())
-        })?;
-        if set.keys.is_empty() {
-            return Err(ServiceError::Unavailable(
-                "Supabase JWKS did not contain any signing keys".to_string(),
-            ));
-        }
-        let mut guard = self.jwks_cache.write().await;
-        *guard = Some(JwksCacheEntry {
-            fetched_at: Instant::now(),
-            set,
-        });
-        Ok(())
-    }
-}
-
-fn is_supported_supabase_algorithm(algorithm: Algorithm) -> bool {
-    matches!(
-        algorithm,
-        Algorithm::HS256 | Algorithm::RS256 | Algorithm::ES256
-    )
 }
 
 fn record_request(method: &str, path: &str, status: StatusCode) {
@@ -6785,8 +6578,8 @@ async fn drain_cloud_copy_jobs(
     let mut results = Vec::with_capacity(rows.len());
     for row in rows {
         let item = cloud_copy_work_item_from_row(&state.config, &row);
-        let claimed_attempts = claim_cloud_copy_job(&client, &item.job.id).await?;
-        let Some(attempts) = claimed_attempts else {
+        let claim = claim_cloud_copy_job(&client, &item.job.id).await?;
+        let Some(claim) = claim else {
             skipped += 1;
             results.push(CloudCopyDrainResult {
                 job_id: item.job.id,
@@ -6799,25 +6592,47 @@ async fn drain_cloud_copy_jobs(
         attempted += 1;
         match process_cloud_copy_job(&state, &client, &item).await {
             Ok(provider_file_id) => {
-                completed += 1;
-                mark_cloud_copy_job_success(&client, &item, &provider_file_id).await?;
+                let finalized =
+                    mark_cloud_copy_job_success(&client, &item, &provider_file_id, claim.attempts)
+                        .await?;
+                if finalized {
+                    completed += 1;
+                } else {
+                    skipped += 1;
+                }
                 results.push(CloudCopyDrainResult {
                     job_id: item.job.id,
                     provider: item.job.provider,
-                    status: "completed".to_string(),
-                    message: None,
+                    status: if finalized { "completed" } else { "skipped" }.to_string(),
+                    message: (!finalized).then(|| {
+                        "job lease was superseded before its result could be recorded".to_string()
+                    }),
                 });
             }
             Err(err) => {
-                failed += 1;
                 let message = service_error_message(&err);
-                mark_cloud_copy_job_error(&client, &item.job.id, attempts, &message, &state.config)
-                    .await?;
+                let finalized = mark_cloud_copy_job_error(
+                    &client,
+                    &item.job.id,
+                    claim.attempts,
+                    &message,
+                    &state.config,
+                )
+                .await?;
+                if finalized {
+                    failed += 1;
+                } else {
+                    skipped += 1;
+                }
                 results.push(CloudCopyDrainResult {
                     job_id: item.job.id,
                     provider: item.job.provider,
-                    status: "failed".to_string(),
-                    message: Some(message),
+                    status: if finalized { "failed" } else { "skipped" }.to_string(),
+                    message: Some(if finalized {
+                        message
+                    } else {
+                        "job lease was superseded before its failure could be recorded".to_string()
+                    }),
                 });
             }
         }
@@ -6848,7 +6663,7 @@ fn service_error_message(error: &ServiceError) -> String {
 async fn claim_cloud_copy_job(
     client: &DbClient,
     job_id: &str,
-) -> Result<Option<i32>, ServiceError> {
+) -> Result<Option<CloudCopyClaim>, ServiceError> {
     let locked_until = Utc::now()
         .checked_add_signed(ChronoDuration::minutes(5))
         .unwrap_or_else(Utc::now);
@@ -6870,7 +6685,9 @@ async fn claim_cloud_copy_job(
         )
         .await
         .map_err(db_error)?;
-    Ok(row.map(|row| row.get("attempts")))
+    Ok(row.map(|row| CloudCopyClaim {
+        attempts: row.get("attempts"),
+    }))
 }
 
 async fn process_cloud_copy_job(
@@ -7080,8 +6897,9 @@ async fn mark_cloud_copy_job_success(
     client: &DbClient,
     item: &CloudCopyWorkItem,
     provider_file_id: &str,
-) -> Result<(), ServiceError> {
-    client
+    attempts: i32,
+) -> Result<bool, ServiceError> {
+    let updated = client
         .execute(
             "update sound_recorder_cloud_copy_jobs
              set status = 'completed',
@@ -7090,11 +6908,20 @@ async fn mark_cloud_copy_job_success(
                  locked_until = null,
                  last_error = null,
                  updated_at = now()
-             where id = $1::uuid",
-            &[&item.job.id, &provider_file_id],
+             where id = $1::uuid
+               and status = 'running'
+               and attempts = $3",
+            &[&item.job.id, &provider_file_id, &attempts],
         )
         .await
         .map_err(db_error)?;
+    if updated == 0 {
+        warn!(
+            job_id = item.job.id,
+            attempts, "cloud-copy completion ignored because the lease was superseded"
+        );
+        return Ok(false);
+    }
     client
         .execute(
             "update sound_recorder_cloud_connections
@@ -7104,7 +6931,7 @@ async fn mark_cloud_copy_job_success(
         )
         .await
         .map_err(db_error)?;
-    Ok(())
+    Ok(true)
 }
 
 async fn mark_cloud_copy_job_error(
@@ -7113,7 +6940,7 @@ async fn mark_cloud_copy_job_error(
     attempts: i32,
     message: &str,
     config: &Config,
-) -> Result<(), ServiceError> {
+) -> Result<bool, ServiceError> {
     let status = if attempts >= config.cloud_copy_max_attempts {
         "failed"
     } else {
@@ -7127,19 +6954,28 @@ async fn mark_cloud_copy_job_error(
         None
     };
     let last_error = message.chars().take(500).collect::<String>();
-    client
+    let updated = client
         .execute(
             "update sound_recorder_cloud_copy_jobs
              set status = $2,
                  locked_until = $3,
                  last_error = $4,
                  updated_at = now()
-             where id = $1::uuid",
-            &[&job_id, &status, &locked_until, &last_error],
+             where id = $1::uuid
+               and status = 'running'
+               and attempts = $5",
+            &[&job_id, &status, &locked_until, &last_error, &attempts],
         )
         .await
         .map_err(db_error)?;
-    Ok(())
+    if updated == 0 {
+        warn!(
+            job_id,
+            attempts, "cloud-copy failure ignored because the lease was superseded"
+        );
+        return Ok(false);
+    }
+    Ok(true)
 }
 
 async fn retention_sweep(

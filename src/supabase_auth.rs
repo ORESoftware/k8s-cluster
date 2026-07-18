@@ -1,0 +1,292 @@
+//! Supabase access-token verification and JWKS key rotation.
+//!
+//! This module owns the security boundary between a caller-supplied bearer
+//! token and the verified account identity used by the rest of the service.
+//! It accepts only the explicit Supabase algorithms, pins `aud` and `iss`,
+//! keeps a bounded JWKS cache, and single-flights/rate-limits refreshes so an
+//! unknown-`kid` flood cannot amplify into outbound requests.
+
+use std::time::{Duration, Instant};
+
+use jsonwebtoken::{
+    decode, decode_header,
+    jwk::{Jwk, JwkSet, KeyAlgorithm, PublicKeyUse},
+    Algorithm, DecodingKey, Validation,
+};
+use serde::Deserialize;
+use tokio::sync::{Mutex as AsyncMutex, RwLock};
+use tracing::error;
+
+use super::{ServiceError, SupabaseConfig};
+
+const SUPABASE_SUBJECT_PREFIX: &str = "supabase:";
+// Supabase's JWKS edge cache is ten minutes. Do not retain keys longer here or
+// emergency key revocation could remain trusted well beyond the provider cache.
+const JWKS_CACHE_TTL: Duration = Duration::from_secs(600);
+/// Minimum wall-clock between Supabase JWKS fetches. A flood of tokens bearing
+/// unknown `kid`s (random or post-rotation) must not amplify into one outbound
+/// JWKS request per token; once the cache is warm, legitimate tokens are served
+/// from it and never reach the network, so throttling only bounds the misses.
+const JWKS_MIN_REFRESH_INTERVAL: Duration = Duration::from_secs(30);
+
+/// Verified Supabase identity derived from an access-token JWT.
+#[derive(Clone, Debug)]
+pub(crate) struct SupabaseIdentity {
+    pub(crate) subject: String,
+    pub(crate) email: Option<String>,
+}
+
+impl SupabaseIdentity {
+    /// Namespaced external subject stored on the account so a Supabase `sub`
+    /// can never collide with subjects minted by another identity source.
+    pub(crate) fn external_subject(&self) -> String {
+        format!("{SUPABASE_SUBJECT_PREFIX}{}", self.subject)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct SupabaseClaims {
+    sub: String,
+    #[serde(default)]
+    email: Option<String>,
+}
+
+pub(crate) struct JwksCacheEntry {
+    fetched_at: Instant,
+    set: JwkSet,
+}
+
+/// Verifies Supabase-issued access tokens (HS256 legacy secret or asymmetric
+/// JWKS keys) so device registration and cloud linking can be tied to a real,
+/// server-verified identity instead of a client-asserted subject string.
+pub(crate) struct SupabaseVerifier {
+    pub(crate) audience: String,
+    pub(crate) issuer: Option<String>,
+    pub(crate) jwt_secret: Option<String>,
+    pub(crate) jwks_url: Option<String>,
+    pub(crate) jwks_cache: RwLock<Option<JwksCacheEntry>>,
+    /// When the last JWKS refresh was *attempted* (success or failure), used to
+    /// rate-limit outbound fetches. See [`JWKS_MIN_REFRESH_INTERVAL`].
+    pub(crate) jwks_last_refresh: RwLock<Option<Instant>>,
+    /// Single-flight guard: concurrent cache misses wait for the same refresh
+    /// instead of racing and incorrectly returning 401 while a valid key is
+    /// still being fetched.
+    pub(crate) jwks_refresh_lock: AsyncMutex<()>,
+}
+
+impl SupabaseVerifier {
+    pub(crate) fn from_config(config: &SupabaseConfig) -> Option<Self> {
+        if !config.is_enabled() {
+            return None;
+        }
+        Some(Self {
+            audience: config.audience.clone(),
+            issuer: config.issuer.clone(),
+            jwt_secret: config.jwt_secret.clone(),
+            jwks_url: config.jwks_url.clone(),
+            jwks_cache: RwLock::new(None),
+            jwks_last_refresh: RwLock::new(None),
+            jwks_refresh_lock: AsyncMutex::new(()),
+        })
+    }
+
+    fn validation(&self, alg: Algorithm) -> Validation {
+        let mut validation = Validation::new(alg);
+        validation.set_audience(&[self.audience.as_str()]);
+        if let Some(issuer) = &self.issuer {
+            validation.set_issuer(&[issuer.as_str()]);
+        }
+        validation.validate_exp = true;
+        validation
+    }
+
+    pub(crate) async fn verify(
+        &self,
+        http: &reqwest::Client,
+        token: &str,
+    ) -> Result<SupabaseIdentity, ServiceError> {
+        let header = decode_header(token).map_err(|_| ServiceError::Unauthorized)?;
+        if !is_supported_supabase_algorithm(header.alg) {
+            return Err(ServiceError::Unauthorized);
+        }
+        let claims = if matches!(header.alg, Algorithm::HS256) {
+            let secret = self.jwt_secret.as_deref().ok_or_else(|| {
+                ServiceError::Unavailable(
+                    "Supabase HS256 token received but SOUND_RECORDER_SUPABASE_JWT_SECRET is not configured".to_string(),
+                )
+            })?;
+            decode::<SupabaseClaims>(
+                token,
+                &DecodingKey::from_secret(secret.as_bytes()),
+                &self.validation(Algorithm::HS256),
+            )
+            .map_err(|_| ServiceError::Unauthorized)?
+            .claims
+        } else {
+            let kid = header.kid.ok_or(ServiceError::Unauthorized)?;
+            let jwk = self.jwk_for_kid(http, &kid, header.alg).await?;
+            let key = DecodingKey::from_jwk(&jwk).map_err(|_| ServiceError::Unauthorized)?;
+            decode::<SupabaseClaims>(token, &key, &self.validation(header.alg))
+                .map_err(|_| ServiceError::Unauthorized)?
+                .claims
+        };
+        let subject = claims.sub.trim().to_string();
+        if subject.is_empty()
+            || subject.len() > 160
+            || subject
+                .chars()
+                .any(|ch| ch.is_control() || matches!(ch, '/' | '\\'))
+        {
+            return Err(ServiceError::Unauthorized);
+        }
+        Ok(SupabaseIdentity {
+            subject,
+            email: claims
+                .email
+                .map(|email| email.trim().to_string())
+                .filter(|email| !email.is_empty() && email.len() <= 320),
+        })
+    }
+
+    async fn jwk_for_kid(
+        &self,
+        http: &reqwest::Client,
+        kid: &str,
+        algorithm: Algorithm,
+    ) -> Result<Jwk, ServiceError> {
+        if let Some(jwk) = self.cached_jwk(kid, algorithm).await {
+            return Ok(jwk);
+        }
+        // Cache miss: the kid is unknown, unsuitable for the token algorithm,
+        // or the cache aged out. Refresh at most once per
+        // JWKS_MIN_REFRESH_INTERVAL so a burst of unknown-kid tokens cannot
+        // turn into a burst of outbound JWKS fetches.
+        let refreshed = self.try_refresh_jwks(http).await?;
+        if let Some(jwk) = self.cached_jwk(kid, algorithm).await {
+            return Ok(jwk);
+        }
+        if refreshed || self.jwks_cache.read().await.is_some() {
+            Err(ServiceError::Unauthorized)
+        } else {
+            // No cache exists and a prior refresh failed or is throttled. This
+            // is an identity-provider availability failure, not bad caller auth.
+            Err(ServiceError::Unavailable(
+                "Supabase signing keys are temporarily unavailable".to_string(),
+            ))
+        }
+    }
+
+    /// Refreshes the JWKS cache unless a refresh was attempted within the last
+    /// [`JWKS_MIN_REFRESH_INTERVAL`]. Returns `Ok(true)` if a refresh ran (so the
+    /// caller should re-check the cache) and `Ok(false)` if it was throttled.
+    pub(crate) async fn try_refresh_jwks(
+        &self,
+        http: &reqwest::Client,
+    ) -> Result<bool, ServiceError> {
+        let _refresh_guard = self.jwks_refresh_lock.lock().await;
+        {
+            // Fast path: reserve the refresh slot under the write lock and bail
+            // out (without an HTTP call) if another task refreshed recently.
+            let mut last = self.jwks_last_refresh.write().await;
+            if let Some(at) = *last {
+                if at.elapsed() < JWKS_MIN_REFRESH_INTERVAL {
+                    return Ok(false);
+                }
+            }
+            *last = Some(Instant::now());
+        }
+        self.refresh_jwks(http).await?;
+        Ok(true)
+    }
+
+    async fn cached_jwk(&self, kid: &str, algorithm: Algorithm) -> Option<Jwk> {
+        let guard = self.jwks_cache.read().await;
+        let entry = guard.as_ref()?;
+        if entry.fetched_at.elapsed() > JWKS_CACHE_TTL {
+            return None;
+        }
+        let jwk = entry.set.find(kid)?;
+        jwk_is_usable_for_algorithm(jwk, algorithm).then(|| jwk.clone())
+    }
+
+    pub(crate) async fn refresh_jwks(&self, http: &reqwest::Client) -> Result<(), ServiceError> {
+        let jwks_url = self.jwks_url.as_deref().ok_or_else(|| {
+            ServiceError::Unavailable("Supabase JWKS URL is not configured".to_string())
+        })?;
+        let response = http.get(jwks_url).send().await.map_err(|err| {
+            error!(error = %err, "Supabase JWKS fetch failed");
+            ServiceError::Unavailable("Supabase JWKS fetch failed".to_string())
+        })?;
+        if !response.status().is_success() {
+            return Err(ServiceError::Unavailable(format!(
+                "Supabase JWKS fetch returned status {}",
+                response.status().as_u16()
+            )));
+        }
+        let set = response.json::<JwkSet>().await.map_err(|err| {
+            error!(error = %err, "Supabase JWKS decode failed");
+            ServiceError::Unavailable("Supabase JWKS response was invalid".to_string())
+        })?;
+        if set.keys.is_empty() {
+            return Err(ServiceError::Unavailable(
+                "Supabase JWKS did not contain any signing keys".to_string(),
+            ));
+        }
+        let mut guard = self.jwks_cache.write().await;
+        *guard = Some(JwksCacheEntry {
+            fetched_at: Instant::now(),
+            set,
+        });
+        Ok(())
+    }
+}
+
+/// Reject key-confusion inputs even when a compromised/misconfigured issuer
+/// returns multiple key types under one `kid`. Supabase signing keys identify
+/// their intended signing algorithm; key use is optional in JWK but, when
+/// present, must be `sig`.
+fn jwk_is_usable_for_algorithm(jwk: &Jwk, algorithm: Algorithm) -> bool {
+    let signing_use = matches!(
+        &jwk.common.public_key_use,
+        None | Some(PublicKeyUse::Signature)
+    );
+    let matching_algorithm = matches!(
+        (jwk.common.key_algorithm, algorithm),
+        (Some(KeyAlgorithm::RS256), Algorithm::RS256)
+            | (Some(KeyAlgorithm::ES256), Algorithm::ES256)
+    );
+    signing_use && matching_algorithm
+}
+
+pub(crate) fn is_supported_supabase_algorithm(algorithm: Algorithm) -> bool {
+    matches!(
+        algorithm,
+        Algorithm::HS256 | Algorithm::RS256 | Algorithm::ES256
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use jsonwebtoken::{jwk::Jwk, Algorithm};
+
+    use super::jwk_is_usable_for_algorithm;
+
+    #[test]
+    fn jwks_key_must_match_the_token_algorithm_and_signature_use() {
+        let signing_rsa: Jwk = serde_json::from_str(
+            r#"{"kty":"RSA","kid":"key-1","use":"sig","alg":"RS256","n":"AQ","e":"AQAB"}"#,
+        )
+        .unwrap();
+        assert!(jwk_is_usable_for_algorithm(&signing_rsa, Algorithm::RS256));
+        assert!(!jwk_is_usable_for_algorithm(&signing_rsa, Algorithm::ES256));
+
+        let encryption_rsa: Jwk = serde_json::from_str(
+            r#"{"kty":"RSA","kid":"key-1","use":"enc","alg":"RS256","n":"AQ","e":"AQAB"}"#,
+        )
+        .unwrap();
+        assert!(!jwk_is_usable_for_algorithm(
+            &encryption_rsa,
+            Algorithm::RS256
+        ));
+    }
+}
