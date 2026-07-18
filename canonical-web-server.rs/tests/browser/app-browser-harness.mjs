@@ -76,7 +76,7 @@ function resolveBinary() {
     return override;
   }
   const built = join(REPO_ROOT, "target", "debug", "canonical-web-server");
-  const build = spawnSync("cargo", ["build", "--quiet", "--bin", "canonical-web-server"], {
+  const build = spawnSync("cargo", ["build", "--locked", "--quiet", "--bin", "canonical-web-server"], {
     cwd: REPO_ROOT,
     stdio: "inherit",
   });
@@ -126,7 +126,8 @@ export async function startServer() {
   const binary = resolveBinary();
   ensureClientBundle();
   const staticDir = makeStaticFixture();
-  const databaseUrl = `sqlite://${join(staticDir, "browser.sqlite")}?mode=rwc`;
+  const databaseDir = mkdtempSync(join(tmpdir(), "canonical-browser-db-"));
+  const databaseUrl = `sqlite://${join(databaseDir, "browser.sqlite")}?mode=rwc`;
   const port = await freePort();
   const url = `http://127.0.0.1:${port}`;
 
@@ -168,30 +169,41 @@ export async function startServer() {
       APP_ASSET_DIR: join(REPO_ROOT, "client", "dist"),
     },
   });
+  const exited = new Promise((resolve) => child.once("exit", resolve));
   child.unref();
 
-  const stop = () => {
+  const stop = async () => {
+    if (child.pid !== undefined && child.exitCode === null) {
+      try {
+        process.kill(-child.pid, "SIGTERM");
+      } catch {
+        try {
+          child.kill("SIGTERM");
+        } catch {
+          // already gone
+        }
+      }
+      await Promise.race([
+        exited,
+        new Promise((resolve) => setTimeout(resolve, 5000)),
+      ]);
+    }
     try {
       rmSync(staticDir, { recursive: true, force: true });
     } catch {
       // best effort
     }
-    if (child.pid === undefined) return;
     try {
-      process.kill(-child.pid, "SIGTERM");
+      rmSync(databaseDir, { recursive: true, force: true });
     } catch {
-      try {
-        child.kill("SIGTERM");
-      } catch {
-        // already gone
-      }
+      // best effort
     }
   };
 
   try {
     await waitForReady(`${url}/healthz`, 60000);
   } catch (error) {
-    stop();
+    await stop();
     throw error;
   }
 

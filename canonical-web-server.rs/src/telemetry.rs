@@ -236,9 +236,13 @@ fn sensitive_attribute_key(key: &str) -> bool {
     let normalized = key.to_ascii_lowercase().replace(['-', '.'], "_");
     [
         "authorization",
+        "access_key",
         "bearer",
         "cookie",
         "credential",
+        "connection_string",
+        "database",
+        "dsn",
         "email",
         "jwt",
         "passphrase",
@@ -252,6 +256,8 @@ fn sensitive_attribute_key(key: &str) -> bool {
         "token",
         "api_key",
         "apikey",
+        "uri",
+        "url",
     ]
     .iter()
     .any(|needle| normalized.contains(needle))
@@ -373,7 +379,7 @@ mod tests {
     #[test]
     fn resource_attributes_reject_secrets_and_identity_overrides() {
         let attributes = resource_attribute_pairs(
-            "team=canonical,api.token=nope,service.name=spoof,cloud.region=us-east-1",
+            "team=canonical,api.token=nope,service.name=spoof,cloud.region=us-east-1,db.connection_string=secret,database_url=secret,backup.dsn=secret",
         )
         .collect::<Vec<_>>();
         assert_eq!(

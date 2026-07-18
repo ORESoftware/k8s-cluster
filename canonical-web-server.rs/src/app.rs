@@ -6,13 +6,13 @@ use axum::{
     http::{header, HeaderName, HeaderValue},
     Router,
 };
+use tokio::sync::Semaphore;
 use tower_http::{
     compression::CompressionLayer,
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
     sensitive_headers::SetSensitiveRequestHeadersLayer,
     set_header::SetResponseHeaderLayer,
 };
-use tokio::sync::Semaphore;
 
 use crate::{
     auth::{self, AuthProvider},

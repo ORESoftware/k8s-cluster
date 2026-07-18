@@ -350,7 +350,7 @@ mod tests {
     fn auth_client_rejects_privileged_api_keys() {
         assert!(SupabaseAuth::new(
             "https://example.supabase.co".into(),
-            "sb_secret_never_mount_this".into(),
+            "sb_secret_x".into(),
         )
         .is_err());
 

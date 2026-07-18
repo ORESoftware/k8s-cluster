@@ -107,6 +107,10 @@ fn runtime_responsibilities_stay_in_their_modules() {
     for required in ["TcpListener::bind", "spawn_postgres_backplane"] {
         assert!(server.contains(required), "server.rs is missing {required}");
     }
+    assert!(
+        !server.contains("spawn_revocation_worker"),
+        "the customer web process must not run the no-ingress revoker"
+    );
     for forbidden in ["ConnectOptions", "Migrator::up", "SupabaseAuth::new"] {
         assert!(
             !server.contains(forbidden),
@@ -132,6 +136,8 @@ fn database_contract_is_seaorm_only_and_never_migrates_on_serve() {
     );
     assert!(cargo.contains("sea-orm ="));
     assert!(database.contains("crate::db::connect_database"));
+    assert!(!database.contains("ConnectOptions"));
+    assert!(!database.contains("Database::connect"));
     assert!(read("crates/canonical-store/src/lib.rs").contains("use sea_orm::"));
 
     // PostgreSQL LISTEN/NOTIFY is the one sanctioned driver escape, and it must
@@ -180,4 +186,23 @@ fn public_module_seams_compile() {
     let _ = canonical_web_server::server::run;
     let _ = canonical_web_server::telemetry::init;
     let _ = canonical_web_server::telemetry::instrument_http;
+}
+
+#[test]
+fn revoker_manifest_cannot_depend_on_the_customer_http_surface() {
+    let manifest = read("services/canonical-session-revoker/Cargo.toml");
+    for forbidden in ["canonical-web-server", "axum", "maud"] {
+        assert!(
+            !manifest.contains(forbidden),
+            "the no-ingress revoker must not depend on {forbidden}"
+        );
+    }
+    for required in [
+        "canonical-auth",
+        "canonical-config",
+        "canonical-session",
+        "canonical-store",
+    ] {
+        assert!(manifest.contains(required), "revoker is missing {required}");
+    }
 }
