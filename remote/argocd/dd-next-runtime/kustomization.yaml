@@ -186,7 +186,7 @@ resources:
   - dd-akrion-web-server-rs.networkpolicy.yaml
   - dd-akrion-web-server-rs.pdb.yaml
   - dd-akrion-web-server-rs.service.yaml
-  # AthletO jello-ws shop app (MASH: Maud/Axum/SQLx/Supabase/HTMX), submodule
+  # AthletO jello-ws shop app (MASH: Maud/Axum/SeaORM/Supabase/HTMX), submodule
   # remote/deployments/athleto-app-rs. Served on its own public host
   # app.athleto.store via a dedicated Ingress and the jello-ws Service alias.
   - dd-athleto-app-rs.deployment.yaml
@@ -196,6 +196,9 @@ resources:
   - dd-athleto-app-rs.pdb.yaml
   - dd-athleto-app-rs.service.yaml
   - jello-ws.service.yaml
+  # Smaller standalone Athlet-O API/storefront backend. Its manifests and
+  # Rust source are owned by the source-of-truth git submodule.
+  - ../../deployments/athleto-backend-rs/k8s/ec2
   # Opt-in AthletO live-storefront browser smoke: dispatches read-only UI
   # scenarios to dd-browser-test-server under Playwright + Puppeteer.
   - dd-athleto-e2e-scenarios.configmap.yaml
@@ -235,3 +238,11 @@ resources:
   - dd-t2v-web.networkpolicy.yaml
   - dd-t2v-web.pdb.yaml
   - dd-t2v-web.service.yaml
+
+patches:
+  - path: dd-athleto-backend.observability.patch.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: dd-athleto-backend

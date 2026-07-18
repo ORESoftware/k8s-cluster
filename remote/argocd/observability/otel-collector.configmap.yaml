@@ -369,6 +369,22 @@ data:
         endpoint: dd-tempo.observability.svc.cluster.local:4317
         tls:
           insecure: true
+      # Loki 3.x accepts native OTLP logs at /otlp/v1/logs. The otlphttp
+      # exporter appends /v1/logs to this base endpoint, preserving resource
+      # attributes as Loki labels/structured metadata instead of flattening
+      # OTLP records through the collector's own debug log stream.
+      otlphttp/loki:
+        endpoint: http://dd-loki.observability.svc.cluster.local:3100/otlp
+        timeout: 10s
+        sending_queue:
+          enabled: true
+          num_consumers: 4
+          queue_size: 2000
+        retry_on_failure:
+          enabled: true
+          initial_interval: 1s
+          max_interval: 10s
+          max_elapsed_time: 60s
       # Jaeger all-in-one is a best-effort secondary trace sink; Tempo is the
       # authoritative trace store. When jaeger stalls (in-memory storage
       # backpressure or a slow Query), the default 5s timeout + 5m retry
@@ -427,4 +443,5 @@ data:
             - memory_limiter
             - batch
           exporters:
+            - otlphttp/loki
             - debug

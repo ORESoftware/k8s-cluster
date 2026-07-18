@@ -375,7 +375,12 @@ one-pod-at-a-time after a five-minute stabilization window. The Kubernetes resou
 publishes HPA current/desired/min/max replica state and an at-max signal so Prometheus can alert
 when fabrication planning demand holds the autoscaler at its ceiling. The dedicated NetworkPolicy permits
 only gateway, runtime-config, and observability ingress plus DNS, NATS, runtime-config, in-cluster
-MDP optimizer HTTP, and public IPv4/IPv6 HTTP/S egress that excludes private and reserved ranges. The gateway keeps
+MDP optimizer HTTP, Fiducia KV through the `fiducia-load-balance` pod selector, and public IPv4/IPv6
+HTTP/S egress that excludes private and reserved ranges. The pod's optional `FIDUCIA_API_KEY` comes
+from `dd-fabrication-server-secrets`; provision that Secret through the cluster's external secret
+injector with a `kv:read`-only key. Daedalus reads only
+`secrets/daedalus/{NATS_URL,NATS_TOKEN,NATS_NKEY}`, direct environment values win, and a missing key
+leaves the existing environment configuration active. The gateway keeps
 `/fabrication/` uploads bounded at `512k` to match the Rust HTTP/NATS payload caps, disables
 request buffering so submitted instruction payloads stream to the Rust service, and uses explicit
 upload/connect plus 900-second upstream read/send timeouts for longer planning and analysis responses. It forwards the NGINX `X-Request-ID`, `X-Forwarded-For`, `X-Forwarded-Host`, `X-Forwarded-Port`, `X-Forwarded-Prefix: /fabrication`, `X-Forwarded-Proto`, `X-Original-URI`, and `X-Real-IP` values to the Rust service so edge failures and downstream job evidence can be correlated even before a payload-level `requestId` is parsed and after the public route prefix is stripped. It also disables upstream retries for `/fabrication/` so non-idempotent planning or instruction-submission requests are not replayed after an upstream failure. Public `/fabrication/internal` and `/fabrication/internal/*` paths return 404 at the gateway so service-local runtime-control routes stay off the Internet-facing surface. The canonical `/fabrication` redirect is read-only (`GET`/`HEAD`); the public `/fabrication/` gateway surface allows only `GET`, `HEAD`, and `POST`, returning 405 for other methods before they reach the Rust service. Fabrication `POST` traffic also has a gateway burst guard of `12r/m` per remote address with a burst of `6`, returning 429 before expensive planning, instruction analysis, NATS fan-out, or MDP publishing can pile up.

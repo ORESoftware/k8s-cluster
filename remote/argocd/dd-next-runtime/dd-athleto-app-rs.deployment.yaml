@@ -125,7 +125,25 @@ spec:
             - name: ALLOWED_HOSTS
               value: app.athleto.store,biz.athleto.store
             - name: RUST_LOG
-              value: info,athleto_app_rs=info,tower_http=info
+              value: info,athleto_app_rs=info,sea_orm=warn,hyper=warn
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://dd-otel-collector.observability.svc.cluster.local:4317
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: deployment.environment=remote-dev
+            - name: DEPLOYMENT_ENV
+              value: remote-dev
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
             # Supabase project for Athlet-O; keys land in the dd-agent-secrets
             # bundle (all optional — the app boots in degraded mode without them).
             - name: SUPABASE_URL

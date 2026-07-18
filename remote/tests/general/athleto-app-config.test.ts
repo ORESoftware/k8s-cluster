@@ -47,12 +47,11 @@ test("app Cargo.toml declares the MASH stack (Maud + Axum + SeaORM + Supabase + 
   assert.match(cargo, /maud\s*=/);
   assert.match(cargo, /axum\s*=\s*\{[^}]*features\s*=\s*\[[^\]]*"ws"[^\]]*\]/);
   assert.match(cargo, /sea-orm\s*=/);
-  // SeaORM sits over SQLx/Postgres; reqwest+rustls drives the Supabase REST API.
-  assert.match(cargo, /sqlx\s*=/);
+  // Application queries use SeaORM; reqwest+rustls drives the Supabase REST API.
   assert.match(cargo, /reqwest\s*=/);
 });
 
-test("app ships an embedded migrations directory", { skip: skipIfAbsent }, async () => {
+test("app retains its numbered schema audit trail", { skip: skipIfAbsent }, async () => {
   const migration1 = await readRepoFile(`${vendorRoot}/migrations/0001_products_and_carts.sql`);
   assert.ok(migration1.length > 0, "expected first migration to be non-empty");
   assert.ok(
@@ -118,7 +117,7 @@ test("dd-next-runtime argocd wires the athleto app on its own athleto.store host
   assert.match(jelloService, /port:\s*8145/);
 });
 
-test("shared nginx gateway /jello still targets web-home-rs (athleto not yet in the gateway map)", async () => {
+test("standalone backend is reconciled internally while shared /jello still targets web-home-rs", async () => {
   const gateway = await readRepoFile("remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml");
   const kustomization = await readRepoFile("remote/argocd/dd-next-runtime/kustomization.yaml");
 
@@ -129,7 +128,8 @@ test("shared nginx gateway /jello still targets web-home-rs (athleto not yet in 
   assert.match(gateway, /set \$dd_up_3 dd-remote-web-home\.default\.svc\.cluster\.local:8080;/);
   assert.doesNotMatch(gateway, /athleto/i);
 
-  // The standalone athleto-backend service is vendored in its own submodule's
-  // k8s/ec2 kustomization only; it is not (yet) reconciled by dd-next-runtime.
-  assert.doesNotMatch(kustomization, /dd-athleto-backend/);
+  // The standalone backend now runs as an internal workload from its source-
+  // owned submodule manifests. Public /jello routing remains unchanged until
+  // an explicit product cutover is reviewed.
+  assert.match(kustomization, /deployments\/athleto-backend-rs\/k8s\/ec2/);
 });

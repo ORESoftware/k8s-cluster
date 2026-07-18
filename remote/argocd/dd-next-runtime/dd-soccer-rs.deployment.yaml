@@ -195,11 +195,46 @@ spec:
             # server binds.
             - name: CARGO_BUILD_JOBS
               value: '1'
+            # Structured CRI logs are collected by Promtail/Loki. Traces and
+            # metrics use OTLP/HTTP; Prometheus scrapes the collector exporter.
+            - name: AKRION_TELEMETRY_ENABLED
+              value: 'true'
+            - name: AKRION_LOG_JSON
+              value: 'true'
+            - name: AKRION_SERVICE_NAME
+              value: dd-soccer-rs
+            - name: AKRION_RUST_LOG
+              value: info,dd_soccer_rs=info,tower_http=info
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://dd-otel-collector.observability.svc.cluster.local:4318
+            - name: AKRION_OTEL_TRACES
+              value: 'true'
+            - name: AKRION_OTEL_METRICS
+              value: 'true'
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
             # --- Load the learned policy from RDS (the in-VPC pod reaches it fast,
             # unlike a laptop). Mirrors the dd-soccer-learning-queue cronjob's PG
             # wiring. The live server loads the latest ACTIVE policy for this
             # experiment on the first game session, then serves it. ---
             - name: SOCCER_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-remote-rest-api-secrets
+                  key: RDS_DATABASE_URL
+            # Service-owned database access and readiness use SeaORM. The
+            # engine keeps SOCCER_DATABASE_URL for its existing policy loader.
+            - name: AKRION_DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   name: dd-remote-rest-api-secrets
@@ -248,7 +283,7 @@ spec:
             failureThreshold: 600
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: http
             periodSeconds: 5
             timeoutSeconds: 3

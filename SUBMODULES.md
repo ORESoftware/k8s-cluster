@@ -47,7 +47,7 @@ always lives at `~/codes/ores/k8s-cluster/<submodule path>`.
 | `remote/deployments/billing-server-rs` | [quaestor-ledger/billing-server.rs](https://github.com/quaestor-ledger/billing-server.rs) | `main` | — _(submodule checkout only)_ |
 | `remote/deployments/dart-server` | [sagitta-stack/dart-server](https://github.com/sagitta-stack/dart-server) | `main` | — _(submodule checkout only)_ |
 | `remote/deployments/dd-data-viz-rs` | [claritas-viz/data-viz-server.rs](https://github.com/claritas-viz/data-viz-server.rs) | `main` | — _(submodule checkout only)_ |
-| `remote/deployments/athleto-backend-rs` | [athlet-o/athleto-backend.rs](https://github.com/athlet-o/athleto-backend.rs) | `main` | — _(submodule checkout only)_ |
+| `remote/deployments/athleto-backend-rs` | [athlet-o/athleto-backend.rs](https://github.com/athlet-o/athleto-backend.rs) | `main` | `~/codes/athlet-o/athleto-backend.rs` |
 | `remote/deployments/usacc-rest-api-backend-rs` | [usa-acc/rest-api-backend.rs](https://github.com/usa-acc/rest-api-backend.rs) | `main` | — _(submodule checkout only)_ |
 | `remote/deployments/3fa-web-server-rs` | [3FA-app/3fa-web-server.rs](https://github.com/3FA-app/3fa-web-server.rs) | `main` | — _(submodule checkout only)_ |
 | `remote/deployments/sonus-auris-monorepo` | [sonus-auris/sonus-auris-monorepo](https://github.com/sonus-auris/sonus-auris-monorepo) | `main` | `~/codes/sonus-auris/sonus-auris-monorepo` |
