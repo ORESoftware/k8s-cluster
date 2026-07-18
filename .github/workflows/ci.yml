@@ -70,12 +70,39 @@ jobs:
           psql "$TARGET_DATABASE_URL" -v ON_ERROR_STOP=1 -q -f pg-defs/schema/schema.sql
       - name: dpm sees no drift between schema.sql and the applied database
         run: ./pg-defs/scripts/dpm.sh diff --fail-on-diff
-      # Known-failing until dpm fixes its deparse fixed-point bug: varchar
-      # IN-list CHECK constraints deparse as (ARRAY[...])::text[], which
-      # re-parses into per-element casts, so dpm's re-emitted SQL never
-      # converges to string equality. Flips green when dpm normalizes both
-      # sides consistently.
-      - name: dpm verify (bootstrap convergence proof — known dpm bug, advisory)
+      # Per-database contracts (schema/databases/<db>/schema.sql) are owned by
+      # individual services but live here so all shared defs stay in one repo.
+      # They are NOT fed to the code generator, so nothing else validates them —
+      # apply each to its own fresh database and require dpm to see zero drift,
+      # the same guarantee the main schema gets. Catches a syntax error or an
+      # un-round-trippable definition before it reaches a live RDS.
+      - name: per-database schemas apply cleanly and dpm sees no drift
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          found=0
+          for schema in pg-defs/schema/databases/*/schema.sql; do
+            found=1
+            db="dpm_check_$(basename "$(dirname "$schema")")"
+            echo "::group::$db ($schema)"
+            psql "$SHADOW_DATABASE_URL" -c "create database \"$db\""
+            psql "postgresql://postgres:postgres@localhost:5432/$db" \
+              -v ON_ERROR_STOP=1 -q -f "$schema"
+            dpm diff --source "$schema" \
+              --target "postgresql://postgres:postgres@localhost:5432/$db" \
+              --fail-on-diff
+            echo "::endgroup::"
+          done
+          [ "$found" = 1 ] || echo "no per-database schemas to check"
+      # dpm verify replays the migration on a shadow replica and proves an empty
+      # re-diff (true convergence, catching bugs the source-vs-target diff can't).
+      # The deparse fixed-point bug that made this fail on varchar IN-list CHECK
+      # constraints was fixed upstream (declarative-postgres-migrate.rs commit
+      # 3fcb17b, server-side canonicalization). It stays advisory only until a
+      # tagged dpm release ships that fix: the installer above pulls the latest
+      # *release* binary, still 0.3.0. To enforce: cut a dpm release, bump the
+      # installer commit pin above to it, then drop this continue-on-error.
+      - name: dpm verify (bootstrap convergence proof — advisory pending dpm release)
         continue-on-error: true
         env:
           TARGET_DATABASE_URL: postgres://postgres:postgres@localhost:5432/pg_defs_verify

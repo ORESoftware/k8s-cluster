@@ -65,10 +65,16 @@ CI (`.github/workflows/ci.yml`) proves on every push that `schema.sql` applies
 cleanly to a fresh Postgres 17 and that dpm sees zero drift between the file and
 the applied database.
 
-Known dpm limitation (tracked upstream): varchar IN-list CHECK constraints deparse
-as `(ARRAY[...])::text[]`, which re-parses into per-element casts, so a database
-built from dpm's own re-emitted SQL never converges to string equality against the
-schema file. Databases built from `schema.sql` itself diff clean.
+Formerly-known dpm limitation (now fixed upstream): varchar IN-list CHECK
+constraints and partial-index predicates deparse as `(ARRAY[...])::text[]`, which
+re-parses into per-element casts, so a database built from dpm's own re-emitted SQL
+did not converge to string equality against the schema file. Fixed in
+declarative-postgres-migrate.rs commit `3fcb17b` (server-side canonicalization
+round-trips each CHECK/index def through the shadow to its re-parse fixed point).
+The CI `dpm verify` step stays advisory only until a tagged dpm release ships that
+fix — the installer pulls the latest *release* binary — after which the installer
+pin bumps and the step enforces. Databases built from `schema.sql` itself always
+diff clean.
 
 ### Legacy differ — second opinion
 

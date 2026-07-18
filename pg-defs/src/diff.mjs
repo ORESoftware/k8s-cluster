@@ -31,7 +31,20 @@ import {
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = path.resolve(packageRoot, "..", "..", "..");
 const args = process.argv.slice(2);
+// `--env` becomes a path segment (tmp/migrations/<env>/…) and part of the
+// env-file lookup (.<env>.env). A bare `path.resolve` with a `../`-laden value
+// would let it write the diff/desired SQL outside tmp/ or read an arbitrary
+// `*.env` off disk, so restrict it to a filesystem-safe slug — no separators,
+// no `..`, no control characters. (Same containment posture as the generator's
+// output-path assert.)
 const env = argValue("--env") ?? "dev";
+if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(env) || env.includes("..")) {
+  console.error(
+    `--env ${JSON.stringify(env)} is not a valid environment name ` +
+      "(allowed: letters, digits, '.', '_', '-'; no path separators or '..').",
+  );
+  process.exit(1);
+}
 const DEFAULT_DATABASE_URL_ENV_KEYS = [
   "AGENT_TASKS_RDS_DATABASE_URL",
   "RDS_DATABASE_URL",
