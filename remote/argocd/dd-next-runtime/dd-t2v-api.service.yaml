@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-t2v-api
+  namespace: default
+  labels:
+    app: dd-t2v-api
+spec:
+  selector:
+    app: dd-t2v-api
+  ports:
+    - name: http
+      port: 8130
+      targetPort: http

@@ -33,6 +33,7 @@ spec:
     - hosts:
         - hello.95-217-171-250.sslip.io
         - app.fiducia.cloud
+        - api.fiducia.cloud
         - admin.fiducia.cloud
       secretName: gateway-public-tls
   rules:
@@ -47,6 +48,16 @@ spec:
                 port:
                   number: 443
     - host: app.fiducia.cloud
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: dd-remote-gateway
+                port:
+                  number: 443
+    - host: api.fiducia.cloud
       http:
         paths:
           - path: /

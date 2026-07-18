@@ -13,7 +13,7 @@ enable flags plus separate auth secrets.
 ### Contract validation / raw transactions
 
 - `GET /healthz` - process liveness probe.
-- `GET /readyz` - verifies Solana RPC, PostgreSQL/Fiducia coordination, and formal-methods dependencies.
+- `GET /readyz` - verifies Solana RPC, enabled PostgreSQL/Fiducia coordination, and formal-methods dependencies.
 - `GET /capabilities` - explicit product boundary, integrations, supported escrow actions, and active gates.
 - `GET /metrics` - Prometheus metrics.
 - `GET /status` - checks `getHealth` and `getVersion` against `SOLANA_RPC_URL`.
@@ -97,6 +97,11 @@ action may enact them.
   calls retain and replay the prior RPC result for seven days; failed calls abandon the lease. With
   `CONTRACT_COORDINATION_REQUIRED=true`, a coordinator failure blocks broadcasts instead of degrading
   to replica-local behavior.
+- Coordination refuses to start without a `requests:write`-scoped `FIDUCIA_API_KEY`. Readiness uses a
+  non-mutating `OPTIONS /v1/idempotency/claim` authorization probe, so a health-only connection cannot
+  be mistaken for write access. The checked-in deployment keeps coordination and every broadcast flag
+  disabled until fiducia-auth mints that scoped key into `dd-agent-secrets/FIDUCIA_API_KEY`; enabling any
+  broadcast flag while coordination is disabled or optional is a startup error.
 - Settlement/resolution request IDs are also claimed in-process for immediate caller replay feedback;
   the transaction-digest fence above is the cross-replica source of truth.
 - Confirmation polling is bounded by a max timeout, min poll interval, and max poll count; `/confirm`

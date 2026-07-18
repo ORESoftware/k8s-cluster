@@ -63,7 +63,8 @@ async fn transfer_http(
 ) -> axum::response::Response {
     let bc = &state.blockchain;
     record_request(bc);
-    if let Err(resp) = require_enabled(bc, bc.config().bridge_enabled, "BLOCKCHAIN_BRIDGE_ENABLED") {
+    if let Err(resp) = require_enabled(bc, bc.config().bridge_enabled, "BLOCKCHAIN_BRIDGE_ENABLED")
+    {
         return resp;
     }
     let source_chain = match parse_chain(&body.source_chain) {
@@ -75,18 +76,29 @@ async fn transfer_http(
         Err(error) => return json_err(StatusCode::BAD_REQUEST, &error),
     };
     if source_chain == dest_chain {
-        return json_err(StatusCode::BAD_REQUEST, "source and destination chains must differ");
+        return json_err(
+            StatusCode::BAD_REQUEST,
+            "source and destination chains must differ",
+        );
     }
     let recipient = match validate_chain_address(dest_chain, &body.recipient) {
         Ok(value) => value,
         Err(error) => {
-            return json_err(StatusCode::BAD_REQUEST, &format!("recipient invalid: {error}"))
+            return json_err(
+                StatusCode::BAD_REQUEST,
+                &format!("recipient invalid: {error}"),
+            )
         }
     };
     let amount = body.amount.trim();
-    if amount.is_empty() || amount.len() > MAX_AMOUNT_LEN || !amount.bytes().all(|b| b.is_ascii_digit())
+    if amount.is_empty()
+        || amount.len() > MAX_AMOUNT_LEN
+        || !amount.bytes().all(|b| b.is_ascii_digit())
     {
-        return json_err(StatusCode::BAD_REQUEST, "amount must be a base-10 integer string");
+        return json_err(
+            StatusCode::BAD_REQUEST,
+            "amount must be a base-10 integer string",
+        );
     }
 
     let id = gen_id("bridge");
@@ -133,12 +145,16 @@ async fn attest_http(
 ) -> axum::response::Response {
     let bc = &state.blockchain;
     record_request(bc);
-    if let Err(resp) = require_enabled(bc, bc.config().bridge_enabled, "BLOCKCHAIN_BRIDGE_ENABLED") {
+    if let Err(resp) = require_enabled(bc, bc.config().bridge_enabled, "BLOCKCHAIN_BRIDGE_ENABLED")
+    {
         return resp;
     }
     let lock_ref = body.source_lock_ref.trim();
     if lock_ref.is_empty() || lock_ref.len() > MAX_REF_LEN {
-        return json_err(StatusCode::BAD_REQUEST, "sourceLockRef must be 1..=256 characters");
+        return json_err(
+            StatusCode::BAD_REQUEST,
+            "sourceLockRef must be 1..=256 characters",
+        );
     }
 
     // Look up the transfer's source chain (released before any await).
@@ -210,7 +226,8 @@ async fn status_http(
 ) -> axum::response::Response {
     let bc = &state.blockchain;
     record_request(bc);
-    if let Err(resp) = require_enabled(bc, bc.config().bridge_enabled, "BLOCKCHAIN_BRIDGE_ENABLED") {
+    if let Err(resp) = require_enabled(bc, bc.config().bridge_enabled, "BLOCKCHAIN_BRIDGE_ENABLED")
+    {
         return resp;
     }
     let bridges = match bc.inner().bridges.lock() {
