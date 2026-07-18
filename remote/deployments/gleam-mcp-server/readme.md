@@ -73,9 +73,10 @@ For MCP-specific credentials, use a dedicated AWS secret and Kubernetes secret:
 | --------------------------- | ----------------------------- | ---------------------------------------- |
 | `dd/remote-dev/mcp-secrets` | `dd-gleam-mcp-server-secrets` | Mounted only into `dd-gleam-mcp-server`. |
 
-The current MCP secret shape includes `RDS_DATABASE_URL` and `AGENT_TASKS_RDS_DATABASE_URL` so
-read-only MCP tools can inspect database-backed contract metadata without inheriting the broader
-REST API or agent secret bundles.
+The pod currently mounts only `MCP_AUTH_SECRET`, by explicit `secretKeyRef`. No MCP code opens a
+database connection, so `RDS_DATABASE_URL` and `AGENT_TASKS_RDS_DATABASE_URL` must not be mounted;
+remove any legacy copies from `dd/remote-dev/mcp-secrets`. If a database-backed tool is added later,
+mount only the specific URL it consumes and add a contract test for that code path.
 
 Do not share the broad agent model-key secret with MCP unless the MCP tool truly needs to call
 model providers. Prefer per-service secrets so a compromised MCP pod cannot automatically inherit

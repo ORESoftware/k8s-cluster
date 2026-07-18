@@ -66,6 +66,18 @@ spec:
       ports:
         - protocol: TCP
           port: 4222
+    # Read the allowlisted Daedalus secret overlay through Fiducia. The
+    # dedicated API key is injected separately and should grant only kv:read.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: fiducia
+          podSelector:
+            matchLabels:
+              app: fiducia-load-balance
+      ports:
+        - protocol: TCP
+          port: 8088
     - to:
         - podSelector:
             matchLabels:

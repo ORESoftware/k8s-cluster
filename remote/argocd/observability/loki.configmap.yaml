@@ -46,6 +46,11 @@ data:
       retention_delete_delay: 1h
 
     limits_config:
+      # Native OTLP log ingestion stores resource/scope attributes as
+      # structured metadata. Keep this explicit even though Loki 3.x enables
+      # it by default so a future version/config change cannot silently break
+      # the collector's otlphttp/loki exporter.
+      allow_structured_metadata: true
       # Keep 3 days of logs, then the compactor deletes them — without this Loki
       # grows unbounded in its emptyDir and fills the node root disk (was ~260G,
       # tripping node disk-pressure and stranding the soccer learner).
