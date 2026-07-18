@@ -161,3 +161,15 @@ env = "RUST_LOG"
 aliases = ["rust-log", "log-filter"]
 type = "string"
 help = "Tracing filter passed to tracing-subscriber."
+
+[flags.otel_exporter_otlp_endpoint]
+env = "OTEL_EXPORTER_OTLP_ENDPOINT"
+aliases = ["otel-endpoint"]
+type = "string"
+help = "OTLP/gRPC collector endpoint for traces and metrics."
+
+[flags.otel_resource_attributes]
+env = "OTEL_RESOURCE_ATTRIBUTES"
+aliases = ["otel-resource-attributes"]
+type = "string"
+help = "Comma-separated non-secret OpenTelemetry resource attributes."

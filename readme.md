@@ -30,10 +30,8 @@ the event.
 
 This crate is deliberately small on disk. Each meaningful folder has its own `README.md`.
 
-- [`src/`](./src/README.md) — the Rust source. All logic lives in the single binary
-  [`src/main.rs`](./src/main.rs), whose top-of-file `//!` doc comment maps its sections
-  (config, auth/JWT, presign, cloud-copy, alerts, account deletion, retention, rate limiting,
-  metrics, router).
+- [`src/`](./src/README.md) — a thin binary plus library modules for SeaORM
+  persistence, OpenTelemetry/Loki telemetry, and the Axum domain service.
 - [`migrations/`](./migrations/README.md) — reviewed, copy-pasteable reference SQL and the
   [`RUNBOOK.md`](./migrations/RUNBOOK.md). Schema is declared authoritatively in the
   `ores/k8s-cluster` monorepo (`remote/libs/pg-defs/schema/schema.sql`) and applied out-of-band,
@@ -148,8 +146,8 @@ The crate is also packaged with Nix (`flake.nix`, `.nix/`) and a `Dockerfile` fo
 | --- | --- | --- |
 | `HOST` | `0.0.0.0` | Bind host. |
 | `PORT` | `8126` | Bind port. |
-| `SOUND_RECORDER_RDS_DATABASE_URL` | falls back to shared RDS env vars | Postgres URL. |
-| `SOUND_RECORDER_PG_POOL_MAX_SIZE` | `16` | Max pooled Postgres connections (clamped to `1..100`). Connections are pooled and reused, not opened per request. |
+| `SOUND_RECORDER_RDS_DATABASE_URL` | falls back to shared RDS env vars | Postgres URL used by SeaORM. |
+| `SOUND_RECORDER_PG_POOL_MAX_SIZE` | `16` | SeaORM Postgres pool size (clamped to `1..100`). |
 | `SOUND_RECORDER_S3_BUCKET` / `S3_BUCKET` | unset | Primary AWS S3 bucket. `SOUND_RECORDER_R2_BUCKET` / `R2_BUCKET` are equivalent R2 aliases. |
 | `SOUND_RECORDER_S3_KEY_PREFIX` | `sound-recorder/segments` | Object key prefix. |
 | `SOUND_RECORDER_S3_REGION` / `R2_REGION` | `us-east-1` (`auto` for R2) | SigV4 region. R2 endpoints are always signed with Cloudflare's required `auto` region. |
@@ -199,6 +197,9 @@ The crate is also packaged with Nix (`flake.nix`, `.nix/`) and a `Dockerfile` fo
 | `SOUND_RECORDER_CLOUD_BACKFILL_SEGMENTS` | `240` | Uploaded retained segments to enqueue when a cloud destination is linked. |
 | `SOUND_RECORDER_IOS_APP_STORE_URL` | unset | `/download/ios` target. |
 | `SOUND_RECORDER_ANDROID_PLAY_STORE_URL` | unset | `/download/android` target. |
+| `RUST_LOG` | `dd_sound_recorder_rs=info,tower_http=warn` | Filter for structured `tracing` logs. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | OTLP/gRPC collector endpoint, for example `http://dd-otel-collector.observability.svc.cluster.local:4317`. |
+| `OTEL_RESOURCE_ATTRIBUTES` | unset | Optional non-secret resource attributes; service identity cannot be overridden and secret-like keys are rejected. |
 
 `/readyz` performs a live Postgres `select 1`, checks storage-history compatibility, and requires a
 bounded remote `HeadObject` of `SOUND_RECORDER_S3_READINESS_OBJECT_KEY`. It deliberately does not
@@ -210,6 +211,16 @@ projects. Durable token pepper, registration posture, internal auth, and complet
 configuration remain required. `/healthz` reports process health, the non-secret storage fingerprint,
 and configuration booleans without contacting dependencies. Unknown boolean spellings are invalid
 configuration and fail readiness; they never silently become `false`.
+
+## Observability
+
+Every HTTP request creates an OpenTelemetry-compatible span and records
+low-cardinality method, route-template, status, and duration metrics. Logs are
+newline-delimited JSON on stderr so Kubernetes Promtail can forward them to
+Loki. When `OTEL_EXPORTER_OTLP_ENDPOINT` is configured, traces and metrics are
+also exported to the cluster collector for its Prometheus/Tempo pipeline. The
+existing `/metrics` Prometheus exposition remains available for direct scrape
+compatibility.
 
 ## CLI flags
 
