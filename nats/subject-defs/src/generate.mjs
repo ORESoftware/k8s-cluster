@@ -64,6 +64,8 @@ const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 
 async function main() {
   const args = new Set(process.argv.slice(2));
+  const outputArgument = [...args].find((arg) => arg.startsWith('--output='));
+  const selectedOutput = outputArgument?.slice('--output='.length);
 
   const indexRaw = await readFile(path.join(packageRoot, 'schema', 'index.json'), 'utf8');
   const index = JSON.parse(indexRaw);
@@ -79,10 +81,16 @@ async function main() {
 
   const model = buildModel(schemas);
   const outputs = renderOutputs(model);
+  if (outputArgument && (!selectedOutput || !outputs.has(selectedOutput))) {
+    throw new Error(`Unknown generated output ${JSON.stringify(selectedOutput)}`);
+  }
+  const selectedOutputs = selectedOutput
+    ? new Map([[selectedOutput, outputs.get(selectedOutput)]])
+    : outputs;
 
   if (args.has('--check')) {
     const stale = [];
-    for (const [relativePath, contents] of outputs) {
+    for (const [relativePath, contents] of selectedOutputs) {
       const absolutePath = path.join(packageRoot, relativePath);
       let existing = '';
       try {
@@ -108,12 +116,12 @@ async function main() {
     return;
   }
 
-  for (const [relativePath, contents] of outputs) {
+  for (const [relativePath, contents] of selectedOutputs) {
     const absolutePath = path.join(packageRoot, relativePath);
     await mkdir(path.dirname(absolutePath), { recursive: true });
     await writeFile(absolutePath, contents);
   }
-  console.log(`Generated ${outputs.size} nats-subject-defs files.`);
+  console.log(`Generated ${selectedOutputs.size} nats-subject-defs file${selectedOutputs.size === 1 ? '' : 's'}.`);
 }
 
 // ---------- Model ----------
@@ -293,9 +301,12 @@ function buildModel(schemaFiles) {
   const seenSubjects = new Set();
   const seenStaticSubjects = new Set();
   const seenNormalizedSubjectNames = new Set();
+  const seenParameterizedRoutes = new Map();
   const seenQueueGroupNames = new Set();
+  const seenNormalizedQueueGroupNames = new Set();
   const seenQueueGroupValues = new Set();
   const seenStreams = new Set();
+  const seenNormalizedStreamNames = new Set();
 
   for (const { filename, doc } of schemaFiles) {
     const ext = doc['$dd:nats'];
@@ -404,6 +415,10 @@ function buildModel(schemaFiles) {
         if (new Set(paramNames).size !== paramNames.length) {
           throw new Error(`${subj.name}: parameter names must be unique`);
         }
+        const normalizedParamNames = paramNames.map((name) => pascal(name));
+        if (new Set(normalizedParamNames).size !== normalizedParamNames.length) {
+          throw new Error(`${subj.name}: parameter names must remain unique after cross-language normalization`);
+        }
         if (new Set(placeholders).size !== placeholders.length) {
           throw new Error(`${subj.name}: each parameter placeholder may appear only once in pattern`);
         }
@@ -427,6 +442,16 @@ function buildModel(schemaFiles) {
         if (!subscriptionMatchesSubject(sampleWildcard, samplePattern)) {
           throw new Error(`${subj.name}: wildcard ${subj.wildcard} does not cover pattern ${subj.pattern}`);
         }
+        const normalizedRoute = patternTokens
+          .map((token) => (/^\{[A-Za-z_][A-Za-z0-9_]*\}$/.test(token) ? '{}' : token))
+          .join('.');
+        const existingRoute = seenParameterizedRoutes.get(normalizedRoute);
+        if (existingRoute) {
+          throw new Error(
+            `${subj.name}: parameterized route duplicates ${existingRoute} after placeholder normalization (${normalizedRoute})`,
+          );
+        }
+        seenParameterizedRoutes.set(normalizedRoute, subj.name);
         subjects.push({
           name: subj.name,
           description: subj.description,
@@ -456,6 +481,13 @@ function buildModel(schemaFiles) {
       }
       assertIdentifierName('queueGroup name', qg.name, filename);
       seenQueueGroupNames.add(qg.name);
+      const normalizedQueueGroupName = pascal(qg.name);
+      if (seenNormalizedQueueGroupNames.has(normalizedQueueGroupName)) {
+        throw new Error(
+          `Duplicate generated queueGroup identifier across schemas: ${qg.name} normalizes to ${normalizedQueueGroupName}`,
+        );
+      }
+      seenNormalizedQueueGroupNames.add(normalizedQueueGroupName);
       assertQueueGroupValue(qg.value, `${qg.name}: queueGroup value`);
       if (seenQueueGroupValues.has(qg.value)) {
         throw new Error(`Duplicate queueGroup value across schemas: ${qg.value}`);
@@ -479,6 +511,13 @@ function buildModel(schemaFiles) {
       }
       assertIdentifierName('stream name', st.name, filename);
       seenStreams.add(st.name);
+      const normalizedStreamName = pascal(st.name);
+      if (seenNormalizedStreamNames.has(normalizedStreamName)) {
+        throw new Error(
+          `Duplicate generated stream identifier across schemas: ${st.name} normalizes to ${normalizedStreamName}`,
+        );
+      }
+      seenNormalizedStreamNames.add(normalizedStreamName);
       if (!Array.isArray(st.subjects) || st.subjects.length === 0) {
         throw new Error(`${st.name}: stream needs non-empty 'subjects'`);
       }

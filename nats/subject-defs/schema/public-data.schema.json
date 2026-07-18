@@ -17,6 +17,13 @@
         "direction": "both"
       },
       {
+        "name": "PublicDataIngestDeadLetter",
+        "description": "Dead-letter subject for public-data ingest requests that exhaust JetStream delivery attempts.",
+        "kind": "static",
+        "subject": "dd.remote.public_data.ingest.deadletter",
+        "direction": "publish"
+      },
+      {
         "name": "PublicDataIngestResults",
         "description": "Results emitted after public-data records, scrape results, or webhook receipts are normalized into the service ledger.",
         "kind": "static",
