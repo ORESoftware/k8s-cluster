@@ -5,8 +5,8 @@ use crate::metrics::Metrics;
 use crate::vapi_client::VapiClient;
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use t2v_llm::LlmClient;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 /// Default ceiling on concurrent upstream LLM calls (STT/TTS/translate). Bounds
 /// memory and third-party spend under load; excess requests get 503.
