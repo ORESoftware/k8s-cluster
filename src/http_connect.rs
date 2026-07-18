@@ -183,7 +183,8 @@ struct RequestHead {
 }
 
 fn parse_head(bytes: &[u8]) -> Result<RequestHead> {
-    let text = std::str::from_utf8(bytes).map_err(|_| anyhow!("request head is not valid UTF-8"))?;
+    let text =
+        std::str::from_utf8(bytes).map_err(|_| anyhow!("request head is not valid UTF-8"))?;
     let mut lines = text.split("\r\n");
     let request_line = lines.next().unwrap_or("");
     let mut parts = request_line.split_whitespace();
@@ -280,7 +281,10 @@ mod tests {
     #[test]
     fn parses_connect_target() {
         let h = head("CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n");
-        assert_eq!(connect_target(&h).unwrap(), ("example.com".to_string(), 443));
+        assert_eq!(
+            connect_target(&h).unwrap(),
+            ("example.com".to_string(), 443)
+        );
     }
 
     #[test]

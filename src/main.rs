@@ -198,7 +198,9 @@ async fn run_client() -> Result<()> {
     // Optional HTTP CONNECT front-end (runs alongside SOCKS). Same fail-closed
     // posture: loopback by default; a non-loopback bind needs an explicit opt-in
     // and the shared proxy credential, and is never an open proxy.
-    let http_listen = std::env::var("TOR_HTTP_LISTEN").ok().filter(|s| !s.is_empty());
+    let http_listen = std::env::var("TOR_HTTP_LISTEN")
+        .ok()
+        .filter(|s| !s.is_empty());
     if let Some(listen) = &http_listen {
         let http_is_remote = !is_loopback_listener(listen);
         if http_is_remote && !env_flag("TOR_HTTP_ALLOW_REMOTE") {
