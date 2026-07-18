@@ -46,9 +46,15 @@ resolve_gitdir() {
     # hooks.  They must not leak into this nested invocation or Git resolves
     # the parent repository again and treats every gitlink as if it belonged to
     # the superproject remote.
-    gd="$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_COMMON_DIR -u GIT_INDEX_FILE \
-        git -C "$repo_root/$path" rev-parse --absolute-git-dir 2>/dev/null)" \
-        && { printf '%s\n' "$gd"; return 0; }
+    # Do not invoke `git -C` in an uninitialized submodule directory: Git walks
+    # upward and reports the superproject's gitdir, which would validate a
+    # gitlink against the *cluster* remote. An initialized submodule always has
+    # its own .git file/directory at the configured path.
+    if [ -e "$repo_root/$path/.git" ]; then
+        gd="$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_COMMON_DIR -u GIT_INDEX_FILE \
+            git -C "$repo_root/$path" rev-parse --absolute-git-dir 2>/dev/null)" \
+            && { printf '%s\n' "$gd"; return 0; }
+    fi
     gd="$(git -C "$repo_root" rev-parse --git-path "modules/$path" 2>/dev/null)"
     [ -n "$gd" ] && [ -d "$gd" ] && { printf '%s\n' "$gd"; return 0; }
     return 1
