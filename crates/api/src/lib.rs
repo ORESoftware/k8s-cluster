@@ -84,7 +84,10 @@ pub fn app(state: AppState) -> Router {
         .merge(json_actions)
         .merge(webhook)
         .merge(protected)
-        .layer(TimeoutLayer::new(request_timeout()))
+        .layer(TimeoutLayer::with_status_code(
+            axum::http::StatusCode::REQUEST_TIMEOUT,
+            request_timeout(),
+        ))
         .with_state(state)
 }
 
