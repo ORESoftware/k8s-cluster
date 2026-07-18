@@ -96,6 +96,40 @@ spec:
             - { name: HOST, value: 0.0.0.0 }
             - { name: PORT, value: '8117' }
             - { name: STATIC_DIR, value: /site-dist }
+            # ── app.fiducia.cloud identity + CSRF surface ──────────────────
+            # fiducia-auth verifies Supabase sessions (GET /v1/me); the exact
+            # Host/Origin CSRF checks compare against CUSTOMER_APP_ORIGIN, which
+            # must equal the public https origin the gateway serves.
+            - { name: FIDUCIA_AUTH_URL, value: http://fiducia-auth.fiducia.svc.cluster.local:8097 }
+            - { name: CUSTOMER_APP_HOST, value: app.fiducia.cloud }
+            - { name: CUSTOMER_APP_ORIGIN, value: https://app.fiducia.cloud }
+            - { name: FIDUCIA_SITE_MODE, value: customer }
+            # ── Postgres: dedicated `fiducia` schema on the shared AWS RDS ──
+            # Schema/roles are declared in remote/libs/pg-defs (fiducia section)
+            # and converged with dpm; pinning search_path keeps this plane from
+            # colliding with other apps in the same RDS database.
+            - { name: FIDUCIA_DB_SCHEMA, value: fiducia }
+            # Secrets are created out-of-band in the `fiducia` namespace (not in
+            # git). `database-url` is the RDS DSN for the fiducia role, e.g.:
+            #   kubectl -n fiducia create secret generic fiducia-backend-secrets \
+            #     --from-literal=database-url='postgres://fiducia_app:***@dd-remote-dev-pg-primary.c4rk0ygsgsfe.us-east-1.rds.amazonaws.com:5432/appdb' \
+            #     --from-literal=supabase-url='https://<ref>.supabase.co' \
+            #     --from-literal=supabase-publishable-key='***' \
+            #     --from-literal=csrf-secret="$(openssl rand -hex 32)"
+            # optional:true lets the pod start for the in-pod build; the app
+            # fails closed at runtime if a required value is absent.
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: fiducia-backend-secrets, key: database-url, optional: true }
+            - name: SUPABASE_URL
+              valueFrom:
+                secretKeyRef: { name: fiducia-backend-secrets, key: supabase-url, optional: true }
+            - name: SUPABASE_PUBLISHABLE_KEY
+              valueFrom:
+                secretKeyRef: { name: fiducia-backend-secrets, key: supabase-publishable-key, optional: true }
+            - name: FIDUCIA_CUSTOMER_CSRF_SECRET
+              valueFrom:
+                secretKeyRef: { name: fiducia-backend-secrets, key: csrf-secret, optional: true }
             # Export OTLP traces to the shared observability collector
             # (fiducia-telemetry degrades to stdout-only logging when unset).
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://dd-otel-collector.observability.svc.cluster.local:4317 }
