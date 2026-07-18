@@ -2004,4 +2004,229 @@ module DdPgDefs
     validates :version, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
     validates :updated_by, length: { maximum: 120 }
   end
+
+  class SyncClock < ActiveRecord::Base
+    self.table_name = "fiducia.sync_clock"
+    self.primary_key = "singleton"
+
+    validates :last_sequence, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  end
+
+  class SyncTombstones < ActiveRecord::Base
+    self.table_name = "fiducia.sync_tombstones"
+    self.primary_key = "sequence"
+
+    validates :table_name, presence: true
+    validates :row_id, presence: true
+    validates :row_version, presence: true
+    validates :row_version, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
+  end
+
+  class Orgs < ActiveRecord::Base
+    self.table_name = "fiducia.orgs"
+    self.primary_key = "id"
+
+    validates :slug, presence: true
+    validates :slug, length: { maximum: 120 }
+    validates :slug, format: { with: Regexp.new("\\A[a-z0-9][a-z0-9-]{1,118}[a-z0-9]\\z") }
+    validates :name, presence: true
+    validates :name, length: { maximum: 200 }
+    validates :version, numericality: { only_integer: true }
+    validates :sync_sequence, presence: true
+    validates :sync_sequence, numericality: { only_integer: true }
+  end
+
+  class Projects < ActiveRecord::Base
+    self.table_name = "fiducia.projects"
+    self.primary_key = "id"
+
+    validates :org_id, presence: true
+    validates :slug, presence: true
+    validates :slug, length: { maximum: 120 }
+    validates :slug, format: { with: Regexp.new("\\A[a-z0-9][a-z0-9-]{1,118}[a-z0-9]\\z") }
+    validates :name, presence: true
+    validates :name, length: { maximum: 200 }
+    validates :version, numericality: { only_integer: true }
+    validates :sync_sequence, presence: true
+    validates :sync_sequence, numericality: { only_integer: true }
+  end
+
+  class Users < ActiveRecord::Base
+    self.table_name = "fiducia.users"
+    self.primary_key = "id"
+
+    validates :supabase_user_id, presence: true
+    validates :email, presence: true
+    validates :email, length: { maximum: 320 }
+  end
+
+  class OrgMembers < ActiveRecord::Base
+    self.table_name = "fiducia.org_members"
+
+    validates :org_id, presence: true
+    validates :user_id, presence: true
+    validates :role, inclusion: { in: ["owner", "admin", "member"] }
+  end
+
+  class ProjectMembers < ActiveRecord::Base
+    self.table_name = "fiducia.project_members"
+
+    validates :project_id, presence: true
+    validates :user_id, presence: true
+    validates :role, inclusion: { in: ["admin", "operator", "viewer"] }
+  end
+
+  class ApiKeys < ActiveRecord::Base
+    self.table_name = "fiducia.api_keys"
+    self.primary_key = "id"
+
+    validates :key_id, presence: true
+    validates :key_id, length: { maximum: 64 }
+    validates :org_id, presence: true
+    validates :name, presence: true
+    validates :name, length: { maximum: 200 }
+    validates :secret_hash, presence: true
+    validates :secret_hash, length: { maximum: 255 }
+    validates :env, inclusion: { in: ["live", "test"] }
+    validates :version, numericality: { only_integer: true }
+    validates :sync_sequence, presence: true
+    validates :sync_sequence, numericality: { only_integer: true }
+  end
+
+  class MtlsClientCerts < ActiveRecord::Base
+    self.table_name = "fiducia.mtls_client_certs"
+    self.primary_key = "id"
+
+    validates :org_id, presence: true
+    validates :name, presence: true
+    validates :name, length: { maximum: 200 }
+    validates :subject, presence: true
+    validates :subject, length: { maximum: 500 }
+    validates :sha256_fingerprint, presence: true
+    validates :sha256_fingerprint, length: { maximum: 95 }
+    validates :version, numericality: { only_integer: true }
+    validates :sync_sequence, presence: true
+    validates :sync_sequence, numericality: { only_integer: true }
+  end
+
+  class CustomerPreferences < ActiveRecord::Base
+    self.table_name = "fiducia.customer_preferences"
+    self.primary_key = "user_id"
+
+    validates :density, inclusion: { in: ["comfortable", "compact"] }
+    validates :timezone, length: { maximum: 64 }
+    validates :region, length: { maximum: 16 }
+    validates :version, numericality: { only_integer: true }
+    validates :sync_sequence, presence: true
+    validates :sync_sequence, numericality: { only_integer: true }
+  end
+
+  class CustomerSessions < ActiveRecord::Base
+    self.table_name = "fiducia.customer_sessions"
+    self.primary_key = "id"
+
+    validates :user_id, presence: true
+    validates :device, presence: true
+    validates :device, length: { maximum: 200 }
+    validates :location, length: { maximum: 200 }, allow_nil: true
+    validates :status, inclusion: { in: ["active", "verified", "revoked"] }
+    validates :version, numericality: { only_integer: true }
+    validates :sync_sequence, presence: true
+    validates :sync_sequence, numericality: { only_integer: true }
+  end
+
+  class AuditLog < ActiveRecord::Base
+    self.table_name = "fiducia.audit_log"
+    self.primary_key = "id"
+
+    validates :actor, length: { maximum: 320 }, allow_nil: true
+    validates :action, presence: true
+    validates :action, length: { maximum: 120 }
+    validates :target, length: { maximum: 320 }, allow_nil: true
+    validates :request_id, length: { maximum: 120 }, allow_nil: true
+    validates :source_ip, length: { maximum: 64 }, allow_nil: true
+    validates :user_agent, length: { maximum: 500 }, allow_nil: true
+  end
+
+  class CustomerNotifications < ActiveRecord::Base
+    self.table_name = "fiducia.customer_notifications"
+    self.primary_key = "id"
+
+    validates :user_id, presence: true
+    validates :kind, presence: true
+    validates :kind, length: { maximum: 40 }
+    validates :kind, format: { with: Regexp.new("\\A[a-z][a-z0-9_.]{1,38}[a-z0-9]\\z") }
+    validates :severity, inclusion: { in: ["info", "success", "warning", "critical"] }
+    validates :title, presence: true
+    validates :title, length: { maximum: 200 }
+    validates :body, length: { maximum: 2000 }
+    validates :link, length: { maximum: 500 }, allow_nil: true
+    validates :version, numericality: { only_integer: true }
+    validates :sync_sequence, presence: true
+    validates :sync_sequence, numericality: { only_integer: true }
+  end
+
+  class SyncIdempotencyKeys < ActiveRecord::Base
+    self.table_name = "fiducia.sync_idempotency_keys"
+    self.primary_key = "key"
+
+    validates :request_fingerprint, presence: true
+    validates :request_fingerprint, length: { maximum: 64 }
+    validates :request_fingerprint, format: { with: Regexp.new("\\A[0-9a-f]{64}\\z") }
+    validates :committed_version, numericality: { only_integer: true }, allow_nil: true
+  end
+
+  class Transcriptions < ActiveRecord::Base
+    self.table_name = "t2v.transcriptions"
+    self.primary_key = "id"
+
+    validates :source, presence: true
+    validates :provider, presence: true
+    validates :model, presence: true
+    validates :text, presence: true
+    validates :sample_rate, numericality: { only_integer: true, greater_than_or_equal_to: 4000, less_than_or_equal_to: 384000 }, allow_nil: true
+    validates :duration_ms, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
+  end
+
+  class Syntheses < ActiveRecord::Base
+    self.table_name = "t2v.syntheses"
+    self.primary_key = "id"
+
+    validates :text, presence: true
+    validates :voice, presence: true
+    validates :provider, presence: true
+    validates :model, presence: true
+    validates :format, presence: true
+    validates :audio_bytes, presence: true
+    validates :audio_bytes, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  end
+
+  class Translations < ActiveRecord::Base
+    self.table_name = "t2v.translations"
+    self.primary_key = "id"
+
+    validates :source_text, presence: true
+    validates :translated_text, presence: true
+    validates :target_lang, presence: true
+    validates :provider, presence: true
+    validates :model, presence: true
+    validates :latency_ms, presence: true
+    validates :latency_ms, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  end
+
+  class VapiCalls < ActiveRecord::Base
+    self.table_name = "t2v.vapi_calls"
+    self.primary_key = "id"
+
+    validates :vapi_call_id, presence: true
+    validates :status, presence: true
+  end
+
+  class VapiEvents < ActiveRecord::Base
+    self.table_name = "t2v.vapi_events"
+    self.primary_key = "id"
+
+    validates :event_type, presence: true
+    validates :payload, presence: true
+  end
 end

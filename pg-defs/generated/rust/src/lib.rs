@@ -19778,6 +19778,1417 @@ pub fn validate_shared_context_insert(value: &SharedContextInsert) -> Result<(),
     Ok(())
 }
 
+pub const SYNC_CLOCK_TABLE: &str = "fiducia.sync_clock";
+pub const SYNC_CLOCK_COLUMNS: &[&str] = &["singleton", "last_sequence"];
+pub const SYNC_CLOCK_SELECT_SQL: &str = r###"select
+      singleton,
+      last_sequence
+    from fiducia.sync_clock"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct SyncClockRow {
+    pub singleton: bool,
+    pub last_sequence: i64,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncClockInsert {
+    pub singleton: Option<bool>,
+    pub last_sequence: Option<i64>,
+}
+
+pub fn validate_sync_clock_row(value: &SyncClockRow) -> Result<(), String> {
+    if *(&value.last_sequence) < 0 { return Err("sync_clock.last_sequence is below the minimum".to_string()); }
+    Ok(())
+}
+
+pub fn validate_sync_clock_insert(value: &SyncClockInsert) -> Result<(), String> {
+    if let Some(value) = &value.last_sequence {
+        if *(value) < 0 { return Err("sync_clock.last_sequence is below the minimum".to_string()); }
+    }
+    Ok(())
+}
+
+pub const SYNC_TOMBSTONES_TABLE: &str = "fiducia.sync_tombstones";
+pub const SYNC_TOMBSTONES_COLUMNS: &[&str] = &["sequence", "table_name", "row_id", "tenant_id", "owner_user_id", "row_version", "deleted_at"];
+pub const SYNC_TOMBSTONES_SELECT_SQL: &str = r###"select
+      sequence,
+      table_name,
+      row_id,
+      tenant_id::text as tenant_id,
+      owner_user_id::text as owner_user_id,
+      row_version,
+      to_char(deleted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as deleted_at
+    from fiducia.sync_tombstones"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct SyncTombstonesRow {
+    pub sequence: i64,
+    pub table_name: String,
+    pub row_id: String,
+    pub tenant_id: Option<String>,
+    pub owner_user_id: Option<String>,
+    pub row_version: i64,
+    pub deleted_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncTombstonesInsert {
+    pub sequence: Option<i64>,
+    pub table_name: Option<String>,
+    pub row_id: Option<String>,
+    pub tenant_id: Option<String>,
+    pub owner_user_id: Option<String>,
+    pub row_version: Option<i64>,
+    pub deleted_at: Option<String>,
+}
+
+pub fn validate_sync_tombstones_row(value: &SyncTombstonesRow) -> Result<(), String> {
+    if *(&value.sequence) < 1 { return Err("sync_tombstones.sequence is below the minimum".to_string()); }
+    if *(&value.row_version) < 1 { return Err("sync_tombstones.row_version is below the minimum".to_string()); }
+    Ok(())
+}
+
+pub fn validate_sync_tombstones_insert(value: &SyncTombstonesInsert) -> Result<(), String> {
+    if let Some(value) = &value.sequence {
+        if *(value) < 1 { return Err("sync_tombstones.sequence is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.row_version {
+        if *(value) < 1 { return Err("sync_tombstones.row_version is below the minimum".to_string()); }
+    }
+    Ok(())
+}
+
+pub const ORGS_TABLE: &str = "fiducia.orgs";
+pub const ORGS_COLUMNS: &[&str] = &["id", "slug", "name", "created_at", "updated_at", "version", "sync_sequence"];
+pub const ORGS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      slug,
+      name,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      version,
+      sync_sequence
+    from fiducia.orgs"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct OrgsRow {
+    pub id: String,
+    pub slug: String,
+    pub name: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub version: i64,
+    pub sync_sequence: i64,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrgsInsert {
+    pub id: Option<String>,
+    pub slug: Option<String>,
+    pub name: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub version: Option<i64>,
+    pub sync_sequence: Option<i64>,
+}
+
+pub fn validate_orgs_row(value: &OrgsRow) -> Result<(), String> {
+    validate_slug("orgs.slug", &value.slug)?;
+    validate_string_length("orgs.name", &value.name, None, Some(200))?;
+    Ok(())
+}
+
+pub fn validate_orgs_insert(value: &OrgsInsert) -> Result<(), String> {
+    if let Some(value) = &value.slug {
+        validate_slug("orgs.slug", value)?;
+    }
+    if let Some(value) = &value.name {
+        validate_string_length("orgs.name", value, None, Some(200))?;
+    }
+    Ok(())
+}
+
+pub const PROJECTS_TABLE: &str = "fiducia.projects";
+pub const PROJECTS_COLUMNS: &[&str] = &["id", "org_id", "slug", "name", "created_at", "updated_at", "version", "sync_sequence"];
+pub const PROJECTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      org_id::text as org_id,
+      slug,
+      name,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      version,
+      sync_sequence
+    from fiducia.projects"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectsRow {
+    pub id: String,
+    pub org_id: String,
+    pub slug: String,
+    pub name: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub version: i64,
+    pub sync_sequence: i64,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectsInsert {
+    pub id: Option<String>,
+    pub org_id: Option<String>,
+    pub slug: Option<String>,
+    pub name: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub version: Option<i64>,
+    pub sync_sequence: Option<i64>,
+}
+
+pub fn validate_projects_row(value: &ProjectsRow) -> Result<(), String> {
+    validate_slug("projects.slug", &value.slug)?;
+    validate_string_length("projects.name", &value.name, None, Some(200))?;
+    Ok(())
+}
+
+pub fn validate_projects_insert(value: &ProjectsInsert) -> Result<(), String> {
+    if let Some(value) = &value.slug {
+        validate_slug("projects.slug", value)?;
+    }
+    if let Some(value) = &value.name {
+        validate_string_length("projects.name", value, None, Some(200))?;
+    }
+    Ok(())
+}
+
+pub const USERS_TABLE: &str = "fiducia.users";
+pub const USERS_COLUMNS: &[&str] = &["id", "supabase_user_id", "email", "created_at"];
+pub const USERS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      supabase_user_id::text as supabase_user_id,
+      email,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from fiducia.users"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct UsersRow {
+    pub id: String,
+    pub supabase_user_id: String,
+    pub email: String,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsersInsert {
+    pub id: Option<String>,
+    pub supabase_user_id: Option<String>,
+    pub email: Option<String>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_users_row(value: &UsersRow) -> Result<(), String> {
+    validate_string_length("users.email", &value.email, None, Some(320))?;
+    Ok(())
+}
+
+pub fn validate_users_insert(value: &UsersInsert) -> Result<(), String> {
+    if let Some(value) = &value.email {
+        validate_string_length("users.email", value, None, Some(320))?;
+    }
+    Ok(())
+}
+
+pub const ORG_MEMBERS_TABLE: &str = "fiducia.org_members";
+pub const ORG_MEMBERS_COLUMNS: &[&str] = &["org_id", "user_id", "role", "created_at"];
+pub const ORG_MEMBERS_SELECT_SQL: &str = r###"select
+      org_id::text as org_id,
+      user_id::text as user_id,
+      role,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from fiducia.org_members"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OrgMembersRole {
+    Owner,
+    Admin,
+    Member,
+}
+
+impl OrgMembersRole {
+    pub const VALUES: &'static [&'static str] = &["owner", "admin", "member"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Owner => "owner",
+            Self::Admin => "admin",
+            Self::Member => "member",
+        }
+    }
+}
+
+impl TryFrom<&str> for OrgMembersRole {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "owner" => Ok(Self::Owner),
+            "admin" => Ok(Self::Admin),
+            "member" => Ok(Self::Member),
+            _ => Err(format!("unsupported role: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct OrgMembersRow {
+    pub org_id: String,
+    pub user_id: String,
+    pub role: String,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrgMembersInsert {
+    pub org_id: Option<String>,
+    pub user_id: Option<String>,
+    pub role: Option<String>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_org_members_row(value: &OrgMembersRow) -> Result<(), String> {
+    if !["owner", "admin", "member"].contains(&(&value.role).as_str()) { return Err(format!("unsupported org_members.role: {}", &value.role)); }
+    Ok(())
+}
+
+pub fn validate_org_members_insert(value: &OrgMembersInsert) -> Result<(), String> {
+    if let Some(value) = &value.role {
+        if !["owner", "admin", "member"].contains(&(value).as_str()) { return Err(format!("unsupported org_members.role: {}", value)); }
+    }
+    Ok(())
+}
+
+pub const PROJECT_MEMBERS_TABLE: &str = "fiducia.project_members";
+pub const PROJECT_MEMBERS_COLUMNS: &[&str] = &["project_id", "user_id", "role", "created_at"];
+pub const PROJECT_MEMBERS_SELECT_SQL: &str = r###"select
+      project_id::text as project_id,
+      user_id::text as user_id,
+      role,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from fiducia.project_members"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ProjectMembersRole {
+    Admin,
+    Operator,
+    Viewer,
+}
+
+impl ProjectMembersRole {
+    pub const VALUES: &'static [&'static str] = &["admin", "operator", "viewer"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Admin => "admin",
+            Self::Operator => "operator",
+            Self::Viewer => "viewer",
+        }
+    }
+}
+
+impl TryFrom<&str> for ProjectMembersRole {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "admin" => Ok(Self::Admin),
+            "operator" => Ok(Self::Operator),
+            "viewer" => Ok(Self::Viewer),
+            _ => Err(format!("unsupported role: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectMembersRow {
+    pub project_id: String,
+    pub user_id: String,
+    pub role: String,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectMembersInsert {
+    pub project_id: Option<String>,
+    pub user_id: Option<String>,
+    pub role: Option<String>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_project_members_row(value: &ProjectMembersRow) -> Result<(), String> {
+    if !["admin", "operator", "viewer"].contains(&(&value.role).as_str()) { return Err(format!("unsupported project_members.role: {}", &value.role)); }
+    Ok(())
+}
+
+pub fn validate_project_members_insert(value: &ProjectMembersInsert) -> Result<(), String> {
+    if let Some(value) = &value.role {
+        if !["admin", "operator", "viewer"].contains(&(value).as_str()) { return Err(format!("unsupported project_members.role: {}", value)); }
+    }
+    Ok(())
+}
+
+pub const API_KEYS_TABLE: &str = "fiducia.api_keys";
+pub const API_KEYS_COLUMNS: &[&str] = &["id", "key_id", "org_id", "project_id", "created_by_user_id", "name", "secret_hash", "scopes", "env", "require_idempotency", "mtls_required", "revoked", "created_at", "updated_at", "version", "sync_sequence", "last_used_at", "expires_at"];
+pub const API_KEYS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      key_id,
+      org_id::text as org_id,
+      project_id::text as project_id,
+      created_by_user_id::text as created_by_user_id,
+      name,
+      secret_hash,
+      scopes,
+      env,
+      require_idempotency,
+      mtls_required,
+      revoked,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      version,
+      sync_sequence,
+      to_char(last_used_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_used_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at
+    from fiducia.api_keys"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ApiKeysEnv {
+    Live,
+    Test,
+}
+
+impl ApiKeysEnv {
+    pub const VALUES: &'static [&'static str] = &["live", "test"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Live => "live",
+            Self::Test => "test",
+        }
+    }
+}
+
+impl TryFrom<&str> for ApiKeysEnv {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "live" => Ok(Self::Live),
+            "test" => Ok(Self::Test),
+            _ => Err(format!("unsupported env: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct ApiKeysRow {
+    pub id: String,
+    pub key_id: String,
+    pub org_id: String,
+    pub project_id: Option<String>,
+    pub created_by_user_id: Option<String>,
+    pub name: String,
+    pub secret_hash: String,
+    pub scopes: Value,
+    pub env: String,
+    pub require_idempotency: bool,
+    pub mtls_required: bool,
+    pub revoked: bool,
+    pub created_at: String,
+    pub updated_at: String,
+    pub version: i64,
+    pub sync_sequence: i64,
+    pub last_used_at: Option<String>,
+    pub expires_at: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiKeysInsert {
+    pub id: Option<String>,
+    pub key_id: Option<String>,
+    pub org_id: Option<String>,
+    pub project_id: Option<String>,
+    pub created_by_user_id: Option<String>,
+    pub name: Option<String>,
+    pub secret_hash: Option<String>,
+    pub scopes: Option<Value>,
+    pub env: Option<String>,
+    pub require_idempotency: Option<bool>,
+    pub mtls_required: Option<bool>,
+    pub revoked: Option<bool>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub version: Option<i64>,
+    pub sync_sequence: Option<i64>,
+    pub last_used_at: Option<String>,
+    pub expires_at: Option<String>,
+}
+
+pub fn validate_api_keys_row(value: &ApiKeysRow) -> Result<(), String> {
+    validate_string_length("api_keys.key_id", &value.key_id, None, Some(64))?;
+    validate_string_length("api_keys.name", &value.name, None, Some(200))?;
+    validate_string_length("api_keys.secret_hash", &value.secret_hash, None, Some(255))?;
+    if !(&value.scopes).is_array() { return Err("api_keys.scopes must be a JSON array".to_string()); }
+    if !["live", "test"].contains(&(&value.env).as_str()) { return Err(format!("unsupported api_keys.env: {}", &value.env)); }
+    Ok(())
+}
+
+pub fn validate_api_keys_insert(value: &ApiKeysInsert) -> Result<(), String> {
+    if let Some(value) = &value.key_id {
+        validate_string_length("api_keys.key_id", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.name {
+        validate_string_length("api_keys.name", value, None, Some(200))?;
+    }
+    if let Some(value) = &value.secret_hash {
+        validate_string_length("api_keys.secret_hash", value, None, Some(255))?;
+    }
+    if let Some(value) = &value.scopes {
+        if !(value).is_array() { return Err("api_keys.scopes must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.env {
+        if !["live", "test"].contains(&(value).as_str()) { return Err(format!("unsupported api_keys.env: {}", value)); }
+    }
+    Ok(())
+}
+
+pub const MTLS_CLIENT_CERTS_TABLE: &str = "fiducia.mtls_client_certs";
+pub const MTLS_CLIENT_CERTS_COLUMNS: &[&str] = &["id", "org_id", "project_id", "name", "subject", "sha256_fingerprint", "not_before", "not_after", "revoked", "created_at", "updated_at", "version", "sync_sequence"];
+pub const MTLS_CLIENT_CERTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      org_id::text as org_id,
+      project_id::text as project_id,
+      name,
+      subject,
+      sha256_fingerprint,
+      to_char(not_before at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as not_before,
+      to_char(not_after at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as not_after,
+      revoked,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      version,
+      sync_sequence
+    from fiducia.mtls_client_certs"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct MtlsClientCertsRow {
+    pub id: String,
+    pub org_id: String,
+    pub project_id: Option<String>,
+    pub name: String,
+    pub subject: String,
+    pub sha256_fingerprint: String,
+    pub not_before: Option<String>,
+    pub not_after: Option<String>,
+    pub revoked: bool,
+    pub created_at: String,
+    pub updated_at: String,
+    pub version: i64,
+    pub sync_sequence: i64,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MtlsClientCertsInsert {
+    pub id: Option<String>,
+    pub org_id: Option<String>,
+    pub project_id: Option<String>,
+    pub name: Option<String>,
+    pub subject: Option<String>,
+    pub sha256_fingerprint: Option<String>,
+    pub not_before: Option<String>,
+    pub not_after: Option<String>,
+    pub revoked: Option<bool>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub version: Option<i64>,
+    pub sync_sequence: Option<i64>,
+}
+
+pub fn validate_mtls_client_certs_row(value: &MtlsClientCertsRow) -> Result<(), String> {
+    validate_string_length("mtls_client_certs.name", &value.name, None, Some(200))?;
+    validate_string_length("mtls_client_certs.subject", &value.subject, None, Some(500))?;
+    validate_string_length("mtls_client_certs.sha256_fingerprint", &value.sha256_fingerprint, None, Some(95))?;
+    Ok(())
+}
+
+pub fn validate_mtls_client_certs_insert(value: &MtlsClientCertsInsert) -> Result<(), String> {
+    if let Some(value) = &value.name {
+        validate_string_length("mtls_client_certs.name", value, None, Some(200))?;
+    }
+    if let Some(value) = &value.subject {
+        validate_string_length("mtls_client_certs.subject", value, None, Some(500))?;
+    }
+    if let Some(value) = &value.sha256_fingerprint {
+        validate_string_length("mtls_client_certs.sha256_fingerprint", value, None, Some(95))?;
+    }
+    Ok(())
+}
+
+pub const CUSTOMER_PREFERENCES_TABLE: &str = "fiducia.customer_preferences";
+pub const CUSTOMER_PREFERENCES_COLUMNS: &[&str] = &["user_id", "density", "timezone", "region", "notify_key_rotation", "notify_lock_contention", "notify_mfa", "updated_at", "version", "sync_sequence"];
+pub const CUSTOMER_PREFERENCES_SELECT_SQL: &str = r###"select
+      user_id::text as user_id,
+      density,
+      timezone,
+      region,
+      notify_key_rotation,
+      notify_lock_contention,
+      notify_mfa,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      version,
+      sync_sequence
+    from fiducia.customer_preferences"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CustomerPreferencesDensity {
+    Comfortable,
+    Compact,
+}
+
+impl CustomerPreferencesDensity {
+    pub const VALUES: &'static [&'static str] = &["comfortable", "compact"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Comfortable => "comfortable",
+            Self::Compact => "compact",
+        }
+    }
+}
+
+impl TryFrom<&str> for CustomerPreferencesDensity {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "comfortable" => Ok(Self::Comfortable),
+            "compact" => Ok(Self::Compact),
+            _ => Err(format!("unsupported density: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct CustomerPreferencesRow {
+    pub user_id: String,
+    pub density: String,
+    pub timezone: String,
+    pub region: String,
+    pub notify_key_rotation: bool,
+    pub notify_lock_contention: bool,
+    pub notify_mfa: bool,
+    pub updated_at: String,
+    pub version: i64,
+    pub sync_sequence: i64,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomerPreferencesInsert {
+    pub user_id: Option<String>,
+    pub density: Option<String>,
+    pub timezone: Option<String>,
+    pub region: Option<String>,
+    pub notify_key_rotation: Option<bool>,
+    pub notify_lock_contention: Option<bool>,
+    pub notify_mfa: Option<bool>,
+    pub updated_at: Option<String>,
+    pub version: Option<i64>,
+    pub sync_sequence: Option<i64>,
+}
+
+pub fn validate_customer_preferences_row(value: &CustomerPreferencesRow) -> Result<(), String> {
+    if !["comfortable", "compact"].contains(&(&value.density).as_str()) { return Err(format!("unsupported customer_preferences.density: {}", &value.density)); }
+    validate_string_length("customer_preferences.timezone", &value.timezone, None, Some(64))?;
+    validate_string_length("customer_preferences.region", &value.region, None, Some(16))?;
+    Ok(())
+}
+
+pub fn validate_customer_preferences_insert(value: &CustomerPreferencesInsert) -> Result<(), String> {
+    if let Some(value) = &value.density {
+        if !["comfortable", "compact"].contains(&(value).as_str()) { return Err(format!("unsupported customer_preferences.density: {}", value)); }
+    }
+    if let Some(value) = &value.timezone {
+        validate_string_length("customer_preferences.timezone", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.region {
+        validate_string_length("customer_preferences.region", value, None, Some(16))?;
+    }
+    Ok(())
+}
+
+pub const CUSTOMER_SESSIONS_TABLE: &str = "fiducia.customer_sessions";
+pub const CUSTOMER_SESSIONS_COLUMNS: &[&str] = &["id", "user_id", "device", "location", "last_seen", "status", "updated_at", "version", "sync_sequence"];
+pub const CUSTOMER_SESSIONS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      user_id::text as user_id,
+      device,
+      location,
+      to_char(last_seen at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen,
+      status,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      version,
+      sync_sequence
+    from fiducia.customer_sessions"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CustomerSessionsStatus {
+    Active,
+    Verified,
+    Revoked,
+}
+
+impl CustomerSessionsStatus {
+    pub const VALUES: &'static [&'static str] = &["active", "verified", "revoked"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Verified => "verified",
+            Self::Revoked => "revoked",
+        }
+    }
+}
+
+impl TryFrom<&str> for CustomerSessionsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "active" => Ok(Self::Active),
+            "verified" => Ok(Self::Verified),
+            "revoked" => Ok(Self::Revoked),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct CustomerSessionsRow {
+    pub id: String,
+    pub user_id: String,
+    pub device: String,
+    pub location: Option<String>,
+    pub last_seen: String,
+    pub status: String,
+    pub updated_at: String,
+    pub version: i64,
+    pub sync_sequence: i64,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomerSessionsInsert {
+    pub id: Option<String>,
+    pub user_id: Option<String>,
+    pub device: Option<String>,
+    pub location: Option<String>,
+    pub last_seen: Option<String>,
+    pub status: Option<String>,
+    pub updated_at: Option<String>,
+    pub version: Option<i64>,
+    pub sync_sequence: Option<i64>,
+}
+
+pub fn validate_customer_sessions_row(value: &CustomerSessionsRow) -> Result<(), String> {
+    validate_string_length("customer_sessions.device", &value.device, None, Some(200))?;
+    if let Some(value) = &value.location {
+        validate_string_length("customer_sessions.location", value, None, Some(200))?;
+    }
+    if !["active", "verified", "revoked"].contains(&(&value.status).as_str()) { return Err(format!("unsupported customer_sessions.status: {}", &value.status)); }
+    Ok(())
+}
+
+pub fn validate_customer_sessions_insert(value: &CustomerSessionsInsert) -> Result<(), String> {
+    if let Some(value) = &value.device {
+        validate_string_length("customer_sessions.device", value, None, Some(200))?;
+    }
+    if let Some(value) = &value.location {
+        validate_string_length("customer_sessions.location", value, None, Some(200))?;
+    }
+    if let Some(value) = &value.status {
+        if !["active", "verified", "revoked"].contains(&(value).as_str()) { return Err(format!("unsupported customer_sessions.status: {}", value)); }
+    }
+    Ok(())
+}
+
+pub const AUDIT_LOG_TABLE: &str = "fiducia.audit_log";
+pub const AUDIT_LOG_COLUMNS: &[&str] = &["id", "org_id", "project_id", "actor_user_id", "actor_key_id", "actor", "action", "target", "request_id", "source_ip", "user_agent", "meta", "created_at", "retention_expires_at"];
+pub const AUDIT_LOG_SELECT_SQL: &str = r###"select
+      id::text as id,
+      org_id::text as org_id,
+      project_id::text as project_id,
+      actor_user_id::text as actor_user_id,
+      actor_key_id::text as actor_key_id,
+      actor,
+      action,
+      target,
+      request_id,
+      source_ip,
+      user_agent,
+      meta,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(retention_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as retention_expires_at
+    from fiducia.audit_log"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct AuditLogRow {
+    pub id: String,
+    pub org_id: Option<String>,
+    pub project_id: Option<String>,
+    pub actor_user_id: Option<String>,
+    pub actor_key_id: Option<String>,
+    pub actor: Option<String>,
+    pub action: String,
+    pub target: Option<String>,
+    pub request_id: Option<String>,
+    pub source_ip: Option<String>,
+    pub user_agent: Option<String>,
+    pub meta: Value,
+    pub created_at: String,
+    pub retention_expires_at: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuditLogInsert {
+    pub id: Option<String>,
+    pub org_id: Option<String>,
+    pub project_id: Option<String>,
+    pub actor_user_id: Option<String>,
+    pub actor_key_id: Option<String>,
+    pub actor: Option<String>,
+    pub action: Option<String>,
+    pub target: Option<String>,
+    pub request_id: Option<String>,
+    pub source_ip: Option<String>,
+    pub user_agent: Option<String>,
+    pub meta: Option<Value>,
+    pub created_at: Option<String>,
+    pub retention_expires_at: Option<String>,
+}
+
+pub fn validate_audit_log_row(value: &AuditLogRow) -> Result<(), String> {
+    if let Some(value) = &value.actor {
+        validate_string_length("audit_log.actor", value, None, Some(320))?;
+    }
+    validate_string_length("audit_log.action", &value.action, None, Some(120))?;
+    if let Some(value) = &value.target {
+        validate_string_length("audit_log.target", value, None, Some(320))?;
+    }
+    if let Some(value) = &value.request_id {
+        validate_string_length("audit_log.request_id", value, None, Some(120))?;
+    }
+    if let Some(value) = &value.source_ip {
+        validate_string_length("audit_log.source_ip", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.user_agent {
+        validate_string_length("audit_log.user_agent", value, None, Some(500))?;
+    }
+    if !(&value.meta).is_object() { return Err("audit_log.meta must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_audit_log_insert(value: &AuditLogInsert) -> Result<(), String> {
+    if let Some(value) = &value.actor {
+        validate_string_length("audit_log.actor", value, None, Some(320))?;
+    }
+    if let Some(value) = &value.action {
+        validate_string_length("audit_log.action", value, None, Some(120))?;
+    }
+    if let Some(value) = &value.target {
+        validate_string_length("audit_log.target", value, None, Some(320))?;
+    }
+    if let Some(value) = &value.request_id {
+        validate_string_length("audit_log.request_id", value, None, Some(120))?;
+    }
+    if let Some(value) = &value.source_ip {
+        validate_string_length("audit_log.source_ip", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.user_agent {
+        validate_string_length("audit_log.user_agent", value, None, Some(500))?;
+    }
+    if let Some(value) = &value.meta {
+        if !(value).is_object() { return Err("audit_log.meta must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const CUSTOMER_NOTIFICATIONS_TABLE: &str = "fiducia.customer_notifications";
+pub const CUSTOMER_NOTIFICATIONS_COLUMNS: &[&str] = &["id", "user_id", "org_id", "kind", "severity", "title", "body", "link", "read_at", "created_at", "updated_at", "version", "sync_sequence"];
+pub const CUSTOMER_NOTIFICATIONS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      user_id::text as user_id,
+      org_id::text as org_id,
+      kind,
+      severity,
+      title,
+      body,
+      link,
+      to_char(read_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as read_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      version,
+      sync_sequence
+    from fiducia.customer_notifications"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CustomerNotificationsSeverity {
+    Info,
+    Success,
+    Warning,
+    Critical,
+}
+
+impl CustomerNotificationsSeverity {
+    pub const VALUES: &'static [&'static str] = &["info", "success", "warning", "critical"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Info => "info",
+            Self::Success => "success",
+            Self::Warning => "warning",
+            Self::Critical => "critical",
+        }
+    }
+}
+
+impl TryFrom<&str> for CustomerNotificationsSeverity {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "info" => Ok(Self::Info),
+            "success" => Ok(Self::Success),
+            "warning" => Ok(Self::Warning),
+            "critical" => Ok(Self::Critical),
+            _ => Err(format!("unsupported severity: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct CustomerNotificationsRow {
+    pub id: String,
+    pub user_id: String,
+    pub org_id: Option<String>,
+    pub kind: String,
+    pub severity: String,
+    pub title: String,
+    pub body: String,
+    pub link: Option<String>,
+    pub read_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub version: i64,
+    pub sync_sequence: i64,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomerNotificationsInsert {
+    pub id: Option<String>,
+    pub user_id: Option<String>,
+    pub org_id: Option<String>,
+    pub kind: Option<String>,
+    pub severity: Option<String>,
+    pub title: Option<String>,
+    pub body: Option<String>,
+    pub link: Option<String>,
+    pub read_at: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub version: Option<i64>,
+    pub sync_sequence: Option<i64>,
+}
+
+pub fn validate_customer_notifications_row(value: &CustomerNotificationsRow) -> Result<(), String> {
+    validate_string_length("customer_notifications.kind", &value.kind, None, Some(40))?;
+    if !["info", "success", "warning", "critical"].contains(&(&value.severity).as_str()) { return Err(format!("unsupported customer_notifications.severity: {}", &value.severity)); }
+    validate_string_length("customer_notifications.title", &value.title, None, Some(200))?;
+    validate_string_length("customer_notifications.body", &value.body, None, Some(2000))?;
+    if let Some(value) = &value.link {
+        validate_string_length("customer_notifications.link", value, None, Some(500))?;
+    }
+    Ok(())
+}
+
+pub fn validate_customer_notifications_insert(value: &CustomerNotificationsInsert) -> Result<(), String> {
+    if let Some(value) = &value.kind {
+        validate_string_length("customer_notifications.kind", value, None, Some(40))?;
+    }
+    if let Some(value) = &value.severity {
+        if !["info", "success", "warning", "critical"].contains(&(value).as_str()) { return Err(format!("unsupported customer_notifications.severity: {}", value)); }
+    }
+    if let Some(value) = &value.title {
+        validate_string_length("customer_notifications.title", value, None, Some(200))?;
+    }
+    if let Some(value) = &value.body {
+        validate_string_length("customer_notifications.body", value, None, Some(2000))?;
+    }
+    if let Some(value) = &value.link {
+        validate_string_length("customer_notifications.link", value, None, Some(500))?;
+    }
+    Ok(())
+}
+
+pub const SYNC_IDEMPOTENCY_KEYS_TABLE: &str = "fiducia.sync_idempotency_keys";
+pub const SYNC_IDEMPOTENCY_KEYS_COLUMNS: &[&str] = &["key", "request_fingerprint", "committed_version", "created_at"];
+pub const SYNC_IDEMPOTENCY_KEYS_SELECT_SQL: &str = r###"select
+      key,
+      request_fingerprint,
+      committed_version,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from fiducia.sync_idempotency_keys"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct SyncIdempotencyKeysRow {
+    pub key: String,
+    pub request_fingerprint: String,
+    pub committed_version: Option<i64>,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncIdempotencyKeysInsert {
+    pub key: Option<String>,
+    pub request_fingerprint: Option<String>,
+    pub committed_version: Option<i64>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_sync_idempotency_keys_row(value: &SyncIdempotencyKeysRow) -> Result<(), String> {
+    validate_string_length("sync_idempotency_keys.request_fingerprint", &value.request_fingerprint, None, Some(64))?;
+    Ok(())
+}
+
+pub fn validate_sync_idempotency_keys_insert(value: &SyncIdempotencyKeysInsert) -> Result<(), String> {
+    if let Some(value) = &value.request_fingerprint {
+        validate_string_length("sync_idempotency_keys.request_fingerprint", value, None, Some(64))?;
+    }
+    Ok(())
+}
+
+pub const TRANSCRIPTIONS_TABLE: &str = "t2v.transcriptions";
+pub const TRANSCRIPTIONS_COLUMNS: &[&str] = &["id", "source", "provider", "model", "text", "language", "sample_rate", "duration_ms", "created_at"];
+pub const TRANSCRIPTIONS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      source,
+      provider,
+      model,
+      text,
+      language,
+      sample_rate,
+      duration_ms,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from t2v.transcriptions"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptionsRow {
+    pub id: String,
+    pub source: String,
+    pub provider: String,
+    pub model: String,
+    pub text: String,
+    pub language: Option<String>,
+    pub sample_rate: Option<i32>,
+    pub duration_ms: Option<i64>,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptionsInsert {
+    pub id: Option<String>,
+    pub source: Option<String>,
+    pub provider: Option<String>,
+    pub model: Option<String>,
+    pub text: Option<String>,
+    pub language: Option<String>,
+    pub sample_rate: Option<i32>,
+    pub duration_ms: Option<i64>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_transcriptions_row(value: &TranscriptionsRow) -> Result<(), String> {
+    if (&value.source).as_bytes().len() > 40 { return Err("transcriptions.source exceeds 40 bytes".to_string()); }
+    if (&value.provider).as_bytes().len() > 40 { return Err("transcriptions.provider exceeds 40 bytes".to_string()); }
+    if (&value.model).as_bytes().len() > 200 { return Err("transcriptions.model exceeds 200 bytes".to_string()); }
+    if (&value.text).as_bytes().len() > 1000000 { return Err("transcriptions.text exceeds 1000000 bytes".to_string()); }
+    if let Some(value) = &value.language {
+        if (value).as_bytes().len() > 80 { return Err("transcriptions.language exceeds 80 bytes".to_string()); }
+    }
+    if let Some(value) = &value.sample_rate {
+        if *(value) < 4000 { return Err("transcriptions.sample_rate is below the minimum".to_string()); }
+        if *(value) > 384000 { return Err("transcriptions.sample_rate is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.duration_ms {
+        if *(value) < 0 { return Err("transcriptions.duration_ms is below the minimum".to_string()); }
+    }
+    Ok(())
+}
+
+pub fn validate_transcriptions_insert(value: &TranscriptionsInsert) -> Result<(), String> {
+    if let Some(value) = &value.source {
+        if (value).as_bytes().len() > 40 { return Err("transcriptions.source exceeds 40 bytes".to_string()); }
+    }
+    if let Some(value) = &value.provider {
+        if (value).as_bytes().len() > 40 { return Err("transcriptions.provider exceeds 40 bytes".to_string()); }
+    }
+    if let Some(value) = &value.model {
+        if (value).as_bytes().len() > 200 { return Err("transcriptions.model exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.text {
+        if (value).as_bytes().len() > 1000000 { return Err("transcriptions.text exceeds 1000000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.language {
+        if (value).as_bytes().len() > 80 { return Err("transcriptions.language exceeds 80 bytes".to_string()); }
+    }
+    if let Some(value) = &value.sample_rate {
+        if *(value) < 4000 { return Err("transcriptions.sample_rate is below the minimum".to_string()); }
+        if *(value) > 384000 { return Err("transcriptions.sample_rate is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.duration_ms {
+        if *(value) < 0 { return Err("transcriptions.duration_ms is below the minimum".to_string()); }
+    }
+    Ok(())
+}
+
+pub const SYNTHESES_TABLE: &str = "t2v.syntheses";
+pub const SYNTHESES_COLUMNS: &[&str] = &["id", "text", "voice", "provider", "model", "format", "audio_bytes", "created_at"];
+pub const SYNTHESES_SELECT_SQL: &str = r###"select
+      id::text as id,
+      text,
+      voice,
+      provider,
+      model,
+      format,
+      audio_bytes,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from t2v.syntheses"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct SynthesesRow {
+    pub id: String,
+    pub text: String,
+    pub voice: String,
+    pub provider: String,
+    pub model: String,
+    pub format: String,
+    pub audio_bytes: i64,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SynthesesInsert {
+    pub id: Option<String>,
+    pub text: Option<String>,
+    pub voice: Option<String>,
+    pub provider: Option<String>,
+    pub model: Option<String>,
+    pub format: Option<String>,
+    pub audio_bytes: Option<i64>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_syntheses_row(value: &SynthesesRow) -> Result<(), String> {
+    if (&value.text).as_bytes().len() > 20000 { return Err("syntheses.text exceeds 20000 bytes".to_string()); }
+    if (&value.voice).as_bytes().len() > 80 { return Err("syntheses.voice exceeds 80 bytes".to_string()); }
+    if (&value.provider).as_bytes().len() > 40 { return Err("syntheses.provider exceeds 40 bytes".to_string()); }
+    if (&value.model).as_bytes().len() > 200 { return Err("syntheses.model exceeds 200 bytes".to_string()); }
+    if (&value.format).as_bytes().len() > 10 { return Err("syntheses.format exceeds 10 bytes".to_string()); }
+    if *(&value.audio_bytes) < 0 { return Err("syntheses.audio_bytes is below the minimum".to_string()); }
+    Ok(())
+}
+
+pub fn validate_syntheses_insert(value: &SynthesesInsert) -> Result<(), String> {
+    if let Some(value) = &value.text {
+        if (value).as_bytes().len() > 20000 { return Err("syntheses.text exceeds 20000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.voice {
+        if (value).as_bytes().len() > 80 { return Err("syntheses.voice exceeds 80 bytes".to_string()); }
+    }
+    if let Some(value) = &value.provider {
+        if (value).as_bytes().len() > 40 { return Err("syntheses.provider exceeds 40 bytes".to_string()); }
+    }
+    if let Some(value) = &value.model {
+        if (value).as_bytes().len() > 200 { return Err("syntheses.model exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.format {
+        if (value).as_bytes().len() > 10 { return Err("syntheses.format exceeds 10 bytes".to_string()); }
+    }
+    if let Some(value) = &value.audio_bytes {
+        if *(value) < 0 { return Err("syntheses.audio_bytes is below the minimum".to_string()); }
+    }
+    Ok(())
+}
+
+pub const TRANSLATIONS_TABLE: &str = "t2v.translations";
+pub const TRANSLATIONS_COLUMNS: &[&str] = &["id", "source_text", "translated_text", "source_lang", "target_lang", "provider", "model", "latency_ms", "created_at"];
+pub const TRANSLATIONS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      source_text,
+      translated_text,
+      source_lang,
+      target_lang,
+      provider,
+      model,
+      latency_ms,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from t2v.translations"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct TranslationsRow {
+    pub id: String,
+    pub source_text: String,
+    pub translated_text: String,
+    pub source_lang: Option<String>,
+    pub target_lang: String,
+    pub provider: String,
+    pub model: String,
+    pub latency_ms: i64,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranslationsInsert {
+    pub id: Option<String>,
+    pub source_text: Option<String>,
+    pub translated_text: Option<String>,
+    pub source_lang: Option<String>,
+    pub target_lang: Option<String>,
+    pub provider: Option<String>,
+    pub model: Option<String>,
+    pub latency_ms: Option<i64>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_translations_row(value: &TranslationsRow) -> Result<(), String> {
+    if (&value.source_text).as_bytes().len() > 200000 { return Err("translations.source_text exceeds 200000 bytes".to_string()); }
+    if (&value.translated_text).as_bytes().len() > 200000 { return Err("translations.translated_text exceeds 200000 bytes".to_string()); }
+    if let Some(value) = &value.source_lang {
+        if (value).as_bytes().len() > 80 { return Err("translations.source_lang exceeds 80 bytes".to_string()); }
+    }
+    if (&value.target_lang).as_bytes().len() > 80 { return Err("translations.target_lang exceeds 80 bytes".to_string()); }
+    if (&value.provider).as_bytes().len() > 40 { return Err("translations.provider exceeds 40 bytes".to_string()); }
+    if (&value.model).as_bytes().len() > 200 { return Err("translations.model exceeds 200 bytes".to_string()); }
+    if *(&value.latency_ms) < 0 { return Err("translations.latency_ms is below the minimum".to_string()); }
+    Ok(())
+}
+
+pub fn validate_translations_insert(value: &TranslationsInsert) -> Result<(), String> {
+    if let Some(value) = &value.source_text {
+        if (value).as_bytes().len() > 200000 { return Err("translations.source_text exceeds 200000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.translated_text {
+        if (value).as_bytes().len() > 200000 { return Err("translations.translated_text exceeds 200000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.source_lang {
+        if (value).as_bytes().len() > 80 { return Err("translations.source_lang exceeds 80 bytes".to_string()); }
+    }
+    if let Some(value) = &value.target_lang {
+        if (value).as_bytes().len() > 80 { return Err("translations.target_lang exceeds 80 bytes".to_string()); }
+    }
+    if let Some(value) = &value.provider {
+        if (value).as_bytes().len() > 40 { return Err("translations.provider exceeds 40 bytes".to_string()); }
+    }
+    if let Some(value) = &value.model {
+        if (value).as_bytes().len() > 200 { return Err("translations.model exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.latency_ms {
+        if *(value) < 0 { return Err("translations.latency_ms is below the minimum".to_string()); }
+    }
+    Ok(())
+}
+
+pub const VAPI_CALLS_TABLE: &str = "t2v.vapi_calls";
+pub const VAPI_CALLS_COLUMNS: &[&str] = &["id", "vapi_call_id", "status", "ended_reason", "transcript", "summary", "created_at", "updated_at"];
+pub const VAPI_CALLS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      vapi_call_id,
+      status,
+      ended_reason,
+      transcript,
+      summary,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from t2v.vapi_calls"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct VapiCallsRow {
+    pub id: String,
+    pub vapi_call_id: String,
+    pub status: String,
+    pub ended_reason: Option<String>,
+    pub transcript: Option<String>,
+    pub summary: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VapiCallsInsert {
+    pub id: Option<String>,
+    pub vapi_call_id: Option<String>,
+    pub status: Option<String>,
+    pub ended_reason: Option<String>,
+    pub transcript: Option<String>,
+    pub summary: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_vapi_calls_row(value: &VapiCallsRow) -> Result<(), String> {
+    if (&value.vapi_call_id).as_bytes().len() > 120 { return Err("vapi_calls.vapi_call_id exceeds 120 bytes".to_string()); }
+    if (&value.status).as_bytes().len() > 40 { return Err("vapi_calls.status exceeds 40 bytes".to_string()); }
+    if let Some(value) = &value.ended_reason {
+        if (value).as_bytes().len() > 200 { return Err("vapi_calls.ended_reason exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.transcript {
+        if (value).as_bytes().len() > 1000000 { return Err("vapi_calls.transcript exceeds 1000000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.summary {
+        if (value).as_bytes().len() > 100000 { return Err("vapi_calls.summary exceeds 100000 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub fn validate_vapi_calls_insert(value: &VapiCallsInsert) -> Result<(), String> {
+    if let Some(value) = &value.vapi_call_id {
+        if (value).as_bytes().len() > 120 { return Err("vapi_calls.vapi_call_id exceeds 120 bytes".to_string()); }
+    }
+    if let Some(value) = &value.status {
+        if (value).as_bytes().len() > 40 { return Err("vapi_calls.status exceeds 40 bytes".to_string()); }
+    }
+    if let Some(value) = &value.ended_reason {
+        if (value).as_bytes().len() > 200 { return Err("vapi_calls.ended_reason exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.transcript {
+        if (value).as_bytes().len() > 1000000 { return Err("vapi_calls.transcript exceeds 1000000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.summary {
+        if (value).as_bytes().len() > 100000 { return Err("vapi_calls.summary exceeds 100000 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub const VAPI_EVENTS_TABLE: &str = "t2v.vapi_events";
+pub const VAPI_EVENTS_COLUMNS: &[&str] = &["id", "vapi_call_id", "event_type", "payload", "created_at"];
+pub const VAPI_EVENTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      vapi_call_id,
+      event_type,
+      payload,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from t2v.vapi_events"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct VapiEventsRow {
+    pub id: String,
+    pub vapi_call_id: Option<String>,
+    pub event_type: String,
+    pub payload: Value,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VapiEventsInsert {
+    pub id: Option<String>,
+    pub vapi_call_id: Option<String>,
+    pub event_type: Option<String>,
+    pub payload: Option<Value>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_vapi_events_row(value: &VapiEventsRow) -> Result<(), String> {
+    if let Some(value) = &value.vapi_call_id {
+        if (value).as_bytes().len() > 120 { return Err("vapi_events.vapi_call_id exceeds 120 bytes".to_string()); }
+    }
+    if (&value.event_type).as_bytes().len() > 80 { return Err("vapi_events.event_type exceeds 80 bytes".to_string()); }
+    if !(&value.payload).is_object() { return Err("vapi_events.payload must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_vapi_events_insert(value: &VapiEventsInsert) -> Result<(), String> {
+    if let Some(value) = &value.vapi_call_id {
+        if (value).as_bytes().len() > 120 { return Err("vapi_events.vapi_call_id exceeds 120 bytes".to_string()); }
+    }
+    if let Some(value) = &value.event_type {
+        if (value).as_bytes().len() > 80 { return Err("vapi_events.event_type exceeds 80 bytes".to_string()); }
+    }
+    if let Some(value) = &value.payload {
+        if !(value).is_object() { return Err("vapi_events.payload must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
 fn validate_string_length(field: &str, value: &str, min: Option<usize>, max: Option<usize>) -> Result<(), String> {
     let count = value.chars().count();
     if let Some(min) = min {

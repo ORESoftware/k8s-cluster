@@ -3707,3 +3707,449 @@ class SharedContext extends Model
         ];
     }
 }
+
+class SyncClock extends Model
+{
+    protected $table = 'fiducia.sync_clock';
+    protected $primaryKey = 'singleton';
+    public $timestamps = false;
+    protected $fillable = ['last_sequence'];
+    protected $casts = ['singleton' => 'boolean', 'last_sequence' => 'integer'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'last_sequence' => ['nullable', 'integer', 'min:0'],
+        ];
+    }
+}
+
+class SyncTombstones extends Model
+{
+    protected $table = 'fiducia.sync_tombstones';
+    protected $primaryKey = 'sequence';
+    public $timestamps = false;
+    protected $fillable = ['table_name', 'row_id', 'tenant_id', 'owner_user_id', 'row_version', 'deleted_at'];
+    protected $casts = ['sequence' => 'integer', 'row_version' => 'integer', 'deleted_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'table_name' => ['required', 'string'],
+            'row_id' => ['required', 'string'],
+            'tenant_id' => ['nullable', 'uuid'],
+            'owner_user_id' => ['nullable', 'uuid'],
+            'row_version' => ['required', 'integer', 'min:1'],
+            'deleted_at' => ['nullable', 'date'],
+        ];
+    }
+}
+
+class Orgs extends Model
+{
+    protected $table = 'fiducia.orgs';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = true;
+    protected $fillable = ['slug', 'name', 'created_at', 'updated_at', 'version', 'sync_sequence'];
+    protected $casts = ['created_at' => 'datetime', 'updated_at' => 'datetime', 'version' => 'integer', 'sync_sequence' => 'integer'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'slug' => ['required', 'string', 'max:120', 'regex:/^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$/'],
+            'name' => ['required', 'string', 'max:200'],
+            'version' => ['nullable', 'integer'],
+            'sync_sequence' => ['required', 'integer'],
+        ];
+    }
+}
+
+class Projects extends Model
+{
+    protected $table = 'fiducia.projects';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = true;
+    protected $fillable = ['org_id', 'slug', 'name', 'created_at', 'updated_at', 'version', 'sync_sequence'];
+    protected $casts = ['created_at' => 'datetime', 'updated_at' => 'datetime', 'version' => 'integer', 'sync_sequence' => 'integer'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'org_id' => ['required', 'uuid'],
+            'slug' => ['required', 'string', 'max:120', 'regex:/^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$/'],
+            'name' => ['required', 'string', 'max:200'],
+            'version' => ['nullable', 'integer'],
+            'sync_sequence' => ['required', 'integer'],
+        ];
+    }
+}
+
+class Users extends Model
+{
+    protected $table = 'fiducia.users';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+    protected $fillable = ['supabase_user_id', 'email', 'created_at'];
+    protected $casts = ['created_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'supabase_user_id' => ['required', 'uuid'],
+            'email' => ['required', 'string', 'max:320'],
+        ];
+    }
+}
+
+class OrgMembers extends Model
+{
+    protected $table = 'fiducia.org_members';
+    public $timestamps = false;
+    protected $fillable = ['org_id', 'user_id', 'role', 'created_at'];
+    protected $casts = ['created_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'org_id' => ['required', 'uuid'],
+            'user_id' => ['required', 'uuid'],
+            'role' => ['nullable', 'string', 'in:owner,admin,member'],
+        ];
+    }
+}
+
+class ProjectMembers extends Model
+{
+    protected $table = 'fiducia.project_members';
+    public $timestamps = false;
+    protected $fillable = ['project_id', 'user_id', 'role', 'created_at'];
+    protected $casts = ['created_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'project_id' => ['required', 'uuid'],
+            'user_id' => ['required', 'uuid'],
+            'role' => ['nullable', 'string', 'in:admin,operator,viewer'],
+        ];
+    }
+}
+
+class ApiKeys extends Model
+{
+    protected $table = 'fiducia.api_keys';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = true;
+    protected $fillable = ['key_id', 'org_id', 'project_id', 'created_by_user_id', 'name', 'secret_hash', 'scopes', 'env', 'require_idempotency', 'mtls_required', 'revoked', 'created_at', 'updated_at', 'version', 'sync_sequence', 'last_used_at', 'expires_at'];
+    protected $casts = ['scopes' => 'array', 'require_idempotency' => 'boolean', 'mtls_required' => 'boolean', 'revoked' => 'boolean', 'created_at' => 'datetime', 'updated_at' => 'datetime', 'version' => 'integer', 'sync_sequence' => 'integer', 'last_used_at' => 'datetime', 'expires_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'key_id' => ['required', 'string', 'max:64'],
+            'org_id' => ['required', 'uuid'],
+            'project_id' => ['nullable', 'uuid'],
+            'created_by_user_id' => ['nullable', 'uuid'],
+            'name' => ['required', 'string', 'max:200'],
+            'secret_hash' => ['required', 'string', 'max:255'],
+            'scopes' => ['nullable', 'array'],
+            'env' => ['nullable', 'string', 'in:live,test'],
+            'require_idempotency' => ['nullable', 'boolean'],
+            'mtls_required' => ['nullable', 'boolean'],
+            'revoked' => ['nullable', 'boolean'],
+            'version' => ['nullable', 'integer'],
+            'sync_sequence' => ['required', 'integer'],
+            'last_used_at' => ['nullable', 'date'],
+            'expires_at' => ['nullable', 'date'],
+        ];
+    }
+}
+
+class MtlsClientCerts extends Model
+{
+    protected $table = 'fiducia.mtls_client_certs';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = true;
+    protected $fillable = ['org_id', 'project_id', 'name', 'subject', 'sha256_fingerprint', 'not_before', 'not_after', 'revoked', 'created_at', 'updated_at', 'version', 'sync_sequence'];
+    protected $casts = ['not_before' => 'datetime', 'not_after' => 'datetime', 'revoked' => 'boolean', 'created_at' => 'datetime', 'updated_at' => 'datetime', 'version' => 'integer', 'sync_sequence' => 'integer'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'org_id' => ['required', 'uuid'],
+            'project_id' => ['nullable', 'uuid'],
+            'name' => ['required', 'string', 'max:200'],
+            'subject' => ['required', 'string', 'max:500'],
+            'sha256_fingerprint' => ['required', 'string', 'max:95'],
+            'not_before' => ['nullable', 'date'],
+            'not_after' => ['nullable', 'date'],
+            'revoked' => ['nullable', 'boolean'],
+            'version' => ['nullable', 'integer'],
+            'sync_sequence' => ['required', 'integer'],
+        ];
+    }
+}
+
+class CustomerPreferences extends Model
+{
+    protected $table = 'fiducia.customer_preferences';
+    protected $primaryKey = 'user_id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+    protected $fillable = ['density', 'timezone', 'region', 'notify_key_rotation', 'notify_lock_contention', 'notify_mfa', 'updated_at', 'version', 'sync_sequence'];
+    protected $casts = ['notify_key_rotation' => 'boolean', 'notify_lock_contention' => 'boolean', 'notify_mfa' => 'boolean', 'updated_at' => 'datetime', 'version' => 'integer', 'sync_sequence' => 'integer'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'density' => ['nullable', 'string', 'in:comfortable,compact'],
+            'timezone' => ['nullable', 'string', 'max:64'],
+            'region' => ['nullable', 'string', 'max:16'],
+            'notify_key_rotation' => ['nullable', 'boolean'],
+            'notify_lock_contention' => ['nullable', 'boolean'],
+            'notify_mfa' => ['nullable', 'boolean'],
+            'version' => ['nullable', 'integer'],
+            'sync_sequence' => ['required', 'integer'],
+        ];
+    }
+}
+
+class CustomerSessions extends Model
+{
+    protected $table = 'fiducia.customer_sessions';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+    protected $fillable = ['user_id', 'device', 'location', 'last_seen', 'status', 'updated_at', 'version', 'sync_sequence'];
+    protected $casts = ['last_seen' => 'datetime', 'updated_at' => 'datetime', 'version' => 'integer', 'sync_sequence' => 'integer'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'user_id' => ['required', 'uuid'],
+            'device' => ['required', 'string', 'max:200'],
+            'location' => ['nullable', 'string', 'max:200'],
+            'last_seen' => ['nullable', 'date'],
+            'status' => ['nullable', 'string', 'in:active,verified,revoked'],
+            'version' => ['nullable', 'integer'],
+            'sync_sequence' => ['required', 'integer'],
+        ];
+    }
+}
+
+class AuditLog extends Model
+{
+    protected $table = 'fiducia.audit_log';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+    protected $fillable = ['org_id', 'project_id', 'actor_user_id', 'actor_key_id', 'actor', 'action', 'target', 'request_id', 'source_ip', 'user_agent', 'meta', 'created_at', 'retention_expires_at'];
+    protected $casts = ['meta' => 'array', 'created_at' => 'datetime', 'retention_expires_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'org_id' => ['nullable', 'uuid'],
+            'project_id' => ['nullable', 'uuid'],
+            'actor_user_id' => ['nullable', 'uuid'],
+            'actor_key_id' => ['nullable', 'uuid'],
+            'actor' => ['nullable', 'string', 'max:320'],
+            'action' => ['required', 'string', 'max:120'],
+            'target' => ['nullable', 'string', 'max:320'],
+            'request_id' => ['nullable', 'string', 'max:120'],
+            'source_ip' => ['nullable', 'string', 'max:64'],
+            'user_agent' => ['nullable', 'string', 'max:500'],
+            'meta' => ['nullable', 'array'],
+            'retention_expires_at' => ['nullable', 'date'],
+        ];
+    }
+}
+
+class CustomerNotifications extends Model
+{
+    protected $table = 'fiducia.customer_notifications';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = true;
+    protected $fillable = ['user_id', 'org_id', 'kind', 'severity', 'title', 'body', 'link', 'read_at', 'created_at', 'updated_at', 'version', 'sync_sequence'];
+    protected $casts = ['read_at' => 'datetime', 'created_at' => 'datetime', 'updated_at' => 'datetime', 'version' => 'integer', 'sync_sequence' => 'integer'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'user_id' => ['required', 'uuid'],
+            'org_id' => ['nullable', 'uuid'],
+            'kind' => ['required', 'string', 'max:40', 'regex:/^[a-z][a-z0-9_.]{1,38}[a-z0-9]$/'],
+            'severity' => ['nullable', 'string', 'in:info,success,warning,critical'],
+            'title' => ['required', 'string', 'max:200'],
+            'body' => ['nullable', 'string', 'max:2000'],
+            'link' => ['nullable', 'string', 'max:500'],
+            'read_at' => ['nullable', 'date'],
+            'version' => ['nullable', 'integer'],
+            'sync_sequence' => ['required', 'integer'],
+        ];
+    }
+}
+
+class SyncIdempotencyKeys extends Model
+{
+    protected $table = 'fiducia.sync_idempotency_keys';
+    protected $primaryKey = 'key';
+    public $timestamps = false;
+    protected $fillable = ['request_fingerprint', 'committed_version', 'created_at'];
+    protected $casts = ['committed_version' => 'integer', 'created_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'request_fingerprint' => ['required', 'string', 'max:64', 'regex:/^[0-9a-f]{64}$/'],
+            'committed_version' => ['nullable', 'integer'],
+        ];
+    }
+}
+
+class Transcriptions extends Model
+{
+    protected $table = 't2v.transcriptions';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+    protected $fillable = ['source', 'provider', 'model', 'text', 'language', 'sample_rate', 'duration_ms', 'created_at'];
+    protected $casts = ['sample_rate' => 'integer', 'duration_ms' => 'integer', 'created_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'source' => ['required', 'string'],
+            'provider' => ['required', 'string'],
+            'model' => ['required', 'string'],
+            'text' => ['required', 'string'],
+            'language' => ['nullable', 'string'],
+            'sample_rate' => ['nullable', 'integer', 'min:4000', 'max:384000'],
+            'duration_ms' => ['nullable', 'integer', 'min:0'],
+        ];
+    }
+}
+
+class Syntheses extends Model
+{
+    protected $table = 't2v.syntheses';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+    protected $fillable = ['text', 'voice', 'provider', 'model', 'format', 'audio_bytes', 'created_at'];
+    protected $casts = ['audio_bytes' => 'integer', 'created_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'text' => ['required', 'string'],
+            'voice' => ['required', 'string'],
+            'provider' => ['required', 'string'],
+            'model' => ['required', 'string'],
+            'format' => ['required', 'string'],
+            'audio_bytes' => ['required', 'integer', 'min:0'],
+        ];
+    }
+}
+
+class Translations extends Model
+{
+    protected $table = 't2v.translations';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+    protected $fillable = ['source_text', 'translated_text', 'source_lang', 'target_lang', 'provider', 'model', 'latency_ms', 'created_at'];
+    protected $casts = ['latency_ms' => 'integer', 'created_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'source_text' => ['required', 'string'],
+            'translated_text' => ['required', 'string'],
+            'source_lang' => ['nullable', 'string'],
+            'target_lang' => ['required', 'string'],
+            'provider' => ['required', 'string'],
+            'model' => ['required', 'string'],
+            'latency_ms' => ['required', 'integer', 'min:0'],
+        ];
+    }
+}
+
+class VapiCalls extends Model
+{
+    protected $table = 't2v.vapi_calls';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = true;
+    protected $fillable = ['vapi_call_id', 'status', 'ended_reason', 'transcript', 'summary', 'created_at', 'updated_at'];
+    protected $casts = ['created_at' => 'datetime', 'updated_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'vapi_call_id' => ['required', 'string'],
+            'status' => ['required', 'string'],
+            'ended_reason' => ['nullable', 'string'],
+            'transcript' => ['nullable', 'string'],
+            'summary' => ['nullable', 'string'],
+        ];
+    }
+}
+
+class VapiEvents extends Model
+{
+    protected $table = 't2v.vapi_events';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+    protected $fillable = ['vapi_call_id', 'event_type', 'payload', 'created_at'];
+    protected $casts = ['payload' => 'array', 'created_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'vapi_call_id' => ['nullable', 'string'],
+            'event_type' => ['required', 'string'],
+            'payload' => ['required', 'array'],
+        ];
+    }
+}
