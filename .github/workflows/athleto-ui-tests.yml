@@ -1,0 +1,75 @@
+name: athleto ui tests
+
+# Browser smoke tests for the live AthletO surfaces, driven with node:test
+# under BOTH Playwright and Puppeteer (remote/tests/ui). Targets the public
+# marketing site and storefront, so this is a live-deployment monitor rather
+# than a required PR gate: it runs on a schedule, on demand, and when the UI
+# tests themselves change.
+
+on:
+  schedule:
+    # Every 6 hours (UTC); catches a broken deploy without waiting for a push.
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      marketing_url:
+        description: Marketing base URL (athleto.store)
+        required: false
+        default: https://athleto.store
+      app_url:
+        description: Storefront base URL (app.athleto.store)
+        required: false
+        default: https://app.athleto.store
+  push:
+    branches: [dev, main]
+    paths:
+      - 'remote/tests/ui/**'
+      - 'remote/tests/package.json'
+      - '.github/workflows/athleto-ui-tests.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: athleto-ui-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ui:
+    name: playwright + puppeteer (live)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ATHLETO_MARKETING_URL: ${{ github.event.inputs.marketing_url || 'https://athleto.store' }}
+      ATHLETO_APP_URL: ${{ github.event.inputs.app_url || 'https://app.athleto.store' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Install remote test dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: remote/tests
+
+      - name: Install Playwright chromium (+ system deps)
+        run: pnpm exec playwright install --with-deps chromium
+        working-directory: remote/tests
+
+      - name: Install Puppeteer Chrome
+        run: pnpm exec puppeteer browsers install chrome
+        working-directory: remote/tests
+
+      - name: Run AthletO UI suite (both engines)
+        run: pnpm run test:ui:athleto
+        working-directory: remote/tests
