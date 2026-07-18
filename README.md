@@ -25,6 +25,17 @@ visibility, so public repos (UI, marketing site) coexist with private ones
 | Cloudflare proxy for `sonusauris.app` | [`apps/sonusauris-app-proxy`](apps/sonusauris-app-proxy) | `ORESoftware/sonusauris-app-proxy` |
 | Infra (k8s) | [`apps/sonus-auris.infra`](apps/sonus-auris.infra) | `sonus-auris/sonus-auris.infra` |
 
+## Docs
+
+- [`docs/DEPLOY.md`](docs/DEPLOY.md) — how each app deploys.
+- [`docs/FOLLOWUPS.md`](docs/FOLLOWUPS.md) — what still needs finishing (the
+  paid-tier server enforcement, mobile passwordless UI, web MFA screen, …),
+  prioritized with how-to.
+- [`docs/HARDENING.md`](docs/HARDENING.md) — security / robustness / supply-chain
+  shore-up list.
+- [`docs/SUPABASE_SETUP.md`](docs/SUPABASE_SETUP.md) — the dashboard config that
+  must be done by hand (MFA, SMS, email template).
+
 ## Shared CLI flags
 
 [`tools/flags-2-env`](tools/flags-2-env) pins
