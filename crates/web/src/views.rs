@@ -27,9 +27,9 @@ pub fn layout(title: &str, body: Markup) -> Markup {
                 meta charset="utf-8";
                 meta name="viewport" content="width=device-width, initial-scale=1";
                 title { (title) }
+                link rel="stylesheet" href=(APP_CSS);
                 script src=(HTMX) {}
                 script src=(HTMX_WS) {}
-                style { (PreEscaped(STYLE)) }
             }
             body {
                 header .topbar {
