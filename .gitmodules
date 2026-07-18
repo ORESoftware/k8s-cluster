@@ -149,3 +149,7 @@
 	path = remote/deployments/sonus-auris-monorepo
 	url = git@github.com:sonus-auris/sonus-auris-monorepo.git
 	branch = main
+[submodule "remote/deployments/sonus-auris-interfaces"]
+	path = remote/deployments/sonus-auris-interfaces
+	url = git@github.com:sonus-auris/sonus-auris-interfaces.git
+	branch = main
