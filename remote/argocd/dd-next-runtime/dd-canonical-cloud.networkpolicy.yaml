@@ -42,8 +42,21 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-    # Outbound HTTPS/HTTP for the in-pod build (git clone, npm registry,
-    # crates.io) — public internet only, private ranges excluded.
+    # Explicit OTLP/gRPC export to the in-cluster collector. The public egress
+    # rules below intentionally exclude cluster-private address ranges.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app: dd-otel-collector
+      ports:
+        - protocol: TCP
+          port: 4317
+    # Public egress for the in-pod build, Supabase Auth HTTPS, and the direct or
+    # session-pooled PostgreSQL connection required by LISTEN/NOTIFY. Private
+    # ranges remain excluded.
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
@@ -67,6 +80,8 @@ spec:
           port: 80
         - protocol: TCP
           port: 443
+        - protocol: TCP
+          port: 5432
     - to:
         - ipBlock:
             cidr: ::/0
@@ -85,3 +100,5 @@ spec:
           port: 80
         - protocol: TCP
           port: 443
+        - protocol: TCP
+          port: 5432
