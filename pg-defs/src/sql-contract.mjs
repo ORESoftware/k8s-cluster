@@ -400,6 +400,7 @@ function parseCreateTable(statement) {
   const body = match[3].trim();
   const columns = [];
   const checks = [];
+  const tableLevelPkColumns = [];
 
   for (const item of splitTopLevelComma(body)) {
     const trimmed = item.trim();
@@ -413,16 +414,32 @@ function parseCreateTable(statement) {
     // `unique (...)`, `foreign key (...)`, `exclude`/`like`, or the named
     // `constraint <name> primary key|unique|foreign key (...)` forms. (Named
     // `constraint <name> check (...)` is already captured above.) Skip them so they
-    // are not mis-parsed as a column named e.g. "primary" of type "key". The columns
-    // they reference carry their own `not null`, so no nullability is lost; composite
-    // primary keys are intentionally not surfaced (no adapter models them yet).
+    // are not mis-parsed as a column named e.g. "primary" of type "key" — except that
+    // `primary key (a, b)` column lists are captured first and folded onto the
+    // referenced columns below: key-requiring adapters (sea-orm's DeriveEntityModel
+    // rejects entities with no primary key) need composite PKs surfaced per column.
     if (isTableLevelConstraint(trimmed)) {
+      const pkMatch = trimmed.match(/^(?:constraint\s+"?[\w]+"?\s+)?primary\s+key\s*\(([^)]+)\)/i);
+      if (pkMatch) {
+        for (const part of pkMatch[1].split(",")) {
+          tableLevelPkColumns.push(unquoteIdent(part.trim()));
+        }
+      }
       continue;
     }
 
     const column = parseColumn(trimmed);
     if (column) {
       columns.push(column);
+    }
+  }
+
+  // Postgres makes primary-key columns implicitly not null, so folding a table-level
+  // `primary key (a, b)` onto the columns mirrors the inline `primary key` path exactly.
+  for (const column of columns) {
+    if (tableLevelPkColumns.includes(column.name)) {
+      column.primaryKey = true;
+      column.notNull = true;
     }
   }
 
@@ -475,8 +492,9 @@ function parseCreateFunction(statement) {
   }
 
   const header = statement.slice(0, bodyMatch.index).trim();
+  // Function names may be schema-qualified (e.g. fiducia.bump_row_version).
   const headerMatch = header.match(
-    /^create\s+or\s+replace\s+function\s+("?[\w]+"?)\s*\(([\s\S]*?)\)\s*returns\s+([\s\S]+?)\s+language\s+(\w+)([\s\S]*)$/i,
+    /^create\s+or\s+replace\s+function\s+("?[\w]+"?(?:\."?[\w]+"?)?)\s*\(([\s\S]*?)\)\s*returns\s+([\s\S]+?)\s+language\s+(\w+)([\s\S]*)$/i,
   );
   if (!headerMatch) {
     return null;
@@ -498,8 +516,10 @@ function parseCreateFunction(statement) {
 }
 
 function parseCreateTrigger(statement) {
+  // Table and function references may be schema-qualified (fiducia.orgs,
+  // fiducia.lock_sync_clock); trigger names themselves are never qualified.
   const match = statement.match(
-    /^create\s+trigger\s+("?[\w]+"?)\s+(before|after|instead\s+of)\s+([\s\S]+?)\s+on\s+("?[\w]+"?)\s+for\s+each\s+(row|statement)\s+execute\s+(?:function|procedure)\s+("?[\w]+"?)\s*\(([\s\S]*?)\)\s*;?$/i,
+    /^create\s+trigger\s+("?[\w]+"?)\s+(before|after|instead\s+of)\s+([\s\S]+?)\s+on\s+("?[\w]+"?(?:\."?[\w]+"?)?)\s+for\s+each\s+(row|statement)\s+execute\s+(?:function|procedure)\s+("?[\w]+"?(?:\."?[\w]+"?)?)\s*\(([\s\S]*?)\)\s*;?$/i,
   );
   if (!match) {
     return null;

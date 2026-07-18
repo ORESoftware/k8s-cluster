@@ -24,6 +24,11 @@
     blockchain_bridge_attestations_subject/0,
     blockchain_index_events_subject/0,
     blockchain_mev_alerts_subject/0,
+    build_server_events_subject/0,
+    build_server_images_subject/0,
+    build_server_requests_subject/0,
+    build_server_requests_queue_group/0,
+    build_server_results_subject/0,
     chaos_events_subject/0,
     chaos_experiments_subject/0,
     chaos_probe_subject/0,
@@ -184,6 +189,8 @@
     telemetry_mdp_subject/0,
     telemetry_raw_subject/0,
     telemetry_raw_queue_group/0,
+    thread_tasks_dead_letter_subject/0,
+    thread_tasks_dead_letter_stream/0,
     trading_decisions_subject/0,
     trading_order_intents_subject/0,
     trading_signals_subject/0,
@@ -229,6 +236,7 @@
     workflows_signal_queue_group/0,
     agent_sim_server_queue_group/0,
     billing_server_queue_group/0,
+    build_server_queue_group/0,
     constraint_scheduler_queue_group/0,
     contact_send_queue_group/0,
     critical_events_logger_queue_group/0,
@@ -252,14 +260,17 @@
     thread_preparer_queue_group/0,
     workflow_engine_queue_group/0,
     cdc_stream_name/0,
+    dd_remote_build_jobs_stream_name/0,
     dd_remote_control_stream_name/0,
     dd_remote_critical_events_stream_name/0,
     dd_remote_cron_stream_name/0,
     dd_remote_events_stream_name/0,
     dd_remote_evolution_stream_name/0,
+    dd_remote_fabrication_stream_name/0,
     dd_remote_mip_solver_stream_name/0,
     dd_remote_routing_stream_name/0,
-    dd_remote_tasks_stream_name/0
+    dd_remote_tasks_stream_name/0,
+    dd_remote_tasks_dlq_stream_name/0
 ]).
 
 agent_sim_frames_subject() -> <<"dd.remote.agent_sim.frames"/utf8>>.
@@ -276,6 +287,11 @@ billing_webhook_receipts_subject() -> <<"dd.remote.billing.webhooks.receipts"/ut
 blockchain_bridge_attestations_subject() -> <<"dd.remote.blockchain.bridge.attestations"/utf8>>.
 blockchain_index_events_subject() -> <<"dd.remote.blockchain.index.events"/utf8>>.
 blockchain_mev_alerts_subject() -> <<"dd.remote.blockchain.mev.alerts"/utf8>>.
+build_server_events_subject() -> <<"dd.remote.build_server.events"/utf8>>.
+build_server_images_subject() -> <<"dd.remote.build_server.images"/utf8>>.
+build_server_requests_subject() -> <<"dd.remote.build_server.requests"/utf8>>.
+build_server_requests_queue_group() -> <<"dd-build-server"/utf8>>.
+build_server_results_subject() -> <<"dd.remote.build_server.results"/utf8>>.
 chaos_events_subject() -> <<"dd.remote.chaos.events"/utf8>>.
 chaos_experiments_subject() -> <<"dd.remote.chaos.experiments"/utf8>>.
 chaos_probe_subject() -> <<"dd.remote.chaos.probe"/utf8>>.
@@ -436,6 +452,8 @@ scheduler_schedule_results_subject() -> <<"dd.remote.scheduler.schedule.results"
 telemetry_mdp_subject() -> <<"dd.remote.telemetry.mdp"/utf8>>.
 telemetry_raw_subject() -> <<"dd.remote.telemetry.raw"/utf8>>.
 telemetry_raw_queue_group() -> <<"dd-ai-ml-pipeline"/utf8>>.
+thread_tasks_dead_letter_subject() -> <<"dd.remote.thread.tasks.deadletter"/utf8>>.
+thread_tasks_dead_letter_stream() -> <<"DD_REMOTE_TASKS_DLQ"/utf8>>.
 trading_decisions_subject() -> <<"dd.remote.trading.decisions"/utf8>>.
 trading_order_intents_subject() -> <<"dd.remote.trading.order_intents"/utf8>>.
 trading_signals_subject() -> <<"dd.remote.trading.signals"/utf8>>.
@@ -481,6 +499,7 @@ workflows_signal_wildcard() -> <<"dd.remote.workflows.signal.*"/utf8>>.
 workflows_signal_queue_group() -> <<"dd-gleam-workflow-engine"/utf8>>.
 agent_sim_server_queue_group() -> <<"dd-agent-sim-server"/utf8>>.
 billing_server_queue_group() -> <<"dd-billing-server"/utf8>>.
+build_server_queue_group() -> <<"dd-build-server"/utf8>>.
 constraint_scheduler_queue_group() -> <<"dd-constraint-scheduler"/utf8>>.
 contact_send_queue_group() -> <<"dd-email-sms-contact"/utf8>>.
 critical_events_logger_queue_group() -> <<"dd-runtime-critical-events"/utf8>>.
@@ -504,11 +523,14 @@ sat_smt_server_queue_group() -> <<"dd-sat-smt-server"/utf8>>.
 thread_preparer_queue_group() -> <<"dd-remote-thread-preparer"/utf8>>.
 workflow_engine_queue_group() -> <<"dd-gleam-workflow-engine"/utf8>>.
 cdc_stream_name() -> <<"CDC"/utf8>>.
+dd_remote_build_jobs_stream_name() -> <<"DD_REMOTE_BUILD_JOBS"/utf8>>.
 dd_remote_control_stream_name() -> <<"DD_REMOTE_CONTROL"/utf8>>.
 dd_remote_critical_events_stream_name() -> <<"DD_REMOTE_CRITICAL_EVENTS"/utf8>>.
 dd_remote_cron_stream_name() -> <<"DD_REMOTE_CRON"/utf8>>.
 dd_remote_events_stream_name() -> <<"DD_REMOTE_EVENTS"/utf8>>.
 dd_remote_evolution_stream_name() -> <<"DD_REMOTE_EVOLUTION"/utf8>>.
+dd_remote_fabrication_stream_name() -> <<"DD_REMOTE_FABRICATION"/utf8>>.
 dd_remote_mip_solver_stream_name() -> <<"DD_REMOTE_MIP_SOLVER"/utf8>>.
 dd_remote_routing_stream_name() -> <<"DD_REMOTE_ROUTING"/utf8>>.
 dd_remote_tasks_stream_name() -> <<"DD_REMOTE_TASKS"/utf8>>.
+dd_remote_tasks_dlq_stream_name() -> <<"DD_REMOTE_TASKS_DLQ"/utf8>>.

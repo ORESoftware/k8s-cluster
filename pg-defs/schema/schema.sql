@@ -2,6 +2,68 @@
 -- This file is the desired-state contract used by the remote migration diff generator.
 -- Do not apply it directly to a shared database; generate and review a diff instead.
 
+create schema if not exists threefa;
+
+create table if not exists threefa.accounts (
+  id uuid primary key default gen_random_uuid(),
+  username text not null,
+  auth_secret text not null,
+  created_at timestamptz default now() not null,
+  constraint threefa_accounts_username_size_chk
+    check (octet_length(username) between 1 and 320),
+  constraint threefa_accounts_username_trimmed_chk
+    check (username = btrim(username)),
+  constraint threefa_accounts_auth_secret_size_chk
+    check (octet_length(auth_secret) between 1 and 1024)
+);
+
+create unique index if not exists threefa_accounts_username_uq
+  on threefa.accounts (username);
+
+create table if not exists threefa.devices (
+  id uuid primary key default gen_random_uuid(),
+  account_id uuid not null references threefa.accounts(id) on delete cascade,
+  device_name text not null,
+  sync_token_hash text not null,
+  revoked boolean default false not null,
+  created_at timestamptz default now() not null,
+  constraint threefa_devices_name_size_chk
+    check (octet_length(device_name) between 1 and 200),
+  constraint threefa_devices_name_trimmed_chk
+    check (device_name = btrim(device_name)),
+  constraint threefa_devices_token_hash_chk
+    check (sync_token_hash ~ '^[a-f0-9]{64}$')
+);
+
+create index if not exists threefa_devices_account_idx
+  on threefa.devices (account_id);
+
+create index if not exists threefa_devices_token_idx
+  on threefa.devices (sync_token_hash)
+  where revoked = false;
+
+create table if not exists threefa.vault_blobs (
+  account_id uuid primary key references threefa.accounts(id) on delete cascade,
+  ciphertext text not null,
+  nonce text not null,
+  kdf_salt text not null,
+  kdf_params jsonb not null,
+  version jsonb not null,
+  updated_at timestamptz default now() not null,
+  constraint threefa_vault_ciphertext_size_chk
+    check (octet_length(decode(ciphertext, 'base64')) between 1 and 524288),
+  constraint threefa_vault_nonce_size_chk
+    check (octet_length(decode(nonce, 'base64')) = 24),
+  constraint threefa_vault_salt_size_chk
+    check (octet_length(decode(kdf_salt, 'base64')) between 8 and 64),
+  constraint threefa_vault_kdf_params_object_chk
+    check (jsonb_typeof(kdf_params) = 'object'),
+  constraint threefa_vault_version_array_chk
+    check (jsonb_typeof(version) = 'array'),
+  constraint threefa_vault_version_size_chk
+    check (jsonb_array_length(version) <= 64)
+);
+
 create table if not exists app_config (
   id uuid primary key default gen_random_uuid(),
   scope varchar(120) default 'default' not null,
@@ -5964,3 +6026,735 @@ alter table if exists ai_agent_bridge.channel_members
 alter table if exists ai_agent_bridge.shared_context
   add constraint ai_agent_bridge_context_channel_fk
   foreign key (channel_id) references ai_agent_bridge.channels(id);
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- fiducia — customer plane for fiducia.cloud (app.fiducia.cloud webapp +
+-- api.fiducia.cloud key management), served by fiducia-customer.rs.
+-- ----------------------------------------------------------------------------
+-- Everything lives in the `fiducia` schema so the plane cannot collide with
+-- other apps sharing this RDS database. Identity source of truth is Supabase
+-- Auth (magic link / phone OTP / TOTP); this schema holds the mirrored user
+-- rows, orgs/projects/membership, API-key + mTLS metadata, preferences,
+-- sessions, notifications, and customer-scoped audit.
+--
+-- SYNC CONTRACT (local-first): optimistically-editable tables carry
+--   updated_at timestamptz  -- server commit time
+--   version    bigint       -- monotonic per-row counter (last-writer-wins tiebreak)
+--   sync_sequence bigint    -- global, commit-ordered catch-up cursor
+-- stamped by fiducia.bump_row_version(); fiducia.sync_clock is a transactional
+-- singleton counter (allocating N holds the row lock until commit so no visible
+-- N+1 overtakes an uncommitted N), and deletes land in fiducia.sync_tombstones.
+-- The singleton seed row is a data fixture:
+-- remote/databases/pg/seeds/fiducia-sync-clock.sql.
+-- ════════════════════════════════════════════════════════════════════════════
+
+create schema if not exists fiducia;
+
+create table if not exists fiducia.sync_clock (
+  singleton boolean primary key default true,
+  last_sequence bigint default 0 not null,
+  constraint fiducia_sync_clock_singleton_chk check (singleton),
+  constraint fiducia_sync_clock_nonnegative_chk check (last_sequence >= 0)
+);
+
+-- Latest delete per table/row, scoped so the backend can construct tenant-safe
+-- catch-up queries. Tombstones are retained until an operator-defined
+-- full-snapshot watermark proves no supported client can still need them.
+create table if not exists fiducia.sync_tombstones (
+  sequence bigint primary key,
+  table_name text not null,
+  row_id text not null,
+  tenant_id uuid,
+  owner_user_id uuid,
+  row_version bigint not null,
+  deleted_at timestamptz default now() not null,
+  constraint fiducia_sync_tombstones_sequence_chk check (sequence > 0),
+  constraint fiducia_sync_tombstones_version_chk check (row_version > 0),
+  constraint fiducia_sync_tombstones_scope_chk
+    check (tenant_id is not null or owner_user_id is not null)
+);
+
+create unique index if not exists fiducia_sync_tombstones_table_row_uq
+  on fiducia.sync_tombstones (table_name, row_id);
+
+create index if not exists fiducia_sync_tombstones_tenant_sequence_idx
+  on fiducia.sync_tombstones (table_name, tenant_id, sequence)
+  where tenant_id is not null;
+
+create index if not exists fiducia_sync_tombstones_user_sequence_idx
+  on fiducia.sync_tombstones (table_name, owner_user_id, sequence)
+  where owner_user_id is not null;
+
+create or replace function fiducia.allocate_sync_sequence()
+returns bigint
+language plpgsql
+security definer
+set search_path = pg_catalog, fiducia
+as $$
+declare allocated bigint;
+begin
+  update fiducia.sync_clock
+     set last_sequence = last_sequence + 1
+   where singleton = true
+  returning last_sequence into allocated;
+  if allocated is null then
+    raise exception 'fiducia sync clock singleton is missing';
+  end if;
+  return allocated;
+end;
+$$;
+
+-- Lock the plane clock at statement start, before target-row locks. This keeps
+-- multi-row/multi-table writes from deadlocking in the row trigger while
+-- retaining commit-ordered sequence allocation.
+create or replace function fiducia.lock_sync_clock()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, fiducia
+as $$
+begin
+  perform 1 from fiducia.sync_clock where singleton = true for update;
+  if not found then
+    raise exception 'fiducia sync clock singleton is missing';
+  end if;
+  return null;
+end;
+$$;
+
+-- Shared trigger: stamp the global cursor on INSERT; bump version, timestamp,
+-- and cursor on every UPDATE. Caller-supplied sync_sequence values are
+-- overwritten.
+create or replace function fiducia.bump_row_version()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, fiducia
+as $$
+begin
+  if tg_op = 'UPDATE' then
+    new.version := old.version + 1;
+  end if;
+  new.updated_at := now();
+  new.sync_sequence := fiducia.allocate_sync_sequence();
+  return new;
+end;
+$$;
+
+-- Trigger arguments: primary-key column, tenant column (or ''), owner-user
+-- column (or ''). Extracting through to_jsonb keeps this one function usable
+-- for the customer_preferences user_id primary key and ordinary id primary keys.
+create or replace function fiducia.record_sync_tombstone()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, fiducia
+as $$
+declare
+  allocated bigint;
+  deleted_row jsonb;
+  deleted_row_id text;
+  deleted_tenant_id uuid;
+  deleted_owner_user_id uuid;
+begin
+  if tg_nargs != 3 then
+    raise exception 'record_sync_tombstone requires pk, tenant, and user column arguments';
+  end if;
+  deleted_row := to_jsonb(old);
+  deleted_row_id := deleted_row ->> tg_argv[0];
+  if deleted_row_id is null then
+    raise exception 'sync tombstone primary key % is missing', tg_argv[0];
+  end if;
+  if tg_argv[1] <> '' then
+    deleted_tenant_id := (deleted_row ->> tg_argv[1])::uuid;
+  end if;
+  if tg_argv[2] <> '' then
+    deleted_owner_user_id := (deleted_row ->> tg_argv[2])::uuid;
+  end if;
+
+  allocated := fiducia.allocate_sync_sequence();
+  insert into fiducia.sync_tombstones
+    (sequence, table_name, row_id, tenant_id, owner_user_id, row_version, deleted_at)
+  values
+    (allocated, tg_table_name, deleted_row_id, deleted_tenant_id,
+     deleted_owner_user_id, old.version + 1, now())
+  on conflict (table_name, row_id) do update
+    set sequence = excluded.sequence,
+        tenant_id = excluded.tenant_id,
+        owner_user_id = excluded.owner_user_id,
+        row_version = excluded.row_version,
+        deleted_at = excluded.deleted_at;
+  return old;
+end;
+$$;
+
+create table if not exists fiducia.orgs (
+  id uuid primary key default gen_random_uuid(),
+  slug varchar(120) not null,
+  name varchar(200) not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  version bigint default 1 not null,
+  sync_sequence bigint not null,
+  constraint fiducia_orgs_slug_format_chk
+    check (slug ~ '^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$')
+);
+
+create unique index if not exists fiducia_orgs_slug_uq on fiducia.orgs (slug);
+
+create index if not exists fiducia_orgs_sync_sequence_idx
+  on fiducia.orgs (sync_sequence);
+
+drop trigger if exists fiducia_orgs_sync_clock_guard on fiducia.orgs;
+
+create trigger fiducia_orgs_sync_clock_guard
+  before insert or update or delete on fiducia.orgs
+  for each statement
+  execute function fiducia.lock_sync_clock();
+
+drop trigger if exists fiducia_orgs_bump on fiducia.orgs;
+
+create trigger fiducia_orgs_bump
+  before insert or update on fiducia.orgs
+  for each row
+  execute function fiducia.bump_row_version();
+
+drop trigger if exists fiducia_orgs_tombstone on fiducia.orgs;
+
+create trigger fiducia_orgs_tombstone
+  after delete on fiducia.orgs
+  for each row
+  execute function fiducia.record_sync_tombstone('id', 'id', '');
+
+create table if not exists fiducia.projects (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references fiducia.orgs (id) on delete cascade,
+  slug varchar(120) not null,
+  name varchar(200) not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  version bigint default 1 not null,
+  sync_sequence bigint not null,
+  constraint fiducia_projects_slug_format_chk
+    check (slug ~ '^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$')
+);
+
+create unique index if not exists fiducia_projects_org_slug_uq
+  on fiducia.projects (org_id, slug);
+
+create index if not exists fiducia_projects_org_idx on fiducia.projects (org_id);
+
+create index if not exists fiducia_projects_org_sync_sequence_idx
+  on fiducia.projects (org_id, sync_sequence);
+
+drop trigger if exists fiducia_projects_sync_clock_guard on fiducia.projects;
+
+create trigger fiducia_projects_sync_clock_guard
+  before insert or update or delete on fiducia.projects
+  for each statement
+  execute function fiducia.lock_sync_clock();
+
+drop trigger if exists fiducia_projects_bump on fiducia.projects;
+
+create trigger fiducia_projects_bump
+  before insert or update on fiducia.projects
+  for each row
+  execute function fiducia.bump_row_version();
+
+drop trigger if exists fiducia_projects_tombstone on fiducia.projects;
+
+create trigger fiducia_projects_tombstone
+  after delete on fiducia.projects
+  for each row
+  execute function fiducia.record_sync_tombstone('id', 'org_id', '');
+
+-- Mirrors the Supabase auth user (source of truth is Supabase). We keep a thin
+-- local row to join org membership + audit against.
+create table if not exists fiducia.users (
+  id uuid primary key default gen_random_uuid(),
+  supabase_user_id uuid not null,
+  email varchar(320) not null,
+  created_at timestamptz default now() not null
+);
+
+create unique index if not exists fiducia_users_supabase_uq
+  on fiducia.users (supabase_user_id);
+
+-- A user row is not itself part of the sync feed, but deleting it cascades into
+-- customer_preferences/customer_sessions and updates api_keys.created_by_user_id.
+-- Lock before the parent row so those triggered synced writes retain the global
+-- clock-before-data lock order.
+drop trigger if exists fiducia_users_sync_clock_guard on fiducia.users;
+
+create trigger fiducia_users_sync_clock_guard
+  before delete on fiducia.users
+  for each statement
+  execute function fiducia.lock_sync_clock();
+
+create table if not exists fiducia.org_members (
+  org_id uuid not null references fiducia.orgs (id) on delete cascade,
+  user_id uuid not null references fiducia.users (id) on delete cascade,
+  role varchar(32) default 'member' not null,
+  created_at timestamptz default now() not null,
+  primary key (org_id, user_id),
+  constraint fiducia_org_members_role_chk
+    check (role in ('owner', 'admin', 'member'))
+);
+
+create index if not exists fiducia_org_members_user_idx
+  on fiducia.org_members (user_id);
+
+create table if not exists fiducia.project_members (
+  project_id uuid not null references fiducia.projects (id) on delete cascade,
+  user_id uuid not null references fiducia.users (id) on delete cascade,
+  role varchar(32) default 'viewer' not null,
+  created_at timestamptz default now() not null,
+  primary key (project_id, user_id),
+  constraint fiducia_project_members_role_chk
+    check (role in ('admin', 'operator', 'viewer'))
+);
+
+create index if not exists fiducia_project_members_user_idx
+  on fiducia.project_members (user_id);
+
+-- API keys: only the hash of the secret is ever stored. A null project_id means
+-- the key is org-scoped; otherwise permissions are constrained to one project.
+-- Never published to the sync feed (rows carry verifier hashes).
+create table if not exists fiducia.api_keys (
+  id uuid primary key default gen_random_uuid(),
+  key_id varchar(64) not null,
+  org_id uuid not null references fiducia.orgs (id) on delete cascade,
+  project_id uuid references fiducia.projects (id) on delete cascade,
+  created_by_user_id uuid references fiducia.users (id) on delete set null,
+  name varchar(200) not null,
+  secret_hash varchar(255) not null,
+  scopes jsonb default '[]'::jsonb not null,
+  env varchar(16) default 'live' not null,
+  require_idempotency boolean default true not null,
+  mtls_required boolean default false not null,
+  revoked boolean default false not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  version bigint default 1 not null,
+  sync_sequence bigint not null,
+  last_used_at timestamptz,
+  expires_at timestamptz,
+  constraint fiducia_api_keys_env_chk check (env in ('live', 'test')),
+  constraint fiducia_api_keys_scopes_array_chk
+    check (jsonb_typeof(scopes) = 'array')
+);
+
+create unique index if not exists fiducia_api_keys_key_id_uq
+  on fiducia.api_keys (key_id);
+
+create index if not exists fiducia_api_keys_org_idx
+  on fiducia.api_keys (org_id) where revoked = false;
+
+create index if not exists fiducia_api_keys_project_idx
+  on fiducia.api_keys (project_id) where revoked = false;
+
+create index if not exists fiducia_api_keys_org_sync_sequence_idx
+  on fiducia.api_keys (org_id, sync_sequence);
+
+drop trigger if exists fiducia_api_keys_sync_clock_guard on fiducia.api_keys;
+
+create trigger fiducia_api_keys_sync_clock_guard
+  before insert or update or delete on fiducia.api_keys
+  for each statement
+  execute function fiducia.lock_sync_clock();
+
+drop trigger if exists fiducia_api_keys_bump on fiducia.api_keys;
+
+create trigger fiducia_api_keys_bump
+  before insert or update on fiducia.api_keys
+  for each row
+  execute function fiducia.bump_row_version();
+
+drop trigger if exists fiducia_api_keys_tombstone on fiducia.api_keys;
+
+create trigger fiducia_api_keys_tombstone
+  after delete on fiducia.api_keys
+  for each row
+  execute function fiducia.record_sync_tombstone('id', 'org_id', '');
+
+create table if not exists fiducia.mtls_client_certs (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references fiducia.orgs (id) on delete cascade,
+  project_id uuid references fiducia.projects (id) on delete cascade,
+  name varchar(200) not null,
+  subject varchar(500) not null,
+  sha256_fingerprint varchar(95) not null,
+  not_before timestamptz,
+  not_after timestamptz,
+  revoked boolean default false not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  version bigint default 1 not null,
+  sync_sequence bigint not null
+);
+
+create unique index if not exists fiducia_mtls_client_certs_fingerprint_uq
+  on fiducia.mtls_client_certs (sha256_fingerprint);
+
+create index if not exists fiducia_mtls_client_certs_org_idx
+  on fiducia.mtls_client_certs (org_id) where revoked = false;
+
+create index if not exists fiducia_mtls_client_certs_org_sync_sequence_idx
+  on fiducia.mtls_client_certs (org_id, sync_sequence);
+
+drop trigger if exists fiducia_mtls_client_certs_sync_clock_guard on fiducia.mtls_client_certs;
+
+create trigger fiducia_mtls_client_certs_sync_clock_guard
+  before insert or update or delete on fiducia.mtls_client_certs
+  for each statement
+  execute function fiducia.lock_sync_clock();
+
+drop trigger if exists fiducia_mtls_client_certs_bump on fiducia.mtls_client_certs;
+
+create trigger fiducia_mtls_client_certs_bump
+  before insert or update on fiducia.mtls_client_certs
+  for each row
+  execute function fiducia.bump_row_version();
+
+drop trigger if exists fiducia_mtls_client_certs_tombstone on fiducia.mtls_client_certs;
+
+create trigger fiducia_mtls_client_certs_tombstone
+  after delete on fiducia.mtls_client_certs
+  for each row
+  execute function fiducia.record_sync_tombstone('id', 'org_id', '');
+
+-- Per-user dashboard preferences (backs GET/PUT /api/customer/preferences).
+create table if not exists fiducia.customer_preferences (
+  user_id uuid primary key references fiducia.users (id) on delete cascade,
+  density varchar(16) default 'comfortable' not null,
+  timezone varchar(64) default 'UTC' not null,
+  region varchar(16) default 'auto' not null,
+  notify_key_rotation boolean default true not null,
+  notify_lock_contention boolean default true not null,
+  notify_mfa boolean default true not null,
+  updated_at timestamptz default now() not null,
+  version bigint default 1 not null,
+  sync_sequence bigint not null,
+  constraint fiducia_customer_preferences_density_chk
+    check (density in ('comfortable', 'compact'))
+);
+
+create index if not exists fiducia_customer_preferences_user_sync_sequence_idx
+  on fiducia.customer_preferences (user_id, sync_sequence);
+
+drop trigger if exists fiducia_customer_preferences_sync_clock_guard on fiducia.customer_preferences;
+
+create trigger fiducia_customer_preferences_sync_clock_guard
+  before insert or update or delete on fiducia.customer_preferences
+  for each statement
+  execute function fiducia.lock_sync_clock();
+
+drop trigger if exists fiducia_customer_preferences_bump on fiducia.customer_preferences;
+
+create trigger fiducia_customer_preferences_bump
+  before insert or update on fiducia.customer_preferences
+  for each row
+  execute function fiducia.bump_row_version();
+
+drop trigger if exists fiducia_customer_preferences_tombstone on fiducia.customer_preferences;
+
+create trigger fiducia_customer_preferences_tombstone
+  after delete on fiducia.customer_preferences
+  for each row
+  execute function fiducia.record_sync_tombstone('user_id', '', 'user_id');
+
+-- Trusted sessions shown on the customer Security page (list + revoke).
+create table if not exists fiducia.customer_sessions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references fiducia.users (id) on delete cascade,
+  device varchar(200) not null,
+  location varchar(200),
+  last_seen timestamptz default now() not null,
+  status varchar(16) default 'active' not null,
+  updated_at timestamptz default now() not null,
+  version bigint default 1 not null,
+  sync_sequence bigint not null,
+  constraint fiducia_customer_sessions_status_chk
+    check (status in ('active', 'verified', 'revoked'))
+);
+
+create index if not exists fiducia_customer_sessions_user_idx
+  on fiducia.customer_sessions (user_id);
+
+create index if not exists fiducia_customer_sessions_user_sync_sequence_idx
+  on fiducia.customer_sessions (user_id, sync_sequence);
+
+drop trigger if exists fiducia_customer_sessions_sync_clock_guard on fiducia.customer_sessions;
+
+create trigger fiducia_customer_sessions_sync_clock_guard
+  before insert or update or delete on fiducia.customer_sessions
+  for each statement
+  execute function fiducia.lock_sync_clock();
+
+drop trigger if exists fiducia_customer_sessions_bump on fiducia.customer_sessions;
+
+create trigger fiducia_customer_sessions_bump
+  before insert or update on fiducia.customer_sessions
+  for each row
+  execute function fiducia.bump_row_version();
+
+drop trigger if exists fiducia_customer_sessions_tombstone on fiducia.customer_sessions;
+
+create trigger fiducia_customer_sessions_tombstone
+  after delete on fiducia.customer_sessions
+  for each row
+  execute function fiducia.record_sync_tombstone('id', '', 'user_id');
+
+-- Customer-scoped audit (append-only; no version/trigger).
+create table if not exists fiducia.audit_log (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid references fiducia.orgs (id) on delete set null,
+  project_id uuid references fiducia.projects (id) on delete set null,
+  actor_user_id uuid references fiducia.users (id) on delete set null,
+  actor_key_id uuid references fiducia.api_keys (id) on delete set null,
+  actor varchar(320),
+  action varchar(120) not null,
+  target varchar(320),
+  request_id varchar(120),
+  -- Textual IP (v4/v6). Deliberately varchar, not inet: display-only audit
+  -- metadata, and every pg-defs adapter can carry a string.
+  source_ip varchar(64),
+  user_agent varchar(500),
+  meta jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  retention_expires_at timestamptz,
+  constraint fiducia_audit_meta_object_chk check (jsonb_typeof(meta) = 'object')
+);
+
+create index if not exists fiducia_audit_log_org_created_idx
+  on fiducia.audit_log (org_id, created_at desc);
+
+create index if not exists fiducia_audit_log_project_created_idx
+  on fiducia.audit_log (project_id, created_at desc);
+
+create index if not exists fiducia_audit_log_actor_user_created_idx
+  on fiducia.audit_log (actor_user_id, created_at desc);
+
+create index if not exists fiducia_audit_log_actor_key_created_idx
+  on fiducia.audit_log (actor_key_id, created_at desc);
+
+-- In-product notifications for a signed-in user (key-rotation reminders, lock
+-- contention alerts, MFA nudges, operator broadcasts). `read_at` is the only
+-- client-editable field. Delivery preferences live in customer_preferences
+-- (notify_*); this table is the delivered instances.
+create table if not exists fiducia.customer_notifications (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references fiducia.users (id) on delete cascade,
+  org_id uuid references fiducia.orgs (id) on delete set null,
+  kind varchar(40) not null,
+  severity varchar(16) default 'info' not null,
+  title varchar(200) not null,
+  body varchar(2000) default '' not null,
+  link varchar(500),
+  read_at timestamptz,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  version bigint default 1 not null,
+  sync_sequence bigint not null,
+  constraint fiducia_customer_notifications_severity_chk
+    check (severity in ('info', 'success', 'warning', 'critical')),
+  constraint fiducia_customer_notifications_kind_chk
+    check (kind ~ '^[a-z][a-z0-9_.]{1,38}[a-z0-9]$')
+);
+
+create index if not exists fiducia_customer_notifications_user_created_idx
+  on fiducia.customer_notifications (user_id, created_at desc);
+
+create index if not exists fiducia_customer_notifications_user_unread_idx
+  on fiducia.customer_notifications (user_id) where read_at is null;
+
+create index if not exists fiducia_customer_notifications_user_sync_sequence_idx
+  on fiducia.customer_notifications (user_id, sync_sequence);
+
+drop trigger if exists fiducia_customer_notifications_sync_clock_guard on fiducia.customer_notifications;
+
+create trigger fiducia_customer_notifications_sync_clock_guard
+  before insert or update or delete on fiducia.customer_notifications
+  for each statement
+  execute function fiducia.lock_sync_clock();
+
+drop trigger if exists fiducia_customer_notifications_bump on fiducia.customer_notifications;
+
+create trigger fiducia_customer_notifications_bump
+  before insert or update on fiducia.customer_notifications
+  for each row
+  execute function fiducia.bump_row_version();
+
+drop trigger if exists fiducia_customer_notifications_tombstone on fiducia.customer_notifications;
+
+create trigger fiducia_customer_notifications_tombstone
+  after delete on fiducia.customer_notifications
+  for each row
+  execute function fiducia.record_sync_tombstone('id', '', 'user_id');
+
+-- Request-bound idempotency for sync writes. Server-internal (never synced).
+-- A writer MUST hash the authenticated customer + tenant + table + row +
+-- operation + base version + canonical payload, claim the key with that
+-- fingerprint in the SAME transaction as the mutation, and record
+-- committed_version before commit. On conflict it may replay only when the
+-- fingerprints match and committed_version is non-null; a mismatch or an
+-- uncommitted/null version MUST fail closed. Prune only completed keys after
+-- the supported retry window.
+create table if not exists fiducia.sync_idempotency_keys (
+  key text primary key,
+  request_fingerprint varchar(64) not null,
+  committed_version bigint,
+  created_at timestamptz default now() not null,
+  constraint fiducia_sync_idempotency_fingerprint_chk
+    check (request_fingerprint ~ '^[0-9a-f]{64}$')
+);
+
+create index if not exists fiducia_sync_idempotency_created_idx
+  on fiducia.sync_idempotency_keys (created_at);
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- t2v — voice-to-text / text-to-voice platform (t2v-v2t.rs: t2v-api JSON
+-- server + t2v-web MASH dashboard).
+-- ----------------------------------------------------------------------------
+-- Everything lives in the `t2v` schema so the app's defs cannot collide with
+-- other apps sharing this database. The services connect with
+-- search_path=t2v (SeaORM schema_search_path) and never run their own DDL
+-- against Postgres: this section is the desired state, converged by dpm.
+-- SeaORM entities in t2v-v2t.rs/crates/entity are adapters for these tables;
+-- the repo's sea-orm-migration crate exists only to bootstrap SQLite in local
+-- dev and tests.
+-- ════════════════════════════════════════════════════════════════════════════
+
+create schema if not exists t2v;
+
+-- One row per speech-to-text run (direct upload, pipeline stage, or Vapi).
+create table if not exists t2v.transcriptions (
+  id uuid primary key default gen_random_uuid(),
+  source text not null,
+  provider text not null,
+  model text not null,
+  text text not null,
+  language text,
+  sample_rate integer,
+  duration_ms bigint,
+  created_at timestamptz default now() not null,
+  constraint t2v_transcriptions_source_size_chk
+    check (octet_length(source) between 1 and 40),
+  constraint t2v_transcriptions_provider_size_chk
+    check (octet_length(provider) between 1 and 40),
+  constraint t2v_transcriptions_model_size_chk
+    check (octet_length(model) between 1 and 200),
+  constraint t2v_transcriptions_text_size_chk
+    check (octet_length(text) <= 1000000),
+  constraint t2v_transcriptions_language_size_chk
+    check (language is null or octet_length(language) between 1 and 80),
+  constraint t2v_transcriptions_sample_rate_chk
+    check (sample_rate is null or sample_rate between 4000 and 384000),
+  constraint t2v_transcriptions_duration_chk
+    check (duration_ms is null or duration_ms >= 0)
+);
+
+create index if not exists t2v_transcriptions_created_idx
+  on t2v.transcriptions (created_at);
+
+-- One row per text-to-speech run; audio bytes are returned to the caller and
+-- not stored, only measured.
+create table if not exists t2v.syntheses (
+  id uuid primary key default gen_random_uuid(),
+  text text not null,
+  voice text not null,
+  provider text not null,
+  model text not null,
+  format text not null,
+  audio_bytes bigint not null,
+  created_at timestamptz default now() not null,
+  constraint t2v_syntheses_text_size_chk
+    check (octet_length(text) between 1 and 20000),
+  constraint t2v_syntheses_voice_size_chk
+    check (octet_length(voice) between 1 and 80),
+  constraint t2v_syntheses_provider_size_chk
+    check (octet_length(provider) between 1 and 40),
+  constraint t2v_syntheses_model_size_chk
+    check (octet_length(model) between 1 and 200),
+  constraint t2v_syntheses_format_size_chk
+    check (octet_length(format) between 1 and 10),
+  constraint t2v_syntheses_audio_bytes_chk
+    check (audio_bytes >= 0)
+);
+
+create index if not exists t2v_syntheses_created_idx
+  on t2v.syntheses (created_at);
+
+-- One row per LLM translation (OpenAI / Gemini / Anthropic all land here).
+create table if not exists t2v.translations (
+  id uuid primary key default gen_random_uuid(),
+  source_text text not null,
+  translated_text text not null,
+  source_lang text,
+  target_lang text not null,
+  provider text not null,
+  model text not null,
+  latency_ms bigint not null,
+  created_at timestamptz default now() not null,
+  constraint t2v_translations_source_text_size_chk
+    check (octet_length(source_text) between 1 and 200000),
+  constraint t2v_translations_translated_text_size_chk
+    check (octet_length(translated_text) <= 200000),
+  constraint t2v_translations_source_lang_size_chk
+    check (source_lang is null or octet_length(source_lang) between 1 and 80),
+  constraint t2v_translations_target_lang_size_chk
+    check (octet_length(target_lang) between 1 and 80),
+  constraint t2v_translations_provider_size_chk
+    check (octet_length(provider) between 1 and 40),
+  constraint t2v_translations_model_size_chk
+    check (octet_length(model) between 1 and 200),
+  constraint t2v_translations_latency_chk
+    check (latency_ms >= 0)
+);
+
+create index if not exists t2v_translations_created_idx
+  on t2v.translations (created_at);
+
+-- Vapi.ai call lifecycle, upserted from server webhooks keyed by Vapi's id.
+create table if not exists t2v.vapi_calls (
+  id uuid primary key default gen_random_uuid(),
+  vapi_call_id text not null,
+  status text not null,
+  ended_reason text,
+  transcript text,
+  summary text,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint t2v_vapi_calls_call_id_size_chk
+    check (octet_length(vapi_call_id) between 1 and 120),
+  constraint t2v_vapi_calls_status_size_chk
+    check (octet_length(status) between 1 and 40),
+  constraint t2v_vapi_calls_ended_reason_size_chk
+    check (ended_reason is null or octet_length(ended_reason) between 1 and 200),
+  constraint t2v_vapi_calls_transcript_size_chk
+    check (transcript is null or octet_length(transcript) <= 1000000),
+  constraint t2v_vapi_calls_summary_size_chk
+    check (summary is null or octet_length(summary) <= 100000)
+);
+
+create unique index if not exists t2v_vapi_calls_vapi_call_id_uq
+  on t2v.vapi_calls (vapi_call_id);
+
+-- Raw Vapi webhook events for audit/debugging (payload truncated app-side).
+create table if not exists t2v.vapi_events (
+  id uuid primary key default gen_random_uuid(),
+  vapi_call_id text,
+  event_type text not null,
+  payload jsonb not null,
+  created_at timestamptz default now() not null,
+  constraint t2v_vapi_events_call_id_size_chk
+    check (vapi_call_id is null or octet_length(vapi_call_id) between 1 and 120),
+  constraint t2v_vapi_events_type_size_chk
+    check (octet_length(event_type) between 1 and 80)
+);
+
+create index if not exists t2v_vapi_events_created_idx
+  on t2v.vapi_events (created_at);
+
+create index if not exists t2v_vapi_events_call_idx
+  on t2v.vapi_events (vapi_call_id);

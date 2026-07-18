@@ -11,6 +11,9 @@ defmodule DdPgDefs do
   """
 
   @tables [
+    DdPgDefs.Accounts,
+    DdPgDefs.Devices,
+    DdPgDefs.VaultBlobs,
     DdPgDefs.AppConfig,
     DdPgDefs.VapiPhoneCallEvents,
     DdPgDefs.MusicSongs,
@@ -133,6 +136,25 @@ defmodule DdPgDefs do
     DdPgDefs.Messages,
     DdPgDefs.ChannelMembers,
     DdPgDefs.SharedContext,
+    DdPgDefs.SyncClock,
+    DdPgDefs.SyncTombstones,
+    DdPgDefs.Orgs,
+    DdPgDefs.Projects,
+    DdPgDefs.Users,
+    DdPgDefs.OrgMembers,
+    DdPgDefs.ProjectMembers,
+    DdPgDefs.ApiKeys,
+    DdPgDefs.MtlsClientCerts,
+    DdPgDefs.CustomerPreferences,
+    DdPgDefs.CustomerSessions,
+    DdPgDefs.AuditLog,
+    DdPgDefs.CustomerNotifications,
+    DdPgDefs.SyncIdempotencyKeys,
+    DdPgDefs.Transcriptions,
+    DdPgDefs.Syntheses,
+    DdPgDefs.Translations,
+    DdPgDefs.VapiCalls,
+    DdPgDefs.VapiEvents,
   ]
 
   @spec tables() :: [module()]

@@ -39,6 +39,19 @@ let blockchain_index_events_subject = "dd.remote.blockchain.index.events"
 (* Monitoring-only MEV/arbitrage spread alerts emitted when an observed venue spread crosses the configured threshold. Default for BLOCKCHAIN_MEV_ALERTS_SUBJECT. Observation surface only; there is no execution path. Publish-only. *)
 let blockchain_mev_alerts_subject = "dd.remote.blockchain.mev.alerts"
 
+(* Redacted build lifecycle events (queued/running/succeeded/failed) published by the build server. Default for BUILD_SERVER_NATS_EVENT_SUBJECT. *)
+let build_server_events_subject = "dd.remote.build_server.events"
+
+(* Redacted container-image registry events (ECR / docker registry webhook pushes) relayed by the build server. Default for BUILD_SERVER_NATS_IMAGE_SUBJECT. *)
+let build_server_images_subject = "dd.remote.build_server.images"
+
+(* Durable build-request intake. Producers publish a build-server.v1 job document; build-server replicas consume via the shared queue group / durable JetStream consumer. Default for BUILD_SERVER_NATS_REQUEST_SUBJECT. *)
+let build_server_requests_subject = "dd.remote.build_server.requests"
+let build_server_requests_queue_group = "dd-build-server"
+
+(* Terminal build results (succeeded/failed with jobId and error summary) for NATS-submitted and webhook-submitted jobs. Default for BUILD_SERVER_NATS_RESULT_SUBJECT. *)
+let build_server_results_subject = "dd.remote.build_server.results"
+
 (* Per-fault lifecycle events (selected, injected, restored, aborted-by-guard) emitted by the chaos loops. *)
 let chaos_events_subject = "dd.remote.chaos.events"
 
@@ -411,6 +424,10 @@ let telemetry_mdp_subject = "dd.remote.telemetry.mdp"
 let telemetry_raw_subject = "dd.remote.telemetry.raw"
 let telemetry_raw_queue_group = "dd-ai-ml-pipeline"
 
+(* Redacted terminal task failures emitted after the queue consumer exhausts JetStream redelivery. Kept on a separate limits-retention stream so poison-message evidence is durable without affecting the WorkQueue consumer lag used by KEDA. *)
+let thread_tasks_dead_letter_subject = "dd.remote.thread.tasks.deadletter"
+let thread_tasks_dead_letter_stream = "DD_REMOTE_TASKS_DLQ"
+
 (* Risk-gated buy/sell/hold decisions emitted by the trading server. Default for TRADING_DECISION_SUBJECT. *)
 let trading_decisions_subject = "dd.remote.trading.decisions"
 
@@ -574,7 +591,7 @@ let parse_thread_heartbeat_subject subject =
   | ["dd"; "remote"; "thread"; thread_id; "heartbeat"] -> Some { thread_heartbeat_subject_parts_thread_id = thread_id }
   | _ -> None
 
-(* Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS). Producers publish per-thread; consumers either subscribe to the exact subject (the worker for that thread) or to the wildcard via a queue group (the preparer). *)
+(* Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS) with WorkQueue retention. Producers publish per-thread and queue-consumer replicas share the durable wildcard consumer so each task has one handoff owner. *)
 let thread_tasks_pattern = "dd.remote.thread.{thread_id}.tasks"
 let thread_tasks_wildcard = "dd.remote.thread.*.tasks"
 let thread_tasks_queue_group = "dd-remote-thread-preparer"
@@ -606,6 +623,9 @@ let queue_group_agent_sim_server_queue_group = "dd-agent-sim-server"
 
 (* Queue group shared by dd-billing-server replicas for inbound sync commands so each command is handled by exactly one pod. *)
 let queue_group_billing_server_queue_group = "dd-billing-server"
+
+(* Shared queue group / durable consumer name used by build-server replicas for request intake. *)
+let queue_group_build_server_queue_group = "dd-build-server"
 
 (* Shared queue group used by dd-constraint-scheduler replicas consuming schedule requests. *)
 let queue_group_constraint_scheduler_queue_group = "dd-constraint-scheduler"
@@ -680,6 +700,13 @@ let cdc_stream_retention = "limits"
 let cdc_stream_storage = "file"
 let cdc_stream_ack = "explicit"
 
+(* JetStream file storage with WorkQueue retention and explicit ack for build-request intake. Dedupe by Nats-Msg-Id ('build-request:<requestId>'); Postgres (dd_build_server) remains the real idempotency guard. *)
+let dd_remote_build_jobs_stream_name = "DD_REMOTE_BUILD_JOBS"
+let dd_remote_build_jobs_stream_subjects = ["dd.remote.build_server.requests"]
+let dd_remote_build_jobs_stream_retention = "workqueue"
+let dd_remote_build_jobs_stream_storage = "file"
+let dd_remote_build_jobs_stream_ack = "explicit"
+
 (* Short-retention control plane stream. *)
 let dd_remote_control_stream_name = "DD_REMOTE_CONTROL"
 let dd_remote_control_stream_subjects = ["dd.remote.thread.*.control"; "dd.remote.orchestrator.wakeup"]
@@ -715,6 +742,13 @@ let dd_remote_evolution_stream_retention = "limits"
 let dd_remote_evolution_stream_storage = "file"
 let dd_remote_evolution_stream_ack = "explicit"
 
+(* Durable JetStream history for fabrication requests, results, machine profiles, design conversion, instruction generation and review, execution telemetry, learning outcomes, and release readiness. *)
+let dd_remote_fabrication_stream_name = "DD_REMOTE_FABRICATION"
+let dd_remote_fabrication_stream_subjects = ["dd.remote.fabrication.>"]
+let dd_remote_fabrication_stream_retention = "limits"
+let dd_remote_fabrication_stream_storage = "file"
+let dd_remote_fabrication_stream_ack = "explicit"
+
 (* JetStream stream for distributed in-house LP/MIP/IP solver work, results, control, and progress events. *)
 let dd_remote_mip_solver_stream_name = "DD_REMOTE_MIP_SOLVER"
 let dd_remote_mip_solver_stream_subjects = ["dd.remote.mip_solver.jobs"; "dd.remote.mip_solver.results"; "dd.remote.mip_solver.control"; "dd.remote.mip_solver.events"]
@@ -729,9 +763,16 @@ let dd_remote_routing_stream_retention = "limits"
 let dd_remote_routing_stream_storage = "file"
 let dd_remote_routing_stream_ack = "explicit"
 
-(* JetStream file storage, explicit ack, message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard. *)
+(* JetStream file storage with WorkQueue retention, explicit ack, and message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard. *)
 let dd_remote_tasks_stream_name = "DD_REMOTE_TASKS"
 let dd_remote_tasks_stream_subjects = ["dd.remote.thread.*.tasks"]
-let dd_remote_tasks_stream_retention = "limits"
+let dd_remote_tasks_stream_retention = "workqueue"
 let dd_remote_tasks_stream_storage = "file"
 let dd_remote_tasks_stream_ack = "explicit"
+
+(* Durable limits-retention stream for redacted terminal task failures. It is separate from DD_REMOTE_TASKS so dead letters cannot inflate queue-consumer lag or trigger KEDA scaling. *)
+let dd_remote_tasks_dlq_stream_name = "DD_REMOTE_TASKS_DLQ"
+let dd_remote_tasks_dlq_stream_subjects = ["dd.remote.thread.tasks.deadletter"]
+let dd_remote_tasks_dlq_stream_retention = "limits"
+let dd_remote_tasks_dlq_stream_storage = "file"
+let dd_remote_tasks_dlq_stream_ack = "explicit"

@@ -28,6 +28,15 @@ defmodule DdNatsSubjectDefs do
 
   def blockchain_mev_alerts_subject, do: "dd.remote.blockchain.mev.alerts"
 
+  def build_server_events_subject, do: "dd.remote.build_server.events"
+
+  def build_server_images_subject, do: "dd.remote.build_server.images"
+
+  def build_server_requests_subject, do: "dd.remote.build_server.requests"
+  def build_server_requests_queue_group, do: "dd-build-server"
+
+  def build_server_results_subject, do: "dd.remote.build_server.results"
+
   def chaos_events_subject, do: "dd.remote.chaos.events"
 
   def chaos_experiments_subject, do: "dd.remote.chaos.experiments"
@@ -294,6 +303,9 @@ defmodule DdNatsSubjectDefs do
   def telemetry_raw_subject, do: "dd.remote.telemetry.raw"
   def telemetry_raw_queue_group, do: "dd-ai-ml-pipeline"
 
+  def thread_tasks_dead_letter_subject, do: "dd.remote.thread.tasks.deadletter"
+  def thread_tasks_dead_letter_stream, do: "DD_REMOTE_TASKS_DLQ"
+
   def trading_decisions_subject, do: "dd.remote.trading.decisions"
 
   def trading_order_intents_subject, do: "dd.remote.trading.order_intents"
@@ -451,6 +463,8 @@ defmodule DdNatsSubjectDefs do
 
   def queue_group_billing_server_queue_group, do: "dd-billing-server"
 
+  def queue_group_build_server_queue_group, do: "dd-build-server"
+
   def queue_group_constraint_scheduler_queue_group, do: "dd-constraint-scheduler"
 
   def queue_group_contact_send_queue_group, do: "dd-email-sms-contact"
@@ -501,6 +515,12 @@ defmodule DdNatsSubjectDefs do
   def cdc_stream_storage, do: "file"
   def cdc_stream_ack, do: "explicit"
 
+  def dd_remote_build_jobs_stream_name, do: "DD_REMOTE_BUILD_JOBS"
+  def dd_remote_build_jobs_stream_subjects, do: ["dd.remote.build_server.requests"]
+  def dd_remote_build_jobs_stream_retention, do: "workqueue"
+  def dd_remote_build_jobs_stream_storage, do: "file"
+  def dd_remote_build_jobs_stream_ack, do: "explicit"
+
   def dd_remote_control_stream_name, do: "DD_REMOTE_CONTROL"
   def dd_remote_control_stream_subjects, do: ["dd.remote.thread.*.control", "dd.remote.orchestrator.wakeup"]
   def dd_remote_control_stream_retention, do: "limits"
@@ -531,6 +551,12 @@ defmodule DdNatsSubjectDefs do
   def dd_remote_evolution_stream_storage, do: "file"
   def dd_remote_evolution_stream_ack, do: "explicit"
 
+  def dd_remote_fabrication_stream_name, do: "DD_REMOTE_FABRICATION"
+  def dd_remote_fabrication_stream_subjects, do: ["dd.remote.fabrication.>"]
+  def dd_remote_fabrication_stream_retention, do: "limits"
+  def dd_remote_fabrication_stream_storage, do: "file"
+  def dd_remote_fabrication_stream_ack, do: "explicit"
+
   def dd_remote_mip_solver_stream_name, do: "DD_REMOTE_MIP_SOLVER"
   def dd_remote_mip_solver_stream_subjects, do: ["dd.remote.mip_solver.jobs", "dd.remote.mip_solver.results", "dd.remote.mip_solver.control", "dd.remote.mip_solver.events"]
   def dd_remote_mip_solver_stream_retention, do: "limits"
@@ -545,7 +571,13 @@ defmodule DdNatsSubjectDefs do
 
   def dd_remote_tasks_stream_name, do: "DD_REMOTE_TASKS"
   def dd_remote_tasks_stream_subjects, do: ["dd.remote.thread.*.tasks"]
-  def dd_remote_tasks_stream_retention, do: "limits"
+  def dd_remote_tasks_stream_retention, do: "workqueue"
   def dd_remote_tasks_stream_storage, do: "file"
   def dd_remote_tasks_stream_ack, do: "explicit"
+
+  def dd_remote_tasks_dlq_stream_name, do: "DD_REMOTE_TASKS_DLQ"
+  def dd_remote_tasks_dlq_stream_subjects, do: ["dd.remote.thread.tasks.deadletter"]
+  def dd_remote_tasks_dlq_stream_retention, do: "limits"
+  def dd_remote_tasks_dlq_stream_storage, do: "file"
+  def dd_remote_tasks_dlq_stream_ack, do: "explicit"
 end

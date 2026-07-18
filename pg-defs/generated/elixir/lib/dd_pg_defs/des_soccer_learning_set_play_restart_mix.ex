@@ -9,15 +9,14 @@ defmodule DdPgDefs.DesSoccerLearningSetPlayRestartMix do
 
   @table "des_soccer_learning_set_play_restart_mix"
 
-  @primary_key false
+  @primary_key {:id, :binary_id, autogenerate: true}
+  @foreign_key_type :binary_id
 
   schema @table do
-    field :run_id, :binary_id
-    field :ordinal, :integer
     field :restart, :string, default: nil
   end
 
-  @required_fields ~w(run_id ordinal restart)a
+  @required_fields ~w(restart)a
   @optional_fields ~w()a
 
   @doc "Builds an Ecto changeset enforcing every constraint exposed in schema.sql."
@@ -25,7 +24,6 @@ defmodule DdPgDefs.DesSoccerLearningSetPlayRestartMix do
     struct
     |> cast(attrs, @required_fields ++ @optional_fields)
     |> validate_required(@required_fields)
-    |> validate_number(:ordinal, greater_than_or_equal_to: 0)
     |> validate_inclusion(:restart, ["direct-free-kick", "indirect-free-kick"])
   end
 end

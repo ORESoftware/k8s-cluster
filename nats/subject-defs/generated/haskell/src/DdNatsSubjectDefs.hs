@@ -59,6 +59,24 @@ blockchainIndexEventsSubject = "dd.remote.blockchain.index.events"
 blockchainMevAlertsSubject :: Text
 blockchainMevAlertsSubject = "dd.remote.blockchain.mev.alerts"
 
+-- Redacted build lifecycle events (queued/running/succeeded/failed) published by the build server. Default for BUILD_SERVER_NATS_EVENT_SUBJECT.
+buildServerEventsSubject :: Text
+buildServerEventsSubject = "dd.remote.build_server.events"
+
+-- Redacted container-image registry events (ECR / docker registry webhook pushes) relayed by the build server. Default for BUILD_SERVER_NATS_IMAGE_SUBJECT.
+buildServerImagesSubject :: Text
+buildServerImagesSubject = "dd.remote.build_server.images"
+
+-- Durable build-request intake. Producers publish a build-server.v1 job document; build-server replicas consume via the shared queue group / durable JetStream consumer. Default for BUILD_SERVER_NATS_REQUEST_SUBJECT.
+buildServerRequestsSubject :: Text
+buildServerRequestsSubject = "dd.remote.build_server.requests"
+buildServerRequestsQueueGroup :: Text
+buildServerRequestsQueueGroup = "dd-build-server"
+
+-- Terminal build results (succeeded/failed with jobId and error summary) for NATS-submitted and webhook-submitted jobs. Default for BUILD_SERVER_NATS_RESULT_SUBJECT.
+buildServerResultsSubject :: Text
+buildServerResultsSubject = "dd.remote.build_server.results"
+
 -- Per-fault lifecycle events (selected, injected, restored, aborted-by-guard) emitted by the chaos loops.
 chaosEventsSubject :: Text
 chaosEventsSubject = "dd.remote.chaos.events"
@@ -591,6 +609,12 @@ telemetryRawSubject = "dd.remote.telemetry.raw"
 telemetryRawQueueGroup :: Text
 telemetryRawQueueGroup = "dd-ai-ml-pipeline"
 
+-- Redacted terminal task failures emitted after the queue consumer exhausts JetStream redelivery. Kept on a separate limits-retention stream so poison-message evidence is durable without affecting the WorkQueue consumer lag used by KEDA.
+threadTasksDeadLetterSubject :: Text
+threadTasksDeadLetterSubject = "dd.remote.thread.tasks.deadletter"
+threadTasksDeadLetterStream :: Text
+threadTasksDeadLetterStream = "DD_REMOTE_TASKS_DLQ"
+
 -- Risk-gated buy/sell/hold decisions emitted by the trading server. Default for TRADING_DECISION_SUBJECT.
 tradingDecisionsSubject :: Text
 tradingDecisionsSubject = "dd.remote.trading.decisions"
@@ -812,7 +836,7 @@ parseThreadHeartbeatSubject subject =
     ["dd", "remote", "thread", thread_id, "heartbeat"] -> Just (ThreadHeartbeatSubjectParts thread_id)
     _ -> Nothing
 
--- Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS). Producers publish per-thread; consumers either subscribe to the exact subject (the worker for that thread) or to the wildcard via a queue group (the preparer).
+-- Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS) with WorkQueue retention. Producers publish per-thread and queue-consumer replicas share the durable wildcard consumer so each task has one handoff owner.
 threadTasksPattern :: Text
 threadTasksPattern = "dd.remote.thread.{thread_id}.tasks"
 threadTasksWildcard :: Text
@@ -857,6 +881,10 @@ queueGroupAgentSimServerQueueGroup = "dd-agent-sim-server"
 -- Queue group shared by dd-billing-server replicas for inbound sync commands so each command is handled by exactly one pod.
 queueGroupBillingServerQueueGroup :: Text
 queueGroupBillingServerQueueGroup = "dd-billing-server"
+
+-- Shared queue group / durable consumer name used by build-server replicas for request intake.
+queueGroupBuildServerQueueGroup :: Text
+queueGroupBuildServerQueueGroup = "dd-build-server"
 
 -- Shared queue group used by dd-constraint-scheduler replicas consuming schedule requests.
 queueGroupConstraintSchedulerQueueGroup :: Text
@@ -958,6 +986,18 @@ cDCStreamStorage = "file"
 cDCStreamAck :: Text
 cDCStreamAck = "explicit"
 
+-- JetStream file storage with WorkQueue retention and explicit ack for build-request intake. Dedupe by Nats-Msg-Id ('build-request:<requestId>'); Postgres (dd_build_server) remains the real idempotency guard.
+dD_REMOTE_BUILD_JOBSStreamName :: Text
+dD_REMOTE_BUILD_JOBSStreamName = "DD_REMOTE_BUILD_JOBS"
+dD_REMOTE_BUILD_JOBSStreamSubjects :: [Text]
+dD_REMOTE_BUILD_JOBSStreamSubjects = ["dd.remote.build_server.requests"]
+dD_REMOTE_BUILD_JOBSStreamRetention :: Text
+dD_REMOTE_BUILD_JOBSStreamRetention = "workqueue"
+dD_REMOTE_BUILD_JOBSStreamStorage :: Text
+dD_REMOTE_BUILD_JOBSStreamStorage = "file"
+dD_REMOTE_BUILD_JOBSStreamAck :: Text
+dD_REMOTE_BUILD_JOBSStreamAck = "explicit"
+
 -- Short-retention control plane stream.
 dD_REMOTE_CONTROLStreamName :: Text
 dD_REMOTE_CONTROLStreamName = "DD_REMOTE_CONTROL"
@@ -1018,6 +1058,18 @@ dD_REMOTE_EVOLUTIONStreamStorage = "file"
 dD_REMOTE_EVOLUTIONStreamAck :: Text
 dD_REMOTE_EVOLUTIONStreamAck = "explicit"
 
+-- Durable JetStream history for fabrication requests, results, machine profiles, design conversion, instruction generation and review, execution telemetry, learning outcomes, and release readiness.
+dD_REMOTE_FABRICATIONStreamName :: Text
+dD_REMOTE_FABRICATIONStreamName = "DD_REMOTE_FABRICATION"
+dD_REMOTE_FABRICATIONStreamSubjects :: [Text]
+dD_REMOTE_FABRICATIONStreamSubjects = ["dd.remote.fabrication.>"]
+dD_REMOTE_FABRICATIONStreamRetention :: Text
+dD_REMOTE_FABRICATIONStreamRetention = "limits"
+dD_REMOTE_FABRICATIONStreamStorage :: Text
+dD_REMOTE_FABRICATIONStreamStorage = "file"
+dD_REMOTE_FABRICATIONStreamAck :: Text
+dD_REMOTE_FABRICATIONStreamAck = "explicit"
+
 -- JetStream stream for distributed in-house LP/MIP/IP solver work, results, control, and progress events.
 dD_REMOTE_MIP_SOLVERStreamName :: Text
 dD_REMOTE_MIP_SOLVERStreamName = "DD_REMOTE_MIP_SOLVER"
@@ -1042,14 +1094,26 @@ dD_REMOTE_ROUTINGStreamStorage = "file"
 dD_REMOTE_ROUTINGStreamAck :: Text
 dD_REMOTE_ROUTINGStreamAck = "explicit"
 
--- JetStream file storage, explicit ack, message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard.
+-- JetStream file storage with WorkQueue retention, explicit ack, and message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard.
 dD_REMOTE_TASKSStreamName :: Text
 dD_REMOTE_TASKSStreamName = "DD_REMOTE_TASKS"
 dD_REMOTE_TASKSStreamSubjects :: [Text]
 dD_REMOTE_TASKSStreamSubjects = ["dd.remote.thread.*.tasks"]
 dD_REMOTE_TASKSStreamRetention :: Text
-dD_REMOTE_TASKSStreamRetention = "limits"
+dD_REMOTE_TASKSStreamRetention = "workqueue"
 dD_REMOTE_TASKSStreamStorage :: Text
 dD_REMOTE_TASKSStreamStorage = "file"
 dD_REMOTE_TASKSStreamAck :: Text
 dD_REMOTE_TASKSStreamAck = "explicit"
+
+-- Durable limits-retention stream for redacted terminal task failures. It is separate from DD_REMOTE_TASKS so dead letters cannot inflate queue-consumer lag or trigger KEDA scaling.
+dD_REMOTE_TASKS_DLQStreamName :: Text
+dD_REMOTE_TASKS_DLQStreamName = "DD_REMOTE_TASKS_DLQ"
+dD_REMOTE_TASKS_DLQStreamSubjects :: [Text]
+dD_REMOTE_TASKS_DLQStreamSubjects = ["dd.remote.thread.tasks.deadletter"]
+dD_REMOTE_TASKS_DLQStreamRetention :: Text
+dD_REMOTE_TASKS_DLQStreamRetention = "limits"
+dD_REMOTE_TASKS_DLQStreamStorage :: Text
+dD_REMOTE_TASKS_DLQStreamStorage = "file"
+dD_REMOTE_TASKS_DLQStreamAck :: Text
+dD_REMOTE_TASKS_DLQStreamAck = "explicit"

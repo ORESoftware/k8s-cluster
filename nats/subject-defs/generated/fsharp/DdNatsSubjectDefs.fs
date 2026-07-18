@@ -28,6 +28,15 @@ let blockchainIndexEventsSubject : string = "dd.remote.blockchain.index.events"
 
 let blockchainMevAlertsSubject : string = "dd.remote.blockchain.mev.alerts"
 
+let buildServerEventsSubject : string = "dd.remote.build_server.events"
+
+let buildServerImagesSubject : string = "dd.remote.build_server.images"
+
+let buildServerRequestsSubject : string = "dd.remote.build_server.requests"
+let buildServerRequestsQueueGroup : string = "dd-build-server"
+
+let buildServerResultsSubject : string = "dd.remote.build_server.results"
+
 let chaosEventsSubject : string = "dd.remote.chaos.events"
 
 let chaosExperimentsSubject : string = "dd.remote.chaos.experiments"
@@ -294,6 +303,9 @@ let telemetryMdpSubject : string = "dd.remote.telemetry.mdp"
 let telemetryRawSubject : string = "dd.remote.telemetry.raw"
 let telemetryRawQueueGroup : string = "dd-ai-ml-pipeline"
 
+let threadTasksDeadLetterSubject : string = "dd.remote.thread.tasks.deadletter"
+let threadTasksDeadLetterStream : string = "DD_REMOTE_TASKS_DLQ"
+
 let tradingDecisionsSubject : string = "dd.remote.trading.decisions"
 
 let tradingOrderIntentsSubject : string = "dd.remote.trading.order_intents"
@@ -456,6 +468,8 @@ let queueGroupAgentSimServerQueueGroup : string = "dd-agent-sim-server"
 
 let queueGroupBillingServerQueueGroup : string = "dd-billing-server"
 
+let queueGroupBuildServerQueueGroup : string = "dd-build-server"
+
 let queueGroupConstraintSchedulerQueueGroup : string = "dd-constraint-scheduler"
 
 let queueGroupContactSendQueueGroup : string = "dd-email-sms-contact"
@@ -506,6 +520,12 @@ let cDCStreamRetention : string = "limits"
 let cDCStreamStorage : string = "file"
 let cDCStreamAck : string = "explicit"
 
+let dD_REMOTE_BUILD_JOBSStreamName : string = "DD_REMOTE_BUILD_JOBS"
+let dD_REMOTE_BUILD_JOBSStreamSubjects : string list = [ "dd.remote.build_server.requests" ]
+let dD_REMOTE_BUILD_JOBSStreamRetention : string = "workqueue"
+let dD_REMOTE_BUILD_JOBSStreamStorage : string = "file"
+let dD_REMOTE_BUILD_JOBSStreamAck : string = "explicit"
+
 let dD_REMOTE_CONTROLStreamName : string = "DD_REMOTE_CONTROL"
 let dD_REMOTE_CONTROLStreamSubjects : string list = [ "dd.remote.thread.*.control"; "dd.remote.orchestrator.wakeup" ]
 let dD_REMOTE_CONTROLStreamRetention : string = "limits"
@@ -536,6 +556,12 @@ let dD_REMOTE_EVOLUTIONStreamRetention : string = "limits"
 let dD_REMOTE_EVOLUTIONStreamStorage : string = "file"
 let dD_REMOTE_EVOLUTIONStreamAck : string = "explicit"
 
+let dD_REMOTE_FABRICATIONStreamName : string = "DD_REMOTE_FABRICATION"
+let dD_REMOTE_FABRICATIONStreamSubjects : string list = [ "dd.remote.fabrication.>" ]
+let dD_REMOTE_FABRICATIONStreamRetention : string = "limits"
+let dD_REMOTE_FABRICATIONStreamStorage : string = "file"
+let dD_REMOTE_FABRICATIONStreamAck : string = "explicit"
+
 let dD_REMOTE_MIP_SOLVERStreamName : string = "DD_REMOTE_MIP_SOLVER"
 let dD_REMOTE_MIP_SOLVERStreamSubjects : string list = [ "dd.remote.mip_solver.jobs"; "dd.remote.mip_solver.results"; "dd.remote.mip_solver.control"; "dd.remote.mip_solver.events" ]
 let dD_REMOTE_MIP_SOLVERStreamRetention : string = "limits"
@@ -550,6 +576,12 @@ let dD_REMOTE_ROUTINGStreamAck : string = "explicit"
 
 let dD_REMOTE_TASKSStreamName : string = "DD_REMOTE_TASKS"
 let dD_REMOTE_TASKSStreamSubjects : string list = [ "dd.remote.thread.*.tasks" ]
-let dD_REMOTE_TASKSStreamRetention : string = "limits"
+let dD_REMOTE_TASKSStreamRetention : string = "workqueue"
 let dD_REMOTE_TASKSStreamStorage : string = "file"
 let dD_REMOTE_TASKSStreamAck : string = "explicit"
+
+let dD_REMOTE_TASKS_DLQStreamName : string = "DD_REMOTE_TASKS_DLQ"
+let dD_REMOTE_TASKS_DLQStreamSubjects : string list = [ "dd.remote.thread.tasks.deadletter" ]
+let dD_REMOTE_TASKS_DLQStreamRetention : string = "limits"
+let dD_REMOTE_TASKS_DLQStreamStorage : string = "file"
+let dD_REMOTE_TASKS_DLQStreamAck : string = "explicit"

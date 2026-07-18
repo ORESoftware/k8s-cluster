@@ -17,6 +17,11 @@
     blockchain_bridge_attestations_subject/0,
     blockchain_index_events_subject/0,
     blockchain_mev_alerts_subject/0,
+    build_server_events_subject/0,
+    build_server_images_subject/0,
+    build_server_requests_subject/0,
+    build_server_requests_queue_group/0,
+    build_server_results_subject/0,
     chaos_events_subject/0,
     chaos_experiments_subject/0,
     chaos_probe_subject/0,
@@ -177,6 +182,8 @@
     telemetry_mdp_subject/0,
     telemetry_raw_subject/0,
     telemetry_raw_queue_group/0,
+    thread_tasks_dead_letter_subject/0,
+    thread_tasks_dead_letter_stream/0,
     trading_decisions_subject/0,
     trading_order_intents_subject/0,
     trading_signals_subject/0,
@@ -248,6 +255,7 @@
     workflows_signal_queue_group/0,
     agent_sim_server_queue_group/0,
     billing_server_queue_group/0,
+    build_server_queue_group/0,
     constraint_scheduler_queue_group/0,
     contact_send_queue_group/0,
     critical_events_logger_queue_group/0,
@@ -275,6 +283,11 @@
     cdc_stream_retention/0,
     cdc_stream_storage/0,
     cdc_stream_ack/0,
+    dd_remote_build_jobs_stream_name/0,
+    dd_remote_build_jobs_stream_subjects/0,
+    dd_remote_build_jobs_stream_retention/0,
+    dd_remote_build_jobs_stream_storage/0,
+    dd_remote_build_jobs_stream_ack/0,
     dd_remote_control_stream_name/0,
     dd_remote_control_stream_subjects/0,
     dd_remote_control_stream_retention/0,
@@ -300,6 +313,11 @@
     dd_remote_evolution_stream_retention/0,
     dd_remote_evolution_stream_storage/0,
     dd_remote_evolution_stream_ack/0,
+    dd_remote_fabrication_stream_name/0,
+    dd_remote_fabrication_stream_subjects/0,
+    dd_remote_fabrication_stream_retention/0,
+    dd_remote_fabrication_stream_storage/0,
+    dd_remote_fabrication_stream_ack/0,
     dd_remote_mip_solver_stream_name/0,
     dd_remote_mip_solver_stream_subjects/0,
     dd_remote_mip_solver_stream_retention/0,
@@ -314,7 +332,12 @@
     dd_remote_tasks_stream_subjects/0,
     dd_remote_tasks_stream_retention/0,
     dd_remote_tasks_stream_storage/0,
-    dd_remote_tasks_stream_ack/0
+    dd_remote_tasks_stream_ack/0,
+    dd_remote_tasks_dlq_stream_name/0,
+    dd_remote_tasks_dlq_stream_subjects/0,
+    dd_remote_tasks_dlq_stream_retention/0,
+    dd_remote_tasks_dlq_stream_storage/0,
+    dd_remote_tasks_dlq_stream_ack/0
 ]).
 
 %% Per-tick simulation frames fanned out for live demos (grid/agent snapshots and aggregate stats). Broadcast with no queue group so every interested consumer (and the websocket bridge) receives each frame. Default for AGENT_SIM_FRAME_SUBJECT.
@@ -366,6 +389,23 @@ blockchain_index_events_subject() -> <<"dd.remote.blockchain.index.events"/utf8>
 %% Monitoring-only MEV/arbitrage spread alerts emitted when an observed venue spread crosses the configured threshold. Default for BLOCKCHAIN_MEV_ALERTS_SUBJECT. Observation surface only; there is no execution path. Publish-only.
 %% Service: dd-contract-service
 blockchain_mev_alerts_subject() -> <<"dd.remote.blockchain.mev.alerts"/utf8>>.
+
+%% Redacted build lifecycle events (queued/running/succeeded/failed) published by the build server. Default for BUILD_SERVER_NATS_EVENT_SUBJECT.
+%% Service: dd-build-server
+build_server_events_subject() -> <<"dd.remote.build_server.events"/utf8>>.
+
+%% Redacted container-image registry events (ECR / docker registry webhook pushes) relayed by the build server. Default for BUILD_SERVER_NATS_IMAGE_SUBJECT.
+%% Service: dd-build-server
+build_server_images_subject() -> <<"dd.remote.build_server.images"/utf8>>.
+
+%% Durable build-request intake. Producers publish a build-server.v1 job document; build-server replicas consume via the shared queue group / durable JetStream consumer. Default for BUILD_SERVER_NATS_REQUEST_SUBJECT.
+%% Service: dd-build-server
+build_server_requests_subject() -> <<"dd.remote.build_server.requests"/utf8>>.
+build_server_requests_queue_group() -> <<"dd-build-server"/utf8>>.
+
+%% Terminal build results (succeeded/failed with jobId and error summary) for NATS-submitted and webhook-submitted jobs. Default for BUILD_SERVER_NATS_RESULT_SUBJECT.
+%% Service: dd-build-server
+build_server_results_subject() -> <<"dd.remote.build_server.results"/utf8>>.
 
 %% Per-fault lifecycle events (selected, injected, restored, aborted-by-guard) emitted by the chaos loops.
 %% Service: dd-chaos
@@ -845,6 +885,11 @@ telemetry_mdp_subject() -> <<"dd.remote.telemetry.mdp"/utf8>>.
 telemetry_raw_subject() -> <<"dd.remote.telemetry.raw"/utf8>>.
 telemetry_raw_queue_group() -> <<"dd-ai-ml-pipeline"/utf8>>.
 
+%% Redacted terminal task failures emitted after the queue consumer exhausts JetStream redelivery. Kept on a separate limits-retention stream so poison-message evidence is durable without affecting the WorkQueue consumer lag used by KEDA.
+%% Service: dd-remote-rest-api
+thread_tasks_dead_letter_subject() -> <<"dd.remote.thread.tasks.deadletter"/utf8>>.
+thread_tasks_dead_letter_stream() -> <<"DD_REMOTE_TASKS_DLQ"/utf8>>.
+
 %% Risk-gated buy/sell/hold decisions emitted by the trading server. Default for TRADING_DECISION_SUBJECT.
 %% Service: dd-trading-server
 trading_decisions_subject() -> <<"dd.remote.trading.decisions"/utf8>>.
@@ -1185,7 +1230,7 @@ parse_thread_heartbeat_subject(Subject) ->
             end
     end.
 
-%% Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS). Producers publish per-thread; consumers either subscribe to the exact subject (the worker for that thread) or to the wildcard via a queue group (the preparer).
+%% Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS) with WorkQueue retention. Producers publish per-thread and queue-consumer replicas share the durable wildcard consumer so each task has one handoff owner.
 %% Service: dd-remote-rest-api
 thread_tasks_pattern() -> <<"dd.remote.thread.{thread_id}.tasks"/utf8>>.
 thread_tasks_wildcard() -> <<"dd.remote.thread.*.tasks"/utf8>>.
@@ -1251,6 +1296,10 @@ agent_sim_server_queue_group() -> <<"dd-agent-sim-server"/utf8>>.
 %% Queue group shared by dd-billing-server replicas for inbound sync commands so each command is handled by exactly one pod.
 %% Service: dd-billing-server
 billing_server_queue_group() -> <<"dd-billing-server"/utf8>>.
+
+%% Shared queue group / durable consumer name used by build-server replicas for request intake.
+%% Service: dd-build-server
+build_server_queue_group() -> <<"dd-build-server"/utf8>>.
 
 %% Shared queue group used by dd-constraint-scheduler replicas consuming schedule requests.
 %% Service: dd-constraint-scheduler
@@ -1349,6 +1398,15 @@ cdc_stream_retention() -> <<"limits"/utf8>>.
 cdc_stream_storage() -> <<"file"/utf8>>.
 cdc_stream_ack() -> <<"explicit"/utf8>>.
 
+%% JetStream file storage with WorkQueue retention and explicit ack for build-request intake. Dedupe by Nats-Msg-Id ('build-request:<requestId>'); Postgres (dd_build_server) remains the real idempotency guard.
+%% Service: dd-build-server
+dd_remote_build_jobs_stream_name() -> <<"DD_REMOTE_BUILD_JOBS"/utf8>>.
+dd_remote_build_jobs_stream_subjects() ->
+    [<<"dd.remote.build_server.requests"/utf8>>].
+dd_remote_build_jobs_stream_retention() -> <<"workqueue"/utf8>>.
+dd_remote_build_jobs_stream_storage() -> <<"file"/utf8>>.
+dd_remote_build_jobs_stream_ack() -> <<"explicit"/utf8>>.
+
 %% Short-retention control plane stream.
 %% Service: dd-remote-rest-api
 dd_remote_control_stream_name() -> <<"DD_REMOTE_CONTROL"/utf8>>.
@@ -1394,6 +1452,15 @@ dd_remote_evolution_stream_retention() -> <<"limits"/utf8>>.
 dd_remote_evolution_stream_storage() -> <<"file"/utf8>>.
 dd_remote_evolution_stream_ack() -> <<"explicit"/utf8>>.
 
+%% Durable JetStream history for fabrication requests, results, machine profiles, design conversion, instruction generation and review, execution telemetry, learning outcomes, and release readiness.
+%% Service: dd-fabrication-server
+dd_remote_fabrication_stream_name() -> <<"DD_REMOTE_FABRICATION"/utf8>>.
+dd_remote_fabrication_stream_subjects() ->
+    [<<"dd.remote.fabrication.>"/utf8>>].
+dd_remote_fabrication_stream_retention() -> <<"limits"/utf8>>.
+dd_remote_fabrication_stream_storage() -> <<"file"/utf8>>.
+dd_remote_fabrication_stream_ack() -> <<"explicit"/utf8>>.
+
 %% JetStream stream for distributed in-house LP/MIP/IP solver work, results, control, and progress events.
 %% Service: dd-ai-ml-pipeline
 dd_remote_mip_solver_stream_name() -> <<"DD_REMOTE_MIP_SOLVER"/utf8>>.
@@ -1412,14 +1479,23 @@ dd_remote_routing_stream_retention() -> <<"limits"/utf8>>.
 dd_remote_routing_stream_storage() -> <<"file"/utf8>>.
 dd_remote_routing_stream_ack() -> <<"explicit"/utf8>>.
 
-%% JetStream file storage, explicit ack, message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard.
+%% JetStream file storage with WorkQueue retention, explicit ack, and message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard.
 %% Service: dd-remote-rest-api
 dd_remote_tasks_stream_name() -> <<"DD_REMOTE_TASKS"/utf8>>.
 dd_remote_tasks_stream_subjects() ->
     [<<"dd.remote.thread.*.tasks"/utf8>>].
-dd_remote_tasks_stream_retention() -> <<"limits"/utf8>>.
+dd_remote_tasks_stream_retention() -> <<"workqueue"/utf8>>.
 dd_remote_tasks_stream_storage() -> <<"file"/utf8>>.
 dd_remote_tasks_stream_ack() -> <<"explicit"/utf8>>.
+
+%% Durable limits-retention stream for redacted terminal task failures. It is separate from DD_REMOTE_TASKS so dead letters cannot inflate queue-consumer lag or trigger KEDA scaling.
+%% Service: dd-remote-rest-api
+dd_remote_tasks_dlq_stream_name() -> <<"DD_REMOTE_TASKS_DLQ"/utf8>>.
+dd_remote_tasks_dlq_stream_subjects() ->
+    [<<"dd.remote.thread.tasks.deadletter"/utf8>>].
+dd_remote_tasks_dlq_stream_retention() -> <<"limits"/utf8>>.
+dd_remote_tasks_dlq_stream_storage() -> <<"file"/utf8>>.
+dd_remote_tasks_dlq_stream_ack() -> <<"explicit"/utf8>>.
 
 %% ---------- helpers ----------
 

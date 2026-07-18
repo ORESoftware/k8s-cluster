@@ -196,7 +196,19 @@ fn require_server_auth(store: &RuntimeConfigStore, headers: &HeaderMap) -> Resul
     Ok(())
 }
 
-async fn handle_get(State(store): State<RuntimeConfigStore>) -> impl IntoResponse {
+async fn handle_get(
+    State(store): State<RuntimeConfigStore>,
+    headers: HeaderMap,
+) -> Response {
+    // The snapshot lists every pushed entry value, so once a push secret is
+    // configured the read side must present it too. Without a configured
+    // secret the route stays open (local development) — only the mutating
+    // routes hard-fail when auth is unconfigured.
+    if store.server_secret.is_some() {
+        if let Err(response) = require_server_auth(&store, &headers) {
+            return response;
+        }
+    }
     let state = store.inner.read().await;
     Json(json!({
         "service": read_env(ENV_SERVICE_NAME),
@@ -208,6 +220,7 @@ async fn handle_get(State(store): State<RuntimeConfigStore>) -> impl IntoRespons
         "lastPushId": state.last_push_id,
         "lastReason": state.last_reason,
     }))
+    .into_response()
 }
 
 async fn handle_apply(

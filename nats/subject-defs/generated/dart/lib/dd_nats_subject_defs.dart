@@ -54,6 +54,23 @@ const String blockchainIndexEventsSubject = "dd.remote.blockchain.index.events";
 /// Service: dd-contract-service
 const String blockchainMevAlertsSubject = "dd.remote.blockchain.mev.alerts";
 
+/// Redacted build lifecycle events (queued/running/succeeded/failed) published by the build server. Default for BUILD_SERVER_NATS_EVENT_SUBJECT.
+/// Service: dd-build-server
+const String buildServerEventsSubject = "dd.remote.build_server.events";
+
+/// Redacted container-image registry events (ECR / docker registry webhook pushes) relayed by the build server. Default for BUILD_SERVER_NATS_IMAGE_SUBJECT.
+/// Service: dd-build-server
+const String buildServerImagesSubject = "dd.remote.build_server.images";
+
+/// Durable build-request intake. Producers publish a build-server.v1 job document; build-server replicas consume via the shared queue group / durable JetStream consumer. Default for BUILD_SERVER_NATS_REQUEST_SUBJECT.
+/// Service: dd-build-server
+const String buildServerRequestsSubject = "dd.remote.build_server.requests";
+const String buildServerRequestsQueueGroup = "dd-build-server";
+
+/// Terminal build results (succeeded/failed with jobId and error summary) for NATS-submitted and webhook-submitted jobs. Default for BUILD_SERVER_NATS_RESULT_SUBJECT.
+/// Service: dd-build-server
+const String buildServerResultsSubject = "dd.remote.build_server.results";
+
 /// Per-fault lifecycle events (selected, injected, restored, aborted-by-guard) emitted by the chaos loops.
 /// Service: dd-chaos
 const String chaosEventsSubject = "dd.remote.chaos.events";
@@ -532,6 +549,11 @@ const String telemetryMdpSubject = "dd.remote.telemetry.mdp";
 const String telemetryRawSubject = "dd.remote.telemetry.raw";
 const String telemetryRawQueueGroup = "dd-ai-ml-pipeline";
 
+/// Redacted terminal task failures emitted after the queue consumer exhausts JetStream redelivery. Kept on a separate limits-retention stream so poison-message evidence is durable without affecting the WorkQueue consumer lag used by KEDA.
+/// Service: dd-remote-rest-api
+const String threadTasksDeadLetterSubject = "dd.remote.thread.tasks.deadletter";
+const String threadTasksDeadLetterStream = "DD_REMOTE_TASKS_DLQ";
+
 /// Risk-gated buy/sell/hold decisions emitted by the trading server. Default for TRADING_DECISION_SUBJECT.
 /// Service: dd-trading-server
 const String tradingDecisionsSubject = "dd.remote.trading.decisions";
@@ -901,7 +923,7 @@ ThreadHeartbeatSubjectParts? parseThreadHeartbeatSubject(String subject) {
   return ThreadHeartbeatSubjectParts(threadId: result["thread_id"]!);
 }
 
-/// Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS). Producers publish per-thread; consumers either subscribe to the exact subject (the worker for that thread) or to the wildcard via a queue group (the preparer).
+/// Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS) with WorkQueue retention. Producers publish per-thread and queue-consumer replicas share the durable wildcard consumer so each task has one handoff owner.
 /// Service: dd-remote-rest-api
 const String threadTasksPattern = "dd.remote.thread.{thread_id}.tasks";
 const String threadTasksWildcard = "dd.remote.thread.*.tasks";
@@ -973,6 +995,10 @@ const String agentSimServerQueueGroup = "dd-agent-sim-server";
 /// Queue group shared by dd-billing-server replicas for inbound sync commands so each command is handled by exactly one pod.
 /// Service: dd-billing-server
 const String billingServerQueueGroup = "dd-billing-server";
+
+/// Shared queue group / durable consumer name used by build-server replicas for request intake.
+/// Service: dd-build-server
+const String buildServerQueueGroup = "dd-build-server";
 
 /// Shared queue group used by dd-constraint-scheduler replicas consuming schedule requests.
 /// Service: dd-constraint-scheduler
@@ -1072,6 +1098,14 @@ const String cdcStreamRetention = "limits";
 const String cdcStreamStorage = "file";
 const String cdcStreamAck = "explicit";
 
+/// JetStream file storage with WorkQueue retention and explicit ack for build-request intake. Dedupe by Nats-Msg-Id ('build-request:<requestId>'); Postgres (dd_build_server) remains the real idempotency guard.
+/// Service: dd-build-server
+const String ddRemoteBuildJobsStreamName = "DD_REMOTE_BUILD_JOBS";
+const List<String> ddRemoteBuildJobsStreamSubjects = ["dd.remote.build_server.requests"];
+const String ddRemoteBuildJobsStreamRetention = "workqueue";
+const String ddRemoteBuildJobsStreamStorage = "file";
+const String ddRemoteBuildJobsStreamAck = "explicit";
+
 /// Short-retention control plane stream.
 /// Service: dd-remote-rest-api
 const String ddRemoteControlStreamName = "DD_REMOTE_CONTROL";
@@ -1112,6 +1146,14 @@ const String ddRemoteEvolutionStreamRetention = "limits";
 const String ddRemoteEvolutionStreamStorage = "file";
 const String ddRemoteEvolutionStreamAck = "explicit";
 
+/// Durable JetStream history for fabrication requests, results, machine profiles, design conversion, instruction generation and review, execution telemetry, learning outcomes, and release readiness.
+/// Service: dd-fabrication-server
+const String ddRemoteFabricationStreamName = "DD_REMOTE_FABRICATION";
+const List<String> ddRemoteFabricationStreamSubjects = ["dd.remote.fabrication.>"];
+const String ddRemoteFabricationStreamRetention = "limits";
+const String ddRemoteFabricationStreamStorage = "file";
+const String ddRemoteFabricationStreamAck = "explicit";
+
 /// JetStream stream for distributed in-house LP/MIP/IP solver work, results, control, and progress events.
 /// Service: dd-ai-ml-pipeline
 const String ddRemoteMipSolverStreamName = "DD_REMOTE_MIP_SOLVER";
@@ -1128,10 +1170,18 @@ const String ddRemoteRoutingStreamRetention = "limits";
 const String ddRemoteRoutingStreamStorage = "file";
 const String ddRemoteRoutingStreamAck = "explicit";
 
-/// JetStream file storage, explicit ack, message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard.
+/// JetStream file storage with WorkQueue retention, explicit ack, and message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard.
 /// Service: dd-remote-rest-api
 const String ddRemoteTasksStreamName = "DD_REMOTE_TASKS";
 const List<String> ddRemoteTasksStreamSubjects = ["dd.remote.thread.*.tasks"];
-const String ddRemoteTasksStreamRetention = "limits";
+const String ddRemoteTasksStreamRetention = "workqueue";
 const String ddRemoteTasksStreamStorage = "file";
 const String ddRemoteTasksStreamAck = "explicit";
+
+/// Durable limits-retention stream for redacted terminal task failures. It is separate from DD_REMOTE_TASKS so dead letters cannot inflate queue-consumer lag or trigger KEDA scaling.
+/// Service: dd-remote-rest-api
+const String ddRemoteTasksDlqStreamName = "DD_REMOTE_TASKS_DLQ";
+const List<String> ddRemoteTasksDlqStreamSubjects = ["dd.remote.thread.tasks.deadletter"];
+const String ddRemoteTasksDlqStreamRetention = "limits";
+const String ddRemoteTasksDlqStreamStorage = "file";
+const String ddRemoteTasksDlqStreamAck = "explicit";

@@ -14,6 +14,7 @@ import (
 	"gorm.io/datatypes"
 )
 
+var devicesSyncTokenHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var appConfigScopePattern = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,120}$`)
 var appConfigKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,200}$`)
 var vapiPhoneCallEventsEventTypePattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,80}$`)
@@ -105,6 +106,92 @@ var channelMembersChannelSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{
 var channelMembersAgentKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,120}$`)
 var sharedContextChannelSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,119}$`)
 var sharedContextCtxKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,200}$`)
+var orgsSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
+var projectsSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
+var customerNotificationsKindPattern = regexp.MustCompile(`^[a-z][a-z0-9_.]{1,38}[a-z0-9]$`)
+var syncIdempotencyKeysRequestFingerprintPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+const AccountsTable = "threefa.accounts"
+const AccountsSelectSQL = `select
+      id::text as id,
+      username,
+      auth_secret,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from threefa.accounts`
+
+type AccountsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	Username string `gorm:"column:username;type:text;not null" json:"username"`
+	AuthSecret string `gorm:"column:auth_secret;type:text;not null" json:"authSecret"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (AccountsGorm) TableName() string { return AccountsTable }
+
+func (value AccountsGorm) Validate() error {
+	if len([]byte(value.Username)) > 320 { return errors.New("accounts.username exceeds 320 bytes") }
+	if len([]byte(value.Username)) < 1 { return errors.New("accounts.username is below 1 bytes") }
+	if len([]byte(value.AuthSecret)) > 1024 { return errors.New("accounts.auth_secret exceeds 1024 bytes") }
+	if len([]byte(value.AuthSecret)) < 1 { return errors.New("accounts.auth_secret is below 1 bytes") }
+	return nil
+}
+
+const DevicesTable = "threefa.devices"
+const DevicesSelectSQL = `select
+      id::text as id,
+      account_id::text as account_id,
+      device_name,
+      sync_token_hash,
+      revoked,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from threefa.devices`
+
+type DevicesGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	AccountId uuid.UUID `gorm:"column:account_id;type:uuid;not null" json:"accountId"`
+	DeviceName string `gorm:"column:device_name;type:text;not null" json:"deviceName"`
+	SyncTokenHash string `gorm:"column:sync_token_hash;type:text;not null" json:"syncTokenHash"`
+	Revoked bool `gorm:"column:revoked;type:boolean;default:false;not null" json:"revoked"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (DevicesGorm) TableName() string { return DevicesTable }
+
+func (value DevicesGorm) Validate() error {
+	if len([]byte(value.DeviceName)) > 200 { return errors.New("devices.device_name exceeds 200 bytes") }
+	if len([]byte(value.DeviceName)) < 1 { return errors.New("devices.device_name is below 1 bytes") }
+	if !devicesSyncTokenHashPattern.MatchString(value.SyncTokenHash) { return errors.New("devices.sync_token_hash does not match the required pattern") }
+	return nil
+}
+
+const VaultBlobsTable = "threefa.vault_blobs"
+const VaultBlobsSelectSQL = `select
+      account_id::text as account_id,
+      ciphertext,
+      nonce,
+      kdf_salt,
+      kdf_params,
+      version,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from threefa.vault_blobs`
+
+type VaultBlobsGorm struct {
+	AccountId uuid.UUID `gorm:"column:account_id;type:uuid;primaryKey" json:"accountId"`
+	Ciphertext string `gorm:"column:ciphertext;type:text;not null" json:"ciphertext"`
+	Nonce string `gorm:"column:nonce;type:text;not null" json:"nonce"`
+	KdfSalt string `gorm:"column:kdf_salt;type:text;not null" json:"kdfSalt"`
+	KdfParams datatypes.JSON `gorm:"column:kdf_params;type:jsonb;not null" json:"kdfParams"`
+	Version datatypes.JSON `gorm:"column:version;type:jsonb;not null" json:"version"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (VaultBlobsGorm) TableName() string { return VaultBlobsTable }
+
+func (value VaultBlobsGorm) Validate() error {
+	if !validateJSONString(value.KdfParams) { return errors.New("vault_blobs.kdf_params must be valid JSON") }
+	if !validateJSONString(value.Version) { return errors.New("vault_blobs.version must be valid JSON") }
+	return nil
+}
 
 const AppConfigTable = "app_config"
 const AppConfigSelectSQL = `select
@@ -2802,8 +2889,8 @@ const DesSoccerLearningSetPlayRestartMixSelectSQL = `select
 var DesSoccerLearningSetPlayRestartMixRestartValues = []string{"direct-free-kick", "indirect-free-kick"}
 
 type DesSoccerLearningSetPlayRestartMixGorm struct {
-	RunId uuid.UUID `gorm:"column:run_id;type:uuid;not null" json:"runId"`
-	Ordinal int32 `gorm:"column:ordinal;type:integer;not null" json:"ordinal"`
+	RunId uuid.UUID `gorm:"column:run_id;type:uuid;primaryKey" json:"runId"`
+	Ordinal int32 `gorm:"column:ordinal;type:integer;primaryKey" json:"ordinal"`
 	Restart string `gorm:"column:restart;type:varchar(40);not null" json:"restart"`
 }
 
@@ -2842,8 +2929,8 @@ const DesSoccerLearningSetPlayEpisodeMetricsSelectSQL = `select
 var DesSoccerLearningSetPlayEpisodeMetricsRestartValues = []string{"direct-free-kick", "indirect-free-kick"}
 
 type DesSoccerLearningSetPlayEpisodeMetricsGorm struct {
-	RunId uuid.UUID `gorm:"column:run_id;type:uuid;not null" json:"runId"`
-	EpisodeIndex int32 `gorm:"column:episode_index;type:integer;not null" json:"episodeIndex"`
+	RunId uuid.UUID `gorm:"column:run_id;type:uuid;primaryKey" json:"runId"`
+	EpisodeIndex int32 `gorm:"column:episode_index;type:integer;primaryKey" json:"episodeIndex"`
 	Seed int64 `gorm:"column:seed;type:bigint;not null" json:"seed"`
 	Restart string `gorm:"column:restart;type:varchar(40);not null" json:"restart"`
 	Routine *string `gorm:"column:routine;type:varchar(80)" json:"routine,omitempty"`
@@ -6787,6 +6874,656 @@ func (value SharedContextGorm) Validate() error {
 	if !sharedContextCtxKeyPattern.MatchString(value.CtxKey) { return errors.New("shared_context.ctx_key does not match the required pattern") }
 	if !validateJSONString(value.Value) { return errors.New("shared_context.value must be valid JSON") }
 	if value.Version < 1 { return errors.New("shared_context.version is below the minimum") }
+	return nil
+}
+
+const SyncClockTable = "fiducia.sync_clock"
+const SyncClockSelectSQL = `select
+      singleton,
+      last_sequence
+    from fiducia.sync_clock`
+
+type SyncClockGorm struct {
+	Singleton bool `gorm:"column:singleton;type:boolean;primaryKey;default:true" json:"singleton"`
+	LastSequence int64 `gorm:"column:last_sequence;type:bigint;default:0;not null" json:"lastSequence"`
+}
+
+func (SyncClockGorm) TableName() string { return SyncClockTable }
+
+func (value SyncClockGorm) Validate() error {
+	if value.LastSequence < 0 { return errors.New("sync_clock.last_sequence is below the minimum") }
+	return nil
+}
+
+const SyncTombstonesTable = "fiducia.sync_tombstones"
+const SyncTombstonesSelectSQL = `select
+      sequence,
+      table_name,
+      row_id,
+      tenant_id::text as tenant_id,
+      owner_user_id::text as owner_user_id,
+      row_version,
+      to_char(deleted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as deleted_at
+    from fiducia.sync_tombstones`
+
+type SyncTombstonesGorm struct {
+	Sequence int64 `gorm:"column:sequence;type:bigint;primaryKey" json:"sequence"`
+	TableName string `gorm:"column:table_name;type:text;not null" json:"tableName"`
+	RowId string `gorm:"column:row_id;type:text;not null" json:"rowId"`
+	TenantId *uuid.UUID `gorm:"column:tenant_id;type:uuid" json:"tenantId,omitempty"`
+	OwnerUserId *uuid.UUID `gorm:"column:owner_user_id;type:uuid" json:"ownerUserId,omitempty"`
+	RowVersion int64 `gorm:"column:row_version;type:bigint;not null" json:"rowVersion"`
+	DeletedAt time.Time `gorm:"column:deleted_at;type:timestamptz;default:now();not null" json:"deletedAt"`
+}
+
+func (SyncTombstonesGorm) TableName() string { return SyncTombstonesTable }
+
+func (value SyncTombstonesGorm) Validate() error {
+	if value.Sequence < 1 { return errors.New("sync_tombstones.sequence is below the minimum") }
+	if value.RowVersion < 1 { return errors.New("sync_tombstones.row_version is below the minimum") }
+	return nil
+}
+
+const OrgsTable = "fiducia.orgs"
+const OrgsSelectSQL = `select
+      id::text as id,
+      slug,
+      name,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      version,
+      sync_sequence
+    from fiducia.orgs`
+
+type OrgsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	Slug string `gorm:"column:slug;type:varchar(120);not null" json:"slug"`
+	Name string `gorm:"column:name;type:varchar(200);not null" json:"name"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	Version int64 `gorm:"column:version;type:bigint;default:1;not null" json:"version"`
+	SyncSequence int64 `gorm:"column:sync_sequence;type:bigint;not null" json:"syncSequence"`
+}
+
+func (OrgsGorm) TableName() string { return OrgsTable }
+
+func (value OrgsGorm) Validate() error {
+	if !orgsSlugPattern.MatchString(value.Slug) { return errors.New("orgs.slug does not match the required pattern") }
+	return nil
+}
+
+const ProjectsTable = "fiducia.projects"
+const ProjectsSelectSQL = `select
+      id::text as id,
+      org_id::text as org_id,
+      slug,
+      name,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      version,
+      sync_sequence
+    from fiducia.projects`
+
+type ProjectsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	OrgId uuid.UUID `gorm:"column:org_id;type:uuid;not null" json:"orgId"`
+	Slug string `gorm:"column:slug;type:varchar(120);not null" json:"slug"`
+	Name string `gorm:"column:name;type:varchar(200);not null" json:"name"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	Version int64 `gorm:"column:version;type:bigint;default:1;not null" json:"version"`
+	SyncSequence int64 `gorm:"column:sync_sequence;type:bigint;not null" json:"syncSequence"`
+}
+
+func (ProjectsGorm) TableName() string { return ProjectsTable }
+
+func (value ProjectsGorm) Validate() error {
+	if !projectsSlugPattern.MatchString(value.Slug) { return errors.New("projects.slug does not match the required pattern") }
+	return nil
+}
+
+const UsersTable = "fiducia.users"
+const UsersSelectSQL = `select
+      id::text as id,
+      supabase_user_id::text as supabase_user_id,
+      email,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from fiducia.users`
+
+type UsersGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	SupabaseUserId uuid.UUID `gorm:"column:supabase_user_id;type:uuid;not null" json:"supabaseUserId"`
+	Email string `gorm:"column:email;type:varchar(320);not null" json:"email"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (UsersGorm) TableName() string { return UsersTable }
+
+func (value UsersGorm) Validate() error {
+	return nil
+}
+
+const OrgMembersTable = "fiducia.org_members"
+const OrgMembersSelectSQL = `select
+      org_id::text as org_id,
+      user_id::text as user_id,
+      role,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from fiducia.org_members`
+
+var OrgMembersRoleValues = []string{"owner", "admin", "member"}
+
+type OrgMembersGorm struct {
+	OrgId uuid.UUID `gorm:"column:org_id;type:uuid;primaryKey" json:"orgId"`
+	UserId uuid.UUID `gorm:"column:user_id;type:uuid;primaryKey" json:"userId"`
+	Role string `gorm:"column:role;type:varchar(32);default:'member';not null" json:"role"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (OrgMembersGorm) TableName() string { return OrgMembersTable }
+
+func (value OrgMembersGorm) Validate() error {
+	if !containsString(OrgMembersRoleValues, value.Role) { return errors.New("unsupported org_members.role") }
+	return nil
+}
+
+const ProjectMembersTable = "fiducia.project_members"
+const ProjectMembersSelectSQL = `select
+      project_id::text as project_id,
+      user_id::text as user_id,
+      role,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from fiducia.project_members`
+
+var ProjectMembersRoleValues = []string{"admin", "operator", "viewer"}
+
+type ProjectMembersGorm struct {
+	ProjectId uuid.UUID `gorm:"column:project_id;type:uuid;primaryKey" json:"projectId"`
+	UserId uuid.UUID `gorm:"column:user_id;type:uuid;primaryKey" json:"userId"`
+	Role string `gorm:"column:role;type:varchar(32);default:'viewer';not null" json:"role"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (ProjectMembersGorm) TableName() string { return ProjectMembersTable }
+
+func (value ProjectMembersGorm) Validate() error {
+	if !containsString(ProjectMembersRoleValues, value.Role) { return errors.New("unsupported project_members.role") }
+	return nil
+}
+
+const ApiKeysTable = "fiducia.api_keys"
+const ApiKeysSelectSQL = `select
+      id::text as id,
+      key_id,
+      org_id::text as org_id,
+      project_id::text as project_id,
+      created_by_user_id::text as created_by_user_id,
+      name,
+      secret_hash,
+      scopes,
+      env,
+      require_idempotency,
+      mtls_required,
+      revoked,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      version,
+      sync_sequence,
+      to_char(last_used_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_used_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at
+    from fiducia.api_keys`
+
+var ApiKeysEnvValues = []string{"live", "test"}
+
+type ApiKeysGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	KeyId string `gorm:"column:key_id;type:varchar(64);not null" json:"keyId"`
+	OrgId uuid.UUID `gorm:"column:org_id;type:uuid;not null" json:"orgId"`
+	ProjectId *uuid.UUID `gorm:"column:project_id;type:uuid" json:"projectId,omitempty"`
+	CreatedByUserId *uuid.UUID `gorm:"column:created_by_user_id;type:uuid" json:"createdByUserId,omitempty"`
+	Name string `gorm:"column:name;type:varchar(200);not null" json:"name"`
+	SecretHash string `gorm:"column:secret_hash;type:varchar(255);not null" json:"secretHash"`
+	Scopes datatypes.JSON `gorm:"column:scopes;type:jsonb;default:'[]'::jsonb;not null" json:"scopes"`
+	Env string `gorm:"column:env;type:varchar(16);default:'live';not null" json:"env"`
+	RequireIdempotency bool `gorm:"column:require_idempotency;type:boolean;default:true;not null" json:"requireIdempotency"`
+	MtlsRequired bool `gorm:"column:mtls_required;type:boolean;default:false;not null" json:"mtlsRequired"`
+	Revoked bool `gorm:"column:revoked;type:boolean;default:false;not null" json:"revoked"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	Version int64 `gorm:"column:version;type:bigint;default:1;not null" json:"version"`
+	SyncSequence int64 `gorm:"column:sync_sequence;type:bigint;not null" json:"syncSequence"`
+	LastUsedAt *time.Time `gorm:"column:last_used_at;type:timestamptz" json:"lastUsedAt,omitempty"`
+	ExpiresAt *time.Time `gorm:"column:expires_at;type:timestamptz" json:"expiresAt,omitempty"`
+}
+
+func (ApiKeysGorm) TableName() string { return ApiKeysTable }
+
+func (value ApiKeysGorm) Validate() error {
+	if !validateJSONString(value.Scopes) { return errors.New("api_keys.scopes must be valid JSON") }
+	if !containsString(ApiKeysEnvValues, value.Env) { return errors.New("unsupported api_keys.env") }
+	return nil
+}
+
+const MtlsClientCertsTable = "fiducia.mtls_client_certs"
+const MtlsClientCertsSelectSQL = `select
+      id::text as id,
+      org_id::text as org_id,
+      project_id::text as project_id,
+      name,
+      subject,
+      sha256_fingerprint,
+      to_char(not_before at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as not_before,
+      to_char(not_after at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as not_after,
+      revoked,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      version,
+      sync_sequence
+    from fiducia.mtls_client_certs`
+
+type MtlsClientCertsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	OrgId uuid.UUID `gorm:"column:org_id;type:uuid;not null" json:"orgId"`
+	ProjectId *uuid.UUID `gorm:"column:project_id;type:uuid" json:"projectId,omitempty"`
+	Name string `gorm:"column:name;type:varchar(200);not null" json:"name"`
+	Subject string `gorm:"column:subject;type:varchar(500);not null" json:"subject"`
+	Sha256Fingerprint string `gorm:"column:sha256_fingerprint;type:varchar(95);not null" json:"sha256Fingerprint"`
+	NotBefore *time.Time `gorm:"column:not_before;type:timestamptz" json:"notBefore,omitempty"`
+	NotAfter *time.Time `gorm:"column:not_after;type:timestamptz" json:"notAfter,omitempty"`
+	Revoked bool `gorm:"column:revoked;type:boolean;default:false;not null" json:"revoked"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	Version int64 `gorm:"column:version;type:bigint;default:1;not null" json:"version"`
+	SyncSequence int64 `gorm:"column:sync_sequence;type:bigint;not null" json:"syncSequence"`
+}
+
+func (MtlsClientCertsGorm) TableName() string { return MtlsClientCertsTable }
+
+func (value MtlsClientCertsGorm) Validate() error {
+	return nil
+}
+
+const CustomerPreferencesTable = "fiducia.customer_preferences"
+const CustomerPreferencesSelectSQL = `select
+      user_id::text as user_id,
+      density,
+      timezone,
+      region,
+      notify_key_rotation,
+      notify_lock_contention,
+      notify_mfa,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      version,
+      sync_sequence
+    from fiducia.customer_preferences`
+
+var CustomerPreferencesDensityValues = []string{"comfortable", "compact"}
+
+type CustomerPreferencesGorm struct {
+	UserId uuid.UUID `gorm:"column:user_id;type:uuid;primaryKey" json:"userId"`
+	Density string `gorm:"column:density;type:varchar(16);default:'comfortable';not null" json:"density"`
+	Timezone string `gorm:"column:timezone;type:varchar(64);default:'UTC';not null" json:"timezone"`
+	Region string `gorm:"column:region;type:varchar(16);default:'auto';not null" json:"region"`
+	NotifyKeyRotation bool `gorm:"column:notify_key_rotation;type:boolean;default:true;not null" json:"notifyKeyRotation"`
+	NotifyLockContention bool `gorm:"column:notify_lock_contention;type:boolean;default:true;not null" json:"notifyLockContention"`
+	NotifyMfa bool `gorm:"column:notify_mfa;type:boolean;default:true;not null" json:"notifyMfa"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	Version int64 `gorm:"column:version;type:bigint;default:1;not null" json:"version"`
+	SyncSequence int64 `gorm:"column:sync_sequence;type:bigint;not null" json:"syncSequence"`
+}
+
+func (CustomerPreferencesGorm) TableName() string { return CustomerPreferencesTable }
+
+func (value CustomerPreferencesGorm) Validate() error {
+	if !containsString(CustomerPreferencesDensityValues, value.Density) { return errors.New("unsupported customer_preferences.density") }
+	return nil
+}
+
+const CustomerSessionsTable = "fiducia.customer_sessions"
+const CustomerSessionsSelectSQL = `select
+      id::text as id,
+      user_id::text as user_id,
+      device,
+      location,
+      to_char(last_seen at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen,
+      status,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      version,
+      sync_sequence
+    from fiducia.customer_sessions`
+
+var CustomerSessionsStatusValues = []string{"active", "verified", "revoked"}
+
+type CustomerSessionsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	UserId uuid.UUID `gorm:"column:user_id;type:uuid;not null" json:"userId"`
+	Device string `gorm:"column:device;type:varchar(200);not null" json:"device"`
+	Location *string `gorm:"column:location;type:varchar(200)" json:"location,omitempty"`
+	LastSeen time.Time `gorm:"column:last_seen;type:timestamptz;default:now();not null" json:"lastSeen"`
+	Status string `gorm:"column:status;type:varchar(16);default:'active';not null" json:"status"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	Version int64 `gorm:"column:version;type:bigint;default:1;not null" json:"version"`
+	SyncSequence int64 `gorm:"column:sync_sequence;type:bigint;not null" json:"syncSequence"`
+}
+
+func (CustomerSessionsGorm) TableName() string { return CustomerSessionsTable }
+
+func (value CustomerSessionsGorm) Validate() error {
+	if !containsString(CustomerSessionsStatusValues, value.Status) { return errors.New("unsupported customer_sessions.status") }
+	return nil
+}
+
+const AuditLogTable = "fiducia.audit_log"
+const AuditLogSelectSQL = `select
+      id::text as id,
+      org_id::text as org_id,
+      project_id::text as project_id,
+      actor_user_id::text as actor_user_id,
+      actor_key_id::text as actor_key_id,
+      actor,
+      action,
+      target,
+      request_id,
+      source_ip,
+      user_agent,
+      meta,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(retention_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as retention_expires_at
+    from fiducia.audit_log`
+
+type AuditLogGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	OrgId *uuid.UUID `gorm:"column:org_id;type:uuid" json:"orgId,omitempty"`
+	ProjectId *uuid.UUID `gorm:"column:project_id;type:uuid" json:"projectId,omitempty"`
+	ActorUserId *uuid.UUID `gorm:"column:actor_user_id;type:uuid" json:"actorUserId,omitempty"`
+	ActorKeyId *uuid.UUID `gorm:"column:actor_key_id;type:uuid" json:"actorKeyId,omitempty"`
+	Actor *string `gorm:"column:actor;type:varchar(320)" json:"actor,omitempty"`
+	Action string `gorm:"column:action;type:varchar(120);not null" json:"action"`
+	Target *string `gorm:"column:target;type:varchar(320)" json:"target,omitempty"`
+	RequestId *string `gorm:"column:request_id;type:varchar(120)" json:"requestId,omitempty"`
+	SourceIp *string `gorm:"column:source_ip;type:varchar(64)" json:"sourceIp,omitempty"`
+	UserAgent *string `gorm:"column:user_agent;type:varchar(500)" json:"userAgent,omitempty"`
+	Meta datatypes.JSON `gorm:"column:meta;type:jsonb;default:'{}'::jsonb;not null" json:"meta"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	RetentionExpiresAt *time.Time `gorm:"column:retention_expires_at;type:timestamptz" json:"retentionExpiresAt,omitempty"`
+}
+
+func (AuditLogGorm) TableName() string { return AuditLogTable }
+
+func (value AuditLogGorm) Validate() error {
+	if !validateJSONString(value.Meta) { return errors.New("audit_log.meta must be valid JSON") }
+	return nil
+}
+
+const CustomerNotificationsTable = "fiducia.customer_notifications"
+const CustomerNotificationsSelectSQL = `select
+      id::text as id,
+      user_id::text as user_id,
+      org_id::text as org_id,
+      kind,
+      severity,
+      title,
+      body,
+      link,
+      to_char(read_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as read_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      version,
+      sync_sequence
+    from fiducia.customer_notifications`
+
+var CustomerNotificationsSeverityValues = []string{"info", "success", "warning", "critical"}
+
+type CustomerNotificationsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	UserId uuid.UUID `gorm:"column:user_id;type:uuid;not null" json:"userId"`
+	OrgId *uuid.UUID `gorm:"column:org_id;type:uuid" json:"orgId,omitempty"`
+	Kind string `gorm:"column:kind;type:varchar(40);not null" json:"kind"`
+	Severity string `gorm:"column:severity;type:varchar(16);default:'info';not null" json:"severity"`
+	Title string `gorm:"column:title;type:varchar(200);not null" json:"title"`
+	Body string `gorm:"column:body;type:varchar(2000);default:'';not null" json:"body"`
+	Link *string `gorm:"column:link;type:varchar(500)" json:"link,omitempty"`
+	ReadAt *time.Time `gorm:"column:read_at;type:timestamptz" json:"readAt,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	Version int64 `gorm:"column:version;type:bigint;default:1;not null" json:"version"`
+	SyncSequence int64 `gorm:"column:sync_sequence;type:bigint;not null" json:"syncSequence"`
+}
+
+func (CustomerNotificationsGorm) TableName() string { return CustomerNotificationsTable }
+
+func (value CustomerNotificationsGorm) Validate() error {
+	if !customerNotificationsKindPattern.MatchString(value.Kind) { return errors.New("customer_notifications.kind does not match the required pattern") }
+	if !containsString(CustomerNotificationsSeverityValues, value.Severity) { return errors.New("unsupported customer_notifications.severity") }
+	return nil
+}
+
+const SyncIdempotencyKeysTable = "fiducia.sync_idempotency_keys"
+const SyncIdempotencyKeysSelectSQL = `select
+      key,
+      request_fingerprint,
+      committed_version,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from fiducia.sync_idempotency_keys`
+
+type SyncIdempotencyKeysGorm struct {
+	Key string `gorm:"column:key;type:text;primaryKey" json:"key"`
+	RequestFingerprint string `gorm:"column:request_fingerprint;type:varchar(64);not null" json:"requestFingerprint"`
+	CommittedVersion *int64 `gorm:"column:committed_version;type:bigint" json:"committedVersion,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (SyncIdempotencyKeysGorm) TableName() string { return SyncIdempotencyKeysTable }
+
+func (value SyncIdempotencyKeysGorm) Validate() error {
+	if !syncIdempotencyKeysRequestFingerprintPattern.MatchString(value.RequestFingerprint) { return errors.New("sync_idempotency_keys.request_fingerprint does not match the required pattern") }
+	return nil
+}
+
+const TranscriptionsTable = "t2v.transcriptions"
+const TranscriptionsSelectSQL = `select
+      id::text as id,
+      source,
+      provider,
+      model,
+      text,
+      language,
+      sample_rate,
+      duration_ms,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from t2v.transcriptions`
+
+type TranscriptionsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	Source string `gorm:"column:source;type:text;not null" json:"source"`
+	Provider string `gorm:"column:provider;type:text;not null" json:"provider"`
+	Model string `gorm:"column:model;type:text;not null" json:"model"`
+	Text string `gorm:"column:text;type:text;not null" json:"text"`
+	Language *string `gorm:"column:language;type:text" json:"language,omitempty"`
+	SampleRate *int32 `gorm:"column:sample_rate;type:integer" json:"sampleRate,omitempty"`
+	DurationMs *int64 `gorm:"column:duration_ms;type:bigint" json:"durationMs,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (TranscriptionsGorm) TableName() string { return TranscriptionsTable }
+
+func (value TranscriptionsGorm) Validate() error {
+	if len([]byte(value.Source)) > 40 { return errors.New("transcriptions.source exceeds 40 bytes") }
+	if len([]byte(value.Source)) < 1 { return errors.New("transcriptions.source is below 1 bytes") }
+	if len([]byte(value.Provider)) > 40 { return errors.New("transcriptions.provider exceeds 40 bytes") }
+	if len([]byte(value.Provider)) < 1 { return errors.New("transcriptions.provider is below 1 bytes") }
+	if len([]byte(value.Model)) > 200 { return errors.New("transcriptions.model exceeds 200 bytes") }
+	if len([]byte(value.Model)) < 1 { return errors.New("transcriptions.model is below 1 bytes") }
+	if len([]byte(value.Text)) > 1000000 { return errors.New("transcriptions.text exceeds 1000000 bytes") }
+	if value.Language != nil {
+		if len([]byte(*value.Language)) > 80 { return errors.New("transcriptions.language exceeds 80 bytes") }
+		if len([]byte(*value.Language)) < 1 { return errors.New("transcriptions.language is below 1 bytes") }
+	}
+	if value.SampleRate != nil {
+		if *value.SampleRate < 4000 { return errors.New("transcriptions.sample_rate is below the minimum") }
+		if *value.SampleRate > 384000 { return errors.New("transcriptions.sample_rate is above the maximum") }
+	}
+	if value.DurationMs != nil {
+		if *value.DurationMs < 0 { return errors.New("transcriptions.duration_ms is below the minimum") }
+	}
+	return nil
+}
+
+const SynthesesTable = "t2v.syntheses"
+const SynthesesSelectSQL = `select
+      id::text as id,
+      text,
+      voice,
+      provider,
+      model,
+      format,
+      audio_bytes,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from t2v.syntheses`
+
+type SynthesesGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	Text string `gorm:"column:text;type:text;not null" json:"text"`
+	Voice string `gorm:"column:voice;type:text;not null" json:"voice"`
+	Provider string `gorm:"column:provider;type:text;not null" json:"provider"`
+	Model string `gorm:"column:model;type:text;not null" json:"model"`
+	Format string `gorm:"column:format;type:text;not null" json:"format"`
+	AudioBytes int64 `gorm:"column:audio_bytes;type:bigint;not null" json:"audioBytes"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (SynthesesGorm) TableName() string { return SynthesesTable }
+
+func (value SynthesesGorm) Validate() error {
+	if len([]byte(value.Text)) > 20000 { return errors.New("syntheses.text exceeds 20000 bytes") }
+	if len([]byte(value.Text)) < 1 { return errors.New("syntheses.text is below 1 bytes") }
+	if len([]byte(value.Voice)) > 80 { return errors.New("syntheses.voice exceeds 80 bytes") }
+	if len([]byte(value.Voice)) < 1 { return errors.New("syntheses.voice is below 1 bytes") }
+	if len([]byte(value.Provider)) > 40 { return errors.New("syntheses.provider exceeds 40 bytes") }
+	if len([]byte(value.Provider)) < 1 { return errors.New("syntheses.provider is below 1 bytes") }
+	if len([]byte(value.Model)) > 200 { return errors.New("syntheses.model exceeds 200 bytes") }
+	if len([]byte(value.Model)) < 1 { return errors.New("syntheses.model is below 1 bytes") }
+	if len([]byte(value.Format)) > 10 { return errors.New("syntheses.format exceeds 10 bytes") }
+	if len([]byte(value.Format)) < 1 { return errors.New("syntheses.format is below 1 bytes") }
+	if value.AudioBytes < 0 { return errors.New("syntheses.audio_bytes is below the minimum") }
+	return nil
+}
+
+const TranslationsTable = "t2v.translations"
+const TranslationsSelectSQL = `select
+      id::text as id,
+      source_text,
+      translated_text,
+      source_lang,
+      target_lang,
+      provider,
+      model,
+      latency_ms,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from t2v.translations`
+
+type TranslationsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	SourceText string `gorm:"column:source_text;type:text;not null" json:"sourceText"`
+	TranslatedText string `gorm:"column:translated_text;type:text;not null" json:"translatedText"`
+	SourceLang *string `gorm:"column:source_lang;type:text" json:"sourceLang,omitempty"`
+	TargetLang string `gorm:"column:target_lang;type:text;not null" json:"targetLang"`
+	Provider string `gorm:"column:provider;type:text;not null" json:"provider"`
+	Model string `gorm:"column:model;type:text;not null" json:"model"`
+	LatencyMs int64 `gorm:"column:latency_ms;type:bigint;not null" json:"latencyMs"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (TranslationsGorm) TableName() string { return TranslationsTable }
+
+func (value TranslationsGorm) Validate() error {
+	if len([]byte(value.SourceText)) > 200000 { return errors.New("translations.source_text exceeds 200000 bytes") }
+	if len([]byte(value.SourceText)) < 1 { return errors.New("translations.source_text is below 1 bytes") }
+	if len([]byte(value.TranslatedText)) > 200000 { return errors.New("translations.translated_text exceeds 200000 bytes") }
+	if value.SourceLang != nil {
+		if len([]byte(*value.SourceLang)) > 80 { return errors.New("translations.source_lang exceeds 80 bytes") }
+		if len([]byte(*value.SourceLang)) < 1 { return errors.New("translations.source_lang is below 1 bytes") }
+	}
+	if len([]byte(value.TargetLang)) > 80 { return errors.New("translations.target_lang exceeds 80 bytes") }
+	if len([]byte(value.TargetLang)) < 1 { return errors.New("translations.target_lang is below 1 bytes") }
+	if len([]byte(value.Provider)) > 40 { return errors.New("translations.provider exceeds 40 bytes") }
+	if len([]byte(value.Provider)) < 1 { return errors.New("translations.provider is below 1 bytes") }
+	if len([]byte(value.Model)) > 200 { return errors.New("translations.model exceeds 200 bytes") }
+	if len([]byte(value.Model)) < 1 { return errors.New("translations.model is below 1 bytes") }
+	if value.LatencyMs < 0 { return errors.New("translations.latency_ms is below the minimum") }
+	return nil
+}
+
+const VapiCallsTable = "t2v.vapi_calls"
+const VapiCallsSelectSQL = `select
+      id::text as id,
+      vapi_call_id,
+      status,
+      ended_reason,
+      transcript,
+      summary,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from t2v.vapi_calls`
+
+type VapiCallsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	VapiCallId string `gorm:"column:vapi_call_id;type:text;not null" json:"vapiCallId"`
+	Status string `gorm:"column:status;type:text;not null" json:"status"`
+	EndedReason *string `gorm:"column:ended_reason;type:text" json:"endedReason,omitempty"`
+	Transcript *string `gorm:"column:transcript;type:text" json:"transcript,omitempty"`
+	Summary *string `gorm:"column:summary;type:text" json:"summary,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (VapiCallsGorm) TableName() string { return VapiCallsTable }
+
+func (value VapiCallsGorm) Validate() error {
+	if len([]byte(value.VapiCallId)) > 120 { return errors.New("vapi_calls.vapi_call_id exceeds 120 bytes") }
+	if len([]byte(value.VapiCallId)) < 1 { return errors.New("vapi_calls.vapi_call_id is below 1 bytes") }
+	if len([]byte(value.Status)) > 40 { return errors.New("vapi_calls.status exceeds 40 bytes") }
+	if len([]byte(value.Status)) < 1 { return errors.New("vapi_calls.status is below 1 bytes") }
+	if value.EndedReason != nil {
+		if len([]byte(*value.EndedReason)) > 200 { return errors.New("vapi_calls.ended_reason exceeds 200 bytes") }
+		if len([]byte(*value.EndedReason)) < 1 { return errors.New("vapi_calls.ended_reason is below 1 bytes") }
+	}
+	if value.Transcript != nil {
+		if len([]byte(*value.Transcript)) > 1000000 { return errors.New("vapi_calls.transcript exceeds 1000000 bytes") }
+	}
+	if value.Summary != nil {
+		if len([]byte(*value.Summary)) > 100000 { return errors.New("vapi_calls.summary exceeds 100000 bytes") }
+	}
+	return nil
+}
+
+const VapiEventsTable = "t2v.vapi_events"
+const VapiEventsSelectSQL = `select
+      id::text as id,
+      vapi_call_id,
+      event_type,
+      payload,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from t2v.vapi_events`
+
+type VapiEventsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	VapiCallId *string `gorm:"column:vapi_call_id;type:text" json:"vapiCallId,omitempty"`
+	EventType string `gorm:"column:event_type;type:text;not null" json:"eventType"`
+	Payload datatypes.JSON `gorm:"column:payload;type:jsonb;not null" json:"payload"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (VapiEventsGorm) TableName() string { return VapiEventsTable }
+
+func (value VapiEventsGorm) Validate() error {
+	if value.VapiCallId != nil {
+		if len([]byte(*value.VapiCallId)) > 120 { return errors.New("vapi_events.vapi_call_id exceeds 120 bytes") }
+		if len([]byte(*value.VapiCallId)) < 1 { return errors.New("vapi_events.vapi_call_id is below 1 bytes") }
+	}
+	if len([]byte(value.EventType)) > 80 { return errors.New("vapi_events.event_type exceeds 80 bytes") }
+	if len([]byte(value.EventType)) < 1 { return errors.New("vapi_events.event_type is below 1 bytes") }
+	if !validateJSONString(value.Payload) { return errors.New("vapi_events.payload must be valid JSON") }
 	return nil
 }
 

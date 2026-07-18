@@ -79,6 +79,31 @@ export const BLOCKCHAIN_INDEX_EVENTS_SUBJECT = "dd.remote.blockchain.index.event
 export const BLOCKCHAIN_MEV_ALERTS_SUBJECT = "dd.remote.blockchain.mev.alerts";
 
 /**
+ * Redacted build lifecycle events (queued/running/succeeded/failed) published by the build server. Default for BUILD_SERVER_NATS_EVENT_SUBJECT.
+ * Service: dd-build-server
+ */
+export const BUILD_SERVER_EVENTS_SUBJECT = "dd.remote.build_server.events";
+
+/**
+ * Redacted container-image registry events (ECR / docker registry webhook pushes) relayed by the build server. Default for BUILD_SERVER_NATS_IMAGE_SUBJECT.
+ * Service: dd-build-server
+ */
+export const BUILD_SERVER_IMAGES_SUBJECT = "dd.remote.build_server.images";
+
+/**
+ * Durable build-request intake. Producers publish a build-server.v1 job document; build-server replicas consume via the shared queue group / durable JetStream consumer. Default for BUILD_SERVER_NATS_REQUEST_SUBJECT.
+ * Service: dd-build-server
+ */
+export const BUILD_SERVER_REQUESTS_SUBJECT = "dd.remote.build_server.requests";
+export const BUILD_SERVER_REQUESTS_QUEUE_GROUP = "dd-build-server";
+
+/**
+ * Terminal build results (succeeded/failed with jobId and error summary) for NATS-submitted and webhook-submitted jobs. Default for BUILD_SERVER_NATS_RESULT_SUBJECT.
+ * Service: dd-build-server
+ */
+export const BUILD_SERVER_RESULTS_SUBJECT = "dd.remote.build_server.results";
+
+/**
  * Per-fault lifecycle events (selected, injected, restored, aborted-by-guard) emitted by the chaos loops.
  * Service: dd-chaos
  */
@@ -769,6 +794,13 @@ export const TELEMETRY_RAW_SUBJECT = "dd.remote.telemetry.raw";
 export const TELEMETRY_RAW_QUEUE_GROUP = "dd-ai-ml-pipeline";
 
 /**
+ * Redacted terminal task failures emitted after the queue consumer exhausts JetStream redelivery. Kept on a separate limits-retention stream so poison-message evidence is durable without affecting the WorkQueue consumer lag used by KEDA.
+ * Service: dd-remote-rest-api
+ */
+export const THREAD_TASKS_DEAD_LETTER_SUBJECT = "dd.remote.thread.tasks.deadletter";
+export const THREAD_TASKS_DEAD_LETTER_STREAM = "DD_REMOTE_TASKS_DLQ";
+
+/**
  * Risk-gated buy/sell/hold decisions emitted by the trading server. Default for TRADING_DECISION_SUBJECT.
  * Service: dd-trading-server
  */
@@ -1183,7 +1215,7 @@ export function parseThreadHeartbeatSubject(subject: string): ThreadHeartbeatSub
 }
 
 /**
- * Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS). Producers publish per-thread; consumers either subscribe to the exact subject (the worker for that thread) or to the wildcard via a queue group (the preparer).
+ * Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS) with WorkQueue retention. Producers publish per-thread and queue-consumer replicas share the durable wildcard consumer so each task has one handoff owner.
  * Service: dd-remote-rest-api
  */
 export const THREAD_TASKS_PATTERN = "dd.remote.thread.{thread_id}.tasks";
@@ -1264,6 +1296,12 @@ export const AGENT_SIM_SERVER_QUEUE_GROUP = "dd-agent-sim-server";
  * Service: dd-billing-server
  */
 export const BILLING_SERVER_QUEUE_GROUP = "dd-billing-server";
+
+/**
+ * Shared queue group / durable consumer name used by build-server replicas for request intake.
+ * Service: dd-build-server
+ */
+export const BUILD_SERVER_QUEUE_GROUP = "dd-build-server";
 
 /**
  * Shared queue group used by dd-constraint-scheduler replicas consuming schedule requests.
@@ -1410,6 +1448,16 @@ export const CDC_STREAM_STORAGE = "file";
 export const CDC_STREAM_ACK = "explicit";
 
 /**
+ * JetStream file storage with WorkQueue retention and explicit ack for build-request intake. Dedupe by Nats-Msg-Id ('build-request:<requestId>'); Postgres (dd_build_server) remains the real idempotency guard.
+ * Service: dd-build-server
+ */
+export const DD_REMOTE_BUILD_JOBS_STREAM_NAME = "DD_REMOTE_BUILD_JOBS";
+export const DD_REMOTE_BUILD_JOBS_STREAM_SUBJECTS: readonly string[] = ["dd.remote.build_server.requests"];
+export const DD_REMOTE_BUILD_JOBS_STREAM_RETENTION = "workqueue";
+export const DD_REMOTE_BUILD_JOBS_STREAM_STORAGE = "file";
+export const DD_REMOTE_BUILD_JOBS_STREAM_ACK = "explicit";
+
+/**
  * Short-retention control plane stream.
  * Service: dd-remote-rest-api
  */
@@ -1460,6 +1508,16 @@ export const DD_REMOTE_EVOLUTION_STREAM_STORAGE = "file";
 export const DD_REMOTE_EVOLUTION_STREAM_ACK = "explicit";
 
 /**
+ * Durable JetStream history for fabrication requests, results, machine profiles, design conversion, instruction generation and review, execution telemetry, learning outcomes, and release readiness.
+ * Service: dd-fabrication-server
+ */
+export const DD_REMOTE_FABRICATION_STREAM_NAME = "DD_REMOTE_FABRICATION";
+export const DD_REMOTE_FABRICATION_STREAM_SUBJECTS: readonly string[] = ["dd.remote.fabrication.>"];
+export const DD_REMOTE_FABRICATION_STREAM_RETENTION = "limits";
+export const DD_REMOTE_FABRICATION_STREAM_STORAGE = "file";
+export const DD_REMOTE_FABRICATION_STREAM_ACK = "explicit";
+
+/**
  * JetStream stream for distributed in-house LP/MIP/IP solver work, results, control, and progress events.
  * Service: dd-ai-ml-pipeline
  */
@@ -1480,11 +1538,21 @@ export const DD_REMOTE_ROUTING_STREAM_STORAGE = "file";
 export const DD_REMOTE_ROUTING_STREAM_ACK = "explicit";
 
 /**
- * JetStream file storage, explicit ack, message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard.
+ * JetStream file storage with WorkQueue retention, explicit ack, and message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard.
  * Service: dd-remote-rest-api
  */
 export const DD_REMOTE_TASKS_STREAM_NAME = "DD_REMOTE_TASKS";
 export const DD_REMOTE_TASKS_STREAM_SUBJECTS: readonly string[] = ["dd.remote.thread.*.tasks"];
-export const DD_REMOTE_TASKS_STREAM_RETENTION = "limits";
+export const DD_REMOTE_TASKS_STREAM_RETENTION = "workqueue";
 export const DD_REMOTE_TASKS_STREAM_STORAGE = "file";
 export const DD_REMOTE_TASKS_STREAM_ACK = "explicit";
+
+/**
+ * Durable limits-retention stream for redacted terminal task failures. It is separate from DD_REMOTE_TASKS so dead letters cannot inflate queue-consumer lag or trigger KEDA scaling.
+ * Service: dd-remote-rest-api
+ */
+export const DD_REMOTE_TASKS_DLQ_STREAM_NAME = "DD_REMOTE_TASKS_DLQ";
+export const DD_REMOTE_TASKS_DLQ_STREAM_SUBJECTS: readonly string[] = ["dd.remote.thread.tasks.deadletter"];
+export const DD_REMOTE_TASKS_DLQ_STREAM_RETENTION = "limits";
+export const DD_REMOTE_TASKS_DLQ_STREAM_STORAGE = "file";
+export const DD_REMOTE_TASKS_DLQ_STREAM_ACK = "explicit";

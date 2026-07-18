@@ -55,6 +55,23 @@ pub const blockchain_index_events_subject = "dd.remote.blockchain.index.events"
 /// Service: dd-contract-service
 pub const blockchain_mev_alerts_subject = "dd.remote.blockchain.mev.alerts"
 
+/// Redacted build lifecycle events (queued/running/succeeded/failed) published by the build server. Default for BUILD_SERVER_NATS_EVENT_SUBJECT.
+/// Service: dd-build-server
+pub const build_server_events_subject = "dd.remote.build_server.events"
+
+/// Redacted container-image registry events (ECR / docker registry webhook pushes) relayed by the build server. Default for BUILD_SERVER_NATS_IMAGE_SUBJECT.
+/// Service: dd-build-server
+pub const build_server_images_subject = "dd.remote.build_server.images"
+
+/// Durable build-request intake. Producers publish a build-server.v1 job document; build-server replicas consume via the shared queue group / durable JetStream consumer. Default for BUILD_SERVER_NATS_REQUEST_SUBJECT.
+/// Service: dd-build-server
+pub const build_server_requests_subject = "dd.remote.build_server.requests"
+pub const build_server_requests_queue_group = "dd-build-server"
+
+/// Terminal build results (succeeded/failed with jobId and error summary) for NATS-submitted and webhook-submitted jobs. Default for BUILD_SERVER_NATS_RESULT_SUBJECT.
+/// Service: dd-build-server
+pub const build_server_results_subject = "dd.remote.build_server.results"
+
 /// Per-fault lifecycle events (selected, injected, restored, aborted-by-guard) emitted by the chaos loops.
 /// Service: dd-chaos
 pub const chaos_events_subject = "dd.remote.chaos.events"
@@ -533,6 +550,11 @@ pub const telemetry_mdp_subject = "dd.remote.telemetry.mdp"
 pub const telemetry_raw_subject = "dd.remote.telemetry.raw"
 pub const telemetry_raw_queue_group = "dd-ai-ml-pipeline"
 
+/// Redacted terminal task failures emitted after the queue consumer exhausts JetStream redelivery. Kept on a separate limits-retention stream so poison-message evidence is durable without affecting the WorkQueue consumer lag used by KEDA.
+/// Service: dd-remote-rest-api
+pub const thread_tasks_dead_letter_subject = "dd.remote.thread.tasks.deadletter"
+pub const thread_tasks_dead_letter_stream = "DD_REMOTE_TASKS_DLQ"
+
 /// Risk-gated buy/sell/hold decisions emitted by the trading server. Default for TRADING_DECISION_SUBJECT.
 /// Service: dd-trading-server
 pub const trading_decisions_subject = "dd.remote.trading.decisions"
@@ -1009,7 +1031,7 @@ pub fn parse_thread_heartbeat_subject(subject: String) -> Option(ThreadHeartbeat
   }
 }
 
-/// Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS). Producers publish per-thread; consumers either subscribe to the exact subject (the worker for that thread) or to the wildcard via a queue group (the preparer).
+/// Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS) with WorkQueue retention. Producers publish per-thread and queue-consumer replicas share the durable wildcard consumer so each task has one handoff owner.
 /// Service: dd-remote-rest-api
 pub const thread_tasks_pattern = "dd.remote.thread.{thread_id}.tasks"
 pub const thread_tasks_wildcard = "dd.remote.thread.*.tasks"
@@ -1097,6 +1119,10 @@ pub const agent_sim_server_queue_group = "dd-agent-sim-server"
 /// Queue group shared by dd-billing-server replicas for inbound sync commands so each command is handled by exactly one pod.
 /// Service: dd-billing-server
 pub const billing_server_queue_group = "dd-billing-server"
+
+/// Shared queue group / durable consumer name used by build-server replicas for request intake.
+/// Service: dd-build-server
+pub const build_server_queue_group = "dd-build-server"
 
 /// Shared queue group used by dd-constraint-scheduler replicas consuming schedule requests.
 /// Service: dd-constraint-scheduler
@@ -1196,6 +1222,16 @@ pub const cdc_stream_retention = "limits"
 pub const cdc_stream_storage = "file"
 pub const cdc_stream_ack = "explicit"
 
+/// JetStream file storage with WorkQueue retention and explicit ack for build-request intake. Dedupe by Nats-Msg-Id ('build-request:<requestId>'); Postgres (dd_build_server) remains the real idempotency guard.
+/// Service: dd-build-server
+pub const dd_remote_build_jobs_stream_name = "DD_REMOTE_BUILD_JOBS"
+pub fn dd_remote_build_jobs_stream_subjects() -> List(String) {
+  ["dd.remote.build_server.requests"]
+}
+pub const dd_remote_build_jobs_stream_retention = "workqueue"
+pub const dd_remote_build_jobs_stream_storage = "file"
+pub const dd_remote_build_jobs_stream_ack = "explicit"
+
 /// Short-retention control plane stream.
 /// Service: dd-remote-rest-api
 pub const dd_remote_control_stream_name = "DD_REMOTE_CONTROL"
@@ -1246,6 +1282,16 @@ pub const dd_remote_evolution_stream_retention = "limits"
 pub const dd_remote_evolution_stream_storage = "file"
 pub const dd_remote_evolution_stream_ack = "explicit"
 
+/// Durable JetStream history for fabrication requests, results, machine profiles, design conversion, instruction generation and review, execution telemetry, learning outcomes, and release readiness.
+/// Service: dd-fabrication-server
+pub const dd_remote_fabrication_stream_name = "DD_REMOTE_FABRICATION"
+pub fn dd_remote_fabrication_stream_subjects() -> List(String) {
+  ["dd.remote.fabrication.>"]
+}
+pub const dd_remote_fabrication_stream_retention = "limits"
+pub const dd_remote_fabrication_stream_storage = "file"
+pub const dd_remote_fabrication_stream_ack = "explicit"
+
 /// JetStream stream for distributed in-house LP/MIP/IP solver work, results, control, and progress events.
 /// Service: dd-ai-ml-pipeline
 pub const dd_remote_mip_solver_stream_name = "DD_REMOTE_MIP_SOLVER"
@@ -1266,15 +1312,25 @@ pub const dd_remote_routing_stream_retention = "limits"
 pub const dd_remote_routing_stream_storage = "file"
 pub const dd_remote_routing_stream_ack = "explicit"
 
-/// JetStream file storage, explicit ack, message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard.
+/// JetStream file storage with WorkQueue retention, explicit ack, and message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard.
 /// Service: dd-remote-rest-api
 pub const dd_remote_tasks_stream_name = "DD_REMOTE_TASKS"
 pub fn dd_remote_tasks_stream_subjects() -> List(String) {
   ["dd.remote.thread.*.tasks"]
 }
-pub const dd_remote_tasks_stream_retention = "limits"
+pub const dd_remote_tasks_stream_retention = "workqueue"
 pub const dd_remote_tasks_stream_storage = "file"
 pub const dd_remote_tasks_stream_ack = "explicit"
+
+/// Durable limits-retention stream for redacted terminal task failures. It is separate from DD_REMOTE_TASKS so dead letters cannot inflate queue-consumer lag or trigger KEDA scaling.
+/// Service: dd-remote-rest-api
+pub const dd_remote_tasks_dlq_stream_name = "DD_REMOTE_TASKS_DLQ"
+pub fn dd_remote_tasks_dlq_stream_subjects() -> List(String) {
+  ["dd.remote.thread.tasks.deadletter"]
+}
+pub const dd_remote_tasks_dlq_stream_retention = "limits"
+pub const dd_remote_tasks_dlq_stream_storage = "file"
+pub const dd_remote_tasks_dlq_stream_ack = "explicit"
 
 // ---------- helpers ----------
 

@@ -62,8 +62,14 @@ init(ServiceName) ->
         application:set_env(opentelemetry, span_processor, batch),
         application:set_env(opentelemetry, traces_exporter, otlp),
 
-        %% Exporter first (the SDK's batch processor links to it on boot),
-        %% then the SDK itself.
+        %% The OTLP HTTP exporter uses Erlang's httpc client but its OTP
+        %% application does not reliably start `inets` before exporter init.
+        %% Start that explicit transport dependency first so the exporter is
+        %% functional rather than merely registered with the supervisor.
+        {ok, _} = ensure_started(inets),
+
+        %% Exporter next (the SDK's batch processor links to it on boot), then
+        %% the SDK itself.
         {ok, _} = ensure_started(opentelemetry_exporter),
         {ok, _} = ensure_started(opentelemetry),
 
