@@ -123,3 +123,5 @@ Accepted / deployment-enforced (NOT in code):
   bucket IS the global limit. If you scale replicas, move the limiter to a shared store (Redis)
   or the effective rate becomes `replicas × limit`.
 - **NATS payload size** is bounded by the server's `max_payload` (default 1 MiB), not app-side.
+
+> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

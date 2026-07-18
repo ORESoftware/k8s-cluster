@@ -126,3 +126,5 @@ cargo build --no-default-features
 [`image`]: https://crates.io/crates/image
 [`imageproc`]: https://crates.io/crates/imageproc
 [`reqwest`]: https://crates.io/crates/reqwest
+
+> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

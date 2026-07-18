@@ -45,12 +45,15 @@ path. The fallback is enabled by default through `QUEUE_CONSUMER_FALLBACK_REST_D
 | `NATS_TASK_MAX_ACK_PENDING` | `256` | Max in-flight unacked messages on the durable consumer. |
 | `NATS_TASK_MAX_DELIVER` | `5` | Max redeliveries before JetStream stops retrying a poison message. |
 | `NATS_TASK_NAK_DELAY_SECONDS` | `15` | Delay before redelivery when the REST prepare call fails. |
+| `NATS_TASK_DLQ_SUBJECT` | `dd.remote.thread.tasks.deadletter` | Subject a task is published to once redelivery is exhausted, just before it is `Term`'d. |
+| `NATS_TASK_DLQ_STREAM` | `DD_REMOTE_TASKS_DLQ` | Dedicated limits-retention JetStream stream created for terminal task evidence. Keeping it separate prevents dead letters from inflating KEDA's WorkQueue lag. |
 | `REMOTE_REST_API_URL` | `http://dd-remote-rest-api.default.svc.cluster.local:8082` | Internal REST API URL. |
 | `CONTAINER_POOL_BASE_URL` | `http://dd-container-pool.default.svc.cluster.local:8102` | Internal warm worker pool URL used for real queued dispatches. |
 | `QUEUE_CONSUMER_FALLBACK_REST_DISPATCH` | `true` | When true, failed pool handoff falls back to `/prepare` plus direct REST dispatch. |
 | `REMOTE_DEV_SERVER_SECRET` / `SERVER_AUTH_SECRET` | `dd-k8s-home` | Shared internal auth header for prepare calls. |
 | `QUEUE_CONSUMER_REQUIRE_NONDEFAULT_SECRET` | `false` | When true, refuse to start if the auth secret is still the built-in default (fail closed instead of warning). The Kubernetes deployment enables this. |
 | `QUEUE_CONSUMER_RECEIPTS_DIR` | `/tmp/dd-remote-queue-consumer/tasks` | JSON task receipts used to skip duplicate NATS deliveries. |
+| `QUEUE_CONSUMER_METRICS_ADDR` | `0.0.0.0:8120` | HTTP listener for `/healthz`, `/readyz`, and Prometheus `/metrics`. |
 | `NATS_REQUIRE_TLS` | `false` | Require TLS to the NATS broker. |
 | `NATS_CREDENTIALS_FILE` / `NATS_TOKEN` / `NATS_NKEY` | _(unset)_ | Optional NATS auth (precedence in that order). |
 
@@ -76,7 +79,28 @@ path. The fallback is enabled by default through `QUEUE_CONSUMER_FALLBACK_REST_D
   finishes before exit, avoiding a redelivery storm on rolling restarts.
 - **Bounded duplicate cache** — the in-memory taskId set is capped (the on-disk receipts stay the
   durable check), so a long-lived pod can't grow it without bound.
+- **Ack-progress heartbeat** — a worker handoff chains up to two HTTP calls (`/prepare` then dispatch),
+  each bounded by `QUEUE_CONSUMER_HTTP_TIMEOUT_SECONDS` (default 420s), which can exceed
+  `NATS_TASK_ACK_WAIT_SECONDS` (default 120s). While a handoff runs the consumer sends
+  `AckKind::Progress` every `ack_wait / 3` (floored at 5s) so JetStream keeps the ack deadline alive
+  instead of redelivering the still-running message to another replica and dispatching the task twice.
+  A genuine crash or stall still redelivers, because heartbeats stop the instant the handoff future does.
+- **Dead-letter + terminate on exhaustion** — when a handoff fails on its final permitted delivery
+  (`delivered >= NATS_TASK_MAX_DELIVER`), the consumer publishes a `dd.dead_letter.v1` record to
+  `NATS_TASK_DLQ_SUBJECT`, waits for the `DD_REMOTE_TASKS_DLQ` JetStream publish acknowledgement,
+  emits a `queue-task-dead-lettered` critical event, and `Term`s the message.
+  This is essential under the stream's `WorkQueue` retention: a message that is only ever Nak'd is never
+  removed once redelivery is exhausted, so it would otherwise linger until `max_age` (14 days) and keep
+  inflating the consumer lag that KEDA scales on — one poison message could pin a replica alive for days.
 - A `WARN` is logged if the internal auth secret falls back to the built-in default.
+
+## Telemetry
+
+The service initializes the shared explicit OpenTelemetry client and writes redacted `dd.log.v1`
+JSON records to stdout/stderr for Promtail and Loki. `/metrics` exposes received, invalid, duplicate,
+fetch-error, ack-progress-failure, handoff, dead-letter, and DLQ-publish counters plus a readiness
+gauge. The OTel Collector scrapes the service and exports those metrics to Prometheus; alert rules
+cover an unavailable target, a non-ready consumer, new dead letters, and failed DLQ persistence.
 
 ## Scaling
 
@@ -102,3 +126,5 @@ The consumer also keeps an in-memory taskId set and writes JSON receipts under
 skipped after the first successful prepare call. The Node.js worker has its own
 task receipt map/files too, so direct REST and future queue execution can remain
 idempotent at the container boundary.
+
+> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

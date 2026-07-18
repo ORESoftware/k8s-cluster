@@ -122,3 +122,5 @@ Clients still own the actual `RTCPeerConnection` setup:
 
 For early tests, public STUN is usually enough. For production mobile support,
 deploy TURN and pass those credentials to clients.
+
+> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

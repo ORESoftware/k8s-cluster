@@ -175,3 +175,5 @@ cargo run --release
 # dep is included
 docker build -f remote/deployments/runtime-config-rs/Dockerfile -t dd-runtime-config:dev .
 ```
+
+> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

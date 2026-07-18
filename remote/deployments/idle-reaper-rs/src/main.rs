@@ -412,7 +412,18 @@ fn runtime_floor_job_from_env() -> Option<RuntimeFloorJob> {
             .unwrap_or_else(|| DD_REMOTE_TASKS_STREAM_NAME.to_string()),
         task_consumer: env_string("RUNTIME_FLOOR_NATS_TASK_CONSUMER")
             .unwrap_or_else(|| THREAD_PREPARER_QUEUE_GROUP.to_string()),
-        task_ack_wait_seconds: env_u64("RUNTIME_FLOOR_NATS_TASK_ACK_WAIT_SECONDS", 600),
+        // This service and dd-remote-queue-consumer both `get_or_create_consumer`
+        // the SAME durable (THREAD_PREPARER_QUEUE_GROUP on DD_REMOTE_TASKS): the
+        // reaper provisions it so KEDA has a consumer to read lag from even when
+        // the queue-consumer has scaled to zero, and the queue-consumer owns its
+        // runtime semantics. Because `get_or_create_consumer` never reconciles an
+        // existing consumer, whichever process wins the create race fixes the
+        // config — so these defaults MUST match the queue-consumer's
+        // (`NATS_TASK_ACK_WAIT_SECONDS`=120, `_MAX_ACK_PENDING`=256,
+        // `_MAX_DELIVER`=5). A drifting ack_wait here (it used to default to 600)
+        // silently overrode the queue-consumer's 120s deadline and its
+        // ack-progress heartbeat tuning. Keep them in lockstep.
+        task_ack_wait_seconds: env_u64("RUNTIME_FLOOR_NATS_TASK_ACK_WAIT_SECONDS", 120),
         task_max_ack_pending: env_i64("RUNTIME_FLOOR_NATS_TASK_MAX_ACK_PENDING", 256),
         task_max_deliver: env_i64("RUNTIME_FLOOR_NATS_TASK_MAX_DELIVER", 5),
         container_pool_url: env_string("RUNTIME_FLOOR_CONTAINER_POOL_URL").unwrap_or_else(|| {

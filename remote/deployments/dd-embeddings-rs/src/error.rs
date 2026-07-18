@@ -79,6 +79,14 @@ impl ApiError {
     }
 }
 
+/// Database failures fold into `Db`: the driver detail is kept for server-side
+/// logging but never returned to the caller (see `client_message`).
+impl From<sea_orm::DbErr> for ApiError {
+    fn from(e: sea_orm::DbErr) -> Self {
+        ApiError::Db(e.to_string())
+    }
+}
+
 fn provider_status_kind(e: &ProviderError) -> (StatusCode, &'static str) {
     match e {
         ProviderError::Unknown(_) => (StatusCode::NOT_FOUND, "unknown_provider"),

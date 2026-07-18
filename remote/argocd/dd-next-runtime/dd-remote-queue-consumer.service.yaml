@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-remote-queue-consumer
+  namespace: default
+  labels:
+    app: dd-remote-queue-consumer
+spec:
+  selector:
+    app: dd-remote-queue-consumer
+  ports:
+    - name: metrics
+      port: 8120
+      targetPort: metrics

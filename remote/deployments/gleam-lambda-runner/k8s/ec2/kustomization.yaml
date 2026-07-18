@@ -1,8 +1,0 @@
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-
-resources:
-  - dd-gleam-lambda-runner-rbac.yaml
-  - dd-gleam-lambda-runner.deployment.yaml
-  - dd-gleam-lambda-runner.networkpolicy.yaml
-  - dd-gleam-lambda-runner.service.yaml
