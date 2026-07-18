@@ -8,7 +8,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::customer_locks::{CustomerLockBroker, customer_lock_targets_from_account_code};
+use crate::customer_locks::{
+    CustomerLockBroker, CustomerLockGuard, customer_lock_targets_from_account_code,
+};
 use crate::db::{decode_enum, require_row, stmt};
 use crate::entity::accounts;
 use crate::error::{AppError, AppResult};
@@ -106,7 +108,7 @@ impl LedgerService {
         region: Region,
     ) -> AppResult<Uuid> {
         let customer_lock_targets = customer_lock_targets_from_draft(draft);
-        let customer_lock_guard = self
+        let mut customer_lock_guard = self
             .customer_locks
             .acquire_customers(
                 draft.tenant_id,
@@ -115,7 +117,9 @@ impl LedgerService {
             )
             .await?;
 
-        let result = self.post_transaction_locked(draft, region).await;
+        let result = self
+            .post_transaction_locked(draft, region, &mut customer_lock_guard)
+            .await;
         if let Err(e) = customer_lock_guard.release().await {
             tracing::warn!(error = %e, "failed to release customer ledger-write lock");
         }
@@ -167,6 +171,7 @@ impl LedgerService {
         &self,
         draft: &DraftTransaction,
         region: Region,
+        customer_lock_guard: &mut CustomerLockGuard,
     ) -> AppResult<(Uuid, bool)> {
         if draft.postings.len() < 2 {
             return Err(AppError::LedgerInvariant(
@@ -235,6 +240,7 @@ impl LedgerService {
             .await?
         {
             let existing: Uuid = row.try_get("", "id")?;
+            customer_lock_guard.ensure_valid().await?;
             tx.commit().await?;
             return Ok((existing, false));
         }
@@ -273,6 +279,7 @@ impl LedgerService {
                 .await?,
             )?;
             let existing: Uuid = row.try_get("", "id")?;
+            customer_lock_guard.ensure_valid().await?;
             tx.commit().await?;
             return Ok((existing, false));
         };
@@ -328,6 +335,7 @@ impl LedgerService {
             .map_err(map_pg_constraint_err)?;
         }
 
+        customer_lock_guard.ensure_valid().await?;
         tx.commit().await?;
 
         // Genuinely-new commit (the two idempotent short-circuits above

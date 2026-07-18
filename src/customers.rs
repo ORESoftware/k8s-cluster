@@ -108,7 +108,7 @@ impl CustomerService {
         currency: Currency,
     ) -> AppResult<BillingState> {
         let user = self.users.by_email(tenant_id, email).await?;
-        let lock_guard = self
+        let mut lock_guard = self
             .customer_locks
             .acquire_customer_uuid(tenant_id, user.id, "customers.billing_state")
             .await?;
@@ -137,9 +137,7 @@ impl CustomerService {
             let aging = self
                 .compute_aging(&tx, tenant_id, user.id, currency)
                 .await?;
-            let last_payment = self
-                .last_payment(&tx, tenant_id, user.id, currency)
-                .await?;
+            let last_payment = self.last_payment(&tx, tenant_id, user.id, currency).await?;
             let recon = self.recon_status(&tx, tenant_id).await?;
 
             let state = BillingState {
@@ -158,6 +156,7 @@ impl CustomerService {
                 reconciliation_status: recon,
                 as_of_confidence: Confidence::Finalized,
             };
+            lock_guard.ensure_valid().await?;
             tx.commit().await?;
             Ok(state)
         }

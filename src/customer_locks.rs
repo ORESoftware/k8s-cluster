@@ -46,6 +46,8 @@ struct HeldCustomerLock {
     coordinator: FiduciaCoordinator,
     holder: String,
     fencing_token: u64,
+    ttl_ms: u64,
+    lease_expires_ms: i64,
     resources: Vec<String>,
     fencing_tokens: Vec<CustomerFencingToken>,
 }
@@ -131,6 +133,8 @@ impl CustomerLockBroker {
                         coordinator: self.coordinator.clone(),
                         holder,
                         fencing_token: grant.fencing_token,
+                        ttl_ms: self.ttl_ms,
+                        lease_expires_ms: grant.lease_expires_ms,
                         resources,
                         fencing_tokens,
                     })),
@@ -179,6 +183,35 @@ impl CustomerLockGuard {
         }
     }
 
+    /// Reacquire the exact same holder/key set immediately before a protected
+    /// commit or snapshot handoff. Fiducia preserves the fencing token and
+    /// extends the lease; a missing or different grant proves this guard lost
+    /// authority and the caller must roll its database transaction back.
+    pub async fn ensure_valid(&mut self) -> AppResult<()> {
+        let CustomerLockGuardInner::Held(held) = &mut self.inner else {
+            return Ok(());
+        };
+        let grant = held
+            .coordinator
+            .acquire_lock(held.resources.clone(), &held.holder, held.ttl_ms)
+            .await?
+            .ok_or_else(|| lost_lock_error("the lock is now held by another caller"))?;
+        if grant.fencing_token != held.fencing_token || grant.keys != held.resources {
+            return Err(lost_lock_error(
+                "the renewed grant did not match the original fencing token and resources",
+            ));
+        }
+        held.lease_expires_ms = grant.lease_expires_ms;
+        tracing::debug!(
+            holder = held.holder,
+            fencing_token = held.fencing_token,
+            lease_expires_ms = held.lease_expires_ms,
+            resources = ?held.resources,
+            "renewed Fiducia customer lock before protected handoff"
+        );
+        Ok(())
+    }
+
     pub async fn release(self) -> AppResult<()> {
         match self.inner {
             CustomerLockGuardInner::Disabled => Ok(()),
@@ -189,6 +222,13 @@ impl CustomerLockGuard {
                 Ok(())
             }
         }
+    }
+}
+
+fn lost_lock_error(message: &str) -> AppError {
+    AppError::Provider {
+        provider: "fiducia.cloud".into(),
+        message: format!("customer lock authority was lost: {message}"),
     }
 }
 
@@ -279,13 +319,23 @@ mod tests {
     #[tokio::test]
     async fn disabled_broker_never_connects() {
         let broker = CustomerLockBroker::disabled();
-        let guard = broker
+        let mut guard = broker
             .acquire_customers(Uuid::new_v4(), vec!["cus_1".into()], "test")
             .await
             .unwrap();
         let info = guard.info();
         assert!(!info.enabled);
         assert!(info.resources.is_empty());
+        guard.ensure_valid().await.unwrap();
         guard.release().await.unwrap();
+    }
+
+    #[test]
+    fn lost_lock_error_is_actionable_without_credentials() {
+        let error = lost_lock_error("fencing token changed");
+        let rendered = error.to_string();
+        assert!(rendered.contains("fiducia.cloud"));
+        assert!(rendered.contains("authority was lost"));
+        assert!(rendered.contains("fencing token changed"));
     }
 }
