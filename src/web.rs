@@ -734,6 +734,24 @@ mod tests {
     }
 
     #[test]
+    fn same_origin_guard_blocks_cross_site_ws() {
+        use axum::http::HeaderValue;
+        let mut h = HeaderMap::new();
+        // No Origin (curl/websocat): allowed.
+        assert!(same_origin(&h));
+        // Matching Origin/Host: allowed.
+        h.insert(header::HOST, HeaderValue::from_static("127.0.0.1:9060"));
+        h.insert(
+            header::ORIGIN,
+            HeaderValue::from_static("http://127.0.0.1:9060"),
+        );
+        assert!(same_origin(&h));
+        // Cross-site Origin: rejected.
+        h.insert(header::ORIGIN, HeaderValue::from_static("http://evil.example"));
+        assert!(!same_origin(&h));
+    }
+
+    #[test]
     fn fetch_ok_fragment_escapes_and_carries_status() {
         // A malicious status line must be escaped, and the status text must be
         // present for the dashboard/e2e to read.
