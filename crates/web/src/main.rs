@@ -45,8 +45,14 @@ pub fn app(state: AppState) -> Router {
         .route("/speak", get(routes::speak_page).post(routes::speak_action))
         .route("/history", get(routes::history_page))
         .route("/ws/stats", get(routes::stats_ws))
+        .route("/assets/htmx.min.js", get(assets::htmx_js))
+        .route("/assets/htmx-ws.js", get(assets::htmx_ws_js))
+        .route("/assets/app.css", get(assets::app_css))
         .route("/healthz", get(routes::healthz))
         .route("/readyz", get(routes::readyz))
+        // Security headers on every response; a backstop timeout on every request.
+        .layer(from_fn(routes::security_headers))
+        .layer(TimeoutLayer::new(Duration::from_secs(REQUEST_TIMEOUT_SECS)))
         .with_state(state)
 }
 
