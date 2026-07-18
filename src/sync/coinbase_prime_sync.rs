@@ -11,8 +11,6 @@
 //!
 //! Idempotency: `coinbase_prime:tx:<id>`.
 
-use sea_orm::ConnectionTrait;
-
 use crate::error::{AppError, AppResult};
 use crate::ledger::{AccountKind, Direction, DraftPosting, DraftTransaction};
 use crate::money::Currency;
@@ -246,39 +244,20 @@ async fn record_observability(
     portfolio_id: &str,
     tx: &PrimeTransaction,
 ) -> AppResult<()> {
-    // NOTE: preserved verbatim from the sqlx original (including the
-    // swallowed error): this INSERT references columns that do not exist on
-    // `provider_balance_snapshots` (see schema/schema.sql), so it has always
-    // failed silently at runtime. Kept behavior-identical during the SeaORM
-    // conversion rather than silently starting to write new data.
-    let _ = ctx
-        .pool
-        .execute(crate::db::stmt(
-            r#"
-        INSERT INTO provider_balance_snapshots
-            (tenant_id, shard_key, provider, external_account_id, asset_symbol,
-             balance_minor, currency, captured_at, metadata)
-        VALUES ($1, $2, 'coinbase_prime'::provider_kind, $3, $4,
-                0::NUMERIC(38,0), $4, now(), $5)
-        ON CONFLICT DO NOTHING
-        "#,
-            [
-                ctx.tenant_id.into(),
-                crate::shard::ShardKey::derive(ctx.tenant_id, ctx.region).0.into(),
-                portfolio_id.into(),
-                tx.symbol.as_deref().unwrap_or("?").into(),
-                serde_json::json!({
-                    "coinbase_prime_tx_id": tx.id,
-                    "coinbase_prime_type": tx.type_,
-                    "coinbase_prime_amount": tx.amount,
-                    "coinbase_prime_completed_at": tx.completed_at,
-                    "note": "non-fiat crypto: recorded for observability only \
-                 (price oracle integration deferred)",
-                })
-                .into(),
-            ],
-        ))
-        .await;
+    // Non-fiat crypto flows have no fiat amount to snapshot until the price
+    // oracle integration lands, and `provider_balance_snapshots` is a
+    // connection-keyed fiat balance table — so this observability record goes
+    // to the structured log stream, not the database.
+    tracing::info!(
+        tenant_id = %ctx.tenant_id,
+        portfolio_id,
+        coinbase_prime_tx_id = %tx.id,
+        coinbase_prime_type = %tx.type_,
+        coinbase_prime_symbol = tx.symbol.as_deref().unwrap_or("?"),
+        coinbase_prime_amount = tx.amount.as_deref().unwrap_or("?"),
+        coinbase_prime_completed_at = tx.completed_at.as_deref().unwrap_or("?"),
+        "skipped non-fiat coinbase prime transaction (price oracle deferred); recorded for observability"
+    );
     Ok(())
 }
 

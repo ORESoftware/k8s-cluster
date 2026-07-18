@@ -75,22 +75,31 @@ customer account code it mutates (`ar/<id>`, `unallocated_cash/<id>`,
 `credit_memo(s)/<id>`, `customer/<id>/...`). The snapshot queries run in one
 Postgres `REPEATABLE READ READ ONLY` transaction, so the result cannot stitch
 together multiple database snapshots even if a non-cooperating writer exists.
+Immediately before a ledger commit or snapshot handoff, the service reacquires
+the exact same holder/key set. Fiducia extends the expiry without changing the
+fencing token; a missing or different grant aborts the Postgres transaction.
 
 Tenant leases use Fiducia leader elections: campaign = acquire, renew = extend,
 and resign = release. The durable billing mirror and audit event commit together
-in Postgres under a transaction-scoped advisory lock. External HTTP calls never
-run inside a database transaction. If the Postgres commit fails after a Fiducia
-campaign or renewal, the service compensates by resigning the remote lease.
+in Postgres under a transaction-scoped advisory lock. Tenant-lease HTTP calls
+stay outside database transactions. The customer-lock pre-commit validation is
+the deliberate bounded exception: it proves the fencing authority is still
+current before Postgres makes a protected change durable. If the Postgres commit
+fails after a Fiducia campaign or renewal, the service compensates by resigning
+the remote lease.
 Customer critical sections keep the independent Postgres advisory lock already
 used by ledger idempotency.
 
-The Rust request/response types are pinned to the canonical
+Billing consumes the canonical
+[`fiducia-cloud/fiducia-clients`](https://github.com/fiducia-cloud/fiducia-clients)
+Rust SDK at an exact Git revision; that SDK pins and re-exports the generated
 [`fiducia-cloud/fiducia-interfaces`](https://github.com/fiducia-cloud/fiducia-interfaces)
-Git revision in `Cargo.lock`. Production requires a least-privilege Fiducia API
+contracts. Both revisions are recorded in `Cargo.lock`, so builds do not silently
+float across either boundary. Production requires a least-privilege Fiducia API
 key with `locks:write` scope (that scope also authorizes election reads/writes).
-Every Fiducia mutation carries an `Idempotency-Key`; credentials are never
-logged, and readiness fails closed while coordination is enabled but unavailable.
->>>>>>> port-origin-dev
+Every Fiducia mutation carries an `Idempotency-Key` and uses the SDK's bounded
+retry policy; credentials are never logged, and readiness fails closed while
+coordination is enabled but unavailable.
 
 The `anchors` table records Merkle roots committed to Solana so any third
 party can independently verify a posting was present at a given on-chain
@@ -154,7 +163,7 @@ src/
   db.rs                # SeaORM connection + raw-Statement helpers
   entity/              # SeaORM entities (one module per table, schema mirror)
   crypto.rs            # per-tenant AES-GCM credential sealing
-  fiducia.rs           # async locks/election-leases client using canonical Git contracts
+  fiducia.rs           # async adapter over the revision-pinned Fiducia Rust SDK
   money.rs             # Money / Currency (minor units, integer)
   shard.rs             # ShardKey + Region
   ledger/              # double-entry posting + balance + invariants

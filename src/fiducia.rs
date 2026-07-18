@@ -1,24 +1,21 @@
-//! Async fiducia.cloud coordination client.
+//! Async adapter over the canonical blocking `fiducia-clients` SDK.
 //!
-//! Request payloads come from the generated `fiducia-interfaces` crate pinned
-//! to `github.com/fiducia-cloud/fiducia-interfaces`. The upstream native Rust
-//! transport is intentionally blocking and does not yet support public bearer
-//! tokens, so this service keeps Tokio's executor non-blocking with `reqwest`
-//! while consuming the canonical shared contract types.
+//! The SDK owns route encoding, redirect refusal, bearer handling, retry safety,
+//! and shared generated contracts. This service runs SDK calls on Tokio's
+//! blocking pool so coordination cannot stall the async executor.
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::sync::Arc;
 use std::time::Duration;
 
-use fiducia_interfaces::{
-    CampaignRequest, ElectionGetResponse, HoldRequest,
-    LockAcquireManyRequest as FiduciaLockAcquireManyRequest,
-    LockReleaseRequest as FiduciaLockReleaseRequest, RenewRequest as ElectionRenewRequest,
+use fiducia_client::{
+    Error as FiduciaClientError, FiduciaClient, RequestControl,
+    types::{ElectionGetResponse, Leadership},
 };
-use reqwest::{Method, StatusCode};
+use serde::Deserialize;
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Value, json};
 use url::Url;
 
 use crate::config::Config;
@@ -28,21 +25,16 @@ use crate::error::{AppError, AppResult};
 pub struct FiduciaCoordinator {
     enabled: bool,
     base_url: Url,
-    client: reqwest::Client,
-    api_key: Option<String>,
+    client: Arc<FiduciaClient>,
     request_timeout: Duration,
 }
 
 impl fmt::Debug for FiduciaCoordinator {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let auth = match &self.api_key {
-            None => "none",
-            Some(_) => "api_key:<redacted>",
-        };
         f.debug_struct("FiduciaCoordinator")
             .field("enabled", &self.enabled)
             .field("base_url", &self.base_url)
-            .field("credentials", &auth)
+            .field("client", &self.client)
             .field("request_timeout", &self.request_timeout)
             .finish()
     }
@@ -81,14 +73,14 @@ struct LockReleaseOutput {
 struct CampaignOutput {
     won: bool,
     #[serde(default)]
-    leadership: Option<fiducia_interfaces::Leadership>,
+    leadership: Option<Leadership>,
 }
 
 #[derive(Debug, Deserialize)]
 struct RenewOutput {
     renewed: bool,
     #[serde(default)]
-    leadership: Option<fiducia_interfaces::Leadership>,
+    leadership: Option<Leadership>,
     #[serde(default)]
     reason: Option<String>,
 }
@@ -115,15 +107,17 @@ struct CommitResult {
 impl FiduciaCoordinator {
     pub fn from_config(cfg: &Config) -> anyhow::Result<Self> {
         let request_timeout = Duration::from_millis(cfg.fiducia_request_timeout_ms);
-        let client = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .timeout(request_timeout)
-            .build()?;
+        let base_url = Url::parse(&cfg.fiducia_base_url)?;
+        let mut client = match cfg.fiducia_api_key.as_deref() {
+            Some(api_key) => FiduciaClient::bearer(base_url.as_str(), api_key),
+            None => FiduciaClient::new(base_url.as_str()),
+        };
+        client.request_timeout = Some(request_timeout);
+        client.lock_request_timeout = Some(request_timeout);
         Ok(Self {
             enabled: cfg.fiducia_enabled,
-            base_url: Url::parse(&cfg.fiducia_base_url)?,
-            client,
-            api_key: cfg.fiducia_api_key.clone(),
+            base_url,
+            client: Arc::new(client),
             request_timeout,
         })
     }
@@ -150,17 +144,7 @@ impl FiduciaCoordinator {
         if !self.enabled {
             return Ok(());
         }
-        let url = self.endpoint(&["healthz"])?;
-        let response = self
-            .authorized(self.client.get(url))
-            .send()
-            .await
-            .map_err(transport_error)?;
-        if response.status().is_success() {
-            Ok(())
-        } else {
-            Err(status_error(response.status(), None))
-        }
+        self.call(FiduciaClient::health).await.map(|_| ())
     }
 
     pub async fn acquire_lock(
@@ -170,20 +154,26 @@ impl FiduciaCoordinator {
         ttl_ms: u64,
     ) -> AppResult<Option<FiduciaLockGrant>> {
         self.require_enabled()?;
-        let request = FiduciaLockAcquireManyRequest {
-            keys,
-            holder: Some(holder.to_string()),
-            ttl_ms: Some(i64::try_from(ttl_ms).map_err(|_| {
-                AppError::BadRequest("Fiducia lock TTL exceeds i64 milliseconds".into())
-            })?),
-            // Callers perform bounded try-lock polling. Fiducia's queued wait
-            // is durable, so timing out a queued request could otherwise grant
-            // a lock after the caller has already abandoned the operation.
-            wait: Some(false),
-        };
-        let output: LockGrantOutput = self
-            .commit(Method::POST, &["v1", "locks", "acquire"], &request)
+        i64::try_from(ttl_ms).map_err(|_| {
+            AppError::BadRequest("Fiducia lock TTL exceeds i64 milliseconds".into())
+        })?;
+        let holder = holder.to_string();
+        let control = self.mutation_control();
+        let response = self
+            .call(move |client| {
+                let key_refs = keys.iter().map(String::as_str).collect::<Vec<_>>();
+                // Callers perform bounded try-lock polling. Fiducia's durable
+                // wait queue must not grant this request after our deadline.
+                client.lock_acquire_many_with_options(
+                    &key_refs,
+                    Some(&holder),
+                    Some(ttl_ms),
+                    false,
+                    control,
+                )
+            })
             .await?;
+        let output: LockGrantOutput = committed_output(response)?;
         if !output.acquired {
             tracing::debug!(
                 conflicts = ?output.conflicts,
@@ -207,14 +197,16 @@ impl FiduciaCoordinator {
 
     pub async fn release_lock(&self, holder: &str, fencing_token: u64) -> AppResult<bool> {
         self.require_enabled()?;
-        let request = FiduciaLockReleaseRequest {
-            holder: holder.to_string(),
-            fencing_token: i64::try_from(fencing_token)
-                .map_err(|_| protocol_error("Fiducia fencing token exceeds i64"))?,
-        };
-        let output: LockReleaseOutput = self
-            .commit(Method::POST, &["v1", "locks", "release"], &request)
+        i64::try_from(fencing_token)
+            .map_err(|_| protocol_error("Fiducia fencing token exceeds i64"))?;
+        let holder = holder.to_string();
+        let control = self.mutation_control();
+        let response = self
+            .call(move |client| {
+                client.lock_release_with_options("", &holder, fencing_token, control)
+            })
             .await?;
+        let output: LockReleaseOutput = committed_output(response)?;
         if !output.released {
             tracing::debug!(reason = ?output.reason, "Fiducia lock was already released");
         }
@@ -227,21 +219,25 @@ impl FiduciaCoordinator {
         candidate: &str,
         ttl_ms: u64,
         metadata: BTreeMap<String, String>,
-    ) -> AppResult<Option<fiducia_interfaces::Leadership>> {
+    ) -> AppResult<Option<Leadership>> {
         self.require_enabled()?;
-        let request = CampaignRequest {
-            candidate: candidate.to_string(),
-            ttl_ms: i64::try_from(ttl_ms)
-                .map_err(|_| AppError::BadRequest("lease TTL exceeds i64 milliseconds".into()))?,
-            metadata: Some(metadata),
-        };
-        let output: CampaignOutput = self
-            .commit(
-                Method::POST,
-                &["v1", "elections", name, "campaign"],
-                &request,
-            )
+        i64::try_from(ttl_ms)
+            .map_err(|_| AppError::BadRequest("lease TTL exceeds i64 milliseconds".into()))?;
+        let name = name.to_string();
+        let candidate = candidate.to_string();
+        let control = self.mutation_control();
+        let response = self
+            .call(move |client| {
+                client.election_campaign_with_options(
+                    &name,
+                    &candidate,
+                    ttl_ms,
+                    Some(json!(metadata)),
+                    control,
+                )
+            })
             .await?;
+        let output: CampaignOutput = committed_output(response)?;
         if output.won {
             Ok(Some(output.leadership.ok_or_else(|| {
                 protocol_error("lease campaign won without leadership details")
@@ -253,13 +249,9 @@ impl FiduciaCoordinator {
 
     pub async fn get_lease(&self, name: &str) -> AppResult<ElectionGetResponse> {
         self.require_enabled()?;
-        self.request_json(
-            Method::GET,
-            &["v1", "elections", name],
-            Option::<&()>::None,
-            None,
-        )
-        .await
+        let name = name.to_string();
+        let response = self.call(move |client| client.election_get(&name)).await?;
+        deserialize_response(response, "lease lookup response")
     }
 
     pub async fn renew_lease(
@@ -268,20 +260,27 @@ impl FiduciaCoordinator {
         candidate: &str,
         fencing_token: u64,
         ttl_ms: u64,
-    ) -> AppResult<Option<fiducia_interfaces::Leadership>> {
+    ) -> AppResult<Option<Leadership>> {
         self.require_enabled()?;
-        let request =
-            ElectionRenewRequest {
-                candidate: candidate.to_string(),
-                fencing_token: i64::try_from(fencing_token)
-                    .map_err(|_| protocol_error("Fiducia fencing token exceeds i64"))?,
-                ttl_ms: Some(i64::try_from(ttl_ms).map_err(|_| {
-                    AppError::BadRequest("lease TTL exceeds i64 milliseconds".into())
-                })?),
-            };
-        let output: RenewOutput = self
-            .commit(Method::POST, &["v1", "elections", name, "renew"], &request)
+        i64::try_from(fencing_token)
+            .map_err(|_| protocol_error("Fiducia fencing token exceeds i64"))?;
+        i64::try_from(ttl_ms)
+            .map_err(|_| AppError::BadRequest("lease TTL exceeds i64 milliseconds".into()))?;
+        let name = name.to_string();
+        let candidate = candidate.to_string();
+        let control = self.mutation_control();
+        let response = self
+            .call(move |client| {
+                client.election_renew_with_options(
+                    &name,
+                    &candidate,
+                    fencing_token,
+                    Some(ttl_ms),
+                    control,
+                )
+            })
             .await?;
+        let output: RenewOutput = committed_output(response)?;
         if output.renewed {
             Ok(Some(output.leadership.ok_or_else(|| {
                 protocol_error("lease renew succeeded without leadership details")
@@ -299,98 +298,39 @@ impl FiduciaCoordinator {
         fencing_token: u64,
     ) -> AppResult<bool> {
         self.require_enabled()?;
-        let request = HoldRequest {
-            candidate: candidate.to_string(),
-            fencing_token: i64::try_from(fencing_token)
-                .map_err(|_| protocol_error("Fiducia fencing token exceeds i64"))?,
-        };
-        let output: ResignOutput = self
-            .commit(Method::POST, &["v1", "elections", name, "resign"], &request)
+        i64::try_from(fencing_token)
+            .map_err(|_| protocol_error("Fiducia fencing token exceeds i64"))?;
+        let name = name.to_string();
+        let candidate = candidate.to_string();
+        let control = self.mutation_control();
+        let response = self
+            .call(move |client| {
+                client.election_resign_with_options(&name, &candidate, fencing_token, control)
+            })
             .await?;
+        let output: ResignOutput = committed_output(response)?;
         Ok(output.resigned)
     }
 
-    async fn commit<B, R>(&self, method: Method, segments: &[&str], body: &B) -> AppResult<R>
-    where
-        B: Serialize + ?Sized,
-        R: DeserializeOwned,
-    {
-        let idempotency_key = format!("billing-server-rs/{}", uuid::Uuid::new_v4());
-        let envelope: CommitEnvelope = self
-            .request_json(method, segments, Some(body), Some(&idempotency_key))
-            .await?;
-        if !envelope.committed {
-            return Err(protocol_error(&format!(
-                "coordination mutation was not committed: {}",
-                envelope.error.unwrap_or(Value::Null)
-            )));
+    fn mutation_control(&self) -> RequestControl {
+        RequestControl {
+            timeout: Some(self.request_timeout),
+            lock_request_timeout: Some(self.request_timeout),
+            max_retries: 1,
+            retry_delay: Duration::from_millis(25),
+            idempotency_key: Some(format!("billing-server-rs/{}", uuid::Uuid::new_v4())),
         }
-        let output = envelope
-            .result
-            .ok_or_else(|| protocol_error("committed response omitted result"))?
-            .output;
-        serde_json::from_value(output)
-            .map_err(|err| protocol_error(&format!("invalid committed output: {err}")))
     }
 
-    async fn request_json<B, R>(
-        &self,
-        method: Method,
-        segments: &[&str],
-        body: Option<&B>,
-        idempotency_key: Option<&str>,
-    ) -> AppResult<R>
+    async fn call<F>(&self, operation: F) -> AppResult<Value>
     where
-        B: Serialize + ?Sized,
-        R: DeserializeOwned,
+        F: FnOnce(&FiduciaClient) -> Result<Value, FiduciaClientError> + Send + 'static,
     {
-        let url = self.endpoint(segments)?;
-        let mut request = self.client.request(method, url);
-        if let Some(idempotency_key) = idempotency_key {
-            request = request.header("Idempotency-Key", idempotency_key);
-        }
-        if let Some(body) = body {
-            request = request.json(body);
-        }
-        let response = self
-            .authorized(request)
-            .send()
+        let client = Arc::clone(&self.client);
+        tokio::task::spawn_blocking(move || operation(client.as_ref()))
             .await
-            .map_err(transport_error)?;
-        let status = response.status();
-        let bytes = response.bytes().await.map_err(transport_error)?;
-        let value = if bytes.is_empty() {
-            Value::Null
-        } else {
-            serde_json::from_slice::<Value>(&bytes)
-                .map_err(|err| protocol_error(&format!("response was not valid JSON: {err}")))?
-        };
-        if !status.is_success() {
-            return Err(status_error(status, Some(value)));
-        }
-        serde_json::from_value(value)
-            .map_err(|err| protocol_error(&format!("response shape mismatch: {err}")))
-    }
-
-    fn authorized(&self, request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-        match &self.api_key {
-            None => request,
-            Some(api_key) => request.bearer_auth(api_key),
-        }
-    }
-
-    fn endpoint(&self, segments: &[&str]) -> AppResult<Url> {
-        let mut url = self.base_url.clone();
-        {
-            let mut path = url
-                .path_segments_mut()
-                .map_err(|_| protocol_error("Fiducia base URL cannot hold path segments"))?;
-            path.pop_if_empty();
-            for segment in segments {
-                path.push(segment);
-            }
-        }
-        Ok(url)
+            .map_err(|err| protocol_error(&format!("Fiducia client task failed: {err}")))?
+            .map_err(client_error)
     }
 
     fn require_enabled(&self) -> AppResult<()> {
@@ -405,10 +345,33 @@ impl FiduciaCoordinator {
     }
 }
 
-fn transport_error(err: reqwest::Error) -> AppError {
-    AppError::Provider {
-        provider: "fiducia.cloud".into(),
-        message: format!("transport failure: {err}"),
+fn committed_output<R: DeserializeOwned>(response: Value) -> AppResult<R> {
+    let envelope: CommitEnvelope = deserialize_response(response, "commit response")?;
+    if !envelope.committed {
+        let detail = response_detail(envelope.error).unwrap_or_else(|| "request rejected".into());
+        return Err(protocol_error(&format!(
+            "coordination mutation was not committed: {detail}"
+        )));
+    }
+    let output = envelope
+        .result
+        .ok_or_else(|| protocol_error("committed response omitted result"))?
+        .output;
+    deserialize_response(output, "committed output")
+}
+
+fn deserialize_response<R: DeserializeOwned>(value: Value, context: &str) -> AppResult<R> {
+    serde_json::from_value(value)
+        .map_err(|err| protocol_error(&format!("invalid {context}: {err}")))
+}
+
+fn client_error(error: FiduciaClientError) -> AppError {
+    match error {
+        FiduciaClientError::Http { status, body } => status_error(status, body),
+        FiduciaClientError::Transport(message) => AppError::Provider {
+            provider: "fiducia.cloud".into(),
+            message: format!("transport failure: {message}"),
+        },
     }
 }
 
@@ -419,25 +382,21 @@ fn protocol_error(message: &str) -> AppError {
     }
 }
 
-fn status_error(status: StatusCode, body: Option<Value>) -> AppError {
-    let detail = body
-        .and_then(|value| {
-            value
-                .get("error")
-                .and_then(Value::as_str)
-                .map(str::to_string)
-                .or_else(|| {
-                    value
-                        .get("message")
-                        .and_then(Value::as_str)
-                        .map(str::to_string)
-                })
-        })
-        .unwrap_or_else(|| "request rejected".into());
+fn status_error(status: u16, body: Option<Value>) -> AppError {
+    let detail = response_detail(body).unwrap_or_else(|| "request rejected".into());
     AppError::Provider {
         provider: "fiducia.cloud".into(),
-        message: format!("HTTP {}: {detail}", status.as_u16()),
+        message: format!("HTTP {status}: {detail}"),
     }
+}
+
+fn response_detail(body: Option<Value>) -> Option<String> {
+    let value = body?;
+    let detail = value
+        .get("error")
+        .and_then(Value::as_str)
+        .or_else(|| value.get("message").and_then(Value::as_str))?;
+    Some(detail.chars().take(256).collect())
 }
 
 #[cfg(test)]
@@ -445,23 +404,15 @@ mod tests {
     use super::*;
     use axum::Json;
     use axum::Router;
-    use axum::extract::State;
+    use axum::extract::{Path, State};
     use axum::http::HeaderMap;
     use axum::routing::post;
+    use fiducia_client::types::{
+        CampaignRequest, HoldRequest, LockAcquireManyRequest as FiduciaLockAcquireManyRequest,
+        LockReleaseRequest as FiduciaLockReleaseRequest, RenewRequest,
+    };
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
-
-    #[test]
-    fn path_segments_encode_slash_safe_lease_names() {
-        let coordinator = FiduciaCoordinator::disabled();
-        let url = coordinator
-            .endpoint(&["v1", "elections", "billing/tenant/a/resource", "renew"])
-            .unwrap();
-        assert_eq!(
-            url.as_str(),
-            "http://127.0.0.1:8090/v1/elections/billing%2Ftenant%2Fa%2Fresource/renew"
-        );
-    }
 
     #[test]
     fn debug_output_redacts_credentials() {
@@ -544,8 +495,141 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(grant.fencing_token, 41);
+        let renewed = coordinator
+            .acquire_lock(vec!["billing:customer:t:c".into()], "holder-1", 60_000)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(renewed.fencing_token, grant.fencing_token);
+        assert_eq!(renewed.keys, grant.keys);
         assert!(coordinator.release_lock("holder-1", 41).await.unwrap());
-        assert_eq!(calls.load(Ordering::Relaxed), 2);
+        assert_eq!(calls.load(Ordering::Relaxed), 3);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn lease_calls_use_sdk_encoding_idempotency_and_canonical_payloads() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let app = Router::new()
+            .route(
+                "/v1/elections/{name}/campaign",
+                post(
+                    |State(calls): State<Arc<AtomicUsize>>,
+                     Path(name): Path<String>,
+                     headers: HeaderMap,
+                     Json(request): Json<CampaignRequest>| async move {
+                        assert_eq!(name, "billing/tenant/a/resource");
+                        assert_eq!(headers.get("authorization").unwrap(), "Bearer fdc_test.key");
+                        assert!(headers.contains_key("idempotency-key"));
+                        assert_eq!(request.candidate, "replica-a");
+                        assert_eq!(request.ttl_ms, 60_000);
+                        assert_eq!(
+                            request.metadata.unwrap().get("region").map(String::as_str),
+                            Some("us-east")
+                        );
+                        calls.fetch_add(1, Ordering::Relaxed);
+                        Json(serde_json::json!({
+                            "committed": true,
+                            "result": {"output": {
+                                "won": true,
+                                "leadership": {
+                                    "name": name,
+                                    "leader": "replica-a",
+                                    "fencing_token": 73,
+                                    "lease_expires_ms": 1_900_000_000_000_i64,
+                                    "ttl_ms": 60_000,
+                                    "metadata": {"region": "us-east"}
+                                }
+                            }}
+                        }))
+                    },
+                ),
+            )
+            .route(
+                "/v1/elections/{name}/renew",
+                post(
+                    |State(calls): State<Arc<AtomicUsize>>,
+                     Path(name): Path<String>,
+                     headers: HeaderMap,
+                     Json(request): Json<RenewRequest>| async move {
+                        assert_eq!(name, "billing/tenant/a/resource");
+                        assert!(headers.contains_key("idempotency-key"));
+                        assert_eq!(request.candidate, "replica-a");
+                        assert_eq!(request.fencing_token, 73);
+                        assert_eq!(request.ttl_ms, Some(60_000));
+                        calls.fetch_add(1, Ordering::Relaxed);
+                        Json(serde_json::json!({
+                            "committed": true,
+                            "result": {"output": {
+                                "renewed": true,
+                                "leadership": {
+                                    "name": name,
+                                    "leader": "replica-a",
+                                    "fencing_token": 73,
+                                    "lease_expires_ms": 1_900_000_060_000_i64,
+                                    "ttl_ms": 60_000,
+                                    "metadata": {"region": "us-east"}
+                                }
+                            }}
+                        }))
+                    },
+                ),
+            )
+            .route(
+                "/v1/elections/{name}/resign",
+                post(
+                    |State(calls): State<Arc<AtomicUsize>>,
+                     Path(name): Path<String>,
+                     headers: HeaderMap,
+                     Json(request): Json<HoldRequest>| async move {
+                        assert_eq!(name, "billing/tenant/a/resource");
+                        assert!(headers.contains_key("idempotency-key"));
+                        assert_eq!(request.candidate, "replica-a");
+                        assert_eq!(request.fencing_token, 73);
+                        calls.fetch_add(1, Ordering::Relaxed);
+                        Json(serde_json::json!({
+                            "committed": true,
+                            "result": {"output": {"resigned": true}}
+                        }))
+                    },
+                ),
+            )
+            .with_state(calls.clone());
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let mut cfg = Config::for_tests();
+        cfg.fiducia_enabled = true;
+        cfg.fiducia_base_url = format!("http://{address}");
+        cfg.fiducia_api_key = Some("fdc_test.key".into());
+        let coordinator = FiduciaCoordinator::from_config(&cfg).unwrap();
+        let name = "billing/tenant/a/resource";
+        let leadership = coordinator
+            .campaign_lease(
+                name,
+                "replica-a",
+                60_000,
+                BTreeMap::from([("region".into(), "us-east".into())]),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(leadership.fencing_token, 73);
+        assert!(
+            coordinator
+                .renew_lease(name, "replica-a", 73, 60_000)
+                .await
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            coordinator
+                .resign_lease(name, "replica-a", 73)
+                .await
+                .unwrap()
+        );
+        assert_eq!(calls.load(Ordering::Relaxed), 3);
         server.abort();
     }
 }
