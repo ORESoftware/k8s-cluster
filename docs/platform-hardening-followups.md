@@ -36,23 +36,20 @@ gh secret set REMOTE_DEV_GH_PAT -R ORESoftware/k8s-cluster
 Consider a calendar reminder to rotate before the next expiry, or switch to a
 GitHub App installation token (no hard expiry) for submodule reads.
 
-### 2. ⚠️ Uncommitted hardening edits in the working tree
+### 2. ✅ Local secret-scan hook + migration-credential fix — committed
 
-Two reviewed fixes are sitting in the `dev` working tree, never committed (the
-branch has been actively moved since):
-
+Both landed already, noted here for context:
 - `.githooks/pre-commit` — gitleaks scan of the staged diff (same rules as
   `secret-scan.yml`), degrades to a warning if gitleaks is absent, `--no-verify`
-  bypass documented. **Also register it:** it only runs if
-  `git config core.hooksPath .githooks` is set (add that to `.githooks/install.sh`
-  so it is applied on clone/setup).
+  bypass documented. Tracked, `core.hooksPath` is set to `.githooks`, and it fires
+  on commit (verified). **Tiny residual:** `.githooks/install.sh` chmods/lists
+  `pre-push` but not `pre-commit` — add it there so a fresh clone's setup message
+  mentions it (the committed file already carries its `+x` mode, so it works
+  regardless).
 - `remote/deployments/build-server-rs/scripts/dpm.sh` — passes the target DB URL
-  to `dpm` via `TARGET_DATABASE_URL` env instead of `--target` on argv (keeps the
-  password out of `ps`/procfs), plus the pinned-installer hint. Mirrors the fix
-  already merged in the libs `pg-defs/scripts/dpm.sh`.
-
-**Shore up:** commit both to `dev` with the current app work, or cherry-pick them
-onto a dedicated branch so they are not lost on the next reset.
+  via `TARGET_DATABASE_URL` env instead of `--target` on argv (keeps the password
+  out of `ps`/procfs). Committed in `480415f9`, mirrors the libs
+  `pg-defs/scripts/dpm.sh` fix.
 
 ---
 
