@@ -10,6 +10,8 @@
     "audit:gateway-pages": "node ui-gateway-sweep.mjs",
     "test:cli": "node cli-smoke.mjs",
     "test:cli:ai-ml-platform": "pnpm exec tsx --test general/ai-ml-platform-config.test.ts",
+    "test:cli:athleto-app-config": "pnpm exec tsx --test general/athleto-app-config.test.ts",
+    "test:cli:athleto-backend-config": "pnpm exec tsx --test general/athleto-backend-config.test.ts",
     "test:cli:bastion-config": "pnpm exec tsx --test general/bastion-config.test.ts",
     "test:cli:browser-job-runner-config": "pnpm exec tsx --test general/browser-job-runner-config.test.ts",
     "test:cli:browser-test-server-config": "pnpm exec tsx --test general/browser-test-server-config.test.ts",
@@ -61,7 +63,10 @@
     "test:ui:playwright": "node ui-playwright-smoke.mjs",
     "test:ui:puppeteer": "node ui-puppeteer-smoke.mjs",
     "test:ui:sweep": "node ui-gateway-sweep.mjs",
-    "test:all": "pnpm run test:cli && pnpm run test:ui:playwright && pnpm run test:ui:puppeteer"
+    "test:ui:athleto:playwright": "node athleto-ui-playwright-smoke.mjs",
+    "test:ui:athleto:puppeteer": "node athleto-ui-puppeteer-smoke.mjs",
+    "test:athleto": "pnpm run test:cli:athleto-backend-config && pnpm run test:cli:athleto-app-config && pnpm run test:ui:athleto:playwright && pnpm run test:ui:athleto:puppeteer",
+    "test:all": "pnpm run test:cli && pnpm run test:ui:playwright && pnpm run test:ui:puppeteer && pnpm run test:athleto"
   },
   "devDependencies": {
     "playwright": "^1.60.0",
