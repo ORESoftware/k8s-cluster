@@ -10,8 +10,9 @@
 //! copies a segment into the backup object store. See `readme.md` for routes,
 //! environment variables, and the wider product/deployment context.
 //!
-//! This is intentionally one large file. Its major sections, roughly in the
-//! order they appear below, are:
+//! Most HTTP/business logic remains here; the security-sensitive Supabase JWT
+//! verifier lives in `src/supabase_auth.rs`. The major sections, roughly in
+//! the order they appear below, are:
 //!
 //! - **Metrics** — Prometheus `Lazy` collectors (`HTTP_REQUESTS`,
 //!   `SEGMENT_PRESIGNS`, `RATE_LIMITED`, uptime) exposed at `GET /metrics`.
@@ -22,10 +23,10 @@
 //!   builds the shared `AppState` (Postgres pool, S3 client, token sealer).
 //! - **Types** — `ServiceError` (→ HTTP responses) plus the request/response
 //!   DTO structs for every route.
-//! - **Auth / JWT** — Supabase JWT verification (`SupabaseVerifier` with cached
-//!   JWKS, HS256 + RS256/ES256), `authenticate_supabase_account`, opaque device
-//!   bearer tokens (`authenticate_device`, SHA-256 + pepper), the registration
-//!   bearer, and internal server-auth secret for `/internal/*` routes.
+//! - **Auth / JWT** — `authenticate_supabase_account`, opaque device bearer
+//!   tokens (`authenticate_device`, SHA-256 + pepper), the registration bearer,
+//!   and internal server-auth secret for `/internal/*` routes. The Supabase JWT
+//!   verifier with cached JWKS is isolated in `supabase_auth`.
 //! - **Presign** — upload-session lifecycle, `presign_segment`, and the
 //!   `presign_put` / `presign_get` S3 URL builders (short-lived PUT/GET).
 //! - **Cloud connections** — OAuth link start/complete, AES-256-GCM
@@ -78,7 +79,8 @@ use base64::{
 use bb8::{Pool, PooledConnection};
 use bb8_postgres::PostgresConnectionManager;
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
-use jsonwebtoken::{decode, decode_header, jwk::JwkSet, Algorithm, DecodingKey, Validation};
+#[cfg(test)]
+use jsonwebtoken::Algorithm;
 use once_cell::sync::Lazy;
 use prometheus::{Encoder, IntCounter, IntCounterVec, IntGauge, Opts, TextEncoder};
 use rand::{rngs::OsRng, RngCore};
@@ -96,6 +98,12 @@ use tokio_postgres::Row;
 use tokio_postgres_rustls::MakeRustlsConnect;
 use tracing::{error, info, warn};
 use uuid::Uuid;
+
+mod supabase_auth;
+
+#[cfg(test)]
+use supabase_auth::is_supported_supabase_algorithm;
+use supabase_auth::{SupabaseIdentity, SupabaseVerifier};
 
 static STARTED_AT: Lazy<Instant> = Lazy::new(Instant::now);
 static HTTP_REQUESTS: Lazy<IntCounterVec> = Lazy::new(|| {
@@ -231,15 +239,6 @@ const MAX_CLOUD_BACKFILL_SEGMENTS: i64 = 1000;
 const GOOGLE_DRIVE_SCOPE: &str = "https://www.googleapis.com/auth/drive.file";
 const MICROSOFT_ONEDRIVE_SCOPE: &str = "offline_access Files.ReadWrite.AppFolder";
 const SUPABASE_DEFAULT_AUDIENCE: &str = "authenticated";
-const SUPABASE_SUBJECT_PREFIX: &str = "supabase:";
-// Supabase's JWKS edge cache is ten minutes. Do not retain keys longer here or
-// emergency key revocation could remain trusted well beyond the provider cache.
-const JWKS_CACHE_TTL: Duration = Duration::from_secs(600);
-/// Minimum wall-clock between Supabase JWKS fetches. A flood of tokens bearing
-/// unknown `kid`s (random or post-rotation) must not amplify into one outbound
-/// JWKS request per token; once the cache is warm, legitimate tokens are served
-/// from it and never reach the network, so throttling only bounds the misses.
-const JWKS_MIN_REFRESH_INTERVAL: Duration = Duration::from_secs(30);
 const DEFAULT_USE_CASE: &str = "security";
 const SUPPORTED_USE_CASES: &[&str] = &["security", "music", "meeting", "voice_note", "ambient"];
 const MAX_PERMANENT_SAVE_SEGMENTS: usize = 1000;
@@ -2679,219 +2678,6 @@ fn apply_opt_in_segment_decryption(
         Some(dek) => segment_job_cipher::decrypt_segment(dek, &bytes),
         None => Ok(bytes),
     }
-}
-
-/// Verified Supabase identity derived from an access-token JWT.
-#[derive(Clone, Debug)]
-struct SupabaseIdentity {
-    subject: String,
-    email: Option<String>,
-}
-
-impl SupabaseIdentity {
-    /// Namespaced external subject stored on the account so a Supabase `sub`
-    /// can never collide with subjects minted by another identity source.
-    fn external_subject(&self) -> String {
-        format!("{SUPABASE_SUBJECT_PREFIX}{}", self.subject)
-    }
-}
-
-#[derive(Debug, Deserialize)]
-struct SupabaseClaims {
-    sub: String,
-    #[serde(default)]
-    email: Option<String>,
-}
-
-struct JwksCacheEntry {
-    fetched_at: Instant,
-    set: JwkSet,
-}
-
-/// Verifies Supabase-issued access tokens (HS256 legacy secret or asymmetric
-/// JWKS keys) so device registration and cloud linking can be tied to a real,
-/// server-verified identity instead of a client-asserted subject string.
-struct SupabaseVerifier {
-    audience: String,
-    issuer: Option<String>,
-    jwt_secret: Option<String>,
-    jwks_url: Option<String>,
-    jwks_cache: RwLock<Option<JwksCacheEntry>>,
-    /// When the last JWKS refresh was *attempted* (success or failure), used to
-    /// rate-limit outbound fetches. See [`JWKS_MIN_REFRESH_INTERVAL`].
-    jwks_last_refresh: RwLock<Option<Instant>>,
-    /// Single-flight guard: concurrent cache misses wait for the same refresh
-    /// instead of racing and incorrectly returning 401 while a valid key is
-    /// still being fetched.
-    jwks_refresh_lock: AsyncMutex<()>,
-}
-
-impl SupabaseVerifier {
-    fn from_config(config: &SupabaseConfig) -> Option<Self> {
-        if !config.is_enabled() {
-            return None;
-        }
-        Some(Self {
-            audience: config.audience.clone(),
-            issuer: config.issuer.clone(),
-            jwt_secret: config.jwt_secret.clone(),
-            jwks_url: config.jwks_url.clone(),
-            jwks_cache: RwLock::new(None),
-            jwks_last_refresh: RwLock::new(None),
-            jwks_refresh_lock: AsyncMutex::new(()),
-        })
-    }
-
-    fn validation(&self, alg: Algorithm) -> Validation {
-        let mut validation = Validation::new(alg);
-        validation.set_audience(&[self.audience.as_str()]);
-        if let Some(issuer) = &self.issuer {
-            validation.set_issuer(&[issuer.as_str()]);
-        }
-        validation.validate_exp = true;
-        validation
-    }
-
-    async fn verify(
-        &self,
-        http: &reqwest::Client,
-        token: &str,
-    ) -> Result<SupabaseIdentity, ServiceError> {
-        let header = decode_header(token).map_err(|_| ServiceError::Unauthorized)?;
-        if !is_supported_supabase_algorithm(header.alg) {
-            return Err(ServiceError::Unauthorized);
-        }
-        let claims = if matches!(header.alg, Algorithm::HS256) {
-            let secret = self.jwt_secret.as_deref().ok_or_else(|| {
-                ServiceError::Unavailable(
-                    "Supabase HS256 token received but SOUND_RECORDER_SUPABASE_JWT_SECRET is not configured".to_string(),
-                )
-            })?;
-            decode::<SupabaseClaims>(
-                token,
-                &DecodingKey::from_secret(secret.as_bytes()),
-                &self.validation(Algorithm::HS256),
-            )
-            .map_err(|_| ServiceError::Unauthorized)?
-            .claims
-        } else {
-            let kid = header.kid.ok_or(ServiceError::Unauthorized)?;
-            let jwk = self.jwk_for_kid(http, &kid).await?;
-            let key = DecodingKey::from_jwk(&jwk).map_err(|_| ServiceError::Unauthorized)?;
-            decode::<SupabaseClaims>(token, &key, &self.validation(header.alg))
-                .map_err(|_| ServiceError::Unauthorized)?
-                .claims
-        };
-        let subject = claims.sub.trim().to_string();
-        if subject.is_empty()
-            || subject.len() > 160
-            || subject
-                .chars()
-                .any(|ch| ch.is_control() || matches!(ch, '/' | '\\'))
-        {
-            return Err(ServiceError::Unauthorized);
-        }
-        Ok(SupabaseIdentity {
-            subject,
-            email: claims
-                .email
-                .map(|email| email.trim().to_string())
-                .filter(|email| !email.is_empty() && email.len() <= 320),
-        })
-    }
-
-    async fn jwk_for_kid(
-        &self,
-        http: &reqwest::Client,
-        kid: &str,
-    ) -> Result<jsonwebtoken::jwk::Jwk, ServiceError> {
-        if let Some(jwk) = self.cached_jwk(kid).await {
-            return Ok(jwk);
-        }
-        // Cache miss: the kid is unknown or the cache aged out. Refresh at most
-        // once per JWKS_MIN_REFRESH_INTERVAL so a burst of unknown-kid tokens
-        // cannot turn into a burst of outbound JWKS fetches.
-        let refreshed = self.try_refresh_jwks(http).await?;
-        if let Some(jwk) = self.cached_jwk(kid).await {
-            return Ok(jwk);
-        }
-        if refreshed || self.jwks_cache.read().await.is_some() {
-            Err(ServiceError::Unauthorized)
-        } else {
-            // No cache exists and a prior refresh failed or is throttled. This
-            // is an identity-provider availability failure, not bad caller auth.
-            Err(ServiceError::Unavailable(
-                "Supabase signing keys are temporarily unavailable".to_string(),
-            ))
-        }
-    }
-
-    /// Refreshes the JWKS cache unless a refresh was attempted within the last
-    /// [`JWKS_MIN_REFRESH_INTERVAL`]. Returns `Ok(true)` if a refresh ran (so the
-    /// caller should re-check the cache) and `Ok(false)` if it was throttled.
-    async fn try_refresh_jwks(&self, http: &reqwest::Client) -> Result<bool, ServiceError> {
-        let _refresh_guard = self.jwks_refresh_lock.lock().await;
-        {
-            // Fast path: reserve the refresh slot under the write lock and bail
-            // out (without an HTTP call) if another task refreshed recently.
-            let mut last = self.jwks_last_refresh.write().await;
-            if let Some(at) = *last {
-                if at.elapsed() < JWKS_MIN_REFRESH_INTERVAL {
-                    return Ok(false);
-                }
-            }
-            *last = Some(Instant::now());
-        }
-        self.refresh_jwks(http).await?;
-        Ok(true)
-    }
-
-    async fn cached_jwk(&self, kid: &str) -> Option<jsonwebtoken::jwk::Jwk> {
-        let guard = self.jwks_cache.read().await;
-        let entry = guard.as_ref()?;
-        if entry.fetched_at.elapsed() > JWKS_CACHE_TTL {
-            return None;
-        }
-        entry.set.find(kid).cloned()
-    }
-
-    async fn refresh_jwks(&self, http: &reqwest::Client) -> Result<(), ServiceError> {
-        let jwks_url = self.jwks_url.as_deref().ok_or_else(|| {
-            ServiceError::Unavailable("Supabase JWKS URL is not configured".to_string())
-        })?;
-        let response = http.get(jwks_url).send().await.map_err(|err| {
-            error!(error = %err, "Supabase JWKS fetch failed");
-            ServiceError::Unavailable("Supabase JWKS fetch failed".to_string())
-        })?;
-        if !response.status().is_success() {
-            return Err(ServiceError::Unavailable(format!(
-                "Supabase JWKS fetch returned status {}",
-                response.status().as_u16()
-            )));
-        }
-        let set = response.json::<JwkSet>().await.map_err(|err| {
-            error!(error = %err, "Supabase JWKS decode failed");
-            ServiceError::Unavailable("Supabase JWKS response was invalid".to_string())
-        })?;
-        if set.keys.is_empty() {
-            return Err(ServiceError::Unavailable(
-                "Supabase JWKS did not contain any signing keys".to_string(),
-            ));
-        }
-        let mut guard = self.jwks_cache.write().await;
-        *guard = Some(JwksCacheEntry {
-            fetched_at: Instant::now(),
-            set,
-        });
-        Ok(())
-    }
-}
-
-fn is_supported_supabase_algorithm(algorithm: Algorithm) -> bool {
-    matches!(
-        algorithm,
-        Algorithm::HS256 | Algorithm::RS256 | Algorithm::ES256
-    )
 }
 
 fn record_request(method: &str, path: &str, status: StatusCode) {

@@ -1,19 +1,20 @@
 # `src/` — service source
 
-The entire `dd-sound-recorder-rs` binary lives here. There is exactly one file.
+The `dd-sound-recorder-rs` binary keeps its HTTP/business logic in `main.rs` and
+its security-sensitive Supabase verification boundary in a focused module.
 
 ## Files
 
-- **`main.rs`** — the whole Axum/Tokio service in one file (~6.9k lines). It is intentionally
-  *not* split into modules; the top-of-file `//!` module doc comment is the map. In order, it
-  contains:
+- **`main.rs`** — the Axum/Tokio service, routes, configuration, storage, and
+  domain logic. Its top-of-file `//!` module doc comment is the map. In order,
+  it contains:
   - Prometheus metric collectors and service constants/limits.
   - Configuration loading (`Config`, `SupabaseConfig`, `S3StorageConfig`, the `env_*` helpers,
     `config_from_env`, `state_from_config`) and the shared `AppState` (Postgres `bb8` pool, S3
     client, `CloudTokenSealer`).
   - `ServiceError` and the request/response DTO structs.
-  - Auth: Supabase JWT verification with cached JWKS (`SupabaseVerifier`), opaque device bearer
-    tokens (SHA-256 + pepper), the registration bearer, and the internal server-auth secret.
+  - Auth: opaque device bearer tokens (SHA-256 + pepper), the registration
+    bearer, and the internal server-auth secret.
   - Route handlers — device registration, upload sessions & segment presign
     (`presign_put`/`presign_get`), timeline, evidence exports, permanent saves, alerts and the
     `/listen/:alert_id` page, cloud-connection OAuth linking, the cloud-copy drain worker
@@ -21,6 +22,9 @@ The entire `dd-sound-recorder-rs` binary lives here. There is exactly one file.
   - `rate_limit` and `add_security_headers` middleware.
   - `main()` (router wiring, TLS Postgres, graceful shutdown) and a trailing `#[cfg(test)]`
     unit-test module.
+- **`supabase_auth.rs`** — Supabase JWT verification and JWKS caching: explicit
+  HS256/RS256/ES256 allowlist, issuer/audience/expiry checks, signing-key
+  algorithm/use matching, bounded cache, and single-flight refresh throttling.
 
 ## Notes
 
