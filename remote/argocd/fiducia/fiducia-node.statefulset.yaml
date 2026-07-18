@@ -43,7 +43,7 @@ spec:
           # Matches fiducia-node.rs/rust-toolchain.toml. RUSTUP_TOOLCHAIN below
           # keeps cargo from attempting a writable toolchain sync on this
           # read-only root filesystem.
-          image: docker.io/library/rust:1.95.0-bookworm
+          image: docker.io/library/rust:1.95-bookworm
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -160,7 +160,7 @@ spec:
         # Co-located (localhost to the node) by design; builds from source in-pod
         # like everything else, sharing the /tmp build volume + cargo dep cache.
         - name: fiducia-node-sidecar
-          image: docker.io/library/rust:1.95.0-bookworm
+          image: docker.io/library/rust:1.95-bookworm
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
