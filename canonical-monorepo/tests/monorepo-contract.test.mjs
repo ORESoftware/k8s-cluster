@@ -133,6 +133,47 @@ test("architecture docs keep migration, RLS, HTMX WebSocket, and backplane bound
   assert.match(boundaries, /non-owner, non-`BYPASSRLS`/);
 });
 
+test("pinned Rust service keeps bootstrap and runtime concerns modular", () => {
+  const service = "apps/canonical-web-server.rs";
+  const main = read(`${service}/src/main.rs`);
+  const library = read(`${service}/src/lib.rs`);
+  const manifest = read(`${service}/Cargo.toml`);
+  const env = read(`${service}/.env.example`);
+  const nonBlankLines = (source) => source.split(/\r?\n/).filter((line) => line.trim()).length;
+
+  for (const suite of ["architecture.rs", "modularization.rs"]) {
+    assert.ok(
+      existsSync(path.join(root, service, "tests", suite)),
+      `the deployable pin is missing the Rust ${suite} contract suite`,
+    );
+  }
+  for (const module of ["app", "command", "database", "server", "telemetry"]) {
+    assert.ok(existsSync(path.join(root, service, "src", `${module}.rs`)), `${module}.rs is missing`);
+    assert.match(library, new RegExp(`^pub mod ${module};$`, "m"));
+  }
+
+  assert.ok(nonBlankLines(main) <= 24, "main.rs must remain a declarative bootstrap");
+  assert.ok(nonBlankLines(library) <= 30, "lib.rs must remain a module map");
+  assert.match(main, /telemetry::init/);
+  assert.match(main, /command::run/);
+  assert.doesNotMatch(main, /axum::|sea_orm|Router|TcpListener|ConnectOptions|Migrator/);
+  assert.doesNotMatch(library, /pub struct|pub async fn|pub fn|impl /);
+
+  assert.match(manifest, /^sea-orm\s*=/m);
+  assert.doesNotMatch(manifest, /^sqlx\s*=/m);
+  assert.doesNotMatch(env, /AUTO_MIGRATE|auto_migrate/);
+  assert.match(read(`${service}/src/database.rs`), /pub async fn run_migrations/);
+  assert.match(read(`${service}/src/server.rs`), /TcpListener::bind/);
+
+  const telemetry = read(`${service}/src/telemetry.rs`);
+  assert.match(telemetry, /OTEL_EXPORTER_OTLP_ENDPOINT/);
+  assert.match(telemetry, /TraceContextPropagator/);
+  assert.match(telemetry, /http\.server\.request\.count/);
+  assert.match(telemetry, /http\.server\.request\.duration/);
+  assert.match(telemetry, /with_writer\(std::io::stdout\)/);
+  assert.match(telemetry, /resource_attribute_pairs/);
+});
+
 test("monorepo scripts keep destructive actions manual and include dry-run/audit guardrails", () => {
   const scripts = readdirSync(path.join(root, "scripts"))
     .filter((file) => file.endsWith(".sh"))

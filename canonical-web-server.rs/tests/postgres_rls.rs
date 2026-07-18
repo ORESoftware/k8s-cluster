@@ -371,7 +371,6 @@ async fn assert_page_routes_use_rls_context(
         app_asset_dir: PathBuf::from("client/dist"),
         database_url: runtime_url.to_string(),
         database_max_connections: 4,
-        auto_migrate: false,
         app_base_url: "http://localhost:8081".into(),
         allowed_origins: HashSet::from(["http://localhost:8081".into()]),
         session_cookie: "canonical_session".into(),

@@ -7,7 +7,10 @@ server's final filesystem fallback.
 
 ## Layout
 
-- `src/main.rs` — configuration/bootstrap only.
+- `src/main.rs`, `src/command.rs` — telemetry/bootstrap and command dispatch only.
+- `src/app.rs`, `src/server.rs` — state/router assembly and network lifecycle.
+- `src/database.rs` — SeaORM pool policy and the explicit migration command.
+- `src/telemetry.rs` — stdout JSON logs plus OTLP HTTP traces/metrics.
 - `src/auth/` — Supabase and opaque application sessions.
 - `src/db/` — SeaORM entities/migration and user-context transactions.
 - `src/routes/`, `src/views/`, `src/ws/` — HTTP, Maud/HTMX, and WebSockets.

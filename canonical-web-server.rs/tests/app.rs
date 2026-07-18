@@ -250,7 +250,6 @@ async fn state() -> AppState {
         app_asset_dir: PathBuf::from("client/dist"),
         database_url: "[test connection is injected]".into(),
         database_max_connections: 1,
-        auto_migrate: false,
         app_base_url: "http://localhost:8081".into(),
         allowed_origins: HashSet::from(["http://localhost:8081".into()]),
         session_cookie: "canonical_session".into(),

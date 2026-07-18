@@ -18,6 +18,7 @@ CLIENT_DIST="$ROOT/apps/canonical-web-server.rs/client/dist"
 API_SCHEMA="$ROOT/apps/canonical-interfaces/schema/api.schema.json"
 PORT="${SMOKE_PORT:-18091}"
 BASE="http://127.0.0.1:$PORT"
+SMOKE_DB_URL="sqlite://${TMPDIR:-/tmp}/canonical-cloud-smoke-${PPID}-$$.sqlite?mode=rwc"
 
 for artifact in "$SERVER" "$MARKETING_DIST/index.html" "$API_SCHEMA"; do
   if [[ ! -e "$artifact" ]]; then
@@ -35,14 +36,17 @@ cleanup() {
 }
 trap cleanup EXIT
 
+MIGRATION_DATABASE_URL="$SMOKE_DB_URL" \
+  MIGRATION_DATABASE_MAX_CONNECTIONS=1 \
+  "$SERVER" migrate
+
 PORT="$PORT" \
   APP_BASE_URL="$BASE" \
   APP_ALLOWED_ORIGINS="$BASE" \
   APP_SESSION_ENCRYPTION_KEY="AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=" \
   COOKIE_SECURE=false \
-  DATABASE_URL="sqlite::memory:" \
+  DATABASE_URL="$SMOKE_DB_URL" \
   DATABASE_MAX_CONNECTIONS=1 \
-  AUTO_MIGRATE=true \
   SUPABASE_URL="http://127.0.0.1:54321" \
   SUPABASE_PUBLISHABLE_KEY="sb_publishable_smoke_only" \
   STATIC_DIR="$MARKETING_DIST" \
@@ -74,7 +78,8 @@ home="$(curl --fail --silent "$BASE/")"
 grep --quiet --ignore-case "<html" <<<"$home"
 
 echo "==> built client asset served under /app-assets"
-asset="$(cd "$CLIENT_DIST" && find . -type f \( -name '*.js' -o -name '*.css' \) | head -1 | sed 's|^\./||')"
+asset="$(cd "$CLIENT_DIST" && find . -type f \( -name '*.js' -o -name '*.css' \) | head -1)"
+asset="${asset#./}"
 if [[ -z "$asset" ]]; then
   echo "error: no built asset found in $CLIENT_DIST" >&2
   exit 1

@@ -3,8 +3,6 @@
    Trust-Forward Dark Theme · CPA & IT Compliance
    ======================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap');
-
 /* ── Design Tokens ── */
 :root {
   /* Brand — Emerald Security */
@@ -37,8 +35,8 @@
   --av-warning: #fbbf24;
 
   /* Typography */
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
 
   /* Spacing */
   --space-xs: 0.25rem;

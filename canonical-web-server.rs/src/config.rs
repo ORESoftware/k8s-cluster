@@ -9,7 +9,6 @@ pub struct Config {
     pub app_asset_dir: PathBuf,
     pub database_url: String,
     pub database_max_connections: u32,
-    pub auto_migrate: bool,
     pub app_base_url: String,
     pub allowed_origins: HashSet<String>,
     pub session_cookie: String,
@@ -48,7 +47,6 @@ impl std::fmt::Debug for Config {
             .field("app_asset_dir", &self.app_asset_dir)
             .field("database_url", &"[REDACTED]")
             .field("database_max_connections", &self.database_max_connections)
-            .field("auto_migrate", &self.auto_migrate)
             .field("app_base_url", &self.app_base_url)
             .field("allowed_origins", &self.allowed_origins)
             .field("session_cookie", &self.session_cookie)
@@ -193,7 +191,6 @@ impl Config {
                 .unwrap_or_else(|| PathBuf::from("client/dist")),
             database_url: required("DATABASE_URL")?,
             database_max_connections: optional_parse("DATABASE_MAX_CONNECTIONS", 10)?,
-            auto_migrate: optional_bool("AUTO_MIGRATE", false)?,
             app_base_url,
             allowed_origins,
             session_cookie,
