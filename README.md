@@ -123,3 +123,11 @@ currently has recursive submodule checkout disabled. See
 ## License
 
 MIT OR Apache-2.0
+
+> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack). This
+> service still uses direct sqlx — conversion to SeaORM is pending; see the
+> fiducia-messaging.rs migration for the reference playbook.
+
+> **Locking/leases:** if this service ever needs distributed locks or leases,
+> use the fiducia-cloud primitives (github.com/fiducia-cloud) rather than
+> rolling our own.

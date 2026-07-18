@@ -260,4 +260,121 @@ mod tests {
         malformed[0].device_id = "bad id".into();
         assert!(!version_vector_is_well_formed(&malformed));
     }
+
+    fn sample_blob() -> SealedBlob {
+        SealedBlob {
+            ciphertext: vec![7u8; 128],
+            nonce: vec![1u8; NONCE_LEN],
+            kdf_salt: vec![2u8; 16],
+            kdf_params: KdfParams::default(),
+        }
+    }
+
+    #[test]
+    fn push_request_round_trips_json() {
+        let req = PushRequest {
+            device_id: "device-a".into(),
+            blob: sample_blob(),
+            base_version: vec![VersionEntry {
+                device_id: "device-a".into(),
+                counter: 3,
+            }],
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        let back: PushRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.device_id, req.device_id);
+        assert_eq!(back.blob, req.blob);
+        assert_eq!(back.base_version, req.base_version);
+    }
+
+    #[test]
+    fn push_and_pull_responses_round_trip_json() {
+        let version = vec![VersionEntry {
+            device_id: "device-a".into(),
+            counter: 5,
+        }];
+
+        let ok = PushResponse::Ok {
+            version: version.clone(),
+        };
+        let back: PushResponse =
+            serde_json::from_str(&serde_json::to_string(&ok).unwrap()).unwrap();
+        match back {
+            PushResponse::Ok { version: v } => assert_eq!(v, version),
+            other => panic!("expected Ok, got {other:?}"),
+        }
+
+        let conflict = PushResponse::Conflict {
+            server_version: version.clone(),
+        };
+        let back: PushResponse =
+            serde_json::from_str(&serde_json::to_string(&conflict).unwrap()).unwrap();
+        match back {
+            PushResponse::Conflict { server_version } => assert_eq!(server_version, version),
+            other => panic!("expected Conflict, got {other:?}"),
+        }
+
+        let pull = PullResponse {
+            blob: Some(sample_blob()),
+            version: version.clone(),
+        };
+        let back: PullResponse =
+            serde_json::from_str(&serde_json::to_string(&pull).unwrap()).unwrap();
+        assert_eq!(back.blob, pull.blob);
+        assert_eq!(back.version, version);
+
+        // Empty pull (no blob yet) also round-trips.
+        let empty = PullResponse {
+            blob: None,
+            version: Vec::new(),
+        };
+        let back: PullResponse =
+            serde_json::from_str(&serde_json::to_string(&empty).unwrap()).unwrap();
+        assert!(back.blob.is_none());
+        assert!(back.version.is_empty());
+    }
+
+    #[test]
+    fn kdf_salt_length_bounds_are_enforced() {
+        let mut blob = sample_blob();
+        blob.kdf_salt = vec![0u8; MIN_KDF_SALT_LEN];
+        assert!(blob.is_well_formed());
+        blob.kdf_salt = vec![0u8; MAX_KDF_SALT_LEN];
+        assert!(blob.is_well_formed());
+        blob.kdf_salt = vec![0u8; MIN_KDF_SALT_LEN - 1];
+        assert!(!blob.is_well_formed());
+        blob.kdf_salt = vec![0u8; MAX_KDF_SALT_LEN + 1];
+        assert!(!blob.is_well_formed());
+    }
+
+    #[test]
+    fn device_id_boundary_lengths() {
+        // Exactly at the cap is accepted; the cap itself is exclusive of nothing.
+        assert!(device_id_is_valid(&"x".repeat(MAX_DEVICE_ID_LEN)));
+        assert!(device_id_is_valid("a"));
+    }
+
+    #[test]
+    fn version_vector_entry_cap_is_enforced() {
+        let at_cap: VersionVector = (0..MAX_VERSION_ENTRIES)
+            .map(|i| VersionEntry {
+                device_id: format!("device-{i}"),
+                counter: 1,
+            })
+            .collect();
+        assert!(version_vector_is_well_formed(&at_cap));
+
+        let mut over_cap = at_cap;
+        over_cap.push(VersionEntry {
+            device_id: "one-too-many".into(),
+            counter: 1,
+        });
+        assert!(!version_vector_is_well_formed(&over_cap));
+    }
+
+    #[test]
+    fn empty_version_vector_is_well_formed() {
+        // A fresh account has never pushed: the empty vector must validate.
+        assert!(version_vector_is_well_formed(&Vec::new()));
+    }
 }

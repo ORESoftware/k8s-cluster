@@ -44,3 +44,33 @@ impl IntoResponse for ApiError {
         (code, self.to_string()).into_response()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_variant_maps_to_its_status_code() {
+        let cases = [
+            (ApiError::Unauthorized, StatusCode::UNAUTHORIZED),
+            (ApiError::Conflict, StatusCode::CONFLICT),
+            (ApiError::BadRequest, StatusCode::BAD_REQUEST),
+            (ApiError::TooManyRequests, StatusCode::TOO_MANY_REQUESTS),
+            (ApiError::Internal, StatusCode::INTERNAL_SERVER_ERROR),
+        ];
+        for (err, expected) in cases {
+            assert_eq!(err.into_response().status(), expected);
+        }
+    }
+
+    #[test]
+    fn sqlx_errors_fold_to_opaque_internal() {
+        // Any DB error must surface as a leak-free 500, never a detailed body.
+        let err: ApiError = sqlx::Error::RowNotFound.into();
+        assert!(matches!(err, ApiError::Internal));
+        assert_eq!(
+            err.into_response().status(),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+    }
+}
