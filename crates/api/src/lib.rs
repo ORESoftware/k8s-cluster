@@ -146,6 +146,12 @@ pub mod testkit {
             self.state.vapi_webhook_secret = Some(Arc::from(secret));
             self
         }
+
+        /// Configure the server-auth bearer secret for operator/history routes.
+        pub fn with_server_auth(mut self, secret: &str) -> Self {
+            self.state.server_auth_secret = Some(Arc::from(secret));
+            self
+        }
     }
 
     /// Build an app backed by a fresh in-memory SQLite database with the
