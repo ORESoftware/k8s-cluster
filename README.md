@@ -147,7 +147,15 @@ In `client` mode a small web server runs alongside the SOCKS proxy
 - **`/docs`** and **`/docs/{name}`** — the markdown files in `docs/` rendered to
   HTML.
 - **`/proxy.pac`** — a browser proxy auto-config pointing at the SOCKS port.
-- **`/api/status`**, **`/api/fetch?url=`** — JSON used by the dashboard.
+- **`/api/status`** — JSON config + live counters. **`/ws/stats`** — the same
+  counters pushed live over a WebSocket (the grid updates without polling).
+- **`/api/fetch?url=`** — builds a fresh circuit, GETs the URL, and returns a
+  server-rendered htmx fragment.
+
+The UI is rendered server-side with [Maud](https://maud.lang.rs) (compile-time,
+auto-escaping), driven by [htmx](https://htmx.org) **vendored into the binary**
+(`/vendor/…`) with a WebSocket for live stats — no CDN or external asset is
+fetched at runtime, so it works in locked-down/air-gapped deployments.
 
 Browsers cannot speak SOCKS from a web page, so the UI's job is to prove the
 overlay works and hand you the config to point real apps (curl, Firefox,

@@ -68,9 +68,12 @@
   `/api/fetch` is an unauthenticated proxy — the process logs a warning if bound
   non-loopback with no token. The URL's host/path are also rejected if they
   contain control characters, preventing CRLF header-injection/request smuggling.
-  The dashboard renders the fetched response's status line and the directory's
-  relay names/addresses as text (HTML-escaped), so a malicious exit destination
-  or directory entry cannot inject script into the dashboard origin.
+  The dashboard is rendered server-side with Maud (auto-escaping), so the fetched
+  response's status line and the directory's relay names/addresses cannot inject
+  script into the dashboard origin; the live-stats WebSocket updates the grid via
+  `textContent`, never `innerHTML`. The UI's only script (htmx) is vendored into
+  the binary and served from `/vendor/…` — no external CDN is contacted at
+  runtime, removing that supply-chain and CSP exposure.
 - **Relay key file safety.** The static identity secret is atomically created
   with `create_new`; on Unix its `0600` mode is applied at creation time.
 - **Framer/parser bounds.** Frames and the explicit cell codec are capped at
