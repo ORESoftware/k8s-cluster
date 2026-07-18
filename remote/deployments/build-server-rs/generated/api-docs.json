@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "build-server-rs",
   "language": "rust",
-  "routeCount": 13,
+  "routeCount": 17,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 3,
+    "user-generated": 7,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -232,6 +232,74 @@
       "purpose": "Readiness check.",
       "handlers": [
         "readyz"
+      ],
+      "sourceFiles": [
+        "remote/deployments/build-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/secrets/sync",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "sync_secrets"
+      ],
+      "sourceFiles": [
+        "remote/deployments/build-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/secrets/sync/status",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "sync_secrets_status"
+      ],
+      "sourceFiles": [
+        "remote/deployments/build-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/webhooks/github",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "webhook signature",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "webhooks"
+      ],
+      "sourceFiles": [
+        "remote/deployments/build-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/webhooks/registry",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "webhook signature",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "webhooks"
       ],
       "sourceFiles": [
         "remote/deployments/build-server-rs/src/main.rs"

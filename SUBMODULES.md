@@ -50,6 +50,7 @@ always lives at `~/codes/ores/k8s-cluster/<submodule path>`.
 | `remote/deployments/athleto-backend-rs` | [athlet-o/athleto-backend.rs](https://github.com/athlet-o/athleto-backend.rs) | `main` | — _(submodule checkout only)_ |
 | `remote/deployments/usacc-rest-api-backend-rs` | [usa-acc/rest-api-backend.rs](https://github.com/usa-acc/rest-api-backend.rs) | `main` | — _(submodule checkout only)_ |
 | `remote/deployments/3fa-web-server-rs` | [3FA-app/3fa-web-server.rs](https://github.com/3FA-app/3fa-web-server.rs) | `main` | — _(submodule checkout only)_ |
+| `remote/deployments/sonus-auris-monorepo` | [sonus-auris/sonus-auris-monorepo](https://github.com/sonus-auris/sonus-auris-monorepo) | `main` | `~/codes/sonus-auris/sonus-auris-monorepo` |
 
 ---
 

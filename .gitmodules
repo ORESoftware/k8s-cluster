@@ -145,3 +145,7 @@
 	path = remote/deployments/t2v-v2t.rs
 	url = git@github.com:ORESoftware/t2v-v2t.rs.git
 	branch = main
+[submodule "sonus-auris-monorepo"]
+	path = remote/deployments/sonus-auris-monorepo
+	url = git@github.com:sonus-auris/sonus-auris-monorepo.git
+	branch = main
