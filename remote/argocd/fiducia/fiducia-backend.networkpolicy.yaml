@@ -37,6 +37,16 @@ spec:
         - protocol: TCP
           port: 8117
   egress:
+    # Session verification: every authenticated request calls fiducia-auth
+    # GET /v1/me to verify the Supabase JWT + org membership. Without this the
+    # portal fails closed (503) on every login.
+    - to:
+        - podSelector:
+            matchLabels:
+              app: fiducia-auth
+      ports:
+        - protocol: TCP
+          port: 8097
     # OTLP trace export to the in-cluster OpenTelemetry collector.
     - to:
         - namespaceSelector:
