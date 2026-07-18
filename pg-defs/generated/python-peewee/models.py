@@ -1080,8 +1080,8 @@ class DesSoccerLearningSetPlayRuns(BaseModel):
 
 
 class DesSoccerLearningSetPlayRestartMix(BaseModel):
-    run_id = UUIDField()
-    ordinal = IntegerField()
+    run_id = UUIDField(primary_key=True)
+    ordinal = IntegerField(primary_key=True)
     restart = CharField(max_length=40)
 
     class Meta:
@@ -1089,8 +1089,8 @@ class DesSoccerLearningSetPlayRestartMix(BaseModel):
 
 
 class DesSoccerLearningSetPlayEpisodeMetrics(BaseModel):
-    run_id = UUIDField()
-    episode_index = IntegerField()
+    run_id = UUIDField(primary_key=True)
+    episode_index = IntegerField(primary_key=True)
     seed = BigIntegerField()
     restart = CharField(max_length=40)
     routine = CharField(max_length=80, null=True)

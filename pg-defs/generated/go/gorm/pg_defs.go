@@ -2889,8 +2889,8 @@ const DesSoccerLearningSetPlayRestartMixSelectSQL = `select
 var DesSoccerLearningSetPlayRestartMixRestartValues = []string{"direct-free-kick", "indirect-free-kick"}
 
 type DesSoccerLearningSetPlayRestartMixGorm struct {
-	RunId uuid.UUID `gorm:"column:run_id;type:uuid;not null" json:"runId"`
-	Ordinal int32 `gorm:"column:ordinal;type:integer;not null" json:"ordinal"`
+	RunId uuid.UUID `gorm:"column:run_id;type:uuid;primaryKey" json:"runId"`
+	Ordinal int32 `gorm:"column:ordinal;type:integer;primaryKey" json:"ordinal"`
 	Restart string `gorm:"column:restart;type:varchar(40);not null" json:"restart"`
 }
 
@@ -2929,8 +2929,8 @@ const DesSoccerLearningSetPlayEpisodeMetricsSelectSQL = `select
 var DesSoccerLearningSetPlayEpisodeMetricsRestartValues = []string{"direct-free-kick", "indirect-free-kick"}
 
 type DesSoccerLearningSetPlayEpisodeMetricsGorm struct {
-	RunId uuid.UUID `gorm:"column:run_id;type:uuid;not null" json:"runId"`
-	EpisodeIndex int32 `gorm:"column:episode_index;type:integer;not null" json:"episodeIndex"`
+	RunId uuid.UUID `gorm:"column:run_id;type:uuid;primaryKey" json:"runId"`
+	EpisodeIndex int32 `gorm:"column:episode_index;type:integer;primaryKey" json:"episodeIndex"`
 	Seed int64 `gorm:"column:seed;type:bigint;not null" json:"seed"`
 	Restart string `gorm:"column:restart;type:varchar(40);not null" json:"restart"`
 	Routine *string `gorm:"column:routine;type:varchar(80)" json:"routine,omitempty"`

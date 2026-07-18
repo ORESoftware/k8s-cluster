@@ -28,6 +28,15 @@ let blockchainIndexEventsSubject : string = "dd.remote.blockchain.index.events"
 
 let blockchainMevAlertsSubject : string = "dd.remote.blockchain.mev.alerts"
 
+let buildServerEventsSubject : string = "dd.remote.build_server.events"
+
+let buildServerImagesSubject : string = "dd.remote.build_server.images"
+
+let buildServerRequestsSubject : string = "dd.remote.build_server.requests"
+let buildServerRequestsQueueGroup : string = "dd-build-server"
+
+let buildServerResultsSubject : string = "dd.remote.build_server.results"
+
 let chaosEventsSubject : string = "dd.remote.chaos.events"
 
 let chaosExperimentsSubject : string = "dd.remote.chaos.experiments"
@@ -459,6 +468,8 @@ let queueGroupAgentSimServerQueueGroup : string = "dd-agent-sim-server"
 
 let queueGroupBillingServerQueueGroup : string = "dd-billing-server"
 
+let queueGroupBuildServerQueueGroup : string = "dd-build-server"
+
 let queueGroupConstraintSchedulerQueueGroup : string = "dd-constraint-scheduler"
 
 let queueGroupContactSendQueueGroup : string = "dd-email-sms-contact"
@@ -508,6 +519,12 @@ let cDCStreamSubjects : string list = [ "cdc.>" ]
 let cDCStreamRetention : string = "limits"
 let cDCStreamStorage : string = "file"
 let cDCStreamAck : string = "explicit"
+
+let dD_REMOTE_BUILD_JOBSStreamName : string = "DD_REMOTE_BUILD_JOBS"
+let dD_REMOTE_BUILD_JOBSStreamSubjects : string list = [ "dd.remote.build_server.requests" ]
+let dD_REMOTE_BUILD_JOBSStreamRetention : string = "workqueue"
+let dD_REMOTE_BUILD_JOBSStreamStorage : string = "file"
+let dD_REMOTE_BUILD_JOBSStreamAck : string = "explicit"
 
 let dD_REMOTE_CONTROLStreamName : string = "DD_REMOTE_CONTROL"
 let dD_REMOTE_CONTROLStreamSubjects : string list = [ "dd.remote.thread.*.control"; "dd.remote.orchestrator.wakeup" ]

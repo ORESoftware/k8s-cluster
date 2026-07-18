@@ -1131,16 +1131,16 @@ model DesSoccerLearningSetPlayRuns {
 }
 
 model DesSoccerLearningSetPlayRestartMix {
-  runId String @map("run_id") @db.Uuid
-  ordinal Int
+  runId String @map("run_id") @id @db.Uuid
+  ordinal Int @id
   restart String @db.VarChar(40)
   // Check constraints live in schema.sql and must be migrated from the SQL contract.
   @@map("des_soccer_learning_set_play_restart_mix")
 }
 
 model DesSoccerLearningSetPlayEpisodeMetrics {
-  runId String @map("run_id") @db.Uuid
-  episodeIndex Int @map("episode_index")
+  runId String @map("run_id") @id @db.Uuid
+  episodeIndex Int @map("episode_index") @id
   seed BigInt @db.BigInt
   restart String @db.VarChar(40)
   routine String? @db.VarChar(80)

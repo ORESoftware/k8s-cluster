@@ -64,6 +64,23 @@ const BlockchainIndexEventsSubject = "dd.remote.blockchain.index.events"
 // Service: dd-contract-service
 const BlockchainMevAlertsSubject = "dd.remote.blockchain.mev.alerts"
 
+// Redacted build lifecycle events (queued/running/succeeded/failed) published by the build server. Default for BUILD_SERVER_NATS_EVENT_SUBJECT.
+// Service: dd-build-server
+const BuildServerEventsSubject = "dd.remote.build_server.events"
+
+// Redacted container-image registry events (ECR / docker registry webhook pushes) relayed by the build server. Default for BUILD_SERVER_NATS_IMAGE_SUBJECT.
+// Service: dd-build-server
+const BuildServerImagesSubject = "dd.remote.build_server.images"
+
+// Durable build-request intake. Producers publish a build-server.v1 job document; build-server replicas consume via the shared queue group / durable JetStream consumer. Default for BUILD_SERVER_NATS_REQUEST_SUBJECT.
+// Service: dd-build-server
+const BuildServerRequestsSubject = "dd.remote.build_server.requests"
+const BuildServerRequestsQueueGroup = "dd-build-server"
+
+// Terminal build results (succeeded/failed with jobId and error summary) for NATS-submitted and webhook-submitted jobs. Default for BUILD_SERVER_NATS_RESULT_SUBJECT.
+// Service: dd-build-server
+const BuildServerResultsSubject = "dd.remote.build_server.results"
+
 // Per-fault lifecycle events (selected, injected, restored, aborted-by-guard) emitted by the chaos loops.
 // Service: dd-chaos
 const ChaosEventsSubject = "dd.remote.chaos.events"
@@ -1103,6 +1120,10 @@ const AgentSimServerQueueGroup = "dd-agent-sim-server"
 // Service: dd-billing-server
 const BillingServerQueueGroup = "dd-billing-server"
 
+// Shared queue group / durable consumer name used by build-server replicas for request intake.
+// Service: dd-build-server
+const BuildServerQueueGroup = "dd-build-server"
+
 // Shared queue group used by dd-constraint-scheduler replicas consuming schedule requests.
 // Service: dd-constraint-scheduler
 const ConstraintSchedulerQueueGroup = "dd-constraint-scheduler"
@@ -1200,6 +1221,14 @@ var CdcStreamSubjects = []string{"cdc.>"}
 const CdcStreamRetention = "limits"
 const CdcStreamStorage = "file"
 const CdcStreamAck = "explicit"
+
+// JetStream file storage with WorkQueue retention and explicit ack for build-request intake. Dedupe by Nats-Msg-Id ('build-request:<requestId>'); Postgres (dd_build_server) remains the real idempotency guard.
+// Service: dd-build-server
+const DdRemoteBuildJobsStreamName = "DD_REMOTE_BUILD_JOBS"
+var DdRemoteBuildJobsStreamSubjects = []string{"dd.remote.build_server.requests"}
+const DdRemoteBuildJobsStreamRetention = "workqueue"
+const DdRemoteBuildJobsStreamStorage = "file"
+const DdRemoteBuildJobsStreamAck = "explicit"
 
 // Short-retention control plane stream.
 // Service: dd-remote-rest-api

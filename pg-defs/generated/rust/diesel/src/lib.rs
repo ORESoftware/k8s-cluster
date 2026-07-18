@@ -3026,7 +3026,7 @@ pub struct DesSoccerLearningSetPlayRunsDieselInsert {
 
 diesel::table! {
     use diesel::sql_types::*;
-    des_soccer_learning_set_play_restart_mix (run_id) {
+    des_soccer_learning_set_play_restart_mix (run_id, ordinal) {
         run_id -> Uuid,
         ordinal -> Int4,
         restart -> Varchar,
@@ -3051,7 +3051,7 @@ pub struct DesSoccerLearningSetPlayRestartMixDieselInsert {
 
 diesel::table! {
     use diesel::sql_types::*;
-    des_soccer_learning_set_play_episode_metrics (run_id) {
+    des_soccer_learning_set_play_episode_metrics (run_id, episode_index) {
         run_id -> Uuid,
         episode_index -> Int4,
         seed -> Int8,

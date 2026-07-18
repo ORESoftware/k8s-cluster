@@ -49,11 +49,24 @@ fn reset_state() -> Nil
 @external(erlang, "dd_runtime_config_client_ffi", "auth_ok")
 fn auth_ok(provided: String) -> Bool
 
-/// Mounted at `GET /internal/runtime-config`.
+@external(erlang, "dd_runtime_config_client_ffi", "read_auth_ok")
+fn read_auth_ok(provided: String) -> Bool
+
+/// Mounted at `GET /internal/runtime-config`. The snapshot lists every pushed
+/// entry value, so once `$RUNTIME_CONFIG_SERVER_SECRET` is configured, reads
+/// require the same `X-Server-Auth` header as the mutating routes. Without a
+/// configured secret the route stays open (local development).
 pub fn handle_snapshot(
-  _req: request.Request(mist.Connection),
+  req: request.Request(mist.Connection),
 ) -> response.Response(mist.ResponseData) {
-  json_response(200, snapshot_json())
+  let provided = case request.get_header(req, "x-server-auth") {
+    Ok(value) -> value
+    Error(_) -> ""
+  }
+  case read_auth_ok(provided) {
+    True -> json_response(200, snapshot_json())
+    False -> json_response(401, "{\"ok\":false,\"error\":\"unauthorized\"}")
+  }
 }
 
 /// Mounted at `POST /internal/update-runtime-config`.

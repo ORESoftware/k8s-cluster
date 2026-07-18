@@ -59,6 +59,24 @@ blockchainIndexEventsSubject = "dd.remote.blockchain.index.events"
 blockchainMevAlertsSubject :: Text
 blockchainMevAlertsSubject = "dd.remote.blockchain.mev.alerts"
 
+-- Redacted build lifecycle events (queued/running/succeeded/failed) published by the build server. Default for BUILD_SERVER_NATS_EVENT_SUBJECT.
+buildServerEventsSubject :: Text
+buildServerEventsSubject = "dd.remote.build_server.events"
+
+-- Redacted container-image registry events (ECR / docker registry webhook pushes) relayed by the build server. Default for BUILD_SERVER_NATS_IMAGE_SUBJECT.
+buildServerImagesSubject :: Text
+buildServerImagesSubject = "dd.remote.build_server.images"
+
+-- Durable build-request intake. Producers publish a build-server.v1 job document; build-server replicas consume via the shared queue group / durable JetStream consumer. Default for BUILD_SERVER_NATS_REQUEST_SUBJECT.
+buildServerRequestsSubject :: Text
+buildServerRequestsSubject = "dd.remote.build_server.requests"
+buildServerRequestsQueueGroup :: Text
+buildServerRequestsQueueGroup = "dd-build-server"
+
+-- Terminal build results (succeeded/failed with jobId and error summary) for NATS-submitted and webhook-submitted jobs. Default for BUILD_SERVER_NATS_RESULT_SUBJECT.
+buildServerResultsSubject :: Text
+buildServerResultsSubject = "dd.remote.build_server.results"
+
 -- Per-fault lifecycle events (selected, injected, restored, aborted-by-guard) emitted by the chaos loops.
 chaosEventsSubject :: Text
 chaosEventsSubject = "dd.remote.chaos.events"
@@ -864,6 +882,10 @@ queueGroupAgentSimServerQueueGroup = "dd-agent-sim-server"
 queueGroupBillingServerQueueGroup :: Text
 queueGroupBillingServerQueueGroup = "dd-billing-server"
 
+-- Shared queue group / durable consumer name used by build-server replicas for request intake.
+queueGroupBuildServerQueueGroup :: Text
+queueGroupBuildServerQueueGroup = "dd-build-server"
+
 -- Shared queue group used by dd-constraint-scheduler replicas consuming schedule requests.
 queueGroupConstraintSchedulerQueueGroup :: Text
 queueGroupConstraintSchedulerQueueGroup = "dd-constraint-scheduler"
@@ -963,6 +985,18 @@ cDCStreamStorage :: Text
 cDCStreamStorage = "file"
 cDCStreamAck :: Text
 cDCStreamAck = "explicit"
+
+-- JetStream file storage with WorkQueue retention and explicit ack for build-request intake. Dedupe by Nats-Msg-Id ('build-request:<requestId>'); Postgres (dd_build_server) remains the real idempotency guard.
+dD_REMOTE_BUILD_JOBSStreamName :: Text
+dD_REMOTE_BUILD_JOBSStreamName = "DD_REMOTE_BUILD_JOBS"
+dD_REMOTE_BUILD_JOBSStreamSubjects :: [Text]
+dD_REMOTE_BUILD_JOBSStreamSubjects = ["dd.remote.build_server.requests"]
+dD_REMOTE_BUILD_JOBSStreamRetention :: Text
+dD_REMOTE_BUILD_JOBSStreamRetention = "workqueue"
+dD_REMOTE_BUILD_JOBSStreamStorage :: Text
+dD_REMOTE_BUILD_JOBSStreamStorage = "file"
+dD_REMOTE_BUILD_JOBSStreamAck :: Text
+dD_REMOTE_BUILD_JOBSStreamAck = "explicit"
 
 -- Short-retention control plane stream.
 dD_REMOTE_CONTROLStreamName :: Text

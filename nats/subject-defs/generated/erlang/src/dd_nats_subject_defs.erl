@@ -17,6 +17,11 @@
     blockchain_bridge_attestations_subject/0,
     blockchain_index_events_subject/0,
     blockchain_mev_alerts_subject/0,
+    build_server_events_subject/0,
+    build_server_images_subject/0,
+    build_server_requests_subject/0,
+    build_server_requests_queue_group/0,
+    build_server_results_subject/0,
     chaos_events_subject/0,
     chaos_experiments_subject/0,
     chaos_probe_subject/0,
@@ -250,6 +255,7 @@
     workflows_signal_queue_group/0,
     agent_sim_server_queue_group/0,
     billing_server_queue_group/0,
+    build_server_queue_group/0,
     constraint_scheduler_queue_group/0,
     contact_send_queue_group/0,
     critical_events_logger_queue_group/0,
@@ -277,6 +283,11 @@
     cdc_stream_retention/0,
     cdc_stream_storage/0,
     cdc_stream_ack/0,
+    dd_remote_build_jobs_stream_name/0,
+    dd_remote_build_jobs_stream_subjects/0,
+    dd_remote_build_jobs_stream_retention/0,
+    dd_remote_build_jobs_stream_storage/0,
+    dd_remote_build_jobs_stream_ack/0,
     dd_remote_control_stream_name/0,
     dd_remote_control_stream_subjects/0,
     dd_remote_control_stream_retention/0,
@@ -378,6 +389,23 @@ blockchain_index_events_subject() -> <<"dd.remote.blockchain.index.events"/utf8>
 %% Monitoring-only MEV/arbitrage spread alerts emitted when an observed venue spread crosses the configured threshold. Default for BLOCKCHAIN_MEV_ALERTS_SUBJECT. Observation surface only; there is no execution path. Publish-only.
 %% Service: dd-contract-service
 blockchain_mev_alerts_subject() -> <<"dd.remote.blockchain.mev.alerts"/utf8>>.
+
+%% Redacted build lifecycle events (queued/running/succeeded/failed) published by the build server. Default for BUILD_SERVER_NATS_EVENT_SUBJECT.
+%% Service: dd-build-server
+build_server_events_subject() -> <<"dd.remote.build_server.events"/utf8>>.
+
+%% Redacted container-image registry events (ECR / docker registry webhook pushes) relayed by the build server. Default for BUILD_SERVER_NATS_IMAGE_SUBJECT.
+%% Service: dd-build-server
+build_server_images_subject() -> <<"dd.remote.build_server.images"/utf8>>.
+
+%% Durable build-request intake. Producers publish a build-server.v1 job document; build-server replicas consume via the shared queue group / durable JetStream consumer. Default for BUILD_SERVER_NATS_REQUEST_SUBJECT.
+%% Service: dd-build-server
+build_server_requests_subject() -> <<"dd.remote.build_server.requests"/utf8>>.
+build_server_requests_queue_group() -> <<"dd-build-server"/utf8>>.
+
+%% Terminal build results (succeeded/failed with jobId and error summary) for NATS-submitted and webhook-submitted jobs. Default for BUILD_SERVER_NATS_RESULT_SUBJECT.
+%% Service: dd-build-server
+build_server_results_subject() -> <<"dd.remote.build_server.results"/utf8>>.
 
 %% Per-fault lifecycle events (selected, injected, restored, aborted-by-guard) emitted by the chaos loops.
 %% Service: dd-chaos
@@ -1269,6 +1297,10 @@ agent_sim_server_queue_group() -> <<"dd-agent-sim-server"/utf8>>.
 %% Service: dd-billing-server
 billing_server_queue_group() -> <<"dd-billing-server"/utf8>>.
 
+%% Shared queue group / durable consumer name used by build-server replicas for request intake.
+%% Service: dd-build-server
+build_server_queue_group() -> <<"dd-build-server"/utf8>>.
+
 %% Shared queue group used by dd-constraint-scheduler replicas consuming schedule requests.
 %% Service: dd-constraint-scheduler
 constraint_scheduler_queue_group() -> <<"dd-constraint-scheduler"/utf8>>.
@@ -1365,6 +1397,15 @@ cdc_stream_subjects() ->
 cdc_stream_retention() -> <<"limits"/utf8>>.
 cdc_stream_storage() -> <<"file"/utf8>>.
 cdc_stream_ack() -> <<"explicit"/utf8>>.
+
+%% JetStream file storage with WorkQueue retention and explicit ack for build-request intake. Dedupe by Nats-Msg-Id ('build-request:<requestId>'); Postgres (dd_build_server) remains the real idempotency guard.
+%% Service: dd-build-server
+dd_remote_build_jobs_stream_name() -> <<"DD_REMOTE_BUILD_JOBS"/utf8>>.
+dd_remote_build_jobs_stream_subjects() ->
+    [<<"dd.remote.build_server.requests"/utf8>>].
+dd_remote_build_jobs_stream_retention() -> <<"workqueue"/utf8>>.
+dd_remote_build_jobs_stream_storage() -> <<"file"/utf8>>.
+dd_remote_build_jobs_stream_ack() -> <<"explicit"/utf8>>.
 
 %% Short-retention control plane stream.
 %% Service: dd-remote-rest-api

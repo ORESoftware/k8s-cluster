@@ -2253,8 +2253,9 @@ pub mod des_soccer_learning_set_play_restart_mix {
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "des_soccer_learning_set_play_restart_mix")]
 pub struct Model {
-    #[sea_orm(column_name = "run_id")]
+    #[sea_orm(primary_key, auto_increment = false, column_name = "run_id")]
     pub run_id: Uuid,
+    #[sea_orm(primary_key, auto_increment = false)]
     pub ordinal: i32,
     pub restart: String,
 }
@@ -2275,9 +2276,9 @@ pub mod des_soccer_learning_set_play_episode_metrics {
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "des_soccer_learning_set_play_episode_metrics")]
 pub struct Model {
-    #[sea_orm(column_name = "run_id")]
+    #[sea_orm(primary_key, auto_increment = false, column_name = "run_id")]
     pub run_id: Uuid,
-    #[sea_orm(column_name = "episode_index")]
+    #[sea_orm(primary_key, auto_increment = false, column_name = "episode_index")]
     pub episode_index: i32,
     pub seed: i64,
     pub restart: String,

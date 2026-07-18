@@ -527,19 +527,58 @@ async function queryJson(databaseUrl, sql) {
   return JSON.parse(trimmed);
 }
 
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]", ""]);
+
+// Prepare the psql invocation without ever putting the password on the child
+// process's command line (argv is world-readable via `ps`/procfs). The
+// password is stripped from the URL and handed over via PGPASSWORD instead.
+// For non-loopback hosts with no explicit sslmode (URL param or PGSSLMODE),
+// default to sslmode=require so a remote RDS connection cannot silently
+// downgrade to plaintext (libpq's default is `prefer`).
+function psqlConnection(databaseUrl) {
+  if (!/^postgres(ql)?:\/\//i.test(databaseUrl)) {
+    throw new Error("database URL must start with postgres:// or postgresql://");
+  }
+  let url;
+  try {
+    url = new URL(databaseUrl);
+  } catch {
+    // Exotic conninfo forms (e.g. multi-host) that URL cannot parse: pass
+    // through unchanged rather than guessing how to rewrite them.
+    return { commandUrl: databaseUrl, childEnv: process.env };
+  }
+  const childEnv = { ...process.env };
+  if (url.password) {
+    childEnv.PGPASSWORD = decodeURIComponent(url.password);
+    url.password = "";
+  }
+  const hasExplicitSslmode =
+    url.searchParams.has("sslmode") || Boolean(process.env.PGSSLMODE);
+  if (!hasExplicitSslmode && !LOOPBACK_HOSTS.has(url.hostname)) {
+    childEnv.PGSSLMODE = "require";
+  }
+  return { commandUrl: url.toString(), childEnv };
+}
+
 function runPsql(databaseUrl, sql) {
+  const { commandUrl, childEnv } = psqlConnection(databaseUrl);
   return new Promise((resolve, reject) => {
-    const child = spawn("psql", [
-      databaseUrl,
-      "-X",
-      "-q",
-      "-t",
-      "-A",
-      "-v",
-      "ON_ERROR_STOP=1",
-      "-c",
-      sql,
-    ]);
+    const child = spawn(
+      "psql",
+      [
+        "--dbname",
+        commandUrl,
+        "-X",
+        "-q",
+        "-t",
+        "-A",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-c",
+        sql,
+      ],
+      { env: childEnv },
+    );
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk) => {

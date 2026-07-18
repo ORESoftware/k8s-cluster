@@ -901,14 +901,14 @@ export function defineDdModels(sequelize: Sequelize) {
   }, { tableName: "des_soccer_learning_set_play_runs", timestamps: false, freezeTableName: true });
 
   const DesSoccerLearningSetPlayRestartMix = sequelize.define("DesSoccerLearningSetPlayRestartMix", {
-    run_id: { type: DataTypes.UUID, allowNull: false },
-    ordinal: { type: DataTypes.INTEGER, allowNull: false, validate: { min: 0 } },
+    run_id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    ordinal: { type: DataTypes.INTEGER, allowNull: false, primaryKey: true, validate: { min: 0 } },
     restart: { type: DataTypes.STRING(40), allowNull: false, validate: { isIn: [["direct-free-kick", "indirect-free-kick"]] } },
   }, { tableName: "des_soccer_learning_set_play_restart_mix", timestamps: false, freezeTableName: true });
 
   const DesSoccerLearningSetPlayEpisodeMetrics = sequelize.define("DesSoccerLearningSetPlayEpisodeMetrics", {
-    run_id: { type: DataTypes.UUID, allowNull: false },
-    episode_index: { type: DataTypes.INTEGER, allowNull: false, validate: { min: 0 } },
+    run_id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    episode_index: { type: DataTypes.INTEGER, allowNull: false, primaryKey: true, validate: { min: 0 } },
     seed: { type: DataTypes.BIGINT, allowNull: false, validate: { min: 0 } },
     restart: { type: DataTypes.STRING(40), allowNull: false, validate: { isIn: [["direct-free-kick", "indirect-free-kick"]] } },
     routine: { type: DataTypes.STRING(80), allowNull: true, validate: { len: [0, 80] } },

@@ -3923,8 +3923,8 @@ export type DesSoccerLearningSetPlayRestartMixRestart = z.infer<typeof desSoccer
 export const desSoccerLearningSetPlayRestartMix = pgTable(
   "des_soccer_learning_set_play_restart_mix",
   {
-    runId: uuid("run_id").notNull(),
-    ordinal: integer("ordinal").notNull(),
+    runId: uuid("run_id").primaryKey(),
+    ordinal: integer("ordinal").primaryKey(),
     restart: varchar("restart", { length: 40 }).notNull(),
   },
   (table) => ({
@@ -3957,8 +3957,8 @@ export type DesSoccerLearningSetPlayEpisodeMetricsRestart = z.infer<typeof desSo
 export const desSoccerLearningSetPlayEpisodeMetrics = pgTable(
   "des_soccer_learning_set_play_episode_metrics",
   {
-    runId: uuid("run_id").notNull(),
-    episodeIndex: integer("episode_index").notNull(),
+    runId: uuid("run_id").primaryKey(),
+    episodeIndex: integer("episode_index").primaryKey(),
     seed: bigint("seed", { mode: "number" }).notNull(),
     restart: varchar("restart", { length: 40 }).notNull(),
     routine: varchar("routine", { length: 80 }),
