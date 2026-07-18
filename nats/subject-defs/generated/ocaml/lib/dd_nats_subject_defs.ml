@@ -453,6 +453,7 @@ let cdc_row_change_pattern = "{prefix}.{schema}.{table}.{op}"
 let cdc_row_change_wildcard = "{prefix}.>"
 let cdc_row_change_stream = "CDC"
 let cdc_row_change_subject prefix schema table op = prefix ^ "." ^ schema ^ "." ^ table ^ "." ^ op
+let format_cdc_row_change_wildcard prefix = prefix ^ ".>"
 type cdc_row_change_subject_parts = {
   cdc_row_change_subject_parts_prefix : string;
   cdc_row_change_subject_parts_schema : string;
@@ -469,6 +470,7 @@ let cdc_table_filter_pattern = "{prefix}.{schema}.{table}.>"
 let cdc_table_filter_wildcard = "{prefix}.>"
 let cdc_table_filter_stream = "CDC"
 let cdc_table_filter_subject prefix schema table = prefix ^ "." ^ schema ^ "." ^ table ^ ".>"
+let format_cdc_table_filter_wildcard prefix = prefix ^ ".>"
 type cdc_table_filter_subject_parts = {
   cdc_table_filter_subject_parts_prefix : string;
   cdc_table_filter_subject_parts_schema : string;

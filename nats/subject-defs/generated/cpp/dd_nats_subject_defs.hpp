@@ -339,6 +339,7 @@ inline const char* cdc_row_change_pattern = "{prefix}.{schema}.{table}.{op}";
 inline const char* cdc_row_change_wildcard = "{prefix}.>";
 inline const char* cdc_row_change_stream = "CDC";
 inline std::string cdc_row_change_subject(const std::string& prefix, const std::string& schema, const std::string& table, const std::string& op) { return prefix + std::string(".") + schema + std::string(".") + table + std::string(".") + op; }
+inline std::string format_cdc_row_change_wildcard(const std::string& prefix) { return prefix + std::string(".>"); }
 struct CdcRowChangeSubjectParts {
     std::string prefix;
     std::string schema;
@@ -360,6 +361,7 @@ inline const char* cdc_table_filter_pattern = "{prefix}.{schema}.{table}.>";
 inline const char* cdc_table_filter_wildcard = "{prefix}.>";
 inline const char* cdc_table_filter_stream = "CDC";
 inline std::string cdc_table_filter_subject(const std::string& prefix, const std::string& schema, const std::string& table) { return prefix + std::string(".") + schema + std::string(".") + table + std::string(".>"); }
+inline std::string format_cdc_table_filter_wildcard(const std::string& prefix) { return prefix + std::string(".>"); }
 struct CdcTableFilterSubjectParts {
     std::string prefix;
     std::string schema;

@@ -598,6 +598,10 @@ pub fn cdc_row_change_subject(prefix prefix: String, schema schema: String, tabl
   prefix <> "." <> schema <> "." <> table <> "." <> op
 }
 
+pub fn format_cdc_row_change_wildcard(prefix prefix: String) -> String {
+  prefix <> ".>"
+}
+
 pub fn parse_cdc_row_change_subject(subject: String) -> Option(CdcRowChangeSubjectParts) {
   let pattern_tokens = string.split("{prefix}.{schema}.{table}.{op}", on: ".")
   let subject_tokens = string.split(subject, on: ".")
@@ -644,6 +648,10 @@ pub type CdcTableFilterSubjectParts {
 }
 pub fn cdc_table_filter_subject(prefix prefix: String, schema schema: String, table table: String) -> String {
   prefix <> "." <> schema <> "." <> table <> ".>"
+}
+
+pub fn format_cdc_table_filter_wildcard(prefix prefix: String) -> String {
+  prefix <> ".>"
 }
 
 pub fn parse_cdc_table_filter_subject(subject: String) -> Option(CdcTableFilterSubjectParts) {

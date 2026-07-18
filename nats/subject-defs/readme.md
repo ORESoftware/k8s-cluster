@@ -43,7 +43,8 @@ remote/libs/nats/subject-defs/
 │   └── wal-cdc.schema.json
 ├── src/
 │   ├── generate.mjs              # JSON Schema → per-language outputs
-│   └── generate.test.mjs         # drift check + formatter/parser round-trip
+│   ├── generate.test.mjs         # focused generator regression tests
+│   └── conformance.test.mjs      # schema-wide, cross-language contract tests
 ├── generated/                    # check-in artifacts, never hand-edit
 │   ├── typescript/
 │   ├── rust/
@@ -61,7 +62,7 @@ remote/libs/nats/subject-defs/
 ```bash
 pnpm --filter @dd/nats-subject-defs generate
 pnpm --filter @dd/nats-subject-defs check    # CI fail-if-stale
-pnpm --filter @dd/nats-subject-defs test     # generator unit tests
+pnpm --filter @dd/nats-subject-defs test     # generator + all-target conformance tests
 ```
 
 ### `$dd:nats` extension
@@ -139,8 +140,23 @@ Each schema file declares a `$dd:nats` block with three top-level lists
 - `>` matches one or more remaining tokens (tail wildcard).
 - The generated parser walks the pattern token-by-token. A `{param}`
   placeholder must align with exactly one resolved token; literal tokens must
-  match exactly. If the pattern ends with a `>` placeholder
-  (`{param>}`), the generator captures the entire tail joined back with `.`.
+  match exactly. A subscribe-only pattern may end in a literal `>` tail
+  wildcard (for example `{prefix}.{schema}.{table}.>`).
+- Placeholders must occupy an entire NATS token. A wildcard may use a declared
+  placeholder (for example `{prefix}.>`); the generated `*_WILDCARD` value is
+  then a template and each target also emits a formatter such as
+  `formatCdcRowChangeWildcard(prefix)` / `format_cdc_row_change_wildcard(prefix)`.
+
+### Conformance coverage
+
+The test suite derives its cases from every entry in `schema/index.json`. It
+validates NATS token grammar, duplicate and generated-identifier collisions,
+JetStream stream coverage, and stream references. It also verifies that every
+generated target (TypeScript, JavaScript, Rust, Python, Gleam, Erlang, Dart,
+Go, Java, Haskell, OCaml, F#, C++, Zig, and Elixir) contains the full schema
+contract. JavaScript and Python execute formatter/parser round-trips for every
+parameterized subject; Rust, Go, and C++ are compiled when their local
+toolchains are available.
 
 ## Consumers
 

@@ -324,6 +324,7 @@ defmodule DdNatsSubjectDefs do
   def cdc_row_change_wildcard, do: "{prefix}.>"
   def cdc_row_change_stream, do: "CDC"
   def cdc_row_change_subject(prefix, schema, table, op), do: prefix <> "." <> schema <> "." <> table <> "." <> op
+  def format_cdc_row_change_wildcard(prefix), do: prefix <> ".>"
   def parse_cdc_row_change_subject(subject) do
     case String.split(subject, ".") do
       [prefix, schema, table, op] -> {:ok, %{prefix: prefix, schema: schema, table: table, op: op}}
@@ -335,6 +336,7 @@ defmodule DdNatsSubjectDefs do
   def cdc_table_filter_wildcard, do: "{prefix}.>"
   def cdc_table_filter_stream, do: "CDC"
   def cdc_table_filter_subject(prefix, schema, table), do: prefix <> "." <> schema <> "." <> table <> ".>"
+  def format_cdc_table_filter_wildcard(prefix), do: prefix <> ".>"
   def parse_cdc_table_filter_subject(subject) do
     case String.split(subject, ".") do
       [prefix, schema, table, ">"] -> {:ok, %{prefix: prefix, schema: schema, table: table}}

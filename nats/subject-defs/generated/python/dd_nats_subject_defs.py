@@ -604,6 +604,9 @@ def cdc_row_change_subject(prefix: str, schema: str, table: str, op: str) -> str
     """Per-row change emitted by wal-gateway. Subject pattern is '<prefix>.<schema>.<table>.<op>'. The default prefix is 'cdc' and the default stream name is 'CDC'. Consumers usually subscribe to the prefix tail wildcard ('cdc.>')."""
     return "{prefix}.{schema}.{table}.{op}".format(prefix=prefix, schema=schema, table=table, op=op)
 
+def format_cdc_row_change_wildcard(prefix: str) -> str:
+    return "{prefix}.>".format(prefix=prefix)
+
 def parse_cdc_row_change_subject(subject: str) -> Optional[CdcRowChangeSubjectParts]:
     """Parse a resolved CdcRowChange subject; returns None on mismatch."""
     pattern_tokens = ["{prefix}","{schema}","{table}","{op}"]
@@ -638,6 +641,9 @@ class CdcTableFilterSubjectParts:
 def cdc_table_filter_subject(prefix: str, schema: str, table: str) -> str:
     """Per-table JetStream filter subject ('<prefix>.<schema>.<table>.>') used by CDC consumers (e.g. dd-remote-rest-api) to subscribe to every op for one Postgres table. Not a publish target; producers publish per-row via CdcRowChange."""
     return "{prefix}.{schema}.{table}.>".format(prefix=prefix, schema=schema, table=table)
+
+def format_cdc_table_filter_wildcard(prefix: str) -> str:
+    return "{prefix}.>".format(prefix=prefix)
 
 def parse_cdc_table_filter_subject(subject: str) -> Optional[CdcTableFilterSubjectParts]:
     """Parse a resolved CdcTableFilter subject; returns None on mismatch."""

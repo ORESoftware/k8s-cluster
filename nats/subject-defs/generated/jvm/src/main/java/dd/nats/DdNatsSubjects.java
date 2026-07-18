@@ -860,6 +860,10 @@ public final class DdNatsSubjects {
         return prefix + "." + schema + "." + table + "." + op;
     }
 
+    public static String formatCdcRowChangeWildcard(String prefix) {
+        return prefix + ".>";
+    }
+
     public static Optional<CdcRowChangeSubjectParts> parseCdcRowChangeSubject(String subject) {
         List<String> patternTokens = List.of("{prefix}", "{schema}", "{table}", "{op}");
         String[] subjectTokens = subject.split("\\.");
@@ -898,6 +902,10 @@ public final class DdNatsSubjects {
 
     public static String cdcTableFilterSubject(String prefix, String schema, String table) {
         return prefix + "." + schema + "." + table + ".>";
+    }
+
+    public static String formatCdcTableFilterWildcard(String prefix) {
+        return prefix + ".>";
     }
 
     public static Optional<CdcTableFilterSubjectParts> parseCdcTableFilterSubject(String subject) {

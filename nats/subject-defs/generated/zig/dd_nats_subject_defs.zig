@@ -326,6 +326,9 @@ pub const cdc_row_change_stream: []const u8 = "CDC";
 pub fn cdc_row_change_subject(allocator: std.mem.Allocator, prefix: []const u8, schema: []const u8, table: []const u8, op: []const u8) ![]u8 {
     return std.fmt.allocPrint(allocator, "{s}.{s}.{s}.{s}", .{ prefix, schema, table, op });
 }
+pub fn format_cdc_row_change_wildcard(allocator: std.mem.Allocator, prefix: []const u8) ![]u8 {
+    return std.fmt.allocPrint(allocator, "{s}.>", .{ prefix });
+}
 pub const CdcRowChangeSubjectParts = struct {
     prefix: []const u8,
     schema: []const u8,
@@ -347,6 +350,9 @@ pub const cdc_table_filter_wildcard: []const u8 = "{prefix}.>";
 pub const cdc_table_filter_stream: []const u8 = "CDC";
 pub fn cdc_table_filter_subject(allocator: std.mem.Allocator, prefix: []const u8, schema: []const u8, table: []const u8) ![]u8 {
     return std.fmt.allocPrint(allocator, "{s}.{s}.{s}.>", .{ prefix, schema, table });
+}
+pub fn format_cdc_table_filter_wildcard(allocator: std.mem.Allocator, prefix: []const u8) ![]u8 {
+    return std.fmt.allocPrint(allocator, "{s}.>", .{ prefix });
 }
 pub const CdcTableFilterSubjectParts = struct {
     prefix: []const u8,

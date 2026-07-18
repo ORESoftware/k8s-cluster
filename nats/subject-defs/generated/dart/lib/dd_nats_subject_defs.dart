@@ -599,6 +599,10 @@ String cdcRowChangeSubject(String prefix, String schema, String table, String op
   return '$prefix.$schema.$table.$op';
 }
 
+String formatCdcRowChangeWildcard(String prefix) {
+  return '$prefix.>';
+}
+
 CdcRowChangeSubjectParts? parseCdcRowChangeSubject(String subject) {
   final patternTokens = ["{prefix}","{schema}","{table}","{op}"];
   final subjectTokens = subject.split('.');
@@ -630,6 +634,10 @@ class CdcTableFilterSubjectParts {
 
 String cdcTableFilterSubject(String prefix, String schema, String table) {
   return '$prefix.$schema.$table.>';
+}
+
+String formatCdcTableFilterWildcard(String prefix) {
+  return '$prefix.>';
 }
 
 CdcTableFilterSubjectParts? parseCdcTableFilterSubject(String subject) {

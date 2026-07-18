@@ -592,6 +592,10 @@ pub fn cdc_row_change_subject(prefix: &str, schema: &str, table: &str, op: &str)
     format!("{}.{}.{}.{}", prefix, schema, table, op)
 }
 
+pub fn format_cdc_row_change_wildcard(prefix: &str) -> String {
+    format!("{}.>", prefix)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CdcRowChangeSubjectParts {
     pub prefix: String,
@@ -641,6 +645,10 @@ pub const CDC_TABLE_FILTER_WILDCARD: &str = "{prefix}.>";
 pub const CDC_TABLE_FILTER_STREAM: &str = "CDC";
 pub fn cdc_table_filter_subject(prefix: &str, schema: &str, table: &str) -> String {
     format!("{}.{}.{}.>", prefix, schema, table)
+}
+
+pub fn format_cdc_table_filter_wildcard(prefix: &str) -> String {
+    format!("{}.>", prefix)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

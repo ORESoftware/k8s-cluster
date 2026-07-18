@@ -324,6 +324,7 @@ let cdcRowChangePattern : string = "{prefix}.{schema}.{table}.{op}"
 let cdcRowChangeWildcard : string = "{prefix}.>"
 let cdcRowChangeStream : string = "CDC"
 let cdcRowChangeSubject (prefix: string) (schema: string) (table: string) (op: string) : string = prefix + "." + schema + "." + table + "." + op
+let formatCdcRowChangeWildcard (prefix: string) : string = prefix + ".>"
 type CdcRowChangeSubjectParts =
     { CdcRowChangeSubjectPartsPrefix: string
       CdcRowChangeSubjectPartsSchema: string
@@ -338,6 +339,7 @@ let cdcTableFilterPattern : string = "{prefix}.{schema}.{table}.>"
 let cdcTableFilterWildcard : string = "{prefix}.>"
 let cdcTableFilterStream : string = "CDC"
 let cdcTableFilterSubject (prefix: string) (schema: string) (table: string) : string = prefix + "." + schema + "." + table + ".>"
+let formatCdcTableFilterWildcard (prefix: string) : string = prefix + ".>"
 type CdcTableFilterSubjectParts =
     { CdcTableFilterSubjectPartsPrefix: string
       CdcTableFilterSubjectPartsSchema: string

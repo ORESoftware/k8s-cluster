@@ -608,6 +608,10 @@ func CdcRowChangeSubject(prefix string, schema string, table string, op string) 
 	return fmt.Sprintf("%s.%s.%s.%s", prefix, schema, table, op)
 }
 
+func FormatCdcRowChangeWildcard(prefix string) string {
+	return fmt.Sprintf("%s.>", prefix)
+}
+
 func ParseCdcRowChangeSubject(subject string) (*CdcRowChangeSubjectParts, bool) {
 	patternTokens := strings.Split("{prefix}.{schema}.{table}.{op}", ".")
 	subjectTokens := strings.Split(subject, ".")
@@ -653,6 +657,10 @@ type CdcTableFilterSubjectParts struct {
 
 func CdcTableFilterSubject(prefix string, schema string, table string) string {
 	return fmt.Sprintf("%s.%s.%s.>", prefix, schema, table)
+}
+
+func FormatCdcTableFilterWildcard(prefix string) string {
+	return fmt.Sprintf("%s.>", prefix)
 }
 
 func ParseCdcTableFilterSubject(subject string) (*CdcTableFilterSubjectParts, bool) {

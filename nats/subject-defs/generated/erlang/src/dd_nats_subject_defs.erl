@@ -195,11 +195,13 @@
     cdc_row_change_pattern/0,
     cdc_row_change_wildcard/0,
     cdc_row_change_subject/4,
+    format_cdc_row_change_wildcard/1,
     parse_cdc_row_change_subject/1,
     cdc_row_change_stream/0,
     cdc_table_filter_pattern/0,
     cdc_table_filter_wildcard/0,
     cdc_table_filter_subject/3,
+    format_cdc_table_filter_wildcard/1,
     parse_cdc_table_filter_subject/1,
     cdc_table_filter_stream/0,
     container_pool_events_pattern/0,
@@ -924,6 +926,9 @@ cdc_row_change_stream() -> <<"CDC"/utf8>>.
 cdc_row_change_subject(Prefix, Schema, Table, Op) ->
     iolist_to_binary([to_bin(Prefix), <<"."/utf8>>, to_bin(Schema), <<"."/utf8>>, to_bin(Table), <<"."/utf8>>, to_bin(Op)]).
 
+format_cdc_row_change_wildcard(Prefix) ->
+    iolist_to_binary([to_bin(Prefix), <<".>"/utf8>>]).
+
 parse_cdc_row_change_subject(Subject) ->
     SubjectBin = to_bin(Subject),
     Tokens = binary:split(SubjectBin, <<".">>, [global]),
@@ -952,6 +957,9 @@ cdc_table_filter_wildcard() -> <<"{prefix}.>"/utf8>>.
 cdc_table_filter_stream() -> <<"CDC"/utf8>>.
 cdc_table_filter_subject(Prefix, Schema, Table) ->
     iolist_to_binary([to_bin(Prefix), <<"."/utf8>>, to_bin(Schema), <<"."/utf8>>, to_bin(Table), <<".>"/utf8>>]).
+
+format_cdc_table_filter_wildcard(Prefix) ->
+    iolist_to_binary([to_bin(Prefix), <<".>"/utf8>>]).
 
 parse_cdc_table_filter_subject(Subject) ->
     SubjectBin = to_bin(Subject),

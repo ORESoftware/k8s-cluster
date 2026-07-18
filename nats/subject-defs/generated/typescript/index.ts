@@ -850,6 +850,9 @@ export const CDC_ROW_CHANGE_STREAM = "CDC";
 export function cdcRowChangeSubject(prefix: string, schema: string, table: string, op: string): string {
   return `${prefix}.${schema}.${table}.${op}`;
 }
+export function formatCdcRowChangeWildcard(prefix: string): string {
+  return `${prefix}.>`;
+}
 export type CdcRowChangeSubjectParts = {
   prefix: string;
   schema: string;
@@ -886,6 +889,9 @@ export const CDC_TABLE_FILTER_WILDCARD = "{prefix}.>";
 export const CDC_TABLE_FILTER_STREAM = "CDC";
 export function cdcTableFilterSubject(prefix: string, schema: string, table: string): string {
   return `${prefix}.${schema}.${table}.>`;
+}
+export function formatCdcTableFilterWildcard(prefix: string): string {
+  return `${prefix}.>`;
 }
 export type CdcTableFilterSubjectParts = {
   prefix: string;

@@ -652,6 +652,8 @@ cdcRowChangeStream :: Text
 cdcRowChangeStream = "CDC"
 cdcRowChangeSubject :: Text -> Text -> Text -> Text -> Text
 cdcRowChangeSubject prefix schema table op = T.concat [prefix, ".", schema, ".", table, ".", op]
+formatCdcRowChangeWildcard :: Text -> Text
+formatCdcRowChangeWildcard prefix = T.concat [prefix, ".>"]
 data CdcRowChangeSubjectParts = CdcRowChangeSubjectParts
   { cdcRowChangeSubjectPartsPrefix :: Text
   , cdcRowChangeSubjectPartsSchema :: Text
@@ -673,6 +675,8 @@ cdcTableFilterStream :: Text
 cdcTableFilterStream = "CDC"
 cdcTableFilterSubject :: Text -> Text -> Text -> Text
 cdcTableFilterSubject prefix schema table = T.concat [prefix, ".", schema, ".", table, ".>"]
+formatCdcTableFilterWildcard :: Text -> Text
+formatCdcTableFilterWildcard prefix = T.concat [prefix, ".>"]
 data CdcTableFilterSubjectParts = CdcTableFilterSubjectParts
   { cdcTableFilterSubjectPartsPrefix :: Text
   , cdcTableFilterSubjectPartsSchema :: Text

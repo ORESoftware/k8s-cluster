@@ -856,6 +856,9 @@ export const CDC_ROW_CHANGE_STREAM = "CDC";
 export function cdcRowChangeSubject(prefix, schema, table, op) {
   return `${prefix}.${schema}.${table}.${op}`;
 }
+export function formatCdcRowChangeWildcard(prefix) {
+  return `${prefix}.>`;
+}
 export function parseCdcRowChangeSubject(subject) {
   const patternTokens = ["{prefix}","{schema}","{table}","{op}"];
   const subjectTokens = subject.split(".");
@@ -886,6 +889,9 @@ export const CDC_TABLE_FILTER_WILDCARD = "{prefix}.>";
 export const CDC_TABLE_FILTER_STREAM = "CDC";
 export function cdcTableFilterSubject(prefix, schema, table) {
   return `${prefix}.${schema}.${table}.>`;
+}
+export function formatCdcTableFilterWildcard(prefix) {
+  return `${prefix}.>`;
 }
 export function parseCdcTableFilterSubject(subject) {
   const patternTokens = ["{prefix}","{schema}","{table}",">"];
