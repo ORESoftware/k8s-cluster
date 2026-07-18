@@ -14,6 +14,7 @@ pub struct Metrics {
     pub vapi_webhook_events_total: AtomicU64,
     pub vapi_webhook_unauthorized_total: AtomicU64,
     pub vapi_tool_calls_total: AtomicU64,
+    pub llm_overloaded_total: AtomicU64,
     pub errors_total: AtomicU64,
 }
 
