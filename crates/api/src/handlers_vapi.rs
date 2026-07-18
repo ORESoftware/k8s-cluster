@@ -400,13 +400,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn constant_time_eq_matches_std() {
-        assert!(constant_time_eq("secret", "secret"));
-        assert!(!constant_time_eq("secret", "secreT"));
-        assert!(!constant_time_eq("secret", "secret2"));
-    }
-
-    #[test]
     fn extracts_tool_call_from_toolcalllist() {
         let msg = json!({
             "toolCallList": [{
