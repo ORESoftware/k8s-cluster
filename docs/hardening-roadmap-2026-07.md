@@ -6,8 +6,10 @@ How to shore up the platform, in order, turning
 [`architectural-security-findings.md`](./architectural-security-findings.md) and
 [`SECURITY-AUDIT.md`](./SECURITY-AUDIT.md).
 
-**Status:** C1 (MFA password-bypass) fixed + pushed (`fiducia-customer.rs@d755ecf`).
-Everything below is open.
+**Status (completed and pushed):** C1 customer@d755ecf; C3 brain@caf03ae; M6
+brain@1742894 + node@7ce5ce3; H17 infra@615c2f5; H12 auth@681e27d;
+H13/H14 auth@681e27d + customer@f049634; C2 node@c59fa24; C4 bridge@1ff293c.
+Items not marked **Done** below remain open.
 
 ---
 
@@ -44,11 +46,11 @@ Ship these independently; each is S-effort and clearly correct.
 
 | Item | Fix | Repo |
 |------|-----|------|
-| **C3** | Floor guard: if `healthy_ids.len() < rf`, treat the tick as incomplete membership — never propose a replica set smaller than `min(current.len(), rf)`. Prevents fleet-wide empty-placement wipe. | brain `scheduler.rs:181` |
+| **C3 — Done** | Floor guard: if `healthy_ids.len() < rf`, treat the tick as incomplete membership — never propose a replica set smaller than `min(current.len(), rf)`. Prevents fleet-wide empty-placement wipe. | brain `scheduler.rs:181` |
 | **H10** | Set `FIDUCIA_BRAIN_ID`/`FIDUCIA_NODE_ID` from `topology.toml`'s dialable `*_endpoint` (host:port), not `$(POD_NAME).$(CLUSTER)`. | infra `base/components/brain/statefulset.yaml:67`, `base/node/statefulset.yaml:97` |
-| **H17** | Add a `maxUnavailable:0` PodDisruptionBudget for the brain StatefulSet (mirror node/LB). | infra `base/components/brain/pdb.yaml` (new) |
-| **H12** | Add `aud:"fiducia-api"` to auth's `Claims`/`mint_with` (confirm which token flows through edge/LB first). | auth `token.rs:36` |
-| **M6** | Dedup + self-exclude `peers` at config parse in both node and brain; derive quorum/commit-count from the deduped set. | node `consensus.rs:296`, brain `raft.rs:323` |
+| **H17 — Done** | Add a `maxUnavailable:0` PodDisruptionBudget for the brain StatefulSet (mirror node/LB). | infra `base/components/brain/pdb.yaml` (new) |
+| **H12 — Done** | Add `aud:"fiducia-api"` to auth's `Claims`/`mint_with` (confirm which token flows through edge/LB first). | auth `token.rs:36` |
+| **M6 — Done** | Dedup + self-exclude `peers` at config parse in both node and brain; derive quorum/commit-count from the deduped set. | node `consensus.rs:296`, brain `raft.rs:323` |
 | **M21/M22** | Resolve core images to `@sha256:` digests in deploy.yml; add `x-fiducia-*` header keys to the otel redact processor. | monorepo `deploy.yml:110`, infra `otel-agent.yaml:120` |
 | **M26/M27** | Delete the two dead auth JWT flags (or wire them); add `FIDUCIA_KV_ENCRYPTION_KEY`, `CUSTOMER_API_KEY_PEPPER`, `FIDUCIA_ALLOW_INSECURE_INTERNAL` to the respective `[env].ignore`. | auth/node/memory `.cli-flags.toml` |
 
@@ -57,7 +59,7 @@ Ship these independently; each is S-effort and clearly correct.
 ### WS-1 — Coordination-core correctness (the big rock)
 Test-first. This is the crown jewel; a wrong fix is worse than the bug.
 
-- **C2 (CRITICAL)** — Make `semaphore_inventory`/`election_inventory`/`*_get` expiry-*aware
+- **C2 (CRITICAL, Done)** — Make `semaphore_inventory`/`election_inventory`/`*_get` expiry-*aware
   but pure (compute live-at-now, no `expire_due`, no promote, no `next_token`), mirroring
   `record.view(name, now)` already used by `barrier_get`/`task_get`. Move any promotion/
   minting exclusively into `apply_at`. **First write P3-2** (fencing monotonicity across
@@ -71,8 +73,10 @@ Test-first. This is the crown jewel; a wrong fix is worse than the bug.
   commit/snapshot) and P3-5 (reconcile fixed-point).
 - **H11** — derive brain placement `generation` from the Raft commit index; confirm the
   node/LB poller compares `!=` not `>`.
-- **C4** — persist the bridge file-lease fencing high-water and restore `max+1` on boot;
-  add a `file_leases` table so leases survive restart. bridge `state.rs:121,152,153`.
+- **C4 (Done)** — persist the compatibility file-lease fencing high-water and active leases
+  in a synchronous local journal; restore unexpired leases and a non-regressing token floor
+  on boot. The Postgres mirror is best-effort, so it is not a fencing authority. bridge
+  `state.rs:121,152,153`.
 
 ### WS-2 — Failure-detection & placement safety (chains with C3)
 - **H1** — track brain node liveness on `Instant`/monotonic elapsed, not `SystemTime`;
@@ -96,10 +100,10 @@ Test-first. This is the crown jewel; a wrong fix is worse than the bug.
   `inbox_try_insert` toward `PgInbox` (M3), split scheduler claim-from-complete (M4).
 
 ### WS-4 — Auth assurance-level (root-cause hardening behind the C1 fix)
-- **H13** — thread the verified factor state / token `aal` into `UserCtx`; have `/v1/me` (or
+- **H13 (Done)** — thread the verified factor state / token `aal` into `UserCtx`; have `/v1/me` (or
   the customer session context) reject or downgrade an aal1 session when the account has a
   verified factor. This is the *token-level* backstop; C1 fixed only the one flow.
-- **H14** — require a fresh aal2 (current TOTP) before any factor mutation (enroll/disable),
+- **H14 (Done)** — require a fresh aal2 (current TOTP) before any factor mutation (enroll/disable),
   so a password-only session can't strip MFA.
 - Backfill P3-6 (real-signature JWKS coverage), P3-7 (CAS exhaustion), P3-11 (aal1 rejection),
   P3-12 (alg-confusion regression guards).
@@ -141,19 +145,22 @@ Test-first. This is the crown jewel; a wrong fix is worse than the bug.
 3. Verify: `rustup run 1.95.0-aarch64-apple-darwin cargo test` (with `RUSTC`+`RUSTDOC`
    pinned — see below).
 
-### C2 — node read-path mutation (highest value; ~M, test-first)
+### C2 — node read-path mutation (Done; test-first)
 1. Tests: (a) "inventory read on a follower leaves `last_applied` and the fencing counter
    unchanged"; (b) P3-2 monotonic-mint-after-restore.
 2. Fix: introduce pure `*_live_at(now)` variants for lock/semaphore/election inventories that
    compute expiry/promotion *views* without mutating `self`; route `handle_query_local`
    through them. Leave `expire_due`/`*_promote`/`next_token` reachable **only** from `apply_at`.
-3. Verify: the full node suite (205 tests) stays green; the two new tests pass.
+3. Verify: the full node suite (209 tests) stays green; the new purity and
+   snapshot→restore monotonicity tests pass.
 
-### C4 — bridge lease durability (~M)
+### C4 — bridge lease durability (Done)
 1. Test: acquire a lease (token N), simulate restart (rebuild `State`), acquire again; assert
    the new token `> N` and the prior lease is either restored or its token never reused.
-2. Fix: persist the fencing high-water (and ideally the lease rows) to Postgres; on boot set
-   `next_file_fencing_token = max(persisted)+1`. Minimum viable: never regress the counter.
+2. Fix: synchronously journal the compatibility lease fencing high-water and active leases;
+   fsync the journal before responding and restore a non-regressing token floor (and
+   unexpired leases) on boot. The asynchronous Postgres mirror is not used as a fence.
+3. Verify: the bridge unit, hardening, HTTP, preflight, and TCP test suites pass.
 
 ---
 
@@ -178,11 +185,10 @@ Test-first. This is the crown jewel; a wrong fix is worse than the bug.
 
 ## Suggested order of attack
 
-1. **WS-0 quick wins** (a day) — C3, H10, H17, H12, M6, config/supply-chain hygiene.
-2. **WS-4 auth backstop** (H13/H14) — closes the class C1 belonged to.
-3. **WS-1 coordination core** (C2 + brain-Raft rigor) — the big correctness rock, test-first.
-4. **WS-2/WS-3** in parallel — failure-detection safety and messaging integrity.
-5. **WS-5 infra** and **WS-6 contract/identity/tests** — steady background workstreams.
+1. **WS-0 remaining quick wins** — H10, config/supply-chain hygiene.
+2. **WS-1 remaining coordination core** — brain-Raft rigor, H11, test-first.
+3. **WS-2/WS-3** — failure-detection safety and messaging integrity.
+4. **WS-5 infra** and **WS-6 contract/identity/tests** — steady background workstreams.
 
 Each item in the backlog carries CONFIRMED vs SUSPECTED — start CONFIRMED, and reproduce any
 SUSPECTED item (H5 brain drain-ack, M-signedness, poller comparison operator) before changing
