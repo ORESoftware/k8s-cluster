@@ -8,10 +8,12 @@
 
 use crate::auth::AuthedDevice;
 use crate::error::ApiError;
+use crate::protocol::{
+    KdfParams, PullResponse, PushRequest, PushResponse, SealedBlob, VersionEntry, VersionVector,
+};
+use base64::Engine;
 use sqlx::types::Json;
 use sqlx::PgPool;
-use crate::protocol::{KdfParams, PullResponse, PushRequest, PushResponse, SealedBlob, VersionEntry,
-    VersionVector};
 use uuid::Uuid;
 
 // ---- pure version-vector logic (unit-tested without a DB) ----
@@ -57,12 +59,12 @@ pub fn reconcile(
 
 // ---- DB-backed handlers ----
 
-type BlobRow = (Vec<u8>, Vec<u8>, Vec<u8>, Json<KdfParams>, Json<VersionVector>);
+type BlobRow = (String, String, String, Json<KdfParams>, Json<VersionVector>);
 
 pub async fn load(pool: &PgPool, account_id: Uuid) -> Result<PullResponse, ApiError> {
     let row: Option<BlobRow> = sqlx::query_as(
         "SELECT ciphertext, nonce, kdf_salt, kdf_params, version \
-         FROM vault_blobs WHERE account_id = $1",
+         FROM threefa.vault_blobs WHERE account_id = $1",
     )
     .bind(account_id)
     .fetch_optional(pool)
@@ -71,9 +73,15 @@ pub async fn load(pool: &PgPool, account_id: Uuid) -> Result<PullResponse, ApiEr
     Ok(match row {
         Some((ciphertext, nonce, kdf_salt, params, version)) => PullResponse {
             blob: Some(SealedBlob {
-                ciphertext,
-                nonce,
-                kdf_salt,
+                ciphertext: base64::engine::general_purpose::STANDARD
+                    .decode(ciphertext)
+                    .map_err(|_| ApiError::Internal)?,
+                nonce: base64::engine::general_purpose::STANDARD
+                    .decode(nonce)
+                    .map_err(|_| ApiError::Internal)?,
+                kdf_salt: base64::engine::general_purpose::STANDARD
+                    .decode(kdf_salt)
+                    .map_err(|_| ApiError::Internal)?,
                 kdf_params: params.0,
             }),
             version: version.0,
@@ -90,14 +98,28 @@ pub async fn store(
     who: AuthedDevice,
     req: &PushRequest,
 ) -> Result<PushResponse, ApiError> {
+    // Reject malformed or hostile envelopes *before* touching the DB: enforce the
+    // crypto shape (nonce/salt/ciphertext bounds) and sane KDF params (so a peer
+    // device can't be made to allocate gigabytes on the next pull), and bound the
+    // client-supplied device id (charset + length) so it can't inject junk into
+    // the version vector. The server still never decrypts — this is pure shape.
+    if !req.blob.is_well_formed()
+        || !crate::protocol::device_id_is_valid(&req.device_id)
+        || !crate::protocol::version_vector_is_well_formed(&req.base_version)
+        || req.device_id != who.device_id.to_string()
+    {
+        return Err(ApiError::BadRequest);
+    }
+
     // Read current version (default empty), reconcile, then upsert atomically.
     let mut tx = pool.begin().await?;
 
-    let current: Option<Json<VersionVector>> =
-        sqlx::query_scalar("SELECT version FROM vault_blobs WHERE account_id = $1 FOR UPDATE")
-            .bind(who.account_id)
-            .fetch_optional(&mut *tx)
-            .await?;
+    let current: Option<Json<VersionVector>> = sqlx::query_scalar(
+        "SELECT version FROM threefa.vault_blobs WHERE account_id = $1 FOR UPDATE",
+    )
+    .bind(who.account_id)
+    .fetch_optional(&mut *tx)
+    .await?;
     let stored = current.map(|j| j.0).unwrap_or_default();
 
     let new_version = match reconcile(&stored, &req.base_version, &req.device_id) {
@@ -108,8 +130,19 @@ pub async fn store(
         }
     };
 
+    // Cap version-vector cardinality so a spoofed stream of distinct device ids
+    // can't grow the stored JSON without bound (each push rewrites it under lock).
+    if new_version.len() > crate::protocol::MAX_VERSION_ENTRIES {
+        tx.rollback().await?;
+        return Err(ApiError::BadRequest);
+    }
+
+    let ciphertext = base64::engine::general_purpose::STANDARD.encode(&req.blob.ciphertext);
+    let nonce = base64::engine::general_purpose::STANDARD.encode(&req.blob.nonce);
+    let kdf_salt = base64::engine::general_purpose::STANDARD.encode(&req.blob.kdf_salt);
+
     sqlx::query(
-        "INSERT INTO vault_blobs (account_id, ciphertext, nonce, kdf_salt, kdf_params, version, updated_at) \
+        "INSERT INTO threefa.vault_blobs (account_id, ciphertext, nonce, kdf_salt, kdf_params, version, updated_at) \
          VALUES ($1, $2, $3, $4, $5, $6, now()) \
          ON CONFLICT (account_id) DO UPDATE SET \
            ciphertext = EXCLUDED.ciphertext, nonce = EXCLUDED.nonce, \
@@ -117,16 +150,18 @@ pub async fn store(
            version = EXCLUDED.version, updated_at = now()",
     )
     .bind(who.account_id)
-    .bind(&req.blob.ciphertext)
-    .bind(&req.blob.nonce)
-    .bind(&req.blob.kdf_salt)
+    .bind(ciphertext)
+    .bind(nonce)
+    .bind(kdf_salt)
     .bind(Json(req.blob.kdf_params))
     .bind(Json(&new_version))
     .execute(&mut *tx)
     .await?;
 
     tx.commit().await?;
-    Ok(PushResponse::Ok { version: new_version })
+    Ok(PushResponse::Ok {
+        version: new_version,
+    })
 }
 
 #[cfg(test)]
@@ -183,5 +218,60 @@ mod tests {
         assert!(dominates(&vv(&[("a", 2)]), &vv(&[("a", 1)])));
         assert!(!dominates(&vv(&[("a", 1)]), &vv(&[("a", 2)])));
         assert!(dominates(&vv(&[("a", 1), ("b", 1)]), &vv(&[("a", 1)])));
+    }
+
+    #[test]
+    fn concurrent_vectors_dominate_neither_way() {
+        // Each side has an event the other has not observed: true concurrency.
+        let left = vv(&[("a", 2), ("b", 1)]);
+        let right = vv(&[("a", 1), ("b", 2)]);
+        assert!(!dominates(&left, &right));
+        assert!(!dominates(&right, &left));
+    }
+
+    #[test]
+    fn empty_vector_dominance() {
+        let empty = vv(&[]);
+        let some = vv(&[("a", 1)]);
+        // Everything (including empty) dominates the empty history...
+        assert!(dominates(&empty, &empty));
+        assert!(dominates(&some, &empty));
+        // ...but the empty history dominates nothing non-empty.
+        assert!(!dominates(&empty, &some));
+    }
+
+    #[test]
+    fn bump_adds_absent_device_and_preserves_others() {
+        let base = vv(&[("a", 3)]);
+        let out = bump(&base, "b");
+        assert_eq!(counter_for(&out, "a"), 3);
+        assert_eq!(counter_for(&out, "b"), 1);
+        assert_eq!(out.len(), 2);
+        // Bumping an existing device increments only that entry.
+        let again = bump(&out, "b");
+        assert_eq!(counter_for(&again, "b"), 2);
+        assert_eq!(counter_for(&again, "a"), 3);
+    }
+
+    #[test]
+    fn concurrent_push_conflicts_even_if_client_advanced_itself() {
+        // Client advanced its own counter but never observed devB's write:
+        // its base does not dominate the stored vector, so it must pull+merge.
+        let stored = vv(&[("devA", 1), ("devB", 1)]);
+        let base = vv(&[("devA", 2)]);
+        let err = reconcile(&stored, &base, "devA").unwrap_err();
+        assert_eq!(err, stored);
+    }
+
+    #[test]
+    fn reconcile_accepts_superset_base_from_new_device() {
+        // A freshly-enrolled device pulled (observing devA/devB) and merged in
+        // history from a third source; its base strictly dominates the stored
+        // version, so the push lands and only its own counter is bumped.
+        let stored = vv(&[("devA", 1)]);
+        let base = vv(&[("devA", 1), ("devC", 5)]);
+        let out = reconcile(&stored, &base, "devC").unwrap();
+        assert_eq!(counter_for(&out, "devA"), 1);
+        assert_eq!(counter_for(&out, "devC"), 6);
     }
 }

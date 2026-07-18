@@ -1,6 +1,6 @@
 # Default-deny with explicit allows. The sync server only needs: ingress from
-# the ingress controller, egress to Postgres and DNS. It never makes outbound
-# calls to the public internet.
+# the ingress controller, egress to Postgres, DNS, and the in-cluster OTLP
+# collector. It never makes outbound calls to the public internet.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -19,6 +19,14 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
+    # Prometheus scrapes /metrics on the same HTTP port.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 8080
   egress:
     # DNS
     - to:
@@ -34,3 +42,13 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
+    # Explicit OTLP/HTTP span export. Keep this namespace- and port-scoped so
+    # telemetry works without opening general egress from the zero-knowledge
+    # vault service.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 4318

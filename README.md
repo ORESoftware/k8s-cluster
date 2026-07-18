@@ -1,3 +1,13 @@
+<!-- BEGIN k8s-cluster-submodule-notice -->
+> [!NOTE]
+> **Canonical source.** This repository is the source of truth for its code. It
+> is also vendored as a **secondary** git submodule of
+> [ORESoftware/k8s-cluster](https://github.com/ORESoftware/k8s-cluster) at
+> `remote/deployments/3fa-backend` — make changes here, not in that submodule checkout.
+>
+> On disk: source clone `~/codes/3FA-app/3fa-backend.rs` · submodule checkout `~/codes/ores/k8s-cluster/remote/deployments/3fa-backend`.
+<!-- END k8s-cluster-submodule-notice -->
+
 # 3FA — Sync Server (backend)
 
 Zero-knowledge sync for the 3FA authenticator. The server stores only an opaque,
@@ -23,6 +33,8 @@ seeds or your password. Written in Rust (axum + sqlx/Postgres).
 | POST   | `/v1/vault`           | ✓    | Push a sealed vault blob (version-vector reconciled) |
 | POST   | `/v1/devices/revoke`  | ✓    | Revoke a device's sync token         |
 | GET    | `/healthz`            | —    | Liveness                             |
+| GET    | `/readyz`             | —    | Postgres readiness                   |
+| GET    | `/metrics`            | —    | Prometheus metrics                   |
 
 ## Security model
 
@@ -34,16 +46,45 @@ seeds or your password. Written in Rust (axum + sqlx/Postgres).
   reaches the server at all.
 - **Sync.** Per-device version vectors give last-writer-wins-with-merge; a stale
   push gets a `Conflict` and must pull/merge/retry.
+- **Telemetry boundary.** Ciphertext, passwords, bearer tokens, auth hashes, and
+  device secrets must never be placed in logs, spans, metric labels, or message
+  payloads. The server intentionally does not publish vault operations to the
+  shared NATS bus: Postgres is the authoritative sync boundary. Any future NATS
+  integration must use a generated subject contract and emit only compact,
+  redacted lifecycle identifiers after the database transaction commits.
 
 ## Run locally
 
 ```bash
+DATABASE_URL=postgres://user:pass@localhost/threefa sqlx migrate run
 DATABASE_URL=postgres://user:pass@localhost/threefa cargo run
-# runs migrations on startup, serves on :8080 (override with BIND_ADDR)
+# serves on :8080 (override with BIND_ADDR)
 ```
+
+Migrations are an explicit operator step: the server never applies DDL on
+startup. Review the SQL before running `sqlx migrate run`, and use the shared
+declarative Postgres contract when deploying into the ORES cluster. Migration
+`0002_isolate_threefa_schema.sql` moves the legacy public tables into the
+service-owned `threefa` schema; confirm that the source tables belong to 3FA
+before applying it to a shared database.
 
 `sqlx` uses runtime (non-macro) queries, so **no live database is needed to
 build** — only to run.
+
+The dependency lock currently requires Rust 1.88 or newer. The deployment
+builder is pinned to the multi-architecture Rust 1.95 Bookworm image digest.
+
+## Observability
+
+- JSON `tracing` records go to stdout for Promtail/Loki collection.
+- HTTP spans preserve W3C `traceparent` and export over OTLP/HTTP. Configure
+  `OTEL_EXPORTER_OTLP_ENDPOINT` or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`.
+- The default-deny NetworkPolicy permits OTLP only to TCP `4318` in the
+  `observability` namespace; no general Internet egress is opened.
+- `/metrics` exposes bounded route/status counters, request latency histograms,
+  and vault-conflict counts for Prometheus.
+- `THREEFA_AUTH_MAX_CONCURRENT` (default `2`) bounds concurrent Argon2 work;
+  excess login/register requests fail with `429` instead of exhausting memory.
 
 ## Layout
 
@@ -52,7 +93,7 @@ src/app.rs        Router, handlers, app state
 src/auth.rs       Argon2id verifier + bearer tokens (OPAQUE seam)
 src/vault_blob.rs Sealed-blob store + version-vector reconciliation
 src/devices.rs    Device registration / revocation
-src/db.rs         Pool + migration runner
+src/db.rs         Bounded Postgres pool (DDL stays operator-owned)
 src/protocol.rs   Wire-protocol DTOs (duplicated with the frontend)
 migrations/       sqlx Postgres migrations
 deploy/           Dockerfile + k8s/ArgoCD manifests
@@ -66,3 +107,11 @@ To the ORES `k8s-cluster` as a git submodule — see
 ## License
 
 MIT OR Apache-2.0
+
+> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack). This
+> service still uses direct sqlx — conversion to SeaORM is pending; see the
+> fiducia-messaging.rs migration for the reference playbook.
+
+> **Locking/leases:** if this service ever needs distributed locks or leases,
+> use the fiducia-cloud primitives (github.com/fiducia-cloud) rather than
+> rolling our own.

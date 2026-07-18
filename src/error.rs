@@ -8,16 +8,22 @@ use axum::response::{IntoResponse, Response};
 pub enum ApiError {
     #[error("unauthorized")]
     Unauthorized,
-    // Vault push conflicts are returned as `PushResponse::Conflict` (200 body),
-    // not an HTTP error; kept here for completeness of the error surface.
-    #[allow(dead_code)]
+    // Returned when registration hits a unique-constraint (username taken).
+    // (Vault *push* conflicts are a 200 `PushResponse::Conflict` body, not this.)
     #[error("conflict")]
     Conflict,
     #[error("bad request")]
     BadRequest,
+    #[error("too many requests")]
+    TooManyRequests,
     #[error("internal error")]
     Internal,
 }
+
+// Note: a Postgres unique-violation (SQLSTATE 23505) is folded to a coarse 409
+// `Conflict` at the one site that can hit it — `register` in `app.rs`, via an
+// explicit `is_unique_violation()` match. Every other sqlx error flows through
+// the blanket `From` below to an opaque `Internal` (logged server-side).
 
 impl From<sqlx::Error> for ApiError {
     fn from(e: sqlx::Error) -> Self {
@@ -32,9 +38,40 @@ impl IntoResponse for ApiError {
             ApiError::Unauthorized => StatusCode::UNAUTHORIZED,
             ApiError::Conflict => StatusCode::CONFLICT,
             ApiError::BadRequest => StatusCode::BAD_REQUEST,
+            ApiError::TooManyRequests => StatusCode::TOO_MANY_REQUESTS,
             ApiError::Internal => StatusCode::INTERNAL_SERVER_ERROR,
         };
         // Body intentionally minimal.
         (code, self.to_string()).into_response()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_variant_maps_to_its_status_code() {
+        let cases = [
+            (ApiError::Unauthorized, StatusCode::UNAUTHORIZED),
+            (ApiError::Conflict, StatusCode::CONFLICT),
+            (ApiError::BadRequest, StatusCode::BAD_REQUEST),
+            (ApiError::TooManyRequests, StatusCode::TOO_MANY_REQUESTS),
+            (ApiError::Internal, StatusCode::INTERNAL_SERVER_ERROR),
+        ];
+        for (err, expected) in cases {
+            assert_eq!(err.into_response().status(), expected);
+        }
+    }
+
+    #[test]
+    fn sqlx_errors_fold_to_opaque_internal() {
+        // Any DB error must surface as a leak-free 500, never a detailed body.
+        let err: ApiError = sqlx::Error::RowNotFound.into();
+        assert!(matches!(err, ApiError::Internal));
+        assert_eq!(
+            err.into_response().status(),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
     }
 }

@@ -11,7 +11,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: git@github.com:ORESoftware/3fa-backend.rs.git
+    repoURL: git@github.com:3FA-app/3fa-backend.rs.git
     targetRevision: main
     path: deploy/k8s
   destination:
