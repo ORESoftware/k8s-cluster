@@ -391,6 +391,8 @@ spec:
             path: /home/ec2-user/codes/dd/dd-next-1
             type: DirectoryOrCreate
         - name: build-cache
-          emptyDir: {}
+          hostPath:
+            path: /home/ec2-user/.cache/dd-sound-recorder-rs
+            type: DirectoryOrCreate
         - name: tmp
           emptyDir: {}
