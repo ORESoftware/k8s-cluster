@@ -40,7 +40,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: fiducia-brain
-          image: docker.io/library/rust:1.95.0-bookworm
+          image: docker.io/library/rust:1.90-bookworm
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -162,7 +162,7 @@ spec:
         # brain's /v1/status rollup into Prometheus text on :8091/metrics, scraped
         # by the fiducia-brain-sidecar job. Builds from source in-pod like the rest.
         - name: fiducia-brain-sidecar
-          image: docker.io/library/rust:1.95.0-bookworm
+          image: docker.io/library/rust:1.90-bookworm
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
