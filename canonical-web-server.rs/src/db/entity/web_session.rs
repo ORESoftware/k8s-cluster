@@ -16,6 +16,10 @@ pub struct Model {
     pub updated_at: DateTimeUtc,
     pub expires_at: DateTimeUtc,
     pub revoked_at: Option<DateTimeUtc>,
+    pub revocation_pending_at: Option<DateTimeUtc>,
+    pub revocation_next_attempt_at: Option<DateTimeUtc>,
+    pub revocation_attempts: i32,
+    pub upstream_revoked_at: Option<DateTimeUtc>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

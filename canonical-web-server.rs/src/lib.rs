@@ -32,6 +32,7 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub db: sea_orm::DatabaseConnection,
     pub auth: Arc<dyn auth::AuthProvider>,
+    pub login_rate_limiter: auth::LoginRateLimiter,
     pub sessions: auth::SessionService,
     pub hub: ws::Hub,
 }
@@ -49,11 +50,17 @@ impl AppState {
             &config.session_encryption_key,
             config.session_ttl,
         )?;
+        let login_rate_limiter = auth::LoginRateLimiter::new(
+            config.login_rate_limit_attempts,
+            config.login_rate_limit_window,
+            config.login_rate_limit_max_keys,
+        );
 
         Ok(Self {
             config,
             db,
             auth,
+            login_rate_limiter,
             sessions,
             hub: ws::Hub::new(256),
         })
@@ -117,6 +124,27 @@ pub fn build_app(state: AppState) -> Router {
             header::REFERRER_POLICY,
             HeaderValue::from_static("strict-origin-when-cross-origin"),
         ),
+        SetResponseHeaderLayer::if_not_present(
+            header::X_FRAME_OPTIONS,
+            HeaderValue::from_static("DENY"),
+        ),
+        SetResponseHeaderLayer::if_not_present(
+            HeaderName::from_static("permissions-policy"),
+            HeaderValue::from_static(
+                "camera=(), geolocation=(), microphone=(), payment=(), usb=()",
+            ),
+        ),
+        SetResponseHeaderLayer::if_not_present(
+            HeaderName::from_static("cross-origin-opener-policy"),
+            HeaderValue::from_static("same-origin"),
+        ),
+        // Browsers only honor HSTS when the response was delivered over HTTPS.
+        // The public gateway must also redirect cleartext requests before they
+        // can reach this process.
+        SetResponseHeaderLayer::if_not_present(
+            header::STRICT_TRANSPORT_SECURITY,
+            HeaderValue::from_static("max-age=31536000"),
+        ),
         CompressionLayer::new(),
         TraceLayer::new_for_http(),
     ))
@@ -133,6 +161,7 @@ pub async fn run(config: Config) -> Result<(), AppError> {
     } else {
         None
     };
+    let _revocation_worker = state.sessions.spawn_revocation_worker();
     let app = build_app(state);
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     let listener = tokio::net::TcpListener::bind(addr).await?;

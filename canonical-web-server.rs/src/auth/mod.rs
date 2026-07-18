@@ -1,10 +1,12 @@
 mod extractor;
+mod rate_limit;
 mod session;
 mod supabase;
 
 pub use extractor::{
     require_csrf, require_origin, Authenticated, OptionalAuthenticated, SessionAuthenticated,
 };
+pub use rate_limit::LoginRateLimiter;
 pub use session::{CreatedSession, SessionService};
 pub use supabase::{AuthProvider, AuthProviderError, AuthTokens, SupabaseAuth, SupabaseUser};
 

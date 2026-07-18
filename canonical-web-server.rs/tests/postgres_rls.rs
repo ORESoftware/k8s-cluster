@@ -378,6 +378,9 @@ async fn assert_page_routes_use_rls_context(
         cookie_secure: false,
         session_encryption_key: vec![7; 32],
         session_ttl: Duration::from_secs(30 * 24 * 60 * 60),
+        login_rate_limit_attempts: 5,
+        login_rate_limit_window: Duration::from_secs(600),
+        login_rate_limit_max_keys: 4_096,
         supabase_url: "http://localhost:9999".into(),
         supabase_publishable_key: "test-publishable-key".into(),
     };

@@ -7,7 +7,7 @@ use crate::{
     views, AppState,
 };
 use axum::{
-    extract::{Form, State},
+    extract::{DefaultBodyLimit, Form, State},
     http::{HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Redirect, Response},
     routing::post,
@@ -23,6 +23,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/login", post(login))
         .route("/logout", post(logout))
+        .layer(DefaultBodyLimit::max(16 * 1024))
         .fallback(auth_not_found)
 }
 
@@ -67,6 +68,12 @@ async fn login(
     if !csrf_matches {
         return Err(AppError::Forbidden);
     }
+    if let Err(retry_after_seconds) = state.login_rate_limiter.check(&form.email).await {
+        tracing::warn!(retry_after_seconds, "login attempt rate limited");
+        return Err(AppError::RateLimited {
+            retry_after_seconds,
+        });
+    }
 
     let tokens = match state
         .auth
@@ -95,6 +102,7 @@ async fn login(
         }
     };
     let created = state.sessions.create(tokens).await?;
+    tracing::info!(user_id = %created.context.user_id, "password login succeeded");
     let max_age = time::Duration::seconds(
         state
             .config
@@ -146,6 +154,7 @@ async fn logout(
     if let Some(cookie) = jar.get(&state.config.session_cookie) {
         state.sessions.revoke(cookie.value()).await?;
     }
+    tracing::info!(user_id = %actor.user_id, "session logout completed");
     let jar = jar.remove(removal_cookie(
         state.config.session_cookie.clone(),
         state.config.cookie_secure,

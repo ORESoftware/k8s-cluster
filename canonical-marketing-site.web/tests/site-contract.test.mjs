@@ -39,6 +39,24 @@ test("layout keeps production metadata and viewport controls", () => {
   assert.match(layout, /property="og:title"/);
   assert.match(layout, /property="og:description"/);
   assert.match(layout, /<title>\{title\} \| canonical\.cloud<\/title>/);
+  assert.match(layout, /target="_blank" rel="noopener noreferrer"/);
+});
+
+test("static image supplies the same defensive headers as the server fallback", async () => {
+  const dockerfile = await readFile(new URL("../Dockerfile", import.meta.url), "utf8");
+  const nginx = await readFile(new URL("../nginx.conf", import.meta.url), "utf8");
+
+  assert.match(dockerfile, /COPY nginx\.conf \/etc\/nginx\/conf\.d\/default\.conf/);
+  for (const header of [
+    "Content-Security-Policy",
+    "X-Content-Type-Options",
+    "Referrer-Policy",
+    "X-Frame-Options",
+    "Permissions-Policy",
+    "Cross-Origin-Opener-Policy",
+  ]) {
+    assert.match(nginx, new RegExp(`add_header ${header}`));
+  }
 });
 
 test("layout keeps base-aware links so the site works behind a gateway prefix", () => {

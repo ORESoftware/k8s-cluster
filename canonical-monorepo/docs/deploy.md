@@ -58,8 +58,18 @@ platform rather than committing them. The server requires:
   key) for Auth;
 - a unique 32-byte `APP_SESSION_ENCRYPTION_KEY`, base64 encoded, plus the exact
   public `APP_BASE_URL` and `APP_ALLOWED_ORIGINS`; and
+- `COOKIE_SECURE=true`, a `__Host-` session cookie, and bounded
+  `LOGIN_RATE_LIMIT_*` settings. The application performs a bounded per-account
+  throttle; the gateway must enforce the authoritative trusted-client-IP limit
+  before requests reach the server; and
 - `STATIC_DIR` and `APP_ASSET_DIR` pointing at the two built browser asset
   directories.
+
+The public gateway must terminate TLS, redirect cleartext traffic, and set HSTS
+for the public hostname. It must preserve `Origin` and WebSocket upgrade
+headers only for the application routes. The Rust fallback and the marketing
+nginx image both send CSP, anti-framing, referrer, permissions, and opener
+headers; do not remove or overwrite them at the gateway.
 
 Schema changes against Supabase are managed declaratively with
 [dpm](https://github.com/declarative-migrations/declarative-postgres-migrate.rs).
@@ -109,6 +119,18 @@ Supabase Postgres is the source of truth. IndexedDB accepts optimistic local
 writes and keeps an idempotent outbox, REST performs push/pull reconciliation,
 and HTMX-owned WebSocket messages only trigger a durable REST pull. The client
 opens its fallback socket only when embedded outside the Maud application shell.
+
+Local logout is authoritative immediately. A narrowly scoped worker then
+retries a failed upstream Supabase sign-out with a database-backed lease and
+bounded exponential backoff; it also revokes expired local sessions and prunes
+confirmed revocations after seven days. This worker is not a general system-job
+identity and must not be extended to bypass customer RLS. Future administrative
+or background services need their own least-privilege deployment identity.
+
+Keep privileged operations out of the customer application. Before an admin
+surface exists, define its separate origin/service, MFA or reauthentication,
+immutable audit records, and narrowly scoped Supabase credential. Never place a
+service-role key in this server's runtime environment.
 
 ## Health checks
 

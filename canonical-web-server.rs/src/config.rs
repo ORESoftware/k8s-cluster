@@ -16,6 +16,9 @@ pub struct Config {
     pub cookie_secure: bool,
     pub session_encryption_key: Vec<u8>,
     pub session_ttl: Duration,
+    pub login_rate_limit_attempts: u32,
+    pub login_rate_limit_window: Duration,
+    pub login_rate_limit_max_keys: usize,
     pub supabase_url: String,
     pub supabase_publishable_key: String,
 }
@@ -52,6 +55,9 @@ impl std::fmt::Debug for Config {
             .field("cookie_secure", &self.cookie_secure)
             .field("session_encryption_key", &"[REDACTED]")
             .field("session_ttl", &self.session_ttl)
+            .field("login_rate_limit_attempts", &self.login_rate_limit_attempts)
+            .field("login_rate_limit_window", &self.login_rate_limit_window)
+            .field("login_rate_limit_max_keys", &self.login_rate_limit_max_keys)
             .field("supabase_url", &self.supabase_url)
             .field("supabase_publishable_key", &"[REDACTED]")
             .finish()
@@ -125,6 +131,12 @@ impl Config {
         let supabase_url = validated_supabase_url(required("SUPABASE_URL")?)?;
 
         let session_ttl_days = optional_parse::<u64>("APP_SESSION_TTL_DAYS", 30)?;
+        if !(1..=30).contains(&session_ttl_days) {
+            return Err(ConfigError::Invalid {
+                name: "APP_SESSION_TTL_DAYS",
+                message: "must be between 1 and 30 days".into(),
+            });
+        }
         let session_ttl = session_ttl_from_days(session_ttl_days)?;
 
         let session_cookie =
@@ -133,6 +145,41 @@ impl Config {
             return Err(ConfigError::Invalid {
                 name: "APP_SESSION_COOKIE",
                 message: "a __Host- cookie requires COOKIE_SECURE=true".into(),
+            });
+        }
+        if !is_loopback_origin(&app_base_url) && !cookie_secure {
+            return Err(ConfigError::Invalid {
+                name: "COOKIE_SECURE",
+                message: "must be true for non-loopback application origins".into(),
+            });
+        }
+        if !is_loopback_origin(&app_base_url) && !session_cookie.starts_with("__Host-") {
+            return Err(ConfigError::Invalid {
+                name: "APP_SESSION_COOKIE",
+                message: "must use a __Host- prefix for non-loopback application origins".into(),
+            });
+        }
+
+        let login_rate_limit_attempts = optional_parse("LOGIN_RATE_LIMIT_ATTEMPTS", 5)?;
+        if !(1..=20).contains(&login_rate_limit_attempts) {
+            return Err(ConfigError::Invalid {
+                name: "LOGIN_RATE_LIMIT_ATTEMPTS",
+                message: "must be between 1 and 20".into(),
+            });
+        }
+        let login_rate_limit_window_seconds =
+            optional_parse::<u64>("LOGIN_RATE_LIMIT_WINDOW_SECONDS", 600)?;
+        if !(1..=3_600).contains(&login_rate_limit_window_seconds) {
+            return Err(ConfigError::Invalid {
+                name: "LOGIN_RATE_LIMIT_WINDOW_SECONDS",
+                message: "must be between 1 and 3600 seconds".into(),
+            });
+        }
+        let login_rate_limit_max_keys = optional_parse("LOGIN_RATE_LIMIT_MAX_KEYS", 4_096)?;
+        if !(128..=65_536).contains(&login_rate_limit_max_keys) {
+            return Err(ConfigError::Invalid {
+                name: "LOGIN_RATE_LIMIT_MAX_KEYS",
+                message: "must be between 128 and 65536".into(),
             });
         }
 
@@ -153,10 +200,22 @@ impl Config {
             cookie_secure,
             session_encryption_key,
             session_ttl,
+            login_rate_limit_attempts,
+            login_rate_limit_window: Duration::from_secs(login_rate_limit_window_seconds),
+            login_rate_limit_max_keys,
             supabase_url,
             supabase_publishable_key: required("SUPABASE_PUBLISHABLE_KEY")?,
         })
     }
+}
+
+fn is_loopback_origin(origin: &str) -> bool {
+    reqwest::Url::parse(origin)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_owned))
+        .is_some_and(|host| {
+            host.eq_ignore_ascii_case("localhost") || host == "127.0.0.1" || host == "::1"
+        })
 }
 
 fn validated_origin(name: &'static str, value: &str) -> Result<String, ConfigError> {

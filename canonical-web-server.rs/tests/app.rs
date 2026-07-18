@@ -93,6 +93,32 @@ struct RotatingAuth {
     calls: Arc<AtomicUsize>,
 }
 
+#[derive(Clone)]
+struct UnavailableLogoutAuth;
+
+#[async_trait]
+impl AuthProvider for UnavailableLogoutAuth {
+    async fn password_sign_in(
+        &self,
+        _email: &str,
+        _password: &str,
+    ) -> Result<AuthTokens, AuthProviderError> {
+        unreachable!("the logout fixture creates tokens directly")
+    }
+
+    async fn refresh(&self, _refresh_token: &str) -> Result<AuthTokens, AuthProviderError> {
+        unreachable!("the logout fixture does not refresh")
+    }
+
+    async fn user_for_token(&self, _access_token: &str) -> Result<SupabaseUser, AuthProviderError> {
+        unreachable!("the logout fixture does not authenticate bearer tokens")
+    }
+
+    async fn sign_out(&self, _access_token: &str) -> Result<(), AuthProviderError> {
+        Err(AuthProviderError::Unavailable)
+    }
+}
+
 #[async_trait]
 impl AuthProvider for RefreshFailureAuth {
     async fn password_sign_in(
@@ -231,6 +257,9 @@ async fn state() -> AppState {
         cookie_secure: false,
         session_encryption_key: vec![7; 32],
         session_ttl: Duration::from_secs(30 * 24 * 60 * 60),
+        login_rate_limit_attempts: 5,
+        login_rate_limit_window: Duration::from_secs(600),
+        login_rate_limit_max_keys: 4_096,
         supabase_url: "http://localhost:9999".into(),
         supabase_publishable_key: "test-publishable-key".into(),
     };
@@ -414,7 +443,59 @@ async fn invalid_htmx_login_returns_a_targeted_fragment_without_changing_the_pag
 }
 
 #[tokio::test]
-async fn app_csp_does_not_leak_onto_the_marketing_fallback() {
+async fn password_login_rate_limits_repeated_attempts_without_exposing_the_account() {
+    let app = app().await;
+    let login_page = app
+        .clone()
+        .oneshot(Request::get("/login").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let csrf_cookie = cookie_value(&login_page, "canonical_login_csrf").unwrap();
+
+    for _ in 0..5 {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post("/auth/login")
+                    .header(header::ORIGIN, "http://localhost:8081")
+                    .header(
+                        header::COOKIE,
+                        format!("canonical_login_csrf={csrf_cookie}"),
+                    )
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .body(Body::from(format!(
+                        "email=user%40example.com&password=wrong&csrf={csrf_cookie}"
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    let response = app
+        .oneshot(
+            Request::post("/auth/login")
+                .header(header::ORIGIN, "http://localhost:8081")
+                .header(
+                    header::COOKIE,
+                    format!("canonical_login_csrf={csrf_cookie}"),
+                )
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "email=user%40example.com&password=wrong&csrf={csrf_cookie}"
+                )))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(response.headers().get(header::RETRY_AFTER).unwrap(), "600");
+    assert_eq!(body_json(response).await["error"]["code"], "rate_limited");
+}
+
+#[tokio::test]
+async fn application_and_marketing_routes_receive_tailored_security_headers() {
     let app = app().await;
     let app_page = app
         .clone()
@@ -431,14 +512,26 @@ async fn app_csp_does_not_leak_onto_the_marketing_fallback() {
         .to_str()
         .unwrap()
         .contains("ws://localhost:8081"));
+    assert_eq!(
+        app_page.headers().get(header::X_FRAME_OPTIONS).unwrap(),
+        "DENY"
+    );
+    assert_eq!(
+        app_page.headers().get("permissions-policy").unwrap(),
+        "camera=(), geolocation=(), microphone=(), payment=(), usb=()"
+    );
 
     let marketing_fallback = app
         .oneshot(Request::get("/").body(Body::empty()).unwrap())
         .await
         .unwrap();
-    assert!(!marketing_fallback
+    assert!(marketing_fallback
         .headers()
-        .contains_key(header::CONTENT_SECURITY_POLICY));
+        .get(header::CONTENT_SECURITY_POLICY)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .contains("frame-ancestors 'none'"));
     assert_eq!(
         marketing_fallback
             .headers()
@@ -453,6 +546,54 @@ async fn app_csp_does_not_leak_onto_the_marketing_fallback() {
             .unwrap(),
         "strict-origin-when-cross-origin"
     );
+}
+
+#[tokio::test]
+async fn logout_marks_the_local_session_and_confirms_upstream_revocation() {
+    let state = state().await;
+    let created = state.sessions.create(tokens()).await.unwrap();
+    let session_hash = created.context.session_hash.unwrap();
+
+    state.sessions.revoke(&created.raw_id).await.unwrap();
+
+    let model = web_session::Entity::find_by_id(session_hash)
+        .one(&state.db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(model.revoked_at.is_some());
+    assert!(model.upstream_revoked_at.is_some());
+    assert!(model.revocation_pending_at.is_none());
+    assert!(model.revocation_next_attempt_at.is_none());
+    assert_eq!(model.revocation_attempts, 1);
+}
+
+#[tokio::test]
+async fn failed_logout_persists_a_retryable_upstream_revocation() {
+    let db = Database::connect("sqlite::memory:").await.unwrap();
+    Migrator::up(&db, None).await.unwrap();
+    let sessions = SessionService::new(
+        db.clone(),
+        Arc::new(UnavailableLogoutAuth),
+        &[7; 32],
+        Duration::from_secs(3600),
+    )
+    .unwrap();
+    let created = sessions.create(tokens()).await.unwrap();
+    let session_hash = created.context.session_hash.unwrap();
+
+    sessions.revoke(&created.raw_id).await.unwrap();
+
+    let model = web_session::Entity::find_by_id(session_hash)
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(model.revoked_at.is_some());
+    assert!(model.upstream_revoked_at.is_none());
+    assert!(model.revocation_pending_at.is_some());
+    assert!(model.revocation_next_attempt_at.is_some());
+    assert_eq!(model.revocation_attempts, 1);
 }
 
 #[tokio::test]

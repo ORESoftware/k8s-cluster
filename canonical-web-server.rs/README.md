@@ -90,6 +90,23 @@ REST clients may send a Supabase bearer token; the first implementation verifies
 it with the authenticating `/auth/v1/user` request rather than trusting decoded
 claims.
 
+`/auth/login` accepts only a 16 KiB form and has a bounded, normalized-account
+throttle before it contacts Supabase. Configure a stronger trusted-client-IP
+limit at the edge; this process intentionally does not trust forwarded-IP
+headers. Production origins fail startup unless cookies are secure and
+`__Host-` prefixed, and session lifetime is limited to 1–30 days.
+
+Logout revokes the opaque local session first, then confirms Supabase sign-out.
+An upstream outage creates a durable, encrypted-token-backed retry record. The
+server's narrowly scoped worker retries it with a short database lease and
+backoff, revokes expired local sessions, and prunes confirmed revocations after
+seven days. It is not a general background-job privilege boundary.
+
+Before adding an admin surface, create a separate origin/service with MFA or
+reauthentication, an immutable audit trail, and a narrowly scoped deployment
+credential. Do not add an owner-RLS bypass or a Supabase service-role key to the
+customer-facing server.
+
 The runtime `DATABASE_URL` must use a dedicated least-privilege Postgres role,
 not `postgres`, the table owner, or a role with `BYPASSRLS`. User-owned SeaORM
 operations install the validated user ID in transaction-local

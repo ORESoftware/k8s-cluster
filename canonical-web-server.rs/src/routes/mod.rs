@@ -14,10 +14,11 @@ use axum::{
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::set_header::SetResponseHeaderLayer;
 
-const APP_CONTENT_SECURITY_POLICY_PREFIX: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'";
+const APP_CONTENT_SECURITY_POLICY_PREFIX: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'";
+const MARKETING_CONTENT_SECURITY_POLICY: &str = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'";
 
 pub fn router(state: AppState) -> Router {
-    let marketing = ServeDir::new(&state.config.static_dir)
+    let marketing_files = ServeDir::new(&state.config.static_dir)
         .append_index_html_on_directories(true)
         .fallback(ServeFile::new(state.config.static_dir.join("index.html")));
     let app_assets = ServeDir::new(&state.config.app_asset_dir);
@@ -57,6 +58,12 @@ pub fn router(state: AppState) -> Router {
             header::CONTENT_SECURITY_POLICY,
             content_security_policy,
         ));
+    let marketing = Router::new().fallback_service(marketing_files).layer(
+        SetResponseHeaderLayer::if_not_present(
+            header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static(MARKETING_CONTENT_SECURITY_POLICY),
+        ),
+    );
 
     Router::new()
         .merge(application)

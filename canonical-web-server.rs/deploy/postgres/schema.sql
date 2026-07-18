@@ -132,7 +132,11 @@ CREATE TABLE public.web_session (
     created_at timestamp with time zone NOT NULL,
     updated_at timestamp with time zone NOT NULL,
     expires_at timestamp with time zone NOT NULL,
-    revoked_at timestamp with time zone
+    revoked_at timestamp with time zone,
+    revocation_pending_at timestamp with time zone,
+    revocation_next_attempt_at timestamp with time zone,
+    revocation_attempts integer DEFAULT 0 NOT NULL,
+    upstream_revoked_at timestamp with time zone
 );
 
 ALTER TABLE ONLY public.audit_engagement
@@ -171,6 +175,8 @@ CREATE INDEX engagement_note_engagement_created_idx ON public.engagement_note US
 CREATE INDEX engagement_note_owner_idx ON public.engagement_note USING btree (owner_id);
 
 CREATE INDEX sync_change_owner_cursor_idx ON public.sync_change USING btree (owner_id, cursor);
+
+CREATE INDEX web_session_revocation_retry_idx ON public.web_session USING btree (revocation_next_attempt_at);
 
 CREATE INDEX web_session_user_id_idx ON public.web_session USING btree (user_id);
 

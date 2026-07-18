@@ -13,11 +13,20 @@ use aes_gcm::{
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{Duration as ChronoDuration, Utc};
 use sea_orm::{
-    sea_query::OnConflict, ActiveModelTrait, ActiveValue::Set, DatabaseConnection, EntityTrait,
-    QuerySelect, TransactionTrait,
+    sea_query::OnConflict, ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection,
+    EntityTrait, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
 };
 use sha2::{Digest, Sha256};
 use std::{sync::Arc, time::Duration};
+use tokio::{
+    task::JoinHandle,
+    time::{self, MissedTickBehavior},
+};
+
+const REVOCATION_BATCH_SIZE: u64 = 32;
+const REVOCATION_WORKER_INTERVAL: Duration = Duration::from_secs(60);
+const REVOCATION_LEASE: ChronoDuration = ChronoDuration::seconds(30);
+const REVOCATION_RETENTION: ChronoDuration = ChronoDuration::days(7);
 
 #[derive(Clone)]
 pub struct SessionService {
@@ -31,6 +40,24 @@ pub struct CreatedSession {
     pub raw_id: String,
     pub csrf_token: String,
     pub context: AuthContext,
+}
+
+/// Owns the narrowly scoped retry loop for Supabase logout reconciliation.
+/// It never accesses user-owned RLS tables and is intentionally not a general
+/// background-job facility.
+pub struct RevocationWorkerTask(JoinHandle<()>);
+
+impl Drop for RevocationWorkerTask {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+struct RevocationClaim {
+    id_hash: String,
+    access_token: String,
+    attempts: i32,
+    user_id: uuid::Uuid,
 }
 
 impl SessionService {
@@ -73,6 +100,10 @@ impl SessionService {
             updated_at: Set(now),
             expires_at: Set(expires_at),
             revoked_at: Set(None),
+            revocation_pending_at: Set(None),
+            revocation_next_attempt_at: Set(None),
+            revocation_attempts: Set(0),
+            upstream_revoked_at: Set(None),
         }
         .insert(&transaction)
         .await?;
@@ -157,8 +188,76 @@ impl SessionService {
 
     pub async fn revoke(&self, raw_id: &str) -> Result<(), AppError> {
         let id_hash = hash_token(raw_id);
+        self.queue_revocation(&id_hash).await?;
+        if let Err(error) = self.attempt_revocation(&id_hash).await {
+            // The local session is already revoked. Persisted retry state
+            // prevents an upstream outage from turning logout into a failure.
+            tracing::warn!(%error, "Supabase logout deferred for retry");
+        }
+        Ok(())
+    }
+
+    pub fn spawn_revocation_worker(&self) -> RevocationWorkerTask {
+        let sessions = self.clone();
+        RevocationWorkerTask(tokio::spawn(async move {
+            let mut ticker = time::interval(REVOCATION_WORKER_INTERVAL);
+            ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
+            loop {
+                ticker.tick().await;
+                if let Err(error) = sessions.reconcile_revocations().await {
+                    tracing::error!(%error, "Supabase logout reconciliation failed");
+                }
+            }
+        }))
+    }
+
+    /// Queues expired local sessions and retries a bounded batch of durable
+    /// upstream logout operations. This is safe to run from several replicas:
+    /// each attempt first takes a short database-backed lease.
+    pub async fn reconcile_revocations(&self) -> Result<(), AppError> {
+        let now = Utc::now();
+        let expired = web_session::Entity::find()
+            .filter(web_session::Column::RevokedAt.is_null())
+            .filter(web_session::Column::ExpiresAt.lte(now))
+            .order_by_asc(web_session::Column::ExpiresAt)
+            .limit(REVOCATION_BATCH_SIZE)
+            .all(&self.db)
+            .await?;
+        for session in expired {
+            self.queue_revocation(&session.id_hash).await?;
+        }
+
+        let pending = web_session::Entity::find()
+            .filter(web_session::Column::RevocationPendingAt.is_not_null())
+            .filter(web_session::Column::UpstreamRevokedAt.is_null())
+            .filter(web_session::Column::RevocationNextAttemptAt.lte(now))
+            .order_by_asc(web_session::Column::RevocationNextAttemptAt)
+            .limit(REVOCATION_BATCH_SIZE)
+            .all(&self.db)
+            .await?;
+        for session in pending {
+            if let Err(error) = self.attempt_revocation(&session.id_hash).await {
+                tracing::warn!(%error, "Supabase logout retry was deferred");
+            }
+        }
+
+        let retention_cutoff = now - REVOCATION_RETENTION;
+        let pruned = web_session::Entity::delete_many()
+            .filter(web_session::Column::UpstreamRevokedAt.lte(retention_cutoff))
+            .exec(&self.db)
+            .await?;
+        if pruned.rows_affected > 0 {
+            tracing::info!(
+                count = pruned.rows_affected,
+                "pruned confirmed revoked sessions"
+            );
+        }
+        Ok(())
+    }
+
+    async fn queue_revocation(&self, id_hash: &str) -> Result<(), AppError> {
         let transaction = self.db.begin().await?;
-        let model = web_session::Entity::find_by_id(&id_hash)
+        let model = web_session::Entity::find_by_id(id_hash)
             .lock_exclusive()
             .one(&transaction)
             .await?;
@@ -166,19 +265,133 @@ impl SessionService {
             transaction.commit().await?;
             return Ok(());
         };
-
-        let access_token = self.decrypt(&model.encrypted_access_token).ok();
-        let mut active: web_session::ActiveModel = model.into();
-        active.revoked_at = Set(Some(Utc::now()));
-        active.updated_at = Set(Utc::now());
-        active.update(&transaction).await?;
+        if model.upstream_revoked_at.is_none() {
+            let now = Utc::now();
+            let revoked_at = model.revoked_at.or(Some(now));
+            let pending_at = model.revocation_pending_at.or(Some(now));
+            let next_attempt_at = if model.revocation_pending_at.is_none() {
+                Some(now)
+            } else {
+                model.revocation_next_attempt_at
+            };
+            let mut active: web_session::ActiveModel = model.into();
+            active.revoked_at = Set(revoked_at);
+            active.revocation_pending_at = Set(pending_at);
+            active.revocation_next_attempt_at = Set(next_attempt_at);
+            active.updated_at = Set(now);
+            active.update(&transaction).await?;
+        }
         transaction.commit().await?;
+        Ok(())
+    }
 
-        if let Some(access_token) = access_token {
-            if let Err(error) = self.auth.sign_out(&access_token).await {
-                tracing::warn!(%error, "Supabase logout failed after local session revocation");
+    async fn attempt_revocation(&self, id_hash: &str) -> Result<(), AppError> {
+        let Some(claim) = self.claim_revocation(id_hash).await? else {
+            return Ok(());
+        };
+        match self.auth.sign_out(&claim.access_token).await {
+            Ok(()) => self.confirm_revocation(&claim).await,
+            Err(error) => {
+                self.defer_revocation(&claim, &error).await?;
+                Err(map_auth_error(error))
             }
         }
+    }
+
+    async fn claim_revocation(&self, id_hash: &str) -> Result<Option<RevocationClaim>, AppError> {
+        let transaction = self.db.begin().await?;
+        let model = web_session::Entity::find_by_id(id_hash)
+            .lock_exclusive()
+            .one(&transaction)
+            .await?;
+        let Some(model) = model else {
+            transaction.commit().await?;
+            return Ok(None);
+        };
+        let now = Utc::now();
+        if model.revoked_at.is_none()
+            || model.upstream_revoked_at.is_some()
+            || model
+                .revocation_next_attempt_at
+                .is_some_and(|next_attempt| next_attempt > now)
+        {
+            transaction.commit().await?;
+            return Ok(None);
+        }
+
+        let access_token = match self.decrypt(&model.encrypted_access_token) {
+            Ok(token) => token,
+            Err(error) => {
+                let attempts = model.revocation_attempts.saturating_add(1);
+                let mut active: web_session::ActiveModel = model.into();
+                active.revocation_attempts = Set(attempts);
+                active.revocation_next_attempt_at = Set(Some(now + REVOCATION_RETENTION));
+                active.updated_at = Set(now);
+                active.update(&transaction).await?;
+                transaction.commit().await?;
+                tracing::error!(%error, "unable to decrypt session for Supabase logout retry");
+                return Ok(None);
+            }
+        };
+
+        let attempts = model.revocation_attempts.saturating_add(1);
+        let user_id = model.user_id;
+        let mut active: web_session::ActiveModel = model.into();
+        active.revocation_attempts = Set(attempts);
+        active.revocation_next_attempt_at = Set(Some(now + REVOCATION_LEASE));
+        active.updated_at = Set(now);
+        active.update(&transaction).await?;
+        transaction.commit().await?;
+        Ok(Some(RevocationClaim {
+            id_hash: id_hash.to_owned(),
+            access_token,
+            attempts,
+            user_id,
+        }))
+    }
+
+    async fn confirm_revocation(&self, claim: &RevocationClaim) -> Result<(), AppError> {
+        let now = Utc::now();
+        let Some(model) = web_session::Entity::find_by_id(&claim.id_hash)
+            .one(&self.db)
+            .await?
+        else {
+            return Ok(());
+        };
+        let mut active: web_session::ActiveModel = model.into();
+        active.upstream_revoked_at = Set(Some(now));
+        active.revocation_pending_at = Set(None);
+        active.revocation_next_attempt_at = Set(None);
+        active.updated_at = Set(now);
+        active.update(&self.db).await?;
+        tracing::info!(user_id = %claim.user_id, attempts = claim.attempts, "Supabase logout reconciled");
+        Ok(())
+    }
+
+    async fn defer_revocation(
+        &self,
+        claim: &RevocationClaim,
+        error: &AuthProviderError,
+    ) -> Result<(), AppError> {
+        let now = Utc::now();
+        let Some(model) = web_session::Entity::find_by_id(&claim.id_hash)
+            .one(&self.db)
+            .await?
+        else {
+            return Ok(());
+        };
+        let pending_at = model.revocation_pending_at.unwrap_or(now);
+        let mut active: web_session::ActiveModel = model.into();
+        active.revocation_pending_at = Set(Some(pending_at));
+        active.revocation_next_attempt_at = Set(Some(now + revocation_retry_delay(claim.attempts)));
+        active.updated_at = Set(now);
+        active.update(&self.db).await?;
+        tracing::warn!(
+            user_id = %claim.user_id,
+            attempts = claim.attempts,
+            error = %error,
+            "Supabase logout queued for retry"
+        );
         Ok(())
     }
 
@@ -263,6 +476,12 @@ impl SessionService {
             .map_err(|_| AppError::Crypto)?;
         String::from_utf8(plaintext).map_err(|_| AppError::Crypto)
     }
+}
+
+fn revocation_retry_delay(attempts: i32) -> ChronoDuration {
+    let exponent = attempts.clamp(1, 10) as u32;
+    let seconds = 2_i64.saturating_pow(exponent).min(3_600);
+    ChronoDuration::seconds(seconds)
 }
 
 fn random_token() -> String {

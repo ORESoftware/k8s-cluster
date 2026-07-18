@@ -6,7 +6,11 @@ pub struct Migrator;
 #[async_trait::async_trait]
 impl MigratorTrait for Migrator {
     fn migrations() -> Vec<Box<dyn MigrationTrait>> {
-        vec![Box::new(Migration), Box::new(AddEngagements)]
+        vec![
+            Box::new(Migration),
+            Box::new(AddEngagements),
+            Box::new(HardenSessions),
+        ]
     }
 }
 
@@ -303,6 +307,75 @@ impl MigrationName for AddEngagements {
     }
 }
 
+struct HardenSessions;
+
+impl MigrationName for HardenSessions {
+    fn name(&self) -> &str {
+        "m20260718_000002_harden_sessions"
+    }
+}
+
+#[async_trait::async_trait]
+impl MigrationTrait for HardenSessions {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        for column in [
+            ColumnDef::new(WebSession::RevocationPendingAt).timestamp_with_time_zone(),
+            ColumnDef::new(WebSession::RevocationNextAttemptAt).timestamp_with_time_zone(),
+            ColumnDef::new(WebSession::RevocationAttempts)
+                .integer()
+                .not_null()
+                .default(0),
+            ColumnDef::new(WebSession::UpstreamRevokedAt).timestamp_with_time_zone(),
+        ] {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(WebSession::Table)
+                        .add_column(column)
+                        .to_owned(),
+                )
+                .await?;
+        }
+        manager
+            .create_index(
+                Index::create()
+                    .name("web_session_revocation_retry_idx")
+                    .table(WebSession::Table)
+                    .col(WebSession::RevocationNextAttemptAt)
+                    .to_owned(),
+            )
+            .await?;
+        Ok(())
+    }
+
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .drop_index(
+                Index::drop()
+                    .name("web_session_revocation_retry_idx")
+                    .table(WebSession::Table)
+                    .to_owned(),
+            )
+            .await?;
+        for column in [
+            WebSession::UpstreamRevokedAt,
+            WebSession::RevocationAttempts,
+            WebSession::RevocationNextAttemptAt,
+            WebSession::RevocationPendingAt,
+        ] {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(WebSession::Table)
+                        .drop_column(column)
+                        .to_owned(),
+                )
+                .await?;
+        }
+        Ok(())
+    }
+}
+
 #[async_trait::async_trait]
 impl MigrationTrait for AddEngagements {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
@@ -534,6 +607,10 @@ enum WebSession {
     UpdatedAt,
     ExpiresAt,
     RevokedAt,
+    RevocationPendingAt,
+    RevocationNextAttemptAt,
+    RevocationAttempts,
+    UpstreamRevokedAt,
 }
 
 #[derive(DeriveIden)]

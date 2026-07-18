@@ -18,10 +18,19 @@ pub async fn upgrade(
     if actor.source == CredentialSource::SessionCookie {
         require_origin(&headers, &state)?;
     }
+    let permit = state
+        .hub
+        .try_acquire_socket(actor.user_id)
+        .ok_or(AppError::RateLimited {
+            retry_after_seconds: 60,
+        })?;
     let hub = state.hub.clone();
     let sessions = state.sessions.clone();
     Ok(websocket
         .max_message_size(64 * 1024)
         .max_frame_size(64 * 1024)
-        .on_upgrade(move |socket| ws::serve(socket, actor, sessions, hub)))
+        .on_upgrade(move |socket| async move {
+            let _permit = permit;
+            ws::serve(socket, actor, sessions, hub).await;
+        }))
 }
