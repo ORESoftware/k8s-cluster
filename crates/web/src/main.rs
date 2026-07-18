@@ -52,7 +52,10 @@ pub fn app(state: AppState) -> Router {
         .route("/readyz", get(routes::readyz))
         // Security headers on every response; a backstop timeout on every request.
         .layer(from_fn(routes::security_headers))
-        .layer(TimeoutLayer::new(Duration::from_secs(REQUEST_TIMEOUT_SECS)))
+        .layer(TimeoutLayer::with_status_code(
+            axum::http::StatusCode::REQUEST_TIMEOUT,
+            Duration::from_secs(REQUEST_TIMEOUT_SECS),
+        ))
         .with_state(state)
 }
 
