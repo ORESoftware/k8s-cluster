@@ -266,6 +266,7 @@ pub async fn run_translation(
         None => Provider::OpenAi,
     };
 
+    let _permit = state.acquire_llm()?;
     let outcome = state
         .llm
         .translate(&TranslationRequest {
