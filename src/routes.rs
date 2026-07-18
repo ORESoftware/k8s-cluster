@@ -6,7 +6,7 @@ use axum::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         State,
     },
-    http::{header::CACHE_CONTROL, HeaderMap, HeaderName, HeaderValue, Request},
+    http::{header::CACHE_CONTROL, HeaderMap, HeaderName, HeaderValue, Request, StatusCode},
     middleware::{self, Next},
     response::Response,
     routing::get,
@@ -14,12 +14,13 @@ use axum::{
 };
 use maud::{html, Markup};
 use tokio::time;
-use tower_http::{services::ServeDir, trace::TraceLayer};
+use tower_http::services::ServeDir;
 
 use crate::{
     app::{asset_dir, AppState, PublicConfig},
     data::DashboardStats,
-    views,
+    database::DatabaseReadiness,
+    telemetry, views,
 };
 
 pub(crate) fn router(state: AppState) -> Router {
@@ -40,7 +41,7 @@ pub(crate) fn router(state: AppState) -> Router {
             header_state,
             security_headers,
         ))
-        .layer(TraceLayer::new_for_http())
+        .layer(middleware::from_fn(telemetry::record_http_metrics))
         .with_state(state)
 }
 
@@ -48,6 +49,7 @@ fn app_routes() -> Router<AppState> {
     Router::new()
         .route("/", get(home))
         .route("/healthz", get(healthz))
+        .route("/readyz", get(readyz))
         .route("/config", get(public_config))
         .route("/portal", get(portal))
         .route("/partials/overview", get(overview_partial))
@@ -120,6 +122,14 @@ async fn healthz() -> &'static str {
     "ok"
 }
 
+async fn readyz(State(state): State<AppState>) -> (StatusCode, &'static str) {
+    match state.database.readiness().await {
+        DatabaseReadiness::Disabled => (StatusCode::OK, "database disabled"),
+        DatabaseReadiness::Connected => (StatusCode::OK, "ready"),
+        DatabaseReadiness::Unreachable => (StatusCode::SERVICE_UNAVAILABLE, "database unreachable"),
+    }
+}
+
 async fn security_headers(
     State(state): State<AppState>,
     request: Request<Body>,
@@ -149,4 +159,19 @@ async fn security_headers(
         HeaderValue::from_static("same-origin"),
     );
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::database::DatabaseState;
+
+    #[tokio::test]
+    async fn readiness_is_healthy_when_database_is_disabled() {
+        let state = AppState::from_env(DatabaseState::default());
+        assert_eq!(
+            readyz(State(state)).await,
+            (StatusCode::OK, "database disabled")
+        );
+    }
 }

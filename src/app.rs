@@ -2,10 +2,12 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use serde::Serialize;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+
+use crate::database::DatabaseState;
 
 #[derive(Clone)]
 pub(crate) struct AppState {
+    pub(crate) database: DatabaseState,
     pub(crate) client: reqwest::Client,
     pub(crate) backend_url: String,
     pub(crate) base_path: String,
@@ -15,8 +17,9 @@ pub(crate) struct AppState {
 }
 
 impl AppState {
-    pub(crate) fn from_env() -> Self {
+    pub(crate) fn from_env(database: DatabaseState) -> Self {
         Self {
+            database,
             client: reqwest::Client::new(),
             backend_url: env_string("AKRION_BACKEND_URL")
                 .unwrap_or_else(|| "http://127.0.0.1:8113".to_string()),
@@ -130,6 +133,7 @@ mod tests {
 
     fn state_with_base_path(base_path: &str) -> AppState {
         AppState {
+            database: DatabaseState::default(),
             client: reqwest::Client::new(),
             backend_url: "http://127.0.0.1:8113".to_string(),
             base_path: normalize_base_path(base_path.to_string()),
@@ -164,40 +168,5 @@ mod tests {
         assert!(policy.contains("https://example.supabase.co"));
         assert!(policy.contains("wss://example.supabase.co"));
         assert!(!policy.contains("'unsafe-inline'"));
-    }
-}
-
-pub(crate) fn init_tracing() {
-    let filter = EnvFilter::try_from_env("AKRION_RUST_LOG")
-        .or_else(|_| EnvFilter::try_from_default_env())
-        .unwrap_or_else(|_| EnvFilter::new("info,akrion_web_server=info,tower_http=info"));
-    tracing_subscriber::registry()
-        .with(filter)
-        .with(tracing_subscriber::fmt::layer().compact())
-        .try_init()
-        .ok();
-}
-
-pub(crate) async fn shutdown_signal() {
-    let ctrl_c = async {
-        tokio::signal::ctrl_c()
-            .await
-            .expect("failed to install Ctrl+C handler");
-    };
-
-    #[cfg(unix)]
-    let terminate = async {
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .expect("failed to install signal handler")
-            .recv()
-            .await;
-    };
-
-    #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
-
-    tokio::select! {
-        _ = ctrl_c => {},
-        _ = terminate => {},
     }
 }

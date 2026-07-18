@@ -6,9 +6,12 @@ realtime game/simulation routes; this repo owns the web pages.
 
 ## Layout
 
-- `src/main.rs` — boot: tracing, state, router, bind, graceful shutdown.
+- `src/main.rs` — thin process bootstrap and bind lifecycle.
 - `src/app.rs` — app state, public browser config, env helpers, asset paths.
+- `src/database.rs` — optional SeaORM/Postgres pool and readiness.
 - `src/routes.rs` — axum routes, htmx partials, the WebSocket stream.
+- `src/shutdown.rs` — graceful process signals.
+- `src/telemetry.rs` — Loki-ready JSON logs and OTLP traces/metrics.
 - `src/views.rs` — maud page templates and UI fragments.
 - `src/data.rs` — dashboard stats and portal rows.
 - `assets/` — `app.css`, `app.js`, `theme.js`, emblem.
