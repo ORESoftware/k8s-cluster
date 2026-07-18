@@ -1323,6 +1323,14 @@ struct CloudCopyWorkItem {
     segment: SegmentResponse,
 }
 
+/// The monotonically increasing attempt number returned while claiming a job.
+/// It doubles as a fencing token: a worker may only finalize the exact attempt
+/// it claimed, so a worker that outlives its lease cannot overwrite a later
+/// worker's result.
+struct CloudCopyClaim {
+    attempts: i32,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CloudTokenSet {
@@ -6810,8 +6818,8 @@ async fn drain_cloud_copy_jobs(
     let mut results = Vec::with_capacity(rows.len());
     for row in rows {
         let item = cloud_copy_work_item_from_row(&state.config, &row);
-        let claimed_attempts = claim_cloud_copy_job(&client, &item.job.id).await?;
-        let Some(attempts) = claimed_attempts else {
+        let claim = claim_cloud_copy_job(&client, &item.job.id).await?;
+        let Some(claim) = claim else {
             skipped += 1;
             results.push(CloudCopyDrainResult {
                 job_id: item.job.id,
@@ -6824,25 +6832,47 @@ async fn drain_cloud_copy_jobs(
         attempted += 1;
         match process_cloud_copy_job(&state, &client, &item).await {
             Ok(provider_file_id) => {
-                completed += 1;
-                mark_cloud_copy_job_success(&client, &item, &provider_file_id).await?;
+                let finalized =
+                    mark_cloud_copy_job_success(&client, &item, &provider_file_id, claim.attempts)
+                        .await?;
+                if finalized {
+                    completed += 1;
+                } else {
+                    skipped += 1;
+                }
                 results.push(CloudCopyDrainResult {
                     job_id: item.job.id,
                     provider: item.job.provider,
-                    status: "completed".to_string(),
-                    message: None,
+                    status: if finalized { "completed" } else { "skipped" }.to_string(),
+                    message: (!finalized).then(|| {
+                        "job lease was superseded before its result could be recorded".to_string()
+                    }),
                 });
             }
             Err(err) => {
-                failed += 1;
                 let message = service_error_message(&err);
-                mark_cloud_copy_job_error(&client, &item.job.id, attempts, &message, &state.config)
-                    .await?;
+                let finalized = mark_cloud_copy_job_error(
+                    &client,
+                    &item.job.id,
+                    claim.attempts,
+                    &message,
+                    &state.config,
+                )
+                .await?;
+                if finalized {
+                    failed += 1;
+                } else {
+                    skipped += 1;
+                }
                 results.push(CloudCopyDrainResult {
                     job_id: item.job.id,
                     provider: item.job.provider,
-                    status: "failed".to_string(),
-                    message: Some(message),
+                    status: if finalized { "failed" } else { "skipped" }.to_string(),
+                    message: Some(if finalized {
+                        message
+                    } else {
+                        "job lease was superseded before its failure could be recorded".to_string()
+                    }),
                 });
             }
         }
@@ -6873,7 +6903,7 @@ fn service_error_message(error: &ServiceError) -> String {
 async fn claim_cloud_copy_job(
     client: &tokio_postgres::Client,
     job_id: &str,
-) -> Result<Option<i32>, ServiceError> {
+) -> Result<Option<CloudCopyClaim>, ServiceError> {
     let locked_until = Utc::now()
         .checked_add_signed(ChronoDuration::minutes(5))
         .unwrap_or_else(Utc::now);
@@ -6895,7 +6925,9 @@ async fn claim_cloud_copy_job(
         )
         .await
         .map_err(db_error)?;
-    Ok(row.map(|row| row.get("attempts")))
+    Ok(row.map(|row| CloudCopyClaim {
+        attempts: row.get("attempts"),
+    }))
 }
 
 async fn process_cloud_copy_job(
@@ -7105,8 +7137,9 @@ async fn mark_cloud_copy_job_success(
     client: &tokio_postgres::Client,
     item: &CloudCopyWorkItem,
     provider_file_id: &str,
-) -> Result<(), ServiceError> {
-    client
+    attempts: i32,
+) -> Result<bool, ServiceError> {
+    let updated = client
         .execute(
             "update sound_recorder_cloud_copy_jobs
              set status = 'completed',
@@ -7115,11 +7148,20 @@ async fn mark_cloud_copy_job_success(
                  locked_until = null,
                  last_error = null,
                  updated_at = now()
-             where id = $1::uuid",
-            &[&item.job.id, &provider_file_id],
+             where id = $1::uuid
+               and status = 'running'
+               and attempts = $3",
+            &[&item.job.id, &provider_file_id, &attempts],
         )
         .await
         .map_err(db_error)?;
+    if updated == 0 {
+        warn!(
+            job_id = item.job.id,
+            attempts, "cloud-copy completion ignored because the lease was superseded"
+        );
+        return Ok(false);
+    }
     client
         .execute(
             "update sound_recorder_cloud_connections
@@ -7129,7 +7171,7 @@ async fn mark_cloud_copy_job_success(
         )
         .await
         .map_err(db_error)?;
-    Ok(())
+    Ok(true)
 }
 
 async fn mark_cloud_copy_job_error(
@@ -7138,7 +7180,7 @@ async fn mark_cloud_copy_job_error(
     attempts: i32,
     message: &str,
     config: &Config,
-) -> Result<(), ServiceError> {
+) -> Result<bool, ServiceError> {
     let status = if attempts >= config.cloud_copy_max_attempts {
         "failed"
     } else {
@@ -7152,19 +7194,28 @@ async fn mark_cloud_copy_job_error(
         None
     };
     let last_error = message.chars().take(500).collect::<String>();
-    client
+    let updated = client
         .execute(
             "update sound_recorder_cloud_copy_jobs
              set status = $2,
                  locked_until = $3,
                  last_error = $4,
                  updated_at = now()
-             where id = $1::uuid",
-            &[&job_id, &status, &locked_until, &last_error],
+             where id = $1::uuid
+               and status = 'running'
+               and attempts = $5",
+            &[&job_id, &status, &locked_until, &last_error, &attempts],
         )
         .await
         .map_err(db_error)?;
-    Ok(())
+    if updated == 0 {
+        warn!(
+            job_id,
+            attempts, "cloud-copy failure ignored because the lease was superseded"
+        );
+        return Ok(false);
+    }
+    Ok(true)
 }
 
 async fn retention_sweep(
