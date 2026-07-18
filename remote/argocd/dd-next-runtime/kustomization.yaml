@@ -194,10 +194,6 @@ resources:
   - dd-athleto-app-rs.pdb.yaml
   - dd-athleto-app-rs.service.yaml
   - jello-ws.service.yaml
-  # Opt-in AthletO live-storefront browser smoke: dispatches read-only UI
-  # scenarios to dd-browser-test-server under Playwright + Puppeteer.
-  - dd-athleto-e2e-scenarios.configmap.yaml
-  - dd-athleto-e2e-browser-suite.cronjob.yaml
   # Nightly soccer learning tournament. AWS and Hetzner both schedule it, while
   # the runner's Postgres advisory lock lets only one cluster run matches.
   - dd-soccer-tournament-nightly.cronjob.yaml
