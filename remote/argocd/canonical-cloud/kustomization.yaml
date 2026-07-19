@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - default-deny.networkpolicy.yaml
+  - registry.externalsecret.yaml
+  - web.externalsecret.yaml
+  - web.deployment.yaml
+  - web.service.yaml
+  - web.networkpolicy.yaml
+  - revoker.externalsecret.yaml
+  - revoker.deployment.yaml
+  - revoker.networkpolicy.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: canonical-cloud
+    includeSelectors: false
