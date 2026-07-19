@@ -10,7 +10,7 @@ use axum::{
     http::{header, StatusCode},
     response::{Html, IntoResponse, Response},
 };
-use dd_pg_defs_sea_orm::{fab_plans, fab_instructions, fab_runs};
+use dd_pg_defs_sea_orm::{fab_instructions, fab_plans, fab_runs};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 use uuid::Uuid;
 
@@ -31,12 +31,7 @@ pub(crate) async fn index(
         .await?;
     state.metrics.record_page();
     Ok(Html(
-        views::page(
-            "Plans",
-            &operator.email,
-            views::plan_list(&plans),
-        )
-        .into_string(),
+        views::page("Plans", &operator.email, views::plan_list(&plans)).into_string(),
     ))
 }
 
@@ -139,7 +134,10 @@ pub(crate) async fn asset(Path(name): Path<String>) -> Response {
     match body {
         Some(js) => (
             StatusCode::OK,
-            [(header::CONTENT_TYPE, "application/javascript; charset=utf-8")],
+            [(
+                header::CONTENT_TYPE,
+                "application/javascript; charset=utf-8",
+            )],
             js,
         )
             .into_response(),
@@ -156,14 +154,9 @@ mod tests {
         // A version bump in views.rs without shipping the matching asset file
         // would 404 the script and break the whole UI; assert the coupling.
         let good = format!("htmx-{}.min.js", views::HTMX_VERSION);
-        assert!(matches!(
-            asset(Path(good)).await.status(),
-            StatusCode::OK
-        ));
+        assert!(matches!(asset(Path(good)).await.status(), StatusCode::OK));
         assert_eq!(
-            asset(Path("htmx-0.0.0.min.js".to_string()))
-                .await
-                .status(),
+            asset(Path("htmx-0.0.0.min.js".to_string())).await.status(),
             StatusCode::NOT_FOUND
         );
     }
