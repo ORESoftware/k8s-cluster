@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-07-18-flutter-profiles-v2'
+        dd.dev/telemetry-revision: '2026-07-18-flutter-profiles-v3'
       labels:
         app: dd-build-server
     spec:
@@ -44,7 +44,7 @@ spec:
               export HOME=/tmp
               mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR"
               source_root=/opt/dd-next-1
-              if [ -n "${BUILD_SERVER_GIT_URL:-}" ]; then
+              if [ -n "${BUILD_SERVER_GIT_URL:-}" ] && [ -n "${GH_PAT:-}" ]; then
                 clone_root="$(mktemp -d /tmp/dd-build-server-source.XXXXXX)"
                 github_extraheader=''
                 if [ -n "${GH_PAT:-}" ]; then
@@ -61,6 +61,8 @@ spec:
                 else
                   echo "[dd-build-server] source clone or remote/libs init failed; using mounted source at ${source_root}" >&2
                 fi
+              elif [ -n "${BUILD_SERVER_GIT_URL:-}" ]; then
+                echo "[dd-build-server] GH_PAT is not configured; using mounted source at ${source_root}" >&2
               fi
               cd "$source_root/remote/deployments/build-server-rs"
               exec /usr/local/cargo/bin/cargo run --release
