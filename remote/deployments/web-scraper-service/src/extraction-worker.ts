@@ -2,6 +2,8 @@ import { parentPort } from 'node:worker_threads';
 
 import * as cheerio from 'cheerio';
 
+import { extractContacts, type ContactExtraction } from './contacts.js';
+
 type ParserName = 'native-fetch' | 'cheerio' | 'jsdom' | 'linkedom';
 
 type ExtractionInput = {
@@ -13,9 +15,14 @@ type ExtractionInput = {
   includeHtml?: boolean;
   includeText?: boolean;
   includeLinks?: boolean;
+  includePhones?: boolean;
+  includeEmails?: boolean;
+  contactRegion?: string;
   maxHtmlChars: number;
   maxTextChars: number;
   maxLinks: number;
+  maxPhones: number;
+  maxEmails: number;
 };
 
 type ExtractionResult = {
