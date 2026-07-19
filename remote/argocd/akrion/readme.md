@@ -48,9 +48,9 @@ deployment is needed.
 
 ## Promotion
 
-Each source repository sends an `akrion-release` repository dispatch after its
-`ci` workflow completes successfully on `main`. The promotion workflow also runs
-every ten minutes as a recovery path and can be started manually:
+The promotion workflow runs every ten minutes, can receive an `akrion-release`
+repository dispatch when a valid cross-repository token is configured, and can
+be started manually:
 
 ```bash
 gh workflow run akrion-gitops.yml \
@@ -58,11 +58,11 @@ gh workflow run akrion-gitops.yml \
   --ref dev
 ```
 
-`AKRION_GITOPS_TOKEN` is stored as an encrypted Actions secret in the three
-source repositories and in `k8s-cluster`. Source workflows can only use it to
-send the repository dispatch; the promotion workflow uses it to read successful
-workflow metadata from the two private Akrion repositories and push the
-resulting GitOps commit. It is not exposed to workloads or to Argo CD.
+`REMOTE_DEV_GH_PAT` is the existing encrypted `k8s-cluster` Actions secret used
+to read successful workflow metadata from the two private Akrion repositories
+and push the resulting GitOps commit. It is not exposed to workloads or to Argo
+CD. A future fine-grained cross-repository token can be used by source-side
+notifiers for lower latency, but it is not required for automatic promotion.
 
 Promotion stops when CI is red, a revision is malformed, a manifest no longer
 matches the release contract, or either Kustomize overlay fails to render. A

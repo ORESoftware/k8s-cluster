@@ -72,13 +72,13 @@ jobs:
     permissions:
       contents: write
     env:
-      GH_TOKEN: ${{ secrets.AKRION_GITOPS_TOKEN }}
+      GH_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
     steps:
       - name: Require private-repository promotion token
         run: |
           set -euo pipefail
           test -n "${GH_TOKEN:-}" || {
-            echo 'AKRION_GITOPS_TOKEN is required to read private Akrion CI metadata and push dev.' >&2
+            echo 'REMOTE_DEV_GH_PAT is required to read private Akrion CI metadata and push dev.' >&2
             exit 1
           }
       - name: Checkout GitOps dev
@@ -86,7 +86,7 @@ jobs:
         with:
           ref: dev
           fetch-depth: 0
-          token: ${{ secrets.AKRION_GITOPS_TOKEN }}
+          token: ${{ secrets.REMOTE_DEV_GH_PAT }}
       - name: Resolve newest successful source revisions
         id: revisions
         shell: bash
