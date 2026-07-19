@@ -102,13 +102,12 @@ database-backed API routes return `503`.
 ## Deployment
 
 GitHub Actions validates workflow syntax, repository hygiene, the Cargo
-manifest, and formatting on every pull request and push to `main`. Full builds
-and production delivery run through `ORESoftware/k8s-cluster`, where this
-crate's path dependencies and runtime manifests live. Its GitOps promotion
-workflow polls for CI-successful backend `main` commits, runs formatting,
-Clippy, and tests in the complete superproject context, advances the pinned
-submodule and immutable Deployment source revision on `dev`, and lets Argo CD
-reconcile the rollout.
+manifest, and formatting on every pull request and push to `main`. After those
+checks pass on `main`, the source-owned GitOps job assembles
+`ORESoftware/k8s-cluster`, runs formatting, Clippy, and tests with the complete
+path-dependency graph, then advances the pinned submodule and immutable
+Deployment source revision on the cluster repository's `dev` branch. Argo CD
+is the only component that reconciles that Git change into the cluster.
 
 Argo includes this service as `usacc-rest-api-backend-rs` in
 `remote/argocd/dd-next-runtime`. The in-cluster service listens on
