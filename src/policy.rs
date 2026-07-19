@@ -179,6 +179,10 @@ fn is_blocked_v4(v4: Ipv4Addr) -> bool {
     let is_this_network = o[0] == 0; // 0.0.0.0/8
     let is_benchmark = o[0] == 198 && (o[1] == 18 || o[1] == 19); // 198.18.0.0/15
     let is_reserved = o[0] >= 240; // 240.0.0.0/4
+    // 192.0.0.0/24 IETF protocol assignments (incl. 192.0.0.170/171 NAT64/DS-Lite).
+    let is_ietf_proto = o[0] == 192 && o[1] == 0 && o[2] == 0;
+    // 192.88.99.0/24 deprecated 6to4 anycast relay.
+    let is_6to4_relay = o[0] == 192 && o[1] == 88 && o[2] == 99;
     return v4.is_loopback()
         || v4.is_private()
         || v4.is_link_local()
@@ -189,7 +193,9 @@ fn is_blocked_v4(v4: Ipv4Addr) -> bool {
         || is_cgnat
         || is_this_network
         || is_benchmark
-        || is_reserved;
+        || is_reserved
+        || is_ietf_proto
+        || is_6to4_relay;
 }
 
 fn is_blocked_v6(v6: Ipv6Addr) -> bool {
