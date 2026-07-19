@@ -59,6 +59,10 @@ blockchainIndexEventsSubject = "dd.remote.blockchain.index.events"
 blockchainMevAlertsSubject :: Text
 blockchainMevAlertsSubject = "dd.remote.blockchain.mev.alerts"
 
+-- Shared result fanout receiving every browser-job terminal result.
+browserJobResultsSubject :: Text
+browserJobResultsSubject = "dd.remote.browser_jobs.results"
+
 -- Redacted build lifecycle events (queued/running/succeeded/failed) published by the build server. Default for BUILD_SERVER_NATS_EVENT_SUBJECT.
 buildServerEventsSubject :: Text
 buildServerEventsSubject = "dd.remote.build_server.events"
@@ -194,6 +198,16 @@ desSimulateSubject :: Text
 desSimulateSubject = "dd.remote.des.simulate"
 desSimulateQueueGroup :: Text
 desSimulateQueueGroup = "dd-des-simulator"
+
+-- Document conversion requests consumed by dd-document-rs replicas.
+documentConvertRequestsSubject :: Text
+documentConvertRequestsSubject = "dd.remote.document.convert"
+documentConvertRequestsQueueGroup :: Text
+documentConvertRequestsQueueGroup = "dd-document-rs"
+
+-- Document conversion results published after a request completes or fails.
+documentConvertResultsSubject :: Text
+documentConvertResultsSubject = "dd.remote.document.results"
 
 -- Inbound forecast/recommendation requests consumed by the economics server. Subscribed with the dd-economics-server queue group so requests load-balance across replicas. Default for ECONOMICS_FORECAST_REQUEST_SUBJECT.
 economicsForecastRequestsSubject :: Text
@@ -485,6 +499,16 @@ musicSongsPublishedSubject = "dd.remote.music.songs.published"
 musicVotesEventsSubject :: Text
 musicVotesEventsSubject = "dd.remote.music.votes.events"
 
+-- OCR requests consumed by dd-ocr-rs replicas.
+ocrRequestsSubject :: Text
+ocrRequestsSubject = "dd.remote.ocr.requests"
+ocrRequestsQueueGroup :: Text
+ocrRequestsQueueGroup = "dd-ocr-rs"
+
+-- OCR results published after a request completes or fails.
+ocrResultsSubject :: Text
+ocrResultsSubject = "dd.remote.ocr.results"
+
 -- Wakeup signal published whenever a new task is enqueued for a thread, so the orchestrator can prepare/scale the matching worker deployment without polling.
 orchestratorWakeupSubject :: Text
 orchestratorWakeupSubject = "dd.remote.orchestrator.wakeup"
@@ -494,6 +518,10 @@ orchestratorWakeupStream = "DD_REMOTE_CONTROL"
 -- Trend, correlation, grant-match, graph-data, model, and white-paper evidence results from public-data analysis runs.
 publicDataAnalysisResultsSubject :: Text
 publicDataAnalysisResultsSubject = "dd.remote.public_data.analysis.results"
+
+-- Dead-letter subject for public-data ingest requests that exhaust JetStream delivery attempts.
+publicDataIngestDeadLetterSubject :: Text
+publicDataIngestDeadLetterSubject = "dd.remote.public_data.ingest.deadletter"
 
 -- Inbound public-data ingestion requests accepted over NATS. Payloads mirror the HTTP /ingest and /scrape contracts.
 publicDataIngestRequestsSubject :: Text
@@ -643,6 +671,38 @@ workflowsStartSubject = "dd.remote.workflows.start"
 workflowsStartQueueGroup :: Text
 workflowsStartQueueGroup = "dd-gleam-workflow-engine"
 
+-- Per-job lifecycle and progress events emitted by the isolated browser worker.
+browserJobEventsPattern :: Text
+browserJobEventsPattern = "dd.remote.browser_jobs.{job_id}.events"
+browserJobEventsWildcard :: Text
+browserJobEventsWildcard = "dd.remote.browser_jobs.*.events"
+browserJobEventsSubject :: Text -> Text
+browserJobEventsSubject job_id = T.concat ["dd.remote.browser_jobs.", job_id, ".events"]
+data BrowserJobEventsSubjectParts = BrowserJobEventsSubjectParts
+  { browserJobEventsSubjectPartsJobId :: Text
+  } deriving (Eq, Show)
+parseBrowserJobEventsSubject :: Text -> Maybe BrowserJobEventsSubjectParts
+parseBrowserJobEventsSubject subject =
+  case T.splitOn "." subject of
+    ["dd", "remote", "browser_jobs", job_id, "events"] -> Just (BrowserJobEventsSubjectParts job_id)
+    _ -> Nothing
+
+-- Per-job terminal result emitted by the isolated browser worker.
+browserJobResultPattern :: Text
+browserJobResultPattern = "dd.remote.browser_jobs.{job_id}.result"
+browserJobResultWildcard :: Text
+browserJobResultWildcard = "dd.remote.browser_jobs.*.result"
+browserJobResultSubject :: Text -> Text
+browserJobResultSubject job_id = T.concat ["dd.remote.browser_jobs.", job_id, ".result"]
+data BrowserJobResultSubjectParts = BrowserJobResultSubjectParts
+  { browserJobResultSubjectPartsJobId :: Text
+  } deriving (Eq, Show)
+parseBrowserJobResultSubject :: Text -> Maybe BrowserJobResultSubjectParts
+parseBrowserJobResultSubject subject =
+  case T.splitOn "." subject of
+    ["dd", "remote", "browser_jobs", job_id, "result"] -> Just (BrowserJobResultSubjectParts job_id)
+    _ -> Nothing
+
 -- Per-row change emitted by wal-gateway. Subject pattern is '<prefix>.<schema>.<table>.<op>'. The default prefix is 'cdc' and the default stream name is 'CDC'. Consumers usually subscribe to the prefix tail wildcard ('cdc.>').
 cdcRowChangePattern :: Text
 cdcRowChangePattern = "{prefix}.{schema}.{table}.{op}"
@@ -652,6 +712,8 @@ cdcRowChangeStream :: Text
 cdcRowChangeStream = "CDC"
 cdcRowChangeSubject :: Text -> Text -> Text -> Text -> Text
 cdcRowChangeSubject prefix schema table op = T.concat [prefix, ".", schema, ".", table, ".", op]
+formatCdcRowChangeWildcard :: Text -> Text
+formatCdcRowChangeWildcard prefix = T.concat [prefix, ".>"]
 data CdcRowChangeSubjectParts = CdcRowChangeSubjectParts
   { cdcRowChangeSubjectPartsPrefix :: Text
   , cdcRowChangeSubjectPartsSchema :: Text
@@ -673,6 +735,8 @@ cdcTableFilterStream :: Text
 cdcTableFilterStream = "CDC"
 cdcTableFilterSubject :: Text -> Text -> Text -> Text
 cdcTableFilterSubject prefix schema table = T.concat [prefix, ".", schema, ".", table, ".>"]
+formatCdcTableFilterWildcard :: Text -> Text
+formatCdcTableFilterWildcard prefix = T.concat [prefix, ".>"]
 data CdcTableFilterSubjectParts = CdcTableFilterSubjectParts
   { cdcTableFilterSubjectPartsPrefix :: Text
   , cdcTableFilterSubjectPartsSchema :: Text
@@ -906,6 +970,10 @@ queueGroupDatasetLabelingWorkersQueueGroup = "dd-dataset-labeling"
 queueGroupDataVizNotificationDispatchQueueGroup :: Text
 queueGroupDataVizNotificationDispatchQueueGroup = "dd-data-viz-notifiers"
 
+-- Shared queue group used by document converter replicas so each request is handled once.
+queueGroupDocumentConvertersQueueGroup :: Text
+queueGroupDocumentConvertersQueueGroup = "dd-document-rs"
+
 -- Shared queue group used by dd-economics-server replicas consuming forecast requests.
 queueGroupEconomicsServerQueueGroup :: Text
 queueGroupEconomicsServerQueueGroup = "dd-economics-server"
@@ -941,6 +1009,10 @@ queueGroupMonteCarloServerQueueGroup = "dd-monte-carlo-server"
 -- Shared queue group used by dd-music-rs replicas consuming generation requests.
 queueGroupMusicGenerationQueueGroup :: Text
 queueGroupMusicGenerationQueueGroup = "dd-music-rs"
+
+-- Shared queue group used by OCR replicas so each request is handled once.
+queueGroupOcrWorkersQueueGroup :: Text
+queueGroupOcrWorkersQueueGroup = "dd-ocr-rs"
 
 -- Shared queue group used by dd-public-data-server replicas so each queued ingest/scrape request is processed once.
 queueGroupPublicDataWorkersQueueGroup :: Text

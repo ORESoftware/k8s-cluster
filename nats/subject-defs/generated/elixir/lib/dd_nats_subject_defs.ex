@@ -28,6 +28,8 @@ defmodule DdNatsSubjectDefs do
 
   def blockchain_mev_alerts_subject, do: "dd.remote.blockchain.mev.alerts"
 
+  def browser_job_results_subject, do: "dd.remote.browser_jobs.results"
+
   def build_server_events_subject, do: "dd.remote.build_server.events"
 
   def build_server_images_subject, do: "dd.remote.build_server.images"
@@ -95,6 +97,11 @@ defmodule DdNatsSubjectDefs do
 
   def des_simulate_subject, do: "dd.remote.des.simulate"
   def des_simulate_queue_group, do: "dd-des-simulator"
+
+  def document_convert_requests_subject, do: "dd.remote.document.convert"
+  def document_convert_requests_queue_group, do: "dd-document-rs"
+
+  def document_convert_results_subject, do: "dd.remote.document.results"
 
   def economics_forecast_requests_subject, do: "dd.remote.economics.forecast.requests"
   def economics_forecast_requests_queue_group, do: "dd-economics-server"
@@ -241,10 +248,17 @@ defmodule DdNatsSubjectDefs do
 
   def music_votes_events_subject, do: "dd.remote.music.votes.events"
 
+  def ocr_requests_subject, do: "dd.remote.ocr.requests"
+  def ocr_requests_queue_group, do: "dd-ocr-rs"
+
+  def ocr_results_subject, do: "dd.remote.ocr.results"
+
   def orchestrator_wakeup_subject, do: "dd.remote.orchestrator.wakeup"
   def orchestrator_wakeup_stream, do: "DD_REMOTE_CONTROL"
 
   def public_data_analysis_results_subject, do: "dd.remote.public_data.analysis.results"
+
+  def public_data_ingest_dead_letter_subject, do: "dd.remote.public_data.ingest.deadletter"
 
   def public_data_ingest_requests_subject, do: "dd.remote.public_data.ingest.requests"
   def public_data_ingest_requests_queue_group, do: "dd-public-data-server"
@@ -320,10 +334,31 @@ defmodule DdNatsSubjectDefs do
   def workflows_start_subject, do: "dd.remote.workflows.start"
   def workflows_start_queue_group, do: "dd-gleam-workflow-engine"
 
+  def browser_job_events_pattern, do: "dd.remote.browser_jobs.{job_id}.events"
+  def browser_job_events_wildcard, do: "dd.remote.browser_jobs.*.events"
+  def browser_job_events_subject(job_id), do: "dd.remote.browser_jobs." <> job_id <> ".events"
+  def parse_browser_job_events_subject(subject) do
+    case String.split(subject, ".") do
+      ["dd", "remote", "browser_jobs", job_id, "events"] -> {:ok, %{job_id: job_id}}
+      _ -> :error
+    end
+  end
+
+  def browser_job_result_pattern, do: "dd.remote.browser_jobs.{job_id}.result"
+  def browser_job_result_wildcard, do: "dd.remote.browser_jobs.*.result"
+  def browser_job_result_subject(job_id), do: "dd.remote.browser_jobs." <> job_id <> ".result"
+  def parse_browser_job_result_subject(subject) do
+    case String.split(subject, ".") do
+      ["dd", "remote", "browser_jobs", job_id, "result"] -> {:ok, %{job_id: job_id}}
+      _ -> :error
+    end
+  end
+
   def cdc_row_change_pattern, do: "{prefix}.{schema}.{table}.{op}"
   def cdc_row_change_wildcard, do: "{prefix}.>"
   def cdc_row_change_stream, do: "CDC"
   def cdc_row_change_subject(prefix, schema, table, op), do: prefix <> "." <> schema <> "." <> table <> "." <> op
+  def format_cdc_row_change_wildcard(prefix), do: prefix <> ".>"
   def parse_cdc_row_change_subject(subject) do
     case String.split(subject, ".") do
       [prefix, schema, table, op] -> {:ok, %{prefix: prefix, schema: schema, table: table, op: op}}
@@ -335,6 +370,7 @@ defmodule DdNatsSubjectDefs do
   def cdc_table_filter_wildcard, do: "{prefix}.>"
   def cdc_table_filter_stream, do: "CDC"
   def cdc_table_filter_subject(prefix, schema, table), do: prefix <> "." <> schema <> "." <> table <> ".>"
+  def format_cdc_table_filter_wildcard(prefix), do: prefix <> ".>"
   def parse_cdc_table_filter_subject(subject) do
     case String.split(subject, ".") do
       [prefix, schema, table, ">"] -> {:ok, %{prefix: prefix, schema: schema, table: table}}
@@ -475,6 +511,8 @@ defmodule DdNatsSubjectDefs do
 
   def queue_group_data_viz_notification_dispatch_queue_group, do: "dd-data-viz-notifiers"
 
+  def queue_group_document_converters_queue_group, do: "dd-document-rs"
+
   def queue_group_economics_server_queue_group, do: "dd-economics-server"
 
   def queue_group_evolution_islands_queue_group, do: "dd-evolution-optimizer-islands"
@@ -492,6 +530,8 @@ defmodule DdNatsSubjectDefs do
   def queue_group_monte_carlo_server_queue_group, do: "dd-monte-carlo-server"
 
   def queue_group_music_generation_queue_group, do: "dd-music-rs"
+
+  def queue_group_ocr_workers_queue_group, do: "dd-ocr-rs"
 
   def queue_group_public_data_workers_queue_group, do: "dd-public-data-server"
 

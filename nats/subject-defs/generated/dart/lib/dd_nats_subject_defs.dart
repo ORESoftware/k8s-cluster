@@ -54,6 +54,10 @@ const String blockchainIndexEventsSubject = "dd.remote.blockchain.index.events";
 /// Service: dd-contract-service
 const String blockchainMevAlertsSubject = "dd.remote.blockchain.mev.alerts";
 
+/// Shared result fanout receiving every browser-job terminal result.
+/// Service: dd-browser-job-runner
+const String browserJobResultsSubject = "dd.remote.browser_jobs.results";
+
 /// Redacted build lifecycle events (queued/running/succeeded/failed) published by the build server. Default for BUILD_SERVER_NATS_EVENT_SUBJECT.
 /// Service: dd-build-server
 const String buildServerEventsSubject = "dd.remote.build_server.events";
@@ -177,6 +181,15 @@ const String desResultsSubject = "dd.remote.des.results";
 /// Service: dd-ai-ml-pipeline
 const String desSimulateSubject = "dd.remote.des.simulate";
 const String desSimulateQueueGroup = "dd-des-simulator";
+
+/// Document conversion requests consumed by dd-document-rs replicas.
+/// Service: dd-document-rs
+const String documentConvertRequestsSubject = "dd.remote.document.convert";
+const String documentConvertRequestsQueueGroup = "dd-document-rs";
+
+/// Document conversion results published after a request completes or fails.
+/// Service: dd-document-rs
+const String documentConvertResultsSubject = "dd.remote.document.results";
 
 /// Inbound forecast/recommendation requests consumed by the economics server. Subscribed with the dd-economics-server queue group so requests load-balance across replicas. Default for ECONOMICS_FORECAST_REQUEST_SUBJECT.
 /// Service: dd-economics-server
@@ -439,6 +452,15 @@ const String musicSongsPublishedSubject = "dd.remote.music.songs.published";
 /// Service: dd-music-rs
 const String musicVotesEventsSubject = "dd.remote.music.votes.events";
 
+/// OCR requests consumed by dd-ocr-rs replicas.
+/// Service: dd-ocr-rs
+const String ocrRequestsSubject = "dd.remote.ocr.requests";
+const String ocrRequestsQueueGroup = "dd-ocr-rs";
+
+/// OCR results published after a request completes or fails.
+/// Service: dd-ocr-rs
+const String ocrResultsSubject = "dd.remote.ocr.results";
+
 /// Wakeup signal published whenever a new task is enqueued for a thread, so the orchestrator can prepare/scale the matching worker deployment without polling.
 /// Service: dd-remote-rest-api
 const String orchestratorWakeupSubject = "dd.remote.orchestrator.wakeup";
@@ -447,6 +469,10 @@ const String orchestratorWakeupStream = "DD_REMOTE_CONTROL";
 /// Trend, correlation, grant-match, graph-data, model, and white-paper evidence results from public-data analysis runs.
 /// Service: dd-public-data-server
 const String publicDataAnalysisResultsSubject = "dd.remote.public_data.analysis.results";
+
+/// Dead-letter subject for public-data ingest requests that exhaust JetStream delivery attempts.
+/// Service: dd-public-data-server
+const String publicDataIngestDeadLetterSubject = "dd.remote.public_data.ingest.deadletter";
 
 /// Inbound public-data ingestion requests accepted over NATS. Payloads mirror the HTTP /ingest and /scrape contracts.
 /// Service: dd-public-data-server
@@ -582,6 +608,66 @@ const String workflowsStartQueueGroup = "dd-gleam-workflow-engine";
 
 // ---------- Parameterized subjects ----------
 
+/// Per-job lifecycle and progress events emitted by the isolated browser worker.
+/// Service: dd-browser-job-runner
+const String browserJobEventsPattern = "dd.remote.browser_jobs.{job_id}.events";
+const String browserJobEventsWildcard = "dd.remote.browser_jobs.*.events";
+class BrowserJobEventsSubjectParts {
+  final String jobId;
+  const BrowserJobEventsSubjectParts({required this.jobId});
+}
+
+String browserJobEventsSubject(String jobId) {
+  return 'dd.remote.browser_jobs.$jobId.events';
+}
+
+BrowserJobEventsSubjectParts? parseBrowserJobEventsSubject(String subject) {
+  final patternTokens = ["dd","remote","browser_jobs","{job_id}","events"];
+  final subjectTokens = subject.split('.');
+  if (patternTokens.length != subjectTokens.length) return null;
+  final result = <String, String>{};
+  for (var i = 0; i < patternTokens.length; i += 1) {
+    final p = patternTokens[i];
+    final s = subjectTokens[i];
+    if (p.startsWith('{') && p.endsWith('}')) {
+      result[p.substring(1, p.length - 1)] = s;
+    } else if (p != s) {
+      return null;
+    }
+  }
+  return BrowserJobEventsSubjectParts(jobId: result["job_id"]!);
+}
+
+/// Per-job terminal result emitted by the isolated browser worker.
+/// Service: dd-browser-job-runner
+const String browserJobResultPattern = "dd.remote.browser_jobs.{job_id}.result";
+const String browserJobResultWildcard = "dd.remote.browser_jobs.*.result";
+class BrowserJobResultSubjectParts {
+  final String jobId;
+  const BrowserJobResultSubjectParts({required this.jobId});
+}
+
+String browserJobResultSubject(String jobId) {
+  return 'dd.remote.browser_jobs.$jobId.result';
+}
+
+BrowserJobResultSubjectParts? parseBrowserJobResultSubject(String subject) {
+  final patternTokens = ["dd","remote","browser_jobs","{job_id}","result"];
+  final subjectTokens = subject.split('.');
+  if (patternTokens.length != subjectTokens.length) return null;
+  final result = <String, String>{};
+  for (var i = 0; i < patternTokens.length; i += 1) {
+    final p = patternTokens[i];
+    final s = subjectTokens[i];
+    if (p.startsWith('{') && p.endsWith('}')) {
+      result[p.substring(1, p.length - 1)] = s;
+    } else if (p != s) {
+      return null;
+    }
+  }
+  return BrowserJobResultSubjectParts(jobId: result["job_id"]!);
+}
+
 /// Per-row change emitted by wal-gateway. Subject pattern is '<prefix>.<schema>.<table>.<op>'. The default prefix is 'cdc' and the default stream name is 'CDC'. Consumers usually subscribe to the prefix tail wildcard ('cdc.>').
 /// Service: dd-wal-gateway
 const String cdcRowChangePattern = "{prefix}.{schema}.{table}.{op}";
@@ -597,6 +683,10 @@ class CdcRowChangeSubjectParts {
 
 String cdcRowChangeSubject(String prefix, String schema, String table, String op) {
   return '$prefix.$schema.$table.$op';
+}
+
+String formatCdcRowChangeWildcard(String prefix) {
+  return '$prefix.>';
 }
 
 CdcRowChangeSubjectParts? parseCdcRowChangeSubject(String subject) {
@@ -630,6 +720,10 @@ class CdcTableFilterSubjectParts {
 
 String cdcTableFilterSubject(String prefix, String schema, String table) {
   return '$prefix.$schema.$table.>';
+}
+
+String formatCdcTableFilterWildcard(String prefix) {
+  return '$prefix.>';
 }
 
 CdcTableFilterSubjectParts? parseCdcTableFilterSubject(String subject) {
@@ -1020,6 +1114,10 @@ const String datasetLabelingWorkersQueueGroup = "dd-dataset-labeling";
 /// Service: dd-data-viz-rs
 const String dataVizNotificationDispatchQueueGroup = "dd-data-viz-notifiers";
 
+/// Shared queue group used by document converter replicas so each request is handled once.
+/// Service: dd-document-rs
+const String documentConvertersQueueGroup = "dd-document-rs";
+
 /// Shared queue group used by dd-economics-server replicas consuming forecast requests.
 /// Service: dd-economics-server
 const String economicsServerQueueGroup = "dd-economics-server";
@@ -1055,6 +1153,10 @@ const String monteCarloServerQueueGroup = "dd-monte-carlo-server";
 /// Shared queue group used by dd-music-rs replicas consuming generation requests.
 /// Service: dd-music-rs
 const String musicGenerationQueueGroup = "dd-music-rs";
+
+/// Shared queue group used by OCR replicas so each request is handled once.
+/// Service: dd-ocr-rs
+const String ocrWorkersQueueGroup = "dd-ocr-rs";
 
 /// Shared queue group used by dd-public-data-server replicas so each queued ingest/scrape request is processed once.
 /// Service: dd-public-data-server

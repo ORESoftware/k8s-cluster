@@ -24,6 +24,7 @@
     blockchain_bridge_attestations_subject/0,
     blockchain_index_events_subject/0,
     blockchain_mev_alerts_subject/0,
+    browser_job_results_subject/0,
     build_server_events_subject/0,
     build_server_images_subject/0,
     build_server_requests_subject/0,
@@ -64,6 +65,9 @@
     des_results_subject/0,
     des_simulate_subject/0,
     des_simulate_queue_group/0,
+    document_convert_requests_subject/0,
+    document_convert_requests_queue_group/0,
+    document_convert_results_subject/0,
     economics_forecast_requests_subject/0,
     economics_forecast_requests_queue_group/0,
     economics_forecast_results_subject/0,
@@ -151,9 +155,13 @@
     music_generation_results_subject/0,
     music_songs_published_subject/0,
     music_votes_events_subject/0,
+    ocr_requests_subject/0,
+    ocr_requests_queue_group/0,
+    ocr_results_subject/0,
     orchestrator_wakeup_subject/0,
     orchestrator_wakeup_stream/0,
     public_data_analysis_results_subject/0,
+    public_data_ingest_dead_letter_subject/0,
     public_data_ingest_requests_subject/0,
     public_data_ingest_requests_queue_group/0,
     public_data_ingest_results_subject/0,
@@ -199,6 +207,10 @@
     workflows_events_subject/0,
     workflows_start_subject/0,
     workflows_start_queue_group/0,
+    browser_job_events_pattern/0,
+    browser_job_events_wildcard/0,
+    browser_job_result_pattern/0,
+    browser_job_result_wildcard/0,
     cdc_row_change_pattern/0,
     cdc_row_change_wildcard/0,
     cdc_row_change_stream/0,
@@ -242,6 +254,7 @@
     critical_events_logger_queue_group/0,
     dataset_labeling_workers_queue_group/0,
     data_viz_notification_dispatch_queue_group/0,
+    document_converters_queue_group/0,
     economics_server_queue_group/0,
     evolution_islands_queue_group/0,
     func_approx_queue_group/0,
@@ -251,6 +264,7 @@
     mip_solver_workers_queue_group/0,
     monte_carlo_server_queue_group/0,
     music_generation_queue_group/0,
+    ocr_workers_queue_group/0,
     public_data_workers_queue_group/0,
     quantum_queue_group/0,
     raft_consensus_queue_group/0,
@@ -287,6 +301,7 @@ billing_webhook_receipts_subject() -> <<"dd.remote.billing.webhooks.receipts"/ut
 blockchain_bridge_attestations_subject() -> <<"dd.remote.blockchain.bridge.attestations"/utf8>>.
 blockchain_index_events_subject() -> <<"dd.remote.blockchain.index.events"/utf8>>.
 blockchain_mev_alerts_subject() -> <<"dd.remote.blockchain.mev.alerts"/utf8>>.
+browser_job_results_subject() -> <<"dd.remote.browser_jobs.results"/utf8>>.
 build_server_events_subject() -> <<"dd.remote.build_server.events"/utf8>>.
 build_server_images_subject() -> <<"dd.remote.build_server.images"/utf8>>.
 build_server_requests_subject() -> <<"dd.remote.build_server.requests"/utf8>>.
@@ -327,6 +342,9 @@ data_viz_publish_events_subject() -> <<"dd.remote.dataviz.publish.events"/utf8>>
 des_results_subject() -> <<"dd.remote.des.results"/utf8>>.
 des_simulate_subject() -> <<"dd.remote.des.simulate"/utf8>>.
 des_simulate_queue_group() -> <<"dd-des-simulator"/utf8>>.
+document_convert_requests_subject() -> <<"dd.remote.document.convert"/utf8>>.
+document_convert_requests_queue_group() -> <<"dd-document-rs"/utf8>>.
+document_convert_results_subject() -> <<"dd.remote.document.results"/utf8>>.
 economics_forecast_requests_subject() -> <<"dd.remote.economics.forecast.requests"/utf8>>.
 economics_forecast_requests_queue_group() -> <<"dd-economics-server"/utf8>>.
 economics_forecast_results_subject() -> <<"dd.remote.economics.forecast.results"/utf8>>.
@@ -414,9 +432,13 @@ music_generation_requests_queue_group() -> <<"dd-music-rs"/utf8>>.
 music_generation_results_subject() -> <<"dd.remote.music.generation.results"/utf8>>.
 music_songs_published_subject() -> <<"dd.remote.music.songs.published"/utf8>>.
 music_votes_events_subject() -> <<"dd.remote.music.votes.events"/utf8>>.
+ocr_requests_subject() -> <<"dd.remote.ocr.requests"/utf8>>.
+ocr_requests_queue_group() -> <<"dd-ocr-rs"/utf8>>.
+ocr_results_subject() -> <<"dd.remote.ocr.results"/utf8>>.
 orchestrator_wakeup_subject() -> <<"dd.remote.orchestrator.wakeup"/utf8>>.
 orchestrator_wakeup_stream() -> <<"DD_REMOTE_CONTROL"/utf8>>.
 public_data_analysis_results_subject() -> <<"dd.remote.public_data.analysis.results"/utf8>>.
+public_data_ingest_dead_letter_subject() -> <<"dd.remote.public_data.ingest.deadletter"/utf8>>.
 public_data_ingest_requests_subject() -> <<"dd.remote.public_data.ingest.requests"/utf8>>.
 public_data_ingest_requests_queue_group() -> <<"dd-public-data-server"/utf8>>.
 public_data_ingest_results_subject() -> <<"dd.remote.public_data.ingest.results"/utf8>>.
@@ -462,6 +484,10 @@ websocket_events_subject() -> <<"dd.remote.websocket.events"/utf8>>.
 workflows_events_subject() -> <<"dd.remote.workflows.events"/utf8>>.
 workflows_start_subject() -> <<"dd.remote.workflows.start"/utf8>>.
 workflows_start_queue_group() -> <<"dd-gleam-workflow-engine"/utf8>>.
+browser_job_events_pattern() -> <<"dd.remote.browser_jobs.{job_id}.events"/utf8>>.
+browser_job_events_wildcard() -> <<"dd.remote.browser_jobs.*.events"/utf8>>.
+browser_job_result_pattern() -> <<"dd.remote.browser_jobs.{job_id}.result"/utf8>>.
+browser_job_result_wildcard() -> <<"dd.remote.browser_jobs.*.result"/utf8>>.
 cdc_row_change_pattern() -> <<"{prefix}.{schema}.{table}.{op}"/utf8>>.
 cdc_row_change_wildcard() -> <<"{prefix}.>"/utf8>>.
 cdc_row_change_stream() -> <<"CDC"/utf8>>.
@@ -505,6 +531,7 @@ contact_send_queue_group() -> <<"dd-email-sms-contact"/utf8>>.
 critical_events_logger_queue_group() -> <<"dd-runtime-critical-events"/utf8>>.
 dataset_labeling_workers_queue_group() -> <<"dd-dataset-labeling"/utf8>>.
 data_viz_notification_dispatch_queue_group() -> <<"dd-data-viz-notifiers"/utf8>>.
+document_converters_queue_group() -> <<"dd-document-rs"/utf8>>.
 economics_server_queue_group() -> <<"dd-economics-server"/utf8>>.
 evolution_islands_queue_group() -> <<"dd-evolution-optimizer-islands"/utf8>>.
 func_approx_queue_group() -> <<"dd-func-approx-rs"/utf8>>.
@@ -514,6 +541,7 @@ lambda_runner_queue_group() -> <<"dd-gleam-lambda-runner"/utf8>>.
 mip_solver_workers_queue_group() -> <<"dd-in-house-mip-solver-node-workers"/utf8>>.
 monte_carlo_server_queue_group() -> <<"dd-monte-carlo-server"/utf8>>.
 music_generation_queue_group() -> <<"dd-music-rs"/utf8>>.
+ocr_workers_queue_group() -> <<"dd-ocr-rs"/utf8>>.
 public_data_workers_queue_group() -> <<"dd-public-data-server"/utf8>>.
 quantum_queue_group() -> <<"dd-quantum-compute-rs"/utf8>>.
 raft_consensus_queue_group() -> <<"dd-raft-consensus"/utf8>>.

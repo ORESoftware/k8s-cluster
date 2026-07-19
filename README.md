@@ -57,3 +57,19 @@ commit the updated `generated/` files.
 After publishing changes here, bump the pin there:
 `git submodule update --remote remote/libs && git add remote/libs && git commit`.
 See `docs/remote-libs-submodule.md` in k8s-cluster.
+
+## Direct consumption from other repositories
+
+`k8s-cluster` is only one consumer. Other repositories should pin this same
+canonical repository instead of copying generated definitions. A Git submodule
+is the portable option for every generated language target:
+
+```bash
+git submodule add -b main git@github.com:ORESoftware/k8s-libs-and-shared-defs.git vendor/k8s-libs-and-shared-defs
+git submodule update --init --recursive
+```
+
+Consume the language-specific package below that checkout (for example
+`nats/subject-defs/generated/rust`, `generated/go`, or
+`generated/typescript`). This keeps external consumers and `k8s-cluster`
+locked to reviewable commits from the identical schema and generator.

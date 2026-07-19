@@ -60,6 +60,10 @@ BLOCKCHAIN_INDEX_EVENTS_SUBJECT = "dd.remote.blockchain.index.events"
 # Service: dd-contract-service
 BLOCKCHAIN_MEV_ALERTS_SUBJECT = "dd.remote.blockchain.mev.alerts"
 
+# Shared result fanout receiving every browser-job terminal result.
+# Service: dd-browser-job-runner
+BROWSER_JOB_RESULTS_SUBJECT = "dd.remote.browser_jobs.results"
+
 # Redacted build lifecycle events (queued/running/succeeded/failed) published by the build server. Default for BUILD_SERVER_NATS_EVENT_SUBJECT.
 # Service: dd-build-server
 BUILD_SERVER_EVENTS_SUBJECT = "dd.remote.build_server.events"
@@ -183,6 +187,15 @@ DES_RESULTS_SUBJECT = "dd.remote.des.results"
 # Service: dd-ai-ml-pipeline
 DES_SIMULATE_SUBJECT = "dd.remote.des.simulate"
 DES_SIMULATE_QUEUE_GROUP = "dd-des-simulator"
+
+# Document conversion requests consumed by dd-document-rs replicas.
+# Service: dd-document-rs
+DOCUMENT_CONVERT_REQUESTS_SUBJECT = "dd.remote.document.convert"
+DOCUMENT_CONVERT_REQUESTS_QUEUE_GROUP = "dd-document-rs"
+
+# Document conversion results published after a request completes or fails.
+# Service: dd-document-rs
+DOCUMENT_CONVERT_RESULTS_SUBJECT = "dd.remote.document.results"
 
 # Inbound forecast/recommendation requests consumed by the economics server. Subscribed with the dd-economics-server queue group so requests load-balance across replicas. Default for ECONOMICS_FORECAST_REQUEST_SUBJECT.
 # Service: dd-economics-server
@@ -445,6 +458,15 @@ MUSIC_SONGS_PUBLISHED_SUBJECT = "dd.remote.music.songs.published"
 # Service: dd-music-rs
 MUSIC_VOTES_EVENTS_SUBJECT = "dd.remote.music.votes.events"
 
+# OCR requests consumed by dd-ocr-rs replicas.
+# Service: dd-ocr-rs
+OCR_REQUESTS_SUBJECT = "dd.remote.ocr.requests"
+OCR_REQUESTS_QUEUE_GROUP = "dd-ocr-rs"
+
+# OCR results published after a request completes or fails.
+# Service: dd-ocr-rs
+OCR_RESULTS_SUBJECT = "dd.remote.ocr.results"
+
 # Wakeup signal published whenever a new task is enqueued for a thread, so the orchestrator can prepare/scale the matching worker deployment without polling.
 # Service: dd-remote-rest-api
 ORCHESTRATOR_WAKEUP_SUBJECT = "dd.remote.orchestrator.wakeup"
@@ -453,6 +475,10 @@ ORCHESTRATOR_WAKEUP_STREAM = "DD_REMOTE_CONTROL"
 # Trend, correlation, grant-match, graph-data, model, and white-paper evidence results from public-data analysis runs.
 # Service: dd-public-data-server
 PUBLIC_DATA_ANALYSIS_RESULTS_SUBJECT = "dd.remote.public_data.analysis.results"
+
+# Dead-letter subject for public-data ingest requests that exhaust JetStream delivery attempts.
+# Service: dd-public-data-server
+PUBLIC_DATA_INGEST_DEAD_LETTER_SUBJECT = "dd.remote.public_data.ingest.deadletter"
 
 # Inbound public-data ingestion requests accepted over NATS. Payloads mirror the HTTP /ingest and /scrape contracts.
 # Service: dd-public-data-server
@@ -588,6 +614,70 @@ WORKFLOWS_START_QUEUE_GROUP = "dd-gleam-workflow-engine"
 
 # ---------- Parameterized subjects ----------
 
+# Per-job lifecycle and progress events emitted by the isolated browser worker.
+# Service: dd-browser-job-runner
+BROWSER_JOB_EVENTS_PATTERN = "dd.remote.browser_jobs.{job_id}.events"
+BROWSER_JOB_EVENTS_WILDCARD = "dd.remote.browser_jobs.*.events"
+@dataclass(frozen=True)
+class BrowserJobEventsSubjectParts:
+    job_id: str
+
+def browser_job_events_subject(job_id: str) -> str:
+    """Per-job lifecycle and progress events emitted by the isolated browser worker."""
+    return "dd.remote.browser_jobs.{job_id}.events".format(job_id=job_id)
+
+def parse_browser_job_events_subject(subject: str) -> Optional[BrowserJobEventsSubjectParts]:
+    """Parse a resolved BrowserJobEvents subject; returns None on mismatch."""
+    pattern_tokens = ["dd","remote","browser_jobs","{job_id}","events"]
+    subject_tokens = subject.split(".")
+    result: dict[str, str] = {}
+    si = 0
+    for tok in pattern_tokens:
+        if tok.startswith("{") and tok.endswith("}"):
+            if si >= len(subject_tokens):
+                return None
+            result[tok[1:-1]] = subject_tokens[si]
+            si += 1
+            continue
+        if si >= len(subject_tokens) or subject_tokens[si] != tok:
+            return None
+        si += 1
+    if si != len(subject_tokens):
+        return None
+    return BrowserJobEventsSubjectParts(job_id=result["job_id"])
+
+# Per-job terminal result emitted by the isolated browser worker.
+# Service: dd-browser-job-runner
+BROWSER_JOB_RESULT_PATTERN = "dd.remote.browser_jobs.{job_id}.result"
+BROWSER_JOB_RESULT_WILDCARD = "dd.remote.browser_jobs.*.result"
+@dataclass(frozen=True)
+class BrowserJobResultSubjectParts:
+    job_id: str
+
+def browser_job_result_subject(job_id: str) -> str:
+    """Per-job terminal result emitted by the isolated browser worker."""
+    return "dd.remote.browser_jobs.{job_id}.result".format(job_id=job_id)
+
+def parse_browser_job_result_subject(subject: str) -> Optional[BrowserJobResultSubjectParts]:
+    """Parse a resolved BrowserJobResult subject; returns None on mismatch."""
+    pattern_tokens = ["dd","remote","browser_jobs","{job_id}","result"]
+    subject_tokens = subject.split(".")
+    result: dict[str, str] = {}
+    si = 0
+    for tok in pattern_tokens:
+        if tok.startswith("{") and tok.endswith("}"):
+            if si >= len(subject_tokens):
+                return None
+            result[tok[1:-1]] = subject_tokens[si]
+            si += 1
+            continue
+        if si >= len(subject_tokens) or subject_tokens[si] != tok:
+            return None
+        si += 1
+    if si != len(subject_tokens):
+        return None
+    return BrowserJobResultSubjectParts(job_id=result["job_id"])
+
 # Per-row change emitted by wal-gateway. Subject pattern is '<prefix>.<schema>.<table>.<op>'. The default prefix is 'cdc' and the default stream name is 'CDC'. Consumers usually subscribe to the prefix tail wildcard ('cdc.>').
 # Service: dd-wal-gateway
 CDC_ROW_CHANGE_PATTERN = "{prefix}.{schema}.{table}.{op}"
@@ -603,6 +693,9 @@ class CdcRowChangeSubjectParts:
 def cdc_row_change_subject(prefix: str, schema: str, table: str, op: str) -> str:
     """Per-row change emitted by wal-gateway. Subject pattern is '<prefix>.<schema>.<table>.<op>'. The default prefix is 'cdc' and the default stream name is 'CDC'. Consumers usually subscribe to the prefix tail wildcard ('cdc.>')."""
     return "{prefix}.{schema}.{table}.{op}".format(prefix=prefix, schema=schema, table=table, op=op)
+
+def format_cdc_row_change_wildcard(prefix: str) -> str:
+    return "{prefix}.>".format(prefix=prefix)
 
 def parse_cdc_row_change_subject(subject: str) -> Optional[CdcRowChangeSubjectParts]:
     """Parse a resolved CdcRowChange subject; returns None on mismatch."""
@@ -638,6 +731,9 @@ class CdcTableFilterSubjectParts:
 def cdc_table_filter_subject(prefix: str, schema: str, table: str) -> str:
     """Per-table JetStream filter subject ('<prefix>.<schema>.<table>.>') used by CDC consumers (e.g. dd-remote-rest-api) to subscribe to every op for one Postgres table. Not a publish target; producers publish per-row via CdcRowChange."""
     return "{prefix}.{schema}.{table}.>".format(prefix=prefix, schema=schema, table=table)
+
+def format_cdc_table_filter_wildcard(prefix: str) -> str:
+    return "{prefix}.>".format(prefix=prefix)
 
 def parse_cdc_table_filter_subject(subject: str) -> Optional[CdcTableFilterSubjectParts]:
     """Parse a resolved CdcTableFilter subject; returns None on mismatch."""
@@ -1052,6 +1148,10 @@ DATASET_LABELING_WORKERS_QUEUE_GROUP = "dd-dataset-labeling"
 # Service: dd-data-viz-rs
 DATA_VIZ_NOTIFICATION_DISPATCH_QUEUE_GROUP = "dd-data-viz-notifiers"
 
+# Shared queue group used by document converter replicas so each request is handled once.
+# Service: dd-document-rs
+DOCUMENT_CONVERTERS_QUEUE_GROUP = "dd-document-rs"
+
 # Shared queue group used by dd-economics-server replicas consuming forecast requests.
 # Service: dd-economics-server
 ECONOMICS_SERVER_QUEUE_GROUP = "dd-economics-server"
@@ -1087,6 +1187,10 @@ MONTE_CARLO_SERVER_QUEUE_GROUP = "dd-monte-carlo-server"
 # Shared queue group used by dd-music-rs replicas consuming generation requests.
 # Service: dd-music-rs
 MUSIC_GENERATION_QUEUE_GROUP = "dd-music-rs"
+
+# Shared queue group used by OCR replicas so each request is handled once.
+# Service: dd-ocr-rs
+OCR_WORKERS_QUEUE_GROUP = "dd-ocr-rs"
 
 # Shared queue group used by dd-public-data-server replicas so each queued ingest/scrape request is processed once.
 # Service: dd-public-data-server

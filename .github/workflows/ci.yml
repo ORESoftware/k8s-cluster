@@ -31,8 +31,15 @@ jobs:
         run: node interfaces/redis/src/generate.mjs --check
       - name: shared interfaces generated output in sync
         run: node interfaces/shared/src/generate.mjs --check
-      - name: pg-defs parser/generator self-tests
-        run: node --test pg-defs/src/*.test.mjs
+      - name: Generator and cross-language contract tests
+        run: >-
+          node --test
+          pg-defs/src/*.test.mjs
+          nats/subject-defs/src/*.test.mjs
+          interfaces/redis/src/*.test.mjs
+          interfaces/shared/src/*.test.mjs
+      - name: Shared-interface examples conform to their schemas
+        run: node interfaces/shared/src/validate-examples.mjs
       - name: pg-defs sql-contract parse sanity (no DB)
         run: node pg-defs/src/diff.mjs --parse-only
 

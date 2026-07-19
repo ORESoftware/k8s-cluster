@@ -28,6 +28,8 @@ let blockchainIndexEventsSubject : string = "dd.remote.blockchain.index.events"
 
 let blockchainMevAlertsSubject : string = "dd.remote.blockchain.mev.alerts"
 
+let browserJobResultsSubject : string = "dd.remote.browser_jobs.results"
+
 let buildServerEventsSubject : string = "dd.remote.build_server.events"
 
 let buildServerImagesSubject : string = "dd.remote.build_server.images"
@@ -95,6 +97,11 @@ let desResultsSubject : string = "dd.remote.des.results"
 
 let desSimulateSubject : string = "dd.remote.des.simulate"
 let desSimulateQueueGroup : string = "dd-des-simulator"
+
+let documentConvertRequestsSubject : string = "dd.remote.document.convert"
+let documentConvertRequestsQueueGroup : string = "dd-document-rs"
+
+let documentConvertResultsSubject : string = "dd.remote.document.results"
 
 let economicsForecastRequestsSubject : string = "dd.remote.economics.forecast.requests"
 let economicsForecastRequestsQueueGroup : string = "dd-economics-server"
@@ -241,10 +248,17 @@ let musicSongsPublishedSubject : string = "dd.remote.music.songs.published"
 
 let musicVotesEventsSubject : string = "dd.remote.music.votes.events"
 
+let ocrRequestsSubject : string = "dd.remote.ocr.requests"
+let ocrRequestsQueueGroup : string = "dd-ocr-rs"
+
+let ocrResultsSubject : string = "dd.remote.ocr.results"
+
 let orchestratorWakeupSubject : string = "dd.remote.orchestrator.wakeup"
 let orchestratorWakeupStream : string = "DD_REMOTE_CONTROL"
 
 let publicDataAnalysisResultsSubject : string = "dd.remote.public_data.analysis.results"
+
+let publicDataIngestDeadLetterSubject : string = "dd.remote.public_data.ingest.deadletter"
 
 let publicDataIngestRequestsSubject : string = "dd.remote.public_data.ingest.requests"
 let publicDataIngestRequestsQueueGroup : string = "dd-public-data-server"
@@ -320,10 +334,31 @@ let workflowsEventsSubject : string = "dd.remote.workflows.events"
 let workflowsStartSubject : string = "dd.remote.workflows.start"
 let workflowsStartQueueGroup : string = "dd-gleam-workflow-engine"
 
+let browserJobEventsPattern : string = "dd.remote.browser_jobs.{job_id}.events"
+let browserJobEventsWildcard : string = "dd.remote.browser_jobs.*.events"
+let browserJobEventsSubject (job_id: string) : string = "dd.remote.browser_jobs." + job_id + ".events"
+type BrowserJobEventsSubjectParts =
+    { BrowserJobEventsSubjectPartsJobId: string }
+let parseBrowserJobEventsSubject (subject: string) : BrowserJobEventsSubjectParts option =
+    match subject.Split('.') with
+    | [| "dd"; "remote"; "browser_jobs"; job_id; "events" |] -> Some { BrowserJobEventsSubjectPartsJobId = job_id }
+    | _ -> None
+
+let browserJobResultPattern : string = "dd.remote.browser_jobs.{job_id}.result"
+let browserJobResultWildcard : string = "dd.remote.browser_jobs.*.result"
+let browserJobResultSubject (job_id: string) : string = "dd.remote.browser_jobs." + job_id + ".result"
+type BrowserJobResultSubjectParts =
+    { BrowserJobResultSubjectPartsJobId: string }
+let parseBrowserJobResultSubject (subject: string) : BrowserJobResultSubjectParts option =
+    match subject.Split('.') with
+    | [| "dd"; "remote"; "browser_jobs"; job_id; "result" |] -> Some { BrowserJobResultSubjectPartsJobId = job_id }
+    | _ -> None
+
 let cdcRowChangePattern : string = "{prefix}.{schema}.{table}.{op}"
 let cdcRowChangeWildcard : string = "{prefix}.>"
 let cdcRowChangeStream : string = "CDC"
 let cdcRowChangeSubject (prefix: string) (schema: string) (table: string) (op: string) : string = prefix + "." + schema + "." + table + "." + op
+let formatCdcRowChangeWildcard (prefix: string) : string = prefix + ".>"
 type CdcRowChangeSubjectParts =
     { CdcRowChangeSubjectPartsPrefix: string
       CdcRowChangeSubjectPartsSchema: string
@@ -338,6 +373,7 @@ let cdcTableFilterPattern : string = "{prefix}.{schema}.{table}.>"
 let cdcTableFilterWildcard : string = "{prefix}.>"
 let cdcTableFilterStream : string = "CDC"
 let cdcTableFilterSubject (prefix: string) (schema: string) (table: string) : string = prefix + "." + schema + "." + table + ".>"
+let formatCdcTableFilterWildcard (prefix: string) : string = prefix + ".>"
 type CdcTableFilterSubjectParts =
     { CdcTableFilterSubjectPartsPrefix: string
       CdcTableFilterSubjectPartsSchema: string
@@ -480,6 +516,8 @@ let queueGroupDatasetLabelingWorkersQueueGroup : string = "dd-dataset-labeling"
 
 let queueGroupDataVizNotificationDispatchQueueGroup : string = "dd-data-viz-notifiers"
 
+let queueGroupDocumentConvertersQueueGroup : string = "dd-document-rs"
+
 let queueGroupEconomicsServerQueueGroup : string = "dd-economics-server"
 
 let queueGroupEvolutionIslandsQueueGroup : string = "dd-evolution-optimizer-islands"
@@ -497,6 +535,8 @@ let queueGroupMipSolverWorkersQueueGroup : string = "dd-in-house-mip-solver-node
 let queueGroupMonteCarloServerQueueGroup : string = "dd-monte-carlo-server"
 
 let queueGroupMusicGenerationQueueGroup : string = "dd-music-rs"
+
+let queueGroupOcrWorkersQueueGroup : string = "dd-ocr-rs"
 
 let queueGroupPublicDataWorkersQueueGroup : string = "dd-public-data-server"
 

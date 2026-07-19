@@ -55,6 +55,10 @@ pub const blockchain_index_events_subject = "dd.remote.blockchain.index.events"
 /// Service: dd-contract-service
 pub const blockchain_mev_alerts_subject = "dd.remote.blockchain.mev.alerts"
 
+/// Shared result fanout receiving every browser-job terminal result.
+/// Service: dd-browser-job-runner
+pub const browser_job_results_subject = "dd.remote.browser_jobs.results"
+
 /// Redacted build lifecycle events (queued/running/succeeded/failed) published by the build server. Default for BUILD_SERVER_NATS_EVENT_SUBJECT.
 /// Service: dd-build-server
 pub const build_server_events_subject = "dd.remote.build_server.events"
@@ -178,6 +182,15 @@ pub const des_results_subject = "dd.remote.des.results"
 /// Service: dd-ai-ml-pipeline
 pub const des_simulate_subject = "dd.remote.des.simulate"
 pub const des_simulate_queue_group = "dd-des-simulator"
+
+/// Document conversion requests consumed by dd-document-rs replicas.
+/// Service: dd-document-rs
+pub const document_convert_requests_subject = "dd.remote.document.convert"
+pub const document_convert_requests_queue_group = "dd-document-rs"
+
+/// Document conversion results published after a request completes or fails.
+/// Service: dd-document-rs
+pub const document_convert_results_subject = "dd.remote.document.results"
 
 /// Inbound forecast/recommendation requests consumed by the economics server. Subscribed with the dd-economics-server queue group so requests load-balance across replicas. Default for ECONOMICS_FORECAST_REQUEST_SUBJECT.
 /// Service: dd-economics-server
@@ -440,6 +453,15 @@ pub const music_songs_published_subject = "dd.remote.music.songs.published"
 /// Service: dd-music-rs
 pub const music_votes_events_subject = "dd.remote.music.votes.events"
 
+/// OCR requests consumed by dd-ocr-rs replicas.
+/// Service: dd-ocr-rs
+pub const ocr_requests_subject = "dd.remote.ocr.requests"
+pub const ocr_requests_queue_group = "dd-ocr-rs"
+
+/// OCR results published after a request completes or fails.
+/// Service: dd-ocr-rs
+pub const ocr_results_subject = "dd.remote.ocr.results"
+
 /// Wakeup signal published whenever a new task is enqueued for a thread, so the orchestrator can prepare/scale the matching worker deployment without polling.
 /// Service: dd-remote-rest-api
 pub const orchestrator_wakeup_subject = "dd.remote.orchestrator.wakeup"
@@ -448,6 +470,10 @@ pub const orchestrator_wakeup_stream = "DD_REMOTE_CONTROL"
 /// Trend, correlation, grant-match, graph-data, model, and white-paper evidence results from public-data analysis runs.
 /// Service: dd-public-data-server
 pub const public_data_analysis_results_subject = "dd.remote.public_data.analysis.results"
+
+/// Dead-letter subject for public-data ingest requests that exhaust JetStream delivery attempts.
+/// Service: dd-public-data-server
+pub const public_data_ingest_dead_letter_subject = "dd.remote.public_data.ingest.deadletter"
 
 /// Inbound public-data ingestion requests accepted over NATS. Payloads mirror the HTTP /ingest and /scrape contracts.
 /// Service: dd-public-data-server
@@ -581,6 +607,84 @@ pub const workflows_events_subject = "dd.remote.workflows.events"
 pub const workflows_start_subject = "dd.remote.workflows.start"
 pub const workflows_start_queue_group = "dd-gleam-workflow-engine"
 
+/// Per-job lifecycle and progress events emitted by the isolated browser worker.
+/// Service: dd-browser-job-runner
+pub const browser_job_events_pattern = "dd.remote.browser_jobs.{job_id}.events"
+pub const browser_job_events_wildcard = "dd.remote.browser_jobs.*.events"
+pub type BrowserJobEventsSubjectParts {
+  BrowserJobEventsSubjectParts(
+    job_id: String
+  )
+}
+pub fn browser_job_events_subject(job_id job_id: String) -> String {
+  "dd.remote.browser_jobs." <> job_id <> ".events"
+}
+
+pub fn parse_browser_job_events_subject(subject: String) -> Option(BrowserJobEventsSubjectParts) {
+  let pattern_tokens = string.split("dd.remote.browser_jobs.{job_id}.events", on: ".")
+  let subject_tokens = string.split(subject, on: ".")
+  case list.length(pattern_tokens) == list.length(subject_tokens) {
+    False -> None
+    True -> {
+      let pairs = list.zip(pattern_tokens, subject_tokens)
+      let job_id = lookup_param(pairs, "{job_id}")
+      let literals_ok = list.all(pairs, fn(pair) {
+        let #(p, s) = pair
+        case string.starts_with(p, "{") && string.ends_with(p, "}") {
+          True -> True
+          False -> p == s
+        }
+      })
+      case literals_ok {
+        False -> None
+        True -> {
+          use job_id <- with_some(job_id)
+          Some(BrowserJobEventsSubjectParts(job_id: job_id))
+        }
+      }
+    }
+  }
+}
+
+/// Per-job terminal result emitted by the isolated browser worker.
+/// Service: dd-browser-job-runner
+pub const browser_job_result_pattern = "dd.remote.browser_jobs.{job_id}.result"
+pub const browser_job_result_wildcard = "dd.remote.browser_jobs.*.result"
+pub type BrowserJobResultSubjectParts {
+  BrowserJobResultSubjectParts(
+    job_id: String
+  )
+}
+pub fn browser_job_result_subject(job_id job_id: String) -> String {
+  "dd.remote.browser_jobs." <> job_id <> ".result"
+}
+
+pub fn parse_browser_job_result_subject(subject: String) -> Option(BrowserJobResultSubjectParts) {
+  let pattern_tokens = string.split("dd.remote.browser_jobs.{job_id}.result", on: ".")
+  let subject_tokens = string.split(subject, on: ".")
+  case list.length(pattern_tokens) == list.length(subject_tokens) {
+    False -> None
+    True -> {
+      let pairs = list.zip(pattern_tokens, subject_tokens)
+      let job_id = lookup_param(pairs, "{job_id}")
+      let literals_ok = list.all(pairs, fn(pair) {
+        let #(p, s) = pair
+        case string.starts_with(p, "{") && string.ends_with(p, "}") {
+          True -> True
+          False -> p == s
+        }
+      })
+      case literals_ok {
+        False -> None
+        True -> {
+          use job_id <- with_some(job_id)
+          Some(BrowserJobResultSubjectParts(job_id: job_id))
+        }
+      }
+    }
+  }
+}
+
 /// Per-row change emitted by wal-gateway. Subject pattern is '<prefix>.<schema>.<table>.<op>'. The default prefix is 'cdc' and the default stream name is 'CDC'. Consumers usually subscribe to the prefix tail wildcard ('cdc.>').
 /// Service: dd-wal-gateway
 pub const cdc_row_change_pattern = "{prefix}.{schema}.{table}.{op}"
@@ -596,6 +700,10 @@ pub type CdcRowChangeSubjectParts {
 }
 pub fn cdc_row_change_subject(prefix prefix: String, schema schema: String, table table: String, op op: String) -> String {
   prefix <> "." <> schema <> "." <> table <> "." <> op
+}
+
+pub fn format_cdc_row_change_wildcard(prefix prefix: String) -> String {
+  prefix <> ".>"
 }
 
 pub fn parse_cdc_row_change_subject(subject: String) -> Option(CdcRowChangeSubjectParts) {
@@ -644,6 +752,10 @@ pub type CdcTableFilterSubjectParts {
 }
 pub fn cdc_table_filter_subject(prefix prefix: String, schema schema: String, table table: String) -> String {
   prefix <> "." <> schema <> "." <> table <> ".>"
+}
+
+pub fn format_cdc_table_filter_wildcard(prefix prefix: String) -> String {
+  prefix <> ".>"
 }
 
 pub fn parse_cdc_table_filter_subject(subject: String) -> Option(CdcTableFilterSubjectParts) {
@@ -1144,6 +1256,10 @@ pub const dataset_labeling_workers_queue_group = "dd-dataset-labeling"
 /// Service: dd-data-viz-rs
 pub const data_viz_notification_dispatch_queue_group = "dd-data-viz-notifiers"
 
+/// Shared queue group used by document converter replicas so each request is handled once.
+/// Service: dd-document-rs
+pub const document_converters_queue_group = "dd-document-rs"
+
 /// Shared queue group used by dd-economics-server replicas consuming forecast requests.
 /// Service: dd-economics-server
 pub const economics_server_queue_group = "dd-economics-server"
@@ -1179,6 +1295,10 @@ pub const monte_carlo_server_queue_group = "dd-monte-carlo-server"
 /// Shared queue group used by dd-music-rs replicas consuming generation requests.
 /// Service: dd-music-rs
 pub const music_generation_queue_group = "dd-music-rs"
+
+/// Shared queue group used by OCR replicas so each request is handled once.
+/// Service: dd-ocr-rs
+pub const ocr_workers_queue_group = "dd-ocr-rs"
 
 /// Shared queue group used by dd-public-data-server replicas so each queued ingest/scrape request is processed once.
 /// Service: dd-public-data-server

@@ -43,6 +43,8 @@ inline const char* blockchain_index_events_subject = "dd.remote.blockchain.index
 
 inline const char* blockchain_mev_alerts_subject = "dd.remote.blockchain.mev.alerts";
 
+inline const char* browser_job_results_subject = "dd.remote.browser_jobs.results";
+
 inline const char* build_server_events_subject = "dd.remote.build_server.events";
 
 inline const char* build_server_images_subject = "dd.remote.build_server.images";
@@ -110,6 +112,11 @@ inline const char* des_results_subject = "dd.remote.des.results";
 
 inline const char* des_simulate_subject = "dd.remote.des.simulate";
 inline const char* des_simulate_queue_group = "dd-des-simulator";
+
+inline const char* document_convert_requests_subject = "dd.remote.document.convert";
+inline const char* document_convert_requests_queue_group = "dd-document-rs";
+
+inline const char* document_convert_results_subject = "dd.remote.document.results";
 
 inline const char* economics_forecast_requests_subject = "dd.remote.economics.forecast.requests";
 inline const char* economics_forecast_requests_queue_group = "dd-economics-server";
@@ -256,10 +263,17 @@ inline const char* music_songs_published_subject = "dd.remote.music.songs.publis
 
 inline const char* music_votes_events_subject = "dd.remote.music.votes.events";
 
+inline const char* ocr_requests_subject = "dd.remote.ocr.requests";
+inline const char* ocr_requests_queue_group = "dd-ocr-rs";
+
+inline const char* ocr_results_subject = "dd.remote.ocr.results";
+
 inline const char* orchestrator_wakeup_subject = "dd.remote.orchestrator.wakeup";
 inline const char* orchestrator_wakeup_stream = "DD_REMOTE_CONTROL";
 
 inline const char* public_data_analysis_results_subject = "dd.remote.public_data.analysis.results";
+
+inline const char* public_data_ingest_dead_letter_subject = "dd.remote.public_data.ingest.deadletter";
 
 inline const char* public_data_ingest_requests_subject = "dd.remote.public_data.ingest.requests";
 inline const char* public_data_ingest_requests_queue_group = "dd-public-data-server";
@@ -335,10 +349,47 @@ inline const char* workflows_events_subject = "dd.remote.workflows.events";
 inline const char* workflows_start_subject = "dd.remote.workflows.start";
 inline const char* workflows_start_queue_group = "dd-gleam-workflow-engine";
 
+inline const char* browser_job_events_pattern = "dd.remote.browser_jobs.{job_id}.events";
+inline const char* browser_job_events_wildcard = "dd.remote.browser_jobs.*.events";
+inline std::string browser_job_events_subject(const std::string& job_id) { return std::string("dd.remote.browser_jobs.") + job_id + std::string(".events"); }
+struct BrowserJobEventsSubjectParts {
+    std::string job_id;
+};
+inline std::optional<BrowserJobEventsSubjectParts> parse_browser_job_events_subject(const std::string& subject) {
+    auto parts = dd_split(subject, '.');
+    if (parts.size() != 5) return std::nullopt;
+    if (parts[0] != "dd") return std::nullopt;
+    if (parts[1] != "remote") return std::nullopt;
+    if (parts[2] != "browser_jobs") return std::nullopt;
+    if (parts[4] != "events") return std::nullopt;
+    BrowserJobEventsSubjectParts result;
+    result.job_id = parts[3];
+    return result;
+}
+
+inline const char* browser_job_result_pattern = "dd.remote.browser_jobs.{job_id}.result";
+inline const char* browser_job_result_wildcard = "dd.remote.browser_jobs.*.result";
+inline std::string browser_job_result_subject(const std::string& job_id) { return std::string("dd.remote.browser_jobs.") + job_id + std::string(".result"); }
+struct BrowserJobResultSubjectParts {
+    std::string job_id;
+};
+inline std::optional<BrowserJobResultSubjectParts> parse_browser_job_result_subject(const std::string& subject) {
+    auto parts = dd_split(subject, '.');
+    if (parts.size() != 5) return std::nullopt;
+    if (parts[0] != "dd") return std::nullopt;
+    if (parts[1] != "remote") return std::nullopt;
+    if (parts[2] != "browser_jobs") return std::nullopt;
+    if (parts[4] != "result") return std::nullopt;
+    BrowserJobResultSubjectParts result;
+    result.job_id = parts[3];
+    return result;
+}
+
 inline const char* cdc_row_change_pattern = "{prefix}.{schema}.{table}.{op}";
 inline const char* cdc_row_change_wildcard = "{prefix}.>";
 inline const char* cdc_row_change_stream = "CDC";
 inline std::string cdc_row_change_subject(const std::string& prefix, const std::string& schema, const std::string& table, const std::string& op) { return prefix + std::string(".") + schema + std::string(".") + table + std::string(".") + op; }
+inline std::string format_cdc_row_change_wildcard(const std::string& prefix) { return prefix + std::string(".>"); }
 struct CdcRowChangeSubjectParts {
     std::string prefix;
     std::string schema;
@@ -360,6 +411,7 @@ inline const char* cdc_table_filter_pattern = "{prefix}.{schema}.{table}.>";
 inline const char* cdc_table_filter_wildcard = "{prefix}.>";
 inline const char* cdc_table_filter_stream = "CDC";
 inline std::string cdc_table_filter_subject(const std::string& prefix, const std::string& schema, const std::string& table) { return prefix + std::string(".") + schema + std::string(".") + table + std::string(".>"); }
+inline std::string format_cdc_table_filter_wildcard(const std::string& prefix) { return prefix + std::string(".>"); }
 struct CdcTableFilterSubjectParts {
     std::string prefix;
     std::string schema;
@@ -595,6 +647,8 @@ inline const char* queue_group_dataset_labeling_workers_queue_group = "dd-datase
 
 inline const char* queue_group_data_viz_notification_dispatch_queue_group = "dd-data-viz-notifiers";
 
+inline const char* queue_group_document_converters_queue_group = "dd-document-rs";
+
 inline const char* queue_group_economics_server_queue_group = "dd-economics-server";
 
 inline const char* queue_group_evolution_islands_queue_group = "dd-evolution-optimizer-islands";
@@ -612,6 +666,8 @@ inline const char* queue_group_mip_solver_workers_queue_group = "dd-in-house-mip
 inline const char* queue_group_monte_carlo_server_queue_group = "dd-monte-carlo-server";
 
 inline const char* queue_group_music_generation_queue_group = "dd-music-rs";
+
+inline const char* queue_group_ocr_workers_queue_group = "dd-ocr-rs";
 
 inline const char* queue_group_public_data_workers_queue_group = "dd-public-data-server";
 

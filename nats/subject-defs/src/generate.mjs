@@ -64,6 +64,8 @@ const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 
 async function main() {
   const args = new Set(process.argv.slice(2));
+  const outputArgument = [...args].find((arg) => arg.startsWith('--output='));
+  const selectedOutput = outputArgument?.slice('--output='.length);
 
   const indexRaw = await readFile(path.join(packageRoot, 'schema', 'index.json'), 'utf8');
   const index = JSON.parse(indexRaw);
@@ -79,10 +81,16 @@ async function main() {
 
   const model = buildModel(schemas);
   const outputs = renderOutputs(model);
+  if (outputArgument && (!selectedOutput || !outputs.has(selectedOutput))) {
+    throw new Error(`Unknown generated output ${JSON.stringify(selectedOutput)}`);
+  }
+  const selectedOutputs = selectedOutput
+    ? new Map([[selectedOutput, outputs.get(selectedOutput)]])
+    : outputs;
 
   if (args.has('--check')) {
     const stale = [];
-    for (const [relativePath, contents] of outputs) {
+    for (const [relativePath, contents] of selectedOutputs) {
       const absolutePath = path.join(packageRoot, relativePath);
       let existing = '';
       try {
@@ -108,17 +116,21 @@ async function main() {
     return;
   }
 
-  for (const [relativePath, contents] of outputs) {
+  for (const [relativePath, contents] of selectedOutputs) {
     const absolutePath = path.join(packageRoot, relativePath);
     await mkdir(path.dirname(absolutePath), { recursive: true });
     await writeFile(absolutePath, contents);
   }
-  console.log(`Generated ${outputs.size} nats-subject-defs files.`);
+  console.log(`Generated ${selectedOutputs.size} nats-subject-defs file${selectedOutputs.size === 1 ? '' : 's'}.`);
 }
 
 // ---------- Model ----------
 
 const DIRECTIONS = new Set(['publish', 'subscribe', 'both']);
+const STREAM_RETENTIONS = new Set(['limits', 'interest', 'workqueue']);
+const STREAM_STORAGES = new Set(['file', 'memory']);
+const STREAM_ACK_POLICIES = new Set(['none', 'all', 'explicit']);
+const NATS_LITERAL_TOKEN = /^[A-Za-z0-9_-]+$/;
 
 /**
  * @typedef {{ name: string, description?: string }} ParamDef
@@ -181,40 +193,175 @@ function assertIdentifierName(kind, value, context) {
   }
 }
 
+function assertArray(value, context) {
+  if (!Array.isArray(value)) {
+    throw new Error(`${context} must be an array`);
+  }
+}
+
+/**
+ * Validate a NATS subject expression and return its dot-separated tokens.
+ *
+ * A schema pattern may use full-token `{parameter}` placeholders. Stream
+ * subjects and concrete static subjects cannot: they must be deployable NATS
+ * expressions on their own. Keeping placeholders as whole tokens matters
+ * because every generated parser operates on NATS tokens, not substrings.
+ */
+function parseNatsTokens(value, context, { allowPlaceholders, allowWildcards }) {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(`${context} must be a non-empty string`);
+  }
+
+  const tokens = value.split('.');
+  for (const [index, token] of tokens.entries()) {
+    if (token.length === 0) {
+      throw new Error(`${context} contains an empty NATS token at position ${index + 1}`);
+    }
+
+    if (/^\{[A-Za-z_][A-Za-z0-9_]*\}$/.test(token)) {
+      if (!allowPlaceholders) {
+        throw new Error(`${context} must not contain a parameter placeholder (${token})`);
+      }
+      continue;
+    }
+
+    if (token.includes('{') || token.includes('}')) {
+      throw new Error(
+        `${context} has malformed placeholder token ${JSON.stringify(token)}; placeholders must occupy a complete NATS token`,
+      );
+    }
+
+    if (token === '*' || token === '>') {
+      if (!allowWildcards) {
+        throw new Error(`${context} must not contain NATS wildcard ${token}`);
+      }
+      if (token === '>' && index !== tokens.length - 1) {
+        throw new Error(`${context} uses '>' before the final NATS token`);
+      }
+      continue;
+    }
+
+    if (!NATS_LITERAL_TOKEN.test(token)) {
+      throw new Error(
+        `${context} has invalid NATS token ${JSON.stringify(token)}; use ASCII letters, digits, '_' or '-'`,
+      );
+    }
+  }
+  return tokens;
+}
+
+function assertQueueGroupValue(value, context) {
+  if (typeof value !== 'string' || !/^[A-Za-z0-9_.-]+$/.test(value)) {
+    throw new Error(
+      `${context} must be a non-empty queue-group name using ASCII letters, digits, '.', '_' or '-'`,
+    );
+  }
+}
+
+function subjectFixtureValue(paramName) {
+  // `prefix` is intentionally meaningful: the CDC stream's canonical
+  // JetStream subject is `cdc.>`. Other values only need to be unambiguous,
+  // one-token NATS-safe placeholders for relationship validation.
+  return paramName === 'prefix' ? 'cdc' : `fixture_${paramName}`;
+}
+
+function materializePattern(pattern, params) {
+  const names = new Set(params.map((param) => param.name));
+  return pattern.replace(/\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_match, name) => {
+    if (!names.has(name)) {
+      throw new Error(`Pattern ${JSON.stringify(pattern)} references unknown parameter ${name}`);
+    }
+    return subjectFixtureValue(name);
+  });
+}
+
+function subscriptionMatchesSubject(subscription, subject) {
+  const subscriptionTokens = subscription.split('.');
+  const subjectTokens = subject.split('.');
+  let subjectIndex = 0;
+
+  for (let subscriptionIndex = 0; subscriptionIndex < subscriptionTokens.length; subscriptionIndex += 1) {
+    const token = subscriptionTokens[subscriptionIndex];
+    if (token === '>') return subscriptionIndex === subscriptionTokens.length - 1 && subjectIndex < subjectTokens.length;
+    if (subjectIndex >= subjectTokens.length) return false;
+    // A subject pattern ending in `>` is itself a subscription expression;
+    // only a tail wildcard can cover that unbounded suffix.
+    if (subjectTokens[subjectIndex] === '>') return false;
+    if (token !== '*' && token !== subjectTokens[subjectIndex]) return false;
+    subjectIndex += 1;
+  }
+
+  return subjectIndex === subjectTokens.length;
+}
+
 function buildModel(schemaFiles) {
   /** @type {Subject[]} */ const subjects = [];
   /** @type {QueueGroup[]} */ const queueGroups = [];
   /** @type {Stream[]} */ const streams = [];
   const seenSubjects = new Set();
+  const seenStaticSubjects = new Set();
+  const seenNormalizedSubjectNames = new Set();
+  const seenParameterizedRoutes = new Map();
   const seenQueueGroupNames = new Set();
+  const seenNormalizedQueueGroupNames = new Set();
+  const seenQueueGroupValues = new Set();
   const seenStreams = new Set();
+  const seenNormalizedStreamNames = new Set();
 
   for (const { filename, doc } of schemaFiles) {
     const ext = doc['$dd:nats'];
     if (!ext) continue;
+    if (typeof ext !== 'object' || Array.isArray(ext)) {
+      throw new Error(`${filename}: $dd:nats must be an object`);
+    }
     // `service` is only ever emitted into doc comments (Service: ...), which
     // splitDoc neutralizes — so it is not identifier-gated here.
     const service = ext.service;
 
+    if (ext.subjects !== undefined) assertArray(ext.subjects, `${filename}: $dd:nats.subjects`);
+    if (ext.queueGroups !== undefined) assertArray(ext.queueGroups, `${filename}: $dd:nats.queueGroups`);
+    if (ext.streams !== undefined) assertArray(ext.streams, `${filename}: $dd:nats.streams`);
+
     for (const subj of ext.subjects ?? []) {
+      if (!subj || typeof subj !== 'object' || Array.isArray(subj)) {
+        throw new Error(`${filename}: every subject must be an object`);
+      }
       if (!subj.name) throw new Error(`${filename}: subject is missing 'name'`);
       assertIdentifierName('subject name', subj.name, filename);
       if (seenSubjects.has(subj.name)) {
         throw new Error(`Duplicate subject name across schemas: ${subj.name}`);
       }
       seenSubjects.add(subj.name);
+      const normalizedSubjectName = pascal(subj.name);
+      if (seenNormalizedSubjectNames.has(normalizedSubjectName)) {
+        throw new Error(
+          `Duplicate generated subject identifier across schemas: ${subj.name} normalizes to ${normalizedSubjectName}`,
+        );
+      }
+      seenNormalizedSubjectNames.add(normalizedSubjectName);
       const direction = subj.direction ?? 'both';
       if (!DIRECTIONS.has(direction)) {
         throw new Error(`${subj.name}: invalid direction ${direction}`);
+      }
+      if (subj.queueGroup !== undefined) {
+        assertQueueGroupValue(subj.queueGroup, `${subj.name}: queueGroup`);
+      }
+      if (subj.stream !== undefined) {
+        assertIdentifierName('stream reference', subj.stream, subj.name);
       }
 
       if (subj.kind === 'static') {
         if (!subj.subject || typeof subj.subject !== 'string') {
           throw new Error(`${subj.name}: static subject requires 'subject' string`);
         }
-        if (/[{}*>]/.test(subj.subject)) {
-          throw new Error(`${subj.name}: static subject must not contain wildcards or placeholders`);
+        parseNatsTokens(subj.subject, `${subj.name}: static subject`, {
+          allowPlaceholders: false,
+          allowWildcards: false,
+        });
+        if (seenStaticSubjects.has(subj.subject)) {
+          throw new Error(`Duplicate static NATS subject across schemas: ${subj.subject}`);
         }
+        seenStaticSubjects.add(subj.subject);
         subjects.push({
           name: subj.name,
           description: subj.description,
@@ -226,21 +373,55 @@ function buildModel(schemaFiles) {
           stream: subj.stream,
         });
       } else if (subj.kind === 'parameterized') {
-        if (!subj.pattern) throw new Error(`${subj.name}: parameterized subject requires 'pattern'`);
-        if (!subj.wildcard) throw new Error(`${subj.name}: parameterized subject requires 'wildcard'`);
+        if (typeof subj.pattern !== 'string' || subj.pattern.length === 0) {
+          throw new Error(`${subj.name}: parameterized subject requires non-empty 'pattern'`);
+        }
+        if (typeof subj.wildcard !== 'string' || subj.wildcard.length === 0) {
+          throw new Error(`${subj.name}: parameterized subject requires non-empty 'wildcard'`);
+        }
         if (!Array.isArray(subj.params) || subj.params.length === 0) {
           throw new Error(`${subj.name}: parameterized subject requires non-empty 'params'`);
         }
-        const placeholders = [
-          ...subj.pattern.matchAll(/\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g),
-        ].map((m) => m[1]);
+        const patternTokens = parseNatsTokens(subj.pattern, `${subj.name}: pattern`, {
+          allowPlaceholders: true,
+          allowWildcards: true,
+        });
+        const wildcardTokens = parseNatsTokens(subj.wildcard, `${subj.name}: wildcard`, {
+          allowPlaceholders: true,
+          allowWildcards: true,
+        });
+        if (patternTokens.includes('*')) {
+          throw new Error(`${subj.name}: parameterized pattern must not contain '*'`);
+        }
+        if (patternTokens.includes('>') && direction !== 'subscribe') {
+          throw new Error(`${subj.name}: a pattern ending in '>' must be subscribe-only`);
+        }
+        if (!wildcardTokens.some((token) => token === '*' || token === '>')) {
+          throw new Error(`${subj.name}: wildcard must contain '*' or '>'`);
+        }
+        const placeholders = patternTokens
+          .filter((token) => /^\{[A-Za-z_][A-Za-z0-9_]*\}$/.test(token))
+          .map((token) => token.slice(1, -1));
         const paramNames = subj.params.map((p) => {
-          if (!p.name) throw new Error(`${subj.name}: param missing name`);
+          if (!p || typeof p !== 'object' || Array.isArray(p) || !p.name) {
+            throw new Error(`${subj.name}: param missing name`);
+          }
+          assertIdentifierName('parameter name', p.name, subj.name);
           if (p.type && p.type !== 'string') {
             throw new Error(`${subj.name}.${p.name}: only string params supported in v1`);
           }
           return p.name;
         });
+        if (new Set(paramNames).size !== paramNames.length) {
+          throw new Error(`${subj.name}: parameter names must be unique`);
+        }
+        const normalizedParamNames = paramNames.map((name) => pascal(name));
+        if (new Set(normalizedParamNames).size !== normalizedParamNames.length) {
+          throw new Error(`${subj.name}: parameter names must remain unique after cross-language normalization`);
+        }
+        if (new Set(placeholders).size !== placeholders.length) {
+          throw new Error(`${subj.name}: each parameter placeholder may appear only once in pattern`);
+        }
         for (const ph of placeholders) {
           if (!paramNames.includes(ph)) {
             throw new Error(`${subj.name}: pattern references {${ph}} not declared in params`);
@@ -251,6 +432,26 @@ function buildModel(schemaFiles) {
             throw new Error(`${subj.name}: param '${p}' declared but not used in pattern`);
           }
         }
+        for (const token of wildcardTokens) {
+          if (/^\{[A-Za-z_][A-Za-z0-9_]*\}$/.test(token) && !paramNames.includes(token.slice(1, -1))) {
+            throw new Error(`${subj.name}: wildcard references ${token} not declared in params`);
+          }
+        }
+        const samplePattern = materializePattern(subj.pattern, subj.params);
+        const sampleWildcard = materializePattern(subj.wildcard, subj.params);
+        if (!subscriptionMatchesSubject(sampleWildcard, samplePattern)) {
+          throw new Error(`${subj.name}: wildcard ${subj.wildcard} does not cover pattern ${subj.pattern}`);
+        }
+        const normalizedRoute = patternTokens
+          .map((token) => (/^\{[A-Za-z_][A-Za-z0-9_]*\}$/.test(token) ? '{}' : token))
+          .join('.');
+        const existingRoute = seenParameterizedRoutes.get(normalizedRoute);
+        if (existingRoute) {
+          throw new Error(
+            `${subj.name}: parameterized route duplicates ${existingRoute} after placeholder normalization (${normalizedRoute})`,
+          );
+        }
+        seenParameterizedRoutes.set(normalizedRoute, subj.name);
         subjects.push({
           name: subj.name,
           description: subj.description,
@@ -269,6 +470,9 @@ function buildModel(schemaFiles) {
     }
 
     for (const qg of ext.queueGroups ?? []) {
+      if (!qg || typeof qg !== 'object' || Array.isArray(qg)) {
+        throw new Error(`${filename}: every queueGroup must be an object`);
+      }
       if (!qg.name || !qg.value) {
         throw new Error(`${filename}: queueGroup needs 'name' and 'value'`);
       }
@@ -277,6 +481,18 @@ function buildModel(schemaFiles) {
       }
       assertIdentifierName('queueGroup name', qg.name, filename);
       seenQueueGroupNames.add(qg.name);
+      const normalizedQueueGroupName = pascal(qg.name);
+      if (seenNormalizedQueueGroupNames.has(normalizedQueueGroupName)) {
+        throw new Error(
+          `Duplicate generated queueGroup identifier across schemas: ${qg.name} normalizes to ${normalizedQueueGroupName}`,
+        );
+      }
+      seenNormalizedQueueGroupNames.add(normalizedQueueGroupName);
+      assertQueueGroupValue(qg.value, `${qg.name}: queueGroup value`);
+      if (seenQueueGroupValues.has(qg.value)) {
+        throw new Error(`Duplicate queueGroup value across schemas: ${qg.value}`);
+      }
+      seenQueueGroupValues.add(qg.value);
       queueGroups.push({
         name: qg.name,
         value: qg.value,
@@ -286,14 +502,42 @@ function buildModel(schemaFiles) {
     }
 
     for (const st of ext.streams ?? []) {
+      if (!st || typeof st !== 'object' || Array.isArray(st)) {
+        throw new Error(`${filename}: every stream must be an object`);
+      }
       if (!st.name) throw new Error(`${filename}: stream needs 'name'`);
       if (seenStreams.has(st.name)) {
         throw new Error(`Duplicate stream name across schemas: ${st.name}`);
       }
       assertIdentifierName('stream name', st.name, filename);
       seenStreams.add(st.name);
+      const normalizedStreamName = pascal(st.name);
+      if (seenNormalizedStreamNames.has(normalizedStreamName)) {
+        throw new Error(
+          `Duplicate generated stream identifier across schemas: ${st.name} normalizes to ${normalizedStreamName}`,
+        );
+      }
+      seenNormalizedStreamNames.add(normalizedStreamName);
       if (!Array.isArray(st.subjects) || st.subjects.length === 0) {
         throw new Error(`${st.name}: stream needs non-empty 'subjects'`);
+      }
+      for (const subject of st.subjects) {
+        parseNatsTokens(subject, `${st.name}: stream subject`, {
+          allowPlaceholders: false,
+          allowWildcards: true,
+        });
+      }
+      if (new Set(st.subjects).size !== st.subjects.length) {
+        throw new Error(`${st.name}: stream subjects must be unique`);
+      }
+      if (st.retention !== undefined && !STREAM_RETENTIONS.has(st.retention)) {
+        throw new Error(`${st.name}: invalid JetStream retention ${st.retention}`);
+      }
+      if (st.storage !== undefined && !STREAM_STORAGES.has(st.storage)) {
+        throw new Error(`${st.name}: invalid JetStream storage ${st.storage}`);
+      }
+      if (st.ack !== undefined && !STREAM_ACK_POLICIES.has(st.ack)) {
+        throw new Error(`${st.name}: invalid JetStream ack policy ${st.ack}`);
       }
       streams.push({
         name: st.name,
@@ -304,6 +548,33 @@ function buildModel(schemaFiles) {
         storage: st.storage,
         ack: st.ack,
       });
+    }
+  }
+
+  const streamsByName = new Map(streams.map((stream) => [stream.name, stream]));
+  for (const subject of subjects) {
+    if (!subject.stream) continue;
+    const stream = streamsByName.get(subject.stream);
+    if (!stream) {
+      throw new Error(`${subject.name}: references unknown stream ${subject.stream}`);
+    }
+    const sampleSubject = subject.kind === 'static'
+      ? subject.subject
+      : materializePattern(subject.pattern, subject.params);
+    if (!stream.subjects.some((subscription) => subscriptionMatchesSubject(subscription, sampleSubject))) {
+      throw new Error(
+        `${subject.name}: stream ${subject.stream} does not cover ${sampleSubject}`,
+      );
+    }
+  }
+  for (const stream of streams) {
+    if (!stream.subjects.some((subscription) => subjects.some((subject) => {
+      const sampleSubject = subject.kind === 'static'
+        ? subject.subject
+        : materializePattern(subject.pattern, subject.params);
+      return subscriptionMatchesSubject(subscription, sampleSubject);
+    }))) {
+      throw new Error(`${stream.name}: no declared NATS subject is covered by this stream`);
     }
   }
 
@@ -445,6 +716,20 @@ function renderTypeScript(model) {
     lines.push(`export function ${fnName}(${params}): string {`);
     lines.push(`  return \`${tmpl}\`;`);
     lines.push('}');
+    if (/\{[A-Za-z_][A-Za-z0-9_]*\}/.test(subj.wildcard)) {
+      const wildcardFnName = `format${pascal(subj.name)}Wildcard`;
+      const wildcardParams = subj.params.filter((param) => subj.wildcard.includes(`{${param.name}}`));
+      const wildcardFnParams = wildcardParams
+        .map((param) => `${camelToLowerCamel(param.name)}: string`)
+        .join(', ');
+      const wildcardTemplate = subj.wildcard.replace(
+        /\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g,
+        (_m, n) => '${' + camelToLowerCamel(n) + '}',
+      );
+      lines.push(`export function ${wildcardFnName}(${wildcardFnParams}): string {`);
+      lines.push(`  return \`${wildcardTemplate}\`;`);
+      lines.push('}');
+    }
 
     // Parser: return type
     const typeName = pascal(subj.name) + 'SubjectParts';
@@ -609,6 +894,20 @@ function renderJavaScript(model) {
     lines.push(`export function ${fnName}(${params}) {`);
     lines.push(`  return \`${tmpl}\`;`);
     lines.push('}');
+    if (/\{[A-Za-z_][A-Za-z0-9_]*\}/.test(subj.wildcard)) {
+      const wildcardFnName = `format${pascal(subj.name)}Wildcard`;
+      const wildcardParams = subj.params.filter((param) => subj.wildcard.includes(`{${param.name}}`));
+      const wildcardFnParams = wildcardParams
+        .map((param) => camelToLowerCamel(param.name))
+        .join(', ');
+      const wildcardTemplate = subj.wildcard.replace(
+        /\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g,
+        (_m, n) => '${' + camelToLowerCamel(n) + '}',
+      );
+      lines.push(`export function ${wildcardFnName}(${wildcardFnParams}) {`);
+      lines.push(`  return \`${wildcardTemplate}\`;`);
+      lines.push('}');
+    }
 
     lines.push(`export function ${parseFnName}(subject) {`);
     lines.push(`  const patternTokens = ${JSON.stringify(subj.pattern.split('.'))};`);
@@ -771,6 +1070,18 @@ function renderRust(model) {
     lines.push(`    format!(${JSON.stringify(fmtPattern)}, ${args})`);
     lines.push('}');
     lines.push('');
+    if (/\{[A-Za-z_][A-Za-z0-9_]*\}/.test(subj.wildcard)) {
+      const wildcardParams = subj.params.filter((param) => subj.wildcard.includes(`{${param.name}}`));
+      const wildcardFnParams = wildcardParams
+        .map((param) => `${camelToSnake(param.name)}: &str`)
+        .join(', ');
+      const wildcardArgs = wildcardParams.map((param) => camelToSnake(param.name)).join(', ');
+      const wildcardFmtPattern = subj.wildcard.replace(/\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g, '{}');
+      lines.push(`pub fn format_${camelToSnake(subj.name)}_wildcard(${wildcardFnParams}) -> String {`);
+      lines.push(`    format!(${JSON.stringify(wildcardFmtPattern)}, ${wildcardArgs})`);
+      lines.push('}');
+      lines.push('');
+    }
 
     const structName = `${pascal(subj.name)}SubjectParts`;
     lines.push('#[derive(Debug, Clone, PartialEq, Eq)]');
@@ -935,6 +1246,20 @@ function renderPython(model) {
       .join(', ');
     lines.push(`    return ${JSON.stringify(fmt)}.format(${fmtArgs})`);
     lines.push('');
+    if (/\{[A-Za-z_][A-Za-z0-9_]*\}/.test(subj.wildcard)) {
+      const wildcardParams = subj.params.filter((param) => subj.wildcard.includes(`{${param.name}}`));
+      const wildcardSig = wildcardParams.map((param) => `${camelToSnake(param.name)}: str`).join(', ');
+      const wildcardFmtArgs = wildcardParams
+        .map((param) => `${camelToSnake(param.name)}=${camelToSnake(param.name)}`)
+        .join(', ');
+      const wildcardFmt = subj.wildcard.replace(
+        /\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g,
+        (_m, n) => `{${camelToSnake(n)}}`,
+      );
+      lines.push(`def format_${camelToSnake(subj.name)}_wildcard(${wildcardSig}) -> str:`);
+      lines.push(`    return ${JSON.stringify(wildcardFmt)}.format(${wildcardFmtArgs})`);
+      lines.push('');
+    }
 
     lines.push(`def ${parseFnName}(subject: str) -> Optional[${className}]:`);
     lines.push(`    """Parse a resolved ${subj.name} subject; returns None on mismatch."""`);
@@ -1097,6 +1422,22 @@ function renderGleam(model) {
     lines.push(`  ${expr}`);
     lines.push('}');
     lines.push('');
+    if (/\{[A-Za-z_][A-Za-z0-9_]*\}/.test(subj.wildcard)) {
+      const wildcardParams = subj.params.filter((param) => subj.wildcard.includes(`{${param.name}}`));
+      const wildcardFnParams = wildcardParams
+        .map((param) => {
+          const name = camelToSnake(param.name);
+          return `${name} ${name}: String`;
+        })
+        .join(', ');
+      const wildcardExpr = parsePattern(subj.wildcard)
+        .map((segment) => (segment.kind === 'literal' ? JSON.stringify(segment.text) : camelToSnake(segment.name)))
+        .join(' <> ');
+      lines.push(`pub fn format_${camelToSnake(subj.name)}_wildcard(${wildcardFnParams}) -> String {`);
+      lines.push(`  ${wildcardExpr}`);
+      lines.push('}');
+      lines.push('');
+    }
 
     const parseFn = `parse_${camelToSnake(subj.name)}_subject`;
     lines.push(`pub fn ${parseFn}(subject: String) -> Option(${typeName}) {`);
@@ -1314,6 +1655,10 @@ function renderErlang(model) {
     exports.push(`${camelToSnake(subj.name)}_pattern/0`);
     exports.push(`${camelToSnake(subj.name)}_wildcard/0`);
     exports.push(`${camelToSnake(subj.name)}_subject/${subj.params.length}`);
+    if (/\{[A-Za-z_][A-Za-z0-9_]*\}/.test(subj.wildcard)) {
+      const wildcardParams = subj.params.filter((param) => subj.wildcard.includes(`{${param.name}}`));
+      exports.push(`format_${camelToSnake(subj.name)}_wildcard/${wildcardParams.length}`);
+    }
     exports.push(`parse_${camelToSnake(subj.name)}_subject/1`);
     if (subj.queueGroup) exports.push(`${camelToSnake(subj.name)}_queue_group/0`);
     if (subj.stream) exports.push(`${camelToSnake(subj.name)}_stream/0`);
@@ -1380,6 +1725,17 @@ function renderErlang(model) {
     lines.push(`${camelToSnake(subj.name)}_subject(${sigArgs}) ->`);
     lines.push(`    iolist_to_binary([${exprParts.join(', ')}]).`);
     lines.push('');
+    if (/\{[A-Za-z_][A-Za-z0-9_]*\}/.test(subj.wildcard)) {
+      const wildcardParams = subj.params.filter((param) => subj.wildcard.includes(`{${param.name}}`));
+      const wildcardArgs = wildcardParams.map((param) => pascalSnakeToVar(param.name)).join(', ');
+      const wildcardParts = parsePattern(subj.wildcard).map((segment) => {
+        if (segment.kind === 'literal') return erlangBinaryLiteral(segment.text);
+        return `to_bin(${pascalSnakeToVar(segment.name)})`;
+      });
+      lines.push(`format_${camelToSnake(subj.name)}_wildcard(${wildcardArgs}) ->`);
+      lines.push(`    iolist_to_binary([${wildcardParts.join(', ')}]).`);
+      lines.push('');
+    }
 
     const tokens = subj.pattern.split('.');
     lines.push(`parse_${camelToSnake(subj.name)}_subject(Subject) ->`);
@@ -1565,6 +1921,20 @@ function renderDart(model) {
     lines.push(`  return '${expr.replace(/'/g, "\\'")}';`);
     lines.push('}');
     lines.push('');
+    if (/\{[A-Za-z_][A-Za-z0-9_]*\}/.test(subj.wildcard)) {
+      const wildcardParams = subj.params.filter((param) => subj.wildcard.includes(`{${param.name}}`));
+      const wildcardFnParams = wildcardParams
+        .map((param) => `String ${camelToLowerCamel(param.name)}`)
+        .join(', ');
+      const wildcardExpr = parsePattern(subj.wildcard)
+        .map((segment) => (segment.kind === 'literal' ? JSON.stringify(segment.text) : `$${camelToLowerCamel(segment.name)}`))
+        .map((segment) => (segment.startsWith('"') ? segment.slice(1, -1) : segment))
+        .join('');
+      lines.push(`String format${pascal(subj.name)}Wildcard(${wildcardFnParams}) {`);
+      lines.push(`  return '${wildcardExpr.replace(/'/g, "\\'")}';`);
+      lines.push('}');
+      lines.push('');
+    }
 
     const parseFn = `parse${pascal(subj.name)}Subject`;
     lines.push(`${className}? ${parseFn}(String subject) {`);
@@ -1707,6 +2077,18 @@ function renderGo(model) {
     lines.push(`\treturn fmt.Sprintf(${JSON.stringify(fmtPattern)}, ${fmtArgs})`);
     lines.push('}');
     lines.push('');
+    if (/\{[A-Za-z_][A-Za-z0-9_]*\}/.test(subj.wildcard)) {
+      const wildcardParams = subj.params.filter((param) => subj.wildcard.includes(`{${param.name}}`));
+      const wildcardFnParams = wildcardParams
+        .map((param) => `${camelToLowerCamel(param.name)} string`)
+        .join(', ');
+      const wildcardFmtPattern = subj.wildcard.replace(/\{[a-zA-Z_][a-zA-Z0-9_]*\}/g, '%s');
+      const wildcardArgs = wildcardParams.map((param) => camelToLowerCamel(param.name)).join(', ');
+      lines.push(`func Format${pascal(subj.name)}Wildcard(${wildcardFnParams}) string {`);
+      lines.push(`\treturn fmt.Sprintf(${JSON.stringify(wildcardFmtPattern)}, ${wildcardArgs})`);
+      lines.push('}');
+      lines.push('');
+    }
 
     const parseFn = `Parse${pascal(subj.name)}Subject`;
     const patternStrLit = JSON.stringify(subj.pattern);
@@ -1879,6 +2261,20 @@ function renderJava(model) {
     lines.push(`        return ${concatParts.join(' + ')};`);
     lines.push('    }');
     lines.push('');
+    if (/\{[A-Za-z_][A-Za-z0-9_]*\}/.test(subj.wildcard)) {
+      const wildcardParams = subj.params.filter((param) => subj.wildcard.includes(`{${param.name}}`));
+      const wildcardFnParams = wildcardParams
+        .map((param) => `String ${camelToLowerCamel(param.name)}`)
+        .join(', ');
+      const wildcardConcatParts = parsePattern(subj.wildcard).map((segment) => {
+        if (segment.kind === 'literal') return JSON.stringify(segment.text);
+        return camelToLowerCamel(segment.name);
+      });
+      lines.push(`    public static String format${pascal(subj.name)}Wildcard(${wildcardFnParams}) {`);
+      lines.push(`        return ${wildcardConcatParts.join(' + ')};`);
+      lines.push('    }');
+      lines.push('');
+    }
 
     // Parser
     const parseFn = `parse${pascal(subj.name)}Subject`;
@@ -2027,6 +2423,16 @@ function renderHaskellNats(model) {
     );
     lines.push(`${base}Subject :: ${signature}`);
     lines.push(`${base}Subject ${argNames.join(' ')} = T.concat [${segments.join(', ')}]`);
+    if (/\{[A-Za-z_][A-Za-z0-9_]*\}/.test(subj.wildcard)) {
+      const wildcardParams = subj.params.filter((param) => subj.wildcard.includes(`{${param.name}}`));
+      const wildcardSignature = wildcardParams.map(() => 'Text').concat('Text').join(' -> ');
+      const wildcardArgNames = wildcardParams.map((param) => natsLowerCamel(param.name));
+      const wildcardSegments = natsPatternSegments(subj.wildcard).map((segment) =>
+        segment.kind === 'literal' ? JSON.stringify(segment.text) : natsLowerCamel(segment.name),
+      );
+      lines.push(`format${typeBase}Wildcard :: ${wildcardSignature}`);
+      lines.push(`format${typeBase}Wildcard ${wildcardArgNames.join(' ')} = T.concat [${wildcardSegments.join(', ')}]`);
+    }
 
     lines.push(`data ${typeBase}SubjectParts = ${typeBase}SubjectParts`);
     subj.params.forEach((param, index) => {
@@ -2140,6 +2546,14 @@ function renderOcamlNats(model) {
       .map((seg) => (seg.kind === 'literal' ? JSON.stringify(seg.text) : camelToSnake(seg.name)))
       .join(' ^ ');
     lines.push(`let ${base}_subject ${argNames.join(' ')} = ${expr}`);
+    if (/\{[A-Za-z_][A-Za-z0-9_]*\}/.test(subj.wildcard)) {
+      const wildcardParams = subj.params.filter((param) => subj.wildcard.includes(`{${param.name}}`));
+      const wildcardArgs = wildcardParams.map((param) => camelToSnake(param.name));
+      const wildcardExpr = natsPatternSegments(subj.wildcard)
+        .map((segment) => (segment.kind === 'literal' ? JSON.stringify(segment.text) : camelToSnake(segment.name)))
+        .join(' ^ ');
+      lines.push(`let format_${base}_wildcard ${wildcardArgs.join(' ')} = ${wildcardExpr}`);
+    }
 
     lines.push(`type ${base}_subject_parts = {`);
     for (const param of subj.params) {
@@ -2228,6 +2642,16 @@ function renderFSharpNats(model) {
       .map((seg) => (seg.kind === 'literal' ? JSON.stringify(seg.text) : camelToSnake(seg.name)))
       .join(' + ');
     lines.push(`let ${base}Subject ${params} : string = ${expr}`);
+    if (/\{[A-Za-z_][A-Za-z0-9_]*\}/.test(subj.wildcard)) {
+      const wildcardParams = subj.params.filter((param) => subj.wildcard.includes(`{${param.name}}`));
+      const wildcardParamsText = wildcardParams
+        .map((param) => `(${camelToSnake(param.name)}: string)`)
+        .join(' ');
+      const wildcardExpr = natsPatternSegments(subj.wildcard)
+        .map((segment) => (segment.kind === 'literal' ? JSON.stringify(segment.text) : camelToSnake(segment.name)))
+        .join(' + ');
+      lines.push(`let format${pascal(subj.name)}Wildcard ${wildcardParamsText} : string = ${wildcardExpr}`);
+    }
     lines.push(`type ${partsType} =`);
     subj.params.forEach((p, i) => {
       const open = i === 0 ? '    { ' : '      ';
@@ -2322,6 +2746,16 @@ function renderCppNats(model) {
       .map((seg) => (seg.kind === 'literal' ? `std::string(${JSON.stringify(seg.text)})` : camelToSnake(seg.name)))
       .join(' + ');
     lines.push(`inline std::string ${camelToSnake(subj.name)}_subject(${params}) { return ${expr}; }`);
+    if (/\{[A-Za-z_][A-Za-z0-9_]*\}/.test(subj.wildcard)) {
+      const wildcardParams = subj.params.filter((param) => subj.wildcard.includes(`{${param.name}}`));
+      const wildcardParamsText = wildcardParams
+        .map((param) => `const std::string& ${camelToSnake(param.name)}`)
+        .join(', ');
+      const wildcardExpr = natsPatternSegments(subj.wildcard)
+        .map((segment) => (segment.kind === 'literal' ? `std::string(${JSON.stringify(segment.text)})` : camelToSnake(segment.name)))
+        .join(' + ');
+      lines.push(`inline std::string format_${camelToSnake(subj.name)}_wildcard(${wildcardParamsText}) { return ${wildcardExpr}; }`);
+    }
     lines.push(`struct ${partsType} {`);
     for (const p of subj.params) lines.push(`    std::string ${camelToSnake(p.name)};`);
     lines.push('};');
@@ -2409,6 +2843,23 @@ function renderZigNats(model) {
     lines.push(`pub fn ${camelToSnake(subj.name)}_subject(allocator: std.mem.Allocator, ${params}) ![]u8 {`);
     lines.push(`    return std.fmt.allocPrint(allocator, ${JSON.stringify(fmt)}, .{ ${args} });`);
     lines.push('}');
+    if (/\{[A-Za-z_][A-Za-z0-9_]*\}/.test(subj.wildcard)) {
+      const wildcardParams = subj.params.filter((param) => subj.wildcard.includes(`{${param.name}}`));
+      const wildcardParamsText = wildcardParams
+        .map((param) => `${camelToSnake(param.name)}: []const u8`)
+        .join(', ');
+      const wildcardSegments = natsPatternSegments(subj.wildcard);
+      const wildcardFmt = wildcardSegments
+        .map((segment) => (segment.kind === 'literal' ? segment.text.replace(/\{/g, '{{').replace(/\}/g, '}}') : '{s}'))
+        .join('');
+      const wildcardArgs = wildcardSegments
+        .filter((segment) => segment.kind === 'param')
+        .map((segment) => camelToSnake(segment.name))
+        .join(', ');
+      lines.push(`pub fn format_${camelToSnake(subj.name)}_wildcard(allocator: std.mem.Allocator, ${wildcardParamsText}) ![]u8 {`);
+      lines.push(`    return std.fmt.allocPrint(allocator, ${JSON.stringify(wildcardFmt)}, .{ ${wildcardArgs} });`);
+      lines.push('}');
+    }
     lines.push(`pub const ${partsType} = struct {`);
     for (const p of subj.params) lines.push(`    ${zigIdent(camelToSnake(p.name))}: []const u8,`);
     lines.push('};');
@@ -2500,6 +2951,14 @@ function renderElixirNats(model) {
       .map((seg) => (seg.kind === 'literal' ? JSON.stringify(seg.text) : camelToSnake(seg.name)))
       .join(' <> ');
     lines.push(`  def ${camelToSnake(subj.name)}_subject(${params}), do: ${expr}`);
+    if (/\{[A-Za-z_][A-Za-z0-9_]*\}/.test(subj.wildcard)) {
+      const wildcardParams = subj.params.filter((param) => subj.wildcard.includes(`{${param.name}}`));
+      const wildcardArgs = wildcardParams.map((param) => camelToSnake(param.name)).join(', ');
+      const wildcardExpr = natsPatternSegments(subj.wildcard)
+        .map((segment) => (segment.kind === 'literal' ? JSON.stringify(segment.text) : camelToSnake(segment.name)))
+        .join(' <> ');
+      lines.push(`  def format_${camelToSnake(subj.name)}_wildcard(${wildcardArgs}), do: ${wildcardExpr}`);
+    }
     const tokens = subj.pattern.split('.').map((token) => {
       const match = token.match(/^\{([a-zA-Z_][a-zA-Z0-9_]*)\}$/);
       return match ? camelToSnake(match[1]) : JSON.stringify(token);
@@ -2661,7 +3120,14 @@ function parsePattern(pattern) {
   return segments;
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+export { buildModel, renderOutputs };
+
+const invokedAsScript = process.argv[1]
+  && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (invokedAsScript) {
+  main().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}
