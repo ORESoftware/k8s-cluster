@@ -2976,6 +2976,9 @@ public class DesSoccerTournamentMatches
     [Column("id")]
     public long Id { get; set; }
 
+    [Column("tournament_id")]
+    public long TournamentId { get; set; }
+
     [Column("match_index")]
     public int MatchIndex { get; set; }
 
@@ -3015,6 +3018,9 @@ public class DesSoccerTournamentTeamBrains
     [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
     [Column("id")]
     public long Id { get; set; }
+
+    [Column("tournament_id")]
+    public long TournamentId { get; set; }
 
     [Column("team_id")]
     public int TeamId { get; set; }

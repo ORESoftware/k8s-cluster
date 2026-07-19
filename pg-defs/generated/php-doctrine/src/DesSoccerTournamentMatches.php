@@ -20,6 +20,9 @@ class DesSoccerTournamentMatches
     #[ORM\Column(type: 'bigint')]
     public string $id;
 
+    #[ORM\Column(type: 'bigint', name: 'tournament_id')]
+    public string $tournamentId;
+
     #[ORM\Column(type: 'integer', name: 'match_index')]
     public int $matchIndex;
 

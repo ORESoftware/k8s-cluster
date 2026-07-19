@@ -211,6 +211,33 @@ test("parser extracts foreign keys onto the source column", () => {
   assert.equal(column.foreignKey?.constraint, "children_parent_fk");
 });
 
+test("parser parses a column whose definition wraps across lines", () => {
+  // Regression: an inline FK whose `references` clause is on the next line used
+  // to fail parseColumn's `.`/`$` matchers and vanish from every adapter
+  // (daedalus.fab_runs.instructions_id, des_soccer_tournament_matches.tournament_id).
+  const sql = `
+    create table des_soccer_tournaments (
+      id bigserial primary key
+    );
+
+    create table des_soccer_tournament_matches (
+      id bigserial primary key,
+      tournament_id bigint not null
+        references des_soccer_tournaments(id) on delete cascade,
+      match_index integer not null
+    );
+  `;
+  const schema = parseSchemaSql(sql);
+  // The wrapped column must appear at all (it used to vanish), with its type
+  // and not-null flag intact from the first line.
+  const column = findColumn(schema, "des_soccer_tournament_matches", "tournament_id");
+  assert.equal(column.sqlType, "bigint");
+  assert.equal(column.notNull, true);
+  // And the column after the wrap must still parse (the wrap must not swallow it).
+  const next = findColumn(schema, "des_soccer_tournament_matches", "match_index");
+  assert.equal(next.sqlType, "integer");
+});
+
 test("parser captures a schema-qualified table while keeping the bare name", () => {
   const sql = `
     create schema if not exists benefactor;

@@ -608,7 +608,14 @@ function parseCheckConstraint(value) {
 }
 
 function parseColumn(value) {
-  const match = value.match(/^("?[\w]+"?)\s+(.+)$/);
+  // A column definition may wrap across lines (identifier/type on one line, a
+  // `references ...` or other clause on the next). Collapse internal whitespace
+  // to single spaces first: the matchers below use `.` (which never crosses a
+  // newline) and `$`, so a raw multi-line value fails to match entirely and the
+  // column is silently dropped from every generated adapter. Normalizing is a
+  // no-op for the single-line columns that make up the rest of the schema.
+  const normalized = value.replace(/\s+/g, " ").trim();
+  const match = normalized.match(/^("?[\w]+"?)\s+(.+)$/);
   if (!match) {
     return null;
   }
@@ -633,7 +640,7 @@ function parseColumn(value) {
     notNull: /\bnot\s+null\b/i.test(rest) || /\bprimary\s+key\b/i.test(rest),
     defaultSql,
     defaultValue: defaultValueFromSql(defaultSql),
-    definitionSql: value.replace(/,$/, "").trim(),
+    definitionSql: normalized.replace(/,$/, "").trim(),
   };
   if (column.sqlType === "varchar" && column.maxLength) {
     mergeValidation(column, { maxLength: column.maxLength });

@@ -4762,9 +4762,10 @@ inline DesSoccerTournamentsRow des_soccer_tournaments_row_of_row(const std::func
 }
 
 inline const char* des_soccer_tournament_matches_table = "des_soccer_tournament_matches";
-inline const std::vector<std::string> des_soccer_tournament_matches_columns = { "id", "match_index", "stage", "home_team_id", "away_team_id", "home_goals", "away_goals", "shootout_winner_team_id", "home_training_steps", "away_training_steps", "recorded_at" };
+inline const std::vector<std::string> des_soccer_tournament_matches_columns = { "id", "tournament_id", "match_index", "stage", "home_team_id", "away_team_id", "home_goals", "away_goals", "shootout_winner_team_id", "home_training_steps", "away_training_steps", "recorded_at" };
 inline const char* des_soccer_tournament_matches_select_sql = R"SQL(select
       id,
+      tournament_id,
       match_index,
       stage,
       home_team_id,
@@ -4779,6 +4780,7 @@ inline const char* des_soccer_tournament_matches_select_sql = R"SQL(select
 
 struct DesSoccerTournamentMatchesRow {
     int64_t id;
+    int64_t tournament_id;
     int32_t match_index;
     std::string stage;
     int32_t home_team_id;
@@ -4795,23 +4797,25 @@ inline DesSoccerTournamentMatchesRow des_soccer_tournament_matches_row_of_row(co
     DesSoccerTournamentMatchesRow row;
     (void)is_null;
     row.id = std::stoll(get(0));
-    row.match_index = std::stoi(get(1));
-    row.stage = get(2);
-    row.home_team_id = std::stoi(get(3));
-    row.away_team_id = std::stoi(get(4));
-    row.home_goals = std::stoi(get(5));
-    row.away_goals = std::stoi(get(6));
-    row.shootout_winner_team_id = is_null(7) ? std::nullopt : std::optional<int32_t>(std::stoi(get(7)));
-    row.home_training_steps = std::stoll(get(8));
-    row.away_training_steps = std::stoll(get(9));
-    row.recorded_at = get(10);
+    row.tournament_id = std::stoll(get(1));
+    row.match_index = std::stoi(get(2));
+    row.stage = get(3);
+    row.home_team_id = std::stoi(get(4));
+    row.away_team_id = std::stoi(get(5));
+    row.home_goals = std::stoi(get(6));
+    row.away_goals = std::stoi(get(7));
+    row.shootout_winner_team_id = is_null(8) ? std::nullopt : std::optional<int32_t>(std::stoi(get(8)));
+    row.home_training_steps = std::stoll(get(9));
+    row.away_training_steps = std::stoll(get(10));
+    row.recorded_at = get(11);
     return row;
 }
 
 inline const char* des_soccer_tournament_team_brains_table = "des_soccer_tournament_team_brains";
-inline const std::vector<std::string> des_soccer_tournament_team_brains_columns = { "id", "team_id", "team_name", "seed", "matches_learned", "training_steps", "played", "wins", "draws", "losses", "goals_for", "goals_against", "neural_snapshot", "genome", "updated_at" };
+inline const std::vector<std::string> des_soccer_tournament_team_brains_columns = { "id", "tournament_id", "team_id", "team_name", "seed", "matches_learned", "training_steps", "played", "wins", "draws", "losses", "goals_for", "goals_against", "neural_snapshot", "genome", "updated_at" };
 inline const char* des_soccer_tournament_team_brains_select_sql = R"SQL(select
       id,
+      tournament_id,
       team_id,
       team_name,
       seed,
@@ -4830,6 +4834,7 @@ inline const char* des_soccer_tournament_team_brains_select_sql = R"SQL(select
 
 struct DesSoccerTournamentTeamBrainsRow {
     int64_t id;
+    int64_t tournament_id;
     int32_t team_id;
     std::string team_name;
     int64_t seed;
@@ -4850,20 +4855,21 @@ inline DesSoccerTournamentTeamBrainsRow des_soccer_tournament_team_brains_row_of
     DesSoccerTournamentTeamBrainsRow row;
     (void)is_null;
     row.id = std::stoll(get(0));
-    row.team_id = std::stoi(get(1));
-    row.team_name = get(2);
-    row.seed = std::stoll(get(3));
-    row.matches_learned = std::stoi(get(4));
-    row.training_steps = std::stoll(get(5));
-    row.played = std::stoi(get(6));
-    row.wins = std::stoi(get(7));
-    row.draws = std::stoi(get(8));
-    row.losses = std::stoi(get(9));
-    row.goals_for = std::stoi(get(10));
-    row.goals_against = std::stoi(get(11));
-    row.neural_snapshot = is_null(12) ? std::nullopt : std::optional<std::string>(get(12));
-    row.genome = is_null(13) ? std::nullopt : std::optional<std::string>(get(13));
-    row.updated_at = get(14);
+    row.tournament_id = std::stoll(get(1));
+    row.team_id = std::stoi(get(2));
+    row.team_name = get(3);
+    row.seed = std::stoll(get(4));
+    row.matches_learned = std::stoi(get(5));
+    row.training_steps = std::stoll(get(6));
+    row.played = std::stoi(get(7));
+    row.wins = std::stoi(get(8));
+    row.draws = std::stoi(get(9));
+    row.losses = std::stoi(get(10));
+    row.goals_for = std::stoi(get(11));
+    row.goals_against = std::stoi(get(12));
+    row.neural_snapshot = is_null(13) ? std::nullopt : std::optional<std::string>(get(13));
+    row.genome = is_null(14) ? std::nullopt : std::optional<std::string>(get(14));
+    row.updated_at = get(15);
     return row;
 }
 

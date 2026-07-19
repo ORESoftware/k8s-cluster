@@ -24,6 +24,7 @@ func (DesSoccerTournamentMatches) Annotations() []schema.Annotation {
 func (DesSoccerTournamentMatches) Fields() []ent.Field {
 	return []ent.Field{
 		field.Int64("id").StorageKey("id"),
+		field.Int64("tournament_id").StorageKey("tournament_id"),
 		field.Int32("match_index").StorageKey("match_index"),
 		field.String("stage").StorageKey("stage"),
 		field.Int32("home_team_id").StorageKey("home_team_id"),

@@ -1327,6 +1327,7 @@ class DesSoccerTournamentMatchesTable extends Table {
   @override String get tableName => "des_soccer_tournament_matches";
 
   Int64Column get id => int64().named("id").customConstraint("BIGSERIAL")();
+  Int64Column get tournamentId => int64().named("tournament_id")();
   IntColumn get matchIndex => integer().named("match_index")();
   TextColumn get stage => text().named("stage")();
   IntColumn get homeTeamId => integer().named("home_team_id")();
@@ -1349,6 +1350,7 @@ class DesSoccerTournamentTeamBrainsTable extends Table {
   @override String get tableName => "des_soccer_tournament_team_brains";
 
   Int64Column get id => int64().named("id").customConstraint("BIGSERIAL")();
+  Int64Column get tournamentId => int64().named("tournament_id")();
   IntColumn get teamId => integer().named("team_id")();
   TextColumn get teamName => text().named("team_name")();
   Int64Column get seed => int64().named("seed")();

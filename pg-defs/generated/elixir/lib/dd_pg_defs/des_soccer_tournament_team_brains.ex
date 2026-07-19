@@ -12,6 +12,7 @@ defmodule DdPgDefs.DesSoccerTournamentTeamBrains do
   @primary_key {:id, :id, autogenerate: true}
 
   schema @table do
+    field :tournament_id, :integer
     field :team_id, :integer
     field :team_name, :string
     field :seed, :integer
@@ -27,7 +28,7 @@ defmodule DdPgDefs.DesSoccerTournamentTeamBrains do
     field :genome, :map
   end
 
-  @required_fields ~w(team_id team_name seed matches_learned training_steps played wins draws losses goals_for goals_against)a
+  @required_fields ~w(tournament_id team_id team_name seed matches_learned training_steps played wins draws losses goals_for goals_against)a
   @optional_fields ~w(neural_snapshot genome)a
 
   @doc "Builds an Ecto changeset enforcing every constraint exposed in schema.sql."

@@ -4464,6 +4464,8 @@ class DesSoccerTournamentMatchesObjectBox {
   @Unique()
   int id;
 
+  int tournamentId;
+
   int matchIndex;
 
   String stage;
@@ -4487,6 +4489,7 @@ class DesSoccerTournamentMatchesObjectBox {
 
   DesSoccerTournamentMatchesObjectBox({
     required this.id,
+    required this.tournamentId,
     required this.matchIndex,
     required this.stage,
     required this.homeTeamId,
@@ -4501,6 +4504,7 @@ class DesSoccerTournamentMatchesObjectBox {
 
   Map<String, Object?> toJson() => <String, Object?>{
     "id": id,
+    "tournamentId": tournamentId,
     "matchIndex": matchIndex,
     "stage": stage,
     "homeTeamId": homeTeamId,
@@ -4516,6 +4520,7 @@ class DesSoccerTournamentMatchesObjectBox {
   static DesSoccerTournamentMatchesObjectBox fromJson(Map<String, Object?> json) {
     return DesSoccerTournamentMatchesObjectBox(
       id: (json["id"] as num).toInt(),
+      tournamentId: (json["tournamentId"] as num).toInt(),
       matchIndex: (json["matchIndex"] as num).toInt(),
       stage: json["stage"] as String,
       homeTeamId: (json["homeTeamId"] as num).toInt(),
@@ -4537,6 +4542,8 @@ class DesSoccerTournamentTeamBrainsObjectBox {
 
   @Unique()
   int id;
+
+  int tournamentId;
 
   int teamId;
 
@@ -4571,6 +4578,7 @@ class DesSoccerTournamentTeamBrainsObjectBox {
 
   DesSoccerTournamentTeamBrainsObjectBox({
     required this.id,
+    required this.tournamentId,
     required this.teamId,
     required this.teamName,
     required this.seed,
@@ -4589,6 +4597,7 @@ class DesSoccerTournamentTeamBrainsObjectBox {
 
   Map<String, Object?> toJson() => <String, Object?>{
     "id": id,
+    "tournamentId": tournamentId,
     "teamId": teamId,
     "teamName": teamName,
     "seed": seed,
@@ -4608,6 +4617,7 @@ class DesSoccerTournamentTeamBrainsObjectBox {
   static DesSoccerTournamentTeamBrainsObjectBox fromJson(Map<String, Object?> json) {
     return DesSoccerTournamentTeamBrainsObjectBox(
       id: (json["id"] as num).toInt(),
+      tournamentId: (json["tournamentId"] as num).toInt(),
       teamId: (json["teamId"] as num).toInt(),
       teamName: json["teamName"] as String,
       seed: (json["seed"] as num).toInt(),

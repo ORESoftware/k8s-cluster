@@ -19,6 +19,9 @@ public class DesSoccerTournamentMatchesEntity {
     @Column(name = "id")
     private Long id;
 
+    @Column(name = "tournament_id", nullable = false)
+    private Long tournamentId;
+
     @Column(name = "match_index", nullable = false)
     private Integer matchIndex;
 
@@ -55,6 +58,14 @@ public class DesSoccerTournamentMatchesEntity {
 
     public void setId(Long id) {
         this.id = id;
+    }
+
+    public Long getTournamentId() {
+        return tournamentId;
+    }
+
+    public void setTournamentId(Long tournamentId) {
+        this.tournamentId = tournamentId;
     }
 
     public Integer getMatchIndex() {

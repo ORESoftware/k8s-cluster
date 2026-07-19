@@ -4544,6 +4544,7 @@ class DesSoccerTournamentMatches(Base):
     )
 
     id: Mapped[int] = mapped_column(BigInteger(), primary_key=True)
+    tournament_id: Mapped[int] = mapped_column(BigInteger(), nullable=False)
     match_index: Mapped[int] = mapped_column(Integer(), nullable=False)
     stage: Mapped[str] = mapped_column(Text(), nullable=False)
     home_team_id: Mapped[int] = mapped_column(Integer(), nullable=False)
@@ -4559,6 +4560,7 @@ class DesSoccerTournamentMatchesRow(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    tournamentId: int
     matchIndex: int
     stage: str
     homeTeamId: int
@@ -4574,6 +4576,7 @@ class DesSoccerTournamentMatchesInsert(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: int
+    tournamentId: int
     matchIndex: int
     stage: str
     homeTeamId: int
@@ -4591,6 +4594,7 @@ class DesSoccerTournamentTeamBrains(Base):
     )
 
     id: Mapped[int] = mapped_column(BigInteger(), primary_key=True)
+    tournament_id: Mapped[int] = mapped_column(BigInteger(), nullable=False)
     team_id: Mapped[int] = mapped_column(Integer(), nullable=False)
     team_name: Mapped[str] = mapped_column(Text(), nullable=False)
     seed: Mapped[int] = mapped_column(BigInteger(), nullable=False)
@@ -4610,6 +4614,7 @@ class DesSoccerTournamentTeamBrainsRow(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    tournamentId: int
     teamId: int
     teamName: str
     seed: int
@@ -4629,6 +4634,7 @@ class DesSoccerTournamentTeamBrainsInsert(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: int
+    tournamentId: int
     teamId: int
     teamName: str
     seed: int

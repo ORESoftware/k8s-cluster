@@ -54,8 +54,8 @@
 -record(des_soccer_learning_run_deltas, {id, run_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, receiver_descriptor, before_value_micros, after_value_micros, value_delta_micros, visit_delta, merge_weight_micros, effective_visit_micros, created_at}).
 -record(des_soccer_learning_merge_events, {id, experiment_id, base_policy_version_id, output_policy_version_id, strategy, input_run_count, input_delta_count, decay_micros, metrics, created_at}).
 -record(des_soccer_tournaments, {id, experiment_id, tournament_date, seed, learning_mode, format, team_count, match_count, matches_played, champion_team_id, runner_up_team_id, third_place_team_id, wall_time_seconds, status, created_at, updated_at, finished_at}).
--record(des_soccer_tournament_matches, {id, match_index, stage, home_team_id, away_team_id, home_goals, away_goals, shootout_winner_team_id, home_training_steps, away_training_steps, recorded_at}).
--record(des_soccer_tournament_team_brains, {id, team_id, team_name, seed, matches_learned, training_steps, played, wins, draws, losses, goals_for, goals_against, neural_snapshot, genome, updated_at}).
+-record(des_soccer_tournament_matches, {id, tournament_id, match_index, stage, home_team_id, away_team_id, home_goals, away_goals, shootout_winner_team_id, home_training_steps, away_training_steps, recorded_at}).
+-record(des_soccer_tournament_team_brains, {id, tournament_id, team_id, team_name, seed, matches_learned, training_steps, played, wins, draws, losses, goals_for, goals_against, neural_snapshot, genome, updated_at}).
 -record(des_soccer_learning_set_play_runs, {run_id, policy_version_id, primary_restart, team, spot_x_micros, spot_y_micros, duration_seconds_micros, episode_count, goals, goal_rate_micros, first_window_goal_rate_micros, last_window_goal_rate_micros, goal_rate_delta_micros, created_at}).
 -record(des_soccer_learning_set_play_restart_mix, {run_id, ordinal, restart}).
 -record(des_soccer_learning_set_play_episode_metrics, {run_id, episode_index, seed, restart, routine, scored, score_delta_for_team, ticks, simulated_seconds_micros, policy_updates, home_policy_entries, home_policy_target_entries, away_policy_entries, away_policy_target_entries, neural_training_steps, neural_samples, neural_replay_samples, neural_last_loss_micros, cumulative_goals, goal_rate_so_far_micros}).
@@ -791,10 +791,10 @@ des_soccer_tournaments_table_def() ->
         {disc_copies, [node()]}
     ].
 
-des_soccer_tournament_matches_attributes() -> ['id', 'match_index', 'stage', 'home_team_id', 'away_team_id', 'home_goals', 'away_goals', 'shootout_winner_team_id', 'home_training_steps', 'away_training_steps', 'recorded_at'].
+des_soccer_tournament_matches_attributes() -> ['id', 'tournament_id', 'match_index', 'stage', 'home_team_id', 'away_team_id', 'home_goals', 'away_goals', 'shootout_winner_team_id', 'home_training_steps', 'away_training_steps', 'recorded_at'].
 
 des_soccer_tournament_matches_record_info() ->
-    {des_soccer_tournament_matches, 11, des_soccer_tournament_matches_attributes()}.
+    {des_soccer_tournament_matches, 12, des_soccer_tournament_matches_attributes()}.
 
 des_soccer_tournament_matches_table_def() ->
     [
@@ -804,10 +804,10 @@ des_soccer_tournament_matches_table_def() ->
         {disc_copies, [node()]}
     ].
 
-des_soccer_tournament_team_brains_attributes() -> ['id', 'team_id', 'team_name', 'seed', 'matches_learned', 'training_steps', 'played', 'wins', 'draws', 'losses', 'goals_for', 'goals_against', 'neural_snapshot', 'genome', 'updated_at'].
+des_soccer_tournament_team_brains_attributes() -> ['id', 'tournament_id', 'team_id', 'team_name', 'seed', 'matches_learned', 'training_steps', 'played', 'wins', 'draws', 'losses', 'goals_for', 'goals_against', 'neural_snapshot', 'genome', 'updated_at'].
 
 des_soccer_tournament_team_brains_record_info() ->
-    {des_soccer_tournament_team_brains, 15, des_soccer_tournament_team_brains_attributes()}.
+    {des_soccer_tournament_team_brains, 16, des_soccer_tournament_team_brains_attributes()}.
 
 des_soccer_tournament_team_brains_table_def() ->
     [

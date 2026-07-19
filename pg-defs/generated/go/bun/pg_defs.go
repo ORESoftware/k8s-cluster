@@ -2698,6 +2698,7 @@ func (value DesSoccerTournamentsBun) Validate() error {
 const DesSoccerTournamentMatchesTable = "des_soccer_tournament_matches"
 const DesSoccerTournamentMatchesSelectSQL = `select
       id,
+      tournament_id,
       match_index,
       stage,
       home_team_id,
@@ -2713,6 +2714,7 @@ const DesSoccerTournamentMatchesSelectSQL = `select
 type DesSoccerTournamentMatchesBun struct {
 	bun.BaseModel `bun:"table:des_soccer_tournament_matches"`
 	Id int64 `bun:"id,type:bigserial,pk" json:"id"`
+	TournamentId int64 `bun:"tournament_id,type:bigint" json:"tournamentId"`
 	MatchIndex int32 `bun:"match_index,type:integer" json:"matchIndex"`
 	Stage string `bun:"stage,type:text" json:"stage"`
 	HomeTeamId int32 `bun:"home_team_id,type:integer" json:"homeTeamId"`
@@ -2732,6 +2734,7 @@ func (value DesSoccerTournamentMatchesBun) Validate() error {
 const DesSoccerTournamentTeamBrainsTable = "des_soccer_tournament_team_brains"
 const DesSoccerTournamentTeamBrainsSelectSQL = `select
       id,
+      tournament_id,
       team_id,
       team_name,
       seed,
@@ -2751,6 +2754,7 @@ const DesSoccerTournamentTeamBrainsSelectSQL = `select
 type DesSoccerTournamentTeamBrainsBun struct {
 	bun.BaseModel `bun:"table:des_soccer_tournament_team_brains"`
 	Id int64 `bun:"id,type:bigserial,pk" json:"id"`
+	TournamentId int64 `bun:"tournament_id,type:bigint" json:"tournamentId"`
 	TeamId int32 `bun:"team_id,type:integer" json:"teamId"`
 	TeamName string `bun:"team_name,type:text" json:"teamName"`
 	Seed int64 `bun:"seed,type:bigint" json:"seed"`
