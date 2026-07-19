@@ -122,7 +122,7 @@ const ASSET_TAIL = /\.(png|jpe?g|gif|webp|svg|css|js|woff2?|ttf|ico|mp4|pdf)$/i;
 // ahead of a required `@`/`.` backtracks quadratically on a long char run with
 // no delimiter, which would hang the parser worker (ReDoS). Bounding caps the
 // backtrack window per start position, keeping the pass linear.
-const EMAIL_RE = /[A-Z0-9._%+\-]{1,64}@[A-Z0-9\-]{1,63}(?:\.[A-Z0-9\-]{1,63}){1,8}\.[A-Z]{2,24}/gi;
+const EMAIL_RE = /[A-Z0-9._%+\-]{1,64}@(?:[A-Z0-9\-]{1,63}\.){1,10}[A-Z]{2,24}/gi;
 
 // A phone candidate: optional +, then digits/grouping punctuation. The lookbehind
 // drops runs glued to a word char, `#`, or a currency symbol — those are order
