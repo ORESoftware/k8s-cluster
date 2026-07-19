@@ -1241,9 +1241,14 @@ function runExtractionWorker(input: {
   includeHtml?: boolean;
   includeText?: boolean;
   includeLinks?: boolean;
+  includePhones?: boolean;
+  includeEmails?: boolean;
+  contactRegion?: string;
   maxHtmlChars: number;
   maxTextChars: number;
   maxLinks: number;
+  maxPhones: number;
+  maxEmails: number;
   timeoutMs: number;
 }): Promise<ExtractionResult> {
   return parserWorkerSemaphore.run(
