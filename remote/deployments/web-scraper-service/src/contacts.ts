@@ -386,8 +386,19 @@ export function normalizePhoneNumber(
   const internationalPrefix = !hasPlus && digits.startsWith('00');
   const bareDigits = internationalPrefix ? digits.slice(2) : digits;
 
-  if (!isPlausiblePhone(bareDigits, hasPlus || internationalPrefix)) {
+  const international = hasPlus || internationalPrefix;
+  if (!isPlausiblePhone(bareDigits, international)) {
     return undefined;
+  }
+
+  // Free-text candidates with no country code must *look* like a published phone
+  // number. An unbroken digit run is an order number / SKU / account ID far more
+  // often than a business line, and those pollute the CRM downstream.
+  if (options?.requireStructure && !international && !/[\s().\-‐-―]/.test(core)) {
+    const nanpBare = digits.length === 10 || (digits.length === 11 && digits.startsWith('1'));
+    if (!nanpBare) {
+      return undefined;
+    }
   }
 
   if (hasPlus || internationalPrefix) {
