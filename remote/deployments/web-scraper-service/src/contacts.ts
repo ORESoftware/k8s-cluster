@@ -471,6 +471,26 @@ export function normalizePhoneNumber(
   return { raw: trimmed, digits, national: groupDigits(digits), extension };
 }
 
+/**
+ * Structural validity check for an assembled E.164 string. This is deliberately
+ * conservative — it only rejects numbers that violate hard, universal rules, so
+ * it never drops a genuine business line:
+ *   - E.164 country codes never start with 0, and the number is 8..15 digits.
+ *   - `+1` is exclusively the North American Numbering Plan, where both the area
+ *     code and central-office code must begin with 2-9 (the `N` in NXX-NXX-XXXX).
+ * We can't validate every country's national format without a full metadata
+ * table, so non-NANP numbers pass on the length/leading-digit rule alone.
+ */
+function isDialableE164(e164: string): boolean {
+  if (!/^\+[1-9]\d{7,14}$/.test(e164)) {
+    return false;
+  }
+  if (e164.startsWith('+1')) {
+    return /^\+1[2-9]\d{2}[2-9]\d{6}$/.test(e164);
+  }
+  return true;
+}
+
 function isPlausiblePhone(digits: string, international: boolean): boolean {
   const len = digits.length;
   if (international) {
