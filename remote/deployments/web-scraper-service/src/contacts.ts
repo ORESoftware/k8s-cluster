@@ -228,9 +228,13 @@ function collectStructuredData(
     if (blocks++ >= MAX_JSONLD_BLOCKS) {
       break;
     }
+    const body = match[1]?.trim();
+    if (!body) {
+      continue;
+    }
     let parsed: unknown;
     try {
-      parsed = JSON.parse(decodeEntities(match[1].trim()));
+      parsed = JSON.parse(decodeEntities(body));
     } catch {
       continue;
     }
