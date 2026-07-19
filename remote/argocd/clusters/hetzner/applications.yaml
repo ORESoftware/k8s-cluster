@@ -198,6 +198,31 @@ spec:
     syncOptions:
       - CreateNamespace=true
 ---
+# The shared training base is safe-by-default; this overlay keeps the continuous
+# learner scaled to zero on 32 GiB Hetzner workers while Argo still owns drift.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-akrion-training
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ORESoftware/k8s-cluster.git
+    targetRevision: dev
+    path: remote/argocd/akrion-training/overlays/hetzner
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - Validate=false
+---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:

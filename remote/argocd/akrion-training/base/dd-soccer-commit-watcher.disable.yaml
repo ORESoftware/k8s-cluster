@@ -1,0 +1,16 @@
+# The legacy watcher made imperative rollout changes and is superseded by the
+# post-CI repository dispatch plus the scheduled GitOps promotion workflow.
+# Partial Server-Side Apply changes only its replica count and rollout marker.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-soccer-commit-watcher
+  namespace: default
+  annotations:
+    argocd.argoproj.io/sync-options: ServerSideApply=true,Validate=false
+spec:
+  replicas: 0
+  template:
+    spec:
+      containers:
+        - name: watcher

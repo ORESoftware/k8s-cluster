@@ -1,0 +1,168 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - dd-soccer-learning-rds-continuous.promotion.yaml
+  - dd-soccer-commit-watcher.disable.yaml
+
+# A safe base never schedules the memory-heavy learner. Cluster overlays must
+# opt in explicitly. The watcher stays disabled because GitHub Actions owns
+# release promotion and Argo CD owns reconciliation.
+patches:
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: dd-soccer-learning-rds-continuous
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: dd-soccer-learning-rds-continuous
+      spec:
+        replicas: 0
+        template:
+          metadata:
+            annotations:
+              dd.dev/soccer-engine-revision: 9bf8382b9dba553c6ee72c658ef8c105e02527e3
+              dd.dev/des-engine-revision: 8eaa32818193509e9c271ca8ee06cec9f493d619
+          spec:
+            containers:
+              - name: soccer-learning
+                env:
+                  - name: SOCCER_SOURCE_REPO
+                    value: https://github.com/akrion-sim/akrion-soccer-engine-rs.git
+                  - name: SOCCER_SOURCE_REF
+                    value: 9bf8382b9dba553c6ee72c658ef8c105e02527e3
+                  - name: SOCCER_ENGINE_SOURCE_REPO
+                    value: https://github.com/ORESoftware/discrete-event-system.rs.git
+                  - name: SOCCER_ENGINE_SOURCE_REF
+                    value: 8eaa32818193509e9c271ca8ee06cec9f493d619
+                  # Preserve the live ConfigMap-backed feature-gate ownership
+                  # while adopting this Deployment into Argo. Explicit nulls
+                  # remove the source manifest's literal value before adding
+                  # valueFrom, avoiding an invalid value + valueFrom merge.
+                  - name: SOCCER_NEURAL_LEARNING_ENABLED
+                    value: null
+                    valueFrom:
+                      configMapKeyRef:
+                        name: dd-soccer-feature-gates
+                        key: SOCCER_NEURAL_LEARNING_ENABLED
+                  - name: DD_SOCCER_ENABLE_BACK_FOUR_LINE_MODEL
+                    value: null
+                    valueFrom:
+                      configMapKeyRef:
+                        name: dd-soccer-feature-gates
+                        key: DD_SOCCER_ENABLE_BACK_FOUR_LINE_MODEL
+                  - name: DD_SOCCER_ENABLE_MIDFIELD_LINE_MODEL
+                    value: null
+                    valueFrom:
+                      configMapKeyRef:
+                        name: dd-soccer-feature-gates
+                        key: DD_SOCCER_ENABLE_MIDFIELD_LINE_MODEL
+                  - name: DD_SOCCER_ENABLE_LOOSE_BALL_COMMIT_MODEL
+                    value: null
+                    valueFrom:
+                      configMapKeyRef:
+                        name: dd-soccer-feature-gates
+                        key: DD_SOCCER_ENABLE_LOOSE_BALL_COMMIT_MODEL
+                  - name: SOCCER_TELEMETRY_ENABLED
+                    value: null
+                    valueFrom:
+                      configMapKeyRef:
+                        name: dd-soccer-feature-gates
+                        key: SOCCER_TELEMETRY_ENABLED
+                  - name: SOCCER_LEARNING_MPC_FIELD_AWARE_ENABLED
+                    value: null
+                    valueFrom:
+                      configMapKeyRef:
+                        name: dd-soccer-feature-gates
+                        key: SOCCER_LEARNING_MPC_FIELD_AWARE_ENABLED
+                  - name: DD_SOCCER_ENABLE_KEEPER_POLICY_HEAD
+                    value: null
+                    valueFrom:
+                      configMapKeyRef:
+                        name: dd-soccer-feature-gates
+                        key: DD_SOCCER_ENABLE_KEEPER_POLICY_HEAD
+                  - name: SOCCER_LEARNING_MPC_ENABLED
+                    value: null
+                    valueFrom:
+                      configMapKeyRef:
+                        name: dd-soccer-feature-gates
+                        key: SOCCER_LEARNING_MPC_ENABLED
+                  - name: SOCCER_NEURAL_ACTOR_CRITIC
+                    value: null
+                    valueFrom:
+                      configMapKeyRef:
+                        name: dd-soccer-feature-gates
+                        key: SOCCER_NEURAL_ACTOR_CRITIC
+                  - name: SOCCER_ENABLE_ACTOR_CRITIC
+                    value: null
+                    valueFrom:
+                      configMapKeyRef:
+                        name: dd-soccer-feature-gates
+                        key: SOCCER_ENABLE_ACTOR_CRITIC
+                  - name: DD_SOCCER_ENABLE_DISCRETIZED_KICK
+                    value: null
+                    valueFrom:
+                      configMapKeyRef:
+                        name: dd-soccer-feature-gates
+                        key: DD_SOCCER_ENABLE_DISCRETIZED_KICK
+                  - name: DD_SOCCER_ENABLE_LEARNED_SPACING_TARGET
+                    value: null
+                    valueFrom:
+                      configMapKeyRef:
+                        name: dd-soccer-feature-gates
+                        key: DD_SOCCER_ENABLE_LEARNED_SPACING_TARGET
+                  - name: DD_SOCCER_ENABLE_SKILL_POLICY_HEADS
+                    value: null
+                    valueFrom:
+                      configMapKeyRef:
+                        name: dd-soccer-feature-gates
+                        key: DD_SOCCER_ENABLE_SKILL_POLICY_HEADS
+                  - name: SOCCER_NEURAL_LP_COUPLING_ENABLED
+                    value: null
+                    valueFrom:
+                      configMapKeyRef:
+                        name: dd-soccer-feature-gates
+                        key: SOCCER_NEURAL_LP_COUPLING_ENABLED
+                  - name: SOCCER_LEARNING_MPC_RECONCILE_ENABLED
+                    value: null
+                    valueFrom:
+                      configMapKeyRef:
+                        name: dd-soccer-feature-gates
+                        key: SOCCER_LEARNING_MPC_RECONCILE_ENABLED
+                  - name: DD_SOCCER_ENABLE_SPECIALIST_CURRICULUM
+                    value: null
+                    valueFrom:
+                      configMapKeyRef:
+                        name: dd-soccer-feature-gates
+                        key: DD_SOCCER_ENABLE_SPECIALIST_CURRICULUM
+                  - name: DD_SOCCER_ENABLE_SCORED_SHOT_PLACEMENT
+                    value: null
+                    valueFrom:
+                      configMapKeyRef:
+                        name: dd-soccer-feature-gates
+                        key: DD_SOCCER_ENABLE_SCORED_SHOT_PLACEMENT
+                  - name: SOCCER_LEARNING_MPC_LATENT_OBJECTIVE_ENABLED
+                    value: null
+                    valueFrom:
+                      configMapKeyRef:
+                        name: dd-soccer-feature-gates
+                        key: SOCCER_LEARNING_MPC_LATENT_OBJECTIVE_ENABLED
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: dd-soccer-commit-watcher
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: dd-soccer-commit-watcher
+      spec:
+        replicas: 0
+        template:
+          metadata:
+            annotations:
+              dd.dev/disabled-by: github-actions-gitops

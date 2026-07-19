@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "promotedAt": "2026-07-19T00:21:00Z",
+  "components": {
+    "backend": {
+      "repository": "akrion-sim/akrion-backend.rs",
+      "revision": "6a57112f5a5ce8c8e96b3fa86dfc33b18cc58c96",
+      "workflow": "ci.yml"
+    },
+    "web": {
+      "repository": "akrion-sim/akrion-web-server.rs",
+      "revision": "7b4e16780717f4307fa98bab7d2bd2c29716bab5",
+      "workflow": "ci.yml"
+    },
+    "soccer": {
+      "repository": "akrion-sim/akrion-soccer-engine-rs",
+      "revision": "9bf8382b9dba553c6ee72c658ef8c105e02527e3",
+      "workflow": "ci.yml"
+    },
+    "des": {
+      "repository": "ORESoftware/discrete-event-system.rs",
+      "revision": "8eaa32818193509e9c271ca8ee06cec9f493d619",
+      "workflow": null
+    }
+  }
+}
