@@ -156,6 +156,38 @@ Raft cluster.
    tenants on k8s-cluster should not own a `fiducia-load-balance` LoadBalancer at all; that
    is a mesh concern.
 
+### Repoint-then-prune runbook (DO NOT skip to the prune)
+
+⚠️ The k8s-cluster `fiducia-node`/`fiducia-brain` StatefulSets are **currently the serving
+quorum** for `app.fiducia.cloud` / `admin.fiducia.cloud` (backend/auth/admin talk to them
+in-cluster). Deleting them from the kustomization prunes a **live** quorum. Only proceed once
+a human confirms the fiducia-infra mesh is reachable from this cluster (network path + TLS +
+auth). The current local wiring is:
+
+- `fiducia-load-balance` (router) seeds from the local `Service/fiducia-node` (:8090).
+- `fiducia-auth` → `FIDUCIA_KV_URL=http://fiducia-load-balance.fiducia.svc.cluster.local:8088`.
+- `fiducia-admin` → `FIDUCIA_BRAIN_URL=http://fiducia-brain.fiducia.svc.cluster.local:8095`.
+- `fiducia-backend`/`fiducia-auth` → `FIDUCIA_AUTH_URL=…fiducia-auth…:8097` (stays local — auth is stateless and stays here).
+
+**Step 1 — repoint the stateless servers at the mesh (no deletion yet):**
+- Point `fiducia-load-balance`'s seed / `fiducia-admin`'s `FIDUCIA_BRAIN_URL` /
+  `fiducia-auth`'s `FIDUCIA_KV_URL` at the mesh endpoints
+  (`node.<cloud>.fiducia.cloud:9090`, `brain.<cloud>.fiducia.cloud:8095` — the addresses in
+  fiducia-infra's `clusters/<cloud>/topology.env`), delivered via `ExternalSecret`/ConfigMap,
+  not hardcoded. Add the mesh CA / mTLS creds the same way.
+- Verify backend/auth/admin stay green reading/writing through the mesh **while the local
+  quorum is still up** (safe rollback: revert the env).
+
+**Step 2 — only after Step 1 is verified — prune the local core:**
+- Remove `fiducia-node.statefulset.yaml`, `fiducia-node.service.yaml`,
+  `fiducia-node.networkpolicy.yaml`, `fiducia-brain.statefulset.yaml`,
+  `fiducia-brain.networkpolicy.yaml` (and the node/brain PDBs) from
+  `remote/argocd/fiducia/kustomization.yaml` and the `fiducia-hetzner` overlay. ArgoCD prunes
+  the now-unreferenced quorum. Decide whether `fiducia-load-balance` stays (thin router to the
+  mesh) or also goes.
+- Then adopt the `fiducia` `AppProject` for the remaining stateless tenants
+  (backend/auth/admin), sourced from the fiducia app repo's `deploy/k8s`.
+
 ## Central systemic gaps (independent of any single org)
 
 1. **`default` is the blast radius.** 106 manifests hardcode it. No per-app quota, limit,
