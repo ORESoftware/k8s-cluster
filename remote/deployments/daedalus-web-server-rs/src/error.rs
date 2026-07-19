@@ -57,27 +57,27 @@ mod tests {
 
     #[test]
     fn auth_failures_do_not_leak_a_reason() {
-        let (status, code, detail) = ServiceError::Unauthorized.parts();
+        // A caller must not learn whether the signature, the audience, or the
+        // email allow-list rejected them — every auth failure is one code.
+        let (status, code) = ServiceError::Unauthorized.parts();
         assert_eq!(status, StatusCode::UNAUTHORIZED);
         assert_eq!(code, "unauthorized");
-        // No detail: a caller must not learn whether the signature, the
-        // audience, or the email allow-list rejected them.
-        assert!(detail.is_none());
     }
 
     #[test]
     fn dependency_detail_is_withheld_from_the_client() {
+        // The detail string carries internal topology; only the coarse code is
+        // exposed. parts() never returns the detail.
         let err = ServiceError::Unavailable("postgres connection refused at 10.0.0.4".to_string());
-        let (status, _, detail) = err.parts();
+        let (status, code) = err.parts();
         assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-        assert!(detail.is_none(), "internal topology must not reach callers");
+        assert_eq!(code, "service_unavailable");
     }
 
     #[test]
-    fn bad_request_detail_is_returned() {
-        let err = ServiceError::BadRequest("title must not be empty".to_string());
-        let (status, _, detail) = err.parts();
-        assert_eq!(status, StatusCode::BAD_REQUEST);
-        assert_eq!(detail, Some("title must not be empty"));
+    fn not_found_doubles_as_the_not_yours_response() {
+        let (status, code) = ServiceError::NotFound.parts();
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(code, "not_found");
     }
 }
