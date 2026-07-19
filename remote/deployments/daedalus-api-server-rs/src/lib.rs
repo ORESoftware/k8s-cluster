@@ -64,21 +64,17 @@ impl FromRequestParts<SharedState> for Operator {
         parts: &mut Parts,
         state: &SharedState,
     ) -> Result<Self, Self::Rejection> {
-        let verifier = state.verifier.as_ref().ok_or_else(|| {
-            // Fail closed. An unconfigured gate must never mean "allow".
-            ServiceError::Unavailable(
-                "Supabase auth is not configured; refusing to serve authenticated routes"
-                    .to_string(),
-            )
-        })?;
-        let header = parts
-            .headers
-            .get(axum::http::header::AUTHORIZATION)
-            .and_then(|value| value.to_str().ok());
-        let token = bearer_token(header).ok_or(ServiceError::Unauthorized)?;
-        let operator = verifier.authorize(&state.http, token).await?;
-        state.metrics.record_authorized();
-        Ok(operator)
+        // Every rejection path increments the rejected counter, so the two
+        // metrics together account for all attempts on authenticated routes.
+        let result = Self::authorize(parts, state).await;
+        match &result {
+            Ok(operator) => {
+                state.metrics.record_authorized();
+                tracing::debug!(auth.subject = %operator.subject, "request authorized");
+            }
+            Err(_) => state.metrics.record_rejected(),
+        }
+        result
     }
 }
 
