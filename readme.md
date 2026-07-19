@@ -1,5 +1,7 @@
 # rest-api-backend.rs — USACC
 
+[![ci](https://github.com/usa-acc/rest-api-backend.rs/actions/workflows/ci.yml/badge.svg)](https://github.com/usa-acc/rest-api-backend.rs/actions/workflows/ci.yml)
+
 **[usa-acc](https://github.com/usa-acc)** · site: [usa-acc.github.io](https://usa-acc.github.io)
 
 > Extracted with full history from `ORESoftware/k8s-cluster`
@@ -98,6 +100,15 @@ If no database URL is configured the service still boots and reports that state 
 database-backed API routes return `503`.
 
 ## Deployment
+
+GitHub Actions validates workflow syntax, repository hygiene, the Cargo
+manifest, and formatting on every pull request and push to `main`. Full builds
+and production delivery run through `ORESoftware/k8s-cluster`, where this
+crate's path dependencies and runtime manifests live. Its GitOps promotion
+workflow polls for CI-successful backend `main` commits, runs formatting,
+Clippy, and tests in the complete superproject context, advances the pinned
+submodule and immutable Deployment source revision on `dev`, and lets Argo CD
+reconcile the rollout.
 
 Argo includes this service as `usacc-rest-api-backend-rs` in
 `remote/argocd/dd-next-runtime`. The in-cluster service listens on

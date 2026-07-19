@@ -171,8 +171,15 @@ pub fn empty_row(colspan: u8, msg: &str) -> Markup {
 pub fn status_badge(value: &str) -> Markup {
     let class = match value {
         "active" | "succeeded" | "certified" | "resolved" | "open" => "badge badge-ok",
-        "pending" | "draft" | "running" | "screening" | "inquiry" | "signature_collection"
-        | "admission_review" | "trial" | "appeal" => "badge badge-pending",
+        "pending"
+        | "draft"
+        | "running"
+        | "screening"
+        | "inquiry"
+        | "signature_collection"
+        | "admission_review"
+        | "trial"
+        | "appeal" => "badge badge-pending",
         "failed" | "banned" | "suspended" | "canceled" | "cancelled" => "badge badge-fail",
         _ => "badge badge-muted",
     };

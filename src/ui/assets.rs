@@ -66,7 +66,10 @@ pub async fn serve(Path(file): Path<String>) -> Response {
     (
         StatusCode::OK,
         [
-            (header::CONTENT_TYPE, "application/javascript; charset=utf-8"),
+            (
+                header::CONTENT_TYPE,
+                "application/javascript; charset=utf-8",
+            ),
             (header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
             (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
         ],

@@ -99,7 +99,9 @@ pub fn router(state: &AppState) -> Router<AppState> {
 /// is never reflected to the client. `action` completes "Could not …".
 pub(super) fn report_db_error(action: &str, err: impl std::fmt::Display) -> Markup {
     tracing::error!(action, error = %err, "console database error");
-    layout::flash_error(format!("Could not {action}. Check the server logs for details."))
+    layout::flash_error(format!(
+        "Could not {action}. Check the server logs for details."
+    ))
 }
 
 /// Body shown by every page when no database is configured.
@@ -203,7 +205,11 @@ mod tests {
 
     #[tokio::test]
     async fn static_asset_rejects_unknown_filenames() {
-        for bad in ["/app/static/foo.js", "/app/static/htmx.min.js", "/app/static/htmx-.js"] {
+        for bad in [
+            "/app/static/foo.js",
+            "/app/static/htmx.min.js",
+            "/app/static/htmx-.js",
+        ] {
             let resp = app(None).oneshot(req("GET", bad)).await.unwrap();
             assert_eq!(resp.status(), StatusCode::NOT_FOUND, "{bad}");
         }
@@ -211,7 +217,10 @@ mod tests {
 
     #[tokio::test]
     async fn robots_disallows_all() {
-        let resp = app(None).oneshot(req("GET", "/app/robots.txt")).await.unwrap();
+        let resp = app(None)
+            .oneshot(req("GET", "/app/robots.txt"))
+            .await
+            .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
         assert!(std::str::from_utf8(&body).unwrap().contains("Disallow: /"));
@@ -257,7 +266,10 @@ mod tests {
     #[tokio::test]
     async fn bearer_required_when_set() {
         let bearer = Some("super-secret-token".to_string());
-        let missing = app(bearer.clone()).oneshot(req("GET", "/app")).await.unwrap();
+        let missing = app(bearer.clone())
+            .oneshot(req("GET", "/app"))
+            .await
+            .unwrap();
         assert_eq!(missing.status(), StatusCode::UNAUTHORIZED);
         assert_eq!(
             missing.headers().get("www-authenticate").unwrap(),

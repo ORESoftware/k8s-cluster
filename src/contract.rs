@@ -115,7 +115,10 @@ mod tests {
     #[test]
     fn missing_or_non_string_digest_yields_none() {
         assert_eq!(digest_from_contract_response(&json!({})), None);
-        assert_eq!(digest_from_contract_response(&json!({ "digest": 42 })), None);
+        assert_eq!(
+            digest_from_contract_response(&json!({ "digest": 42 })),
+            None
+        );
         assert_eq!(
             digest_from_contract_response(&json!({ "validation": { "digest": null } })),
             None
