@@ -159,6 +159,17 @@ const ScrapeRequestSchema = z.object({
   includeHtml: z.boolean().optional(),
   includeText: z.boolean().optional(),
   includeLinks: z.boolean().optional(),
+  // Contact extraction is opt-in: callers ask for PII only when the job needs it.
+  // `includeContacts` turns on both phones and emails; the granular flags win.
+  includeContacts: z.boolean().optional(),
+  includePhones: z.boolean().optional(),
+  includeEmails: z.boolean().optional(),
+  contactRegion: z
+    .string()
+    .regex(/^[A-Za-z]{2}$/, 'contactRegion must be an ISO 3166-1 alpha-2 code')
+    .optional(),
+  maxPhones: z.number().int().min(1).optional(),
+  maxEmails: z.number().int().min(1).optional(),
   captureFailureScreenshot: z.boolean().optional(),
   timeoutMs: z.number().int().min(500).optional(),
   maxHtmlChars: z.number().int().min(1_000).optional(),
