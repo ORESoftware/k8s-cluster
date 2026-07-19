@@ -11,10 +11,11 @@ use axum::{
 };
 use serde_json::json;
 
+// This server is read-only, so there is no request-body validation and thus no
+// BadRequest variant (unlike the API server). NotFound doubles as the "not
+// yours" response so plan ownership cannot be probed.
 #[derive(Debug)]
 pub(crate) enum ServiceError {
-    /// Caller-supplied input failed validation. Safe to describe.
-    BadRequest(String),
     /// Missing, malformed, unverifiable, or non-permitted credentials.
     Unauthorized,
     NotFound,
@@ -24,12 +25,11 @@ pub(crate) enum ServiceError {
 }
 
 impl ServiceError {
-    fn parts(&self) -> (StatusCode, &'static str, Option<&str>) {
+    fn parts(&self) -> (StatusCode, &'static str) {
         match self {
-            Self::BadRequest(detail) => (StatusCode::BAD_REQUEST, "bad_request", Some(detail)),
-            Self::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized", None),
-            Self::NotFound => (StatusCode::NOT_FOUND, "not_found", None),
-            Self::Unavailable(_) => (StatusCode::SERVICE_UNAVAILABLE, "service_unavailable", None),
+            Self::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
+            Self::NotFound => (StatusCode::NOT_FOUND, "not_found"),
+            Self::Unavailable(_) => (StatusCode::SERVICE_UNAVAILABLE, "service_unavailable"),
         }
     }
 }
