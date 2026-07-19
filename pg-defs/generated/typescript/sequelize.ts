@@ -901,14 +901,14 @@ export function defineDdModels(sequelize: Sequelize) {
   }, { tableName: "des_soccer_learning_set_play_runs", timestamps: false, freezeTableName: true });
 
   const DesSoccerLearningSetPlayRestartMix = sequelize.define("DesSoccerLearningSetPlayRestartMix", {
-    run_id: { type: DataTypes.UUID, allowNull: false },
-    ordinal: { type: DataTypes.INTEGER, allowNull: false, validate: { min: 0 } },
+    run_id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    ordinal: { type: DataTypes.INTEGER, allowNull: false, primaryKey: true, validate: { min: 0 } },
     restart: { type: DataTypes.STRING(40), allowNull: false, validate: { isIn: [["direct-free-kick", "indirect-free-kick"]] } },
   }, { tableName: "des_soccer_learning_set_play_restart_mix", timestamps: false, freezeTableName: true });
 
   const DesSoccerLearningSetPlayEpisodeMetrics = sequelize.define("DesSoccerLearningSetPlayEpisodeMetrics", {
-    run_id: { type: DataTypes.UUID, allowNull: false },
-    episode_index: { type: DataTypes.INTEGER, allowNull: false, validate: { min: 0 } },
+    run_id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    episode_index: { type: DataTypes.INTEGER, allowNull: false, primaryKey: true, validate: { min: 0 } },
     seed: { type: DataTypes.BIGINT, allowNull: false, validate: { min: 0 } },
     restart: { type: DataTypes.STRING(40), allowNull: false, validate: { isIn: [["direct-free-kick", "indirect-free-kick"]] } },
     routine: { type: DataTypes.STRING(80), allowNull: true, validate: { len: [0, 80] } },
@@ -2185,5 +2185,271 @@ export function defineDdModels(sequelize: Sequelize) {
     updated_at: { type: DataTypes.DATE, allowNull: false },
   }, { tableName: "shared_context", schema: "ai_agent_bridge", timestamps: false, freezeTableName: true });
 
-  return { Accounts, Devices, VaultBlobs, AppConfig, VapiPhoneCallEvents, MusicSongs, MusicSongVotes, SoundRecorderAccounts, SoundRecorderDevices, SoundRecorderUploadSessions, SoundRecorderSegments, SoundRecorderEvidenceExports, SoundRecorderAuditEvents, SoundRecorderOauthStates, SoundRecorderCloudConnections, SoundRecorderCloudCopyJobs, ContainerPoolConfigs, KnownGitRepo, AgentContextBlobs, AgentContextEmbeddings, AgentRemoteDevThread, AgentRemoteDevTask, AgentRemoteDevEvent, AgentRemoteDevBreadcrumb, AgentRemoteDevArtifact, AgentRemoteDevRuntimeLock, MipSolverSessions, MipSolverSolves, MipSolverJobs, MipSolverEvents, LambdaFunction, WorkflowDefinitions, WorkflowRuns, WorkflowStepRuns, ContainerPoolImageRevisions, ContainerPoolBuildRuns, PresenceConvs, PresenceConvMembers, PresenceUsers, PresenceEvents, PresenceConsumerCheckpoints, DesSoccerLearningExperiments, DesSoccerLearningPolicyVersions, DesSoccerLearningPolicyEntries, DesSoccerLearningJobs, DesSoccerLearningRuns, DesSoccerLearningRunDeltas, DesSoccerLearningMergeEvents, DesSoccerTournaments, DesSoccerTournamentMatches, DesSoccerTournamentTeamBrains, DesSoccerLearningSetPlayRuns, DesSoccerLearningSetPlayRestartMix, DesSoccerLearningSetPlayEpisodeMetrics, DesSoccerLearningNeuralRunMetrics, DesSoccerLearningPassMetrics, DesFelElevatorLearningRuns, DesFelElevatorPolicyStates, DesFelElevatorDispatchDecisions, DesFelElevatorPomdpBeliefs, BenefactorMarketingClients, BenefactorMarketingContacts, BenefactorMarketingServicePackages, BenefactorMarketingContracts, BenefactorMarketingInvoices, BenefactorMarketingIntegrations, BenefactorMarketingLeads, BenefactorMarketingEnrichmentJobs, BenefactorMarketingCampaigns, BenefactorMarketingCampaignChannels, BenefactorMarketingCampaignExperiments, BenefactorMarketingAutomationWorkflows, BenefactorMarketingAutomationEvents, BenefactorMarketingReports, BenefactorMarketingAttributionEvents, BenefactorMarketingOpportunities, BenefactorMarketingContentAssets, BenefactorMarketingProjectTasks, BenefactorMarketingClientApprovals, BenefactorMarketingTickets, BenefactorMarketingMeetings, BenefactorMarketingTeamAllocations, BenefactorMarketingIntegrationSyncRuns, BenefactorMarketingOutreachSequences, BenefactorMarketingOutreachSteps, BenefactorMarketingOutreachEnrollments, BenefactorMarketingOutreachTouchpoints, BenefactorMarketingProspectResearchBriefs, BenefactorMarketingConversionEvents, BenefactorMarketingPortalMembers, BenefactorMarketingSharedDocuments, BenefactorMarketingCollaborationComments, BenefactorMarketingNotifications, BenefactorMarketingTimeEntries, BenefactorMarketingVendorCosts, BenefactorMarketingCommissionEntries, BenefactorMarketingBudgetForecasts, BenefactorMarketingCallInsights, UsaccUsers, UsaccCases, UsaccCaseParticipants, UsaccCaseStages, UsaccElections, UsaccVotes, UsaccEscrowAccounts, UsaccLedgerEntries, UsaccContractOperations, UsaccSimulationRuns, UsaccAuditEvents, BenefactorLeads, BenefactorLeadsDomains, BenefactorSearchLocations, BenefactorScrapeQueries, BenefactorDomainSearchTracking, BenefactorIcps, BenefactorLeadsThrottling, BenefactorLeadsReminders, VcsRepositories, VcsRefs, VcsOperations, Agents, Channels, Messages, ChannelMembers, SharedContext };
+  const SyncClock = sequelize.define("SyncClock", {
+    singleton: { type: DataTypes.BOOLEAN, allowNull: false, primaryKey: true, defaultValue: true },
+    last_sequence: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0, validate: { min: 0 } },
+  }, { tableName: "sync_clock", schema: "fiducia", timestamps: false, freezeTableName: true });
+
+  const SyncTombstones = sequelize.define("SyncTombstones", {
+    sequence: { type: DataTypes.BIGINT, allowNull: false, primaryKey: true, validate: { min: 1 } },
+    table_name: { type: DataTypes.TEXT, allowNull: false },
+    row_id: { type: DataTypes.TEXT, allowNull: false },
+    tenant_id: { type: DataTypes.UUID, allowNull: true },
+    owner_user_id: { type: DataTypes.UUID, allowNull: true },
+    row_version: { type: DataTypes.BIGINT, allowNull: false, validate: { min: 1 } },
+    deleted_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "sync_tombstones", schema: "fiducia", timestamps: false, freezeTableName: true });
+
+  const Orgs = sequelize.define("Orgs", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    slug: { type: DataTypes.STRING(120), allowNull: false, validate: { len: [0, 120], is: new RegExp("^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$") } },
+    name: { type: DataTypes.STRING(200), allowNull: false, validate: { len: [0, 200] } },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+    updated_at: { type: DataTypes.DATE, allowNull: false },
+    version: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 1 },
+    sync_sequence: { type: DataTypes.BIGINT, allowNull: false },
+  }, { tableName: "orgs", schema: "fiducia", timestamps: false, freezeTableName: true });
+
+  const Projects = sequelize.define("Projects", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    org_id: { type: DataTypes.UUID, allowNull: false },
+    slug: { type: DataTypes.STRING(120), allowNull: false, validate: { len: [0, 120], is: new RegExp("^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$") } },
+    name: { type: DataTypes.STRING(200), allowNull: false, validate: { len: [0, 200] } },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+    updated_at: { type: DataTypes.DATE, allowNull: false },
+    version: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 1 },
+    sync_sequence: { type: DataTypes.BIGINT, allowNull: false },
+  }, { tableName: "projects", schema: "fiducia", timestamps: false, freezeTableName: true });
+
+  const Users = sequelize.define("Users", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    supabase_user_id: { type: DataTypes.UUID, allowNull: false },
+    email: { type: DataTypes.STRING(320), allowNull: false, validate: { len: [0, 320] } },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "users", schema: "fiducia", timestamps: false, freezeTableName: true });
+
+  const OrgMembers = sequelize.define("OrgMembers", {
+    org_id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    user_id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    role: { type: DataTypes.STRING(32), allowNull: false, defaultValue: "member", validate: { isIn: [["owner", "admin", "member"]] } },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "org_members", schema: "fiducia", timestamps: false, freezeTableName: true });
+
+  const ProjectMembers = sequelize.define("ProjectMembers", {
+    project_id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    user_id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    role: { type: DataTypes.STRING(32), allowNull: false, defaultValue: "viewer", validate: { isIn: [["admin", "operator", "viewer"]] } },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "project_members", schema: "fiducia", timestamps: false, freezeTableName: true });
+
+  const ApiKeys = sequelize.define("ApiKeys", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    key_id: { type: DataTypes.STRING(64), allowNull: false, validate: { len: [0, 64] } },
+    org_id: { type: DataTypes.UUID, allowNull: false },
+    project_id: { type: DataTypes.UUID, allowNull: true },
+    created_by_user_id: { type: DataTypes.UUID, allowNull: true },
+    name: { type: DataTypes.STRING(200), allowNull: false, validate: { len: [0, 200] } },
+    secret_hash: { type: DataTypes.STRING(255), allowNull: false, validate: { len: [0, 255] } },
+    scopes: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
+    env: { type: DataTypes.STRING(16), allowNull: false, defaultValue: "live", validate: { isIn: [["live", "test"]] } },
+    require_idempotency: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+    mtls_required: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    revoked: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+    updated_at: { type: DataTypes.DATE, allowNull: false },
+    version: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 1 },
+    sync_sequence: { type: DataTypes.BIGINT, allowNull: false },
+    last_used_at: { type: DataTypes.DATE, allowNull: true },
+    expires_at: { type: DataTypes.DATE, allowNull: true },
+  }, { tableName: "api_keys", schema: "fiducia", timestamps: false, freezeTableName: true });
+
+  const MtlsClientCerts = sequelize.define("MtlsClientCerts", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    org_id: { type: DataTypes.UUID, allowNull: false },
+    project_id: { type: DataTypes.UUID, allowNull: true },
+    name: { type: DataTypes.STRING(200), allowNull: false, validate: { len: [0, 200] } },
+    subject: { type: DataTypes.STRING(500), allowNull: false, validate: { len: [0, 500] } },
+    sha256_fingerprint: { type: DataTypes.STRING(95), allowNull: false, validate: { len: [0, 95] } },
+    not_before: { type: DataTypes.DATE, allowNull: true },
+    not_after: { type: DataTypes.DATE, allowNull: true },
+    revoked: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+    updated_at: { type: DataTypes.DATE, allowNull: false },
+    version: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 1 },
+    sync_sequence: { type: DataTypes.BIGINT, allowNull: false },
+  }, { tableName: "mtls_client_certs", schema: "fiducia", timestamps: false, freezeTableName: true });
+
+  const CustomerPreferences = sequelize.define("CustomerPreferences", {
+    user_id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    density: { type: DataTypes.STRING(16), allowNull: false, defaultValue: "comfortable", validate: { isIn: [["comfortable", "compact"]] } },
+    timezone: { type: DataTypes.STRING(64), allowNull: false, defaultValue: "UTC", validate: { len: [0, 64] } },
+    region: { type: DataTypes.STRING(16), allowNull: false, defaultValue: "auto", validate: { len: [0, 16] } },
+    notify_key_rotation: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+    notify_lock_contention: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+    notify_mfa: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+    updated_at: { type: DataTypes.DATE, allowNull: false },
+    version: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 1 },
+    sync_sequence: { type: DataTypes.BIGINT, allowNull: false },
+  }, { tableName: "customer_preferences", schema: "fiducia", timestamps: false, freezeTableName: true });
+
+  const CustomerSessions = sequelize.define("CustomerSessions", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    user_id: { type: DataTypes.UUID, allowNull: false },
+    device: { type: DataTypes.STRING(200), allowNull: false, validate: { len: [0, 200] } },
+    location: { type: DataTypes.STRING(200), allowNull: true, validate: { len: [0, 200] } },
+    last_seen: { type: DataTypes.DATE, allowNull: false },
+    status: { type: DataTypes.STRING(16), allowNull: false, defaultValue: "active", validate: { isIn: [["active", "verified", "revoked"]] } },
+    updated_at: { type: DataTypes.DATE, allowNull: false },
+    version: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 1 },
+    sync_sequence: { type: DataTypes.BIGINT, allowNull: false },
+  }, { tableName: "customer_sessions", schema: "fiducia", timestamps: false, freezeTableName: true });
+
+  const AuditLog = sequelize.define("AuditLog", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    org_id: { type: DataTypes.UUID, allowNull: true },
+    project_id: { type: DataTypes.UUID, allowNull: true },
+    actor_user_id: { type: DataTypes.UUID, allowNull: true },
+    actor_key_id: { type: DataTypes.UUID, allowNull: true },
+    actor: { type: DataTypes.STRING(320), allowNull: true, validate: { len: [0, 320] } },
+    action: { type: DataTypes.STRING(120), allowNull: false, validate: { len: [0, 120] } },
+    target: { type: DataTypes.STRING(320), allowNull: true, validate: { len: [0, 320] } },
+    request_id: { type: DataTypes.STRING(120), allowNull: true, validate: { len: [0, 120] } },
+    source_ip: { type: DataTypes.STRING(64), allowNull: true, validate: { len: [0, 64] } },
+    user_agent: { type: DataTypes.STRING(500), allowNull: true, validate: { len: [0, 500] } },
+    meta: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+    retention_expires_at: { type: DataTypes.DATE, allowNull: true },
+  }, { tableName: "audit_log", schema: "fiducia", timestamps: false, freezeTableName: true });
+
+  const CustomerNotifications = sequelize.define("CustomerNotifications", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    user_id: { type: DataTypes.UUID, allowNull: false },
+    org_id: { type: DataTypes.UUID, allowNull: true },
+    kind: { type: DataTypes.STRING(40), allowNull: false, validate: { len: [0, 40], is: new RegExp("^[a-z][a-z0-9_.]{1,38}[a-z0-9]$") } },
+    severity: { type: DataTypes.STRING(16), allowNull: false, defaultValue: "info", validate: { isIn: [["info", "success", "warning", "critical"]] } },
+    title: { type: DataTypes.STRING(200), allowNull: false, validate: { len: [0, 200] } },
+    body: { type: DataTypes.STRING(2000), allowNull: false, defaultValue: "", validate: { len: [0, 2000] } },
+    link: { type: DataTypes.STRING(500), allowNull: true, validate: { len: [0, 500] } },
+    read_at: { type: DataTypes.DATE, allowNull: true },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+    updated_at: { type: DataTypes.DATE, allowNull: false },
+    version: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 1 },
+    sync_sequence: { type: DataTypes.BIGINT, allowNull: false },
+  }, { tableName: "customer_notifications", schema: "fiducia", timestamps: false, freezeTableName: true });
+
+  const SyncIdempotencyKeys = sequelize.define("SyncIdempotencyKeys", {
+    key: { type: DataTypes.TEXT, allowNull: false, primaryKey: true },
+    request_fingerprint: { type: DataTypes.STRING(64), allowNull: false, validate: { len: [0, 64], is: new RegExp("^[0-9a-f]{64}$") } },
+    committed_version: { type: DataTypes.BIGINT, allowNull: true },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "sync_idempotency_keys", schema: "fiducia", timestamps: false, freezeTableName: true });
+
+  const Transcriptions = sequelize.define("Transcriptions", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    source: { type: DataTypes.TEXT, allowNull: false },
+    provider: { type: DataTypes.TEXT, allowNull: false },
+    model: { type: DataTypes.TEXT, allowNull: false },
+    text: { type: DataTypes.TEXT, allowNull: false },
+    language: { type: DataTypes.TEXT, allowNull: true },
+    sample_rate: { type: DataTypes.INTEGER, allowNull: true, validate: { min: 4000, max: 384000 } },
+    duration_ms: { type: DataTypes.BIGINT, allowNull: true, validate: { min: 0 } },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "transcriptions", schema: "t2v", timestamps: false, freezeTableName: true });
+
+  const Syntheses = sequelize.define("Syntheses", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    text: { type: DataTypes.TEXT, allowNull: false },
+    voice: { type: DataTypes.TEXT, allowNull: false },
+    provider: { type: DataTypes.TEXT, allowNull: false },
+    model: { type: DataTypes.TEXT, allowNull: false },
+    format: { type: DataTypes.TEXT, allowNull: false },
+    audio_bytes: { type: DataTypes.BIGINT, allowNull: false, validate: { min: 0 } },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "syntheses", schema: "t2v", timestamps: false, freezeTableName: true });
+
+  const Translations = sequelize.define("Translations", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    source_text: { type: DataTypes.TEXT, allowNull: false },
+    translated_text: { type: DataTypes.TEXT, allowNull: false },
+    source_lang: { type: DataTypes.TEXT, allowNull: true },
+    target_lang: { type: DataTypes.TEXT, allowNull: false },
+    provider: { type: DataTypes.TEXT, allowNull: false },
+    model: { type: DataTypes.TEXT, allowNull: false },
+    latency_ms: { type: DataTypes.BIGINT, allowNull: false, validate: { min: 0 } },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "translations", schema: "t2v", timestamps: false, freezeTableName: true });
+
+  const VapiCalls = sequelize.define("VapiCalls", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    vapi_call_id: { type: DataTypes.TEXT, allowNull: false },
+    status: { type: DataTypes.TEXT, allowNull: false },
+    ended_reason: { type: DataTypes.TEXT, allowNull: true },
+    transcript: { type: DataTypes.TEXT, allowNull: true },
+    summary: { type: DataTypes.TEXT, allowNull: true },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+    updated_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "vapi_calls", schema: "t2v", timestamps: false, freezeTableName: true });
+
+  const VapiEvents = sequelize.define("VapiEvents", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    vapi_call_id: { type: DataTypes.TEXT, allowNull: true },
+    event_type: { type: DataTypes.TEXT, allowNull: false },
+    payload: { type: DataTypes.JSONB, allowNull: false },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "vapi_events", schema: "t2v", timestamps: false, freezeTableName: true });
+
+  const FabPlans = sequelize.define("FabPlans", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    owner_email: { type: DataTypes.TEXT, allowNull: false },
+    title: { type: DataTypes.TEXT, allowNull: false },
+    goal: { type: DataTypes.TEXT, allowNull: false },
+    process_family: { type: DataTypes.TEXT, allowNull: false, defaultValue: "additive", validate: { isIn: [["additive", "subtractive", "hybrid"]] } },
+    status: { type: DataTypes.TEXT, allowNull: false, defaultValue: "draft", validate: { isIn: [["draft", "planning", "planned", "released", "archived"]] } },
+    document: { type: DataTypes.JSONB, allowNull: true },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+    updated_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "fab_plans", schema: "daedalus", timestamps: false, freezeTableName: true });
+
+  const FabDesigns = sequelize.define("FabDesigns", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    plan_id: { type: DataTypes.UUID, allowNull: false },
+    filename: { type: DataTypes.TEXT, allowNull: false },
+    format: { type: DataTypes.TEXT, allowNull: false, validate: { isIn: [["step", "stl", "3mf", "dxf", "iges", "obj"]] } },
+    storage_uri: { type: DataTypes.TEXT, allowNull: false },
+    size_bytes: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0, validate: { min: 0 } },
+    content_hash: { type: DataTypes.TEXT, allowNull: true },
+    geometry: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "fab_designs", schema: "daedalus", timestamps: false, freezeTableName: true });
+
+  const FabInstructions = sequelize.define("FabInstructions", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    plan_id: { type: DataTypes.UUID, allowNull: false },
+    revision: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1, validate: { min: 1 } },
+    machine_profile: { type: DataTypes.TEXT, allowNull: false },
+    dialect: { type: DataTypes.TEXT, allowNull: false, defaultValue: "gcode", validate: { isIn: [["gcode", "nc", "apt", "proprietary"]] } },
+    storage_uri: { type: DataTypes.TEXT, allowNull: false },
+    content_hash: { type: DataTypes.TEXT, allowNull: true },
+    validated: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    validation: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
+    released_by_email: { type: DataTypes.TEXT, allowNull: true },
+    released_at: { type: DataTypes.DATE, allowNull: true },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "fab_instructions", schema: "daedalus", timestamps: false, freezeTableName: true });
+
+  const FabRuns = sequelize.define("FabRuns", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    instructions_id: { type: DataTypes.UUID, allowNull: false },
+    status: { type: DataTypes.TEXT, allowNull: false, defaultValue: "queued", validate: { isIn: [["queued", "running", "succeeded", "failed", "aborted"]] } },
+    machine_id: { type: DataTypes.TEXT, allowNull: false },
+    operator_email: { type: DataTypes.TEXT, allowNull: true },
+    progress: { type: DataTypes.SMALLINT, allowNull: false, defaultValue: 0, validate: { min: 0, max: 100 } },
+    as_built: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
+    error: { type: DataTypes.TEXT, allowNull: true },
+    started_at: { type: DataTypes.DATE, allowNull: true },
+    finished_at: { type: DataTypes.DATE, allowNull: true },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "fab_runs", schema: "daedalus", timestamps: false, freezeTableName: true });
+
+  return { Accounts, Devices, VaultBlobs, AppConfig, VapiPhoneCallEvents, MusicSongs, MusicSongVotes, SoundRecorderAccounts, SoundRecorderDevices, SoundRecorderUploadSessions, SoundRecorderSegments, SoundRecorderEvidenceExports, SoundRecorderAuditEvents, SoundRecorderOauthStates, SoundRecorderCloudConnections, SoundRecorderCloudCopyJobs, ContainerPoolConfigs, KnownGitRepo, AgentContextBlobs, AgentContextEmbeddings, AgentRemoteDevThread, AgentRemoteDevTask, AgentRemoteDevEvent, AgentRemoteDevBreadcrumb, AgentRemoteDevArtifact, AgentRemoteDevRuntimeLock, MipSolverSessions, MipSolverSolves, MipSolverJobs, MipSolverEvents, LambdaFunction, WorkflowDefinitions, WorkflowRuns, WorkflowStepRuns, ContainerPoolImageRevisions, ContainerPoolBuildRuns, PresenceConvs, PresenceConvMembers, PresenceUsers, PresenceEvents, PresenceConsumerCheckpoints, DesSoccerLearningExperiments, DesSoccerLearningPolicyVersions, DesSoccerLearningPolicyEntries, DesSoccerLearningJobs, DesSoccerLearningRuns, DesSoccerLearningRunDeltas, DesSoccerLearningMergeEvents, DesSoccerTournaments, DesSoccerTournamentMatches, DesSoccerTournamentTeamBrains, DesSoccerLearningSetPlayRuns, DesSoccerLearningSetPlayRestartMix, DesSoccerLearningSetPlayEpisodeMetrics, DesSoccerLearningNeuralRunMetrics, DesSoccerLearningPassMetrics, DesFelElevatorLearningRuns, DesFelElevatorPolicyStates, DesFelElevatorDispatchDecisions, DesFelElevatorPomdpBeliefs, BenefactorMarketingClients, BenefactorMarketingContacts, BenefactorMarketingServicePackages, BenefactorMarketingContracts, BenefactorMarketingInvoices, BenefactorMarketingIntegrations, BenefactorMarketingLeads, BenefactorMarketingEnrichmentJobs, BenefactorMarketingCampaigns, BenefactorMarketingCampaignChannels, BenefactorMarketingCampaignExperiments, BenefactorMarketingAutomationWorkflows, BenefactorMarketingAutomationEvents, BenefactorMarketingReports, BenefactorMarketingAttributionEvents, BenefactorMarketingOpportunities, BenefactorMarketingContentAssets, BenefactorMarketingProjectTasks, BenefactorMarketingClientApprovals, BenefactorMarketingTickets, BenefactorMarketingMeetings, BenefactorMarketingTeamAllocations, BenefactorMarketingIntegrationSyncRuns, BenefactorMarketingOutreachSequences, BenefactorMarketingOutreachSteps, BenefactorMarketingOutreachEnrollments, BenefactorMarketingOutreachTouchpoints, BenefactorMarketingProspectResearchBriefs, BenefactorMarketingConversionEvents, BenefactorMarketingPortalMembers, BenefactorMarketingSharedDocuments, BenefactorMarketingCollaborationComments, BenefactorMarketingNotifications, BenefactorMarketingTimeEntries, BenefactorMarketingVendorCosts, BenefactorMarketingCommissionEntries, BenefactorMarketingBudgetForecasts, BenefactorMarketingCallInsights, UsaccUsers, UsaccCases, UsaccCaseParticipants, UsaccCaseStages, UsaccElections, UsaccVotes, UsaccEscrowAccounts, UsaccLedgerEntries, UsaccContractOperations, UsaccSimulationRuns, UsaccAuditEvents, BenefactorLeads, BenefactorLeadsDomains, BenefactorSearchLocations, BenefactorScrapeQueries, BenefactorDomainSearchTracking, BenefactorIcps, BenefactorLeadsThrottling, BenefactorLeadsReminders, VcsRepositories, VcsRefs, VcsOperations, Agents, Channels, Messages, ChannelMembers, SharedContext, SyncClock, SyncTombstones, Orgs, Projects, Users, OrgMembers, ProjectMembers, ApiKeys, MtlsClientCerts, CustomerPreferences, CustomerSessions, AuditLog, CustomerNotifications, SyncIdempotencyKeys, Transcriptions, Syntheses, Translations, VapiCalls, VapiEvents, FabPlans, FabDesigns, FabInstructions, FabRuns };
 }

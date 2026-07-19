@@ -9,11 +9,10 @@ defmodule DdPgDefs.DesSoccerLearningSetPlayEpisodeMetrics do
 
   @table "des_soccer_learning_set_play_episode_metrics"
 
-  @primary_key false
+  @primary_key {:id, :binary_id, autogenerate: true}
+  @foreign_key_type :binary_id
 
   schema @table do
-    field :run_id, :binary_id
-    field :episode_index, :integer
     field :seed, :integer
     field :restart, :string, default: nil
     field :routine, :string
@@ -34,7 +33,7 @@ defmodule DdPgDefs.DesSoccerLearningSetPlayEpisodeMetrics do
     field :goal_rate_so_far_micros, :integer
   end
 
-  @required_fields ~w(run_id episode_index seed restart scored score_delta_for_team ticks simulated_seconds_micros policy_updates home_policy_entries home_policy_target_entries away_policy_entries away_policy_target_entries neural_training_steps neural_samples neural_replay_samples cumulative_goals goal_rate_so_far_micros)a
+  @required_fields ~w(seed restart scored score_delta_for_team ticks simulated_seconds_micros policy_updates home_policy_entries home_policy_target_entries away_policy_entries away_policy_target_entries neural_training_steps neural_samples neural_replay_samples cumulative_goals goal_rate_so_far_micros)a
   @optional_fields ~w(routine neural_last_loss_micros)a
 
   @doc "Builds an Ecto changeset enforcing every constraint exposed in schema.sql."
@@ -42,7 +41,6 @@ defmodule DdPgDefs.DesSoccerLearningSetPlayEpisodeMetrics do
     struct
     |> cast(attrs, @required_fields ++ @optional_fields)
     |> validate_required(@required_fields)
-    |> validate_number(:episode_index, greater_than_or_equal_to: 0)
     |> validate_number(:seed, greater_than_or_equal_to: 0)
     |> validate_inclusion(:restart, ["direct-free-kick", "indirect-free-kick"])
     |> validate_length(:routine, max: 80)

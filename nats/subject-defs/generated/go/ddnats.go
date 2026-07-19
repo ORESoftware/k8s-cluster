@@ -64,6 +64,27 @@ const BlockchainIndexEventsSubject = "dd.remote.blockchain.index.events"
 // Service: dd-contract-service
 const BlockchainMevAlertsSubject = "dd.remote.blockchain.mev.alerts"
 
+// Shared result fanout receiving every browser-job terminal result.
+// Service: dd-browser-job-runner
+const BrowserJobResultsSubject = "dd.remote.browser_jobs.results"
+
+// Redacted build lifecycle events (queued/running/succeeded/failed) published by the build server. Default for BUILD_SERVER_NATS_EVENT_SUBJECT.
+// Service: dd-build-server
+const BuildServerEventsSubject = "dd.remote.build_server.events"
+
+// Redacted container-image registry events (ECR / docker registry webhook pushes) relayed by the build server. Default for BUILD_SERVER_NATS_IMAGE_SUBJECT.
+// Service: dd-build-server
+const BuildServerImagesSubject = "dd.remote.build_server.images"
+
+// Durable build-request intake. Producers publish a build-server.v1 job document; build-server replicas consume via the shared queue group / durable JetStream consumer. Default for BUILD_SERVER_NATS_REQUEST_SUBJECT.
+// Service: dd-build-server
+const BuildServerRequestsSubject = "dd.remote.build_server.requests"
+const BuildServerRequestsQueueGroup = "dd-build-server"
+
+// Terminal build results (succeeded/failed with jobId and error summary) for NATS-submitted and webhook-submitted jobs. Default for BUILD_SERVER_NATS_RESULT_SUBJECT.
+// Service: dd-build-server
+const BuildServerResultsSubject = "dd.remote.build_server.results"
+
 // Per-fault lifecycle events (selected, injected, restored, aborted-by-guard) emitted by the chaos loops.
 // Service: dd-chaos
 const ChaosEventsSubject = "dd.remote.chaos.events"
@@ -170,6 +191,15 @@ const DesResultsSubject = "dd.remote.des.results"
 // Service: dd-ai-ml-pipeline
 const DesSimulateSubject = "dd.remote.des.simulate"
 const DesSimulateQueueGroup = "dd-des-simulator"
+
+// Document conversion requests consumed by dd-document-rs replicas.
+// Service: dd-document-rs
+const DocumentConvertRequestsSubject = "dd.remote.document.convert"
+const DocumentConvertRequestsQueueGroup = "dd-document-rs"
+
+// Document conversion results published after a request completes or fails.
+// Service: dd-document-rs
+const DocumentConvertResultsSubject = "dd.remote.document.results"
 
 // Inbound forecast/recommendation requests consumed by the economics server. Subscribed with the dd-economics-server queue group so requests load-balance across replicas. Default for ECONOMICS_FORECAST_REQUEST_SUBJECT.
 // Service: dd-economics-server
@@ -432,6 +462,15 @@ const MusicSongsPublishedSubject = "dd.remote.music.songs.published"
 // Service: dd-music-rs
 const MusicVotesEventsSubject = "dd.remote.music.votes.events"
 
+// OCR requests consumed by dd-ocr-rs replicas.
+// Service: dd-ocr-rs
+const OcrRequestsSubject = "dd.remote.ocr.requests"
+const OcrRequestsQueueGroup = "dd-ocr-rs"
+
+// OCR results published after a request completes or fails.
+// Service: dd-ocr-rs
+const OcrResultsSubject = "dd.remote.ocr.results"
+
 // Wakeup signal published whenever a new task is enqueued for a thread, so the orchestrator can prepare/scale the matching worker deployment without polling.
 // Service: dd-remote-rest-api
 const OrchestratorWakeupSubject = "dd.remote.orchestrator.wakeup"
@@ -440,6 +479,10 @@ const OrchestratorWakeupStream = "DD_REMOTE_CONTROL"
 // Trend, correlation, grant-match, graph-data, model, and white-paper evidence results from public-data analysis runs.
 // Service: dd-public-data-server
 const PublicDataAnalysisResultsSubject = "dd.remote.public_data.analysis.results"
+
+// Dead-letter subject for public-data ingest requests that exhaust JetStream delivery attempts.
+// Service: dd-public-data-server
+const PublicDataIngestDeadLetterSubject = "dd.remote.public_data.ingest.deadletter"
 
 // Inbound public-data ingestion requests accepted over NATS. Payloads mirror the HTTP /ingest and /scrape contracts.
 // Service: dd-public-data-server
@@ -575,6 +618,82 @@ const WorkflowsStartQueueGroup = "dd-gleam-workflow-engine"
 
 // ---------- Parameterized subjects ----------
 
+// Per-job lifecycle and progress events emitted by the isolated browser worker.
+// Service: dd-browser-job-runner
+const BrowserJobEventsPattern = "dd.remote.browser_jobs.{job_id}.events"
+const BrowserJobEventsWildcard = "dd.remote.browser_jobs.*.events"
+type BrowserJobEventsSubjectParts struct {
+	JobId string
+}
+
+func BrowserJobEventsSubject(jobId string) string {
+	return fmt.Sprintf("dd.remote.browser_jobs.%s.events", jobId)
+}
+
+func ParseBrowserJobEventsSubject(subject string) (*BrowserJobEventsSubjectParts, bool) {
+	patternTokens := strings.Split("dd.remote.browser_jobs.{job_id}.events", ".")
+	subjectTokens := strings.Split(subject, ".")
+	if len(patternTokens) != len(subjectTokens) {
+		return nil, false
+	}
+	parts := &BrowserJobEventsSubjectParts{}
+	for i, p := range patternTokens {
+		s := subjectTokens[i]
+		if strings.HasPrefix(p, "{") && strings.HasSuffix(p, "}") {
+			name := p[1 : len(p)-1]
+			switch name {
+			case "job_id":
+				parts.JobId = s
+			default:
+				return nil, false
+			}
+			continue
+		}
+		if p != s {
+			return nil, false
+		}
+	}
+	return parts, true
+}
+
+// Per-job terminal result emitted by the isolated browser worker.
+// Service: dd-browser-job-runner
+const BrowserJobResultPattern = "dd.remote.browser_jobs.{job_id}.result"
+const BrowserJobResultWildcard = "dd.remote.browser_jobs.*.result"
+type BrowserJobResultSubjectParts struct {
+	JobId string
+}
+
+func BrowserJobResultSubject(jobId string) string {
+	return fmt.Sprintf("dd.remote.browser_jobs.%s.result", jobId)
+}
+
+func ParseBrowserJobResultSubject(subject string) (*BrowserJobResultSubjectParts, bool) {
+	patternTokens := strings.Split("dd.remote.browser_jobs.{job_id}.result", ".")
+	subjectTokens := strings.Split(subject, ".")
+	if len(patternTokens) != len(subjectTokens) {
+		return nil, false
+	}
+	parts := &BrowserJobResultSubjectParts{}
+	for i, p := range patternTokens {
+		s := subjectTokens[i]
+		if strings.HasPrefix(p, "{") && strings.HasSuffix(p, "}") {
+			name := p[1 : len(p)-1]
+			switch name {
+			case "job_id":
+				parts.JobId = s
+			default:
+				return nil, false
+			}
+			continue
+		}
+		if p != s {
+			return nil, false
+		}
+	}
+	return parts, true
+}
+
 // Per-row change emitted by wal-gateway. Subject pattern is '<prefix>.<schema>.<table>.<op>'. The default prefix is 'cdc' and the default stream name is 'CDC'. Consumers usually subscribe to the prefix tail wildcard ('cdc.>').
 // Service: dd-wal-gateway
 const CdcRowChangePattern = "{prefix}.{schema}.{table}.{op}"
@@ -589,6 +708,10 @@ type CdcRowChangeSubjectParts struct {
 
 func CdcRowChangeSubject(prefix string, schema string, table string, op string) string {
 	return fmt.Sprintf("%s.%s.%s.%s", prefix, schema, table, op)
+}
+
+func FormatCdcRowChangeWildcard(prefix string) string {
+	return fmt.Sprintf("%s.>", prefix)
 }
 
 func ParseCdcRowChangeSubject(subject string) (*CdcRowChangeSubjectParts, bool) {
@@ -636,6 +759,10 @@ type CdcTableFilterSubjectParts struct {
 
 func CdcTableFilterSubject(prefix string, schema string, table string) string {
 	return fmt.Sprintf("%s.%s.%s.>", prefix, schema, table)
+}
+
+func FormatCdcTableFilterWildcard(prefix string) string {
+	return fmt.Sprintf("%s.>", prefix)
 }
 
 func ParseCdcTableFilterSubject(subject string) (*CdcTableFilterSubjectParts, bool) {
@@ -1103,6 +1230,10 @@ const AgentSimServerQueueGroup = "dd-agent-sim-server"
 // Service: dd-billing-server
 const BillingServerQueueGroup = "dd-billing-server"
 
+// Shared queue group / durable consumer name used by build-server replicas for request intake.
+// Service: dd-build-server
+const BuildServerQueueGroup = "dd-build-server"
+
 // Shared queue group used by dd-constraint-scheduler replicas consuming schedule requests.
 // Service: dd-constraint-scheduler
 const ConstraintSchedulerQueueGroup = "dd-constraint-scheduler"
@@ -1122,6 +1253,10 @@ const DatasetLabelingWorkersQueueGroup = "dd-dataset-labeling"
 // Shared queue group used by dd-data-viz notifier workers consuming the notification-dispatch lane.
 // Service: dd-data-viz-rs
 const DataVizNotificationDispatchQueueGroup = "dd-data-viz-notifiers"
+
+// Shared queue group used by document converter replicas so each request is handled once.
+// Service: dd-document-rs
+const DocumentConvertersQueueGroup = "dd-document-rs"
 
 // Shared queue group used by dd-economics-server replicas consuming forecast requests.
 // Service: dd-economics-server
@@ -1158,6 +1293,10 @@ const MonteCarloServerQueueGroup = "dd-monte-carlo-server"
 // Shared queue group used by dd-music-rs replicas consuming generation requests.
 // Service: dd-music-rs
 const MusicGenerationQueueGroup = "dd-music-rs"
+
+// Shared queue group used by OCR replicas so each request is handled once.
+// Service: dd-ocr-rs
+const OcrWorkersQueueGroup = "dd-ocr-rs"
 
 // Shared queue group used by dd-public-data-server replicas so each queued ingest/scrape request is processed once.
 // Service: dd-public-data-server
@@ -1200,6 +1339,14 @@ var CdcStreamSubjects = []string{"cdc.>"}
 const CdcStreamRetention = "limits"
 const CdcStreamStorage = "file"
 const CdcStreamAck = "explicit"
+
+// JetStream file storage with WorkQueue retention and explicit ack for build-request intake. Dedupe by Nats-Msg-Id ('build-request:<requestId>'); Postgres (dd_build_server) remains the real idempotency guard.
+// Service: dd-build-server
+const DdRemoteBuildJobsStreamName = "DD_REMOTE_BUILD_JOBS"
+var DdRemoteBuildJobsStreamSubjects = []string{"dd.remote.build_server.requests"}
+const DdRemoteBuildJobsStreamRetention = "workqueue"
+const DdRemoteBuildJobsStreamStorage = "file"
+const DdRemoteBuildJobsStreamAck = "explicit"
 
 // Short-retention control plane stream.
 // Service: dd-remote-rest-api

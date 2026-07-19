@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dd.dev/schemas/nats/browser-jobs.schema.json",
+  "title": "BrowserJobsNats",
+  "description": "NATS subjects emitted by isolated browser-job workers for per-job events, terminal results, and shared result fanout.",
+  "type": "object",
+  "$dd:nats": {
+    "service": "dd-browser-job-runner",
+    "summary": "Browser-job result and lifecycle subjects derived from the runner-assigned job id.",
+    "subjects": [
+      {
+        "name": "BrowserJobEvents",
+        "description": "Per-job lifecycle and progress events emitted by the isolated browser worker.",
+        "kind": "parameterized",
+        "pattern": "dd.remote.browser_jobs.{job_id}.events",
+        "wildcard": "dd.remote.browser_jobs.*.events",
+        "params": [
+          { "name": "job_id", "type": "string", "description": "Runner-assigned browser job identifier." }
+        ],
+        "direction": "publish"
+      },
+      {
+        "name": "BrowserJobResult",
+        "description": "Per-job terminal result emitted by the isolated browser worker.",
+        "kind": "parameterized",
+        "pattern": "dd.remote.browser_jobs.{job_id}.result",
+        "wildcard": "dd.remote.browser_jobs.*.result",
+        "params": [
+          { "name": "job_id", "type": "string", "description": "Runner-assigned browser job identifier." }
+        ],
+        "direction": "publish"
+      },
+      {
+        "name": "BrowserJobResults",
+        "description": "Shared result fanout receiving every browser-job terminal result.",
+        "kind": "static",
+        "subject": "dd.remote.browser_jobs.results",
+        "direction": "publish"
+      }
+    ]
+  }
+}

@@ -2536,10 +2536,10 @@ export class DesSoccerLearningSetPlayRunsEntity {
 
 @Entity({ name: "des_soccer_learning_set_play_restart_mix" })
 export class DesSoccerLearningSetPlayRestartMixEntity {
-  @Column({ name: "run_id", type: "uuid" })
+  @PrimaryColumn({ name: "run_id", type: "uuid" })
   runId!: string;
 
-  @Column({ name: "ordinal", type: "integer" })
+  @PrimaryColumn({ name: "ordinal", type: "integer" })
   ordinal!: number;
 
   @Column({ name: "restart", type: "varchar", length: 40 })
@@ -2550,10 +2550,10 @@ export class DesSoccerLearningSetPlayRestartMixEntity {
 @Index("des_soccer_learning_set_play_episode_restart_idx", ["restart", "scored", "episodeIndex"])
 @Entity({ name: "des_soccer_learning_set_play_episode_metrics" })
 export class DesSoccerLearningSetPlayEpisodeMetricsEntity {
-  @Column({ name: "run_id", type: "uuid" })
+  @PrimaryColumn({ name: "run_id", type: "uuid" })
   runId!: string;
 
-  @Column({ name: "episode_index", type: "integer" })
+  @PrimaryColumn({ name: "episode_index", type: "integer" })
   episodeIndex!: number;
 
   @Column({ name: "seed", type: "bigint" })
@@ -6207,5 +6207,733 @@ export class SharedContextEntity {
 
   @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
   updatedAt!: Date;
+
+}
+
+@Entity({ schema: "fiducia", name: "sync_clock" })
+export class SyncClockEntity {
+  @PrimaryColumn({ name: "singleton", type: "boolean" })
+  singleton!: boolean;
+
+  @Column({ name: "last_sequence", type: "bigint", default: () => "0" })
+  lastSequence!: number;
+
+}
+
+@Index("fiducia_sync_tombstones_table_row_uq", ["tableName", "rowId"], { unique: true })
+@Index("fiducia_sync_tombstones_tenant_sequence_idx", ["tableName", "tenantId", "sequence"], { where: "tenant_id is not null" })
+@Index("fiducia_sync_tombstones_user_sequence_idx", ["tableName", "ownerUserId", "sequence"], { where: "owner_user_id is not null" })
+@Entity({ schema: "fiducia", name: "sync_tombstones" })
+export class SyncTombstonesEntity {
+  @PrimaryColumn({ name: "sequence", type: "bigint" })
+  sequence!: number;
+
+  @Column({ name: "table_name", type: "text" })
+  tableName!: string;
+
+  @Column({ name: "row_id", type: "text" })
+  rowId!: string;
+
+  @Column({ name: "tenant_id", type: "uuid", nullable: true })
+  tenantId!: string | null;
+
+  @Column({ name: "owner_user_id", type: "uuid", nullable: true })
+  ownerUserId!: string | null;
+
+  @Column({ name: "row_version", type: "bigint" })
+  rowVersion!: number;
+
+  @Column({ name: "deleted_at", type: "timestamptz", default: () => "now()" })
+  deletedAt!: Date;
+
+}
+
+@Index("fiducia_orgs_slug_uq", ["slug"], { unique: true })
+@Index("fiducia_orgs_sync_sequence_idx", ["syncSequence"])
+@Entity({ schema: "fiducia", name: "orgs" })
+export class OrgsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "slug", type: "varchar", length: 120 })
+  slug!: string;
+
+  @Column({ name: "name", type: "varchar", length: 200 })
+  name!: string;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "version", type: "bigint", default: () => "1" })
+  version!: number;
+
+  @Column({ name: "sync_sequence", type: "bigint" })
+  syncSequence!: number;
+
+}
+
+@Index("fiducia_projects_org_slug_uq", ["orgId", "slug"], { unique: true })
+@Index("fiducia_projects_org_idx", ["orgId"])
+@Index("fiducia_projects_org_sync_sequence_idx", ["orgId", "syncSequence"])
+@Entity({ schema: "fiducia", name: "projects" })
+export class ProjectsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "org_id", type: "uuid" })
+  orgId!: string;
+
+  @Column({ name: "slug", type: "varchar", length: 120 })
+  slug!: string;
+
+  @Column({ name: "name", type: "varchar", length: 200 })
+  name!: string;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "version", type: "bigint", default: () => "1" })
+  version!: number;
+
+  @Column({ name: "sync_sequence", type: "bigint" })
+  syncSequence!: number;
+
+}
+
+@Index("fiducia_users_supabase_uq", ["supabaseUserId"], { unique: true })
+@Entity({ schema: "fiducia", name: "users" })
+export class UsersEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "supabase_user_id", type: "uuid" })
+  supabaseUserId!: string;
+
+  @Column({ name: "email", type: "varchar", length: 320 })
+  email!: string;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+}
+
+@Index("fiducia_org_members_user_idx", ["userId"])
+@Entity({ schema: "fiducia", name: "org_members" })
+export class OrgMembersEntity {
+  @PrimaryColumn({ name: "org_id", type: "uuid" })
+  orgId!: string;
+
+  @PrimaryColumn({ name: "user_id", type: "uuid" })
+  userId!: string;
+
+  @Column({ name: "role", type: "varchar", length: 32, default: () => "'member'" })
+  role!: string;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+}
+
+@Index("fiducia_project_members_user_idx", ["userId"])
+@Entity({ schema: "fiducia", name: "project_members" })
+export class ProjectMembersEntity {
+  @PrimaryColumn({ name: "project_id", type: "uuid" })
+  projectId!: string;
+
+  @PrimaryColumn({ name: "user_id", type: "uuid" })
+  userId!: string;
+
+  @Column({ name: "role", type: "varchar", length: 32, default: () => "'viewer'" })
+  role!: string;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+}
+
+@Index("fiducia_api_keys_key_id_uq", ["keyId"], { unique: true })
+@Index("fiducia_api_keys_org_idx", ["orgId"], { where: "revoked = false" })
+@Index("fiducia_api_keys_project_idx", ["projectId"], { where: "revoked = false" })
+@Index("fiducia_api_keys_org_sync_sequence_idx", ["orgId", "syncSequence"])
+@Entity({ schema: "fiducia", name: "api_keys" })
+export class ApiKeysEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "key_id", type: "varchar", length: 64 })
+  keyId!: string;
+
+  @Column({ name: "org_id", type: "uuid" })
+  orgId!: string;
+
+  @Column({ name: "project_id", type: "uuid", nullable: true })
+  projectId!: string | null;
+
+  @Column({ name: "created_by_user_id", type: "uuid", nullable: true })
+  createdByUserId!: string | null;
+
+  @Column({ name: "name", type: "varchar", length: 200 })
+  name!: string;
+
+  @Column({ name: "secret_hash", type: "varchar", length: 255 })
+  secretHash!: string;
+
+  @Column({ name: "scopes", type: "jsonb", default: () => "'[]'::jsonb" })
+  scopes!: unknown[];
+
+  @Column({ name: "env", type: "varchar", length: 16, default: () => "'live'" })
+  env!: string;
+
+  @Column({ name: "require_idempotency", type: "boolean", default: () => "true" })
+  requireIdempotency!: boolean;
+
+  @Column({ name: "mtls_required", type: "boolean", default: () => "false" })
+  mtlsRequired!: boolean;
+
+  @Column({ name: "revoked", type: "boolean", default: () => "false" })
+  revoked!: boolean;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "version", type: "bigint", default: () => "1" })
+  version!: number;
+
+  @Column({ name: "sync_sequence", type: "bigint" })
+  syncSequence!: number;
+
+  @Column({ name: "last_used_at", type: "timestamptz", nullable: true })
+  lastUsedAt!: Date | null;
+
+  @Column({ name: "expires_at", type: "timestamptz", nullable: true })
+  expiresAt!: Date | null;
+
+}
+
+@Index("fiducia_mtls_client_certs_fingerprint_uq", ["sha256Fingerprint"], { unique: true })
+@Index("fiducia_mtls_client_certs_org_idx", ["orgId"], { where: "revoked = false" })
+@Index("fiducia_mtls_client_certs_org_sync_sequence_idx", ["orgId", "syncSequence"])
+@Entity({ schema: "fiducia", name: "mtls_client_certs" })
+export class MtlsClientCertsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "org_id", type: "uuid" })
+  orgId!: string;
+
+  @Column({ name: "project_id", type: "uuid", nullable: true })
+  projectId!: string | null;
+
+  @Column({ name: "name", type: "varchar", length: 200 })
+  name!: string;
+
+  @Column({ name: "subject", type: "varchar", length: 500 })
+  subject!: string;
+
+  @Column({ name: "sha256_fingerprint", type: "varchar", length: 95 })
+  sha256Fingerprint!: string;
+
+  @Column({ name: "not_before", type: "timestamptz", nullable: true })
+  notBefore!: Date | null;
+
+  @Column({ name: "not_after", type: "timestamptz", nullable: true })
+  notAfter!: Date | null;
+
+  @Column({ name: "revoked", type: "boolean", default: () => "false" })
+  revoked!: boolean;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "version", type: "bigint", default: () => "1" })
+  version!: number;
+
+  @Column({ name: "sync_sequence", type: "bigint" })
+  syncSequence!: number;
+
+}
+
+@Index("fiducia_customer_preferences_user_sync_sequence_idx", ["userId", "syncSequence"])
+@Entity({ schema: "fiducia", name: "customer_preferences" })
+export class CustomerPreferencesEntity {
+  @PrimaryColumn({ name: "user_id", type: "uuid" })
+  userId!: string;
+
+  @Column({ name: "density", type: "varchar", length: 16, default: () => "'comfortable'" })
+  density!: string;
+
+  @Column({ name: "timezone", type: "varchar", length: 64, default: () => "'UTC'" })
+  timezone!: string;
+
+  @Column({ name: "region", type: "varchar", length: 16, default: () => "'auto'" })
+  region!: string;
+
+  @Column({ name: "notify_key_rotation", type: "boolean", default: () => "true" })
+  notifyKeyRotation!: boolean;
+
+  @Column({ name: "notify_lock_contention", type: "boolean", default: () => "true" })
+  notifyLockContention!: boolean;
+
+  @Column({ name: "notify_mfa", type: "boolean", default: () => "true" })
+  notifyMfa!: boolean;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "version", type: "bigint", default: () => "1" })
+  version!: number;
+
+  @Column({ name: "sync_sequence", type: "bigint" })
+  syncSequence!: number;
+
+}
+
+@Index("fiducia_customer_sessions_user_idx", ["userId"])
+@Index("fiducia_customer_sessions_user_sync_sequence_idx", ["userId", "syncSequence"])
+@Entity({ schema: "fiducia", name: "customer_sessions" })
+export class CustomerSessionsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "user_id", type: "uuid" })
+  userId!: string;
+
+  @Column({ name: "device", type: "varchar", length: 200 })
+  device!: string;
+
+  @Column({ name: "location", type: "varchar", length: 200, nullable: true })
+  location!: string | null;
+
+  @Column({ name: "last_seen", type: "timestamptz", default: () => "now()" })
+  lastSeen!: Date;
+
+  @Column({ name: "status", type: "varchar", length: 16, default: () => "'active'" })
+  status!: string;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "version", type: "bigint", default: () => "1" })
+  version!: number;
+
+  @Column({ name: "sync_sequence", type: "bigint" })
+  syncSequence!: number;
+
+}
+
+// fiducia_audit_log_org_created_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// fiducia_audit_log_project_created_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// fiducia_audit_log_actor_user_created_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// fiducia_audit_log_actor_key_created_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ schema: "fiducia", name: "audit_log" })
+export class AuditLogEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "org_id", type: "uuid", nullable: true })
+  orgId!: string | null;
+
+  @Column({ name: "project_id", type: "uuid", nullable: true })
+  projectId!: string | null;
+
+  @Column({ name: "actor_user_id", type: "uuid", nullable: true })
+  actorUserId!: string | null;
+
+  @Column({ name: "actor_key_id", type: "uuid", nullable: true })
+  actorKeyId!: string | null;
+
+  @Column({ name: "actor", type: "varchar", length: 320, nullable: true })
+  actor!: string | null;
+
+  @Column({ name: "action", type: "varchar", length: 120 })
+  action!: string;
+
+  @Column({ name: "target", type: "varchar", length: 320, nullable: true })
+  target!: string | null;
+
+  @Column({ name: "request_id", type: "varchar", length: 120, nullable: true })
+  requestId!: string | null;
+
+  @Column({ name: "source_ip", type: "varchar", length: 64, nullable: true })
+  sourceIp!: string | null;
+
+  @Column({ name: "user_agent", type: "varchar", length: 500, nullable: true })
+  userAgent!: string | null;
+
+  @Column({ name: "meta", type: "jsonb", default: () => "'{}'::jsonb" })
+  meta!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "retention_expires_at", type: "timestamptz", nullable: true })
+  retentionExpiresAt!: Date | null;
+
+}
+
+// fiducia_customer_notifications_user_created_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Index("fiducia_customer_notifications_user_unread_idx", ["userId"], { where: "read_at is null" })
+@Index("fiducia_customer_notifications_user_sync_sequence_idx", ["userId", "syncSequence"])
+@Entity({ schema: "fiducia", name: "customer_notifications" })
+export class CustomerNotificationsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "user_id", type: "uuid" })
+  userId!: string;
+
+  @Column({ name: "org_id", type: "uuid", nullable: true })
+  orgId!: string | null;
+
+  @Column({ name: "kind", type: "varchar", length: 40 })
+  kind!: string;
+
+  @Column({ name: "severity", type: "varchar", length: 16, default: () => "'info'" })
+  severity!: string;
+
+  @Column({ name: "title", type: "varchar", length: 200 })
+  title!: string;
+
+  @Column({ name: "body", type: "varchar", length: 2000, default: () => "''" })
+  body!: string;
+
+  @Column({ name: "link", type: "varchar", length: 500, nullable: true })
+  link!: string | null;
+
+  @Column({ name: "read_at", type: "timestamptz", nullable: true })
+  readAt!: Date | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "version", type: "bigint", default: () => "1" })
+  version!: number;
+
+  @Column({ name: "sync_sequence", type: "bigint" })
+  syncSequence!: number;
+
+}
+
+@Index("fiducia_sync_idempotency_created_idx", ["createdAt"])
+@Entity({ schema: "fiducia", name: "sync_idempotency_keys" })
+export class SyncIdempotencyKeysEntity {
+  @PrimaryColumn({ name: "key", type: "text" })
+  key!: string;
+
+  @Column({ name: "request_fingerprint", type: "varchar", length: 64 })
+  requestFingerprint!: string;
+
+  @Column({ name: "committed_version", type: "bigint", nullable: true })
+  committedVersion!: number | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+}
+
+@Index("t2v_transcriptions_created_idx", ["createdAt"])
+@Entity({ schema: "t2v", name: "transcriptions" })
+export class TranscriptionsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "source", type: "text" })
+  source!: string;
+
+  @Column({ name: "provider", type: "text" })
+  provider!: string;
+
+  @Column({ name: "model", type: "text" })
+  model!: string;
+
+  @Column({ name: "text", type: "text" })
+  text!: string;
+
+  @Column({ name: "language", type: "text", nullable: true })
+  language!: string | null;
+
+  @Column({ name: "sample_rate", type: "integer", nullable: true })
+  sampleRate!: number | null;
+
+  @Column({ name: "duration_ms", type: "bigint", nullable: true })
+  durationMs!: number | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+}
+
+@Index("t2v_syntheses_created_idx", ["createdAt"])
+@Entity({ schema: "t2v", name: "syntheses" })
+export class SynthesesEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "text", type: "text" })
+  text!: string;
+
+  @Column({ name: "voice", type: "text" })
+  voice!: string;
+
+  @Column({ name: "provider", type: "text" })
+  provider!: string;
+
+  @Column({ name: "model", type: "text" })
+  model!: string;
+
+  @Column({ name: "format", type: "text" })
+  format!: string;
+
+  @Column({ name: "audio_bytes", type: "bigint" })
+  audioBytes!: number;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+}
+
+@Index("t2v_translations_created_idx", ["createdAt"])
+@Entity({ schema: "t2v", name: "translations" })
+export class TranslationsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "source_text", type: "text" })
+  sourceText!: string;
+
+  @Column({ name: "translated_text", type: "text" })
+  translatedText!: string;
+
+  @Column({ name: "source_lang", type: "text", nullable: true })
+  sourceLang!: string | null;
+
+  @Column({ name: "target_lang", type: "text" })
+  targetLang!: string;
+
+  @Column({ name: "provider", type: "text" })
+  provider!: string;
+
+  @Column({ name: "model", type: "text" })
+  model!: string;
+
+  @Column({ name: "latency_ms", type: "bigint" })
+  latencyMs!: number;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+}
+
+@Index("t2v_vapi_calls_vapi_call_id_uq", ["vapiCallId"], { unique: true })
+@Entity({ schema: "t2v", name: "vapi_calls" })
+export class VapiCallsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "vapi_call_id", type: "text" })
+  vapiCallId!: string;
+
+  @Column({ name: "status", type: "text" })
+  status!: string;
+
+  @Column({ name: "ended_reason", type: "text", nullable: true })
+  endedReason!: string | null;
+
+  @Column({ name: "transcript", type: "text", nullable: true })
+  transcript!: string | null;
+
+  @Column({ name: "summary", type: "text", nullable: true })
+  summary!: string | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+@Index("t2v_vapi_events_created_idx", ["createdAt"])
+@Index("t2v_vapi_events_call_idx", ["vapiCallId"])
+@Entity({ schema: "t2v", name: "vapi_events" })
+export class VapiEventsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "vapi_call_id", type: "text", nullable: true })
+  vapiCallId!: string | null;
+
+  @Column({ name: "event_type", type: "text" })
+  eventType!: string;
+
+  @Column({ name: "payload", type: "jsonb" })
+  payload!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+}
+
+@Index("fab_plans_owner_email_idx", ["ownerEmail"])
+@Index("fab_plans_status_idx", ["status"])
+// fab_plans_owner_created_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ schema: "daedalus", name: "fab_plans" })
+export class FabPlansEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "owner_email", type: "text" })
+  ownerEmail!: string;
+
+  @Column({ name: "title", type: "text" })
+  title!: string;
+
+  @Column({ name: "goal", type: "text" })
+  goal!: string;
+
+  @Column({ name: "process_family", type: "text", default: () => "'additive'" })
+  processFamily!: string;
+
+  @Column({ name: "status", type: "text", default: () => "'draft'" })
+  status!: string;
+
+  @Column({ name: "document", type: "jsonb", nullable: true })
+  document!: Record<string, unknown> | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+@Index("fab_designs_plan_idx", ["planId"])
+@Index("fab_designs_content_hash_idx", ["contentHash"], { where: "content_hash is not null" })
+@Entity({ schema: "daedalus", name: "fab_designs" })
+export class FabDesignsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "plan_id", type: "uuid" })
+  planId!: string;
+
+  @Column({ name: "filename", type: "text" })
+  filename!: string;
+
+  @Column({ name: "format", type: "text" })
+  format!: string;
+
+  @Column({ name: "storage_uri", type: "text" })
+  storageUri!: string;
+
+  @Column({ name: "size_bytes", type: "bigint", default: () => "0" })
+  sizeBytes!: number;
+
+  @Column({ name: "content_hash", type: "text", nullable: true })
+  contentHash!: string | null;
+
+  @Column({ name: "geometry", type: "jsonb", default: () => "'{}'::jsonb" })
+  geometry!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+}
+
+@Index("fab_instructions_plan_revision_uq", ["planId", "revision"], { unique: true })
+@Index("fab_instructions_plan_idx", ["planId"])
+@Entity({ schema: "daedalus", name: "fab_instructions" })
+export class FabInstructionsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "plan_id", type: "uuid" })
+  planId!: string;
+
+  @Column({ name: "revision", type: "integer", default: () => "1" })
+  revision!: number;
+
+  @Column({ name: "machine_profile", type: "text" })
+  machineProfile!: string;
+
+  @Column({ name: "dialect", type: "text", default: () => "'gcode'" })
+  dialect!: string;
+
+  @Column({ name: "storage_uri", type: "text" })
+  storageUri!: string;
+
+  @Column({ name: "content_hash", type: "text", nullable: true })
+  contentHash!: string | null;
+
+  @Column({ name: "validated", type: "boolean", default: () => "false" })
+  validated!: boolean;
+
+  @Column({ name: "validation", type: "jsonb", default: () => "'{}'::jsonb" })
+  validation!: Record<string, unknown>;
+
+  @Column({ name: "released_by_email", type: "text", nullable: true })
+  releasedByEmail!: string | null;
+
+  @Column({ name: "released_at", type: "timestamptz", nullable: true })
+  releasedAt!: Date | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+}
+
+@Index("fab_runs_instructions_idx", ["instructionsId"])
+@Index("fab_runs_status_idx", ["status"])
+// fab_runs_created_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ schema: "daedalus", name: "fab_runs" })
+export class FabRunsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "instructions_id", type: "uuid" })
+  instructionsId!: string;
+
+  @Column({ name: "status", type: "text", default: () => "'queued'" })
+  status!: string;
+
+  @Column({ name: "machine_id", type: "text" })
+  machineId!: string;
+
+  @Column({ name: "operator_email", type: "text", nullable: true })
+  operatorEmail!: string | null;
+
+  @Column({ name: "progress", type: "smallint", default: () => "0" })
+  progress!: number;
+
+  @Column({ name: "as_built", type: "jsonb", default: () => "'{}'::jsonb" })
+  asBuilt!: Record<string, unknown>;
+
+  @Column({ name: "error", type: "text", nullable: true })
+  error!: string | null;
+
+  @Column({ name: "started_at", type: "timestamptz", nullable: true })
+  startedAt!: Date | null;
+
+  @Column({ name: "finished_at", type: "timestamptz", nullable: true })
+  finishedAt!: Date | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
 
 }

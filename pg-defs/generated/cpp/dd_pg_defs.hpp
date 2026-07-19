@@ -12835,4 +12835,1257 @@ inline std::optional<std::string> validate_shared_context_updated_by(const std::
     return std::nullopt;
 }
 
+inline const char* sync_clock_table = "fiducia.sync_clock";
+inline const std::vector<std::string> sync_clock_columns = { "singleton", "last_sequence" };
+inline const char* sync_clock_select_sql = R"SQL(select
+      singleton,
+      last_sequence
+    from fiducia.sync_clock)SQL";
+
+struct SyncClockRow {
+    bool singleton;
+    int64_t last_sequence;
+};
+
+inline SyncClockRow sync_clock_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    SyncClockRow row;
+    (void)is_null;
+    row.singleton = (get(0) == "t");
+    row.last_sequence = std::stoll(get(1));
+    return row;
+}
+inline std::optional<std::string> validate_sync_clock_last_sequence(int64_t value) {
+    if (value < 0) return std::string("sync_clock.last_sequence is below the minimum");
+    return std::nullopt;
+}
+
+inline const char* sync_tombstones_table = "fiducia.sync_tombstones";
+inline const std::vector<std::string> sync_tombstones_columns = { "sequence", "table_name", "row_id", "tenant_id", "owner_user_id", "row_version", "deleted_at" };
+inline const char* sync_tombstones_select_sql = R"SQL(select
+      sequence,
+      table_name,
+      row_id,
+      tenant_id::text as tenant_id,
+      owner_user_id::text as owner_user_id,
+      row_version,
+      to_char(deleted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as deleted_at
+    from fiducia.sync_tombstones)SQL";
+
+struct SyncTombstonesRow {
+    int64_t sequence;
+    std::string table_name;
+    std::string row_id;
+    std::optional<std::string> tenant_id;
+    std::optional<std::string> owner_user_id;
+    int64_t row_version;
+    std::string deleted_at;
+};
+
+inline SyncTombstonesRow sync_tombstones_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    SyncTombstonesRow row;
+    (void)is_null;
+    row.sequence = std::stoll(get(0));
+    row.table_name = get(1);
+    row.row_id = get(2);
+    row.tenant_id = is_null(3) ? std::nullopt : std::optional<std::string>(get(3));
+    row.owner_user_id = is_null(4) ? std::nullopt : std::optional<std::string>(get(4));
+    row.row_version = std::stoll(get(5));
+    row.deleted_at = get(6);
+    return row;
+}
+inline std::optional<std::string> validate_sync_tombstones_sequence(int64_t value) {
+    if (value < 1) return std::string("sync_tombstones.sequence is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_sync_tombstones_row_version(int64_t value) {
+    if (value < 1) return std::string("sync_tombstones.row_version is below the minimum");
+    return std::nullopt;
+}
+
+inline const char* orgs_table = "fiducia.orgs";
+inline const std::vector<std::string> orgs_columns = { "id", "slug", "name", "created_at", "updated_at", "version", "sync_sequence" };
+inline const char* orgs_select_sql = R"SQL(select
+      id::text as id,
+      slug,
+      name,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      version,
+      sync_sequence
+    from fiducia.orgs)SQL";
+
+struct OrgsRow {
+    std::string id;
+    std::string slug;
+    std::string name;
+    std::string created_at;
+    std::string updated_at;
+    int64_t version;
+    int64_t sync_sequence;
+};
+
+inline OrgsRow orgs_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    OrgsRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.slug = get(1);
+    row.name = get(2);
+    row.created_at = get(3);
+    row.updated_at = get(4);
+    row.version = std::stoll(get(5));
+    row.sync_sequence = std::stoll(get(6));
+    return row;
+}
+inline std::optional<std::string> validate_orgs_slug(const std::string& value) {
+    if (value.size() > 120) return std::string("orgs.slug must be at most 120 characters");
+    if (!std::regex_match(value, std::regex(R"RX(^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$)RX"))) return std::string("orgs.slug does not match the required pattern");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_orgs_name(const std::string& value) {
+    if (value.size() > 200) return std::string("orgs.name must be at most 200 characters");
+    return std::nullopt;
+}
+
+inline const char* projects_table = "fiducia.projects";
+inline const std::vector<std::string> projects_columns = { "id", "org_id", "slug", "name", "created_at", "updated_at", "version", "sync_sequence" };
+inline const char* projects_select_sql = R"SQL(select
+      id::text as id,
+      org_id::text as org_id,
+      slug,
+      name,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      version,
+      sync_sequence
+    from fiducia.projects)SQL";
+
+struct ProjectsRow {
+    std::string id;
+    std::string org_id;
+    std::string slug;
+    std::string name;
+    std::string created_at;
+    std::string updated_at;
+    int64_t version;
+    int64_t sync_sequence;
+};
+
+inline ProjectsRow projects_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    ProjectsRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.org_id = get(1);
+    row.slug = get(2);
+    row.name = get(3);
+    row.created_at = get(4);
+    row.updated_at = get(5);
+    row.version = std::stoll(get(6));
+    row.sync_sequence = std::stoll(get(7));
+    return row;
+}
+inline std::optional<std::string> validate_projects_slug(const std::string& value) {
+    if (value.size() > 120) return std::string("projects.slug must be at most 120 characters");
+    if (!std::regex_match(value, std::regex(R"RX(^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$)RX"))) return std::string("projects.slug does not match the required pattern");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_projects_name(const std::string& value) {
+    if (value.size() > 200) return std::string("projects.name must be at most 200 characters");
+    return std::nullopt;
+}
+
+inline const char* users_table = "fiducia.users";
+inline const std::vector<std::string> users_columns = { "id", "supabase_user_id", "email", "created_at" };
+inline const char* users_select_sql = R"SQL(select
+      id::text as id,
+      supabase_user_id::text as supabase_user_id,
+      email,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from fiducia.users)SQL";
+
+struct UsersRow {
+    std::string id;
+    std::string supabase_user_id;
+    std::string email;
+    std::string created_at;
+};
+
+inline UsersRow users_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    UsersRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.supabase_user_id = get(1);
+    row.email = get(2);
+    row.created_at = get(3);
+    return row;
+}
+inline std::optional<std::string> validate_users_email(const std::string& value) {
+    if (value.size() > 320) return std::string("users.email must be at most 320 characters");
+    return std::nullopt;
+}
+
+inline const char* org_members_table = "fiducia.org_members";
+inline const std::vector<std::string> org_members_columns = { "org_id", "user_id", "role", "created_at" };
+inline const char* org_members_select_sql = R"SQL(select
+      org_id::text as org_id,
+      user_id::text as user_id,
+      role,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from fiducia.org_members)SQL";
+
+enum class OrgMembersRole { Owner, Admin, Member };
+inline std::string org_members_role_to_string(OrgMembersRole value) {
+    switch (value) {
+        case OrgMembersRole::Owner: return "owner";
+        case OrgMembersRole::Admin: return "admin";
+        case OrgMembersRole::Member: return "member";
+    }
+    return "";
+}
+inline std::optional<OrgMembersRole> parse_org_members_role(const std::string& value) {
+    if (value == "owner") return OrgMembersRole::Owner;
+    if (value == "admin") return OrgMembersRole::Admin;
+    if (value == "member") return OrgMembersRole::Member;
+    return std::nullopt;
+}
+
+struct OrgMembersRow {
+    std::string org_id;
+    std::string user_id;
+    std::string role;
+    std::string created_at;
+};
+
+inline OrgMembersRow org_members_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    OrgMembersRow row;
+    (void)is_null;
+    row.org_id = get(0);
+    row.user_id = get(1);
+    row.role = get(2);
+    row.created_at = get(3);
+    return row;
+}
+
+inline const char* project_members_table = "fiducia.project_members";
+inline const std::vector<std::string> project_members_columns = { "project_id", "user_id", "role", "created_at" };
+inline const char* project_members_select_sql = R"SQL(select
+      project_id::text as project_id,
+      user_id::text as user_id,
+      role,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from fiducia.project_members)SQL";
+
+enum class ProjectMembersRole { Admin, Operator, Viewer };
+inline std::string project_members_role_to_string(ProjectMembersRole value) {
+    switch (value) {
+        case ProjectMembersRole::Admin: return "admin";
+        case ProjectMembersRole::Operator: return "operator";
+        case ProjectMembersRole::Viewer: return "viewer";
+    }
+    return "";
+}
+inline std::optional<ProjectMembersRole> parse_project_members_role(const std::string& value) {
+    if (value == "admin") return ProjectMembersRole::Admin;
+    if (value == "operator") return ProjectMembersRole::Operator;
+    if (value == "viewer") return ProjectMembersRole::Viewer;
+    return std::nullopt;
+}
+
+struct ProjectMembersRow {
+    std::string project_id;
+    std::string user_id;
+    std::string role;
+    std::string created_at;
+};
+
+inline ProjectMembersRow project_members_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    ProjectMembersRow row;
+    (void)is_null;
+    row.project_id = get(0);
+    row.user_id = get(1);
+    row.role = get(2);
+    row.created_at = get(3);
+    return row;
+}
+
+inline const char* api_keys_table = "fiducia.api_keys";
+inline const std::vector<std::string> api_keys_columns = { "id", "key_id", "org_id", "project_id", "created_by_user_id", "name", "secret_hash", "scopes", "env", "require_idempotency", "mtls_required", "revoked", "created_at", "updated_at", "version", "sync_sequence", "last_used_at", "expires_at" };
+inline const char* api_keys_select_sql = R"SQL(select
+      id::text as id,
+      key_id,
+      org_id::text as org_id,
+      project_id::text as project_id,
+      created_by_user_id::text as created_by_user_id,
+      name,
+      secret_hash,
+      scopes::text as scopes_json,
+      env,
+      require_idempotency,
+      mtls_required,
+      revoked,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      version,
+      sync_sequence,
+      to_char(last_used_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_used_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at
+    from fiducia.api_keys)SQL";
+
+enum class ApiKeysEnv { Live, Test };
+inline std::string api_keys_env_to_string(ApiKeysEnv value) {
+    switch (value) {
+        case ApiKeysEnv::Live: return "live";
+        case ApiKeysEnv::Test: return "test";
+    }
+    return "";
+}
+inline std::optional<ApiKeysEnv> parse_api_keys_env(const std::string& value) {
+    if (value == "live") return ApiKeysEnv::Live;
+    if (value == "test") return ApiKeysEnv::Test;
+    return std::nullopt;
+}
+
+struct ApiKeysRow {
+    std::string id;
+    std::string key_id;
+    std::string org_id;
+    std::optional<std::string> project_id;
+    std::optional<std::string> created_by_user_id;
+    std::string name;
+    std::string secret_hash;
+    std::string scopes;
+    std::string env;
+    bool require_idempotency;
+    bool mtls_required;
+    bool revoked;
+    std::string created_at;
+    std::string updated_at;
+    int64_t version;
+    int64_t sync_sequence;
+    std::optional<std::string> last_used_at;
+    std::optional<std::string> expires_at;
+};
+
+inline ApiKeysRow api_keys_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    ApiKeysRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.key_id = get(1);
+    row.org_id = get(2);
+    row.project_id = is_null(3) ? std::nullopt : std::optional<std::string>(get(3));
+    row.created_by_user_id = is_null(4) ? std::nullopt : std::optional<std::string>(get(4));
+    row.name = get(5);
+    row.secret_hash = get(6);
+    row.scopes = get(7);
+    row.env = get(8);
+    row.require_idempotency = (get(9) == "t");
+    row.mtls_required = (get(10) == "t");
+    row.revoked = (get(11) == "t");
+    row.created_at = get(12);
+    row.updated_at = get(13);
+    row.version = std::stoll(get(14));
+    row.sync_sequence = std::stoll(get(15));
+    row.last_used_at = is_null(16) ? std::nullopt : std::optional<std::string>(get(16));
+    row.expires_at = is_null(17) ? std::nullopt : std::optional<std::string>(get(17));
+    return row;
+}
+inline std::optional<std::string> validate_api_keys_key_id(const std::string& value) {
+    if (value.size() > 64) return std::string("api_keys.key_id must be at most 64 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_api_keys_name(const std::string& value) {
+    if (value.size() > 200) return std::string("api_keys.name must be at most 200 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_api_keys_secret_hash(const std::string& value) {
+    if (value.size() > 255) return std::string("api_keys.secret_hash must be at most 255 characters");
+    return std::nullopt;
+}
+
+inline const char* mtls_client_certs_table = "fiducia.mtls_client_certs";
+inline const std::vector<std::string> mtls_client_certs_columns = { "id", "org_id", "project_id", "name", "subject", "sha256_fingerprint", "not_before", "not_after", "revoked", "created_at", "updated_at", "version", "sync_sequence" };
+inline const char* mtls_client_certs_select_sql = R"SQL(select
+      id::text as id,
+      org_id::text as org_id,
+      project_id::text as project_id,
+      name,
+      subject,
+      sha256_fingerprint,
+      to_char(not_before at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as not_before,
+      to_char(not_after at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as not_after,
+      revoked,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      version,
+      sync_sequence
+    from fiducia.mtls_client_certs)SQL";
+
+struct MtlsClientCertsRow {
+    std::string id;
+    std::string org_id;
+    std::optional<std::string> project_id;
+    std::string name;
+    std::string subject;
+    std::string sha256_fingerprint;
+    std::optional<std::string> not_before;
+    std::optional<std::string> not_after;
+    bool revoked;
+    std::string created_at;
+    std::string updated_at;
+    int64_t version;
+    int64_t sync_sequence;
+};
+
+inline MtlsClientCertsRow mtls_client_certs_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    MtlsClientCertsRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.org_id = get(1);
+    row.project_id = is_null(2) ? std::nullopt : std::optional<std::string>(get(2));
+    row.name = get(3);
+    row.subject = get(4);
+    row.sha256_fingerprint = get(5);
+    row.not_before = is_null(6) ? std::nullopt : std::optional<std::string>(get(6));
+    row.not_after = is_null(7) ? std::nullopt : std::optional<std::string>(get(7));
+    row.revoked = (get(8) == "t");
+    row.created_at = get(9);
+    row.updated_at = get(10);
+    row.version = std::stoll(get(11));
+    row.sync_sequence = std::stoll(get(12));
+    return row;
+}
+inline std::optional<std::string> validate_mtls_client_certs_name(const std::string& value) {
+    if (value.size() > 200) return std::string("mtls_client_certs.name must be at most 200 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_mtls_client_certs_subject(const std::string& value) {
+    if (value.size() > 500) return std::string("mtls_client_certs.subject must be at most 500 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_mtls_client_certs_sha256_fingerprint(const std::string& value) {
+    if (value.size() > 95) return std::string("mtls_client_certs.sha256_fingerprint must be at most 95 characters");
+    return std::nullopt;
+}
+
+inline const char* customer_preferences_table = "fiducia.customer_preferences";
+inline const std::vector<std::string> customer_preferences_columns = { "user_id", "density", "timezone", "region", "notify_key_rotation", "notify_lock_contention", "notify_mfa", "updated_at", "version", "sync_sequence" };
+inline const char* customer_preferences_select_sql = R"SQL(select
+      user_id::text as user_id,
+      density,
+      timezone,
+      region,
+      notify_key_rotation,
+      notify_lock_contention,
+      notify_mfa,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      version,
+      sync_sequence
+    from fiducia.customer_preferences)SQL";
+
+enum class CustomerPreferencesDensity { Comfortable, Compact };
+inline std::string customer_preferences_density_to_string(CustomerPreferencesDensity value) {
+    switch (value) {
+        case CustomerPreferencesDensity::Comfortable: return "comfortable";
+        case CustomerPreferencesDensity::Compact: return "compact";
+    }
+    return "";
+}
+inline std::optional<CustomerPreferencesDensity> parse_customer_preferences_density(const std::string& value) {
+    if (value == "comfortable") return CustomerPreferencesDensity::Comfortable;
+    if (value == "compact") return CustomerPreferencesDensity::Compact;
+    return std::nullopt;
+}
+
+struct CustomerPreferencesRow {
+    std::string user_id;
+    std::string density;
+    std::string timezone;
+    std::string region;
+    bool notify_key_rotation;
+    bool notify_lock_contention;
+    bool notify_mfa;
+    std::string updated_at;
+    int64_t version;
+    int64_t sync_sequence;
+};
+
+inline CustomerPreferencesRow customer_preferences_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    CustomerPreferencesRow row;
+    (void)is_null;
+    row.user_id = get(0);
+    row.density = get(1);
+    row.timezone = get(2);
+    row.region = get(3);
+    row.notify_key_rotation = (get(4) == "t");
+    row.notify_lock_contention = (get(5) == "t");
+    row.notify_mfa = (get(6) == "t");
+    row.updated_at = get(7);
+    row.version = std::stoll(get(8));
+    row.sync_sequence = std::stoll(get(9));
+    return row;
+}
+inline std::optional<std::string> validate_customer_preferences_timezone(const std::string& value) {
+    if (value.size() > 64) return std::string("customer_preferences.timezone must be at most 64 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_customer_preferences_region(const std::string& value) {
+    if (value.size() > 16) return std::string("customer_preferences.region must be at most 16 characters");
+    return std::nullopt;
+}
+
+inline const char* customer_sessions_table = "fiducia.customer_sessions";
+inline const std::vector<std::string> customer_sessions_columns = { "id", "user_id", "device", "location", "last_seen", "status", "updated_at", "version", "sync_sequence" };
+inline const char* customer_sessions_select_sql = R"SQL(select
+      id::text as id,
+      user_id::text as user_id,
+      device,
+      location,
+      to_char(last_seen at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen,
+      status,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      version,
+      sync_sequence
+    from fiducia.customer_sessions)SQL";
+
+enum class CustomerSessionsStatus { Active, Verified, Revoked };
+inline std::string customer_sessions_status_to_string(CustomerSessionsStatus value) {
+    switch (value) {
+        case CustomerSessionsStatus::Active: return "active";
+        case CustomerSessionsStatus::Verified: return "verified";
+        case CustomerSessionsStatus::Revoked: return "revoked";
+    }
+    return "";
+}
+inline std::optional<CustomerSessionsStatus> parse_customer_sessions_status(const std::string& value) {
+    if (value == "active") return CustomerSessionsStatus::Active;
+    if (value == "verified") return CustomerSessionsStatus::Verified;
+    if (value == "revoked") return CustomerSessionsStatus::Revoked;
+    return std::nullopt;
+}
+
+struct CustomerSessionsRow {
+    std::string id;
+    std::string user_id;
+    std::string device;
+    std::optional<std::string> location;
+    std::string last_seen;
+    std::string status;
+    std::string updated_at;
+    int64_t version;
+    int64_t sync_sequence;
+};
+
+inline CustomerSessionsRow customer_sessions_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    CustomerSessionsRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.user_id = get(1);
+    row.device = get(2);
+    row.location = is_null(3) ? std::nullopt : std::optional<std::string>(get(3));
+    row.last_seen = get(4);
+    row.status = get(5);
+    row.updated_at = get(6);
+    row.version = std::stoll(get(7));
+    row.sync_sequence = std::stoll(get(8));
+    return row;
+}
+inline std::optional<std::string> validate_customer_sessions_device(const std::string& value) {
+    if (value.size() > 200) return std::string("customer_sessions.device must be at most 200 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_customer_sessions_location(const std::string& value) {
+    if (value.size() > 200) return std::string("customer_sessions.location must be at most 200 characters");
+    return std::nullopt;
+}
+
+inline const char* audit_log_table = "fiducia.audit_log";
+inline const std::vector<std::string> audit_log_columns = { "id", "org_id", "project_id", "actor_user_id", "actor_key_id", "actor", "action", "target", "request_id", "source_ip", "user_agent", "meta", "created_at", "retention_expires_at" };
+inline const char* audit_log_select_sql = R"SQL(select
+      id::text as id,
+      org_id::text as org_id,
+      project_id::text as project_id,
+      actor_user_id::text as actor_user_id,
+      actor_key_id::text as actor_key_id,
+      actor,
+      action,
+      target,
+      request_id,
+      source_ip,
+      user_agent,
+      meta::text as meta_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(retention_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as retention_expires_at
+    from fiducia.audit_log)SQL";
+
+struct AuditLogRow {
+    std::string id;
+    std::optional<std::string> org_id;
+    std::optional<std::string> project_id;
+    std::optional<std::string> actor_user_id;
+    std::optional<std::string> actor_key_id;
+    std::optional<std::string> actor;
+    std::string action;
+    std::optional<std::string> target;
+    std::optional<std::string> request_id;
+    std::optional<std::string> source_ip;
+    std::optional<std::string> user_agent;
+    std::string meta;
+    std::string created_at;
+    std::optional<std::string> retention_expires_at;
+};
+
+inline AuditLogRow audit_log_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    AuditLogRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.org_id = is_null(1) ? std::nullopt : std::optional<std::string>(get(1));
+    row.project_id = is_null(2) ? std::nullopt : std::optional<std::string>(get(2));
+    row.actor_user_id = is_null(3) ? std::nullopt : std::optional<std::string>(get(3));
+    row.actor_key_id = is_null(4) ? std::nullopt : std::optional<std::string>(get(4));
+    row.actor = is_null(5) ? std::nullopt : std::optional<std::string>(get(5));
+    row.action = get(6);
+    row.target = is_null(7) ? std::nullopt : std::optional<std::string>(get(7));
+    row.request_id = is_null(8) ? std::nullopt : std::optional<std::string>(get(8));
+    row.source_ip = is_null(9) ? std::nullopt : std::optional<std::string>(get(9));
+    row.user_agent = is_null(10) ? std::nullopt : std::optional<std::string>(get(10));
+    row.meta = get(11);
+    row.created_at = get(12);
+    row.retention_expires_at = is_null(13) ? std::nullopt : std::optional<std::string>(get(13));
+    return row;
+}
+inline std::optional<std::string> validate_audit_log_actor(const std::string& value) {
+    if (value.size() > 320) return std::string("audit_log.actor must be at most 320 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_audit_log_action(const std::string& value) {
+    if (value.size() > 120) return std::string("audit_log.action must be at most 120 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_audit_log_target(const std::string& value) {
+    if (value.size() > 320) return std::string("audit_log.target must be at most 320 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_audit_log_request_id(const std::string& value) {
+    if (value.size() > 120) return std::string("audit_log.request_id must be at most 120 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_audit_log_source_ip(const std::string& value) {
+    if (value.size() > 64) return std::string("audit_log.source_ip must be at most 64 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_audit_log_user_agent(const std::string& value) {
+    if (value.size() > 500) return std::string("audit_log.user_agent must be at most 500 characters");
+    return std::nullopt;
+}
+
+inline const char* customer_notifications_table = "fiducia.customer_notifications";
+inline const std::vector<std::string> customer_notifications_columns = { "id", "user_id", "org_id", "kind", "severity", "title", "body", "link", "read_at", "created_at", "updated_at", "version", "sync_sequence" };
+inline const char* customer_notifications_select_sql = R"SQL(select
+      id::text as id,
+      user_id::text as user_id,
+      org_id::text as org_id,
+      kind,
+      severity,
+      title,
+      body,
+      link,
+      to_char(read_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as read_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      version,
+      sync_sequence
+    from fiducia.customer_notifications)SQL";
+
+enum class CustomerNotificationsSeverity { Info, Success, Warning, Critical };
+inline std::string customer_notifications_severity_to_string(CustomerNotificationsSeverity value) {
+    switch (value) {
+        case CustomerNotificationsSeverity::Info: return "info";
+        case CustomerNotificationsSeverity::Success: return "success";
+        case CustomerNotificationsSeverity::Warning: return "warning";
+        case CustomerNotificationsSeverity::Critical: return "critical";
+    }
+    return "";
+}
+inline std::optional<CustomerNotificationsSeverity> parse_customer_notifications_severity(const std::string& value) {
+    if (value == "info") return CustomerNotificationsSeverity::Info;
+    if (value == "success") return CustomerNotificationsSeverity::Success;
+    if (value == "warning") return CustomerNotificationsSeverity::Warning;
+    if (value == "critical") return CustomerNotificationsSeverity::Critical;
+    return std::nullopt;
+}
+
+struct CustomerNotificationsRow {
+    std::string id;
+    std::string user_id;
+    std::optional<std::string> org_id;
+    std::string kind;
+    std::string severity;
+    std::string title;
+    std::string body;
+    std::optional<std::string> link;
+    std::optional<std::string> read_at;
+    std::string created_at;
+    std::string updated_at;
+    int64_t version;
+    int64_t sync_sequence;
+};
+
+inline CustomerNotificationsRow customer_notifications_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    CustomerNotificationsRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.user_id = get(1);
+    row.org_id = is_null(2) ? std::nullopt : std::optional<std::string>(get(2));
+    row.kind = get(3);
+    row.severity = get(4);
+    row.title = get(5);
+    row.body = get(6);
+    row.link = is_null(7) ? std::nullopt : std::optional<std::string>(get(7));
+    row.read_at = is_null(8) ? std::nullopt : std::optional<std::string>(get(8));
+    row.created_at = get(9);
+    row.updated_at = get(10);
+    row.version = std::stoll(get(11));
+    row.sync_sequence = std::stoll(get(12));
+    return row;
+}
+inline std::optional<std::string> validate_customer_notifications_kind(const std::string& value) {
+    if (value.size() > 40) return std::string("customer_notifications.kind must be at most 40 characters");
+    if (!std::regex_match(value, std::regex(R"RX(^[a-z][a-z0-9_.]{1,38}[a-z0-9]$)RX"))) return std::string("customer_notifications.kind does not match the required pattern");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_customer_notifications_title(const std::string& value) {
+    if (value.size() > 200) return std::string("customer_notifications.title must be at most 200 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_customer_notifications_body(const std::string& value) {
+    if (value.size() > 2000) return std::string("customer_notifications.body must be at most 2000 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_customer_notifications_link(const std::string& value) {
+    if (value.size() > 500) return std::string("customer_notifications.link must be at most 500 characters");
+    return std::nullopt;
+}
+
+inline const char* sync_idempotency_keys_table = "fiducia.sync_idempotency_keys";
+inline const std::vector<std::string> sync_idempotency_keys_columns = { "key", "request_fingerprint", "committed_version", "created_at" };
+inline const char* sync_idempotency_keys_select_sql = R"SQL(select
+      key,
+      request_fingerprint,
+      committed_version,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from fiducia.sync_idempotency_keys)SQL";
+
+struct SyncIdempotencyKeysRow {
+    std::string key;
+    std::string request_fingerprint;
+    std::optional<int64_t> committed_version;
+    std::string created_at;
+};
+
+inline SyncIdempotencyKeysRow sync_idempotency_keys_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    SyncIdempotencyKeysRow row;
+    (void)is_null;
+    row.key = get(0);
+    row.request_fingerprint = get(1);
+    row.committed_version = is_null(2) ? std::nullopt : std::optional<int64_t>(std::stoll(get(2)));
+    row.created_at = get(3);
+    return row;
+}
+inline std::optional<std::string> validate_sync_idempotency_keys_request_fingerprint(const std::string& value) {
+    if (value.size() > 64) return std::string("sync_idempotency_keys.request_fingerprint must be at most 64 characters");
+    if (!std::regex_match(value, std::regex(R"RX(^[0-9a-f]{64}$)RX"))) return std::string("sync_idempotency_keys.request_fingerprint does not match the required pattern");
+    return std::nullopt;
+}
+
+inline const char* transcriptions_table = "t2v.transcriptions";
+inline const std::vector<std::string> transcriptions_columns = { "id", "source", "provider", "model", "text", "language", "sample_rate", "duration_ms", "created_at" };
+inline const char* transcriptions_select_sql = R"SQL(select
+      id::text as id,
+      source,
+      provider,
+      model,
+      text,
+      language,
+      sample_rate,
+      duration_ms,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from t2v.transcriptions)SQL";
+
+struct TranscriptionsRow {
+    std::string id;
+    std::string source;
+    std::string provider;
+    std::string model;
+    std::string text;
+    std::optional<std::string> language;
+    std::optional<int32_t> sample_rate;
+    std::optional<int64_t> duration_ms;
+    std::string created_at;
+};
+
+inline TranscriptionsRow transcriptions_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    TranscriptionsRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.source = get(1);
+    row.provider = get(2);
+    row.model = get(3);
+    row.text = get(4);
+    row.language = is_null(5) ? std::nullopt : std::optional<std::string>(get(5));
+    row.sample_rate = is_null(6) ? std::nullopt : std::optional<int32_t>(std::stoi(get(6)));
+    row.duration_ms = is_null(7) ? std::nullopt : std::optional<int64_t>(std::stoll(get(7)));
+    row.created_at = get(8);
+    return row;
+}
+inline std::optional<std::string> validate_transcriptions_sample_rate(int32_t value) {
+    if (value < 4000) return std::string("transcriptions.sample_rate is below the minimum");
+    if (value > 384000) return std::string("transcriptions.sample_rate is above the maximum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_transcriptions_duration_ms(int64_t value) {
+    if (value < 0) return std::string("transcriptions.duration_ms is below the minimum");
+    return std::nullopt;
+}
+
+inline const char* syntheses_table = "t2v.syntheses";
+inline const std::vector<std::string> syntheses_columns = { "id", "text", "voice", "provider", "model", "format", "audio_bytes", "created_at" };
+inline const char* syntheses_select_sql = R"SQL(select
+      id::text as id,
+      text,
+      voice,
+      provider,
+      model,
+      format,
+      audio_bytes,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from t2v.syntheses)SQL";
+
+struct SynthesesRow {
+    std::string id;
+    std::string text;
+    std::string voice;
+    std::string provider;
+    std::string model;
+    std::string format;
+    int64_t audio_bytes;
+    std::string created_at;
+};
+
+inline SynthesesRow syntheses_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    SynthesesRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.text = get(1);
+    row.voice = get(2);
+    row.provider = get(3);
+    row.model = get(4);
+    row.format = get(5);
+    row.audio_bytes = std::stoll(get(6));
+    row.created_at = get(7);
+    return row;
+}
+inline std::optional<std::string> validate_syntheses_audio_bytes(int64_t value) {
+    if (value < 0) return std::string("syntheses.audio_bytes is below the minimum");
+    return std::nullopt;
+}
+
+inline const char* translations_table = "t2v.translations";
+inline const std::vector<std::string> translations_columns = { "id", "source_text", "translated_text", "source_lang", "target_lang", "provider", "model", "latency_ms", "created_at" };
+inline const char* translations_select_sql = R"SQL(select
+      id::text as id,
+      source_text,
+      translated_text,
+      source_lang,
+      target_lang,
+      provider,
+      model,
+      latency_ms,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from t2v.translations)SQL";
+
+struct TranslationsRow {
+    std::string id;
+    std::string source_text;
+    std::string translated_text;
+    std::optional<std::string> source_lang;
+    std::string target_lang;
+    std::string provider;
+    std::string model;
+    int64_t latency_ms;
+    std::string created_at;
+};
+
+inline TranslationsRow translations_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    TranslationsRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.source_text = get(1);
+    row.translated_text = get(2);
+    row.source_lang = is_null(3) ? std::nullopt : std::optional<std::string>(get(3));
+    row.target_lang = get(4);
+    row.provider = get(5);
+    row.model = get(6);
+    row.latency_ms = std::stoll(get(7));
+    row.created_at = get(8);
+    return row;
+}
+inline std::optional<std::string> validate_translations_latency_ms(int64_t value) {
+    if (value < 0) return std::string("translations.latency_ms is below the minimum");
+    return std::nullopt;
+}
+
+inline const char* vapi_calls_table = "t2v.vapi_calls";
+inline const std::vector<std::string> vapi_calls_columns = { "id", "vapi_call_id", "status", "ended_reason", "transcript", "summary", "created_at", "updated_at" };
+inline const char* vapi_calls_select_sql = R"SQL(select
+      id::text as id,
+      vapi_call_id,
+      status,
+      ended_reason,
+      transcript,
+      summary,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from t2v.vapi_calls)SQL";
+
+struct VapiCallsRow {
+    std::string id;
+    std::string vapi_call_id;
+    std::string status;
+    std::optional<std::string> ended_reason;
+    std::optional<std::string> transcript;
+    std::optional<std::string> summary;
+    std::string created_at;
+    std::string updated_at;
+};
+
+inline VapiCallsRow vapi_calls_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    VapiCallsRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.vapi_call_id = get(1);
+    row.status = get(2);
+    row.ended_reason = is_null(3) ? std::nullopt : std::optional<std::string>(get(3));
+    row.transcript = is_null(4) ? std::nullopt : std::optional<std::string>(get(4));
+    row.summary = is_null(5) ? std::nullopt : std::optional<std::string>(get(5));
+    row.created_at = get(6);
+    row.updated_at = get(7);
+    return row;
+}
+
+inline const char* vapi_events_table = "t2v.vapi_events";
+inline const std::vector<std::string> vapi_events_columns = { "id", "vapi_call_id", "event_type", "payload", "created_at" };
+inline const char* vapi_events_select_sql = R"SQL(select
+      id::text as id,
+      vapi_call_id,
+      event_type,
+      payload::text as payload_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from t2v.vapi_events)SQL";
+
+struct VapiEventsRow {
+    std::string id;
+    std::optional<std::string> vapi_call_id;
+    std::string event_type;
+    std::string payload;
+    std::string created_at;
+};
+
+inline VapiEventsRow vapi_events_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    VapiEventsRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.vapi_call_id = is_null(1) ? std::nullopt : std::optional<std::string>(get(1));
+    row.event_type = get(2);
+    row.payload = get(3);
+    row.created_at = get(4);
+    return row;
+}
+
+inline const char* fab_plans_table = "daedalus.fab_plans";
+inline const std::vector<std::string> fab_plans_columns = { "id", "owner_email", "title", "goal", "process_family", "status", "document", "created_at", "updated_at" };
+inline const char* fab_plans_select_sql = R"SQL(select
+      id::text as id,
+      owner_email,
+      title,
+      goal,
+      process_family,
+      status,
+      document::text as document_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from daedalus.fab_plans)SQL";
+
+enum class FabPlansProcessFamily { Additive, Subtractive, Hybrid };
+inline std::string fab_plans_process_family_to_string(FabPlansProcessFamily value) {
+    switch (value) {
+        case FabPlansProcessFamily::Additive: return "additive";
+        case FabPlansProcessFamily::Subtractive: return "subtractive";
+        case FabPlansProcessFamily::Hybrid: return "hybrid";
+    }
+    return "";
+}
+inline std::optional<FabPlansProcessFamily> parse_fab_plans_process_family(const std::string& value) {
+    if (value == "additive") return FabPlansProcessFamily::Additive;
+    if (value == "subtractive") return FabPlansProcessFamily::Subtractive;
+    if (value == "hybrid") return FabPlansProcessFamily::Hybrid;
+    return std::nullopt;
+}
+
+enum class FabPlansStatus { Draft, Planning, Planned, Released, Archived };
+inline std::string fab_plans_status_to_string(FabPlansStatus value) {
+    switch (value) {
+        case FabPlansStatus::Draft: return "draft";
+        case FabPlansStatus::Planning: return "planning";
+        case FabPlansStatus::Planned: return "planned";
+        case FabPlansStatus::Released: return "released";
+        case FabPlansStatus::Archived: return "archived";
+    }
+    return "";
+}
+inline std::optional<FabPlansStatus> parse_fab_plans_status(const std::string& value) {
+    if (value == "draft") return FabPlansStatus::Draft;
+    if (value == "planning") return FabPlansStatus::Planning;
+    if (value == "planned") return FabPlansStatus::Planned;
+    if (value == "released") return FabPlansStatus::Released;
+    if (value == "archived") return FabPlansStatus::Archived;
+    return std::nullopt;
+}
+
+struct FabPlansRow {
+    std::string id;
+    std::string owner_email;
+    std::string title;
+    std::string goal;
+    std::string process_family;
+    std::string status;
+    std::optional<std::string> document;
+    std::string created_at;
+    std::string updated_at;
+};
+
+inline FabPlansRow fab_plans_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    FabPlansRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.owner_email = get(1);
+    row.title = get(2);
+    row.goal = get(3);
+    row.process_family = get(4);
+    row.status = get(5);
+    row.document = is_null(6) ? std::nullopt : std::optional<std::string>(get(6));
+    row.created_at = get(7);
+    row.updated_at = get(8);
+    return row;
+}
+
+inline const char* fab_designs_table = "daedalus.fab_designs";
+inline const std::vector<std::string> fab_designs_columns = { "id", "plan_id", "filename", "format", "storage_uri", "size_bytes", "content_hash", "geometry", "created_at" };
+inline const char* fab_designs_select_sql = R"SQL(select
+      id::text as id,
+      plan_id::text as plan_id,
+      filename,
+      format,
+      storage_uri,
+      size_bytes,
+      content_hash,
+      geometry::text as geometry_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from daedalus.fab_designs)SQL";
+
+enum class FabDesignsFormat { Step, Stl, 3mf, Dxf, Iges, Obj };
+inline std::string fab_designs_format_to_string(FabDesignsFormat value) {
+    switch (value) {
+        case FabDesignsFormat::Step: return "step";
+        case FabDesignsFormat::Stl: return "stl";
+        case FabDesignsFormat::3mf: return "3mf";
+        case FabDesignsFormat::Dxf: return "dxf";
+        case FabDesignsFormat::Iges: return "iges";
+        case FabDesignsFormat::Obj: return "obj";
+    }
+    return "";
+}
+inline std::optional<FabDesignsFormat> parse_fab_designs_format(const std::string& value) {
+    if (value == "step") return FabDesignsFormat::Step;
+    if (value == "stl") return FabDesignsFormat::Stl;
+    if (value == "3mf") return FabDesignsFormat::3mf;
+    if (value == "dxf") return FabDesignsFormat::Dxf;
+    if (value == "iges") return FabDesignsFormat::Iges;
+    if (value == "obj") return FabDesignsFormat::Obj;
+    return std::nullopt;
+}
+
+struct FabDesignsRow {
+    std::string id;
+    std::string plan_id;
+    std::string filename;
+    std::string format;
+    std::string storage_uri;
+    int64_t size_bytes;
+    std::optional<std::string> content_hash;
+    std::string geometry;
+    std::string created_at;
+};
+
+inline FabDesignsRow fab_designs_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    FabDesignsRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.plan_id = get(1);
+    row.filename = get(2);
+    row.format = get(3);
+    row.storage_uri = get(4);
+    row.size_bytes = std::stoll(get(5));
+    row.content_hash = is_null(6) ? std::nullopt : std::optional<std::string>(get(6));
+    row.geometry = get(7);
+    row.created_at = get(8);
+    return row;
+}
+inline std::optional<std::string> validate_fab_designs_size_bytes(int64_t value) {
+    if (value < 0) return std::string("fab_designs.size_bytes is below the minimum");
+    return std::nullopt;
+}
+
+inline const char* fab_instructions_table = "daedalus.fab_instructions";
+inline const std::vector<std::string> fab_instructions_columns = { "id", "plan_id", "revision", "machine_profile", "dialect", "storage_uri", "content_hash", "validated", "validation", "released_by_email", "released_at", "created_at" };
+inline const char* fab_instructions_select_sql = R"SQL(select
+      id::text as id,
+      plan_id::text as plan_id,
+      revision,
+      machine_profile,
+      dialect,
+      storage_uri,
+      content_hash,
+      validated,
+      validation::text as validation_json,
+      released_by_email,
+      to_char(released_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as released_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from daedalus.fab_instructions)SQL";
+
+enum class FabInstructionsDialect { Gcode, Nc, Apt, Proprietary };
+inline std::string fab_instructions_dialect_to_string(FabInstructionsDialect value) {
+    switch (value) {
+        case FabInstructionsDialect::Gcode: return "gcode";
+        case FabInstructionsDialect::Nc: return "nc";
+        case FabInstructionsDialect::Apt: return "apt";
+        case FabInstructionsDialect::Proprietary: return "proprietary";
+    }
+    return "";
+}
+inline std::optional<FabInstructionsDialect> parse_fab_instructions_dialect(const std::string& value) {
+    if (value == "gcode") return FabInstructionsDialect::Gcode;
+    if (value == "nc") return FabInstructionsDialect::Nc;
+    if (value == "apt") return FabInstructionsDialect::Apt;
+    if (value == "proprietary") return FabInstructionsDialect::Proprietary;
+    return std::nullopt;
+}
+
+struct FabInstructionsRow {
+    std::string id;
+    std::string plan_id;
+    int32_t revision;
+    std::string machine_profile;
+    std::string dialect;
+    std::string storage_uri;
+    std::optional<std::string> content_hash;
+    bool validated;
+    std::string validation;
+    std::optional<std::string> released_by_email;
+    std::optional<std::string> released_at;
+    std::string created_at;
+};
+
+inline FabInstructionsRow fab_instructions_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    FabInstructionsRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.plan_id = get(1);
+    row.revision = std::stoi(get(2));
+    row.machine_profile = get(3);
+    row.dialect = get(4);
+    row.storage_uri = get(5);
+    row.content_hash = is_null(6) ? std::nullopt : std::optional<std::string>(get(6));
+    row.validated = (get(7) == "t");
+    row.validation = get(8);
+    row.released_by_email = is_null(9) ? std::nullopt : std::optional<std::string>(get(9));
+    row.released_at = is_null(10) ? std::nullopt : std::optional<std::string>(get(10));
+    row.created_at = get(11);
+    return row;
+}
+inline std::optional<std::string> validate_fab_instructions_revision(int32_t value) {
+    if (value < 1) return std::string("fab_instructions.revision is below the minimum");
+    return std::nullopt;
+}
+
+inline const char* fab_runs_table = "daedalus.fab_runs";
+inline const std::vector<std::string> fab_runs_columns = { "id", "instructions_id", "status", "machine_id", "operator_email", "progress", "as_built", "error", "started_at", "finished_at", "created_at" };
+inline const char* fab_runs_select_sql = R"SQL(select
+      id::text as id,
+      instructions_id::text as instructions_id,
+      status,
+      machine_id,
+      operator_email,
+      progress,
+      as_built::text as as_built_json,
+      error,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from daedalus.fab_runs)SQL";
+
+enum class FabRunsStatus { Queued, Running, Succeeded, Failed, Aborted };
+inline std::string fab_runs_status_to_string(FabRunsStatus value) {
+    switch (value) {
+        case FabRunsStatus::Queued: return "queued";
+        case FabRunsStatus::Running: return "running";
+        case FabRunsStatus::Succeeded: return "succeeded";
+        case FabRunsStatus::Failed: return "failed";
+        case FabRunsStatus::Aborted: return "aborted";
+    }
+    return "";
+}
+inline std::optional<FabRunsStatus> parse_fab_runs_status(const std::string& value) {
+    if (value == "queued") return FabRunsStatus::Queued;
+    if (value == "running") return FabRunsStatus::Running;
+    if (value == "succeeded") return FabRunsStatus::Succeeded;
+    if (value == "failed") return FabRunsStatus::Failed;
+    if (value == "aborted") return FabRunsStatus::Aborted;
+    return std::nullopt;
+}
+
+struct FabRunsRow {
+    std::string id;
+    std::string instructions_id;
+    std::string status;
+    std::string machine_id;
+    std::optional<std::string> operator_email;
+    int32_t progress;
+    std::string as_built;
+    std::optional<std::string> error;
+    std::optional<std::string> started_at;
+    std::optional<std::string> finished_at;
+    std::string created_at;
+};
+
+inline FabRunsRow fab_runs_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    FabRunsRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.instructions_id = get(1);
+    row.status = get(2);
+    row.machine_id = get(3);
+    row.operator_email = is_null(4) ? std::nullopt : std::optional<std::string>(get(4));
+    row.progress = std::stoi(get(5));
+    row.as_built = get(6);
+    row.error = is_null(7) ? std::nullopt : std::optional<std::string>(get(7));
+    row.started_at = is_null(8) ? std::nullopt : std::optional<std::string>(get(8));
+    row.finished_at = is_null(9) ? std::nullopt : std::optional<std::string>(get(9));
+    row.created_at = get(10);
+    return row;
+}
+inline std::optional<std::string> validate_fab_runs_progress(int32_t value) {
+    if (value < 0) return std::string("fab_runs.progress is below the minimum");
+    if (value > 100) return std::string("fab_runs.progress is above the maximum");
+    return std::nullopt;
+}
+
 }  // namespace dd_pg_defs

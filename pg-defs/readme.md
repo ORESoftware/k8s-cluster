@@ -6,6 +6,13 @@ to Postgres from different runtimes.
 The canonical source is [`schema/schema.sql`](./schema/schema.sql). Generated adapters live under
 `generated/` and are adapters only.
 
+Services with their **own database** (separate from the shared contract) may keep their
+declarative schema under [`schema/databases/<db_name>/schema.sql`](./schema/databases/) so all
+shared defs stay in this repo; the owning service carries a `scripts/dpm.sh` pointing at that file.
+Current contracts include `dd_build_server` and the SeaORM-backed `athleto` commerce database.
+These per-database contracts are not fed to the code generator — their consumers hand-write
+pg-defs-style entities.
+
 ```sh
 node src/generate.mjs
 ```
@@ -58,10 +65,15 @@ CI (`.github/workflows/ci.yml`) proves on every push that `schema.sql` applies
 cleanly to a fresh Postgres 17 and that dpm sees zero drift between the file and
 the applied database.
 
-Known dpm limitation (tracked upstream): varchar IN-list CHECK constraints deparse
-as `(ARRAY[...])::text[]`, which re-parses into per-element casts, so a database
-built from dpm's own re-emitted SQL never converges to string equality against the
-schema file. Databases built from `schema.sql` itself diff clean.
+Formerly-known dpm limitation (fixed in dpm v0.3.2): varchar IN-list CHECK
+constraints, partial-index predicates, generated-column expressions, and view
+bodies deparse as `(ARRAY[...])::text[]`, which re-parses into per-element casts,
+so a database built from dpm's own re-emitted SQL did not converge to string
+equality against the schema file. Fixed in declarative-postgres-migrate.rs
+`3fcb17b` + `16e2c9b` (server-side canonicalization round-trips each such def
+through the shadow to its re-parse fixed point). Shipped in dpm v0.3.2, so the CI
+`dpm verify` step is now enforcing. Databases built from `schema.sql` itself always
+diff clean.
 
 ### Legacy differ — second opinion
 

@@ -39,6 +39,22 @@ let blockchain_index_events_subject = "dd.remote.blockchain.index.events"
 (* Monitoring-only MEV/arbitrage spread alerts emitted when an observed venue spread crosses the configured threshold. Default for BLOCKCHAIN_MEV_ALERTS_SUBJECT. Observation surface only; there is no execution path. Publish-only. *)
 let blockchain_mev_alerts_subject = "dd.remote.blockchain.mev.alerts"
 
+(* Shared result fanout receiving every browser-job terminal result. *)
+let browser_job_results_subject = "dd.remote.browser_jobs.results"
+
+(* Redacted build lifecycle events (queued/running/succeeded/failed) published by the build server. Default for BUILD_SERVER_NATS_EVENT_SUBJECT. *)
+let build_server_events_subject = "dd.remote.build_server.events"
+
+(* Redacted container-image registry events (ECR / docker registry webhook pushes) relayed by the build server. Default for BUILD_SERVER_NATS_IMAGE_SUBJECT. *)
+let build_server_images_subject = "dd.remote.build_server.images"
+
+(* Durable build-request intake. Producers publish a build-server.v1 job document; build-server replicas consume via the shared queue group / durable JetStream consumer. Default for BUILD_SERVER_NATS_REQUEST_SUBJECT. *)
+let build_server_requests_subject = "dd.remote.build_server.requests"
+let build_server_requests_queue_group = "dd-build-server"
+
+(* Terminal build results (succeeded/failed with jobId and error summary) for NATS-submitted and webhook-submitted jobs. Default for BUILD_SERVER_NATS_RESULT_SUBJECT. *)
+let build_server_results_subject = "dd.remote.build_server.results"
+
 (* Per-fault lifecycle events (selected, injected, restored, aborted-by-guard) emitted by the chaos loops. *)
 let chaos_events_subject = "dd.remote.chaos.events"
 
@@ -121,6 +137,13 @@ let des_results_subject = "dd.remote.des.results"
 (* Discrete-event simulation job requests. Default for DES_SIMULATE_SUBJECT. *)
 let des_simulate_subject = "dd.remote.des.simulate"
 let des_simulate_queue_group = "dd-des-simulator"
+
+(* Document conversion requests consumed by dd-document-rs replicas. *)
+let document_convert_requests_subject = "dd.remote.document.convert"
+let document_convert_requests_queue_group = "dd-document-rs"
+
+(* Document conversion results published after a request completes or fails. *)
+let document_convert_results_subject = "dd.remote.document.results"
 
 (* Inbound forecast/recommendation requests consumed by the economics server. Subscribed with the dd-economics-server queue group so requests load-balance across replicas. Default for ECONOMICS_FORECAST_REQUEST_SUBJECT. *)
 let economics_forecast_requests_subject = "dd.remote.economics.forecast.requests"
@@ -325,12 +348,22 @@ let music_songs_published_subject = "dd.remote.music.songs.published"
 (* Fan-out of anonymous up/down votes for downstream analytics. Carries song id, direction, and the resulting tallies (no visitor hashes). *)
 let music_votes_events_subject = "dd.remote.music.votes.events"
 
+(* OCR requests consumed by dd-ocr-rs replicas. *)
+let ocr_requests_subject = "dd.remote.ocr.requests"
+let ocr_requests_queue_group = "dd-ocr-rs"
+
+(* OCR results published after a request completes or fails. *)
+let ocr_results_subject = "dd.remote.ocr.results"
+
 (* Wakeup signal published whenever a new task is enqueued for a thread, so the orchestrator can prepare/scale the matching worker deployment without polling. *)
 let orchestrator_wakeup_subject = "dd.remote.orchestrator.wakeup"
 let orchestrator_wakeup_stream = "DD_REMOTE_CONTROL"
 
 (* Trend, correlation, grant-match, graph-data, model, and white-paper evidence results from public-data analysis runs. *)
 let public_data_analysis_results_subject = "dd.remote.public_data.analysis.results"
+
+(* Dead-letter subject for public-data ingest requests that exhaust JetStream delivery attempts. *)
+let public_data_ingest_dead_letter_subject = "dd.remote.public_data.ingest.deadletter"
 
 (* Inbound public-data ingestion requests accepted over NATS. Payloads mirror the HTTP /ingest and /scrape contracts. *)
 let public_data_ingest_requests_subject = "dd.remote.public_data.ingest.requests"
@@ -435,11 +468,36 @@ let workflows_events_subject = "dd.remote.workflows.events"
 let workflows_start_subject = "dd.remote.workflows.start"
 let workflows_start_queue_group = "dd-gleam-workflow-engine"
 
+(* Per-job lifecycle and progress events emitted by the isolated browser worker. *)
+let browser_job_events_pattern = "dd.remote.browser_jobs.{job_id}.events"
+let browser_job_events_wildcard = "dd.remote.browser_jobs.*.events"
+let browser_job_events_subject job_id = "dd.remote.browser_jobs." ^ job_id ^ ".events"
+type browser_job_events_subject_parts = {
+  browser_job_events_subject_parts_job_id : string;
+}
+let parse_browser_job_events_subject subject =
+  match String.split_on_char '.' subject with
+  | ["dd"; "remote"; "browser_jobs"; job_id; "events"] -> Some { browser_job_events_subject_parts_job_id = job_id }
+  | _ -> None
+
+(* Per-job terminal result emitted by the isolated browser worker. *)
+let browser_job_result_pattern = "dd.remote.browser_jobs.{job_id}.result"
+let browser_job_result_wildcard = "dd.remote.browser_jobs.*.result"
+let browser_job_result_subject job_id = "dd.remote.browser_jobs." ^ job_id ^ ".result"
+type browser_job_result_subject_parts = {
+  browser_job_result_subject_parts_job_id : string;
+}
+let parse_browser_job_result_subject subject =
+  match String.split_on_char '.' subject with
+  | ["dd"; "remote"; "browser_jobs"; job_id; "result"] -> Some { browser_job_result_subject_parts_job_id = job_id }
+  | _ -> None
+
 (* Per-row change emitted by wal-gateway. Subject pattern is '<prefix>.<schema>.<table>.<op>'. The default prefix is 'cdc' and the default stream name is 'CDC'. Consumers usually subscribe to the prefix tail wildcard ('cdc.>'). *)
 let cdc_row_change_pattern = "{prefix}.{schema}.{table}.{op}"
 let cdc_row_change_wildcard = "{prefix}.>"
 let cdc_row_change_stream = "CDC"
 let cdc_row_change_subject prefix schema table op = prefix ^ "." ^ schema ^ "." ^ table ^ "." ^ op
+let format_cdc_row_change_wildcard prefix = prefix ^ ".>"
 type cdc_row_change_subject_parts = {
   cdc_row_change_subject_parts_prefix : string;
   cdc_row_change_subject_parts_schema : string;
@@ -456,6 +514,7 @@ let cdc_table_filter_pattern = "{prefix}.{schema}.{table}.>"
 let cdc_table_filter_wildcard = "{prefix}.>"
 let cdc_table_filter_stream = "CDC"
 let cdc_table_filter_subject prefix schema table = prefix ^ "." ^ schema ^ "." ^ table ^ ".>"
+let format_cdc_table_filter_wildcard prefix = prefix ^ ".>"
 type cdc_table_filter_subject_parts = {
   cdc_table_filter_subject_parts_prefix : string;
   cdc_table_filter_subject_parts_schema : string;
@@ -611,6 +670,9 @@ let queue_group_agent_sim_server_queue_group = "dd-agent-sim-server"
 (* Queue group shared by dd-billing-server replicas for inbound sync commands so each command is handled by exactly one pod. *)
 let queue_group_billing_server_queue_group = "dd-billing-server"
 
+(* Shared queue group / durable consumer name used by build-server replicas for request intake. *)
+let queue_group_build_server_queue_group = "dd-build-server"
+
 (* Shared queue group used by dd-constraint-scheduler replicas consuming schedule requests. *)
 let queue_group_constraint_scheduler_queue_group = "dd-constraint-scheduler"
 
@@ -625,6 +687,9 @@ let queue_group_dataset_labeling_workers_queue_group = "dd-dataset-labeling"
 
 (* Shared queue group used by dd-data-viz notifier workers consuming the notification-dispatch lane. *)
 let queue_group_data_viz_notification_dispatch_queue_group = "dd-data-viz-notifiers"
+
+(* Shared queue group used by document converter replicas so each request is handled once. *)
+let queue_group_document_converters_queue_group = "dd-document-rs"
 
 (* Shared queue group used by dd-economics-server replicas consuming forecast requests. *)
 let queue_group_economics_server_queue_group = "dd-economics-server"
@@ -652,6 +717,9 @@ let queue_group_monte_carlo_server_queue_group = "dd-monte-carlo-server"
 
 (* Shared queue group used by dd-music-rs replicas consuming generation requests. *)
 let queue_group_music_generation_queue_group = "dd-music-rs"
+
+(* Shared queue group used by OCR replicas so each request is handled once. *)
+let queue_group_ocr_workers_queue_group = "dd-ocr-rs"
 
 (* Shared queue group used by dd-public-data-server replicas so each queued ingest/scrape request is processed once. *)
 let queue_group_public_data_workers_queue_group = "dd-public-data-server"
@@ -683,6 +751,13 @@ let cdc_stream_subjects = ["cdc.>"]
 let cdc_stream_retention = "limits"
 let cdc_stream_storage = "file"
 let cdc_stream_ack = "explicit"
+
+(* JetStream file storage with WorkQueue retention and explicit ack for build-request intake. Dedupe by Nats-Msg-Id ('build-request:<requestId>'); Postgres (dd_build_server) remains the real idempotency guard. *)
+let dd_remote_build_jobs_stream_name = "DD_REMOTE_BUILD_JOBS"
+let dd_remote_build_jobs_stream_subjects = ["dd.remote.build_server.requests"]
+let dd_remote_build_jobs_stream_retention = "workqueue"
+let dd_remote_build_jobs_stream_storage = "file"
+let dd_remote_build_jobs_stream_ack = "explicit"
 
 (* Short-retention control plane stream. *)
 let dd_remote_control_stream_name = "DD_REMOTE_CONTROL"

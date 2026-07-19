@@ -1013,6 +1013,8 @@ object DesSoccerLearningSetPlayRestartMix : Table("des_soccer_learning_set_play_
     val runId = uuid("run_id")
     val ordinal = integer("ordinal")
     val restart = varchar("restart", 40)
+
+    override val primaryKey = PrimaryKey(runId, ordinal)
 }
 
 object DesSoccerLearningSetPlayEpisodeMetrics : Table("des_soccer_learning_set_play_episode_metrics") {
@@ -1036,6 +1038,8 @@ object DesSoccerLearningSetPlayEpisodeMetrics : Table("des_soccer_learning_set_p
     val neuralLastLossMicros = long("neural_last_loss_micros").nullable()
     val cumulativeGoals = integer("cumulative_goals")
     val goalRateSoFarMicros = long("goal_rate_so_far_micros")
+
+    override val primaryKey = PrimaryKey(runId, episodeIndex)
 }
 
 object DesSoccerLearningNeuralRunMetrics : Table("des_soccer_learning_neural_run_metrics") {
@@ -2432,6 +2436,318 @@ object SharedContext : Table("ai_agent_bridge.shared_context") {
     val updatedBy = varchar("updated_by", 120)
     val createdAt = timestampWithTimeZone("created_at")
     val updatedAt = timestampWithTimeZone("updated_at")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object SyncClock : Table("fiducia.sync_clock") {
+    val singleton = bool("singleton")
+    val lastSequence = long("last_sequence")
+
+    override val primaryKey = PrimaryKey(singleton)
+}
+
+object SyncTombstones : Table("fiducia.sync_tombstones") {
+    val sequence = long("sequence")
+    val tableName = text("table_name")
+    val rowId = text("row_id")
+    val tenantId = uuid("tenant_id").nullable()
+    val ownerUserId = uuid("owner_user_id").nullable()
+    val rowVersion = long("row_version")
+    val deletedAt = timestampWithTimeZone("deleted_at")
+
+    override val primaryKey = PrimaryKey(sequence)
+}
+
+object Orgs : Table("fiducia.orgs") {
+    val id = uuid("id")
+    val slug = varchar("slug", 120)
+    val name = varchar("name", 200)
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+    val version = long("version")
+    val syncSequence = long("sync_sequence")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object Projects : Table("fiducia.projects") {
+    val id = uuid("id")
+    val orgId = uuid("org_id")
+    val slug = varchar("slug", 120)
+    val name = varchar("name", 200)
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+    val version = long("version")
+    val syncSequence = long("sync_sequence")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object Users : Table("fiducia.users") {
+    val id = uuid("id")
+    val supabaseUserId = uuid("supabase_user_id")
+    val email = varchar("email", 320)
+    val createdAt = timestampWithTimeZone("created_at")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object OrgMembers : Table("fiducia.org_members") {
+    val orgId = uuid("org_id")
+    val userId = uuid("user_id")
+    val role = varchar("role", 32)
+    val createdAt = timestampWithTimeZone("created_at")
+
+    override val primaryKey = PrimaryKey(orgId, userId)
+}
+
+object ProjectMembers : Table("fiducia.project_members") {
+    val projectId = uuid("project_id")
+    val userId = uuid("user_id")
+    val role = varchar("role", 32)
+    val createdAt = timestampWithTimeZone("created_at")
+
+    override val primaryKey = PrimaryKey(projectId, userId)
+}
+
+object ApiKeys : Table("fiducia.api_keys") {
+    val id = uuid("id")
+    val keyId = varchar("key_id", 64)
+    val orgId = uuid("org_id")
+    val projectId = uuid("project_id").nullable()
+    val createdByUserId = uuid("created_by_user_id").nullable()
+    val name = varchar("name", 200)
+    val secretHash = varchar("secret_hash", 255)
+    val scopes = jsonb<String>("scopes", { it }, { it })
+    val env = varchar("env", 16)
+    val requireIdempotency = bool("require_idempotency")
+    val mtlsRequired = bool("mtls_required")
+    val revoked = bool("revoked")
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+    val version = long("version")
+    val syncSequence = long("sync_sequence")
+    val lastUsedAt = timestampWithTimeZone("last_used_at").nullable()
+    val expiresAt = timestampWithTimeZone("expires_at").nullable()
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object MtlsClientCerts : Table("fiducia.mtls_client_certs") {
+    val id = uuid("id")
+    val orgId = uuid("org_id")
+    val projectId = uuid("project_id").nullable()
+    val name = varchar("name", 200)
+    val subject = varchar("subject", 500)
+    val sha256Fingerprint = varchar("sha256_fingerprint", 95)
+    val notBefore = timestampWithTimeZone("not_before").nullable()
+    val notAfter = timestampWithTimeZone("not_after").nullable()
+    val revoked = bool("revoked")
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+    val version = long("version")
+    val syncSequence = long("sync_sequence")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object CustomerPreferences : Table("fiducia.customer_preferences") {
+    val userId = uuid("user_id")
+    val density = varchar("density", 16)
+    val timezone = varchar("timezone", 64)
+    val region = varchar("region", 16)
+    val notifyKeyRotation = bool("notify_key_rotation")
+    val notifyLockContention = bool("notify_lock_contention")
+    val notifyMfa = bool("notify_mfa")
+    val updatedAt = timestampWithTimeZone("updated_at")
+    val version = long("version")
+    val syncSequence = long("sync_sequence")
+
+    override val primaryKey = PrimaryKey(userId)
+}
+
+object CustomerSessions : Table("fiducia.customer_sessions") {
+    val id = uuid("id")
+    val userId = uuid("user_id")
+    val device = varchar("device", 200)
+    val location = varchar("location", 200).nullable()
+    val lastSeen = timestampWithTimeZone("last_seen")
+    val status = varchar("status", 16)
+    val updatedAt = timestampWithTimeZone("updated_at")
+    val version = long("version")
+    val syncSequence = long("sync_sequence")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object AuditLog : Table("fiducia.audit_log") {
+    val id = uuid("id")
+    val orgId = uuid("org_id").nullable()
+    val projectId = uuid("project_id").nullable()
+    val actorUserId = uuid("actor_user_id").nullable()
+    val actorKeyId = uuid("actor_key_id").nullable()
+    val actor = varchar("actor", 320).nullable()
+    val action = varchar("action", 120)
+    val target = varchar("target", 320).nullable()
+    val requestId = varchar("request_id", 120).nullable()
+    val sourceIp = varchar("source_ip", 64).nullable()
+    val userAgent = varchar("user_agent", 500).nullable()
+    val meta = jsonb<String>("meta", { it }, { it })
+    val createdAt = timestampWithTimeZone("created_at")
+    val retentionExpiresAt = timestampWithTimeZone("retention_expires_at").nullable()
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object CustomerNotifications : Table("fiducia.customer_notifications") {
+    val id = uuid("id")
+    val userId = uuid("user_id")
+    val orgId = uuid("org_id").nullable()
+    val kind = varchar("kind", 40)
+    val severity = varchar("severity", 16)
+    val title = varchar("title", 200)
+    val body = varchar("body", 2000)
+    val link = varchar("link", 500).nullable()
+    val readAt = timestampWithTimeZone("read_at").nullable()
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+    val version = long("version")
+    val syncSequence = long("sync_sequence")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object SyncIdempotencyKeys : Table("fiducia.sync_idempotency_keys") {
+    val key = text("key")
+    val requestFingerprint = varchar("request_fingerprint", 64)
+    val committedVersion = long("committed_version").nullable()
+    val createdAt = timestampWithTimeZone("created_at")
+
+    override val primaryKey = PrimaryKey(key)
+}
+
+object Transcriptions : Table("t2v.transcriptions") {
+    val id = uuid("id")
+    val source = text("source")
+    val provider = text("provider")
+    val model = text("model")
+    val text = text("text")
+    val language = text("language").nullable()
+    val sampleRate = integer("sample_rate").nullable()
+    val durationMs = long("duration_ms").nullable()
+    val createdAt = timestampWithTimeZone("created_at")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object Syntheses : Table("t2v.syntheses") {
+    val id = uuid("id")
+    val text = text("text")
+    val voice = text("voice")
+    val provider = text("provider")
+    val model = text("model")
+    val format = text("format")
+    val audioBytes = long("audio_bytes")
+    val createdAt = timestampWithTimeZone("created_at")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object Translations : Table("t2v.translations") {
+    val id = uuid("id")
+    val sourceText = text("source_text")
+    val translatedText = text("translated_text")
+    val sourceLang = text("source_lang").nullable()
+    val targetLang = text("target_lang")
+    val provider = text("provider")
+    val model = text("model")
+    val latencyMs = long("latency_ms")
+    val createdAt = timestampWithTimeZone("created_at")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object VapiCalls : Table("t2v.vapi_calls") {
+    val id = uuid("id")
+    val vapiCallId = text("vapi_call_id")
+    val status = text("status")
+    val endedReason = text("ended_reason").nullable()
+    val transcript = text("transcript").nullable()
+    val summary = text("summary").nullable()
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object VapiEvents : Table("t2v.vapi_events") {
+    val id = uuid("id")
+    val vapiCallId = text("vapi_call_id").nullable()
+    val eventType = text("event_type")
+    val payload = jsonb<String>("payload", { it }, { it })
+    val createdAt = timestampWithTimeZone("created_at")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object FabPlans : Table("daedalus.fab_plans") {
+    val id = uuid("id")
+    val ownerEmail = text("owner_email")
+    val title = text("title")
+    val goal = text("goal")
+    val processFamily = text("process_family")
+    val status = text("status")
+    val document = jsonb<String>("document", { it }, { it }).nullable()
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object FabDesigns : Table("daedalus.fab_designs") {
+    val id = uuid("id")
+    val planId = uuid("plan_id")
+    val filename = text("filename")
+    val format = text("format")
+    val storageUri = text("storage_uri")
+    val sizeBytes = long("size_bytes")
+    val contentHash = text("content_hash").nullable()
+    val geometry = jsonb<String>("geometry", { it }, { it })
+    val createdAt = timestampWithTimeZone("created_at")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object FabInstructions : Table("daedalus.fab_instructions") {
+    val id = uuid("id")
+    val planId = uuid("plan_id")
+    val revision = integer("revision")
+    val machineProfile = text("machine_profile")
+    val dialect = text("dialect")
+    val storageUri = text("storage_uri")
+    val contentHash = text("content_hash").nullable()
+    val validated = bool("validated")
+    val validation = jsonb<String>("validation", { it }, { it })
+    val releasedByEmail = text("released_by_email").nullable()
+    val releasedAt = timestampWithTimeZone("released_at").nullable()
+    val createdAt = timestampWithTimeZone("created_at")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object FabRuns : Table("daedalus.fab_runs") {
+    val id = uuid("id")
+    val instructionsId = uuid("instructions_id")
+    val status = text("status")
+    val machineId = text("machine_id")
+    val operatorEmail = text("operator_email").nullable()
+    val progress = short("progress")
+    val asBuilt = jsonb<String>("as_built", { it }, { it })
+    val error = text("error").nullable()
+    val startedAt = timestampWithTimeZone("started_at").nullable()
+    val finishedAt = timestampWithTimeZone("finished_at").nullable()
+    val createdAt = timestampWithTimeZone("created_at")
 
     override val primaryKey = PrimaryKey(id)
 }
@@ -6776,4 +7092,536 @@ fun toSharedContextRow(row: ResultRow): SharedContextRow = SharedContextRow(
     row[SharedContext.updatedBy],
     row[SharedContext.createdAt],
     row[SharedContext.updatedAt],
+)
+
+data class SyncClockRow(
+    val singleton: Boolean,
+    val lastSequence: Long,
+)
+
+fun toSyncClockRow(row: ResultRow): SyncClockRow = SyncClockRow(
+    row[SyncClock.singleton],
+    row[SyncClock.lastSequence],
+)
+
+data class SyncTombstonesRow(
+    val sequence: Long,
+    val tableName: String,
+    val rowId: String,
+    val tenantId: UUID?,
+    val ownerUserId: UUID?,
+    val rowVersion: Long,
+    val deletedAt: OffsetDateTime,
+)
+
+fun toSyncTombstonesRow(row: ResultRow): SyncTombstonesRow = SyncTombstonesRow(
+    row[SyncTombstones.sequence],
+    row[SyncTombstones.tableName],
+    row[SyncTombstones.rowId],
+    row[SyncTombstones.tenantId],
+    row[SyncTombstones.ownerUserId],
+    row[SyncTombstones.rowVersion],
+    row[SyncTombstones.deletedAt],
+)
+
+data class OrgsRow(
+    val id: UUID,
+    val slug: String,
+    val name: String,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+    val version: Long,
+    val syncSequence: Long,
+)
+
+fun toOrgsRow(row: ResultRow): OrgsRow = OrgsRow(
+    row[Orgs.id],
+    row[Orgs.slug],
+    row[Orgs.name],
+    row[Orgs.createdAt],
+    row[Orgs.updatedAt],
+    row[Orgs.version],
+    row[Orgs.syncSequence],
+)
+
+data class ProjectsRow(
+    val id: UUID,
+    val orgId: UUID,
+    val slug: String,
+    val name: String,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+    val version: Long,
+    val syncSequence: Long,
+)
+
+fun toProjectsRow(row: ResultRow): ProjectsRow = ProjectsRow(
+    row[Projects.id],
+    row[Projects.orgId],
+    row[Projects.slug],
+    row[Projects.name],
+    row[Projects.createdAt],
+    row[Projects.updatedAt],
+    row[Projects.version],
+    row[Projects.syncSequence],
+)
+
+data class UsersRow(
+    val id: UUID,
+    val supabaseUserId: UUID,
+    val email: String,
+    val createdAt: OffsetDateTime,
+)
+
+fun toUsersRow(row: ResultRow): UsersRow = UsersRow(
+    row[Users.id],
+    row[Users.supabaseUserId],
+    row[Users.email],
+    row[Users.createdAt],
+)
+
+data class OrgMembersRow(
+    val orgId: UUID,
+    val userId: UUID,
+    val role: String,
+    val createdAt: OffsetDateTime,
+)
+
+fun toOrgMembersRow(row: ResultRow): OrgMembersRow = OrgMembersRow(
+    row[OrgMembers.orgId],
+    row[OrgMembers.userId],
+    row[OrgMembers.role],
+    row[OrgMembers.createdAt],
+)
+
+data class ProjectMembersRow(
+    val projectId: UUID,
+    val userId: UUID,
+    val role: String,
+    val createdAt: OffsetDateTime,
+)
+
+fun toProjectMembersRow(row: ResultRow): ProjectMembersRow = ProjectMembersRow(
+    row[ProjectMembers.projectId],
+    row[ProjectMembers.userId],
+    row[ProjectMembers.role],
+    row[ProjectMembers.createdAt],
+)
+
+data class ApiKeysRow(
+    val id: UUID,
+    val keyId: String,
+    val orgId: UUID,
+    val projectId: UUID?,
+    val createdByUserId: UUID?,
+    val name: String,
+    val secretHash: String,
+    val scopes: String,
+    val env: String,
+    val requireIdempotency: Boolean,
+    val mtlsRequired: Boolean,
+    val revoked: Boolean,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+    val version: Long,
+    val syncSequence: Long,
+    val lastUsedAt: OffsetDateTime?,
+    val expiresAt: OffsetDateTime?,
+)
+
+fun toApiKeysRow(row: ResultRow): ApiKeysRow = ApiKeysRow(
+    row[ApiKeys.id],
+    row[ApiKeys.keyId],
+    row[ApiKeys.orgId],
+    row[ApiKeys.projectId],
+    row[ApiKeys.createdByUserId],
+    row[ApiKeys.name],
+    row[ApiKeys.secretHash],
+    row[ApiKeys.scopes],
+    row[ApiKeys.env],
+    row[ApiKeys.requireIdempotency],
+    row[ApiKeys.mtlsRequired],
+    row[ApiKeys.revoked],
+    row[ApiKeys.createdAt],
+    row[ApiKeys.updatedAt],
+    row[ApiKeys.version],
+    row[ApiKeys.syncSequence],
+    row[ApiKeys.lastUsedAt],
+    row[ApiKeys.expiresAt],
+)
+
+data class MtlsClientCertsRow(
+    val id: UUID,
+    val orgId: UUID,
+    val projectId: UUID?,
+    val name: String,
+    val subject: String,
+    val sha256Fingerprint: String,
+    val notBefore: OffsetDateTime?,
+    val notAfter: OffsetDateTime?,
+    val revoked: Boolean,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+    val version: Long,
+    val syncSequence: Long,
+)
+
+fun toMtlsClientCertsRow(row: ResultRow): MtlsClientCertsRow = MtlsClientCertsRow(
+    row[MtlsClientCerts.id],
+    row[MtlsClientCerts.orgId],
+    row[MtlsClientCerts.projectId],
+    row[MtlsClientCerts.name],
+    row[MtlsClientCerts.subject],
+    row[MtlsClientCerts.sha256Fingerprint],
+    row[MtlsClientCerts.notBefore],
+    row[MtlsClientCerts.notAfter],
+    row[MtlsClientCerts.revoked],
+    row[MtlsClientCerts.createdAt],
+    row[MtlsClientCerts.updatedAt],
+    row[MtlsClientCerts.version],
+    row[MtlsClientCerts.syncSequence],
+)
+
+data class CustomerPreferencesRow(
+    val userId: UUID,
+    val density: String,
+    val timezone: String,
+    val region: String,
+    val notifyKeyRotation: Boolean,
+    val notifyLockContention: Boolean,
+    val notifyMfa: Boolean,
+    val updatedAt: OffsetDateTime,
+    val version: Long,
+    val syncSequence: Long,
+)
+
+fun toCustomerPreferencesRow(row: ResultRow): CustomerPreferencesRow = CustomerPreferencesRow(
+    row[CustomerPreferences.userId],
+    row[CustomerPreferences.density],
+    row[CustomerPreferences.timezone],
+    row[CustomerPreferences.region],
+    row[CustomerPreferences.notifyKeyRotation],
+    row[CustomerPreferences.notifyLockContention],
+    row[CustomerPreferences.notifyMfa],
+    row[CustomerPreferences.updatedAt],
+    row[CustomerPreferences.version],
+    row[CustomerPreferences.syncSequence],
+)
+
+data class CustomerSessionsRow(
+    val id: UUID,
+    val userId: UUID,
+    val device: String,
+    val location: String?,
+    val lastSeen: OffsetDateTime,
+    val status: String,
+    val updatedAt: OffsetDateTime,
+    val version: Long,
+    val syncSequence: Long,
+)
+
+fun toCustomerSessionsRow(row: ResultRow): CustomerSessionsRow = CustomerSessionsRow(
+    row[CustomerSessions.id],
+    row[CustomerSessions.userId],
+    row[CustomerSessions.device],
+    row[CustomerSessions.location],
+    row[CustomerSessions.lastSeen],
+    row[CustomerSessions.status],
+    row[CustomerSessions.updatedAt],
+    row[CustomerSessions.version],
+    row[CustomerSessions.syncSequence],
+)
+
+data class AuditLogRow(
+    val id: UUID,
+    val orgId: UUID?,
+    val projectId: UUID?,
+    val actorUserId: UUID?,
+    val actorKeyId: UUID?,
+    val actor: String?,
+    val action: String,
+    val target: String?,
+    val requestId: String?,
+    val sourceIp: String?,
+    val userAgent: String?,
+    val meta: String,
+    val createdAt: OffsetDateTime,
+    val retentionExpiresAt: OffsetDateTime?,
+)
+
+fun toAuditLogRow(row: ResultRow): AuditLogRow = AuditLogRow(
+    row[AuditLog.id],
+    row[AuditLog.orgId],
+    row[AuditLog.projectId],
+    row[AuditLog.actorUserId],
+    row[AuditLog.actorKeyId],
+    row[AuditLog.actor],
+    row[AuditLog.action],
+    row[AuditLog.target],
+    row[AuditLog.requestId],
+    row[AuditLog.sourceIp],
+    row[AuditLog.userAgent],
+    row[AuditLog.meta],
+    row[AuditLog.createdAt],
+    row[AuditLog.retentionExpiresAt],
+)
+
+data class CustomerNotificationsRow(
+    val id: UUID,
+    val userId: UUID,
+    val orgId: UUID?,
+    val kind: String,
+    val severity: String,
+    val title: String,
+    val body: String,
+    val link: String?,
+    val readAt: OffsetDateTime?,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+    val version: Long,
+    val syncSequence: Long,
+)
+
+fun toCustomerNotificationsRow(row: ResultRow): CustomerNotificationsRow = CustomerNotificationsRow(
+    row[CustomerNotifications.id],
+    row[CustomerNotifications.userId],
+    row[CustomerNotifications.orgId],
+    row[CustomerNotifications.kind],
+    row[CustomerNotifications.severity],
+    row[CustomerNotifications.title],
+    row[CustomerNotifications.body],
+    row[CustomerNotifications.link],
+    row[CustomerNotifications.readAt],
+    row[CustomerNotifications.createdAt],
+    row[CustomerNotifications.updatedAt],
+    row[CustomerNotifications.version],
+    row[CustomerNotifications.syncSequence],
+)
+
+data class SyncIdempotencyKeysRow(
+    val key: String,
+    val requestFingerprint: String,
+    val committedVersion: Long?,
+    val createdAt: OffsetDateTime,
+)
+
+fun toSyncIdempotencyKeysRow(row: ResultRow): SyncIdempotencyKeysRow = SyncIdempotencyKeysRow(
+    row[SyncIdempotencyKeys.key],
+    row[SyncIdempotencyKeys.requestFingerprint],
+    row[SyncIdempotencyKeys.committedVersion],
+    row[SyncIdempotencyKeys.createdAt],
+)
+
+data class TranscriptionsRow(
+    val id: UUID,
+    val source: String,
+    val provider: String,
+    val model: String,
+    val text: String,
+    val language: String?,
+    val sampleRate: Int?,
+    val durationMs: Long?,
+    val createdAt: OffsetDateTime,
+)
+
+fun toTranscriptionsRow(row: ResultRow): TranscriptionsRow = TranscriptionsRow(
+    row[Transcriptions.id],
+    row[Transcriptions.source],
+    row[Transcriptions.provider],
+    row[Transcriptions.model],
+    row[Transcriptions.text],
+    row[Transcriptions.language],
+    row[Transcriptions.sampleRate],
+    row[Transcriptions.durationMs],
+    row[Transcriptions.createdAt],
+)
+
+data class SynthesesRow(
+    val id: UUID,
+    val text: String,
+    val voice: String,
+    val provider: String,
+    val model: String,
+    val format: String,
+    val audioBytes: Long,
+    val createdAt: OffsetDateTime,
+)
+
+fun toSynthesesRow(row: ResultRow): SynthesesRow = SynthesesRow(
+    row[Syntheses.id],
+    row[Syntheses.text],
+    row[Syntheses.voice],
+    row[Syntheses.provider],
+    row[Syntheses.model],
+    row[Syntheses.format],
+    row[Syntheses.audioBytes],
+    row[Syntheses.createdAt],
+)
+
+data class TranslationsRow(
+    val id: UUID,
+    val sourceText: String,
+    val translatedText: String,
+    val sourceLang: String?,
+    val targetLang: String,
+    val provider: String,
+    val model: String,
+    val latencyMs: Long,
+    val createdAt: OffsetDateTime,
+)
+
+fun toTranslationsRow(row: ResultRow): TranslationsRow = TranslationsRow(
+    row[Translations.id],
+    row[Translations.sourceText],
+    row[Translations.translatedText],
+    row[Translations.sourceLang],
+    row[Translations.targetLang],
+    row[Translations.provider],
+    row[Translations.model],
+    row[Translations.latencyMs],
+    row[Translations.createdAt],
+)
+
+data class VapiCallsRow(
+    val id: UUID,
+    val vapiCallId: String,
+    val status: String,
+    val endedReason: String?,
+    val transcript: String?,
+    val summary: String?,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+)
+
+fun toVapiCallsRow(row: ResultRow): VapiCallsRow = VapiCallsRow(
+    row[VapiCalls.id],
+    row[VapiCalls.vapiCallId],
+    row[VapiCalls.status],
+    row[VapiCalls.endedReason],
+    row[VapiCalls.transcript],
+    row[VapiCalls.summary],
+    row[VapiCalls.createdAt],
+    row[VapiCalls.updatedAt],
+)
+
+data class VapiEventsRow(
+    val id: UUID,
+    val vapiCallId: String?,
+    val eventType: String,
+    val payload: String,
+    val createdAt: OffsetDateTime,
+)
+
+fun toVapiEventsRow(row: ResultRow): VapiEventsRow = VapiEventsRow(
+    row[VapiEvents.id],
+    row[VapiEvents.vapiCallId],
+    row[VapiEvents.eventType],
+    row[VapiEvents.payload],
+    row[VapiEvents.createdAt],
+)
+
+data class FabPlansRow(
+    val id: UUID,
+    val ownerEmail: String,
+    val title: String,
+    val goal: String,
+    val processFamily: String,
+    val status: String,
+    val document: String?,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+)
+
+fun toFabPlansRow(row: ResultRow): FabPlansRow = FabPlansRow(
+    row[FabPlans.id],
+    row[FabPlans.ownerEmail],
+    row[FabPlans.title],
+    row[FabPlans.goal],
+    row[FabPlans.processFamily],
+    row[FabPlans.status],
+    row[FabPlans.document],
+    row[FabPlans.createdAt],
+    row[FabPlans.updatedAt],
+)
+
+data class FabDesignsRow(
+    val id: UUID,
+    val planId: UUID,
+    val filename: String,
+    val format: String,
+    val storageUri: String,
+    val sizeBytes: Long,
+    val contentHash: String?,
+    val geometry: String,
+    val createdAt: OffsetDateTime,
+)
+
+fun toFabDesignsRow(row: ResultRow): FabDesignsRow = FabDesignsRow(
+    row[FabDesigns.id],
+    row[FabDesigns.planId],
+    row[FabDesigns.filename],
+    row[FabDesigns.format],
+    row[FabDesigns.storageUri],
+    row[FabDesigns.sizeBytes],
+    row[FabDesigns.contentHash],
+    row[FabDesigns.geometry],
+    row[FabDesigns.createdAt],
+)
+
+data class FabInstructionsRow(
+    val id: UUID,
+    val planId: UUID,
+    val revision: Int,
+    val machineProfile: String,
+    val dialect: String,
+    val storageUri: String,
+    val contentHash: String?,
+    val validated: Boolean,
+    val validation: String,
+    val releasedByEmail: String?,
+    val releasedAt: OffsetDateTime?,
+    val createdAt: OffsetDateTime,
+)
+
+fun toFabInstructionsRow(row: ResultRow): FabInstructionsRow = FabInstructionsRow(
+    row[FabInstructions.id],
+    row[FabInstructions.planId],
+    row[FabInstructions.revision],
+    row[FabInstructions.machineProfile],
+    row[FabInstructions.dialect],
+    row[FabInstructions.storageUri],
+    row[FabInstructions.contentHash],
+    row[FabInstructions.validated],
+    row[FabInstructions.validation],
+    row[FabInstructions.releasedByEmail],
+    row[FabInstructions.releasedAt],
+    row[FabInstructions.createdAt],
+)
+
+data class FabRunsRow(
+    val id: UUID,
+    val instructionsId: UUID,
+    val status: String,
+    val machineId: String,
+    val operatorEmail: String?,
+    val progress: Short,
+    val asBuilt: String,
+    val error: String?,
+    val startedAt: OffsetDateTime?,
+    val finishedAt: OffsetDateTime?,
+    val createdAt: OffsetDateTime,
+)
+
+fun toFabRunsRow(row: ResultRow): FabRunsRow = FabRunsRow(
+    row[FabRuns.id],
+    row[FabRuns.instructionsId],
+    row[FabRuns.status],
+    row[FabRuns.machineId],
+    row[FabRuns.operatorEmail],
+    row[FabRuns.progress],
+    row[FabRuns.asBuilt],
+    row[FabRuns.error],
+    row[FabRuns.startedAt],
+    row[FabRuns.finishedAt],
+    row[FabRuns.createdAt],
 )

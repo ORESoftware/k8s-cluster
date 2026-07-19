@@ -55,6 +55,27 @@ pub const BLOCKCHAIN_INDEX_EVENTS_SUBJECT: &str = "dd.remote.blockchain.index.ev
 /// Service: dd-contract-service
 pub const BLOCKCHAIN_MEV_ALERTS_SUBJECT: &str = "dd.remote.blockchain.mev.alerts";
 
+/// Shared result fanout receiving every browser-job terminal result.
+/// Service: dd-browser-job-runner
+pub const BROWSER_JOB_RESULTS_SUBJECT: &str = "dd.remote.browser_jobs.results";
+
+/// Redacted build lifecycle events (queued/running/succeeded/failed) published by the build server. Default for BUILD_SERVER_NATS_EVENT_SUBJECT.
+/// Service: dd-build-server
+pub const BUILD_SERVER_EVENTS_SUBJECT: &str = "dd.remote.build_server.events";
+
+/// Redacted container-image registry events (ECR / docker registry webhook pushes) relayed by the build server. Default for BUILD_SERVER_NATS_IMAGE_SUBJECT.
+/// Service: dd-build-server
+pub const BUILD_SERVER_IMAGES_SUBJECT: &str = "dd.remote.build_server.images";
+
+/// Durable build-request intake. Producers publish a build-server.v1 job document; build-server replicas consume via the shared queue group / durable JetStream consumer. Default for BUILD_SERVER_NATS_REQUEST_SUBJECT.
+/// Service: dd-build-server
+pub const BUILD_SERVER_REQUESTS_SUBJECT: &str = "dd.remote.build_server.requests";
+pub const BUILD_SERVER_REQUESTS_QUEUE_GROUP: &str = "dd-build-server";
+
+/// Terminal build results (succeeded/failed with jobId and error summary) for NATS-submitted and webhook-submitted jobs. Default for BUILD_SERVER_NATS_RESULT_SUBJECT.
+/// Service: dd-build-server
+pub const BUILD_SERVER_RESULTS_SUBJECT: &str = "dd.remote.build_server.results";
+
 /// Per-fault lifecycle events (selected, injected, restored, aborted-by-guard) emitted by the chaos loops.
 /// Service: dd-chaos
 pub const CHAOS_EVENTS_SUBJECT: &str = "dd.remote.chaos.events";
@@ -111,8 +132,7 @@ pub const CONTRACTS_SOLANA_SETTLE_QUEUE_GROUP: &str = "dd-contract-service";
 
 /// Published settlement and dispute-resolution outcomes, including on-chain confirmation status. Default for CONTRACT_SETTLEMENT_RESULT_SUBJECT.
 /// Service: dd-contract-service
-pub const CONTRACTS_SOLANA_SETTLEMENT_RESULTS_SUBJECT: &str =
-    "dd.remote.contracts.solana.settlement.results";
+pub const CONTRACTS_SOLANA_SETTLEMENT_RESULTS_SUBJECT: &str = "dd.remote.contracts.solana.settlement.results";
 
 /// Validation requests for solana.contract.v1 instruction envelopes. Default for CONTRACT_VALIDATE_SUBJECT.
 /// Service: dd-contract-service
@@ -147,8 +167,7 @@ pub const DATA_VIZ_ALERTS_EVENTS_SUBJECT: &str = "dd.remote.dataviz.alerts.event
 
 /// Outbound notification-dispatch summaries published when an alert dispatch is processed. The dd-data-viz-notifiers queue group is reserved for a future notifier worker (no in-tree consumer yet); when added it will deliver each dispatch once. The payload is the dispatch summary (ids, status, counts) — the per-contact attempt list stays off this subject.
 /// Service: dd-data-viz-rs
-pub const DATA_VIZ_NOTIFICATIONS_DISPATCH_SUBJECT: &str =
-    "dd.remote.dataviz.notifications.dispatch";
+pub const DATA_VIZ_NOTIFICATIONS_DISPATCH_SUBJECT: &str = "dd.remote.dataviz.notifications.dispatch";
 pub const DATA_VIZ_NOTIFICATIONS_DISPATCH_QUEUE_GROUP: &str = "dd-data-viz-notifiers";
 
 /// Fan-out emitted when a publish request is saved or reviewed. Carries the publish-request summary (request/target ids, target title, requester, reviewer, status) — never the rendered payload or the free-text notes/review comment.
@@ -163,6 +182,15 @@ pub const DES_RESULTS_SUBJECT: &str = "dd.remote.des.results";
 /// Service: dd-ai-ml-pipeline
 pub const DES_SIMULATE_SUBJECT: &str = "dd.remote.des.simulate";
 pub const DES_SIMULATE_QUEUE_GROUP: &str = "dd-des-simulator";
+
+/// Document conversion requests consumed by dd-document-rs replicas.
+/// Service: dd-document-rs
+pub const DOCUMENT_CONVERT_REQUESTS_SUBJECT: &str = "dd.remote.document.convert";
+pub const DOCUMENT_CONVERT_REQUESTS_QUEUE_GROUP: &str = "dd-document-rs";
+
+/// Document conversion results published after a request completes or fails.
+/// Service: dd-document-rs
+pub const DOCUMENT_CONVERT_RESULTS_SUBJECT: &str = "dd.remote.document.results";
 
 /// Inbound forecast/recommendation requests consumed by the economics server. Subscribed with the dd-economics-server queue group so requests load-balance across replicas. Default for ECONOMICS_FORECAST_REQUEST_SUBJECT.
 /// Service: dd-economics-server
@@ -209,122 +237,93 @@ pub const EVOLUTION_RESULTS_STREAM: &str = "DD_REMOTE_EVOLUTION";
 
 /// Hybrid assembly and process-decomposition requests for workers that split, combine, join, and sequence printed, milled, turned, sheet-cut, and postprocessed parts.
 /// Service: dd-fabrication-server
-pub const FABRICATION_ASSEMBLY_PLANNING_REQUESTS_SUBJECT: &str =
-    "dd.remote.fabrication.assembly.planning.requests";
-pub const FABRICATION_ASSEMBLY_PLANNING_REQUESTS_QUEUE_GROUP: &str =
-    "dd-fabrication-assembly-planners";
+pub const FABRICATION_ASSEMBLY_PLANNING_REQUESTS_SUBJECT: &str = "dd.remote.fabrication.assembly.planning.requests";
+pub const FABRICATION_ASSEMBLY_PLANNING_REQUESTS_QUEUE_GROUP: &str = "dd-fabrication-assembly-planners";
 
 /// Hybrid assembly and process-decomposition results carrying part splits, joins, process sequences, learning state, blockers, and release metadata.
 /// Service: dd-fabrication-server
-pub const FABRICATION_ASSEMBLY_PLANNING_RESULTS_SUBJECT: &str =
-    "dd.remote.fabrication.assembly.planning.results";
+pub const FABRICATION_ASSEMBLY_PLANNING_RESULTS_SUBJECT: &str = "dd.remote.fabrication.assembly.planning.results";
 
 /// Design input conversion requests for CAD, mesh, slicer, CAM setup, and neutral export workers.
 /// Service: dd-fabrication-server
-pub const FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT: &str =
-    "dd.remote.fabrication.design.conversion.requests";
-pub const FABRICATION_DESIGN_CONVERSION_REQUESTS_QUEUE_GROUP: &str =
-    "dd-fabrication-design-converters";
+pub const FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT: &str = "dd.remote.fabrication.design.conversion.requests";
+pub const FABRICATION_DESIGN_CONVERSION_REQUESTS_QUEUE_GROUP: &str = "dd-fabrication-design-converters";
 
 /// Design input conversion results carrying neutral exports, translator evidence, blockers, and review metadata.
 /// Service: dd-fabrication-server
-pub const FABRICATION_DESIGN_CONVERSION_RESULTS_SUBJECT: &str =
-    "dd.remote.fabrication.design.conversion.results";
+pub const FABRICATION_DESIGN_CONVERSION_RESULTS_SUBJECT: &str = "dd.remote.fabrication.design.conversion.results";
 
 /// Design synthesis requests for workers that turn fabrication intent, constraints, parametric templates, learning hints, and CAD references into generated design candidates.
 /// Service: dd-fabrication-server
-pub const FABRICATION_DESIGN_SYNTHESIS_REQUESTS_SUBJECT: &str =
-    "dd.remote.fabrication.design.synthesis.requests";
-pub const FABRICATION_DESIGN_SYNTHESIS_REQUESTS_QUEUE_GROUP: &str =
-    "dd-fabrication-design-synthesizers";
+pub const FABRICATION_DESIGN_SYNTHESIS_REQUESTS_SUBJECT: &str = "dd.remote.fabrication.design.synthesis.requests";
+pub const FABRICATION_DESIGN_SYNTHESIS_REQUESTS_QUEUE_GROUP: &str = "dd-fabrication-design-synthesizers";
 
 /// Design synthesis results carrying generated design candidates, parametric source artifacts, manufacturability evidence, blockers, and review metadata.
 /// Service: dd-fabrication-server
-pub const FABRICATION_DESIGN_SYNTHESIS_RESULTS_SUBJECT: &str =
-    "dd.remote.fabrication.design.synthesis.results";
+pub const FABRICATION_DESIGN_SYNTHESIS_RESULTS_SUBJECT: &str = "dd.remote.fabrication.design.synthesis.results";
 
 /// Fabrication execution telemetry requests for live printer, mill, lathe, router, sheet-cutting, assembly, inspection, and postprocess run result reviewers.
 /// Service: dd-fabrication-server
-pub const FABRICATION_EXECUTION_TELEMETRY_REQUESTS_SUBJECT: &str =
-    "dd.remote.fabrication.execution.telemetry.requests";
-pub const FABRICATION_EXECUTION_TELEMETRY_REQUESTS_QUEUE_GROUP: &str =
-    "dd-fabrication-execution-reviewers";
+pub const FABRICATION_EXECUTION_TELEMETRY_REQUESTS_SUBJECT: &str = "dd.remote.fabrication.execution.telemetry.requests";
+pub const FABRICATION_EXECUTION_TELEMETRY_REQUESTS_QUEUE_GROUP: &str = "dd-fabrication-execution-reviewers";
 
 /// Fabrication execution telemetry results carrying observed run state, machine stops, operator interventions, split/combine decisions, artifacts, and learning labels.
 /// Service: dd-fabrication-server
-pub const FABRICATION_EXECUTION_TELEMETRY_RESULTS_SUBJECT: &str =
-    "dd.remote.fabrication.execution.telemetry.results";
+pub const FABRICATION_EXECUTION_TELEMETRY_RESULTS_SUBJECT: &str = "dd.remote.fabrication.execution.telemetry.results";
 
 /// Instruction generation requests for slicer, CAM, postprocess, setup-sheet, and machine-code workers.
 /// Service: dd-fabrication-server
-pub const FABRICATION_INSTRUCTION_GENERATION_REQUESTS_SUBJECT: &str =
-    "dd.remote.fabrication.instructions.generation.requests";
-pub const FABRICATION_INSTRUCTION_GENERATION_REQUESTS_QUEUE_GROUP: &str =
-    "dd-fabrication-instruction-generators";
+pub const FABRICATION_INSTRUCTION_GENERATION_REQUESTS_SUBJECT: &str = "dd.remote.fabrication.instructions.generation.requests";
+pub const FABRICATION_INSTRUCTION_GENERATION_REQUESTS_QUEUE_GROUP: &str = "dd-fabrication-instruction-generators";
 
 /// Instruction generation results carrying machine code, setup sheets, simulation evidence, blockers, and release metadata.
 /// Service: dd-fabrication-server
-pub const FABRICATION_INSTRUCTION_GENERATION_RESULTS_SUBJECT: &str =
-    "dd.remote.fabrication.instructions.generation.results";
+pub const FABRICATION_INSTRUCTION_GENERATION_RESULTS_SUBJECT: &str = "dd.remote.fabrication.instructions.generation.results";
 
 /// Imported fabrication instruction review requests for existing G-code, NC programs, slicer files, setup sheets, sheet-cutting jobs, and operator instructions.
 /// Service: dd-fabrication-server
-pub const FABRICATION_INSTRUCTION_REVIEW_REQUESTS_SUBJECT: &str =
-    "dd.remote.fabrication.instructions.review.requests";
-pub const FABRICATION_INSTRUCTION_REVIEW_REQUESTS_QUEUE_GROUP: &str =
-    "dd-fabrication-instruction-reviewers";
+pub const FABRICATION_INSTRUCTION_REVIEW_REQUESTS_SUBJECT: &str = "dd.remote.fabrication.instructions.review.requests";
+pub const FABRICATION_INSTRUCTION_REVIEW_REQUESTS_QUEUE_GROUP: &str = "dd-fabrication-instruction-reviewers";
 
 /// Imported fabrication instruction review results carrying validation findings, improvement drafts, machine-failure boundaries, and release blockers.
 /// Service: dd-fabrication-server
-pub const FABRICATION_INSTRUCTION_REVIEW_RESULTS_SUBJECT: &str =
-    "dd.remote.fabrication.instructions.review.results";
+pub const FABRICATION_INSTRUCTION_REVIEW_RESULTS_SUBJECT: &str = "dd.remote.fabrication.instructions.review.results";
 
 /// Instruction simulation and verification requests for generated or imported printer jobs, G-code, NC programs, lathe cycles, sheet-cutting files, and setup evidence.
 /// Service: dd-fabrication-server
-pub const FABRICATION_INSTRUCTION_SIMULATION_REQUESTS_SUBJECT: &str =
-    "dd.remote.fabrication.instructions.simulation.requests";
-pub const FABRICATION_INSTRUCTION_SIMULATION_REQUESTS_QUEUE_GROUP: &str =
-    "dd-fabrication-instruction-simulators";
+pub const FABRICATION_INSTRUCTION_SIMULATION_REQUESTS_SUBJECT: &str = "dd.remote.fabrication.instructions.simulation.requests";
+pub const FABRICATION_INSTRUCTION_SIMULATION_REQUESTS_QUEUE_GROUP: &str = "dd-fabrication-instruction-simulators";
 
 /// Instruction simulation and verification results carrying machine-envelope checks, toolpath/process findings, failure boundaries, and release blockers.
 /// Service: dd-fabrication-server
-pub const FABRICATION_INSTRUCTION_SIMULATION_RESULTS_SUBJECT: &str =
-    "dd.remote.fabrication.instructions.simulation.results";
+pub const FABRICATION_INSTRUCTION_SIMULATION_RESULTS_SUBJECT: &str = "dd.remote.fabrication.instructions.simulation.results";
 
 /// Fabrication outcome learning requests for MDP, POMDP, neural-policy, reward, replay, and failure-boundary updaters.
 /// Service: dd-fabrication-server
-pub const FABRICATION_LEARNING_OUTCOME_REQUESTS_SUBJECT: &str =
-    "dd.remote.fabrication.learning.outcomes.requests";
-pub const FABRICATION_LEARNING_OUTCOME_REQUESTS_QUEUE_GROUP: &str =
-    "dd-fabrication-learning-updaters";
+pub const FABRICATION_LEARNING_OUTCOME_REQUESTS_SUBJECT: &str = "dd.remote.fabrication.learning.outcomes.requests";
+pub const FABRICATION_LEARNING_OUTCOME_REQUESTS_QUEUE_GROUP: &str = "dd-fabrication-learning-updaters";
 
 /// Fabrication outcome learning results carrying accepted model updates, replay labels, reward summaries, and retained failure boundaries.
 /// Service: dd-fabrication-server
-pub const FABRICATION_LEARNING_OUTCOME_RESULTS_SUBJECT: &str =
-    "dd.remote.fabrication.learning.outcomes.results";
+pub const FABRICATION_LEARNING_OUTCOME_RESULTS_SUBJECT: &str = "dd.remote.fabrication.learning.outcomes.results";
 
 /// Machine capability, calibration, fixture, tool, material, and maintenance profile requests for printers, mills, lathes, routers, sheet cutters, postprocess stations, and inspection equipment.
 /// Service: dd-fabrication-server
-pub const FABRICATION_MACHINE_PROFILE_REQUESTS_SUBJECT: &str =
-    "dd.remote.fabrication.machine.profiles.requests";
-pub const FABRICATION_MACHINE_PROFILE_REQUESTS_QUEUE_GROUP: &str =
-    "dd-fabrication-machine-profilers";
+pub const FABRICATION_MACHINE_PROFILE_REQUESTS_SUBJECT: &str = "dd.remote.fabrication.machine.profiles.requests";
+pub const FABRICATION_MACHINE_PROFILE_REQUESTS_QUEUE_GROUP: &str = "dd-fabrication-machine-profilers";
 
 /// Machine profile results carrying capability snapshots, calibration state, tool and fixture readiness, material/process state, maintenance blockers, and release evidence.
 /// Service: dd-fabrication-server
-pub const FABRICATION_MACHINE_PROFILE_RESULTS_SUBJECT: &str =
-    "dd.remote.fabrication.machine.profiles.results";
+pub const FABRICATION_MACHINE_PROFILE_RESULTS_SUBJECT: &str = "dd.remote.fabrication.machine.profiles.results";
 
 /// Final fabrication release readiness requests that aggregate design, assembly, instruction, review, learning, machine, operator, and evidence state before machine-ready release.
 /// Service: dd-fabrication-server
-pub const FABRICATION_RELEASE_READINESS_REQUESTS_SUBJECT: &str =
-    "dd.remote.fabrication.release.readiness.requests";
+pub const FABRICATION_RELEASE_READINESS_REQUESTS_SUBJECT: &str = "dd.remote.fabrication.release.readiness.requests";
 pub const FABRICATION_RELEASE_READINESS_REQUESTS_QUEUE_GROUP: &str = "dd-fabrication-release-gates";
 
 /// Final fabrication release readiness results carrying release decisions, required human interventions, retained blockers, and machine-ready manifests.
 /// Service: dd-fabrication-server
-pub const FABRICATION_RELEASE_READINESS_RESULTS_SUBJECT: &str =
-    "dd.remote.fabrication.release.readiness.results";
+pub const FABRICATION_RELEASE_READINESS_RESULTS_SUBJECT: &str = "dd.remote.fabrication.release.readiness.results";
 
 /// Fabrication planning requests. Default for FABRICATION_REQUEST_SUBJECT.
 /// Service: dd-fabrication-server
@@ -454,6 +453,15 @@ pub const MUSIC_SONGS_PUBLISHED_SUBJECT: &str = "dd.remote.music.songs.published
 /// Service: dd-music-rs
 pub const MUSIC_VOTES_EVENTS_SUBJECT: &str = "dd.remote.music.votes.events";
 
+/// OCR requests consumed by dd-ocr-rs replicas.
+/// Service: dd-ocr-rs
+pub const OCR_REQUESTS_SUBJECT: &str = "dd.remote.ocr.requests";
+pub const OCR_REQUESTS_QUEUE_GROUP: &str = "dd-ocr-rs";
+
+/// OCR results published after a request completes or fails.
+/// Service: dd-ocr-rs
+pub const OCR_RESULTS_SUBJECT: &str = "dd.remote.ocr.results";
+
 /// Wakeup signal published whenever a new task is enqueued for a thread, so the orchestrator can prepare/scale the matching worker deployment without polling.
 /// Service: dd-remote-rest-api
 pub const ORCHESTRATOR_WAKEUP_SUBJECT: &str = "dd.remote.orchestrator.wakeup";
@@ -462,6 +470,10 @@ pub const ORCHESTRATOR_WAKEUP_STREAM: &str = "DD_REMOTE_CONTROL";
 /// Trend, correlation, grant-match, graph-data, model, and white-paper evidence results from public-data analysis runs.
 /// Service: dd-public-data-server
 pub const PUBLIC_DATA_ANALYSIS_RESULTS_SUBJECT: &str = "dd.remote.public_data.analysis.results";
+
+/// Dead-letter subject for public-data ingest requests that exhaust JetStream delivery attempts.
+/// Service: dd-public-data-server
+pub const PUBLIC_DATA_INGEST_DEAD_LETTER_SUBJECT: &str = "dd.remote.public_data.ingest.deadletter";
 
 /// Inbound public-data ingestion requests accepted over NATS. Payloads mirror the HTTP /ingest and /scrape contracts.
 /// Service: dd-public-data-server
@@ -597,6 +609,82 @@ pub const WORKFLOWS_START_QUEUE_GROUP: &str = "dd-gleam-workflow-engine";
 
 // ---------- Parameterized subjects ----------
 
+/// Per-job lifecycle and progress events emitted by the isolated browser worker.
+/// Service: dd-browser-job-runner
+pub const BROWSER_JOB_EVENTS_PATTERN: &str = "dd.remote.browser_jobs.{job_id}.events";
+pub const BROWSER_JOB_EVENTS_WILDCARD: &str = "dd.remote.browser_jobs.*.events";
+pub fn browser_job_events_subject(job_id: &str) -> String {
+    format!("dd.remote.browser_jobs.{}.events", job_id)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrowserJobEventsSubjectParts {
+    pub job_id: String,
+}
+
+pub fn parse_browser_job_events_subject(subject: &str) -> Option<BrowserJobEventsSubjectParts> {
+    let pattern_tokens: &[&str] = &["dd", "remote", "browser_jobs", "{job_id}", "events"];
+    let subject_tokens: Vec<&str> = subject.split('.').collect();
+    let mut job_id: Option<String> = None;
+    let mut si: usize = 0;
+    for tok in pattern_tokens.iter() {
+        if tok.starts_with('{') && tok.ends_with('}') {
+            if si >= subject_tokens.len() { return None; }
+            let name = &tok[1..tok.len()-1];
+            match name {
+                "job_id" => { job_id = Some(subject_tokens[si].to_string()); }
+                _ => return None,
+            }
+            si += 1;
+            continue;
+        }
+        if si >= subject_tokens.len() || subject_tokens[si] != *tok { return None; }
+        si += 1;
+    }
+    if si != subject_tokens.len() { return None; }
+    Some(BrowserJobEventsSubjectParts {
+        job_id: job_id?,
+    })
+}
+
+/// Per-job terminal result emitted by the isolated browser worker.
+/// Service: dd-browser-job-runner
+pub const BROWSER_JOB_RESULT_PATTERN: &str = "dd.remote.browser_jobs.{job_id}.result";
+pub const BROWSER_JOB_RESULT_WILDCARD: &str = "dd.remote.browser_jobs.*.result";
+pub fn browser_job_result_subject(job_id: &str) -> String {
+    format!("dd.remote.browser_jobs.{}.result", job_id)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrowserJobResultSubjectParts {
+    pub job_id: String,
+}
+
+pub fn parse_browser_job_result_subject(subject: &str) -> Option<BrowserJobResultSubjectParts> {
+    let pattern_tokens: &[&str] = &["dd", "remote", "browser_jobs", "{job_id}", "result"];
+    let subject_tokens: Vec<&str> = subject.split('.').collect();
+    let mut job_id: Option<String> = None;
+    let mut si: usize = 0;
+    for tok in pattern_tokens.iter() {
+        if tok.starts_with('{') && tok.ends_with('}') {
+            if si >= subject_tokens.len() { return None; }
+            let name = &tok[1..tok.len()-1];
+            match name {
+                "job_id" => { job_id = Some(subject_tokens[si].to_string()); }
+                _ => return None,
+            }
+            si += 1;
+            continue;
+        }
+        if si >= subject_tokens.len() || subject_tokens[si] != *tok { return None; }
+        si += 1;
+    }
+    if si != subject_tokens.len() { return None; }
+    Some(BrowserJobResultSubjectParts {
+        job_id: job_id?,
+    })
+}
+
 /// Per-row change emitted by wal-gateway. Subject pattern is '<prefix>.<schema>.<table>.<op>'. The default prefix is 'cdc' and the default stream name is 'CDC'. Consumers usually subscribe to the prefix tail wildcard ('cdc.>').
 /// Service: dd-wal-gateway
 pub const CDC_ROW_CHANGE_PATTERN: &str = "{prefix}.{schema}.{table}.{op}";
@@ -604,6 +692,10 @@ pub const CDC_ROW_CHANGE_WILDCARD: &str = "{prefix}.>";
 pub const CDC_ROW_CHANGE_STREAM: &str = "CDC";
 pub fn cdc_row_change_subject(prefix: &str, schema: &str, table: &str, op: &str) -> String {
     format!("{}.{}.{}.{}", prefix, schema, table, op)
+}
+
+pub fn format_cdc_row_change_wildcard(prefix: &str) -> String {
+    format!("{}.>", prefix)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -624,36 +716,22 @@ pub fn parse_cdc_row_change_subject(subject: &str) -> Option<CdcRowChangeSubject
     let mut si: usize = 0;
     for tok in pattern_tokens.iter() {
         if tok.starts_with('{') && tok.ends_with('}') {
-            if si >= subject_tokens.len() {
-                return None;
-            }
-            let name = &tok[1..tok.len() - 1];
+            if si >= subject_tokens.len() { return None; }
+            let name = &tok[1..tok.len()-1];
             match name {
-                "prefix" => {
-                    prefix = Some(subject_tokens[si].to_string());
-                }
-                "schema" => {
-                    schema = Some(subject_tokens[si].to_string());
-                }
-                "table" => {
-                    table = Some(subject_tokens[si].to_string());
-                }
-                "op" => {
-                    op = Some(subject_tokens[si].to_string());
-                }
+                "prefix" => { prefix = Some(subject_tokens[si].to_string()); }
+                "schema" => { schema = Some(subject_tokens[si].to_string()); }
+                "table" => { table = Some(subject_tokens[si].to_string()); }
+                "op" => { op = Some(subject_tokens[si].to_string()); }
                 _ => return None,
             }
             si += 1;
             continue;
         }
-        if si >= subject_tokens.len() || subject_tokens[si] != *tok {
-            return None;
-        }
+        if si >= subject_tokens.len() || subject_tokens[si] != *tok { return None; }
         si += 1;
     }
-    if si != subject_tokens.len() {
-        return None;
-    }
+    if si != subject_tokens.len() { return None; }
     Some(CdcRowChangeSubjectParts {
         prefix: prefix?,
         schema: schema?,
@@ -669,6 +747,10 @@ pub const CDC_TABLE_FILTER_WILDCARD: &str = "{prefix}.>";
 pub const CDC_TABLE_FILTER_STREAM: &str = "CDC";
 pub fn cdc_table_filter_subject(prefix: &str, schema: &str, table: &str) -> String {
     format!("{}.{}.{}.>", prefix, schema, table)
+}
+
+pub fn format_cdc_table_filter_wildcard(prefix: &str) -> String {
+    format!("{}.>", prefix)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -687,33 +769,21 @@ pub fn parse_cdc_table_filter_subject(subject: &str) -> Option<CdcTableFilterSub
     let mut si: usize = 0;
     for tok in pattern_tokens.iter() {
         if tok.starts_with('{') && tok.ends_with('}') {
-            if si >= subject_tokens.len() {
-                return None;
-            }
-            let name = &tok[1..tok.len() - 1];
+            if si >= subject_tokens.len() { return None; }
+            let name = &tok[1..tok.len()-1];
             match name {
-                "prefix" => {
-                    prefix = Some(subject_tokens[si].to_string());
-                }
-                "schema" => {
-                    schema = Some(subject_tokens[si].to_string());
-                }
-                "table" => {
-                    table = Some(subject_tokens[si].to_string());
-                }
+                "prefix" => { prefix = Some(subject_tokens[si].to_string()); }
+                "schema" => { schema = Some(subject_tokens[si].to_string()); }
+                "table" => { table = Some(subject_tokens[si].to_string()); }
                 _ => return None,
             }
             si += 1;
             continue;
         }
-        if si >= subject_tokens.len() || subject_tokens[si] != *tok {
-            return None;
-        }
+        if si >= subject_tokens.len() || subject_tokens[si] != *tok { return None; }
         si += 1;
     }
-    if si != subject_tokens.len() {
-        return None;
-    }
+    if si != subject_tokens.len() { return None; }
     Some(CdcTableFilterSubjectParts {
         prefix: prefix?,
         schema: schema?,
@@ -734,36 +804,26 @@ pub struct ContainerPoolEventsSubjectParts {
     pub pool_slug: String,
 }
 
-pub fn parse_container_pool_events_subject(
-    subject: &str,
-) -> Option<ContainerPoolEventsSubjectParts> {
+pub fn parse_container_pool_events_subject(subject: &str) -> Option<ContainerPoolEventsSubjectParts> {
     let pattern_tokens: &[&str] = &["dd", "remote", "container_pool", "{pool_slug}", "events"];
     let subject_tokens: Vec<&str> = subject.split('.').collect();
     let mut pool_slug: Option<String> = None;
     let mut si: usize = 0;
     for tok in pattern_tokens.iter() {
         if tok.starts_with('{') && tok.ends_with('}') {
-            if si >= subject_tokens.len() {
-                return None;
-            }
-            let name = &tok[1..tok.len() - 1];
+            if si >= subject_tokens.len() { return None; }
+            let name = &tok[1..tok.len()-1];
             match name {
-                "pool_slug" => {
-                    pool_slug = Some(subject_tokens[si].to_string());
-                }
+                "pool_slug" => { pool_slug = Some(subject_tokens[si].to_string()); }
                 _ => return None,
             }
             si += 1;
             continue;
         }
-        if si >= subject_tokens.len() || subject_tokens[si] != *tok {
-            return None;
-        }
+        if si >= subject_tokens.len() || subject_tokens[si] != *tok { return None; }
         si += 1;
     }
-    if si != subject_tokens.len() {
-        return None;
-    }
+    if si != subject_tokens.len() { return None; }
     Some(ContainerPoolEventsSubjectParts {
         pool_slug: pool_slug?,
     })
@@ -771,8 +831,7 @@ pub fn parse_container_pool_events_subject(
 
 /// Per-pool heartbeat subject (built from pool slug at runtime).
 /// Service: dd-container-pool
-pub const CONTAINER_POOL_HEARTBEATS_PATTERN: &str =
-    "dd.remote.container_pool.{pool_slug}.heartbeats";
+pub const CONTAINER_POOL_HEARTBEATS_PATTERN: &str = "dd.remote.container_pool.{pool_slug}.heartbeats";
 pub const CONTAINER_POOL_HEARTBEATS_WILDCARD: &str = "dd.remote.container_pool.*.heartbeats";
 pub fn container_pool_heartbeats_subject(pool_slug: &str) -> String {
     format!("dd.remote.container_pool.{}.heartbeats", pool_slug)
@@ -783,42 +842,26 @@ pub struct ContainerPoolHeartbeatsSubjectParts {
     pub pool_slug: String,
 }
 
-pub fn parse_container_pool_heartbeats_subject(
-    subject: &str,
-) -> Option<ContainerPoolHeartbeatsSubjectParts> {
-    let pattern_tokens: &[&str] = &[
-        "dd",
-        "remote",
-        "container_pool",
-        "{pool_slug}",
-        "heartbeats",
-    ];
+pub fn parse_container_pool_heartbeats_subject(subject: &str) -> Option<ContainerPoolHeartbeatsSubjectParts> {
+    let pattern_tokens: &[&str] = &["dd", "remote", "container_pool", "{pool_slug}", "heartbeats"];
     let subject_tokens: Vec<&str> = subject.split('.').collect();
     let mut pool_slug: Option<String> = None;
     let mut si: usize = 0;
     for tok in pattern_tokens.iter() {
         if tok.starts_with('{') && tok.ends_with('}') {
-            if si >= subject_tokens.len() {
-                return None;
-            }
-            let name = &tok[1..tok.len() - 1];
+            if si >= subject_tokens.len() { return None; }
+            let name = &tok[1..tok.len()-1];
             match name {
-                "pool_slug" => {
-                    pool_slug = Some(subject_tokens[si].to_string());
-                }
+                "pool_slug" => { pool_slug = Some(subject_tokens[si].to_string()); }
                 _ => return None,
             }
             si += 1;
             continue;
         }
-        if si >= subject_tokens.len() || subject_tokens[si] != *tok {
-            return None;
-        }
+        if si >= subject_tokens.len() || subject_tokens[si] != *tok { return None; }
         si += 1;
     }
-    if si != subject_tokens.len() {
-        return None;
-    }
+    if si != subject_tokens.len() { return None; }
     Some(ContainerPoolHeartbeatsSubjectParts {
         pool_slug: pool_slug?,
     })
@@ -826,8 +869,7 @@ pub fn parse_container_pool_heartbeats_subject(
 
 /// Per-runtime pool request subject (e.g. nodejs, rust, golang, dart, gleamlang, erlang). Seeded by container-pool-app-config.
 /// Service: dd-container-pool
-pub const CONTAINER_POOL_LANGUAGE_REQUESTS_PATTERN: &str =
-    "dd.remote.container_pool.{language}.requests";
+pub const CONTAINER_POOL_LANGUAGE_REQUESTS_PATTERN: &str = "dd.remote.container_pool.{language}.requests";
 pub const CONTAINER_POOL_LANGUAGE_REQUESTS_WILDCARD: &str = "dd.remote.container_pool.*.requests";
 pub fn container_pool_language_requests_subject(language: &str) -> String {
     format!("dd.remote.container_pool.{}.requests", language)
@@ -838,36 +880,26 @@ pub struct ContainerPoolLanguageRequestsSubjectParts {
     pub language: String,
 }
 
-pub fn parse_container_pool_language_requests_subject(
-    subject: &str,
-) -> Option<ContainerPoolLanguageRequestsSubjectParts> {
+pub fn parse_container_pool_language_requests_subject(subject: &str) -> Option<ContainerPoolLanguageRequestsSubjectParts> {
     let pattern_tokens: &[&str] = &["dd", "remote", "container_pool", "{language}", "requests"];
     let subject_tokens: Vec<&str> = subject.split('.').collect();
     let mut language: Option<String> = None;
     let mut si: usize = 0;
     for tok in pattern_tokens.iter() {
         if tok.starts_with('{') && tok.ends_with('}') {
-            if si >= subject_tokens.len() {
-                return None;
-            }
-            let name = &tok[1..tok.len() - 1];
+            if si >= subject_tokens.len() { return None; }
+            let name = &tok[1..tok.len()-1];
             match name {
-                "language" => {
-                    language = Some(subject_tokens[si].to_string());
-                }
+                "language" => { language = Some(subject_tokens[si].to_string()); }
                 _ => return None,
             }
             si += 1;
             continue;
         }
-        if si >= subject_tokens.len() || subject_tokens[si] != *tok {
-            return None;
-        }
+        if si >= subject_tokens.len() || subject_tokens[si] != *tok { return None; }
         si += 1;
     }
-    if si != subject_tokens.len() {
-        return None;
-    }
+    if si != subject_tokens.len() { return None; }
     Some(ContainerPoolLanguageRequestsSubjectParts {
         language: language?,
     })
@@ -894,27 +926,19 @@ pub fn parse_lambdas_invoke_subject(subject: &str) -> Option<LambdasInvokeSubjec
     let mut si: usize = 0;
     for tok in pattern_tokens.iter() {
         if tok.starts_with('{') && tok.ends_with('}') {
-            if si >= subject_tokens.len() {
-                return None;
-            }
-            let name = &tok[1..tok.len() - 1];
+            if si >= subject_tokens.len() { return None; }
+            let name = &tok[1..tok.len()-1];
             match name {
-                "function_name" => {
-                    function_name = Some(subject_tokens[si].to_string());
-                }
+                "function_name" => { function_name = Some(subject_tokens[si].to_string()); }
                 _ => return None,
             }
             si += 1;
             continue;
         }
-        if si >= subject_tokens.len() || subject_tokens[si] != *tok {
-            return None;
-        }
+        if si >= subject_tokens.len() || subject_tokens[si] != *tok { return None; }
         si += 1;
     }
-    if si != subject_tokens.len() {
-        return None;
-    }
+    if si != subject_tokens.len() { return None; }
     Some(LambdasInvokeSubjectParts {
         function_name: function_name?,
     })
@@ -933,37 +957,29 @@ pub struct PresenceBroadcastConvSubjectParts {
     pub conv_id: String,
 }
 
-pub fn parse_presence_broadcast_conv_subject(
-    subject: &str,
-) -> Option<PresenceBroadcastConvSubjectParts> {
+pub fn parse_presence_broadcast_conv_subject(subject: &str) -> Option<PresenceBroadcastConvSubjectParts> {
     let pattern_tokens: &[&str] = &["presence", "broadcast", "conv", "{conv_id}"];
     let subject_tokens: Vec<&str> = subject.split('.').collect();
     let mut conv_id: Option<String> = None;
     let mut si: usize = 0;
     for tok in pattern_tokens.iter() {
         if tok.starts_with('{') && tok.ends_with('}') {
-            if si >= subject_tokens.len() {
-                return None;
-            }
-            let name = &tok[1..tok.len() - 1];
+            if si >= subject_tokens.len() { return None; }
+            let name = &tok[1..tok.len()-1];
             match name {
-                "conv_id" => {
-                    conv_id = Some(subject_tokens[si].to_string());
-                }
+                "conv_id" => { conv_id = Some(subject_tokens[si].to_string()); }
                 _ => return None,
             }
             si += 1;
             continue;
         }
-        if si >= subject_tokens.len() || subject_tokens[si] != *tok {
-            return None;
-        }
+        if si >= subject_tokens.len() || subject_tokens[si] != *tok { return None; }
         si += 1;
     }
-    if si != subject_tokens.len() {
-        return None;
-    }
-    Some(PresenceBroadcastConvSubjectParts { conv_id: conv_id? })
+    if si != subject_tokens.len() { return None; }
+    Some(PresenceBroadcastConvSubjectParts {
+        conv_id: conv_id?,
+    })
 }
 
 /// Optional per-conv membership-change channel (reserved; today membership changes go through PG NOTIFY).
@@ -979,37 +995,29 @@ pub struct PresenceMemberChangeConvSubjectParts {
     pub conv_id: String,
 }
 
-pub fn parse_presence_member_change_conv_subject(
-    subject: &str,
-) -> Option<PresenceMemberChangeConvSubjectParts> {
+pub fn parse_presence_member_change_conv_subject(subject: &str) -> Option<PresenceMemberChangeConvSubjectParts> {
     let pattern_tokens: &[&str] = &["presence", "member_change", "conv", "{conv_id}"];
     let subject_tokens: Vec<&str> = subject.split('.').collect();
     let mut conv_id: Option<String> = None;
     let mut si: usize = 0;
     for tok in pattern_tokens.iter() {
         if tok.starts_with('{') && tok.ends_with('}') {
-            if si >= subject_tokens.len() {
-                return None;
-            }
-            let name = &tok[1..tok.len() - 1];
+            if si >= subject_tokens.len() { return None; }
+            let name = &tok[1..tok.len()-1];
             match name {
-                "conv_id" => {
-                    conv_id = Some(subject_tokens[si].to_string());
-                }
+                "conv_id" => { conv_id = Some(subject_tokens[si].to_string()); }
                 _ => return None,
             }
             si += 1;
             continue;
         }
-        if si >= subject_tokens.len() || subject_tokens[si] != *tok {
-            return None;
-        }
+        if si >= subject_tokens.len() || subject_tokens[si] != *tok { return None; }
         si += 1;
     }
-    if si != subject_tokens.len() {
-        return None;
-    }
-    Some(PresenceMemberChangeConvSubjectParts { conv_id: conv_id? })
+    if si != subject_tokens.len() { return None; }
+    Some(PresenceMemberChangeConvSubjectParts {
+        conv_id: conv_id?,
+    })
 }
 
 /// Per-thread control-plane commands (scale, evict, reload). Short-retention JetStream control stream.
@@ -1033,27 +1041,19 @@ pub fn parse_thread_control_subject(subject: &str) -> Option<ThreadControlSubjec
     let mut si: usize = 0;
     for tok in pattern_tokens.iter() {
         if tok.starts_with('{') && tok.ends_with('}') {
-            if si >= subject_tokens.len() {
-                return None;
-            }
-            let name = &tok[1..tok.len() - 1];
+            if si >= subject_tokens.len() { return None; }
+            let name = &tok[1..tok.len()-1];
             match name {
-                "thread_id" => {
-                    thread_id = Some(subject_tokens[si].to_string());
-                }
+                "thread_id" => { thread_id = Some(subject_tokens[si].to_string()); }
                 _ => return None,
             }
             si += 1;
             continue;
         }
-        if si >= subject_tokens.len() || subject_tokens[si] != *tok {
-            return None;
-        }
+        if si >= subject_tokens.len() || subject_tokens[si] != *tok { return None; }
         si += 1;
     }
-    if si != subject_tokens.len() {
-        return None;
-    }
+    if si != subject_tokens.len() { return None; }
     Some(ThreadControlSubjectParts {
         thread_id: thread_id?,
     })
@@ -1080,27 +1080,19 @@ pub fn parse_thread_events_subject(subject: &str) -> Option<ThreadEventsSubjectP
     let mut si: usize = 0;
     for tok in pattern_tokens.iter() {
         if tok.starts_with('{') && tok.ends_with('}') {
-            if si >= subject_tokens.len() {
-                return None;
-            }
-            let name = &tok[1..tok.len() - 1];
+            if si >= subject_tokens.len() { return None; }
+            let name = &tok[1..tok.len()-1];
             match name {
-                "thread_id" => {
-                    thread_id = Some(subject_tokens[si].to_string());
-                }
+                "thread_id" => { thread_id = Some(subject_tokens[si].to_string()); }
                 _ => return None,
             }
             si += 1;
             continue;
         }
-        if si >= subject_tokens.len() || subject_tokens[si] != *tok {
-            return None;
-        }
+        if si >= subject_tokens.len() || subject_tokens[si] != *tok { return None; }
         si += 1;
     }
-    if si != subject_tokens.len() {
-        return None;
-    }
+    if si != subject_tokens.len() { return None; }
     Some(ThreadEventsSubjectParts {
         thread_id: thread_id?,
     })
@@ -1127,27 +1119,19 @@ pub fn parse_thread_heartbeat_subject(subject: &str) -> Option<ThreadHeartbeatSu
     let mut si: usize = 0;
     for tok in pattern_tokens.iter() {
         if tok.starts_with('{') && tok.ends_with('}') {
-            if si >= subject_tokens.len() {
-                return None;
-            }
-            let name = &tok[1..tok.len() - 1];
+            if si >= subject_tokens.len() { return None; }
+            let name = &tok[1..tok.len()-1];
             match name {
-                "thread_id" => {
-                    thread_id = Some(subject_tokens[si].to_string());
-                }
+                "thread_id" => { thread_id = Some(subject_tokens[si].to_string()); }
                 _ => return None,
             }
             si += 1;
             continue;
         }
-        if si >= subject_tokens.len() || subject_tokens[si] != *tok {
-            return None;
-        }
+        if si >= subject_tokens.len() || subject_tokens[si] != *tok { return None; }
         si += 1;
     }
-    if si != subject_tokens.len() {
-        return None;
-    }
+    if si != subject_tokens.len() { return None; }
     Some(ThreadHeartbeatSubjectParts {
         thread_id: thread_id?,
     })
@@ -1175,27 +1159,19 @@ pub fn parse_thread_tasks_subject(subject: &str) -> Option<ThreadTasksSubjectPar
     let mut si: usize = 0;
     for tok in pattern_tokens.iter() {
         if tok.starts_with('{') && tok.ends_with('}') {
-            if si >= subject_tokens.len() {
-                return None;
-            }
-            let name = &tok[1..tok.len() - 1];
+            if si >= subject_tokens.len() { return None; }
+            let name = &tok[1..tok.len()-1];
             match name {
-                "thread_id" => {
-                    thread_id = Some(subject_tokens[si].to_string());
-                }
+                "thread_id" => { thread_id = Some(subject_tokens[si].to_string()); }
                 _ => return None,
             }
             si += 1;
             continue;
         }
-        if si >= subject_tokens.len() || subject_tokens[si] != *tok {
-            return None;
-        }
+        if si >= subject_tokens.len() || subject_tokens[si] != *tok { return None; }
         si += 1;
     }
-    if si != subject_tokens.len() {
-        return None;
-    }
+    if si != subject_tokens.len() { return None; }
     Some(ThreadTasksSubjectParts {
         thread_id: thread_id?,
     })
@@ -1222,28 +1198,22 @@ pub fn parse_workflows_signal_subject(subject: &str) -> Option<WorkflowsSignalSu
     let mut si: usize = 0;
     for tok in pattern_tokens.iter() {
         if tok.starts_with('{') && tok.ends_with('}') {
-            if si >= subject_tokens.len() {
-                return None;
-            }
-            let name = &tok[1..tok.len() - 1];
+            if si >= subject_tokens.len() { return None; }
+            let name = &tok[1..tok.len()-1];
             match name {
-                "run_id" => {
-                    run_id = Some(subject_tokens[si].to_string());
-                }
+                "run_id" => { run_id = Some(subject_tokens[si].to_string()); }
                 _ => return None,
             }
             si += 1;
             continue;
         }
-        if si >= subject_tokens.len() || subject_tokens[si] != *tok {
-            return None;
-        }
+        if si >= subject_tokens.len() || subject_tokens[si] != *tok { return None; }
         si += 1;
     }
-    if si != subject_tokens.len() {
-        return None;
-    }
-    Some(WorkflowsSignalSubjectParts { run_id: run_id? })
+    if si != subject_tokens.len() { return None; }
+    Some(WorkflowsSignalSubjectParts {
+        run_id: run_id?,
+    })
 }
 
 // ---------- Standalone queue groups ----------
@@ -1255,6 +1225,10 @@ pub const AGENT_SIM_SERVER_QUEUE_GROUP: &str = "dd-agent-sim-server";
 /// Queue group shared by dd-billing-server replicas for inbound sync commands so each command is handled by exactly one pod.
 /// Service: dd-billing-server
 pub const BILLING_SERVER_QUEUE_GROUP: &str = "dd-billing-server";
+
+/// Shared queue group / durable consumer name used by build-server replicas for request intake.
+/// Service: dd-build-server
+pub const BUILD_SERVER_QUEUE_GROUP: &str = "dd-build-server";
 
 /// Shared queue group used by dd-constraint-scheduler replicas consuming schedule requests.
 /// Service: dd-constraint-scheduler
@@ -1275,6 +1249,10 @@ pub const DATASET_LABELING_WORKERS_QUEUE_GROUP: &str = "dd-dataset-labeling";
 /// Shared queue group used by dd-data-viz notifier workers consuming the notification-dispatch lane.
 /// Service: dd-data-viz-rs
 pub const DATA_VIZ_NOTIFICATION_DISPATCH_QUEUE_GROUP: &str = "dd-data-viz-notifiers";
+
+/// Shared queue group used by document converter replicas so each request is handled once.
+/// Service: dd-document-rs
+pub const DOCUMENT_CONVERTERS_QUEUE_GROUP: &str = "dd-document-rs";
 
 /// Shared queue group used by dd-economics-server replicas consuming forecast requests.
 /// Service: dd-economics-server
@@ -1311,6 +1289,10 @@ pub const MONTE_CARLO_SERVER_QUEUE_GROUP: &str = "dd-monte-carlo-server";
 /// Shared queue group used by dd-music-rs replicas consuming generation requests.
 /// Service: dd-music-rs
 pub const MUSIC_GENERATION_QUEUE_GROUP: &str = "dd-music-rs";
+
+/// Shared queue group used by OCR replicas so each request is handled once.
+/// Service: dd-ocr-rs
+pub const OCR_WORKERS_QUEUE_GROUP: &str = "dd-ocr-rs";
 
 /// Shared queue group used by dd-public-data-server replicas so each queued ingest/scrape request is processed once.
 /// Service: dd-public-data-server
@@ -1354,13 +1336,18 @@ pub const CDC_STREAM_RETENTION: &str = "limits";
 pub const CDC_STREAM_STORAGE: &str = "file";
 pub const CDC_STREAM_ACK: &str = "explicit";
 
+/// JetStream file storage with WorkQueue retention and explicit ack for build-request intake. Dedupe by Nats-Msg-Id ('build-request:<requestId>'); Postgres (dd_build_server) remains the real idempotency guard.
+/// Service: dd-build-server
+pub const DD_REMOTE_BUILD_JOBS_STREAM_NAME: &str = "DD_REMOTE_BUILD_JOBS";
+pub const DD_REMOTE_BUILD_JOBS_STREAM_SUBJECTS: &[&str] = &["dd.remote.build_server.requests"];
+pub const DD_REMOTE_BUILD_JOBS_STREAM_RETENTION: &str = "workqueue";
+pub const DD_REMOTE_BUILD_JOBS_STREAM_STORAGE: &str = "file";
+pub const DD_REMOTE_BUILD_JOBS_STREAM_ACK: &str = "explicit";
+
 /// Short-retention control plane stream.
 /// Service: dd-remote-rest-api
 pub const DD_REMOTE_CONTROL_STREAM_NAME: &str = "DD_REMOTE_CONTROL";
-pub const DD_REMOTE_CONTROL_STREAM_SUBJECTS: &[&str] = &[
-    "dd.remote.thread.*.control",
-    "dd.remote.orchestrator.wakeup",
-];
+pub const DD_REMOTE_CONTROL_STREAM_SUBJECTS: &[&str] = &["dd.remote.thread.*.control", "dd.remote.orchestrator.wakeup"];
 pub const DD_REMOTE_CONTROL_STREAM_RETENTION: &str = "limits";
 pub const DD_REMOTE_CONTROL_STREAM_STORAGE: &str = "file";
 pub const DD_REMOTE_CONTROL_STREAM_ACK: &str = "explicit";
@@ -1384,8 +1371,7 @@ pub const DD_REMOTE_CRON_STREAM_ACK: &str = "explicit";
 /// Longer-retention event stream for replay/debugging, mirrored into Postgres.
 /// Service: dd-remote-rest-api
 pub const DD_REMOTE_EVENTS_STREAM_NAME: &str = "DD_REMOTE_EVENTS";
-pub const DD_REMOTE_EVENTS_STREAM_SUBJECTS: &[&str] =
-    &["dd.remote.thread.*.events", "dd.remote.thread.*.heartbeat"];
+pub const DD_REMOTE_EVENTS_STREAM_SUBJECTS: &[&str] = &["dd.remote.thread.*.events", "dd.remote.thread.*.heartbeat"];
 pub const DD_REMOTE_EVENTS_STREAM_RETENTION: &str = "limits";
 pub const DD_REMOTE_EVENTS_STREAM_STORAGE: &str = "file";
 pub const DD_REMOTE_EVENTS_STREAM_ACK: &str = "explicit";
@@ -1393,12 +1379,7 @@ pub const DD_REMOTE_EVENTS_STREAM_ACK: &str = "explicit";
 /// JetStream stream for distributed island-model GA jobs, results, ring migrants, and progress events.
 /// Service: dd-evolution-optimizer
 pub const DD_REMOTE_EVOLUTION_STREAM_NAME: &str = "DD_REMOTE_EVOLUTION";
-pub const DD_REMOTE_EVOLUTION_STREAM_SUBJECTS: &[&str] = &[
-    "dd.remote.evolution.jobs",
-    "dd.remote.evolution.results",
-    "dd.remote.evolution.migrants",
-    "dd.remote.evolution.events",
-];
+pub const DD_REMOTE_EVOLUTION_STREAM_SUBJECTS: &[&str] = &["dd.remote.evolution.jobs", "dd.remote.evolution.results", "dd.remote.evolution.migrants", "dd.remote.evolution.events"];
 pub const DD_REMOTE_EVOLUTION_STREAM_RETENTION: &str = "limits";
 pub const DD_REMOTE_EVOLUTION_STREAM_STORAGE: &str = "file";
 pub const DD_REMOTE_EVOLUTION_STREAM_ACK: &str = "explicit";
@@ -1414,12 +1395,7 @@ pub const DD_REMOTE_FABRICATION_STREAM_ACK: &str = "explicit";
 /// JetStream stream for distributed in-house LP/MIP/IP solver work, results, control, and progress events.
 /// Service: dd-ai-ml-pipeline
 pub const DD_REMOTE_MIP_SOLVER_STREAM_NAME: &str = "DD_REMOTE_MIP_SOLVER";
-pub const DD_REMOTE_MIP_SOLVER_STREAM_SUBJECTS: &[&str] = &[
-    "dd.remote.mip_solver.jobs",
-    "dd.remote.mip_solver.results",
-    "dd.remote.mip_solver.control",
-    "dd.remote.mip_solver.events",
-];
+pub const DD_REMOTE_MIP_SOLVER_STREAM_SUBJECTS: &[&str] = &["dd.remote.mip_solver.jobs", "dd.remote.mip_solver.results", "dd.remote.mip_solver.control", "dd.remote.mip_solver.events"];
 pub const DD_REMOTE_MIP_SOLVER_STREAM_RETENTION: &str = "limits";
 pub const DD_REMOTE_MIP_SOLVER_STREAM_STORAGE: &str = "file";
 pub const DD_REMOTE_MIP_SOLVER_STREAM_ACK: &str = "explicit";
@@ -1427,11 +1403,7 @@ pub const DD_REMOTE_MIP_SOLVER_STREAM_ACK: &str = "explicit";
 /// JetStream stream for distributed VRP/TSP solve jobs, worker tour results, and incumbent-improvement events.
 /// Service: dd-routing-server
 pub const DD_REMOTE_ROUTING_STREAM_NAME: &str = "DD_REMOTE_ROUTING";
-pub const DD_REMOTE_ROUTING_STREAM_SUBJECTS: &[&str] = &[
-    "dd.remote.routing.jobs",
-    "dd.remote.routing.results",
-    "dd.remote.routing.events",
-];
+pub const DD_REMOTE_ROUTING_STREAM_SUBJECTS: &[&str] = &["dd.remote.routing.jobs", "dd.remote.routing.results", "dd.remote.routing.events"];
 pub const DD_REMOTE_ROUTING_STREAM_RETENTION: &str = "limits";
 pub const DD_REMOTE_ROUTING_STREAM_STORAGE: &str = "file";
 pub const DD_REMOTE_ROUTING_STREAM_ACK: &str = "explicit";

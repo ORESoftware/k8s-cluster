@@ -1165,8 +1165,8 @@ class DesSoccerLearningSetPlayRuns(models.Model):
 
 
 class DesSoccerLearningSetPlayRestartMix(models.Model):
-    run_id = models.UUIDField()
-    ordinal = models.IntegerField(validators=[MinValueValidator(0)])
+    run_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    ordinal = models.IntegerField(primary_key=True, validators=[MinValueValidator(0)])
     restart = models.CharField(max_length=40, choices=[("direct-free-kick", "direct-free-kick"), ("indirect-free-kick", "indirect-free-kick")])
 
     class Meta:
@@ -1176,8 +1176,8 @@ class DesSoccerLearningSetPlayRestartMix(models.Model):
 
 
 class DesSoccerLearningSetPlayEpisodeMetrics(models.Model):
-    run_id = models.UUIDField()
-    episode_index = models.IntegerField(validators=[MinValueValidator(0)])
+    run_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    episode_index = models.IntegerField(primary_key=True, validators=[MinValueValidator(0)])
     seed = models.BigIntegerField(validators=[MinValueValidator(0)])
     restart = models.CharField(max_length=40, choices=[("direct-free-kick", "direct-free-kick"), ("indirect-free-kick", "indirect-free-kick")])
     routine = models.CharField(max_length=80, null=True, blank=True)
@@ -2812,3 +2812,384 @@ class SharedContext(models.Model):
         managed = False
         app_label = "dd_pg_defs"
         db_table = "ai_agent_bridge\".\"shared_context"
+
+
+class SyncClock(models.Model):
+    singleton = models.BooleanField(primary_key=True, default=True)
+    last_sequence = models.BigIntegerField(default=0, validators=[MinValueValidator(0)])
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "fiducia\".\"sync_clock"
+
+
+class SyncTombstones(models.Model):
+    sequence = models.BigIntegerField(primary_key=True, validators=[MinValueValidator(1)])
+    table_name = models.TextField()
+    row_id = models.TextField()
+    tenant_id = models.UUIDField(null=True, blank=True)
+    owner_user_id = models.UUIDField(null=True, blank=True)
+    row_version = models.BigIntegerField(validators=[MinValueValidator(1)])
+    deleted_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "fiducia\".\"sync_tombstones"
+
+
+class Orgs(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    slug = models.CharField(max_length=120, validators=[RegexValidator(regex="^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$")])
+    name = models.CharField(max_length=200)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+    version = models.BigIntegerField(default=1)
+    sync_sequence = models.BigIntegerField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "fiducia\".\"orgs"
+
+
+class Projects(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    org_id = models.UUIDField()
+    slug = models.CharField(max_length=120, validators=[RegexValidator(regex="^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$")])
+    name = models.CharField(max_length=200)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+    version = models.BigIntegerField(default=1)
+    sync_sequence = models.BigIntegerField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "fiducia\".\"projects"
+
+
+class Users(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    supabase_user_id = models.UUIDField()
+    email = models.CharField(max_length=320)
+    created_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "fiducia\".\"users"
+
+
+class OrgMembers(models.Model):
+    org_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    role = models.CharField(max_length=32, choices=[("owner", "owner"), ("admin", "admin"), ("member", "member")], default="member")
+    created_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "fiducia\".\"org_members"
+
+
+class ProjectMembers(models.Model):
+    project_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    role = models.CharField(max_length=32, choices=[("admin", "admin"), ("operator", "operator"), ("viewer", "viewer")], default="viewer")
+    created_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "fiducia\".\"project_members"
+
+
+class ApiKeys(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    key_id = models.CharField(max_length=64)
+    org_id = models.UUIDField()
+    project_id = models.UUIDField(null=True, blank=True)
+    created_by_user_id = models.UUIDField(null=True, blank=True)
+    name = models.CharField(max_length=200)
+    secret_hash = models.CharField(max_length=255)
+    scopes = models.JSONField(default=list)
+    env = models.CharField(max_length=16, choices=[("live", "live"), ("test", "test")], default="live")
+    require_idempotency = models.BooleanField(default=True)
+    mtls_required = models.BooleanField(default=False)
+    revoked = models.BooleanField(default=False)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+    version = models.BigIntegerField(default=1)
+    sync_sequence = models.BigIntegerField()
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "fiducia\".\"api_keys"
+
+
+class MtlsClientCerts(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    org_id = models.UUIDField()
+    project_id = models.UUIDField(null=True, blank=True)
+    name = models.CharField(max_length=200)
+    subject = models.CharField(max_length=500)
+    sha256_fingerprint = models.CharField(max_length=95)
+    not_before = models.DateTimeField(null=True, blank=True)
+    not_after = models.DateTimeField(null=True, blank=True)
+    revoked = models.BooleanField(default=False)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+    version = models.BigIntegerField(default=1)
+    sync_sequence = models.BigIntegerField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "fiducia\".\"mtls_client_certs"
+
+
+class CustomerPreferences(models.Model):
+    user_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    density = models.CharField(max_length=16, choices=[("comfortable", "comfortable"), ("compact", "compact")], default="comfortable")
+    timezone = models.CharField(max_length=64, default="UTC")
+    region = models.CharField(max_length=16, default="auto")
+    notify_key_rotation = models.BooleanField(default=True)
+    notify_lock_contention = models.BooleanField(default=True)
+    notify_mfa = models.BooleanField(default=True)
+    updated_at = models.DateTimeField()
+    version = models.BigIntegerField(default=1)
+    sync_sequence = models.BigIntegerField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "fiducia\".\"customer_preferences"
+
+
+class CustomerSessions(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user_id = models.UUIDField()
+    device = models.CharField(max_length=200)
+    location = models.CharField(max_length=200, null=True, blank=True)
+    last_seen = models.DateTimeField()
+    status = models.CharField(max_length=16, choices=[("active", "active"), ("verified", "verified"), ("revoked", "revoked")], default="active")
+    updated_at = models.DateTimeField()
+    version = models.BigIntegerField(default=1)
+    sync_sequence = models.BigIntegerField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "fiducia\".\"customer_sessions"
+
+
+class AuditLog(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    org_id = models.UUIDField(null=True, blank=True)
+    project_id = models.UUIDField(null=True, blank=True)
+    actor_user_id = models.UUIDField(null=True, blank=True)
+    actor_key_id = models.UUIDField(null=True, blank=True)
+    actor = models.CharField(max_length=320, null=True, blank=True)
+    action = models.CharField(max_length=120)
+    target = models.CharField(max_length=320, null=True, blank=True)
+    request_id = models.CharField(max_length=120, null=True, blank=True)
+    source_ip = models.CharField(max_length=64, null=True, blank=True)
+    user_agent = models.CharField(max_length=500, null=True, blank=True)
+    meta = models.JSONField(default=dict)
+    created_at = models.DateTimeField()
+    retention_expires_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "fiducia\".\"audit_log"
+
+
+class CustomerNotifications(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user_id = models.UUIDField()
+    org_id = models.UUIDField(null=True, blank=True)
+    kind = models.CharField(max_length=40, validators=[RegexValidator(regex="^[a-z][a-z0-9_.]{1,38}[a-z0-9]$")])
+    severity = models.CharField(max_length=16, choices=[("info", "info"), ("success", "success"), ("warning", "warning"), ("critical", "critical")], default="info")
+    title = models.CharField(max_length=200)
+    body = models.CharField(max_length=2000, default="")
+    link = models.CharField(max_length=500, null=True, blank=True)
+    read_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+    version = models.BigIntegerField(default=1)
+    sync_sequence = models.BigIntegerField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "fiducia\".\"customer_notifications"
+
+
+class SyncIdempotencyKeys(models.Model):
+    key = models.TextField(primary_key=True)
+    request_fingerprint = models.CharField(max_length=64, validators=[RegexValidator(regex="^[0-9a-f]{64}$")])
+    committed_version = models.BigIntegerField(null=True, blank=True)
+    created_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "fiducia\".\"sync_idempotency_keys"
+
+
+class Transcriptions(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    source = models.TextField()
+    provider = models.TextField()
+    model = models.TextField()
+    text = models.TextField()
+    language = models.TextField(null=True, blank=True)
+    sample_rate = models.IntegerField(null=True, blank=True, validators=[MinValueValidator(4000), MaxValueValidator(384000)])
+    duration_ms = models.BigIntegerField(null=True, blank=True, validators=[MinValueValidator(0)])
+    created_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "t2v\".\"transcriptions"
+
+
+class Syntheses(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    text = models.TextField()
+    voice = models.TextField()
+    provider = models.TextField()
+    model = models.TextField()
+    format = models.TextField()
+    audio_bytes = models.BigIntegerField(validators=[MinValueValidator(0)])
+    created_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "t2v\".\"syntheses"
+
+
+class Translations(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    source_text = models.TextField()
+    translated_text = models.TextField()
+    source_lang = models.TextField(null=True, blank=True)
+    target_lang = models.TextField()
+    provider = models.TextField()
+    model = models.TextField()
+    latency_ms = models.BigIntegerField(validators=[MinValueValidator(0)])
+    created_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "t2v\".\"translations"
+
+
+class VapiCalls(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    vapi_call_id = models.TextField()
+    status = models.TextField()
+    ended_reason = models.TextField(null=True, blank=True)
+    transcript = models.TextField(null=True, blank=True)
+    summary = models.TextField(null=True, blank=True)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "t2v\".\"vapi_calls"
+
+
+class VapiEvents(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    vapi_call_id = models.TextField(null=True, blank=True)
+    event_type = models.TextField()
+    payload = models.JSONField()
+    created_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "t2v\".\"vapi_events"
+
+
+class FabPlans(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner_email = models.TextField()
+    title = models.TextField()
+    goal = models.TextField()
+    process_family = models.TextField(choices=[("additive", "additive"), ("subtractive", "subtractive"), ("hybrid", "hybrid")], default="additive")
+    status = models.TextField(choices=[("draft", "draft"), ("planning", "planning"), ("planned", "planned"), ("released", "released"), ("archived", "archived")], default="draft")
+    document = models.JSONField(null=True, blank=True)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "daedalus\".\"fab_plans"
+
+
+class FabDesigns(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    plan_id = models.UUIDField()
+    filename = models.TextField()
+    format = models.TextField(choices=[("step", "step"), ("stl", "stl"), ("3mf", "3mf"), ("dxf", "dxf"), ("iges", "iges"), ("obj", "obj")])
+    storage_uri = models.TextField()
+    size_bytes = models.BigIntegerField(default=0, validators=[MinValueValidator(0)])
+    content_hash = models.TextField(null=True, blank=True)
+    geometry = models.JSONField(default=dict)
+    created_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "daedalus\".\"fab_designs"
+
+
+class FabInstructions(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    plan_id = models.UUIDField()
+    revision = models.IntegerField(default=1, validators=[MinValueValidator(1)])
+    machine_profile = models.TextField()
+    dialect = models.TextField(choices=[("gcode", "gcode"), ("nc", "nc"), ("apt", "apt"), ("proprietary", "proprietary")], default="gcode")
+    storage_uri = models.TextField()
+    content_hash = models.TextField(null=True, blank=True)
+    validated = models.BooleanField(default=False)
+    validation = models.JSONField(default=dict)
+    released_by_email = models.TextField(null=True, blank=True)
+    released_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "daedalus\".\"fab_instructions"
+
+
+class FabRuns(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    instructions_id = models.UUIDField()
+    status = models.TextField(choices=[("queued", "queued"), ("running", "running"), ("succeeded", "succeeded"), ("failed", "failed"), ("aborted", "aborted")], default="queued")
+    machine_id = models.TextField()
+    operator_email = models.TextField(null=True, blank=True)
+    progress = models.SmallIntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(100)])
+    as_built = models.JSONField(default=dict)
+    error = models.TextField(null=True, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "daedalus\".\"fab_runs"

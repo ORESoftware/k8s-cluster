@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dd.dev/schemas/nats/ocr.schema.json",
+  "title": "OcrNats",
+  "description": "NATS request and result subjects for OCR workers.",
+  "type": "object",
+  "$dd:nats": {
+    "service": "dd-ocr-rs",
+    "summary": "OCR request dispatch and result fanout.",
+    "subjects": [
+      {
+        "name": "OcrRequests",
+        "description": "OCR requests consumed by dd-ocr-rs replicas.",
+        "kind": "static",
+        "subject": "dd.remote.ocr.requests",
+        "queueGroup": "dd-ocr-rs",
+        "direction": "subscribe"
+      },
+      {
+        "name": "OcrResults",
+        "description": "OCR results published after a request completes or fails.",
+        "kind": "static",
+        "subject": "dd.remote.ocr.results",
+        "direction": "publish"
+      }
+    ],
+    "queueGroups": [
+      {
+        "name": "OcrWorkersQueueGroup",
+        "value": "dd-ocr-rs",
+        "description": "Shared queue group used by OCR replicas so each request is handled once."
+      }
+    ]
+  }
+}

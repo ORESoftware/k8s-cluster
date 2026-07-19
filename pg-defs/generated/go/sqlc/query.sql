@@ -785,31 +785,31 @@ delete from des_soccer_learning_set_play_runs where run_id = $1;
 select run_id, ordinal, restart from des_soccer_learning_set_play_restart_mix;
 
 -- name: GetDesSoccerLearningSetPlayRestartMix :one
-select run_id, ordinal, restart from des_soccer_learning_set_play_restart_mix where id = $1 limit 1;
+select run_id, ordinal, restart from des_soccer_learning_set_play_restart_mix where run_id = $1 limit 1;
 
 -- name: CreateDesSoccerLearningSetPlayRestartMix :one
 insert into des_soccer_learning_set_play_restart_mix (run_id, ordinal, restart) values ($1, $2, $3) returning run_id, ordinal, restart;
 
 -- name: UpdateDesSoccerLearningSetPlayRestartMix :one
-update des_soccer_learning_set_play_restart_mix set run_id = $2, ordinal = $3, restart = $4 where id = $1 returning run_id, ordinal, restart;
+update des_soccer_learning_set_play_restart_mix set restart = $2 where run_id = $1 returning run_id, ordinal, restart;
 
 -- name: DeleteDesSoccerLearningSetPlayRestartMix :exec
-delete from des_soccer_learning_set_play_restart_mix where id = $1;
+delete from des_soccer_learning_set_play_restart_mix where run_id = $1;
 
 -- name: ListDesSoccerLearningSetPlayEpisodeMetrics :many
 select run_id, episode_index, seed, restart, routine, scored, score_delta_for_team, ticks, simulated_seconds_micros, policy_updates, home_policy_entries, home_policy_target_entries, away_policy_entries, away_policy_target_entries, neural_training_steps, neural_samples, neural_replay_samples, neural_last_loss_micros, cumulative_goals, goal_rate_so_far_micros from des_soccer_learning_set_play_episode_metrics;
 
 -- name: GetDesSoccerLearningSetPlayEpisodeMetrics :one
-select run_id, episode_index, seed, restart, routine, scored, score_delta_for_team, ticks, simulated_seconds_micros, policy_updates, home_policy_entries, home_policy_target_entries, away_policy_entries, away_policy_target_entries, neural_training_steps, neural_samples, neural_replay_samples, neural_last_loss_micros, cumulative_goals, goal_rate_so_far_micros from des_soccer_learning_set_play_episode_metrics where id = $1 limit 1;
+select run_id, episode_index, seed, restart, routine, scored, score_delta_for_team, ticks, simulated_seconds_micros, policy_updates, home_policy_entries, home_policy_target_entries, away_policy_entries, away_policy_target_entries, neural_training_steps, neural_samples, neural_replay_samples, neural_last_loss_micros, cumulative_goals, goal_rate_so_far_micros from des_soccer_learning_set_play_episode_metrics where run_id = $1 limit 1;
 
 -- name: CreateDesSoccerLearningSetPlayEpisodeMetrics :one
 insert into des_soccer_learning_set_play_episode_metrics (run_id, episode_index, seed, restart, routine, scored, score_delta_for_team, ticks, simulated_seconds_micros, policy_updates, home_policy_entries, home_policy_target_entries, away_policy_entries, away_policy_target_entries, neural_training_steps, neural_samples, neural_replay_samples, neural_last_loss_micros, cumulative_goals, goal_rate_so_far_micros) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) returning run_id, episode_index, seed, restart, routine, scored, score_delta_for_team, ticks, simulated_seconds_micros, policy_updates, home_policy_entries, home_policy_target_entries, away_policy_entries, away_policy_target_entries, neural_training_steps, neural_samples, neural_replay_samples, neural_last_loss_micros, cumulative_goals, goal_rate_so_far_micros;
 
 -- name: UpdateDesSoccerLearningSetPlayEpisodeMetrics :one
-update des_soccer_learning_set_play_episode_metrics set run_id = $2, episode_index = $3, seed = $4, restart = $5, routine = $6, scored = $7, score_delta_for_team = $8, ticks = $9, simulated_seconds_micros = $10, policy_updates = $11, home_policy_entries = $12, home_policy_target_entries = $13, away_policy_entries = $14, away_policy_target_entries = $15, neural_training_steps = $16, neural_samples = $17, neural_replay_samples = $18, neural_last_loss_micros = $19, cumulative_goals = $20, goal_rate_so_far_micros = $21 where id = $1 returning run_id, episode_index, seed, restart, routine, scored, score_delta_for_team, ticks, simulated_seconds_micros, policy_updates, home_policy_entries, home_policy_target_entries, away_policy_entries, away_policy_target_entries, neural_training_steps, neural_samples, neural_replay_samples, neural_last_loss_micros, cumulative_goals, goal_rate_so_far_micros;
+update des_soccer_learning_set_play_episode_metrics set seed = $2, restart = $3, routine = $4, scored = $5, score_delta_for_team = $6, ticks = $7, simulated_seconds_micros = $8, policy_updates = $9, home_policy_entries = $10, home_policy_target_entries = $11, away_policy_entries = $12, away_policy_target_entries = $13, neural_training_steps = $14, neural_samples = $15, neural_replay_samples = $16, neural_last_loss_micros = $17, cumulative_goals = $18, goal_rate_so_far_micros = $19 where run_id = $1 returning run_id, episode_index, seed, restart, routine, scored, score_delta_for_team, ticks, simulated_seconds_micros, policy_updates, home_policy_entries, home_policy_target_entries, away_policy_entries, away_policy_target_entries, neural_training_steps, neural_samples, neural_replay_samples, neural_last_loss_micros, cumulative_goals, goal_rate_so_far_micros;
 
 -- name: DeleteDesSoccerLearningSetPlayEpisodeMetrics :exec
-delete from des_soccer_learning_set_play_episode_metrics where id = $1;
+delete from des_soccer_learning_set_play_episode_metrics where run_id = $1;
 
 -- name: ListDesSoccerLearningNeuralRunMetrics :many
 select run_id, policy_version_id, enabled, backend, training_steps, samples, pending_batches, dropped_batches, replay_samples, replay_capacity, parameter_count, target_clip_micros, last_loss_micros, average_loss_micros, created_at from des_soccer_learning_neural_run_metrics;
@@ -1875,3 +1875,348 @@ update ai_agent_bridge.shared_context set channel_slug = $2, channel_id = $3, ct
 
 -- name: DeleteSharedContext :exec
 delete from ai_agent_bridge.shared_context where id = $1;
+
+-- name: ListSyncClock :many
+select singleton, last_sequence from fiducia.sync_clock;
+
+-- name: GetSyncClock :one
+select singleton, last_sequence from fiducia.sync_clock where singleton = $1 limit 1;
+
+-- name: CreateSyncClock :one
+insert into fiducia.sync_clock (singleton, last_sequence) values ($1, $2) returning singleton, last_sequence;
+
+-- name: UpdateSyncClock :one
+update fiducia.sync_clock set last_sequence = $2 where singleton = $1 returning singleton, last_sequence;
+
+-- name: DeleteSyncClock :exec
+delete from fiducia.sync_clock where singleton = $1;
+
+-- name: ListSyncTombstones :many
+select sequence, table_name, row_id, tenant_id, owner_user_id, row_version, deleted_at from fiducia.sync_tombstones;
+
+-- name: GetSyncTombstones :one
+select sequence, table_name, row_id, tenant_id, owner_user_id, row_version, deleted_at from fiducia.sync_tombstones where sequence = $1 limit 1;
+
+-- name: CreateSyncTombstones :one
+insert into fiducia.sync_tombstones (sequence, table_name, row_id, tenant_id, owner_user_id, row_version, deleted_at) values ($1, $2, $3, $4, $5, $6, $7) returning sequence, table_name, row_id, tenant_id, owner_user_id, row_version, deleted_at;
+
+-- name: UpdateSyncTombstones :one
+update fiducia.sync_tombstones set table_name = $2, row_id = $3, tenant_id = $4, owner_user_id = $5, row_version = $6, deleted_at = $7 where sequence = $1 returning sequence, table_name, row_id, tenant_id, owner_user_id, row_version, deleted_at;
+
+-- name: DeleteSyncTombstones :exec
+delete from fiducia.sync_tombstones where sequence = $1;
+
+-- name: ListOrgs :many
+select id, slug, name, created_at, updated_at, version, sync_sequence from fiducia.orgs;
+
+-- name: GetOrgs :one
+select id, slug, name, created_at, updated_at, version, sync_sequence from fiducia.orgs where id = $1 limit 1;
+
+-- name: CreateOrgs :one
+insert into fiducia.orgs (id, slug, name, created_at, updated_at, version, sync_sequence) values ($1, $2, $3, $4, $5, $6, $7) returning id, slug, name, created_at, updated_at, version, sync_sequence;
+
+-- name: UpdateOrgs :one
+update fiducia.orgs set slug = $2, name = $3, updated_at = $4, version = $5, sync_sequence = $6 where id = $1 returning id, slug, name, created_at, updated_at, version, sync_sequence;
+
+-- name: DeleteOrgs :exec
+delete from fiducia.orgs where id = $1;
+
+-- name: ListProjects :many
+select id, org_id, slug, name, created_at, updated_at, version, sync_sequence from fiducia.projects;
+
+-- name: GetProjects :one
+select id, org_id, slug, name, created_at, updated_at, version, sync_sequence from fiducia.projects where id = $1 limit 1;
+
+-- name: CreateProjects :one
+insert into fiducia.projects (id, org_id, slug, name, created_at, updated_at, version, sync_sequence) values ($1, $2, $3, $4, $5, $6, $7, $8) returning id, org_id, slug, name, created_at, updated_at, version, sync_sequence;
+
+-- name: UpdateProjects :one
+update fiducia.projects set org_id = $2, slug = $3, name = $4, updated_at = $5, version = $6, sync_sequence = $7 where id = $1 returning id, org_id, slug, name, created_at, updated_at, version, sync_sequence;
+
+-- name: DeleteProjects :exec
+delete from fiducia.projects where id = $1;
+
+-- name: ListUsers :many
+select id, supabase_user_id, email, created_at from fiducia.users;
+
+-- name: GetUsers :one
+select id, supabase_user_id, email, created_at from fiducia.users where id = $1 limit 1;
+
+-- name: CreateUsers :one
+insert into fiducia.users (id, supabase_user_id, email, created_at) values ($1, $2, $3, $4) returning id, supabase_user_id, email, created_at;
+
+-- name: UpdateUsers :one
+update fiducia.users set supabase_user_id = $2, email = $3 where id = $1 returning id, supabase_user_id, email, created_at;
+
+-- name: DeleteUsers :exec
+delete from fiducia.users where id = $1;
+
+-- name: ListOrgMembers :many
+select org_id, user_id, role, created_at from fiducia.org_members;
+
+-- name: GetOrgMembers :one
+select org_id, user_id, role, created_at from fiducia.org_members where org_id = $1 limit 1;
+
+-- name: CreateOrgMembers :one
+insert into fiducia.org_members (org_id, user_id, role, created_at) values ($1, $2, $3, $4) returning org_id, user_id, role, created_at;
+
+-- name: UpdateOrgMembers :one
+update fiducia.org_members set role = $2 where org_id = $1 returning org_id, user_id, role, created_at;
+
+-- name: DeleteOrgMembers :exec
+delete from fiducia.org_members where org_id = $1;
+
+-- name: ListProjectMembers :many
+select project_id, user_id, role, created_at from fiducia.project_members;
+
+-- name: GetProjectMembers :one
+select project_id, user_id, role, created_at from fiducia.project_members where project_id = $1 limit 1;
+
+-- name: CreateProjectMembers :one
+insert into fiducia.project_members (project_id, user_id, role, created_at) values ($1, $2, $3, $4) returning project_id, user_id, role, created_at;
+
+-- name: UpdateProjectMembers :one
+update fiducia.project_members set role = $2 where project_id = $1 returning project_id, user_id, role, created_at;
+
+-- name: DeleteProjectMembers :exec
+delete from fiducia.project_members where project_id = $1;
+
+-- name: ListApiKeys :many
+select id, key_id, org_id, project_id, created_by_user_id, name, secret_hash, scopes, env, require_idempotency, mtls_required, revoked, created_at, updated_at, version, sync_sequence, last_used_at, expires_at from fiducia.api_keys;
+
+-- name: GetApiKeys :one
+select id, key_id, org_id, project_id, created_by_user_id, name, secret_hash, scopes, env, require_idempotency, mtls_required, revoked, created_at, updated_at, version, sync_sequence, last_used_at, expires_at from fiducia.api_keys where id = $1 limit 1;
+
+-- name: CreateApiKeys :one
+insert into fiducia.api_keys (id, key_id, org_id, project_id, created_by_user_id, name, secret_hash, scopes, env, require_idempotency, mtls_required, revoked, created_at, updated_at, version, sync_sequence, last_used_at, expires_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) returning id, key_id, org_id, project_id, created_by_user_id, name, secret_hash, scopes, env, require_idempotency, mtls_required, revoked, created_at, updated_at, version, sync_sequence, last_used_at, expires_at;
+
+-- name: UpdateApiKeys :one
+update fiducia.api_keys set key_id = $2, org_id = $3, project_id = $4, created_by_user_id = $5, name = $6, secret_hash = $7, scopes = $8, env = $9, require_idempotency = $10, mtls_required = $11, revoked = $12, updated_at = $13, version = $14, sync_sequence = $15, last_used_at = $16, expires_at = $17 where id = $1 returning id, key_id, org_id, project_id, created_by_user_id, name, secret_hash, scopes, env, require_idempotency, mtls_required, revoked, created_at, updated_at, version, sync_sequence, last_used_at, expires_at;
+
+-- name: DeleteApiKeys :exec
+delete from fiducia.api_keys where id = $1;
+
+-- name: ListMtlsClientCerts :many
+select id, org_id, project_id, name, subject, sha256_fingerprint, not_before, not_after, revoked, created_at, updated_at, version, sync_sequence from fiducia.mtls_client_certs;
+
+-- name: GetMtlsClientCerts :one
+select id, org_id, project_id, name, subject, sha256_fingerprint, not_before, not_after, revoked, created_at, updated_at, version, sync_sequence from fiducia.mtls_client_certs where id = $1 limit 1;
+
+-- name: CreateMtlsClientCerts :one
+insert into fiducia.mtls_client_certs (id, org_id, project_id, name, subject, sha256_fingerprint, not_before, not_after, revoked, created_at, updated_at, version, sync_sequence) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) returning id, org_id, project_id, name, subject, sha256_fingerprint, not_before, not_after, revoked, created_at, updated_at, version, sync_sequence;
+
+-- name: UpdateMtlsClientCerts :one
+update fiducia.mtls_client_certs set org_id = $2, project_id = $3, name = $4, subject = $5, sha256_fingerprint = $6, not_before = $7, not_after = $8, revoked = $9, updated_at = $10, version = $11, sync_sequence = $12 where id = $1 returning id, org_id, project_id, name, subject, sha256_fingerprint, not_before, not_after, revoked, created_at, updated_at, version, sync_sequence;
+
+-- name: DeleteMtlsClientCerts :exec
+delete from fiducia.mtls_client_certs where id = $1;
+
+-- name: ListCustomerPreferences :many
+select user_id, density, timezone, region, notify_key_rotation, notify_lock_contention, notify_mfa, updated_at, version, sync_sequence from fiducia.customer_preferences;
+
+-- name: GetCustomerPreferences :one
+select user_id, density, timezone, region, notify_key_rotation, notify_lock_contention, notify_mfa, updated_at, version, sync_sequence from fiducia.customer_preferences where user_id = $1 limit 1;
+
+-- name: CreateCustomerPreferences :one
+insert into fiducia.customer_preferences (user_id, density, timezone, region, notify_key_rotation, notify_lock_contention, notify_mfa, updated_at, version, sync_sequence) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning user_id, density, timezone, region, notify_key_rotation, notify_lock_contention, notify_mfa, updated_at, version, sync_sequence;
+
+-- name: UpdateCustomerPreferences :one
+update fiducia.customer_preferences set density = $2, timezone = $3, region = $4, notify_key_rotation = $5, notify_lock_contention = $6, notify_mfa = $7, updated_at = $8, version = $9, sync_sequence = $10 where user_id = $1 returning user_id, density, timezone, region, notify_key_rotation, notify_lock_contention, notify_mfa, updated_at, version, sync_sequence;
+
+-- name: DeleteCustomerPreferences :exec
+delete from fiducia.customer_preferences where user_id = $1;
+
+-- name: ListCustomerSessions :many
+select id, user_id, device, location, last_seen, status, updated_at, version, sync_sequence from fiducia.customer_sessions;
+
+-- name: GetCustomerSessions :one
+select id, user_id, device, location, last_seen, status, updated_at, version, sync_sequence from fiducia.customer_sessions where id = $1 limit 1;
+
+-- name: CreateCustomerSessions :one
+insert into fiducia.customer_sessions (id, user_id, device, location, last_seen, status, updated_at, version, sync_sequence) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id, user_id, device, location, last_seen, status, updated_at, version, sync_sequence;
+
+-- name: UpdateCustomerSessions :one
+update fiducia.customer_sessions set user_id = $2, device = $3, location = $4, last_seen = $5, status = $6, updated_at = $7, version = $8, sync_sequence = $9 where id = $1 returning id, user_id, device, location, last_seen, status, updated_at, version, sync_sequence;
+
+-- name: DeleteCustomerSessions :exec
+delete from fiducia.customer_sessions where id = $1;
+
+-- name: ListAuditLog :many
+select id, org_id, project_id, actor_user_id, actor_key_id, actor, action, target, request_id, source_ip, user_agent, meta, created_at, retention_expires_at from fiducia.audit_log;
+
+-- name: GetAuditLog :one
+select id, org_id, project_id, actor_user_id, actor_key_id, actor, action, target, request_id, source_ip, user_agent, meta, created_at, retention_expires_at from fiducia.audit_log where id = $1 limit 1;
+
+-- name: CreateAuditLog :one
+insert into fiducia.audit_log (id, org_id, project_id, actor_user_id, actor_key_id, actor, action, target, request_id, source_ip, user_agent, meta, created_at, retention_expires_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) returning id, org_id, project_id, actor_user_id, actor_key_id, actor, action, target, request_id, source_ip, user_agent, meta, created_at, retention_expires_at;
+
+-- name: UpdateAuditLog :one
+update fiducia.audit_log set org_id = $2, project_id = $3, actor_user_id = $4, actor_key_id = $5, actor = $6, action = $7, target = $8, request_id = $9, source_ip = $10, user_agent = $11, meta = $12, retention_expires_at = $13 where id = $1 returning id, org_id, project_id, actor_user_id, actor_key_id, actor, action, target, request_id, source_ip, user_agent, meta, created_at, retention_expires_at;
+
+-- name: DeleteAuditLog :exec
+delete from fiducia.audit_log where id = $1;
+
+-- name: ListCustomerNotifications :many
+select id, user_id, org_id, kind, severity, title, body, link, read_at, created_at, updated_at, version, sync_sequence from fiducia.customer_notifications;
+
+-- name: GetCustomerNotifications :one
+select id, user_id, org_id, kind, severity, title, body, link, read_at, created_at, updated_at, version, sync_sequence from fiducia.customer_notifications where id = $1 limit 1;
+
+-- name: CreateCustomerNotifications :one
+insert into fiducia.customer_notifications (id, user_id, org_id, kind, severity, title, body, link, read_at, created_at, updated_at, version, sync_sequence) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) returning id, user_id, org_id, kind, severity, title, body, link, read_at, created_at, updated_at, version, sync_sequence;
+
+-- name: UpdateCustomerNotifications :one
+update fiducia.customer_notifications set user_id = $2, org_id = $3, kind = $4, severity = $5, title = $6, body = $7, link = $8, read_at = $9, updated_at = $10, version = $11, sync_sequence = $12 where id = $1 returning id, user_id, org_id, kind, severity, title, body, link, read_at, created_at, updated_at, version, sync_sequence;
+
+-- name: DeleteCustomerNotifications :exec
+delete from fiducia.customer_notifications where id = $1;
+
+-- name: ListSyncIdempotencyKeys :many
+select key, request_fingerprint, committed_version, created_at from fiducia.sync_idempotency_keys;
+
+-- name: GetSyncIdempotencyKeys :one
+select key, request_fingerprint, committed_version, created_at from fiducia.sync_idempotency_keys where key = $1 limit 1;
+
+-- name: CreateSyncIdempotencyKeys :one
+insert into fiducia.sync_idempotency_keys (key, request_fingerprint, committed_version, created_at) values ($1, $2, $3, $4) returning key, request_fingerprint, committed_version, created_at;
+
+-- name: UpdateSyncIdempotencyKeys :one
+update fiducia.sync_idempotency_keys set request_fingerprint = $2, committed_version = $3 where key = $1 returning key, request_fingerprint, committed_version, created_at;
+
+-- name: DeleteSyncIdempotencyKeys :exec
+delete from fiducia.sync_idempotency_keys where key = $1;
+
+-- name: ListTranscriptions :many
+select id, source, provider, model, text, language, sample_rate, duration_ms, created_at from t2v.transcriptions;
+
+-- name: GetTranscriptions :one
+select id, source, provider, model, text, language, sample_rate, duration_ms, created_at from t2v.transcriptions where id = $1 limit 1;
+
+-- name: CreateTranscriptions :one
+insert into t2v.transcriptions (id, source, provider, model, text, language, sample_rate, duration_ms, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id, source, provider, model, text, language, sample_rate, duration_ms, created_at;
+
+-- name: UpdateTranscriptions :one
+update t2v.transcriptions set source = $2, provider = $3, model = $4, text = $5, language = $6, sample_rate = $7, duration_ms = $8 where id = $1 returning id, source, provider, model, text, language, sample_rate, duration_ms, created_at;
+
+-- name: DeleteTranscriptions :exec
+delete from t2v.transcriptions where id = $1;
+
+-- name: ListSyntheses :many
+select id, text, voice, provider, model, format, audio_bytes, created_at from t2v.syntheses;
+
+-- name: GetSyntheses :one
+select id, text, voice, provider, model, format, audio_bytes, created_at from t2v.syntheses where id = $1 limit 1;
+
+-- name: CreateSyntheses :one
+insert into t2v.syntheses (id, text, voice, provider, model, format, audio_bytes, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8) returning id, text, voice, provider, model, format, audio_bytes, created_at;
+
+-- name: UpdateSyntheses :one
+update t2v.syntheses set text = $2, voice = $3, provider = $4, model = $5, format = $6, audio_bytes = $7 where id = $1 returning id, text, voice, provider, model, format, audio_bytes, created_at;
+
+-- name: DeleteSyntheses :exec
+delete from t2v.syntheses where id = $1;
+
+-- name: ListTranslations :many
+select id, source_text, translated_text, source_lang, target_lang, provider, model, latency_ms, created_at from t2v.translations;
+
+-- name: GetTranslations :one
+select id, source_text, translated_text, source_lang, target_lang, provider, model, latency_ms, created_at from t2v.translations where id = $1 limit 1;
+
+-- name: CreateTranslations :one
+insert into t2v.translations (id, source_text, translated_text, source_lang, target_lang, provider, model, latency_ms, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id, source_text, translated_text, source_lang, target_lang, provider, model, latency_ms, created_at;
+
+-- name: UpdateTranslations :one
+update t2v.translations set source_text = $2, translated_text = $3, source_lang = $4, target_lang = $5, provider = $6, model = $7, latency_ms = $8 where id = $1 returning id, source_text, translated_text, source_lang, target_lang, provider, model, latency_ms, created_at;
+
+-- name: DeleteTranslations :exec
+delete from t2v.translations where id = $1;
+
+-- name: ListVapiCalls :many
+select id, vapi_call_id, status, ended_reason, transcript, summary, created_at, updated_at from t2v.vapi_calls;
+
+-- name: GetVapiCalls :one
+select id, vapi_call_id, status, ended_reason, transcript, summary, created_at, updated_at from t2v.vapi_calls where id = $1 limit 1;
+
+-- name: CreateVapiCalls :one
+insert into t2v.vapi_calls (id, vapi_call_id, status, ended_reason, transcript, summary, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8) returning id, vapi_call_id, status, ended_reason, transcript, summary, created_at, updated_at;
+
+-- name: UpdateVapiCalls :one
+update t2v.vapi_calls set vapi_call_id = $2, status = $3, ended_reason = $4, transcript = $5, summary = $6, updated_at = $7 where id = $1 returning id, vapi_call_id, status, ended_reason, transcript, summary, created_at, updated_at;
+
+-- name: DeleteVapiCalls :exec
+delete from t2v.vapi_calls where id = $1;
+
+-- name: ListVapiEvents :many
+select id, vapi_call_id, event_type, payload, created_at from t2v.vapi_events;
+
+-- name: GetVapiEvents :one
+select id, vapi_call_id, event_type, payload, created_at from t2v.vapi_events where id = $1 limit 1;
+
+-- name: CreateVapiEvents :one
+insert into t2v.vapi_events (id, vapi_call_id, event_type, payload, created_at) values ($1, $2, $3, $4, $5) returning id, vapi_call_id, event_type, payload, created_at;
+
+-- name: UpdateVapiEvents :one
+update t2v.vapi_events set vapi_call_id = $2, event_type = $3, payload = $4 where id = $1 returning id, vapi_call_id, event_type, payload, created_at;
+
+-- name: DeleteVapiEvents :exec
+delete from t2v.vapi_events where id = $1;
+
+-- name: ListFabPlans :many
+select id, owner_email, title, goal, process_family, status, document, created_at, updated_at from daedalus.fab_plans;
+
+-- name: GetFabPlans :one
+select id, owner_email, title, goal, process_family, status, document, created_at, updated_at from daedalus.fab_plans where id = $1 limit 1;
+
+-- name: CreateFabPlans :one
+insert into daedalus.fab_plans (id, owner_email, title, goal, process_family, status, document, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id, owner_email, title, goal, process_family, status, document, created_at, updated_at;
+
+-- name: UpdateFabPlans :one
+update daedalus.fab_plans set owner_email = $2, title = $3, goal = $4, process_family = $5, status = $6, document = $7, updated_at = $8 where id = $1 returning id, owner_email, title, goal, process_family, status, document, created_at, updated_at;
+
+-- name: DeleteFabPlans :exec
+delete from daedalus.fab_plans where id = $1;
+
+-- name: ListFabDesigns :many
+select id, plan_id, filename, format, storage_uri, size_bytes, content_hash, geometry, created_at from daedalus.fab_designs;
+
+-- name: GetFabDesigns :one
+select id, plan_id, filename, format, storage_uri, size_bytes, content_hash, geometry, created_at from daedalus.fab_designs where id = $1 limit 1;
+
+-- name: CreateFabDesigns :one
+insert into daedalus.fab_designs (id, plan_id, filename, format, storage_uri, size_bytes, content_hash, geometry, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id, plan_id, filename, format, storage_uri, size_bytes, content_hash, geometry, created_at;
+
+-- name: UpdateFabDesigns :one
+update daedalus.fab_designs set plan_id = $2, filename = $3, format = $4, storage_uri = $5, size_bytes = $6, content_hash = $7, geometry = $8 where id = $1 returning id, plan_id, filename, format, storage_uri, size_bytes, content_hash, geometry, created_at;
+
+-- name: DeleteFabDesigns :exec
+delete from daedalus.fab_designs where id = $1;
+
+-- name: ListFabInstructions :many
+select id, plan_id, revision, machine_profile, dialect, storage_uri, content_hash, validated, validation, released_by_email, released_at, created_at from daedalus.fab_instructions;
+
+-- name: GetFabInstructions :one
+select id, plan_id, revision, machine_profile, dialect, storage_uri, content_hash, validated, validation, released_by_email, released_at, created_at from daedalus.fab_instructions where id = $1 limit 1;
+
+-- name: CreateFabInstructions :one
+insert into daedalus.fab_instructions (id, plan_id, revision, machine_profile, dialect, storage_uri, content_hash, validated, validation, released_by_email, released_at, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) returning id, plan_id, revision, machine_profile, dialect, storage_uri, content_hash, validated, validation, released_by_email, released_at, created_at;
+
+-- name: UpdateFabInstructions :one
+update daedalus.fab_instructions set plan_id = $2, revision = $3, machine_profile = $4, dialect = $5, storage_uri = $6, content_hash = $7, validated = $8, validation = $9, released_by_email = $10, released_at = $11 where id = $1 returning id, plan_id, revision, machine_profile, dialect, storage_uri, content_hash, validated, validation, released_by_email, released_at, created_at;
+
+-- name: DeleteFabInstructions :exec
+delete from daedalus.fab_instructions where id = $1;
+
+-- name: ListFabRuns :many
+select id, instructions_id, status, machine_id, operator_email, progress, as_built, error, started_at, finished_at, created_at from daedalus.fab_runs;
+
+-- name: GetFabRuns :one
+select id, instructions_id, status, machine_id, operator_email, progress, as_built, error, started_at, finished_at, created_at from daedalus.fab_runs where id = $1 limit 1;
+
+-- name: CreateFabRuns :one
+insert into daedalus.fab_runs (id, instructions_id, status, machine_id, operator_email, progress, as_built, error, started_at, finished_at, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning id, instructions_id, status, machine_id, operator_email, progress, as_built, error, started_at, finished_at, created_at;
+
+-- name: UpdateFabRuns :one
+update daedalus.fab_runs set instructions_id = $2, status = $3, machine_id = $4, operator_email = $5, progress = $6, as_built = $7, error = $8, started_at = $9, finished_at = $10 where id = $1 returning id, instructions_id, status, machine_id, operator_email, progress, as_built, error, started_at, finished_at, created_at;
+
+-- name: DeleteFabRuns :exec
+delete from daedalus.fab_runs where id = $1;

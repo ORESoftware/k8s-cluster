@@ -1080,8 +1080,8 @@ class DesSoccerLearningSetPlayRuns(BaseModel):
 
 
 class DesSoccerLearningSetPlayRestartMix(BaseModel):
-    run_id = UUIDField()
-    ordinal = IntegerField()
+    run_id = UUIDField(primary_key=True)
+    ordinal = IntegerField(primary_key=True)
     restart = CharField(max_length=40)
 
     class Meta:
@@ -1089,8 +1089,8 @@ class DesSoccerLearningSetPlayRestartMix(BaseModel):
 
 
 class DesSoccerLearningSetPlayEpisodeMetrics(BaseModel):
-    run_id = UUIDField()
-    episode_index = IntegerField()
+    run_id = UUIDField(primary_key=True)
+    episode_index = IntegerField(primary_key=True)
     seed = BigIntegerField()
     restart = CharField(max_length=40)
     routine = CharField(max_length=80, null=True)
@@ -2594,3 +2594,361 @@ class SharedContext(BaseModel):
     class Meta:
         table_name = "shared_context"
         schema = "ai_agent_bridge"
+
+
+class SyncClock(BaseModel):
+    singleton = BooleanField(primary_key=True)
+    last_sequence = BigIntegerField()
+
+    class Meta:
+        table_name = "sync_clock"
+        schema = "fiducia"
+
+
+class SyncTombstones(BaseModel):
+    sequence = BigIntegerField(primary_key=True)
+    table_name = TextField()
+    row_id = TextField()
+    tenant_id = UUIDField(null=True)
+    owner_user_id = UUIDField(null=True)
+    row_version = BigIntegerField()
+    deleted_at = DateTimeField()
+
+    class Meta:
+        table_name = "sync_tombstones"
+        schema = "fiducia"
+
+
+class Orgs(BaseModel):
+    id = UUIDField(primary_key=True)
+    slug = CharField(max_length=120)
+    name = CharField(max_length=200)
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+    version = BigIntegerField()
+    sync_sequence = BigIntegerField()
+
+    class Meta:
+        table_name = "orgs"
+        schema = "fiducia"
+
+
+class Projects(BaseModel):
+    id = UUIDField(primary_key=True)
+    org_id = UUIDField()
+    slug = CharField(max_length=120)
+    name = CharField(max_length=200)
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+    version = BigIntegerField()
+    sync_sequence = BigIntegerField()
+
+    class Meta:
+        table_name = "projects"
+        schema = "fiducia"
+
+
+class Users(BaseModel):
+    id = UUIDField(primary_key=True)
+    supabase_user_id = UUIDField()
+    email = CharField(max_length=320)
+    created_at = DateTimeField()
+
+    class Meta:
+        table_name = "users"
+        schema = "fiducia"
+
+
+class OrgMembers(BaseModel):
+    org_id = UUIDField(primary_key=True)
+    user_id = UUIDField(primary_key=True)
+    role = CharField(max_length=32)
+    created_at = DateTimeField()
+
+    class Meta:
+        table_name = "org_members"
+        schema = "fiducia"
+
+
+class ProjectMembers(BaseModel):
+    project_id = UUIDField(primary_key=True)
+    user_id = UUIDField(primary_key=True)
+    role = CharField(max_length=32)
+    created_at = DateTimeField()
+
+    class Meta:
+        table_name = "project_members"
+        schema = "fiducia"
+
+
+class ApiKeys(BaseModel):
+    id = UUIDField(primary_key=True)
+    key_id = CharField(max_length=64)
+    org_id = UUIDField()
+    project_id = UUIDField(null=True)
+    created_by_user_id = UUIDField(null=True)
+    name = CharField(max_length=200)
+    secret_hash = CharField(max_length=255)
+    scopes = BinaryJSONField()
+    env = CharField(max_length=16)
+    require_idempotency = BooleanField()
+    mtls_required = BooleanField()
+    revoked = BooleanField()
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+    version = BigIntegerField()
+    sync_sequence = BigIntegerField()
+    last_used_at = DateTimeField(null=True)
+    expires_at = DateTimeField(null=True)
+
+    class Meta:
+        table_name = "api_keys"
+        schema = "fiducia"
+
+
+class MtlsClientCerts(BaseModel):
+    id = UUIDField(primary_key=True)
+    org_id = UUIDField()
+    project_id = UUIDField(null=True)
+    name = CharField(max_length=200)
+    subject = CharField(max_length=500)
+    sha256_fingerprint = CharField(max_length=95)
+    not_before = DateTimeField(null=True)
+    not_after = DateTimeField(null=True)
+    revoked = BooleanField()
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+    version = BigIntegerField()
+    sync_sequence = BigIntegerField()
+
+    class Meta:
+        table_name = "mtls_client_certs"
+        schema = "fiducia"
+
+
+class CustomerPreferences(BaseModel):
+    user_id = UUIDField(primary_key=True)
+    density = CharField(max_length=16)
+    timezone = CharField(max_length=64)
+    region = CharField(max_length=16)
+    notify_key_rotation = BooleanField()
+    notify_lock_contention = BooleanField()
+    notify_mfa = BooleanField()
+    updated_at = DateTimeField()
+    version = BigIntegerField()
+    sync_sequence = BigIntegerField()
+
+    class Meta:
+        table_name = "customer_preferences"
+        schema = "fiducia"
+
+
+class CustomerSessions(BaseModel):
+    id = UUIDField(primary_key=True)
+    user_id = UUIDField()
+    device = CharField(max_length=200)
+    location = CharField(max_length=200, null=True)
+    last_seen = DateTimeField()
+    status = CharField(max_length=16)
+    updated_at = DateTimeField()
+    version = BigIntegerField()
+    sync_sequence = BigIntegerField()
+
+    class Meta:
+        table_name = "customer_sessions"
+        schema = "fiducia"
+
+
+class AuditLog(BaseModel):
+    id = UUIDField(primary_key=True)
+    org_id = UUIDField(null=True)
+    project_id = UUIDField(null=True)
+    actor_user_id = UUIDField(null=True)
+    actor_key_id = UUIDField(null=True)
+    actor = CharField(max_length=320, null=True)
+    action = CharField(max_length=120)
+    target = CharField(max_length=320, null=True)
+    request_id = CharField(max_length=120, null=True)
+    source_ip = CharField(max_length=64, null=True)
+    user_agent = CharField(max_length=500, null=True)
+    meta = BinaryJSONField()
+    created_at = DateTimeField()
+    retention_expires_at = DateTimeField(null=True)
+
+    class Meta:
+        table_name = "audit_log"
+        schema = "fiducia"
+
+
+class CustomerNotifications(BaseModel):
+    id = UUIDField(primary_key=True)
+    user_id = UUIDField()
+    org_id = UUIDField(null=True)
+    kind = CharField(max_length=40)
+    severity = CharField(max_length=16)
+    title = CharField(max_length=200)
+    body = CharField(max_length=2000)
+    link = CharField(max_length=500, null=True)
+    read_at = DateTimeField(null=True)
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+    version = BigIntegerField()
+    sync_sequence = BigIntegerField()
+
+    class Meta:
+        table_name = "customer_notifications"
+        schema = "fiducia"
+
+
+class SyncIdempotencyKeys(BaseModel):
+    key = TextField(primary_key=True)
+    request_fingerprint = CharField(max_length=64)
+    committed_version = BigIntegerField(null=True)
+    created_at = DateTimeField()
+
+    class Meta:
+        table_name = "sync_idempotency_keys"
+        schema = "fiducia"
+
+
+class Transcriptions(BaseModel):
+    id = UUIDField(primary_key=True)
+    source = TextField()
+    provider = TextField()
+    model = TextField()
+    text = TextField()
+    language = TextField(null=True)
+    sample_rate = IntegerField(null=True)
+    duration_ms = BigIntegerField(null=True)
+    created_at = DateTimeField()
+
+    class Meta:
+        table_name = "transcriptions"
+        schema = "t2v"
+
+
+class Syntheses(BaseModel):
+    id = UUIDField(primary_key=True)
+    text = TextField()
+    voice = TextField()
+    provider = TextField()
+    model = TextField()
+    format = TextField()
+    audio_bytes = BigIntegerField()
+    created_at = DateTimeField()
+
+    class Meta:
+        table_name = "syntheses"
+        schema = "t2v"
+
+
+class Translations(BaseModel):
+    id = UUIDField(primary_key=True)
+    source_text = TextField()
+    translated_text = TextField()
+    source_lang = TextField(null=True)
+    target_lang = TextField()
+    provider = TextField()
+    model = TextField()
+    latency_ms = BigIntegerField()
+    created_at = DateTimeField()
+
+    class Meta:
+        table_name = "translations"
+        schema = "t2v"
+
+
+class VapiCalls(BaseModel):
+    id = UUIDField(primary_key=True)
+    vapi_call_id = TextField()
+    status = TextField()
+    ended_reason = TextField(null=True)
+    transcript = TextField(null=True)
+    summary = TextField(null=True)
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+
+    class Meta:
+        table_name = "vapi_calls"
+        schema = "t2v"
+
+
+class VapiEvents(BaseModel):
+    id = UUIDField(primary_key=True)
+    vapi_call_id = TextField(null=True)
+    event_type = TextField()
+    payload = BinaryJSONField()
+    created_at = DateTimeField()
+
+    class Meta:
+        table_name = "vapi_events"
+        schema = "t2v"
+
+
+class FabPlans(BaseModel):
+    id = UUIDField(primary_key=True)
+    owner_email = TextField()
+    title = TextField()
+    goal = TextField()
+    process_family = TextField()
+    status = TextField()
+    document = BinaryJSONField(null=True)
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+
+    class Meta:
+        table_name = "fab_plans"
+        schema = "daedalus"
+
+
+class FabDesigns(BaseModel):
+    id = UUIDField(primary_key=True)
+    plan_id = UUIDField()
+    filename = TextField()
+    format = TextField()
+    storage_uri = TextField()
+    size_bytes = BigIntegerField()
+    content_hash = TextField(null=True)
+    geometry = BinaryJSONField()
+    created_at = DateTimeField()
+
+    class Meta:
+        table_name = "fab_designs"
+        schema = "daedalus"
+
+
+class FabInstructions(BaseModel):
+    id = UUIDField(primary_key=True)
+    plan_id = UUIDField()
+    revision = IntegerField()
+    machine_profile = TextField()
+    dialect = TextField()
+    storage_uri = TextField()
+    content_hash = TextField(null=True)
+    validated = BooleanField()
+    validation = BinaryJSONField()
+    released_by_email = TextField(null=True)
+    released_at = DateTimeField(null=True)
+    created_at = DateTimeField()
+
+    class Meta:
+        table_name = "fab_instructions"
+        schema = "daedalus"
+
+
+class FabRuns(BaseModel):
+    id = UUIDField(primary_key=True)
+    instructions_id = UUIDField()
+    status = TextField()
+    machine_id = TextField()
+    operator_email = TextField(null=True)
+    progress = SmallIntegerField()
+    as_built = BinaryJSONField()
+    error = TextField(null=True)
+    started_at = DateTimeField(null=True)
+    finished_at = DateTimeField(null=True)
+    created_at = DateTimeField()
+
+    class Meta:
+        table_name = "fab_runs"
+        schema = "daedalus"

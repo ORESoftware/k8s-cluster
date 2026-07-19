@@ -22,10 +22,22 @@ async function main() {
 
   const outputs = renderOutputs(schema, sourceSql);
 
+  // Every output must resolve inside generated/. Table/class names are
+  // parser-constrained to [A-Za-z0-9_] today, but nothing at the write site
+  // enforced that — this guard makes path escape structurally impossible.
+  const generatedRoot = path.join(packageRoot, 'generated') + path.sep;
+  const resolveOutputPath = (relativePath) => {
+    const absolutePath = path.join(packageRoot, relativePath);
+    if (!absolutePath.startsWith(generatedRoot)) {
+      throw new Error(`generated output path escapes generated/: ${relativePath}`);
+    }
+    return absolutePath;
+  };
+
   if (args.has('--check')) {
     const stale = [];
     for (const [relativePath, contents] of outputs) {
-      const absolutePath = path.join(packageRoot, relativePath);
+      const absolutePath = resolveOutputPath(relativePath);
       let existing = '';
       try {
         existing = await readFile(absolutePath, 'utf8');
@@ -51,7 +63,7 @@ async function main() {
   }
 
   for (const [relativePath, contents] of outputs) {
-    const absolutePath = path.join(packageRoot, relativePath);
+    const absolutePath = resolveOutputPath(relativePath);
     await mkdir(path.dirname(absolutePath), { recursive: true });
     await writeFile(absolutePath, contents);
   }
@@ -2225,7 +2237,9 @@ function renderDieselCargo() {
     '',
     '[dependencies]',
     'chrono = { version = "0.4", features = ["serde"] }',
-    'diesel = { version = "2", features = ["postgres", "uuid", "serde_json", "chrono"] }',
+    // 64-column-tables: music_songs (45 cols) and benefactor_scrape_queries (43) exceed
+    // diesel's default 32-column table! limit.
+    'diesel = { version = "2", features = ["postgres", "uuid", "serde_json", "chrono", "64-column-tables"] }',
     'serde = { version = "1", features = ["derive"] }',
     'serde_json = "1"',
     'uuid = { version = "1", features = ["serde"] }',
@@ -2313,11 +2327,14 @@ function renderSeaOrmRust(contract) {
         : `#[sea_orm(table_name = ${JSON.stringify(table.name)})]`;
     lines.push(seaOrmTableAttr);
     lines.push('pub struct Model {');
+    const primaryKeyCount = table.columns.filter((column) => column.primaryKey).length;
     for (const column of table.columns) {
       const attrs = [];
       if (column.primaryKey) {
         attrs.push('primary_key');
-        if (column.sqlType === 'uuid') {
+        // Composite keys are never auto-increment; sea-orm defaults integer PKs to
+        // auto_increment = true, which mis-models `primary key (a, b)` tables.
+        if (column.sqlType === 'uuid' || primaryKeyCount > 1) {
           attrs.push('auto_increment = false');
         }
       }
@@ -5849,11 +5866,22 @@ function screaming(value) {
 }
 
 function escapeTemplate(value) {
-  return value.replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
+  // Backslashes first — a trailing `\` would otherwise escape the closing
+  // backtick of the emitted template literal.
+  return value
+    .replace(/\\/g, '\\\\')
+    .replace(/`/g, '\\`')
+    .replace(/\$\{/g, '\\${');
 }
 
 function rustRawString(value) {
-  return `r###"${value}"###`;
+  // Grow the fence until it cannot appear in the value, so no input can
+  // terminate the raw string early (same trick as dartRawRegexString).
+  let fence = '###';
+  while (value.includes(`"${fence}`)) {
+    fence += '#';
+  }
+  return `r${fence}"${value}"${fence}`;
 }
 
 function goRawString(value) {

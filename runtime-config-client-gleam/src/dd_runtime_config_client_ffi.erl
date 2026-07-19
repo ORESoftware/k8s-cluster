@@ -20,6 +20,7 @@
     apply_payload/1,
     reset/0,
     auth_ok/1,
+    read_auth_ok/1,
     server_secret/0
 ]).
 
@@ -108,6 +109,20 @@ auth_ok(Provided) when is_list(Provided) ->
     auth_ok(list_to_binary(Provided));
 auth_ok(_) ->
     auth_ok(<<>>).
+
+%% Read-side auth: the snapshot lists every pushed entry value, so once a push
+%% secret is configured, reads must present it too. Without a configured
+%% secret the read stays open (local development), unlike the mutating routes
+%% which additionally honour RUNTIME_CONFIG_ALLOW_UNAUTHENTICATED.
+read_auth_ok(Provided) when is_binary(Provided) ->
+    case server_secret() of
+        undefined -> true;
+        Secret -> constant_time_equal(Provided, Secret)
+    end;
+read_auth_ok(Provided) when is_list(Provided) ->
+    read_auth_ok(list_to_binary(Provided));
+read_auth_ok(_) ->
+    read_auth_ok(<<>>).
 
 server_secret() ->
     case os:getenv("RUNTIME_CONFIG_SERVER_SECRET") of
@@ -283,8 +298,30 @@ nullable_string(undefined) -> <<"null">>;
 nullable_string(Value) when is_binary(Value) -> [<<"\"">>, escape_string(Value), <<"\"">>];
 nullable_string(Value) when is_list(Value) -> nullable_string(iolist_to_binary(Value)).
 
+%% Full JSON string escaping: backslash first, then quote, then control
+%% characters. Entry keys come from the control plane; emitting them with
+%% quote-only escaping would let a key containing a lone backslash break (or
+%% inject into) the snapshot JSON envelope.
 escape_string(Value) when is_binary(Value) ->
-    binary:replace(Value, <<"\"">>, <<"\\\"">>, [global]).
+    escape_string(Value, <<>>).
+
+escape_string(<<>>, Acc) ->
+    Acc;
+escape_string(<<$\\, Rest/binary>>, Acc) ->
+    escape_string(Rest, <<Acc/binary, "\\\\">>);
+escape_string(<<$", Rest/binary>>, Acc) ->
+    escape_string(Rest, <<Acc/binary, "\\\"">>);
+escape_string(<<$\n, Rest/binary>>, Acc) ->
+    escape_string(Rest, <<Acc/binary, "\\n">>);
+escape_string(<<$\r, Rest/binary>>, Acc) ->
+    escape_string(Rest, <<Acc/binary, "\\r">>);
+escape_string(<<$\t, Rest/binary>>, Acc) ->
+    escape_string(Rest, <<Acc/binary, "\\t">>);
+escape_string(<<C, Rest/binary>>, Acc) when C < 16#20 ->
+    Escaped = iolist_to_binary(io_lib:format("\\u~4.16.0b", [C])),
+    escape_string(Rest, <<Acc/binary, Escaped/binary>>);
+escape_string(<<C, Rest/binary>>, Acc) ->
+    escape_string(Rest, <<Acc/binary, C>>).
 
 %% ---------- payload parsing (small, dependency-free) -------------------
 

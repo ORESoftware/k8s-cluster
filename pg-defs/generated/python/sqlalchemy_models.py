@@ -4718,8 +4718,8 @@ class DesSoccerLearningSetPlayRestartMix(Base):
         CheckConstraint("restart in ('direct-free-kick', 'indirect-free-kick')", name="des_soccer_learning_set_play_restart_mix_restart_chk"),
     )
 
-    run_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
-    ordinal: Mapped[int] = mapped_column(Integer(), nullable=False)
+    run_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
+    ordinal: Mapped[int] = mapped_column(Integer(), primary_key=True)
     restart: Mapped[str] = mapped_column(String(40), nullable=False)
 
 class DesSoccerLearningSetPlayRestartMixRow(BaseModel):
@@ -4754,8 +4754,8 @@ class DesSoccerLearningSetPlayEpisodeMetrics(Base):
         Index("des_soccer_learning_set_play_episode_restart_idx", "restart", "scored", "episode_index"),
     )
 
-    run_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
-    episode_index: Mapped[int] = mapped_column(Integer(), nullable=False)
+    run_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
+    episode_index: Mapped[int] = mapped_column(Integer(), primary_key=True)
     seed: Mapped[int] = mapped_column(BigInteger(), nullable=False)
     restart: Mapped[str] = mapped_column(String(40), nullable=False)
     routine: Mapped[str | None] = mapped_column(String(80), nullable=True)
@@ -11165,3 +11165,1518 @@ class SharedContextInsert(BaseModel):
     updatedBy: str | None = Field("system", max_length=120)
     createdAt: datetime | None = None
     updatedAt: datetime | None = None
+
+class SyncClock(Base):
+    __tablename__ = "sync_clock"
+    __table_args__ = (
+        CheckConstraint("singleton", name="fiducia_sync_clock_singleton_chk"),
+        CheckConstraint("last_sequence >= 0", name="fiducia_sync_clock_nonnegative_chk"),
+        {"schema": "fiducia"},
+    )
+
+    singleton: Mapped[bool] = mapped_column(Boolean(), primary_key=True, server_default=text("true"))
+    last_sequence: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+
+class SyncClockRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    singleton: bool
+    lastSequence: int
+
+class SyncClockInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    singleton: bool | None = True
+    lastSequence: int | None = 0
+
+class SyncTombstones(Base):
+    __tablename__ = "sync_tombstones"
+    __table_args__ = (
+        CheckConstraint("sequence > 0", name="fiducia_sync_tombstones_sequence_chk"),
+        CheckConstraint("row_version > 0", name="fiducia_sync_tombstones_version_chk"),
+        CheckConstraint("tenant_id is not null or owner_user_id is not null", name="fiducia_sync_tombstones_scope_chk"),
+        Index("fiducia_sync_tombstones_table_row_uq", "table_name", "row_id", unique=True),
+        Index("fiducia_sync_tombstones_tenant_sequence_idx", "table_name", "tenant_id", "sequence", postgresql_where=text("tenant_id is not null")),
+        Index("fiducia_sync_tombstones_user_sequence_idx", "table_name", "owner_user_id", "sequence", postgresql_where=text("owner_user_id is not null")),
+        {"schema": "fiducia"},
+    )
+
+    sequence: Mapped[int] = mapped_column(BigInteger(), primary_key=True)
+    table_name: Mapped[str] = mapped_column(Text(), nullable=False)
+    row_id: Mapped[str] = mapped_column(Text(), nullable=False)
+    tenant_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    owner_user_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    row_version: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    deleted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class SyncTombstonesRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    sequence: int
+    tableName: str
+    rowId: str
+    tenantId: UUID | None = None
+    ownerUserId: UUID | None = None
+    rowVersion: int
+    deletedAt: datetime
+
+class SyncTombstonesInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sequence: int
+    tableName: str
+    rowId: str
+    tenantId: UUID | None = None
+    ownerUserId: UUID | None = None
+    rowVersion: int
+    deletedAt: datetime | None = None
+
+class Orgs(Base):
+    __tablename__ = "orgs"
+    __table_args__ = (
+        CheckConstraint("slug ~ '^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$'", name="fiducia_orgs_slug_format_chk"),
+        Index("fiducia_orgs_slug_uq", "slug", unique=True),
+        Index("fiducia_orgs_sync_sequence_idx", "sync_sequence"),
+        {"schema": "fiducia"},
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    slug: Mapped[str] = mapped_column(String(120), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    version: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("1"))
+    sync_sequence: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+
+class OrgsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    slug: str = Field(..., max_length=120, pattern="^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$")
+    name: str = Field(..., max_length=200)
+    createdAt: datetime
+    updatedAt: datetime
+    version: int
+    syncSequence: int
+
+class OrgsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    slug: str = Field(..., max_length=120, pattern="^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$")
+    name: str = Field(..., max_length=200)
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    version: int | None = 1
+    syncSequence: int
+
+class Projects(Base):
+    __tablename__ = "projects"
+    __table_args__ = (
+        CheckConstraint("slug ~ '^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$'", name="fiducia_projects_slug_format_chk"),
+        Index("fiducia_projects_org_slug_uq", "org_id", "slug", unique=True),
+        Index("fiducia_projects_org_idx", "org_id"),
+        Index("fiducia_projects_org_sync_sequence_idx", "org_id", "sync_sequence"),
+        {"schema": "fiducia"},
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    org_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    slug: Mapped[str] = mapped_column(String(120), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    version: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("1"))
+    sync_sequence: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+
+class ProjectsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    orgId: UUID
+    slug: str = Field(..., max_length=120, pattern="^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$")
+    name: str = Field(..., max_length=200)
+    createdAt: datetime
+    updatedAt: datetime
+    version: int
+    syncSequence: int
+
+class ProjectsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    orgId: UUID
+    slug: str = Field(..., max_length=120, pattern="^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$")
+    name: str = Field(..., max_length=200)
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    version: int | None = 1
+    syncSequence: int
+
+class Users(Base):
+    __tablename__ = "users"
+    __table_args__ = (
+        Index("fiducia_users_supabase_uq", "supabase_user_id", unique=True),
+        {"schema": "fiducia"},
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    supabase_user_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    email: Mapped[str] = mapped_column(String(320), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class UsersRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    supabaseUserId: UUID
+    email: str = Field(..., max_length=320)
+    createdAt: datetime
+
+class UsersInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    supabaseUserId: UUID
+    email: str = Field(..., max_length=320)
+    createdAt: datetime | None = None
+
+OrgMembersRole = Literal["owner", "admin", "member"]
+
+class OrgMembers(Base):
+    __tablename__ = "org_members"
+    __table_args__ = (
+        CheckConstraint("role in ('owner', 'admin', 'member')", name="fiducia_org_members_role_chk"),
+        Index("fiducia_org_members_user_idx", "user_id"),
+        {"schema": "fiducia"},
+    )
+
+    org_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
+    user_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
+    role: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'member'"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class OrgMembersRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    orgId: UUID
+    userId: UUID
+    role: OrgMembersRole
+    createdAt: datetime
+
+class OrgMembersInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    orgId: UUID
+    userId: UUID
+    role: OrgMembersRole | None = "member"
+    createdAt: datetime | None = None
+
+ProjectMembersRole = Literal["admin", "operator", "viewer"]
+
+class ProjectMembers(Base):
+    __tablename__ = "project_members"
+    __table_args__ = (
+        CheckConstraint("role in ('admin', 'operator', 'viewer')", name="fiducia_project_members_role_chk"),
+        Index("fiducia_project_members_user_idx", "user_id"),
+        {"schema": "fiducia"},
+    )
+
+    project_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
+    user_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
+    role: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'viewer'"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class ProjectMembersRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    projectId: UUID
+    userId: UUID
+    role: ProjectMembersRole
+    createdAt: datetime
+
+class ProjectMembersInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    projectId: UUID
+    userId: UUID
+    role: ProjectMembersRole | None = "viewer"
+    createdAt: datetime | None = None
+
+ApiKeysEnv = Literal["live", "test"]
+
+class ApiKeys(Base):
+    __tablename__ = "api_keys"
+    __table_args__ = (
+        CheckConstraint("env in ('live', 'test')", name="fiducia_api_keys_env_chk"),
+        CheckConstraint("jsonb_typeof(scopes) = 'array'", name="fiducia_api_keys_scopes_array_chk"),
+        Index("fiducia_api_keys_key_id_uq", "key_id", unique=True),
+        Index("fiducia_api_keys_org_idx", "org_id", postgresql_where=text("revoked = false")),
+        Index("fiducia_api_keys_project_idx", "project_id", postgresql_where=text("revoked = false")),
+        Index("fiducia_api_keys_org_sync_sequence_idx", "org_id", "sync_sequence"),
+        {"schema": "fiducia"},
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    key_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    org_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    project_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    created_by_user_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    secret_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    scopes: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'[]'::jsonb"))
+    env: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'live'"))
+    require_idempotency: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("true"))
+    mtls_required: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    revoked: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    version: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("1"))
+    sync_sequence: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+class ApiKeysRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    keyId: str = Field(..., max_length=64)
+    orgId: UUID
+    projectId: UUID | None = None
+    createdByUserId: UUID | None = None
+    name: str = Field(..., max_length=200)
+    secretHash: str = Field(..., max_length=255)
+    scopes: list[Any]
+    env: ApiKeysEnv
+    requireIdempotency: bool
+    mtlsRequired: bool
+    revoked: bool
+    createdAt: datetime
+    updatedAt: datetime
+    version: int
+    syncSequence: int
+    lastUsedAt: datetime | None = None
+    expiresAt: datetime | None = None
+
+class ApiKeysInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    keyId: str = Field(..., max_length=64)
+    orgId: UUID
+    projectId: UUID | None = None
+    createdByUserId: UUID | None = None
+    name: str = Field(..., max_length=200)
+    secretHash: str = Field(..., max_length=255)
+    scopes: list[Any] | None = Field(default_factory=list)
+    env: ApiKeysEnv | None = "live"
+    requireIdempotency: bool | None = True
+    mtlsRequired: bool | None = False
+    revoked: bool | None = False
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    version: int | None = 1
+    syncSequence: int
+    lastUsedAt: datetime | None = None
+    expiresAt: datetime | None = None
+
+class MtlsClientCerts(Base):
+    __tablename__ = "mtls_client_certs"
+    __table_args__ = (
+        Index("fiducia_mtls_client_certs_fingerprint_uq", "sha256_fingerprint", unique=True),
+        Index("fiducia_mtls_client_certs_org_idx", "org_id", postgresql_where=text("revoked = false")),
+        Index("fiducia_mtls_client_certs_org_sync_sequence_idx", "org_id", "sync_sequence"),
+        {"schema": "fiducia"},
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    org_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    project_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    subject: Mapped[str] = mapped_column(String(500), nullable=False)
+    sha256_fingerprint: Mapped[str] = mapped_column(String(95), nullable=False)
+    not_before: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    not_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    version: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("1"))
+    sync_sequence: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+
+class MtlsClientCertsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    orgId: UUID
+    projectId: UUID | None = None
+    name: str = Field(..., max_length=200)
+    subject: str = Field(..., max_length=500)
+    sha256Fingerprint: str = Field(..., max_length=95)
+    notBefore: datetime | None = None
+    notAfter: datetime | None = None
+    revoked: bool
+    createdAt: datetime
+    updatedAt: datetime
+    version: int
+    syncSequence: int
+
+class MtlsClientCertsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    orgId: UUID
+    projectId: UUID | None = None
+    name: str = Field(..., max_length=200)
+    subject: str = Field(..., max_length=500)
+    sha256Fingerprint: str = Field(..., max_length=95)
+    notBefore: datetime | None = None
+    notAfter: datetime | None = None
+    revoked: bool | None = False
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    version: int | None = 1
+    syncSequence: int
+
+CustomerPreferencesDensity = Literal["comfortable", "compact"]
+
+class CustomerPreferences(Base):
+    __tablename__ = "customer_preferences"
+    __table_args__ = (
+        CheckConstraint("density in ('comfortable', 'compact')", name="fiducia_customer_preferences_density_chk"),
+        Index("fiducia_customer_preferences_user_sync_sequence_idx", "user_id", "sync_sequence"),
+        {"schema": "fiducia"},
+    )
+
+    user_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
+    density: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'comfortable'"))
+    timezone: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'UTC'"))
+    region: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'auto'"))
+    notify_key_rotation: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("true"))
+    notify_lock_contention: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("true"))
+    notify_mfa: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("true"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    version: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("1"))
+    sync_sequence: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+
+class CustomerPreferencesRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    userId: UUID
+    density: CustomerPreferencesDensity
+    timezone: str = Field(..., max_length=64)
+    region: str = Field(..., max_length=16)
+    notifyKeyRotation: bool
+    notifyLockContention: bool
+    notifyMfa: bool
+    updatedAt: datetime
+    version: int
+    syncSequence: int
+
+class CustomerPreferencesInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    userId: UUID
+    density: CustomerPreferencesDensity | None = "comfortable"
+    timezone: str | None = Field("UTC", max_length=64)
+    region: str | None = Field("auto", max_length=16)
+    notifyKeyRotation: bool | None = True
+    notifyLockContention: bool | None = True
+    notifyMfa: bool | None = True
+    updatedAt: datetime | None = None
+    version: int | None = 1
+    syncSequence: int
+
+CustomerSessionsStatus = Literal["active", "verified", "revoked"]
+
+class CustomerSessions(Base):
+    __tablename__ = "customer_sessions"
+    __table_args__ = (
+        CheckConstraint("status in ('active', 'verified', 'revoked')", name="fiducia_customer_sessions_status_chk"),
+        Index("fiducia_customer_sessions_user_idx", "user_id"),
+        Index("fiducia_customer_sessions_user_sync_sequence_idx", "user_id", "sync_sequence"),
+        {"schema": "fiducia"},
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    user_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    device: Mapped[str] = mapped_column(String(200), nullable=False)
+    location: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'active'"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    version: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("1"))
+    sync_sequence: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+
+class CustomerSessionsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    userId: UUID
+    device: str = Field(..., max_length=200)
+    location: str | None = Field(None, max_length=200)
+    lastSeen: datetime
+    status: CustomerSessionsStatus
+    updatedAt: datetime
+    version: int
+    syncSequence: int
+
+class CustomerSessionsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    userId: UUID
+    device: str = Field(..., max_length=200)
+    location: str | None = Field(None, max_length=200)
+    lastSeen: datetime | None = None
+    status: CustomerSessionsStatus | None = "active"
+    updatedAt: datetime | None = None
+    version: int | None = 1
+    syncSequence: int
+
+class AuditLog(Base):
+    __tablename__ = "audit_log"
+    __table_args__ = (
+        CheckConstraint("jsonb_typeof(meta) = 'object'", name="fiducia_audit_meta_object_chk"),
+        Index("fiducia_audit_log_org_created_idx", "org_id", text("created_at desc")),
+        Index("fiducia_audit_log_project_created_idx", "project_id", text("created_at desc")),
+        Index("fiducia_audit_log_actor_user_created_idx", "actor_user_id", text("created_at desc")),
+        Index("fiducia_audit_log_actor_key_created_idx", "actor_key_id", text("created_at desc")),
+        {"schema": "fiducia"},
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    org_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    project_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    actor_user_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    actor_key_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    actor: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    action: Mapped[str] = mapped_column(String(120), nullable=False)
+    target: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    request_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    source_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    meta: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    retention_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+class AuditLogRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    orgId: UUID | None = None
+    projectId: UUID | None = None
+    actorUserId: UUID | None = None
+    actorKeyId: UUID | None = None
+    actor: str | None = Field(None, max_length=320)
+    action: str = Field(..., max_length=120)
+    target: str | None = Field(None, max_length=320)
+    requestId: str | None = Field(None, max_length=120)
+    sourceIp: str | None = Field(None, max_length=64)
+    userAgent: str | None = Field(None, max_length=500)
+    meta: dict[str, Any]
+    createdAt: datetime
+    retentionExpiresAt: datetime | None = None
+
+class AuditLogInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    orgId: UUID | None = None
+    projectId: UUID | None = None
+    actorUserId: UUID | None = None
+    actorKeyId: UUID | None = None
+    actor: str | None = Field(None, max_length=320)
+    action: str = Field(..., max_length=120)
+    target: str | None = Field(None, max_length=320)
+    requestId: str | None = Field(None, max_length=120)
+    sourceIp: str | None = Field(None, max_length=64)
+    userAgent: str | None = Field(None, max_length=500)
+    meta: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+    retentionExpiresAt: datetime | None = None
+
+CustomerNotificationsSeverity = Literal["info", "success", "warning", "critical"]
+
+class CustomerNotifications(Base):
+    __tablename__ = "customer_notifications"
+    __table_args__ = (
+        CheckConstraint("severity in ('info', 'success', 'warning', 'critical')", name="fiducia_customer_notifications_severity_chk"),
+        CheckConstraint("kind ~ '^[a-z][a-z0-9_.]{1,38}[a-z0-9]$'", name="fiducia_customer_notifications_kind_chk"),
+        Index("fiducia_customer_notifications_user_created_idx", "user_id", text("created_at desc")),
+        Index("fiducia_customer_notifications_user_unread_idx", "user_id", postgresql_where=text("read_at is null")),
+        Index("fiducia_customer_notifications_user_sync_sequence_idx", "user_id", "sync_sequence"),
+        {"schema": "fiducia"},
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    user_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    org_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    kind: Mapped[str] = mapped_column(String(40), nullable=False)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'info'"))
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    body: Mapped[str] = mapped_column(String(2000), nullable=False, server_default=text("''"))
+    link: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    version: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("1"))
+    sync_sequence: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+
+class CustomerNotificationsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    userId: UUID
+    orgId: UUID | None = None
+    kind: str = Field(..., max_length=40, pattern="^[a-z][a-z0-9_.]{1,38}[a-z0-9]$")
+    severity: CustomerNotificationsSeverity
+    title: str = Field(..., max_length=200)
+    body: str = Field(..., max_length=2000)
+    link: str | None = Field(None, max_length=500)
+    readAt: datetime | None = None
+    createdAt: datetime
+    updatedAt: datetime
+    version: int
+    syncSequence: int
+
+class CustomerNotificationsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    userId: UUID
+    orgId: UUID | None = None
+    kind: str = Field(..., max_length=40, pattern="^[a-z][a-z0-9_.]{1,38}[a-z0-9]$")
+    severity: CustomerNotificationsSeverity | None = "info"
+    title: str = Field(..., max_length=200)
+    body: str | None = Field("", max_length=2000)
+    link: str | None = Field(None, max_length=500)
+    readAt: datetime | None = None
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    version: int | None = 1
+    syncSequence: int
+
+class SyncIdempotencyKeys(Base):
+    __tablename__ = "sync_idempotency_keys"
+    __table_args__ = (
+        CheckConstraint("request_fingerprint ~ '^[0-9a-f]{64}$'", name="fiducia_sync_idempotency_fingerprint_chk"),
+        Index("fiducia_sync_idempotency_created_idx", "created_at"),
+        {"schema": "fiducia"},
+    )
+
+    key: Mapped[str] = mapped_column(Text(), primary_key=True)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    committed_version: Mapped[int | None] = mapped_column(BigInteger(), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class SyncIdempotencyKeysRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    key: str
+    requestFingerprint: str = Field(..., max_length=64, pattern="^[0-9a-f]{64}$")
+    committedVersion: int | None = None
+    createdAt: datetime
+
+class SyncIdempotencyKeysInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    requestFingerprint: str = Field(..., max_length=64, pattern="^[0-9a-f]{64}$")
+    committedVersion: int | None = None
+    createdAt: datetime | None = None
+
+class Transcriptions(Base):
+    __tablename__ = "transcriptions"
+    __table_args__ = (
+        CheckConstraint("octet_length(source) between 1 and 40", name="t2v_transcriptions_source_size_chk"),
+        CheckConstraint("octet_length(provider) between 1 and 40", name="t2v_transcriptions_provider_size_chk"),
+        CheckConstraint("octet_length(model) between 1 and 200", name="t2v_transcriptions_model_size_chk"),
+        CheckConstraint("octet_length(text) <= 1000000", name="t2v_transcriptions_text_size_chk"),
+        CheckConstraint("language is null or octet_length(language) between 1 and 80", name="t2v_transcriptions_language_size_chk"),
+        CheckConstraint("sample_rate is null or sample_rate between 4000 and 384000", name="t2v_transcriptions_sample_rate_chk"),
+        CheckConstraint("duration_ms is null or duration_ms >= 0", name="t2v_transcriptions_duration_chk"),
+        Index("t2v_transcriptions_created_idx", "created_at"),
+        {"schema": "t2v"},
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    source: Mapped[str] = mapped_column(Text(), nullable=False)
+    provider: Mapped[str] = mapped_column(Text(), nullable=False)
+    model: Mapped[str] = mapped_column(Text(), nullable=False)
+    text: Mapped[str] = mapped_column(Text(), nullable=False)
+    language: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    sample_rate: Mapped[int | None] = mapped_column(Integer(), nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(BigInteger(), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class TranscriptionsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    source: str
+    provider: str
+    model: str
+    text: str
+    language: str | None = None
+    sampleRate: int | None = Field(None, ge=4000, le=384000)
+    durationMs: int | None = None
+    createdAt: datetime
+
+    @field_validator("source")
+    @classmethod
+    def validate_source(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 40:
+            raise ValueError("transcriptions.source exceeds 40 bytes")
+        return value
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 40:
+            raise ValueError("transcriptions.provider exceeds 40 bytes")
+        return value
+
+    @field_validator("model")
+    @classmethod
+    def validate_model(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("transcriptions.model exceeds 200 bytes")
+        return value
+
+    @field_validator("text")
+    @classmethod
+    def validate_text(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 1000000:
+            raise ValueError("transcriptions.text exceeds 1000000 bytes")
+        return value
+
+    @field_validator("language")
+    @classmethod
+    def validate_language(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 80:
+            raise ValueError("transcriptions.language exceeds 80 bytes")
+        return value
+
+class TranscriptionsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    source: str
+    provider: str
+    model: str
+    text: str
+    language: str | None = None
+    sampleRate: int | None = Field(None, ge=4000, le=384000)
+    durationMs: int | None = None
+    createdAt: datetime | None = None
+
+    @field_validator("source")
+    @classmethod
+    def validate_source(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 40:
+            raise ValueError("transcriptions.source exceeds 40 bytes")
+        return value
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 40:
+            raise ValueError("transcriptions.provider exceeds 40 bytes")
+        return value
+
+    @field_validator("model")
+    @classmethod
+    def validate_model(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("transcriptions.model exceeds 200 bytes")
+        return value
+
+    @field_validator("text")
+    @classmethod
+    def validate_text(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 1000000:
+            raise ValueError("transcriptions.text exceeds 1000000 bytes")
+        return value
+
+    @field_validator("language")
+    @classmethod
+    def validate_language(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 80:
+            raise ValueError("transcriptions.language exceeds 80 bytes")
+        return value
+
+class Syntheses(Base):
+    __tablename__ = "syntheses"
+    __table_args__ = (
+        CheckConstraint("octet_length(text) between 1 and 20000", name="t2v_syntheses_text_size_chk"),
+        CheckConstraint("octet_length(voice) between 1 and 80", name="t2v_syntheses_voice_size_chk"),
+        CheckConstraint("octet_length(provider) between 1 and 40", name="t2v_syntheses_provider_size_chk"),
+        CheckConstraint("octet_length(model) between 1 and 200", name="t2v_syntheses_model_size_chk"),
+        CheckConstraint("octet_length(format) between 1 and 10", name="t2v_syntheses_format_size_chk"),
+        CheckConstraint("audio_bytes >= 0", name="t2v_syntheses_audio_bytes_chk"),
+        Index("t2v_syntheses_created_idx", "created_at"),
+        {"schema": "t2v"},
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    text: Mapped[str] = mapped_column(Text(), nullable=False)
+    voice: Mapped[str] = mapped_column(Text(), nullable=False)
+    provider: Mapped[str] = mapped_column(Text(), nullable=False)
+    model: Mapped[str] = mapped_column(Text(), nullable=False)
+    format: Mapped[str] = mapped_column(Text(), nullable=False)
+    audio_bytes: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class SynthesesRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    text: str
+    voice: str
+    provider: str
+    model: str
+    format: str
+    audioBytes: int
+    createdAt: datetime
+
+    @field_validator("text")
+    @classmethod
+    def validate_text(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 20000:
+            raise ValueError("syntheses.text exceeds 20000 bytes")
+        return value
+
+    @field_validator("voice")
+    @classmethod
+    def validate_voice(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 80:
+            raise ValueError("syntheses.voice exceeds 80 bytes")
+        return value
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 40:
+            raise ValueError("syntheses.provider exceeds 40 bytes")
+        return value
+
+    @field_validator("model")
+    @classmethod
+    def validate_model(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("syntheses.model exceeds 200 bytes")
+        return value
+
+    @field_validator("format")
+    @classmethod
+    def validate_format(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 10:
+            raise ValueError("syntheses.format exceeds 10 bytes")
+        return value
+
+class SynthesesInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    text: str
+    voice: str
+    provider: str
+    model: str
+    format: str
+    audioBytes: int
+    createdAt: datetime | None = None
+
+    @field_validator("text")
+    @classmethod
+    def validate_text(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 20000:
+            raise ValueError("syntheses.text exceeds 20000 bytes")
+        return value
+
+    @field_validator("voice")
+    @classmethod
+    def validate_voice(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 80:
+            raise ValueError("syntheses.voice exceeds 80 bytes")
+        return value
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 40:
+            raise ValueError("syntheses.provider exceeds 40 bytes")
+        return value
+
+    @field_validator("model")
+    @classmethod
+    def validate_model(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("syntheses.model exceeds 200 bytes")
+        return value
+
+    @field_validator("format")
+    @classmethod
+    def validate_format(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 10:
+            raise ValueError("syntheses.format exceeds 10 bytes")
+        return value
+
+class Translations(Base):
+    __tablename__ = "translations"
+    __table_args__ = (
+        CheckConstraint("octet_length(source_text) between 1 and 200000", name="t2v_translations_source_text_size_chk"),
+        CheckConstraint("octet_length(translated_text) <= 200000", name="t2v_translations_translated_text_size_chk"),
+        CheckConstraint("source_lang is null or octet_length(source_lang) between 1 and 80", name="t2v_translations_source_lang_size_chk"),
+        CheckConstraint("octet_length(target_lang) between 1 and 80", name="t2v_translations_target_lang_size_chk"),
+        CheckConstraint("octet_length(provider) between 1 and 40", name="t2v_translations_provider_size_chk"),
+        CheckConstraint("octet_length(model) between 1 and 200", name="t2v_translations_model_size_chk"),
+        CheckConstraint("latency_ms >= 0", name="t2v_translations_latency_chk"),
+        Index("t2v_translations_created_idx", "created_at"),
+        {"schema": "t2v"},
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    source_text: Mapped[str] = mapped_column(Text(), nullable=False)
+    translated_text: Mapped[str] = mapped_column(Text(), nullable=False)
+    source_lang: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    target_lang: Mapped[str] = mapped_column(Text(), nullable=False)
+    provider: Mapped[str] = mapped_column(Text(), nullable=False)
+    model: Mapped[str] = mapped_column(Text(), nullable=False)
+    latency_ms: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class TranslationsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    sourceText: str
+    translatedText: str
+    sourceLang: str | None = None
+    targetLang: str
+    provider: str
+    model: str
+    latencyMs: int
+    createdAt: datetime
+
+    @field_validator("sourceText")
+    @classmethod
+    def validate_source_text(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200000:
+            raise ValueError("translations.source_text exceeds 200000 bytes")
+        return value
+
+    @field_validator("translatedText")
+    @classmethod
+    def validate_translated_text(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200000:
+            raise ValueError("translations.translated_text exceeds 200000 bytes")
+        return value
+
+    @field_validator("sourceLang")
+    @classmethod
+    def validate_source_lang(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 80:
+            raise ValueError("translations.source_lang exceeds 80 bytes")
+        return value
+
+    @field_validator("targetLang")
+    @classmethod
+    def validate_target_lang(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 80:
+            raise ValueError("translations.target_lang exceeds 80 bytes")
+        return value
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 40:
+            raise ValueError("translations.provider exceeds 40 bytes")
+        return value
+
+    @field_validator("model")
+    @classmethod
+    def validate_model(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("translations.model exceeds 200 bytes")
+        return value
+
+class TranslationsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    sourceText: str
+    translatedText: str
+    sourceLang: str | None = None
+    targetLang: str
+    provider: str
+    model: str
+    latencyMs: int
+    createdAt: datetime | None = None
+
+    @field_validator("sourceText")
+    @classmethod
+    def validate_source_text(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200000:
+            raise ValueError("translations.source_text exceeds 200000 bytes")
+        return value
+
+    @field_validator("translatedText")
+    @classmethod
+    def validate_translated_text(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200000:
+            raise ValueError("translations.translated_text exceeds 200000 bytes")
+        return value
+
+    @field_validator("sourceLang")
+    @classmethod
+    def validate_source_lang(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 80:
+            raise ValueError("translations.source_lang exceeds 80 bytes")
+        return value
+
+    @field_validator("targetLang")
+    @classmethod
+    def validate_target_lang(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 80:
+            raise ValueError("translations.target_lang exceeds 80 bytes")
+        return value
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 40:
+            raise ValueError("translations.provider exceeds 40 bytes")
+        return value
+
+    @field_validator("model")
+    @classmethod
+    def validate_model(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("translations.model exceeds 200 bytes")
+        return value
+
+class VapiCalls(Base):
+    __tablename__ = "vapi_calls"
+    __table_args__ = (
+        CheckConstraint("octet_length(vapi_call_id) between 1 and 120", name="t2v_vapi_calls_call_id_size_chk"),
+        CheckConstraint("octet_length(status) between 1 and 40", name="t2v_vapi_calls_status_size_chk"),
+        CheckConstraint("ended_reason is null or octet_length(ended_reason) between 1 and 200", name="t2v_vapi_calls_ended_reason_size_chk"),
+        CheckConstraint("transcript is null or octet_length(transcript) <= 1000000", name="t2v_vapi_calls_transcript_size_chk"),
+        CheckConstraint("summary is null or octet_length(summary) <= 100000", name="t2v_vapi_calls_summary_size_chk"),
+        Index("t2v_vapi_calls_vapi_call_id_uq", "vapi_call_id", unique=True),
+        {"schema": "t2v"},
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    vapi_call_id: Mapped[str] = mapped_column(Text(), nullable=False)
+    status: Mapped[str] = mapped_column(Text(), nullable=False)
+    ended_reason: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    transcript: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class VapiCallsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    vapiCallId: str
+    status: str
+    endedReason: str | None = None
+    transcript: str | None = None
+    summary: str | None = None
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("vapiCallId")
+    @classmethod
+    def validate_vapi_call_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 120:
+            raise ValueError("vapi_calls.vapi_call_id exceeds 120 bytes")
+        return value
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 40:
+            raise ValueError("vapi_calls.status exceeds 40 bytes")
+        return value
+
+    @field_validator("endedReason")
+    @classmethod
+    def validate_ended_reason(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("vapi_calls.ended_reason exceeds 200 bytes")
+        return value
+
+    @field_validator("transcript")
+    @classmethod
+    def validate_transcript(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 1000000:
+            raise ValueError("vapi_calls.transcript exceeds 1000000 bytes")
+        return value
+
+    @field_validator("summary")
+    @classmethod
+    def validate_summary(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 100000:
+            raise ValueError("vapi_calls.summary exceeds 100000 bytes")
+        return value
+
+class VapiCallsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    vapiCallId: str
+    status: str
+    endedReason: str | None = None
+    transcript: str | None = None
+    summary: str | None = None
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("vapiCallId")
+    @classmethod
+    def validate_vapi_call_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 120:
+            raise ValueError("vapi_calls.vapi_call_id exceeds 120 bytes")
+        return value
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 40:
+            raise ValueError("vapi_calls.status exceeds 40 bytes")
+        return value
+
+    @field_validator("endedReason")
+    @classmethod
+    def validate_ended_reason(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("vapi_calls.ended_reason exceeds 200 bytes")
+        return value
+
+    @field_validator("transcript")
+    @classmethod
+    def validate_transcript(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 1000000:
+            raise ValueError("vapi_calls.transcript exceeds 1000000 bytes")
+        return value
+
+    @field_validator("summary")
+    @classmethod
+    def validate_summary(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 100000:
+            raise ValueError("vapi_calls.summary exceeds 100000 bytes")
+        return value
+
+class VapiEvents(Base):
+    __tablename__ = "vapi_events"
+    __table_args__ = (
+        CheckConstraint("vapi_call_id is null or octet_length(vapi_call_id) between 1 and 120", name="t2v_vapi_events_call_id_size_chk"),
+        CheckConstraint("octet_length(event_type) between 1 and 80", name="t2v_vapi_events_type_size_chk"),
+        Index("t2v_vapi_events_created_idx", "created_at"),
+        Index("t2v_vapi_events_call_idx", "vapi_call_id"),
+        {"schema": "t2v"},
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    vapi_call_id: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    event_type: Mapped[str] = mapped_column(Text(), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class VapiEventsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    vapiCallId: str | None = None
+    eventType: str
+    payload: dict[str, Any]
+    createdAt: datetime
+
+    @field_validator("vapiCallId")
+    @classmethod
+    def validate_vapi_call_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 120:
+            raise ValueError("vapi_events.vapi_call_id exceeds 120 bytes")
+        return value
+
+    @field_validator("eventType")
+    @classmethod
+    def validate_event_type(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 80:
+            raise ValueError("vapi_events.event_type exceeds 80 bytes")
+        return value
+
+class VapiEventsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    vapiCallId: str | None = None
+    eventType: str
+    payload: dict[str, Any]
+    createdAt: datetime | None = None
+
+    @field_validator("vapiCallId")
+    @classmethod
+    def validate_vapi_call_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 120:
+            raise ValueError("vapi_events.vapi_call_id exceeds 120 bytes")
+        return value
+
+    @field_validator("eventType")
+    @classmethod
+    def validate_event_type(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 80:
+            raise ValueError("vapi_events.event_type exceeds 80 bytes")
+        return value
+
+FabPlansProcessFamily = Literal["additive", "subtractive", "hybrid"]
+FabPlansStatus = Literal["draft", "planning", "planned", "released", "archived"]
+
+class FabPlans(Base):
+    __tablename__ = "fab_plans"
+    __table_args__ = (
+        CheckConstraint("octet_length(owner_email) between 3 and 320", name="fab_plans_owner_email_size_chk"),
+        CheckConstraint("octet_length(title) between 1 and 200", name="fab_plans_title_size_chk"),
+        CheckConstraint("octet_length(goal) between 1 and 20000", name="fab_plans_goal_size_chk"),
+        CheckConstraint("process_family in ('additive', 'subtractive', 'hybrid')", name="fab_plans_process_family_chk"),
+        CheckConstraint("status in ('draft', 'planning', 'planned', 'released', 'archived')", name="fab_plans_status_chk"),
+        Index("fab_plans_owner_email_idx", "owner_email"),
+        Index("fab_plans_status_idx", "status"),
+        Index("fab_plans_owner_created_idx", "owner_email", text("created_at desc")),
+        {"schema": "daedalus"},
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    owner_email: Mapped[str] = mapped_column(Text(), nullable=False)
+    title: Mapped[str] = mapped_column(Text(), nullable=False)
+    goal: Mapped[str] = mapped_column(Text(), nullable=False)
+    process_family: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("'additive'"))
+    status: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("'draft'"))
+    document: Mapped[dict[str, Any] | None] = mapped_column(JSONB(), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class FabPlansRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    ownerEmail: str
+    title: str
+    goal: str
+    processFamily: FabPlansProcessFamily
+    status: FabPlansStatus
+    document: dict[str, Any] | None = None
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("ownerEmail")
+    @classmethod
+    def validate_owner_email(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 320:
+            raise ValueError("fab_plans.owner_email exceeds 320 bytes")
+        return value
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("fab_plans.title exceeds 200 bytes")
+        return value
+
+    @field_validator("goal")
+    @classmethod
+    def validate_goal(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 20000:
+            raise ValueError("fab_plans.goal exceeds 20000 bytes")
+        return value
+
+class FabPlansInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    ownerEmail: str
+    title: str
+    goal: str
+    processFamily: FabPlansProcessFamily | None = "additive"
+    status: FabPlansStatus | None = "draft"
+    document: dict[str, Any] | None = None
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("ownerEmail")
+    @classmethod
+    def validate_owner_email(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 320:
+            raise ValueError("fab_plans.owner_email exceeds 320 bytes")
+        return value
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("fab_plans.title exceeds 200 bytes")
+        return value
+
+    @field_validator("goal")
+    @classmethod
+    def validate_goal(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 20000:
+            raise ValueError("fab_plans.goal exceeds 20000 bytes")
+        return value
+
+FabDesignsFormat = Literal["step", "stl", "3mf", "dxf", "iges", "obj"]
+
+class FabDesigns(Base):
+    __tablename__ = "fab_designs"
+    __table_args__ = (
+        CheckConstraint("octet_length(filename) between 1 and 400", name="fab_designs_filename_size_chk"),
+        CheckConstraint("format in ('step', 'stl', '3mf', 'dxf', 'iges', 'obj')", name="fab_designs_format_chk"),
+        CheckConstraint("octet_length(storage_uri) between 1 and 2000", name="fab_designs_storage_uri_size_chk"),
+        CheckConstraint("size_bytes >= 0", name="fab_designs_size_nonnegative_chk"),
+        CheckConstraint("content_hash is null or octet_length(content_hash) = 64", name="fab_designs_content_hash_chk"),
+        Index("fab_designs_plan_idx", "plan_id"),
+        Index("fab_designs_content_hash_idx", "content_hash", postgresql_where=text("content_hash is not null")),
+        {"schema": "daedalus"},
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    plan_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    filename: Mapped[str] = mapped_column(Text(), nullable=False)
+    format: Mapped[str] = mapped_column(Text(), nullable=False)
+    storage_uri: Mapped[str] = mapped_column(Text(), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    content_hash: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    geometry: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class FabDesignsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    planId: UUID
+    filename: str
+    format: FabDesignsFormat
+    storageUri: str
+    sizeBytes: int
+    contentHash: str | None = None
+    geometry: dict[str, Any]
+    createdAt: datetime
+
+    @field_validator("filename")
+    @classmethod
+    def validate_filename(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 400:
+            raise ValueError("fab_designs.filename exceeds 400 bytes")
+        return value
+
+    @field_validator("storageUri")
+    @classmethod
+    def validate_storage_uri(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 2000:
+            raise ValueError("fab_designs.storage_uri exceeds 2000 bytes")
+        return value
+
+class FabDesignsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    planId: UUID
+    filename: str
+    format: FabDesignsFormat
+    storageUri: str
+    sizeBytes: int | None = 0
+    contentHash: str | None = None
+    geometry: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+
+    @field_validator("filename")
+    @classmethod
+    def validate_filename(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 400:
+            raise ValueError("fab_designs.filename exceeds 400 bytes")
+        return value
+
+    @field_validator("storageUri")
+    @classmethod
+    def validate_storage_uri(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 2000:
+            raise ValueError("fab_designs.storage_uri exceeds 2000 bytes")
+        return value
+
+FabInstructionsDialect = Literal["gcode", "nc", "apt", "proprietary"]
+
+class FabInstructions(Base):
+    __tablename__ = "fab_instructions"
+    __table_args__ = (
+        CheckConstraint("revision >= 1", name="fab_instructions_revision_chk"),
+        CheckConstraint("octet_length(machine_profile) between 1 and 200", name="fab_instructions_machine_profile_size_chk"),
+        CheckConstraint("dialect in ('gcode', 'nc', 'apt', 'proprietary')", name="fab_instructions_dialect_chk"),
+        CheckConstraint("octet_length(storage_uri) between 1 and 2000", name="fab_instructions_storage_uri_size_chk"),
+        CheckConstraint("content_hash is null or octet_length(content_hash) = 64", name="fab_instructions_content_hash_chk"),
+        CheckConstraint("(released_by_email is null) = (released_at is null)", name="fab_instructions_release_pair_chk"),
+        Index("fab_instructions_plan_revision_uq", "plan_id", "revision", unique=True),
+        Index("fab_instructions_plan_idx", "plan_id"),
+        {"schema": "daedalus"},
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    plan_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("1"))
+    machine_profile: Mapped[str] = mapped_column(Text(), nullable=False)
+    dialect: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("'gcode'"))
+    storage_uri: Mapped[str] = mapped_column(Text(), nullable=False)
+    content_hash: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    validated: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    validation: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    released_by_email: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class FabInstructionsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    planId: UUID
+    revision: int = Field(..., ge=1)
+    machineProfile: str
+    dialect: FabInstructionsDialect
+    storageUri: str
+    contentHash: str | None = None
+    validated: bool
+    validation: dict[str, Any]
+    releasedByEmail: str | None = None
+    releasedAt: datetime | None = None
+    createdAt: datetime
+
+    @field_validator("machineProfile")
+    @classmethod
+    def validate_machine_profile(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("fab_instructions.machine_profile exceeds 200 bytes")
+        return value
+
+    @field_validator("storageUri")
+    @classmethod
+    def validate_storage_uri(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 2000:
+            raise ValueError("fab_instructions.storage_uri exceeds 2000 bytes")
+        return value
+
+class FabInstructionsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    planId: UUID
+    revision: int | None = Field(1, ge=1)
+    machineProfile: str
+    dialect: FabInstructionsDialect | None = "gcode"
+    storageUri: str
+    contentHash: str | None = None
+    validated: bool | None = False
+    validation: dict[str, Any] | None = Field(default_factory=dict)
+    releasedByEmail: str | None = None
+    releasedAt: datetime | None = None
+    createdAt: datetime | None = None
+
+    @field_validator("machineProfile")
+    @classmethod
+    def validate_machine_profile(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("fab_instructions.machine_profile exceeds 200 bytes")
+        return value
+
+    @field_validator("storageUri")
+    @classmethod
+    def validate_storage_uri(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 2000:
+            raise ValueError("fab_instructions.storage_uri exceeds 2000 bytes")
+        return value
+
+FabRunsStatus = Literal["queued", "running", "succeeded", "failed", "aborted"]
+
+class FabRuns(Base):
+    __tablename__ = "fab_runs"
+    __table_args__ = (
+        CheckConstraint("status in ('queued', 'running', 'succeeded', 'failed', 'aborted')", name="fab_runs_status_chk"),
+        CheckConstraint("octet_length(machine_id) between 1 and 200", name="fab_runs_machine_id_size_chk"),
+        CheckConstraint("progress between 0 and 100", name="fab_runs_progress_range_chk"),
+        CheckConstraint("error is null or octet_length(error) <= 20000", name="fab_runs_error_size_chk"),
+        CheckConstraint("(status in ('succeeded', 'failed', 'aborted')) = (finished_at is not null)", name="fab_runs_finished_chk"),
+        Index("fab_runs_instructions_idx", "instructions_id"),
+        Index("fab_runs_status_idx", "status"),
+        Index("fab_runs_created_idx", text("created_at desc")),
+        {"schema": "daedalus"},
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    instructions_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    status: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("'queued'"))
+    machine_id: Mapped[str] = mapped_column(Text(), nullable=False)
+    operator_email: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    progress: Mapped[int] = mapped_column(SmallInteger(), nullable=False, server_default=text("0"))
+    as_built: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    error: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class FabRunsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    instructionsId: UUID
+    status: FabRunsStatus
+    machineId: str
+    operatorEmail: str | None = None
+    progress: int = Field(..., ge=0, le=100)
+    asBuilt: dict[str, Any]
+    error: str | None = None
+    startedAt: datetime | None = None
+    finishedAt: datetime | None = None
+    createdAt: datetime
+
+    @field_validator("machineId")
+    @classmethod
+    def validate_machine_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("fab_runs.machine_id exceeds 200 bytes")
+        return value
+
+    @field_validator("error")
+    @classmethod
+    def validate_error(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 20000:
+            raise ValueError("fab_runs.error exceeds 20000 bytes")
+        return value
+
+class FabRunsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    instructionsId: UUID
+    status: FabRunsStatus | None = "queued"
+    machineId: str
+    operatorEmail: str | None = None
+    progress: int | None = Field(0, ge=0, le=100)
+    asBuilt: dict[str, Any] | None = Field(default_factory=dict)
+    error: str | None = None
+    startedAt: datetime | None = None
+    finishedAt: datetime | None = None
+    createdAt: datetime | None = None
+
+    @field_validator("machineId")
+    @classmethod
+    def validate_machine_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("fab_runs.machine_id exceeds 200 bytes")
+        return value
+
+    @field_validator("error")
+    @classmethod
+    def validate_error(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 20000:
+            raise ValueError("fab_runs.error exceeds 20000 bytes")
+        return value

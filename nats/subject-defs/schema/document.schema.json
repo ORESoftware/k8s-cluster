@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dd.dev/schemas/nats/document.schema.json",
+  "title": "DocumentNats",
+  "description": "NATS request and result subjects for document conversion workers.",
+  "type": "object",
+  "$dd:nats": {
+    "service": "dd-document-rs",
+    "summary": "Document conversion request dispatch and result fanout.",
+    "subjects": [
+      {
+        "name": "DocumentConvertRequests",
+        "description": "Document conversion requests consumed by dd-document-rs replicas.",
+        "kind": "static",
+        "subject": "dd.remote.document.convert",
+        "queueGroup": "dd-document-rs",
+        "direction": "subscribe"
+      },
+      {
+        "name": "DocumentConvertResults",
+        "description": "Document conversion results published after a request completes or fails.",
+        "kind": "static",
+        "subject": "dd.remote.document.results",
+        "direction": "publish"
+      }
+    ],
+    "queueGroups": [
+      {
+        "name": "DocumentConvertersQueueGroup",
+        "value": "dd-document-rs",
+        "description": "Shared queue group used by document converter replicas so each request is handled once."
+      }
+    ]
+  }
+}

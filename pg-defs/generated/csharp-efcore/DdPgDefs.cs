@@ -3121,9 +3121,13 @@ public class DesSoccerLearningSetPlayRuns
 [Table("des_soccer_learning_set_play_restart_mix")]
 public class DesSoccerLearningSetPlayRestartMix
 {
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
     [Column("run_id")]
     public Guid RunId { get; set; }
 
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
     [Column("ordinal")]
     [Range(0, 2147483647)]
     public int Ordinal { get; set; }
@@ -3138,9 +3142,13 @@ public class DesSoccerLearningSetPlayRestartMix
 [Table("des_soccer_learning_set_play_episode_metrics")]
 public class DesSoccerLearningSetPlayEpisodeMetrics
 {
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
     [Column("run_id")]
     public Guid RunId { get; set; }
 
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
     [Column("episode_index")]
     [Range(0, 2147483647)]
     public int EpisodeIndex { get; set; }
@@ -7639,6 +7647,859 @@ public class SharedContext
     public DateTimeOffset UpdatedAt { get; set; }
 }
 
+[Table("sync_clock", Schema = "fiducia")]
+public class SyncClock
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("singleton")]
+    public bool Singleton { get; set; }
+
+    [Column("last_sequence")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long LastSequence { get; set; }
+}
+
+[Table("sync_tombstones", Schema = "fiducia")]
+public class SyncTombstones
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("sequence")]
+    [Range(typeof(long), "1", "9223372036854775807")]
+    public long Sequence { get; set; }
+
+    [Required]
+    [Column("table_name")]
+    public string TableName { get; set; } = null!;
+
+    [Required]
+    [Column("row_id")]
+    public string RowId { get; set; } = null!;
+
+    [Column("tenant_id")]
+    public Guid? TenantId { get; set; }
+
+    [Column("owner_user_id")]
+    public Guid? OwnerUserId { get; set; }
+
+    [Column("row_version")]
+    [Range(typeof(long), "1", "9223372036854775807")]
+    public long RowVersion { get; set; }
+
+    [Column("deleted_at")]
+    public DateTimeOffset DeletedAt { get; set; }
+}
+
+[Table("orgs", Schema = "fiducia")]
+public class Orgs
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Required]
+    [Column("slug")]
+    [MaxLength(120)]
+    [RegularExpression(@"^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$")]
+    public string Slug { get; set; } = null!;
+
+    [Required]
+    [Column("name")]
+    [MaxLength(200)]
+    public string Name { get; set; } = null!;
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+
+    [Column("version")]
+    public long Version { get; set; }
+
+    [Column("sync_sequence")]
+    public long SyncSequence { get; set; }
+}
+
+[Table("projects", Schema = "fiducia")]
+public class Projects
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Column("org_id")]
+    public Guid OrgId { get; set; }
+
+    [Required]
+    [Column("slug")]
+    [MaxLength(120)]
+    [RegularExpression(@"^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$")]
+    public string Slug { get; set; } = null!;
+
+    [Required]
+    [Column("name")]
+    [MaxLength(200)]
+    public string Name { get; set; } = null!;
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+
+    [Column("version")]
+    public long Version { get; set; }
+
+    [Column("sync_sequence")]
+    public long SyncSequence { get; set; }
+}
+
+[Table("users", Schema = "fiducia")]
+public class Users
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Column("supabase_user_id")]
+    public Guid SupabaseUserId { get; set; }
+
+    [Required]
+    [Column("email")]
+    [MaxLength(320)]
+    public string Email { get; set; } = null!;
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+[Table("org_members", Schema = "fiducia")]
+public class OrgMembers
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("org_id")]
+    public Guid OrgId { get; set; }
+
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("user_id")]
+    public Guid UserId { get; set; }
+
+    [Required]
+    [Column("role")]
+    [MaxLength(32)]
+    [RegularExpression(@"^(owner|admin|member)$")]
+    public string Role { get; set; } = null!;
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+[Table("project_members", Schema = "fiducia")]
+public class ProjectMembers
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("project_id")]
+    public Guid ProjectId { get; set; }
+
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("user_id")]
+    public Guid UserId { get; set; }
+
+    [Required]
+    [Column("role")]
+    [MaxLength(32)]
+    [RegularExpression(@"^(admin|operator|viewer)$")]
+    public string Role { get; set; } = null!;
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+[Table("api_keys", Schema = "fiducia")]
+public class ApiKeys
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Required]
+    [Column("key_id")]
+    [MaxLength(64)]
+    public string KeyId { get; set; } = null!;
+
+    [Column("org_id")]
+    public Guid OrgId { get; set; }
+
+    [Column("project_id")]
+    public Guid? ProjectId { get; set; }
+
+    [Column("created_by_user_id")]
+    public Guid? CreatedByUserId { get; set; }
+
+    [Required]
+    [Column("name")]
+    [MaxLength(200)]
+    public string Name { get; set; } = null!;
+
+    [Required]
+    [Column("secret_hash")]
+    [MaxLength(255)]
+    public string SecretHash { get; set; } = null!;
+
+    [Required]
+    [Column("scopes", TypeName = "jsonb")]
+    public string Scopes { get; set; } = null!;
+
+    [Required]
+    [Column("env")]
+    [MaxLength(16)]
+    [RegularExpression(@"^(live|test)$")]
+    public string Env { get; set; } = null!;
+
+    [Column("require_idempotency")]
+    public bool RequireIdempotency { get; set; }
+
+    [Column("mtls_required")]
+    public bool MtlsRequired { get; set; }
+
+    [Column("revoked")]
+    public bool Revoked { get; set; }
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+
+    [Column("version")]
+    public long Version { get; set; }
+
+    [Column("sync_sequence")]
+    public long SyncSequence { get; set; }
+
+    [Column("last_used_at")]
+    public DateTimeOffset? LastUsedAt { get; set; }
+
+    [Column("expires_at")]
+    public DateTimeOffset? ExpiresAt { get; set; }
+}
+
+[Table("mtls_client_certs", Schema = "fiducia")]
+public class MtlsClientCerts
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Column("org_id")]
+    public Guid OrgId { get; set; }
+
+    [Column("project_id")]
+    public Guid? ProjectId { get; set; }
+
+    [Required]
+    [Column("name")]
+    [MaxLength(200)]
+    public string Name { get; set; } = null!;
+
+    [Required]
+    [Column("subject")]
+    [MaxLength(500)]
+    public string Subject { get; set; } = null!;
+
+    [Required]
+    [Column("sha256_fingerprint")]
+    [MaxLength(95)]
+    public string Sha256Fingerprint { get; set; } = null!;
+
+    [Column("not_before")]
+    public DateTimeOffset? NotBefore { get; set; }
+
+    [Column("not_after")]
+    public DateTimeOffset? NotAfter { get; set; }
+
+    [Column("revoked")]
+    public bool Revoked { get; set; }
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+
+    [Column("version")]
+    public long Version { get; set; }
+
+    [Column("sync_sequence")]
+    public long SyncSequence { get; set; }
+}
+
+[Table("customer_preferences", Schema = "fiducia")]
+public class CustomerPreferences
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("user_id")]
+    public Guid UserId { get; set; }
+
+    [Required]
+    [Column("density")]
+    [MaxLength(16)]
+    [RegularExpression(@"^(comfortable|compact)$")]
+    public string Density { get; set; } = null!;
+
+    [Required]
+    [Column("timezone")]
+    [MaxLength(64)]
+    public string Timezone { get; set; } = null!;
+
+    [Required]
+    [Column("region")]
+    [MaxLength(16)]
+    public string Region { get; set; } = null!;
+
+    [Column("notify_key_rotation")]
+    public bool NotifyKeyRotation { get; set; }
+
+    [Column("notify_lock_contention")]
+    public bool NotifyLockContention { get; set; }
+
+    [Column("notify_mfa")]
+    public bool NotifyMfa { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+
+    [Column("version")]
+    public long Version { get; set; }
+
+    [Column("sync_sequence")]
+    public long SyncSequence { get; set; }
+}
+
+[Table("customer_sessions", Schema = "fiducia")]
+public class CustomerSessions
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Column("user_id")]
+    public Guid UserId { get; set; }
+
+    [Required]
+    [Column("device")]
+    [MaxLength(200)]
+    public string Device { get; set; } = null!;
+
+    [Column("location")]
+    [MaxLength(200)]
+    public string? Location { get; set; }
+
+    [Column("last_seen")]
+    public DateTimeOffset LastSeen { get; set; }
+
+    [Required]
+    [Column("status")]
+    [MaxLength(16)]
+    [RegularExpression(@"^(active|verified|revoked)$")]
+    public string Status { get; set; } = null!;
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+
+    [Column("version")]
+    public long Version { get; set; }
+
+    [Column("sync_sequence")]
+    public long SyncSequence { get; set; }
+}
+
+[Table("audit_log", Schema = "fiducia")]
+public class AuditLog
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Column("org_id")]
+    public Guid? OrgId { get; set; }
+
+    [Column("project_id")]
+    public Guid? ProjectId { get; set; }
+
+    [Column("actor_user_id")]
+    public Guid? ActorUserId { get; set; }
+
+    [Column("actor_key_id")]
+    public Guid? ActorKeyId { get; set; }
+
+    [Column("actor")]
+    [MaxLength(320)]
+    public string? Actor { get; set; }
+
+    [Required]
+    [Column("action")]
+    [MaxLength(120)]
+    public string Action { get; set; } = null!;
+
+    [Column("target")]
+    [MaxLength(320)]
+    public string? Target { get; set; }
+
+    [Column("request_id")]
+    [MaxLength(120)]
+    public string? RequestId { get; set; }
+
+    [Column("source_ip")]
+    [MaxLength(64)]
+    public string? SourceIp { get; set; }
+
+    [Column("user_agent")]
+    [MaxLength(500)]
+    public string? UserAgent { get; set; }
+
+    [Required]
+    [Column("meta", TypeName = "jsonb")]
+    public string Meta { get; set; } = null!;
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("retention_expires_at")]
+    public DateTimeOffset? RetentionExpiresAt { get; set; }
+}
+
+[Table("customer_notifications", Schema = "fiducia")]
+public class CustomerNotifications
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Column("user_id")]
+    public Guid UserId { get; set; }
+
+    [Column("org_id")]
+    public Guid? OrgId { get; set; }
+
+    [Required]
+    [Column("kind")]
+    [MaxLength(40)]
+    [RegularExpression(@"^[a-z][a-z0-9_.]{1,38}[a-z0-9]$")]
+    public string Kind { get; set; } = null!;
+
+    [Required]
+    [Column("severity")]
+    [MaxLength(16)]
+    [RegularExpression(@"^(info|success|warning|critical)$")]
+    public string Severity { get; set; } = null!;
+
+    [Required]
+    [Column("title")]
+    [MaxLength(200)]
+    public string Title { get; set; } = null!;
+
+    [Required]
+    [Column("body")]
+    [MaxLength(2000)]
+    public string Body { get; set; } = null!;
+
+    [Column("link")]
+    [MaxLength(500)]
+    public string? Link { get; set; }
+
+    [Column("read_at")]
+    public DateTimeOffset? ReadAt { get; set; }
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+
+    [Column("version")]
+    public long Version { get; set; }
+
+    [Column("sync_sequence")]
+    public long SyncSequence { get; set; }
+}
+
+[Table("sync_idempotency_keys", Schema = "fiducia")]
+public class SyncIdempotencyKeys
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("key")]
+    public string Key { get; set; } = null!;
+
+    [Required]
+    [Column("request_fingerprint")]
+    [MaxLength(64)]
+    [RegularExpression(@"^[0-9a-f]{64}$")]
+    public string RequestFingerprint { get; set; } = null!;
+
+    [Column("committed_version")]
+    public long? CommittedVersion { get; set; }
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+[Table("transcriptions", Schema = "t2v")]
+public class Transcriptions
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Required]
+    [Column("source")]
+    public string Source { get; set; } = null!;
+
+    [Required]
+    [Column("provider")]
+    public string Provider { get; set; } = null!;
+
+    [Required]
+    [Column("model")]
+    public string Model { get; set; } = null!;
+
+    [Required]
+    [Column("text")]
+    public string Text { get; set; } = null!;
+
+    [Column("language")]
+    public string? Language { get; set; }
+
+    [Column("sample_rate")]
+    [Range(4000, 384000)]
+    public int? SampleRate { get; set; }
+
+    [Column("duration_ms")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long? DurationMs { get; set; }
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+[Table("syntheses", Schema = "t2v")]
+public class Syntheses
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Required]
+    [Column("text")]
+    public string Text { get; set; } = null!;
+
+    [Required]
+    [Column("voice")]
+    public string Voice { get; set; } = null!;
+
+    [Required]
+    [Column("provider")]
+    public string Provider { get; set; } = null!;
+
+    [Required]
+    [Column("model")]
+    public string Model { get; set; } = null!;
+
+    [Required]
+    [Column("format")]
+    public string Format { get; set; } = null!;
+
+    [Column("audio_bytes")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long AudioBytes { get; set; }
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+[Table("translations", Schema = "t2v")]
+public class Translations
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Required]
+    [Column("source_text")]
+    public string SourceText { get; set; } = null!;
+
+    [Required]
+    [Column("translated_text")]
+    public string TranslatedText { get; set; } = null!;
+
+    [Column("source_lang")]
+    public string? SourceLang { get; set; }
+
+    [Required]
+    [Column("target_lang")]
+    public string TargetLang { get; set; } = null!;
+
+    [Required]
+    [Column("provider")]
+    public string Provider { get; set; } = null!;
+
+    [Required]
+    [Column("model")]
+    public string Model { get; set; } = null!;
+
+    [Column("latency_ms")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long LatencyMs { get; set; }
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+[Table("vapi_calls", Schema = "t2v")]
+public class VapiCalls
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Required]
+    [Column("vapi_call_id")]
+    public string VapiCallId { get; set; } = null!;
+
+    [Required]
+    [Column("status")]
+    public string Status { get; set; } = null!;
+
+    [Column("ended_reason")]
+    public string? EndedReason { get; set; }
+
+    [Column("transcript")]
+    public string? Transcript { get; set; }
+
+    [Column("summary")]
+    public string? Summary { get; set; }
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+[Table("vapi_events", Schema = "t2v")]
+public class VapiEvents
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Column("vapi_call_id")]
+    public string? VapiCallId { get; set; }
+
+    [Required]
+    [Column("event_type")]
+    public string EventType { get; set; } = null!;
+
+    [Required]
+    [Column("payload", TypeName = "jsonb")]
+    public string Payload { get; set; } = null!;
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+[Table("fab_plans", Schema = "daedalus")]
+public class FabPlans
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Required]
+    [Column("owner_email")]
+    public string OwnerEmail { get; set; } = null!;
+
+    [Required]
+    [Column("title")]
+    public string Title { get; set; } = null!;
+
+    [Required]
+    [Column("goal")]
+    public string Goal { get; set; } = null!;
+
+    [Required]
+    [Column("process_family")]
+    [RegularExpression(@"^(additive|subtractive|hybrid)$")]
+    public string ProcessFamily { get; set; } = null!;
+
+    [Required]
+    [Column("status")]
+    [RegularExpression(@"^(draft|planning|planned|released|archived)$")]
+    public string Status { get; set; } = null!;
+
+    [Column("document", TypeName = "jsonb")]
+    public string? Document { get; set; }
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+[Table("fab_designs", Schema = "daedalus")]
+public class FabDesigns
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Column("plan_id")]
+    public Guid PlanId { get; set; }
+
+    [Required]
+    [Column("filename")]
+    public string Filename { get; set; } = null!;
+
+    [Required]
+    [Column("format")]
+    [RegularExpression(@"^(step|stl|3mf|dxf|iges|obj)$")]
+    public string Format { get; set; } = null!;
+
+    [Required]
+    [Column("storage_uri")]
+    public string StorageUri { get; set; } = null!;
+
+    [Column("size_bytes")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long SizeBytes { get; set; }
+
+    [Column("content_hash")]
+    public string? ContentHash { get; set; }
+
+    [Required]
+    [Column("geometry", TypeName = "jsonb")]
+    public string Geometry { get; set; } = null!;
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+[Table("fab_instructions", Schema = "daedalus")]
+public class FabInstructions
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Column("plan_id")]
+    public Guid PlanId { get; set; }
+
+    [Column("revision")]
+    [Range(1, 2147483647)]
+    public int Revision { get; set; }
+
+    [Required]
+    [Column("machine_profile")]
+    public string MachineProfile { get; set; } = null!;
+
+    [Required]
+    [Column("dialect")]
+    [RegularExpression(@"^(gcode|nc|apt|proprietary)$")]
+    public string Dialect { get; set; } = null!;
+
+    [Required]
+    [Column("storage_uri")]
+    public string StorageUri { get; set; } = null!;
+
+    [Column("content_hash")]
+    public string? ContentHash { get; set; }
+
+    [Column("validated")]
+    public bool Validated { get; set; }
+
+    [Required]
+    [Column("validation", TypeName = "jsonb")]
+    public string Validation { get; set; } = null!;
+
+    [Column("released_by_email")]
+    public string? ReleasedByEmail { get; set; }
+
+    [Column("released_at")]
+    public DateTimeOffset? ReleasedAt { get; set; }
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+[Table("fab_runs", Schema = "daedalus")]
+public class FabRuns
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Column("instructions_id")]
+    public Guid InstructionsId { get; set; }
+
+    [Required]
+    [Column("status")]
+    [RegularExpression(@"^(queued|running|succeeded|failed|aborted)$")]
+    public string Status { get; set; } = null!;
+
+    [Required]
+    [Column("machine_id")]
+    public string MachineId { get; set; } = null!;
+
+    [Column("operator_email")]
+    public string? OperatorEmail { get; set; }
+
+    [Column("progress")]
+    [Range(0, 100)]
+    public short Progress { get; set; }
+
+    [Required]
+    [Column("as_built", TypeName = "jsonb")]
+    public string AsBuilt { get; set; } = null!;
+
+    [Column("error")]
+    public string? Error { get; set; }
+
+    [Column("started_at")]
+    public DateTimeOffset? StartedAt { get; set; }
+
+    [Column("finished_at")]
+    public DateTimeOffset? FinishedAt { get; set; }
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
 public class DdPgDefsContext : DbContext
 {
     public DdPgDefsContext(DbContextOptions<DdPgDefsContext> options) : base(options)
@@ -7894,4 +8755,50 @@ public class DdPgDefsContext : DbContext
     public DbSet<ChannelMembers> ChannelMembersSet => Set<ChannelMembers>();
 
     public DbSet<SharedContext> SharedContextSet => Set<SharedContext>();
+
+    public DbSet<SyncClock> SyncClockSet => Set<SyncClock>();
+
+    public DbSet<SyncTombstones> SyncTombstonesSet => Set<SyncTombstones>();
+
+    public DbSet<Orgs> OrgsSet => Set<Orgs>();
+
+    public DbSet<Projects> ProjectsSet => Set<Projects>();
+
+    public DbSet<Users> UsersSet => Set<Users>();
+
+    public DbSet<OrgMembers> OrgMembersSet => Set<OrgMembers>();
+
+    public DbSet<ProjectMembers> ProjectMembersSet => Set<ProjectMembers>();
+
+    public DbSet<ApiKeys> ApiKeysSet => Set<ApiKeys>();
+
+    public DbSet<MtlsClientCerts> MtlsClientCertsSet => Set<MtlsClientCerts>();
+
+    public DbSet<CustomerPreferences> CustomerPreferencesSet => Set<CustomerPreferences>();
+
+    public DbSet<CustomerSessions> CustomerSessionsSet => Set<CustomerSessions>();
+
+    public DbSet<AuditLog> AuditLogSet => Set<AuditLog>();
+
+    public DbSet<CustomerNotifications> CustomerNotificationsSet => Set<CustomerNotifications>();
+
+    public DbSet<SyncIdempotencyKeys> SyncIdempotencyKeysSet => Set<SyncIdempotencyKeys>();
+
+    public DbSet<Transcriptions> TranscriptionsSet => Set<Transcriptions>();
+
+    public DbSet<Syntheses> SynthesesSet => Set<Syntheses>();
+
+    public DbSet<Translations> TranslationsSet => Set<Translations>();
+
+    public DbSet<VapiCalls> VapiCallsSet => Set<VapiCalls>();
+
+    public DbSet<VapiEvents> VapiEventsSet => Set<VapiEvents>();
+
+    public DbSet<FabPlans> FabPlansSet => Set<FabPlans>();
+
+    public DbSet<FabDesigns> FabDesignsSet => Set<FabDesigns>();
+
+    public DbSet<FabInstructions> FabInstructionsSet => Set<FabInstructions>();
+
+    public DbSet<FabRuns> FabRunsSet => Set<FabRuns>();
 }

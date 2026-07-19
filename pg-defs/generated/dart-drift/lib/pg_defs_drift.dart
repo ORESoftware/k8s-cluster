@@ -1401,18 +1401,20 @@ class DesSoccerLearningSetPlayRunsTable extends Table {
 class DesSoccerLearningSetPlayRestartMixTable extends Table {
   @override String get tableName => "des_soccer_learning_set_play_restart_mix";
 
-  @override bool get withoutRowId => true;
-
   TextColumn get runId => text().named("run_id").customConstraint("UUID")();
   IntColumn get ordinal => integer().named("ordinal")();
   TextColumn get restart => text().named("restart")();
+
+  @override
+  Set<Column> get primaryKey => {
+        runId,
+        ordinal,
+  };
 }
 
 @DataClassName("DesSoccerLearningSetPlayEpisodeMetricsData")
 class DesSoccerLearningSetPlayEpisodeMetricsTable extends Table {
   @override String get tableName => "des_soccer_learning_set_play_episode_metrics";
-
-  @override bool get withoutRowId => true;
 
   TextColumn get runId => text().named("run_id").customConstraint("UUID")();
   IntColumn get episodeIndex => integer().named("episode_index")();
@@ -1434,6 +1436,12 @@ class DesSoccerLearningSetPlayEpisodeMetricsTable extends Table {
   Int64Column get neuralLastLossMicros => int64().named("neural_last_loss_micros").nullable()();
   IntColumn get cumulativeGoals => integer().named("cumulative_goals")();
   Int64Column get goalRateSoFarMicros => int64().named("goal_rate_so_far_micros")();
+
+  @override
+  Set<Column> get primaryKey => {
+        runId,
+        episodeIndex,
+  };
 }
 
 @DataClassName("DesSoccerLearningNeuralRunMetricsData")
@@ -3402,6 +3410,504 @@ class SharedContextTable extends Table {
   };
 }
 
+@DataClassName("SyncClockData")
+class SyncClockTable extends Table {
+  @override String get tableName => "sync_clock";
+
+  @override bool get withoutRowId => true;
+
+  BoolColumn get singleton => boolean().named("singleton").clientDefault(() => true)();
+  Int64Column get lastSequence => int64().named("last_sequence").clientDefault(() => 0)();
+
+  @override
+  Set<Column> get primaryKey => {
+        singleton,
+  };
+}
+
+@DataClassName("SyncTombstonesData")
+class SyncTombstonesTable extends Table {
+  @override String get tableName => "sync_tombstones";
+
+  @override bool get withoutRowId => true;
+
+  Int64Column get sequence => int64().named("sequence")();
+  TextColumn get tableName => text().named("table_name")();
+  TextColumn get rowId => text().named("row_id")();
+  TextColumn get tenantId => text().named("tenant_id").nullable().customConstraint("UUID")();
+  TextColumn get ownerUserId => text().named("owner_user_id").nullable().customConstraint("UUID")();
+  Int64Column get rowVersion => int64().named("row_version")();
+  DateTimeColumn get deletedAt => dateTime().named("deleted_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        sequence,
+  };
+}
+
+@DataClassName("OrgsData")
+class OrgsTable extends Table {
+  @override String get tableName => "orgs";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get slug => text().named("slug").withLength(max: 120)();
+  TextColumn get name => text().named("name").withLength(max: 200)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  Int64Column get version => int64().named("version").clientDefault(() => 1)();
+  Int64Column get syncSequence => int64().named("sync_sequence")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("ProjectsData")
+class ProjectsTable extends Table {
+  @override String get tableName => "projects";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get orgId => text().named("org_id").customConstraint("UUID")();
+  TextColumn get slug => text().named("slug").withLength(max: 120)();
+  TextColumn get name => text().named("name").withLength(max: 200)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  Int64Column get version => int64().named("version").clientDefault(() => 1)();
+  Int64Column get syncSequence => int64().named("sync_sequence")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("UsersData")
+class UsersTable extends Table {
+  @override String get tableName => "users";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get supabaseUserId => text().named("supabase_user_id").customConstraint("UUID")();
+  TextColumn get email => text().named("email").withLength(max: 320)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("OrgMembersData")
+class OrgMembersTable extends Table {
+  @override String get tableName => "org_members";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get orgId => text().named("org_id").customConstraint("UUID")();
+  TextColumn get userId => text().named("user_id").customConstraint("UUID")();
+  TextColumn get role => text().named("role").clientDefault(() => 'member')();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        orgId,
+        userId,
+  };
+}
+
+@DataClassName("ProjectMembersData")
+class ProjectMembersTable extends Table {
+  @override String get tableName => "project_members";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get projectId => text().named("project_id").customConstraint("UUID")();
+  TextColumn get userId => text().named("user_id").customConstraint("UUID")();
+  TextColumn get role => text().named("role").clientDefault(() => 'viewer')();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        projectId,
+        userId,
+  };
+}
+
+@DataClassName("ApiKeysData")
+class ApiKeysTable extends Table {
+  @override String get tableName => "api_keys";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get keyId => text().named("key_id").withLength(max: 64)();
+  TextColumn get orgId => text().named("org_id").customConstraint("UUID")();
+  TextColumn get projectId => text().named("project_id").nullable().customConstraint("UUID")();
+  TextColumn get createdByUserId => text().named("created_by_user_id").nullable().customConstraint("UUID")();
+  TextColumn get name => text().named("name").withLength(max: 200)();
+  TextColumn get secretHash => text().named("secret_hash").withLength(max: 255)();
+  TextColumn get scopes => text().named("scopes").clientDefault(() => '[]').customConstraint("JSONB")();
+  TextColumn get env => text().named("env").clientDefault(() => 'live')();
+  BoolColumn get requireIdempotency => boolean().named("require_idempotency").clientDefault(() => true)();
+  BoolColumn get mtlsRequired => boolean().named("mtls_required").clientDefault(() => false)();
+  BoolColumn get revoked => boolean().named("revoked").clientDefault(() => false)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  Int64Column get version => int64().named("version").clientDefault(() => 1)();
+  Int64Column get syncSequence => int64().named("sync_sequence")();
+  DateTimeColumn get lastUsedAt => dateTime().named("last_used_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get expiresAt => dateTime().named("expires_at").nullable().customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("MtlsClientCertsData")
+class MtlsClientCertsTable extends Table {
+  @override String get tableName => "mtls_client_certs";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get orgId => text().named("org_id").customConstraint("UUID")();
+  TextColumn get projectId => text().named("project_id").nullable().customConstraint("UUID")();
+  TextColumn get name => text().named("name").withLength(max: 200)();
+  TextColumn get subject => text().named("subject").withLength(max: 500)();
+  TextColumn get sha256Fingerprint => text().named("sha256_fingerprint").withLength(max: 95)();
+  DateTimeColumn get notBefore => dateTime().named("not_before").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get notAfter => dateTime().named("not_after").nullable().customConstraint("TIMESTAMPTZ")();
+  BoolColumn get revoked => boolean().named("revoked").clientDefault(() => false)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  Int64Column get version => int64().named("version").clientDefault(() => 1)();
+  Int64Column get syncSequence => int64().named("sync_sequence")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("CustomerPreferencesData")
+class CustomerPreferencesTable extends Table {
+  @override String get tableName => "customer_preferences";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get userId => text().named("user_id").customConstraint("UUID")();
+  TextColumn get density => text().named("density").clientDefault(() => 'comfortable')();
+  TextColumn get timezone => text().named("timezone").withLength(max: 64).clientDefault(() => 'UTC')();
+  TextColumn get region => text().named("region").withLength(max: 16).clientDefault(() => 'auto')();
+  BoolColumn get notifyKeyRotation => boolean().named("notify_key_rotation").clientDefault(() => true)();
+  BoolColumn get notifyLockContention => boolean().named("notify_lock_contention").clientDefault(() => true)();
+  BoolColumn get notifyMfa => boolean().named("notify_mfa").clientDefault(() => true)();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  Int64Column get version => int64().named("version").clientDefault(() => 1)();
+  Int64Column get syncSequence => int64().named("sync_sequence")();
+
+  @override
+  Set<Column> get primaryKey => {
+        userId,
+  };
+}
+
+@DataClassName("CustomerSessionsData")
+class CustomerSessionsTable extends Table {
+  @override String get tableName => "customer_sessions";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get userId => text().named("user_id").customConstraint("UUID")();
+  TextColumn get device => text().named("device").withLength(max: 200)();
+  TextColumn get location => text().named("location").withLength(max: 200).nullable()();
+  DateTimeColumn get lastSeen => dateTime().named("last_seen").customConstraint("TIMESTAMPTZ")();
+  TextColumn get status => text().named("status").clientDefault(() => 'active')();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  Int64Column get version => int64().named("version").clientDefault(() => 1)();
+  Int64Column get syncSequence => int64().named("sync_sequence")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("AuditLogData")
+class AuditLogTable extends Table {
+  @override String get tableName => "audit_log";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get orgId => text().named("org_id").nullable().customConstraint("UUID")();
+  TextColumn get projectId => text().named("project_id").nullable().customConstraint("UUID")();
+  TextColumn get actorUserId => text().named("actor_user_id").nullable().customConstraint("UUID")();
+  TextColumn get actorKeyId => text().named("actor_key_id").nullable().customConstraint("UUID")();
+  TextColumn get actor => text().named("actor").withLength(max: 320).nullable()();
+  TextColumn get action => text().named("action").withLength(max: 120)();
+  TextColumn get target => text().named("target").withLength(max: 320).nullable()();
+  TextColumn get requestId => text().named("request_id").withLength(max: 120).nullable()();
+  TextColumn get sourceIp => text().named("source_ip").withLength(max: 64).nullable()();
+  TextColumn get userAgent => text().named("user_agent").withLength(max: 500).nullable()();
+  TextColumn get meta => text().named("meta").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get retentionExpiresAt => dateTime().named("retention_expires_at").nullable().customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("CustomerNotificationsData")
+class CustomerNotificationsTable extends Table {
+  @override String get tableName => "customer_notifications";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get userId => text().named("user_id").customConstraint("UUID")();
+  TextColumn get orgId => text().named("org_id").nullable().customConstraint("UUID")();
+  TextColumn get kind => text().named("kind").withLength(max: 40)();
+  TextColumn get severity => text().named("severity").clientDefault(() => 'info')();
+  TextColumn get title => text().named("title").withLength(max: 200)();
+  TextColumn get body => text().named("body").withLength(max: 2000).clientDefault(() => '')();
+  TextColumn get link => text().named("link").withLength(max: 500).nullable()();
+  DateTimeColumn get readAt => dateTime().named("read_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  Int64Column get version => int64().named("version").clientDefault(() => 1)();
+  Int64Column get syncSequence => int64().named("sync_sequence")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("SyncIdempotencyKeysData")
+class SyncIdempotencyKeysTable extends Table {
+  @override String get tableName => "sync_idempotency_keys";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get key => text().named("key")();
+  TextColumn get requestFingerprint => text().named("request_fingerprint").withLength(max: 64)();
+  Int64Column get committedVersion => int64().named("committed_version").nullable()();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        key,
+  };
+}
+
+@DataClassName("TranscriptionsData")
+class TranscriptionsTable extends Table {
+  @override String get tableName => "transcriptions";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get source => text().named("source")();
+  TextColumn get provider => text().named("provider")();
+  TextColumn get model => text().named("model")();
+  TextColumn get text => text().named("text")();
+  TextColumn get language => text().named("language").nullable()();
+  IntColumn get sampleRate => integer().named("sample_rate").nullable()();
+  Int64Column get durationMs => int64().named("duration_ms").nullable()();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("SynthesesData")
+class SynthesesTable extends Table {
+  @override String get tableName => "syntheses";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get text => text().named("text")();
+  TextColumn get voice => text().named("voice")();
+  TextColumn get provider => text().named("provider")();
+  TextColumn get model => text().named("model")();
+  TextColumn get format => text().named("format")();
+  Int64Column get audioBytes => int64().named("audio_bytes")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("TranslationsData")
+class TranslationsTable extends Table {
+  @override String get tableName => "translations";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get sourceText => text().named("source_text")();
+  TextColumn get translatedText => text().named("translated_text")();
+  TextColumn get sourceLang => text().named("source_lang").nullable()();
+  TextColumn get targetLang => text().named("target_lang")();
+  TextColumn get provider => text().named("provider")();
+  TextColumn get model => text().named("model")();
+  Int64Column get latencyMs => int64().named("latency_ms")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("VapiCallsData")
+class VapiCallsTable extends Table {
+  @override String get tableName => "vapi_calls";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get vapiCallId => text().named("vapi_call_id")();
+  TextColumn get status => text().named("status")();
+  TextColumn get endedReason => text().named("ended_reason").nullable()();
+  TextColumn get transcript => text().named("transcript").nullable()();
+  TextColumn get summary => text().named("summary").nullable()();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("VapiEventsData")
+class VapiEventsTable extends Table {
+  @override String get tableName => "vapi_events";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get vapiCallId => text().named("vapi_call_id").nullable()();
+  TextColumn get eventType => text().named("event_type")();
+  TextColumn get payload => text().named("payload").customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("FabPlansData")
+class FabPlansTable extends Table {
+  @override String get tableName => "fab_plans";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get ownerEmail => text().named("owner_email")();
+  TextColumn get title => text().named("title")();
+  TextColumn get goal => text().named("goal")();
+  TextColumn get processFamily => text().named("process_family").clientDefault(() => 'additive')();
+  TextColumn get status => text().named("status").clientDefault(() => 'draft')();
+  TextColumn get document => text().named("document").nullable().customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("FabDesignsData")
+class FabDesignsTable extends Table {
+  @override String get tableName => "fab_designs";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get planId => text().named("plan_id").customConstraint("UUID")();
+  TextColumn get filename => text().named("filename")();
+  TextColumn get format => text().named("format")();
+  TextColumn get storageUri => text().named("storage_uri")();
+  Int64Column get sizeBytes => int64().named("size_bytes").clientDefault(() => 0)();
+  TextColumn get contentHash => text().named("content_hash").nullable()();
+  TextColumn get geometry => text().named("geometry").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("FabInstructionsData")
+class FabInstructionsTable extends Table {
+  @override String get tableName => "fab_instructions";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get planId => text().named("plan_id").customConstraint("UUID")();
+  IntColumn get revision => integer().named("revision").clientDefault(() => 1)();
+  TextColumn get machineProfile => text().named("machine_profile")();
+  TextColumn get dialect => text().named("dialect").clientDefault(() => 'gcode')();
+  TextColumn get storageUri => text().named("storage_uri")();
+  TextColumn get contentHash => text().named("content_hash").nullable()();
+  BoolColumn get validated => boolean().named("validated").clientDefault(() => false)();
+  TextColumn get validation => text().named("validation").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get releasedByEmail => text().named("released_by_email").nullable()();
+  DateTimeColumn get releasedAt => dateTime().named("released_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("FabRunsData")
+class FabRunsTable extends Table {
+  @override String get tableName => "fab_runs";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get instructionsId => text().named("instructions_id").customConstraint("UUID")();
+  TextColumn get status => text().named("status").clientDefault(() => 'queued')();
+  TextColumn get machineId => text().named("machine_id")();
+  TextColumn get operatorEmail => text().named("operator_email").nullable()();
+  IntColumn get progress => integer().named("progress").clientDefault(() => 0)();
+  TextColumn get asBuilt => text().named("as_built").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get error => text().named("error").nullable()();
+  DateTimeColumn get startedAt => dateTime().named("started_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get finishedAt => dateTime().named("finished_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
 // Drift annotation users should re-export the table classes via:
 // @DriftDatabase(tables: [...registeredDriftTables])
 const List<Type> registeredDriftTables = <Type>[
@@ -3530,4 +4036,27 @@ const List<Type> registeredDriftTables = <Type>[
   MessagesTable,
   ChannelMembersTable,
   SharedContextTable,
+  SyncClockTable,
+  SyncTombstonesTable,
+  OrgsTable,
+  ProjectsTable,
+  UsersTable,
+  OrgMembersTable,
+  ProjectMembersTable,
+  ApiKeysTable,
+  MtlsClientCertsTable,
+  CustomerPreferencesTable,
+  CustomerSessionsTable,
+  AuditLogTable,
+  CustomerNotificationsTable,
+  SyncIdempotencyKeysTable,
+  TranscriptionsTable,
+  SynthesesTable,
+  TranslationsTable,
+  VapiCallsTable,
+  VapiEventsTable,
+  FabPlansTable,
+  FabDesignsTable,
+  FabInstructionsTable,
+  FabRunsTable,
 ];

@@ -15,10 +15,12 @@ import java.util.UUID;
 @Entity
 @Table(name = "des_soccer_learning_set_play_restart_mix")
 public class DesSoccerLearningSetPlayRestartMixEntity {
-    @Column(name = "run_id", nullable = false)
+    @Id
+    @Column(name = "run_id")
     private UUID runId;
 
-    @Column(name = "ordinal", nullable = false)
+    @Id
+    @Column(name = "ordinal")
     private Integer ordinal;
 
     @Column(name = "restart", length = 40, nullable = false)

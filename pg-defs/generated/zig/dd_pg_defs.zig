@@ -12415,3 +12415,1107 @@ pub fn validateSharedContextUpdatedBy(value: []const u8) ?[]const u8 {
     if (value.len > 120) return "shared_context.updated_by must be at most 120 characters";
     return null;
 }
+
+pub const sync_clock_table: []const u8 = "fiducia.sync_clock";
+pub const sync_clock_columns = [_][]const u8{ "singleton", "last_sequence" };
+pub const sync_clock_select_sql: []const u8 = "select\n      singleton,\n      last_sequence\n    from fiducia.sync_clock";
+
+pub const SyncClockRow = struct {
+    singleton: bool,
+    last_sequence: i64,
+
+    pub fn fromRow(reader: RowReader) SyncClockRow {
+        return SyncClockRow{
+            .singleton = reader.boolean(0),
+            .last_sequence = reader.int(1),
+        };
+    }
+};
+
+pub fn validateSyncClockLastSequence(value: i64) ?[]const u8 {
+    if (value < 0) return "sync_clock.last_sequence is below the minimum";
+    return null;
+}
+
+pub const sync_tombstones_table: []const u8 = "fiducia.sync_tombstones";
+pub const sync_tombstones_columns = [_][]const u8{ "sequence", "table_name", "row_id", "tenant_id", "owner_user_id", "row_version", "deleted_at" };
+pub const sync_tombstones_select_sql: []const u8 = "select\n      sequence,\n      table_name,\n      row_id,\n      tenant_id::text as tenant_id,\n      owner_user_id::text as owner_user_id,\n      row_version,\n      to_char(deleted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as deleted_at\n    from fiducia.sync_tombstones";
+
+pub const SyncTombstonesRow = struct {
+    sequence: i64,
+    table_name: []const u8,
+    row_id: []const u8,
+    tenant_id: ?[]const u8,
+    owner_user_id: ?[]const u8,
+    row_version: i64,
+    deleted_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) SyncTombstonesRow {
+        return SyncTombstonesRow{
+            .sequence = reader.int(0),
+            .table_name = reader.text(1),
+            .row_id = reader.text(2),
+            .tenant_id = if (reader.is_null(3)) null else reader.text(3),
+            .owner_user_id = if (reader.is_null(4)) null else reader.text(4),
+            .row_version = reader.int(5),
+            .deleted_at = reader.text(6),
+        };
+    }
+};
+
+pub fn validateSyncTombstonesSequence(value: i64) ?[]const u8 {
+    if (value < 1) return "sync_tombstones.sequence is below the minimum";
+    return null;
+}
+
+pub fn validateSyncTombstonesRowVersion(value: i64) ?[]const u8 {
+    if (value < 1) return "sync_tombstones.row_version is below the minimum";
+    return null;
+}
+
+pub const orgs_table: []const u8 = "fiducia.orgs";
+pub const orgs_columns = [_][]const u8{ "id", "slug", "name", "created_at", "updated_at", "version", "sync_sequence" };
+pub const orgs_select_sql: []const u8 = "select\n      id::text as id,\n      slug,\n      name,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence\n    from fiducia.orgs";
+
+pub const OrgsRow = struct {
+    id: []const u8,
+    slug: []const u8,
+    name: []const u8,
+    created_at: []const u8,
+    updated_at: []const u8,
+    version: i64,
+    sync_sequence: i64,
+
+    pub fn fromRow(reader: RowReader) OrgsRow {
+        return OrgsRow{
+            .id = reader.text(0),
+            .slug = reader.text(1),
+            .name = reader.text(2),
+            .created_at = reader.text(3),
+            .updated_at = reader.text(4),
+            .version = reader.int(5),
+            .sync_sequence = reader.int(6),
+        };
+    }
+};
+
+pub fn validateOrgsSlug(value: []const u8) ?[]const u8 {
+    if (value.len > 120) return "orgs.slug must be at most 120 characters";
+    return null;
+}
+
+pub fn validateOrgsName(value: []const u8) ?[]const u8 {
+    if (value.len > 200) return "orgs.name must be at most 200 characters";
+    return null;
+}
+
+pub const projects_table: []const u8 = "fiducia.projects";
+pub const projects_columns = [_][]const u8{ "id", "org_id", "slug", "name", "created_at", "updated_at", "version", "sync_sequence" };
+pub const projects_select_sql: []const u8 = "select\n      id::text as id,\n      org_id::text as org_id,\n      slug,\n      name,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence\n    from fiducia.projects";
+
+pub const ProjectsRow = struct {
+    id: []const u8,
+    org_id: []const u8,
+    slug: []const u8,
+    name: []const u8,
+    created_at: []const u8,
+    updated_at: []const u8,
+    version: i64,
+    sync_sequence: i64,
+
+    pub fn fromRow(reader: RowReader) ProjectsRow {
+        return ProjectsRow{
+            .id = reader.text(0),
+            .org_id = reader.text(1),
+            .slug = reader.text(2),
+            .name = reader.text(3),
+            .created_at = reader.text(4),
+            .updated_at = reader.text(5),
+            .version = reader.int(6),
+            .sync_sequence = reader.int(7),
+        };
+    }
+};
+
+pub fn validateProjectsSlug(value: []const u8) ?[]const u8 {
+    if (value.len > 120) return "projects.slug must be at most 120 characters";
+    return null;
+}
+
+pub fn validateProjectsName(value: []const u8) ?[]const u8 {
+    if (value.len > 200) return "projects.name must be at most 200 characters";
+    return null;
+}
+
+pub const users_table: []const u8 = "fiducia.users";
+pub const users_columns = [_][]const u8{ "id", "supabase_user_id", "email", "created_at" };
+pub const users_select_sql: []const u8 = "select\n      id::text as id,\n      supabase_user_id::text as supabase_user_id,\n      email,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from fiducia.users";
+
+pub const UsersRow = struct {
+    id: []const u8,
+    supabase_user_id: []const u8,
+    email: []const u8,
+    created_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) UsersRow {
+        return UsersRow{
+            .id = reader.text(0),
+            .supabase_user_id = reader.text(1),
+            .email = reader.text(2),
+            .created_at = reader.text(3),
+        };
+    }
+};
+
+pub fn validateUsersEmail(value: []const u8) ?[]const u8 {
+    if (value.len > 320) return "users.email must be at most 320 characters";
+    return null;
+}
+
+pub const org_members_table: []const u8 = "fiducia.org_members";
+pub const org_members_columns = [_][]const u8{ "org_id", "user_id", "role", "created_at" };
+pub const org_members_select_sql: []const u8 = "select\n      org_id::text as org_id,\n      user_id::text as user_id,\n      role,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from fiducia.org_members";
+
+pub const OrgMembersRole = enum {
+    owner,
+    admin,
+    member,
+
+    pub fn toString(self: OrgMembersRole) []const u8 {
+        return switch (self) {
+            .owner => "owner",
+            .admin => "admin",
+            .member => "member",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?OrgMembersRole {
+        if (std.mem.eql(u8, value, "owner")) return .owner;
+        if (std.mem.eql(u8, value, "admin")) return .admin;
+        if (std.mem.eql(u8, value, "member")) return .member;
+        return null;
+    }
+};
+
+pub const OrgMembersRow = struct {
+    org_id: []const u8,
+    user_id: []const u8,
+    role: []const u8,
+    created_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) OrgMembersRow {
+        return OrgMembersRow{
+            .org_id = reader.text(0),
+            .user_id = reader.text(1),
+            .role = reader.text(2),
+            .created_at = reader.text(3),
+        };
+    }
+};
+
+pub const project_members_table: []const u8 = "fiducia.project_members";
+pub const project_members_columns = [_][]const u8{ "project_id", "user_id", "role", "created_at" };
+pub const project_members_select_sql: []const u8 = "select\n      project_id::text as project_id,\n      user_id::text as user_id,\n      role,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from fiducia.project_members";
+
+pub const ProjectMembersRole = enum {
+    admin,
+    operator,
+    viewer,
+
+    pub fn toString(self: ProjectMembersRole) []const u8 {
+        return switch (self) {
+            .admin => "admin",
+            .operator => "operator",
+            .viewer => "viewer",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?ProjectMembersRole {
+        if (std.mem.eql(u8, value, "admin")) return .admin;
+        if (std.mem.eql(u8, value, "operator")) return .operator;
+        if (std.mem.eql(u8, value, "viewer")) return .viewer;
+        return null;
+    }
+};
+
+pub const ProjectMembersRow = struct {
+    project_id: []const u8,
+    user_id: []const u8,
+    role: []const u8,
+    created_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) ProjectMembersRow {
+        return ProjectMembersRow{
+            .project_id = reader.text(0),
+            .user_id = reader.text(1),
+            .role = reader.text(2),
+            .created_at = reader.text(3),
+        };
+    }
+};
+
+pub const api_keys_table: []const u8 = "fiducia.api_keys";
+pub const api_keys_columns = [_][]const u8{ "id", "key_id", "org_id", "project_id", "created_by_user_id", "name", "secret_hash", "scopes", "env", "require_idempotency", "mtls_required", "revoked", "created_at", "updated_at", "version", "sync_sequence", "last_used_at", "expires_at" };
+pub const api_keys_select_sql: []const u8 = "select\n      id::text as id,\n      key_id,\n      org_id::text as org_id,\n      project_id::text as project_id,\n      created_by_user_id::text as created_by_user_id,\n      name,\n      secret_hash,\n      scopes::text as scopes_json,\n      env,\n      require_idempotency,\n      mtls_required,\n      revoked,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence,\n      to_char(last_used_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_used_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at\n    from fiducia.api_keys";
+
+pub const ApiKeysEnv = enum {
+    live,
+    @"test",
+
+    pub fn toString(self: ApiKeysEnv) []const u8 {
+        return switch (self) {
+            .live => "live",
+            .@"test" => "test",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?ApiKeysEnv {
+        if (std.mem.eql(u8, value, "live")) return .live;
+        if (std.mem.eql(u8, value, "test")) return .@"test";
+        return null;
+    }
+};
+
+pub const ApiKeysRow = struct {
+    id: []const u8,
+    key_id: []const u8,
+    org_id: []const u8,
+    project_id: ?[]const u8,
+    created_by_user_id: ?[]const u8,
+    name: []const u8,
+    secret_hash: []const u8,
+    scopes: []const u8,
+    env: []const u8,
+    require_idempotency: bool,
+    mtls_required: bool,
+    revoked: bool,
+    created_at: []const u8,
+    updated_at: []const u8,
+    version: i64,
+    sync_sequence: i64,
+    last_used_at: ?[]const u8,
+    expires_at: ?[]const u8,
+
+    pub fn fromRow(reader: RowReader) ApiKeysRow {
+        return ApiKeysRow{
+            .id = reader.text(0),
+            .key_id = reader.text(1),
+            .org_id = reader.text(2),
+            .project_id = if (reader.is_null(3)) null else reader.text(3),
+            .created_by_user_id = if (reader.is_null(4)) null else reader.text(4),
+            .name = reader.text(5),
+            .secret_hash = reader.text(6),
+            .scopes = reader.text(7),
+            .env = reader.text(8),
+            .require_idempotency = reader.boolean(9),
+            .mtls_required = reader.boolean(10),
+            .revoked = reader.boolean(11),
+            .created_at = reader.text(12),
+            .updated_at = reader.text(13),
+            .version = reader.int(14),
+            .sync_sequence = reader.int(15),
+            .last_used_at = if (reader.is_null(16)) null else reader.text(16),
+            .expires_at = if (reader.is_null(17)) null else reader.text(17),
+        };
+    }
+};
+
+pub fn validateApiKeysKeyId(value: []const u8) ?[]const u8 {
+    if (value.len > 64) return "api_keys.key_id must be at most 64 characters";
+    return null;
+}
+
+pub fn validateApiKeysName(value: []const u8) ?[]const u8 {
+    if (value.len > 200) return "api_keys.name must be at most 200 characters";
+    return null;
+}
+
+pub fn validateApiKeysSecretHash(value: []const u8) ?[]const u8 {
+    if (value.len > 255) return "api_keys.secret_hash must be at most 255 characters";
+    return null;
+}
+
+pub const mtls_client_certs_table: []const u8 = "fiducia.mtls_client_certs";
+pub const mtls_client_certs_columns = [_][]const u8{ "id", "org_id", "project_id", "name", "subject", "sha256_fingerprint", "not_before", "not_after", "revoked", "created_at", "updated_at", "version", "sync_sequence" };
+pub const mtls_client_certs_select_sql: []const u8 = "select\n      id::text as id,\n      org_id::text as org_id,\n      project_id::text as project_id,\n      name,\n      subject,\n      sha256_fingerprint,\n      to_char(not_before at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as not_before,\n      to_char(not_after at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as not_after,\n      revoked,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence\n    from fiducia.mtls_client_certs";
+
+pub const MtlsClientCertsRow = struct {
+    id: []const u8,
+    org_id: []const u8,
+    project_id: ?[]const u8,
+    name: []const u8,
+    subject: []const u8,
+    sha256_fingerprint: []const u8,
+    not_before: ?[]const u8,
+    not_after: ?[]const u8,
+    revoked: bool,
+    created_at: []const u8,
+    updated_at: []const u8,
+    version: i64,
+    sync_sequence: i64,
+
+    pub fn fromRow(reader: RowReader) MtlsClientCertsRow {
+        return MtlsClientCertsRow{
+            .id = reader.text(0),
+            .org_id = reader.text(1),
+            .project_id = if (reader.is_null(2)) null else reader.text(2),
+            .name = reader.text(3),
+            .subject = reader.text(4),
+            .sha256_fingerprint = reader.text(5),
+            .not_before = if (reader.is_null(6)) null else reader.text(6),
+            .not_after = if (reader.is_null(7)) null else reader.text(7),
+            .revoked = reader.boolean(8),
+            .created_at = reader.text(9),
+            .updated_at = reader.text(10),
+            .version = reader.int(11),
+            .sync_sequence = reader.int(12),
+        };
+    }
+};
+
+pub fn validateMtlsClientCertsName(value: []const u8) ?[]const u8 {
+    if (value.len > 200) return "mtls_client_certs.name must be at most 200 characters";
+    return null;
+}
+
+pub fn validateMtlsClientCertsSubject(value: []const u8) ?[]const u8 {
+    if (value.len > 500) return "mtls_client_certs.subject must be at most 500 characters";
+    return null;
+}
+
+pub fn validateMtlsClientCertsSha256Fingerprint(value: []const u8) ?[]const u8 {
+    if (value.len > 95) return "mtls_client_certs.sha256_fingerprint must be at most 95 characters";
+    return null;
+}
+
+pub const customer_preferences_table: []const u8 = "fiducia.customer_preferences";
+pub const customer_preferences_columns = [_][]const u8{ "user_id", "density", "timezone", "region", "notify_key_rotation", "notify_lock_contention", "notify_mfa", "updated_at", "version", "sync_sequence" };
+pub const customer_preferences_select_sql: []const u8 = "select\n      user_id::text as user_id,\n      density,\n      timezone,\n      region,\n      notify_key_rotation,\n      notify_lock_contention,\n      notify_mfa,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence\n    from fiducia.customer_preferences";
+
+pub const CustomerPreferencesDensity = enum {
+    comfortable,
+    compact,
+
+    pub fn toString(self: CustomerPreferencesDensity) []const u8 {
+        return switch (self) {
+            .comfortable => "comfortable",
+            .compact => "compact",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?CustomerPreferencesDensity {
+        if (std.mem.eql(u8, value, "comfortable")) return .comfortable;
+        if (std.mem.eql(u8, value, "compact")) return .compact;
+        return null;
+    }
+};
+
+pub const CustomerPreferencesRow = struct {
+    user_id: []const u8,
+    density: []const u8,
+    timezone: []const u8,
+    region: []const u8,
+    notify_key_rotation: bool,
+    notify_lock_contention: bool,
+    notify_mfa: bool,
+    updated_at: []const u8,
+    version: i64,
+    sync_sequence: i64,
+
+    pub fn fromRow(reader: RowReader) CustomerPreferencesRow {
+        return CustomerPreferencesRow{
+            .user_id = reader.text(0),
+            .density = reader.text(1),
+            .timezone = reader.text(2),
+            .region = reader.text(3),
+            .notify_key_rotation = reader.boolean(4),
+            .notify_lock_contention = reader.boolean(5),
+            .notify_mfa = reader.boolean(6),
+            .updated_at = reader.text(7),
+            .version = reader.int(8),
+            .sync_sequence = reader.int(9),
+        };
+    }
+};
+
+pub fn validateCustomerPreferencesTimezone(value: []const u8) ?[]const u8 {
+    if (value.len > 64) return "customer_preferences.timezone must be at most 64 characters";
+    return null;
+}
+
+pub fn validateCustomerPreferencesRegion(value: []const u8) ?[]const u8 {
+    if (value.len > 16) return "customer_preferences.region must be at most 16 characters";
+    return null;
+}
+
+pub const customer_sessions_table: []const u8 = "fiducia.customer_sessions";
+pub const customer_sessions_columns = [_][]const u8{ "id", "user_id", "device", "location", "last_seen", "status", "updated_at", "version", "sync_sequence" };
+pub const customer_sessions_select_sql: []const u8 = "select\n      id::text as id,\n      user_id::text as user_id,\n      device,\n      location,\n      to_char(last_seen at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen,\n      status,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence\n    from fiducia.customer_sessions";
+
+pub const CustomerSessionsStatus = enum {
+    active,
+    verified,
+    revoked,
+
+    pub fn toString(self: CustomerSessionsStatus) []const u8 {
+        return switch (self) {
+            .active => "active",
+            .verified => "verified",
+            .revoked => "revoked",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?CustomerSessionsStatus {
+        if (std.mem.eql(u8, value, "active")) return .active;
+        if (std.mem.eql(u8, value, "verified")) return .verified;
+        if (std.mem.eql(u8, value, "revoked")) return .revoked;
+        return null;
+    }
+};
+
+pub const CustomerSessionsRow = struct {
+    id: []const u8,
+    user_id: []const u8,
+    device: []const u8,
+    location: ?[]const u8,
+    last_seen: []const u8,
+    status: []const u8,
+    updated_at: []const u8,
+    version: i64,
+    sync_sequence: i64,
+
+    pub fn fromRow(reader: RowReader) CustomerSessionsRow {
+        return CustomerSessionsRow{
+            .id = reader.text(0),
+            .user_id = reader.text(1),
+            .device = reader.text(2),
+            .location = if (reader.is_null(3)) null else reader.text(3),
+            .last_seen = reader.text(4),
+            .status = reader.text(5),
+            .updated_at = reader.text(6),
+            .version = reader.int(7),
+            .sync_sequence = reader.int(8),
+        };
+    }
+};
+
+pub fn validateCustomerSessionsDevice(value: []const u8) ?[]const u8 {
+    if (value.len > 200) return "customer_sessions.device must be at most 200 characters";
+    return null;
+}
+
+pub fn validateCustomerSessionsLocation(value: []const u8) ?[]const u8 {
+    if (value.len > 200) return "customer_sessions.location must be at most 200 characters";
+    return null;
+}
+
+pub const audit_log_table: []const u8 = "fiducia.audit_log";
+pub const audit_log_columns = [_][]const u8{ "id", "org_id", "project_id", "actor_user_id", "actor_key_id", "actor", "action", "target", "request_id", "source_ip", "user_agent", "meta", "created_at", "retention_expires_at" };
+pub const audit_log_select_sql: []const u8 = "select\n      id::text as id,\n      org_id::text as org_id,\n      project_id::text as project_id,\n      actor_user_id::text as actor_user_id,\n      actor_key_id::text as actor_key_id,\n      actor,\n      action,\n      target,\n      request_id,\n      source_ip,\n      user_agent,\n      meta::text as meta_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(retention_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as retention_expires_at\n    from fiducia.audit_log";
+
+pub const AuditLogRow = struct {
+    id: []const u8,
+    org_id: ?[]const u8,
+    project_id: ?[]const u8,
+    actor_user_id: ?[]const u8,
+    actor_key_id: ?[]const u8,
+    actor: ?[]const u8,
+    action: []const u8,
+    target: ?[]const u8,
+    request_id: ?[]const u8,
+    source_ip: ?[]const u8,
+    user_agent: ?[]const u8,
+    meta: []const u8,
+    created_at: []const u8,
+    retention_expires_at: ?[]const u8,
+
+    pub fn fromRow(reader: RowReader) AuditLogRow {
+        return AuditLogRow{
+            .id = reader.text(0),
+            .org_id = if (reader.is_null(1)) null else reader.text(1),
+            .project_id = if (reader.is_null(2)) null else reader.text(2),
+            .actor_user_id = if (reader.is_null(3)) null else reader.text(3),
+            .actor_key_id = if (reader.is_null(4)) null else reader.text(4),
+            .actor = if (reader.is_null(5)) null else reader.text(5),
+            .action = reader.text(6),
+            .target = if (reader.is_null(7)) null else reader.text(7),
+            .request_id = if (reader.is_null(8)) null else reader.text(8),
+            .source_ip = if (reader.is_null(9)) null else reader.text(9),
+            .user_agent = if (reader.is_null(10)) null else reader.text(10),
+            .meta = reader.text(11),
+            .created_at = reader.text(12),
+            .retention_expires_at = if (reader.is_null(13)) null else reader.text(13),
+        };
+    }
+};
+
+pub fn validateAuditLogActor(value: []const u8) ?[]const u8 {
+    if (value.len > 320) return "audit_log.actor must be at most 320 characters";
+    return null;
+}
+
+pub fn validateAuditLogAction(value: []const u8) ?[]const u8 {
+    if (value.len > 120) return "audit_log.action must be at most 120 characters";
+    return null;
+}
+
+pub fn validateAuditLogTarget(value: []const u8) ?[]const u8 {
+    if (value.len > 320) return "audit_log.target must be at most 320 characters";
+    return null;
+}
+
+pub fn validateAuditLogRequestId(value: []const u8) ?[]const u8 {
+    if (value.len > 120) return "audit_log.request_id must be at most 120 characters";
+    return null;
+}
+
+pub fn validateAuditLogSourceIp(value: []const u8) ?[]const u8 {
+    if (value.len > 64) return "audit_log.source_ip must be at most 64 characters";
+    return null;
+}
+
+pub fn validateAuditLogUserAgent(value: []const u8) ?[]const u8 {
+    if (value.len > 500) return "audit_log.user_agent must be at most 500 characters";
+    return null;
+}
+
+pub const customer_notifications_table: []const u8 = "fiducia.customer_notifications";
+pub const customer_notifications_columns = [_][]const u8{ "id", "user_id", "org_id", "kind", "severity", "title", "body", "link", "read_at", "created_at", "updated_at", "version", "sync_sequence" };
+pub const customer_notifications_select_sql: []const u8 = "select\n      id::text as id,\n      user_id::text as user_id,\n      org_id::text as org_id,\n      kind,\n      severity,\n      title,\n      body,\n      link,\n      to_char(read_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as read_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence\n    from fiducia.customer_notifications";
+
+pub const CustomerNotificationsSeverity = enum {
+    info,
+    success,
+    warning,
+    critical,
+
+    pub fn toString(self: CustomerNotificationsSeverity) []const u8 {
+        return switch (self) {
+            .info => "info",
+            .success => "success",
+            .warning => "warning",
+            .critical => "critical",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?CustomerNotificationsSeverity {
+        if (std.mem.eql(u8, value, "info")) return .info;
+        if (std.mem.eql(u8, value, "success")) return .success;
+        if (std.mem.eql(u8, value, "warning")) return .warning;
+        if (std.mem.eql(u8, value, "critical")) return .critical;
+        return null;
+    }
+};
+
+pub const CustomerNotificationsRow = struct {
+    id: []const u8,
+    user_id: []const u8,
+    org_id: ?[]const u8,
+    kind: []const u8,
+    severity: []const u8,
+    title: []const u8,
+    body: []const u8,
+    link: ?[]const u8,
+    read_at: ?[]const u8,
+    created_at: []const u8,
+    updated_at: []const u8,
+    version: i64,
+    sync_sequence: i64,
+
+    pub fn fromRow(reader: RowReader) CustomerNotificationsRow {
+        return CustomerNotificationsRow{
+            .id = reader.text(0),
+            .user_id = reader.text(1),
+            .org_id = if (reader.is_null(2)) null else reader.text(2),
+            .kind = reader.text(3),
+            .severity = reader.text(4),
+            .title = reader.text(5),
+            .body = reader.text(6),
+            .link = if (reader.is_null(7)) null else reader.text(7),
+            .read_at = if (reader.is_null(8)) null else reader.text(8),
+            .created_at = reader.text(9),
+            .updated_at = reader.text(10),
+            .version = reader.int(11),
+            .sync_sequence = reader.int(12),
+        };
+    }
+};
+
+pub fn validateCustomerNotificationsKind(value: []const u8) ?[]const u8 {
+    if (value.len > 40) return "customer_notifications.kind must be at most 40 characters";
+    return null;
+}
+
+pub fn validateCustomerNotificationsTitle(value: []const u8) ?[]const u8 {
+    if (value.len > 200) return "customer_notifications.title must be at most 200 characters";
+    return null;
+}
+
+pub fn validateCustomerNotificationsBody(value: []const u8) ?[]const u8 {
+    if (value.len > 2000) return "customer_notifications.body must be at most 2000 characters";
+    return null;
+}
+
+pub fn validateCustomerNotificationsLink(value: []const u8) ?[]const u8 {
+    if (value.len > 500) return "customer_notifications.link must be at most 500 characters";
+    return null;
+}
+
+pub const sync_idempotency_keys_table: []const u8 = "fiducia.sync_idempotency_keys";
+pub const sync_idempotency_keys_columns = [_][]const u8{ "key", "request_fingerprint", "committed_version", "created_at" };
+pub const sync_idempotency_keys_select_sql: []const u8 = "select\n      key,\n      request_fingerprint,\n      committed_version,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from fiducia.sync_idempotency_keys";
+
+pub const SyncIdempotencyKeysRow = struct {
+    key: []const u8,
+    request_fingerprint: []const u8,
+    committed_version: ?i64,
+    created_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) SyncIdempotencyKeysRow {
+        return SyncIdempotencyKeysRow{
+            .key = reader.text(0),
+            .request_fingerprint = reader.text(1),
+            .committed_version = if (reader.is_null(2)) null else reader.int(2),
+            .created_at = reader.text(3),
+        };
+    }
+};
+
+pub fn validateSyncIdempotencyKeysRequestFingerprint(value: []const u8) ?[]const u8 {
+    if (value.len > 64) return "sync_idempotency_keys.request_fingerprint must be at most 64 characters";
+    return null;
+}
+
+pub const transcriptions_table: []const u8 = "t2v.transcriptions";
+pub const transcriptions_columns = [_][]const u8{ "id", "source", "provider", "model", "text", "language", "sample_rate", "duration_ms", "created_at" };
+pub const transcriptions_select_sql: []const u8 = "select\n      id::text as id,\n      source,\n      provider,\n      model,\n      text,\n      language,\n      sample_rate,\n      duration_ms,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from t2v.transcriptions";
+
+pub const TranscriptionsRow = struct {
+    id: []const u8,
+    source: []const u8,
+    provider: []const u8,
+    model: []const u8,
+    text: []const u8,
+    language: ?[]const u8,
+    sample_rate: ?i32,
+    duration_ms: ?i64,
+    created_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) TranscriptionsRow {
+        return TranscriptionsRow{
+            .id = reader.text(0),
+            .source = reader.text(1),
+            .provider = reader.text(2),
+            .model = reader.text(3),
+            .text = reader.text(4),
+            .language = if (reader.is_null(5)) null else reader.text(5),
+            .sample_rate = if (reader.is_null(6)) null else @as(i32, @intCast(reader.int(6))),
+            .duration_ms = if (reader.is_null(7)) null else reader.int(7),
+            .created_at = reader.text(8),
+        };
+    }
+};
+
+pub fn validateTranscriptionsSampleRate(value: i32) ?[]const u8 {
+    if (value < 4000) return "transcriptions.sample_rate is below the minimum";
+    if (value > 384000) return "transcriptions.sample_rate is above the maximum";
+    return null;
+}
+
+pub fn validateTranscriptionsDurationMs(value: i64) ?[]const u8 {
+    if (value < 0) return "transcriptions.duration_ms is below the minimum";
+    return null;
+}
+
+pub const syntheses_table: []const u8 = "t2v.syntheses";
+pub const syntheses_columns = [_][]const u8{ "id", "text", "voice", "provider", "model", "format", "audio_bytes", "created_at" };
+pub const syntheses_select_sql: []const u8 = "select\n      id::text as id,\n      text,\n      voice,\n      provider,\n      model,\n      format,\n      audio_bytes,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from t2v.syntheses";
+
+pub const SynthesesRow = struct {
+    id: []const u8,
+    text: []const u8,
+    voice: []const u8,
+    provider: []const u8,
+    model: []const u8,
+    format: []const u8,
+    audio_bytes: i64,
+    created_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) SynthesesRow {
+        return SynthesesRow{
+            .id = reader.text(0),
+            .text = reader.text(1),
+            .voice = reader.text(2),
+            .provider = reader.text(3),
+            .model = reader.text(4),
+            .format = reader.text(5),
+            .audio_bytes = reader.int(6),
+            .created_at = reader.text(7),
+        };
+    }
+};
+
+pub fn validateSynthesesAudioBytes(value: i64) ?[]const u8 {
+    if (value < 0) return "syntheses.audio_bytes is below the minimum";
+    return null;
+}
+
+pub const translations_table: []const u8 = "t2v.translations";
+pub const translations_columns = [_][]const u8{ "id", "source_text", "translated_text", "source_lang", "target_lang", "provider", "model", "latency_ms", "created_at" };
+pub const translations_select_sql: []const u8 = "select\n      id::text as id,\n      source_text,\n      translated_text,\n      source_lang,\n      target_lang,\n      provider,\n      model,\n      latency_ms,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from t2v.translations";
+
+pub const TranslationsRow = struct {
+    id: []const u8,
+    source_text: []const u8,
+    translated_text: []const u8,
+    source_lang: ?[]const u8,
+    target_lang: []const u8,
+    provider: []const u8,
+    model: []const u8,
+    latency_ms: i64,
+    created_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) TranslationsRow {
+        return TranslationsRow{
+            .id = reader.text(0),
+            .source_text = reader.text(1),
+            .translated_text = reader.text(2),
+            .source_lang = if (reader.is_null(3)) null else reader.text(3),
+            .target_lang = reader.text(4),
+            .provider = reader.text(5),
+            .model = reader.text(6),
+            .latency_ms = reader.int(7),
+            .created_at = reader.text(8),
+        };
+    }
+};
+
+pub fn validateTranslationsLatencyMs(value: i64) ?[]const u8 {
+    if (value < 0) return "translations.latency_ms is below the minimum";
+    return null;
+}
+
+pub const vapi_calls_table: []const u8 = "t2v.vapi_calls";
+pub const vapi_calls_columns = [_][]const u8{ "id", "vapi_call_id", "status", "ended_reason", "transcript", "summary", "created_at", "updated_at" };
+pub const vapi_calls_select_sql: []const u8 = "select\n      id::text as id,\n      vapi_call_id,\n      status,\n      ended_reason,\n      transcript,\n      summary,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from t2v.vapi_calls";
+
+pub const VapiCallsRow = struct {
+    id: []const u8,
+    vapi_call_id: []const u8,
+    status: []const u8,
+    ended_reason: ?[]const u8,
+    transcript: ?[]const u8,
+    summary: ?[]const u8,
+    created_at: []const u8,
+    updated_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) VapiCallsRow {
+        return VapiCallsRow{
+            .id = reader.text(0),
+            .vapi_call_id = reader.text(1),
+            .status = reader.text(2),
+            .ended_reason = if (reader.is_null(3)) null else reader.text(3),
+            .transcript = if (reader.is_null(4)) null else reader.text(4),
+            .summary = if (reader.is_null(5)) null else reader.text(5),
+            .created_at = reader.text(6),
+            .updated_at = reader.text(7),
+        };
+    }
+};
+
+pub const vapi_events_table: []const u8 = "t2v.vapi_events";
+pub const vapi_events_columns = [_][]const u8{ "id", "vapi_call_id", "event_type", "payload", "created_at" };
+pub const vapi_events_select_sql: []const u8 = "select\n      id::text as id,\n      vapi_call_id,\n      event_type,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from t2v.vapi_events";
+
+pub const VapiEventsRow = struct {
+    id: []const u8,
+    vapi_call_id: ?[]const u8,
+    event_type: []const u8,
+    payload: []const u8,
+    created_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) VapiEventsRow {
+        return VapiEventsRow{
+            .id = reader.text(0),
+            .vapi_call_id = if (reader.is_null(1)) null else reader.text(1),
+            .event_type = reader.text(2),
+            .payload = reader.text(3),
+            .created_at = reader.text(4),
+        };
+    }
+};
+
+pub const fab_plans_table: []const u8 = "daedalus.fab_plans";
+pub const fab_plans_columns = [_][]const u8{ "id", "owner_email", "title", "goal", "process_family", "status", "document", "created_at", "updated_at" };
+pub const fab_plans_select_sql: []const u8 = "select\n      id::text as id,\n      owner_email,\n      title,\n      goal,\n      process_family,\n      status,\n      document::text as document_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from daedalus.fab_plans";
+
+pub const FabPlansProcessFamily = enum {
+    additive,
+    subtractive,
+    hybrid,
+
+    pub fn toString(self: FabPlansProcessFamily) []const u8 {
+        return switch (self) {
+            .additive => "additive",
+            .subtractive => "subtractive",
+            .hybrid => "hybrid",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?FabPlansProcessFamily {
+        if (std.mem.eql(u8, value, "additive")) return .additive;
+        if (std.mem.eql(u8, value, "subtractive")) return .subtractive;
+        if (std.mem.eql(u8, value, "hybrid")) return .hybrid;
+        return null;
+    }
+};
+
+pub const FabPlansStatus = enum {
+    draft,
+    planning,
+    planned,
+    released,
+    archived,
+
+    pub fn toString(self: FabPlansStatus) []const u8 {
+        return switch (self) {
+            .draft => "draft",
+            .planning => "planning",
+            .planned => "planned",
+            .released => "released",
+            .archived => "archived",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?FabPlansStatus {
+        if (std.mem.eql(u8, value, "draft")) return .draft;
+        if (std.mem.eql(u8, value, "planning")) return .planning;
+        if (std.mem.eql(u8, value, "planned")) return .planned;
+        if (std.mem.eql(u8, value, "released")) return .released;
+        if (std.mem.eql(u8, value, "archived")) return .archived;
+        return null;
+    }
+};
+
+pub const FabPlansRow = struct {
+    id: []const u8,
+    owner_email: []const u8,
+    title: []const u8,
+    goal: []const u8,
+    process_family: []const u8,
+    status: []const u8,
+    document: ?[]const u8,
+    created_at: []const u8,
+    updated_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) FabPlansRow {
+        return FabPlansRow{
+            .id = reader.text(0),
+            .owner_email = reader.text(1),
+            .title = reader.text(2),
+            .goal = reader.text(3),
+            .process_family = reader.text(4),
+            .status = reader.text(5),
+            .document = if (reader.is_null(6)) null else reader.text(6),
+            .created_at = reader.text(7),
+            .updated_at = reader.text(8),
+        };
+    }
+};
+
+pub const fab_designs_table: []const u8 = "daedalus.fab_designs";
+pub const fab_designs_columns = [_][]const u8{ "id", "plan_id", "filename", "format", "storage_uri", "size_bytes", "content_hash", "geometry", "created_at" };
+pub const fab_designs_select_sql: []const u8 = "select\n      id::text as id,\n      plan_id::text as plan_id,\n      filename,\n      format,\n      storage_uri,\n      size_bytes,\n      content_hash,\n      geometry::text as geometry_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_designs";
+
+pub const FabDesignsFormat = enum {
+    step,
+    stl,
+    @"3mf",
+    dxf,
+    iges,
+    obj,
+
+    pub fn toString(self: FabDesignsFormat) []const u8 {
+        return switch (self) {
+            .step => "step",
+            .stl => "stl",
+            .@"3mf" => "3mf",
+            .dxf => "dxf",
+            .iges => "iges",
+            .obj => "obj",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?FabDesignsFormat {
+        if (std.mem.eql(u8, value, "step")) return .step;
+        if (std.mem.eql(u8, value, "stl")) return .stl;
+        if (std.mem.eql(u8, value, "3mf")) return .@"3mf";
+        if (std.mem.eql(u8, value, "dxf")) return .dxf;
+        if (std.mem.eql(u8, value, "iges")) return .iges;
+        if (std.mem.eql(u8, value, "obj")) return .obj;
+        return null;
+    }
+};
+
+pub const FabDesignsRow = struct {
+    id: []const u8,
+    plan_id: []const u8,
+    filename: []const u8,
+    format: []const u8,
+    storage_uri: []const u8,
+    size_bytes: i64,
+    content_hash: ?[]const u8,
+    geometry: []const u8,
+    created_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) FabDesignsRow {
+        return FabDesignsRow{
+            .id = reader.text(0),
+            .plan_id = reader.text(1),
+            .filename = reader.text(2),
+            .format = reader.text(3),
+            .storage_uri = reader.text(4),
+            .size_bytes = reader.int(5),
+            .content_hash = if (reader.is_null(6)) null else reader.text(6),
+            .geometry = reader.text(7),
+            .created_at = reader.text(8),
+        };
+    }
+};
+
+pub fn validateFabDesignsSizeBytes(value: i64) ?[]const u8 {
+    if (value < 0) return "fab_designs.size_bytes is below the minimum";
+    return null;
+}
+
+pub const fab_instructions_table: []const u8 = "daedalus.fab_instructions";
+pub const fab_instructions_columns = [_][]const u8{ "id", "plan_id", "revision", "machine_profile", "dialect", "storage_uri", "content_hash", "validated", "validation", "released_by_email", "released_at", "created_at" };
+pub const fab_instructions_select_sql: []const u8 = "select\n      id::text as id,\n      plan_id::text as plan_id,\n      revision,\n      machine_profile,\n      dialect,\n      storage_uri,\n      content_hash,\n      validated,\n      validation::text as validation_json,\n      released_by_email,\n      to_char(released_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as released_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_instructions";
+
+pub const FabInstructionsDialect = enum {
+    gcode,
+    nc,
+    apt,
+    proprietary,
+
+    pub fn toString(self: FabInstructionsDialect) []const u8 {
+        return switch (self) {
+            .gcode => "gcode",
+            .nc => "nc",
+            .apt => "apt",
+            .proprietary => "proprietary",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?FabInstructionsDialect {
+        if (std.mem.eql(u8, value, "gcode")) return .gcode;
+        if (std.mem.eql(u8, value, "nc")) return .nc;
+        if (std.mem.eql(u8, value, "apt")) return .apt;
+        if (std.mem.eql(u8, value, "proprietary")) return .proprietary;
+        return null;
+    }
+};
+
+pub const FabInstructionsRow = struct {
+    id: []const u8,
+    plan_id: []const u8,
+    revision: i32,
+    machine_profile: []const u8,
+    dialect: []const u8,
+    storage_uri: []const u8,
+    content_hash: ?[]const u8,
+    validated: bool,
+    validation: []const u8,
+    released_by_email: ?[]const u8,
+    released_at: ?[]const u8,
+    created_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) FabInstructionsRow {
+        return FabInstructionsRow{
+            .id = reader.text(0),
+            .plan_id = reader.text(1),
+            .revision = @as(i32, @intCast(reader.int(2))),
+            .machine_profile = reader.text(3),
+            .dialect = reader.text(4),
+            .storage_uri = reader.text(5),
+            .content_hash = if (reader.is_null(6)) null else reader.text(6),
+            .validated = reader.boolean(7),
+            .validation = reader.text(8),
+            .released_by_email = if (reader.is_null(9)) null else reader.text(9),
+            .released_at = if (reader.is_null(10)) null else reader.text(10),
+            .created_at = reader.text(11),
+        };
+    }
+};
+
+pub fn validateFabInstructionsRevision(value: i32) ?[]const u8 {
+    if (value < 1) return "fab_instructions.revision is below the minimum";
+    return null;
+}
+
+pub const fab_runs_table: []const u8 = "daedalus.fab_runs";
+pub const fab_runs_columns = [_][]const u8{ "id", "instructions_id", "status", "machine_id", "operator_email", "progress", "as_built", "error", "started_at", "finished_at", "created_at" };
+pub const fab_runs_select_sql: []const u8 = "select\n      id::text as id,\n      instructions_id::text as instructions_id,\n      status,\n      machine_id,\n      operator_email,\n      progress,\n      as_built::text as as_built_json,\n      error,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_runs";
+
+pub const FabRunsStatus = enum {
+    queued,
+    running,
+    succeeded,
+    failed,
+    aborted,
+
+    pub fn toString(self: FabRunsStatus) []const u8 {
+        return switch (self) {
+            .queued => "queued",
+            .running => "running",
+            .succeeded => "succeeded",
+            .failed => "failed",
+            .aborted => "aborted",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?FabRunsStatus {
+        if (std.mem.eql(u8, value, "queued")) return .queued;
+        if (std.mem.eql(u8, value, "running")) return .running;
+        if (std.mem.eql(u8, value, "succeeded")) return .succeeded;
+        if (std.mem.eql(u8, value, "failed")) return .failed;
+        if (std.mem.eql(u8, value, "aborted")) return .aborted;
+        return null;
+    }
+};
+
+pub const FabRunsRow = struct {
+    id: []const u8,
+    instructions_id: []const u8,
+    status: []const u8,
+    machine_id: []const u8,
+    operator_email: ?[]const u8,
+    progress: i32,
+    as_built: []const u8,
+    @"error": ?[]const u8,
+    started_at: ?[]const u8,
+    finished_at: ?[]const u8,
+    created_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) FabRunsRow {
+        return FabRunsRow{
+            .id = reader.text(0),
+            .instructions_id = reader.text(1),
+            .status = reader.text(2),
+            .machine_id = reader.text(3),
+            .operator_email = if (reader.is_null(4)) null else reader.text(4),
+            .progress = @as(i32, @intCast(reader.int(5))),
+            .as_built = reader.text(6),
+            .@"error" = if (reader.is_null(7)) null else reader.text(7),
+            .started_at = if (reader.is_null(8)) null else reader.text(8),
+            .finished_at = if (reader.is_null(9)) null else reader.text(9),
+            .created_at = reader.text(10),
+        };
+    }
+};
+
+pub fn validateFabRunsProgress(value: i32) ?[]const u8 {
+    if (value < 0) return "fab_runs.progress is below the minimum";
+    if (value > 100) return "fab_runs.progress is above the maximum";
+    return null;
+}

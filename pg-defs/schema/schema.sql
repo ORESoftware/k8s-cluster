@@ -6611,3 +6611,332 @@ create table if not exists fiducia.sync_idempotency_keys (
 
 create index if not exists fiducia_sync_idempotency_created_idx
   on fiducia.sync_idempotency_keys (created_at);
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- t2v — voice-to-text / text-to-voice platform (t2v-v2t.rs: t2v-api JSON
+-- server + t2v-web MASH dashboard).
+-- ----------------------------------------------------------------------------
+-- Everything lives in the `t2v` schema so the app's defs cannot collide with
+-- other apps sharing this database. The services connect with
+-- search_path=t2v (SeaORM schema_search_path) and never run their own DDL
+-- against Postgres: this section is the desired state, converged by dpm.
+-- SeaORM entities in t2v-v2t.rs/crates/entity are adapters for these tables;
+-- the repo's sea-orm-migration crate exists only to bootstrap SQLite in local
+-- dev and tests.
+-- ════════════════════════════════════════════════════════════════════════════
+
+create schema if not exists t2v;
+
+-- One row per speech-to-text run (direct upload, pipeline stage, or Vapi).
+create table if not exists t2v.transcriptions (
+  id uuid primary key default gen_random_uuid(),
+  source text not null,
+  provider text not null,
+  model text not null,
+  text text not null,
+  language text,
+  sample_rate integer,
+  duration_ms bigint,
+  created_at timestamptz default now() not null,
+  constraint t2v_transcriptions_source_size_chk
+    check (octet_length(source) between 1 and 40),
+  constraint t2v_transcriptions_provider_size_chk
+    check (octet_length(provider) between 1 and 40),
+  constraint t2v_transcriptions_model_size_chk
+    check (octet_length(model) between 1 and 200),
+  constraint t2v_transcriptions_text_size_chk
+    check (octet_length(text) <= 1000000),
+  constraint t2v_transcriptions_language_size_chk
+    check (language is null or octet_length(language) between 1 and 80),
+  constraint t2v_transcriptions_sample_rate_chk
+    check (sample_rate is null or sample_rate between 4000 and 384000),
+  constraint t2v_transcriptions_duration_chk
+    check (duration_ms is null or duration_ms >= 0)
+);
+
+create index if not exists t2v_transcriptions_created_idx
+  on t2v.transcriptions (created_at);
+
+-- One row per text-to-speech run; audio bytes are returned to the caller and
+-- not stored, only measured.
+create table if not exists t2v.syntheses (
+  id uuid primary key default gen_random_uuid(),
+  text text not null,
+  voice text not null,
+  provider text not null,
+  model text not null,
+  format text not null,
+  audio_bytes bigint not null,
+  created_at timestamptz default now() not null,
+  constraint t2v_syntheses_text_size_chk
+    check (octet_length(text) between 1 and 20000),
+  constraint t2v_syntheses_voice_size_chk
+    check (octet_length(voice) between 1 and 80),
+  constraint t2v_syntheses_provider_size_chk
+    check (octet_length(provider) between 1 and 40),
+  constraint t2v_syntheses_model_size_chk
+    check (octet_length(model) between 1 and 200),
+  constraint t2v_syntheses_format_size_chk
+    check (octet_length(format) between 1 and 10),
+  constraint t2v_syntheses_audio_bytes_chk
+    check (audio_bytes >= 0)
+);
+
+create index if not exists t2v_syntheses_created_idx
+  on t2v.syntheses (created_at);
+
+-- One row per LLM translation (OpenAI / Gemini / Anthropic all land here).
+create table if not exists t2v.translations (
+  id uuid primary key default gen_random_uuid(),
+  source_text text not null,
+  translated_text text not null,
+  source_lang text,
+  target_lang text not null,
+  provider text not null,
+  model text not null,
+  latency_ms bigint not null,
+  created_at timestamptz default now() not null,
+  constraint t2v_translations_source_text_size_chk
+    check (octet_length(source_text) between 1 and 200000),
+  constraint t2v_translations_translated_text_size_chk
+    check (octet_length(translated_text) <= 200000),
+  constraint t2v_translations_source_lang_size_chk
+    check (source_lang is null or octet_length(source_lang) between 1 and 80),
+  constraint t2v_translations_target_lang_size_chk
+    check (octet_length(target_lang) between 1 and 80),
+  constraint t2v_translations_provider_size_chk
+    check (octet_length(provider) between 1 and 40),
+  constraint t2v_translations_model_size_chk
+    check (octet_length(model) between 1 and 200),
+  constraint t2v_translations_latency_chk
+    check (latency_ms >= 0)
+);
+
+create index if not exists t2v_translations_created_idx
+  on t2v.translations (created_at);
+
+-- Vapi.ai call lifecycle, upserted from server webhooks keyed by Vapi's id.
+create table if not exists t2v.vapi_calls (
+  id uuid primary key default gen_random_uuid(),
+  vapi_call_id text not null,
+  status text not null,
+  ended_reason text,
+  transcript text,
+  summary text,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint t2v_vapi_calls_call_id_size_chk
+    check (octet_length(vapi_call_id) between 1 and 120),
+  constraint t2v_vapi_calls_status_size_chk
+    check (octet_length(status) between 1 and 40),
+  constraint t2v_vapi_calls_ended_reason_size_chk
+    check (ended_reason is null or octet_length(ended_reason) between 1 and 200),
+  constraint t2v_vapi_calls_transcript_size_chk
+    check (transcript is null or octet_length(transcript) <= 1000000),
+  constraint t2v_vapi_calls_summary_size_chk
+    check (summary is null or octet_length(summary) <= 100000)
+);
+
+create unique index if not exists t2v_vapi_calls_vapi_call_id_uq
+  on t2v.vapi_calls (vapi_call_id);
+
+-- Raw Vapi webhook events for audit/debugging (payload truncated app-side).
+create table if not exists t2v.vapi_events (
+  id uuid primary key default gen_random_uuid(),
+  vapi_call_id text,
+  event_type text not null,
+  payload jsonb not null,
+  created_at timestamptz default now() not null,
+  constraint t2v_vapi_events_call_id_size_chk
+    check (vapi_call_id is null or octet_length(vapi_call_id) between 1 and 120),
+  constraint t2v_vapi_events_type_size_chk
+    check (octet_length(event_type) between 1 and 80)
+);
+
+create index if not exists t2v_vapi_events_created_idx
+  on t2v.vapi_events (created_at);
+
+create index if not exists t2v_vapi_events_call_idx
+  on t2v.vapi_events (vapi_call_id);
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- DAEDALUS — fabrication planning (daedalus-fab org)
+--
+-- NAMESPACE: `daedalus`, a named schema on the shared pg-defs RDS database,
+-- following the fiducia/benefactor/threefa pattern. Consuming services address
+-- it via `search_path = daedalus, public` or schema-qualified names.
+--
+-- Consumers: daedalus-api-server.rs (owns all writes) and
+-- daedalus-web-server.rs (read-only, renders Maud/htmx over these rows). Both
+-- use hand-written SeaORM entities in src/entity — never generate SQL or
+-- migrations from application code.
+--
+-- AUTH BOUNDARY — read this before adding a table here. This is Amazon RDS,
+-- NOT Supabase: `auth.uid()` / `auth.email()` do not exist and RLS is not used
+-- on this database (no policy in this file relies on them). End-user identity
+-- arrives as a verified Supabase JWT at the server edge, and the server writes
+-- the subject into `owner_email`. Authorization is enforced in the server, not
+-- by the database. Client-streamed telemetry stays on Supabase in
+-- `public.daedalus_client_log_*` and is deliberately NOT mirrored here.
+--
+-- Migrations are declarative via dpm (declarative-postgres-migrate):
+--   scripts/dpm.sh {diff|verify|review|apply}
+-- with schema/schema.sql as --source. Never apply this file directly to a live
+-- database and never migrate at boot; generate and review a diff instead.
+-- ════════════════════════════════════════════════════════════════════════════
+
+create schema if not exists daedalus;
+
+-- A fabrication plan: the unit of work carrying a goal from intake through to
+-- released machine instructions. `status` advances monotonically in the server;
+-- the check constraint only bounds the vocabulary.
+create table if not exists daedalus.fab_plans (
+  id uuid primary key default gen_random_uuid(),
+  owner_email text not null,
+  title text not null,
+  -- Free-form statement of what the operator wants fabricated.
+  goal text not null,
+  -- additive | subtractive | hybrid — the org's three process families.
+  process_family text not null default 'additive',
+  status text not null default 'draft',
+  -- Full plan document as last computed by the planner (nullable until first
+  -- planning pass completes).
+  document jsonb,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint fab_plans_owner_email_size_chk
+    check (octet_length(owner_email) between 3 and 320),
+  constraint fab_plans_title_size_chk
+    check (octet_length(title) between 1 and 200),
+  constraint fab_plans_goal_size_chk
+    check (octet_length(goal) between 1 and 20000),
+  constraint fab_plans_process_family_chk
+    check (process_family in ('additive', 'subtractive', 'hybrid')),
+  constraint fab_plans_status_chk
+    check (status in ('draft', 'planning', 'planned', 'released', 'archived'))
+);
+
+create index if not exists fab_plans_owner_email_idx
+  on daedalus.fab_plans (owner_email);
+
+create index if not exists fab_plans_status_idx
+  on daedalus.fab_plans (status);
+
+-- Newest-first listing per owner, the web server's landing query.
+create index if not exists fab_plans_owner_created_idx
+  on daedalus.fab_plans (owner_email, created_at desc);
+
+-- An imported design (STEP/STL/etc) attached to a plan. Blobs live in object
+-- storage; only the locator and extracted metadata are stored here.
+create table if not exists daedalus.fab_designs (
+  id uuid primary key default gen_random_uuid(),
+  plan_id uuid not null references daedalus.fab_plans (id) on delete cascade,
+  filename text not null,
+  -- step | stl | 3mf | dxf | iges | obj
+  format text not null,
+  -- Object-storage locator (s3://…); never the design bytes themselves.
+  storage_uri text not null,
+  size_bytes bigint not null default 0,
+  -- sha256 of the design bytes, for dedupe and provenance.
+  content_hash text,
+  -- Extracted geometry facts (bounding box, volume, feature counts).
+  geometry jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  constraint fab_designs_filename_size_chk
+    check (octet_length(filename) between 1 and 400),
+  constraint fab_designs_format_chk
+    check (format in ('step', 'stl', '3mf', 'dxf', 'iges', 'obj')),
+  constraint fab_designs_storage_uri_size_chk
+    check (octet_length(storage_uri) between 1 and 2000),
+  constraint fab_designs_size_nonnegative_chk
+    check (size_bytes >= 0),
+  constraint fab_designs_content_hash_chk
+    check (content_hash is null or octet_length(content_hash) = 64)
+);
+
+create index if not exists fab_designs_plan_idx
+  on daedalus.fab_designs (plan_id);
+
+create index if not exists fab_designs_content_hash_idx
+  on daedalus.fab_designs (content_hash)
+  where content_hash is not null;
+
+-- A released instruction set (G-code and friends) produced from a plan.
+-- Releases are immutable and append-only: a correction is a new revision, never
+-- an UPDATE of a released row.
+create table if not exists daedalus.fab_instructions (
+  id uuid primary key default gen_random_uuid(),
+  plan_id uuid not null references daedalus.fab_plans (id) on delete cascade,
+  revision integer not null default 1,
+  -- Target machine this instruction set was posted for.
+  machine_profile text not null,
+  -- gcode | nc | apt | proprietary
+  dialect text not null default 'gcode',
+  storage_uri text not null,
+  content_hash text,
+  -- Validator verdict recorded at release time.
+  validated boolean not null default false,
+  validation jsonb default '{}'::jsonb not null,
+  released_by_email text,
+  released_at timestamptz,
+  created_at timestamptz default now() not null,
+  constraint fab_instructions_revision_chk
+    check (revision >= 1),
+  constraint fab_instructions_machine_profile_size_chk
+    check (octet_length(machine_profile) between 1 and 200),
+  constraint fab_instructions_dialect_chk
+    check (dialect in ('gcode', 'nc', 'apt', 'proprietary')),
+  constraint fab_instructions_storage_uri_size_chk
+    check (octet_length(storage_uri) between 1 and 2000),
+  constraint fab_instructions_content_hash_chk
+    check (content_hash is null or octet_length(content_hash) = 64),
+  -- A release must record who released it and when, together or not at all.
+  constraint fab_instructions_release_pair_chk
+    check ((released_by_email is null) = (released_at is null))
+);
+
+create unique index if not exists fab_instructions_plan_revision_uq
+  on daedalus.fab_instructions (plan_id, revision);
+
+create index if not exists fab_instructions_plan_idx
+  on daedalus.fab_instructions (plan_id);
+
+-- An execution of one instruction set on real hardware. Terminal states carry
+-- finished_at; `progress` is advisory and driven by the run's telemetry stream.
+create table if not exists daedalus.fab_runs (
+  id uuid primary key default gen_random_uuid(),
+  instructions_id uuid not null references daedalus.fab_instructions (id) on delete cascade,
+  status text not null default 'queued',
+  machine_id text not null,
+  operator_email text,
+  -- Whole-percent completion, 0–100. Integer rather than numeric: the pg-defs
+  -- code generator has no numeric mapping, and sub-percent precision is noise
+  -- for an advisory progress figure.
+  progress smallint not null default 0,
+  -- Free-form as-built observations captured during/after the run.
+  as_built jsonb default '{}'::jsonb not null,
+  error text,
+  started_at timestamptz,
+  finished_at timestamptz,
+  created_at timestamptz default now() not null,
+  constraint fab_runs_status_chk
+    check (status in ('queued', 'running', 'succeeded', 'failed', 'aborted')),
+  constraint fab_runs_machine_id_size_chk
+    check (octet_length(machine_id) between 1 and 200),
+  constraint fab_runs_progress_range_chk
+    check (progress between 0 and 100),
+  constraint fab_runs_error_size_chk
+    check (error is null or octet_length(error) <= 20000),
+  -- Terminal runs have finished; non-terminal runs have not.
+  constraint fab_runs_finished_chk
+    check ((status in ('succeeded', 'failed', 'aborted')) = (finished_at is not null))
+);
+
+create index if not exists fab_runs_instructions_idx
+  on daedalus.fab_runs (instructions_id);
+
+create index if not exists fab_runs_status_idx
+  on daedalus.fab_runs (status);
+
+create index if not exists fab_runs_created_idx
+  on daedalus.fab_runs (created_at desc);

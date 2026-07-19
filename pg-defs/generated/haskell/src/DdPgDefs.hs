@@ -9749,3 +9749,917 @@ validateSharedContextUpdatedBy :: Text -> Either Text Text
 validateSharedContextUpdatedBy value
   | T.length value > 120 = Left "shared_context.updated_by must be at most 120 characters"
   | otherwise = Right value
+
+syncClockTable :: Text
+syncClockTable = "fiducia.sync_clock"
+
+syncClockColumns :: [Text]
+syncClockColumns = ["singleton", "last_sequence"]
+
+syncClockSelectSql :: Text
+syncClockSelectSql = "select\n      singleton,\n      last_sequence\n    from fiducia.sync_clock"
+
+data SyncClockRow = SyncClockRow
+  { syncClockSingleton :: Bool
+  , syncClockLastSequence :: Int
+  } deriving (Eq, Show)
+
+instance FromRow SyncClockRow where
+  fromRow = SyncClockRow <$> field <*> field
+
+validateSyncClockLastSequence :: Int -> Either Text Int
+validateSyncClockLastSequence value
+  | value < 0 = Left "sync_clock.last_sequence is below the minimum"
+  | otherwise = Right value
+
+syncTombstonesTable :: Text
+syncTombstonesTable = "fiducia.sync_tombstones"
+
+syncTombstonesColumns :: [Text]
+syncTombstonesColumns = ["sequence", "table_name", "row_id", "tenant_id", "owner_user_id", "row_version", "deleted_at"]
+
+syncTombstonesSelectSql :: Text
+syncTombstonesSelectSql = "select\n      sequence,\n      table_name,\n      row_id,\n      tenant_id::text as tenant_id,\n      owner_user_id::text as owner_user_id,\n      row_version,\n      to_char(deleted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as deleted_at\n    from fiducia.sync_tombstones"
+
+data SyncTombstonesRow = SyncTombstonesRow
+  { syncTombstonesSequence :: Int
+  , syncTombstonesTableName :: Text
+  , syncTombstonesRowId :: Text
+  , syncTombstonesTenantId :: (Maybe Text)
+  , syncTombstonesOwnerUserId :: (Maybe Text)
+  , syncTombstonesRowVersion :: Int
+  , syncTombstonesDeletedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow SyncTombstonesRow where
+  fromRow = SyncTombstonesRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateSyncTombstonesSequence :: Int -> Either Text Int
+validateSyncTombstonesSequence value
+  | value < 1 = Left "sync_tombstones.sequence is below the minimum"
+  | otherwise = Right value
+
+validateSyncTombstonesRowVersion :: Int -> Either Text Int
+validateSyncTombstonesRowVersion value
+  | value < 1 = Left "sync_tombstones.row_version is below the minimum"
+  | otherwise = Right value
+
+orgsTable :: Text
+orgsTable = "fiducia.orgs"
+
+orgsColumns :: [Text]
+orgsColumns = ["id", "slug", "name", "created_at", "updated_at", "version", "sync_sequence"]
+
+orgsSelectSql :: Text
+orgsSelectSql = "select\n      id::text as id,\n      slug,\n      name,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence\n    from fiducia.orgs"
+
+data OrgsRow = OrgsRow
+  { orgsId :: Text
+  , orgsSlug :: Text
+  , orgsName :: Text
+  , orgsCreatedAt :: Text
+  , orgsUpdatedAt :: Text
+  , orgsVersion :: Int
+  , orgsSyncSequence :: Int
+  } deriving (Eq, Show)
+
+instance FromRow OrgsRow where
+  fromRow = OrgsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateOrgsSlug :: Text -> Either Text Text
+validateOrgsSlug value
+  | T.length value > 120 = Left "orgs.slug must be at most 120 characters"
+  | otherwise = Right value
+
+validateOrgsName :: Text -> Either Text Text
+validateOrgsName value
+  | T.length value > 200 = Left "orgs.name must be at most 200 characters"
+  | otherwise = Right value
+
+projectsTable :: Text
+projectsTable = "fiducia.projects"
+
+projectsColumns :: [Text]
+projectsColumns = ["id", "org_id", "slug", "name", "created_at", "updated_at", "version", "sync_sequence"]
+
+projectsSelectSql :: Text
+projectsSelectSql = "select\n      id::text as id,\n      org_id::text as org_id,\n      slug,\n      name,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence\n    from fiducia.projects"
+
+data ProjectsRow = ProjectsRow
+  { projectsId :: Text
+  , projectsOrgId :: Text
+  , projectsSlug :: Text
+  , projectsName :: Text
+  , projectsCreatedAt :: Text
+  , projectsUpdatedAt :: Text
+  , projectsVersion :: Int
+  , projectsSyncSequence :: Int
+  } deriving (Eq, Show)
+
+instance FromRow ProjectsRow where
+  fromRow = ProjectsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateProjectsSlug :: Text -> Either Text Text
+validateProjectsSlug value
+  | T.length value > 120 = Left "projects.slug must be at most 120 characters"
+  | otherwise = Right value
+
+validateProjectsName :: Text -> Either Text Text
+validateProjectsName value
+  | T.length value > 200 = Left "projects.name must be at most 200 characters"
+  | otherwise = Right value
+
+usersTable :: Text
+usersTable = "fiducia.users"
+
+usersColumns :: [Text]
+usersColumns = ["id", "supabase_user_id", "email", "created_at"]
+
+usersSelectSql :: Text
+usersSelectSql = "select\n      id::text as id,\n      supabase_user_id::text as supabase_user_id,\n      email,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from fiducia.users"
+
+data UsersRow = UsersRow
+  { usersId :: Text
+  , usersSupabaseUserId :: Text
+  , usersEmail :: Text
+  , usersCreatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow UsersRow where
+  fromRow = UsersRow <$> field <*> field <*> field <*> field
+
+validateUsersEmail :: Text -> Either Text Text
+validateUsersEmail value
+  | T.length value > 320 = Left "users.email must be at most 320 characters"
+  | otherwise = Right value
+
+orgMembersTable :: Text
+orgMembersTable = "fiducia.org_members"
+
+orgMembersColumns :: [Text]
+orgMembersColumns = ["org_id", "user_id", "role", "created_at"]
+
+orgMembersSelectSql :: Text
+orgMembersSelectSql = "select\n      org_id::text as org_id,\n      user_id::text as user_id,\n      role,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from fiducia.org_members"
+
+data OrgMembersRole = OrgMembersRoleOwner | OrgMembersRoleAdmin | OrgMembersRoleMember
+  deriving (Eq, Show)
+
+orgMembersRoleToText :: OrgMembersRole -> Text
+orgMembersRoleToText value = case value of
+  OrgMembersRoleOwner -> "owner"
+  OrgMembersRoleAdmin -> "admin"
+  OrgMembersRoleMember -> "member"
+
+parseOrgMembersRole :: Text -> Either Text OrgMembersRole
+parseOrgMembersRole value = case value of
+  "owner" -> Right OrgMembersRoleOwner
+  "admin" -> Right OrgMembersRoleAdmin
+  "member" -> Right OrgMembersRoleMember
+  _ -> Left (T.append "unsupported org_members.role: " value)
+
+data OrgMembersRow = OrgMembersRow
+  { orgMembersOrgId :: Text
+  , orgMembersUserId :: Text
+  , orgMembersRole :: Text
+  , orgMembersCreatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow OrgMembersRow where
+  fromRow = OrgMembersRow <$> field <*> field <*> field <*> field
+
+projectMembersTable :: Text
+projectMembersTable = "fiducia.project_members"
+
+projectMembersColumns :: [Text]
+projectMembersColumns = ["project_id", "user_id", "role", "created_at"]
+
+projectMembersSelectSql :: Text
+projectMembersSelectSql = "select\n      project_id::text as project_id,\n      user_id::text as user_id,\n      role,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from fiducia.project_members"
+
+data ProjectMembersRole = ProjectMembersRoleAdmin | ProjectMembersRoleOperator | ProjectMembersRoleViewer
+  deriving (Eq, Show)
+
+projectMembersRoleToText :: ProjectMembersRole -> Text
+projectMembersRoleToText value = case value of
+  ProjectMembersRoleAdmin -> "admin"
+  ProjectMembersRoleOperator -> "operator"
+  ProjectMembersRoleViewer -> "viewer"
+
+parseProjectMembersRole :: Text -> Either Text ProjectMembersRole
+parseProjectMembersRole value = case value of
+  "admin" -> Right ProjectMembersRoleAdmin
+  "operator" -> Right ProjectMembersRoleOperator
+  "viewer" -> Right ProjectMembersRoleViewer
+  _ -> Left (T.append "unsupported project_members.role: " value)
+
+data ProjectMembersRow = ProjectMembersRow
+  { projectMembersProjectId :: Text
+  , projectMembersUserId :: Text
+  , projectMembersRole :: Text
+  , projectMembersCreatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow ProjectMembersRow where
+  fromRow = ProjectMembersRow <$> field <*> field <*> field <*> field
+
+apiKeysTable :: Text
+apiKeysTable = "fiducia.api_keys"
+
+apiKeysColumns :: [Text]
+apiKeysColumns = ["id", "key_id", "org_id", "project_id", "created_by_user_id", "name", "secret_hash", "scopes", "env", "require_idempotency", "mtls_required", "revoked", "created_at", "updated_at", "version", "sync_sequence", "last_used_at", "expires_at"]
+
+apiKeysSelectSql :: Text
+apiKeysSelectSql = "select\n      id::text as id,\n      key_id,\n      org_id::text as org_id,\n      project_id::text as project_id,\n      created_by_user_id::text as created_by_user_id,\n      name,\n      secret_hash,\n      scopes::text as scopes_json,\n      env,\n      require_idempotency,\n      mtls_required,\n      revoked,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence,\n      to_char(last_used_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_used_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at\n    from fiducia.api_keys"
+
+data ApiKeysEnv = ApiKeysEnvLive | ApiKeysEnvTest
+  deriving (Eq, Show)
+
+apiKeysEnvToText :: ApiKeysEnv -> Text
+apiKeysEnvToText value = case value of
+  ApiKeysEnvLive -> "live"
+  ApiKeysEnvTest -> "test"
+
+parseApiKeysEnv :: Text -> Either Text ApiKeysEnv
+parseApiKeysEnv value = case value of
+  "live" -> Right ApiKeysEnvLive
+  "test" -> Right ApiKeysEnvTest
+  _ -> Left (T.append "unsupported api_keys.env: " value)
+
+data ApiKeysRow = ApiKeysRow
+  { apiKeysId :: Text
+  , apiKeysKeyId :: Text
+  , apiKeysOrgId :: Text
+  , apiKeysProjectId :: (Maybe Text)
+  , apiKeysCreatedByUserId :: (Maybe Text)
+  , apiKeysName :: Text
+  , apiKeysSecretHash :: Text
+  , apiKeysScopes :: Text
+  , apiKeysEnv :: Text
+  , apiKeysRequireIdempotency :: Bool
+  , apiKeysMtlsRequired :: Bool
+  , apiKeysRevoked :: Bool
+  , apiKeysCreatedAt :: Text
+  , apiKeysUpdatedAt :: Text
+  , apiKeysVersion :: Int
+  , apiKeysSyncSequence :: Int
+  , apiKeysLastUsedAt :: (Maybe Text)
+  , apiKeysExpiresAt :: (Maybe Text)
+  } deriving (Eq, Show)
+
+instance FromRow ApiKeysRow where
+  fromRow = ApiKeysRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateApiKeysKeyId :: Text -> Either Text Text
+validateApiKeysKeyId value
+  | T.length value > 64 = Left "api_keys.key_id must be at most 64 characters"
+  | otherwise = Right value
+
+validateApiKeysName :: Text -> Either Text Text
+validateApiKeysName value
+  | T.length value > 200 = Left "api_keys.name must be at most 200 characters"
+  | otherwise = Right value
+
+validateApiKeysSecretHash :: Text -> Either Text Text
+validateApiKeysSecretHash value
+  | T.length value > 255 = Left "api_keys.secret_hash must be at most 255 characters"
+  | otherwise = Right value
+
+mtlsClientCertsTable :: Text
+mtlsClientCertsTable = "fiducia.mtls_client_certs"
+
+mtlsClientCertsColumns :: [Text]
+mtlsClientCertsColumns = ["id", "org_id", "project_id", "name", "subject", "sha256_fingerprint", "not_before", "not_after", "revoked", "created_at", "updated_at", "version", "sync_sequence"]
+
+mtlsClientCertsSelectSql :: Text
+mtlsClientCertsSelectSql = "select\n      id::text as id,\n      org_id::text as org_id,\n      project_id::text as project_id,\n      name,\n      subject,\n      sha256_fingerprint,\n      to_char(not_before at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as not_before,\n      to_char(not_after at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as not_after,\n      revoked,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence\n    from fiducia.mtls_client_certs"
+
+data MtlsClientCertsRow = MtlsClientCertsRow
+  { mtlsClientCertsId :: Text
+  , mtlsClientCertsOrgId :: Text
+  , mtlsClientCertsProjectId :: (Maybe Text)
+  , mtlsClientCertsName :: Text
+  , mtlsClientCertsSubject :: Text
+  , mtlsClientCertsSha256Fingerprint :: Text
+  , mtlsClientCertsNotBefore :: (Maybe Text)
+  , mtlsClientCertsNotAfter :: (Maybe Text)
+  , mtlsClientCertsRevoked :: Bool
+  , mtlsClientCertsCreatedAt :: Text
+  , mtlsClientCertsUpdatedAt :: Text
+  , mtlsClientCertsVersion :: Int
+  , mtlsClientCertsSyncSequence :: Int
+  } deriving (Eq, Show)
+
+instance FromRow MtlsClientCertsRow where
+  fromRow = MtlsClientCertsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateMtlsClientCertsName :: Text -> Either Text Text
+validateMtlsClientCertsName value
+  | T.length value > 200 = Left "mtls_client_certs.name must be at most 200 characters"
+  | otherwise = Right value
+
+validateMtlsClientCertsSubject :: Text -> Either Text Text
+validateMtlsClientCertsSubject value
+  | T.length value > 500 = Left "mtls_client_certs.subject must be at most 500 characters"
+  | otherwise = Right value
+
+validateMtlsClientCertsSha256Fingerprint :: Text -> Either Text Text
+validateMtlsClientCertsSha256Fingerprint value
+  | T.length value > 95 = Left "mtls_client_certs.sha256_fingerprint must be at most 95 characters"
+  | otherwise = Right value
+
+customerPreferencesTable :: Text
+customerPreferencesTable = "fiducia.customer_preferences"
+
+customerPreferencesColumns :: [Text]
+customerPreferencesColumns = ["user_id", "density", "timezone", "region", "notify_key_rotation", "notify_lock_contention", "notify_mfa", "updated_at", "version", "sync_sequence"]
+
+customerPreferencesSelectSql :: Text
+customerPreferencesSelectSql = "select\n      user_id::text as user_id,\n      density,\n      timezone,\n      region,\n      notify_key_rotation,\n      notify_lock_contention,\n      notify_mfa,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence\n    from fiducia.customer_preferences"
+
+data CustomerPreferencesDensity = CustomerPreferencesDensityComfortable | CustomerPreferencesDensityCompact
+  deriving (Eq, Show)
+
+customerPreferencesDensityToText :: CustomerPreferencesDensity -> Text
+customerPreferencesDensityToText value = case value of
+  CustomerPreferencesDensityComfortable -> "comfortable"
+  CustomerPreferencesDensityCompact -> "compact"
+
+parseCustomerPreferencesDensity :: Text -> Either Text CustomerPreferencesDensity
+parseCustomerPreferencesDensity value = case value of
+  "comfortable" -> Right CustomerPreferencesDensityComfortable
+  "compact" -> Right CustomerPreferencesDensityCompact
+  _ -> Left (T.append "unsupported customer_preferences.density: " value)
+
+data CustomerPreferencesRow = CustomerPreferencesRow
+  { customerPreferencesUserId :: Text
+  , customerPreferencesDensity :: Text
+  , customerPreferencesTimezone :: Text
+  , customerPreferencesRegion :: Text
+  , customerPreferencesNotifyKeyRotation :: Bool
+  , customerPreferencesNotifyLockContention :: Bool
+  , customerPreferencesNotifyMfa :: Bool
+  , customerPreferencesUpdatedAt :: Text
+  , customerPreferencesVersion :: Int
+  , customerPreferencesSyncSequence :: Int
+  } deriving (Eq, Show)
+
+instance FromRow CustomerPreferencesRow where
+  fromRow = CustomerPreferencesRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateCustomerPreferencesTimezone :: Text -> Either Text Text
+validateCustomerPreferencesTimezone value
+  | T.length value > 64 = Left "customer_preferences.timezone must be at most 64 characters"
+  | otherwise = Right value
+
+validateCustomerPreferencesRegion :: Text -> Either Text Text
+validateCustomerPreferencesRegion value
+  | T.length value > 16 = Left "customer_preferences.region must be at most 16 characters"
+  | otherwise = Right value
+
+customerSessionsTable :: Text
+customerSessionsTable = "fiducia.customer_sessions"
+
+customerSessionsColumns :: [Text]
+customerSessionsColumns = ["id", "user_id", "device", "location", "last_seen", "status", "updated_at", "version", "sync_sequence"]
+
+customerSessionsSelectSql :: Text
+customerSessionsSelectSql = "select\n      id::text as id,\n      user_id::text as user_id,\n      device,\n      location,\n      to_char(last_seen at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen,\n      status,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence\n    from fiducia.customer_sessions"
+
+data CustomerSessionsStatus = CustomerSessionsStatusActive | CustomerSessionsStatusVerified | CustomerSessionsStatusRevoked
+  deriving (Eq, Show)
+
+customerSessionsStatusToText :: CustomerSessionsStatus -> Text
+customerSessionsStatusToText value = case value of
+  CustomerSessionsStatusActive -> "active"
+  CustomerSessionsStatusVerified -> "verified"
+  CustomerSessionsStatusRevoked -> "revoked"
+
+parseCustomerSessionsStatus :: Text -> Either Text CustomerSessionsStatus
+parseCustomerSessionsStatus value = case value of
+  "active" -> Right CustomerSessionsStatusActive
+  "verified" -> Right CustomerSessionsStatusVerified
+  "revoked" -> Right CustomerSessionsStatusRevoked
+  _ -> Left (T.append "unsupported customer_sessions.status: " value)
+
+data CustomerSessionsRow = CustomerSessionsRow
+  { customerSessionsId :: Text
+  , customerSessionsUserId :: Text
+  , customerSessionsDevice :: Text
+  , customerSessionsLocation :: (Maybe Text)
+  , customerSessionsLastSeen :: Text
+  , customerSessionsStatus :: Text
+  , customerSessionsUpdatedAt :: Text
+  , customerSessionsVersion :: Int
+  , customerSessionsSyncSequence :: Int
+  } deriving (Eq, Show)
+
+instance FromRow CustomerSessionsRow where
+  fromRow = CustomerSessionsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateCustomerSessionsDevice :: Text -> Either Text Text
+validateCustomerSessionsDevice value
+  | T.length value > 200 = Left "customer_sessions.device must be at most 200 characters"
+  | otherwise = Right value
+
+validateCustomerSessionsLocation :: Text -> Either Text Text
+validateCustomerSessionsLocation value
+  | T.length value > 200 = Left "customer_sessions.location must be at most 200 characters"
+  | otherwise = Right value
+
+auditLogTable :: Text
+auditLogTable = "fiducia.audit_log"
+
+auditLogColumns :: [Text]
+auditLogColumns = ["id", "org_id", "project_id", "actor_user_id", "actor_key_id", "actor", "action", "target", "request_id", "source_ip", "user_agent", "meta", "created_at", "retention_expires_at"]
+
+auditLogSelectSql :: Text
+auditLogSelectSql = "select\n      id::text as id,\n      org_id::text as org_id,\n      project_id::text as project_id,\n      actor_user_id::text as actor_user_id,\n      actor_key_id::text as actor_key_id,\n      actor,\n      action,\n      target,\n      request_id,\n      source_ip,\n      user_agent,\n      meta::text as meta_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(retention_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as retention_expires_at\n    from fiducia.audit_log"
+
+data AuditLogRow = AuditLogRow
+  { auditLogId :: Text
+  , auditLogOrgId :: (Maybe Text)
+  , auditLogProjectId :: (Maybe Text)
+  , auditLogActorUserId :: (Maybe Text)
+  , auditLogActorKeyId :: (Maybe Text)
+  , auditLogActor :: (Maybe Text)
+  , auditLogAction :: Text
+  , auditLogTarget :: (Maybe Text)
+  , auditLogRequestId :: (Maybe Text)
+  , auditLogSourceIp :: (Maybe Text)
+  , auditLogUserAgent :: (Maybe Text)
+  , auditLogMeta :: Text
+  , auditLogCreatedAt :: Text
+  , auditLogRetentionExpiresAt :: (Maybe Text)
+  } deriving (Eq, Show)
+
+instance FromRow AuditLogRow where
+  fromRow = AuditLogRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateAuditLogActor :: Text -> Either Text Text
+validateAuditLogActor value
+  | T.length value > 320 = Left "audit_log.actor must be at most 320 characters"
+  | otherwise = Right value
+
+validateAuditLogAction :: Text -> Either Text Text
+validateAuditLogAction value
+  | T.length value > 120 = Left "audit_log.action must be at most 120 characters"
+  | otherwise = Right value
+
+validateAuditLogTarget :: Text -> Either Text Text
+validateAuditLogTarget value
+  | T.length value > 320 = Left "audit_log.target must be at most 320 characters"
+  | otherwise = Right value
+
+validateAuditLogRequestId :: Text -> Either Text Text
+validateAuditLogRequestId value
+  | T.length value > 120 = Left "audit_log.request_id must be at most 120 characters"
+  | otherwise = Right value
+
+validateAuditLogSourceIp :: Text -> Either Text Text
+validateAuditLogSourceIp value
+  | T.length value > 64 = Left "audit_log.source_ip must be at most 64 characters"
+  | otherwise = Right value
+
+validateAuditLogUserAgent :: Text -> Either Text Text
+validateAuditLogUserAgent value
+  | T.length value > 500 = Left "audit_log.user_agent must be at most 500 characters"
+  | otherwise = Right value
+
+customerNotificationsTable :: Text
+customerNotificationsTable = "fiducia.customer_notifications"
+
+customerNotificationsColumns :: [Text]
+customerNotificationsColumns = ["id", "user_id", "org_id", "kind", "severity", "title", "body", "link", "read_at", "created_at", "updated_at", "version", "sync_sequence"]
+
+customerNotificationsSelectSql :: Text
+customerNotificationsSelectSql = "select\n      id::text as id,\n      user_id::text as user_id,\n      org_id::text as org_id,\n      kind,\n      severity,\n      title,\n      body,\n      link,\n      to_char(read_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as read_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence\n    from fiducia.customer_notifications"
+
+data CustomerNotificationsSeverity = CustomerNotificationsSeverityInfo | CustomerNotificationsSeveritySuccess | CustomerNotificationsSeverityWarning | CustomerNotificationsSeverityCritical
+  deriving (Eq, Show)
+
+customerNotificationsSeverityToText :: CustomerNotificationsSeverity -> Text
+customerNotificationsSeverityToText value = case value of
+  CustomerNotificationsSeverityInfo -> "info"
+  CustomerNotificationsSeveritySuccess -> "success"
+  CustomerNotificationsSeverityWarning -> "warning"
+  CustomerNotificationsSeverityCritical -> "critical"
+
+parseCustomerNotificationsSeverity :: Text -> Either Text CustomerNotificationsSeverity
+parseCustomerNotificationsSeverity value = case value of
+  "info" -> Right CustomerNotificationsSeverityInfo
+  "success" -> Right CustomerNotificationsSeveritySuccess
+  "warning" -> Right CustomerNotificationsSeverityWarning
+  "critical" -> Right CustomerNotificationsSeverityCritical
+  _ -> Left (T.append "unsupported customer_notifications.severity: " value)
+
+data CustomerNotificationsRow = CustomerNotificationsRow
+  { customerNotificationsId :: Text
+  , customerNotificationsUserId :: Text
+  , customerNotificationsOrgId :: (Maybe Text)
+  , customerNotificationsKind :: Text
+  , customerNotificationsSeverity :: Text
+  , customerNotificationsTitle :: Text
+  , customerNotificationsBody :: Text
+  , customerNotificationsLink :: (Maybe Text)
+  , customerNotificationsReadAt :: (Maybe Text)
+  , customerNotificationsCreatedAt :: Text
+  , customerNotificationsUpdatedAt :: Text
+  , customerNotificationsVersion :: Int
+  , customerNotificationsSyncSequence :: Int
+  } deriving (Eq, Show)
+
+instance FromRow CustomerNotificationsRow where
+  fromRow = CustomerNotificationsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateCustomerNotificationsKind :: Text -> Either Text Text
+validateCustomerNotificationsKind value
+  | T.length value > 40 = Left "customer_notifications.kind must be at most 40 characters"
+  | otherwise = Right value
+
+validateCustomerNotificationsTitle :: Text -> Either Text Text
+validateCustomerNotificationsTitle value
+  | T.length value > 200 = Left "customer_notifications.title must be at most 200 characters"
+  | otherwise = Right value
+
+validateCustomerNotificationsBody :: Text -> Either Text Text
+validateCustomerNotificationsBody value
+  | T.length value > 2000 = Left "customer_notifications.body must be at most 2000 characters"
+  | otherwise = Right value
+
+validateCustomerNotificationsLink :: Text -> Either Text Text
+validateCustomerNotificationsLink value
+  | T.length value > 500 = Left "customer_notifications.link must be at most 500 characters"
+  | otherwise = Right value
+
+syncIdempotencyKeysTable :: Text
+syncIdempotencyKeysTable = "fiducia.sync_idempotency_keys"
+
+syncIdempotencyKeysColumns :: [Text]
+syncIdempotencyKeysColumns = ["key", "request_fingerprint", "committed_version", "created_at"]
+
+syncIdempotencyKeysSelectSql :: Text
+syncIdempotencyKeysSelectSql = "select\n      key,\n      request_fingerprint,\n      committed_version,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from fiducia.sync_idempotency_keys"
+
+data SyncIdempotencyKeysRow = SyncIdempotencyKeysRow
+  { syncIdempotencyKeysKey :: Text
+  , syncIdempotencyKeysRequestFingerprint :: Text
+  , syncIdempotencyKeysCommittedVersion :: (Maybe Int)
+  , syncIdempotencyKeysCreatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow SyncIdempotencyKeysRow where
+  fromRow = SyncIdempotencyKeysRow <$> field <*> field <*> field <*> field
+
+validateSyncIdempotencyKeysRequestFingerprint :: Text -> Either Text Text
+validateSyncIdempotencyKeysRequestFingerprint value
+  | T.length value > 64 = Left "sync_idempotency_keys.request_fingerprint must be at most 64 characters"
+  | otherwise = Right value
+
+transcriptionsTable :: Text
+transcriptionsTable = "t2v.transcriptions"
+
+transcriptionsColumns :: [Text]
+transcriptionsColumns = ["id", "source", "provider", "model", "text", "language", "sample_rate", "duration_ms", "created_at"]
+
+transcriptionsSelectSql :: Text
+transcriptionsSelectSql = "select\n      id::text as id,\n      source,\n      provider,\n      model,\n      text,\n      language,\n      sample_rate,\n      duration_ms,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from t2v.transcriptions"
+
+data TranscriptionsRow = TranscriptionsRow
+  { transcriptionsId :: Text
+  , transcriptionsSource :: Text
+  , transcriptionsProvider :: Text
+  , transcriptionsModel :: Text
+  , transcriptionsText :: Text
+  , transcriptionsLanguage :: (Maybe Text)
+  , transcriptionsSampleRate :: (Maybe Int)
+  , transcriptionsDurationMs :: (Maybe Int)
+  , transcriptionsCreatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow TranscriptionsRow where
+  fromRow = TranscriptionsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateTranscriptionsSampleRate :: Int -> Either Text Int
+validateTranscriptionsSampleRate value
+  | value < 4000 = Left "transcriptions.sample_rate is below the minimum"
+  | value > 384000 = Left "transcriptions.sample_rate is above the maximum"
+  | otherwise = Right value
+
+validateTranscriptionsDurationMs :: Int -> Either Text Int
+validateTranscriptionsDurationMs value
+  | value < 0 = Left "transcriptions.duration_ms is below the minimum"
+  | otherwise = Right value
+
+synthesesTable :: Text
+synthesesTable = "t2v.syntheses"
+
+synthesesColumns :: [Text]
+synthesesColumns = ["id", "text", "voice", "provider", "model", "format", "audio_bytes", "created_at"]
+
+synthesesSelectSql :: Text
+synthesesSelectSql = "select\n      id::text as id,\n      text,\n      voice,\n      provider,\n      model,\n      format,\n      audio_bytes,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from t2v.syntheses"
+
+data SynthesesRow = SynthesesRow
+  { synthesesId :: Text
+  , synthesesText :: Text
+  , synthesesVoice :: Text
+  , synthesesProvider :: Text
+  , synthesesModel :: Text
+  , synthesesFormat :: Text
+  , synthesesAudioBytes :: Int
+  , synthesesCreatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow SynthesesRow where
+  fromRow = SynthesesRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateSynthesesAudioBytes :: Int -> Either Text Int
+validateSynthesesAudioBytes value
+  | value < 0 = Left "syntheses.audio_bytes is below the minimum"
+  | otherwise = Right value
+
+translationsTable :: Text
+translationsTable = "t2v.translations"
+
+translationsColumns :: [Text]
+translationsColumns = ["id", "source_text", "translated_text", "source_lang", "target_lang", "provider", "model", "latency_ms", "created_at"]
+
+translationsSelectSql :: Text
+translationsSelectSql = "select\n      id::text as id,\n      source_text,\n      translated_text,\n      source_lang,\n      target_lang,\n      provider,\n      model,\n      latency_ms,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from t2v.translations"
+
+data TranslationsRow = TranslationsRow
+  { translationsId :: Text
+  , translationsSourceText :: Text
+  , translationsTranslatedText :: Text
+  , translationsSourceLang :: (Maybe Text)
+  , translationsTargetLang :: Text
+  , translationsProvider :: Text
+  , translationsModel :: Text
+  , translationsLatencyMs :: Int
+  , translationsCreatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow TranslationsRow where
+  fromRow = TranslationsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateTranslationsLatencyMs :: Int -> Either Text Int
+validateTranslationsLatencyMs value
+  | value < 0 = Left "translations.latency_ms is below the minimum"
+  | otherwise = Right value
+
+vapiCallsTable :: Text
+vapiCallsTable = "t2v.vapi_calls"
+
+vapiCallsColumns :: [Text]
+vapiCallsColumns = ["id", "vapi_call_id", "status", "ended_reason", "transcript", "summary", "created_at", "updated_at"]
+
+vapiCallsSelectSql :: Text
+vapiCallsSelectSql = "select\n      id::text as id,\n      vapi_call_id,\n      status,\n      ended_reason,\n      transcript,\n      summary,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from t2v.vapi_calls"
+
+data VapiCallsRow = VapiCallsRow
+  { vapiCallsId :: Text
+  , vapiCallsVapiCallId :: Text
+  , vapiCallsStatus :: Text
+  , vapiCallsEndedReason :: (Maybe Text)
+  , vapiCallsTranscript :: (Maybe Text)
+  , vapiCallsSummary :: (Maybe Text)
+  , vapiCallsCreatedAt :: Text
+  , vapiCallsUpdatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow VapiCallsRow where
+  fromRow = VapiCallsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+vapiEventsTable :: Text
+vapiEventsTable = "t2v.vapi_events"
+
+vapiEventsColumns :: [Text]
+vapiEventsColumns = ["id", "vapi_call_id", "event_type", "payload", "created_at"]
+
+vapiEventsSelectSql :: Text
+vapiEventsSelectSql = "select\n      id::text as id,\n      vapi_call_id,\n      event_type,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from t2v.vapi_events"
+
+data VapiEventsRow = VapiEventsRow
+  { vapiEventsId :: Text
+  , vapiEventsVapiCallId :: (Maybe Text)
+  , vapiEventsEventType :: Text
+  , vapiEventsPayload :: Text
+  , vapiEventsCreatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow VapiEventsRow where
+  fromRow = VapiEventsRow <$> field <*> field <*> field <*> field <*> field
+
+fabPlansTable :: Text
+fabPlansTable = "daedalus.fab_plans"
+
+fabPlansColumns :: [Text]
+fabPlansColumns = ["id", "owner_email", "title", "goal", "process_family", "status", "document", "created_at", "updated_at"]
+
+fabPlansSelectSql :: Text
+fabPlansSelectSql = "select\n      id::text as id,\n      owner_email,\n      title,\n      goal,\n      process_family,\n      status,\n      document::text as document_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from daedalus.fab_plans"
+
+data FabPlansProcessFamily = FabPlansProcessFamilyAdditive | FabPlansProcessFamilySubtractive | FabPlansProcessFamilyHybrid
+  deriving (Eq, Show)
+
+fabPlansProcessFamilyToText :: FabPlansProcessFamily -> Text
+fabPlansProcessFamilyToText value = case value of
+  FabPlansProcessFamilyAdditive -> "additive"
+  FabPlansProcessFamilySubtractive -> "subtractive"
+  FabPlansProcessFamilyHybrid -> "hybrid"
+
+parseFabPlansProcessFamily :: Text -> Either Text FabPlansProcessFamily
+parseFabPlansProcessFamily value = case value of
+  "additive" -> Right FabPlansProcessFamilyAdditive
+  "subtractive" -> Right FabPlansProcessFamilySubtractive
+  "hybrid" -> Right FabPlansProcessFamilyHybrid
+  _ -> Left (T.append "unsupported fab_plans.process_family: " value)
+
+data FabPlansStatus = FabPlansStatusDraft | FabPlansStatusPlanning | FabPlansStatusPlanned | FabPlansStatusReleased | FabPlansStatusArchived
+  deriving (Eq, Show)
+
+fabPlansStatusToText :: FabPlansStatus -> Text
+fabPlansStatusToText value = case value of
+  FabPlansStatusDraft -> "draft"
+  FabPlansStatusPlanning -> "planning"
+  FabPlansStatusPlanned -> "planned"
+  FabPlansStatusReleased -> "released"
+  FabPlansStatusArchived -> "archived"
+
+parseFabPlansStatus :: Text -> Either Text FabPlansStatus
+parseFabPlansStatus value = case value of
+  "draft" -> Right FabPlansStatusDraft
+  "planning" -> Right FabPlansStatusPlanning
+  "planned" -> Right FabPlansStatusPlanned
+  "released" -> Right FabPlansStatusReleased
+  "archived" -> Right FabPlansStatusArchived
+  _ -> Left (T.append "unsupported fab_plans.status: " value)
+
+data FabPlansRow = FabPlansRow
+  { fabPlansId :: Text
+  , fabPlansOwnerEmail :: Text
+  , fabPlansTitle :: Text
+  , fabPlansGoal :: Text
+  , fabPlansProcessFamily :: Text
+  , fabPlansStatus :: Text
+  , fabPlansDocument :: (Maybe Text)
+  , fabPlansCreatedAt :: Text
+  , fabPlansUpdatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow FabPlansRow where
+  fromRow = FabPlansRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+fabDesignsTable :: Text
+fabDesignsTable = "daedalus.fab_designs"
+
+fabDesignsColumns :: [Text]
+fabDesignsColumns = ["id", "plan_id", "filename", "format", "storage_uri", "size_bytes", "content_hash", "geometry", "created_at"]
+
+fabDesignsSelectSql :: Text
+fabDesignsSelectSql = "select\n      id::text as id,\n      plan_id::text as plan_id,\n      filename,\n      format,\n      storage_uri,\n      size_bytes,\n      content_hash,\n      geometry::text as geometry_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_designs"
+
+data FabDesignsFormat = FabDesignsFormatStep | FabDesignsFormatStl | FabDesignsFormat3mf | FabDesignsFormatDxf | FabDesignsFormatIges | FabDesignsFormatObj
+  deriving (Eq, Show)
+
+fabDesignsFormatToText :: FabDesignsFormat -> Text
+fabDesignsFormatToText value = case value of
+  FabDesignsFormatStep -> "step"
+  FabDesignsFormatStl -> "stl"
+  FabDesignsFormat3mf -> "3mf"
+  FabDesignsFormatDxf -> "dxf"
+  FabDesignsFormatIges -> "iges"
+  FabDesignsFormatObj -> "obj"
+
+parseFabDesignsFormat :: Text -> Either Text FabDesignsFormat
+parseFabDesignsFormat value = case value of
+  "step" -> Right FabDesignsFormatStep
+  "stl" -> Right FabDesignsFormatStl
+  "3mf" -> Right FabDesignsFormat3mf
+  "dxf" -> Right FabDesignsFormatDxf
+  "iges" -> Right FabDesignsFormatIges
+  "obj" -> Right FabDesignsFormatObj
+  _ -> Left (T.append "unsupported fab_designs.format: " value)
+
+data FabDesignsRow = FabDesignsRow
+  { fabDesignsId :: Text
+  , fabDesignsPlanId :: Text
+  , fabDesignsFilename :: Text
+  , fabDesignsFormat :: Text
+  , fabDesignsStorageUri :: Text
+  , fabDesignsSizeBytes :: Int
+  , fabDesignsContentHash :: (Maybe Text)
+  , fabDesignsGeometry :: Text
+  , fabDesignsCreatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow FabDesignsRow where
+  fromRow = FabDesignsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateFabDesignsSizeBytes :: Int -> Either Text Int
+validateFabDesignsSizeBytes value
+  | value < 0 = Left "fab_designs.size_bytes is below the minimum"
+  | otherwise = Right value
+
+fabInstructionsTable :: Text
+fabInstructionsTable = "daedalus.fab_instructions"
+
+fabInstructionsColumns :: [Text]
+fabInstructionsColumns = ["id", "plan_id", "revision", "machine_profile", "dialect", "storage_uri", "content_hash", "validated", "validation", "released_by_email", "released_at", "created_at"]
+
+fabInstructionsSelectSql :: Text
+fabInstructionsSelectSql = "select\n      id::text as id,\n      plan_id::text as plan_id,\n      revision,\n      machine_profile,\n      dialect,\n      storage_uri,\n      content_hash,\n      validated,\n      validation::text as validation_json,\n      released_by_email,\n      to_char(released_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as released_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_instructions"
+
+data FabInstructionsDialect = FabInstructionsDialectGcode | FabInstructionsDialectNc | FabInstructionsDialectApt | FabInstructionsDialectProprietary
+  deriving (Eq, Show)
+
+fabInstructionsDialectToText :: FabInstructionsDialect -> Text
+fabInstructionsDialectToText value = case value of
+  FabInstructionsDialectGcode -> "gcode"
+  FabInstructionsDialectNc -> "nc"
+  FabInstructionsDialectApt -> "apt"
+  FabInstructionsDialectProprietary -> "proprietary"
+
+parseFabInstructionsDialect :: Text -> Either Text FabInstructionsDialect
+parseFabInstructionsDialect value = case value of
+  "gcode" -> Right FabInstructionsDialectGcode
+  "nc" -> Right FabInstructionsDialectNc
+  "apt" -> Right FabInstructionsDialectApt
+  "proprietary" -> Right FabInstructionsDialectProprietary
+  _ -> Left (T.append "unsupported fab_instructions.dialect: " value)
+
+data FabInstructionsRow = FabInstructionsRow
+  { fabInstructionsId :: Text
+  , fabInstructionsPlanId :: Text
+  , fabInstructionsRevision :: Int
+  , fabInstructionsMachineProfile :: Text
+  , fabInstructionsDialect :: Text
+  , fabInstructionsStorageUri :: Text
+  , fabInstructionsContentHash :: (Maybe Text)
+  , fabInstructionsValidated :: Bool
+  , fabInstructionsValidation :: Text
+  , fabInstructionsReleasedByEmail :: (Maybe Text)
+  , fabInstructionsReleasedAt :: (Maybe Text)
+  , fabInstructionsCreatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow FabInstructionsRow where
+  fromRow = FabInstructionsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateFabInstructionsRevision :: Int -> Either Text Int
+validateFabInstructionsRevision value
+  | value < 1 = Left "fab_instructions.revision is below the minimum"
+  | otherwise = Right value
+
+fabRunsTable :: Text
+fabRunsTable = "daedalus.fab_runs"
+
+fabRunsColumns :: [Text]
+fabRunsColumns = ["id", "instructions_id", "status", "machine_id", "operator_email", "progress", "as_built", "error", "started_at", "finished_at", "created_at"]
+
+fabRunsSelectSql :: Text
+fabRunsSelectSql = "select\n      id::text as id,\n      instructions_id::text as instructions_id,\n      status,\n      machine_id,\n      operator_email,\n      progress,\n      as_built::text as as_built_json,\n      error,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_runs"
+
+data FabRunsStatus = FabRunsStatusQueued | FabRunsStatusRunning | FabRunsStatusSucceeded | FabRunsStatusFailed | FabRunsStatusAborted
+  deriving (Eq, Show)
+
+fabRunsStatusToText :: FabRunsStatus -> Text
+fabRunsStatusToText value = case value of
+  FabRunsStatusQueued -> "queued"
+  FabRunsStatusRunning -> "running"
+  FabRunsStatusSucceeded -> "succeeded"
+  FabRunsStatusFailed -> "failed"
+  FabRunsStatusAborted -> "aborted"
+
+parseFabRunsStatus :: Text -> Either Text FabRunsStatus
+parseFabRunsStatus value = case value of
+  "queued" -> Right FabRunsStatusQueued
+  "running" -> Right FabRunsStatusRunning
+  "succeeded" -> Right FabRunsStatusSucceeded
+  "failed" -> Right FabRunsStatusFailed
+  "aborted" -> Right FabRunsStatusAborted
+  _ -> Left (T.append "unsupported fab_runs.status: " value)
+
+data FabRunsRow = FabRunsRow
+  { fabRunsId :: Text
+  , fabRunsInstructionsId :: Text
+  , fabRunsStatus :: Text
+  , fabRunsMachineId :: Text
+  , fabRunsOperatorEmail :: (Maybe Text)
+  , fabRunsProgress :: Int
+  , fabRunsAsBuilt :: Text
+  , fabRunsError :: (Maybe Text)
+  , fabRunsStartedAt :: (Maybe Text)
+  , fabRunsFinishedAt :: (Maybe Text)
+  , fabRunsCreatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow FabRunsRow where
+  fromRow = FabRunsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateFabRunsProgress :: Int -> Either Text Int
+validateFabRunsProgress value
+  | value < 0 = Left "fab_runs.progress is below the minimum"
+  | value > 100 = Left "fab_runs.progress is above the maximum"
+  | otherwise = Right value

@@ -3,7 +3,7 @@
 % Generated ORM/client code is an adapter only; do not infer migrations from it.
 % MIGRATION SAFETY: never run or apply migrations automatically. Require explicit human review and approval before any database write.
 -module(pg_defs_mnesia).
--export([accounts_attributes/0, accounts_table_def/0, accounts_record_info/0, devices_attributes/0, devices_table_def/0, devices_record_info/0, vault_blobs_attributes/0, vault_blobs_table_def/0, vault_blobs_record_info/0, app_config_attributes/0, app_config_table_def/0, app_config_record_info/0, vapi_phone_call_events_attributes/0, vapi_phone_call_events_table_def/0, vapi_phone_call_events_record_info/0, music_songs_attributes/0, music_songs_table_def/0, music_songs_record_info/0, music_song_votes_attributes/0, music_song_votes_table_def/0, music_song_votes_record_info/0, sound_recorder_accounts_attributes/0, sound_recorder_accounts_table_def/0, sound_recorder_accounts_record_info/0, sound_recorder_devices_attributes/0, sound_recorder_devices_table_def/0, sound_recorder_devices_record_info/0, sound_recorder_upload_sessions_attributes/0, sound_recorder_upload_sessions_table_def/0, sound_recorder_upload_sessions_record_info/0, sound_recorder_segments_attributes/0, sound_recorder_segments_table_def/0, sound_recorder_segments_record_info/0, sound_recorder_evidence_exports_attributes/0, sound_recorder_evidence_exports_table_def/0, sound_recorder_evidence_exports_record_info/0, sound_recorder_audit_events_attributes/0, sound_recorder_audit_events_table_def/0, sound_recorder_audit_events_record_info/0, sound_recorder_oauth_states_attributes/0, sound_recorder_oauth_states_table_def/0, sound_recorder_oauth_states_record_info/0, sound_recorder_cloud_connections_attributes/0, sound_recorder_cloud_connections_table_def/0, sound_recorder_cloud_connections_record_info/0, sound_recorder_cloud_copy_jobs_attributes/0, sound_recorder_cloud_copy_jobs_table_def/0, sound_recorder_cloud_copy_jobs_record_info/0, container_pool_configs_attributes/0, container_pool_configs_table_def/0, container_pool_configs_record_info/0, known_git_repos_attributes/0, known_git_repos_table_def/0, known_git_repos_record_info/0, agent_context_blobs_attributes/0, agent_context_blobs_table_def/0, agent_context_blobs_record_info/0, agent_context_embeddings_attributes/0, agent_context_embeddings_table_def/0, agent_context_embeddings_record_info/0, agent_remote_dev_threads_attributes/0, agent_remote_dev_threads_table_def/0, agent_remote_dev_threads_record_info/0, agent_remote_dev_tasks_attributes/0, agent_remote_dev_tasks_table_def/0, agent_remote_dev_tasks_record_info/0, agent_remote_dev_events_attributes/0, agent_remote_dev_events_table_def/0, agent_remote_dev_events_record_info/0, agent_remote_dev_breadcrumbs_attributes/0, agent_remote_dev_breadcrumbs_table_def/0, agent_remote_dev_breadcrumbs_record_info/0, agent_remote_dev_artifacts_attributes/0, agent_remote_dev_artifacts_table_def/0, agent_remote_dev_artifacts_record_info/0, agent_remote_dev_runtime_locks_attributes/0, agent_remote_dev_runtime_locks_table_def/0, agent_remote_dev_runtime_locks_record_info/0, mip_solver_sessions_attributes/0, mip_solver_sessions_table_def/0, mip_solver_sessions_record_info/0, mip_solver_solves_attributes/0, mip_solver_solves_table_def/0, mip_solver_solves_record_info/0, mip_solver_jobs_attributes/0, mip_solver_jobs_table_def/0, mip_solver_jobs_record_info/0, mip_solver_events_attributes/0, mip_solver_events_table_def/0, mip_solver_events_record_info/0, lambda_functions_attributes/0, lambda_functions_table_def/0, lambda_functions_record_info/0, workflow_definitions_attributes/0, workflow_definitions_table_def/0, workflow_definitions_record_info/0, workflow_runs_attributes/0, workflow_runs_table_def/0, workflow_runs_record_info/0, workflow_step_runs_attributes/0, workflow_step_runs_table_def/0, workflow_step_runs_record_info/0, container_pool_image_revisions_attributes/0, container_pool_image_revisions_table_def/0, container_pool_image_revisions_record_info/0, container_pool_build_runs_attributes/0, container_pool_build_runs_table_def/0, container_pool_build_runs_record_info/0, presence_convs_attributes/0, presence_convs_table_def/0, presence_convs_record_info/0, presence_conv_members_attributes/0, presence_conv_members_table_def/0, presence_conv_members_record_info/0, presence_users_attributes/0, presence_users_table_def/0, presence_users_record_info/0, presence_events_attributes/0, presence_events_table_def/0, presence_events_record_info/0, presence_consumer_checkpoints_attributes/0, presence_consumer_checkpoints_table_def/0, presence_consumer_checkpoints_record_info/0, des_soccer_learning_experiments_attributes/0, des_soccer_learning_experiments_table_def/0, des_soccer_learning_experiments_record_info/0, des_soccer_learning_policy_versions_attributes/0, des_soccer_learning_policy_versions_table_def/0, des_soccer_learning_policy_versions_record_info/0, des_soccer_learning_policy_entries_attributes/0, des_soccer_learning_policy_entries_table_def/0, des_soccer_learning_policy_entries_record_info/0, des_soccer_learning_jobs_attributes/0, des_soccer_learning_jobs_table_def/0, des_soccer_learning_jobs_record_info/0, des_soccer_learning_runs_attributes/0, des_soccer_learning_runs_table_def/0, des_soccer_learning_runs_record_info/0, des_soccer_learning_run_deltas_attributes/0, des_soccer_learning_run_deltas_table_def/0, des_soccer_learning_run_deltas_record_info/0, des_soccer_learning_merge_events_attributes/0, des_soccer_learning_merge_events_table_def/0, des_soccer_learning_merge_events_record_info/0, des_soccer_tournaments_attributes/0, des_soccer_tournaments_table_def/0, des_soccer_tournaments_record_info/0, des_soccer_tournament_matches_attributes/0, des_soccer_tournament_matches_table_def/0, des_soccer_tournament_matches_record_info/0, des_soccer_tournament_team_brains_attributes/0, des_soccer_tournament_team_brains_table_def/0, des_soccer_tournament_team_brains_record_info/0, des_soccer_learning_set_play_runs_attributes/0, des_soccer_learning_set_play_runs_table_def/0, des_soccer_learning_set_play_runs_record_info/0, des_soccer_learning_set_play_restart_mix_attributes/0, des_soccer_learning_set_play_restart_mix_table_def/0, des_soccer_learning_set_play_restart_mix_record_info/0, des_soccer_learning_set_play_episode_metrics_attributes/0, des_soccer_learning_set_play_episode_metrics_table_def/0, des_soccer_learning_set_play_episode_metrics_record_info/0, des_soccer_learning_neural_run_metrics_attributes/0, des_soccer_learning_neural_run_metrics_table_def/0, des_soccer_learning_neural_run_metrics_record_info/0, des_soccer_learning_pass_metrics_attributes/0, des_soccer_learning_pass_metrics_table_def/0, des_soccer_learning_pass_metrics_record_info/0, des_fel_elevator_learning_runs_attributes/0, des_fel_elevator_learning_runs_table_def/0, des_fel_elevator_learning_runs_record_info/0, des_fel_elevator_policy_states_attributes/0, des_fel_elevator_policy_states_table_def/0, des_fel_elevator_policy_states_record_info/0, des_fel_elevator_dispatch_decisions_attributes/0, des_fel_elevator_dispatch_decisions_table_def/0, des_fel_elevator_dispatch_decisions_record_info/0, des_fel_elevator_pomdp_beliefs_attributes/0, des_fel_elevator_pomdp_beliefs_table_def/0, des_fel_elevator_pomdp_beliefs_record_info/0, benefactor_marketing_clients_attributes/0, benefactor_marketing_clients_table_def/0, benefactor_marketing_clients_record_info/0, benefactor_marketing_contacts_attributes/0, benefactor_marketing_contacts_table_def/0, benefactor_marketing_contacts_record_info/0, benefactor_marketing_service_packages_attributes/0, benefactor_marketing_service_packages_table_def/0, benefactor_marketing_service_packages_record_info/0, benefactor_marketing_contracts_attributes/0, benefactor_marketing_contracts_table_def/0, benefactor_marketing_contracts_record_info/0, benefactor_marketing_invoices_attributes/0, benefactor_marketing_invoices_table_def/0, benefactor_marketing_invoices_record_info/0, benefactor_marketing_integrations_attributes/0, benefactor_marketing_integrations_table_def/0, benefactor_marketing_integrations_record_info/0, benefactor_marketing_leads_attributes/0, benefactor_marketing_leads_table_def/0, benefactor_marketing_leads_record_info/0, benefactor_marketing_enrichment_jobs_attributes/0, benefactor_marketing_enrichment_jobs_table_def/0, benefactor_marketing_enrichment_jobs_record_info/0, benefactor_marketing_campaigns_attributes/0, benefactor_marketing_campaigns_table_def/0, benefactor_marketing_campaigns_record_info/0, benefactor_marketing_campaign_channels_attributes/0, benefactor_marketing_campaign_channels_table_def/0, benefactor_marketing_campaign_channels_record_info/0, benefactor_marketing_campaign_experiments_attributes/0, benefactor_marketing_campaign_experiments_table_def/0, benefactor_marketing_campaign_experiments_record_info/0, benefactor_marketing_automation_workflows_attributes/0, benefactor_marketing_automation_workflows_table_def/0, benefactor_marketing_automation_workflows_record_info/0, benefactor_marketing_automation_events_attributes/0, benefactor_marketing_automation_events_table_def/0, benefactor_marketing_automation_events_record_info/0, benefactor_marketing_reports_attributes/0, benefactor_marketing_reports_table_def/0, benefactor_marketing_reports_record_info/0, benefactor_marketing_attribution_events_attributes/0, benefactor_marketing_attribution_events_table_def/0, benefactor_marketing_attribution_events_record_info/0, benefactor_marketing_opportunities_attributes/0, benefactor_marketing_opportunities_table_def/0, benefactor_marketing_opportunities_record_info/0, benefactor_marketing_content_assets_attributes/0, benefactor_marketing_content_assets_table_def/0, benefactor_marketing_content_assets_record_info/0, benefactor_marketing_project_tasks_attributes/0, benefactor_marketing_project_tasks_table_def/0, benefactor_marketing_project_tasks_record_info/0, benefactor_marketing_client_approvals_attributes/0, benefactor_marketing_client_approvals_table_def/0, benefactor_marketing_client_approvals_record_info/0, benefactor_marketing_tickets_attributes/0, benefactor_marketing_tickets_table_def/0, benefactor_marketing_tickets_record_info/0, benefactor_marketing_meetings_attributes/0, benefactor_marketing_meetings_table_def/0, benefactor_marketing_meetings_record_info/0, benefactor_marketing_team_allocations_attributes/0, benefactor_marketing_team_allocations_table_def/0, benefactor_marketing_team_allocations_record_info/0, benefactor_marketing_integration_sync_runs_attributes/0, benefactor_marketing_integration_sync_runs_table_def/0, benefactor_marketing_integration_sync_runs_record_info/0, benefactor_marketing_outreach_sequences_attributes/0, benefactor_marketing_outreach_sequences_table_def/0, benefactor_marketing_outreach_sequences_record_info/0, benefactor_marketing_outreach_steps_attributes/0, benefactor_marketing_outreach_steps_table_def/0, benefactor_marketing_outreach_steps_record_info/0, benefactor_marketing_outreach_enrollments_attributes/0, benefactor_marketing_outreach_enrollments_table_def/0, benefactor_marketing_outreach_enrollments_record_info/0, benefactor_marketing_outreach_touchpoints_attributes/0, benefactor_marketing_outreach_touchpoints_table_def/0, benefactor_marketing_outreach_touchpoints_record_info/0, benefactor_marketing_prospect_research_briefs_attributes/0, benefactor_marketing_prospect_research_briefs_table_def/0, benefactor_marketing_prospect_research_briefs_record_info/0, benefactor_marketing_conversion_events_attributes/0, benefactor_marketing_conversion_events_table_def/0, benefactor_marketing_conversion_events_record_info/0, benefactor_marketing_portal_members_attributes/0, benefactor_marketing_portal_members_table_def/0, benefactor_marketing_portal_members_record_info/0, benefactor_marketing_shared_documents_attributes/0, benefactor_marketing_shared_documents_table_def/0, benefactor_marketing_shared_documents_record_info/0, benefactor_marketing_collaboration_comments_attributes/0, benefactor_marketing_collaboration_comments_table_def/0, benefactor_marketing_collaboration_comments_record_info/0, benefactor_marketing_notifications_attributes/0, benefactor_marketing_notifications_table_def/0, benefactor_marketing_notifications_record_info/0, benefactor_marketing_time_entries_attributes/0, benefactor_marketing_time_entries_table_def/0, benefactor_marketing_time_entries_record_info/0, benefactor_marketing_vendor_costs_attributes/0, benefactor_marketing_vendor_costs_table_def/0, benefactor_marketing_vendor_costs_record_info/0, benefactor_marketing_commission_entries_attributes/0, benefactor_marketing_commission_entries_table_def/0, benefactor_marketing_commission_entries_record_info/0, benefactor_marketing_budget_forecasts_attributes/0, benefactor_marketing_budget_forecasts_table_def/0, benefactor_marketing_budget_forecasts_record_info/0, benefactor_marketing_call_insights_attributes/0, benefactor_marketing_call_insights_table_def/0, benefactor_marketing_call_insights_record_info/0, usacc_users_attributes/0, usacc_users_table_def/0, usacc_users_record_info/0, usacc_cases_attributes/0, usacc_cases_table_def/0, usacc_cases_record_info/0, usacc_case_participants_attributes/0, usacc_case_participants_table_def/0, usacc_case_participants_record_info/0, usacc_case_stages_attributes/0, usacc_case_stages_table_def/0, usacc_case_stages_record_info/0, usacc_elections_attributes/0, usacc_elections_table_def/0, usacc_elections_record_info/0, usacc_votes_attributes/0, usacc_votes_table_def/0, usacc_votes_record_info/0, usacc_escrow_accounts_attributes/0, usacc_escrow_accounts_table_def/0, usacc_escrow_accounts_record_info/0, usacc_ledger_entries_attributes/0, usacc_ledger_entries_table_def/0, usacc_ledger_entries_record_info/0, usacc_contract_operations_attributes/0, usacc_contract_operations_table_def/0, usacc_contract_operations_record_info/0, usacc_simulation_runs_attributes/0, usacc_simulation_runs_table_def/0, usacc_simulation_runs_record_info/0, usacc_audit_events_attributes/0, usacc_audit_events_table_def/0, usacc_audit_events_record_info/0, benefactor_leads_attributes/0, benefactor_leads_table_def/0, benefactor_leads_record_info/0, benefactor_leads_domains_attributes/0, benefactor_leads_domains_table_def/0, benefactor_leads_domains_record_info/0, benefactor_search_locations_attributes/0, benefactor_search_locations_table_def/0, benefactor_search_locations_record_info/0, benefactor_scrape_queries_attributes/0, benefactor_scrape_queries_table_def/0, benefactor_scrape_queries_record_info/0, benefactor_domain_search_tracking_attributes/0, benefactor_domain_search_tracking_table_def/0, benefactor_domain_search_tracking_record_info/0, benefactor_icps_attributes/0, benefactor_icps_table_def/0, benefactor_icps_record_info/0, benefactor_leads_throttling_attributes/0, benefactor_leads_throttling_table_def/0, benefactor_leads_throttling_record_info/0, benefactor_leads_reminders_attributes/0, benefactor_leads_reminders_table_def/0, benefactor_leads_reminders_record_info/0, vcs_repositories_attributes/0, vcs_repositories_table_def/0, vcs_repositories_record_info/0, vcs_refs_attributes/0, vcs_refs_table_def/0, vcs_refs_record_info/0, vcs_operations_attributes/0, vcs_operations_table_def/0, vcs_operations_record_info/0, agents_attributes/0, agents_table_def/0, agents_record_info/0, channels_attributes/0, channels_table_def/0, channels_record_info/0, messages_attributes/0, messages_table_def/0, messages_record_info/0, channel_members_attributes/0, channel_members_table_def/0, channel_members_record_info/0, shared_context_attributes/0, shared_context_table_def/0, shared_context_record_info/0, all_table_defs/0]).
+-export([accounts_attributes/0, accounts_table_def/0, accounts_record_info/0, devices_attributes/0, devices_table_def/0, devices_record_info/0, vault_blobs_attributes/0, vault_blobs_table_def/0, vault_blobs_record_info/0, app_config_attributes/0, app_config_table_def/0, app_config_record_info/0, vapi_phone_call_events_attributes/0, vapi_phone_call_events_table_def/0, vapi_phone_call_events_record_info/0, music_songs_attributes/0, music_songs_table_def/0, music_songs_record_info/0, music_song_votes_attributes/0, music_song_votes_table_def/0, music_song_votes_record_info/0, sound_recorder_accounts_attributes/0, sound_recorder_accounts_table_def/0, sound_recorder_accounts_record_info/0, sound_recorder_devices_attributes/0, sound_recorder_devices_table_def/0, sound_recorder_devices_record_info/0, sound_recorder_upload_sessions_attributes/0, sound_recorder_upload_sessions_table_def/0, sound_recorder_upload_sessions_record_info/0, sound_recorder_segments_attributes/0, sound_recorder_segments_table_def/0, sound_recorder_segments_record_info/0, sound_recorder_evidence_exports_attributes/0, sound_recorder_evidence_exports_table_def/0, sound_recorder_evidence_exports_record_info/0, sound_recorder_audit_events_attributes/0, sound_recorder_audit_events_table_def/0, sound_recorder_audit_events_record_info/0, sound_recorder_oauth_states_attributes/0, sound_recorder_oauth_states_table_def/0, sound_recorder_oauth_states_record_info/0, sound_recorder_cloud_connections_attributes/0, sound_recorder_cloud_connections_table_def/0, sound_recorder_cloud_connections_record_info/0, sound_recorder_cloud_copy_jobs_attributes/0, sound_recorder_cloud_copy_jobs_table_def/0, sound_recorder_cloud_copy_jobs_record_info/0, container_pool_configs_attributes/0, container_pool_configs_table_def/0, container_pool_configs_record_info/0, known_git_repos_attributes/0, known_git_repos_table_def/0, known_git_repos_record_info/0, agent_context_blobs_attributes/0, agent_context_blobs_table_def/0, agent_context_blobs_record_info/0, agent_context_embeddings_attributes/0, agent_context_embeddings_table_def/0, agent_context_embeddings_record_info/0, agent_remote_dev_threads_attributes/0, agent_remote_dev_threads_table_def/0, agent_remote_dev_threads_record_info/0, agent_remote_dev_tasks_attributes/0, agent_remote_dev_tasks_table_def/0, agent_remote_dev_tasks_record_info/0, agent_remote_dev_events_attributes/0, agent_remote_dev_events_table_def/0, agent_remote_dev_events_record_info/0, agent_remote_dev_breadcrumbs_attributes/0, agent_remote_dev_breadcrumbs_table_def/0, agent_remote_dev_breadcrumbs_record_info/0, agent_remote_dev_artifacts_attributes/0, agent_remote_dev_artifacts_table_def/0, agent_remote_dev_artifacts_record_info/0, agent_remote_dev_runtime_locks_attributes/0, agent_remote_dev_runtime_locks_table_def/0, agent_remote_dev_runtime_locks_record_info/0, mip_solver_sessions_attributes/0, mip_solver_sessions_table_def/0, mip_solver_sessions_record_info/0, mip_solver_solves_attributes/0, mip_solver_solves_table_def/0, mip_solver_solves_record_info/0, mip_solver_jobs_attributes/0, mip_solver_jobs_table_def/0, mip_solver_jobs_record_info/0, mip_solver_events_attributes/0, mip_solver_events_table_def/0, mip_solver_events_record_info/0, lambda_functions_attributes/0, lambda_functions_table_def/0, lambda_functions_record_info/0, workflow_definitions_attributes/0, workflow_definitions_table_def/0, workflow_definitions_record_info/0, workflow_runs_attributes/0, workflow_runs_table_def/0, workflow_runs_record_info/0, workflow_step_runs_attributes/0, workflow_step_runs_table_def/0, workflow_step_runs_record_info/0, container_pool_image_revisions_attributes/0, container_pool_image_revisions_table_def/0, container_pool_image_revisions_record_info/0, container_pool_build_runs_attributes/0, container_pool_build_runs_table_def/0, container_pool_build_runs_record_info/0, presence_convs_attributes/0, presence_convs_table_def/0, presence_convs_record_info/0, presence_conv_members_attributes/0, presence_conv_members_table_def/0, presence_conv_members_record_info/0, presence_users_attributes/0, presence_users_table_def/0, presence_users_record_info/0, presence_events_attributes/0, presence_events_table_def/0, presence_events_record_info/0, presence_consumer_checkpoints_attributes/0, presence_consumer_checkpoints_table_def/0, presence_consumer_checkpoints_record_info/0, des_soccer_learning_experiments_attributes/0, des_soccer_learning_experiments_table_def/0, des_soccer_learning_experiments_record_info/0, des_soccer_learning_policy_versions_attributes/0, des_soccer_learning_policy_versions_table_def/0, des_soccer_learning_policy_versions_record_info/0, des_soccer_learning_policy_entries_attributes/0, des_soccer_learning_policy_entries_table_def/0, des_soccer_learning_policy_entries_record_info/0, des_soccer_learning_jobs_attributes/0, des_soccer_learning_jobs_table_def/0, des_soccer_learning_jobs_record_info/0, des_soccer_learning_runs_attributes/0, des_soccer_learning_runs_table_def/0, des_soccer_learning_runs_record_info/0, des_soccer_learning_run_deltas_attributes/0, des_soccer_learning_run_deltas_table_def/0, des_soccer_learning_run_deltas_record_info/0, des_soccer_learning_merge_events_attributes/0, des_soccer_learning_merge_events_table_def/0, des_soccer_learning_merge_events_record_info/0, des_soccer_tournaments_attributes/0, des_soccer_tournaments_table_def/0, des_soccer_tournaments_record_info/0, des_soccer_tournament_matches_attributes/0, des_soccer_tournament_matches_table_def/0, des_soccer_tournament_matches_record_info/0, des_soccer_tournament_team_brains_attributes/0, des_soccer_tournament_team_brains_table_def/0, des_soccer_tournament_team_brains_record_info/0, des_soccer_learning_set_play_runs_attributes/0, des_soccer_learning_set_play_runs_table_def/0, des_soccer_learning_set_play_runs_record_info/0, des_soccer_learning_set_play_restart_mix_attributes/0, des_soccer_learning_set_play_restart_mix_table_def/0, des_soccer_learning_set_play_restart_mix_record_info/0, des_soccer_learning_set_play_episode_metrics_attributes/0, des_soccer_learning_set_play_episode_metrics_table_def/0, des_soccer_learning_set_play_episode_metrics_record_info/0, des_soccer_learning_neural_run_metrics_attributes/0, des_soccer_learning_neural_run_metrics_table_def/0, des_soccer_learning_neural_run_metrics_record_info/0, des_soccer_learning_pass_metrics_attributes/0, des_soccer_learning_pass_metrics_table_def/0, des_soccer_learning_pass_metrics_record_info/0, des_fel_elevator_learning_runs_attributes/0, des_fel_elevator_learning_runs_table_def/0, des_fel_elevator_learning_runs_record_info/0, des_fel_elevator_policy_states_attributes/0, des_fel_elevator_policy_states_table_def/0, des_fel_elevator_policy_states_record_info/0, des_fel_elevator_dispatch_decisions_attributes/0, des_fel_elevator_dispatch_decisions_table_def/0, des_fel_elevator_dispatch_decisions_record_info/0, des_fel_elevator_pomdp_beliefs_attributes/0, des_fel_elevator_pomdp_beliefs_table_def/0, des_fel_elevator_pomdp_beliefs_record_info/0, benefactor_marketing_clients_attributes/0, benefactor_marketing_clients_table_def/0, benefactor_marketing_clients_record_info/0, benefactor_marketing_contacts_attributes/0, benefactor_marketing_contacts_table_def/0, benefactor_marketing_contacts_record_info/0, benefactor_marketing_service_packages_attributes/0, benefactor_marketing_service_packages_table_def/0, benefactor_marketing_service_packages_record_info/0, benefactor_marketing_contracts_attributes/0, benefactor_marketing_contracts_table_def/0, benefactor_marketing_contracts_record_info/0, benefactor_marketing_invoices_attributes/0, benefactor_marketing_invoices_table_def/0, benefactor_marketing_invoices_record_info/0, benefactor_marketing_integrations_attributes/0, benefactor_marketing_integrations_table_def/0, benefactor_marketing_integrations_record_info/0, benefactor_marketing_leads_attributes/0, benefactor_marketing_leads_table_def/0, benefactor_marketing_leads_record_info/0, benefactor_marketing_enrichment_jobs_attributes/0, benefactor_marketing_enrichment_jobs_table_def/0, benefactor_marketing_enrichment_jobs_record_info/0, benefactor_marketing_campaigns_attributes/0, benefactor_marketing_campaigns_table_def/0, benefactor_marketing_campaigns_record_info/0, benefactor_marketing_campaign_channels_attributes/0, benefactor_marketing_campaign_channels_table_def/0, benefactor_marketing_campaign_channels_record_info/0, benefactor_marketing_campaign_experiments_attributes/0, benefactor_marketing_campaign_experiments_table_def/0, benefactor_marketing_campaign_experiments_record_info/0, benefactor_marketing_automation_workflows_attributes/0, benefactor_marketing_automation_workflows_table_def/0, benefactor_marketing_automation_workflows_record_info/0, benefactor_marketing_automation_events_attributes/0, benefactor_marketing_automation_events_table_def/0, benefactor_marketing_automation_events_record_info/0, benefactor_marketing_reports_attributes/0, benefactor_marketing_reports_table_def/0, benefactor_marketing_reports_record_info/0, benefactor_marketing_attribution_events_attributes/0, benefactor_marketing_attribution_events_table_def/0, benefactor_marketing_attribution_events_record_info/0, benefactor_marketing_opportunities_attributes/0, benefactor_marketing_opportunities_table_def/0, benefactor_marketing_opportunities_record_info/0, benefactor_marketing_content_assets_attributes/0, benefactor_marketing_content_assets_table_def/0, benefactor_marketing_content_assets_record_info/0, benefactor_marketing_project_tasks_attributes/0, benefactor_marketing_project_tasks_table_def/0, benefactor_marketing_project_tasks_record_info/0, benefactor_marketing_client_approvals_attributes/0, benefactor_marketing_client_approvals_table_def/0, benefactor_marketing_client_approvals_record_info/0, benefactor_marketing_tickets_attributes/0, benefactor_marketing_tickets_table_def/0, benefactor_marketing_tickets_record_info/0, benefactor_marketing_meetings_attributes/0, benefactor_marketing_meetings_table_def/0, benefactor_marketing_meetings_record_info/0, benefactor_marketing_team_allocations_attributes/0, benefactor_marketing_team_allocations_table_def/0, benefactor_marketing_team_allocations_record_info/0, benefactor_marketing_integration_sync_runs_attributes/0, benefactor_marketing_integration_sync_runs_table_def/0, benefactor_marketing_integration_sync_runs_record_info/0, benefactor_marketing_outreach_sequences_attributes/0, benefactor_marketing_outreach_sequences_table_def/0, benefactor_marketing_outreach_sequences_record_info/0, benefactor_marketing_outreach_steps_attributes/0, benefactor_marketing_outreach_steps_table_def/0, benefactor_marketing_outreach_steps_record_info/0, benefactor_marketing_outreach_enrollments_attributes/0, benefactor_marketing_outreach_enrollments_table_def/0, benefactor_marketing_outreach_enrollments_record_info/0, benefactor_marketing_outreach_touchpoints_attributes/0, benefactor_marketing_outreach_touchpoints_table_def/0, benefactor_marketing_outreach_touchpoints_record_info/0, benefactor_marketing_prospect_research_briefs_attributes/0, benefactor_marketing_prospect_research_briefs_table_def/0, benefactor_marketing_prospect_research_briefs_record_info/0, benefactor_marketing_conversion_events_attributes/0, benefactor_marketing_conversion_events_table_def/0, benefactor_marketing_conversion_events_record_info/0, benefactor_marketing_portal_members_attributes/0, benefactor_marketing_portal_members_table_def/0, benefactor_marketing_portal_members_record_info/0, benefactor_marketing_shared_documents_attributes/0, benefactor_marketing_shared_documents_table_def/0, benefactor_marketing_shared_documents_record_info/0, benefactor_marketing_collaboration_comments_attributes/0, benefactor_marketing_collaboration_comments_table_def/0, benefactor_marketing_collaboration_comments_record_info/0, benefactor_marketing_notifications_attributes/0, benefactor_marketing_notifications_table_def/0, benefactor_marketing_notifications_record_info/0, benefactor_marketing_time_entries_attributes/0, benefactor_marketing_time_entries_table_def/0, benefactor_marketing_time_entries_record_info/0, benefactor_marketing_vendor_costs_attributes/0, benefactor_marketing_vendor_costs_table_def/0, benefactor_marketing_vendor_costs_record_info/0, benefactor_marketing_commission_entries_attributes/0, benefactor_marketing_commission_entries_table_def/0, benefactor_marketing_commission_entries_record_info/0, benefactor_marketing_budget_forecasts_attributes/0, benefactor_marketing_budget_forecasts_table_def/0, benefactor_marketing_budget_forecasts_record_info/0, benefactor_marketing_call_insights_attributes/0, benefactor_marketing_call_insights_table_def/0, benefactor_marketing_call_insights_record_info/0, usacc_users_attributes/0, usacc_users_table_def/0, usacc_users_record_info/0, usacc_cases_attributes/0, usacc_cases_table_def/0, usacc_cases_record_info/0, usacc_case_participants_attributes/0, usacc_case_participants_table_def/0, usacc_case_participants_record_info/0, usacc_case_stages_attributes/0, usacc_case_stages_table_def/0, usacc_case_stages_record_info/0, usacc_elections_attributes/0, usacc_elections_table_def/0, usacc_elections_record_info/0, usacc_votes_attributes/0, usacc_votes_table_def/0, usacc_votes_record_info/0, usacc_escrow_accounts_attributes/0, usacc_escrow_accounts_table_def/0, usacc_escrow_accounts_record_info/0, usacc_ledger_entries_attributes/0, usacc_ledger_entries_table_def/0, usacc_ledger_entries_record_info/0, usacc_contract_operations_attributes/0, usacc_contract_operations_table_def/0, usacc_contract_operations_record_info/0, usacc_simulation_runs_attributes/0, usacc_simulation_runs_table_def/0, usacc_simulation_runs_record_info/0, usacc_audit_events_attributes/0, usacc_audit_events_table_def/0, usacc_audit_events_record_info/0, benefactor_leads_attributes/0, benefactor_leads_table_def/0, benefactor_leads_record_info/0, benefactor_leads_domains_attributes/0, benefactor_leads_domains_table_def/0, benefactor_leads_domains_record_info/0, benefactor_search_locations_attributes/0, benefactor_search_locations_table_def/0, benefactor_search_locations_record_info/0, benefactor_scrape_queries_attributes/0, benefactor_scrape_queries_table_def/0, benefactor_scrape_queries_record_info/0, benefactor_domain_search_tracking_attributes/0, benefactor_domain_search_tracking_table_def/0, benefactor_domain_search_tracking_record_info/0, benefactor_icps_attributes/0, benefactor_icps_table_def/0, benefactor_icps_record_info/0, benefactor_leads_throttling_attributes/0, benefactor_leads_throttling_table_def/0, benefactor_leads_throttling_record_info/0, benefactor_leads_reminders_attributes/0, benefactor_leads_reminders_table_def/0, benefactor_leads_reminders_record_info/0, vcs_repositories_attributes/0, vcs_repositories_table_def/0, vcs_repositories_record_info/0, vcs_refs_attributes/0, vcs_refs_table_def/0, vcs_refs_record_info/0, vcs_operations_attributes/0, vcs_operations_table_def/0, vcs_operations_record_info/0, agents_attributes/0, agents_table_def/0, agents_record_info/0, channels_attributes/0, channels_table_def/0, channels_record_info/0, messages_attributes/0, messages_table_def/0, messages_record_info/0, channel_members_attributes/0, channel_members_table_def/0, channel_members_record_info/0, shared_context_attributes/0, shared_context_table_def/0, shared_context_record_info/0, sync_clock_attributes/0, sync_clock_table_def/0, sync_clock_record_info/0, sync_tombstones_attributes/0, sync_tombstones_table_def/0, sync_tombstones_record_info/0, orgs_attributes/0, orgs_table_def/0, orgs_record_info/0, projects_attributes/0, projects_table_def/0, projects_record_info/0, users_attributes/0, users_table_def/0, users_record_info/0, org_members_attributes/0, org_members_table_def/0, org_members_record_info/0, project_members_attributes/0, project_members_table_def/0, project_members_record_info/0, api_keys_attributes/0, api_keys_table_def/0, api_keys_record_info/0, mtls_client_certs_attributes/0, mtls_client_certs_table_def/0, mtls_client_certs_record_info/0, customer_preferences_attributes/0, customer_preferences_table_def/0, customer_preferences_record_info/0, customer_sessions_attributes/0, customer_sessions_table_def/0, customer_sessions_record_info/0, audit_log_attributes/0, audit_log_table_def/0, audit_log_record_info/0, customer_notifications_attributes/0, customer_notifications_table_def/0, customer_notifications_record_info/0, sync_idempotency_keys_attributes/0, sync_idempotency_keys_table_def/0, sync_idempotency_keys_record_info/0, transcriptions_attributes/0, transcriptions_table_def/0, transcriptions_record_info/0, syntheses_attributes/0, syntheses_table_def/0, syntheses_record_info/0, translations_attributes/0, translations_table_def/0, translations_record_info/0, vapi_calls_attributes/0, vapi_calls_table_def/0, vapi_calls_record_info/0, vapi_events_attributes/0, vapi_events_table_def/0, vapi_events_record_info/0, fab_plans_attributes/0, fab_plans_table_def/0, fab_plans_record_info/0, fab_designs_attributes/0, fab_designs_table_def/0, fab_designs_record_info/0, fab_instructions_attributes/0, fab_instructions_table_def/0, fab_instructions_record_info/0, fab_runs_attributes/0, fab_runs_table_def/0, fab_runs_record_info/0, all_table_defs/0]).
 
 -record(accounts, {id, username, auth_secret, created_at}).
 -record(devices, {id, account_id, device_name, sync_token_hash, revoked, created_at}).
@@ -130,6 +130,29 @@
 -record(messages, {id, channel_slug, channel_id, seq, from_agent_key, role, content, meta_data, created_at}).
 -record(channel_members, {id, channel_slug, channel_id, agent_key, role, joined_at, last_seen_at, meta_data}).
 -record(shared_context, {id, channel_slug, channel_id, ctx_key, value, version, updated_by, created_at, updated_at}).
+-record(sync_clock, {singleton, last_sequence}).
+-record(sync_tombstones, {sequence, table_name, row_id, tenant_id, owner_user_id, row_version, deleted_at}).
+-record(orgs, {id, slug, name, created_at, updated_at, version, sync_sequence}).
+-record(projects, {id, org_id, slug, name, created_at, updated_at, version, sync_sequence}).
+-record(users, {id, supabase_user_id, email, created_at}).
+-record(org_members, {org_id, user_id, role, created_at}).
+-record(project_members, {project_id, user_id, role, created_at}).
+-record(api_keys, {id, key_id, org_id, project_id, created_by_user_id, name, secret_hash, scopes, env, require_idempotency, mtls_required, revoked, created_at, updated_at, version, sync_sequence, last_used_at, expires_at}).
+-record(mtls_client_certs, {id, org_id, project_id, name, subject, sha256_fingerprint, not_before, not_after, revoked, created_at, updated_at, version, sync_sequence}).
+-record(customer_preferences, {user_id, density, timezone, region, notify_key_rotation, notify_lock_contention, notify_mfa, updated_at, version, sync_sequence}).
+-record(customer_sessions, {id, user_id, device, location, last_seen, status, updated_at, version, sync_sequence}).
+-record(audit_log, {id, org_id, project_id, actor_user_id, actor_key_id, actor, action, target, request_id, source_ip, user_agent, meta, created_at, retention_expires_at}).
+-record(customer_notifications, {id, user_id, org_id, kind, severity, title, body, link, read_at, created_at, updated_at, version, sync_sequence}).
+-record(sync_idempotency_keys, {key, request_fingerprint, committed_version, created_at}).
+-record(transcriptions, {id, source, provider, model, text, language, sample_rate, duration_ms, created_at}).
+-record(syntheses, {id, text, voice, provider, model, format, audio_bytes, created_at}).
+-record(translations, {id, source_text, translated_text, source_lang, target_lang, provider, model, latency_ms, created_at}).
+-record(vapi_calls, {id, vapi_call_id, status, ended_reason, transcript, summary, created_at, updated_at}).
+-record(vapi_events, {id, vapi_call_id, event_type, payload, created_at}).
+-record(fab_plans, {id, owner_email, title, goal, process_family, status, document, created_at, updated_at}).
+-record(fab_designs, {id, plan_id, filename, format, storage_uri, size_bytes, content_hash, geometry, created_at}).
+-record(fab_instructions, {id, plan_id, revision, machine_profile, dialect, storage_uri, content_hash, validated, validation, released_by_email, released_at, created_at}).
+-record(fab_runs, {id, instructions_id, status, machine_id, operator_email, progress, as_built, error, started_at, finished_at, created_at}).
 
 accounts_attributes() -> ['id', 'username', 'auth_secret', 'created_at'].
 
@@ -1756,5 +1779,304 @@ shared_context_table_def() ->
         {disc_copies, [node()]}
     ].
 
+sync_clock_attributes() -> ['singleton', 'last_sequence'].
+
+sync_clock_record_info() ->
+    {sync_clock, 2, sync_clock_attributes()}.
+
+sync_clock_table_def() ->
+    [
+        {attributes, sync_clock_attributes()},
+        {type, set},
+        {record_name, sync_clock},
+        {disc_copies, [node()]}
+    ].
+
+sync_tombstones_attributes() -> ['sequence', 'table_name', 'row_id', 'tenant_id', 'owner_user_id', 'row_version', 'deleted_at'].
+
+sync_tombstones_record_info() ->
+    {sync_tombstones, 7, sync_tombstones_attributes()}.
+
+sync_tombstones_table_def() ->
+    [
+        {attributes, sync_tombstones_attributes()},
+        {type, set},
+        {record_name, sync_tombstones},
+        {disc_copies, [node()]}
+    ].
+
+orgs_attributes() -> ['id', 'slug', 'name', 'created_at', 'updated_at', 'version', 'sync_sequence'].
+
+orgs_record_info() ->
+    {orgs, 7, orgs_attributes()}.
+
+orgs_table_def() ->
+    [
+        {attributes, orgs_attributes()},
+        {type, set},
+        {record_name, orgs},
+        {disc_copies, [node()]}
+    ].
+
+projects_attributes() -> ['id', 'org_id', 'slug', 'name', 'created_at', 'updated_at', 'version', 'sync_sequence'].
+
+projects_record_info() ->
+    {projects, 8, projects_attributes()}.
+
+projects_table_def() ->
+    [
+        {attributes, projects_attributes()},
+        {type, set},
+        {record_name, projects},
+        {disc_copies, [node()]}
+    ].
+
+users_attributes() -> ['id', 'supabase_user_id', 'email', 'created_at'].
+
+users_record_info() ->
+    {users, 4, users_attributes()}.
+
+users_table_def() ->
+    [
+        {attributes, users_attributes()},
+        {type, set},
+        {record_name, users},
+        {disc_copies, [node()]}
+    ].
+
+org_members_attributes() -> ['org_id', 'user_id', 'role', 'created_at'].
+
+org_members_record_info() ->
+    {org_members, 4, org_members_attributes()}.
+
+org_members_table_def() ->
+    [
+        {attributes, org_members_attributes()},
+        {type, set},
+        {record_name, org_members},
+        {disc_copies, [node()]}
+    ].
+
+project_members_attributes() -> ['project_id', 'user_id', 'role', 'created_at'].
+
+project_members_record_info() ->
+    {project_members, 4, project_members_attributes()}.
+
+project_members_table_def() ->
+    [
+        {attributes, project_members_attributes()},
+        {type, set},
+        {record_name, project_members},
+        {disc_copies, [node()]}
+    ].
+
+api_keys_attributes() -> ['id', 'key_id', 'org_id', 'project_id', 'created_by_user_id', 'name', 'secret_hash', 'scopes', 'env', 'require_idempotency', 'mtls_required', 'revoked', 'created_at', 'updated_at', 'version', 'sync_sequence', 'last_used_at', 'expires_at'].
+
+api_keys_record_info() ->
+    {api_keys, 18, api_keys_attributes()}.
+
+api_keys_table_def() ->
+    [
+        {attributes, api_keys_attributes()},
+        {type, set},
+        {record_name, api_keys},
+        {disc_copies, [node()]}
+    ].
+
+mtls_client_certs_attributes() -> ['id', 'org_id', 'project_id', 'name', 'subject', 'sha256_fingerprint', 'not_before', 'not_after', 'revoked', 'created_at', 'updated_at', 'version', 'sync_sequence'].
+
+mtls_client_certs_record_info() ->
+    {mtls_client_certs, 13, mtls_client_certs_attributes()}.
+
+mtls_client_certs_table_def() ->
+    [
+        {attributes, mtls_client_certs_attributes()},
+        {type, set},
+        {record_name, mtls_client_certs},
+        {disc_copies, [node()]}
+    ].
+
+customer_preferences_attributes() -> ['user_id', 'density', 'timezone', 'region', 'notify_key_rotation', 'notify_lock_contention', 'notify_mfa', 'updated_at', 'version', 'sync_sequence'].
+
+customer_preferences_record_info() ->
+    {customer_preferences, 10, customer_preferences_attributes()}.
+
+customer_preferences_table_def() ->
+    [
+        {attributes, customer_preferences_attributes()},
+        {type, set},
+        {record_name, customer_preferences},
+        {disc_copies, [node()]}
+    ].
+
+customer_sessions_attributes() -> ['id', 'user_id', 'device', 'location', 'last_seen', 'status', 'updated_at', 'version', 'sync_sequence'].
+
+customer_sessions_record_info() ->
+    {customer_sessions, 9, customer_sessions_attributes()}.
+
+customer_sessions_table_def() ->
+    [
+        {attributes, customer_sessions_attributes()},
+        {type, set},
+        {record_name, customer_sessions},
+        {disc_copies, [node()]}
+    ].
+
+audit_log_attributes() -> ['id', 'org_id', 'project_id', 'actor_user_id', 'actor_key_id', 'actor', 'action', 'target', 'request_id', 'source_ip', 'user_agent', 'meta', 'created_at', 'retention_expires_at'].
+
+audit_log_record_info() ->
+    {audit_log, 14, audit_log_attributes()}.
+
+audit_log_table_def() ->
+    [
+        {attributes, audit_log_attributes()},
+        {type, set},
+        {record_name, audit_log},
+        {disc_copies, [node()]}
+    ].
+
+customer_notifications_attributes() -> ['id', 'user_id', 'org_id', 'kind', 'severity', 'title', 'body', 'link', 'read_at', 'created_at', 'updated_at', 'version', 'sync_sequence'].
+
+customer_notifications_record_info() ->
+    {customer_notifications, 13, customer_notifications_attributes()}.
+
+customer_notifications_table_def() ->
+    [
+        {attributes, customer_notifications_attributes()},
+        {type, set},
+        {record_name, customer_notifications},
+        {disc_copies, [node()]}
+    ].
+
+sync_idempotency_keys_attributes() -> ['key', 'request_fingerprint', 'committed_version', 'created_at'].
+
+sync_idempotency_keys_record_info() ->
+    {sync_idempotency_keys, 4, sync_idempotency_keys_attributes()}.
+
+sync_idempotency_keys_table_def() ->
+    [
+        {attributes, sync_idempotency_keys_attributes()},
+        {type, set},
+        {record_name, sync_idempotency_keys},
+        {disc_copies, [node()]}
+    ].
+
+transcriptions_attributes() -> ['id', 'source', 'provider', 'model', 'text', 'language', 'sample_rate', 'duration_ms', 'created_at'].
+
+transcriptions_record_info() ->
+    {transcriptions, 9, transcriptions_attributes()}.
+
+transcriptions_table_def() ->
+    [
+        {attributes, transcriptions_attributes()},
+        {type, set},
+        {record_name, transcriptions},
+        {disc_copies, [node()]}
+    ].
+
+syntheses_attributes() -> ['id', 'text', 'voice', 'provider', 'model', 'format', 'audio_bytes', 'created_at'].
+
+syntheses_record_info() ->
+    {syntheses, 8, syntheses_attributes()}.
+
+syntheses_table_def() ->
+    [
+        {attributes, syntheses_attributes()},
+        {type, set},
+        {record_name, syntheses},
+        {disc_copies, [node()]}
+    ].
+
+translations_attributes() -> ['id', 'source_text', 'translated_text', 'source_lang', 'target_lang', 'provider', 'model', 'latency_ms', 'created_at'].
+
+translations_record_info() ->
+    {translations, 9, translations_attributes()}.
+
+translations_table_def() ->
+    [
+        {attributes, translations_attributes()},
+        {type, set},
+        {record_name, translations},
+        {disc_copies, [node()]}
+    ].
+
+vapi_calls_attributes() -> ['id', 'vapi_call_id', 'status', 'ended_reason', 'transcript', 'summary', 'created_at', 'updated_at'].
+
+vapi_calls_record_info() ->
+    {vapi_calls, 8, vapi_calls_attributes()}.
+
+vapi_calls_table_def() ->
+    [
+        {attributes, vapi_calls_attributes()},
+        {type, set},
+        {record_name, vapi_calls},
+        {disc_copies, [node()]}
+    ].
+
+vapi_events_attributes() -> ['id', 'vapi_call_id', 'event_type', 'payload', 'created_at'].
+
+vapi_events_record_info() ->
+    {vapi_events, 5, vapi_events_attributes()}.
+
+vapi_events_table_def() ->
+    [
+        {attributes, vapi_events_attributes()},
+        {type, set},
+        {record_name, vapi_events},
+        {disc_copies, [node()]}
+    ].
+
+fab_plans_attributes() -> ['id', 'owner_email', 'title', 'goal', 'process_family', 'status', 'document', 'created_at', 'updated_at'].
+
+fab_plans_record_info() ->
+    {fab_plans, 9, fab_plans_attributes()}.
+
+fab_plans_table_def() ->
+    [
+        {attributes, fab_plans_attributes()},
+        {type, set},
+        {record_name, fab_plans},
+        {disc_copies, [node()]}
+    ].
+
+fab_designs_attributes() -> ['id', 'plan_id', 'filename', 'format', 'storage_uri', 'size_bytes', 'content_hash', 'geometry', 'created_at'].
+
+fab_designs_record_info() ->
+    {fab_designs, 9, fab_designs_attributes()}.
+
+fab_designs_table_def() ->
+    [
+        {attributes, fab_designs_attributes()},
+        {type, set},
+        {record_name, fab_designs},
+        {disc_copies, [node()]}
+    ].
+
+fab_instructions_attributes() -> ['id', 'plan_id', 'revision', 'machine_profile', 'dialect', 'storage_uri', 'content_hash', 'validated', 'validation', 'released_by_email', 'released_at', 'created_at'].
+
+fab_instructions_record_info() ->
+    {fab_instructions, 12, fab_instructions_attributes()}.
+
+fab_instructions_table_def() ->
+    [
+        {attributes, fab_instructions_attributes()},
+        {type, set},
+        {record_name, fab_instructions},
+        {disc_copies, [node()]}
+    ].
+
+fab_runs_attributes() -> ['id', 'instructions_id', 'status', 'machine_id', 'operator_email', 'progress', 'as_built', 'error', 'started_at', 'finished_at', 'created_at'].
+
+fab_runs_record_info() ->
+    {fab_runs, 11, fab_runs_attributes()}.
+
+fab_runs_table_def() ->
+    [
+        {attributes, fab_runs_attributes()},
+        {type, set},
+        {record_name, fab_runs},
+        {disc_copies, [node()]}
+    ].
+
 all_table_defs() ->
-    [{accounts, accounts_table_def()}, {devices, devices_table_def()}, {vault_blobs, vault_blobs_table_def()}, {app_config, app_config_table_def()}, {vapi_phone_call_events, vapi_phone_call_events_table_def()}, {music_songs, music_songs_table_def()}, {music_song_votes, music_song_votes_table_def()}, {sound_recorder_accounts, sound_recorder_accounts_table_def()}, {sound_recorder_devices, sound_recorder_devices_table_def()}, {sound_recorder_upload_sessions, sound_recorder_upload_sessions_table_def()}, {sound_recorder_segments, sound_recorder_segments_table_def()}, {sound_recorder_evidence_exports, sound_recorder_evidence_exports_table_def()}, {sound_recorder_audit_events, sound_recorder_audit_events_table_def()}, {sound_recorder_oauth_states, sound_recorder_oauth_states_table_def()}, {sound_recorder_cloud_connections, sound_recorder_cloud_connections_table_def()}, {sound_recorder_cloud_copy_jobs, sound_recorder_cloud_copy_jobs_table_def()}, {container_pool_configs, container_pool_configs_table_def()}, {known_git_repos, known_git_repos_table_def()}, {agent_context_blobs, agent_context_blobs_table_def()}, {agent_context_embeddings, agent_context_embeddings_table_def()}, {agent_remote_dev_threads, agent_remote_dev_threads_table_def()}, {agent_remote_dev_tasks, agent_remote_dev_tasks_table_def()}, {agent_remote_dev_events, agent_remote_dev_events_table_def()}, {agent_remote_dev_breadcrumbs, agent_remote_dev_breadcrumbs_table_def()}, {agent_remote_dev_artifacts, agent_remote_dev_artifacts_table_def()}, {agent_remote_dev_runtime_locks, agent_remote_dev_runtime_locks_table_def()}, {mip_solver_sessions, mip_solver_sessions_table_def()}, {mip_solver_solves, mip_solver_solves_table_def()}, {mip_solver_jobs, mip_solver_jobs_table_def()}, {mip_solver_events, mip_solver_events_table_def()}, {lambda_functions, lambda_functions_table_def()}, {workflow_definitions, workflow_definitions_table_def()}, {workflow_runs, workflow_runs_table_def()}, {workflow_step_runs, workflow_step_runs_table_def()}, {container_pool_image_revisions, container_pool_image_revisions_table_def()}, {container_pool_build_runs, container_pool_build_runs_table_def()}, {presence_convs, presence_convs_table_def()}, {presence_conv_members, presence_conv_members_table_def()}, {presence_users, presence_users_table_def()}, {presence_events, presence_events_table_def()}, {presence_consumer_checkpoints, presence_consumer_checkpoints_table_def()}, {des_soccer_learning_experiments, des_soccer_learning_experiments_table_def()}, {des_soccer_learning_policy_versions, des_soccer_learning_policy_versions_table_def()}, {des_soccer_learning_policy_entries, des_soccer_learning_policy_entries_table_def()}, {des_soccer_learning_jobs, des_soccer_learning_jobs_table_def()}, {des_soccer_learning_runs, des_soccer_learning_runs_table_def()}, {des_soccer_learning_run_deltas, des_soccer_learning_run_deltas_table_def()}, {des_soccer_learning_merge_events, des_soccer_learning_merge_events_table_def()}, {des_soccer_tournaments, des_soccer_tournaments_table_def()}, {des_soccer_tournament_matches, des_soccer_tournament_matches_table_def()}, {des_soccer_tournament_team_brains, des_soccer_tournament_team_brains_table_def()}, {des_soccer_learning_set_play_runs, des_soccer_learning_set_play_runs_table_def()}, {des_soccer_learning_set_play_restart_mix, des_soccer_learning_set_play_restart_mix_table_def()}, {des_soccer_learning_set_play_episode_metrics, des_soccer_learning_set_play_episode_metrics_table_def()}, {des_soccer_learning_neural_run_metrics, des_soccer_learning_neural_run_metrics_table_def()}, {des_soccer_learning_pass_metrics, des_soccer_learning_pass_metrics_table_def()}, {des_fel_elevator_learning_runs, des_fel_elevator_learning_runs_table_def()}, {des_fel_elevator_policy_states, des_fel_elevator_policy_states_table_def()}, {des_fel_elevator_dispatch_decisions, des_fel_elevator_dispatch_decisions_table_def()}, {des_fel_elevator_pomdp_beliefs, des_fel_elevator_pomdp_beliefs_table_def()}, {benefactor_marketing_clients, benefactor_marketing_clients_table_def()}, {benefactor_marketing_contacts, benefactor_marketing_contacts_table_def()}, {benefactor_marketing_service_packages, benefactor_marketing_service_packages_table_def()}, {benefactor_marketing_contracts, benefactor_marketing_contracts_table_def()}, {benefactor_marketing_invoices, benefactor_marketing_invoices_table_def()}, {benefactor_marketing_integrations, benefactor_marketing_integrations_table_def()}, {benefactor_marketing_leads, benefactor_marketing_leads_table_def()}, {benefactor_marketing_enrichment_jobs, benefactor_marketing_enrichment_jobs_table_def()}, {benefactor_marketing_campaigns, benefactor_marketing_campaigns_table_def()}, {benefactor_marketing_campaign_channels, benefactor_marketing_campaign_channels_table_def()}, {benefactor_marketing_campaign_experiments, benefactor_marketing_campaign_experiments_table_def()}, {benefactor_marketing_automation_workflows, benefactor_marketing_automation_workflows_table_def()}, {benefactor_marketing_automation_events, benefactor_marketing_automation_events_table_def()}, {benefactor_marketing_reports, benefactor_marketing_reports_table_def()}, {benefactor_marketing_attribution_events, benefactor_marketing_attribution_events_table_def()}, {benefactor_marketing_opportunities, benefactor_marketing_opportunities_table_def()}, {benefactor_marketing_content_assets, benefactor_marketing_content_assets_table_def()}, {benefactor_marketing_project_tasks, benefactor_marketing_project_tasks_table_def()}, {benefactor_marketing_client_approvals, benefactor_marketing_client_approvals_table_def()}, {benefactor_marketing_tickets, benefactor_marketing_tickets_table_def()}, {benefactor_marketing_meetings, benefactor_marketing_meetings_table_def()}, {benefactor_marketing_team_allocations, benefactor_marketing_team_allocations_table_def()}, {benefactor_marketing_integration_sync_runs, benefactor_marketing_integration_sync_runs_table_def()}, {benefactor_marketing_outreach_sequences, benefactor_marketing_outreach_sequences_table_def()}, {benefactor_marketing_outreach_steps, benefactor_marketing_outreach_steps_table_def()}, {benefactor_marketing_outreach_enrollments, benefactor_marketing_outreach_enrollments_table_def()}, {benefactor_marketing_outreach_touchpoints, benefactor_marketing_outreach_touchpoints_table_def()}, {benefactor_marketing_prospect_research_briefs, benefactor_marketing_prospect_research_briefs_table_def()}, {benefactor_marketing_conversion_events, benefactor_marketing_conversion_events_table_def()}, {benefactor_marketing_portal_members, benefactor_marketing_portal_members_table_def()}, {benefactor_marketing_shared_documents, benefactor_marketing_shared_documents_table_def()}, {benefactor_marketing_collaboration_comments, benefactor_marketing_collaboration_comments_table_def()}, {benefactor_marketing_notifications, benefactor_marketing_notifications_table_def()}, {benefactor_marketing_time_entries, benefactor_marketing_time_entries_table_def()}, {benefactor_marketing_vendor_costs, benefactor_marketing_vendor_costs_table_def()}, {benefactor_marketing_commission_entries, benefactor_marketing_commission_entries_table_def()}, {benefactor_marketing_budget_forecasts, benefactor_marketing_budget_forecasts_table_def()}, {benefactor_marketing_call_insights, benefactor_marketing_call_insights_table_def()}, {usacc_users, usacc_users_table_def()}, {usacc_cases, usacc_cases_table_def()}, {usacc_case_participants, usacc_case_participants_table_def()}, {usacc_case_stages, usacc_case_stages_table_def()}, {usacc_elections, usacc_elections_table_def()}, {usacc_votes, usacc_votes_table_def()}, {usacc_escrow_accounts, usacc_escrow_accounts_table_def()}, {usacc_ledger_entries, usacc_ledger_entries_table_def()}, {usacc_contract_operations, usacc_contract_operations_table_def()}, {usacc_simulation_runs, usacc_simulation_runs_table_def()}, {usacc_audit_events, usacc_audit_events_table_def()}, {benefactor_leads, benefactor_leads_table_def()}, {benefactor_leads_domains, benefactor_leads_domains_table_def()}, {benefactor_search_locations, benefactor_search_locations_table_def()}, {benefactor_scrape_queries, benefactor_scrape_queries_table_def()}, {benefactor_domain_search_tracking, benefactor_domain_search_tracking_table_def()}, {benefactor_icps, benefactor_icps_table_def()}, {benefactor_leads_throttling, benefactor_leads_throttling_table_def()}, {benefactor_leads_reminders, benefactor_leads_reminders_table_def()}, {vcs_repositories, vcs_repositories_table_def()}, {vcs_refs, vcs_refs_table_def()}, {vcs_operations, vcs_operations_table_def()}, {agents, agents_table_def()}, {channels, channels_table_def()}, {messages, messages_table_def()}, {channel_members, channel_members_table_def()}, {shared_context, shared_context_table_def()}].
+    [{accounts, accounts_table_def()}, {devices, devices_table_def()}, {vault_blobs, vault_blobs_table_def()}, {app_config, app_config_table_def()}, {vapi_phone_call_events, vapi_phone_call_events_table_def()}, {music_songs, music_songs_table_def()}, {music_song_votes, music_song_votes_table_def()}, {sound_recorder_accounts, sound_recorder_accounts_table_def()}, {sound_recorder_devices, sound_recorder_devices_table_def()}, {sound_recorder_upload_sessions, sound_recorder_upload_sessions_table_def()}, {sound_recorder_segments, sound_recorder_segments_table_def()}, {sound_recorder_evidence_exports, sound_recorder_evidence_exports_table_def()}, {sound_recorder_audit_events, sound_recorder_audit_events_table_def()}, {sound_recorder_oauth_states, sound_recorder_oauth_states_table_def()}, {sound_recorder_cloud_connections, sound_recorder_cloud_connections_table_def()}, {sound_recorder_cloud_copy_jobs, sound_recorder_cloud_copy_jobs_table_def()}, {container_pool_configs, container_pool_configs_table_def()}, {known_git_repos, known_git_repos_table_def()}, {agent_context_blobs, agent_context_blobs_table_def()}, {agent_context_embeddings, agent_context_embeddings_table_def()}, {agent_remote_dev_threads, agent_remote_dev_threads_table_def()}, {agent_remote_dev_tasks, agent_remote_dev_tasks_table_def()}, {agent_remote_dev_events, agent_remote_dev_events_table_def()}, {agent_remote_dev_breadcrumbs, agent_remote_dev_breadcrumbs_table_def()}, {agent_remote_dev_artifacts, agent_remote_dev_artifacts_table_def()}, {agent_remote_dev_runtime_locks, agent_remote_dev_runtime_locks_table_def()}, {mip_solver_sessions, mip_solver_sessions_table_def()}, {mip_solver_solves, mip_solver_solves_table_def()}, {mip_solver_jobs, mip_solver_jobs_table_def()}, {mip_solver_events, mip_solver_events_table_def()}, {lambda_functions, lambda_functions_table_def()}, {workflow_definitions, workflow_definitions_table_def()}, {workflow_runs, workflow_runs_table_def()}, {workflow_step_runs, workflow_step_runs_table_def()}, {container_pool_image_revisions, container_pool_image_revisions_table_def()}, {container_pool_build_runs, container_pool_build_runs_table_def()}, {presence_convs, presence_convs_table_def()}, {presence_conv_members, presence_conv_members_table_def()}, {presence_users, presence_users_table_def()}, {presence_events, presence_events_table_def()}, {presence_consumer_checkpoints, presence_consumer_checkpoints_table_def()}, {des_soccer_learning_experiments, des_soccer_learning_experiments_table_def()}, {des_soccer_learning_policy_versions, des_soccer_learning_policy_versions_table_def()}, {des_soccer_learning_policy_entries, des_soccer_learning_policy_entries_table_def()}, {des_soccer_learning_jobs, des_soccer_learning_jobs_table_def()}, {des_soccer_learning_runs, des_soccer_learning_runs_table_def()}, {des_soccer_learning_run_deltas, des_soccer_learning_run_deltas_table_def()}, {des_soccer_learning_merge_events, des_soccer_learning_merge_events_table_def()}, {des_soccer_tournaments, des_soccer_tournaments_table_def()}, {des_soccer_tournament_matches, des_soccer_tournament_matches_table_def()}, {des_soccer_tournament_team_brains, des_soccer_tournament_team_brains_table_def()}, {des_soccer_learning_set_play_runs, des_soccer_learning_set_play_runs_table_def()}, {des_soccer_learning_set_play_restart_mix, des_soccer_learning_set_play_restart_mix_table_def()}, {des_soccer_learning_set_play_episode_metrics, des_soccer_learning_set_play_episode_metrics_table_def()}, {des_soccer_learning_neural_run_metrics, des_soccer_learning_neural_run_metrics_table_def()}, {des_soccer_learning_pass_metrics, des_soccer_learning_pass_metrics_table_def()}, {des_fel_elevator_learning_runs, des_fel_elevator_learning_runs_table_def()}, {des_fel_elevator_policy_states, des_fel_elevator_policy_states_table_def()}, {des_fel_elevator_dispatch_decisions, des_fel_elevator_dispatch_decisions_table_def()}, {des_fel_elevator_pomdp_beliefs, des_fel_elevator_pomdp_beliefs_table_def()}, {benefactor_marketing_clients, benefactor_marketing_clients_table_def()}, {benefactor_marketing_contacts, benefactor_marketing_contacts_table_def()}, {benefactor_marketing_service_packages, benefactor_marketing_service_packages_table_def()}, {benefactor_marketing_contracts, benefactor_marketing_contracts_table_def()}, {benefactor_marketing_invoices, benefactor_marketing_invoices_table_def()}, {benefactor_marketing_integrations, benefactor_marketing_integrations_table_def()}, {benefactor_marketing_leads, benefactor_marketing_leads_table_def()}, {benefactor_marketing_enrichment_jobs, benefactor_marketing_enrichment_jobs_table_def()}, {benefactor_marketing_campaigns, benefactor_marketing_campaigns_table_def()}, {benefactor_marketing_campaign_channels, benefactor_marketing_campaign_channels_table_def()}, {benefactor_marketing_campaign_experiments, benefactor_marketing_campaign_experiments_table_def()}, {benefactor_marketing_automation_workflows, benefactor_marketing_automation_workflows_table_def()}, {benefactor_marketing_automation_events, benefactor_marketing_automation_events_table_def()}, {benefactor_marketing_reports, benefactor_marketing_reports_table_def()}, {benefactor_marketing_attribution_events, benefactor_marketing_attribution_events_table_def()}, {benefactor_marketing_opportunities, benefactor_marketing_opportunities_table_def()}, {benefactor_marketing_content_assets, benefactor_marketing_content_assets_table_def()}, {benefactor_marketing_project_tasks, benefactor_marketing_project_tasks_table_def()}, {benefactor_marketing_client_approvals, benefactor_marketing_client_approvals_table_def()}, {benefactor_marketing_tickets, benefactor_marketing_tickets_table_def()}, {benefactor_marketing_meetings, benefactor_marketing_meetings_table_def()}, {benefactor_marketing_team_allocations, benefactor_marketing_team_allocations_table_def()}, {benefactor_marketing_integration_sync_runs, benefactor_marketing_integration_sync_runs_table_def()}, {benefactor_marketing_outreach_sequences, benefactor_marketing_outreach_sequences_table_def()}, {benefactor_marketing_outreach_steps, benefactor_marketing_outreach_steps_table_def()}, {benefactor_marketing_outreach_enrollments, benefactor_marketing_outreach_enrollments_table_def()}, {benefactor_marketing_outreach_touchpoints, benefactor_marketing_outreach_touchpoints_table_def()}, {benefactor_marketing_prospect_research_briefs, benefactor_marketing_prospect_research_briefs_table_def()}, {benefactor_marketing_conversion_events, benefactor_marketing_conversion_events_table_def()}, {benefactor_marketing_portal_members, benefactor_marketing_portal_members_table_def()}, {benefactor_marketing_shared_documents, benefactor_marketing_shared_documents_table_def()}, {benefactor_marketing_collaboration_comments, benefactor_marketing_collaboration_comments_table_def()}, {benefactor_marketing_notifications, benefactor_marketing_notifications_table_def()}, {benefactor_marketing_time_entries, benefactor_marketing_time_entries_table_def()}, {benefactor_marketing_vendor_costs, benefactor_marketing_vendor_costs_table_def()}, {benefactor_marketing_commission_entries, benefactor_marketing_commission_entries_table_def()}, {benefactor_marketing_budget_forecasts, benefactor_marketing_budget_forecasts_table_def()}, {benefactor_marketing_call_insights, benefactor_marketing_call_insights_table_def()}, {usacc_users, usacc_users_table_def()}, {usacc_cases, usacc_cases_table_def()}, {usacc_case_participants, usacc_case_participants_table_def()}, {usacc_case_stages, usacc_case_stages_table_def()}, {usacc_elections, usacc_elections_table_def()}, {usacc_votes, usacc_votes_table_def()}, {usacc_escrow_accounts, usacc_escrow_accounts_table_def()}, {usacc_ledger_entries, usacc_ledger_entries_table_def()}, {usacc_contract_operations, usacc_contract_operations_table_def()}, {usacc_simulation_runs, usacc_simulation_runs_table_def()}, {usacc_audit_events, usacc_audit_events_table_def()}, {benefactor_leads, benefactor_leads_table_def()}, {benefactor_leads_domains, benefactor_leads_domains_table_def()}, {benefactor_search_locations, benefactor_search_locations_table_def()}, {benefactor_scrape_queries, benefactor_scrape_queries_table_def()}, {benefactor_domain_search_tracking, benefactor_domain_search_tracking_table_def()}, {benefactor_icps, benefactor_icps_table_def()}, {benefactor_leads_throttling, benefactor_leads_throttling_table_def()}, {benefactor_leads_reminders, benefactor_leads_reminders_table_def()}, {vcs_repositories, vcs_repositories_table_def()}, {vcs_refs, vcs_refs_table_def()}, {vcs_operations, vcs_operations_table_def()}, {agents, agents_table_def()}, {channels, channels_table_def()}, {messages, messages_table_def()}, {channel_members, channel_members_table_def()}, {shared_context, shared_context_table_def()}, {sync_clock, sync_clock_table_def()}, {sync_tombstones, sync_tombstones_table_def()}, {orgs, orgs_table_def()}, {projects, projects_table_def()}, {users, users_table_def()}, {org_members, org_members_table_def()}, {project_members, project_members_table_def()}, {api_keys, api_keys_table_def()}, {mtls_client_certs, mtls_client_certs_table_def()}, {customer_preferences, customer_preferences_table_def()}, {customer_sessions, customer_sessions_table_def()}, {audit_log, audit_log_table_def()}, {customer_notifications, customer_notifications_table_def()}, {sync_idempotency_keys, sync_idempotency_keys_table_def()}, {transcriptions, transcriptions_table_def()}, {syntheses, syntheses_table_def()}, {translations, translations_table_def()}, {vapi_calls, vapi_calls_table_def()}, {vapi_events, vapi_events_table_def()}, {fab_plans, fab_plans_table_def()}, {fab_designs, fab_designs_table_def()}, {fab_instructions, fab_instructions_table_def()}, {fab_runs, fab_runs_table_def()}].

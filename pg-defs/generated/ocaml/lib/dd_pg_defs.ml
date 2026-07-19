@@ -10616,3 +10616,1021 @@ let validate_shared_context_version (value : int) : (int, string) result =
 let validate_shared_context_updated_by (value : string) : (string, string) result =
   if String.length value > 120 then Error "shared_context.updated_by must be at most 120 characters"
   else Ok value
+
+let sync_clock_table = "fiducia.sync_clock"
+
+let sync_clock_columns = ["singleton"; "last_sequence"]
+
+let sync_clock_select_sql = "select\n      singleton,\n      last_sequence\n    from fiducia.sync_clock"
+
+type sync_clock_row = {
+  sync_clock_singleton : bool;
+  sync_clock_last_sequence : int64;
+}
+
+let sync_clock_row_of_row ~(get : int -> string) ~is_null:(_ : int -> bool) : sync_clock_row =
+  {
+    sync_clock_singleton = (get 0 = "t");
+    sync_clock_last_sequence = Int64.of_string (get 1);
+  }
+
+let validate_sync_clock_last_sequence (value : int64) : (int64, string) result =
+  if Int64.compare value 0L < 0 then Error "sync_clock.last_sequence is below the minimum"
+  else Ok value
+
+let sync_tombstones_table = "fiducia.sync_tombstones"
+
+let sync_tombstones_columns = ["sequence"; "table_name"; "row_id"; "tenant_id"; "owner_user_id"; "row_version"; "deleted_at"]
+
+let sync_tombstones_select_sql = "select\n      sequence,\n      table_name,\n      row_id,\n      tenant_id::text as tenant_id,\n      owner_user_id::text as owner_user_id,\n      row_version,\n      to_char(deleted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as deleted_at\n    from fiducia.sync_tombstones"
+
+type sync_tombstones_row = {
+  sync_tombstones_sequence : int64;
+  sync_tombstones_table_name : string;
+  sync_tombstones_row_id : string;
+  sync_tombstones_tenant_id : string option;
+  sync_tombstones_owner_user_id : string option;
+  sync_tombstones_row_version : int64;
+  sync_tombstones_deleted_at : string;
+}
+
+let sync_tombstones_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : sync_tombstones_row =
+  {
+    sync_tombstones_sequence = Int64.of_string (get 0);
+    sync_tombstones_table_name = get 1;
+    sync_tombstones_row_id = get 2;
+    sync_tombstones_tenant_id = (if is_null 3 then None else Some (get 3));
+    sync_tombstones_owner_user_id = (if is_null 4 then None else Some (get 4));
+    sync_tombstones_row_version = Int64.of_string (get 5);
+    sync_tombstones_deleted_at = get 6;
+  }
+
+let validate_sync_tombstones_sequence (value : int64) : (int64, string) result =
+  if Int64.compare value 1L < 0 then Error "sync_tombstones.sequence is below the minimum"
+  else Ok value
+
+let validate_sync_tombstones_row_version (value : int64) : (int64, string) result =
+  if Int64.compare value 1L < 0 then Error "sync_tombstones.row_version is below the minimum"
+  else Ok value
+
+let orgs_table = "fiducia.orgs"
+
+let orgs_columns = ["id"; "slug"; "name"; "created_at"; "updated_at"; "version"; "sync_sequence"]
+
+let orgs_select_sql = "select\n      id::text as id,\n      slug,\n      name,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence\n    from fiducia.orgs"
+
+type orgs_row = {
+  orgs_id : string;
+  orgs_slug : string;
+  orgs_name : string;
+  orgs_created_at : string;
+  orgs_updated_at : string;
+  orgs_version : int64;
+  orgs_sync_sequence : int64;
+}
+
+let orgs_row_of_row ~(get : int -> string) ~is_null:(_ : int -> bool) : orgs_row =
+  {
+    orgs_id = get 0;
+    orgs_slug = get 1;
+    orgs_name = get 2;
+    orgs_created_at = get 3;
+    orgs_updated_at = get 4;
+    orgs_version = Int64.of_string (get 5);
+    orgs_sync_sequence = Int64.of_string (get 6);
+  }
+
+let validate_orgs_slug (value : string) : (string, string) result =
+  if String.length value > 120 then Error "orgs.slug must be at most 120 characters"
+  else Ok value
+
+let validate_orgs_name (value : string) : (string, string) result =
+  if String.length value > 200 then Error "orgs.name must be at most 200 characters"
+  else Ok value
+
+let projects_table = "fiducia.projects"
+
+let projects_columns = ["id"; "org_id"; "slug"; "name"; "created_at"; "updated_at"; "version"; "sync_sequence"]
+
+let projects_select_sql = "select\n      id::text as id,\n      org_id::text as org_id,\n      slug,\n      name,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence\n    from fiducia.projects"
+
+type projects_row = {
+  projects_id : string;
+  projects_org_id : string;
+  projects_slug : string;
+  projects_name : string;
+  projects_created_at : string;
+  projects_updated_at : string;
+  projects_version : int64;
+  projects_sync_sequence : int64;
+}
+
+let projects_row_of_row ~(get : int -> string) ~is_null:(_ : int -> bool) : projects_row =
+  {
+    projects_id = get 0;
+    projects_org_id = get 1;
+    projects_slug = get 2;
+    projects_name = get 3;
+    projects_created_at = get 4;
+    projects_updated_at = get 5;
+    projects_version = Int64.of_string (get 6);
+    projects_sync_sequence = Int64.of_string (get 7);
+  }
+
+let validate_projects_slug (value : string) : (string, string) result =
+  if String.length value > 120 then Error "projects.slug must be at most 120 characters"
+  else Ok value
+
+let validate_projects_name (value : string) : (string, string) result =
+  if String.length value > 200 then Error "projects.name must be at most 200 characters"
+  else Ok value
+
+let users_table = "fiducia.users"
+
+let users_columns = ["id"; "supabase_user_id"; "email"; "created_at"]
+
+let users_select_sql = "select\n      id::text as id,\n      supabase_user_id::text as supabase_user_id,\n      email,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from fiducia.users"
+
+type users_row = {
+  users_id : string;
+  users_supabase_user_id : string;
+  users_email : string;
+  users_created_at : string;
+}
+
+let users_row_of_row ~(get : int -> string) ~is_null:(_ : int -> bool) : users_row =
+  {
+    users_id = get 0;
+    users_supabase_user_id = get 1;
+    users_email = get 2;
+    users_created_at = get 3;
+  }
+
+let validate_users_email (value : string) : (string, string) result =
+  if String.length value > 320 then Error "users.email must be at most 320 characters"
+  else Ok value
+
+let org_members_table = "fiducia.org_members"
+
+let org_members_columns = ["org_id"; "user_id"; "role"; "created_at"]
+
+let org_members_select_sql = "select\n      org_id::text as org_id,\n      user_id::text as user_id,\n      role,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from fiducia.org_members"
+
+type org_members_role = [ `Owner | `Admin | `Member ]
+
+let org_members_role_to_string (value : org_members_role) : string =
+  match value with
+  | `Owner -> "owner"
+  | `Admin -> "admin"
+  | `Member -> "member"
+
+let parse_org_members_role (value : string) : (org_members_role, string) result =
+  match value with
+  | "owner" -> Ok `Owner
+  | "admin" -> Ok `Admin
+  | "member" -> Ok `Member
+  | _ -> Error ("unsupported org_members.role: " ^ value)
+
+type org_members_row = {
+  org_members_org_id : string;
+  org_members_user_id : string;
+  org_members_role : string;
+  org_members_created_at : string;
+}
+
+let org_members_row_of_row ~(get : int -> string) ~is_null:(_ : int -> bool) : org_members_row =
+  {
+    org_members_org_id = get 0;
+    org_members_user_id = get 1;
+    org_members_role = get 2;
+    org_members_created_at = get 3;
+  }
+
+let project_members_table = "fiducia.project_members"
+
+let project_members_columns = ["project_id"; "user_id"; "role"; "created_at"]
+
+let project_members_select_sql = "select\n      project_id::text as project_id,\n      user_id::text as user_id,\n      role,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from fiducia.project_members"
+
+type project_members_role = [ `Admin | `Operator | `Viewer ]
+
+let project_members_role_to_string (value : project_members_role) : string =
+  match value with
+  | `Admin -> "admin"
+  | `Operator -> "operator"
+  | `Viewer -> "viewer"
+
+let parse_project_members_role (value : string) : (project_members_role, string) result =
+  match value with
+  | "admin" -> Ok `Admin
+  | "operator" -> Ok `Operator
+  | "viewer" -> Ok `Viewer
+  | _ -> Error ("unsupported project_members.role: " ^ value)
+
+type project_members_row = {
+  project_members_project_id : string;
+  project_members_user_id : string;
+  project_members_role : string;
+  project_members_created_at : string;
+}
+
+let project_members_row_of_row ~(get : int -> string) ~is_null:(_ : int -> bool) : project_members_row =
+  {
+    project_members_project_id = get 0;
+    project_members_user_id = get 1;
+    project_members_role = get 2;
+    project_members_created_at = get 3;
+  }
+
+let api_keys_table = "fiducia.api_keys"
+
+let api_keys_columns = ["id"; "key_id"; "org_id"; "project_id"; "created_by_user_id"; "name"; "secret_hash"; "scopes"; "env"; "require_idempotency"; "mtls_required"; "revoked"; "created_at"; "updated_at"; "version"; "sync_sequence"; "last_used_at"; "expires_at"]
+
+let api_keys_select_sql = "select\n      id::text as id,\n      key_id,\n      org_id::text as org_id,\n      project_id::text as project_id,\n      created_by_user_id::text as created_by_user_id,\n      name,\n      secret_hash,\n      scopes::text as scopes_json,\n      env,\n      require_idempotency,\n      mtls_required,\n      revoked,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence,\n      to_char(last_used_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_used_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at\n    from fiducia.api_keys"
+
+type api_keys_env = [ `Live | `Test ]
+
+let api_keys_env_to_string (value : api_keys_env) : string =
+  match value with
+  | `Live -> "live"
+  | `Test -> "test"
+
+let parse_api_keys_env (value : string) : (api_keys_env, string) result =
+  match value with
+  | "live" -> Ok `Live
+  | "test" -> Ok `Test
+  | _ -> Error ("unsupported api_keys.env: " ^ value)
+
+type api_keys_row = {
+  api_keys_id : string;
+  api_keys_key_id : string;
+  api_keys_org_id : string;
+  api_keys_project_id : string option;
+  api_keys_created_by_user_id : string option;
+  api_keys_name : string;
+  api_keys_secret_hash : string;
+  api_keys_scopes : string;
+  api_keys_env : string;
+  api_keys_require_idempotency : bool;
+  api_keys_mtls_required : bool;
+  api_keys_revoked : bool;
+  api_keys_created_at : string;
+  api_keys_updated_at : string;
+  api_keys_version : int64;
+  api_keys_sync_sequence : int64;
+  api_keys_last_used_at : string option;
+  api_keys_expires_at : string option;
+}
+
+let api_keys_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : api_keys_row =
+  {
+    api_keys_id = get 0;
+    api_keys_key_id = get 1;
+    api_keys_org_id = get 2;
+    api_keys_project_id = (if is_null 3 then None else Some (get 3));
+    api_keys_created_by_user_id = (if is_null 4 then None else Some (get 4));
+    api_keys_name = get 5;
+    api_keys_secret_hash = get 6;
+    api_keys_scopes = get 7;
+    api_keys_env = get 8;
+    api_keys_require_idempotency = (get 9 = "t");
+    api_keys_mtls_required = (get 10 = "t");
+    api_keys_revoked = (get 11 = "t");
+    api_keys_created_at = get 12;
+    api_keys_updated_at = get 13;
+    api_keys_version = Int64.of_string (get 14);
+    api_keys_sync_sequence = Int64.of_string (get 15);
+    api_keys_last_used_at = (if is_null 16 then None else Some (get 16));
+    api_keys_expires_at = (if is_null 17 then None else Some (get 17));
+  }
+
+let validate_api_keys_key_id (value : string) : (string, string) result =
+  if String.length value > 64 then Error "api_keys.key_id must be at most 64 characters"
+  else Ok value
+
+let validate_api_keys_name (value : string) : (string, string) result =
+  if String.length value > 200 then Error "api_keys.name must be at most 200 characters"
+  else Ok value
+
+let validate_api_keys_secret_hash (value : string) : (string, string) result =
+  if String.length value > 255 then Error "api_keys.secret_hash must be at most 255 characters"
+  else Ok value
+
+let mtls_client_certs_table = "fiducia.mtls_client_certs"
+
+let mtls_client_certs_columns = ["id"; "org_id"; "project_id"; "name"; "subject"; "sha256_fingerprint"; "not_before"; "not_after"; "revoked"; "created_at"; "updated_at"; "version"; "sync_sequence"]
+
+let mtls_client_certs_select_sql = "select\n      id::text as id,\n      org_id::text as org_id,\n      project_id::text as project_id,\n      name,\n      subject,\n      sha256_fingerprint,\n      to_char(not_before at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as not_before,\n      to_char(not_after at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as not_after,\n      revoked,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence\n    from fiducia.mtls_client_certs"
+
+type mtls_client_certs_row = {
+  mtls_client_certs_id : string;
+  mtls_client_certs_org_id : string;
+  mtls_client_certs_project_id : string option;
+  mtls_client_certs_name : string;
+  mtls_client_certs_subject : string;
+  mtls_client_certs_sha256_fingerprint : string;
+  mtls_client_certs_not_before : string option;
+  mtls_client_certs_not_after : string option;
+  mtls_client_certs_revoked : bool;
+  mtls_client_certs_created_at : string;
+  mtls_client_certs_updated_at : string;
+  mtls_client_certs_version : int64;
+  mtls_client_certs_sync_sequence : int64;
+}
+
+let mtls_client_certs_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : mtls_client_certs_row =
+  {
+    mtls_client_certs_id = get 0;
+    mtls_client_certs_org_id = get 1;
+    mtls_client_certs_project_id = (if is_null 2 then None else Some (get 2));
+    mtls_client_certs_name = get 3;
+    mtls_client_certs_subject = get 4;
+    mtls_client_certs_sha256_fingerprint = get 5;
+    mtls_client_certs_not_before = (if is_null 6 then None else Some (get 6));
+    mtls_client_certs_not_after = (if is_null 7 then None else Some (get 7));
+    mtls_client_certs_revoked = (get 8 = "t");
+    mtls_client_certs_created_at = get 9;
+    mtls_client_certs_updated_at = get 10;
+    mtls_client_certs_version = Int64.of_string (get 11);
+    mtls_client_certs_sync_sequence = Int64.of_string (get 12);
+  }
+
+let validate_mtls_client_certs_name (value : string) : (string, string) result =
+  if String.length value > 200 then Error "mtls_client_certs.name must be at most 200 characters"
+  else Ok value
+
+let validate_mtls_client_certs_subject (value : string) : (string, string) result =
+  if String.length value > 500 then Error "mtls_client_certs.subject must be at most 500 characters"
+  else Ok value
+
+let validate_mtls_client_certs_sha256_fingerprint (value : string) : (string, string) result =
+  if String.length value > 95 then Error "mtls_client_certs.sha256_fingerprint must be at most 95 characters"
+  else Ok value
+
+let customer_preferences_table = "fiducia.customer_preferences"
+
+let customer_preferences_columns = ["user_id"; "density"; "timezone"; "region"; "notify_key_rotation"; "notify_lock_contention"; "notify_mfa"; "updated_at"; "version"; "sync_sequence"]
+
+let customer_preferences_select_sql = "select\n      user_id::text as user_id,\n      density,\n      timezone,\n      region,\n      notify_key_rotation,\n      notify_lock_contention,\n      notify_mfa,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence\n    from fiducia.customer_preferences"
+
+type customer_preferences_density = [ `Comfortable | `Compact ]
+
+let customer_preferences_density_to_string (value : customer_preferences_density) : string =
+  match value with
+  | `Comfortable -> "comfortable"
+  | `Compact -> "compact"
+
+let parse_customer_preferences_density (value : string) : (customer_preferences_density, string) result =
+  match value with
+  | "comfortable" -> Ok `Comfortable
+  | "compact" -> Ok `Compact
+  | _ -> Error ("unsupported customer_preferences.density: " ^ value)
+
+type customer_preferences_row = {
+  customer_preferences_user_id : string;
+  customer_preferences_density : string;
+  customer_preferences_timezone : string;
+  customer_preferences_region : string;
+  customer_preferences_notify_key_rotation : bool;
+  customer_preferences_notify_lock_contention : bool;
+  customer_preferences_notify_mfa : bool;
+  customer_preferences_updated_at : string;
+  customer_preferences_version : int64;
+  customer_preferences_sync_sequence : int64;
+}
+
+let customer_preferences_row_of_row ~(get : int -> string) ~is_null:(_ : int -> bool) : customer_preferences_row =
+  {
+    customer_preferences_user_id = get 0;
+    customer_preferences_density = get 1;
+    customer_preferences_timezone = get 2;
+    customer_preferences_region = get 3;
+    customer_preferences_notify_key_rotation = (get 4 = "t");
+    customer_preferences_notify_lock_contention = (get 5 = "t");
+    customer_preferences_notify_mfa = (get 6 = "t");
+    customer_preferences_updated_at = get 7;
+    customer_preferences_version = Int64.of_string (get 8);
+    customer_preferences_sync_sequence = Int64.of_string (get 9);
+  }
+
+let validate_customer_preferences_timezone (value : string) : (string, string) result =
+  if String.length value > 64 then Error "customer_preferences.timezone must be at most 64 characters"
+  else Ok value
+
+let validate_customer_preferences_region (value : string) : (string, string) result =
+  if String.length value > 16 then Error "customer_preferences.region must be at most 16 characters"
+  else Ok value
+
+let customer_sessions_table = "fiducia.customer_sessions"
+
+let customer_sessions_columns = ["id"; "user_id"; "device"; "location"; "last_seen"; "status"; "updated_at"; "version"; "sync_sequence"]
+
+let customer_sessions_select_sql = "select\n      id::text as id,\n      user_id::text as user_id,\n      device,\n      location,\n      to_char(last_seen at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen,\n      status,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence\n    from fiducia.customer_sessions"
+
+type customer_sessions_status = [ `Active | `Verified | `Revoked ]
+
+let customer_sessions_status_to_string (value : customer_sessions_status) : string =
+  match value with
+  | `Active -> "active"
+  | `Verified -> "verified"
+  | `Revoked -> "revoked"
+
+let parse_customer_sessions_status (value : string) : (customer_sessions_status, string) result =
+  match value with
+  | "active" -> Ok `Active
+  | "verified" -> Ok `Verified
+  | "revoked" -> Ok `Revoked
+  | _ -> Error ("unsupported customer_sessions.status: " ^ value)
+
+type customer_sessions_row = {
+  customer_sessions_id : string;
+  customer_sessions_user_id : string;
+  customer_sessions_device : string;
+  customer_sessions_location : string option;
+  customer_sessions_last_seen : string;
+  customer_sessions_status : string;
+  customer_sessions_updated_at : string;
+  customer_sessions_version : int64;
+  customer_sessions_sync_sequence : int64;
+}
+
+let customer_sessions_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : customer_sessions_row =
+  {
+    customer_sessions_id = get 0;
+    customer_sessions_user_id = get 1;
+    customer_sessions_device = get 2;
+    customer_sessions_location = (if is_null 3 then None else Some (get 3));
+    customer_sessions_last_seen = get 4;
+    customer_sessions_status = get 5;
+    customer_sessions_updated_at = get 6;
+    customer_sessions_version = Int64.of_string (get 7);
+    customer_sessions_sync_sequence = Int64.of_string (get 8);
+  }
+
+let validate_customer_sessions_device (value : string) : (string, string) result =
+  if String.length value > 200 then Error "customer_sessions.device must be at most 200 characters"
+  else Ok value
+
+let validate_customer_sessions_location (value : string) : (string, string) result =
+  if String.length value > 200 then Error "customer_sessions.location must be at most 200 characters"
+  else Ok value
+
+let audit_log_table = "fiducia.audit_log"
+
+let audit_log_columns = ["id"; "org_id"; "project_id"; "actor_user_id"; "actor_key_id"; "actor"; "action"; "target"; "request_id"; "source_ip"; "user_agent"; "meta"; "created_at"; "retention_expires_at"]
+
+let audit_log_select_sql = "select\n      id::text as id,\n      org_id::text as org_id,\n      project_id::text as project_id,\n      actor_user_id::text as actor_user_id,\n      actor_key_id::text as actor_key_id,\n      actor,\n      action,\n      target,\n      request_id,\n      source_ip,\n      user_agent,\n      meta::text as meta_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(retention_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as retention_expires_at\n    from fiducia.audit_log"
+
+type audit_log_row = {
+  audit_log_id : string;
+  audit_log_org_id : string option;
+  audit_log_project_id : string option;
+  audit_log_actor_user_id : string option;
+  audit_log_actor_key_id : string option;
+  audit_log_actor : string option;
+  audit_log_action : string;
+  audit_log_target : string option;
+  audit_log_request_id : string option;
+  audit_log_source_ip : string option;
+  audit_log_user_agent : string option;
+  audit_log_meta : string;
+  audit_log_created_at : string;
+  audit_log_retention_expires_at : string option;
+}
+
+let audit_log_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : audit_log_row =
+  {
+    audit_log_id = get 0;
+    audit_log_org_id = (if is_null 1 then None else Some (get 1));
+    audit_log_project_id = (if is_null 2 then None else Some (get 2));
+    audit_log_actor_user_id = (if is_null 3 then None else Some (get 3));
+    audit_log_actor_key_id = (if is_null 4 then None else Some (get 4));
+    audit_log_actor = (if is_null 5 then None else Some (get 5));
+    audit_log_action = get 6;
+    audit_log_target = (if is_null 7 then None else Some (get 7));
+    audit_log_request_id = (if is_null 8 then None else Some (get 8));
+    audit_log_source_ip = (if is_null 9 then None else Some (get 9));
+    audit_log_user_agent = (if is_null 10 then None else Some (get 10));
+    audit_log_meta = get 11;
+    audit_log_created_at = get 12;
+    audit_log_retention_expires_at = (if is_null 13 then None else Some (get 13));
+  }
+
+let validate_audit_log_actor (value : string) : (string, string) result =
+  if String.length value > 320 then Error "audit_log.actor must be at most 320 characters"
+  else Ok value
+
+let validate_audit_log_action (value : string) : (string, string) result =
+  if String.length value > 120 then Error "audit_log.action must be at most 120 characters"
+  else Ok value
+
+let validate_audit_log_target (value : string) : (string, string) result =
+  if String.length value > 320 then Error "audit_log.target must be at most 320 characters"
+  else Ok value
+
+let validate_audit_log_request_id (value : string) : (string, string) result =
+  if String.length value > 120 then Error "audit_log.request_id must be at most 120 characters"
+  else Ok value
+
+let validate_audit_log_source_ip (value : string) : (string, string) result =
+  if String.length value > 64 then Error "audit_log.source_ip must be at most 64 characters"
+  else Ok value
+
+let validate_audit_log_user_agent (value : string) : (string, string) result =
+  if String.length value > 500 then Error "audit_log.user_agent must be at most 500 characters"
+  else Ok value
+
+let customer_notifications_table = "fiducia.customer_notifications"
+
+let customer_notifications_columns = ["id"; "user_id"; "org_id"; "kind"; "severity"; "title"; "body"; "link"; "read_at"; "created_at"; "updated_at"; "version"; "sync_sequence"]
+
+let customer_notifications_select_sql = "select\n      id::text as id,\n      user_id::text as user_id,\n      org_id::text as org_id,\n      kind,\n      severity,\n      title,\n      body,\n      link,\n      to_char(read_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as read_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence\n    from fiducia.customer_notifications"
+
+type customer_notifications_severity = [ `Info | `Success | `Warning | `Critical ]
+
+let customer_notifications_severity_to_string (value : customer_notifications_severity) : string =
+  match value with
+  | `Info -> "info"
+  | `Success -> "success"
+  | `Warning -> "warning"
+  | `Critical -> "critical"
+
+let parse_customer_notifications_severity (value : string) : (customer_notifications_severity, string) result =
+  match value with
+  | "info" -> Ok `Info
+  | "success" -> Ok `Success
+  | "warning" -> Ok `Warning
+  | "critical" -> Ok `Critical
+  | _ -> Error ("unsupported customer_notifications.severity: " ^ value)
+
+type customer_notifications_row = {
+  customer_notifications_id : string;
+  customer_notifications_user_id : string;
+  customer_notifications_org_id : string option;
+  customer_notifications_kind : string;
+  customer_notifications_severity : string;
+  customer_notifications_title : string;
+  customer_notifications_body : string;
+  customer_notifications_link : string option;
+  customer_notifications_read_at : string option;
+  customer_notifications_created_at : string;
+  customer_notifications_updated_at : string;
+  customer_notifications_version : int64;
+  customer_notifications_sync_sequence : int64;
+}
+
+let customer_notifications_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : customer_notifications_row =
+  {
+    customer_notifications_id = get 0;
+    customer_notifications_user_id = get 1;
+    customer_notifications_org_id = (if is_null 2 then None else Some (get 2));
+    customer_notifications_kind = get 3;
+    customer_notifications_severity = get 4;
+    customer_notifications_title = get 5;
+    customer_notifications_body = get 6;
+    customer_notifications_link = (if is_null 7 then None else Some (get 7));
+    customer_notifications_read_at = (if is_null 8 then None else Some (get 8));
+    customer_notifications_created_at = get 9;
+    customer_notifications_updated_at = get 10;
+    customer_notifications_version = Int64.of_string (get 11);
+    customer_notifications_sync_sequence = Int64.of_string (get 12);
+  }
+
+let validate_customer_notifications_kind (value : string) : (string, string) result =
+  if String.length value > 40 then Error "customer_notifications.kind must be at most 40 characters"
+  else Ok value
+
+let validate_customer_notifications_title (value : string) : (string, string) result =
+  if String.length value > 200 then Error "customer_notifications.title must be at most 200 characters"
+  else Ok value
+
+let validate_customer_notifications_body (value : string) : (string, string) result =
+  if String.length value > 2000 then Error "customer_notifications.body must be at most 2000 characters"
+  else Ok value
+
+let validate_customer_notifications_link (value : string) : (string, string) result =
+  if String.length value > 500 then Error "customer_notifications.link must be at most 500 characters"
+  else Ok value
+
+let sync_idempotency_keys_table = "fiducia.sync_idempotency_keys"
+
+let sync_idempotency_keys_columns = ["key"; "request_fingerprint"; "committed_version"; "created_at"]
+
+let sync_idempotency_keys_select_sql = "select\n      key,\n      request_fingerprint,\n      committed_version,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from fiducia.sync_idempotency_keys"
+
+type sync_idempotency_keys_row = {
+  sync_idempotency_keys_key : string;
+  sync_idempotency_keys_request_fingerprint : string;
+  sync_idempotency_keys_committed_version : int64 option;
+  sync_idempotency_keys_created_at : string;
+}
+
+let sync_idempotency_keys_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : sync_idempotency_keys_row =
+  {
+    sync_idempotency_keys_key = get 0;
+    sync_idempotency_keys_request_fingerprint = get 1;
+    sync_idempotency_keys_committed_version = (if is_null 2 then None else Some (Int64.of_string (get 2)));
+    sync_idempotency_keys_created_at = get 3;
+  }
+
+let validate_sync_idempotency_keys_request_fingerprint (value : string) : (string, string) result =
+  if String.length value > 64 then Error "sync_idempotency_keys.request_fingerprint must be at most 64 characters"
+  else Ok value
+
+let transcriptions_table = "t2v.transcriptions"
+
+let transcriptions_columns = ["id"; "source"; "provider"; "model"; "text"; "language"; "sample_rate"; "duration_ms"; "created_at"]
+
+let transcriptions_select_sql = "select\n      id::text as id,\n      source,\n      provider,\n      model,\n      text,\n      language,\n      sample_rate,\n      duration_ms,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from t2v.transcriptions"
+
+type transcriptions_row = {
+  transcriptions_id : string;
+  transcriptions_source : string;
+  transcriptions_provider : string;
+  transcriptions_model : string;
+  transcriptions_text : string;
+  transcriptions_language : string option;
+  transcriptions_sample_rate : int option;
+  transcriptions_duration_ms : int64 option;
+  transcriptions_created_at : string;
+}
+
+let transcriptions_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : transcriptions_row =
+  {
+    transcriptions_id = get 0;
+    transcriptions_source = get 1;
+    transcriptions_provider = get 2;
+    transcriptions_model = get 3;
+    transcriptions_text = get 4;
+    transcriptions_language = (if is_null 5 then None else Some (get 5));
+    transcriptions_sample_rate = (if is_null 6 then None else Some (int_of_string (get 6)));
+    transcriptions_duration_ms = (if is_null 7 then None else Some (Int64.of_string (get 7)));
+    transcriptions_created_at = get 8;
+  }
+
+let validate_transcriptions_sample_rate (value : int) : (int, string) result =
+  if value < 4000 then Error "transcriptions.sample_rate is below the minimum"
+  else if value > 384000 then Error "transcriptions.sample_rate is above the maximum"
+  else Ok value
+
+let validate_transcriptions_duration_ms (value : int64) : (int64, string) result =
+  if Int64.compare value 0L < 0 then Error "transcriptions.duration_ms is below the minimum"
+  else Ok value
+
+let syntheses_table = "t2v.syntheses"
+
+let syntheses_columns = ["id"; "text"; "voice"; "provider"; "model"; "format"; "audio_bytes"; "created_at"]
+
+let syntheses_select_sql = "select\n      id::text as id,\n      text,\n      voice,\n      provider,\n      model,\n      format,\n      audio_bytes,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from t2v.syntheses"
+
+type syntheses_row = {
+  syntheses_id : string;
+  syntheses_text : string;
+  syntheses_voice : string;
+  syntheses_provider : string;
+  syntheses_model : string;
+  syntheses_format : string;
+  syntheses_audio_bytes : int64;
+  syntheses_created_at : string;
+}
+
+let syntheses_row_of_row ~(get : int -> string) ~is_null:(_ : int -> bool) : syntheses_row =
+  {
+    syntheses_id = get 0;
+    syntheses_text = get 1;
+    syntheses_voice = get 2;
+    syntheses_provider = get 3;
+    syntheses_model = get 4;
+    syntheses_format = get 5;
+    syntheses_audio_bytes = Int64.of_string (get 6);
+    syntheses_created_at = get 7;
+  }
+
+let validate_syntheses_audio_bytes (value : int64) : (int64, string) result =
+  if Int64.compare value 0L < 0 then Error "syntheses.audio_bytes is below the minimum"
+  else Ok value
+
+let translations_table = "t2v.translations"
+
+let translations_columns = ["id"; "source_text"; "translated_text"; "source_lang"; "target_lang"; "provider"; "model"; "latency_ms"; "created_at"]
+
+let translations_select_sql = "select\n      id::text as id,\n      source_text,\n      translated_text,\n      source_lang,\n      target_lang,\n      provider,\n      model,\n      latency_ms,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from t2v.translations"
+
+type translations_row = {
+  translations_id : string;
+  translations_source_text : string;
+  translations_translated_text : string;
+  translations_source_lang : string option;
+  translations_target_lang : string;
+  translations_provider : string;
+  translations_model : string;
+  translations_latency_ms : int64;
+  translations_created_at : string;
+}
+
+let translations_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : translations_row =
+  {
+    translations_id = get 0;
+    translations_source_text = get 1;
+    translations_translated_text = get 2;
+    translations_source_lang = (if is_null 3 then None else Some (get 3));
+    translations_target_lang = get 4;
+    translations_provider = get 5;
+    translations_model = get 6;
+    translations_latency_ms = Int64.of_string (get 7);
+    translations_created_at = get 8;
+  }
+
+let validate_translations_latency_ms (value : int64) : (int64, string) result =
+  if Int64.compare value 0L < 0 then Error "translations.latency_ms is below the minimum"
+  else Ok value
+
+let vapi_calls_table = "t2v.vapi_calls"
+
+let vapi_calls_columns = ["id"; "vapi_call_id"; "status"; "ended_reason"; "transcript"; "summary"; "created_at"; "updated_at"]
+
+let vapi_calls_select_sql = "select\n      id::text as id,\n      vapi_call_id,\n      status,\n      ended_reason,\n      transcript,\n      summary,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from t2v.vapi_calls"
+
+type vapi_calls_row = {
+  vapi_calls_id : string;
+  vapi_calls_vapi_call_id : string;
+  vapi_calls_status : string;
+  vapi_calls_ended_reason : string option;
+  vapi_calls_transcript : string option;
+  vapi_calls_summary : string option;
+  vapi_calls_created_at : string;
+  vapi_calls_updated_at : string;
+}
+
+let vapi_calls_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : vapi_calls_row =
+  {
+    vapi_calls_id = get 0;
+    vapi_calls_vapi_call_id = get 1;
+    vapi_calls_status = get 2;
+    vapi_calls_ended_reason = (if is_null 3 then None else Some (get 3));
+    vapi_calls_transcript = (if is_null 4 then None else Some (get 4));
+    vapi_calls_summary = (if is_null 5 then None else Some (get 5));
+    vapi_calls_created_at = get 6;
+    vapi_calls_updated_at = get 7;
+  }
+
+let vapi_events_table = "t2v.vapi_events"
+
+let vapi_events_columns = ["id"; "vapi_call_id"; "event_type"; "payload"; "created_at"]
+
+let vapi_events_select_sql = "select\n      id::text as id,\n      vapi_call_id,\n      event_type,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from t2v.vapi_events"
+
+type vapi_events_row = {
+  vapi_events_id : string;
+  vapi_events_vapi_call_id : string option;
+  vapi_events_event_type : string;
+  vapi_events_payload : string;
+  vapi_events_created_at : string;
+}
+
+let vapi_events_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : vapi_events_row =
+  {
+    vapi_events_id = get 0;
+    vapi_events_vapi_call_id = (if is_null 1 then None else Some (get 1));
+    vapi_events_event_type = get 2;
+    vapi_events_payload = get 3;
+    vapi_events_created_at = get 4;
+  }
+
+let fab_plans_table = "daedalus.fab_plans"
+
+let fab_plans_columns = ["id"; "owner_email"; "title"; "goal"; "process_family"; "status"; "document"; "created_at"; "updated_at"]
+
+let fab_plans_select_sql = "select\n      id::text as id,\n      owner_email,\n      title,\n      goal,\n      process_family,\n      status,\n      document::text as document_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from daedalus.fab_plans"
+
+type fab_plans_process_family = [ `Additive | `Subtractive | `Hybrid ]
+
+let fab_plans_process_family_to_string (value : fab_plans_process_family) : string =
+  match value with
+  | `Additive -> "additive"
+  | `Subtractive -> "subtractive"
+  | `Hybrid -> "hybrid"
+
+let parse_fab_plans_process_family (value : string) : (fab_plans_process_family, string) result =
+  match value with
+  | "additive" -> Ok `Additive
+  | "subtractive" -> Ok `Subtractive
+  | "hybrid" -> Ok `Hybrid
+  | _ -> Error ("unsupported fab_plans.process_family: " ^ value)
+
+type fab_plans_status = [ `Draft | `Planning | `Planned | `Released | `Archived ]
+
+let fab_plans_status_to_string (value : fab_plans_status) : string =
+  match value with
+  | `Draft -> "draft"
+  | `Planning -> "planning"
+  | `Planned -> "planned"
+  | `Released -> "released"
+  | `Archived -> "archived"
+
+let parse_fab_plans_status (value : string) : (fab_plans_status, string) result =
+  match value with
+  | "draft" -> Ok `Draft
+  | "planning" -> Ok `Planning
+  | "planned" -> Ok `Planned
+  | "released" -> Ok `Released
+  | "archived" -> Ok `Archived
+  | _ -> Error ("unsupported fab_plans.status: " ^ value)
+
+type fab_plans_row = {
+  fab_plans_id : string;
+  fab_plans_owner_email : string;
+  fab_plans_title : string;
+  fab_plans_goal : string;
+  fab_plans_process_family : string;
+  fab_plans_status : string;
+  fab_plans_document : string option;
+  fab_plans_created_at : string;
+  fab_plans_updated_at : string;
+}
+
+let fab_plans_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : fab_plans_row =
+  {
+    fab_plans_id = get 0;
+    fab_plans_owner_email = get 1;
+    fab_plans_title = get 2;
+    fab_plans_goal = get 3;
+    fab_plans_process_family = get 4;
+    fab_plans_status = get 5;
+    fab_plans_document = (if is_null 6 then None else Some (get 6));
+    fab_plans_created_at = get 7;
+    fab_plans_updated_at = get 8;
+  }
+
+let fab_designs_table = "daedalus.fab_designs"
+
+let fab_designs_columns = ["id"; "plan_id"; "filename"; "format"; "storage_uri"; "size_bytes"; "content_hash"; "geometry"; "created_at"]
+
+let fab_designs_select_sql = "select\n      id::text as id,\n      plan_id::text as plan_id,\n      filename,\n      format,\n      storage_uri,\n      size_bytes,\n      content_hash,\n      geometry::text as geometry_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_designs"
+
+type fab_designs_format = [ `Step | `Stl | `3mf | `Dxf | `Iges | `Obj ]
+
+let fab_designs_format_to_string (value : fab_designs_format) : string =
+  match value with
+  | `Step -> "step"
+  | `Stl -> "stl"
+  | `3mf -> "3mf"
+  | `Dxf -> "dxf"
+  | `Iges -> "iges"
+  | `Obj -> "obj"
+
+let parse_fab_designs_format (value : string) : (fab_designs_format, string) result =
+  match value with
+  | "step" -> Ok `Step
+  | "stl" -> Ok `Stl
+  | "3mf" -> Ok `3mf
+  | "dxf" -> Ok `Dxf
+  | "iges" -> Ok `Iges
+  | "obj" -> Ok `Obj
+  | _ -> Error ("unsupported fab_designs.format: " ^ value)
+
+type fab_designs_row = {
+  fab_designs_id : string;
+  fab_designs_plan_id : string;
+  fab_designs_filename : string;
+  fab_designs_format : string;
+  fab_designs_storage_uri : string;
+  fab_designs_size_bytes : int64;
+  fab_designs_content_hash : string option;
+  fab_designs_geometry : string;
+  fab_designs_created_at : string;
+}
+
+let fab_designs_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : fab_designs_row =
+  {
+    fab_designs_id = get 0;
+    fab_designs_plan_id = get 1;
+    fab_designs_filename = get 2;
+    fab_designs_format = get 3;
+    fab_designs_storage_uri = get 4;
+    fab_designs_size_bytes = Int64.of_string (get 5);
+    fab_designs_content_hash = (if is_null 6 then None else Some (get 6));
+    fab_designs_geometry = get 7;
+    fab_designs_created_at = get 8;
+  }
+
+let validate_fab_designs_size_bytes (value : int64) : (int64, string) result =
+  if Int64.compare value 0L < 0 then Error "fab_designs.size_bytes is below the minimum"
+  else Ok value
+
+let fab_instructions_table = "daedalus.fab_instructions"
+
+let fab_instructions_columns = ["id"; "plan_id"; "revision"; "machine_profile"; "dialect"; "storage_uri"; "content_hash"; "validated"; "validation"; "released_by_email"; "released_at"; "created_at"]
+
+let fab_instructions_select_sql = "select\n      id::text as id,\n      plan_id::text as plan_id,\n      revision,\n      machine_profile,\n      dialect,\n      storage_uri,\n      content_hash,\n      validated,\n      validation::text as validation_json,\n      released_by_email,\n      to_char(released_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as released_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_instructions"
+
+type fab_instructions_dialect = [ `Gcode | `Nc | `Apt | `Proprietary ]
+
+let fab_instructions_dialect_to_string (value : fab_instructions_dialect) : string =
+  match value with
+  | `Gcode -> "gcode"
+  | `Nc -> "nc"
+  | `Apt -> "apt"
+  | `Proprietary -> "proprietary"
+
+let parse_fab_instructions_dialect (value : string) : (fab_instructions_dialect, string) result =
+  match value with
+  | "gcode" -> Ok `Gcode
+  | "nc" -> Ok `Nc
+  | "apt" -> Ok `Apt
+  | "proprietary" -> Ok `Proprietary
+  | _ -> Error ("unsupported fab_instructions.dialect: " ^ value)
+
+type fab_instructions_row = {
+  fab_instructions_id : string;
+  fab_instructions_plan_id : string;
+  fab_instructions_revision : int;
+  fab_instructions_machine_profile : string;
+  fab_instructions_dialect : string;
+  fab_instructions_storage_uri : string;
+  fab_instructions_content_hash : string option;
+  fab_instructions_validated : bool;
+  fab_instructions_validation : string;
+  fab_instructions_released_by_email : string option;
+  fab_instructions_released_at : string option;
+  fab_instructions_created_at : string;
+}
+
+let fab_instructions_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : fab_instructions_row =
+  {
+    fab_instructions_id = get 0;
+    fab_instructions_plan_id = get 1;
+    fab_instructions_revision = int_of_string (get 2);
+    fab_instructions_machine_profile = get 3;
+    fab_instructions_dialect = get 4;
+    fab_instructions_storage_uri = get 5;
+    fab_instructions_content_hash = (if is_null 6 then None else Some (get 6));
+    fab_instructions_validated = (get 7 = "t");
+    fab_instructions_validation = get 8;
+    fab_instructions_released_by_email = (if is_null 9 then None else Some (get 9));
+    fab_instructions_released_at = (if is_null 10 then None else Some (get 10));
+    fab_instructions_created_at = get 11;
+  }
+
+let validate_fab_instructions_revision (value : int) : (int, string) result =
+  if value < 1 then Error "fab_instructions.revision is below the minimum"
+  else Ok value
+
+let fab_runs_table = "daedalus.fab_runs"
+
+let fab_runs_columns = ["id"; "instructions_id"; "status"; "machine_id"; "operator_email"; "progress"; "as_built"; "error"; "started_at"; "finished_at"; "created_at"]
+
+let fab_runs_select_sql = "select\n      id::text as id,\n      instructions_id::text as instructions_id,\n      status,\n      machine_id,\n      operator_email,\n      progress,\n      as_built::text as as_built_json,\n      error,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_runs"
+
+type fab_runs_status = [ `Queued | `Running | `Succeeded | `Failed | `Aborted ]
+
+let fab_runs_status_to_string (value : fab_runs_status) : string =
+  match value with
+  | `Queued -> "queued"
+  | `Running -> "running"
+  | `Succeeded -> "succeeded"
+  | `Failed -> "failed"
+  | `Aborted -> "aborted"
+
+let parse_fab_runs_status (value : string) : (fab_runs_status, string) result =
+  match value with
+  | "queued" -> Ok `Queued
+  | "running" -> Ok `Running
+  | "succeeded" -> Ok `Succeeded
+  | "failed" -> Ok `Failed
+  | "aborted" -> Ok `Aborted
+  | _ -> Error ("unsupported fab_runs.status: " ^ value)
+
+type fab_runs_row = {
+  fab_runs_id : string;
+  fab_runs_instructions_id : string;
+  fab_runs_status : string;
+  fab_runs_machine_id : string;
+  fab_runs_operator_email : string option;
+  fab_runs_progress : int;
+  fab_runs_as_built : string;
+  fab_runs_error : string option;
+  fab_runs_started_at : string option;
+  fab_runs_finished_at : string option;
+  fab_runs_created_at : string;
+}
+
+let fab_runs_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : fab_runs_row =
+  {
+    fab_runs_id = get 0;
+    fab_runs_instructions_id = get 1;
+    fab_runs_status = get 2;
+    fab_runs_machine_id = get 3;
+    fab_runs_operator_email = (if is_null 4 then None else Some (get 4));
+    fab_runs_progress = int_of_string (get 5);
+    fab_runs_as_built = get 6;
+    fab_runs_error = (if is_null 7 then None else Some (get 7));
+    fab_runs_started_at = (if is_null 8 then None else Some (get 8));
+    fab_runs_finished_at = (if is_null 9 then None else Some (get 9));
+    fab_runs_created_at = get 10;
+  }
+
+let validate_fab_runs_progress (value : int) : (int, string) result =
+  if value < 0 then Error "fab_runs.progress is below the minimum"
+  else if value > 100 then Error "fab_runs.progress is above the maximum"
+  else Ok value

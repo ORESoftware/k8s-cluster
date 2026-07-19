@@ -4720,8 +4720,10 @@ class DesSoccerLearningSetPlayRestartMixObjectBox {
   @Id()
   int obxId = 0;
 
+  @Unique()
   String runId;
 
+  @Unique()
   int ordinal;
 
   String restart;
@@ -4753,8 +4755,10 @@ class DesSoccerLearningSetPlayEpisodeMetricsObjectBox {
   @Id()
   int obxId = 0;
 
+  @Unique()
   String runId;
 
+  @Unique()
   int episodeIndex;
 
   int seed;
@@ -11533,6 +11537,1437 @@ class SharedContextObjectBox {
       updatedBy: json["updatedBy"] as String,
       createdAt: json["createdAt"] as String,
       updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class SyncClockObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  bool singleton;
+
+  int lastSequence;
+
+
+  SyncClockObjectBox({
+    required this.singleton,
+    required this.lastSequence,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "singleton": singleton,
+    "lastSequence": lastSequence,
+  };
+
+  static SyncClockObjectBox fromJson(Map<String, Object?> json) {
+    return SyncClockObjectBox(
+      singleton: json["singleton"] as bool,
+      lastSequence: (json["lastSequence"] as num).toInt(),
+    );
+  }
+}
+
+@Entity()
+class SyncTombstonesObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  int sequence;
+
+  String tableName;
+
+  String rowId;
+
+  String? tenantId;
+
+  String? ownerUserId;
+
+  int rowVersion;
+
+  String deletedAt;
+
+
+  SyncTombstonesObjectBox({
+    required this.sequence,
+    required this.tableName,
+    required this.rowId,
+    this.tenantId,
+    this.ownerUserId,
+    required this.rowVersion,
+    required this.deletedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "sequence": sequence,
+    "tableName": tableName,
+    "rowId": rowId,
+    "tenantId": tenantId,
+    "ownerUserId": ownerUserId,
+    "rowVersion": rowVersion,
+    "deletedAt": deletedAt,
+  };
+
+  static SyncTombstonesObjectBox fromJson(Map<String, Object?> json) {
+    return SyncTombstonesObjectBox(
+      sequence: (json["sequence"] as num).toInt(),
+      tableName: json["tableName"] as String,
+      rowId: json["rowId"] as String,
+      tenantId: json["tenantId"] as String?,
+      ownerUserId: json["ownerUserId"] as String?,
+      rowVersion: (json["rowVersion"] as num).toInt(),
+      deletedAt: json["deletedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class OrgsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String slug;
+
+  String name;
+
+  String createdAt;
+
+  String updatedAt;
+
+  int version;
+
+  int syncSequence;
+
+
+  OrgsObjectBox({
+    required this.id,
+    required this.slug,
+    required this.name,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.version,
+    required this.syncSequence,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "slug": slug,
+    "name": name,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "version": version,
+    "syncSequence": syncSequence,
+  };
+
+  static OrgsObjectBox fromJson(Map<String, Object?> json) {
+    return OrgsObjectBox(
+      id: json["id"] as String,
+      slug: json["slug"] as String,
+      name: json["name"] as String,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+      version: (json["version"] as num).toInt(),
+      syncSequence: (json["syncSequence"] as num).toInt(),
+    );
+  }
+}
+
+@Entity()
+class ProjectsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String orgId;
+
+  String slug;
+
+  String name;
+
+  String createdAt;
+
+  String updatedAt;
+
+  int version;
+
+  int syncSequence;
+
+
+  ProjectsObjectBox({
+    required this.id,
+    required this.orgId,
+    required this.slug,
+    required this.name,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.version,
+    required this.syncSequence,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "orgId": orgId,
+    "slug": slug,
+    "name": name,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "version": version,
+    "syncSequence": syncSequence,
+  };
+
+  static ProjectsObjectBox fromJson(Map<String, Object?> json) {
+    return ProjectsObjectBox(
+      id: json["id"] as String,
+      orgId: json["orgId"] as String,
+      slug: json["slug"] as String,
+      name: json["name"] as String,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+      version: (json["version"] as num).toInt(),
+      syncSequence: (json["syncSequence"] as num).toInt(),
+    );
+  }
+}
+
+@Entity()
+class UsersObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String supabaseUserId;
+
+  String email;
+
+  String createdAt;
+
+
+  UsersObjectBox({
+    required this.id,
+    required this.supabaseUserId,
+    required this.email,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "supabaseUserId": supabaseUserId,
+    "email": email,
+    "createdAt": createdAt,
+  };
+
+  static UsersObjectBox fromJson(Map<String, Object?> json) {
+    return UsersObjectBox(
+      id: json["id"] as String,
+      supabaseUserId: json["supabaseUserId"] as String,
+      email: json["email"] as String,
+      createdAt: json["createdAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class OrgMembersObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String orgId;
+
+  @Unique()
+  String userId;
+
+  String role;
+
+  String createdAt;
+
+
+  OrgMembersObjectBox({
+    required this.orgId,
+    required this.userId,
+    required this.role,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "orgId": orgId,
+    "userId": userId,
+    "role": role,
+    "createdAt": createdAt,
+  };
+
+  static OrgMembersObjectBox fromJson(Map<String, Object?> json) {
+    return OrgMembersObjectBox(
+      orgId: json["orgId"] as String,
+      userId: json["userId"] as String,
+      role: json["role"] as String,
+      createdAt: json["createdAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class ProjectMembersObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String projectId;
+
+  @Unique()
+  String userId;
+
+  String role;
+
+  String createdAt;
+
+
+  ProjectMembersObjectBox({
+    required this.projectId,
+    required this.userId,
+    required this.role,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "projectId": projectId,
+    "userId": userId,
+    "role": role,
+    "createdAt": createdAt,
+  };
+
+  static ProjectMembersObjectBox fromJson(Map<String, Object?> json) {
+    return ProjectMembersObjectBox(
+      projectId: json["projectId"] as String,
+      userId: json["userId"] as String,
+      role: json["role"] as String,
+      createdAt: json["createdAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class ApiKeysObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String keyId;
+
+  String orgId;
+
+  String? projectId;
+
+  String? createdByUserId;
+
+  String name;
+
+  String secretHash;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String scopes;
+
+  String env;
+
+  bool requireIdempotency;
+
+  bool mtlsRequired;
+
+  bool revoked;
+
+  String createdAt;
+
+  String updatedAt;
+
+  int version;
+
+  int syncSequence;
+
+  String? lastUsedAt;
+
+  String? expiresAt;
+
+
+  ApiKeysObjectBox({
+    required this.id,
+    required this.keyId,
+    required this.orgId,
+    this.projectId,
+    this.createdByUserId,
+    required this.name,
+    required this.secretHash,
+    required this.scopes,
+    required this.env,
+    required this.requireIdempotency,
+    required this.mtlsRequired,
+    required this.revoked,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.version,
+    required this.syncSequence,
+    this.lastUsedAt,
+    this.expiresAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "keyId": keyId,
+    "orgId": orgId,
+    "projectId": projectId,
+    "createdByUserId": createdByUserId,
+    "name": name,
+    "secretHash": secretHash,
+    "scopes": jsonDecode(scopes),
+    "env": env,
+    "requireIdempotency": requireIdempotency,
+    "mtlsRequired": mtlsRequired,
+    "revoked": revoked,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "version": version,
+    "syncSequence": syncSequence,
+    "lastUsedAt": lastUsedAt,
+    "expiresAt": expiresAt,
+  };
+
+  static ApiKeysObjectBox fromJson(Map<String, Object?> json) {
+    return ApiKeysObjectBox(
+      id: json["id"] as String,
+      keyId: json["keyId"] as String,
+      orgId: json["orgId"] as String,
+      projectId: json["projectId"] as String?,
+      createdByUserId: json["createdByUserId"] as String?,
+      name: json["name"] as String,
+      secretHash: json["secretHash"] as String,
+      scopes: json["scopes"] is String ? json["scopes"] as String : jsonEncode(json["scopes"]),
+      env: json["env"] as String,
+      requireIdempotency: json["requireIdempotency"] as bool,
+      mtlsRequired: json["mtlsRequired"] as bool,
+      revoked: json["revoked"] as bool,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+      version: (json["version"] as num).toInt(),
+      syncSequence: (json["syncSequence"] as num).toInt(),
+      lastUsedAt: json["lastUsedAt"] as String?,
+      expiresAt: json["expiresAt"] as String?,
+    );
+  }
+}
+
+@Entity()
+class MtlsClientCertsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String orgId;
+
+  String? projectId;
+
+  String name;
+
+  String subject;
+
+  String sha256Fingerprint;
+
+  String? notBefore;
+
+  String? notAfter;
+
+  bool revoked;
+
+  String createdAt;
+
+  String updatedAt;
+
+  int version;
+
+  int syncSequence;
+
+
+  MtlsClientCertsObjectBox({
+    required this.id,
+    required this.orgId,
+    this.projectId,
+    required this.name,
+    required this.subject,
+    required this.sha256Fingerprint,
+    this.notBefore,
+    this.notAfter,
+    required this.revoked,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.version,
+    required this.syncSequence,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "orgId": orgId,
+    "projectId": projectId,
+    "name": name,
+    "subject": subject,
+    "sha256Fingerprint": sha256Fingerprint,
+    "notBefore": notBefore,
+    "notAfter": notAfter,
+    "revoked": revoked,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "version": version,
+    "syncSequence": syncSequence,
+  };
+
+  static MtlsClientCertsObjectBox fromJson(Map<String, Object?> json) {
+    return MtlsClientCertsObjectBox(
+      id: json["id"] as String,
+      orgId: json["orgId"] as String,
+      projectId: json["projectId"] as String?,
+      name: json["name"] as String,
+      subject: json["subject"] as String,
+      sha256Fingerprint: json["sha256Fingerprint"] as String,
+      notBefore: json["notBefore"] as String?,
+      notAfter: json["notAfter"] as String?,
+      revoked: json["revoked"] as bool,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+      version: (json["version"] as num).toInt(),
+      syncSequence: (json["syncSequence"] as num).toInt(),
+    );
+  }
+}
+
+@Entity()
+class CustomerPreferencesObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String userId;
+
+  String density;
+
+  String timezone;
+
+  String region;
+
+  bool notifyKeyRotation;
+
+  bool notifyLockContention;
+
+  bool notifyMfa;
+
+  String updatedAt;
+
+  int version;
+
+  int syncSequence;
+
+
+  CustomerPreferencesObjectBox({
+    required this.userId,
+    required this.density,
+    required this.timezone,
+    required this.region,
+    required this.notifyKeyRotation,
+    required this.notifyLockContention,
+    required this.notifyMfa,
+    required this.updatedAt,
+    required this.version,
+    required this.syncSequence,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "userId": userId,
+    "density": density,
+    "timezone": timezone,
+    "region": region,
+    "notifyKeyRotation": notifyKeyRotation,
+    "notifyLockContention": notifyLockContention,
+    "notifyMfa": notifyMfa,
+    "updatedAt": updatedAt,
+    "version": version,
+    "syncSequence": syncSequence,
+  };
+
+  static CustomerPreferencesObjectBox fromJson(Map<String, Object?> json) {
+    return CustomerPreferencesObjectBox(
+      userId: json["userId"] as String,
+      density: json["density"] as String,
+      timezone: json["timezone"] as String,
+      region: json["region"] as String,
+      notifyKeyRotation: json["notifyKeyRotation"] as bool,
+      notifyLockContention: json["notifyLockContention"] as bool,
+      notifyMfa: json["notifyMfa"] as bool,
+      updatedAt: json["updatedAt"] as String,
+      version: (json["version"] as num).toInt(),
+      syncSequence: (json["syncSequence"] as num).toInt(),
+    );
+  }
+}
+
+@Entity()
+class CustomerSessionsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String userId;
+
+  String device;
+
+  String? location;
+
+  String lastSeen;
+
+  String status;
+
+  String updatedAt;
+
+  int version;
+
+  int syncSequence;
+
+
+  CustomerSessionsObjectBox({
+    required this.id,
+    required this.userId,
+    required this.device,
+    this.location,
+    required this.lastSeen,
+    required this.status,
+    required this.updatedAt,
+    required this.version,
+    required this.syncSequence,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "userId": userId,
+    "device": device,
+    "location": location,
+    "lastSeen": lastSeen,
+    "status": status,
+    "updatedAt": updatedAt,
+    "version": version,
+    "syncSequence": syncSequence,
+  };
+
+  static CustomerSessionsObjectBox fromJson(Map<String, Object?> json) {
+    return CustomerSessionsObjectBox(
+      id: json["id"] as String,
+      userId: json["userId"] as String,
+      device: json["device"] as String,
+      location: json["location"] as String?,
+      lastSeen: json["lastSeen"] as String,
+      status: json["status"] as String,
+      updatedAt: json["updatedAt"] as String,
+      version: (json["version"] as num).toInt(),
+      syncSequence: (json["syncSequence"] as num).toInt(),
+    );
+  }
+}
+
+@Entity()
+class AuditLogObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String? orgId;
+
+  String? projectId;
+
+  String? actorUserId;
+
+  String? actorKeyId;
+
+  String? actor;
+
+  String action;
+
+  String? target;
+
+  String? requestId;
+
+  String? sourceIp;
+
+  String? userAgent;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String meta;
+
+  String createdAt;
+
+  String? retentionExpiresAt;
+
+
+  AuditLogObjectBox({
+    required this.id,
+    this.orgId,
+    this.projectId,
+    this.actorUserId,
+    this.actorKeyId,
+    this.actor,
+    required this.action,
+    this.target,
+    this.requestId,
+    this.sourceIp,
+    this.userAgent,
+    required this.meta,
+    required this.createdAt,
+    this.retentionExpiresAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "orgId": orgId,
+    "projectId": projectId,
+    "actorUserId": actorUserId,
+    "actorKeyId": actorKeyId,
+    "actor": actor,
+    "action": action,
+    "target": target,
+    "requestId": requestId,
+    "sourceIp": sourceIp,
+    "userAgent": userAgent,
+    "meta": jsonDecode(meta),
+    "createdAt": createdAt,
+    "retentionExpiresAt": retentionExpiresAt,
+  };
+
+  static AuditLogObjectBox fromJson(Map<String, Object?> json) {
+    return AuditLogObjectBox(
+      id: json["id"] as String,
+      orgId: json["orgId"] as String?,
+      projectId: json["projectId"] as String?,
+      actorUserId: json["actorUserId"] as String?,
+      actorKeyId: json["actorKeyId"] as String?,
+      actor: json["actor"] as String?,
+      action: json["action"] as String,
+      target: json["target"] as String?,
+      requestId: json["requestId"] as String?,
+      sourceIp: json["sourceIp"] as String?,
+      userAgent: json["userAgent"] as String?,
+      meta: json["meta"] is String ? json["meta"] as String : jsonEncode(json["meta"]),
+      createdAt: json["createdAt"] as String,
+      retentionExpiresAt: json["retentionExpiresAt"] as String?,
+    );
+  }
+}
+
+@Entity()
+class CustomerNotificationsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String userId;
+
+  String? orgId;
+
+  String kind;
+
+  String severity;
+
+  String title;
+
+  String body;
+
+  String? link;
+
+  String? readAt;
+
+  String createdAt;
+
+  String updatedAt;
+
+  int version;
+
+  int syncSequence;
+
+
+  CustomerNotificationsObjectBox({
+    required this.id,
+    required this.userId,
+    this.orgId,
+    required this.kind,
+    required this.severity,
+    required this.title,
+    required this.body,
+    this.link,
+    this.readAt,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.version,
+    required this.syncSequence,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "userId": userId,
+    "orgId": orgId,
+    "kind": kind,
+    "severity": severity,
+    "title": title,
+    "body": body,
+    "link": link,
+    "readAt": readAt,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "version": version,
+    "syncSequence": syncSequence,
+  };
+
+  static CustomerNotificationsObjectBox fromJson(Map<String, Object?> json) {
+    return CustomerNotificationsObjectBox(
+      id: json["id"] as String,
+      userId: json["userId"] as String,
+      orgId: json["orgId"] as String?,
+      kind: json["kind"] as String,
+      severity: json["severity"] as String,
+      title: json["title"] as String,
+      body: json["body"] as String,
+      link: json["link"] as String?,
+      readAt: json["readAt"] as String?,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+      version: (json["version"] as num).toInt(),
+      syncSequence: (json["syncSequence"] as num).toInt(),
+    );
+  }
+}
+
+@Entity()
+class SyncIdempotencyKeysObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String key;
+
+  String requestFingerprint;
+
+  int? committedVersion;
+
+  String createdAt;
+
+
+  SyncIdempotencyKeysObjectBox({
+    required this.key,
+    required this.requestFingerprint,
+    this.committedVersion,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "key": key,
+    "requestFingerprint": requestFingerprint,
+    "committedVersion": committedVersion,
+    "createdAt": createdAt,
+  };
+
+  static SyncIdempotencyKeysObjectBox fromJson(Map<String, Object?> json) {
+    return SyncIdempotencyKeysObjectBox(
+      key: json["key"] as String,
+      requestFingerprint: json["requestFingerprint"] as String,
+      committedVersion: json["committedVersion"] == null ? null : (json["committedVersion"] as num).toInt(),
+      createdAt: json["createdAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class TranscriptionsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String source;
+
+  String provider;
+
+  String model;
+
+  String text;
+
+  String? language;
+
+  int? sampleRate;
+
+  int? durationMs;
+
+  String createdAt;
+
+
+  TranscriptionsObjectBox({
+    required this.id,
+    required this.source,
+    required this.provider,
+    required this.model,
+    required this.text,
+    this.language,
+    this.sampleRate,
+    this.durationMs,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "source": source,
+    "provider": provider,
+    "model": model,
+    "text": text,
+    "language": language,
+    "sampleRate": sampleRate,
+    "durationMs": durationMs,
+    "createdAt": createdAt,
+  };
+
+  static TranscriptionsObjectBox fromJson(Map<String, Object?> json) {
+    return TranscriptionsObjectBox(
+      id: json["id"] as String,
+      source: json["source"] as String,
+      provider: json["provider"] as String,
+      model: json["model"] as String,
+      text: json["text"] as String,
+      language: json["language"] as String?,
+      sampleRate: json["sampleRate"] == null ? null : (json["sampleRate"] as num).toInt(),
+      durationMs: json["durationMs"] == null ? null : (json["durationMs"] as num).toInt(),
+      createdAt: json["createdAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class SynthesesObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String text;
+
+  String voice;
+
+  String provider;
+
+  String model;
+
+  String format;
+
+  int audioBytes;
+
+  String createdAt;
+
+
+  SynthesesObjectBox({
+    required this.id,
+    required this.text,
+    required this.voice,
+    required this.provider,
+    required this.model,
+    required this.format,
+    required this.audioBytes,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "text": text,
+    "voice": voice,
+    "provider": provider,
+    "model": model,
+    "format": format,
+    "audioBytes": audioBytes,
+    "createdAt": createdAt,
+  };
+
+  static SynthesesObjectBox fromJson(Map<String, Object?> json) {
+    return SynthesesObjectBox(
+      id: json["id"] as String,
+      text: json["text"] as String,
+      voice: json["voice"] as String,
+      provider: json["provider"] as String,
+      model: json["model"] as String,
+      format: json["format"] as String,
+      audioBytes: (json["audioBytes"] as num).toInt(),
+      createdAt: json["createdAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class TranslationsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String sourceText;
+
+  String translatedText;
+
+  String? sourceLang;
+
+  String targetLang;
+
+  String provider;
+
+  String model;
+
+  int latencyMs;
+
+  String createdAt;
+
+
+  TranslationsObjectBox({
+    required this.id,
+    required this.sourceText,
+    required this.translatedText,
+    this.sourceLang,
+    required this.targetLang,
+    required this.provider,
+    required this.model,
+    required this.latencyMs,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "sourceText": sourceText,
+    "translatedText": translatedText,
+    "sourceLang": sourceLang,
+    "targetLang": targetLang,
+    "provider": provider,
+    "model": model,
+    "latencyMs": latencyMs,
+    "createdAt": createdAt,
+  };
+
+  static TranslationsObjectBox fromJson(Map<String, Object?> json) {
+    return TranslationsObjectBox(
+      id: json["id"] as String,
+      sourceText: json["sourceText"] as String,
+      translatedText: json["translatedText"] as String,
+      sourceLang: json["sourceLang"] as String?,
+      targetLang: json["targetLang"] as String,
+      provider: json["provider"] as String,
+      model: json["model"] as String,
+      latencyMs: (json["latencyMs"] as num).toInt(),
+      createdAt: json["createdAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class VapiCallsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String vapiCallId;
+
+  String status;
+
+  String? endedReason;
+
+  String? transcript;
+
+  String? summary;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  VapiCallsObjectBox({
+    required this.id,
+    required this.vapiCallId,
+    required this.status,
+    this.endedReason,
+    this.transcript,
+    this.summary,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "vapiCallId": vapiCallId,
+    "status": status,
+    "endedReason": endedReason,
+    "transcript": transcript,
+    "summary": summary,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static VapiCallsObjectBox fromJson(Map<String, Object?> json) {
+    return VapiCallsObjectBox(
+      id: json["id"] as String,
+      vapiCallId: json["vapiCallId"] as String,
+      status: json["status"] as String,
+      endedReason: json["endedReason"] as String?,
+      transcript: json["transcript"] as String?,
+      summary: json["summary"] as String?,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class VapiEventsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String? vapiCallId;
+
+  String eventType;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String payload;
+
+  String createdAt;
+
+
+  VapiEventsObjectBox({
+    required this.id,
+    this.vapiCallId,
+    required this.eventType,
+    required this.payload,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "vapiCallId": vapiCallId,
+    "eventType": eventType,
+    "payload": jsonDecode(payload),
+    "createdAt": createdAt,
+  };
+
+  static VapiEventsObjectBox fromJson(Map<String, Object?> json) {
+    return VapiEventsObjectBox(
+      id: json["id"] as String,
+      vapiCallId: json["vapiCallId"] as String?,
+      eventType: json["eventType"] as String,
+      payload: json["payload"] is String ? json["payload"] as String : jsonEncode(json["payload"]),
+      createdAt: json["createdAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class FabPlansObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String ownerEmail;
+
+  String title;
+
+  String goal;
+
+  String processFamily;
+
+  String status;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String? document;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  FabPlansObjectBox({
+    required this.id,
+    required this.ownerEmail,
+    required this.title,
+    required this.goal,
+    required this.processFamily,
+    required this.status,
+    this.document,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "ownerEmail": ownerEmail,
+    "title": title,
+    "goal": goal,
+    "processFamily": processFamily,
+    "status": status,
+    "document": jsonDecode(document),
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static FabPlansObjectBox fromJson(Map<String, Object?> json) {
+    return FabPlansObjectBox(
+      id: json["id"] as String,
+      ownerEmail: json["ownerEmail"] as String,
+      title: json["title"] as String,
+      goal: json["goal"] as String,
+      processFamily: json["processFamily"] as String,
+      status: json["status"] as String,
+      document: json["document"] is String ? json["document"] as String : jsonEncode(json["document"]),
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class FabDesignsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String planId;
+
+  String filename;
+
+  String format;
+
+  String storageUri;
+
+  int sizeBytes;
+
+  String? contentHash;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String geometry;
+
+  String createdAt;
+
+
+  FabDesignsObjectBox({
+    required this.id,
+    required this.planId,
+    required this.filename,
+    required this.format,
+    required this.storageUri,
+    required this.sizeBytes,
+    this.contentHash,
+    required this.geometry,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "planId": planId,
+    "filename": filename,
+    "format": format,
+    "storageUri": storageUri,
+    "sizeBytes": sizeBytes,
+    "contentHash": contentHash,
+    "geometry": jsonDecode(geometry),
+    "createdAt": createdAt,
+  };
+
+  static FabDesignsObjectBox fromJson(Map<String, Object?> json) {
+    return FabDesignsObjectBox(
+      id: json["id"] as String,
+      planId: json["planId"] as String,
+      filename: json["filename"] as String,
+      format: json["format"] as String,
+      storageUri: json["storageUri"] as String,
+      sizeBytes: (json["sizeBytes"] as num).toInt(),
+      contentHash: json["contentHash"] as String?,
+      geometry: json["geometry"] is String ? json["geometry"] as String : jsonEncode(json["geometry"]),
+      createdAt: json["createdAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class FabInstructionsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String planId;
+
+  int revision;
+
+  String machineProfile;
+
+  String dialect;
+
+  String storageUri;
+
+  String? contentHash;
+
+  bool validated;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String validation;
+
+  String? releasedByEmail;
+
+  String? releasedAt;
+
+  String createdAt;
+
+
+  FabInstructionsObjectBox({
+    required this.id,
+    required this.planId,
+    required this.revision,
+    required this.machineProfile,
+    required this.dialect,
+    required this.storageUri,
+    this.contentHash,
+    required this.validated,
+    required this.validation,
+    this.releasedByEmail,
+    this.releasedAt,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "planId": planId,
+    "revision": revision,
+    "machineProfile": machineProfile,
+    "dialect": dialect,
+    "storageUri": storageUri,
+    "contentHash": contentHash,
+    "validated": validated,
+    "validation": jsonDecode(validation),
+    "releasedByEmail": releasedByEmail,
+    "releasedAt": releasedAt,
+    "createdAt": createdAt,
+  };
+
+  static FabInstructionsObjectBox fromJson(Map<String, Object?> json) {
+    return FabInstructionsObjectBox(
+      id: json["id"] as String,
+      planId: json["planId"] as String,
+      revision: (json["revision"] as num).toInt(),
+      machineProfile: json["machineProfile"] as String,
+      dialect: json["dialect"] as String,
+      storageUri: json["storageUri"] as String,
+      contentHash: json["contentHash"] as String?,
+      validated: json["validated"] as bool,
+      validation: json["validation"] is String ? json["validation"] as String : jsonEncode(json["validation"]),
+      releasedByEmail: json["releasedByEmail"] as String?,
+      releasedAt: json["releasedAt"] as String?,
+      createdAt: json["createdAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class FabRunsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String instructionsId;
+
+  String status;
+
+  String machineId;
+
+  String? operatorEmail;
+
+  int progress;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String asBuilt;
+
+  String? error;
+
+  String? startedAt;
+
+  String? finishedAt;
+
+  String createdAt;
+
+
+  FabRunsObjectBox({
+    required this.id,
+    required this.instructionsId,
+    required this.status,
+    required this.machineId,
+    this.operatorEmail,
+    required this.progress,
+    required this.asBuilt,
+    this.error,
+    this.startedAt,
+    this.finishedAt,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "instructionsId": instructionsId,
+    "status": status,
+    "machineId": machineId,
+    "operatorEmail": operatorEmail,
+    "progress": progress,
+    "asBuilt": jsonDecode(asBuilt),
+    "error": error,
+    "startedAt": startedAt,
+    "finishedAt": finishedAt,
+    "createdAt": createdAt,
+  };
+
+  static FabRunsObjectBox fromJson(Map<String, Object?> json) {
+    return FabRunsObjectBox(
+      id: json["id"] as String,
+      instructionsId: json["instructionsId"] as String,
+      status: json["status"] as String,
+      machineId: json["machineId"] as String,
+      operatorEmail: json["operatorEmail"] as String?,
+      progress: (json["progress"] as num).toInt(),
+      asBuilt: json["asBuilt"] is String ? json["asBuilt"] as String : jsonEncode(json["asBuilt"]),
+      error: json["error"] as String?,
+      startedAt: json["startedAt"] as String?,
+      finishedAt: json["finishedAt"] as String?,
+      createdAt: json["createdAt"] as String,
     );
   }
 }

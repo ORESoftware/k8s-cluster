@@ -400,6 +400,7 @@ function parseCreateTable(statement) {
   const body = match[3].trim();
   const columns = [];
   const checks = [];
+  const tableLevelPkColumns = [];
 
   for (const item of splitTopLevelComma(body)) {
     const trimmed = item.trim();
@@ -413,16 +414,32 @@ function parseCreateTable(statement) {
     // `unique (...)`, `foreign key (...)`, `exclude`/`like`, or the named
     // `constraint <name> primary key|unique|foreign key (...)` forms. (Named
     // `constraint <name> check (...)` is already captured above.) Skip them so they
-    // are not mis-parsed as a column named e.g. "primary" of type "key". The columns
-    // they reference carry their own `not null`, so no nullability is lost; composite
-    // primary keys are intentionally not surfaced (no adapter models them yet).
+    // are not mis-parsed as a column named e.g. "primary" of type "key" — except that
+    // `primary key (a, b)` column lists are captured first and folded onto the
+    // referenced columns below: key-requiring adapters (sea-orm's DeriveEntityModel
+    // rejects entities with no primary key) need composite PKs surfaced per column.
     if (isTableLevelConstraint(trimmed)) {
+      const pkMatch = trimmed.match(/^(?:constraint\s+"?[\w]+"?\s+)?primary\s+key\s*\(([^)]+)\)/i);
+      if (pkMatch) {
+        for (const part of pkMatch[1].split(",")) {
+          tableLevelPkColumns.push(unquoteIdent(part.trim()));
+        }
+      }
       continue;
     }
 
     const column = parseColumn(trimmed);
     if (column) {
       columns.push(column);
+    }
+  }
+
+  // Postgres makes primary-key columns implicitly not null, so folding a table-level
+  // `primary key (a, b)` onto the columns mirrors the inline `primary key` path exactly.
+  for (const column of columns) {
+    if (tableLevelPkColumns.includes(column.name)) {
+      column.primaryKey = true;
+      column.notNull = true;
     }
   }
 
@@ -591,7 +608,14 @@ function parseCheckConstraint(value) {
 }
 
 function parseColumn(value) {
-  const match = value.match(/^("?[\w]+"?)\s+(.+)$/);
+  // A column definition may wrap across lines (identifier/type on one line, a
+  // `references ...` or other clause on the next). Collapse internal whitespace
+  // to single spaces first: the matchers below use `.` (which never crosses a
+  // newline) and `$`, so a raw multi-line value fails to match entirely and the
+  // column is silently dropped from every generated adapter. Normalizing is a
+  // no-op for the single-line columns that make up the rest of the schema.
+  const normalized = value.replace(/\s+/g, " ").trim();
+  const match = normalized.match(/^("?[\w]+"?)\s+(.+)$/);
   if (!match) {
     return null;
   }

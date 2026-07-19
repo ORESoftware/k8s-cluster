@@ -131,14 +131,34 @@ impl RowChange {
     }
 }
 
+/// A subject token must be a bare NATS token: dots would add subject levels
+/// and `*`/`>` would widen the subscription — either silently changes what a
+/// consumer receives. Panics (these are compile-time-known identifiers in
+/// practice; failing fast at startup beats subscribing to the wrong data).
+fn assert_subject_token(kind: &str, value: &str) {
+    let ok = !value.is_empty()
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-');
+    assert!(
+        ok,
+        "invalid {kind} {value:?} for a CDC subject: must be non-empty and \
+         contain only [A-Za-z0-9_-] (no '.', '*', '>' or whitespace)"
+    );
+}
+
 /// Build the JetStream subject the gateway publishes to for a given table
 /// and operation.
 pub fn subject_for(schema: &str, table: &str, op: ChangeOp) -> String {
+    assert_subject_token("schema", schema);
+    assert_subject_token("table", table);
     format!("cdc.{schema}.{table}.{}", op.as_str())
 }
 
 /// Build the wildcard subject for "all ops on this table".
 pub fn subject_for_table(schema: &str, table: &str) -> String {
+    assert_subject_token("schema", schema);
+    assert_subject_token("table", table);
     format!("cdc.{schema}.{table}.>")
 }
 
@@ -152,10 +172,12 @@ impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Error::Jetstream(s) => write!(f, "jetstream error: {s}"),
+            // Deliberately length-only: CDC payloads carry row data, which
+            // must not leak into logs/error chains via a Display impl.
             Error::Decode(e, raw) => write!(
                 f,
-                "row envelope decode error: {e}; first 200 bytes={}",
-                String::from_utf8_lossy(&raw[..raw.len().min(200)])
+                "row envelope decode error: {e}; payload_len={}",
+                raw.len()
             ),
         }
     }

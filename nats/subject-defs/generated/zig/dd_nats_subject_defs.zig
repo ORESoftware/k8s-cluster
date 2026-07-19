@@ -28,6 +28,17 @@ pub const blockchain_index_events_subject: []const u8 = "dd.remote.blockchain.in
 
 pub const blockchain_mev_alerts_subject: []const u8 = "dd.remote.blockchain.mev.alerts";
 
+pub const browser_job_results_subject: []const u8 = "dd.remote.browser_jobs.results";
+
+pub const build_server_events_subject: []const u8 = "dd.remote.build_server.events";
+
+pub const build_server_images_subject: []const u8 = "dd.remote.build_server.images";
+
+pub const build_server_requests_subject: []const u8 = "dd.remote.build_server.requests";
+pub const build_server_requests_queue_group: []const u8 = "dd-build-server";
+
+pub const build_server_results_subject: []const u8 = "dd.remote.build_server.results";
+
 pub const chaos_events_subject: []const u8 = "dd.remote.chaos.events";
 
 pub const chaos_experiments_subject: []const u8 = "dd.remote.chaos.experiments";
@@ -86,6 +97,11 @@ pub const des_results_subject: []const u8 = "dd.remote.des.results";
 
 pub const des_simulate_subject: []const u8 = "dd.remote.des.simulate";
 pub const des_simulate_queue_group: []const u8 = "dd-des-simulator";
+
+pub const document_convert_requests_subject: []const u8 = "dd.remote.document.convert";
+pub const document_convert_requests_queue_group: []const u8 = "dd-document-rs";
+
+pub const document_convert_results_subject: []const u8 = "dd.remote.document.results";
 
 pub const economics_forecast_requests_subject: []const u8 = "dd.remote.economics.forecast.requests";
 pub const economics_forecast_requests_queue_group: []const u8 = "dd-economics-server";
@@ -232,10 +248,17 @@ pub const music_songs_published_subject: []const u8 = "dd.remote.music.songs.pub
 
 pub const music_votes_events_subject: []const u8 = "dd.remote.music.votes.events";
 
+pub const ocr_requests_subject: []const u8 = "dd.remote.ocr.requests";
+pub const ocr_requests_queue_group: []const u8 = "dd-ocr-rs";
+
+pub const ocr_results_subject: []const u8 = "dd.remote.ocr.results";
+
 pub const orchestrator_wakeup_subject: []const u8 = "dd.remote.orchestrator.wakeup";
 pub const orchestrator_wakeup_stream: []const u8 = "DD_REMOTE_CONTROL";
 
 pub const public_data_analysis_results_subject: []const u8 = "dd.remote.public_data.analysis.results";
+
+pub const public_data_ingest_dead_letter_subject: []const u8 = "dd.remote.public_data.ingest.deadletter";
 
 pub const public_data_ingest_requests_subject: []const u8 = "dd.remote.public_data.ingest.requests";
 pub const public_data_ingest_requests_queue_group: []const u8 = "dd-public-data-server";
@@ -311,11 +334,60 @@ pub const workflows_events_subject: []const u8 = "dd.remote.workflows.events";
 pub const workflows_start_subject: []const u8 = "dd.remote.workflows.start";
 pub const workflows_start_queue_group: []const u8 = "dd-gleam-workflow-engine";
 
+pub const browser_job_events_pattern: []const u8 = "dd.remote.browser_jobs.{job_id}.events";
+pub const browser_job_events_wildcard: []const u8 = "dd.remote.browser_jobs.*.events";
+pub fn browser_job_events_subject(allocator: std.mem.Allocator, job_id: []const u8) ![]u8 {
+    return std.fmt.allocPrint(allocator, "dd.remote.browser_jobs.{s}.events", .{ job_id });
+}
+pub const BrowserJobEventsSubjectParts = struct {
+    job_id: []const u8,
+};
+pub fn parse_browser_job_events_subject(subject: []const u8) ?BrowserJobEventsSubjectParts {
+    var it = std.mem.splitScalar(u8, subject, '.');
+    const t0 = it.next() orelse return null;
+    const t1 = it.next() orelse return null;
+    const t2 = it.next() orelse return null;
+    const t3 = it.next() orelse return null;
+    const t4 = it.next() orelse return null;
+    if (it.next() != null) return null;
+    if (!std.mem.eql(u8, t0, "dd")) return null;
+    if (!std.mem.eql(u8, t1, "remote")) return null;
+    if (!std.mem.eql(u8, t2, "browser_jobs")) return null;
+    if (!std.mem.eql(u8, t4, "events")) return null;
+    return BrowserJobEventsSubjectParts{ .job_id = t3 };
+}
+
+pub const browser_job_result_pattern: []const u8 = "dd.remote.browser_jobs.{job_id}.result";
+pub const browser_job_result_wildcard: []const u8 = "dd.remote.browser_jobs.*.result";
+pub fn browser_job_result_subject(allocator: std.mem.Allocator, job_id: []const u8) ![]u8 {
+    return std.fmt.allocPrint(allocator, "dd.remote.browser_jobs.{s}.result", .{ job_id });
+}
+pub const BrowserJobResultSubjectParts = struct {
+    job_id: []const u8,
+};
+pub fn parse_browser_job_result_subject(subject: []const u8) ?BrowserJobResultSubjectParts {
+    var it = std.mem.splitScalar(u8, subject, '.');
+    const t0 = it.next() orelse return null;
+    const t1 = it.next() orelse return null;
+    const t2 = it.next() orelse return null;
+    const t3 = it.next() orelse return null;
+    const t4 = it.next() orelse return null;
+    if (it.next() != null) return null;
+    if (!std.mem.eql(u8, t0, "dd")) return null;
+    if (!std.mem.eql(u8, t1, "remote")) return null;
+    if (!std.mem.eql(u8, t2, "browser_jobs")) return null;
+    if (!std.mem.eql(u8, t4, "result")) return null;
+    return BrowserJobResultSubjectParts{ .job_id = t3 };
+}
+
 pub const cdc_row_change_pattern: []const u8 = "{prefix}.{schema}.{table}.{op}";
 pub const cdc_row_change_wildcard: []const u8 = "{prefix}.>";
 pub const cdc_row_change_stream: []const u8 = "CDC";
 pub fn cdc_row_change_subject(allocator: std.mem.Allocator, prefix: []const u8, schema: []const u8, table: []const u8, op: []const u8) ![]u8 {
     return std.fmt.allocPrint(allocator, "{s}.{s}.{s}.{s}", .{ prefix, schema, table, op });
+}
+pub fn format_cdc_row_change_wildcard(allocator: std.mem.Allocator, prefix: []const u8) ![]u8 {
+    return std.fmt.allocPrint(allocator, "{s}.>", .{ prefix });
 }
 pub const CdcRowChangeSubjectParts = struct {
     prefix: []const u8,
@@ -338,6 +410,9 @@ pub const cdc_table_filter_wildcard: []const u8 = "{prefix}.>";
 pub const cdc_table_filter_stream: []const u8 = "CDC";
 pub fn cdc_table_filter_subject(allocator: std.mem.Allocator, prefix: []const u8, schema: []const u8, table: []const u8) ![]u8 {
     return std.fmt.allocPrint(allocator, "{s}.{s}.{s}.>", .{ prefix, schema, table });
+}
+pub fn format_cdc_table_filter_wildcard(allocator: std.mem.Allocator, prefix: []const u8) ![]u8 {
+    return std.fmt.allocPrint(allocator, "{s}.>", .{ prefix });
 }
 pub const CdcTableFilterSubjectParts = struct {
     prefix: []const u8,
@@ -615,6 +690,8 @@ pub const queue_group_agent_sim_server_queue_group: []const u8 = "dd-agent-sim-s
 
 pub const queue_group_billing_server_queue_group: []const u8 = "dd-billing-server";
 
+pub const queue_group_build_server_queue_group: []const u8 = "dd-build-server";
+
 pub const queue_group_constraint_scheduler_queue_group: []const u8 = "dd-constraint-scheduler";
 
 pub const queue_group_contact_send_queue_group: []const u8 = "dd-email-sms-contact";
@@ -624,6 +701,8 @@ pub const queue_group_critical_events_logger_queue_group: []const u8 = "dd-runti
 pub const queue_group_dataset_labeling_workers_queue_group: []const u8 = "dd-dataset-labeling";
 
 pub const queue_group_data_viz_notification_dispatch_queue_group: []const u8 = "dd-data-viz-notifiers";
+
+pub const queue_group_document_converters_queue_group: []const u8 = "dd-document-rs";
 
 pub const queue_group_economics_server_queue_group: []const u8 = "dd-economics-server";
 
@@ -642,6 +721,8 @@ pub const queue_group_mip_solver_workers_queue_group: []const u8 = "dd-in-house-
 pub const queue_group_monte_carlo_server_queue_group: []const u8 = "dd-monte-carlo-server";
 
 pub const queue_group_music_generation_queue_group: []const u8 = "dd-music-rs";
+
+pub const queue_group_ocr_workers_queue_group: []const u8 = "dd-ocr-rs";
 
 pub const queue_group_public_data_workers_queue_group: []const u8 = "dd-public-data-server";
 
@@ -664,6 +745,12 @@ pub const cdc_stream_subjects = [_][]const u8{ "cdc.>" };
 pub const cdc_stream_retention: []const u8 = "limits";
 pub const cdc_stream_storage: []const u8 = "file";
 pub const cdc_stream_ack: []const u8 = "explicit";
+
+pub const dd_remote_build_jobs_stream_name: []const u8 = "DD_REMOTE_BUILD_JOBS";
+pub const dd_remote_build_jobs_stream_subjects = [_][]const u8{ "dd.remote.build_server.requests" };
+pub const dd_remote_build_jobs_stream_retention: []const u8 = "workqueue";
+pub const dd_remote_build_jobs_stream_storage: []const u8 = "file";
+pub const dd_remote_build_jobs_stream_ack: []const u8 = "explicit";
 
 pub const dd_remote_control_stream_name: []const u8 = "DD_REMOTE_CONTROL";
 pub const dd_remote_control_stream_subjects = [_][]const u8{ "dd.remote.thread.*.control", "dd.remote.orchestrator.wakeup" };

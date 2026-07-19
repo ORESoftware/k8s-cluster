@@ -10261,6 +10261,922 @@ pub fn validate_shared_context_slug(value: String) -> Result(String, String) {
   }
 }
 
+pub const sync_clock_table = "fiducia.sync_clock"
+pub const sync_clock_select_sql = "select\n      singleton,\n      last_sequence\n    from fiducia.sync_clock"
+
+pub type SyncClockRow {
+  SyncClockRow(
+    singleton: Bool,
+    last_sequence: Int,
+  )
+}
+
+pub fn validate_sync_clock_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("sync_clock.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const sync_tombstones_table = "fiducia.sync_tombstones"
+pub const sync_tombstones_select_sql = "select\n      sequence,\n      table_name,\n      row_id,\n      tenant_id::text as tenant_id,\n      owner_user_id::text as owner_user_id,\n      row_version,\n      to_char(deleted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as deleted_at\n    from fiducia.sync_tombstones"
+
+pub type SyncTombstonesRow {
+  SyncTombstonesRow(
+    sequence: Int,
+    table_name: String,
+    row_id: String,
+    tenant_id: Option(String),
+    owner_user_id: Option(String),
+    row_version: Int,
+    deleted_at: String,
+  )
+}
+
+pub fn validate_sync_tombstones_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("sync_tombstones.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const orgs_table = "fiducia.orgs"
+pub const orgs_select_sql = "select\n      id::text as id,\n      slug,\n      name,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence\n    from fiducia.orgs"
+
+pub type OrgsRow {
+  OrgsRow(
+    id: String,
+    slug: String,
+    name: String,
+    created_at: String,
+    updated_at: String,
+    version: Int,
+    sync_sequence: Int,
+  )
+}
+
+pub fn validate_orgs_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("orgs.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const projects_table = "fiducia.projects"
+pub const projects_select_sql = "select\n      id::text as id,\n      org_id::text as org_id,\n      slug,\n      name,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence\n    from fiducia.projects"
+
+pub type ProjectsRow {
+  ProjectsRow(
+    id: String,
+    org_id: String,
+    slug: String,
+    name: String,
+    created_at: String,
+    updated_at: String,
+    version: Int,
+    sync_sequence: Int,
+  )
+}
+
+pub fn validate_projects_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("projects.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const users_table = "fiducia.users"
+pub const users_select_sql = "select\n      id::text as id,\n      supabase_user_id::text as supabase_user_id,\n      email,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from fiducia.users"
+
+pub type UsersRow {
+  UsersRow(
+    id: String,
+    supabase_user_id: String,
+    email: String,
+    created_at: String,
+  )
+}
+
+pub fn validate_users_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("users.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const org_members_table = "fiducia.org_members"
+pub const org_members_select_sql = "select\n      org_id::text as org_id,\n      user_id::text as user_id,\n      role,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from fiducia.org_members"
+
+pub type OrgMembersRole {
+  OrgMembersRoleOwner
+  OrgMembersRoleAdmin
+  OrgMembersRoleMember
+}
+
+pub fn org_members_role_to_string(value: OrgMembersRole) -> String {
+  case value {
+    OrgMembersRoleOwner -> "owner"
+    OrgMembersRoleAdmin -> "admin"
+    OrgMembersRoleMember -> "member"
+  }
+}
+
+pub fn parse_org_members_role(value: String) -> Result(OrgMembersRole, String) {
+  case value {
+    "owner" -> Ok(OrgMembersRoleOwner)
+    "admin" -> Ok(OrgMembersRoleAdmin)
+    "member" -> Ok(OrgMembersRoleMember)
+    _ -> Error("unsupported org_members.role: " <> value)
+  }
+}
+
+pub type OrgMembersRow {
+  OrgMembersRow(
+    org_id: String,
+    user_id: String,
+    role: String,
+    created_at: String,
+  )
+}
+
+pub fn validate_org_members_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("org_members.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_org_members_role(value: String) -> Result(String, String) {
+  case list.contains(["owner", "admin", "member"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported org_members.role: " <> value)
+  }
+}
+
+pub const project_members_table = "fiducia.project_members"
+pub const project_members_select_sql = "select\n      project_id::text as project_id,\n      user_id::text as user_id,\n      role,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from fiducia.project_members"
+
+pub type ProjectMembersRole {
+  ProjectMembersRoleAdmin
+  ProjectMembersRoleOperator
+  ProjectMembersRoleViewer
+}
+
+pub fn project_members_role_to_string(value: ProjectMembersRole) -> String {
+  case value {
+    ProjectMembersRoleAdmin -> "admin"
+    ProjectMembersRoleOperator -> "operator"
+    ProjectMembersRoleViewer -> "viewer"
+  }
+}
+
+pub fn parse_project_members_role(value: String) -> Result(ProjectMembersRole, String) {
+  case value {
+    "admin" -> Ok(ProjectMembersRoleAdmin)
+    "operator" -> Ok(ProjectMembersRoleOperator)
+    "viewer" -> Ok(ProjectMembersRoleViewer)
+    _ -> Error("unsupported project_members.role: " <> value)
+  }
+}
+
+pub type ProjectMembersRow {
+  ProjectMembersRow(
+    project_id: String,
+    user_id: String,
+    role: String,
+    created_at: String,
+  )
+}
+
+pub fn validate_project_members_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("project_members.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_project_members_role(value: String) -> Result(String, String) {
+  case list.contains(["admin", "operator", "viewer"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported project_members.role: " <> value)
+  }
+}
+
+pub const api_keys_table = "fiducia.api_keys"
+pub const api_keys_select_sql = "select\n      id::text as id,\n      key_id,\n      org_id::text as org_id,\n      project_id::text as project_id,\n      created_by_user_id::text as created_by_user_id,\n      name,\n      secret_hash,\n      scopes::text as scopes_json,\n      env,\n      require_idempotency,\n      mtls_required,\n      revoked,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence,\n      to_char(last_used_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_used_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at\n    from fiducia.api_keys"
+
+pub type ApiKeysEnv {
+  ApiKeysEnvLive
+  ApiKeysEnvTest
+}
+
+pub fn api_keys_env_to_string(value: ApiKeysEnv) -> String {
+  case value {
+    ApiKeysEnvLive -> "live"
+    ApiKeysEnvTest -> "test"
+  }
+}
+
+pub fn parse_api_keys_env(value: String) -> Result(ApiKeysEnv, String) {
+  case value {
+    "live" -> Ok(ApiKeysEnvLive)
+    "test" -> Ok(ApiKeysEnvTest)
+    _ -> Error("unsupported api_keys.env: " <> value)
+  }
+}
+
+pub type ApiKeysRow {
+  ApiKeysRow(
+    id: String,
+    key_id: String,
+    org_id: String,
+    project_id: Option(String),
+    created_by_user_id: Option(String),
+    name: String,
+    secret_hash: String,
+    scopes_json: String,
+    env: String,
+    require_idempotency: Bool,
+    mtls_required: Bool,
+    revoked: Bool,
+    created_at: String,
+    updated_at: String,
+    version: Int,
+    sync_sequence: Int,
+    last_used_at: Option(String),
+    expires_at: Option(String),
+  )
+}
+
+pub fn validate_api_keys_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("api_keys.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_api_keys_env(value: String) -> Result(String, String) {
+  case list.contains(["live", "test"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported api_keys.env: " <> value)
+  }
+}
+
+pub const mtls_client_certs_table = "fiducia.mtls_client_certs"
+pub const mtls_client_certs_select_sql = "select\n      id::text as id,\n      org_id::text as org_id,\n      project_id::text as project_id,\n      name,\n      subject,\n      sha256_fingerprint,\n      to_char(not_before at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as not_before,\n      to_char(not_after at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as not_after,\n      revoked,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence\n    from fiducia.mtls_client_certs"
+
+pub type MtlsClientCertsRow {
+  MtlsClientCertsRow(
+    id: String,
+    org_id: String,
+    project_id: Option(String),
+    name: String,
+    subject: String,
+    sha256_fingerprint: String,
+    not_before: Option(String),
+    not_after: Option(String),
+    revoked: Bool,
+    created_at: String,
+    updated_at: String,
+    version: Int,
+    sync_sequence: Int,
+  )
+}
+
+pub fn validate_mtls_client_certs_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("mtls_client_certs.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const customer_preferences_table = "fiducia.customer_preferences"
+pub const customer_preferences_select_sql = "select\n      user_id::text as user_id,\n      density,\n      timezone,\n      region,\n      notify_key_rotation,\n      notify_lock_contention,\n      notify_mfa,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence\n    from fiducia.customer_preferences"
+
+pub type CustomerPreferencesDensity {
+  CustomerPreferencesDensityComfortable
+  CustomerPreferencesDensityCompact
+}
+
+pub fn customer_preferences_density_to_string(value: CustomerPreferencesDensity) -> String {
+  case value {
+    CustomerPreferencesDensityComfortable -> "comfortable"
+    CustomerPreferencesDensityCompact -> "compact"
+  }
+}
+
+pub fn parse_customer_preferences_density(value: String) -> Result(CustomerPreferencesDensity, String) {
+  case value {
+    "comfortable" -> Ok(CustomerPreferencesDensityComfortable)
+    "compact" -> Ok(CustomerPreferencesDensityCompact)
+    _ -> Error("unsupported customer_preferences.density: " <> value)
+  }
+}
+
+pub type CustomerPreferencesRow {
+  CustomerPreferencesRow(
+    user_id: String,
+    density: String,
+    timezone: String,
+    region: String,
+    notify_key_rotation: Bool,
+    notify_lock_contention: Bool,
+    notify_mfa: Bool,
+    updated_at: String,
+    version: Int,
+    sync_sequence: Int,
+  )
+}
+
+pub fn validate_customer_preferences_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("customer_preferences.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_customer_preferences_density(value: String) -> Result(String, String) {
+  case list.contains(["comfortable", "compact"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported customer_preferences.density: " <> value)
+  }
+}
+
+pub const customer_sessions_table = "fiducia.customer_sessions"
+pub const customer_sessions_select_sql = "select\n      id::text as id,\n      user_id::text as user_id,\n      device,\n      location,\n      to_char(last_seen at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen,\n      status,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence\n    from fiducia.customer_sessions"
+
+pub type CustomerSessionsStatus {
+  CustomerSessionsStatusActive
+  CustomerSessionsStatusVerified
+  CustomerSessionsStatusRevoked
+}
+
+pub fn customer_sessions_status_to_string(value: CustomerSessionsStatus) -> String {
+  case value {
+    CustomerSessionsStatusActive -> "active"
+    CustomerSessionsStatusVerified -> "verified"
+    CustomerSessionsStatusRevoked -> "revoked"
+  }
+}
+
+pub fn parse_customer_sessions_status(value: String) -> Result(CustomerSessionsStatus, String) {
+  case value {
+    "active" -> Ok(CustomerSessionsStatusActive)
+    "verified" -> Ok(CustomerSessionsStatusVerified)
+    "revoked" -> Ok(CustomerSessionsStatusRevoked)
+    _ -> Error("unsupported customer_sessions.status: " <> value)
+  }
+}
+
+pub type CustomerSessionsRow {
+  CustomerSessionsRow(
+    id: String,
+    user_id: String,
+    device: String,
+    location: Option(String),
+    last_seen: String,
+    status: String,
+    updated_at: String,
+    version: Int,
+    sync_sequence: Int,
+  )
+}
+
+pub fn validate_customer_sessions_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("customer_sessions.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_customer_sessions_status(value: String) -> Result(String, String) {
+  case list.contains(["active", "verified", "revoked"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported customer_sessions.status: " <> value)
+  }
+}
+
+pub const audit_log_table = "fiducia.audit_log"
+pub const audit_log_select_sql = "select\n      id::text as id,\n      org_id::text as org_id,\n      project_id::text as project_id,\n      actor_user_id::text as actor_user_id,\n      actor_key_id::text as actor_key_id,\n      actor,\n      action,\n      target,\n      request_id,\n      source_ip,\n      user_agent,\n      meta::text as meta_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(retention_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as retention_expires_at\n    from fiducia.audit_log"
+
+pub type AuditLogRow {
+  AuditLogRow(
+    id: String,
+    org_id: Option(String),
+    project_id: Option(String),
+    actor_user_id: Option(String),
+    actor_key_id: Option(String),
+    actor: Option(String),
+    action: String,
+    target: Option(String),
+    request_id: Option(String),
+    source_ip: Option(String),
+    user_agent: Option(String),
+    meta_json: String,
+    created_at: String,
+    retention_expires_at: Option(String),
+  )
+}
+
+pub fn validate_audit_log_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("audit_log.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const customer_notifications_table = "fiducia.customer_notifications"
+pub const customer_notifications_select_sql = "select\n      id::text as id,\n      user_id::text as user_id,\n      org_id::text as org_id,\n      kind,\n      severity,\n      title,\n      body,\n      link,\n      to_char(read_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as read_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence\n    from fiducia.customer_notifications"
+
+pub type CustomerNotificationsSeverity {
+  CustomerNotificationsSeverityInfo
+  CustomerNotificationsSeveritySuccess
+  CustomerNotificationsSeverityWarning
+  CustomerNotificationsSeverityCritical
+}
+
+pub fn customer_notifications_severity_to_string(value: CustomerNotificationsSeverity) -> String {
+  case value {
+    CustomerNotificationsSeverityInfo -> "info"
+    CustomerNotificationsSeveritySuccess -> "success"
+    CustomerNotificationsSeverityWarning -> "warning"
+    CustomerNotificationsSeverityCritical -> "critical"
+  }
+}
+
+pub fn parse_customer_notifications_severity(value: String) -> Result(CustomerNotificationsSeverity, String) {
+  case value {
+    "info" -> Ok(CustomerNotificationsSeverityInfo)
+    "success" -> Ok(CustomerNotificationsSeveritySuccess)
+    "warning" -> Ok(CustomerNotificationsSeverityWarning)
+    "critical" -> Ok(CustomerNotificationsSeverityCritical)
+    _ -> Error("unsupported customer_notifications.severity: " <> value)
+  }
+}
+
+pub type CustomerNotificationsRow {
+  CustomerNotificationsRow(
+    id: String,
+    user_id: String,
+    org_id: Option(String),
+    kind: String,
+    severity: String,
+    title: String,
+    body: String,
+    link: Option(String),
+    read_at: Option(String),
+    created_at: String,
+    updated_at: String,
+    version: Int,
+    sync_sequence: Int,
+  )
+}
+
+pub fn validate_customer_notifications_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("customer_notifications.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_customer_notifications_severity(value: String) -> Result(String, String) {
+  case list.contains(["info", "success", "warning", "critical"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported customer_notifications.severity: " <> value)
+  }
+}
+
+pub const sync_idempotency_keys_table = "fiducia.sync_idempotency_keys"
+pub const sync_idempotency_keys_select_sql = "select\n      key,\n      request_fingerprint,\n      committed_version,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from fiducia.sync_idempotency_keys"
+
+pub type SyncIdempotencyKeysRow {
+  SyncIdempotencyKeysRow(
+    key: String,
+    request_fingerprint: String,
+    committed_version: Option(Int),
+    created_at: String,
+  )
+}
+
+pub fn validate_sync_idempotency_keys_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("sync_idempotency_keys.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const transcriptions_table = "t2v.transcriptions"
+pub const transcriptions_select_sql = "select\n      id::text as id,\n      source,\n      provider,\n      model,\n      text,\n      language,\n      sample_rate,\n      duration_ms,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from t2v.transcriptions"
+
+pub type TranscriptionsRow {
+  TranscriptionsRow(
+    id: String,
+    source: String,
+    provider: String,
+    model: String,
+    text: String,
+    language: Option(String),
+    sample_rate: Option(Int),
+    duration_ms: Option(Int),
+    created_at: String,
+  )
+}
+
+pub fn validate_transcriptions_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("transcriptions.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const syntheses_table = "t2v.syntheses"
+pub const syntheses_select_sql = "select\n      id::text as id,\n      text,\n      voice,\n      provider,\n      model,\n      format,\n      audio_bytes,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from t2v.syntheses"
+
+pub type SynthesesRow {
+  SynthesesRow(
+    id: String,
+    text: String,
+    voice: String,
+    provider: String,
+    model: String,
+    format: String,
+    audio_bytes: Int,
+    created_at: String,
+  )
+}
+
+pub fn validate_syntheses_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("syntheses.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const translations_table = "t2v.translations"
+pub const translations_select_sql = "select\n      id::text as id,\n      source_text,\n      translated_text,\n      source_lang,\n      target_lang,\n      provider,\n      model,\n      latency_ms,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from t2v.translations"
+
+pub type TranslationsRow {
+  TranslationsRow(
+    id: String,
+    source_text: String,
+    translated_text: String,
+    source_lang: Option(String),
+    target_lang: String,
+    provider: String,
+    model: String,
+    latency_ms: Int,
+    created_at: String,
+  )
+}
+
+pub fn validate_translations_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("translations.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const vapi_calls_table = "t2v.vapi_calls"
+pub const vapi_calls_select_sql = "select\n      id::text as id,\n      vapi_call_id,\n      status,\n      ended_reason,\n      transcript,\n      summary,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from t2v.vapi_calls"
+
+pub type VapiCallsRow {
+  VapiCallsRow(
+    id: String,
+    vapi_call_id: String,
+    status: String,
+    ended_reason: Option(String),
+    transcript: Option(String),
+    summary: Option(String),
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_vapi_calls_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("vapi_calls.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const vapi_events_table = "t2v.vapi_events"
+pub const vapi_events_select_sql = "select\n      id::text as id,\n      vapi_call_id,\n      event_type,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from t2v.vapi_events"
+
+pub type VapiEventsRow {
+  VapiEventsRow(
+    id: String,
+    vapi_call_id: Option(String),
+    event_type: String,
+    payload_json: String,
+    created_at: String,
+  )
+}
+
+pub fn validate_vapi_events_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("vapi_events.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const fab_plans_table = "daedalus.fab_plans"
+pub const fab_plans_select_sql = "select\n      id::text as id,\n      owner_email,\n      title,\n      goal,\n      process_family,\n      status,\n      document::text as document_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from daedalus.fab_plans"
+
+pub type FabPlansProcessFamily {
+  FabPlansProcessFamilyAdditive
+  FabPlansProcessFamilySubtractive
+  FabPlansProcessFamilyHybrid
+}
+
+pub fn fab_plans_process_family_to_string(value: FabPlansProcessFamily) -> String {
+  case value {
+    FabPlansProcessFamilyAdditive -> "additive"
+    FabPlansProcessFamilySubtractive -> "subtractive"
+    FabPlansProcessFamilyHybrid -> "hybrid"
+  }
+}
+
+pub fn parse_fab_plans_process_family(value: String) -> Result(FabPlansProcessFamily, String) {
+  case value {
+    "additive" -> Ok(FabPlansProcessFamilyAdditive)
+    "subtractive" -> Ok(FabPlansProcessFamilySubtractive)
+    "hybrid" -> Ok(FabPlansProcessFamilyHybrid)
+    _ -> Error("unsupported fab_plans.process_family: " <> value)
+  }
+}
+
+pub type FabPlansStatus {
+  FabPlansStatusDraft
+  FabPlansStatusPlanning
+  FabPlansStatusPlanned
+  FabPlansStatusReleased
+  FabPlansStatusArchived
+}
+
+pub fn fab_plans_status_to_string(value: FabPlansStatus) -> String {
+  case value {
+    FabPlansStatusDraft -> "draft"
+    FabPlansStatusPlanning -> "planning"
+    FabPlansStatusPlanned -> "planned"
+    FabPlansStatusReleased -> "released"
+    FabPlansStatusArchived -> "archived"
+  }
+}
+
+pub fn parse_fab_plans_status(value: String) -> Result(FabPlansStatus, String) {
+  case value {
+    "draft" -> Ok(FabPlansStatusDraft)
+    "planning" -> Ok(FabPlansStatusPlanning)
+    "planned" -> Ok(FabPlansStatusPlanned)
+    "released" -> Ok(FabPlansStatusReleased)
+    "archived" -> Ok(FabPlansStatusArchived)
+    _ -> Error("unsupported fab_plans.status: " <> value)
+  }
+}
+
+pub type FabPlansRow {
+  FabPlansRow(
+    id: String,
+    owner_email: String,
+    title: String,
+    goal: String,
+    process_family: String,
+    status: String,
+    document_json: Option(String),
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_fab_plans_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("fab_plans.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_fab_plans_process_family(value: String) -> Result(String, String) {
+  case list.contains(["additive", "subtractive", "hybrid"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported fab_plans.process_family: " <> value)
+  }
+}
+
+pub fn validate_fab_plans_status(value: String) -> Result(String, String) {
+  case list.contains(["draft", "planning", "planned", "released", "archived"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported fab_plans.status: " <> value)
+  }
+}
+
+pub const fab_designs_table = "daedalus.fab_designs"
+pub const fab_designs_select_sql = "select\n      id::text as id,\n      plan_id::text as plan_id,\n      filename,\n      format,\n      storage_uri,\n      size_bytes,\n      content_hash,\n      geometry::text as geometry_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_designs"
+
+pub type FabDesignsFormat {
+  FabDesignsFormatStep
+  FabDesignsFormatStl
+  FabDesignsFormat3mf
+  FabDesignsFormatDxf
+  FabDesignsFormatIges
+  FabDesignsFormatObj
+}
+
+pub fn fab_designs_format_to_string(value: FabDesignsFormat) -> String {
+  case value {
+    FabDesignsFormatStep -> "step"
+    FabDesignsFormatStl -> "stl"
+    FabDesignsFormat3mf -> "3mf"
+    FabDesignsFormatDxf -> "dxf"
+    FabDesignsFormatIges -> "iges"
+    FabDesignsFormatObj -> "obj"
+  }
+}
+
+pub fn parse_fab_designs_format(value: String) -> Result(FabDesignsFormat, String) {
+  case value {
+    "step" -> Ok(FabDesignsFormatStep)
+    "stl" -> Ok(FabDesignsFormatStl)
+    "3mf" -> Ok(FabDesignsFormat3mf)
+    "dxf" -> Ok(FabDesignsFormatDxf)
+    "iges" -> Ok(FabDesignsFormatIges)
+    "obj" -> Ok(FabDesignsFormatObj)
+    _ -> Error("unsupported fab_designs.format: " <> value)
+  }
+}
+
+pub type FabDesignsRow {
+  FabDesignsRow(
+    id: String,
+    plan_id: String,
+    filename: String,
+    format: String,
+    storage_uri: String,
+    size_bytes: Int,
+    content_hash: Option(String),
+    geometry_json: String,
+    created_at: String,
+  )
+}
+
+pub fn validate_fab_designs_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("fab_designs.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_fab_designs_format(value: String) -> Result(String, String) {
+  case list.contains(["step", "stl", "3mf", "dxf", "iges", "obj"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported fab_designs.format: " <> value)
+  }
+}
+
+pub const fab_instructions_table = "daedalus.fab_instructions"
+pub const fab_instructions_select_sql = "select\n      id::text as id,\n      plan_id::text as plan_id,\n      revision,\n      machine_profile,\n      dialect,\n      storage_uri,\n      content_hash,\n      validated,\n      validation::text as validation_json,\n      released_by_email,\n      to_char(released_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as released_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_instructions"
+
+pub type FabInstructionsDialect {
+  FabInstructionsDialectGcode
+  FabInstructionsDialectNc
+  FabInstructionsDialectApt
+  FabInstructionsDialectProprietary
+}
+
+pub fn fab_instructions_dialect_to_string(value: FabInstructionsDialect) -> String {
+  case value {
+    FabInstructionsDialectGcode -> "gcode"
+    FabInstructionsDialectNc -> "nc"
+    FabInstructionsDialectApt -> "apt"
+    FabInstructionsDialectProprietary -> "proprietary"
+  }
+}
+
+pub fn parse_fab_instructions_dialect(value: String) -> Result(FabInstructionsDialect, String) {
+  case value {
+    "gcode" -> Ok(FabInstructionsDialectGcode)
+    "nc" -> Ok(FabInstructionsDialectNc)
+    "apt" -> Ok(FabInstructionsDialectApt)
+    "proprietary" -> Ok(FabInstructionsDialectProprietary)
+    _ -> Error("unsupported fab_instructions.dialect: " <> value)
+  }
+}
+
+pub type FabInstructionsRow {
+  FabInstructionsRow(
+    id: String,
+    plan_id: String,
+    revision: Int,
+    machine_profile: String,
+    dialect: String,
+    storage_uri: String,
+    content_hash: Option(String),
+    validated: Bool,
+    validation_json: String,
+    released_by_email: Option(String),
+    released_at: Option(String),
+    created_at: String,
+  )
+}
+
+pub fn validate_fab_instructions_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("fab_instructions.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_fab_instructions_dialect(value: String) -> Result(String, String) {
+  case list.contains(["gcode", "nc", "apt", "proprietary"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported fab_instructions.dialect: " <> value)
+  }
+}
+
+pub const fab_runs_table = "daedalus.fab_runs"
+pub const fab_runs_select_sql = "select\n      id::text as id,\n      instructions_id::text as instructions_id,\n      status,\n      machine_id,\n      operator_email,\n      progress,\n      as_built::text as as_built_json,\n      error,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_runs"
+
+pub type FabRunsStatus {
+  FabRunsStatusQueued
+  FabRunsStatusRunning
+  FabRunsStatusSucceeded
+  FabRunsStatusFailed
+  FabRunsStatusAborted
+}
+
+pub fn fab_runs_status_to_string(value: FabRunsStatus) -> String {
+  case value {
+    FabRunsStatusQueued -> "queued"
+    FabRunsStatusRunning -> "running"
+    FabRunsStatusSucceeded -> "succeeded"
+    FabRunsStatusFailed -> "failed"
+    FabRunsStatusAborted -> "aborted"
+  }
+}
+
+pub fn parse_fab_runs_status(value: String) -> Result(FabRunsStatus, String) {
+  case value {
+    "queued" -> Ok(FabRunsStatusQueued)
+    "running" -> Ok(FabRunsStatusRunning)
+    "succeeded" -> Ok(FabRunsStatusSucceeded)
+    "failed" -> Ok(FabRunsStatusFailed)
+    "aborted" -> Ok(FabRunsStatusAborted)
+    _ -> Error("unsupported fab_runs.status: " <> value)
+  }
+}
+
+pub type FabRunsRow {
+  FabRunsRow(
+    id: String,
+    instructions_id: String,
+    status: String,
+    machine_id: String,
+    operator_email: Option(String),
+    progress: Int,
+    as_built_json: String,
+    error: Option(String),
+    started_at: Option(String),
+    finished_at: Option(String),
+    created_at: String,
+  )
+}
+
+pub fn validate_fab_runs_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("fab_runs.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_fab_runs_status(value: String) -> Result(String, String) {
+  case list.contains(["queued", "running", "succeeded", "failed", "aborted"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported fab_runs.status: " <> value)
+  }
+}
+
 fn is_slug_text(value: String) -> Bool {
   let chars = string.to_graphemes(value)
   case chars {

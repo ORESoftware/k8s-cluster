@@ -12445,6 +12445,1558 @@ class SharedContextRow {
   }
 }
 
+const syncClockTable = "fiducia.sync_clock";
+const syncClockSelectSql = "select\n      singleton,\n      last_sequence\n    from fiducia.sync_clock";
+
+class SyncClockRow {
+  const SyncClockRow({
+    required this.singleton,
+    required this.lastSequence,
+  });
+
+  final bool singleton;
+  final int lastSequence;
+
+  factory SyncClockRow.fromJson(Map<String, Object?> json) {
+    return SyncClockRow(
+      singleton: _readRequiredBool(json, "singleton"),
+      lastSequence: _readRequiredInt(json, "lastSequence"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "singleton": singleton,
+    "lastSequence": lastSequence,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+}
+
+const syncTombstonesTable = "fiducia.sync_tombstones";
+const syncTombstonesSelectSql = "select\n      sequence,\n      table_name,\n      row_id,\n      tenant_id::text as tenant_id,\n      owner_user_id::text as owner_user_id,\n      row_version,\n      to_char(deleted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as deleted_at\n    from fiducia.sync_tombstones";
+
+class SyncTombstonesRow {
+  const SyncTombstonesRow({
+    required this.sequence,
+    required this.tableName,
+    required this.rowId,
+    this.tenantId,
+    this.ownerUserId,
+    required this.rowVersion,
+    required this.deletedAt,
+  });
+
+  final int sequence;
+  final String tableName;
+  final String rowId;
+  final String? tenantId;
+  final String? ownerUserId;
+  final int rowVersion;
+  final String deletedAt;
+
+  factory SyncTombstonesRow.fromJson(Map<String, Object?> json) {
+    return SyncTombstonesRow(
+      sequence: _readRequiredInt(json, "sequence"),
+      tableName: _readRequiredString(json, "tableName"),
+      rowId: _readRequiredString(json, "rowId"),
+      tenantId: _readOptionalString(json, "tenantId"),
+      ownerUserId: _readOptionalString(json, "ownerUserId"),
+      rowVersion: _readRequiredInt(json, "rowVersion"),
+      deletedAt: _readRequiredString(json, "deletedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "sequence": sequence,
+    "tableName": tableName,
+    "rowId": rowId,
+    "tenantId": tenantId,
+    "ownerUserId": ownerUserId,
+    "rowVersion": rowVersion,
+    "deletedAt": deletedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+}
+
+const orgsTable = "fiducia.orgs";
+const orgsSelectSql = "select\n      id::text as id,\n      slug,\n      name,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence\n    from fiducia.orgs";
+
+class OrgsRow {
+  const OrgsRow({
+    required this.id,
+    required this.slug,
+    required this.name,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.version,
+    required this.syncSequence,
+  });
+
+  final String id;
+  final String slug;
+  final String name;
+  final String createdAt;
+  final String updatedAt;
+  final int version;
+  final int syncSequence;
+
+  factory OrgsRow.fromJson(Map<String, Object?> json) {
+    return OrgsRow(
+      id: _readRequiredString(json, "id"),
+      slug: _readRequiredString(json, "slug"),
+      name: _readRequiredString(json, "name"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      version: _readRequiredInt(json, "version"),
+      syncSequence: _readRequiredInt(json, "syncSequence"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "slug": slug,
+    "name": name,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "version": version,
+    "syncSequence": syncSequence,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$').hasMatch(slug)) {
+      errors.add("orgs.slug must be a lowercase slug");
+    }
+    return errors;
+  }
+}
+
+const projectsTable = "fiducia.projects";
+const projectsSelectSql = "select\n      id::text as id,\n      org_id::text as org_id,\n      slug,\n      name,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence\n    from fiducia.projects";
+
+class ProjectsRow {
+  const ProjectsRow({
+    required this.id,
+    required this.orgId,
+    required this.slug,
+    required this.name,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.version,
+    required this.syncSequence,
+  });
+
+  final String id;
+  final String orgId;
+  final String slug;
+  final String name;
+  final String createdAt;
+  final String updatedAt;
+  final int version;
+  final int syncSequence;
+
+  factory ProjectsRow.fromJson(Map<String, Object?> json) {
+    return ProjectsRow(
+      id: _readRequiredString(json, "id"),
+      orgId: _readRequiredString(json, "orgId"),
+      slug: _readRequiredString(json, "slug"),
+      name: _readRequiredString(json, "name"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      version: _readRequiredInt(json, "version"),
+      syncSequence: _readRequiredInt(json, "syncSequence"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "orgId": orgId,
+    "slug": slug,
+    "name": name,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "version": version,
+    "syncSequence": syncSequence,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$').hasMatch(slug)) {
+      errors.add("projects.slug must be a lowercase slug");
+    }
+    return errors;
+  }
+}
+
+const usersTable = "fiducia.users";
+const usersSelectSql = "select\n      id::text as id,\n      supabase_user_id::text as supabase_user_id,\n      email,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from fiducia.users";
+
+class UsersRow {
+  const UsersRow({
+    required this.id,
+    required this.supabaseUserId,
+    required this.email,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String supabaseUserId;
+  final String email;
+  final String createdAt;
+
+  factory UsersRow.fromJson(Map<String, Object?> json) {
+    return UsersRow(
+      id: _readRequiredString(json, "id"),
+      supabaseUserId: _readRequiredString(json, "supabaseUserId"),
+      email: _readRequiredString(json, "email"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "supabaseUserId": supabaseUserId,
+    "email": email,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+}
+
+const orgMembersTable = "fiducia.org_members";
+const orgMembersSelectSql = "select\n      org_id::text as org_id,\n      user_id::text as user_id,\n      role,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from fiducia.org_members";
+
+const orgMembersRoleValues = <String>["owner", "admin", "member"];
+
+class OrgMembersRow {
+  const OrgMembersRow({
+    required this.orgId,
+    required this.userId,
+    required this.role,
+    required this.createdAt,
+  });
+
+  final String orgId;
+  final String userId;
+  final String role;
+  final String createdAt;
+
+  factory OrgMembersRow.fromJson(Map<String, Object?> json) {
+    return OrgMembersRow(
+      orgId: _readRequiredString(json, "orgId"),
+      userId: _readRequiredString(json, "userId"),
+      role: _readRequiredString(json, "role"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "orgId": orgId,
+    "userId": userId,
+    "role": role,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!orgMembersRoleValues.contains(role)) {
+      errors.add("unsupported org_members.role");
+    }
+    return errors;
+  }
+}
+
+const projectMembersTable = "fiducia.project_members";
+const projectMembersSelectSql = "select\n      project_id::text as project_id,\n      user_id::text as user_id,\n      role,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from fiducia.project_members";
+
+const projectMembersRoleValues = <String>["admin", "operator", "viewer"];
+
+class ProjectMembersRow {
+  const ProjectMembersRow({
+    required this.projectId,
+    required this.userId,
+    required this.role,
+    required this.createdAt,
+  });
+
+  final String projectId;
+  final String userId;
+  final String role;
+  final String createdAt;
+
+  factory ProjectMembersRow.fromJson(Map<String, Object?> json) {
+    return ProjectMembersRow(
+      projectId: _readRequiredString(json, "projectId"),
+      userId: _readRequiredString(json, "userId"),
+      role: _readRequiredString(json, "role"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "projectId": projectId,
+    "userId": userId,
+    "role": role,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!projectMembersRoleValues.contains(role)) {
+      errors.add("unsupported project_members.role");
+    }
+    return errors;
+  }
+}
+
+const apiKeysTable = "fiducia.api_keys";
+const apiKeysSelectSql = "select\n      id::text as id,\n      key_id,\n      org_id::text as org_id,\n      project_id::text as project_id,\n      created_by_user_id::text as created_by_user_id,\n      name,\n      secret_hash,\n      scopes::text as scopes_json,\n      env,\n      require_idempotency,\n      mtls_required,\n      revoked,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence,\n      to_char(last_used_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_used_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at\n    from fiducia.api_keys";
+
+const apiKeysEnvValues = <String>["live", "test"];
+
+class ApiKeysRow {
+  const ApiKeysRow({
+    required this.id,
+    required this.keyId,
+    required this.orgId,
+    this.projectId,
+    this.createdByUserId,
+    required this.name,
+    required this.secretHash,
+    required this.scopes,
+    required this.env,
+    required this.requireIdempotency,
+    required this.mtlsRequired,
+    required this.revoked,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.version,
+    required this.syncSequence,
+    this.lastUsedAt,
+    this.expiresAt,
+  });
+
+  final String id;
+  final String keyId;
+  final String orgId;
+  final String? projectId;
+  final String? createdByUserId;
+  final String name;
+  final String secretHash;
+  final List<Object?> scopes;
+  final String env;
+  final bool requireIdempotency;
+  final bool mtlsRequired;
+  final bool revoked;
+  final String createdAt;
+  final String updatedAt;
+  final int version;
+  final int syncSequence;
+  final String? lastUsedAt;
+  final String? expiresAt;
+
+  factory ApiKeysRow.fromJson(Map<String, Object?> json) {
+    return ApiKeysRow(
+      id: _readRequiredString(json, "id"),
+      keyId: _readRequiredString(json, "keyId"),
+      orgId: _readRequiredString(json, "orgId"),
+      projectId: _readOptionalString(json, "projectId"),
+      createdByUserId: _readOptionalString(json, "createdByUserId"),
+      name: _readRequiredString(json, "name"),
+      secretHash: _readRequiredString(json, "secretHash"),
+      scopes: _readRequiredArray(json, "scopes"),
+      env: _readRequiredString(json, "env"),
+      requireIdempotency: _readRequiredBool(json, "requireIdempotency"),
+      mtlsRequired: _readRequiredBool(json, "mtlsRequired"),
+      revoked: _readRequiredBool(json, "revoked"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      version: _readRequiredInt(json, "version"),
+      syncSequence: _readRequiredInt(json, "syncSequence"),
+      lastUsedAt: _readOptionalString(json, "lastUsedAt"),
+      expiresAt: _readOptionalString(json, "expiresAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "keyId": keyId,
+    "orgId": orgId,
+    "projectId": projectId,
+    "createdByUserId": createdByUserId,
+    "name": name,
+    "secretHash": secretHash,
+    "scopes": scopes,
+    "env": env,
+    "requireIdempotency": requireIdempotency,
+    "mtlsRequired": mtlsRequired,
+    "revoked": revoked,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "version": version,
+    "syncSequence": syncSequence,
+    "lastUsedAt": lastUsedAt,
+    "expiresAt": expiresAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!apiKeysEnvValues.contains(env)) {
+      errors.add("unsupported api_keys.env");
+    }
+    return errors;
+  }
+}
+
+const mtlsClientCertsTable = "fiducia.mtls_client_certs";
+const mtlsClientCertsSelectSql = "select\n      id::text as id,\n      org_id::text as org_id,\n      project_id::text as project_id,\n      name,\n      subject,\n      sha256_fingerprint,\n      to_char(not_before at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as not_before,\n      to_char(not_after at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as not_after,\n      revoked,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence\n    from fiducia.mtls_client_certs";
+
+class MtlsClientCertsRow {
+  const MtlsClientCertsRow({
+    required this.id,
+    required this.orgId,
+    this.projectId,
+    required this.name,
+    required this.subject,
+    required this.sha256Fingerprint,
+    this.notBefore,
+    this.notAfter,
+    required this.revoked,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.version,
+    required this.syncSequence,
+  });
+
+  final String id;
+  final String orgId;
+  final String? projectId;
+  final String name;
+  final String subject;
+  final String sha256Fingerprint;
+  final String? notBefore;
+  final String? notAfter;
+  final bool revoked;
+  final String createdAt;
+  final String updatedAt;
+  final int version;
+  final int syncSequence;
+
+  factory MtlsClientCertsRow.fromJson(Map<String, Object?> json) {
+    return MtlsClientCertsRow(
+      id: _readRequiredString(json, "id"),
+      orgId: _readRequiredString(json, "orgId"),
+      projectId: _readOptionalString(json, "projectId"),
+      name: _readRequiredString(json, "name"),
+      subject: _readRequiredString(json, "subject"),
+      sha256Fingerprint: _readRequiredString(json, "sha256Fingerprint"),
+      notBefore: _readOptionalString(json, "notBefore"),
+      notAfter: _readOptionalString(json, "notAfter"),
+      revoked: _readRequiredBool(json, "revoked"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      version: _readRequiredInt(json, "version"),
+      syncSequence: _readRequiredInt(json, "syncSequence"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "orgId": orgId,
+    "projectId": projectId,
+    "name": name,
+    "subject": subject,
+    "sha256Fingerprint": sha256Fingerprint,
+    "notBefore": notBefore,
+    "notAfter": notAfter,
+    "revoked": revoked,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "version": version,
+    "syncSequence": syncSequence,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+}
+
+const customerPreferencesTable = "fiducia.customer_preferences";
+const customerPreferencesSelectSql = "select\n      user_id::text as user_id,\n      density,\n      timezone,\n      region,\n      notify_key_rotation,\n      notify_lock_contention,\n      notify_mfa,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence\n    from fiducia.customer_preferences";
+
+const customerPreferencesDensityValues = <String>["comfortable", "compact"];
+
+class CustomerPreferencesRow {
+  const CustomerPreferencesRow({
+    required this.userId,
+    required this.density,
+    required this.timezone,
+    required this.region,
+    required this.notifyKeyRotation,
+    required this.notifyLockContention,
+    required this.notifyMfa,
+    required this.updatedAt,
+    required this.version,
+    required this.syncSequence,
+  });
+
+  final String userId;
+  final String density;
+  final String timezone;
+  final String region;
+  final bool notifyKeyRotation;
+  final bool notifyLockContention;
+  final bool notifyMfa;
+  final String updatedAt;
+  final int version;
+  final int syncSequence;
+
+  factory CustomerPreferencesRow.fromJson(Map<String, Object?> json) {
+    return CustomerPreferencesRow(
+      userId: _readRequiredString(json, "userId"),
+      density: _readRequiredString(json, "density"),
+      timezone: _readRequiredString(json, "timezone"),
+      region: _readRequiredString(json, "region"),
+      notifyKeyRotation: _readRequiredBool(json, "notifyKeyRotation"),
+      notifyLockContention: _readRequiredBool(json, "notifyLockContention"),
+      notifyMfa: _readRequiredBool(json, "notifyMfa"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      version: _readRequiredInt(json, "version"),
+      syncSequence: _readRequiredInt(json, "syncSequence"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "userId": userId,
+    "density": density,
+    "timezone": timezone,
+    "region": region,
+    "notifyKeyRotation": notifyKeyRotation,
+    "notifyLockContention": notifyLockContention,
+    "notifyMfa": notifyMfa,
+    "updatedAt": updatedAt,
+    "version": version,
+    "syncSequence": syncSequence,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!customerPreferencesDensityValues.contains(density)) {
+      errors.add("unsupported customer_preferences.density");
+    }
+    return errors;
+  }
+}
+
+const customerSessionsTable = "fiducia.customer_sessions";
+const customerSessionsSelectSql = "select\n      id::text as id,\n      user_id::text as user_id,\n      device,\n      location,\n      to_char(last_seen at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen,\n      status,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence\n    from fiducia.customer_sessions";
+
+const customerSessionsStatusValues = <String>["active", "verified", "revoked"];
+
+class CustomerSessionsRow {
+  const CustomerSessionsRow({
+    required this.id,
+    required this.userId,
+    required this.device,
+    this.location,
+    required this.lastSeen,
+    required this.status,
+    required this.updatedAt,
+    required this.version,
+    required this.syncSequence,
+  });
+
+  final String id;
+  final String userId;
+  final String device;
+  final String? location;
+  final String lastSeen;
+  final String status;
+  final String updatedAt;
+  final int version;
+  final int syncSequence;
+
+  factory CustomerSessionsRow.fromJson(Map<String, Object?> json) {
+    return CustomerSessionsRow(
+      id: _readRequiredString(json, "id"),
+      userId: _readRequiredString(json, "userId"),
+      device: _readRequiredString(json, "device"),
+      location: _readOptionalString(json, "location"),
+      lastSeen: _readRequiredString(json, "lastSeen"),
+      status: _readRequiredString(json, "status"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      version: _readRequiredInt(json, "version"),
+      syncSequence: _readRequiredInt(json, "syncSequence"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "userId": userId,
+    "device": device,
+    "location": location,
+    "lastSeen": lastSeen,
+    "status": status,
+    "updatedAt": updatedAt,
+    "version": version,
+    "syncSequence": syncSequence,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!customerSessionsStatusValues.contains(status)) {
+      errors.add("unsupported customer_sessions.status");
+    }
+    return errors;
+  }
+}
+
+const auditLogTable = "fiducia.audit_log";
+const auditLogSelectSql = "select\n      id::text as id,\n      org_id::text as org_id,\n      project_id::text as project_id,\n      actor_user_id::text as actor_user_id,\n      actor_key_id::text as actor_key_id,\n      actor,\n      action,\n      target,\n      request_id,\n      source_ip,\n      user_agent,\n      meta::text as meta_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(retention_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as retention_expires_at\n    from fiducia.audit_log";
+
+class AuditLogRow {
+  const AuditLogRow({
+    required this.id,
+    this.orgId,
+    this.projectId,
+    this.actorUserId,
+    this.actorKeyId,
+    this.actor,
+    required this.action,
+    this.target,
+    this.requestId,
+    this.sourceIp,
+    this.userAgent,
+    required this.meta,
+    required this.createdAt,
+    this.retentionExpiresAt,
+  });
+
+  final String id;
+  final String? orgId;
+  final String? projectId;
+  final String? actorUserId;
+  final String? actorKeyId;
+  final String? actor;
+  final String action;
+  final String? target;
+  final String? requestId;
+  final String? sourceIp;
+  final String? userAgent;
+  final Map<String, Object?> meta;
+  final String createdAt;
+  final String? retentionExpiresAt;
+
+  factory AuditLogRow.fromJson(Map<String, Object?> json) {
+    return AuditLogRow(
+      id: _readRequiredString(json, "id"),
+      orgId: _readOptionalString(json, "orgId"),
+      projectId: _readOptionalString(json, "projectId"),
+      actorUserId: _readOptionalString(json, "actorUserId"),
+      actorKeyId: _readOptionalString(json, "actorKeyId"),
+      actor: _readOptionalString(json, "actor"),
+      action: _readRequiredString(json, "action"),
+      target: _readOptionalString(json, "target"),
+      requestId: _readOptionalString(json, "requestId"),
+      sourceIp: _readOptionalString(json, "sourceIp"),
+      userAgent: _readOptionalString(json, "userAgent"),
+      meta: _readRequiredObject(json, "meta"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      retentionExpiresAt: _readOptionalString(json, "retentionExpiresAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "orgId": orgId,
+    "projectId": projectId,
+    "actorUserId": actorUserId,
+    "actorKeyId": actorKeyId,
+    "actor": actor,
+    "action": action,
+    "target": target,
+    "requestId": requestId,
+    "sourceIp": sourceIp,
+    "userAgent": userAgent,
+    "meta": meta,
+    "createdAt": createdAt,
+    "retentionExpiresAt": retentionExpiresAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+}
+
+const customerNotificationsTable = "fiducia.customer_notifications";
+const customerNotificationsSelectSql = "select\n      id::text as id,\n      user_id::text as user_id,\n      org_id::text as org_id,\n      kind,\n      severity,\n      title,\n      body,\n      link,\n      to_char(read_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as read_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      version,\n      sync_sequence\n    from fiducia.customer_notifications";
+
+const customerNotificationsSeverityValues = <String>["info", "success", "warning", "critical"];
+
+class CustomerNotificationsRow {
+  const CustomerNotificationsRow({
+    required this.id,
+    required this.userId,
+    this.orgId,
+    required this.kind,
+    required this.severity,
+    required this.title,
+    required this.body,
+    this.link,
+    this.readAt,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.version,
+    required this.syncSequence,
+  });
+
+  final String id;
+  final String userId;
+  final String? orgId;
+  final String kind;
+  final String severity;
+  final String title;
+  final String body;
+  final String? link;
+  final String? readAt;
+  final String createdAt;
+  final String updatedAt;
+  final int version;
+  final int syncSequence;
+
+  factory CustomerNotificationsRow.fromJson(Map<String, Object?> json) {
+    return CustomerNotificationsRow(
+      id: _readRequiredString(json, "id"),
+      userId: _readRequiredString(json, "userId"),
+      orgId: _readOptionalString(json, "orgId"),
+      kind: _readRequiredString(json, "kind"),
+      severity: _readRequiredString(json, "severity"),
+      title: _readRequiredString(json, "title"),
+      body: _readRequiredString(json, "body"),
+      link: _readOptionalString(json, "link"),
+      readAt: _readOptionalString(json, "readAt"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      version: _readRequiredInt(json, "version"),
+      syncSequence: _readRequiredInt(json, "syncSequence"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "userId": userId,
+    "orgId": orgId,
+    "kind": kind,
+    "severity": severity,
+    "title": title,
+    "body": body,
+    "link": link,
+    "readAt": readAt,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "version": version,
+    "syncSequence": syncSequence,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[a-z][a-z0-9_.]{1,38}[a-z0-9]$').hasMatch(kind)) {
+      errors.add("customer_notifications.kind does not match the required pattern");
+    }
+    if (!customerNotificationsSeverityValues.contains(severity)) {
+      errors.add("unsupported customer_notifications.severity");
+    }
+    return errors;
+  }
+}
+
+const syncIdempotencyKeysTable = "fiducia.sync_idempotency_keys";
+const syncIdempotencyKeysSelectSql = "select\n      key,\n      request_fingerprint,\n      committed_version,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from fiducia.sync_idempotency_keys";
+
+class SyncIdempotencyKeysRow {
+  const SyncIdempotencyKeysRow({
+    required this.key,
+    required this.requestFingerprint,
+    this.committedVersion,
+    required this.createdAt,
+  });
+
+  final String key;
+  final String requestFingerprint;
+  final int? committedVersion;
+  final String createdAt;
+
+  factory SyncIdempotencyKeysRow.fromJson(Map<String, Object?> json) {
+    return SyncIdempotencyKeysRow(
+      key: _readRequiredString(json, "key"),
+      requestFingerprint: _readRequiredString(json, "requestFingerprint"),
+      committedVersion: _readOptionalInt(json, "committedVersion"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "key": key,
+    "requestFingerprint": requestFingerprint,
+    "committedVersion": committedVersion,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(requestFingerprint)) {
+      errors.add("sync_idempotency_keys.request_fingerprint does not match the required pattern");
+    }
+    return errors;
+  }
+}
+
+const transcriptionsTable = "t2v.transcriptions";
+const transcriptionsSelectSql = "select\n      id::text as id,\n      source,\n      provider,\n      model,\n      text,\n      language,\n      sample_rate,\n      duration_ms,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from t2v.transcriptions";
+
+class TranscriptionsRow {
+  const TranscriptionsRow({
+    required this.id,
+    required this.source,
+    required this.provider,
+    required this.model,
+    required this.text,
+    this.language,
+    this.sampleRate,
+    this.durationMs,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String source;
+  final String provider;
+  final String model;
+  final String text;
+  final String? language;
+  final int? sampleRate;
+  final int? durationMs;
+  final String createdAt;
+
+  factory TranscriptionsRow.fromJson(Map<String, Object?> json) {
+    return TranscriptionsRow(
+      id: _readRequiredString(json, "id"),
+      source: _readRequiredString(json, "source"),
+      provider: _readRequiredString(json, "provider"),
+      model: _readRequiredString(json, "model"),
+      text: _readRequiredString(json, "text"),
+      language: _readOptionalString(json, "language"),
+      sampleRate: _readOptionalInt(json, "sampleRate"),
+      durationMs: _readOptionalInt(json, "durationMs"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "source": source,
+    "provider": provider,
+    "model": model,
+    "text": text,
+    "language": language,
+    "sampleRate": sampleRate,
+    "durationMs": durationMs,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (utf8.encode(source).length > 40) {
+      errors.add("transcriptions.source exceeds 40 bytes");
+    }
+    if (utf8.encode(source).length < 1) {
+      errors.add("transcriptions.source is below 1 bytes");
+    }
+    if (utf8.encode(provider).length > 40) {
+      errors.add("transcriptions.provider exceeds 40 bytes");
+    }
+    if (utf8.encode(provider).length < 1) {
+      errors.add("transcriptions.provider is below 1 bytes");
+    }
+    if (utf8.encode(model).length > 200) {
+      errors.add("transcriptions.model exceeds 200 bytes");
+    }
+    if (utf8.encode(model).length < 1) {
+      errors.add("transcriptions.model is below 1 bytes");
+    }
+    if (utf8.encode(text).length > 1000000) {
+      errors.add("transcriptions.text exceeds 1000000 bytes");
+    }
+    if (language != null && utf8.encode(language!).length > 80) {
+      errors.add("transcriptions.language exceeds 80 bytes");
+    }
+    if (language != null && utf8.encode(language!).length < 1) {
+      errors.add("transcriptions.language is below 1 bytes");
+    }
+    if (sampleRate != null && sampleRate! < 4000) {
+      errors.add("transcriptions.sample_rate is below the minimum");
+    }
+    if (sampleRate != null && sampleRate! > 384000) {
+      errors.add("transcriptions.sample_rate is above the maximum");
+    }
+    return errors;
+  }
+}
+
+const synthesesTable = "t2v.syntheses";
+const synthesesSelectSql = "select\n      id::text as id,\n      text,\n      voice,\n      provider,\n      model,\n      format,\n      audio_bytes,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from t2v.syntheses";
+
+class SynthesesRow {
+  const SynthesesRow({
+    required this.id,
+    required this.text,
+    required this.voice,
+    required this.provider,
+    required this.model,
+    required this.format,
+    required this.audioBytes,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String text;
+  final String voice;
+  final String provider;
+  final String model;
+  final String format;
+  final int audioBytes;
+  final String createdAt;
+
+  factory SynthesesRow.fromJson(Map<String, Object?> json) {
+    return SynthesesRow(
+      id: _readRequiredString(json, "id"),
+      text: _readRequiredString(json, "text"),
+      voice: _readRequiredString(json, "voice"),
+      provider: _readRequiredString(json, "provider"),
+      model: _readRequiredString(json, "model"),
+      format: _readRequiredString(json, "format"),
+      audioBytes: _readRequiredInt(json, "audioBytes"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "text": text,
+    "voice": voice,
+    "provider": provider,
+    "model": model,
+    "format": format,
+    "audioBytes": audioBytes,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (utf8.encode(text).length > 20000) {
+      errors.add("syntheses.text exceeds 20000 bytes");
+    }
+    if (utf8.encode(text).length < 1) {
+      errors.add("syntheses.text is below 1 bytes");
+    }
+    if (utf8.encode(voice).length > 80) {
+      errors.add("syntheses.voice exceeds 80 bytes");
+    }
+    if (utf8.encode(voice).length < 1) {
+      errors.add("syntheses.voice is below 1 bytes");
+    }
+    if (utf8.encode(provider).length > 40) {
+      errors.add("syntheses.provider exceeds 40 bytes");
+    }
+    if (utf8.encode(provider).length < 1) {
+      errors.add("syntheses.provider is below 1 bytes");
+    }
+    if (utf8.encode(model).length > 200) {
+      errors.add("syntheses.model exceeds 200 bytes");
+    }
+    if (utf8.encode(model).length < 1) {
+      errors.add("syntheses.model is below 1 bytes");
+    }
+    if (utf8.encode(format).length > 10) {
+      errors.add("syntheses.format exceeds 10 bytes");
+    }
+    if (utf8.encode(format).length < 1) {
+      errors.add("syntheses.format is below 1 bytes");
+    }
+    return errors;
+  }
+}
+
+const translationsTable = "t2v.translations";
+const translationsSelectSql = "select\n      id::text as id,\n      source_text,\n      translated_text,\n      source_lang,\n      target_lang,\n      provider,\n      model,\n      latency_ms,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from t2v.translations";
+
+class TranslationsRow {
+  const TranslationsRow({
+    required this.id,
+    required this.sourceText,
+    required this.translatedText,
+    this.sourceLang,
+    required this.targetLang,
+    required this.provider,
+    required this.model,
+    required this.latencyMs,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String sourceText;
+  final String translatedText;
+  final String? sourceLang;
+  final String targetLang;
+  final String provider;
+  final String model;
+  final int latencyMs;
+  final String createdAt;
+
+  factory TranslationsRow.fromJson(Map<String, Object?> json) {
+    return TranslationsRow(
+      id: _readRequiredString(json, "id"),
+      sourceText: _readRequiredString(json, "sourceText"),
+      translatedText: _readRequiredString(json, "translatedText"),
+      sourceLang: _readOptionalString(json, "sourceLang"),
+      targetLang: _readRequiredString(json, "targetLang"),
+      provider: _readRequiredString(json, "provider"),
+      model: _readRequiredString(json, "model"),
+      latencyMs: _readRequiredInt(json, "latencyMs"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "sourceText": sourceText,
+    "translatedText": translatedText,
+    "sourceLang": sourceLang,
+    "targetLang": targetLang,
+    "provider": provider,
+    "model": model,
+    "latencyMs": latencyMs,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (utf8.encode(sourceText).length > 200000) {
+      errors.add("translations.source_text exceeds 200000 bytes");
+    }
+    if (utf8.encode(sourceText).length < 1) {
+      errors.add("translations.source_text is below 1 bytes");
+    }
+    if (utf8.encode(translatedText).length > 200000) {
+      errors.add("translations.translated_text exceeds 200000 bytes");
+    }
+    if (sourceLang != null && utf8.encode(sourceLang!).length > 80) {
+      errors.add("translations.source_lang exceeds 80 bytes");
+    }
+    if (sourceLang != null && utf8.encode(sourceLang!).length < 1) {
+      errors.add("translations.source_lang is below 1 bytes");
+    }
+    if (utf8.encode(targetLang).length > 80) {
+      errors.add("translations.target_lang exceeds 80 bytes");
+    }
+    if (utf8.encode(targetLang).length < 1) {
+      errors.add("translations.target_lang is below 1 bytes");
+    }
+    if (utf8.encode(provider).length > 40) {
+      errors.add("translations.provider exceeds 40 bytes");
+    }
+    if (utf8.encode(provider).length < 1) {
+      errors.add("translations.provider is below 1 bytes");
+    }
+    if (utf8.encode(model).length > 200) {
+      errors.add("translations.model exceeds 200 bytes");
+    }
+    if (utf8.encode(model).length < 1) {
+      errors.add("translations.model is below 1 bytes");
+    }
+    return errors;
+  }
+}
+
+const vapiCallsTable = "t2v.vapi_calls";
+const vapiCallsSelectSql = "select\n      id::text as id,\n      vapi_call_id,\n      status,\n      ended_reason,\n      transcript,\n      summary,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from t2v.vapi_calls";
+
+class VapiCallsRow {
+  const VapiCallsRow({
+    required this.id,
+    required this.vapiCallId,
+    required this.status,
+    this.endedReason,
+    this.transcript,
+    this.summary,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String vapiCallId;
+  final String status;
+  final String? endedReason;
+  final String? transcript;
+  final String? summary;
+  final String createdAt;
+  final String updatedAt;
+
+  factory VapiCallsRow.fromJson(Map<String, Object?> json) {
+    return VapiCallsRow(
+      id: _readRequiredString(json, "id"),
+      vapiCallId: _readRequiredString(json, "vapiCallId"),
+      status: _readRequiredString(json, "status"),
+      endedReason: _readOptionalString(json, "endedReason"),
+      transcript: _readOptionalString(json, "transcript"),
+      summary: _readOptionalString(json, "summary"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "vapiCallId": vapiCallId,
+    "status": status,
+    "endedReason": endedReason,
+    "transcript": transcript,
+    "summary": summary,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (utf8.encode(vapiCallId).length > 120) {
+      errors.add("vapi_calls.vapi_call_id exceeds 120 bytes");
+    }
+    if (utf8.encode(vapiCallId).length < 1) {
+      errors.add("vapi_calls.vapi_call_id is below 1 bytes");
+    }
+    if (utf8.encode(status).length > 40) {
+      errors.add("vapi_calls.status exceeds 40 bytes");
+    }
+    if (utf8.encode(status).length < 1) {
+      errors.add("vapi_calls.status is below 1 bytes");
+    }
+    if (endedReason != null && utf8.encode(endedReason!).length > 200) {
+      errors.add("vapi_calls.ended_reason exceeds 200 bytes");
+    }
+    if (endedReason != null && utf8.encode(endedReason!).length < 1) {
+      errors.add("vapi_calls.ended_reason is below 1 bytes");
+    }
+    if (transcript != null && utf8.encode(transcript!).length > 1000000) {
+      errors.add("vapi_calls.transcript exceeds 1000000 bytes");
+    }
+    if (summary != null && utf8.encode(summary!).length > 100000) {
+      errors.add("vapi_calls.summary exceeds 100000 bytes");
+    }
+    return errors;
+  }
+}
+
+const vapiEventsTable = "t2v.vapi_events";
+const vapiEventsSelectSql = "select\n      id::text as id,\n      vapi_call_id,\n      event_type,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from t2v.vapi_events";
+
+class VapiEventsRow {
+  const VapiEventsRow({
+    required this.id,
+    this.vapiCallId,
+    required this.eventType,
+    required this.payload,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String? vapiCallId;
+  final String eventType;
+  final Map<String, Object?> payload;
+  final String createdAt;
+
+  factory VapiEventsRow.fromJson(Map<String, Object?> json) {
+    return VapiEventsRow(
+      id: _readRequiredString(json, "id"),
+      vapiCallId: _readOptionalString(json, "vapiCallId"),
+      eventType: _readRequiredString(json, "eventType"),
+      payload: _readRequiredObject(json, "payload"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "vapiCallId": vapiCallId,
+    "eventType": eventType,
+    "payload": payload,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (vapiCallId != null && utf8.encode(vapiCallId!).length > 120) {
+      errors.add("vapi_events.vapi_call_id exceeds 120 bytes");
+    }
+    if (vapiCallId != null && utf8.encode(vapiCallId!).length < 1) {
+      errors.add("vapi_events.vapi_call_id is below 1 bytes");
+    }
+    if (utf8.encode(eventType).length > 80) {
+      errors.add("vapi_events.event_type exceeds 80 bytes");
+    }
+    if (utf8.encode(eventType).length < 1) {
+      errors.add("vapi_events.event_type is below 1 bytes");
+    }
+    return errors;
+  }
+}
+
+const fabPlansTable = "daedalus.fab_plans";
+const fabPlansSelectSql = "select\n      id::text as id,\n      owner_email,\n      title,\n      goal,\n      process_family,\n      status,\n      document::text as document_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from daedalus.fab_plans";
+
+const fabPlansProcessFamilyValues = <String>["additive", "subtractive", "hybrid"];
+const fabPlansStatusValues = <String>["draft", "planning", "planned", "released", "archived"];
+
+class FabPlansRow {
+  const FabPlansRow({
+    required this.id,
+    required this.ownerEmail,
+    required this.title,
+    required this.goal,
+    required this.processFamily,
+    required this.status,
+    this.document,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String ownerEmail;
+  final String title;
+  final String goal;
+  final String processFamily;
+  final String status;
+  final Map<String, Object?>? document;
+  final String createdAt;
+  final String updatedAt;
+
+  factory FabPlansRow.fromJson(Map<String, Object?> json) {
+    return FabPlansRow(
+      id: _readRequiredString(json, "id"),
+      ownerEmail: _readRequiredString(json, "ownerEmail"),
+      title: _readRequiredString(json, "title"),
+      goal: _readRequiredString(json, "goal"),
+      processFamily: _readRequiredString(json, "processFamily"),
+      status: _readRequiredString(json, "status"),
+      document: _readRequiredObject(json, "document"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "ownerEmail": ownerEmail,
+    "title": title,
+    "goal": goal,
+    "processFamily": processFamily,
+    "status": status,
+    "document": document,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (utf8.encode(ownerEmail).length > 320) {
+      errors.add("fab_plans.owner_email exceeds 320 bytes");
+    }
+    if (utf8.encode(ownerEmail).length < 3) {
+      errors.add("fab_plans.owner_email is below 3 bytes");
+    }
+    if (utf8.encode(title).length > 200) {
+      errors.add("fab_plans.title exceeds 200 bytes");
+    }
+    if (utf8.encode(title).length < 1) {
+      errors.add("fab_plans.title is below 1 bytes");
+    }
+    if (utf8.encode(goal).length > 20000) {
+      errors.add("fab_plans.goal exceeds 20000 bytes");
+    }
+    if (utf8.encode(goal).length < 1) {
+      errors.add("fab_plans.goal is below 1 bytes");
+    }
+    if (!fabPlansProcessFamilyValues.contains(processFamily)) {
+      errors.add("unsupported fab_plans.process_family");
+    }
+    if (!fabPlansStatusValues.contains(status)) {
+      errors.add("unsupported fab_plans.status");
+    }
+    return errors;
+  }
+}
+
+const fabDesignsTable = "daedalus.fab_designs";
+const fabDesignsSelectSql = "select\n      id::text as id,\n      plan_id::text as plan_id,\n      filename,\n      format,\n      storage_uri,\n      size_bytes,\n      content_hash,\n      geometry::text as geometry_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_designs";
+
+const fabDesignsFormatValues = <String>["step", "stl", "3mf", "dxf", "iges", "obj"];
+
+class FabDesignsRow {
+  const FabDesignsRow({
+    required this.id,
+    required this.planId,
+    required this.filename,
+    required this.format,
+    required this.storageUri,
+    required this.sizeBytes,
+    this.contentHash,
+    required this.geometry,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String planId;
+  final String filename;
+  final String format;
+  final String storageUri;
+  final int sizeBytes;
+  final String? contentHash;
+  final Map<String, Object?> geometry;
+  final String createdAt;
+
+  factory FabDesignsRow.fromJson(Map<String, Object?> json) {
+    return FabDesignsRow(
+      id: _readRequiredString(json, "id"),
+      planId: _readRequiredString(json, "planId"),
+      filename: _readRequiredString(json, "filename"),
+      format: _readRequiredString(json, "format"),
+      storageUri: _readRequiredString(json, "storageUri"),
+      sizeBytes: _readRequiredInt(json, "sizeBytes"),
+      contentHash: _readOptionalString(json, "contentHash"),
+      geometry: _readRequiredObject(json, "geometry"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "planId": planId,
+    "filename": filename,
+    "format": format,
+    "storageUri": storageUri,
+    "sizeBytes": sizeBytes,
+    "contentHash": contentHash,
+    "geometry": geometry,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (utf8.encode(filename).length > 400) {
+      errors.add("fab_designs.filename exceeds 400 bytes");
+    }
+    if (utf8.encode(filename).length < 1) {
+      errors.add("fab_designs.filename is below 1 bytes");
+    }
+    if (!fabDesignsFormatValues.contains(format)) {
+      errors.add("unsupported fab_designs.format");
+    }
+    if (utf8.encode(storageUri).length > 2000) {
+      errors.add("fab_designs.storage_uri exceeds 2000 bytes");
+    }
+    if (utf8.encode(storageUri).length < 1) {
+      errors.add("fab_designs.storage_uri is below 1 bytes");
+    }
+    return errors;
+  }
+}
+
+const fabInstructionsTable = "daedalus.fab_instructions";
+const fabInstructionsSelectSql = "select\n      id::text as id,\n      plan_id::text as plan_id,\n      revision,\n      machine_profile,\n      dialect,\n      storage_uri,\n      content_hash,\n      validated,\n      validation::text as validation_json,\n      released_by_email,\n      to_char(released_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as released_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_instructions";
+
+const fabInstructionsDialectValues = <String>["gcode", "nc", "apt", "proprietary"];
+
+class FabInstructionsRow {
+  const FabInstructionsRow({
+    required this.id,
+    required this.planId,
+    required this.revision,
+    required this.machineProfile,
+    required this.dialect,
+    required this.storageUri,
+    this.contentHash,
+    required this.validated,
+    required this.validation,
+    this.releasedByEmail,
+    this.releasedAt,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String planId;
+  final int revision;
+  final String machineProfile;
+  final String dialect;
+  final String storageUri;
+  final String? contentHash;
+  final bool validated;
+  final Map<String, Object?> validation;
+  final String? releasedByEmail;
+  final String? releasedAt;
+  final String createdAt;
+
+  factory FabInstructionsRow.fromJson(Map<String, Object?> json) {
+    return FabInstructionsRow(
+      id: _readRequiredString(json, "id"),
+      planId: _readRequiredString(json, "planId"),
+      revision: _readRequiredInt(json, "revision"),
+      machineProfile: _readRequiredString(json, "machineProfile"),
+      dialect: _readRequiredString(json, "dialect"),
+      storageUri: _readRequiredString(json, "storageUri"),
+      contentHash: _readOptionalString(json, "contentHash"),
+      validated: _readRequiredBool(json, "validated"),
+      validation: _readRequiredObject(json, "validation"),
+      releasedByEmail: _readOptionalString(json, "releasedByEmail"),
+      releasedAt: _readOptionalString(json, "releasedAt"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "planId": planId,
+    "revision": revision,
+    "machineProfile": machineProfile,
+    "dialect": dialect,
+    "storageUri": storageUri,
+    "contentHash": contentHash,
+    "validated": validated,
+    "validation": validation,
+    "releasedByEmail": releasedByEmail,
+    "releasedAt": releasedAt,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (revision < 1) {
+      errors.add("fab_instructions.revision is below the minimum");
+    }
+    if (utf8.encode(machineProfile).length > 200) {
+      errors.add("fab_instructions.machine_profile exceeds 200 bytes");
+    }
+    if (utf8.encode(machineProfile).length < 1) {
+      errors.add("fab_instructions.machine_profile is below 1 bytes");
+    }
+    if (!fabInstructionsDialectValues.contains(dialect)) {
+      errors.add("unsupported fab_instructions.dialect");
+    }
+    if (utf8.encode(storageUri).length > 2000) {
+      errors.add("fab_instructions.storage_uri exceeds 2000 bytes");
+    }
+    if (utf8.encode(storageUri).length < 1) {
+      errors.add("fab_instructions.storage_uri is below 1 bytes");
+    }
+    return errors;
+  }
+}
+
+const fabRunsTable = "daedalus.fab_runs";
+const fabRunsSelectSql = "select\n      id::text as id,\n      instructions_id::text as instructions_id,\n      status,\n      machine_id,\n      operator_email,\n      progress,\n      as_built::text as as_built_json,\n      error,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_runs";
+
+const fabRunsStatusValues = <String>["queued", "running", "succeeded", "failed", "aborted"];
+
+class FabRunsRow {
+  const FabRunsRow({
+    required this.id,
+    required this.instructionsId,
+    required this.status,
+    required this.machineId,
+    this.operatorEmail,
+    required this.progress,
+    required this.asBuilt,
+    this.error,
+    this.startedAt,
+    this.finishedAt,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String instructionsId;
+  final String status;
+  final String machineId;
+  final String? operatorEmail;
+  final int progress;
+  final Map<String, Object?> asBuilt;
+  final String? error;
+  final String? startedAt;
+  final String? finishedAt;
+  final String createdAt;
+
+  factory FabRunsRow.fromJson(Map<String, Object?> json) {
+    return FabRunsRow(
+      id: _readRequiredString(json, "id"),
+      instructionsId: _readRequiredString(json, "instructionsId"),
+      status: _readRequiredString(json, "status"),
+      machineId: _readRequiredString(json, "machineId"),
+      operatorEmail: _readOptionalString(json, "operatorEmail"),
+      progress: _readRequiredInt(json, "progress"),
+      asBuilt: _readRequiredObject(json, "asBuilt"),
+      error: _readOptionalString(json, "error"),
+      startedAt: _readOptionalString(json, "startedAt"),
+      finishedAt: _readOptionalString(json, "finishedAt"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "instructionsId": instructionsId,
+    "status": status,
+    "machineId": machineId,
+    "operatorEmail": operatorEmail,
+    "progress": progress,
+    "asBuilt": asBuilt,
+    "error": error,
+    "startedAt": startedAt,
+    "finishedAt": finishedAt,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!fabRunsStatusValues.contains(status)) {
+      errors.add("unsupported fab_runs.status");
+    }
+    if (utf8.encode(machineId).length > 200) {
+      errors.add("fab_runs.machine_id exceeds 200 bytes");
+    }
+    if (utf8.encode(machineId).length < 1) {
+      errors.add("fab_runs.machine_id is below 1 bytes");
+    }
+    if (progress < 0) {
+      errors.add("fab_runs.progress is below the minimum");
+    }
+    if (progress > 100) {
+      errors.add("fab_runs.progress is above the maximum");
+    }
+    if (error != null && utf8.encode(error!).length > 20000) {
+      errors.add("fab_runs.error exceeds 20000 bytes");
+    }
+    return errors;
+  }
+}
+
 String _readRequiredString(Map<String, Object?> json, String key) {
   final value = json[key];
   if (value is String) return value;

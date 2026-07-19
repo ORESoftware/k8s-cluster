@@ -17,6 +17,12 @@
     blockchain_bridge_attestations_subject/0,
     blockchain_index_events_subject/0,
     blockchain_mev_alerts_subject/0,
+    browser_job_results_subject/0,
+    build_server_events_subject/0,
+    build_server_images_subject/0,
+    build_server_requests_subject/0,
+    build_server_requests_queue_group/0,
+    build_server_results_subject/0,
     chaos_events_subject/0,
     chaos_experiments_subject/0,
     chaos_probe_subject/0,
@@ -52,6 +58,9 @@
     des_results_subject/0,
     des_simulate_subject/0,
     des_simulate_queue_group/0,
+    document_convert_requests_subject/0,
+    document_convert_requests_queue_group/0,
+    document_convert_results_subject/0,
     economics_forecast_requests_subject/0,
     economics_forecast_requests_queue_group/0,
     economics_forecast_results_subject/0,
@@ -139,9 +148,13 @@
     music_generation_results_subject/0,
     music_songs_published_subject/0,
     music_votes_events_subject/0,
+    ocr_requests_subject/0,
+    ocr_requests_queue_group/0,
+    ocr_results_subject/0,
     orchestrator_wakeup_subject/0,
     orchestrator_wakeup_stream/0,
     public_data_analysis_results_subject/0,
+    public_data_ingest_dead_letter_subject/0,
     public_data_ingest_requests_subject/0,
     public_data_ingest_requests_queue_group/0,
     public_data_ingest_results_subject/0,
@@ -187,14 +200,24 @@
     workflows_events_subject/0,
     workflows_start_subject/0,
     workflows_start_queue_group/0,
+    browser_job_events_pattern/0,
+    browser_job_events_wildcard/0,
+    browser_job_events_subject/1,
+    parse_browser_job_events_subject/1,
+    browser_job_result_pattern/0,
+    browser_job_result_wildcard/0,
+    browser_job_result_subject/1,
+    parse_browser_job_result_subject/1,
     cdc_row_change_pattern/0,
     cdc_row_change_wildcard/0,
     cdc_row_change_subject/4,
+    format_cdc_row_change_wildcard/1,
     parse_cdc_row_change_subject/1,
     cdc_row_change_stream/0,
     cdc_table_filter_pattern/0,
     cdc_table_filter_wildcard/0,
     cdc_table_filter_subject/3,
+    format_cdc_table_filter_wildcard/1,
     parse_cdc_table_filter_subject/1,
     cdc_table_filter_stream/0,
     container_pool_events_pattern/0,
@@ -250,11 +273,13 @@
     workflows_signal_queue_group/0,
     agent_sim_server_queue_group/0,
     billing_server_queue_group/0,
+    build_server_queue_group/0,
     constraint_scheduler_queue_group/0,
     contact_send_queue_group/0,
     critical_events_logger_queue_group/0,
     dataset_labeling_workers_queue_group/0,
     data_viz_notification_dispatch_queue_group/0,
+    document_converters_queue_group/0,
     economics_server_queue_group/0,
     evolution_islands_queue_group/0,
     func_approx_queue_group/0,
@@ -264,6 +289,7 @@
     mip_solver_workers_queue_group/0,
     monte_carlo_server_queue_group/0,
     music_generation_queue_group/0,
+    ocr_workers_queue_group/0,
     public_data_workers_queue_group/0,
     quantum_queue_group/0,
     raft_consensus_queue_group/0,
@@ -277,6 +303,11 @@
     cdc_stream_retention/0,
     cdc_stream_storage/0,
     cdc_stream_ack/0,
+    dd_remote_build_jobs_stream_name/0,
+    dd_remote_build_jobs_stream_subjects/0,
+    dd_remote_build_jobs_stream_retention/0,
+    dd_remote_build_jobs_stream_storage/0,
+    dd_remote_build_jobs_stream_ack/0,
     dd_remote_control_stream_name/0,
     dd_remote_control_stream_subjects/0,
     dd_remote_control_stream_retention/0,
@@ -378,6 +409,27 @@ blockchain_index_events_subject() -> <<"dd.remote.blockchain.index.events"/utf8>
 %% Monitoring-only MEV/arbitrage spread alerts emitted when an observed venue spread crosses the configured threshold. Default for BLOCKCHAIN_MEV_ALERTS_SUBJECT. Observation surface only; there is no execution path. Publish-only.
 %% Service: dd-contract-service
 blockchain_mev_alerts_subject() -> <<"dd.remote.blockchain.mev.alerts"/utf8>>.
+
+%% Shared result fanout receiving every browser-job terminal result.
+%% Service: dd-browser-job-runner
+browser_job_results_subject() -> <<"dd.remote.browser_jobs.results"/utf8>>.
+
+%% Redacted build lifecycle events (queued/running/succeeded/failed) published by the build server. Default for BUILD_SERVER_NATS_EVENT_SUBJECT.
+%% Service: dd-build-server
+build_server_events_subject() -> <<"dd.remote.build_server.events"/utf8>>.
+
+%% Redacted container-image registry events (ECR / docker registry webhook pushes) relayed by the build server. Default for BUILD_SERVER_NATS_IMAGE_SUBJECT.
+%% Service: dd-build-server
+build_server_images_subject() -> <<"dd.remote.build_server.images"/utf8>>.
+
+%% Durable build-request intake. Producers publish a build-server.v1 job document; build-server replicas consume via the shared queue group / durable JetStream consumer. Default for BUILD_SERVER_NATS_REQUEST_SUBJECT.
+%% Service: dd-build-server
+build_server_requests_subject() -> <<"dd.remote.build_server.requests"/utf8>>.
+build_server_requests_queue_group() -> <<"dd-build-server"/utf8>>.
+
+%% Terminal build results (succeeded/failed with jobId and error summary) for NATS-submitted and webhook-submitted jobs. Default for BUILD_SERVER_NATS_RESULT_SUBJECT.
+%% Service: dd-build-server
+build_server_results_subject() -> <<"dd.remote.build_server.results"/utf8>>.
 
 %% Per-fault lifecycle events (selected, injected, restored, aborted-by-guard) emitted by the chaos loops.
 %% Service: dd-chaos
@@ -485,6 +537,15 @@ des_results_subject() -> <<"dd.remote.des.results"/utf8>>.
 %% Service: dd-ai-ml-pipeline
 des_simulate_subject() -> <<"dd.remote.des.simulate"/utf8>>.
 des_simulate_queue_group() -> <<"dd-des-simulator"/utf8>>.
+
+%% Document conversion requests consumed by dd-document-rs replicas.
+%% Service: dd-document-rs
+document_convert_requests_subject() -> <<"dd.remote.document.convert"/utf8>>.
+document_convert_requests_queue_group() -> <<"dd-document-rs"/utf8>>.
+
+%% Document conversion results published after a request completes or fails.
+%% Service: dd-document-rs
+document_convert_results_subject() -> <<"dd.remote.document.results"/utf8>>.
 
 %% Inbound forecast/recommendation requests consumed by the economics server. Subscribed with the dd-economics-server queue group so requests load-balance across replicas. Default for ECONOMICS_FORECAST_REQUEST_SUBJECT.
 %% Service: dd-economics-server
@@ -747,6 +808,15 @@ music_songs_published_subject() -> <<"dd.remote.music.songs.published"/utf8>>.
 %% Service: dd-music-rs
 music_votes_events_subject() -> <<"dd.remote.music.votes.events"/utf8>>.
 
+%% OCR requests consumed by dd-ocr-rs replicas.
+%% Service: dd-ocr-rs
+ocr_requests_subject() -> <<"dd.remote.ocr.requests"/utf8>>.
+ocr_requests_queue_group() -> <<"dd-ocr-rs"/utf8>>.
+
+%% OCR results published after a request completes or fails.
+%% Service: dd-ocr-rs
+ocr_results_subject() -> <<"dd.remote.ocr.results"/utf8>>.
+
 %% Wakeup signal published whenever a new task is enqueued for a thread, so the orchestrator can prepare/scale the matching worker deployment without polling.
 %% Service: dd-remote-rest-api
 orchestrator_wakeup_subject() -> <<"dd.remote.orchestrator.wakeup"/utf8>>.
@@ -755,6 +825,10 @@ orchestrator_wakeup_stream() -> <<"DD_REMOTE_CONTROL"/utf8>>.
 %% Trend, correlation, grant-match, graph-data, model, and white-paper evidence results from public-data analysis runs.
 %% Service: dd-public-data-server
 public_data_analysis_results_subject() -> <<"dd.remote.public_data.analysis.results"/utf8>>.
+
+%% Dead-letter subject for public-data ingest requests that exhaust JetStream delivery attempts.
+%% Service: dd-public-data-server
+public_data_ingest_dead_letter_subject() -> <<"dd.remote.public_data.ingest.deadletter"/utf8>>.
 
 %% Inbound public-data ingestion requests accepted over NATS. Payloads mirror the HTTP /ingest and /scrape contracts.
 %% Service: dd-public-data-server
@@ -888,6 +962,62 @@ workflows_events_subject() -> <<"dd.remote.workflows.events"/utf8>>.
 workflows_start_subject() -> <<"dd.remote.workflows.start"/utf8>>.
 workflows_start_queue_group() -> <<"dd-gleam-workflow-engine"/utf8>>.
 
+%% Per-job lifecycle and progress events emitted by the isolated browser worker.
+%% Service: dd-browser-job-runner
+browser_job_events_pattern() -> <<"dd.remote.browser_jobs.{job_id}.events"/utf8>>.
+browser_job_events_wildcard() -> <<"dd.remote.browser_jobs.*.events"/utf8>>.
+browser_job_events_subject(JobId) ->
+    iolist_to_binary([<<"dd.remote.browser_jobs."/utf8>>, to_bin(JobId), <<".events"/utf8>>]).
+
+parse_browser_job_events_subject(Subject) ->
+    SubjectBin = to_bin(Subject),
+    Tokens = binary:split(SubjectBin, <<".">>, [global]),
+    PatternTokens = [<<"dd"/utf8>>, <<"remote"/utf8>>, <<"browser_jobs"/utf8>>, <<"{job_id}"/utf8>>, <<"events"/utf8>>],
+    case length(Tokens) =:= length(PatternTokens) of
+        false -> error;
+        true ->
+            Pairs = lists:zip(PatternTokens, Tokens),
+            LiteralsOk = lists:all(fun({P, S}) ->
+                case is_placeholder(P) of
+                    true -> true;
+                    false -> P =:= S
+                end
+            end, Pairs),
+            case LiteralsOk of
+                false -> error;
+                true ->
+                    {ok, #{job_id => extract_param(Pairs, <<"{job_id}"/utf8>>)}}
+            end
+    end.
+
+%% Per-job terminal result emitted by the isolated browser worker.
+%% Service: dd-browser-job-runner
+browser_job_result_pattern() -> <<"dd.remote.browser_jobs.{job_id}.result"/utf8>>.
+browser_job_result_wildcard() -> <<"dd.remote.browser_jobs.*.result"/utf8>>.
+browser_job_result_subject(JobId) ->
+    iolist_to_binary([<<"dd.remote.browser_jobs."/utf8>>, to_bin(JobId), <<".result"/utf8>>]).
+
+parse_browser_job_result_subject(Subject) ->
+    SubjectBin = to_bin(Subject),
+    Tokens = binary:split(SubjectBin, <<".">>, [global]),
+    PatternTokens = [<<"dd"/utf8>>, <<"remote"/utf8>>, <<"browser_jobs"/utf8>>, <<"{job_id}"/utf8>>, <<"result"/utf8>>],
+    case length(Tokens) =:= length(PatternTokens) of
+        false -> error;
+        true ->
+            Pairs = lists:zip(PatternTokens, Tokens),
+            LiteralsOk = lists:all(fun({P, S}) ->
+                case is_placeholder(P) of
+                    true -> true;
+                    false -> P =:= S
+                end
+            end, Pairs),
+            case LiteralsOk of
+                false -> error;
+                true ->
+                    {ok, #{job_id => extract_param(Pairs, <<"{job_id}"/utf8>>)}}
+            end
+    end.
+
 %% Per-row change emitted by wal-gateway. Subject pattern is '<prefix>.<schema>.<table>.<op>'. The default prefix is 'cdc' and the default stream name is 'CDC'. Consumers usually subscribe to the prefix tail wildcard ('cdc.>').
 %% Service: dd-wal-gateway
 cdc_row_change_pattern() -> <<"{prefix}.{schema}.{table}.{op}"/utf8>>.
@@ -895,6 +1025,9 @@ cdc_row_change_wildcard() -> <<"{prefix}.>"/utf8>>.
 cdc_row_change_stream() -> <<"CDC"/utf8>>.
 cdc_row_change_subject(Prefix, Schema, Table, Op) ->
     iolist_to_binary([to_bin(Prefix), <<"."/utf8>>, to_bin(Schema), <<"."/utf8>>, to_bin(Table), <<"."/utf8>>, to_bin(Op)]).
+
+format_cdc_row_change_wildcard(Prefix) ->
+    iolist_to_binary([to_bin(Prefix), <<".>"/utf8>>]).
 
 parse_cdc_row_change_subject(Subject) ->
     SubjectBin = to_bin(Subject),
@@ -924,6 +1057,9 @@ cdc_table_filter_wildcard() -> <<"{prefix}.>"/utf8>>.
 cdc_table_filter_stream() -> <<"CDC"/utf8>>.
 cdc_table_filter_subject(Prefix, Schema, Table) ->
     iolist_to_binary([to_bin(Prefix), <<"."/utf8>>, to_bin(Schema), <<"."/utf8>>, to_bin(Table), <<".>"/utf8>>]).
+
+format_cdc_table_filter_wildcard(Prefix) ->
+    iolist_to_binary([to_bin(Prefix), <<".>"/utf8>>]).
 
 parse_cdc_table_filter_subject(Subject) ->
     SubjectBin = to_bin(Subject),
@@ -1269,6 +1405,10 @@ agent_sim_server_queue_group() -> <<"dd-agent-sim-server"/utf8>>.
 %% Service: dd-billing-server
 billing_server_queue_group() -> <<"dd-billing-server"/utf8>>.
 
+%% Shared queue group / durable consumer name used by build-server replicas for request intake.
+%% Service: dd-build-server
+build_server_queue_group() -> <<"dd-build-server"/utf8>>.
+
 %% Shared queue group used by dd-constraint-scheduler replicas consuming schedule requests.
 %% Service: dd-constraint-scheduler
 constraint_scheduler_queue_group() -> <<"dd-constraint-scheduler"/utf8>>.
@@ -1288,6 +1428,10 @@ dataset_labeling_workers_queue_group() -> <<"dd-dataset-labeling"/utf8>>.
 %% Shared queue group used by dd-data-viz notifier workers consuming the notification-dispatch lane.
 %% Service: dd-data-viz-rs
 data_viz_notification_dispatch_queue_group() -> <<"dd-data-viz-notifiers"/utf8>>.
+
+%% Shared queue group used by document converter replicas so each request is handled once.
+%% Service: dd-document-rs
+document_converters_queue_group() -> <<"dd-document-rs"/utf8>>.
 
 %% Shared queue group used by dd-economics-server replicas consuming forecast requests.
 %% Service: dd-economics-server
@@ -1324,6 +1468,10 @@ monte_carlo_server_queue_group() -> <<"dd-monte-carlo-server"/utf8>>.
 %% Shared queue group used by dd-music-rs replicas consuming generation requests.
 %% Service: dd-music-rs
 music_generation_queue_group() -> <<"dd-music-rs"/utf8>>.
+
+%% Shared queue group used by OCR replicas so each request is handled once.
+%% Service: dd-ocr-rs
+ocr_workers_queue_group() -> <<"dd-ocr-rs"/utf8>>.
 
 %% Shared queue group used by dd-public-data-server replicas so each queued ingest/scrape request is processed once.
 %% Service: dd-public-data-server
@@ -1365,6 +1513,15 @@ cdc_stream_subjects() ->
 cdc_stream_retention() -> <<"limits"/utf8>>.
 cdc_stream_storage() -> <<"file"/utf8>>.
 cdc_stream_ack() -> <<"explicit"/utf8>>.
+
+%% JetStream file storage with WorkQueue retention and explicit ack for build-request intake. Dedupe by Nats-Msg-Id ('build-request:<requestId>'); Postgres (dd_build_server) remains the real idempotency guard.
+%% Service: dd-build-server
+dd_remote_build_jobs_stream_name() -> <<"DD_REMOTE_BUILD_JOBS"/utf8>>.
+dd_remote_build_jobs_stream_subjects() ->
+    [<<"dd.remote.build_server.requests"/utf8>>].
+dd_remote_build_jobs_stream_retention() -> <<"workqueue"/utf8>>.
+dd_remote_build_jobs_stream_storage() -> <<"file"/utf8>>.
+dd_remote_build_jobs_stream_ack() -> <<"explicit"/utf8>>.
 
 %% Short-retention control plane stream.
 %% Service: dd-remote-rest-api

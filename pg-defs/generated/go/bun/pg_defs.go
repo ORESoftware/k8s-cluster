@@ -106,6 +106,10 @@ var channelMembersChannelSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{
 var channelMembersAgentKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,120}$`)
 var sharedContextChannelSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,119}$`)
 var sharedContextCtxKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,200}$`)
+var orgsSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
+var projectsSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
+var customerNotificationsKindPattern = regexp.MustCompile(`^[a-z][a-z0-9_.]{1,38}[a-z0-9]$`)
+var syncIdempotencyKeysRequestFingerprintPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 const AccountsTable = "threefa.accounts"
 const AccountsSelectSQL = `select
@@ -2834,8 +2838,8 @@ var DesSoccerLearningSetPlayRestartMixRestartValues = []string{"direct-free-kick
 
 type DesSoccerLearningSetPlayRestartMixBun struct {
 	bun.BaseModel `bun:"table:des_soccer_learning_set_play_restart_mix"`
-	RunId uuid.UUID `bun:"run_id,type:uuid" json:"runId"`
-	Ordinal int32 `bun:"ordinal,type:integer" json:"ordinal"`
+	RunId uuid.UUID `bun:"run_id,type:uuid,pk" json:"runId"`
+	Ordinal int32 `bun:"ordinal,type:integer,pk" json:"ordinal"`
 	Restart string `bun:"restart,type:varchar(40)" json:"restart"`
 }
 
@@ -2873,8 +2877,8 @@ var DesSoccerLearningSetPlayEpisodeMetricsRestartValues = []string{"direct-free-
 
 type DesSoccerLearningSetPlayEpisodeMetricsBun struct {
 	bun.BaseModel `bun:"table:des_soccer_learning_set_play_episode_metrics"`
-	RunId uuid.UUID `bun:"run_id,type:uuid" json:"runId"`
-	EpisodeIndex int32 `bun:"episode_index,type:integer" json:"episodeIndex"`
+	RunId uuid.UUID `bun:"run_id,type:uuid,pk" json:"runId"`
+	EpisodeIndex int32 `bun:"episode_index,type:integer,pk" json:"episodeIndex"`
 	Seed int64 `bun:"seed,type:bigint" json:"seed"`
 	Restart string `bun:"restart,type:varchar(40)" json:"restart"`
 	Routine *string `bun:"routine,type:varchar(80),nullzero" json:"routine,omitempty"`
@@ -6745,6 +6749,810 @@ func (value SharedContextBun) Validate() error {
 	if !sharedContextCtxKeyPattern.MatchString(value.CtxKey) { return errors.New("shared_context.ctx_key does not match the required pattern") }
 	if !validateRawJSON(value.Value) { return errors.New("shared_context.value must be valid JSON") }
 	if value.Version < 1 { return errors.New("shared_context.version is below the minimum") }
+	return nil
+}
+
+const SyncClockTable = "fiducia.sync_clock"
+const SyncClockSelectSQL = `select
+      singleton,
+      last_sequence
+    from fiducia.sync_clock`
+
+type SyncClockBun struct {
+	bun.BaseModel `bun:"table:fiducia.sync_clock"`
+	Singleton bool `bun:"singleton,type:boolean,pk,default:true" json:"singleton"`
+	LastSequence int64 `bun:"last_sequence,type:bigint,default:0" json:"lastSequence"`
+}
+
+func (value SyncClockBun) Validate() error {
+	if value.LastSequence < 0 { return errors.New("sync_clock.last_sequence is below the minimum") }
+	return nil
+}
+
+const SyncTombstonesTable = "fiducia.sync_tombstones"
+const SyncTombstonesSelectSQL = `select
+      sequence,
+      table_name,
+      row_id,
+      tenant_id::text as tenant_id,
+      owner_user_id::text as owner_user_id,
+      row_version,
+      to_char(deleted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as deleted_at
+    from fiducia.sync_tombstones`
+
+type SyncTombstonesBun struct {
+	bun.BaseModel `bun:"table:fiducia.sync_tombstones"`
+	Sequence int64 `bun:"sequence,type:bigint,pk" json:"sequence"`
+	TableName string `bun:"table_name,type:text" json:"tableName"`
+	RowId string `bun:"row_id,type:text" json:"rowId"`
+	TenantId *uuid.UUID `bun:"tenant_id,type:uuid,nullzero" json:"tenantId,omitempty"`
+	OwnerUserId *uuid.UUID `bun:"owner_user_id,type:uuid,nullzero" json:"ownerUserId,omitempty"`
+	RowVersion int64 `bun:"row_version,type:bigint" json:"rowVersion"`
+	DeletedAt time.Time `bun:"deleted_at,type:timestamptz,default:now()" json:"deletedAt"`
+}
+
+func (value SyncTombstonesBun) Validate() error {
+	if value.Sequence < 1 { return errors.New("sync_tombstones.sequence is below the minimum") }
+	if value.RowVersion < 1 { return errors.New("sync_tombstones.row_version is below the minimum") }
+	return nil
+}
+
+const OrgsTable = "fiducia.orgs"
+const OrgsSelectSQL = `select
+      id::text as id,
+      slug,
+      name,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      version,
+      sync_sequence
+    from fiducia.orgs`
+
+type OrgsBun struct {
+	bun.BaseModel `bun:"table:fiducia.orgs"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	Slug string `bun:"slug,type:varchar(120)" json:"slug"`
+	Name string `bun:"name,type:varchar(200)" json:"name"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+	Version int64 `bun:"version,type:bigint,default:1" json:"version"`
+	SyncSequence int64 `bun:"sync_sequence,type:bigint" json:"syncSequence"`
+}
+
+func (value OrgsBun) Validate() error {
+	if !orgsSlugPattern.MatchString(value.Slug) { return errors.New("orgs.slug does not match the required pattern") }
+	return nil
+}
+
+const ProjectsTable = "fiducia.projects"
+const ProjectsSelectSQL = `select
+      id::text as id,
+      org_id::text as org_id,
+      slug,
+      name,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      version,
+      sync_sequence
+    from fiducia.projects`
+
+type ProjectsBun struct {
+	bun.BaseModel `bun:"table:fiducia.projects"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	OrgId uuid.UUID `bun:"org_id,type:uuid" json:"orgId"`
+	Slug string `bun:"slug,type:varchar(120)" json:"slug"`
+	Name string `bun:"name,type:varchar(200)" json:"name"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+	Version int64 `bun:"version,type:bigint,default:1" json:"version"`
+	SyncSequence int64 `bun:"sync_sequence,type:bigint" json:"syncSequence"`
+}
+
+func (value ProjectsBun) Validate() error {
+	if !projectsSlugPattern.MatchString(value.Slug) { return errors.New("projects.slug does not match the required pattern") }
+	return nil
+}
+
+const UsersTable = "fiducia.users"
+const UsersSelectSQL = `select
+      id::text as id,
+      supabase_user_id::text as supabase_user_id,
+      email,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from fiducia.users`
+
+type UsersBun struct {
+	bun.BaseModel `bun:"table:fiducia.users"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	SupabaseUserId uuid.UUID `bun:"supabase_user_id,type:uuid" json:"supabaseUserId"`
+	Email string `bun:"email,type:varchar(320)" json:"email"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+}
+
+func (value UsersBun) Validate() error {
+	return nil
+}
+
+const OrgMembersTable = "fiducia.org_members"
+const OrgMembersSelectSQL = `select
+      org_id::text as org_id,
+      user_id::text as user_id,
+      role,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from fiducia.org_members`
+
+var OrgMembersRoleValues = []string{"owner", "admin", "member"}
+
+type OrgMembersBun struct {
+	bun.BaseModel `bun:"table:fiducia.org_members"`
+	OrgId uuid.UUID `bun:"org_id,type:uuid,pk" json:"orgId"`
+	UserId uuid.UUID `bun:"user_id,type:uuid,pk" json:"userId"`
+	Role string `bun:"role,type:varchar(32),default:'member'" json:"role"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+}
+
+func (value OrgMembersBun) Validate() error {
+	if !containsString(OrgMembersRoleValues, value.Role) { return errors.New("unsupported org_members.role") }
+	return nil
+}
+
+const ProjectMembersTable = "fiducia.project_members"
+const ProjectMembersSelectSQL = `select
+      project_id::text as project_id,
+      user_id::text as user_id,
+      role,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from fiducia.project_members`
+
+var ProjectMembersRoleValues = []string{"admin", "operator", "viewer"}
+
+type ProjectMembersBun struct {
+	bun.BaseModel `bun:"table:fiducia.project_members"`
+	ProjectId uuid.UUID `bun:"project_id,type:uuid,pk" json:"projectId"`
+	UserId uuid.UUID `bun:"user_id,type:uuid,pk" json:"userId"`
+	Role string `bun:"role,type:varchar(32),default:'viewer'" json:"role"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+}
+
+func (value ProjectMembersBun) Validate() error {
+	if !containsString(ProjectMembersRoleValues, value.Role) { return errors.New("unsupported project_members.role") }
+	return nil
+}
+
+const ApiKeysTable = "fiducia.api_keys"
+const ApiKeysSelectSQL = `select
+      id::text as id,
+      key_id,
+      org_id::text as org_id,
+      project_id::text as project_id,
+      created_by_user_id::text as created_by_user_id,
+      name,
+      secret_hash,
+      scopes,
+      env,
+      require_idempotency,
+      mtls_required,
+      revoked,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      version,
+      sync_sequence,
+      to_char(last_used_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_used_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at
+    from fiducia.api_keys`
+
+var ApiKeysEnvValues = []string{"live", "test"}
+
+type ApiKeysBun struct {
+	bun.BaseModel `bun:"table:fiducia.api_keys"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	KeyId string `bun:"key_id,type:varchar(64)" json:"keyId"`
+	OrgId uuid.UUID `bun:"org_id,type:uuid" json:"orgId"`
+	ProjectId *uuid.UUID `bun:"project_id,type:uuid,nullzero" json:"projectId,omitempty"`
+	CreatedByUserId *uuid.UUID `bun:"created_by_user_id,type:uuid,nullzero" json:"createdByUserId,omitempty"`
+	Name string `bun:"name,type:varchar(200)" json:"name"`
+	SecretHash string `bun:"secret_hash,type:varchar(255)" json:"secretHash"`
+	Scopes json.RawMessage `bun:"scopes,type:jsonb,default:'[]'::jsonb" json:"scopes"`
+	Env string `bun:"env,type:varchar(16),default:'live'" json:"env"`
+	RequireIdempotency bool `bun:"require_idempotency,type:boolean,default:true" json:"requireIdempotency"`
+	MtlsRequired bool `bun:"mtls_required,type:boolean,default:false" json:"mtlsRequired"`
+	Revoked bool `bun:"revoked,type:boolean,default:false" json:"revoked"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+	Version int64 `bun:"version,type:bigint,default:1" json:"version"`
+	SyncSequence int64 `bun:"sync_sequence,type:bigint" json:"syncSequence"`
+	LastUsedAt *time.Time `bun:"last_used_at,type:timestamptz,nullzero" json:"lastUsedAt,omitempty"`
+	ExpiresAt *time.Time `bun:"expires_at,type:timestamptz,nullzero" json:"expiresAt,omitempty"`
+}
+
+func (value ApiKeysBun) Validate() error {
+	if !validateRawJSON(value.Scopes) { return errors.New("api_keys.scopes must be valid JSON") }
+	if !containsString(ApiKeysEnvValues, value.Env) { return errors.New("unsupported api_keys.env") }
+	return nil
+}
+
+const MtlsClientCertsTable = "fiducia.mtls_client_certs"
+const MtlsClientCertsSelectSQL = `select
+      id::text as id,
+      org_id::text as org_id,
+      project_id::text as project_id,
+      name,
+      subject,
+      sha256_fingerprint,
+      to_char(not_before at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as not_before,
+      to_char(not_after at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as not_after,
+      revoked,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      version,
+      sync_sequence
+    from fiducia.mtls_client_certs`
+
+type MtlsClientCertsBun struct {
+	bun.BaseModel `bun:"table:fiducia.mtls_client_certs"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	OrgId uuid.UUID `bun:"org_id,type:uuid" json:"orgId"`
+	ProjectId *uuid.UUID `bun:"project_id,type:uuid,nullzero" json:"projectId,omitempty"`
+	Name string `bun:"name,type:varchar(200)" json:"name"`
+	Subject string `bun:"subject,type:varchar(500)" json:"subject"`
+	Sha256Fingerprint string `bun:"sha256_fingerprint,type:varchar(95)" json:"sha256Fingerprint"`
+	NotBefore *time.Time `bun:"not_before,type:timestamptz,nullzero" json:"notBefore,omitempty"`
+	NotAfter *time.Time `bun:"not_after,type:timestamptz,nullzero" json:"notAfter,omitempty"`
+	Revoked bool `bun:"revoked,type:boolean,default:false" json:"revoked"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+	Version int64 `bun:"version,type:bigint,default:1" json:"version"`
+	SyncSequence int64 `bun:"sync_sequence,type:bigint" json:"syncSequence"`
+}
+
+func (value MtlsClientCertsBun) Validate() error {
+	return nil
+}
+
+const CustomerPreferencesTable = "fiducia.customer_preferences"
+const CustomerPreferencesSelectSQL = `select
+      user_id::text as user_id,
+      density,
+      timezone,
+      region,
+      notify_key_rotation,
+      notify_lock_contention,
+      notify_mfa,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      version,
+      sync_sequence
+    from fiducia.customer_preferences`
+
+var CustomerPreferencesDensityValues = []string{"comfortable", "compact"}
+
+type CustomerPreferencesBun struct {
+	bun.BaseModel `bun:"table:fiducia.customer_preferences"`
+	UserId uuid.UUID `bun:"user_id,type:uuid,pk" json:"userId"`
+	Density string `bun:"density,type:varchar(16),default:'comfortable'" json:"density"`
+	Timezone string `bun:"timezone,type:varchar(64),default:'UTC'" json:"timezone"`
+	Region string `bun:"region,type:varchar(16),default:'auto'" json:"region"`
+	NotifyKeyRotation bool `bun:"notify_key_rotation,type:boolean,default:true" json:"notifyKeyRotation"`
+	NotifyLockContention bool `bun:"notify_lock_contention,type:boolean,default:true" json:"notifyLockContention"`
+	NotifyMfa bool `bun:"notify_mfa,type:boolean,default:true" json:"notifyMfa"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+	Version int64 `bun:"version,type:bigint,default:1" json:"version"`
+	SyncSequence int64 `bun:"sync_sequence,type:bigint" json:"syncSequence"`
+}
+
+func (value CustomerPreferencesBun) Validate() error {
+	if !containsString(CustomerPreferencesDensityValues, value.Density) { return errors.New("unsupported customer_preferences.density") }
+	return nil
+}
+
+const CustomerSessionsTable = "fiducia.customer_sessions"
+const CustomerSessionsSelectSQL = `select
+      id::text as id,
+      user_id::text as user_id,
+      device,
+      location,
+      to_char(last_seen at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen,
+      status,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      version,
+      sync_sequence
+    from fiducia.customer_sessions`
+
+var CustomerSessionsStatusValues = []string{"active", "verified", "revoked"}
+
+type CustomerSessionsBun struct {
+	bun.BaseModel `bun:"table:fiducia.customer_sessions"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	UserId uuid.UUID `bun:"user_id,type:uuid" json:"userId"`
+	Device string `bun:"device,type:varchar(200)" json:"device"`
+	Location *string `bun:"location,type:varchar(200),nullzero" json:"location,omitempty"`
+	LastSeen time.Time `bun:"last_seen,type:timestamptz,default:now()" json:"lastSeen"`
+	Status string `bun:"status,type:varchar(16),default:'active'" json:"status"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+	Version int64 `bun:"version,type:bigint,default:1" json:"version"`
+	SyncSequence int64 `bun:"sync_sequence,type:bigint" json:"syncSequence"`
+}
+
+func (value CustomerSessionsBun) Validate() error {
+	if !containsString(CustomerSessionsStatusValues, value.Status) { return errors.New("unsupported customer_sessions.status") }
+	return nil
+}
+
+const AuditLogTable = "fiducia.audit_log"
+const AuditLogSelectSQL = `select
+      id::text as id,
+      org_id::text as org_id,
+      project_id::text as project_id,
+      actor_user_id::text as actor_user_id,
+      actor_key_id::text as actor_key_id,
+      actor,
+      action,
+      target,
+      request_id,
+      source_ip,
+      user_agent,
+      meta,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(retention_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as retention_expires_at
+    from fiducia.audit_log`
+
+type AuditLogBun struct {
+	bun.BaseModel `bun:"table:fiducia.audit_log"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	OrgId *uuid.UUID `bun:"org_id,type:uuid,nullzero" json:"orgId,omitempty"`
+	ProjectId *uuid.UUID `bun:"project_id,type:uuid,nullzero" json:"projectId,omitempty"`
+	ActorUserId *uuid.UUID `bun:"actor_user_id,type:uuid,nullzero" json:"actorUserId,omitempty"`
+	ActorKeyId *uuid.UUID `bun:"actor_key_id,type:uuid,nullzero" json:"actorKeyId,omitempty"`
+	Actor *string `bun:"actor,type:varchar(320),nullzero" json:"actor,omitempty"`
+	Action string `bun:"action,type:varchar(120)" json:"action"`
+	Target *string `bun:"target,type:varchar(320),nullzero" json:"target,omitempty"`
+	RequestId *string `bun:"request_id,type:varchar(120),nullzero" json:"requestId,omitempty"`
+	SourceIp *string `bun:"source_ip,type:varchar(64),nullzero" json:"sourceIp,omitempty"`
+	UserAgent *string `bun:"user_agent,type:varchar(500),nullzero" json:"userAgent,omitempty"`
+	Meta json.RawMessage `bun:"meta,type:jsonb,default:'{}'::jsonb" json:"meta"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	RetentionExpiresAt *time.Time `bun:"retention_expires_at,type:timestamptz,nullzero" json:"retentionExpiresAt,omitempty"`
+}
+
+func (value AuditLogBun) Validate() error {
+	if !validateRawJSON(value.Meta) { return errors.New("audit_log.meta must be valid JSON") }
+	return nil
+}
+
+const CustomerNotificationsTable = "fiducia.customer_notifications"
+const CustomerNotificationsSelectSQL = `select
+      id::text as id,
+      user_id::text as user_id,
+      org_id::text as org_id,
+      kind,
+      severity,
+      title,
+      body,
+      link,
+      to_char(read_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as read_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      version,
+      sync_sequence
+    from fiducia.customer_notifications`
+
+var CustomerNotificationsSeverityValues = []string{"info", "success", "warning", "critical"}
+
+type CustomerNotificationsBun struct {
+	bun.BaseModel `bun:"table:fiducia.customer_notifications"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	UserId uuid.UUID `bun:"user_id,type:uuid" json:"userId"`
+	OrgId *uuid.UUID `bun:"org_id,type:uuid,nullzero" json:"orgId,omitempty"`
+	Kind string `bun:"kind,type:varchar(40)" json:"kind"`
+	Severity string `bun:"severity,type:varchar(16),default:'info'" json:"severity"`
+	Title string `bun:"title,type:varchar(200)" json:"title"`
+	Body string `bun:"body,type:varchar(2000),default:''" json:"body"`
+	Link *string `bun:"link,type:varchar(500),nullzero" json:"link,omitempty"`
+	ReadAt *time.Time `bun:"read_at,type:timestamptz,nullzero" json:"readAt,omitempty"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+	Version int64 `bun:"version,type:bigint,default:1" json:"version"`
+	SyncSequence int64 `bun:"sync_sequence,type:bigint" json:"syncSequence"`
+}
+
+func (value CustomerNotificationsBun) Validate() error {
+	if !customerNotificationsKindPattern.MatchString(value.Kind) { return errors.New("customer_notifications.kind does not match the required pattern") }
+	if !containsString(CustomerNotificationsSeverityValues, value.Severity) { return errors.New("unsupported customer_notifications.severity") }
+	return nil
+}
+
+const SyncIdempotencyKeysTable = "fiducia.sync_idempotency_keys"
+const SyncIdempotencyKeysSelectSQL = `select
+      key,
+      request_fingerprint,
+      committed_version,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from fiducia.sync_idempotency_keys`
+
+type SyncIdempotencyKeysBun struct {
+	bun.BaseModel `bun:"table:fiducia.sync_idempotency_keys"`
+	Key string `bun:"key,type:text,pk" json:"key"`
+	RequestFingerprint string `bun:"request_fingerprint,type:varchar(64)" json:"requestFingerprint"`
+	CommittedVersion *int64 `bun:"committed_version,type:bigint,nullzero" json:"committedVersion,omitempty"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+}
+
+func (value SyncIdempotencyKeysBun) Validate() error {
+	if !syncIdempotencyKeysRequestFingerprintPattern.MatchString(value.RequestFingerprint) { return errors.New("sync_idempotency_keys.request_fingerprint does not match the required pattern") }
+	return nil
+}
+
+const TranscriptionsTable = "t2v.transcriptions"
+const TranscriptionsSelectSQL = `select
+      id::text as id,
+      source,
+      provider,
+      model,
+      text,
+      language,
+      sample_rate,
+      duration_ms,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from t2v.transcriptions`
+
+type TranscriptionsBun struct {
+	bun.BaseModel `bun:"table:t2v.transcriptions"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	Source string `bun:"source,type:text" json:"source"`
+	Provider string `bun:"provider,type:text" json:"provider"`
+	Model string `bun:"model,type:text" json:"model"`
+	Text string `bun:"text,type:text" json:"text"`
+	Language *string `bun:"language,type:text,nullzero" json:"language,omitempty"`
+	SampleRate *int32 `bun:"sample_rate,type:integer,nullzero" json:"sampleRate,omitempty"`
+	DurationMs *int64 `bun:"duration_ms,type:bigint,nullzero" json:"durationMs,omitempty"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+}
+
+func (value TranscriptionsBun) Validate() error {
+	if len([]byte(value.Source)) > 40 { return errors.New("transcriptions.source exceeds 40 bytes") }
+	if len([]byte(value.Source)) < 1 { return errors.New("transcriptions.source is below 1 bytes") }
+	if len([]byte(value.Provider)) > 40 { return errors.New("transcriptions.provider exceeds 40 bytes") }
+	if len([]byte(value.Provider)) < 1 { return errors.New("transcriptions.provider is below 1 bytes") }
+	if len([]byte(value.Model)) > 200 { return errors.New("transcriptions.model exceeds 200 bytes") }
+	if len([]byte(value.Model)) < 1 { return errors.New("transcriptions.model is below 1 bytes") }
+	if len([]byte(value.Text)) > 1000000 { return errors.New("transcriptions.text exceeds 1000000 bytes") }
+	if value.Language != nil {
+		if len([]byte(*value.Language)) > 80 { return errors.New("transcriptions.language exceeds 80 bytes") }
+		if len([]byte(*value.Language)) < 1 { return errors.New("transcriptions.language is below 1 bytes") }
+	}
+	if value.SampleRate != nil {
+		if *value.SampleRate < 4000 { return errors.New("transcriptions.sample_rate is below the minimum") }
+		if *value.SampleRate > 384000 { return errors.New("transcriptions.sample_rate is above the maximum") }
+	}
+	if value.DurationMs != nil {
+		if *value.DurationMs < 0 { return errors.New("transcriptions.duration_ms is below the minimum") }
+	}
+	return nil
+}
+
+const SynthesesTable = "t2v.syntheses"
+const SynthesesSelectSQL = `select
+      id::text as id,
+      text,
+      voice,
+      provider,
+      model,
+      format,
+      audio_bytes,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from t2v.syntheses`
+
+type SynthesesBun struct {
+	bun.BaseModel `bun:"table:t2v.syntheses"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	Text string `bun:"text,type:text" json:"text"`
+	Voice string `bun:"voice,type:text" json:"voice"`
+	Provider string `bun:"provider,type:text" json:"provider"`
+	Model string `bun:"model,type:text" json:"model"`
+	Format string `bun:"format,type:text" json:"format"`
+	AudioBytes int64 `bun:"audio_bytes,type:bigint" json:"audioBytes"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+}
+
+func (value SynthesesBun) Validate() error {
+	if len([]byte(value.Text)) > 20000 { return errors.New("syntheses.text exceeds 20000 bytes") }
+	if len([]byte(value.Text)) < 1 { return errors.New("syntheses.text is below 1 bytes") }
+	if len([]byte(value.Voice)) > 80 { return errors.New("syntheses.voice exceeds 80 bytes") }
+	if len([]byte(value.Voice)) < 1 { return errors.New("syntheses.voice is below 1 bytes") }
+	if len([]byte(value.Provider)) > 40 { return errors.New("syntheses.provider exceeds 40 bytes") }
+	if len([]byte(value.Provider)) < 1 { return errors.New("syntheses.provider is below 1 bytes") }
+	if len([]byte(value.Model)) > 200 { return errors.New("syntheses.model exceeds 200 bytes") }
+	if len([]byte(value.Model)) < 1 { return errors.New("syntheses.model is below 1 bytes") }
+	if len([]byte(value.Format)) > 10 { return errors.New("syntheses.format exceeds 10 bytes") }
+	if len([]byte(value.Format)) < 1 { return errors.New("syntheses.format is below 1 bytes") }
+	if value.AudioBytes < 0 { return errors.New("syntheses.audio_bytes is below the minimum") }
+	return nil
+}
+
+const TranslationsTable = "t2v.translations"
+const TranslationsSelectSQL = `select
+      id::text as id,
+      source_text,
+      translated_text,
+      source_lang,
+      target_lang,
+      provider,
+      model,
+      latency_ms,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from t2v.translations`
+
+type TranslationsBun struct {
+	bun.BaseModel `bun:"table:t2v.translations"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	SourceText string `bun:"source_text,type:text" json:"sourceText"`
+	TranslatedText string `bun:"translated_text,type:text" json:"translatedText"`
+	SourceLang *string `bun:"source_lang,type:text,nullzero" json:"sourceLang,omitempty"`
+	TargetLang string `bun:"target_lang,type:text" json:"targetLang"`
+	Provider string `bun:"provider,type:text" json:"provider"`
+	Model string `bun:"model,type:text" json:"model"`
+	LatencyMs int64 `bun:"latency_ms,type:bigint" json:"latencyMs"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+}
+
+func (value TranslationsBun) Validate() error {
+	if len([]byte(value.SourceText)) > 200000 { return errors.New("translations.source_text exceeds 200000 bytes") }
+	if len([]byte(value.SourceText)) < 1 { return errors.New("translations.source_text is below 1 bytes") }
+	if len([]byte(value.TranslatedText)) > 200000 { return errors.New("translations.translated_text exceeds 200000 bytes") }
+	if value.SourceLang != nil {
+		if len([]byte(*value.SourceLang)) > 80 { return errors.New("translations.source_lang exceeds 80 bytes") }
+		if len([]byte(*value.SourceLang)) < 1 { return errors.New("translations.source_lang is below 1 bytes") }
+	}
+	if len([]byte(value.TargetLang)) > 80 { return errors.New("translations.target_lang exceeds 80 bytes") }
+	if len([]byte(value.TargetLang)) < 1 { return errors.New("translations.target_lang is below 1 bytes") }
+	if len([]byte(value.Provider)) > 40 { return errors.New("translations.provider exceeds 40 bytes") }
+	if len([]byte(value.Provider)) < 1 { return errors.New("translations.provider is below 1 bytes") }
+	if len([]byte(value.Model)) > 200 { return errors.New("translations.model exceeds 200 bytes") }
+	if len([]byte(value.Model)) < 1 { return errors.New("translations.model is below 1 bytes") }
+	if value.LatencyMs < 0 { return errors.New("translations.latency_ms is below the minimum") }
+	return nil
+}
+
+const VapiCallsTable = "t2v.vapi_calls"
+const VapiCallsSelectSQL = `select
+      id::text as id,
+      vapi_call_id,
+      status,
+      ended_reason,
+      transcript,
+      summary,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from t2v.vapi_calls`
+
+type VapiCallsBun struct {
+	bun.BaseModel `bun:"table:t2v.vapi_calls"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	VapiCallId string `bun:"vapi_call_id,type:text" json:"vapiCallId"`
+	Status string `bun:"status,type:text" json:"status"`
+	EndedReason *string `bun:"ended_reason,type:text,nullzero" json:"endedReason,omitempty"`
+	Transcript *string `bun:"transcript,type:text,nullzero" json:"transcript,omitempty"`
+	Summary *string `bun:"summary,type:text,nullzero" json:"summary,omitempty"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value VapiCallsBun) Validate() error {
+	if len([]byte(value.VapiCallId)) > 120 { return errors.New("vapi_calls.vapi_call_id exceeds 120 bytes") }
+	if len([]byte(value.VapiCallId)) < 1 { return errors.New("vapi_calls.vapi_call_id is below 1 bytes") }
+	if len([]byte(value.Status)) > 40 { return errors.New("vapi_calls.status exceeds 40 bytes") }
+	if len([]byte(value.Status)) < 1 { return errors.New("vapi_calls.status is below 1 bytes") }
+	if value.EndedReason != nil {
+		if len([]byte(*value.EndedReason)) > 200 { return errors.New("vapi_calls.ended_reason exceeds 200 bytes") }
+		if len([]byte(*value.EndedReason)) < 1 { return errors.New("vapi_calls.ended_reason is below 1 bytes") }
+	}
+	if value.Transcript != nil {
+		if len([]byte(*value.Transcript)) > 1000000 { return errors.New("vapi_calls.transcript exceeds 1000000 bytes") }
+	}
+	if value.Summary != nil {
+		if len([]byte(*value.Summary)) > 100000 { return errors.New("vapi_calls.summary exceeds 100000 bytes") }
+	}
+	return nil
+}
+
+const VapiEventsTable = "t2v.vapi_events"
+const VapiEventsSelectSQL = `select
+      id::text as id,
+      vapi_call_id,
+      event_type,
+      payload,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from t2v.vapi_events`
+
+type VapiEventsBun struct {
+	bun.BaseModel `bun:"table:t2v.vapi_events"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	VapiCallId *string `bun:"vapi_call_id,type:text,nullzero" json:"vapiCallId,omitempty"`
+	EventType string `bun:"event_type,type:text" json:"eventType"`
+	Payload json.RawMessage `bun:"payload,type:jsonb" json:"payload"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+}
+
+func (value VapiEventsBun) Validate() error {
+	if value.VapiCallId != nil {
+		if len([]byte(*value.VapiCallId)) > 120 { return errors.New("vapi_events.vapi_call_id exceeds 120 bytes") }
+		if len([]byte(*value.VapiCallId)) < 1 { return errors.New("vapi_events.vapi_call_id is below 1 bytes") }
+	}
+	if len([]byte(value.EventType)) > 80 { return errors.New("vapi_events.event_type exceeds 80 bytes") }
+	if len([]byte(value.EventType)) < 1 { return errors.New("vapi_events.event_type is below 1 bytes") }
+	if !validateRawJSON(value.Payload) { return errors.New("vapi_events.payload must be valid JSON") }
+	return nil
+}
+
+const FabPlansTable = "daedalus.fab_plans"
+const FabPlansSelectSQL = `select
+      id::text as id,
+      owner_email,
+      title,
+      goal,
+      process_family,
+      status,
+      document,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from daedalus.fab_plans`
+
+var FabPlansProcessFamilyValues = []string{"additive", "subtractive", "hybrid"}
+var FabPlansStatusValues = []string{"draft", "planning", "planned", "released", "archived"}
+
+type FabPlansBun struct {
+	bun.BaseModel `bun:"table:daedalus.fab_plans"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	OwnerEmail string `bun:"owner_email,type:text" json:"ownerEmail"`
+	Title string `bun:"title,type:text" json:"title"`
+	Goal string `bun:"goal,type:text" json:"goal"`
+	ProcessFamily string `bun:"process_family,type:text,default:'additive'" json:"processFamily"`
+	Status string `bun:"status,type:text,default:'draft'" json:"status"`
+	Document *json.RawMessage `bun:"document,type:jsonb,nullzero" json:"document,omitempty"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value FabPlansBun) Validate() error {
+	if len([]byte(value.OwnerEmail)) > 320 { return errors.New("fab_plans.owner_email exceeds 320 bytes") }
+	if len([]byte(value.OwnerEmail)) < 3 { return errors.New("fab_plans.owner_email is below 3 bytes") }
+	if len([]byte(value.Title)) > 200 { return errors.New("fab_plans.title exceeds 200 bytes") }
+	if len([]byte(value.Title)) < 1 { return errors.New("fab_plans.title is below 1 bytes") }
+	if len([]byte(value.Goal)) > 20000 { return errors.New("fab_plans.goal exceeds 20000 bytes") }
+	if len([]byte(value.Goal)) < 1 { return errors.New("fab_plans.goal is below 1 bytes") }
+	if !containsString(FabPlansProcessFamilyValues, value.ProcessFamily) { return errors.New("unsupported fab_plans.process_family") }
+	if !containsString(FabPlansStatusValues, value.Status) { return errors.New("unsupported fab_plans.status") }
+	if value.Document != nil {
+		if !validateRawJSON(*value.Document) { return errors.New("fab_plans.document must be valid JSON") }
+	}
+	return nil
+}
+
+const FabDesignsTable = "daedalus.fab_designs"
+const FabDesignsSelectSQL = `select
+      id::text as id,
+      plan_id::text as plan_id,
+      filename,
+      format,
+      storage_uri,
+      size_bytes,
+      content_hash,
+      geometry,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from daedalus.fab_designs`
+
+var FabDesignsFormatValues = []string{"step", "stl", "3mf", "dxf", "iges", "obj"}
+
+type FabDesignsBun struct {
+	bun.BaseModel `bun:"table:daedalus.fab_designs"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	PlanId uuid.UUID `bun:"plan_id,type:uuid" json:"planId"`
+	Filename string `bun:"filename,type:text" json:"filename"`
+	Format string `bun:"format,type:text" json:"format"`
+	StorageUri string `bun:"storage_uri,type:text" json:"storageUri"`
+	SizeBytes int64 `bun:"size_bytes,type:bigint,default:0" json:"sizeBytes"`
+	ContentHash *string `bun:"content_hash,type:text,nullzero" json:"contentHash,omitempty"`
+	Geometry json.RawMessage `bun:"geometry,type:jsonb,default:'{}'::jsonb" json:"geometry"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+}
+
+func (value FabDesignsBun) Validate() error {
+	if len([]byte(value.Filename)) > 400 { return errors.New("fab_designs.filename exceeds 400 bytes") }
+	if len([]byte(value.Filename)) < 1 { return errors.New("fab_designs.filename is below 1 bytes") }
+	if !containsString(FabDesignsFormatValues, value.Format) { return errors.New("unsupported fab_designs.format") }
+	if len([]byte(value.StorageUri)) > 2000 { return errors.New("fab_designs.storage_uri exceeds 2000 bytes") }
+	if len([]byte(value.StorageUri)) < 1 { return errors.New("fab_designs.storage_uri is below 1 bytes") }
+	if value.SizeBytes < 0 { return errors.New("fab_designs.size_bytes is below the minimum") }
+	if !validateRawJSON(value.Geometry) { return errors.New("fab_designs.geometry must be valid JSON") }
+	return nil
+}
+
+const FabInstructionsTable = "daedalus.fab_instructions"
+const FabInstructionsSelectSQL = `select
+      id::text as id,
+      plan_id::text as plan_id,
+      revision,
+      machine_profile,
+      dialect,
+      storage_uri,
+      content_hash,
+      validated,
+      validation,
+      released_by_email,
+      to_char(released_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as released_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from daedalus.fab_instructions`
+
+var FabInstructionsDialectValues = []string{"gcode", "nc", "apt", "proprietary"}
+
+type FabInstructionsBun struct {
+	bun.BaseModel `bun:"table:daedalus.fab_instructions"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	PlanId uuid.UUID `bun:"plan_id,type:uuid" json:"planId"`
+	Revision int32 `bun:"revision,type:integer,default:1" json:"revision"`
+	MachineProfile string `bun:"machine_profile,type:text" json:"machineProfile"`
+	Dialect string `bun:"dialect,type:text,default:'gcode'" json:"dialect"`
+	StorageUri string `bun:"storage_uri,type:text" json:"storageUri"`
+	ContentHash *string `bun:"content_hash,type:text,nullzero" json:"contentHash,omitempty"`
+	Validated bool `bun:"validated,type:boolean,default:false" json:"validated"`
+	Validation json.RawMessage `bun:"validation,type:jsonb,default:'{}'::jsonb" json:"validation"`
+	ReleasedByEmail *string `bun:"released_by_email,type:text,nullzero" json:"releasedByEmail,omitempty"`
+	ReleasedAt *time.Time `bun:"released_at,type:timestamptz,nullzero" json:"releasedAt,omitempty"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+}
+
+func (value FabInstructionsBun) Validate() error {
+	if value.Revision < 1 { return errors.New("fab_instructions.revision is below the minimum") }
+	if len([]byte(value.MachineProfile)) > 200 { return errors.New("fab_instructions.machine_profile exceeds 200 bytes") }
+	if len([]byte(value.MachineProfile)) < 1 { return errors.New("fab_instructions.machine_profile is below 1 bytes") }
+	if !containsString(FabInstructionsDialectValues, value.Dialect) { return errors.New("unsupported fab_instructions.dialect") }
+	if len([]byte(value.StorageUri)) > 2000 { return errors.New("fab_instructions.storage_uri exceeds 2000 bytes") }
+	if len([]byte(value.StorageUri)) < 1 { return errors.New("fab_instructions.storage_uri is below 1 bytes") }
+	if !validateRawJSON(value.Validation) { return errors.New("fab_instructions.validation must be valid JSON") }
+	return nil
+}
+
+const FabRunsTable = "daedalus.fab_runs"
+const FabRunsSelectSQL = `select
+      id::text as id,
+      instructions_id::text as instructions_id,
+      status,
+      machine_id,
+      operator_email,
+      progress,
+      as_built,
+      error,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from daedalus.fab_runs`
+
+var FabRunsStatusValues = []string{"queued", "running", "succeeded", "failed", "aborted"}
+
+type FabRunsBun struct {
+	bun.BaseModel `bun:"table:daedalus.fab_runs"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	InstructionsId uuid.UUID `bun:"instructions_id,type:uuid" json:"instructionsId"`
+	Status string `bun:"status,type:text,default:'queued'" json:"status"`
+	MachineId string `bun:"machine_id,type:text" json:"machineId"`
+	OperatorEmail *string `bun:"operator_email,type:text,nullzero" json:"operatorEmail,omitempty"`
+	Progress int32 `bun:"progress,type:smallint,default:0" json:"progress"`
+	AsBuilt json.RawMessage `bun:"as_built,type:jsonb,default:'{}'::jsonb" json:"asBuilt"`
+	Error *string `bun:"error,type:text,nullzero" json:"error,omitempty"`
+	StartedAt *time.Time `bun:"started_at,type:timestamptz,nullzero" json:"startedAt,omitempty"`
+	FinishedAt *time.Time `bun:"finished_at,type:timestamptz,nullzero" json:"finishedAt,omitempty"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+}
+
+func (value FabRunsBun) Validate() error {
+	if !containsString(FabRunsStatusValues, value.Status) { return errors.New("unsupported fab_runs.status") }
+	if len([]byte(value.MachineId)) > 200 { return errors.New("fab_runs.machine_id exceeds 200 bytes") }
+	if len([]byte(value.MachineId)) < 1 { return errors.New("fab_runs.machine_id is below 1 bytes") }
+	if value.Progress < 0 { return errors.New("fab_runs.progress is below the minimum") }
+	if value.Progress > 100 { return errors.New("fab_runs.progress is above the maximum") }
+	if !validateRawJSON(value.AsBuilt) { return errors.New("fab_runs.as_built must be valid JSON") }
+	if value.Error != nil {
+		if len([]byte(*value.Error)) > 20000 { return errors.New("fab_runs.error exceeds 20000 bytes") }
+	}
 	return nil
 }
 

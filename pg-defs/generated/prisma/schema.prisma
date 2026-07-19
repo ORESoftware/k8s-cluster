@@ -1131,16 +1131,16 @@ model DesSoccerLearningSetPlayRuns {
 }
 
 model DesSoccerLearningSetPlayRestartMix {
-  runId String @map("run_id") @db.Uuid
-  ordinal Int
+  runId String @map("run_id") @id @db.Uuid
+  ordinal Int @id
   restart String @db.VarChar(40)
   // Check constraints live in schema.sql and must be migrated from the SQL contract.
   @@map("des_soccer_learning_set_play_restart_mix")
 }
 
 model DesSoccerLearningSetPlayEpisodeMetrics {
-  runId String @map("run_id") @db.Uuid
-  episodeIndex Int @map("episode_index")
+  runId String @map("run_id") @id @db.Uuid
+  episodeIndex Int @map("episode_index") @id
   seed BigInt @db.BigInt
   restart String @db.VarChar(40)
   routine String? @db.VarChar(80)
@@ -2745,4 +2745,359 @@ model SharedContext {
   @@unique([channelSlug, ctxKey], map: "ai_agent_bridge_context_channel_key_uq")
   // Check constraints live in schema.sql and must be migrated from the SQL contract.
   @@map("shared_context")
+}
+
+model SyncClock {
+  singleton Boolean @id @default(true)
+  lastSequence BigInt @map("last_sequence") @default(0) @db.BigInt
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("sync_clock")
+}
+
+model SyncTombstones {
+  sequence BigInt @id @db.BigInt
+  tableName String @map("table_name") @db.Text
+  rowId String @map("row_id") @db.Text
+  tenantId String? @map("tenant_id") @db.Uuid
+  ownerUserId String? @map("owner_user_id") @db.Uuid
+  rowVersion BigInt @map("row_version") @db.BigInt
+  deletedAt DateTime @map("deleted_at") @default(now()) @db.Timestamptz(6)
+  @@unique([tableName, rowId], map: "fiducia_sync_tombstones_table_row_uq")
+  // fiducia_sync_tombstones_tenant_sequence_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // fiducia_sync_tombstones_user_sequence_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("sync_tombstones")
+}
+
+model Orgs {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug String @db.VarChar(120)
+  name String @db.VarChar(200)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  version BigInt @default(1) @db.BigInt
+  syncSequence BigInt @map("sync_sequence") @db.BigInt
+  @@unique([slug], map: "fiducia_orgs_slug_uq")
+  @@index([syncSequence], map: "fiducia_orgs_sync_sequence_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("orgs")
+}
+
+model Projects {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgId String @map("org_id") @db.Uuid
+  slug String @db.VarChar(120)
+  name String @db.VarChar(200)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  version BigInt @default(1) @db.BigInt
+  syncSequence BigInt @map("sync_sequence") @db.BigInt
+  @@unique([orgId, slug], map: "fiducia_projects_org_slug_uq")
+  @@index([orgId], map: "fiducia_projects_org_idx")
+  @@index([orgId, syncSequence], map: "fiducia_projects_org_sync_sequence_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("projects")
+}
+
+model Users {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  supabaseUserId String @map("supabase_user_id") @db.Uuid
+  email String @db.VarChar(320)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  @@unique([supabaseUserId], map: "fiducia_users_supabase_uq")
+  @@map("users")
+}
+
+model OrgMembers {
+  orgId String @map("org_id") @id @db.Uuid
+  userId String @map("user_id") @id @db.Uuid
+  role String @default("member") @db.VarChar(32)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  @@index([userId], map: "fiducia_org_members_user_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("org_members")
+}
+
+model ProjectMembers {
+  projectId String @map("project_id") @id @db.Uuid
+  userId String @map("user_id") @id @db.Uuid
+  role String @default("viewer") @db.VarChar(32)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  @@index([userId], map: "fiducia_project_members_user_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("project_members")
+}
+
+model ApiKeys {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  keyId String @map("key_id") @db.VarChar(64)
+  orgId String @map("org_id") @db.Uuid
+  projectId String? @map("project_id") @db.Uuid
+  createdByUserId String? @map("created_by_user_id") @db.Uuid
+  name String @db.VarChar(200)
+  secretHash String @map("secret_hash") @db.VarChar(255)
+  scopes Json @default("[]")
+  env String @default("live") @db.VarChar(16)
+  requireIdempotency Boolean @map("require_idempotency") @default(true)
+  mtlsRequired Boolean @map("mtls_required") @default(false)
+  revoked Boolean @default(false)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  version BigInt @default(1) @db.BigInt
+  syncSequence BigInt @map("sync_sequence") @db.BigInt
+  lastUsedAt DateTime? @map("last_used_at") @db.Timestamptz(6)
+  expiresAt DateTime? @map("expires_at") @db.Timestamptz(6)
+  @@unique([keyId], map: "fiducia_api_keys_key_id_uq")
+  // fiducia_api_keys_org_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // fiducia_api_keys_project_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  @@index([orgId, syncSequence], map: "fiducia_api_keys_org_sync_sequence_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("api_keys")
+}
+
+model MtlsClientCerts {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgId String @map("org_id") @db.Uuid
+  projectId String? @map("project_id") @db.Uuid
+  name String @db.VarChar(200)
+  subject String @db.VarChar(500)
+  sha256Fingerprint String @map("sha256_fingerprint") @db.VarChar(95)
+  notBefore DateTime? @map("not_before") @db.Timestamptz(6)
+  notAfter DateTime? @map("not_after") @db.Timestamptz(6)
+  revoked Boolean @default(false)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  version BigInt @default(1) @db.BigInt
+  syncSequence BigInt @map("sync_sequence") @db.BigInt
+  @@unique([sha256Fingerprint], map: "fiducia_mtls_client_certs_fingerprint_uq")
+  // fiducia_mtls_client_certs_org_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  @@index([orgId, syncSequence], map: "fiducia_mtls_client_certs_org_sync_sequence_idx")
+  @@map("mtls_client_certs")
+}
+
+model CustomerPreferences {
+  userId String @map("user_id") @id @db.Uuid
+  density String @default("comfortable") @db.VarChar(16)
+  timezone String @default("UTC") @db.VarChar(64)
+  region String @default("auto") @db.VarChar(16)
+  notifyKeyRotation Boolean @map("notify_key_rotation") @default(true)
+  notifyLockContention Boolean @map("notify_lock_contention") @default(true)
+  notifyMfa Boolean @map("notify_mfa") @default(true)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  version BigInt @default(1) @db.BigInt
+  syncSequence BigInt @map("sync_sequence") @db.BigInt
+  @@index([userId, syncSequence], map: "fiducia_customer_preferences_user_sync_sequence_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("customer_preferences")
+}
+
+model CustomerSessions {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  device String @db.VarChar(200)
+  location String? @db.VarChar(200)
+  lastSeen DateTime @map("last_seen") @default(now()) @db.Timestamptz(6)
+  status String @default("active") @db.VarChar(16)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  version BigInt @default(1) @db.BigInt
+  syncSequence BigInt @map("sync_sequence") @db.BigInt
+  @@index([userId], map: "fiducia_customer_sessions_user_idx")
+  @@index([userId, syncSequence], map: "fiducia_customer_sessions_user_sync_sequence_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("customer_sessions")
+}
+
+model AuditLog {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgId String? @map("org_id") @db.Uuid
+  projectId String? @map("project_id") @db.Uuid
+  actorUserId String? @map("actor_user_id") @db.Uuid
+  actorKeyId String? @map("actor_key_id") @db.Uuid
+  actor String? @db.VarChar(320)
+  action String @db.VarChar(120)
+  target String? @db.VarChar(320)
+  requestId String? @map("request_id") @db.VarChar(120)
+  sourceIp String? @map("source_ip") @db.VarChar(64)
+  userAgent String? @map("user_agent") @db.VarChar(500)
+  meta Json @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  retentionExpiresAt DateTime? @map("retention_expires_at") @db.Timestamptz(6)
+  @@index([orgId, createdAt], map: "fiducia_audit_log_org_created_idx")
+  @@index([projectId, createdAt], map: "fiducia_audit_log_project_created_idx")
+  @@index([actorUserId, createdAt], map: "fiducia_audit_log_actor_user_created_idx")
+  @@index([actorKeyId, createdAt], map: "fiducia_audit_log_actor_key_created_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("audit_log")
+}
+
+model CustomerNotifications {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  orgId String? @map("org_id") @db.Uuid
+  kind String @db.VarChar(40)
+  severity String @default("info") @db.VarChar(16)
+  title String @db.VarChar(200)
+  body String @default("") @db.VarChar(2000)
+  link String? @db.VarChar(500)
+  readAt DateTime? @map("read_at") @db.Timestamptz(6)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  version BigInt @default(1) @db.BigInt
+  syncSequence BigInt @map("sync_sequence") @db.BigInt
+  @@index([userId, createdAt], map: "fiducia_customer_notifications_user_created_idx")
+  // fiducia_customer_notifications_user_unread_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  @@index([userId, syncSequence], map: "fiducia_customer_notifications_user_sync_sequence_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("customer_notifications")
+}
+
+model SyncIdempotencyKeys {
+  key String @id @db.Text
+  requestFingerprint String @map("request_fingerprint") @db.VarChar(64)
+  committedVersion BigInt? @map("committed_version") @db.BigInt
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  @@index([createdAt], map: "fiducia_sync_idempotency_created_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("sync_idempotency_keys")
+}
+
+model Transcriptions {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  source String @db.Text
+  provider String @db.Text
+  model String @db.Text
+  text String @db.Text
+  language String? @db.Text
+  sampleRate Int? @map("sample_rate")
+  durationMs BigInt? @map("duration_ms") @db.BigInt
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  @@index([createdAt], map: "t2v_transcriptions_created_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("transcriptions")
+}
+
+model Syntheses {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  text String @db.Text
+  voice String @db.Text
+  provider String @db.Text
+  model String @db.Text
+  format String @db.Text
+  audioBytes BigInt @map("audio_bytes") @db.BigInt
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  @@index([createdAt], map: "t2v_syntheses_created_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("syntheses")
+}
+
+model Translations {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sourceText String @map("source_text") @db.Text
+  translatedText String @map("translated_text") @db.Text
+  sourceLang String? @map("source_lang") @db.Text
+  targetLang String @map("target_lang") @db.Text
+  provider String @db.Text
+  model String @db.Text
+  latencyMs BigInt @map("latency_ms") @db.BigInt
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  @@index([createdAt], map: "t2v_translations_created_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("translations")
+}
+
+model VapiCalls {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vapiCallId String @map("vapi_call_id") @db.Text
+  status String @db.Text
+  endedReason String? @map("ended_reason") @db.Text
+  transcript String? @db.Text
+  summary String? @db.Text
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@unique([vapiCallId], map: "t2v_vapi_calls_vapi_call_id_uq")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("vapi_calls")
+}
+
+model VapiEvents {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vapiCallId String? @map("vapi_call_id") @db.Text
+  eventType String @map("event_type") @db.Text
+  payload Json
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  @@index([createdAt], map: "t2v_vapi_events_created_idx")
+  @@index([vapiCallId], map: "t2v_vapi_events_call_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("vapi_events")
+}
+
+model FabPlans {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ownerEmail String @map("owner_email") @db.Text
+  title String @db.Text
+  goal String @db.Text
+  processFamily String @map("process_family") @default("additive") @db.Text
+  status String @default("draft") @db.Text
+  document Json?
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@index([ownerEmail], map: "fab_plans_owner_email_idx")
+  @@index([status], map: "fab_plans_status_idx")
+  @@index([ownerEmail, createdAt], map: "fab_plans_owner_created_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("fab_plans")
+}
+
+model FabDesigns {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  planId String @map("plan_id") @db.Uuid
+  filename String @db.Text
+  format String @db.Text
+  storageUri String @map("storage_uri") @db.Text
+  sizeBytes BigInt @map("size_bytes") @default(0) @db.BigInt
+  contentHash String? @map("content_hash") @db.Text
+  geometry Json @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  @@index([planId], map: "fab_designs_plan_idx")
+  // fab_designs_content_hash_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("fab_designs")
+}
+
+model FabInstructions {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  planId String @map("plan_id") @db.Uuid
+  revision Int @default(1)
+  machineProfile String @map("machine_profile") @db.Text
+  dialect String @default("gcode") @db.Text
+  storageUri String @map("storage_uri") @db.Text
+  contentHash String? @map("content_hash") @db.Text
+  validated Boolean @default(false)
+  validation Json @default("{}")
+  releasedByEmail String? @map("released_by_email") @db.Text
+  releasedAt DateTime? @map("released_at") @db.Timestamptz(6)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  @@unique([planId, revision], map: "fab_instructions_plan_revision_uq")
+  @@index([planId], map: "fab_instructions_plan_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("fab_instructions")
+}
+
+model FabRuns {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  instructionsId String @map("instructions_id") @db.Uuid
+  status String @default("queued") @db.Text
+  machineId String @map("machine_id") @db.Text
+  operatorEmail String? @map("operator_email") @db.Text
+  progress Int @default(0)
+  asBuilt Json @map("as_built") @default("{}")
+  error String? @db.Text
+  startedAt DateTime? @map("started_at") @db.Timestamptz(6)
+  finishedAt DateTime? @map("finished_at") @db.Timestamptz(6)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  @@index([instructionsId], map: "fab_runs_instructions_idx")
+  @@index([status], map: "fab_runs_status_idx")
+  @@index([createdAt], map: "fab_runs_created_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("fab_runs")
 }

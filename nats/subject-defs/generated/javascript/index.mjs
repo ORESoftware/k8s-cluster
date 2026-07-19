@@ -85,6 +85,37 @@ export const BLOCKCHAIN_INDEX_EVENTS_SUBJECT = "dd.remote.blockchain.index.event
 export const BLOCKCHAIN_MEV_ALERTS_SUBJECT = "dd.remote.blockchain.mev.alerts";
 
 /**
+ * Shared result fanout receiving every browser-job terminal result.
+ * Service: dd-browser-job-runner
+ */
+export const BROWSER_JOB_RESULTS_SUBJECT = "dd.remote.browser_jobs.results";
+
+/**
+ * Redacted build lifecycle events (queued/running/succeeded/failed) published by the build server. Default for BUILD_SERVER_NATS_EVENT_SUBJECT.
+ * Service: dd-build-server
+ */
+export const BUILD_SERVER_EVENTS_SUBJECT = "dd.remote.build_server.events";
+
+/**
+ * Redacted container-image registry events (ECR / docker registry webhook pushes) relayed by the build server. Default for BUILD_SERVER_NATS_IMAGE_SUBJECT.
+ * Service: dd-build-server
+ */
+export const BUILD_SERVER_IMAGES_SUBJECT = "dd.remote.build_server.images";
+
+/**
+ * Durable build-request intake. Producers publish a build-server.v1 job document; build-server replicas consume via the shared queue group / durable JetStream consumer. Default for BUILD_SERVER_NATS_REQUEST_SUBJECT.
+ * Service: dd-build-server
+ */
+export const BUILD_SERVER_REQUESTS_SUBJECT = "dd.remote.build_server.requests";
+export const BUILD_SERVER_REQUESTS_QUEUE_GROUP = "dd-build-server";
+
+/**
+ * Terminal build results (succeeded/failed with jobId and error summary) for NATS-submitted and webhook-submitted jobs. Default for BUILD_SERVER_NATS_RESULT_SUBJECT.
+ * Service: dd-build-server
+ */
+export const BUILD_SERVER_RESULTS_SUBJECT = "dd.remote.build_server.results";
+
+/**
  * Per-fault lifecycle events (selected, injected, restored, aborted-by-guard) emitted by the chaos loops.
  * Service: dd-chaos
  */
@@ -238,6 +269,19 @@ export const DES_RESULTS_SUBJECT = "dd.remote.des.results";
  */
 export const DES_SIMULATE_SUBJECT = "dd.remote.des.simulate";
 export const DES_SIMULATE_QUEUE_GROUP = "dd-des-simulator";
+
+/**
+ * Document conversion requests consumed by dd-document-rs replicas.
+ * Service: dd-document-rs
+ */
+export const DOCUMENT_CONVERT_REQUESTS_SUBJECT = "dd.remote.document.convert";
+export const DOCUMENT_CONVERT_REQUESTS_QUEUE_GROUP = "dd-document-rs";
+
+/**
+ * Document conversion results published after a request completes or fails.
+ * Service: dd-document-rs
+ */
+export const DOCUMENT_CONVERT_RESULTS_SUBJECT = "dd.remote.document.results";
 
 /**
  * Inbound forecast/recommendation requests consumed by the economics server. Subscribed with the dd-economics-server queue group so requests load-balance across replicas. Default for ECONOMICS_FORECAST_REQUEST_SUBJECT.
@@ -617,6 +661,19 @@ export const MUSIC_SONGS_PUBLISHED_SUBJECT = "dd.remote.music.songs.published";
 export const MUSIC_VOTES_EVENTS_SUBJECT = "dd.remote.music.votes.events";
 
 /**
+ * OCR requests consumed by dd-ocr-rs replicas.
+ * Service: dd-ocr-rs
+ */
+export const OCR_REQUESTS_SUBJECT = "dd.remote.ocr.requests";
+export const OCR_REQUESTS_QUEUE_GROUP = "dd-ocr-rs";
+
+/**
+ * OCR results published after a request completes or fails.
+ * Service: dd-ocr-rs
+ */
+export const OCR_RESULTS_SUBJECT = "dd.remote.ocr.results";
+
+/**
  * Wakeup signal published whenever a new task is enqueued for a thread, so the orchestrator can prepare/scale the matching worker deployment without polling.
  * Service: dd-remote-rest-api
  */
@@ -628,6 +685,12 @@ export const ORCHESTRATOR_WAKEUP_STREAM = "DD_REMOTE_CONTROL";
  * Service: dd-public-data-server
  */
 export const PUBLIC_DATA_ANALYSIS_RESULTS_SUBJECT = "dd.remote.public_data.analysis.results";
+
+/**
+ * Dead-letter subject for public-data ingest requests that exhaust JetStream delivery attempts.
+ * Service: dd-public-data-server
+ */
+export const PUBLIC_DATA_INGEST_DEAD_LETTER_SUBJECT = "dd.remote.public_data.ingest.deadletter";
 
 /**
  * Inbound public-data ingestion requests accepted over NATS. Payloads mirror the HTTP /ingest and /scrape contracts.
@@ -822,6 +885,66 @@ export const WORKFLOWS_START_QUEUE_GROUP = "dd-gleam-workflow-engine";
 // ---------- Parameterized subjects ----------
 
 /**
+ * Per-job lifecycle and progress events emitted by the isolated browser worker.
+ * Service: dd-browser-job-runner
+ */
+export const BROWSER_JOB_EVENTS_PATTERN = "dd.remote.browser_jobs.{job_id}.events";
+export const BROWSER_JOB_EVENTS_WILDCARD = "dd.remote.browser_jobs.*.events";
+export function browserJobEventsSubject(jobId) {
+  return `dd.remote.browser_jobs.${jobId}.events`;
+}
+export function parseBrowserJobEventsSubject(subject) {
+  const patternTokens = ["dd","remote","browser_jobs","{job_id}","events"];
+  const subjectTokens = subject.split(".");
+  const result = {};
+  let si = 0;
+  for (let pi = 0; pi < patternTokens.length; pi += 1) {
+    const tok = patternTokens[pi];
+    const phMatch = /^\{([a-zA-Z_][a-zA-Z0-9_]*)\}$/.exec(tok);
+    if (phMatch) {
+      if (si >= subjectTokens.length) return null;
+      result[phMatch[1]] = subjectTokens[si];
+      si += 1;
+      continue;
+    }
+    if (si >= subjectTokens.length || subjectTokens[si] !== tok) return null;
+    si += 1;
+  }
+  if (si !== subjectTokens.length) return null;
+  return result;
+}
+
+/**
+ * Per-job terminal result emitted by the isolated browser worker.
+ * Service: dd-browser-job-runner
+ */
+export const BROWSER_JOB_RESULT_PATTERN = "dd.remote.browser_jobs.{job_id}.result";
+export const BROWSER_JOB_RESULT_WILDCARD = "dd.remote.browser_jobs.*.result";
+export function browserJobResultSubject(jobId) {
+  return `dd.remote.browser_jobs.${jobId}.result`;
+}
+export function parseBrowserJobResultSubject(subject) {
+  const patternTokens = ["dd","remote","browser_jobs","{job_id}","result"];
+  const subjectTokens = subject.split(".");
+  const result = {};
+  let si = 0;
+  for (let pi = 0; pi < patternTokens.length; pi += 1) {
+    const tok = patternTokens[pi];
+    const phMatch = /^\{([a-zA-Z_][a-zA-Z0-9_]*)\}$/.exec(tok);
+    if (phMatch) {
+      if (si >= subjectTokens.length) return null;
+      result[phMatch[1]] = subjectTokens[si];
+      si += 1;
+      continue;
+    }
+    if (si >= subjectTokens.length || subjectTokens[si] !== tok) return null;
+    si += 1;
+  }
+  if (si !== subjectTokens.length) return null;
+  return result;
+}
+
+/**
  * Per-row change emitted by wal-gateway. Subject pattern is '<prefix>.<schema>.<table>.<op>'. The default prefix is 'cdc' and the default stream name is 'CDC'. Consumers usually subscribe to the prefix tail wildcard ('cdc.>').
  * Service: dd-wal-gateway
  */
@@ -830,6 +953,9 @@ export const CDC_ROW_CHANGE_WILDCARD = "{prefix}.>";
 export const CDC_ROW_CHANGE_STREAM = "CDC";
 export function cdcRowChangeSubject(prefix, schema, table, op) {
   return `${prefix}.${schema}.${table}.${op}`;
+}
+export function formatCdcRowChangeWildcard(prefix) {
+  return `${prefix}.>`;
 }
 export function parseCdcRowChangeSubject(subject) {
   const patternTokens = ["{prefix}","{schema}","{table}","{op}"];
@@ -861,6 +987,9 @@ export const CDC_TABLE_FILTER_WILDCARD = "{prefix}.>";
 export const CDC_TABLE_FILTER_STREAM = "CDC";
 export function cdcTableFilterSubject(prefix, schema, table) {
   return `${prefix}.${schema}.${table}.>`;
+}
+export function formatCdcTableFilterWildcard(prefix) {
+  return `${prefix}.>`;
 }
 export function parseCdcTableFilterSubject(subject) {
   const patternTokens = ["{prefix}","{schema}","{table}",">"];
@@ -1235,6 +1364,12 @@ export const AGENT_SIM_SERVER_QUEUE_GROUP = "dd-agent-sim-server";
 export const BILLING_SERVER_QUEUE_GROUP = "dd-billing-server";
 
 /**
+ * Shared queue group / durable consumer name used by build-server replicas for request intake.
+ * Service: dd-build-server
+ */
+export const BUILD_SERVER_QUEUE_GROUP = "dd-build-server";
+
+/**
  * Shared queue group used by dd-constraint-scheduler replicas consuming schedule requests.
  * Service: dd-constraint-scheduler
  */
@@ -1263,6 +1398,12 @@ export const DATASET_LABELING_WORKERS_QUEUE_GROUP = "dd-dataset-labeling";
  * Service: dd-data-viz-rs
  */
 export const DATA_VIZ_NOTIFICATION_DISPATCH_QUEUE_GROUP = "dd-data-viz-notifiers";
+
+/**
+ * Shared queue group used by document converter replicas so each request is handled once.
+ * Service: dd-document-rs
+ */
+export const DOCUMENT_CONVERTERS_QUEUE_GROUP = "dd-document-rs";
 
 /**
  * Shared queue group used by dd-economics-server replicas consuming forecast requests.
@@ -1317,6 +1458,12 @@ export const MONTE_CARLO_SERVER_QUEUE_GROUP = "dd-monte-carlo-server";
  * Service: dd-music-rs
  */
 export const MUSIC_GENERATION_QUEUE_GROUP = "dd-music-rs";
+
+/**
+ * Shared queue group used by OCR replicas so each request is handled once.
+ * Service: dd-ocr-rs
+ */
+export const OCR_WORKERS_QUEUE_GROUP = "dd-ocr-rs";
 
 /**
  * Shared queue group used by dd-public-data-server replicas so each queued ingest/scrape request is processed once.
@@ -1377,6 +1524,16 @@ export const CDC_STREAM_SUBJECTS = Object.freeze(["cdc.>"]);
 export const CDC_STREAM_RETENTION = "limits";
 export const CDC_STREAM_STORAGE = "file";
 export const CDC_STREAM_ACK = "explicit";
+
+/**
+ * JetStream file storage with WorkQueue retention and explicit ack for build-request intake. Dedupe by Nats-Msg-Id ('build-request:<requestId>'); Postgres (dd_build_server) remains the real idempotency guard.
+ * Service: dd-build-server
+ */
+export const DD_REMOTE_BUILD_JOBS_STREAM_NAME = "DD_REMOTE_BUILD_JOBS";
+export const DD_REMOTE_BUILD_JOBS_STREAM_SUBJECTS = Object.freeze(["dd.remote.build_server.requests"]);
+export const DD_REMOTE_BUILD_JOBS_STREAM_RETENTION = "workqueue";
+export const DD_REMOTE_BUILD_JOBS_STREAM_STORAGE = "file";
+export const DD_REMOTE_BUILD_JOBS_STREAM_ACK = "explicit";
 
 /**
  * Short-retention control plane stream.

@@ -130,6 +130,18 @@ const VALUE_TYPES = new Set([
   'integer',
 ]);
 
+// Names emitted as type/field/function identifiers (directly or via the
+// casing helpers, which don't sanitize) must be plain identifiers.
+const STRICT_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+function assertIdentifier(kind, value, context) {
+  if (typeof value !== 'string' || !STRICT_IDENTIFIER.test(value)) {
+    throw new Error(
+      `${context}: ${kind} ${JSON.stringify(value)} is not a safe identifier for generated code`,
+    );
+  }
+}
+
 function buildModel(schemaFiles) {
   /** @type {NamedType[]} */
   const named = [];
@@ -140,6 +152,7 @@ function buildModel(schemaFiles) {
   for (const { filename, doc } of schemaFiles) {
     const defs = doc.$defs ?? doc.definitions ?? {};
     for (const [name, def] of Object.entries(defs)) {
+      assertIdentifier('$defs name', name, filename);
       if (seenTypes.has(name)) {
         throw new Error(`Duplicate $defs name across schema files: ${name}`);
       }
@@ -154,6 +167,7 @@ function buildModel(schemaFiles) {
         if (seenKeys.has(key.name)) {
           throw new Error(`Duplicate redis key name across schemas: ${key.name}`);
         }
+        assertIdentifier('redis key name', key.name, filename);
         seenKeys.add(key.name);
         if (!key.pattern) {
           throw new Error(`redis key ${key.name} missing pattern`);
@@ -225,6 +239,7 @@ function resolveNamed(name, def, filename) {
   const required = new Set(def.required ?? []);
   const fields = [];
   for (const [fieldName, fieldDef] of Object.entries(def.properties ?? {})) {
+    assertIdentifier('field name', fieldName, `${filename} / ${name}`);
     const { typeRef, nullable } = resolveTypeRef(fieldDef, `${name}.${fieldName}`);
     fields.push({
       name: fieldName,
@@ -1701,7 +1716,18 @@ function upperSnake(name) {
 }
 
 function splitDoc(text) {
-  return text.split(/\n+/).map((line) => line.trim()).filter((line) => line.length > 0);
+  // `*/` must never survive into a block comment (it would terminate the
+  // emitted JSDoc/Javadoc early and leak the rest of the line as source),
+  // and control characters have no business in generated docs.
+  return text
+    .split(/\n+/)
+    .map((line) =>
+      line
+        .replace(/\*\//g, '*\\/')
+        .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+        .trim(),
+    )
+    .filter((line) => line.length > 0);
 }
 
 function parsePattern(pattern) {

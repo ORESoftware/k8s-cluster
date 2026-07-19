@@ -14,6 +14,9 @@ const jsonArraySchema = z.array(z.unknown());
 export const threefaSchema = pgSchema("threefa");
 export const benefactorSchema = pgSchema("benefactor");
 export const aiAgentBridgeSchema = pgSchema("ai_agent_bridge");
+export const fiduciaSchema = pgSchema("fiducia");
+export const t2vSchema = pgSchema("t2v");
+export const daedalusSchema = pgSchema("daedalus");
 
 export const accounts = threefaSchema.table(
   "accounts",
@@ -3921,8 +3924,8 @@ export type DesSoccerLearningSetPlayRestartMixRestart = z.infer<typeof desSoccer
 export const desSoccerLearningSetPlayRestartMix = pgTable(
   "des_soccer_learning_set_play_restart_mix",
   {
-    runId: uuid("run_id").notNull(),
-    ordinal: integer("ordinal").notNull(),
+    runId: uuid("run_id").primaryKey(),
+    ordinal: integer("ordinal").primaryKey(),
     restart: varchar("restart", { length: 40 }).notNull(),
   },
   (table) => ({
@@ -3955,8 +3958,8 @@ export type DesSoccerLearningSetPlayEpisodeMetricsRestart = z.infer<typeof desSo
 export const desSoccerLearningSetPlayEpisodeMetrics = pgTable(
   "des_soccer_learning_set_play_episode_metrics",
   {
-    runId: uuid("run_id").notNull(),
-    episodeIndex: integer("episode_index").notNull(),
+    runId: uuid("run_id").primaryKey(),
+    episodeIndex: integer("episode_index").primaryKey(),
     seed: bigint("seed", { mode: "number" }).notNull(),
     restart: varchar("restart", { length: 40 }).notNull(),
     routine: varchar("routine", { length: 80 }),
@@ -9607,3 +9610,1185 @@ export const sharedContextUpdateSchema = sharedContextInsertSchema.partial();
 export type SharedContextRow = z.infer<typeof sharedContextRowSchema>;
 export type SharedContextInsert = z.infer<typeof sharedContextInsertSchema>;
 export type SharedContextUpdate = z.infer<typeof sharedContextUpdateSchema>;
+
+export const syncClock = fiduciaSchema.table(
+  "sync_clock",
+  {
+    singleton: boolean("singleton").default(sql`true`).primaryKey(),
+    lastSequence: bigint("last_sequence", { mode: "number" }).default(sql`0`).notNull(),
+  },
+  (table) => ({
+    fiduciaSyncClockSingletonChk: check("fiducia_sync_clock_singleton_chk", sql.raw("singleton")),
+    fiduciaSyncClockNonnegativeChk: check("fiducia_sync_clock_nonnegative_chk", sql.raw("last_sequence >= 0")),
+  }),
+);
+
+export const syncClockRowSchema = z.object({
+  singleton: z.boolean(),
+  lastSequence: z.number().int().min(0),
+});
+
+export const syncClockInsertSchema = z.object({
+  singleton: z.boolean().optional().default(true),
+  lastSequence: z.number().int().min(0).optional().default(0),
+});
+
+export const syncClockUpdateSchema = syncClockInsertSchema.partial();
+export type SyncClockRow = z.infer<typeof syncClockRowSchema>;
+export type SyncClockInsert = z.infer<typeof syncClockInsertSchema>;
+export type SyncClockUpdate = z.infer<typeof syncClockUpdateSchema>;
+
+export const syncTombstones = fiduciaSchema.table(
+  "sync_tombstones",
+  {
+    sequence: bigint("sequence", { mode: "number" }).primaryKey(),
+    tableName: text("table_name").notNull(),
+    rowId: text("row_id").notNull(),
+    tenantId: uuid("tenant_id"),
+    ownerUserId: uuid("owner_user_id"),
+    rowVersion: bigint("row_version", { mode: "number" }).notNull(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    fiduciaSyncTombstonesSequenceChk: check("fiducia_sync_tombstones_sequence_chk", sql.raw("sequence > 0")),
+    fiduciaSyncTombstonesVersionChk: check("fiducia_sync_tombstones_version_chk", sql.raw("row_version > 0")),
+    fiduciaSyncTombstonesScopeChk: check("fiducia_sync_tombstones_scope_chk", sql.raw("tenant_id is not null or owner_user_id is not null")),
+    fiduciaSyncTombstonesTableRowUq: uniqueIndex("fiducia_sync_tombstones_table_row_uq").on(table.tableName, table.rowId),
+    fiduciaSyncTombstonesTenantSequenceIdx: index("fiducia_sync_tombstones_tenant_sequence_idx").on(table.tableName, table.tenantId, table.sequence).where(sql.raw("tenant_id is not null")),
+    fiduciaSyncTombstonesUserSequenceIdx: index("fiducia_sync_tombstones_user_sequence_idx").on(table.tableName, table.ownerUserId, table.sequence).where(sql.raw("owner_user_id is not null")),
+  }),
+);
+
+export const syncTombstonesRowSchema = z.object({
+  sequence: z.number().int().min(1),
+  tableName: z.string(),
+  rowId: z.string(),
+  tenantId: z.string().uuid().nullable(),
+  ownerUserId: z.string().uuid().nullable(),
+  rowVersion: z.number().int().min(1),
+  deletedAt: z.string().datetime(),
+});
+
+export const syncTombstonesInsertSchema = z.object({
+  sequence: z.number().int().min(1),
+  tableName: z.string(),
+  rowId: z.string(),
+  tenantId: z.string().uuid().nullable().optional(),
+  ownerUserId: z.string().uuid().nullable().optional(),
+  rowVersion: z.number().int().min(1),
+  deletedAt: z.string().datetime().optional(),
+});
+
+export const syncTombstonesUpdateSchema = syncTombstonesInsertSchema.partial();
+export type SyncTombstonesRow = z.infer<typeof syncTombstonesRowSchema>;
+export type SyncTombstonesInsert = z.infer<typeof syncTombstonesInsertSchema>;
+export type SyncTombstonesUpdate = z.infer<typeof syncTombstonesUpdateSchema>;
+
+export const orgs = fiduciaSchema.table(
+  "orgs",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    slug: varchar("slug", { length: 120 }).notNull(),
+    name: varchar("name", { length: 200 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    version: bigint("version", { mode: "number" }).default(sql`1`).notNull(),
+    syncSequence: bigint("sync_sequence", { mode: "number" }).notNull(),
+  },
+  (table) => ({
+    fiduciaOrgsSlugFormatChk: check("fiducia_orgs_slug_format_chk", sql.raw("slug ~ '^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$'")),
+    fiduciaOrgsSlugUq: uniqueIndex("fiducia_orgs_slug_uq").on(table.slug),
+    fiduciaOrgsSyncSequenceIdx: index("fiducia_orgs_sync_sequence_idx").on(table.syncSequence),
+  }),
+);
+
+export const orgsRowSchema = z.object({
+  id: z.string().uuid(),
+  slug: z.string().max(120).regex(new RegExp("^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$")),
+  name: z.string().max(200),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  version: z.number().int(),
+  syncSequence: z.number().int(),
+});
+
+export const orgsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  slug: z.string().max(120).regex(new RegExp("^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$")),
+  name: z.string().max(200),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  version: z.number().int().optional().default(1),
+  syncSequence: z.number().int(),
+});
+
+export const orgsUpdateSchema = orgsInsertSchema.partial();
+export type OrgsRow = z.infer<typeof orgsRowSchema>;
+export type OrgsInsert = z.infer<typeof orgsInsertSchema>;
+export type OrgsUpdate = z.infer<typeof orgsUpdateSchema>;
+
+export const projects = fiduciaSchema.table(
+  "projects",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    orgId: uuid("org_id").notNull(),
+    slug: varchar("slug", { length: 120 }).notNull(),
+    name: varchar("name", { length: 200 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    version: bigint("version", { mode: "number" }).default(sql`1`).notNull(),
+    syncSequence: bigint("sync_sequence", { mode: "number" }).notNull(),
+  },
+  (table) => ({
+    fiduciaProjectsSlugFormatChk: check("fiducia_projects_slug_format_chk", sql.raw("slug ~ '^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$'")),
+    fiduciaProjectsOrgSlugUq: uniqueIndex("fiducia_projects_org_slug_uq").on(table.orgId, table.slug),
+    fiduciaProjectsOrgIdx: index("fiducia_projects_org_idx").on(table.orgId),
+    fiduciaProjectsOrgSyncSequenceIdx: index("fiducia_projects_org_sync_sequence_idx").on(table.orgId, table.syncSequence),
+  }),
+);
+
+export const projectsRowSchema = z.object({
+  id: z.string().uuid(),
+  orgId: z.string().uuid(),
+  slug: z.string().max(120).regex(new RegExp("^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$")),
+  name: z.string().max(200),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  version: z.number().int(),
+  syncSequence: z.number().int(),
+});
+
+export const projectsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  orgId: z.string().uuid(),
+  slug: z.string().max(120).regex(new RegExp("^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$")),
+  name: z.string().max(200),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  version: z.number().int().optional().default(1),
+  syncSequence: z.number().int(),
+});
+
+export const projectsUpdateSchema = projectsInsertSchema.partial();
+export type ProjectsRow = z.infer<typeof projectsRowSchema>;
+export type ProjectsInsert = z.infer<typeof projectsInsertSchema>;
+export type ProjectsUpdate = z.infer<typeof projectsUpdateSchema>;
+
+export const users = fiduciaSchema.table(
+  "users",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    supabaseUserId: uuid("supabase_user_id").notNull(),
+    email: varchar("email", { length: 320 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    fiduciaUsersSupabaseUq: uniqueIndex("fiducia_users_supabase_uq").on(table.supabaseUserId),
+  }),
+);
+
+export const usersRowSchema = z.object({
+  id: z.string().uuid(),
+  supabaseUserId: z.string().uuid(),
+  email: z.string().max(320),
+  createdAt: z.string().datetime(),
+});
+
+export const usersInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  supabaseUserId: z.string().uuid(),
+  email: z.string().max(320),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const usersUpdateSchema = usersInsertSchema.partial();
+export type UsersRow = z.infer<typeof usersRowSchema>;
+export type UsersInsert = z.infer<typeof usersInsertSchema>;
+export type UsersUpdate = z.infer<typeof usersUpdateSchema>;
+
+export const orgMembersRoleValues = ["owner","admin","member"] as const;
+export const orgMembersRoleSchema = z.enum(orgMembersRoleValues);
+export type OrgMembersRole = z.infer<typeof orgMembersRoleSchema>;
+
+export const orgMembers = fiduciaSchema.table(
+  "org_members",
+  {
+    orgId: uuid("org_id").primaryKey(),
+    userId: uuid("user_id").primaryKey(),
+    role: varchar("role", { length: 32 }).default(sql`'member'`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    fiduciaOrgMembersRoleChk: check("fiducia_org_members_role_chk", sql.raw("role in ('owner', 'admin', 'member')")),
+    fiduciaOrgMembersUserIdx: index("fiducia_org_members_user_idx").on(table.userId),
+  }),
+);
+
+export const orgMembersRowSchema = z.object({
+  orgId: z.string().uuid(),
+  userId: z.string().uuid(),
+  role: orgMembersRoleSchema,
+  createdAt: z.string().datetime(),
+});
+
+export const orgMembersInsertSchema = z.object({
+  orgId: z.string().uuid(),
+  userId: z.string().uuid(),
+  role: orgMembersRoleSchema.optional().default("member"),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const orgMembersUpdateSchema = orgMembersInsertSchema.partial();
+export type OrgMembersRow = z.infer<typeof orgMembersRowSchema>;
+export type OrgMembersInsert = z.infer<typeof orgMembersInsertSchema>;
+export type OrgMembersUpdate = z.infer<typeof orgMembersUpdateSchema>;
+
+export const projectMembersRoleValues = ["admin","operator","viewer"] as const;
+export const projectMembersRoleSchema = z.enum(projectMembersRoleValues);
+export type ProjectMembersRole = z.infer<typeof projectMembersRoleSchema>;
+
+export const projectMembers = fiduciaSchema.table(
+  "project_members",
+  {
+    projectId: uuid("project_id").primaryKey(),
+    userId: uuid("user_id").primaryKey(),
+    role: varchar("role", { length: 32 }).default(sql`'viewer'`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    fiduciaProjectMembersRoleChk: check("fiducia_project_members_role_chk", sql.raw("role in ('admin', 'operator', 'viewer')")),
+    fiduciaProjectMembersUserIdx: index("fiducia_project_members_user_idx").on(table.userId),
+  }),
+);
+
+export const projectMembersRowSchema = z.object({
+  projectId: z.string().uuid(),
+  userId: z.string().uuid(),
+  role: projectMembersRoleSchema,
+  createdAt: z.string().datetime(),
+});
+
+export const projectMembersInsertSchema = z.object({
+  projectId: z.string().uuid(),
+  userId: z.string().uuid(),
+  role: projectMembersRoleSchema.optional().default("viewer"),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const projectMembersUpdateSchema = projectMembersInsertSchema.partial();
+export type ProjectMembersRow = z.infer<typeof projectMembersRowSchema>;
+export type ProjectMembersInsert = z.infer<typeof projectMembersInsertSchema>;
+export type ProjectMembersUpdate = z.infer<typeof projectMembersUpdateSchema>;
+
+export const apiKeysEnvValues = ["live","test"] as const;
+export const apiKeysEnvSchema = z.enum(apiKeysEnvValues);
+export type ApiKeysEnv = z.infer<typeof apiKeysEnvSchema>;
+
+export const apiKeys = fiduciaSchema.table(
+  "api_keys",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    keyId: varchar("key_id", { length: 64 }).notNull(),
+    orgId: uuid("org_id").notNull(),
+    projectId: uuid("project_id"),
+    createdByUserId: uuid("created_by_user_id"),
+    name: varchar("name", { length: 200 }).notNull(),
+    secretHash: varchar("secret_hash", { length: 255 }).notNull(),
+    scopes: jsonb("scopes").default(sql`'[]'::jsonb`).notNull(),
+    env: varchar("env", { length: 16 }).default(sql`'live'`).notNull(),
+    requireIdempotency: boolean("require_idempotency").default(sql`true`).notNull(),
+    mtlsRequired: boolean("mtls_required").default(sql`false`).notNull(),
+    revoked: boolean("revoked").default(sql`false`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    version: bigint("version", { mode: "number" }).default(sql`1`).notNull(),
+    syncSequence: bigint("sync_sequence", { mode: "number" }).notNull(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true, mode: "string" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true, mode: "string" }),
+  },
+  (table) => ({
+    fiduciaApiKeysEnvChk: check("fiducia_api_keys_env_chk", sql.raw("env in ('live', 'test')")),
+    fiduciaApiKeysScopesArrayChk: check("fiducia_api_keys_scopes_array_chk", sql.raw("jsonb_typeof(scopes) = 'array'")),
+    fiduciaApiKeysKeyIdUq: uniqueIndex("fiducia_api_keys_key_id_uq").on(table.keyId),
+    fiduciaApiKeysOrgIdx: index("fiducia_api_keys_org_idx").on(table.orgId).where(sql.raw("revoked = false")),
+    fiduciaApiKeysProjectIdx: index("fiducia_api_keys_project_idx").on(table.projectId).where(sql.raw("revoked = false")),
+    fiduciaApiKeysOrgSyncSequenceIdx: index("fiducia_api_keys_org_sync_sequence_idx").on(table.orgId, table.syncSequence),
+  }),
+);
+
+export const apiKeysRowSchema = z.object({
+  id: z.string().uuid(),
+  keyId: z.string().max(64),
+  orgId: z.string().uuid(),
+  projectId: z.string().uuid().nullable(),
+  createdByUserId: z.string().uuid().nullable(),
+  name: z.string().max(200),
+  secretHash: z.string().max(255),
+  scopes: jsonArraySchema,
+  env: apiKeysEnvSchema,
+  requireIdempotency: z.boolean(),
+  mtlsRequired: z.boolean(),
+  revoked: z.boolean(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  version: z.number().int(),
+  syncSequence: z.number().int(),
+  lastUsedAt: z.string().datetime().nullable(),
+  expiresAt: z.string().datetime().nullable(),
+});
+
+export const apiKeysInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  keyId: z.string().max(64),
+  orgId: z.string().uuid(),
+  projectId: z.string().uuid().nullable().optional(),
+  createdByUserId: z.string().uuid().nullable().optional(),
+  name: z.string().max(200),
+  secretHash: z.string().max(255),
+  scopes: jsonArraySchema.optional().default([]),
+  env: apiKeysEnvSchema.optional().default("live"),
+  requireIdempotency: z.boolean().optional().default(true),
+  mtlsRequired: z.boolean().optional().default(false),
+  revoked: z.boolean().optional().default(false),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  version: z.number().int().optional().default(1),
+  syncSequence: z.number().int(),
+  lastUsedAt: z.string().datetime().nullable().optional(),
+  expiresAt: z.string().datetime().nullable().optional(),
+});
+
+export const apiKeysUpdateSchema = apiKeysInsertSchema.partial();
+export type ApiKeysRow = z.infer<typeof apiKeysRowSchema>;
+export type ApiKeysInsert = z.infer<typeof apiKeysInsertSchema>;
+export type ApiKeysUpdate = z.infer<typeof apiKeysUpdateSchema>;
+
+export const mtlsClientCerts = fiduciaSchema.table(
+  "mtls_client_certs",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    orgId: uuid("org_id").notNull(),
+    projectId: uuid("project_id"),
+    name: varchar("name", { length: 200 }).notNull(),
+    subject: varchar("subject", { length: 500 }).notNull(),
+    sha256Fingerprint: varchar("sha256_fingerprint", { length: 95 }).notNull(),
+    notBefore: timestamp("not_before", { withTimezone: true, mode: "string" }),
+    notAfter: timestamp("not_after", { withTimezone: true, mode: "string" }),
+    revoked: boolean("revoked").default(sql`false`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    version: bigint("version", { mode: "number" }).default(sql`1`).notNull(),
+    syncSequence: bigint("sync_sequence", { mode: "number" }).notNull(),
+  },
+  (table) => ({
+    fiduciaMtlsClientCertsFingerprintUq: uniqueIndex("fiducia_mtls_client_certs_fingerprint_uq").on(table.sha256Fingerprint),
+    fiduciaMtlsClientCertsOrgIdx: index("fiducia_mtls_client_certs_org_idx").on(table.orgId).where(sql.raw("revoked = false")),
+    fiduciaMtlsClientCertsOrgSyncSequenceIdx: index("fiducia_mtls_client_certs_org_sync_sequence_idx").on(table.orgId, table.syncSequence),
+  }),
+);
+
+export const mtlsClientCertsRowSchema = z.object({
+  id: z.string().uuid(),
+  orgId: z.string().uuid(),
+  projectId: z.string().uuid().nullable(),
+  name: z.string().max(200),
+  subject: z.string().max(500),
+  sha256Fingerprint: z.string().max(95),
+  notBefore: z.string().datetime().nullable(),
+  notAfter: z.string().datetime().nullable(),
+  revoked: z.boolean(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  version: z.number().int(),
+  syncSequence: z.number().int(),
+});
+
+export const mtlsClientCertsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  orgId: z.string().uuid(),
+  projectId: z.string().uuid().nullable().optional(),
+  name: z.string().max(200),
+  subject: z.string().max(500),
+  sha256Fingerprint: z.string().max(95),
+  notBefore: z.string().datetime().nullable().optional(),
+  notAfter: z.string().datetime().nullable().optional(),
+  revoked: z.boolean().optional().default(false),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  version: z.number().int().optional().default(1),
+  syncSequence: z.number().int(),
+});
+
+export const mtlsClientCertsUpdateSchema = mtlsClientCertsInsertSchema.partial();
+export type MtlsClientCertsRow = z.infer<typeof mtlsClientCertsRowSchema>;
+export type MtlsClientCertsInsert = z.infer<typeof mtlsClientCertsInsertSchema>;
+export type MtlsClientCertsUpdate = z.infer<typeof mtlsClientCertsUpdateSchema>;
+
+export const customerPreferencesDensityValues = ["comfortable","compact"] as const;
+export const customerPreferencesDensitySchema = z.enum(customerPreferencesDensityValues);
+export type CustomerPreferencesDensity = z.infer<typeof customerPreferencesDensitySchema>;
+
+export const customerPreferences = fiduciaSchema.table(
+  "customer_preferences",
+  {
+    userId: uuid("user_id").primaryKey(),
+    density: varchar("density", { length: 16 }).default(sql`'comfortable'`).notNull(),
+    timezone: varchar("timezone", { length: 64 }).default(sql`'UTC'`).notNull(),
+    region: varchar("region", { length: 16 }).default(sql`'auto'`).notNull(),
+    notifyKeyRotation: boolean("notify_key_rotation").default(sql`true`).notNull(),
+    notifyLockContention: boolean("notify_lock_contention").default(sql`true`).notNull(),
+    notifyMfa: boolean("notify_mfa").default(sql`true`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    version: bigint("version", { mode: "number" }).default(sql`1`).notNull(),
+    syncSequence: bigint("sync_sequence", { mode: "number" }).notNull(),
+  },
+  (table) => ({
+    fiduciaCustomerPreferencesDensityChk: check("fiducia_customer_preferences_density_chk", sql.raw("density in ('comfortable', 'compact')")),
+    fiduciaCustomerPreferencesUserSyncSequenceIdx: index("fiducia_customer_preferences_user_sync_sequence_idx").on(table.userId, table.syncSequence),
+  }),
+);
+
+export const customerPreferencesRowSchema = z.object({
+  userId: z.string().uuid(),
+  density: customerPreferencesDensitySchema,
+  timezone: z.string().max(64),
+  region: z.string().max(16),
+  notifyKeyRotation: z.boolean(),
+  notifyLockContention: z.boolean(),
+  notifyMfa: z.boolean(),
+  updatedAt: z.string().datetime(),
+  version: z.number().int(),
+  syncSequence: z.number().int(),
+});
+
+export const customerPreferencesInsertSchema = z.object({
+  userId: z.string().uuid(),
+  density: customerPreferencesDensitySchema.optional().default("comfortable"),
+  timezone: z.string().max(64).optional().default("UTC"),
+  region: z.string().max(16).optional().default("auto"),
+  notifyKeyRotation: z.boolean().optional().default(true),
+  notifyLockContention: z.boolean().optional().default(true),
+  notifyMfa: z.boolean().optional().default(true),
+  updatedAt: z.string().datetime().optional(),
+  version: z.number().int().optional().default(1),
+  syncSequence: z.number().int(),
+});
+
+export const customerPreferencesUpdateSchema = customerPreferencesInsertSchema.partial();
+export type CustomerPreferencesRow = z.infer<typeof customerPreferencesRowSchema>;
+export type CustomerPreferencesInsert = z.infer<typeof customerPreferencesInsertSchema>;
+export type CustomerPreferencesUpdate = z.infer<typeof customerPreferencesUpdateSchema>;
+
+export const customerSessionsStatusValues = ["active","verified","revoked"] as const;
+export const customerSessionsStatusSchema = z.enum(customerSessionsStatusValues);
+export type CustomerSessionsStatus = z.infer<typeof customerSessionsStatusSchema>;
+
+export const customerSessions = fiduciaSchema.table(
+  "customer_sessions",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    userId: uuid("user_id").notNull(),
+    device: varchar("device", { length: 200 }).notNull(),
+    location: varchar("location", { length: 200 }),
+    lastSeen: timestamp("last_seen", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    status: varchar("status", { length: 16 }).default(sql`'active'`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    version: bigint("version", { mode: "number" }).default(sql`1`).notNull(),
+    syncSequence: bigint("sync_sequence", { mode: "number" }).notNull(),
+  },
+  (table) => ({
+    fiduciaCustomerSessionsStatusChk: check("fiducia_customer_sessions_status_chk", sql.raw("status in ('active', 'verified', 'revoked')")),
+    fiduciaCustomerSessionsUserIdx: index("fiducia_customer_sessions_user_idx").on(table.userId),
+    fiduciaCustomerSessionsUserSyncSequenceIdx: index("fiducia_customer_sessions_user_sync_sequence_idx").on(table.userId, table.syncSequence),
+  }),
+);
+
+export const customerSessionsRowSchema = z.object({
+  id: z.string().uuid(),
+  userId: z.string().uuid(),
+  device: z.string().max(200),
+  location: z.string().max(200).nullable(),
+  lastSeen: z.string().datetime(),
+  status: customerSessionsStatusSchema,
+  updatedAt: z.string().datetime(),
+  version: z.number().int(),
+  syncSequence: z.number().int(),
+});
+
+export const customerSessionsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  userId: z.string().uuid(),
+  device: z.string().max(200),
+  location: z.string().max(200).nullable().optional(),
+  lastSeen: z.string().datetime().optional(),
+  status: customerSessionsStatusSchema.optional().default("active"),
+  updatedAt: z.string().datetime().optional(),
+  version: z.number().int().optional().default(1),
+  syncSequence: z.number().int(),
+});
+
+export const customerSessionsUpdateSchema = customerSessionsInsertSchema.partial();
+export type CustomerSessionsRow = z.infer<typeof customerSessionsRowSchema>;
+export type CustomerSessionsInsert = z.infer<typeof customerSessionsInsertSchema>;
+export type CustomerSessionsUpdate = z.infer<typeof customerSessionsUpdateSchema>;
+
+export const auditLog = fiduciaSchema.table(
+  "audit_log",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    orgId: uuid("org_id"),
+    projectId: uuid("project_id"),
+    actorUserId: uuid("actor_user_id"),
+    actorKeyId: uuid("actor_key_id"),
+    actor: varchar("actor", { length: 320 }),
+    action: varchar("action", { length: 120 }).notNull(),
+    target: varchar("target", { length: 320 }),
+    requestId: varchar("request_id", { length: 120 }),
+    sourceIp: varchar("source_ip", { length: 64 }),
+    userAgent: varchar("user_agent", { length: 500 }),
+    meta: jsonb("meta").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    retentionExpiresAt: timestamp("retention_expires_at", { withTimezone: true, mode: "string" }),
+  },
+  (table) => ({
+    fiduciaAuditMetaObjectChk: check("fiducia_audit_meta_object_chk", sql.raw("jsonb_typeof(meta) = 'object'")),
+    fiduciaAuditLogOrgCreatedIdx: index("fiducia_audit_log_org_created_idx").on(table.orgId, table.createdAt.desc()),
+    fiduciaAuditLogProjectCreatedIdx: index("fiducia_audit_log_project_created_idx").on(table.projectId, table.createdAt.desc()),
+    fiduciaAuditLogActorUserCreatedIdx: index("fiducia_audit_log_actor_user_created_idx").on(table.actorUserId, table.createdAt.desc()),
+    fiduciaAuditLogActorKeyCreatedIdx: index("fiducia_audit_log_actor_key_created_idx").on(table.actorKeyId, table.createdAt.desc()),
+  }),
+);
+
+export const auditLogRowSchema = z.object({
+  id: z.string().uuid(),
+  orgId: z.string().uuid().nullable(),
+  projectId: z.string().uuid().nullable(),
+  actorUserId: z.string().uuid().nullable(),
+  actorKeyId: z.string().uuid().nullable(),
+  actor: z.string().max(320).nullable(),
+  action: z.string().max(120),
+  target: z.string().max(320).nullable(),
+  requestId: z.string().max(120).nullable(),
+  sourceIp: z.string().max(64).nullable(),
+  userAgent: z.string().max(500).nullable(),
+  meta: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+  retentionExpiresAt: z.string().datetime().nullable(),
+});
+
+export const auditLogInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  orgId: z.string().uuid().nullable().optional(),
+  projectId: z.string().uuid().nullable().optional(),
+  actorUserId: z.string().uuid().nullable().optional(),
+  actorKeyId: z.string().uuid().nullable().optional(),
+  actor: z.string().max(320).nullable().optional(),
+  action: z.string().max(120),
+  target: z.string().max(320).nullable().optional(),
+  requestId: z.string().max(120).nullable().optional(),
+  sourceIp: z.string().max(64).nullable().optional(),
+  userAgent: z.string().max(500).nullable().optional(),
+  meta: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+  retentionExpiresAt: z.string().datetime().nullable().optional(),
+});
+
+export const auditLogUpdateSchema = auditLogInsertSchema.partial();
+export type AuditLogRow = z.infer<typeof auditLogRowSchema>;
+export type AuditLogInsert = z.infer<typeof auditLogInsertSchema>;
+export type AuditLogUpdate = z.infer<typeof auditLogUpdateSchema>;
+
+export const customerNotificationsSeverityValues = ["info","success","warning","critical"] as const;
+export const customerNotificationsSeveritySchema = z.enum(customerNotificationsSeverityValues);
+export type CustomerNotificationsSeverity = z.infer<typeof customerNotificationsSeveritySchema>;
+
+export const customerNotifications = fiduciaSchema.table(
+  "customer_notifications",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    userId: uuid("user_id").notNull(),
+    orgId: uuid("org_id"),
+    kind: varchar("kind", { length: 40 }).notNull(),
+    severity: varchar("severity", { length: 16 }).default(sql`'info'`).notNull(),
+    title: varchar("title", { length: 200 }).notNull(),
+    body: varchar("body", { length: 2000 }).default(sql`''`).notNull(),
+    link: varchar("link", { length: 500 }),
+    readAt: timestamp("read_at", { withTimezone: true, mode: "string" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    version: bigint("version", { mode: "number" }).default(sql`1`).notNull(),
+    syncSequence: bigint("sync_sequence", { mode: "number" }).notNull(),
+  },
+  (table) => ({
+    fiduciaCustomerNotificationsSeverityChk: check("fiducia_customer_notifications_severity_chk", sql.raw("severity in ('info', 'success', 'warning', 'critical')")),
+    fiduciaCustomerNotificationsKindChk: check("fiducia_customer_notifications_kind_chk", sql.raw("kind ~ '^[a-z][a-z0-9_.]{1,38}[a-z0-9]$'")),
+    fiduciaCustomerNotificationsUserCreatedIdx: index("fiducia_customer_notifications_user_created_idx").on(table.userId, table.createdAt.desc()),
+    fiduciaCustomerNotificationsUserUnreadIdx: index("fiducia_customer_notifications_user_unread_idx").on(table.userId).where(sql.raw("read_at is null")),
+    fiduciaCustomerNotificationsUserSyncSequenceIdx: index("fiducia_customer_notifications_user_sync_sequence_idx").on(table.userId, table.syncSequence),
+  }),
+);
+
+export const customerNotificationsRowSchema = z.object({
+  id: z.string().uuid(),
+  userId: z.string().uuid(),
+  orgId: z.string().uuid().nullable(),
+  kind: z.string().max(40).regex(new RegExp("^[a-z][a-z0-9_.]{1,38}[a-z0-9]$")),
+  severity: customerNotificationsSeveritySchema,
+  title: z.string().max(200),
+  body: z.string().max(2000),
+  link: z.string().max(500).nullable(),
+  readAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  version: z.number().int(),
+  syncSequence: z.number().int(),
+});
+
+export const customerNotificationsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  userId: z.string().uuid(),
+  orgId: z.string().uuid().nullable().optional(),
+  kind: z.string().max(40).regex(new RegExp("^[a-z][a-z0-9_.]{1,38}[a-z0-9]$")),
+  severity: customerNotificationsSeveritySchema.optional().default("info"),
+  title: z.string().max(200),
+  body: z.string().max(2000).optional().default(""),
+  link: z.string().max(500).nullable().optional(),
+  readAt: z.string().datetime().nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  version: z.number().int().optional().default(1),
+  syncSequence: z.number().int(),
+});
+
+export const customerNotificationsUpdateSchema = customerNotificationsInsertSchema.partial();
+export type CustomerNotificationsRow = z.infer<typeof customerNotificationsRowSchema>;
+export type CustomerNotificationsInsert = z.infer<typeof customerNotificationsInsertSchema>;
+export type CustomerNotificationsUpdate = z.infer<typeof customerNotificationsUpdateSchema>;
+
+export const syncIdempotencyKeys = fiduciaSchema.table(
+  "sync_idempotency_keys",
+  {
+    key: text("key").primaryKey(),
+    requestFingerprint: varchar("request_fingerprint", { length: 64 }).notNull(),
+    committedVersion: bigint("committed_version", { mode: "number" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    fiduciaSyncIdempotencyFingerprintChk: check("fiducia_sync_idempotency_fingerprint_chk", sql.raw("request_fingerprint ~ '^[0-9a-f]{64}$'")),
+    fiduciaSyncIdempotencyCreatedIdx: index("fiducia_sync_idempotency_created_idx").on(table.createdAt),
+  }),
+);
+
+export const syncIdempotencyKeysRowSchema = z.object({
+  key: z.string(),
+  requestFingerprint: z.string().max(64).regex(new RegExp("^[0-9a-f]{64}$")),
+  committedVersion: z.number().int().nullable(),
+  createdAt: z.string().datetime(),
+});
+
+export const syncIdempotencyKeysInsertSchema = z.object({
+  key: z.string(),
+  requestFingerprint: z.string().max(64).regex(new RegExp("^[0-9a-f]{64}$")),
+  committedVersion: z.number().int().nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const syncIdempotencyKeysUpdateSchema = syncIdempotencyKeysInsertSchema.partial();
+export type SyncIdempotencyKeysRow = z.infer<typeof syncIdempotencyKeysRowSchema>;
+export type SyncIdempotencyKeysInsert = z.infer<typeof syncIdempotencyKeysInsertSchema>;
+export type SyncIdempotencyKeysUpdate = z.infer<typeof syncIdempotencyKeysUpdateSchema>;
+
+export const transcriptions = t2vSchema.table(
+  "transcriptions",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    source: text("source").notNull(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    text: text("text").notNull(),
+    language: text("language"),
+    sampleRate: integer("sample_rate"),
+    durationMs: bigint("duration_ms", { mode: "number" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    t2vTranscriptionsSourceSizeChk: check("t2v_transcriptions_source_size_chk", sql.raw("octet_length(source) between 1 and 40")),
+    t2vTranscriptionsProviderSizeChk: check("t2v_transcriptions_provider_size_chk", sql.raw("octet_length(provider) between 1 and 40")),
+    t2vTranscriptionsModelSizeChk: check("t2v_transcriptions_model_size_chk", sql.raw("octet_length(model) between 1 and 200")),
+    t2vTranscriptionsTextSizeChk: check("t2v_transcriptions_text_size_chk", sql.raw("octet_length(text) <= 1000000")),
+    t2vTranscriptionsLanguageSizeChk: check("t2v_transcriptions_language_size_chk", sql.raw("language is null or octet_length(language) between 1 and 80")),
+    t2vTranscriptionsSampleRateChk: check("t2v_transcriptions_sample_rate_chk", sql.raw("sample_rate is null or sample_rate between 4000 and 384000")),
+    t2vTranscriptionsDurationChk: check("t2v_transcriptions_duration_chk", sql.raw("duration_ms is null or duration_ms >= 0")),
+    t2vTranscriptionsCreatedIdx: index("t2v_transcriptions_created_idx").on(table.createdAt),
+  }),
+);
+
+export const transcriptionsRowSchema = z.object({
+  id: z.string().uuid(),
+  source: z.string().refine((value) => byteLength(value) <= 40, "Must be at most 40 bytes"),
+  provider: z.string().refine((value) => byteLength(value) <= 40, "Must be at most 40 bytes"),
+  model: z.string().refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  text: z.string().refine((value) => byteLength(value) <= 1000000, "Must be at most 1000000 bytes"),
+  language: z.string().refine((value) => byteLength(value) <= 80, "Must be at most 80 bytes").nullable(),
+  sampleRate: z.number().int().min(4000).max(384000).nullable(),
+  durationMs: z.number().int().min(0).nullable(),
+  createdAt: z.string().datetime(),
+});
+
+export const transcriptionsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  source: z.string().refine((value) => byteLength(value) <= 40, "Must be at most 40 bytes"),
+  provider: z.string().refine((value) => byteLength(value) <= 40, "Must be at most 40 bytes"),
+  model: z.string().refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  text: z.string().refine((value) => byteLength(value) <= 1000000, "Must be at most 1000000 bytes"),
+  language: z.string().refine((value) => byteLength(value) <= 80, "Must be at most 80 bytes").nullable().optional(),
+  sampleRate: z.number().int().min(4000).max(384000).nullable().optional(),
+  durationMs: z.number().int().min(0).nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const transcriptionsUpdateSchema = transcriptionsInsertSchema.partial();
+export type TranscriptionsRow = z.infer<typeof transcriptionsRowSchema>;
+export type TranscriptionsInsert = z.infer<typeof transcriptionsInsertSchema>;
+export type TranscriptionsUpdate = z.infer<typeof transcriptionsUpdateSchema>;
+
+export const syntheses = t2vSchema.table(
+  "syntheses",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    text: text("text").notNull(),
+    voice: text("voice").notNull(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    format: text("format").notNull(),
+    audioBytes: bigint("audio_bytes", { mode: "number" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    t2vSynthesesTextSizeChk: check("t2v_syntheses_text_size_chk", sql.raw("octet_length(text) between 1 and 20000")),
+    t2vSynthesesVoiceSizeChk: check("t2v_syntheses_voice_size_chk", sql.raw("octet_length(voice) between 1 and 80")),
+    t2vSynthesesProviderSizeChk: check("t2v_syntheses_provider_size_chk", sql.raw("octet_length(provider) between 1 and 40")),
+    t2vSynthesesModelSizeChk: check("t2v_syntheses_model_size_chk", sql.raw("octet_length(model) between 1 and 200")),
+    t2vSynthesesFormatSizeChk: check("t2v_syntheses_format_size_chk", sql.raw("octet_length(format) between 1 and 10")),
+    t2vSynthesesAudioBytesChk: check("t2v_syntheses_audio_bytes_chk", sql.raw("audio_bytes >= 0")),
+    t2vSynthesesCreatedIdx: index("t2v_syntheses_created_idx").on(table.createdAt),
+  }),
+);
+
+export const synthesesRowSchema = z.object({
+  id: z.string().uuid(),
+  text: z.string().refine((value) => byteLength(value) <= 20000, "Must be at most 20000 bytes"),
+  voice: z.string().refine((value) => byteLength(value) <= 80, "Must be at most 80 bytes"),
+  provider: z.string().refine((value) => byteLength(value) <= 40, "Must be at most 40 bytes"),
+  model: z.string().refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  format: z.string().refine((value) => byteLength(value) <= 10, "Must be at most 10 bytes"),
+  audioBytes: z.number().int().min(0),
+  createdAt: z.string().datetime(),
+});
+
+export const synthesesInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  text: z.string().refine((value) => byteLength(value) <= 20000, "Must be at most 20000 bytes"),
+  voice: z.string().refine((value) => byteLength(value) <= 80, "Must be at most 80 bytes"),
+  provider: z.string().refine((value) => byteLength(value) <= 40, "Must be at most 40 bytes"),
+  model: z.string().refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  format: z.string().refine((value) => byteLength(value) <= 10, "Must be at most 10 bytes"),
+  audioBytes: z.number().int().min(0),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const synthesesUpdateSchema = synthesesInsertSchema.partial();
+export type SynthesesRow = z.infer<typeof synthesesRowSchema>;
+export type SynthesesInsert = z.infer<typeof synthesesInsertSchema>;
+export type SynthesesUpdate = z.infer<typeof synthesesUpdateSchema>;
+
+export const translations = t2vSchema.table(
+  "translations",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    sourceText: text("source_text").notNull(),
+    translatedText: text("translated_text").notNull(),
+    sourceLang: text("source_lang"),
+    targetLang: text("target_lang").notNull(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    latencyMs: bigint("latency_ms", { mode: "number" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    t2vTranslationsSourceTextSizeChk: check("t2v_translations_source_text_size_chk", sql.raw("octet_length(source_text) between 1 and 200000")),
+    t2vTranslationsTranslatedTextSizeChk: check("t2v_translations_translated_text_size_chk", sql.raw("octet_length(translated_text) <= 200000")),
+    t2vTranslationsSourceLangSizeChk: check("t2v_translations_source_lang_size_chk", sql.raw("source_lang is null or octet_length(source_lang) between 1 and 80")),
+    t2vTranslationsTargetLangSizeChk: check("t2v_translations_target_lang_size_chk", sql.raw("octet_length(target_lang) between 1 and 80")),
+    t2vTranslationsProviderSizeChk: check("t2v_translations_provider_size_chk", sql.raw("octet_length(provider) between 1 and 40")),
+    t2vTranslationsModelSizeChk: check("t2v_translations_model_size_chk", sql.raw("octet_length(model) between 1 and 200")),
+    t2vTranslationsLatencyChk: check("t2v_translations_latency_chk", sql.raw("latency_ms >= 0")),
+    t2vTranslationsCreatedIdx: index("t2v_translations_created_idx").on(table.createdAt),
+  }),
+);
+
+export const translationsRowSchema = z.object({
+  id: z.string().uuid(),
+  sourceText: z.string().refine((value) => byteLength(value) <= 200000, "Must be at most 200000 bytes"),
+  translatedText: z.string().refine((value) => byteLength(value) <= 200000, "Must be at most 200000 bytes"),
+  sourceLang: z.string().refine((value) => byteLength(value) <= 80, "Must be at most 80 bytes").nullable(),
+  targetLang: z.string().refine((value) => byteLength(value) <= 80, "Must be at most 80 bytes"),
+  provider: z.string().refine((value) => byteLength(value) <= 40, "Must be at most 40 bytes"),
+  model: z.string().refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  latencyMs: z.number().int().min(0),
+  createdAt: z.string().datetime(),
+});
+
+export const translationsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  sourceText: z.string().refine((value) => byteLength(value) <= 200000, "Must be at most 200000 bytes"),
+  translatedText: z.string().refine((value) => byteLength(value) <= 200000, "Must be at most 200000 bytes"),
+  sourceLang: z.string().refine((value) => byteLength(value) <= 80, "Must be at most 80 bytes").nullable().optional(),
+  targetLang: z.string().refine((value) => byteLength(value) <= 80, "Must be at most 80 bytes"),
+  provider: z.string().refine((value) => byteLength(value) <= 40, "Must be at most 40 bytes"),
+  model: z.string().refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  latencyMs: z.number().int().min(0),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const translationsUpdateSchema = translationsInsertSchema.partial();
+export type TranslationsRow = z.infer<typeof translationsRowSchema>;
+export type TranslationsInsert = z.infer<typeof translationsInsertSchema>;
+export type TranslationsUpdate = z.infer<typeof translationsUpdateSchema>;
+
+export const vapiCalls = t2vSchema.table(
+  "vapi_calls",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    vapiCallId: text("vapi_call_id").notNull(),
+    status: text("status").notNull(),
+    endedReason: text("ended_reason"),
+    transcript: text("transcript"),
+    summary: text("summary"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    t2vVapiCallsCallIdSizeChk: check("t2v_vapi_calls_call_id_size_chk", sql.raw("octet_length(vapi_call_id) between 1 and 120")),
+    t2vVapiCallsStatusSizeChk: check("t2v_vapi_calls_status_size_chk", sql.raw("octet_length(status) between 1 and 40")),
+    t2vVapiCallsEndedReasonSizeChk: check("t2v_vapi_calls_ended_reason_size_chk", sql.raw("ended_reason is null or octet_length(ended_reason) between 1 and 200")),
+    t2vVapiCallsTranscriptSizeChk: check("t2v_vapi_calls_transcript_size_chk", sql.raw("transcript is null or octet_length(transcript) <= 1000000")),
+    t2vVapiCallsSummarySizeChk: check("t2v_vapi_calls_summary_size_chk", sql.raw("summary is null or octet_length(summary) <= 100000")),
+    t2vVapiCallsVapiCallIdUq: uniqueIndex("t2v_vapi_calls_vapi_call_id_uq").on(table.vapiCallId),
+  }),
+);
+
+export const vapiCallsRowSchema = z.object({
+  id: z.string().uuid(),
+  vapiCallId: z.string().refine((value) => byteLength(value) <= 120, "Must be at most 120 bytes"),
+  status: z.string().refine((value) => byteLength(value) <= 40, "Must be at most 40 bytes"),
+  endedReason: z.string().refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes").nullable(),
+  transcript: z.string().refine((value) => byteLength(value) <= 1000000, "Must be at most 1000000 bytes").nullable(),
+  summary: z.string().refine((value) => byteLength(value) <= 100000, "Must be at most 100000 bytes").nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const vapiCallsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  vapiCallId: z.string().refine((value) => byteLength(value) <= 120, "Must be at most 120 bytes"),
+  status: z.string().refine((value) => byteLength(value) <= 40, "Must be at most 40 bytes"),
+  endedReason: z.string().refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes").nullable().optional(),
+  transcript: z.string().refine((value) => byteLength(value) <= 1000000, "Must be at most 1000000 bytes").nullable().optional(),
+  summary: z.string().refine((value) => byteLength(value) <= 100000, "Must be at most 100000 bytes").nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const vapiCallsUpdateSchema = vapiCallsInsertSchema.partial();
+export type VapiCallsRow = z.infer<typeof vapiCallsRowSchema>;
+export type VapiCallsInsert = z.infer<typeof vapiCallsInsertSchema>;
+export type VapiCallsUpdate = z.infer<typeof vapiCallsUpdateSchema>;
+
+export const vapiEvents = t2vSchema.table(
+  "vapi_events",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    vapiCallId: text("vapi_call_id"),
+    eventType: text("event_type").notNull(),
+    payload: jsonb("payload").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    t2vVapiEventsCallIdSizeChk: check("t2v_vapi_events_call_id_size_chk", sql.raw("vapi_call_id is null or octet_length(vapi_call_id) between 1 and 120")),
+    t2vVapiEventsTypeSizeChk: check("t2v_vapi_events_type_size_chk", sql.raw("octet_length(event_type) between 1 and 80")),
+    t2vVapiEventsCreatedIdx: index("t2v_vapi_events_created_idx").on(table.createdAt),
+    t2vVapiEventsCallIdx: index("t2v_vapi_events_call_idx").on(table.vapiCallId),
+  }),
+);
+
+export const vapiEventsRowSchema = z.object({
+  id: z.string().uuid(),
+  vapiCallId: z.string().refine((value) => byteLength(value) <= 120, "Must be at most 120 bytes").nullable(),
+  eventType: z.string().refine((value) => byteLength(value) <= 80, "Must be at most 80 bytes"),
+  payload: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+});
+
+export const vapiEventsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  vapiCallId: z.string().refine((value) => byteLength(value) <= 120, "Must be at most 120 bytes").nullable().optional(),
+  eventType: z.string().refine((value) => byteLength(value) <= 80, "Must be at most 80 bytes"),
+  payload: jsonObjectSchema,
+  createdAt: z.string().datetime().optional(),
+});
+
+export const vapiEventsUpdateSchema = vapiEventsInsertSchema.partial();
+export type VapiEventsRow = z.infer<typeof vapiEventsRowSchema>;
+export type VapiEventsInsert = z.infer<typeof vapiEventsInsertSchema>;
+export type VapiEventsUpdate = z.infer<typeof vapiEventsUpdateSchema>;
+
+export const fabPlansProcessFamilyValues = ["additive","subtractive","hybrid"] as const;
+export const fabPlansProcessFamilySchema = z.enum(fabPlansProcessFamilyValues);
+export type FabPlansProcessFamily = z.infer<typeof fabPlansProcessFamilySchema>;
+
+export const fabPlansStatusValues = ["draft","planning","planned","released","archived"] as const;
+export const fabPlansStatusSchema = z.enum(fabPlansStatusValues);
+export type FabPlansStatus = z.infer<typeof fabPlansStatusSchema>;
+
+export const fabPlans = daedalusSchema.table(
+  "fab_plans",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    ownerEmail: text("owner_email").notNull(),
+    title: text("title").notNull(),
+    goal: text("goal").notNull(),
+    processFamily: text("process_family").default(sql`'additive'`).notNull(),
+    status: text("status").default(sql`'draft'`).notNull(),
+    document: jsonb("document"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    fabPlansOwnerEmailSizeChk: check("fab_plans_owner_email_size_chk", sql.raw("octet_length(owner_email) between 3 and 320")),
+    fabPlansTitleSizeChk: check("fab_plans_title_size_chk", sql.raw("octet_length(title) between 1 and 200")),
+    fabPlansGoalSizeChk: check("fab_plans_goal_size_chk", sql.raw("octet_length(goal) between 1 and 20000")),
+    fabPlansProcessFamilyChk: check("fab_plans_process_family_chk", sql.raw("process_family in ('additive', 'subtractive', 'hybrid')")),
+    fabPlansStatusChk: check("fab_plans_status_chk", sql.raw("status in ('draft', 'planning', 'planned', 'released', 'archived')")),
+    fabPlansOwnerEmailIdx: index("fab_plans_owner_email_idx").on(table.ownerEmail),
+    fabPlansStatusIdx: index("fab_plans_status_idx").on(table.status),
+    fabPlansOwnerCreatedIdx: index("fab_plans_owner_created_idx").on(table.ownerEmail, table.createdAt.desc()),
+  }),
+);
+
+export const fabPlansRowSchema = z.object({
+  id: z.string().uuid(),
+  ownerEmail: z.string().refine((value) => byteLength(value) <= 320, "Must be at most 320 bytes"),
+  title: z.string().refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  goal: z.string().refine((value) => byteLength(value) <= 20000, "Must be at most 20000 bytes"),
+  processFamily: fabPlansProcessFamilySchema,
+  status: fabPlansStatusSchema,
+  document: jsonObjectSchema.nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const fabPlansInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  ownerEmail: z.string().refine((value) => byteLength(value) <= 320, "Must be at most 320 bytes"),
+  title: z.string().refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  goal: z.string().refine((value) => byteLength(value) <= 20000, "Must be at most 20000 bytes"),
+  processFamily: fabPlansProcessFamilySchema.optional().default("additive"),
+  status: fabPlansStatusSchema.optional().default("draft"),
+  document: jsonObjectSchema.nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const fabPlansUpdateSchema = fabPlansInsertSchema.partial();
+export type FabPlansRow = z.infer<typeof fabPlansRowSchema>;
+export type FabPlansInsert = z.infer<typeof fabPlansInsertSchema>;
+export type FabPlansUpdate = z.infer<typeof fabPlansUpdateSchema>;
+
+export const fabDesignsFormatValues = ["step","stl","3mf","dxf","iges","obj"] as const;
+export const fabDesignsFormatSchema = z.enum(fabDesignsFormatValues);
+export type FabDesignsFormat = z.infer<typeof fabDesignsFormatSchema>;
+
+export const fabDesigns = daedalusSchema.table(
+  "fab_designs",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    planId: uuid("plan_id").notNull(),
+    filename: text("filename").notNull(),
+    format: text("format").notNull(),
+    storageUri: text("storage_uri").notNull(),
+    sizeBytes: bigint("size_bytes", { mode: "number" }).default(sql`0`).notNull(),
+    contentHash: text("content_hash"),
+    geometry: jsonb("geometry").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    fabDesignsFilenameSizeChk: check("fab_designs_filename_size_chk", sql.raw("octet_length(filename) between 1 and 400")),
+    fabDesignsFormatChk: check("fab_designs_format_chk", sql.raw("format in ('step', 'stl', '3mf', 'dxf', 'iges', 'obj')")),
+    fabDesignsStorageUriSizeChk: check("fab_designs_storage_uri_size_chk", sql.raw("octet_length(storage_uri) between 1 and 2000")),
+    fabDesignsSizeNonnegativeChk: check("fab_designs_size_nonnegative_chk", sql.raw("size_bytes >= 0")),
+    fabDesignsContentHashChk: check("fab_designs_content_hash_chk", sql.raw("content_hash is null or octet_length(content_hash) = 64")),
+    fabDesignsPlanIdx: index("fab_designs_plan_idx").on(table.planId),
+    fabDesignsContentHashIdx: index("fab_designs_content_hash_idx").on(table.contentHash).where(sql.raw("content_hash is not null")),
+  }),
+);
+
+export const fabDesignsRowSchema = z.object({
+  id: z.string().uuid(),
+  planId: z.string().uuid(),
+  filename: z.string().refine((value) => byteLength(value) <= 400, "Must be at most 400 bytes"),
+  format: fabDesignsFormatSchema,
+  storageUri: z.string().refine((value) => byteLength(value) <= 2000, "Must be at most 2000 bytes"),
+  sizeBytes: z.number().int().min(0),
+  contentHash: z.string().nullable(),
+  geometry: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+});
+
+export const fabDesignsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  planId: z.string().uuid(),
+  filename: z.string().refine((value) => byteLength(value) <= 400, "Must be at most 400 bytes"),
+  format: fabDesignsFormatSchema,
+  storageUri: z.string().refine((value) => byteLength(value) <= 2000, "Must be at most 2000 bytes"),
+  sizeBytes: z.number().int().min(0).optional().default(0),
+  contentHash: z.string().nullable().optional(),
+  geometry: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const fabDesignsUpdateSchema = fabDesignsInsertSchema.partial();
+export type FabDesignsRow = z.infer<typeof fabDesignsRowSchema>;
+export type FabDesignsInsert = z.infer<typeof fabDesignsInsertSchema>;
+export type FabDesignsUpdate = z.infer<typeof fabDesignsUpdateSchema>;
+
+export const fabInstructionsDialectValues = ["gcode","nc","apt","proprietary"] as const;
+export const fabInstructionsDialectSchema = z.enum(fabInstructionsDialectValues);
+export type FabInstructionsDialect = z.infer<typeof fabInstructionsDialectSchema>;
+
+export const fabInstructions = daedalusSchema.table(
+  "fab_instructions",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    planId: uuid("plan_id").notNull(),
+    revision: integer("revision").default(sql`1`).notNull(),
+    machineProfile: text("machine_profile").notNull(),
+    dialect: text("dialect").default(sql`'gcode'`).notNull(),
+    storageUri: text("storage_uri").notNull(),
+    contentHash: text("content_hash"),
+    validated: boolean("validated").default(sql`false`).notNull(),
+    validation: jsonb("validation").default(sql`'{}'::jsonb`).notNull(),
+    releasedByEmail: text("released_by_email"),
+    releasedAt: timestamp("released_at", { withTimezone: true, mode: "string" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    fabInstructionsRevisionChk: check("fab_instructions_revision_chk", sql.raw("revision >= 1")),
+    fabInstructionsMachineProfileSizeChk: check("fab_instructions_machine_profile_size_chk", sql.raw("octet_length(machine_profile) between 1 and 200")),
+    fabInstructionsDialectChk: check("fab_instructions_dialect_chk", sql.raw("dialect in ('gcode', 'nc', 'apt', 'proprietary')")),
+    fabInstructionsStorageUriSizeChk: check("fab_instructions_storage_uri_size_chk", sql.raw("octet_length(storage_uri) between 1 and 2000")),
+    fabInstructionsContentHashChk: check("fab_instructions_content_hash_chk", sql.raw("content_hash is null or octet_length(content_hash) = 64")),
+    fabInstructionsReleasePairChk: check("fab_instructions_release_pair_chk", sql.raw("(released_by_email is null) = (released_at is null)")),
+    fabInstructionsPlanRevisionUq: uniqueIndex("fab_instructions_plan_revision_uq").on(table.planId, table.revision),
+    fabInstructionsPlanIdx: index("fab_instructions_plan_idx").on(table.planId),
+  }),
+);
+
+export const fabInstructionsRowSchema = z.object({
+  id: z.string().uuid(),
+  planId: z.string().uuid(),
+  revision: z.number().int().min(1),
+  machineProfile: z.string().refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  dialect: fabInstructionsDialectSchema,
+  storageUri: z.string().refine((value) => byteLength(value) <= 2000, "Must be at most 2000 bytes"),
+  contentHash: z.string().nullable(),
+  validated: z.boolean(),
+  validation: jsonObjectSchema,
+  releasedByEmail: z.string().nullable(),
+  releasedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+});
+
+export const fabInstructionsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  planId: z.string().uuid(),
+  revision: z.number().int().min(1).optional().default(1),
+  machineProfile: z.string().refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  dialect: fabInstructionsDialectSchema.optional().default("gcode"),
+  storageUri: z.string().refine((value) => byteLength(value) <= 2000, "Must be at most 2000 bytes"),
+  contentHash: z.string().nullable().optional(),
+  validated: z.boolean().optional().default(false),
+  validation: jsonObjectSchema.optional().default({}),
+  releasedByEmail: z.string().nullable().optional(),
+  releasedAt: z.string().datetime().nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const fabInstructionsUpdateSchema = fabInstructionsInsertSchema.partial();
+export type FabInstructionsRow = z.infer<typeof fabInstructionsRowSchema>;
+export type FabInstructionsInsert = z.infer<typeof fabInstructionsInsertSchema>;
+export type FabInstructionsUpdate = z.infer<typeof fabInstructionsUpdateSchema>;
+
+export const fabRunsStatusValues = ["queued","running","succeeded","failed","aborted"] as const;
+export const fabRunsStatusSchema = z.enum(fabRunsStatusValues);
+export type FabRunsStatus = z.infer<typeof fabRunsStatusSchema>;
+
+export const fabRuns = daedalusSchema.table(
+  "fab_runs",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    instructionsId: uuid("instructions_id").notNull(),
+    status: text("status").default(sql`'queued'`).notNull(),
+    machineId: text("machine_id").notNull(),
+    operatorEmail: text("operator_email"),
+    progress: smallint("progress").default(sql`0`).notNull(),
+    asBuilt: jsonb("as_built").default(sql`'{}'::jsonb`).notNull(),
+    error: text("error"),
+    startedAt: timestamp("started_at", { withTimezone: true, mode: "string" }),
+    finishedAt: timestamp("finished_at", { withTimezone: true, mode: "string" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    fabRunsStatusChk: check("fab_runs_status_chk", sql.raw("status in ('queued', 'running', 'succeeded', 'failed', 'aborted')")),
+    fabRunsMachineIdSizeChk: check("fab_runs_machine_id_size_chk", sql.raw("octet_length(machine_id) between 1 and 200")),
+    fabRunsProgressRangeChk: check("fab_runs_progress_range_chk", sql.raw("progress between 0 and 100")),
+    fabRunsErrorSizeChk: check("fab_runs_error_size_chk", sql.raw("error is null or octet_length(error) <= 20000")),
+    fabRunsFinishedChk: check("fab_runs_finished_chk", sql.raw("(status in ('succeeded', 'failed', 'aborted')) = (finished_at is not null)")),
+    fabRunsInstructionsIdx: index("fab_runs_instructions_idx").on(table.instructionsId),
+    fabRunsStatusIdx: index("fab_runs_status_idx").on(table.status),
+    fabRunsCreatedIdx: index("fab_runs_created_idx").on(table.createdAt.desc()),
+  }),
+);
+
+export const fabRunsRowSchema = z.object({
+  id: z.string().uuid(),
+  instructionsId: z.string().uuid(),
+  status: fabRunsStatusSchema,
+  machineId: z.string().refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  operatorEmail: z.string().nullable(),
+  progress: z.number().int().min(0).max(100),
+  asBuilt: jsonObjectSchema,
+  error: z.string().refine((value) => byteLength(value) <= 20000, "Must be at most 20000 bytes").nullable(),
+  startedAt: z.string().datetime().nullable(),
+  finishedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+});
+
+export const fabRunsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  instructionsId: z.string().uuid(),
+  status: fabRunsStatusSchema.optional().default("queued"),
+  machineId: z.string().refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  operatorEmail: z.string().nullable().optional(),
+  progress: z.number().int().min(0).max(100).optional().default(0),
+  asBuilt: jsonObjectSchema.optional().default({}),
+  error: z.string().refine((value) => byteLength(value) <= 20000, "Must be at most 20000 bytes").nullable().optional(),
+  startedAt: z.string().datetime().nullable().optional(),
+  finishedAt: z.string().datetime().nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const fabRunsUpdateSchema = fabRunsInsertSchema.partial();
+export type FabRunsRow = z.infer<typeof fabRunsRowSchema>;
+export type FabRunsInsert = z.infer<typeof fabRunsInsertSchema>;
+export type FabRunsUpdate = z.infer<typeof fabRunsUpdateSchema>;

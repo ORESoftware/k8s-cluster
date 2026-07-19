@@ -3,6 +3,14 @@ target/
 .gradle/
 build/
 bin/
+erl_crash.dump
+.zig-cache/
+zig-out/
 pg-defs/tmp/
 pg-defs/generated/**/.gradle/
 pg-defs/generated/**/build/
+
+# Operator env files (diff.mjs reads env/.<env>.env with live DB URLs) — never commit
+.env
+*.env
+env/

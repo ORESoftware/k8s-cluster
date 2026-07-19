@@ -19,8 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
       - name: pg-defs generated output in sync with schema.sql
@@ -31,8 +31,15 @@ jobs:
         run: node interfaces/redis/src/generate.mjs --check
       - name: shared interfaces generated output in sync
         run: node interfaces/shared/src/generate.mjs --check
-      - name: pg-defs parser/generator self-tests
-        run: node --test pg-defs/src/*.test.mjs
+      - name: Generator and cross-language contract tests
+        run: >-
+          node --test
+          pg-defs/src/*.test.mjs
+          nats/subject-defs/src/*.test.mjs
+          interfaces/redis/src/*.test.mjs
+          interfaces/shared/src/*.test.mjs
+      - name: Shared-interface examples conform to their schemas
+        run: node interfaces/shared/src/validate-examples.mjs
       - name: pg-defs sql-contract parse sanity (no DB)
         run: node pg-defs/src/diff.mjs --parse-only
 
@@ -59,22 +66,49 @@ jobs:
       SHADOW_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
       TARGET_DATABASE_URL: postgres://postgres:postgres@localhost:5432/pg_defs_target
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: Install dpm
-        run: curl -fsSL https://raw.githubusercontent.com/declarative-migrations/declarative-postgres-migrate.rs/main/scripts/install.sh | bash
+        # Pinned to a reviewed commit of the installer, not `main`, so an
+        # upstream compromise can't inject into this job. Bump deliberately.
+        run: curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/declarative-migrations/declarative-postgres-migrate.rs/f7180770fc0c7a3dbf9b83dcdc2ac6255da31ffc/scripts/install.sh | bash
       - name: schema.sql applies cleanly to a fresh Postgres 17
         run: |
           psql "$SHADOW_DATABASE_URL" -c 'create database pg_defs_target'
           psql "$TARGET_DATABASE_URL" -v ON_ERROR_STOP=1 -q -f pg-defs/schema/schema.sql
       - name: dpm sees no drift between schema.sql and the applied database
         run: ./pg-defs/scripts/dpm.sh diff --fail-on-diff
-      # Known-failing until dpm fixes its deparse fixed-point bug: varchar
-      # IN-list CHECK constraints deparse as (ARRAY[...])::text[], which
-      # re-parses into per-element casts, so dpm's re-emitted SQL never
-      # converges to string equality. Flips green when dpm normalizes both
-      # sides consistently.
-      - name: dpm verify (bootstrap convergence proof — known dpm bug, advisory)
-        continue-on-error: true
+      # Per-database contracts (schema/databases/<db>/schema.sql) are owned by
+      # individual services but live here so all shared defs stay in one repo.
+      # They are NOT fed to the code generator, so nothing else validates them —
+      # apply each to its own fresh database and require dpm to see zero drift,
+      # the same guarantee the main schema gets. Catches a syntax error or an
+      # un-round-trippable definition before it reaches a live RDS.
+      - name: per-database schemas apply cleanly and dpm sees no drift
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          found=0
+          for schema in pg-defs/schema/databases/*/schema.sql; do
+            found=1
+            db="dpm_check_$(basename "$(dirname "$schema")")"
+            echo "::group::$db ($schema)"
+            psql "$SHADOW_DATABASE_URL" -c "create database \"$db\""
+            psql "postgresql://postgres:postgres@localhost:5432/$db" \
+              -v ON_ERROR_STOP=1 -q -f "$schema"
+            dpm diff --source "$schema" \
+              --target "postgresql://postgres:postgres@localhost:5432/$db" \
+              --fail-on-diff
+            echo "::endgroup::"
+          done
+          [ "$found" = 1 ] || echo "no per-database schemas to check"
+      # dpm verify replays the migration on a shadow replica and proves an empty
+      # re-diff (true convergence, catching bugs the source-vs-target diff can't).
+      # The deparse fixed-point bug that made this fail on varchar IN-list CHECK
+      # constraints, generated columns, and view bodies was fixed upstream
+      # (declarative-postgres-migrate.rs 3fcb17b + 16e2c9b, server-side
+      # canonicalization) and shipped in dpm v0.3.2. The installer above pulls
+      # the latest release, so this is now enforcing.
+      - name: dpm verify (bootstrap convergence proof)
         env:
           TARGET_DATABASE_URL: postgres://postgres:postgres@localhost:5432/pg_defs_verify
         run: |
