@@ -167,8 +167,10 @@ function collectTelHrefs(html: string, phones: PhoneCollector): void {
 
 function collectMailtoHrefs(html: string, emails: EmailCollector): void {
   for (const match of html.matchAll(MAILTO_HREF_RE)) {
-    const value = decodeEntities(match[1]).trim();
-    emails.add(value, 'mailto-href');
+    const value = decodeEntities(match[1] ?? '').trim();
+    if (value) {
+      emails.add(value, 'mailto-href');
+    }
   }
 }
 
