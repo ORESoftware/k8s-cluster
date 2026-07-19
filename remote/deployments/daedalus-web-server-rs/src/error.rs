@@ -40,12 +40,8 @@ impl IntoResponse for ServiceError {
         if let Self::Unavailable(detail) = &self {
             tracing::warn!(error = %detail, "dependency unavailable");
         }
-        let (status, code, detail) = self.parts();
-        let body = match detail {
-            Some(detail) => json!({ "error": code, "detail": detail }),
-            None => json!({ "error": code }),
-        };
-        (status, Json(body)).into_response()
+        let (status, code) = self.parts();
+        (status, Json(json!({ "error": code }))).into_response()
     }
 }
 
