@@ -6,6 +6,7 @@ pub(crate) struct Metrics {
     registry: Registry,
     authorized: IntCounter,
     rejected: IntCounter,
+    pages_rendered: IntCounter,
 }
 
 impl Metrics {
@@ -21,16 +22,21 @@ impl Metrics {
             "Requests rejected at the authorization boundary.",
         )
         .expect("static metric definition");
-        registry
-            .register(Box::new(authorized.clone()))
-            .expect("static metric registration");
-        registry
-            .register(Box::new(rejected.clone()))
-            .expect("static metric registration");
+        let pages_rendered = IntCounter::new(
+            "daedalus_web_pages_rendered_total",
+            "Server-rendered Maud responses (full pages and htmx fragments).",
+        )
+        .expect("static metric definition");
+        for counter in [&authorized, &rejected, &pages_rendered] {
+            registry
+                .register(Box::new(counter.clone()))
+                .expect("static metric registration");
+        }
         Self {
             registry,
             authorized,
             rejected,
+            pages_rendered,
         }
     }
 
@@ -40,6 +46,10 @@ impl Metrics {
 
     pub(crate) fn record_rejected(&self) {
         self.rejected.inc();
+    }
+
+    pub(crate) fn record_page(&self) {
+        self.pages_rendered.inc();
     }
 
     pub(crate) fn encode(&self) -> String {
@@ -58,8 +68,10 @@ mod tests {
         let metrics = Metrics::new();
         metrics.record_authorized();
         metrics.record_rejected();
+        metrics.record_page();
         let encoded = metrics.encode();
         assert!(encoded.contains("daedalus_web_authorized_requests_total 1"));
         assert!(encoded.contains("daedalus_web_rejected_requests_total 1"));
+        assert!(encoded.contains("daedalus_web_pages_rendered_total 1"));
     }
 }
