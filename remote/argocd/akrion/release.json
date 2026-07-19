@@ -1,20 +1,25 @@
 {
   "schemaVersion": 1,
-  "promotedAt": "2026-07-19T00:21:00Z",
+  "promotedAt": "2026-07-19T00:58:12Z",
+  "source": {
+    "repository": "akrion-sim/akrion-monorepo",
+    "revision": "2fcb1f9400e2af8024964139bbb822225d8f5db6",
+    "workflow": "ci.yml"
+  },
   "components": {
     "backend": {
       "repository": "akrion-sim/akrion-backend.rs",
-      "revision": "6a57112f5a5ce8c8e96b3fa86dfc33b18cc58c96",
+      "revision": "37271b3e6df93de0b80aa53f7d894d43cb56ec9c",
       "workflow": "ci.yml"
     },
     "web": {
       "repository": "akrion-sim/akrion-web-server.rs",
-      "revision": "7b4e16780717f4307fa98bab7d2bd2c29716bab5",
+      "revision": "c0f80615b6e612cc961265fee9a018610cda9af6",
       "workflow": "ci.yml"
     },
     "soccer": {
       "repository": "akrion-sim/akrion-soccer-engine-rs",
-      "revision": "9bf8382b9dba553c6ee72c658ef8c105e02527e3",
+      "revision": "565f42e6adea4eea124cfc2b1a6a0f49c6c22e9a",
       "workflow": "ci.yml"
     },
     "des": {

@@ -1,15 +1,17 @@
 # Akrion GitOps release contract
 
 `release.json` is the machine-readable record of the Akrion source revisions
-currently promoted through this repository. The `akrion GitOps` GitHub Actions
-workflow polls the three canonical Akrion repositories, selects the newest
-successful `main` CI revision for each one, pins the matching gitlinks and
-manifests, validates the desired state, and commits the promotion to `dev`.
+currently promoted through this repository. `akrion-monorepo` advances its app
+gitlinks only to successful source-CI revisions and tests the integrated pin set.
+The `akrion GitOps` GitHub Actions workflow selects the newest successful
+monorepo `main` revision, copies its exact gitlinks into the matching manifests,
+validates the desired state, and commits the promotion to `dev`.
 
 The workflow never receives Kubernetes credentials and never runs `kubectl
 apply`. Argo CD watches `k8s-cluster@dev` and is the only deployment actor.
 
-The release covers four independently versioned inputs:
+The release records the tested `akrion-monorepo` revision plus four independently
+versioned inputs pinned by that revision:
 
 - `backend`: the private `dd-soccer-rs` HTTP/WebSocket server;
 - `web`: the private Akrion Maud/HTMX portal;
@@ -58,11 +60,11 @@ gh workflow run akrion-gitops.yml \
   --ref dev
 ```
 
-`REMOTE_DEV_GH_PAT` is the existing encrypted `k8s-cluster` Actions secret used
-to read successful workflow metadata from the two private Akrion repositories
-and push the resulting GitOps commit. It is not exposed to workloads or to Argo
-CD. A future fine-grained cross-repository token can be used by source-side
-notifiers for lower latency, but it is not required for automatic promotion.
+`AKRION_GITOPS_TOKEN` is the encrypted `k8s-cluster` Actions secret used only to
+read successful workflow metadata and gitlinks from the private monorepo. The
+built-in short-lived `GITHUB_TOKEN` checks out and pushes `k8s-cluster`, so the
+cross-repository credential is not reused for cluster-repository writes. Neither
+credential is exposed to workloads or to Argo CD.
 
 Promotion stops when CI is red, a revision is malformed, a manifest no longer
 matches the release contract, or either Kustomize overlay fails to render. A

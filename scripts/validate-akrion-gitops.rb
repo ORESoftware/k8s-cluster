@@ -10,6 +10,12 @@ Dir.chdir(ROOT)
 release = JSON.parse(File.read('remote/argocd/akrion/release.json'))
 raise 'unsupported Akrion release schema' unless release['schemaVersion'] == 1
 
+source = release.fetch('source')
+raise 'Akrion release source must be akrion-monorepo' unless source['repository'] == 'akrion-sim/akrion-monorepo'
+raise 'Akrion release source workflow must be ci.yml' unless source['workflow'] == 'ci.yml'
+monorepo_revision = source.fetch('revision')
+raise 'invalid akrion-monorepo revision' unless monorepo_revision.match?(/\A[0-9a-f]{40}\z/)
+
 expected_repositories = {
   'backend' => 'akrion-sim/akrion-backend.rs',
   'web' => 'akrion-sim/akrion-web-server.rs',
@@ -155,5 +161,5 @@ end
   raise "#{cluster} Argo application must disable client-side apply migration" unless options.include?('DisableClientSideApplyMigration=true')
 end
 
-puts "Akrion GitOps contract is valid: backend=#{revisions.fetch('backend')} " \
+puts "Akrion GitOps contract is valid: monorepo=#{monorepo_revision} backend=#{revisions.fetch('backend')} " \
      "web=#{revisions.fetch('web')} soccer=#{revisions.fetch('soccer')} des=#{revisions.fetch('des')}"
