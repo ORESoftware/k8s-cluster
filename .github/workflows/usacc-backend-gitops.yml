@@ -1,0 +1,162 @@
+name: USACC backend GitOps promotion
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: Optional usa-acc/rest-api-backend.rs commit to promote; defaults to main.
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: usacc-backend-gitops
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      BACKEND_REPO: usa-acc/rest-api-backend.rs
+      BACKEND_PATH: remote/deployments/usacc-rest-api-backend-rs
+      DEPLOYMENT_MANIFEST: remote/argocd/dd-next-runtime/usacc-rest-api-backend-rs.deployment.yaml
+    steps:
+      - name: Require cross-repository read token
+        env:
+          K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
+        run: test -n "$K8S_SUBMODULE_TOKEN"
+
+      - name: Checkout GitOps branch
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      - name: Resolve a CI-successful backend revision
+        id: source
+        env:
+          GH_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
+          REQUESTED_SHA: ${{ inputs.target_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          target_sha="${REQUESTED_SHA:-}"
+          if [ -z "$target_sha" ]; then
+            target_sha="$(gh api "repos/${BACKEND_REPO}/git/ref/heads/main" --jq '.object.sha')"
+          fi
+          if [[ ! "$target_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "invalid backend commit: $target_sha" >&2
+            exit 64
+          fi
+          successful_runs="$(
+            gh api -X GET "repos/${BACKEND_REPO}/actions/workflows/ci.yml/runs" \
+              -f branch=main \
+              -f head_sha="$target_sha" \
+              -f status=success \
+              -F per_page=1 \
+              --jq '.total_count'
+          )"
+          if [ "$successful_runs" -lt 1 ]; then
+            echo "backend commit $target_sha has no successful main CI run" >&2
+            exit 65
+          fi
+          echo "sha=$target_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Initialize build context at the approved revision
+        env:
+          K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
+          TARGET_SHA: ${{ steps.source.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          token_url="https://x-access-token:${K8S_SUBMODULE_TOKEN}@github.com/"
+          git config --global url."${token_url}".insteadOf "git@github.com:"
+          trap 'git config --global --unset-all url."${token_url}".insteadOf || true' EXIT
+          git submodule update --init --depth 1 -- \
+            remote/libs \
+            remote/submodules/discrete-event-system.rs \
+            "$BACKEND_PATH"
+          git -C "$BACKEND_PATH" fetch --depth 1 origin "$TARGET_SHA"
+          git -C "$BACKEND_PATH" switch --detach "$TARGET_SHA"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Rust build data
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: ${{ env.BACKEND_PATH }} -> target
+
+      - name: Validate the integrated backend
+        working-directory: ${{ env.BACKEND_PATH }}
+        run: |
+          cargo fmt --package usacc-rest-api-backend-rs -- --check
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo test --all-targets --locked
+
+      - name: Record the immutable source revision
+        env:
+          TARGET_SHA: ${{ steps.source.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_SHA="$TARGET_SHA" MANIFEST="$DEPLOYMENT_MANIFEST" python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          path = Path(os.environ["MANIFEST"])
+          sha = os.environ["SOURCE_SHA"]
+          text = path.read_text()
+
+          annotation = "        dd.dev/usacc-source-revision: '" + sha + "'"
+          pattern = r"(?m)^        dd\.dev/usacc-source-revision:.*$"
+          if re.search(pattern, text):
+              text = re.sub(pattern, annotation, text)
+          else:
+              text = text.replace(
+                  "      annotations:\n",
+                  "      annotations:\n" + annotation + "\n",
+                  1,
+              )
+
+          env_value = "            - name: USACC_SOURCE_REVISION\n              value: '" + sha + "'"
+          env_pattern = r"(?m)^            - name: USACC_SOURCE_REVISION\n              value:.*$"
+          if re.search(env_pattern, text):
+              text = re.sub(env_pattern, env_value, text)
+          else:
+              text = text.replace(
+                  "          env:\n",
+                  "          env:\n" + env_value + "\n",
+                  1,
+              )
+
+          path.write_text(text)
+          PY
+          git add "$BACKEND_PATH" "$DEPLOYMENT_MANIFEST"
+          git diff --cached --check
+          git diff --cached --submodule=log --stat
+
+      - name: Commit GitOps promotion
+        env:
+          TARGET_SHA: ${{ steps.source.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --cached --quiet; then
+            echo "GitOps already pins backend $TARGET_SHA"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "deploy(usacc): promote ${TARGET_SHA:0:12} [usacc-gitops]"
+          git fetch origin dev
+          git merge --no-edit origin/dev
+          git push origin HEAD:dev
