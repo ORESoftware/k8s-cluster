@@ -236,14 +236,23 @@ fn peel_backward(openers: &mut [Opener], frame: Vec<u8>) -> Result<Peeled> {
             bail!("ran out of onion layers while peeling backward frame");
         }
         let plaintext = openers[idx].open(&ct)?;
+        let is_exit_layer = idx == openers.len() - 1;
         match Cell::decode(&plaintext)? {
             Cell::Relay { payload } => {
                 ct = strip_len(&payload)?;
                 idx += 1;
             }
-            Cell::Data { bytes } => return Ok(Peeled::Data(bytes)),
-            Cell::End => return Ok(Peeled::End),
-            other => bail!("unexpected cell while peeling backward: {other:?}"),
+            // End-to-end integrity: only the exit layer may deliver application
+            // Data/End. Each relay holds the backward key the client uses for its
+            // own hop, so without this a malicious middle/entry relay could seal a
+            // Data cell at its layer and inject bytes the app would attribute to
+            // the exit. Sealing a valid Data at the exit layer requires the exit's
+            // key, which no other relay possesses.
+            Cell::Data { bytes } if is_exit_layer => return Ok(Peeled::Data(bytes)),
+            Cell::End if is_exit_layer => return Ok(Peeled::End),
+            other => bail!(
+                "mis-layered or unexpected cell while peeling backward (possible relay injection): {other:?}"
+            ),
         }
     }
 }
