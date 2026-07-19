@@ -94,6 +94,18 @@ and `<style>` bodies are excluded from the markup scan so vendor config values
 don't surface as contacts. HTML entities are decoded first, so `info&#64;acme.test`
 is still found.
 
+Every emitted `e164` is checked for structural validity before it is returned:
+country codes never start with `0`, the number is 8–15 digits, and `+1` numbers
+must satisfy the North American Numbering Plan (area code and exchange both start
+2–9). So `+1 111 555 0100` and `+0…` are dropped rather than synced. These are
+hard, universal rules, so the check never removes a genuine business line; it is
+not a substitute for a full validation library (e.g. `libphonenumber`) if you
+later need per-country national-format validation.
+
+Scanning is ReDoS-safe: the email/phone patterns use bounded quantifiers, so a
+hostile page (the scan runs over untrusted, attacker-controlled text up to
+`MAX_SCAN_CHARS`) cannot trigger catastrophic backtracking in a parser worker.
+
 Because contact data is frequently injected client-side (click-to-call widgets,
 "reveal number" buttons), the `playwright` and `puppeteer` strategies find
 numbers the static parsers cannot — they extract from the rendered DOM. Prefer a
