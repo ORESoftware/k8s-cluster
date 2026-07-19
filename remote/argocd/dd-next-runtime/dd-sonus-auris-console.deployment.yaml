@@ -61,7 +61,7 @@ spec:
                 exit 1
               fi
               mkdir -p "$source_dir"
-              tar --exclude=.git -C "$source_mount" -cf - . | tar -xf - -C "$source_dir"
+              tar --exclude=.git -C "$source_mount" -cf - . | tar --no-same-owner -xf - -C "$source_dir"
               echo "[dd-sonus-auris-console] monorepo: ${actual_monorepo_revision}"
               echo "[dd-sonus-auris-console] source: ${actual_revision}"
 
