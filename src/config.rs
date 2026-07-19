@@ -301,24 +301,10 @@ impl Config {
             .and_then(|s| s.parse().ok())
             .unwrap_or(300),
 
-            admin_ui_enabled: env_bool("BILLING_ADMIN_UI_ENABLED", true),
-            admin_auth_bearer: env::var("BILLING_ADMIN_AUTH_BEARER").ok().and_then(|s| {
-                let t = s.trim();
-                if t.is_empty() {
-                    None
-                } else {
-                    Some(t.to_string())
-                }
-            }),
+            admin_ui_enabled,
+            admin_auth_bearer,
             admin_allowed_origins: parse_csv_env("BILLING_ADMIN_ALLOWED_ORIGINS"),
-            api_auth_bearer: env::var("BILLING_API_AUTH_BEARER").ok().and_then(|s| {
-                let t = s.trim();
-                if t.is_empty() {
-                    None
-                } else {
-                    Some(t.to_string())
-                }
-            }),
+            api_auth_bearer,
             // Default fail-closed: the only legitimate use for outbound
             // private-IP traffic is dev/integration. Production callers
             // should hit the public webhook URL of their tenant.
