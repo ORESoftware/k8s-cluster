@@ -167,7 +167,7 @@ fn collect_signature(engine: &mut Engine<World>) {
     let response_draw = engine.world.rng.next_unit();
     if response_draw <= engine.world.config.sponsor_response_rate {
         engine.world.signatures += 1;
-        if engine.world.signatures <= 25 || engine.world.signatures % 100 == 0 {
+        if engine.world.signatures <= 25 || engine.world.signatures.is_multiple_of(100) {
             push_trace(
                 engine,
                 "signature.received",

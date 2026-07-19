@@ -924,14 +924,17 @@ async fn validate_contract(
     let response = contract::validate_envelope(&state, &body.envelope).await?;
     persist_contract_operation(
         &state,
-        body.case_id,
-        body.election_id,
-        body.vote_id,
-        request_id,
-        body.operation_kind
-            .unwrap_or_else(|| "validate_envelope".to_string()),
-        &body.envelope,
-        &response,
+        ContractOperation {
+            case_id: body.case_id,
+            election_id: body.election_id,
+            vote_id: body.vote_id,
+            request_id,
+            operation_kind: body
+                .operation_kind
+                .unwrap_or_else(|| "validate_envelope".to_string()),
+            envelope: &body.envelope,
+            response: &response,
+        },
     )
     .await?;
     Ok(Json(json!({ "ok": true, "contract": response })))
@@ -950,28 +953,43 @@ async fn simulate_contract(
     let response = contract::simulate_transaction(&state, &body.payload).await?;
     persist_contract_operation(
         &state,
-        body.case_id,
-        None,
-        None,
-        request_id,
-        "simulate_transaction".to_string(),
-        &body.payload,
-        &response,
+        ContractOperation {
+            case_id: body.case_id,
+            election_id: None,
+            vote_id: None,
+            request_id,
+            operation_kind: "simulate_transaction".to_string(),
+            envelope: &body.payload,
+            response: &response,
+        },
     )
     .await?;
     Ok(Json(json!({ "ok": true, "contract": response })))
 }
 
-async fn persist_contract_operation(
-    state: &AppState,
+struct ContractOperation<'a> {
     case_id: Option<String>,
     election_id: Option<String>,
     vote_id: Option<String>,
     request_id: String,
     operation_kind: String,
-    envelope: &Value,
-    response: &Value,
+    envelope: &'a Value,
+    response: &'a Value,
+}
+
+async fn persist_contract_operation(
+    state: &AppState,
+    operation: ContractOperation<'_>,
 ) -> ApiResult<()> {
+    let ContractOperation {
+        case_id,
+        election_id,
+        vote_id,
+        request_id,
+        operation_kind,
+        envelope,
+        response,
+    } = operation;
     let Some(pool) = state.pool.as_ref() else {
         return Ok(());
     };
