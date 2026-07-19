@@ -218,9 +218,15 @@ export STRIPE_API_VERSION=2026-04-22.dahlia
 export STRIPE_CLIENT_SECRET=...
 # Stripe platform API key, used for Stripe API reads with Stripe-Account.
 export STRIPE_API_KEY=...
-# Provider webhook secrets are optional locally; set strict mode in shared envs.
+# Provider webhook secrets are optional locally; strict mode is now the default.
 export STRIPE_WEBHOOK_SECRET=whsec_...
+# Webhook signature verification defaults to ON (fail-closed). Only turn it off
+# for local development against unsigned mock payloads.
 export BILLING_REQUIRE_WEBHOOK_SIGNATURES=false
+# Fail-closed auth: the server refuses to boot with the admin UI enabled and no
+# BILLING_ADMIN_AUTH_BEARER, or with BILLING_API_AUTH_BEARER unset. For local dev
+# either set those bearers or opt out explicitly:
+export BILLING_ALLOW_INSECURE_DEV=1
 export BILLING_FIDUCIA_ENABLED=false # set true with a local/public Fiducia endpoint
 # export BILLING_FIDUCIA_BASE_URL=http://127.0.0.1:8088
 # export BILLING_FIDUCIA_API_KEY=fdc_... # requires locks:write
@@ -337,9 +343,15 @@ test-only mock constructors.
 
 Inbound webhook payloads are stored with `signature_ok`, `payload_sha256`,
 `verification_error`, `tenant_id`, `connection_id`, and the provider external
-account id when it can be inferred. Set
-`BILLING_REQUIRE_WEBHOOK_SIGNATURES=true` outside local development; unsigned
-or unverifiable deliveries are recorded and then rejected with `401`.
+account id when it can be inferred. `BILLING_REQUIRE_WEBHOOK_SIGNATURES`
+defaults to `true` (fail-closed); unsigned or unverifiable deliveries are
+recorded and then rejected with `401`. Set it to `false` only for local
+development against unsigned mock payloads.
+
+When a delivery carries no extractable provider event id, the idempotency key
+is derived deterministically from the body's `payload_sha256` (not a random
+uuid), so repeated deliveries of the same body dedup via the
+`(provider, external_event_id)` upsert instead of inserting a new row each time.
 
 **Strict mode also rejects** any signed delivery that cannot be bound to a
 tenant connection. That stops a valid platform-secret signature (Stripe
@@ -407,9 +419,12 @@ The OAuth `/start` and Plaid `/link-token`/`/exchange` endpoints **do**
 require the bearer — they mint per-tenant CSRF state and seal
 credentials, so they have to prove the caller's identity.
 
-If the bearer is unset, the API runs in open mode (dev convenience) and
-logs a single WARN line at boot. Production manifests inject the bearer
-via SealedSecrets / ExternalSecrets.
+The bearer is now **required to boot** (fail-closed): with
+`BILLING_API_AUTH_BEARER` unset the server refuses to start rather than run
+the API in open mode, unless `BILLING_ALLOW_INSECURE_DEV=1` is set explicitly
+for local development (in which case it runs open and logs a single WARN line
+at boot). Production manifests inject the bearer via SealedSecrets /
+ExternalSecrets.
 
 ### Other 2026-05-23 hardening fixes
 
@@ -498,10 +513,12 @@ What you get:
 Layered defenses, designed to fail safely (see `src/admin/security.rs`
 and the wire-level tests in `src/admin/mod.rs`):
 
-- **Bearer auth (optional)** — set `BILLING_ADMIN_AUTH_BEARER=<token>`
-  to require `Authorization: Bearer <token>` on every `/admin/*`
-  request. Constant-time compared. When unset, the UI is unauthenticated
-  (intended for trusted networks / local dev).
+- **Bearer auth (required when the UI is enabled)** — set
+  `BILLING_ADMIN_AUTH_BEARER=<token>` to require `Authorization: Bearer
+  <token>` on every `/admin/*` request. Constant-time compared. The server
+  now refuses to boot with the admin UI enabled and this bearer unset (an
+  unauthenticated admin surface), unless `BILLING_ALLOW_INSECURE_DEV=1` is set
+  explicitly for trusted networks / local dev.
 - **CSRF guard** — every POST/PUT/PATCH/DELETE must carry
   `HX-Request: true` (HTMX always sends it; cross-origin browsers
   cannot set it without a CORS preflight we do not grant) **and**, when
