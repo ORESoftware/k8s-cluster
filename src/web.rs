@@ -625,8 +625,16 @@ async fn docs_page(State(cfg): State<AppState>, AxPath(name): AxPath<String>) ->
         Ok(s) => s,
         Err(_) => return (StatusCode::NOT_FOUND, "doc not found").into_response(),
     };
+    // Neutralize raw HTML embedded in a doc: pulldown-cmark passes it through
+    // verbatim, and we emit the result PreEscaped, so a mounted/untrusted docs
+    // volume could otherwise inject script into the dashboard origin. Map raw
+    // HTML events to escaped text; genuine markdown still renders normally.
     let mut rendered = String::new();
-    let parser = pulldown_cmark::Parser::new(&md);
+    let parser = pulldown_cmark::Parser::new(&md).map(|event| match event {
+        pulldown_cmark::Event::Html(html) => pulldown_cmark::Event::Text(html),
+        pulldown_cmark::Event::InlineHtml(html) => pulldown_cmark::Event::Text(html),
+        other => other,
+    });
     pulldown_cmark::html::push_html(&mut rendered, parser);
     let markup = html! {
         (DOCTYPE)
