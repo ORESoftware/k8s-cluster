@@ -257,7 +257,10 @@ impl Config {
             oauth_return_to_allowed_prefixes: parse_csv_env(
                 "BILLING_OAUTH_RETURN_TO_ALLOWED_PREFIXES",
             ),
-            require_webhook_signatures: env_bool("BILLING_REQUIRE_WEBHOOK_SIGNATURES", false),
+            // Fail-closed: verify webhook signatures unless an operator
+            // explicitly opts out. An unsigned/unverified webhook can forge
+            // money-movement events, so the default must reject them.
+            require_webhook_signatures: env_bool("BILLING_REQUIRE_WEBHOOK_SIGNATURES", true),
             webhook_signature_tolerance_seconds: env::var(
                 "BILLING_WEBHOOK_SIGNATURE_TOLERANCE_SECONDS",
             )
