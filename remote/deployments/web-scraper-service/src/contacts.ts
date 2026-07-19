@@ -366,7 +366,11 @@ type NormalizedPhone = {
  * inferred from `defaultRegion`. Returns `undefined` for values that don't look
  * like a dialable business number (too short/long, placeholder runs, IDs).
  */
-export function normalizePhoneNumber(raw: string, defaultRegion?: string): NormalizedPhone | undefined {
+export function normalizePhoneNumber(
+  raw: string,
+  defaultRegion?: string,
+  options?: { requireStructure?: boolean },
+): NormalizedPhone | undefined {
   const trimmed = raw.trim();
   // Split off a trailing extension the source embedded (e.g. "...x123").
   let extension: string | undefined;
