@@ -23,3 +23,8 @@ scripts are `bash`, start with `set -euo pipefail`, never `git push`, and offer
   services are distroless/nonroot by default;
   OS-tool runners require the explicit `tool-runner-nonroot` profile and uid/gid
   `65532:65532`.
+- `check-interface-consumers.sh <public|full|--dry-run>` — compiles the
+  generated-interface contract checks across the exact pinned app gitlinks.
+  Normal CI uses `public`; protected fleet audit and production promotion use
+  `full`, which also verifies the private application consumers with their
+  explicitly pinned Rust toolchains.

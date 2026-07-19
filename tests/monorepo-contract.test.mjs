@@ -186,6 +186,7 @@ test("monorepo scripts keep destructive actions manual and include dry-run/audit
 
   assert.deepEqual(scripts, [
     "audit-repo-state.sh",
+    "check-interface-consumers.sh",
     "checkout-feature-branch.sh",
     "pin-submodules.sh",
   ]);
@@ -198,6 +199,11 @@ test("monorepo scripts keep destructive actions manual and include dry-run/audit
   }
 
   const audit = read("scripts/audit-repo-state.sh");
+  const interfaceConsumers = read("scripts/check-interface-consumers.sh");
+  assert.match(interfaceConsumers, /generated_interfaces_are_importable/);
+  assert.match(interfaceConsumers, /RUSTC="\$rustc_bin"/);
+  assert.match(interfaceConsumers, /public_consumers/);
+  assert.match(interfaceConsumers, /private_consumers/);
   assert.match(audit, /:\(exclude\)target\/\*\*/);
   assert.match(audit, /:\(exclude\)node_modules\/\*\*/);
   assert.match(audit, /:\(exclude\)dist\/\*\*/);
