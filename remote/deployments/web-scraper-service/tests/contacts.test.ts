@@ -181,3 +181,40 @@ test('normalizeEmail rejects malformed addresses', () => {
   assert.equal(normalizeEmail('a@b'), undefined);
   assert.equal(normalizeEmail('user@acme.test.'), 'user@acme.test');
 });
+
+test('structurally impossible NANP numbers are rejected, not stored', () => {
+  // Area code and exchange must start 2-9. These would otherwise become
+  // "+11115550100" / "+14150550100" and pollute the CRM.
+  assert.equal(normalizePhoneNumber('(111) 555-0100', 'US'), undefined);
+  assert.equal(normalizePhoneNumber('(415) 055-0100', 'US'), undefined);
+  assert.equal(normalizePhoneNumber('+1 111 555 0100', 'US'), undefined);
+  // A well-formed NANP number still passes.
+  assert.equal(normalizePhoneNumber('(415) 555-0100', 'US')?.e164, '+14155550100');
+});
+
+test('E.164 country codes cannot start with zero', () => {
+  assert.equal(normalizePhoneNumber('+0 20 7946 0958', 'US'), undefined);
+  assert.equal(normalizePhoneNumber('+44 20 7946 0958', 'US')?.e164, '+442079460958');
+});
+
+test('invalid NANP candidates in text are dropped end-to-end', () => {
+  const { phones } = extractContacts({
+    html: '',
+    text: 'Call (111) 555-0100 or our real line (628) 555-0100',
+    ...both,
+  });
+  assert.deepEqual(phones.map((p) => p.e164), ['+16285550100']);
+});
+
+test('scanning pathological input stays fast (no ReDoS)', () => {
+  // A long run of email/phone-shaped characters with no delimiter is the classic
+  // catastrophic-backtracking trigger. Bounded quantifiers keep this linear.
+  const html = `${'a'.repeat(400_000)} ${'1'.repeat(400_000)}`;
+  const started = process.hrtime.bigint();
+  const { phones, emails } = extractContacts({ html, text: html, ...both });
+  const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
+
+  assert.deepEqual(phones, []);
+  assert.deepEqual(emails, []);
+  assert.ok(elapsedMs < 1_000, `contact scan took ${elapsedMs.toFixed(0)}ms — expected < 1000ms`);
+});
