@@ -683,8 +683,15 @@ jobs:
             git status --short --untracked-files=no --ignore-submodules=all -- remote .github >&2
             exit 1
           fi
-          git fetch origin {rev}
+          # Fetch only the superproject here. An unrelated stale submodule
+          # revision must not block runtime manifest reconciliation.
+          git -c fetch.recurseSubmodules=false fetch --no-recurse-submodules origin {rev}
           git -c submodule.recurse=false merge --ff-only origin/{rev}
+          # The USACC pod compiles from this hostPath, so advance exactly its
+          # source checkout before Argo rolls the immutable manifest revision.
+          git submodule sync -- remote/deployments/usacc-rest-api-backend-rs
+          git -c fetch.recurseSubmodules=false submodule update --init -- \
+            remote/deployments/usacc-rest-api-backend-rs
           git rev-parse --short HEAD
           '''
           commands = [
