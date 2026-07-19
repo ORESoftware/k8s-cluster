@@ -42,8 +42,10 @@ pub struct WebhookRule {
     pub tags: bool,
     /// Events to react to: "push" (default) and/or "workflow_run" (completed+success).
     pub events: Option<Vec<String>>,
-    /// Image template. `{sha}` / `{shortSha}` / `{ref}` are substituted.
-    pub image: String,
+    /// Image template for image jobs. `{sha}` / `{shortSha}` / `{ref}` are substituted.
+    pub image: Option<String>,
+    /// Fixed CI profile for run-profile jobs. Exactly one of image/profile is required.
+    pub profile: Option<String>,
     pub context_dir: Option<String>,
     pub dockerfile: Option<String>,
     #[serde(default)]
@@ -53,8 +55,25 @@ pub struct WebhookRule {
 }
 
 pub fn parse_rules(raw: &str) -> Result<Vec<WebhookRule>, String> {
-    serde_json::from_str::<Vec<WebhookRule>>(raw)
-        .map_err(|error| format!("invalid webhook rules JSON: {error}"))
+    let rules = serde_json::from_str::<Vec<WebhookRule>>(raw)
+        .map_err(|error| format!("invalid webhook rules JSON: {error}"))?;
+    for rule in &rules {
+        if rule.image.is_some() == rule.profile.is_some() {
+            return Err(format!(
+                "webhook rule for {:?} must set exactly one of image or profile",
+                rule.repo
+            ));
+        }
+        if rule.profile.is_some()
+            && (rule.push || rule.deploy.is_some() || rule.dockerfile.is_some())
+        {
+            return Err(format!(
+                "profile webhook rule for {:?} cannot push, deploy, or set dockerfile",
+                rule.repo
+            ));
+        }
+    }
+    Ok(rules)
 }
 
 fn verify_github_signature(secret: &str, body: &[u8], signature_header: &str) -> bool {
@@ -110,18 +129,30 @@ fn rule_matches(rule: &WebhookRule, event: &str, repo: &str, git_ref: &str) -> b
     }
 }
 
-fn build_request_from_rule(rule: &WebhookRule, repo: &str, git_ref: &str, sha: &str) -> BuildRequest {
+fn build_request_from_rule(
+    rule: &WebhookRule,
+    repo: &str,
+    git_ref: &str,
+    sha: &str,
+) -> BuildRequest {
     let branch = branch_from_ref(git_ref).unwrap_or(git_ref).to_string();
     BuildRequest {
         schema_version: Some("build-server.v1".to_string()),
-        job_kind: Some(if rule.deploy.is_some() {
+        job_kind: Some(if rule.profile.is_some() {
+            "run-profile".to_string()
+        } else if rule.deploy.is_some() {
             "build-and-deploy".to_string()
         } else {
             "build-image".to_string()
         }),
         repo_url: format!("https://github.com/{repo}.git"),
         git_ref: Some(branch.clone()),
-        image: substitute_image(&rule.image, sha, &branch),
+        image: rule
+            .image
+            .as_deref()
+            .map(|image| substitute_image(image, sha, &branch))
+            .unwrap_or_default(),
+        profile: rule.profile.clone(),
         context_dir: rule.context_dir.clone(),
         dockerfile: rule.dockerfile.clone(),
         build_args: None,
@@ -149,7 +180,10 @@ pub async fn github_webhook(
         .and_then(|value| value.to_str().ok())
         .unwrap_or_default();
     if !verify_github_signature(secret, &body, signature) {
-        state.counters.webhooks_rejected.fetch_add(1, Ordering::Relaxed);
+        state
+            .counters
+            .webhooks_rejected
+            .fetch_add(1, Ordering::Relaxed);
         return (
             StatusCode::UNAUTHORIZED,
             Json(json!({ "error": "invalid or missing X-Hub-Signature-256" })),
@@ -207,8 +241,7 @@ pub async fn github_webhook(
                 .and_then(serde_json::Value::as_str)
                 .unwrap_or_default()
                 .to_string();
-            let deleted = payload.get("deleted").and_then(serde_json::Value::as_bool)
-                == Some(true);
+            let deleted = payload.get("deleted").and_then(serde_json::Value::as_bool) == Some(true);
             (git_ref, sha, !deleted)
         }
         "workflow_run" => {
@@ -231,7 +264,10 @@ pub async fn github_webhook(
         _ => (String::new(), String::new(), false),
     };
 
-    state.counters.webhooks_received.fetch_add(1, Ordering::Relaxed);
+    state
+        .counters
+        .webhooks_received
+        .fetch_add(1, Ordering::Relaxed);
 
     // Local dedupe (Postgres unique) + multi-replica dedupe (fiducia lease).
     if let Some(db) = state.db.as_ref() {
@@ -336,16 +372,18 @@ fn registry_secret_ok(state: &AppState, headers: &HeaderMap) -> bool {
         .get("x-registry-webhook-secret")
         .or_else(|| headers.get("x-webhook-secret"))
         .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| {
-            value.as_bytes().ct_eq(secret.as_bytes()).into()
-        })
+        .is_some_and(|value| value.as_bytes().ct_eq(secret.as_bytes()).into())
 }
 
 /// Normalize either an ECR EventBridge event or a docker distribution v2
 /// notification into compact (repository, tag, digest, action) tuples.
 fn registry_events(payload: &serde_json::Value) -> Vec<serde_json::Value> {
     // ECR EventBridge: {"detail-type": "ECR Image Action", "detail": {...}}
-    if payload.get("detail-type").and_then(serde_json::Value::as_str) == Some("ECR Image Action") {
+    if payload
+        .get("detail-type")
+        .and_then(serde_json::Value::as_str)
+        == Some("ECR Image Action")
+    {
         let detail = payload.get("detail").cloned().unwrap_or_default();
         return vec![json!({
             "provider": "ecr",
@@ -394,7 +432,10 @@ pub async fn registry_webhook(
             .into_response();
     }
     if !registry_secret_ok(&state, &headers) {
-        state.counters.webhooks_rejected.fetch_add(1, Ordering::Relaxed);
+        state
+            .counters
+            .webhooks_rejected
+            .fetch_add(1, Ordering::Relaxed);
         return (
             StatusCode::UNAUTHORIZED,
             Json(json!({ "error": "missing or invalid registry webhook secret header" })),
@@ -412,7 +453,10 @@ pub async fn registry_webhook(
         }
     };
 
-    state.counters.webhooks_received.fetch_add(1, Ordering::Relaxed);
+    state
+        .counters
+        .webhooks_received
+        .fetch_add(1, Ordering::Relaxed);
     let events = registry_events(&payload);
     let delivery_id = headers
         .get("x-delivery-id")
@@ -470,8 +514,7 @@ mod tests {
     #[test]
     fn github_signature_verification_is_exact() {
         // echo -n 'hello' | openssl dgst -sha256 -hmac 'secret'
-        let signature =
-            "sha256=88aab3ede8d3adf94d26ab90d3bafd4a2083070c3bcce9c014ee04a443847c0b";
+        let signature = "sha256=88aab3ede8d3adf94d26ab90d3bafd4a2083070c3bcce9c014ee04a443847c0b";
         assert!(verify_github_signature("secret", b"hello", signature));
         assert!(!verify_github_signature("secret", b"hello2", signature));
         assert!(!verify_github_signature("wrong", b"hello", signature));
@@ -488,10 +531,25 @@ mod tests {
             "push": true
         }))
         .unwrap();
-        assert!(rule_matches(&rule, "push", "oresoftware/example", "refs/heads/dev"));
-        assert!(!rule_matches(&rule, "push", "oresoftware/example", "refs/heads/main"));
+        assert!(rule_matches(
+            &rule,
+            "push",
+            "oresoftware/example",
+            "refs/heads/dev"
+        ));
+        assert!(!rule_matches(
+            &rule,
+            "push",
+            "oresoftware/example",
+            "refs/heads/main"
+        ));
         assert!(!rule_matches(&rule, "push", "other/repo", "refs/heads/dev"));
-        assert!(!rule_matches(&rule, "workflow_run", "oresoftware/example", "dev"));
+        assert!(!rule_matches(
+            &rule,
+            "workflow_run",
+            "oresoftware/example",
+            "dev"
+        ));
 
         let request = build_request_from_rule(
             &rule,
@@ -499,9 +557,29 @@ mod tests {
             "refs/heads/dev",
             "0123456789abcdef0123",
         );
-        assert_eq!(request.repo_url, "https://github.com/ORESoftware/example.git");
+        assert_eq!(
+            request.repo_url,
+            "https://github.com/ORESoftware/example.git"
+        );
         assert_eq!(request.git_ref.as_deref(), Some("dev"));
         assert!(request.image.ends_with(":0123456789ab"));
+
+        let profile_rules = parse_rules(
+            r#"[{"repo":"sonus-auris/sonus-auris-ui.dart","branch":"main","profile":"flutter-android-debug"}]"#,
+        )
+        .expect("profile rule parses");
+        let profile_request = build_request_from_rule(
+            &profile_rules[0],
+            "sonus-auris/sonus-auris-ui.dart",
+            "refs/heads/main",
+            "0123456789abcdef0123",
+        );
+        assert_eq!(profile_request.job_kind.as_deref(), Some("run-profile"));
+        assert_eq!(
+            profile_request.profile.as_deref(),
+            Some("flutter-android-debug")
+        );
+        assert!(profile_request.image.is_empty());
     }
 
     #[test]

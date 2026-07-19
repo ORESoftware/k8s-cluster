@@ -21,6 +21,18 @@ data:
         "contextDir": "remote/deployments/build-server-rs",
         "dockerfile": "Dockerfile",
         "push": true
+      },
+      {
+        "repo": "sonus-auris/sonus-auris-ui.dart",
+        "branch": "main",
+        "events": ["push"],
+        "profile": "flutter-android-debug"
+      },
+      {
+        "repo": "sonus-auris/sonus-auris-web-desktop.dart",
+        "branch": "main",
+        "events": ["push"],
+        "profile": "flutter-web-e2e"
       }
     ]
   # GitHub Actions secret sync rules. Each maps a repo secret name to a

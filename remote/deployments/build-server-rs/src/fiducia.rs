@@ -41,9 +41,13 @@ pub enum LockOutcome {
     Disabled,
     Acquired(LockGrant),
     /// Retry budget exhausted while another holder kept the lock.
-    Busy { key: String },
+    Busy {
+        key: String,
+    },
     /// fiducia unreachable/errored. Fatal only when coordination is required.
-    Unavailable { error: String },
+    Unavailable {
+        error: String,
+    },
 }
 
 /// Reject URLs that would leak the bearer token to arbitrary hosts: https
@@ -79,10 +83,7 @@ fn request(
     body: serde_json::Value,
 ) -> reqwest::RequestBuilder {
     let url = format!("{}{path}", config.fiducia_url.trim_end_matches('/'));
-    let mut builder = http
-        .post(url)
-        .timeout(Duration::from_secs(10))
-        .json(&body);
+    let mut builder = http.post(url).timeout(Duration::from_secs(10)).json(&body);
     if let Some(api_key) = config.fiducia_api_key.as_deref() {
         builder = builder.bearer_auth(api_key);
     }
