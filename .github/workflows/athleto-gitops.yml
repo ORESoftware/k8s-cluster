@@ -56,6 +56,8 @@ jobs:
             dd-athleto-app-rs.deployment.yaml
             dd-athleto-app-rs.ingress.yaml
             dd-athleto-app-rs.service.yaml
+            dd-athleto-backend.deployment.yaml
+            dd-athleto-backend.service.yaml
             dd-athleto-backend.observability.patch.yaml
           ]
 
@@ -70,7 +72,8 @@ jobs:
             dd-athleto-app-rs.deployment.yaml
             dd-athleto-app-rs.ingress.yaml
             dd-athleto-app-rs.service.yaml
-            ../../deployments/athleto-backend-rs/k8s/ec2
+            dd-athleto-backend.deployment.yaml
+            dd-athleto-backend.service.yaml
           ].each do |resource|
             raise "dd-next-runtime does not include #{resource}" unless kustomization.include?(resource)
           end

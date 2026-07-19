@@ -163,6 +163,10 @@ resources:
   - dd-sonus-auris-site.configmap.yaml
   - dd-sonus-auris-site.deployment.yaml
   - dd-sonus-auris-site.service.yaml
+  - dd-sonus-auris-console.configmap.yaml
+  - dd-sonus-auris-console.deployment.yaml
+  - dd-sonus-auris-console.networkpolicy.yaml
+  - dd-sonus-auris-console.service.yaml
   - dd-webrtc-signaling.deployment.yaml
   - dd-webrtc-signaling.service.yaml
   - dd-webrtc-media.deployment.yaml
@@ -196,9 +200,11 @@ resources:
   - dd-athleto-app-rs.pdb.yaml
   - dd-athleto-app-rs.service.yaml
   - jello-ws.service.yaml
-  # Smaller standalone Athlet-O API/storefront backend. Its manifests and
-  # Rust source are owned by the source-of-truth git submodule.
-  - ../../deployments/athleto-backend-rs/k8s/ec2
+  # Smaller standalone Athlet-O API/storefront backend. Runtime manifests are
+  # vendored here because Argo intentionally disables recursive git submodules;
+  # Rust source remains pinned by the source-of-truth gitlink.
+  - dd-athleto-backend.deployment.yaml
+  - dd-athleto-backend.service.yaml
   # Opt-in AthletO live-storefront browser smoke: dispatches read-only UI
   # scenarios to dd-browser-test-server under Playwright + Puppeteer.
   - dd-athleto-e2e-scenarios.configmap.yaml
