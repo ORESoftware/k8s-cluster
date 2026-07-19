@@ -1,5 +1,8 @@
 # Security model & hardening
 
+For the most recent full audit (method, findings by severity, and their
+disposition), see [audit](/docs/audit).
+
 ## What the design protects
 
 - **Unlinkability across a single relay.** Layered encryption means the entry
