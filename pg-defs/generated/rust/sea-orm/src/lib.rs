@@ -6082,3 +6082,141 @@ impl ActiveModelBehavior for ActiveModel {}
 
 pub use vapi_events::Entity as VapiEventsEntity;
 pub use vapi_events::Model as VapiEventsModel;
+
+pub mod fab_plans {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(schema_name = "daedalus", table_name = "fab_plans")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "owner_email")]
+    pub owner_email: String,
+    pub title: String,
+    pub goal: String,
+    #[sea_orm(column_name = "process_family")]
+    pub process_family: String,
+    pub status: String,
+    pub document: Option<Json>,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use fab_plans::Entity as FabPlansEntity;
+pub use fab_plans::Model as FabPlansModel;
+
+pub mod fab_designs {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(schema_name = "daedalus", table_name = "fab_designs")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "plan_id")]
+    pub plan_id: Uuid,
+    pub filename: String,
+    pub format: String,
+    #[sea_orm(column_name = "storage_uri")]
+    pub storage_uri: String,
+    #[sea_orm(column_name = "size_bytes")]
+    pub size_bytes: i64,
+    #[sea_orm(column_name = "content_hash")]
+    pub content_hash: Option<String>,
+    pub geometry: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use fab_designs::Entity as FabDesignsEntity;
+pub use fab_designs::Model as FabDesignsModel;
+
+pub mod fab_instructions {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(schema_name = "daedalus", table_name = "fab_instructions")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "plan_id")]
+    pub plan_id: Uuid,
+    pub revision: i32,
+    #[sea_orm(column_name = "machine_profile")]
+    pub machine_profile: String,
+    pub dialect: String,
+    #[sea_orm(column_name = "storage_uri")]
+    pub storage_uri: String,
+    #[sea_orm(column_name = "content_hash")]
+    pub content_hash: Option<String>,
+    pub validated: bool,
+    pub validation: Json,
+    #[sea_orm(column_name = "released_by_email")]
+    pub released_by_email: Option<String>,
+    #[sea_orm(column_name = "released_at")]
+    pub released_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use fab_instructions::Entity as FabInstructionsEntity;
+pub use fab_instructions::Model as FabInstructionsModel;
+
+pub mod fab_runs {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(schema_name = "daedalus", table_name = "fab_runs")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    pub status: String,
+    #[sea_orm(column_name = "machine_id")]
+    pub machine_id: String,
+    #[sea_orm(column_name = "operator_email")]
+    pub operator_email: Option<String>,
+    pub progress: i16,
+    #[sea_orm(column_name = "as_built")]
+    pub as_built: Json,
+    pub error: Option<String>,
+    #[sea_orm(column_name = "started_at")]
+    pub started_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "finished_at")]
+    pub finished_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use fab_runs::Entity as FabRunsEntity;
+pub use fab_runs::Model as FabRunsModel;

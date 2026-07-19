@@ -2883,3 +2883,71 @@ class VapiEvents(BaseModel):
     class Meta:
         table_name = "vapi_events"
         schema = "t2v"
+
+
+class FabPlans(BaseModel):
+    id = UUIDField(primary_key=True)
+    owner_email = TextField()
+    title = TextField()
+    goal = TextField()
+    process_family = TextField()
+    status = TextField()
+    document = BinaryJSONField(null=True)
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+
+    class Meta:
+        table_name = "fab_plans"
+        schema = "daedalus"
+
+
+class FabDesigns(BaseModel):
+    id = UUIDField(primary_key=True)
+    plan_id = UUIDField()
+    filename = TextField()
+    format = TextField()
+    storage_uri = TextField()
+    size_bytes = BigIntegerField()
+    content_hash = TextField(null=True)
+    geometry = BinaryJSONField()
+    created_at = DateTimeField()
+
+    class Meta:
+        table_name = "fab_designs"
+        schema = "daedalus"
+
+
+class FabInstructions(BaseModel):
+    id = UUIDField(primary_key=True)
+    plan_id = UUIDField()
+    revision = IntegerField()
+    machine_profile = TextField()
+    dialect = TextField()
+    storage_uri = TextField()
+    content_hash = TextField(null=True)
+    validated = BooleanField()
+    validation = BinaryJSONField()
+    released_by_email = TextField(null=True)
+    released_at = DateTimeField(null=True)
+    created_at = DateTimeField()
+
+    class Meta:
+        table_name = "fab_instructions"
+        schema = "daedalus"
+
+
+class FabRuns(BaseModel):
+    id = UUIDField(primary_key=True)
+    status = TextField()
+    machine_id = TextField()
+    operator_email = TextField(null=True)
+    progress = SmallIntegerField()
+    as_built = BinaryJSONField()
+    error = TextField(null=True)
+    started_at = DateTimeField(null=True)
+    finished_at = DateTimeField(null=True)
+    created_at = DateTimeField()
+
+    class Meta:
+        table_name = "fab_runs"
+        schema = "daedalus"

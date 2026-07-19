@@ -21189,6 +21189,501 @@ pub fn validate_vapi_events_insert(value: &VapiEventsInsert) -> Result<(), Strin
     Ok(())
 }
 
+pub const FAB_PLANS_TABLE: &str = "daedalus.fab_plans";
+pub const FAB_PLANS_COLUMNS: &[&str] = &["id", "owner_email", "title", "goal", "process_family", "status", "document", "created_at", "updated_at"];
+pub const FAB_PLANS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      owner_email,
+      title,
+      goal,
+      process_family,
+      status,
+      document,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from daedalus.fab_plans"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FabPlansProcessFamily {
+    Additive,
+    Subtractive,
+    Hybrid,
+}
+
+impl FabPlansProcessFamily {
+    pub const VALUES: &'static [&'static str] = &["additive", "subtractive", "hybrid"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Additive => "additive",
+            Self::Subtractive => "subtractive",
+            Self::Hybrid => "hybrid",
+        }
+    }
+}
+
+impl TryFrom<&str> for FabPlansProcessFamily {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "additive" => Ok(Self::Additive),
+            "subtractive" => Ok(Self::Subtractive),
+            "hybrid" => Ok(Self::Hybrid),
+            _ => Err(format!("unsupported process_family: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FabPlansStatus {
+    Draft,
+    Planning,
+    Planned,
+    Released,
+    Archived,
+}
+
+impl FabPlansStatus {
+    pub const VALUES: &'static [&'static str] = &["draft", "planning", "planned", "released", "archived"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Draft => "draft",
+            Self::Planning => "planning",
+            Self::Planned => "planned",
+            Self::Released => "released",
+            Self::Archived => "archived",
+        }
+    }
+}
+
+impl TryFrom<&str> for FabPlansStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "draft" => Ok(Self::Draft),
+            "planning" => Ok(Self::Planning),
+            "planned" => Ok(Self::Planned),
+            "released" => Ok(Self::Released),
+            "archived" => Ok(Self::Archived),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct FabPlansRow {
+    pub id: String,
+    pub owner_email: String,
+    pub title: String,
+    pub goal: String,
+    pub process_family: String,
+    pub status: String,
+    pub document: Option<Value>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FabPlansInsert {
+    pub id: Option<String>,
+    pub owner_email: Option<String>,
+    pub title: Option<String>,
+    pub goal: Option<String>,
+    pub process_family: Option<String>,
+    pub status: Option<String>,
+    pub document: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_fab_plans_row(value: &FabPlansRow) -> Result<(), String> {
+    if (&value.owner_email).as_bytes().len() > 320 { return Err("fab_plans.owner_email exceeds 320 bytes".to_string()); }
+    if (&value.title).as_bytes().len() > 200 { return Err("fab_plans.title exceeds 200 bytes".to_string()); }
+    if (&value.goal).as_bytes().len() > 20000 { return Err("fab_plans.goal exceeds 20000 bytes".to_string()); }
+    if !["additive", "subtractive", "hybrid"].contains(&(&value.process_family).as_str()) { return Err(format!("unsupported fab_plans.process_family: {}", &value.process_family)); }
+    if !["draft", "planning", "planned", "released", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported fab_plans.status: {}", &value.status)); }
+    if let Some(value) = &value.document {
+        if !(value).is_object() { return Err("fab_plans.document must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub fn validate_fab_plans_insert(value: &FabPlansInsert) -> Result<(), String> {
+    if let Some(value) = &value.owner_email {
+        if (value).as_bytes().len() > 320 { return Err("fab_plans.owner_email exceeds 320 bytes".to_string()); }
+    }
+    if let Some(value) = &value.title {
+        if (value).as_bytes().len() > 200 { return Err("fab_plans.title exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.goal {
+        if (value).as_bytes().len() > 20000 { return Err("fab_plans.goal exceeds 20000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.process_family {
+        if !["additive", "subtractive", "hybrid"].contains(&(value).as_str()) { return Err(format!("unsupported fab_plans.process_family: {}", value)); }
+    }
+    if let Some(value) = &value.status {
+        if !["draft", "planning", "planned", "released", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported fab_plans.status: {}", value)); }
+    }
+    if let Some(value) = &value.document {
+        if !(value).is_object() { return Err("fab_plans.document must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const FAB_DESIGNS_TABLE: &str = "daedalus.fab_designs";
+pub const FAB_DESIGNS_COLUMNS: &[&str] = &["id", "plan_id", "filename", "format", "storage_uri", "size_bytes", "content_hash", "geometry", "created_at"];
+pub const FAB_DESIGNS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      plan_id::text as plan_id,
+      filename,
+      format,
+      storage_uri,
+      size_bytes,
+      content_hash,
+      geometry,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from daedalus.fab_designs"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FabDesignsFormat {
+    Step,
+    Stl,
+    3mf,
+    Dxf,
+    Iges,
+    Obj,
+}
+
+impl FabDesignsFormat {
+    pub const VALUES: &'static [&'static str] = &["step", "stl", "3mf", "dxf", "iges", "obj"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Step => "step",
+            Self::Stl => "stl",
+            Self::3mf => "3mf",
+            Self::Dxf => "dxf",
+            Self::Iges => "iges",
+            Self::Obj => "obj",
+        }
+    }
+}
+
+impl TryFrom<&str> for FabDesignsFormat {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "step" => Ok(Self::Step),
+            "stl" => Ok(Self::Stl),
+            "3mf" => Ok(Self::3mf),
+            "dxf" => Ok(Self::Dxf),
+            "iges" => Ok(Self::Iges),
+            "obj" => Ok(Self::Obj),
+            _ => Err(format!("unsupported format: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct FabDesignsRow {
+    pub id: String,
+    pub plan_id: String,
+    pub filename: String,
+    pub format: String,
+    pub storage_uri: String,
+    pub size_bytes: i64,
+    pub content_hash: Option<String>,
+    pub geometry: Value,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FabDesignsInsert {
+    pub id: Option<String>,
+    pub plan_id: Option<String>,
+    pub filename: Option<String>,
+    pub format: Option<String>,
+    pub storage_uri: Option<String>,
+    pub size_bytes: Option<i64>,
+    pub content_hash: Option<String>,
+    pub geometry: Option<Value>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_fab_designs_row(value: &FabDesignsRow) -> Result<(), String> {
+    if (&value.filename).as_bytes().len() > 400 { return Err("fab_designs.filename exceeds 400 bytes".to_string()); }
+    if !["step", "stl", "3mf", "dxf", "iges", "obj"].contains(&(&value.format).as_str()) { return Err(format!("unsupported fab_designs.format: {}", &value.format)); }
+    if (&value.storage_uri).as_bytes().len() > 2000 { return Err("fab_designs.storage_uri exceeds 2000 bytes".to_string()); }
+    if *(&value.size_bytes) < 0 { return Err("fab_designs.size_bytes is below the minimum".to_string()); }
+    if !(&value.geometry).is_object() { return Err("fab_designs.geometry must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_fab_designs_insert(value: &FabDesignsInsert) -> Result<(), String> {
+    if let Some(value) = &value.filename {
+        if (value).as_bytes().len() > 400 { return Err("fab_designs.filename exceeds 400 bytes".to_string()); }
+    }
+    if let Some(value) = &value.format {
+        if !["step", "stl", "3mf", "dxf", "iges", "obj"].contains(&(value).as_str()) { return Err(format!("unsupported fab_designs.format: {}", value)); }
+    }
+    if let Some(value) = &value.storage_uri {
+        if (value).as_bytes().len() > 2000 { return Err("fab_designs.storage_uri exceeds 2000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.size_bytes {
+        if *(value) < 0 { return Err("fab_designs.size_bytes is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.geometry {
+        if !(value).is_object() { return Err("fab_designs.geometry must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const FAB_INSTRUCTIONS_TABLE: &str = "daedalus.fab_instructions";
+pub const FAB_INSTRUCTIONS_COLUMNS: &[&str] = &["id", "plan_id", "revision", "machine_profile", "dialect", "storage_uri", "content_hash", "validated", "validation", "released_by_email", "released_at", "created_at"];
+pub const FAB_INSTRUCTIONS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      plan_id::text as plan_id,
+      revision,
+      machine_profile,
+      dialect,
+      storage_uri,
+      content_hash,
+      validated,
+      validation,
+      released_by_email,
+      to_char(released_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as released_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from daedalus.fab_instructions"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FabInstructionsDialect {
+    Gcode,
+    Nc,
+    Apt,
+    Proprietary,
+}
+
+impl FabInstructionsDialect {
+    pub const VALUES: &'static [&'static str] = &["gcode", "nc", "apt", "proprietary"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Gcode => "gcode",
+            Self::Nc => "nc",
+            Self::Apt => "apt",
+            Self::Proprietary => "proprietary",
+        }
+    }
+}
+
+impl TryFrom<&str> for FabInstructionsDialect {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "gcode" => Ok(Self::Gcode),
+            "nc" => Ok(Self::Nc),
+            "apt" => Ok(Self::Apt),
+            "proprietary" => Ok(Self::Proprietary),
+            _ => Err(format!("unsupported dialect: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct FabInstructionsRow {
+    pub id: String,
+    pub plan_id: String,
+    pub revision: i32,
+    pub machine_profile: String,
+    pub dialect: String,
+    pub storage_uri: String,
+    pub content_hash: Option<String>,
+    pub validated: bool,
+    pub validation: Value,
+    pub released_by_email: Option<String>,
+    pub released_at: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FabInstructionsInsert {
+    pub id: Option<String>,
+    pub plan_id: Option<String>,
+    pub revision: Option<i32>,
+    pub machine_profile: Option<String>,
+    pub dialect: Option<String>,
+    pub storage_uri: Option<String>,
+    pub content_hash: Option<String>,
+    pub validated: Option<bool>,
+    pub validation: Option<Value>,
+    pub released_by_email: Option<String>,
+    pub released_at: Option<String>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_fab_instructions_row(value: &FabInstructionsRow) -> Result<(), String> {
+    if *(&value.revision) < 1 { return Err("fab_instructions.revision is below the minimum".to_string()); }
+    if (&value.machine_profile).as_bytes().len() > 200 { return Err("fab_instructions.machine_profile exceeds 200 bytes".to_string()); }
+    if !["gcode", "nc", "apt", "proprietary"].contains(&(&value.dialect).as_str()) { return Err(format!("unsupported fab_instructions.dialect: {}", &value.dialect)); }
+    if (&value.storage_uri).as_bytes().len() > 2000 { return Err("fab_instructions.storage_uri exceeds 2000 bytes".to_string()); }
+    if !(&value.validation).is_object() { return Err("fab_instructions.validation must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_fab_instructions_insert(value: &FabInstructionsInsert) -> Result<(), String> {
+    if let Some(value) = &value.revision {
+        if *(value) < 1 { return Err("fab_instructions.revision is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.machine_profile {
+        if (value).as_bytes().len() > 200 { return Err("fab_instructions.machine_profile exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.dialect {
+        if !["gcode", "nc", "apt", "proprietary"].contains(&(value).as_str()) { return Err(format!("unsupported fab_instructions.dialect: {}", value)); }
+    }
+    if let Some(value) = &value.storage_uri {
+        if (value).as_bytes().len() > 2000 { return Err("fab_instructions.storage_uri exceeds 2000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.validation {
+        if !(value).is_object() { return Err("fab_instructions.validation must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const FAB_RUNS_TABLE: &str = "daedalus.fab_runs";
+pub const FAB_RUNS_COLUMNS: &[&str] = &["id", "status", "machine_id", "operator_email", "progress", "as_built", "error", "started_at", "finished_at", "created_at"];
+pub const FAB_RUNS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      status,
+      machine_id,
+      operator_email,
+      progress,
+      as_built,
+      error,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from daedalus.fab_runs"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FabRunsStatus {
+    Queued,
+    Running,
+    Succeeded,
+    Failed,
+    Aborted,
+}
+
+impl FabRunsStatus {
+    pub const VALUES: &'static [&'static str] = &["queued", "running", "succeeded", "failed", "aborted"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Running => "running",
+            Self::Succeeded => "succeeded",
+            Self::Failed => "failed",
+            Self::Aborted => "aborted",
+        }
+    }
+}
+
+impl TryFrom<&str> for FabRunsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "queued" => Ok(Self::Queued),
+            "running" => Ok(Self::Running),
+            "succeeded" => Ok(Self::Succeeded),
+            "failed" => Ok(Self::Failed),
+            "aborted" => Ok(Self::Aborted),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct FabRunsRow {
+    pub id: String,
+    pub status: String,
+    pub machine_id: String,
+    pub operator_email: Option<String>,
+    pub progress: i16,
+    pub as_built: Value,
+    pub error: Option<String>,
+    pub started_at: Option<String>,
+    pub finished_at: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FabRunsInsert {
+    pub id: Option<String>,
+    pub status: Option<String>,
+    pub machine_id: Option<String>,
+    pub operator_email: Option<String>,
+    pub progress: Option<i16>,
+    pub as_built: Option<Value>,
+    pub error: Option<String>,
+    pub started_at: Option<String>,
+    pub finished_at: Option<String>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_fab_runs_row(value: &FabRunsRow) -> Result<(), String> {
+    if !["queued", "running", "succeeded", "failed", "aborted"].contains(&(&value.status).as_str()) { return Err(format!("unsupported fab_runs.status: {}", &value.status)); }
+    if (&value.machine_id).as_bytes().len() > 200 { return Err("fab_runs.machine_id exceeds 200 bytes".to_string()); }
+    if *(&value.progress) < 0 { return Err("fab_runs.progress is below the minimum".to_string()); }
+    if *(&value.progress) > 100 { return Err("fab_runs.progress is above the maximum".to_string()); }
+    if !(&value.as_built).is_object() { return Err("fab_runs.as_built must be a JSON object".to_string()); }
+    if let Some(value) = &value.error {
+        if (value).as_bytes().len() > 20000 { return Err("fab_runs.error exceeds 20000 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub fn validate_fab_runs_insert(value: &FabRunsInsert) -> Result<(), String> {
+    if let Some(value) = &value.status {
+        if !["queued", "running", "succeeded", "failed", "aborted"].contains(&(value).as_str()) { return Err(format!("unsupported fab_runs.status: {}", value)); }
+    }
+    if let Some(value) = &value.machine_id {
+        if (value).as_bytes().len() > 200 { return Err("fab_runs.machine_id exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.progress {
+        if *(value) < 0 { return Err("fab_runs.progress is below the minimum".to_string()); }
+        if *(value) > 100 { return Err("fab_runs.progress is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.as_built {
+        if !(value).is_object() { return Err("fab_runs.as_built must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.error {
+        if (value).as_bytes().len() > 20000 { return Err("fab_runs.error exceeds 20000 bytes".to_string()); }
+    }
+    Ok(())
+}
+
 fn validate_string_length(field: &str, value: &str, min: Option<usize>, max: Option<usize>) -> Result<(), String> {
     let count = value.chars().count();
     if let Some(min) = min {

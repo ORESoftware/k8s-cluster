@@ -10898,6 +10898,284 @@ pub fn validate_vapi_events_slug(value: String) -> Result(String, String) {
   }
 }
 
+pub const fab_plans_table = "daedalus.fab_plans"
+pub const fab_plans_select_sql = "select\n      id::text as id,\n      owner_email,\n      title,\n      goal,\n      process_family,\n      status,\n      document::text as document_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from daedalus.fab_plans"
+
+pub type FabPlansProcessFamily {
+  FabPlansProcessFamilyAdditive
+  FabPlansProcessFamilySubtractive
+  FabPlansProcessFamilyHybrid
+}
+
+pub fn fab_plans_process_family_to_string(value: FabPlansProcessFamily) -> String {
+  case value {
+    FabPlansProcessFamilyAdditive -> "additive"
+    FabPlansProcessFamilySubtractive -> "subtractive"
+    FabPlansProcessFamilyHybrid -> "hybrid"
+  }
+}
+
+pub fn parse_fab_plans_process_family(value: String) -> Result(FabPlansProcessFamily, String) {
+  case value {
+    "additive" -> Ok(FabPlansProcessFamilyAdditive)
+    "subtractive" -> Ok(FabPlansProcessFamilySubtractive)
+    "hybrid" -> Ok(FabPlansProcessFamilyHybrid)
+    _ -> Error("unsupported fab_plans.process_family: " <> value)
+  }
+}
+
+pub type FabPlansStatus {
+  FabPlansStatusDraft
+  FabPlansStatusPlanning
+  FabPlansStatusPlanned
+  FabPlansStatusReleased
+  FabPlansStatusArchived
+}
+
+pub fn fab_plans_status_to_string(value: FabPlansStatus) -> String {
+  case value {
+    FabPlansStatusDraft -> "draft"
+    FabPlansStatusPlanning -> "planning"
+    FabPlansStatusPlanned -> "planned"
+    FabPlansStatusReleased -> "released"
+    FabPlansStatusArchived -> "archived"
+  }
+}
+
+pub fn parse_fab_plans_status(value: String) -> Result(FabPlansStatus, String) {
+  case value {
+    "draft" -> Ok(FabPlansStatusDraft)
+    "planning" -> Ok(FabPlansStatusPlanning)
+    "planned" -> Ok(FabPlansStatusPlanned)
+    "released" -> Ok(FabPlansStatusReleased)
+    "archived" -> Ok(FabPlansStatusArchived)
+    _ -> Error("unsupported fab_plans.status: " <> value)
+  }
+}
+
+pub type FabPlansRow {
+  FabPlansRow(
+    id: String,
+    owner_email: String,
+    title: String,
+    goal: String,
+    process_family: String,
+    status: String,
+    document_json: Option(String),
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_fab_plans_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("fab_plans.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_fab_plans_process_family(value: String) -> Result(String, String) {
+  case list.contains(["additive", "subtractive", "hybrid"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported fab_plans.process_family: " <> value)
+  }
+}
+
+pub fn validate_fab_plans_status(value: String) -> Result(String, String) {
+  case list.contains(["draft", "planning", "planned", "released", "archived"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported fab_plans.status: " <> value)
+  }
+}
+
+pub const fab_designs_table = "daedalus.fab_designs"
+pub const fab_designs_select_sql = "select\n      id::text as id,\n      plan_id::text as plan_id,\n      filename,\n      format,\n      storage_uri,\n      size_bytes,\n      content_hash,\n      geometry::text as geometry_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_designs"
+
+pub type FabDesignsFormat {
+  FabDesignsFormatStep
+  FabDesignsFormatStl
+  FabDesignsFormat3mf
+  FabDesignsFormatDxf
+  FabDesignsFormatIges
+  FabDesignsFormatObj
+}
+
+pub fn fab_designs_format_to_string(value: FabDesignsFormat) -> String {
+  case value {
+    FabDesignsFormatStep -> "step"
+    FabDesignsFormatStl -> "stl"
+    FabDesignsFormat3mf -> "3mf"
+    FabDesignsFormatDxf -> "dxf"
+    FabDesignsFormatIges -> "iges"
+    FabDesignsFormatObj -> "obj"
+  }
+}
+
+pub fn parse_fab_designs_format(value: String) -> Result(FabDesignsFormat, String) {
+  case value {
+    "step" -> Ok(FabDesignsFormatStep)
+    "stl" -> Ok(FabDesignsFormatStl)
+    "3mf" -> Ok(FabDesignsFormat3mf)
+    "dxf" -> Ok(FabDesignsFormatDxf)
+    "iges" -> Ok(FabDesignsFormatIges)
+    "obj" -> Ok(FabDesignsFormatObj)
+    _ -> Error("unsupported fab_designs.format: " <> value)
+  }
+}
+
+pub type FabDesignsRow {
+  FabDesignsRow(
+    id: String,
+    plan_id: String,
+    filename: String,
+    format: String,
+    storage_uri: String,
+    size_bytes: Int,
+    content_hash: Option(String),
+    geometry_json: String,
+    created_at: String,
+  )
+}
+
+pub fn validate_fab_designs_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("fab_designs.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_fab_designs_format(value: String) -> Result(String, String) {
+  case list.contains(["step", "stl", "3mf", "dxf", "iges", "obj"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported fab_designs.format: " <> value)
+  }
+}
+
+pub const fab_instructions_table = "daedalus.fab_instructions"
+pub const fab_instructions_select_sql = "select\n      id::text as id,\n      plan_id::text as plan_id,\n      revision,\n      machine_profile,\n      dialect,\n      storage_uri,\n      content_hash,\n      validated,\n      validation::text as validation_json,\n      released_by_email,\n      to_char(released_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as released_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_instructions"
+
+pub type FabInstructionsDialect {
+  FabInstructionsDialectGcode
+  FabInstructionsDialectNc
+  FabInstructionsDialectApt
+  FabInstructionsDialectProprietary
+}
+
+pub fn fab_instructions_dialect_to_string(value: FabInstructionsDialect) -> String {
+  case value {
+    FabInstructionsDialectGcode -> "gcode"
+    FabInstructionsDialectNc -> "nc"
+    FabInstructionsDialectApt -> "apt"
+    FabInstructionsDialectProprietary -> "proprietary"
+  }
+}
+
+pub fn parse_fab_instructions_dialect(value: String) -> Result(FabInstructionsDialect, String) {
+  case value {
+    "gcode" -> Ok(FabInstructionsDialectGcode)
+    "nc" -> Ok(FabInstructionsDialectNc)
+    "apt" -> Ok(FabInstructionsDialectApt)
+    "proprietary" -> Ok(FabInstructionsDialectProprietary)
+    _ -> Error("unsupported fab_instructions.dialect: " <> value)
+  }
+}
+
+pub type FabInstructionsRow {
+  FabInstructionsRow(
+    id: String,
+    plan_id: String,
+    revision: Int,
+    machine_profile: String,
+    dialect: String,
+    storage_uri: String,
+    content_hash: Option(String),
+    validated: Bool,
+    validation_json: String,
+    released_by_email: Option(String),
+    released_at: Option(String),
+    created_at: String,
+  )
+}
+
+pub fn validate_fab_instructions_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("fab_instructions.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_fab_instructions_dialect(value: String) -> Result(String, String) {
+  case list.contains(["gcode", "nc", "apt", "proprietary"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported fab_instructions.dialect: " <> value)
+  }
+}
+
+pub const fab_runs_table = "daedalus.fab_runs"
+pub const fab_runs_select_sql = "select\n      id::text as id,\n      status,\n      machine_id,\n      operator_email,\n      progress,\n      as_built::text as as_built_json,\n      error,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_runs"
+
+pub type FabRunsStatus {
+  FabRunsStatusQueued
+  FabRunsStatusRunning
+  FabRunsStatusSucceeded
+  FabRunsStatusFailed
+  FabRunsStatusAborted
+}
+
+pub fn fab_runs_status_to_string(value: FabRunsStatus) -> String {
+  case value {
+    FabRunsStatusQueued -> "queued"
+    FabRunsStatusRunning -> "running"
+    FabRunsStatusSucceeded -> "succeeded"
+    FabRunsStatusFailed -> "failed"
+    FabRunsStatusAborted -> "aborted"
+  }
+}
+
+pub fn parse_fab_runs_status(value: String) -> Result(FabRunsStatus, String) {
+  case value {
+    "queued" -> Ok(FabRunsStatusQueued)
+    "running" -> Ok(FabRunsStatusRunning)
+    "succeeded" -> Ok(FabRunsStatusSucceeded)
+    "failed" -> Ok(FabRunsStatusFailed)
+    "aborted" -> Ok(FabRunsStatusAborted)
+    _ -> Error("unsupported fab_runs.status: " <> value)
+  }
+}
+
+pub type FabRunsRow {
+  FabRunsRow(
+    id: String,
+    status: String,
+    machine_id: String,
+    operator_email: Option(String),
+    progress: Int,
+    as_built_json: String,
+    error: Option(String),
+    started_at: Option(String),
+    finished_at: Option(String),
+    created_at: String,
+  )
+}
+
+pub fn validate_fab_runs_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("fab_runs.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_fab_runs_status(value: String) -> Result(String, String) {
+  case list.contains(["queued", "running", "succeeded", "failed", "aborted"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported fab_runs.status: " <> value)
+  }
+}
+
 fn is_slug_text(value: String) -> Bool {
   let chars = string.to_graphemes(value)
   case chars {

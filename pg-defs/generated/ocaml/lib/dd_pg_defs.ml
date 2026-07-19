@@ -11396,3 +11396,239 @@ let vapi_events_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : vap
     vapi_events_payload = get 3;
     vapi_events_created_at = get 4;
   }
+
+let fab_plans_table = "daedalus.fab_plans"
+
+let fab_plans_columns = ["id"; "owner_email"; "title"; "goal"; "process_family"; "status"; "document"; "created_at"; "updated_at"]
+
+let fab_plans_select_sql = "select\n      id::text as id,\n      owner_email,\n      title,\n      goal,\n      process_family,\n      status,\n      document::text as document_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from daedalus.fab_plans"
+
+type fab_plans_process_family = [ `Additive | `Subtractive | `Hybrid ]
+
+let fab_plans_process_family_to_string (value : fab_plans_process_family) : string =
+  match value with
+  | `Additive -> "additive"
+  | `Subtractive -> "subtractive"
+  | `Hybrid -> "hybrid"
+
+let parse_fab_plans_process_family (value : string) : (fab_plans_process_family, string) result =
+  match value with
+  | "additive" -> Ok `Additive
+  | "subtractive" -> Ok `Subtractive
+  | "hybrid" -> Ok `Hybrid
+  | _ -> Error ("unsupported fab_plans.process_family: " ^ value)
+
+type fab_plans_status = [ `Draft | `Planning | `Planned | `Released | `Archived ]
+
+let fab_plans_status_to_string (value : fab_plans_status) : string =
+  match value with
+  | `Draft -> "draft"
+  | `Planning -> "planning"
+  | `Planned -> "planned"
+  | `Released -> "released"
+  | `Archived -> "archived"
+
+let parse_fab_plans_status (value : string) : (fab_plans_status, string) result =
+  match value with
+  | "draft" -> Ok `Draft
+  | "planning" -> Ok `Planning
+  | "planned" -> Ok `Planned
+  | "released" -> Ok `Released
+  | "archived" -> Ok `Archived
+  | _ -> Error ("unsupported fab_plans.status: " ^ value)
+
+type fab_plans_row = {
+  fab_plans_id : string;
+  fab_plans_owner_email : string;
+  fab_plans_title : string;
+  fab_plans_goal : string;
+  fab_plans_process_family : string;
+  fab_plans_status : string;
+  fab_plans_document : string option;
+  fab_plans_created_at : string;
+  fab_plans_updated_at : string;
+}
+
+let fab_plans_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : fab_plans_row =
+  {
+    fab_plans_id = get 0;
+    fab_plans_owner_email = get 1;
+    fab_plans_title = get 2;
+    fab_plans_goal = get 3;
+    fab_plans_process_family = get 4;
+    fab_plans_status = get 5;
+    fab_plans_document = (if is_null 6 then None else Some (get 6));
+    fab_plans_created_at = get 7;
+    fab_plans_updated_at = get 8;
+  }
+
+let fab_designs_table = "daedalus.fab_designs"
+
+let fab_designs_columns = ["id"; "plan_id"; "filename"; "format"; "storage_uri"; "size_bytes"; "content_hash"; "geometry"; "created_at"]
+
+let fab_designs_select_sql = "select\n      id::text as id,\n      plan_id::text as plan_id,\n      filename,\n      format,\n      storage_uri,\n      size_bytes,\n      content_hash,\n      geometry::text as geometry_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_designs"
+
+type fab_designs_format = [ `Step | `Stl | `3mf | `Dxf | `Iges | `Obj ]
+
+let fab_designs_format_to_string (value : fab_designs_format) : string =
+  match value with
+  | `Step -> "step"
+  | `Stl -> "stl"
+  | `3mf -> "3mf"
+  | `Dxf -> "dxf"
+  | `Iges -> "iges"
+  | `Obj -> "obj"
+
+let parse_fab_designs_format (value : string) : (fab_designs_format, string) result =
+  match value with
+  | "step" -> Ok `Step
+  | "stl" -> Ok `Stl
+  | "3mf" -> Ok `3mf
+  | "dxf" -> Ok `Dxf
+  | "iges" -> Ok `Iges
+  | "obj" -> Ok `Obj
+  | _ -> Error ("unsupported fab_designs.format: " ^ value)
+
+type fab_designs_row = {
+  fab_designs_id : string;
+  fab_designs_plan_id : string;
+  fab_designs_filename : string;
+  fab_designs_format : string;
+  fab_designs_storage_uri : string;
+  fab_designs_size_bytes : int64;
+  fab_designs_content_hash : string option;
+  fab_designs_geometry : string;
+  fab_designs_created_at : string;
+}
+
+let fab_designs_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : fab_designs_row =
+  {
+    fab_designs_id = get 0;
+    fab_designs_plan_id = get 1;
+    fab_designs_filename = get 2;
+    fab_designs_format = get 3;
+    fab_designs_storage_uri = get 4;
+    fab_designs_size_bytes = Int64.of_string (get 5);
+    fab_designs_content_hash = (if is_null 6 then None else Some (get 6));
+    fab_designs_geometry = get 7;
+    fab_designs_created_at = get 8;
+  }
+
+let validate_fab_designs_size_bytes (value : int64) : (int64, string) result =
+  if Int64.compare value 0L < 0 then Error "fab_designs.size_bytes is below the minimum"
+  else Ok value
+
+let fab_instructions_table = "daedalus.fab_instructions"
+
+let fab_instructions_columns = ["id"; "plan_id"; "revision"; "machine_profile"; "dialect"; "storage_uri"; "content_hash"; "validated"; "validation"; "released_by_email"; "released_at"; "created_at"]
+
+let fab_instructions_select_sql = "select\n      id::text as id,\n      plan_id::text as plan_id,\n      revision,\n      machine_profile,\n      dialect,\n      storage_uri,\n      content_hash,\n      validated,\n      validation::text as validation_json,\n      released_by_email,\n      to_char(released_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as released_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_instructions"
+
+type fab_instructions_dialect = [ `Gcode | `Nc | `Apt | `Proprietary ]
+
+let fab_instructions_dialect_to_string (value : fab_instructions_dialect) : string =
+  match value with
+  | `Gcode -> "gcode"
+  | `Nc -> "nc"
+  | `Apt -> "apt"
+  | `Proprietary -> "proprietary"
+
+let parse_fab_instructions_dialect (value : string) : (fab_instructions_dialect, string) result =
+  match value with
+  | "gcode" -> Ok `Gcode
+  | "nc" -> Ok `Nc
+  | "apt" -> Ok `Apt
+  | "proprietary" -> Ok `Proprietary
+  | _ -> Error ("unsupported fab_instructions.dialect: " ^ value)
+
+type fab_instructions_row = {
+  fab_instructions_id : string;
+  fab_instructions_plan_id : string;
+  fab_instructions_revision : int;
+  fab_instructions_machine_profile : string;
+  fab_instructions_dialect : string;
+  fab_instructions_storage_uri : string;
+  fab_instructions_content_hash : string option;
+  fab_instructions_validated : bool;
+  fab_instructions_validation : string;
+  fab_instructions_released_by_email : string option;
+  fab_instructions_released_at : string option;
+  fab_instructions_created_at : string;
+}
+
+let fab_instructions_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : fab_instructions_row =
+  {
+    fab_instructions_id = get 0;
+    fab_instructions_plan_id = get 1;
+    fab_instructions_revision = int_of_string (get 2);
+    fab_instructions_machine_profile = get 3;
+    fab_instructions_dialect = get 4;
+    fab_instructions_storage_uri = get 5;
+    fab_instructions_content_hash = (if is_null 6 then None else Some (get 6));
+    fab_instructions_validated = (get 7 = "t");
+    fab_instructions_validation = get 8;
+    fab_instructions_released_by_email = (if is_null 9 then None else Some (get 9));
+    fab_instructions_released_at = (if is_null 10 then None else Some (get 10));
+    fab_instructions_created_at = get 11;
+  }
+
+let validate_fab_instructions_revision (value : int) : (int, string) result =
+  if value < 1 then Error "fab_instructions.revision is below the minimum"
+  else Ok value
+
+let fab_runs_table = "daedalus.fab_runs"
+
+let fab_runs_columns = ["id"; "status"; "machine_id"; "operator_email"; "progress"; "as_built"; "error"; "started_at"; "finished_at"; "created_at"]
+
+let fab_runs_select_sql = "select\n      id::text as id,\n      status,\n      machine_id,\n      operator_email,\n      progress,\n      as_built::text as as_built_json,\n      error,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_runs"
+
+type fab_runs_status = [ `Queued | `Running | `Succeeded | `Failed | `Aborted ]
+
+let fab_runs_status_to_string (value : fab_runs_status) : string =
+  match value with
+  | `Queued -> "queued"
+  | `Running -> "running"
+  | `Succeeded -> "succeeded"
+  | `Failed -> "failed"
+  | `Aborted -> "aborted"
+
+let parse_fab_runs_status (value : string) : (fab_runs_status, string) result =
+  match value with
+  | "queued" -> Ok `Queued
+  | "running" -> Ok `Running
+  | "succeeded" -> Ok `Succeeded
+  | "failed" -> Ok `Failed
+  | "aborted" -> Ok `Aborted
+  | _ -> Error ("unsupported fab_runs.status: " ^ value)
+
+type fab_runs_row = {
+  fab_runs_id : string;
+  fab_runs_status : string;
+  fab_runs_machine_id : string;
+  fab_runs_operator_email : string option;
+  fab_runs_progress : int;
+  fab_runs_as_built : string;
+  fab_runs_error : string option;
+  fab_runs_started_at : string option;
+  fab_runs_finished_at : string option;
+  fab_runs_created_at : string;
+}
+
+let fab_runs_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : fab_runs_row =
+  {
+    fab_runs_id = get 0;
+    fab_runs_status = get 1;
+    fab_runs_machine_id = get 2;
+    fab_runs_operator_email = (if is_null 3 then None else Some (get 3));
+    fab_runs_progress = int_of_string (get 4);
+    fab_runs_as_built = get 5;
+    fab_runs_error = (if is_null 6 then None else Some (get 6));
+    fab_runs_started_at = (if is_null 7 then None else Some (get 7));
+    fab_runs_finished_at = (if is_null 8 then None else Some (get 8));
+    fab_runs_created_at = get 9;
+  }
+
+let validate_fab_runs_progress (value : int) : (int, string) result =
+  if value < 0 then Error "fab_runs.progress is below the minimum"
+  else if value > 100 then Error "fab_runs.progress is above the maximum"
+  else Ok value

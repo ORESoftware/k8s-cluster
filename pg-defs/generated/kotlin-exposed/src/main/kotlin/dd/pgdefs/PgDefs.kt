@@ -2691,6 +2691,66 @@ object VapiEvents : Table("t2v.vapi_events") {
     override val primaryKey = PrimaryKey(id)
 }
 
+object FabPlans : Table("daedalus.fab_plans") {
+    val id = uuid("id")
+    val ownerEmail = text("owner_email")
+    val title = text("title")
+    val goal = text("goal")
+    val processFamily = text("process_family")
+    val status = text("status")
+    val document = jsonb<String>("document", { it }, { it }).nullable()
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object FabDesigns : Table("daedalus.fab_designs") {
+    val id = uuid("id")
+    val planId = uuid("plan_id")
+    val filename = text("filename")
+    val format = text("format")
+    val storageUri = text("storage_uri")
+    val sizeBytes = long("size_bytes")
+    val contentHash = text("content_hash").nullable()
+    val geometry = jsonb<String>("geometry", { it }, { it })
+    val createdAt = timestampWithTimeZone("created_at")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object FabInstructions : Table("daedalus.fab_instructions") {
+    val id = uuid("id")
+    val planId = uuid("plan_id")
+    val revision = integer("revision")
+    val machineProfile = text("machine_profile")
+    val dialect = text("dialect")
+    val storageUri = text("storage_uri")
+    val contentHash = text("content_hash").nullable()
+    val validated = bool("validated")
+    val validation = jsonb<String>("validation", { it }, { it })
+    val releasedByEmail = text("released_by_email").nullable()
+    val releasedAt = timestampWithTimeZone("released_at").nullable()
+    val createdAt = timestampWithTimeZone("created_at")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object FabRuns : Table("daedalus.fab_runs") {
+    val id = uuid("id")
+    val status = text("status")
+    val machineId = text("machine_id")
+    val operatorEmail = text("operator_email").nullable()
+    val progress = short("progress")
+    val asBuilt = jsonb<String>("as_built", { it }, { it })
+    val error = text("error").nullable()
+    val startedAt = timestampWithTimeZone("started_at").nullable()
+    val finishedAt = timestampWithTimeZone("finished_at").nullable()
+    val createdAt = timestampWithTimeZone("created_at")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
 data class AccountsRow(
     val id: UUID,
     val username: String,
@@ -7457,4 +7517,108 @@ fun toVapiEventsRow(row: ResultRow): VapiEventsRow = VapiEventsRow(
     row[VapiEvents.eventType],
     row[VapiEvents.payload],
     row[VapiEvents.createdAt],
+)
+
+data class FabPlansRow(
+    val id: UUID,
+    val ownerEmail: String,
+    val title: String,
+    val goal: String,
+    val processFamily: String,
+    val status: String,
+    val document: String?,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+)
+
+fun toFabPlansRow(row: ResultRow): FabPlansRow = FabPlansRow(
+    row[FabPlans.id],
+    row[FabPlans.ownerEmail],
+    row[FabPlans.title],
+    row[FabPlans.goal],
+    row[FabPlans.processFamily],
+    row[FabPlans.status],
+    row[FabPlans.document],
+    row[FabPlans.createdAt],
+    row[FabPlans.updatedAt],
+)
+
+data class FabDesignsRow(
+    val id: UUID,
+    val planId: UUID,
+    val filename: String,
+    val format: String,
+    val storageUri: String,
+    val sizeBytes: Long,
+    val contentHash: String?,
+    val geometry: String,
+    val createdAt: OffsetDateTime,
+)
+
+fun toFabDesignsRow(row: ResultRow): FabDesignsRow = FabDesignsRow(
+    row[FabDesigns.id],
+    row[FabDesigns.planId],
+    row[FabDesigns.filename],
+    row[FabDesigns.format],
+    row[FabDesigns.storageUri],
+    row[FabDesigns.sizeBytes],
+    row[FabDesigns.contentHash],
+    row[FabDesigns.geometry],
+    row[FabDesigns.createdAt],
+)
+
+data class FabInstructionsRow(
+    val id: UUID,
+    val planId: UUID,
+    val revision: Int,
+    val machineProfile: String,
+    val dialect: String,
+    val storageUri: String,
+    val contentHash: String?,
+    val validated: Boolean,
+    val validation: String,
+    val releasedByEmail: String?,
+    val releasedAt: OffsetDateTime?,
+    val createdAt: OffsetDateTime,
+)
+
+fun toFabInstructionsRow(row: ResultRow): FabInstructionsRow = FabInstructionsRow(
+    row[FabInstructions.id],
+    row[FabInstructions.planId],
+    row[FabInstructions.revision],
+    row[FabInstructions.machineProfile],
+    row[FabInstructions.dialect],
+    row[FabInstructions.storageUri],
+    row[FabInstructions.contentHash],
+    row[FabInstructions.validated],
+    row[FabInstructions.validation],
+    row[FabInstructions.releasedByEmail],
+    row[FabInstructions.releasedAt],
+    row[FabInstructions.createdAt],
+)
+
+data class FabRunsRow(
+    val id: UUID,
+    val status: String,
+    val machineId: String,
+    val operatorEmail: String?,
+    val progress: Short,
+    val asBuilt: String,
+    val error: String?,
+    val startedAt: OffsetDateTime?,
+    val finishedAt: OffsetDateTime?,
+    val createdAt: OffsetDateTime,
+)
+
+fun toFabRunsRow(row: ResultRow): FabRunsRow = FabRunsRow(
+    row[FabRuns.id],
+    row[FabRuns.status],
+    row[FabRuns.machineId],
+    row[FabRuns.operatorEmail],
+    row[FabRuns.progress],
+    row[FabRuns.asBuilt],
+    row[FabRuns.error],
+    row[FabRuns.startedAt],
+    row[FabRuns.finishedAt],
+    row[FabRuns.createdAt],
 )

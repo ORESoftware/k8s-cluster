@@ -4157,3 +4157,106 @@ class VapiEvents extends Model
         ];
     }
 }
+
+class FabPlans extends Model
+{
+    protected $table = 'daedalus.fab_plans';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = true;
+    protected $fillable = ['owner_email', 'title', 'goal', 'process_family', 'status', 'document', 'created_at', 'updated_at'];
+    protected $casts = ['document' => 'array', 'created_at' => 'datetime', 'updated_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'owner_email' => ['required', 'string'],
+            'title' => ['required', 'string'],
+            'goal' => ['required', 'string'],
+            'process_family' => ['nullable', 'string', 'in:additive,subtractive,hybrid'],
+            'status' => ['nullable', 'string', 'in:draft,planning,planned,released,archived'],
+            'document' => ['nullable', 'array'],
+        ];
+    }
+}
+
+class FabDesigns extends Model
+{
+    protected $table = 'daedalus.fab_designs';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+    protected $fillable = ['plan_id', 'filename', 'format', 'storage_uri', 'size_bytes', 'content_hash', 'geometry', 'created_at'];
+    protected $casts = ['size_bytes' => 'integer', 'geometry' => 'array', 'created_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'plan_id' => ['required', 'uuid'],
+            'filename' => ['required', 'string'],
+            'format' => ['required', 'string', 'in:step,stl,3mf,dxf,iges,obj'],
+            'storage_uri' => ['required', 'string'],
+            'size_bytes' => ['nullable', 'integer', 'min:0'],
+            'content_hash' => ['nullable', 'string'],
+            'geometry' => ['nullable', 'array'],
+        ];
+    }
+}
+
+class FabInstructions extends Model
+{
+    protected $table = 'daedalus.fab_instructions';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+    protected $fillable = ['plan_id', 'revision', 'machine_profile', 'dialect', 'storage_uri', 'content_hash', 'validated', 'validation', 'released_by_email', 'released_at', 'created_at'];
+    protected $casts = ['revision' => 'integer', 'validated' => 'boolean', 'validation' => 'array', 'released_at' => 'datetime', 'created_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'plan_id' => ['required', 'uuid'],
+            'revision' => ['nullable', 'integer', 'min:1'],
+            'machine_profile' => ['required', 'string'],
+            'dialect' => ['nullable', 'string', 'in:gcode,nc,apt,proprietary'],
+            'storage_uri' => ['required', 'string'],
+            'content_hash' => ['nullable', 'string'],
+            'validated' => ['nullable', 'boolean'],
+            'validation' => ['nullable', 'array'],
+            'released_by_email' => ['nullable', 'string'],
+            'released_at' => ['nullable', 'date'],
+        ];
+    }
+}
+
+class FabRuns extends Model
+{
+    protected $table = 'daedalus.fab_runs';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+    protected $fillable = ['status', 'machine_id', 'operator_email', 'progress', 'as_built', 'error', 'started_at', 'finished_at', 'created_at'];
+    protected $casts = ['progress' => 'integer', 'as_built' => 'array', 'started_at' => 'datetime', 'finished_at' => 'datetime', 'created_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'status' => ['nullable', 'string', 'in:queued,running,succeeded,failed,aborted'],
+            'machine_id' => ['required', 'string'],
+            'operator_email' => ['nullable', 'string'],
+            'progress' => ['nullable', 'integer', 'min:0', 'max:100'],
+            'as_built' => ['nullable', 'array'],
+            'error' => ['nullable', 'string'],
+            'started_at' => ['nullable', 'date'],
+            'finished_at' => ['nullable', 'date'],
+        ];
+    }
+}

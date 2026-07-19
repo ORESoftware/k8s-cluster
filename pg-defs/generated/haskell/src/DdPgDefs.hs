@@ -10450,3 +10450,215 @@ data VapiEventsRow = VapiEventsRow
 
 instance FromRow VapiEventsRow where
   fromRow = VapiEventsRow <$> field <*> field <*> field <*> field <*> field
+
+fabPlansTable :: Text
+fabPlansTable = "daedalus.fab_plans"
+
+fabPlansColumns :: [Text]
+fabPlansColumns = ["id", "owner_email", "title", "goal", "process_family", "status", "document", "created_at", "updated_at"]
+
+fabPlansSelectSql :: Text
+fabPlansSelectSql = "select\n      id::text as id,\n      owner_email,\n      title,\n      goal,\n      process_family,\n      status,\n      document::text as document_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from daedalus.fab_plans"
+
+data FabPlansProcessFamily = FabPlansProcessFamilyAdditive | FabPlansProcessFamilySubtractive | FabPlansProcessFamilyHybrid
+  deriving (Eq, Show)
+
+fabPlansProcessFamilyToText :: FabPlansProcessFamily -> Text
+fabPlansProcessFamilyToText value = case value of
+  FabPlansProcessFamilyAdditive -> "additive"
+  FabPlansProcessFamilySubtractive -> "subtractive"
+  FabPlansProcessFamilyHybrid -> "hybrid"
+
+parseFabPlansProcessFamily :: Text -> Either Text FabPlansProcessFamily
+parseFabPlansProcessFamily value = case value of
+  "additive" -> Right FabPlansProcessFamilyAdditive
+  "subtractive" -> Right FabPlansProcessFamilySubtractive
+  "hybrid" -> Right FabPlansProcessFamilyHybrid
+  _ -> Left (T.append "unsupported fab_plans.process_family: " value)
+
+data FabPlansStatus = FabPlansStatusDraft | FabPlansStatusPlanning | FabPlansStatusPlanned | FabPlansStatusReleased | FabPlansStatusArchived
+  deriving (Eq, Show)
+
+fabPlansStatusToText :: FabPlansStatus -> Text
+fabPlansStatusToText value = case value of
+  FabPlansStatusDraft -> "draft"
+  FabPlansStatusPlanning -> "planning"
+  FabPlansStatusPlanned -> "planned"
+  FabPlansStatusReleased -> "released"
+  FabPlansStatusArchived -> "archived"
+
+parseFabPlansStatus :: Text -> Either Text FabPlansStatus
+parseFabPlansStatus value = case value of
+  "draft" -> Right FabPlansStatusDraft
+  "planning" -> Right FabPlansStatusPlanning
+  "planned" -> Right FabPlansStatusPlanned
+  "released" -> Right FabPlansStatusReleased
+  "archived" -> Right FabPlansStatusArchived
+  _ -> Left (T.append "unsupported fab_plans.status: " value)
+
+data FabPlansRow = FabPlansRow
+  { fabPlansId :: Text
+  , fabPlansOwnerEmail :: Text
+  , fabPlansTitle :: Text
+  , fabPlansGoal :: Text
+  , fabPlansProcessFamily :: Text
+  , fabPlansStatus :: Text
+  , fabPlansDocument :: (Maybe Text)
+  , fabPlansCreatedAt :: Text
+  , fabPlansUpdatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow FabPlansRow where
+  fromRow = FabPlansRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+fabDesignsTable :: Text
+fabDesignsTable = "daedalus.fab_designs"
+
+fabDesignsColumns :: [Text]
+fabDesignsColumns = ["id", "plan_id", "filename", "format", "storage_uri", "size_bytes", "content_hash", "geometry", "created_at"]
+
+fabDesignsSelectSql :: Text
+fabDesignsSelectSql = "select\n      id::text as id,\n      plan_id::text as plan_id,\n      filename,\n      format,\n      storage_uri,\n      size_bytes,\n      content_hash,\n      geometry::text as geometry_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_designs"
+
+data FabDesignsFormat = FabDesignsFormatStep | FabDesignsFormatStl | FabDesignsFormat3mf | FabDesignsFormatDxf | FabDesignsFormatIges | FabDesignsFormatObj
+  deriving (Eq, Show)
+
+fabDesignsFormatToText :: FabDesignsFormat -> Text
+fabDesignsFormatToText value = case value of
+  FabDesignsFormatStep -> "step"
+  FabDesignsFormatStl -> "stl"
+  FabDesignsFormat3mf -> "3mf"
+  FabDesignsFormatDxf -> "dxf"
+  FabDesignsFormatIges -> "iges"
+  FabDesignsFormatObj -> "obj"
+
+parseFabDesignsFormat :: Text -> Either Text FabDesignsFormat
+parseFabDesignsFormat value = case value of
+  "step" -> Right FabDesignsFormatStep
+  "stl" -> Right FabDesignsFormatStl
+  "3mf" -> Right FabDesignsFormat3mf
+  "dxf" -> Right FabDesignsFormatDxf
+  "iges" -> Right FabDesignsFormatIges
+  "obj" -> Right FabDesignsFormatObj
+  _ -> Left (T.append "unsupported fab_designs.format: " value)
+
+data FabDesignsRow = FabDesignsRow
+  { fabDesignsId :: Text
+  , fabDesignsPlanId :: Text
+  , fabDesignsFilename :: Text
+  , fabDesignsFormat :: Text
+  , fabDesignsStorageUri :: Text
+  , fabDesignsSizeBytes :: Int
+  , fabDesignsContentHash :: (Maybe Text)
+  , fabDesignsGeometry :: Text
+  , fabDesignsCreatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow FabDesignsRow where
+  fromRow = FabDesignsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateFabDesignsSizeBytes :: Int -> Either Text Int
+validateFabDesignsSizeBytes value
+  | value < 0 = Left "fab_designs.size_bytes is below the minimum"
+  | otherwise = Right value
+
+fabInstructionsTable :: Text
+fabInstructionsTable = "daedalus.fab_instructions"
+
+fabInstructionsColumns :: [Text]
+fabInstructionsColumns = ["id", "plan_id", "revision", "machine_profile", "dialect", "storage_uri", "content_hash", "validated", "validation", "released_by_email", "released_at", "created_at"]
+
+fabInstructionsSelectSql :: Text
+fabInstructionsSelectSql = "select\n      id::text as id,\n      plan_id::text as plan_id,\n      revision,\n      machine_profile,\n      dialect,\n      storage_uri,\n      content_hash,\n      validated,\n      validation::text as validation_json,\n      released_by_email,\n      to_char(released_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as released_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_instructions"
+
+data FabInstructionsDialect = FabInstructionsDialectGcode | FabInstructionsDialectNc | FabInstructionsDialectApt | FabInstructionsDialectProprietary
+  deriving (Eq, Show)
+
+fabInstructionsDialectToText :: FabInstructionsDialect -> Text
+fabInstructionsDialectToText value = case value of
+  FabInstructionsDialectGcode -> "gcode"
+  FabInstructionsDialectNc -> "nc"
+  FabInstructionsDialectApt -> "apt"
+  FabInstructionsDialectProprietary -> "proprietary"
+
+parseFabInstructionsDialect :: Text -> Either Text FabInstructionsDialect
+parseFabInstructionsDialect value = case value of
+  "gcode" -> Right FabInstructionsDialectGcode
+  "nc" -> Right FabInstructionsDialectNc
+  "apt" -> Right FabInstructionsDialectApt
+  "proprietary" -> Right FabInstructionsDialectProprietary
+  _ -> Left (T.append "unsupported fab_instructions.dialect: " value)
+
+data FabInstructionsRow = FabInstructionsRow
+  { fabInstructionsId :: Text
+  , fabInstructionsPlanId :: Text
+  , fabInstructionsRevision :: Int
+  , fabInstructionsMachineProfile :: Text
+  , fabInstructionsDialect :: Text
+  , fabInstructionsStorageUri :: Text
+  , fabInstructionsContentHash :: (Maybe Text)
+  , fabInstructionsValidated :: Bool
+  , fabInstructionsValidation :: Text
+  , fabInstructionsReleasedByEmail :: (Maybe Text)
+  , fabInstructionsReleasedAt :: (Maybe Text)
+  , fabInstructionsCreatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow FabInstructionsRow where
+  fromRow = FabInstructionsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateFabInstructionsRevision :: Int -> Either Text Int
+validateFabInstructionsRevision value
+  | value < 1 = Left "fab_instructions.revision is below the minimum"
+  | otherwise = Right value
+
+fabRunsTable :: Text
+fabRunsTable = "daedalus.fab_runs"
+
+fabRunsColumns :: [Text]
+fabRunsColumns = ["id", "status", "machine_id", "operator_email", "progress", "as_built", "error", "started_at", "finished_at", "created_at"]
+
+fabRunsSelectSql :: Text
+fabRunsSelectSql = "select\n      id::text as id,\n      status,\n      machine_id,\n      operator_email,\n      progress,\n      as_built::text as as_built_json,\n      error,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_runs"
+
+data FabRunsStatus = FabRunsStatusQueued | FabRunsStatusRunning | FabRunsStatusSucceeded | FabRunsStatusFailed | FabRunsStatusAborted
+  deriving (Eq, Show)
+
+fabRunsStatusToText :: FabRunsStatus -> Text
+fabRunsStatusToText value = case value of
+  FabRunsStatusQueued -> "queued"
+  FabRunsStatusRunning -> "running"
+  FabRunsStatusSucceeded -> "succeeded"
+  FabRunsStatusFailed -> "failed"
+  FabRunsStatusAborted -> "aborted"
+
+parseFabRunsStatus :: Text -> Either Text FabRunsStatus
+parseFabRunsStatus value = case value of
+  "queued" -> Right FabRunsStatusQueued
+  "running" -> Right FabRunsStatusRunning
+  "succeeded" -> Right FabRunsStatusSucceeded
+  "failed" -> Right FabRunsStatusFailed
+  "aborted" -> Right FabRunsStatusAborted
+  _ -> Left (T.append "unsupported fab_runs.status: " value)
+
+data FabRunsRow = FabRunsRow
+  { fabRunsId :: Text
+  , fabRunsStatus :: Text
+  , fabRunsMachineId :: Text
+  , fabRunsOperatorEmail :: (Maybe Text)
+  , fabRunsProgress :: Int
+  , fabRunsAsBuilt :: Text
+  , fabRunsError :: (Maybe Text)
+  , fabRunsStartedAt :: (Maybe Text)
+  , fabRunsFinishedAt :: (Maybe Text)
+  , fabRunsCreatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow FabRunsRow where
+  fromRow = FabRunsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateFabRunsProgress :: Int -> Either Text Int
+validateFabRunsProgress value
+  | value < 0 = Left "fab_runs.progress is below the minimum"
+  | value > 100 = Left "fab_runs.progress is above the maximum"
+  | otherwise = Right value

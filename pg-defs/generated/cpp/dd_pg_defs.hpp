@@ -13800,4 +13800,289 @@ inline VapiEventsRow vapi_events_row_of_row(const std::function<std::string(int)
     return row;
 }
 
+inline const char* fab_plans_table = "daedalus.fab_plans";
+inline const std::vector<std::string> fab_plans_columns = { "id", "owner_email", "title", "goal", "process_family", "status", "document", "created_at", "updated_at" };
+inline const char* fab_plans_select_sql = R"SQL(select
+      id::text as id,
+      owner_email,
+      title,
+      goal,
+      process_family,
+      status,
+      document::text as document_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from daedalus.fab_plans)SQL";
+
+enum class FabPlansProcessFamily { Additive, Subtractive, Hybrid };
+inline std::string fab_plans_process_family_to_string(FabPlansProcessFamily value) {
+    switch (value) {
+        case FabPlansProcessFamily::Additive: return "additive";
+        case FabPlansProcessFamily::Subtractive: return "subtractive";
+        case FabPlansProcessFamily::Hybrid: return "hybrid";
+    }
+    return "";
+}
+inline std::optional<FabPlansProcessFamily> parse_fab_plans_process_family(const std::string& value) {
+    if (value == "additive") return FabPlansProcessFamily::Additive;
+    if (value == "subtractive") return FabPlansProcessFamily::Subtractive;
+    if (value == "hybrid") return FabPlansProcessFamily::Hybrid;
+    return std::nullopt;
+}
+
+enum class FabPlansStatus { Draft, Planning, Planned, Released, Archived };
+inline std::string fab_plans_status_to_string(FabPlansStatus value) {
+    switch (value) {
+        case FabPlansStatus::Draft: return "draft";
+        case FabPlansStatus::Planning: return "planning";
+        case FabPlansStatus::Planned: return "planned";
+        case FabPlansStatus::Released: return "released";
+        case FabPlansStatus::Archived: return "archived";
+    }
+    return "";
+}
+inline std::optional<FabPlansStatus> parse_fab_plans_status(const std::string& value) {
+    if (value == "draft") return FabPlansStatus::Draft;
+    if (value == "planning") return FabPlansStatus::Planning;
+    if (value == "planned") return FabPlansStatus::Planned;
+    if (value == "released") return FabPlansStatus::Released;
+    if (value == "archived") return FabPlansStatus::Archived;
+    return std::nullopt;
+}
+
+struct FabPlansRow {
+    std::string id;
+    std::string owner_email;
+    std::string title;
+    std::string goal;
+    std::string process_family;
+    std::string status;
+    std::optional<std::string> document;
+    std::string created_at;
+    std::string updated_at;
+};
+
+inline FabPlansRow fab_plans_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    FabPlansRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.owner_email = get(1);
+    row.title = get(2);
+    row.goal = get(3);
+    row.process_family = get(4);
+    row.status = get(5);
+    row.document = is_null(6) ? std::nullopt : std::optional<std::string>(get(6));
+    row.created_at = get(7);
+    row.updated_at = get(8);
+    return row;
+}
+
+inline const char* fab_designs_table = "daedalus.fab_designs";
+inline const std::vector<std::string> fab_designs_columns = { "id", "plan_id", "filename", "format", "storage_uri", "size_bytes", "content_hash", "geometry", "created_at" };
+inline const char* fab_designs_select_sql = R"SQL(select
+      id::text as id,
+      plan_id::text as plan_id,
+      filename,
+      format,
+      storage_uri,
+      size_bytes,
+      content_hash,
+      geometry::text as geometry_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from daedalus.fab_designs)SQL";
+
+enum class FabDesignsFormat { Step, Stl, 3mf, Dxf, Iges, Obj };
+inline std::string fab_designs_format_to_string(FabDesignsFormat value) {
+    switch (value) {
+        case FabDesignsFormat::Step: return "step";
+        case FabDesignsFormat::Stl: return "stl";
+        case FabDesignsFormat::3mf: return "3mf";
+        case FabDesignsFormat::Dxf: return "dxf";
+        case FabDesignsFormat::Iges: return "iges";
+        case FabDesignsFormat::Obj: return "obj";
+    }
+    return "";
+}
+inline std::optional<FabDesignsFormat> parse_fab_designs_format(const std::string& value) {
+    if (value == "step") return FabDesignsFormat::Step;
+    if (value == "stl") return FabDesignsFormat::Stl;
+    if (value == "3mf") return FabDesignsFormat::3mf;
+    if (value == "dxf") return FabDesignsFormat::Dxf;
+    if (value == "iges") return FabDesignsFormat::Iges;
+    if (value == "obj") return FabDesignsFormat::Obj;
+    return std::nullopt;
+}
+
+struct FabDesignsRow {
+    std::string id;
+    std::string plan_id;
+    std::string filename;
+    std::string format;
+    std::string storage_uri;
+    int64_t size_bytes;
+    std::optional<std::string> content_hash;
+    std::string geometry;
+    std::string created_at;
+};
+
+inline FabDesignsRow fab_designs_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    FabDesignsRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.plan_id = get(1);
+    row.filename = get(2);
+    row.format = get(3);
+    row.storage_uri = get(4);
+    row.size_bytes = std::stoll(get(5));
+    row.content_hash = is_null(6) ? std::nullopt : std::optional<std::string>(get(6));
+    row.geometry = get(7);
+    row.created_at = get(8);
+    return row;
+}
+inline std::optional<std::string> validate_fab_designs_size_bytes(int64_t value) {
+    if (value < 0) return std::string("fab_designs.size_bytes is below the minimum");
+    return std::nullopt;
+}
+
+inline const char* fab_instructions_table = "daedalus.fab_instructions";
+inline const std::vector<std::string> fab_instructions_columns = { "id", "plan_id", "revision", "machine_profile", "dialect", "storage_uri", "content_hash", "validated", "validation", "released_by_email", "released_at", "created_at" };
+inline const char* fab_instructions_select_sql = R"SQL(select
+      id::text as id,
+      plan_id::text as plan_id,
+      revision,
+      machine_profile,
+      dialect,
+      storage_uri,
+      content_hash,
+      validated,
+      validation::text as validation_json,
+      released_by_email,
+      to_char(released_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as released_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from daedalus.fab_instructions)SQL";
+
+enum class FabInstructionsDialect { Gcode, Nc, Apt, Proprietary };
+inline std::string fab_instructions_dialect_to_string(FabInstructionsDialect value) {
+    switch (value) {
+        case FabInstructionsDialect::Gcode: return "gcode";
+        case FabInstructionsDialect::Nc: return "nc";
+        case FabInstructionsDialect::Apt: return "apt";
+        case FabInstructionsDialect::Proprietary: return "proprietary";
+    }
+    return "";
+}
+inline std::optional<FabInstructionsDialect> parse_fab_instructions_dialect(const std::string& value) {
+    if (value == "gcode") return FabInstructionsDialect::Gcode;
+    if (value == "nc") return FabInstructionsDialect::Nc;
+    if (value == "apt") return FabInstructionsDialect::Apt;
+    if (value == "proprietary") return FabInstructionsDialect::Proprietary;
+    return std::nullopt;
+}
+
+struct FabInstructionsRow {
+    std::string id;
+    std::string plan_id;
+    int32_t revision;
+    std::string machine_profile;
+    std::string dialect;
+    std::string storage_uri;
+    std::optional<std::string> content_hash;
+    bool validated;
+    std::string validation;
+    std::optional<std::string> released_by_email;
+    std::optional<std::string> released_at;
+    std::string created_at;
+};
+
+inline FabInstructionsRow fab_instructions_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    FabInstructionsRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.plan_id = get(1);
+    row.revision = std::stoi(get(2));
+    row.machine_profile = get(3);
+    row.dialect = get(4);
+    row.storage_uri = get(5);
+    row.content_hash = is_null(6) ? std::nullopt : std::optional<std::string>(get(6));
+    row.validated = (get(7) == "t");
+    row.validation = get(8);
+    row.released_by_email = is_null(9) ? std::nullopt : std::optional<std::string>(get(9));
+    row.released_at = is_null(10) ? std::nullopt : std::optional<std::string>(get(10));
+    row.created_at = get(11);
+    return row;
+}
+inline std::optional<std::string> validate_fab_instructions_revision(int32_t value) {
+    if (value < 1) return std::string("fab_instructions.revision is below the minimum");
+    return std::nullopt;
+}
+
+inline const char* fab_runs_table = "daedalus.fab_runs";
+inline const std::vector<std::string> fab_runs_columns = { "id", "status", "machine_id", "operator_email", "progress", "as_built", "error", "started_at", "finished_at", "created_at" };
+inline const char* fab_runs_select_sql = R"SQL(select
+      id::text as id,
+      status,
+      machine_id,
+      operator_email,
+      progress,
+      as_built::text as as_built_json,
+      error,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from daedalus.fab_runs)SQL";
+
+enum class FabRunsStatus { Queued, Running, Succeeded, Failed, Aborted };
+inline std::string fab_runs_status_to_string(FabRunsStatus value) {
+    switch (value) {
+        case FabRunsStatus::Queued: return "queued";
+        case FabRunsStatus::Running: return "running";
+        case FabRunsStatus::Succeeded: return "succeeded";
+        case FabRunsStatus::Failed: return "failed";
+        case FabRunsStatus::Aborted: return "aborted";
+    }
+    return "";
+}
+inline std::optional<FabRunsStatus> parse_fab_runs_status(const std::string& value) {
+    if (value == "queued") return FabRunsStatus::Queued;
+    if (value == "running") return FabRunsStatus::Running;
+    if (value == "succeeded") return FabRunsStatus::Succeeded;
+    if (value == "failed") return FabRunsStatus::Failed;
+    if (value == "aborted") return FabRunsStatus::Aborted;
+    return std::nullopt;
+}
+
+struct FabRunsRow {
+    std::string id;
+    std::string status;
+    std::string machine_id;
+    std::optional<std::string> operator_email;
+    int32_t progress;
+    std::string as_built;
+    std::optional<std::string> error;
+    std::optional<std::string> started_at;
+    std::optional<std::string> finished_at;
+    std::string created_at;
+};
+
+inline FabRunsRow fab_runs_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    FabRunsRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.status = get(1);
+    row.machine_id = get(2);
+    row.operator_email = is_null(3) ? std::nullopt : std::optional<std::string>(get(3));
+    row.progress = std::stoi(get(4));
+    row.as_built = get(5);
+    row.error = is_null(6) ? std::nullopt : std::optional<std::string>(get(6));
+    row.started_at = is_null(7) ? std::nullopt : std::optional<std::string>(get(7));
+    row.finished_at = is_null(8) ? std::nullopt : std::optional<std::string>(get(8));
+    row.created_at = get(9);
+    return row;
+}
+inline std::optional<std::string> validate_fab_runs_progress(int32_t value) {
+    if (value < 0) return std::string("fab_runs.progress is below the minimum");
+    if (value > 100) return std::string("fab_runs.progress is above the maximum");
+    return std::nullopt;
+}
+
 }  // namespace dd_pg_defs

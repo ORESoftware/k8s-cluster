@@ -12686,3 +12686,283 @@ class VapiEventsObjectBox {
     );
   }
 }
+
+@Entity()
+class FabPlansObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String ownerEmail;
+
+  String title;
+
+  String goal;
+
+  String processFamily;
+
+  String status;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String? document;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  FabPlansObjectBox({
+    required this.id,
+    required this.ownerEmail,
+    required this.title,
+    required this.goal,
+    required this.processFamily,
+    required this.status,
+    this.document,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "ownerEmail": ownerEmail,
+    "title": title,
+    "goal": goal,
+    "processFamily": processFamily,
+    "status": status,
+    "document": jsonDecode(document),
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static FabPlansObjectBox fromJson(Map<String, Object?> json) {
+    return FabPlansObjectBox(
+      id: json["id"] as String,
+      ownerEmail: json["ownerEmail"] as String,
+      title: json["title"] as String,
+      goal: json["goal"] as String,
+      processFamily: json["processFamily"] as String,
+      status: json["status"] as String,
+      document: json["document"] is String ? json["document"] as String : jsonEncode(json["document"]),
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class FabDesignsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String planId;
+
+  String filename;
+
+  String format;
+
+  String storageUri;
+
+  int sizeBytes;
+
+  String? contentHash;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String geometry;
+
+  String createdAt;
+
+
+  FabDesignsObjectBox({
+    required this.id,
+    required this.planId,
+    required this.filename,
+    required this.format,
+    required this.storageUri,
+    required this.sizeBytes,
+    this.contentHash,
+    required this.geometry,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "planId": planId,
+    "filename": filename,
+    "format": format,
+    "storageUri": storageUri,
+    "sizeBytes": sizeBytes,
+    "contentHash": contentHash,
+    "geometry": jsonDecode(geometry),
+    "createdAt": createdAt,
+  };
+
+  static FabDesignsObjectBox fromJson(Map<String, Object?> json) {
+    return FabDesignsObjectBox(
+      id: json["id"] as String,
+      planId: json["planId"] as String,
+      filename: json["filename"] as String,
+      format: json["format"] as String,
+      storageUri: json["storageUri"] as String,
+      sizeBytes: (json["sizeBytes"] as num).toInt(),
+      contentHash: json["contentHash"] as String?,
+      geometry: json["geometry"] is String ? json["geometry"] as String : jsonEncode(json["geometry"]),
+      createdAt: json["createdAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class FabInstructionsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String planId;
+
+  int revision;
+
+  String machineProfile;
+
+  String dialect;
+
+  String storageUri;
+
+  String? contentHash;
+
+  bool validated;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String validation;
+
+  String? releasedByEmail;
+
+  String? releasedAt;
+
+  String createdAt;
+
+
+  FabInstructionsObjectBox({
+    required this.id,
+    required this.planId,
+    required this.revision,
+    required this.machineProfile,
+    required this.dialect,
+    required this.storageUri,
+    this.contentHash,
+    required this.validated,
+    required this.validation,
+    this.releasedByEmail,
+    this.releasedAt,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "planId": planId,
+    "revision": revision,
+    "machineProfile": machineProfile,
+    "dialect": dialect,
+    "storageUri": storageUri,
+    "contentHash": contentHash,
+    "validated": validated,
+    "validation": jsonDecode(validation),
+    "releasedByEmail": releasedByEmail,
+    "releasedAt": releasedAt,
+    "createdAt": createdAt,
+  };
+
+  static FabInstructionsObjectBox fromJson(Map<String, Object?> json) {
+    return FabInstructionsObjectBox(
+      id: json["id"] as String,
+      planId: json["planId"] as String,
+      revision: (json["revision"] as num).toInt(),
+      machineProfile: json["machineProfile"] as String,
+      dialect: json["dialect"] as String,
+      storageUri: json["storageUri"] as String,
+      contentHash: json["contentHash"] as String?,
+      validated: json["validated"] as bool,
+      validation: json["validation"] is String ? json["validation"] as String : jsonEncode(json["validation"]),
+      releasedByEmail: json["releasedByEmail"] as String?,
+      releasedAt: json["releasedAt"] as String?,
+      createdAt: json["createdAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class FabRunsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String status;
+
+  String machineId;
+
+  String? operatorEmail;
+
+  int progress;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String asBuilt;
+
+  String? error;
+
+  String? startedAt;
+
+  String? finishedAt;
+
+  String createdAt;
+
+
+  FabRunsObjectBox({
+    required this.id,
+    required this.status,
+    required this.machineId,
+    this.operatorEmail,
+    required this.progress,
+    required this.asBuilt,
+    this.error,
+    this.startedAt,
+    this.finishedAt,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "status": status,
+    "machineId": machineId,
+    "operatorEmail": operatorEmail,
+    "progress": progress,
+    "asBuilt": jsonDecode(asBuilt),
+    "error": error,
+    "startedAt": startedAt,
+    "finishedAt": finishedAt,
+    "createdAt": createdAt,
+  };
+
+  static FabRunsObjectBox fromJson(Map<String, Object?> json) {
+    return FabRunsObjectBox(
+      id: json["id"] as String,
+      status: json["status"] as String,
+      machineId: json["machineId"] as String,
+      operatorEmail: json["operatorEmail"] as String?,
+      progress: (json["progress"] as num).toInt(),
+      asBuilt: json["asBuilt"] is String ? json["asBuilt"] as String : jsonEncode(json["asBuilt"]),
+      error: json["error"] as String?,
+      startedAt: json["startedAt"] as String?,
+      finishedAt: json["finishedAt"] as String?,
+      createdAt: json["createdAt"] as String,
+    );
+  }
+}

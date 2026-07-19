@@ -13244,3 +13244,276 @@ pub const VapiEventsRow = struct {
         };
     }
 };
+
+pub const fab_plans_table: []const u8 = "daedalus.fab_plans";
+pub const fab_plans_columns = [_][]const u8{ "id", "owner_email", "title", "goal", "process_family", "status", "document", "created_at", "updated_at" };
+pub const fab_plans_select_sql: []const u8 = "select\n      id::text as id,\n      owner_email,\n      title,\n      goal,\n      process_family,\n      status,\n      document::text as document_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from daedalus.fab_plans";
+
+pub const FabPlansProcessFamily = enum {
+    additive,
+    subtractive,
+    hybrid,
+
+    pub fn toString(self: FabPlansProcessFamily) []const u8 {
+        return switch (self) {
+            .additive => "additive",
+            .subtractive => "subtractive",
+            .hybrid => "hybrid",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?FabPlansProcessFamily {
+        if (std.mem.eql(u8, value, "additive")) return .additive;
+        if (std.mem.eql(u8, value, "subtractive")) return .subtractive;
+        if (std.mem.eql(u8, value, "hybrid")) return .hybrid;
+        return null;
+    }
+};
+
+pub const FabPlansStatus = enum {
+    draft,
+    planning,
+    planned,
+    released,
+    archived,
+
+    pub fn toString(self: FabPlansStatus) []const u8 {
+        return switch (self) {
+            .draft => "draft",
+            .planning => "planning",
+            .planned => "planned",
+            .released => "released",
+            .archived => "archived",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?FabPlansStatus {
+        if (std.mem.eql(u8, value, "draft")) return .draft;
+        if (std.mem.eql(u8, value, "planning")) return .planning;
+        if (std.mem.eql(u8, value, "planned")) return .planned;
+        if (std.mem.eql(u8, value, "released")) return .released;
+        if (std.mem.eql(u8, value, "archived")) return .archived;
+        return null;
+    }
+};
+
+pub const FabPlansRow = struct {
+    id: []const u8,
+    owner_email: []const u8,
+    title: []const u8,
+    goal: []const u8,
+    process_family: []const u8,
+    status: []const u8,
+    document: ?[]const u8,
+    created_at: []const u8,
+    updated_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) FabPlansRow {
+        return FabPlansRow{
+            .id = reader.text(0),
+            .owner_email = reader.text(1),
+            .title = reader.text(2),
+            .goal = reader.text(3),
+            .process_family = reader.text(4),
+            .status = reader.text(5),
+            .document = if (reader.is_null(6)) null else reader.text(6),
+            .created_at = reader.text(7),
+            .updated_at = reader.text(8),
+        };
+    }
+};
+
+pub const fab_designs_table: []const u8 = "daedalus.fab_designs";
+pub const fab_designs_columns = [_][]const u8{ "id", "plan_id", "filename", "format", "storage_uri", "size_bytes", "content_hash", "geometry", "created_at" };
+pub const fab_designs_select_sql: []const u8 = "select\n      id::text as id,\n      plan_id::text as plan_id,\n      filename,\n      format,\n      storage_uri,\n      size_bytes,\n      content_hash,\n      geometry::text as geometry_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_designs";
+
+pub const FabDesignsFormat = enum {
+    step,
+    stl,
+    @"3mf",
+    dxf,
+    iges,
+    obj,
+
+    pub fn toString(self: FabDesignsFormat) []const u8 {
+        return switch (self) {
+            .step => "step",
+            .stl => "stl",
+            .@"3mf" => "3mf",
+            .dxf => "dxf",
+            .iges => "iges",
+            .obj => "obj",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?FabDesignsFormat {
+        if (std.mem.eql(u8, value, "step")) return .step;
+        if (std.mem.eql(u8, value, "stl")) return .stl;
+        if (std.mem.eql(u8, value, "3mf")) return .@"3mf";
+        if (std.mem.eql(u8, value, "dxf")) return .dxf;
+        if (std.mem.eql(u8, value, "iges")) return .iges;
+        if (std.mem.eql(u8, value, "obj")) return .obj;
+        return null;
+    }
+};
+
+pub const FabDesignsRow = struct {
+    id: []const u8,
+    plan_id: []const u8,
+    filename: []const u8,
+    format: []const u8,
+    storage_uri: []const u8,
+    size_bytes: i64,
+    content_hash: ?[]const u8,
+    geometry: []const u8,
+    created_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) FabDesignsRow {
+        return FabDesignsRow{
+            .id = reader.text(0),
+            .plan_id = reader.text(1),
+            .filename = reader.text(2),
+            .format = reader.text(3),
+            .storage_uri = reader.text(4),
+            .size_bytes = reader.int(5),
+            .content_hash = if (reader.is_null(6)) null else reader.text(6),
+            .geometry = reader.text(7),
+            .created_at = reader.text(8),
+        };
+    }
+};
+
+pub fn validateFabDesignsSizeBytes(value: i64) ?[]const u8 {
+    if (value < 0) return "fab_designs.size_bytes is below the minimum";
+    return null;
+}
+
+pub const fab_instructions_table: []const u8 = "daedalus.fab_instructions";
+pub const fab_instructions_columns = [_][]const u8{ "id", "plan_id", "revision", "machine_profile", "dialect", "storage_uri", "content_hash", "validated", "validation", "released_by_email", "released_at", "created_at" };
+pub const fab_instructions_select_sql: []const u8 = "select\n      id::text as id,\n      plan_id::text as plan_id,\n      revision,\n      machine_profile,\n      dialect,\n      storage_uri,\n      content_hash,\n      validated,\n      validation::text as validation_json,\n      released_by_email,\n      to_char(released_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as released_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_instructions";
+
+pub const FabInstructionsDialect = enum {
+    gcode,
+    nc,
+    apt,
+    proprietary,
+
+    pub fn toString(self: FabInstructionsDialect) []const u8 {
+        return switch (self) {
+            .gcode => "gcode",
+            .nc => "nc",
+            .apt => "apt",
+            .proprietary => "proprietary",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?FabInstructionsDialect {
+        if (std.mem.eql(u8, value, "gcode")) return .gcode;
+        if (std.mem.eql(u8, value, "nc")) return .nc;
+        if (std.mem.eql(u8, value, "apt")) return .apt;
+        if (std.mem.eql(u8, value, "proprietary")) return .proprietary;
+        return null;
+    }
+};
+
+pub const FabInstructionsRow = struct {
+    id: []const u8,
+    plan_id: []const u8,
+    revision: i32,
+    machine_profile: []const u8,
+    dialect: []const u8,
+    storage_uri: []const u8,
+    content_hash: ?[]const u8,
+    validated: bool,
+    validation: []const u8,
+    released_by_email: ?[]const u8,
+    released_at: ?[]const u8,
+    created_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) FabInstructionsRow {
+        return FabInstructionsRow{
+            .id = reader.text(0),
+            .plan_id = reader.text(1),
+            .revision = @as(i32, @intCast(reader.int(2))),
+            .machine_profile = reader.text(3),
+            .dialect = reader.text(4),
+            .storage_uri = reader.text(5),
+            .content_hash = if (reader.is_null(6)) null else reader.text(6),
+            .validated = reader.boolean(7),
+            .validation = reader.text(8),
+            .released_by_email = if (reader.is_null(9)) null else reader.text(9),
+            .released_at = if (reader.is_null(10)) null else reader.text(10),
+            .created_at = reader.text(11),
+        };
+    }
+};
+
+pub fn validateFabInstructionsRevision(value: i32) ?[]const u8 {
+    if (value < 1) return "fab_instructions.revision is below the minimum";
+    return null;
+}
+
+pub const fab_runs_table: []const u8 = "daedalus.fab_runs";
+pub const fab_runs_columns = [_][]const u8{ "id", "status", "machine_id", "operator_email", "progress", "as_built", "error", "started_at", "finished_at", "created_at" };
+pub const fab_runs_select_sql: []const u8 = "select\n      id::text as id,\n      status,\n      machine_id,\n      operator_email,\n      progress,\n      as_built::text as as_built_json,\n      error,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_runs";
+
+pub const FabRunsStatus = enum {
+    queued,
+    running,
+    succeeded,
+    failed,
+    aborted,
+
+    pub fn toString(self: FabRunsStatus) []const u8 {
+        return switch (self) {
+            .queued => "queued",
+            .running => "running",
+            .succeeded => "succeeded",
+            .failed => "failed",
+            .aborted => "aborted",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?FabRunsStatus {
+        if (std.mem.eql(u8, value, "queued")) return .queued;
+        if (std.mem.eql(u8, value, "running")) return .running;
+        if (std.mem.eql(u8, value, "succeeded")) return .succeeded;
+        if (std.mem.eql(u8, value, "failed")) return .failed;
+        if (std.mem.eql(u8, value, "aborted")) return .aborted;
+        return null;
+    }
+};
+
+pub const FabRunsRow = struct {
+    id: []const u8,
+    status: []const u8,
+    machine_id: []const u8,
+    operator_email: ?[]const u8,
+    progress: i32,
+    as_built: []const u8,
+    @"error": ?[]const u8,
+    started_at: ?[]const u8,
+    finished_at: ?[]const u8,
+    created_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) FabRunsRow {
+        return FabRunsRow{
+            .id = reader.text(0),
+            .status = reader.text(1),
+            .machine_id = reader.text(2),
+            .operator_email = if (reader.is_null(3)) null else reader.text(3),
+            .progress = @as(i32, @intCast(reader.int(4))),
+            .as_built = reader.text(5),
+            .@"error" = if (reader.is_null(6)) null else reader.text(6),
+            .started_at = if (reader.is_null(7)) null else reader.text(7),
+            .finished_at = if (reader.is_null(8)) null else reader.text(8),
+            .created_at = reader.text(9),
+        };
+    }
+};
+
+pub fn validateFabRunsProgress(value: i32) ?[]const u8 {
+    if (value < 0) return "fab_runs.progress is below the minimum";
+    if (value > 100) return "fab_runs.progress is above the maximum";
+    return null;
+}

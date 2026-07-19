@@ -8329,6 +8329,174 @@ public class VapiEvents
     public DateTimeOffset CreatedAt { get; set; }
 }
 
+[Table("fab_plans", Schema = "daedalus")]
+public class FabPlans
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Required]
+    [Column("owner_email")]
+    public string OwnerEmail { get; set; } = null!;
+
+    [Required]
+    [Column("title")]
+    public string Title { get; set; } = null!;
+
+    [Required]
+    [Column("goal")]
+    public string Goal { get; set; } = null!;
+
+    [Required]
+    [Column("process_family")]
+    [RegularExpression(@"^(additive|subtractive|hybrid)$")]
+    public string ProcessFamily { get; set; } = null!;
+
+    [Required]
+    [Column("status")]
+    [RegularExpression(@"^(draft|planning|planned|released|archived)$")]
+    public string Status { get; set; } = null!;
+
+    [Column("document", TypeName = "jsonb")]
+    public string? Document { get; set; }
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+[Table("fab_designs", Schema = "daedalus")]
+public class FabDesigns
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Column("plan_id")]
+    public Guid PlanId { get; set; }
+
+    [Required]
+    [Column("filename")]
+    public string Filename { get; set; } = null!;
+
+    [Required]
+    [Column("format")]
+    [RegularExpression(@"^(step|stl|3mf|dxf|iges|obj)$")]
+    public string Format { get; set; } = null!;
+
+    [Required]
+    [Column("storage_uri")]
+    public string StorageUri { get; set; } = null!;
+
+    [Column("size_bytes")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long SizeBytes { get; set; }
+
+    [Column("content_hash")]
+    public string? ContentHash { get; set; }
+
+    [Required]
+    [Column("geometry", TypeName = "jsonb")]
+    public string Geometry { get; set; } = null!;
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+[Table("fab_instructions", Schema = "daedalus")]
+public class FabInstructions
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Column("plan_id")]
+    public Guid PlanId { get; set; }
+
+    [Column("revision")]
+    [Range(1, 2147483647)]
+    public int Revision { get; set; }
+
+    [Required]
+    [Column("machine_profile")]
+    public string MachineProfile { get; set; } = null!;
+
+    [Required]
+    [Column("dialect")]
+    [RegularExpression(@"^(gcode|nc|apt|proprietary)$")]
+    public string Dialect { get; set; } = null!;
+
+    [Required]
+    [Column("storage_uri")]
+    public string StorageUri { get; set; } = null!;
+
+    [Column("content_hash")]
+    public string? ContentHash { get; set; }
+
+    [Column("validated")]
+    public bool Validated { get; set; }
+
+    [Required]
+    [Column("validation", TypeName = "jsonb")]
+    public string Validation { get; set; } = null!;
+
+    [Column("released_by_email")]
+    public string? ReleasedByEmail { get; set; }
+
+    [Column("released_at")]
+    public DateTimeOffset? ReleasedAt { get; set; }
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+[Table("fab_runs", Schema = "daedalus")]
+public class FabRuns
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Required]
+    [Column("status")]
+    [RegularExpression(@"^(queued|running|succeeded|failed|aborted)$")]
+    public string Status { get; set; } = null!;
+
+    [Required]
+    [Column("machine_id")]
+    public string MachineId { get; set; } = null!;
+
+    [Column("operator_email")]
+    public string? OperatorEmail { get; set; }
+
+    [Column("progress")]
+    [Range(0, 100)]
+    public short Progress { get; set; }
+
+    [Required]
+    [Column("as_built", TypeName = "jsonb")]
+    public string AsBuilt { get; set; } = null!;
+
+    [Column("error")]
+    public string? Error { get; set; }
+
+    [Column("started_at")]
+    public DateTimeOffset? StartedAt { get; set; }
+
+    [Column("finished_at")]
+    public DateTimeOffset? FinishedAt { get; set; }
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
 public class DdPgDefsContext : DbContext
 {
     public DdPgDefsContext(DbContextOptions<DdPgDefsContext> options) : base(options)
@@ -8622,4 +8790,12 @@ public class DdPgDefsContext : DbContext
     public DbSet<VapiCalls> VapiCallsSet => Set<VapiCalls>();
 
     public DbSet<VapiEvents> VapiEventsSet => Set<VapiEvents>();
+
+    public DbSet<FabPlans> FabPlansSet => Set<FabPlans>();
+
+    public DbSet<FabDesigns> FabDesignsSet => Set<FabDesigns>();
+
+    public DbSet<FabInstructions> FabInstructionsSet => Set<FabInstructions>();
+
+    public DbSet<FabRuns> FabRunsSet => Set<FabRuns>();
 }

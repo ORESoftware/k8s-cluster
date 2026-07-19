@@ -3030,3 +3030,73 @@ model VapiEvents {
   // Check constraints live in schema.sql and must be migrated from the SQL contract.
   @@map("vapi_events")
 }
+
+model FabPlans {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ownerEmail String @map("owner_email") @db.Text
+  title String @db.Text
+  goal String @db.Text
+  processFamily String @map("process_family") @default("additive") @db.Text
+  status String @default("draft") @db.Text
+  document Json?
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@index([ownerEmail], map: "fab_plans_owner_email_idx")
+  @@index([status], map: "fab_plans_status_idx")
+  @@index([ownerEmail, createdAt], map: "fab_plans_owner_created_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("fab_plans")
+}
+
+model FabDesigns {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  planId String @map("plan_id") @db.Uuid
+  filename String @db.Text
+  format String @db.Text
+  storageUri String @map("storage_uri") @db.Text
+  sizeBytes BigInt @map("size_bytes") @default(0) @db.BigInt
+  contentHash String? @map("content_hash") @db.Text
+  geometry Json @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  @@index([planId], map: "fab_designs_plan_idx")
+  // fab_designs_content_hash_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("fab_designs")
+}
+
+model FabInstructions {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  planId String @map("plan_id") @db.Uuid
+  revision Int @default(1)
+  machineProfile String @map("machine_profile") @db.Text
+  dialect String @default("gcode") @db.Text
+  storageUri String @map("storage_uri") @db.Text
+  contentHash String? @map("content_hash") @db.Text
+  validated Boolean @default(false)
+  validation Json @default("{}")
+  releasedByEmail String? @map("released_by_email") @db.Text
+  releasedAt DateTime? @map("released_at") @db.Timestamptz(6)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  @@unique([planId, revision], map: "fab_instructions_plan_revision_uq")
+  @@index([planId], map: "fab_instructions_plan_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("fab_instructions")
+}
+
+model FabRuns {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  status String @default("queued") @db.Text
+  machineId String @map("machine_id") @db.Text
+  operatorEmail String? @map("operator_email") @db.Text
+  progress Int @default(0)
+  asBuilt Json @map("as_built") @default("{}")
+  error String? @db.Text
+  startedAt DateTime? @map("started_at") @db.Timestamptz(6)
+  finishedAt DateTime? @map("finished_at") @db.Timestamptz(6)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  @@index([instructionsId], map: "fab_runs_instructions_idx")
+  @@index([status], map: "fab_runs_status_idx")
+  @@index([createdAt], map: "fab_runs_created_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("fab_runs")
+}
