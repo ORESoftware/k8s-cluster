@@ -29,6 +29,7 @@ use sha2::Sha256;
 use std::sync::OnceLock;
 use subtle::ConstantTimeEq;
 use x25519_dalek::{PublicKey, StaticSecret};
+use zeroize::Zeroize;
 
 type HmacSha256 = Hmac<Sha256>;
 
