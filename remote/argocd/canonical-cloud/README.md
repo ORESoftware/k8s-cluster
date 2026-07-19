@@ -5,6 +5,13 @@ backend. It is deliberately separate from `dd-next-runtime`: the legacy
 `dd-canonical-cloud` workload remains untouched until this prebuilt-image path
 has been activated and verified.
 
+`canonical-cloud/canonical-monorepo` is the only deployable source of truth.
+Its exact tested commit produces both release images; this overlay consumes
+only those immutable digests and never deploys the umbrella `canonical.cloud`
+repository or an individual application repository. The existing
+`remote/deployments/canonical-cloud` secondary submodule is legacy operational
+context and is not an input to this overlay.
+
 Argo CD is the only runtime writer. GitHub Actions builds and attests the web
 and revoker images, but it receives no kubeconfig and never applies Kubernetes
 resources. A reviewed Git commit promotes exact registry digests here; Argo CD
@@ -66,6 +73,10 @@ Review the two deployment changes, run the contract/render tests, and commit
 the digest promotion. The helper changes only the two image references and
 their release annotations. Re-run it with the same values plus `--check` to
 verify the committed state without writing.
+
+This reviewed manual handoff is temporary. The narrowly scoped promotion
+automation and secondary-submodule cleanup are tracked in
+[`docs/canonical-cloud-deployment-todos.md`](../../../docs/canonical-cloud-deployment-todos.md).
 
 ## Activation gates
 

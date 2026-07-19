@@ -224,7 +224,10 @@ test('promotion helper changes only immutable image refs and release annotations
 
 test('runbook makes activation, migration, and rollback gates explicit', async () => {
   const readme = await readRepoFile(`${overlay}/README.md`);
+  const todos = await readRepoFile('docs/canonical-cloud-deployment-todos.md');
 
+  assert.match(readme, /canonical-cloud\/canonical-monorepo.*only deployable source/s);
+  assert.match(readme, /never deploys the umbrella `canonical\.cloud`/);
   assert.match(readme, /Argo CD is the only runtime writer/);
   assert.match(readme, /Do not apply .*canonical-cloud\.application\.yaml.*until/s);
   assert.match(readme, /Migrations are never an Argo sync hook/);
@@ -233,4 +236,13 @@ test('runbook makes activation, migration, and rollback gates explicit', async (
   assert.match(readme, /Rollback is a Git revert/);
   assert.match(readme, /legacy `dd-canonical-cloud`/);
   assert.match(readme, /--check/);
+  assert.match(readme, /canonical-cloud-deployment-todos\.md/);
+
+  assert.match(todos, /canonical-cloud\/canonical-monorepo.*only deployable source/s);
+  assert.match(todos, /GitHub App/);
+  assert.match(todos, /digest-only promotion PR/);
+  assert.match(todos, /Retire the umbrella checkout/);
+  assert.match(todos, /Never make a pod clone or build/);
+  assert.match(todos, /No kubeconfig/);
+  assert.match(todos, /No automatic schema migration/);
 });
