@@ -15,9 +15,10 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-07-18-flutter-profiles-v3'
+        dd.dev/telemetry-revision: '2026-07-18-flutter-profiles-v4'
       labels:
         app: dd-build-server
+        dd.dev/fiducia-client: 'true'
     spec:
       serviceAccountName: dd-build-server
       terminationGracePeriodSeconds: 30
@@ -288,6 +289,11 @@ spec:
             - name: nerdctl-bin
               mountPath: /usr/local/bin/nerdctl
               readOnly: true
+            - name: buildctl-bin
+              mountPath: /usr/local/bin/buildctl
+              readOnly: true
+            - name: buildkit-sock
+              mountPath: /run/buildkit/buildkitd.sock
             - name: kubectl-bin
               mountPath: /usr/bin/kubectl
               readOnly: true
@@ -314,6 +320,14 @@ spec:
           hostPath:
             path: /usr/local/bin/nerdctl
             type: File
+        - name: buildctl-bin
+          hostPath:
+            path: /usr/local/bin/buildctl
+            type: File
+        - name: buildkit-sock
+          hostPath:
+            path: /run/buildkit/buildkitd.sock
+            type: Socket
         - name: kubectl-bin
           hostPath:
             path: /usr/bin/kubectl
