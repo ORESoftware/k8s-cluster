@@ -1,9 +1,13 @@
 name: pages
 
 on:
-  push:
+  # Production Pages deploys only the exact main-branch commit that completed
+  # the blocking CI workflow (including Playwright + Puppeteer). A parallel
+  # push-triggered workflow could otherwise publish while browser CI is red.
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
     branches: [main]
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -13,12 +17,17 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
+  pages-build:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          ref: ${{ github.event.workflow_run.head_sha }}
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -42,8 +51,8 @@ jobs:
         with:
           path: ./dist
 
-  deploy:
-    needs: build
+  pages-deploy:
+    needs: pages-build
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
