@@ -215,7 +215,28 @@ test("otel collector scrapes all remote runtimes and exports traces", async () =
   assert.match(collectorService, /name:\s*health[\s\S]*port:\s*13133[\s\S]*targetPort:\s*13133/);
 });
 
+test("workload OTLP exporters converge on the shared collector", async () => {
+  const manifests = await listYamlFiles("remote/argocd");
+  const configured: string[] = [];
+
+  for (const relativePath of manifests) {
+    const source = await readRepoFile(relativePath);
+    for (const match of source.matchAll(/\bname:\s*OTEL_EXPORTER_OTLP_ENDPOINT\b/g)) {
+      const block = source.slice(match.index, match.index + 320);
+      assert.match(
+        block,
+        /value:\s*http:\/\/dd-otel-collector\.observability\.svc\.cluster\.local:431[78]/,
+        `${relativePath} must send OTLP to the in-cluster collector`,
+      );
+      configured.push(relativePath);
+    }
+  }
+
+  assert.ok(configured.length >= 10, "expected broad workload OTLP exporter coverage");
+});
+
 test("prometheus and loki ingest through the collector and promtail fan-in", async () => {
+  const collector = await readRepoFile("remote/argocd/observability/otel-collector.configmap.yaml");
   const prometheus = await readRepoFile("remote/argocd/observability/prometheus.configmap.yaml");
   const promtail = await readRepoFile("remote/argocd/observability/promtail.configmap.yaml");
   const loki = await readRepoFile("remote/argocd/observability/loki.configmap.yaml");
@@ -244,6 +265,14 @@ test("prometheus and loki ingest through the collector and promtail fan-in", asy
   assert.match(prometheus, /record:\s*dd:observability:target_up_ratio/);
   assert.match(prometheus, /alert:\s*DDObservabilityTargetDown/);
   assert.match(prometheus, /alert:\s*DDOtelCollectorRejectedTelemetry/);
+  assert.match(
+    collector,
+    /otlphttp\/loki:[\s\S]*endpoint:\s*http:\/\/dd-loki\.observability\.svc\.cluster\.local:3100\/otlp/,
+  );
+  assert.match(
+    collector,
+    /logs:[\s\S]*receivers:[\s\S]*-\s*otlp[\s\S]*processors:[\s\S]*-\s*memory_limiter[\s\S]*-\s*batch[\s\S]*exporters:[\s\S]*-\s*otlphttp\/loki/,
+  );
   assert.match(promtail, /dd-loki\.observability\.svc\.cluster\.local:3100\/loki\/api\/v1\/push/);
   assert.match(promtail, /batchwait:\s*1s/);
   assert.match(promtail, /batchsize:\s*1048576/);
@@ -259,6 +288,7 @@ test("prometheus and loki ingest through the collector and promtail fan-in", asy
   assert.match(promtail, /env:\s*prod[\s\S]*environment:\s*prod/);
   assert.match(promtail, /labeldrop:[\s\S]*-\s*filename/);
   assert.match(promtail, /- cri:\s*\{\}/);
+  assert.match(loki, /limits_config:[\s\S]*allow_structured_metadata:\s*true/);
   assert.match(loki, /limits_config:[\s\S]*reject_old_samples:\s*true/);
   assert.match(loki, /ingestion_rate_mb:\s*16/);
   assert.match(loki, /max_global_streams_per_user:\s*5000/);
@@ -405,7 +435,7 @@ test("supporting runtime services expose prometheus metrics", async () => {
   assert.match(lockLoadtest, /dd_lock_loadtest_trigger_runs_started_total/);
   assert.match(agentWorkerDeployment, /dd\.dev\/telemetry-revision:\s*'2026-05-18-observability'/);
   assert.match(authDeployment, /dd\.dev\/telemetry-revision:\s*'2026-05-18-observability'/);
-  assert.match(billingDeployment, /dd\.dev\/telemetry-revision:\s*'2026-06-05-customer-snapshot-locks'/);
+  assert.match(billingDeployment, /dd\.dev\/telemetry-revision:\s*'2026-07-16-fiducia-coordination'/);
   assert.match(formalDeployment, /dd\.dev\/telemetry-revision:\s*'2026-05-18-observability'/);
   assert.match(lockDeployment, /dd\.dev\/telemetry-revision:\s*'2026-05-18-observability'/);
 });

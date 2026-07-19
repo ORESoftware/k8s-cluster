@@ -22,6 +22,7 @@ resources:
   - dd-container-pool.networkpolicy.yaml
   - dd-container-pool.service.yaml
   - dd-build-server-rbac.yaml
+  - dd-build-server.configmap.yaml
   - dd-build-server.deployment.yaml
   - dd-build-server.service.yaml
   - dd-build-server.networkpolicy.yaml
@@ -120,6 +121,7 @@ resources:
   # canonical.cloud marketing site: Astro frontend built in-pod (node) and
   # served by its axum backend, proxied publicly by the gateway under /canonical/.
   - dd-canonical-cloud.deployment.yaml
+  - dd-canonical-cloud.externalsecret.yaml
   - dd-canonical-cloud.networkpolicy.yaml
   - dd-canonical-cloud.service.yaml
   # fiducia.cloud marketing site: same shape as canonical (in-pod node build of
@@ -161,6 +163,10 @@ resources:
   - dd-sonus-auris-site.configmap.yaml
   - dd-sonus-auris-site.deployment.yaml
   - dd-sonus-auris-site.service.yaml
+  - dd-sonus-auris-console.configmap.yaml
+  - dd-sonus-auris-console.deployment.yaml
+  - dd-sonus-auris-console.networkpolicy.yaml
+  - dd-sonus-auris-console.service.yaml
   - dd-webrtc-signaling.deployment.yaml
   - dd-webrtc-signaling.service.yaml
   - dd-webrtc-media.deployment.yaml
@@ -184,7 +190,7 @@ resources:
   - dd-akrion-web-server-rs.networkpolicy.yaml
   - dd-akrion-web-server-rs.pdb.yaml
   - dd-akrion-web-server-rs.service.yaml
-  # AthletO jello-ws shop app (MASH: Maud/Axum/SQLx/Supabase/HTMX), submodule
+  # AthletO jello-ws shop app (MASH: Maud/Axum/SeaORM/Supabase/HTMX), submodule
   # remote/deployments/athleto-app-rs. Served on its own public host
   # app.athleto.store via a dedicated Ingress and the jello-ws Service alias.
   - dd-athleto-app-rs.deployment.yaml
@@ -194,6 +200,11 @@ resources:
   - dd-athleto-app-rs.pdb.yaml
   - dd-athleto-app-rs.service.yaml
   - jello-ws.service.yaml
+  # Smaller standalone Athlet-O API/storefront backend. Runtime manifests are
+  # vendored here because Argo intentionally disables recursive git submodules;
+  # Rust source remains pinned by the source-of-truth gitlink.
+  - dd-athleto-backend.deployment.yaml
+  - dd-athleto-backend.service.yaml
   # Opt-in AthletO live-storefront browser smoke: dispatches read-only UI
   # scenarios to dd-browser-test-server under Playwright + Puppeteer.
   - dd-athleto-e2e-scenarios.configmap.yaml
@@ -233,3 +244,11 @@ resources:
   - dd-t2v-web.networkpolicy.yaml
   - dd-t2v-web.pdb.yaml
   - dd-t2v-web.service.yaml
+
+patches:
+  - path: dd-athleto-backend.observability.patch.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: dd-athleto-backend

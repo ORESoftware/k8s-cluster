@@ -1301,6 +1301,28 @@ data:
         proxy_pass http://dd-sonus-auris-site.default.svc.cluster.local:8080/;
       }
 
+      location = /sonus-console {
+        return 302 /sonus-console/;
+      }
+
+      location /sonus-console/ {
+        if ($request_method !~ ^(GET|HEAD)$) {
+          return 405;
+        }
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 120;
+        proxy_send_timeout 120;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Prefix /sonus-console;
+        proxy_set_header Auth "";
+        proxy_set_header Cookie "";
+        proxy_pass http://dd-sonus-auris-console.default.svc.cluster.local:8080/;
+      }
+
       location = /music {
         return 302 /music/;
       }
@@ -1451,7 +1473,7 @@ data:
       }
 
       location /sound-recorder/api/mobile/ {
-        if ($request_method !~ ^(GET|HEAD|POST)$) {
+        if ($request_method !~ ^(GET|HEAD|POST|DELETE)$) {
           return 405;
         }
         limit_req zone=dd_sound_recorder_mobile_write burst=120 nodelay;
@@ -2298,6 +2320,28 @@ data:
         proxy_set_header Auth $dd_gateway_auth_header;
         set $dd_up_46 dd-build-server.default.svc.cluster.local:8100;
         proxy_pass http://$dd_up_46;
+      }
+
+      # Inbound webhooks from GitHub (push / workflow_run) and container
+      # registries. Unlike the operator API above, these are NOT gated by the
+      # operator cookie — GitHub cannot present it. Instead the build server
+      # verifies each request itself: the GitHub X-Hub-Signature-256 HMAC
+      # (BUILD_SERVER_GITHUB_WEBHOOK_SECRET) and the registry shared-secret
+      # header. We deliberately do NOT inject the operator X-Server-Auth here,
+      # so this public path carries no privileged credential; the webhook
+      # handlers never consult that header. Body must reach the server intact
+      # for HMAC verification, so buffering stays off and the body is not
+      # altered.
+      location /webhooks/ {
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 60;
+        proxy_send_timeout 60;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        set $dd_up_build_webhooks dd-build-server.default.svc.cluster.local:8100;
+        proxy_pass http://$dd_up_build_webhooks;
       }
 
       # /lmx-rs/ — operator HTML status page for the Rust live-mutex

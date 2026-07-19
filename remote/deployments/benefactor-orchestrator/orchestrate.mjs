@@ -5,11 +5,13 @@
 //   -> extract+validate emails (dd-next-1 regex/filters) -> follow one contact subpage
 //   -> dedupe -> insert benefactor.benefactor_leads -> update domain memory + query stats.
 import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
 const require = createRequire('/work/package.json');
 const pg = require('pg');
 const cheerio = require('cheerio');
 
 const RDS = process.env.RDS_URL;
+const PG_SSL_CA_FILE = process.env.PG_SSL_CA_FILE || '';
 const SERPER_KEY = process.env.SERPER_API_KEY || '';
 const BRAVE_KEY = process.env.BRAVE_SEARCH_API_KEY || '';
 const SCRAPER_URL = process.env.SCRAPER_URL || 'http://dd-web-scraper.default.svc.cluster.local:8097';
@@ -19,6 +21,12 @@ const MAX_QUERIES = parseInt(process.env.MAX_QUERIES || '8', 10);
 const TARGET_EMAILS = parseInt(process.env.TARGET_EMAILS || '30', 10);
 const MAX_PAGES_PER_QUERY = parseInt(process.env.MAX_PAGES_PER_QUERY || '8', 10);
 const DOMAIN_SKIP_DAYS = parseInt(process.env.DOMAIN_SKIP_DAYS || '14', 10);
+const QUERY_COOLDOWN_DAYS = parseInt(process.env.QUERY_COOLDOWN_DAYS || '30', 10);
+const ZERO_NEW_RETIRE = parseInt(process.env.ZERO_NEW_RETIRE || '3', 10);
+const SCRAPE_THROTTLE_DAYS = parseInt(process.env.SCRAPE_THROTTLE_DAYS || '30', 10);
+const SCRAPE_REQUEST_TYPE = process.env.SCRAPE_REQUEST_TYPE || 'scrape_collect';
+const REQUIRE_ROLE_EMAIL = (process.env.REQUIRE_ROLE_EMAIL || 'true').toLowerCase() !== 'false';
+const ALLOW_DIRECT_FALLBACK = (process.env.ALLOW_DIRECT_FALLBACK || 'false').toLowerCase() === 'true';
 const DEADLINE_MS = Date.now() + parseInt(process.env.DEADLINE_SECONDS || '420', 10) * 1000;
 if (!CATEGORY) { console.error('ICP_CATEGORY required'); process.exit(2); }
 
@@ -31,7 +39,9 @@ const BLOCKED_EMAIL_DOMAINS = new Set(['example.com','example.org','example.net'
 // addresses (schools/cities/bases are not benefactor lead targets).
 const COMMON_TLDS = new Set(['com','net','org','biz','info','pro','dev','app','xyz','online','tech','site','agency','services','company','solutions','group','team','homes','builders','construction','plumbing','llc','inc','email','live','store','shop','works','care','build','plus','life']);
 const BLOCKED_EMAIL_PREFIXES = ['no-reply','noreply','donotreply','do-not-reply','postmaster','mailer-daemon','wordpress','example','user','you','your','name','test','root','hostmaster','abuse','sentry'];
+const ROLE_EMAIL_PREFIXES = new Set(['admin','appointments','booking','business','care','contact','customerservice','estimates','hello','help','info','inquiries','marketing','office','operations','owner','partnerships','quotes','reception','sales','service','support','team']);
 const BLOCKED_PATH_EXT = /\.(?:png|jpg|jpeg|gif|webp|svg|css|js|ico|woff2?|ttf|otf|eot)$/i;
+const emailValidationStats = { checked: 0, accepted: 0, consumerDomain: 0, blockedDomain: 0, nonRole: 0 };
 
 function deobfuscate(text) {
   return text
@@ -43,6 +53,7 @@ function deobfuscate(text) {
     .replace(/([A-Z0-9_-])\s+dot\s+([A-Z]{2,})/gi, '$1.$2');
 }
 function isValidEmail(email) {
+  emailValidationStats.checked++;
   const lower = email.toLowerCase().trim();
   if (lower.length < 6 || lower.length > 254) return false;
   const at = lower.indexOf('@');
@@ -56,9 +67,13 @@ function isValidEmail(email) {
   if (BLOCKED_PATH_EXT.test(domain)) return false;
   if (/[^\x20-\x7E]/.test(lower) || domain.startsWith('xn--')) return false;
   if (/sentry/.test(domain) || domain.endsWith('.wixpress.com')) return false;
-  if (BLOCKED_EMAIL_DOMAINS.has(domain) && !CONSUMER_WEBMAIL.has(domain)) return false;
+  if (CONSUMER_WEBMAIL.has(domain)) { emailValidationStats.consumerDomain++; return false; }
+  if (BLOCKED_EMAIL_DOMAINS.has(domain)) { emailValidationStats.blockedDomain++; return false; }
   for (const p of BLOCKED_EMAIL_PREFIXES) if (local === p || local.startsWith(p + '.') || local.startsWith(p + '+')) return false;
+  const rolePrefix = local.split('+', 1)[0].split(/[._-]/, 1)[0];
+  if (REQUIRE_ROLE_EMAIL && !ROLE_EMAIL_PREFIXES.has(rolePrefix)) { emailValidationStats.nonRole++; return false; }
   if (/^\d+$/.test(local)) return false;
+  emailValidationStats.accepted++;
   return true;
 }
 function emailsFromText(text) {
@@ -143,9 +158,10 @@ async function scrapeViaService(url, strategy) {
   } catch { clearTimeout(t); return null; }
 }
 async function scrapeDirect(url) {
+  if (!ALLOW_DIRECT_FALLBACK || !(await robotsAllows(url))) return null;
   const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 15000);
   try {
-    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; benefactor-leadbot/1.0)', Accept: 'text/html,application/xhtml+xml' }, redirect: 'follow', signal: ctl.signal });
+    const res = await fetch(url, { headers: { 'User-Agent': 'BenefactorLeadResearch/1.0 (+https://benefactor.cc)', Accept: 'text/html,application/xhtml+xml' }, redirect: 'follow', signal: ctl.signal });
     clearTimeout(t);
     if (!res.ok) return null;
     const ct = res.headers.get('content-type') || '';
@@ -153,6 +169,60 @@ async function scrapeDirect(url) {
     const html = (await res.text()).slice(0, 800000);
     return { html, text: '', strategy: 'direct' };
   } catch { clearTimeout(t); return null; }
+}
+
+const robotsCache = new Map();
+async function robotsAllows(url) {
+  let parsed;
+  try { parsed = new URL(url); } catch { return false; }
+  const cacheKey = parsed.origin;
+  if (robotsCache.has(cacheKey)) return robotsCache.get(cacheKey)(parsed.pathname || '/');
+
+  try {
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 8000);
+    const res = await fetch(`${parsed.origin}/robots.txt`, {
+      headers: { 'User-Agent': 'BenefactorLeadResearch/1.0 (+https://benefactor.cc)' },
+      redirect: 'follow',
+      signal: ctl.signal,
+    });
+    clearTimeout(t);
+    if (res.status === 404) {
+      const allowAll = () => true;
+      robotsCache.set(cacheKey, allowAll);
+      return true;
+    }
+    if (!res.ok) return false;
+    const groups = [];
+    let group = null;
+    for (const rawLine of (await res.text()).slice(0, 500000).split(/\r?\n/)) {
+      const line = rawLine.replace(/#.*$/, '').trim();
+      if (!line) continue;
+      const match = line.match(/^([^:]+):\s*(.*)$/);
+      if (!match) continue;
+      const key = match[1].trim().toLowerCase();
+      const value = match[2].trim();
+      if (key === 'user-agent') {
+        if (!group || group.rules.length) { group = { agents: [], rules: [] }; groups.push(group); }
+        group.agents.push(value.toLowerCase());
+      } else if (group && (key === 'allow' || key === 'disallow')) {
+        group.rules.push({ allow: key === 'allow', path: value });
+      }
+    }
+    const matching = groups.filter(({ agents }) => agents.some((agent) => agent === '*' || agent === 'benefactorleadresearch'));
+    const selected = matching.some(({ agents }) => agents.includes('benefactorleadresearch'))
+      ? matching.filter(({ agents }) => agents.includes('benefactorleadresearch'))
+      : matching;
+    const isAllowed = (pathname) => {
+      const rules = selected.flatMap(({ rules }) => rules).filter(({ path }) => path && pathname.startsWith(path));
+      if (!rules.length) return true;
+      rules.sort((a, b) => b.path.length - a.path.length || Number(b.allow) - Number(a.allow));
+      return rules[0].allow;
+    };
+    robotsCache.set(cacheKey, isAllowed);
+    return isAllowed(parsed.pathname || '/');
+  } catch {
+    return false;
+  }
 }
 async function fetchPage(url) {
   // cheerio (fast, no browser) -> if thin/no-email escalate to playwright -> direct fallback
@@ -166,7 +236,22 @@ async function fetchPage(url) {
 }
 
 // ── main ───────────────────────────────────────────────────────────────────────
-const db = new pg.Client({ connectionString: RDS, ssl: { rejectUnauthorized: false }, statement_timeout: 0 });
+if (!RDS || !PG_SSL_CA_FILE) {
+  console.error('RDS_URL and PG_SSL_CA_FILE are required');
+  process.exit(2);
+}
+const databaseUrl = new URL(RDS);
+if (!['postgres:', 'postgresql:'].includes(databaseUrl.protocol)) {
+  console.error('RDS_URL must use the postgres or postgresql scheme');
+  process.exit(2);
+}
+databaseUrl.searchParams.delete('sslmode');
+databaseUrl.searchParams.delete('uselibpqcompat');
+const db = new pg.Client({
+  connectionString: databaseUrl.toString(),
+  ssl: { ca: readFileSync(PG_SSL_CA_FILE, 'utf8'), rejectUnauthorized: true },
+  statement_timeout: 0,
+});
 await db.connect();
 await db.query(`set search_path = benefactor, public`);
 
@@ -175,7 +260,7 @@ const queries = (await db.query(
    from benefactor.benefactor_scrape_queries
    where service_category=$1 and is_active and not is_soft_deleted
      and (cooldown_until is null or cooldown_until <= now())
-   order by priority desc, total_runs asc, last_run_at asc nulls first
+   order by priority desc, total_runs asc, random()
    limit $2`, [CATEGORY, MAX_QUERIES])).rows;
 console.log(`[${CATEGORY}] loaded ${queries.length} queries`);
 
@@ -240,16 +325,35 @@ for (const q of queries) {
     }
   }
   await db.query(
-    `update benefactor.benefactor_scrape_queries set total_runs=total_runs+1, last_run_at=now(),
-       total_urls_visited=total_urls_visited+$2, total_emails_found=total_emails_found+$3,
-       last_run_emails_found=$3, last_run_success=$4 where id=$1`,
-    [q.id, qVisited, qFound, qFound > 0]);
+    `update benefactor.benefactor_scrape_queries set
+       total_runs = total_runs + 1,
+       last_run_at = now(),
+       total_urls_visited = total_urls_visited + $2,
+       total_emails_found = total_emails_found + $3,
+       last_run_emails_found = $3,
+       last_run_success = $4,
+       last_success_at = case when $4 then now() else last_success_at end,
+       cooldown_until = now() + make_interval(days => $5::int),
+       consecutive_zero_new_runs = case when $3 > 0 then 0 else consecutive_zero_new_runs + 1 end,
+       last_zero_new_run_at = case when $3 > 0 then last_zero_new_run_at else now() end,
+       is_active = case when $3 = 0 and consecutive_zero_new_runs + 1 >= $6 then false else is_active end,
+       updated_at = now()
+     where id = $1`,
+    [q.id, qVisited, qFound, qFound > 0, QUERY_COOLDOWN_DAYS, ZERO_NEW_RETIRE]);
 }
 
 // ── persist leads ───────────────────────────────────────────────────────────────
-let inserted = 0;
+let inserted = 0, throttledSkips = 0;
 for (const rec of collected.values()) {
   try {
+    const throttle = await db.query(
+      `select 1 from benefactor.benefactor_leads_throttling
+        where email = $1 and request_type = $2 and not is_soft_deleted
+          and (next_allowed_at is null or next_allowed_at > now())
+        limit 1`,
+      [rec.email, SCRAPE_REQUEST_TYPE]);
+    if (throttle.rows.length) { throttledSkips++; continue; }
+
     const res = await db.query(
       `insert into benefactor.benefactor_leads
          (business_name, primary_email, service_category, city, state, source_url, source_query, source_tool, source_engine, tags, meta_data, lead_status, outreach_status)
@@ -260,8 +364,22 @@ for (const rec of collected.values()) {
        JSON.stringify(['benefactor-scrape','orchestrator', `category:${rec.q.service_category}`, rec.q.benefactor_icp_slug ? `icp:${rec.q.benefactor_icp_slug}` : 'icp:unknown']),
        JSON.stringify({ scrapeSourceUrl: rec.url, scrapeQuery: rec.q.query_text, scrapeQueryRowId: rec.q.id, benefactorIcpSlug: rec.q.benefactor_icp_slug, benefactorIcpName: rec.q.benefactor_icp_name, pipeline: 'benefactor-orchestrator', importedAt: new Date().toISOString() })]);
     if (res.rows.length) inserted++;
-  } catch (e) { console.log('  insert skip:', e.message.split('\n')[0]); }
+    const leadId = res.rows[0]?.id || null;
+
+    await db.query(
+      `insert into benefactor.benefactor_leads_throttling
+         (benefactor_lead_id, email, request_type, last_request_at, next_allowed_at, request_count, throttle_window_days, last_request_source)
+       values ($1,$2,$3, now(), now() + make_interval(days => $4::int), 1, $4, 'orchestrator')
+       on conflict (email, request_type) where is_soft_deleted = false
+       do update set
+         last_request_at = now(),
+         next_allowed_at = now() + make_interval(days => $4::int),
+         request_count = benefactor.benefactor_leads_throttling.request_count + 1,
+         benefactor_lead_id = coalesce(benefactor.benefactor_leads_throttling.benefactor_lead_id, excluded.benefactor_lead_id),
+         updated_at = now()`,
+      [leadId, rec.email, SCRAPE_REQUEST_TYPE, SCRAPE_THROTTLE_DAYS]);
+  } catch (e) { console.log('  persist skip:', e.message.split('\n')[0]); }
 }
 
-console.log(`\n[${CATEGORY}] DONE queries=${queries.length} urlsVisited=${urlsVisited} pagesWithEmail=${pagesWithEmail} emailsCollected=${collected.size} leadsInserted=${inserted}`);
+console.log(`\n[${CATEGORY}] DONE queries=${queries.length} urlsVisited=${urlsVisited} pagesWithEmail=${pagesWithEmail} emailsCollected=${collected.size} leadsInserted=${inserted} throttledSkips=${throttledSkips} emailChecks=${emailValidationStats.checked} acceptedChecks=${emailValidationStats.accepted} consumerRejected=${emailValidationStats.consumerDomain} blockedDomainRejected=${emailValidationStats.blockedDomain} nonRoleRejected=${emailValidationStats.nonRole}`);
 await db.end();

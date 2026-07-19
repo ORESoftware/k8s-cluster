@@ -41,7 +41,7 @@ jobs:
           token_url="https://x-access-token:${K8S_SUBMODULE_TOKEN}@github.com/"
           git config --global url."${token_url}".insteadOf "git@github.com:"
           trap 'git config --global --unset-all url."${token_url}".insteadOf || true' EXIT
-          git submodule update --init --depth 1 -- remote/libs
+          git submodule update --init --recursive --depth 1 -- remote/libs
 
       - name: Install pnpm
         uses: pnpm/action-setup@v6
@@ -100,6 +100,7 @@ jobs:
             general/nats-shadow-handoff.test.ts
             general/observability-config.test.ts
             general/redis-cache-config.test.ts
+            general/remote-libs-submodule-contract.test.ts
             general/remote-dev-worker-git-hardening.test.ts
             general/runtime-split-config.test.ts
             general/selenium-server-config.test.ts
@@ -116,6 +117,49 @@ jobs:
             general/ws-loadtest-config.test.ts
           )
           pnpm exec tsx --test "${static_tests[@]}"
+        working-directory: remote/tests
+
+  backend-contracts:
+    name: backend pins + SeaORM + NATS contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Require private-submodule read token
+        env:
+          K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
+        run: test -n "$K8S_SUBMODULE_TOKEN"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize pinned libraries and backend repositories
+        env:
+          K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
+        run: |
+          set -euo pipefail
+          token_url="https://x-access-token:${K8S_SUBMODULE_TOKEN}@github.com/"
+          git config --global url."${token_url}".insteadOf "git@github.com:"
+          trap 'git config --global --unset-all url."${token_url}".insteadOf || true' EXIT
+          git submodule update --init --depth 1 -- remote/libs remote/deployments
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Install remote test dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: remote/tests
+
+      - name: Verify pinned backend architecture and NATS subjects
+        run: pnpm exec tsx --test general/backend-architecture-contract.test.ts general/nats-subject-contract.test.ts
         working-directory: remote/tests
 
   kustomize-render:

@@ -34,10 +34,9 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       initContainers:
-        # 1) Clone the canonical.cloud monorepo and build the Astro frontend with
-        # the gateway prefix baked in (--base /canonical) so asset URLs resolve
-        # behind /canonical/. The built dist and the backend source are handed to
-        # the main container via shared emptyDir volumes.
+        # 1) Clone the deployable canonical-monorepo release, initialize its
+        # pinned app submodules, and build both browser bundles. The gateway
+        # prefix is baked into Astro so asset URLs resolve behind /canonical/.
         - name: build-frontend
           image: docker.io/library/node:22-bookworm
           imagePullPolicy: IfNotPresent
@@ -56,16 +55,22 @@ spec:
                 apt-get install -y --no-install-recommends git ca-certificates
               fi
               git clone --depth 1 --branch "${CANONICAL_GIT_REF}" "${CANONICAL_GIT_URL}" /source
+              git -C /source config url."https://github.com/".insteadOf git@github.com:
+              git -C /source submodule update --init --recursive --depth 1
               echo "[dd-canonical-cloud] source: ${CANONICAL_GIT_URL}@${CANONICAL_GIT_REF} ($(git -C /source rev-parse --short HEAD))"
-              cd /source/canonical-frontend
+              cd /source/apps/canonical-marketing-site.web
               npm ci --no-audit --no-fund
               npm run build -- --base /canonical
               cp -R dist/. /site-dist/
+              cd /source/apps/canonical-web-server.rs/client
+              npm ci --no-audit --no-fund
+              npm run typecheck
+              npm run build
               # World-readable so the non-root backend (uid 1000) can serve/build.
               chmod -R a+rX /site-dist /source
           env:
             - name: CANONICAL_GIT_URL
-              value: https://github.com/canonical-cloud/canonical.cloud.git
+              value: https://github.com/canonical-cloud/canonical-monorepo.git
             - name: CANONICAL_GIT_REF
               value: main
             - name: npm_config_cache
@@ -113,16 +118,45 @@ spec:
               # Build from a writable copy; the source mount is read-only.
               build=/tmp/build
               mkdir -p "${build}"
-              cp -R /source/canonical-backend.rs/. "${build}/"
+              cp -R /source/apps/canonical-web-server.rs/. "${build}/"
               cd "${build}"
-              exec /usr/local/cargo/bin/cargo run --release
+              exec /usr/local/cargo/bin/cargo run --locked --release -- serve
+          envFrom:
+            - secretRef:
+                name: dd-canonical-cloud-runtime
           env:
-            - name: HOST
-              value: 0.0.0.0
             - name: PORT
               value: '8119'
             - name: STATIC_DIR
               value: /site-dist
+            - name: APP_ASSET_DIR
+              value: /tmp/build/client/dist
+            - name: APP_BASE_URL
+              value: https://canonical.cloud
+            - name: APP_ALLOWED_ORIGINS
+              value: https://canonical.cloud
+            - name: COOKIE_SECURE
+              value: 'true'
+            - name: DATABASE_MAX_CONNECTIONS
+              value: '10'
+            - name: RUST_LOG
+              value: canonical_web_server=info,tower_http=info,hyper=warn,h2=warn,reqwest=warn,sea_orm=warn
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://dd-otel-collector.observability.svc.cluster.local:4317
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: deployment.environment=remote-dev
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
             - name: HOME
               value: /tmp
             - name: CARGO_HOME
@@ -152,7 +186,7 @@ spec:
             failureThreshold: 240
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: http
             periodSeconds: 10
             timeoutSeconds: 3

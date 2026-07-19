@@ -39,6 +39,17 @@ const ALLOWED_OTHER_DIRS: ReadonlyArray<string> = [
   // this idempotent schema at boot. It is intentionally disjoint from shared
   // RDS pg-defs tables.
   'remote/deployments/fsharp-ws-server/sql',
+  // The optional embeddings search subsystem owns a separate pgvector
+  // database. schema/schema.sql is its dpm-managed contract and migrations/
+  // is retained only as its frozen historical audit trail.
+  'remote/deployments/dd-embeddings-rs/schema',
+  'remote/deployments/dd-embeddings-rs/migrations',
+  // Per-database declarative schema contracts for services that own a database
+  // separate from the shared pg-defs RDS schema (e.g. dd-build-server's
+  // dd_build_server). These live with the shared defs but target their own
+  // database namespace and are converged with each service's scripts/dpm.sh,
+  // not with the shared schema.sql. They are NOT fed to the code generator.
+  'remote/libs/pg-defs/schema/databases',
 ];
 
 const IGNORED_DIRS = new Set([
@@ -65,6 +76,19 @@ const IGNORED_DIRS = new Set([
 ]);
 
 async function walk(currentRoot: string, repoRootDir: string, sink: string[]): Promise<void> {
+  const relativeRoot = relative(repoRootDir, currentRoot).split(sep).join('/');
+  if (
+    relativeRoot !== 'remote/libs' &&
+    relativeRoot.startsWith('remote/') &&
+    existsSync(join(currentRoot, '.git'))
+  ) {
+    // Application submodules own and validate their independent database
+    // contracts upstream. This guard covers superproject SQL plus the shared
+    // pg-defs submodule; it must not reinterpret source inside secondary
+    // checkouts as k8s-cluster-owned RDS DDL.
+    return;
+  }
+
   let entries;
   try {
     entries = await readdir(currentRoot, { withFileTypes: true });

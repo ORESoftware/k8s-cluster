@@ -41,12 +41,31 @@ hostPath mounts. Always recurse.
 private submodules: `live-mutex`, `sonus-auris-backend.rs`, `3fa-backend`, …),
 so anything that checks it out needs ORESoftware-scoped credentials:
 
-- **GitHub Actions** — `actions/checkout@v4` with `submodules: recursive`
-  (see `repo-checks.yml` and `pg-defs-check.yml`). Uses the default token, the
-  same mechanism the existing private submodules already rely on.
+- **GitHub Actions** — initialize the pinned gitlink explicitly with
+  `git submodule update --init --recursive --depth 1 -- remote/libs` after
+  rewriting the SSH URL to authenticated HTTPS. `repo-checks.yml` uses the
+  ORESoftware-scoped `REMOTE_DEV_GH_PAT`; `pg-defs-check.yml` uses the checkout
+  credential persisted by `actions/checkout`. Do not use `--remote` in CI:
+  consumers must test the exact commit recorded by the cluster superproject.
 - **Runtime node** — `remote-k8s-maintenance.yml` runs
   `git submodule update --init --recursive` with the node's deploy key; this
   recurses into `remote/libs` → `async-java`.
+
+## Enforced integration contract
+
+The cluster checks both the git plumbing and the generated contracts:
+
+```bash
+cd remote/tests
+pnpm run test:cli:remote-libs-submodule-contract
+pnpm run test:cli:nats-subject-contract
+```
+
+The submodule contract locks the canonical repository URL, `main` branch,
+gitlink mode and commit, nested `async-java` pin, required shared surfaces, and
+the resolved Rust/Gleam consumer paths. The NATS contract runs the pinned
+generator in `--check` mode before comparing every tracked workload subject to
+the canonical schema model. Both run in `repo-checks.yml`.
 
 ## Bumping the pin (it tracks `main`)
 

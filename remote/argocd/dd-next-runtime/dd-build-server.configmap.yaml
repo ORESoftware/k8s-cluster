@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dd-build-server-rules
+  namespace: default
+  labels:
+    app: dd-build-server
+data:
+  # GitHub webhook -> build job rules. Each rule maps a repo (+ optional
+  # branch) and event to a build-server.v1 job. `{sha}` / `{shortSha}` /
+  # `{ref}` are substituted into the image tag. Consumed via
+  # BUILD_SERVER_WEBHOOK_RULES_PATH. Empty array = accept + dedupe webhooks
+  # but build nothing (safe default).
+  webhook-rules.json: |
+    [
+      {
+        "repo": "ORESoftware/k8s-cluster",
+        "branch": "dev",
+        "events": ["push"],
+        "image": "710156900967.dkr.ecr.us-east-1.amazonaws.com/dd-build-server:dev-{shortSha}",
+        "contextDir": "remote/deployments/build-server-rs",
+        "dockerfile": "Dockerfile",
+        "push": true
+      },
+      {
+        "repo": "sonus-auris/sonus-auris-ui.dart",
+        "branch": "main",
+        "events": ["push"],
+        "profile": "flutter-android-debug"
+      },
+      {
+        "repo": "sonus-auris/sonus-auris-web-desktop.dart",
+        "branch": "main",
+        "events": ["push"],
+        "profile": "flutter-web-e2e"
+      }
+    ]
+  # GitHub Actions secret sync rules. Each maps a repo secret name to a
+  # source env var (populated by External Secrets from AWS Secrets Manager).
+  # Values themselves never appear here. Consumed via
+  # BUILD_SERVER_GH_SYNC_RULES_PATH; only runs when
+  # BUILD_SERVER_GH_SYNC_ENABLED=true. Empty array = sync nothing.
+  gh-sync-rules.json: |
+    []

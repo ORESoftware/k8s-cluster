@@ -77,6 +77,15 @@ policy `ManageRemoteDevSecrets` covers both consumers:
       "Resource": "arn:aws:secretsmanager:us-east-1:<account>:secret:dd/remote-dev/*"
     },
     {
+      "Sid": "ReadBenefactorGhcrPullCredential",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:DescribeSecret",
+        "secretsmanager:GetSecretValue"
+      ],
+      "Resource": "arn:aws:secretsmanager:us-east-1:<account>:secret:dd/benefactor/ghcr-pull-*"
+    },
+    {
       "Sid": "ListSecretsForInspect",
       "Effect": "Allow",
       "Action": "secretsmanager:ListSecrets", // not resource-scopeable
@@ -86,9 +95,12 @@ policy `ManageRemoteDevSecrets` covers both consumers:
 }
 ```
 
-Do not split this back into separate read-only and write policies — the bootstrap path
-needs `CreateSecret` and the inspect path needs `ListSecrets`, and the ESO read path is a
-strict subset of those actions on the same resource prefix.
+Do not split the `dd/remote-dev/*` statement back into separate read-only and
+write policies — the bootstrap path needs `CreateSecret` and the inspect path
+needs `ListSecrets`, and the ESO read path is a strict subset of those actions
+on the same resource prefix. The benefactor registry statement is deliberately
+separate and read-only so the cluster can pull its private image without gaining
+write access to that credential.
 
 `dd/remote-dev/lambda-runner-secrets` must include `LAMBDA_DATABASE_URL`; the Gleam lambda runner
 consumes that key through an explicit `secretKeyRef` so function invocation can look up lambda

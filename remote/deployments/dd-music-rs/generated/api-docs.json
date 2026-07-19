@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "dd-music-rs",
   "language": "rust",
-  "routeCount": 13,
+  "routeCount": 14,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 6
+    "user-generated": 7
   },
   "standardDocsRoutes": [
     "/docs/api",
@@ -229,6 +229,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "songs_shelf"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-music-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/ws",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "ws_votes"
       ],
       "sourceFiles": [
         "remote/deployments/dd-music-rs/src/main.rs"

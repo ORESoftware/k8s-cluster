@@ -17,7 +17,10 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-07-sound-recorder-backend'
+        dd.dev/telemetry-revision: '2026-07-18-sonus-otel-seaorm'
+        prometheus.io/path: /metrics
+        prometheus.io/port: '8126'
+        prometheus.io/scrape: 'true'
       labels:
         app: dd-sound-recorder-rs
     spec:
@@ -28,7 +31,7 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
       containers:
         - name: sound-recorder-rs
-          image: docker.io/library/rust:1.91.1-bookworm
+          image: docker.io/library/rust:1.94.1-bookworm
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -54,10 +57,11 @@ spec:
               mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR"
               # The backend code lives in its own private repo, sonus-auris/sonus-auris-backend.rs,
               # wired into this superproject as a git submodule at
-              # remote/deployments/dd-sound-recorder-rs. Prefer mounted source
-              # when the node has it; otherwise clone the superproject and
-              # initialize only this backend submodule so unrelated private
-              # submodules cannot block Sonus Auris startup. GH_PAT
+              # remote/deployments/dd-sound-recorder-rs. Its generated Rust
+              # contract is the sibling remote/deployments/sonus-auris-interfaces
+              # submodule. Prefer mounted source when the node has both; otherwise
+              # clone the superproject and initialize only these two submodules so
+              # unrelated private submodules cannot block Sonus Auris startup. GH_PAT
               # (dd-agent-secrets) authenticates the private fetch via an HTTP
               # header instead of a URL, so auth failures cannot print a token.
               git_auth_args=()
@@ -68,29 +72,37 @@ spec:
               fi
               source_root=/opt/dd-next-1
               app_dir="$source_root/remote/deployments/dd-sound-recorder-rs"
-              if [ -f "$app_dir/Cargo.toml" ]; then
-                echo "[dd-sound-recorder-rs] source: using mounted backend at ${app_dir}"
+              interfaces_dir="$source_root/remote/deployments/sonus-auris-interfaces/generated/rust"
+              if [ -f "$app_dir/Cargo.toml" ] && [ -f "$interfaces_dir/Cargo.toml" ]; then
+                echo "[dd-sound-recorder-rs] source: using mounted backend and interfaces at ${source_root}"
               elif [ -n "${SOUND_RECORDER_GIT_URL:-}" ]; then
                 clone_root="$(mktemp -d /tmp/dd-sound-recorder-rs-source.XXXXXX)"
                 if git clone --depth 1 \
                      --branch "${SOUND_RECORDER_GIT_REF:-dev}" "${SOUND_RECORDER_GIT_URL}" "$clone_root" &&
-                   git -C "$clone_root" submodule init remote/deployments/dd-sound-recorder-rs &&
+                   git -C "$clone_root" submodule init \
+                     remote/deployments/dd-sound-recorder-rs \
+                     remote/deployments/sonus-auris-interfaces &&
                    git -C "$clone_root" config "submodule.remote/deployments/dd-sound-recorder-rs.url" "https://github.com/sonus-auris/sonus-auris-backend.rs.git" &&
-                   git -C "$clone_root" "${git_auth_args[@]}" submodule update --depth 1 remote/deployments/dd-sound-recorder-rs; then
+                   git -C "$clone_root" config "submodule.remote/deployments/sonus-auris-interfaces.url" "https://github.com/sonus-auris/sonus-auris-interfaces.git" &&
+                   git -C "$clone_root" "${git_auth_args[@]}" submodule update --depth 1 \
+                     remote/deployments/dd-sound-recorder-rs \
+                     remote/deployments/sonus-auris-interfaces; then
                   source_root="$clone_root"
                   app_dir="$source_root/remote/deployments/dd-sound-recorder-rs"
+                  interfaces_dir="$source_root/remote/deployments/sonus-auris-interfaces/generated/rust"
                   sub_sha="$(git -C "$clone_root/remote/deployments/dd-sound-recorder-rs" rev-parse --short HEAD 2>/dev/null || echo '?')"
-                  echo "[dd-sound-recorder-rs] source: cloned ${SOUND_RECORDER_GIT_URL}@${SOUND_RECORDER_GIT_REF:-dev} ($(git -C "$clone_root" rev-parse --short HEAD)); backend submodule ${sub_sha}"
+                  interfaces_sha="$(git -C "$clone_root/remote/deployments/sonus-auris-interfaces" rev-parse --short HEAD 2>/dev/null || echo '?')"
+                  echo "[dd-sound-recorder-rs] source: cloned ${SOUND_RECORDER_GIT_URL}@${SOUND_RECORDER_GIT_REF:-dev} ($(git -C "$clone_root" rev-parse --short HEAD)); backend ${sub_sha}; interfaces ${interfaces_sha}"
                 else
                   echo "[dd-sound-recorder-rs] source clone failed; using mounted source at ${source_root}" >&2
                 fi
               fi
               # When we fall back to the read-only mounted superproject, the host must have already run
-              # `git submodule update --init` for this path. Fail loudly with a fix hint instead of a
+              # `git submodule update --init` for both paths. Fail loudly with a fix hint instead of a
               # confusing cargo "could not find Cargo.toml" error.
-              if [ ! -f "$app_dir/Cargo.toml" ]; then
-                echo "[dd-sound-recorder-rs] FATAL: backend submodule not populated at $app_dir." >&2
-                echo "[dd-sound-recorder-rs] If using mounted source, run on the host: git -C \"$source_root\" submodule update --init remote/deployments/dd-sound-recorder-rs" >&2
+              if [ ! -f "$app_dir/Cargo.toml" ] || [ ! -f "$interfaces_dir/Cargo.toml" ]; then
+                echo "[dd-sound-recorder-rs] FATAL: backend or interfaces submodule is not populated under $source_root/remote/deployments." >&2
+                echo "[dd-sound-recorder-rs] If using mounted source, initialize remote/deployments/dd-sound-recorder-rs and remote/deployments/sonus-auris-interfaces on the host." >&2
                 echo "[dd-sound-recorder-rs] If using the git clone path, ensure GH_PAT (private-repo read) is set." >&2
                 exit 1
               fi
@@ -103,6 +115,22 @@ spec:
               value: /var/cache/dd-sound-recorder-rs/cargo
             - name: CARGO_TARGET_DIR
               value: /var/cache/dd-sound-recorder-rs/target
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://dd-otel-collector.observability.svc.cluster.local:4317
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: deployment.environment=kubernetes
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
             - name: SOUND_RECORDER_GIT_URL
               value: https://github.com/ORESoftware/k8s-cluster.git
             - name: SOUND_RECORDER_GIT_REF
@@ -133,6 +161,10 @@ spec:
               value: '900'
             - name: SOUND_RECORDER_S3_KEY_PREFIX
               value: sound-recorder/segments
+            - name: SOUND_RECORDER_S3_READINESS_OBJECT_KEY
+              value: sound-recorder/segments/.readiness
+            - name: SOUND_RECORDER_S3_VERSIONING_MODE
+              value: unversioned
             - name: SOUND_RECORDER_OAUTH_STATE_TTL_SECONDS
               value: '600'
             - name: SOUND_RECORDER_CLOUD_COPY_BATCH_SIZE
@@ -243,6 +275,18 @@ spec:
                   name: dd-agent-secrets
                   key: SOUND_RECORDER_SUPABASE_URL
                   optional: true
+            - name: SOUND_RECORDER_SUPABASE_PUBLISHABLE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SOUND_RECORDER_SUPABASE_PUBLISHABLE_KEY
+                  optional: true
+            - name: SOUND_RECORDER_SUPABASE_SERVICE_ROLE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SOUND_RECORDER_SUPABASE_SERVICE_ROLE_KEY
+                  optional: true
             - name: SOUND_RECORDER_SUPABASE_JWT_SECRET
               valueFrom:
                 secretKeyRef:
@@ -347,6 +391,8 @@ spec:
             path: /home/ec2-user/codes/dd/dd-next-1
             type: DirectoryOrCreate
         - name: build-cache
-          emptyDir: {}
+          hostPath:
+            path: /home/ec2-user/.cache/dd-sound-recorder-rs
+            type: DirectoryOrCreate
         - name: tmp
           emptyDir: {}

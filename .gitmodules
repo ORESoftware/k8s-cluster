@@ -47,7 +47,7 @@
 	branch = main
 [submodule "remote/submodules/soccer-sim-game-engine.rs"]
 	path = remote/submodules/soccer-sim-game-engine.rs
-	url = https://github.com/ORESoftware/soccer-sim-game-engine.rs.git
+	url = https://github.com/akrion-sim/akrion-soccer-engine-rs.git
 	branch = main
 [submodule "remote/deployments/dd-sound-recorder-rs"]
 	path = remote/deployments/dd-sound-recorder-rs
@@ -144,4 +144,12 @@
 [submodule "remote/deployments/t2v-v2t.rs"]
 	path = remote/deployments/t2v-v2t.rs
 	url = git@github.com:ORESoftware/t2v-v2t.rs.git
+	branch = main
+[submodule "sonus-auris-monorepo"]
+	path = remote/deployments/sonus-auris-monorepo
+	url = git@github.com:sonus-auris/sonus-auris-monorepo.git
+	branch = main
+[submodule "remote/deployments/sonus-auris-interfaces"]
+	path = remote/deployments/sonus-auris-interfaces
+	url = git@github.com:sonus-auris/sonus-auris-interfaces.git
 	branch = main

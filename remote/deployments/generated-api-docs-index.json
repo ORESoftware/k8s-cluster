@@ -109,10 +109,10 @@
     {
       "service": "build-server-rs",
       "language": "rust",
-      "routeCount": 13,
+      "routeCount": 18,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 3,
+        "user-generated": 8,
         "runtime-config": 3
       },
       "generated": [
@@ -151,10 +151,10 @@
     {
       "service": "contract-service-rs",
       "language": "rust",
-      "routeCount": 52,
+      "routeCount": 59,
       "routeTypeCounts": {
-        "service": 6,
-        "user-generated": 43,
+        "service": 7,
+        "user-generated": 49,
         "runtime-config": 3
       },
       "generated": [
@@ -259,10 +259,10 @@
     {
       "service": "dd-music-rs",
       "language": "rust",
-      "routeCount": 13,
+      "routeCount": 14,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 6
+        "user-generated": 7
       },
       "generated": [
         "remote/deployments/dd-music-rs/generated/api-docs.json",
@@ -281,19 +281,6 @@
       "generated": [
         "remote/deployments/dd-ocr-rs/generated/api-docs.json",
         "remote/deployments/dd-ocr-rs/generated/api-docs.html"
-      ]
-    },
-    {
-      "service": "dd-sound-recorder-rs",
-      "language": "rust",
-      "routeCount": 30,
-      "routeTypeCounts": {
-        "service": 7,
-        "user-generated": 23
-      },
-      "generated": [
-        "remote/deployments/dd-sound-recorder-rs/generated/api-docs.json",
-        "remote/deployments/dd-sound-recorder-rs/generated/api-docs.html"
       ]
     },
     {
@@ -339,26 +326,12 @@
       ]
     },
     {
-      "service": "fabrication-server-rs",
-      "language": "rust",
-      "routeCount": 511,
-      "routeTypeCounts": {
-        "service": 7,
-        "user-generated": 501,
-        "runtime-config": 3
-      },
-      "generated": [
-        "remote/deployments/fabrication-server-rs/generated/api-docs.json",
-        "remote/deployments/fabrication-server-rs/generated/api-docs.html"
-      ]
-    },
-    {
       "service": "fiducia-customer.rs",
       "language": "rust",
-      "routeCount": 38,
+      "routeCount": 58,
       "routeTypeCounts": {
         "service": 5,
-        "user-generated": 33
+        "user-generated": 53
       },
       "generated": [
         "remote/deployments/fiducia-customer.rs/generated/api-docs.json",

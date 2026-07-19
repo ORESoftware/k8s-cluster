@@ -1,0 +1,277 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: benefactor-backend-rs
+  namespace: default
+  labels:
+    app: benefactor-backend-rs
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: benefactor-backend-rs
+  template:
+    metadata:
+      annotations:
+        prometheus.io/path: /metrics
+        prometheus.io/port: '8135'
+        prometheus.io/scrape: 'true'
+      labels:
+        app: benefactor-backend-rs
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: benefactor-ghcr
+      securityContext:
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: api
+          image: ghcr.io/benefactor-cc/backend.rs:main
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          env:
+            - name: BENEFACTOR_BACKEND_HOST
+              value: 0.0.0.0
+            - name: BENEFACTOR_BACKEND_PORT
+              value: '8135'
+            - name: BENEFACTOR_REPLY_DRY_RUN
+              value: 'false'
+            - name: LIVE_SEND_CONFIRM
+              value: send-benefactor-reply-followup
+            # First-touch outreach (/api/outreach/send-batch). Stays dry-run
+            # until flipped to 'false'; live also requires the
+            # X-Benefactor-Live-Confirm header.
+            - name: BENEFACTOR_OUTREACH_DRY_RUN
+              value: 'false'
+            - name: BENEFACTOR_OUTREACH_POSTAL_ADDRESS
+              value: 120 East 82nd St, NY, NY 10028
+            - name: GEMINI_HUMANIZE_ENABLED
+              value: 'true'
+            - name: GEMINI_MODEL
+              value: gemini-2.5-flash
+            - name: BENEFACTOR_TRACKING_ENABLED
+              value: 'true'
+            - name: BENEFACTOR_TRACKING_BASE_URL
+              value: https://go.benefactor.cc/r/team
+            - name: BENEFACTOR_TRACKING_REDIRECT_URL
+              value: https://benefactor.cc/team
+            # Hard-capped in the service at 90 days. Keep this short enough to
+            # bound a signing-key compromise while covering the outreach cycle.
+            - name: BENEFACTOR_TRACKING_TOKEN_TTL_SECONDS
+              value: '7776000'
+            - name: SUPABASE_CLICKS_TABLE
+              value: benefactor_outreach_clicks
+            - name: SUPABASE_DB_SCHEMA
+              value: benefactor-cc
+            - name: FROM_EMAIL
+              value: hello@mail.benefactor.cc
+            - name: FROM_NAME
+              value: Benefactor
+            - name: REPLY_TO_EMAIL
+              value: hello@benefactor.cc
+            - name: SIGNATURE_URL
+              value: https://benefactor.cc/team
+            - name: CALENDLY_URL
+              value: https://calendly.com/hello-benefactor/30min
+            - name: UNSUBSCRIBE_URL_BASE
+              value: https://benefactor.cc/unsubscribe
+            - name: CAMPAIGN_KEY
+              value: benefactor-sendgrid-outreach
+            - name: REPLY_FOLLOWUP_TYPE
+              value: benefactor_reply_calendly_followup
+            - name: REPLY_MATCH_LOOKBACK_DAYS
+              value: '45'
+            - name: REPLY_FOLLOWUP_ONCE_PER_LEAD
+              value: 'true'
+            - name: GMAIL_POLL_ENABLED
+              value: 'true'
+            - name: GMAIL_IMPERSONATE_EMAIL
+              value: hello@benefactor.cc
+            - name: GMAIL_POLL_INTERVAL_SECONDS
+              value: '300'
+            - name: GMAIL_POLL_MAX_RESULTS
+              value: '25'
+            - name: GMAIL_PROCESSED_LABEL
+              value: benefactor-reply-processed
+            - name: GMAIL_ERROR_LABEL
+              value: benefactor-reply-error
+            - name: GMAIL_POLL_LOCK_KEY
+              value: benefactor-gmail-reply-poll
+            - name: GOOGLE_CHAT_REPLY_ENABLED
+              value: 'true'
+            - name: GOOGLE_CHAT_REPLY_DRY_RUN
+              value: 'false'
+            - name: GOOGLE_CHAT_IMPERSONATE_EMAIL
+              value: hello@benefactor.cc
+            - name: GOOGLE_CHAT_REPLY_CREATE_DM
+              value: 'true'
+            - name: GOOGLE_CHAT_REPLY_REQUIRE_ALLOWED_DOMAIN
+              value: 'true'
+            - name: GOOGLE_CHAT_REPLY_ALLOWED_DOMAINS
+              value: gmail.com,googlemail.com
+            - name: HUBSPOT_SYNC_ENABLED
+              value: 'true'
+            - name: HUBSPOT_SYNC_DRY_RUN
+              value: 'false'
+            - name: HUBSPOT_SYNC_INTERVAL_SECONDS
+              value: '300'
+            - name: HUBSPOT_SYNC_BATCH_SIZE
+              value: '50'
+            - name: HUBSPOT_SYNC_LOCK_KEY
+              value: benefactor-hubspot-lead-sync
+            - name: HUBSPOT_SYNC_SOURCE
+              value: benefactor-leads-postgres
+            - name: HUBSPOT_OUTGOING_EMAIL
+              value: hello@mail.benefactor.cc
+            # OTLP traces and metrics go to the shared collector. The collector
+            # exports metrics to Prometheus; JSON stdout is collected by
+            # Promtail and stored in Loki.
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://dd-otel-collector.observability.svc.cluster.local:4317
+            - name: DEPLOYMENT_ENV
+              value: production
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: RUST_LOG
+              value: benefactor_backend_rs=info,tower_http=info,sea_orm=warn
+            - name: BENEFACTOR_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-remote-rest-api-secrets
+                  key: AGENT_TASKS_RDS_DATABASE_URL
+            - name: SENDGRID_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: benefactor-sendgrid
+                  key: SENDGRID_API_KEY
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: benefactor-gemini
+                  key: GEMINI_API_KEY
+                  optional: true
+            - name: BENEFACTOR_TRACKING_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: benefactor-tracking
+                  key: BENEFACTOR_TRACKING_SECRET
+                  optional: true
+            # Set only for a normal key rollover, then remove it after the
+            # former token TTL has elapsed. Do not set it after a compromise.
+            - name: BENEFACTOR_TRACKING_PREVIOUS_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: benefactor-tracking
+                  key: BENEFACTOR_TRACKING_PREVIOUS_SECRET
+                  optional: true
+            - name: SUPABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: benefactor-supabase
+                  key: SUPABASE_URL
+                  optional: true
+            # The click writer uses an ordinary API key plus a custom JWT that
+            # assumes the non-bypassing `benefactor_click_writer` DB role. The
+            # service role key is intentionally never injected into this pod.
+            - name: SUPABASE_PUBLISHABLE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: benefactor-supabase
+                  key: SUPABASE_PUBLISHABLE_KEY
+                  optional: true
+            - name: SUPABASE_CLICK_WRITER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: benefactor-supabase
+                  key: SUPABASE_CLICK_WRITER_TOKEN
+                  optional: true
+            - name: BENEFACTOR_REPLY_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: benefactor-backend
+                  key: BENEFACTOR_REPLY_WEBHOOK_SECRET
+            - name: BENEFACTOR_API_AUTH_BEARER
+              valueFrom:
+                secretKeyRef:
+                  name: benefactor-backend
+                  key: BENEFACTOR_API_AUTH_BEARER
+                  optional: true
+            - name: GMAIL_SERVICE_ACCOUNT_JSON
+              valueFrom:
+                secretKeyRef:
+                  name: benefactor-gmail
+                  key: GOOGLE_SERVICE_ACCOUNT_JSON
+            - name: HUBSPOT_ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: benefactor-hubspot
+                  key: HUBSPOT_ACCESS_TOKEN
+                  optional: true
+            - name: HUBSPOT_PRIVATE_APP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: benefactor-hubspot
+                  key: HUBSPOT_PRIVATE_APP_TOKEN
+                  optional: true
+          ports:
+            - name: http
+              containerPort: 8135
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 24
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: '2'
+              memory: 2Gi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

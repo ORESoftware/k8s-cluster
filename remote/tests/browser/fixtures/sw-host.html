@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>dd draft service-worker host</title>
+</head>
+<body>
+  <!-- Minimal page whose only job is to register the browser-drafts service
+       worker (remote/libs/browser/service-worker.js) and expose a promise-based
+       bridge to it, so the E2E tests can exercise the save/load/delete protocol
+       from page context via page.evaluate(). -->
+  <div id="status">booting</div>
+  <script>
+    // Resolves once the worker is registered and active.
+    window.__swReady = (async () => {
+      if (!("serviceWorker" in navigator)) {
+        document.getElementById("status").textContent = "no-sw-support";
+        throw new Error("service workers unsupported in this context");
+      }
+      await navigator.serviceWorker.register("./service-worker.js");
+      const reg = await navigator.serviceWorker.ready;
+      document.getElementById("status").textContent = reg.active ? "sw-ready" : "sw-inactive";
+      return Boolean(reg.active);
+    })();
+
+    // Post one message to the active worker over a fresh MessageChannel and
+    // resolve with its reply. Mirrors how a real page talks to the worker.
+    window.ddDraftCall = (type, payload = {}) =>
+      new Promise((resolve, reject) => {
+        navigator.serviceWorker.ready
+          .then((reg) => {
+            const worker = reg.active;
+            if (!worker) {
+              reject(new Error("no active service worker"));
+              return;
+            }
+            const channel = new MessageChannel();
+            const timer = setTimeout(() => reject(new Error("service worker reply timed out")), 5000);
+            channel.port1.onmessage = (event) => {
+              clearTimeout(timer);
+              resolve(event.data);
+            };
+            worker.postMessage(Object.assign({ type }, payload), [channel.port2]);
+          })
+          .catch(reject);
+      });
+  </script>
+</body>
+</html>

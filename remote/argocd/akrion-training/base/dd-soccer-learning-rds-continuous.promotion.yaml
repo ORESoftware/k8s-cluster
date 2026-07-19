@@ -1,0 +1,18 @@
+# This is intentionally a partial Server-Side Apply manifest. The continuous
+# learner already exists in both clusters with carefully tuned live fields that
+# have not all been reconciled into the canonical source manifest. Argo owns the
+# replica policy and immutable source pins below and leaves every other field
+# with its current field manager.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-soccer-learning-rds-continuous
+  namespace: default
+  annotations:
+    argocd.argoproj.io/sync-options: ServerSideApply=true,Validate=false,DisableClientSideApplyMigration=true
+spec:
+  replicas: 0
+  template:
+    spec:
+      containers:
+        - name: soccer-learning
