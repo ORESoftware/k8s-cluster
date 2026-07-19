@@ -761,7 +761,11 @@ const WS_SCRIPT: &str = r#"
   function set(id, v) { var e = document.getElementById(id); if (e != null && v != null) e.textContent = v; }
   function connect() {
     var ws;
-    try { ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/stats'); }
+    try {
+      var tok = new URLSearchParams(location.search).get('token');
+      var base = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/stats';
+      ws = new WebSocket(tok ? base + '?token=' + encodeURIComponent(tok) : base);
+    }
     catch (e) { return; }
     ws.onmessage = function (ev) {
       var s; try { s = JSON.parse(ev.data); } catch (e) { return; }
