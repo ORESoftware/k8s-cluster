@@ -1,7 +1,8 @@
 name: akrion GitOps
 
-# Source repositories own code and CI. This workflow promotes only successful
-# revisions into k8s-cluster; Argo CD remains the sole deployment actor.
+# Source repositories own code and CI. akrion-monorepo integrates their tested
+# revisions, and this workflow promotes only a successful monorepo revision into
+# k8s-cluster. Argo CD remains the sole deployment actor.
 on:
   pull_request:
     paths:
@@ -72,13 +73,13 @@ jobs:
     permissions:
       contents: write
     env:
-      GH_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
+      GH_TOKEN: ${{ secrets.AKRION_GITOPS_TOKEN }}
     steps:
       - name: Require private-repository promotion token
         run: |
           set -euo pipefail
           test -n "${GH_TOKEN:-}" || {
-            echo 'REMOTE_DEV_GH_PAT is required to read private Akrion CI metadata and push dev.' >&2
+            echo 'AKRION_GITOPS_TOKEN is required to read private akrion-monorepo CI metadata.' >&2
             exit 1
           }
       - name: Checkout GitOps dev
@@ -86,35 +87,41 @@ jobs:
         with:
           ref: dev
           fetch-depth: 0
-          token: ${{ secrets.REMOTE_DEV_GH_PAT }}
+          token: ${{ github.token }}
       - name: Resolve newest successful source revisions
         id: revisions
         shell: bash
         run: |
           set -euo pipefail
 
-          latest_successful_ci() {
-            repository="$1"
-            revision="$(gh api \
-              "repos/${repository}/actions/workflows/ci.yml/runs?branch=main&status=success&event=push&per_page=1" \
-              --jq '.workflow_runs[0].head_sha // empty')"
+          monorepo="$(gh api \
+            'repos/akrion-sim/akrion-monorepo/actions/workflows/ci.yml/runs?branch=main&status=success&event=push&per_page=1' \
+            --jq '.workflow_runs[0].head_sha // empty')"
+          if ! [[ "$monorepo" =~ ^[0-9a-f]{40}$ ]]; then
+            echo 'No successful main CI revision found for akrion-sim/akrion-monorepo.' >&2
+            exit 1
+          fi
+
+          monorepo_tree="$(gh api "repos/akrion-sim/akrion-monorepo/git/trees/${monorepo}?recursive=1")"
+          component_revision() {
+            path="$1"
+            revision="$(jq -r --arg path "$path" \
+              '.tree[] | select(.path == $path and .mode == "160000") | .sha' \
+              <<<"$monorepo_tree")"
             if ! [[ "$revision" =~ ^[0-9a-f]{40}$ ]]; then
-              echo "No successful main CI revision found for ${repository}." >&2
+              echo "Successful monorepo revision does not pin ${path}." >&2
               exit 1
             fi
             printf '%s' "$revision"
           }
 
-          backend="$(latest_successful_ci akrion-sim/akrion-backend.rs)"
-          web="$(latest_successful_ci akrion-sim/akrion-web-server.rs)"
-          soccer="$(latest_successful_ci akrion-sim/akrion-soccer-engine-rs)"
-          des="$(gh api repos/ORESoftware/discrete-event-system.rs/commits/main --jq '.sha')"
-          if ! [[ "$des" =~ ^[0-9a-f]{40}$ ]]; then
-            echo 'Unable to resolve ORESoftware/discrete-event-system.rs@main.' >&2
-            exit 1
-          fi
+          backend="$(component_revision apps/akrion-backend.rs)"
+          web="$(component_revision apps/akrion-web-server.rs)"
+          soccer="$(component_revision apps/akrion-soccer-engine.rs)"
+          des="$(component_revision apps/discrete-event-system.rs)"
 
           {
+            echo "monorepo=$monorepo"
             echo "backend=$backend"
             echo "web=$web"
             echo "soccer=$soccer"
@@ -122,6 +129,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
       - name: Update exact GitOps revisions
         env:
+          AKRION_MONOREPO_REVISION: ${{ steps.revisions.outputs.monorepo }}
           AKRION_BACKEND_REVISION: ${{ steps.revisions.outputs.backend }}
           AKRION_WEB_REVISION: ${{ steps.revisions.outputs.web }}
           AKRION_SOCCER_REVISION: ${{ steps.revisions.outputs.soccer }}
@@ -144,13 +152,14 @@ jobs:
 
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          short_soccer="${{ steps.revisions.outputs.soccer }}"
-          git commit -m "chore(akrion): promote tested release ${short_soccer:0:12}"
+          short_monorepo="${{ steps.revisions.outputs.monorepo }}"
+          git commit -m "chore(akrion): promote tested monorepo ${short_monorepo:0:12}"
           git push origin HEAD:dev
 
           {
             echo '### Akrion GitOps promotion'
             echo
+            echo "- monorepo: \`${{ steps.revisions.outputs.monorepo }}\`"
             echo "- backend: \`${{ steps.revisions.outputs.backend }}\`"
             echo "- web: \`${{ steps.revisions.outputs.web }}\`"
             echo "- soccer: \`${{ steps.revisions.outputs.soccer }}\`"

@@ -19,6 +19,11 @@ revisions = REVISION_ENV.to_h do |component, variable|
   [component, revision]
 end
 
+monorepo_revision = ENV.fetch('AKRION_MONOREPO_REVISION', '').strip
+unless monorepo_revision.match?(/\A[0-9a-f]{40}\z/)
+  abort 'AKRION_MONOREPO_REVISION must be a full 40-character commit SHA'
+end
+
 def replace_one(path, pattern, description)
   text = File.read(path)
   matches = text.scan(pattern).length
@@ -69,11 +74,12 @@ set_env_value(training_base, 'SOCCER_ENGINE_SOURCE_REF', revisions.fetch('des'))
 
 release_path = 'remote/argocd/akrion/release.json'
 release = JSON.parse(File.read(release_path))
-release_changed = revisions.any? do |component, revision|
+release_changed = release.dig('source', 'revision') != monorepo_revision || revisions.any? do |component, revision|
   release.dig('components', component, 'revision') != revision
 end
 
 if release_changed
+  release.fetch('source')['revision'] = monorepo_revision
   revisions.each do |component, revision|
     release.fetch('components').fetch(component)['revision'] = revision
   end
@@ -103,5 +109,5 @@ files = [
 ]
 abort 'unable to stage Akrion release manifests' unless system('git', 'add', '--', *files)
 
-puts "promoted backend=#{revisions.fetch('backend')} web=#{revisions.fetch('web')} " \
+puts "promoted monorepo=#{monorepo_revision} backend=#{revisions.fetch('backend')} web=#{revisions.fetch('web')} " \
      "soccer=#{revisions.fetch('soccer')} des=#{revisions.fetch('des')}"
