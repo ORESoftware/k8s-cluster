@@ -78,6 +78,7 @@ pub async fn run(cfg: Arc<WebConfig>) -> Result<()> {
         .route("/docs/{name}", get(docs_page))
         .route("/proxy.pac", get(proxy_pac))
         .route("/healthz", get(|| async { "ok" }))
+        .layer(middleware::from_fn_with_state(cfg.clone(), require_token))
         .with_state(cfg.clone());
 
     let listener = TcpListener::bind(&cfg.ui_listen).await?;
