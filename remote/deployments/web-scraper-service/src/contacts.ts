@@ -116,7 +116,13 @@ const PLACEHOLDER_EMAIL_DOMAINS = new Set([
 // Image/asset extensions that show up as bogus "emails" like `logo@2x.png`.
 const ASSET_TAIL = /\.(png|jpe?g|gif|webp|svg|css|js|woff2?|ttf|ico|mp4|pdf)$/i;
 
-const EMAIL_RE = /[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,24}/gi;
+// Quantifiers are bounded to RFC 5321 limits (local-part <= 64, domain <= 255)
+// rather than left as open `+`. That is not cosmetic: the scan runs over
+// attacker-controlled page text (up to MAX_SCAN_CHARS), and an unbounded `+`
+// ahead of a required `@`/`.` backtracks quadratically on a long char run with
+// no delimiter, which would hang the parser worker (ReDoS). Bounding caps the
+// backtrack window per start position, keeping the pass linear.
+const EMAIL_RE = /[A-Z0-9._%+\-]{1,64}@[A-Z0-9\-]{1,63}(?:\.[A-Z0-9\-]{1,63}){1,8}\.[A-Z]{2,24}/gi;
 
 // A phone candidate: optional +, then digits/grouping punctuation. The lookbehind
 // drops runs glued to a word char, `#`, or a currency symbol — those are order
