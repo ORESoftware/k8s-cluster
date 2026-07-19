@@ -291,7 +291,9 @@ class PhoneCollector {
   constructor(private readonly defaultRegion?: string) {}
 
   add(raw: string, source: ContactSource, extension?: string): void {
-    const normalized = normalizePhoneNumber(raw, this.defaultRegion);
+    const normalized = normalizePhoneNumber(raw, this.defaultRegion, {
+      requireStructure: source === 'text',
+    });
     if (!normalized) {
       return;
     }
