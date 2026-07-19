@@ -47,6 +47,22 @@ spec:
           args:
             - |
               set -euo pipefail
+              expected_flutter_revision=c9a6c484230f8b5e408ec57be1ef71dee1e77020
+              expected_flutter_version=3.44.2
+              actual_flutter_revision="$(git -C /opt/flutter rev-parse HEAD)"
+              if [ "$actual_flutter_revision" != "$expected_flutter_revision" ]; then
+                echo "[dd-sonus-auris-console] refusing Flutter revision ${actual_flutter_revision}; expected ${expected_flutter_revision}" >&2
+                exit 1
+              fi
+              git -C /opt/flutter tag --force "$expected_flutter_version" "$expected_flutter_revision"
+              if [ -f /opt/flutter/bin/cache/flutter.version.json ]; then
+                mv /opt/flutter/bin/cache/flutter.version.json /tmp/flutter.version.pre-tag.json
+              fi
+              if ! flutter --version --machine | grep -Eq '"frameworkVersion"[[:space:]]*:[[:space:]]*"3\.44\.2"'; then
+                echo "[dd-sonus-auris-console] Flutter did not resolve to ${expected_flutter_version}" >&2
+                exit 1
+              fi
+
               source_dir=/work/source
               monorepo_mount=/host-dd-next/remote/deployments/sonus-auris-monorepo
               source_mount=${monorepo_mount}/apps/sonus-auris-web-desktop.dart

@@ -9,6 +9,11 @@ Linux desktop toolchain, and fetches the exact Flutter framework revision
 scan-on-push ECR repository `sonus-flutter-builder`; Kubernetes workloads should
 pin the resulting digest after the bootstrap build succeeds.
 
+The checkout is intentionally shallow, so the Dockerfile creates the reviewed
+`3.44.2` release tag at the verified full revision before Flutter first writes
+its version cache. Omitting that tag makes the tool report `0.0.0-unknown` and
+causes otherwise-compatible packages to fail their Flutter SDK constraint.
+
 The `dd-build-server` builds it from repository context `remote/images/sonus-flutter-builder`.
 Changing Flutter or the Android base requires a reviewed Dockerfile change, a
 new immutable tag, a successful ECR scan, and an Argo digest update.
