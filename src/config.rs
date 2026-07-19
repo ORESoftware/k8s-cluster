@@ -74,9 +74,10 @@ pub struct Config {
 
     /// Bearer token for the JSON API (`/v1/...`). When set, every
     /// tenant-scoped route requires `Authorization: Bearer <token>`
-    /// (constant-time compared). Leave unset for unauthenticated local
-    /// dev, but **always** set this in production — without it the
-    /// entire API is open to anyone who can reach the listener.
+    /// (constant-time compared). Required to boot: without it the entire API
+    /// is open to anyone who can reach the listener, so the server refuses to
+    /// start unless this is set (or `BILLING_ALLOW_INSECURE_DEV=1` is given for
+    /// local dev).
     ///
     /// Production deployments should additionally front the listener
     /// with `dd-remote-auth` or another gateway that enforces tenant
