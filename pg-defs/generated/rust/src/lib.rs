@@ -34,23 +34,38 @@ pub struct AccountsInsert {
 }
 
 pub fn validate_accounts_row(value: &AccountsRow) -> Result<(), String> {
-    if (&value.username).as_bytes().len() > 320 { return Err("accounts.username exceeds 320 bytes".to_string()); }
-    if (&value.auth_secret).as_bytes().len() > 1024 { return Err("accounts.auth_secret exceeds 1024 bytes".to_string()); }
+    if (&value.username).as_bytes().len() > 320 {
+        return Err("accounts.username exceeds 320 bytes".to_string());
+    }
+    if (&value.auth_secret).as_bytes().len() > 1024 {
+        return Err("accounts.auth_secret exceeds 1024 bytes".to_string());
+    }
     Ok(())
 }
 
 pub fn validate_accounts_insert(value: &AccountsInsert) -> Result<(), String> {
     if let Some(value) = &value.username {
-        if (value).as_bytes().len() > 320 { return Err("accounts.username exceeds 320 bytes".to_string()); }
+        if (value).as_bytes().len() > 320 {
+            return Err("accounts.username exceeds 320 bytes".to_string());
+        }
     }
     if let Some(value) = &value.auth_secret {
-        if (value).as_bytes().len() > 1024 { return Err("accounts.auth_secret exceeds 1024 bytes".to_string()); }
+        if (value).as_bytes().len() > 1024 {
+            return Err("accounts.auth_secret exceeds 1024 bytes".to_string());
+        }
     }
     Ok(())
 }
 
 pub const DEVICES_TABLE: &str = "threefa.devices";
-pub const DEVICES_COLUMNS: &[&str] = &["id", "account_id", "device_name", "sync_token_hash", "revoked", "created_at"];
+pub const DEVICES_COLUMNS: &[&str] = &[
+    "id",
+    "account_id",
+    "device_name",
+    "sync_token_hash",
+    "revoked",
+    "created_at",
+];
 pub const DEVICES_SELECT_SQL: &str = r###"select
       id::text as id,
       account_id::text as account_id,
@@ -84,19 +99,31 @@ pub struct DevicesInsert {
 }
 
 pub fn validate_devices_row(value: &DevicesRow) -> Result<(), String> {
-    if (&value.device_name).as_bytes().len() > 200 { return Err("devices.device_name exceeds 200 bytes".to_string()); }
+    if (&value.device_name).as_bytes().len() > 200 {
+        return Err("devices.device_name exceeds 200 bytes".to_string());
+    }
     Ok(())
 }
 
 pub fn validate_devices_insert(value: &DevicesInsert) -> Result<(), String> {
     if let Some(value) = &value.device_name {
-        if (value).as_bytes().len() > 200 { return Err("devices.device_name exceeds 200 bytes".to_string()); }
+        if (value).as_bytes().len() > 200 {
+            return Err("devices.device_name exceeds 200 bytes".to_string());
+        }
     }
     Ok(())
 }
 
 pub const VAULT_BLOBS_TABLE: &str = "threefa.vault_blobs";
-pub const VAULT_BLOBS_COLUMNS: &[&str] = &["account_id", "ciphertext", "nonce", "kdf_salt", "kdf_params", "version", "updated_at"];
+pub const VAULT_BLOBS_COLUMNS: &[&str] = &[
+    "account_id",
+    "ciphertext",
+    "nonce",
+    "kdf_salt",
+    "kdf_params",
+    "version",
+    "updated_at",
+];
 pub const VAULT_BLOBS_SELECT_SQL: &str = r###"select
       account_id::text as account_id,
       ciphertext,
@@ -133,23 +160,45 @@ pub struct VaultBlobsInsert {
 }
 
 pub fn validate_vault_blobs_row(value: &VaultBlobsRow) -> Result<(), String> {
-    if !(&value.kdf_params).is_object() { return Err("vault_blobs.kdf_params must be a JSON object".to_string()); }
-    if !(&value.version).is_array() { return Err("vault_blobs.version must be a JSON array".to_string()); }
+    if !(&value.kdf_params).is_object() {
+        return Err("vault_blobs.kdf_params must be a JSON object".to_string());
+    }
+    if !(&value.version).is_array() {
+        return Err("vault_blobs.version must be a JSON array".to_string());
+    }
     Ok(())
 }
 
 pub fn validate_vault_blobs_insert(value: &VaultBlobsInsert) -> Result<(), String> {
     if let Some(value) = &value.kdf_params {
-        if !(value).is_object() { return Err("vault_blobs.kdf_params must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("vault_blobs.kdf_params must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.version {
-        if !(value).is_array() { return Err("vault_blobs.version must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err("vault_blobs.version must be a JSON array".to_string());
+        }
     }
     Ok(())
 }
 
 pub const APP_CONFIG_TABLE: &str = "app_config";
-pub const APP_CONFIG_COLUMNS: &[&str] = &["id", "scope", "key", "value", "version", "status", "labels", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const APP_CONFIG_COLUMNS: &[&str] = &[
+    "id",
+    "scope",
+    "key",
+    "value",
+    "version",
+    "status",
+    "labels",
+    "meta_data",
+    "is_soft_deleted",
+    "created_at",
+    "updated_at",
+    "created_by",
+    "updated_by",
+];
 pub const APP_CONFIG_SELECT_SQL: &str = r###"select
       id::text as id,
       scope,
@@ -239,11 +288,21 @@ pub struct AppConfigInsert {
 pub fn validate_app_config_row(value: &AppConfigRow) -> Result<(), String> {
     validate_string_length("app_config.scope", &value.scope, None, Some(120))?;
     validate_string_length("app_config.key", &value.key, None, Some(200))?;
-    if !(&value.value).is_object() { return Err("app_config.value must be a JSON object".to_string()); }
-    if *(&value.version) < 1 { return Err("app_config.version is below the minimum".to_string()); }
-    if !["active", "paused", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported app_config.status: {}", &value.status)); }
-    if !(&value.labels).is_array() { return Err("app_config.labels must be a JSON array".to_string()); }
-    if !(&value.meta_data).is_object() { return Err("app_config.meta_data must be a JSON object".to_string()); }
+    if !(&value.value).is_object() {
+        return Err("app_config.value must be a JSON object".to_string());
+    }
+    if *(&value.version) < 1 {
+        return Err("app_config.version is below the minimum".to_string());
+    }
+    if !["active", "paused", "archived"].contains(&(&value.status).as_str()) {
+        return Err(format!("unsupported app_config.status: {}", &value.status));
+    }
+    if !(&value.labels).is_array() {
+        return Err("app_config.labels must be a JSON array".to_string());
+    }
+    if !(&value.meta_data).is_object() {
+        return Err("app_config.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
@@ -255,25 +314,47 @@ pub fn validate_app_config_insert(value: &AppConfigInsert) -> Result<(), String>
         validate_string_length("app_config.key", value, None, Some(200))?;
     }
     if let Some(value) = &value.value {
-        if !(value).is_object() { return Err("app_config.value must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("app_config.value must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.version {
-        if *(value) < 1 { return Err("app_config.version is below the minimum".to_string()); }
+        if *(value) < 1 {
+            return Err("app_config.version is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.status {
-        if !["active", "paused", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported app_config.status: {}", value)); }
+        if !["active", "paused", "archived"].contains(&(value).as_str()) {
+            return Err(format!("unsupported app_config.status: {}", value));
+        }
     }
     if let Some(value) = &value.labels {
-        if !(value).is_array() { return Err("app_config.labels must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err("app_config.labels must be a JSON array".to_string());
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("app_config.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("app_config.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const VAPI_PHONE_CALL_EVENTS_TABLE: &str = "vapi_phone_call_events";
-pub const VAPI_PHONE_CALL_EVENTS_COLUMNS: &[&str] = &["id", "call_id", "event_type", "payload_hash", "caller_hash", "called_number_hash", "ended_reason", "duration_seconds", "summary", "payload", "created_at"];
+pub const VAPI_PHONE_CALL_EVENTS_COLUMNS: &[&str] = &[
+    "id",
+    "call_id",
+    "event_type",
+    "payload_hash",
+    "caller_hash",
+    "called_number_hash",
+    "ended_reason",
+    "duration_seconds",
+    "summary",
+    "payload",
+    "created_at",
+];
 pub const VAPI_PHONE_CALL_EVENTS_SELECT_SQL: &str = r###"select
       id::text as id,
       call_id,
@@ -322,34 +403,73 @@ pub struct VapiPhoneCallEventsInsert {
 }
 
 pub fn validate_vapi_phone_call_events_row(value: &VapiPhoneCallEventsRow) -> Result<(), String> {
-    validate_string_length("vapi_phone_call_events.call_id", &value.call_id, None, Some(160))?;
-    if (&value.call_id).as_bytes().len() > 160 { return Err("vapi_phone_call_events.call_id exceeds 160 bytes".to_string()); }
-    validate_string_length("vapi_phone_call_events.event_type", &value.event_type, None, Some(80))?;
-    validate_string_length("vapi_phone_call_events.payload_hash", &value.payload_hash, None, Some(64))?;
+    validate_string_length(
+        "vapi_phone_call_events.call_id",
+        &value.call_id,
+        None,
+        Some(160),
+    )?;
+    if (&value.call_id).as_bytes().len() > 160 {
+        return Err("vapi_phone_call_events.call_id exceeds 160 bytes".to_string());
+    }
+    validate_string_length(
+        "vapi_phone_call_events.event_type",
+        &value.event_type,
+        None,
+        Some(80),
+    )?;
+    validate_string_length(
+        "vapi_phone_call_events.payload_hash",
+        &value.payload_hash,
+        None,
+        Some(64),
+    )?;
     if let Some(value) = &value.caller_hash {
         validate_string_length("vapi_phone_call_events.caller_hash", value, None, Some(64))?;
     }
     if let Some(value) = &value.called_number_hash {
-        validate_string_length("vapi_phone_call_events.called_number_hash", value, None, Some(64))?;
+        validate_string_length(
+            "vapi_phone_call_events.called_number_hash",
+            value,
+            None,
+            Some(64),
+        )?;
     }
     if let Some(value) = &value.ended_reason {
-        validate_string_length("vapi_phone_call_events.ended_reason", value, None, Some(160))?;
+        validate_string_length(
+            "vapi_phone_call_events.ended_reason",
+            value,
+            None,
+            Some(160),
+        )?;
     }
     if let Some(value) = &value.duration_seconds {
-        if *(value) < 0 { return Err("vapi_phone_call_events.duration_seconds is below the minimum".to_string()); }
-        if *(value) > 86400 { return Err("vapi_phone_call_events.duration_seconds is above the maximum".to_string()); }
+        if *(value) < 0 {
+            return Err("vapi_phone_call_events.duration_seconds is below the minimum".to_string());
+        }
+        if *(value) > 86400 {
+            return Err("vapi_phone_call_events.duration_seconds is above the maximum".to_string());
+        }
     }
     if let Some(value) = &value.summary {
-        if (value).as_bytes().len() > 4000 { return Err("vapi_phone_call_events.summary exceeds 4000 bytes".to_string()); }
+        if (value).as_bytes().len() > 4000 {
+            return Err("vapi_phone_call_events.summary exceeds 4000 bytes".to_string());
+        }
     }
-    if !(&value.payload).is_object() { return Err("vapi_phone_call_events.payload must be a JSON object".to_string()); }
+    if !(&value.payload).is_object() {
+        return Err("vapi_phone_call_events.payload must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_vapi_phone_call_events_insert(value: &VapiPhoneCallEventsInsert) -> Result<(), String> {
+pub fn validate_vapi_phone_call_events_insert(
+    value: &VapiPhoneCallEventsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.call_id {
         validate_string_length("vapi_phone_call_events.call_id", value, None, Some(160))?;
-        if (value).as_bytes().len() > 160 { return Err("vapi_phone_call_events.call_id exceeds 160 bytes".to_string()); }
+        if (value).as_bytes().len() > 160 {
+            return Err("vapi_phone_call_events.call_id exceeds 160 bytes".to_string());
+        }
     }
     if let Some(value) = &value.event_type {
         validate_string_length("vapi_phone_call_events.event_type", value, None, Some(80))?;
@@ -361,26 +481,73 @@ pub fn validate_vapi_phone_call_events_insert(value: &VapiPhoneCallEventsInsert)
         validate_string_length("vapi_phone_call_events.caller_hash", value, None, Some(64))?;
     }
     if let Some(value) = &value.called_number_hash {
-        validate_string_length("vapi_phone_call_events.called_number_hash", value, None, Some(64))?;
+        validate_string_length(
+            "vapi_phone_call_events.called_number_hash",
+            value,
+            None,
+            Some(64),
+        )?;
     }
     if let Some(value) = &value.ended_reason {
-        validate_string_length("vapi_phone_call_events.ended_reason", value, None, Some(160))?;
+        validate_string_length(
+            "vapi_phone_call_events.ended_reason",
+            value,
+            None,
+            Some(160),
+        )?;
     }
     if let Some(value) = &value.duration_seconds {
-        if *(value) < 0 { return Err("vapi_phone_call_events.duration_seconds is below the minimum".to_string()); }
-        if *(value) > 86400 { return Err("vapi_phone_call_events.duration_seconds is above the maximum".to_string()); }
+        if *(value) < 0 {
+            return Err("vapi_phone_call_events.duration_seconds is below the minimum".to_string());
+        }
+        if *(value) > 86400 {
+            return Err("vapi_phone_call_events.duration_seconds is above the maximum".to_string());
+        }
     }
     if let Some(value) = &value.summary {
-        if (value).as_bytes().len() > 4000 { return Err("vapi_phone_call_events.summary exceeds 4000 bytes".to_string()); }
+        if (value).as_bytes().len() > 4000 {
+            return Err("vapi_phone_call_events.summary exceeds 4000 bytes".to_string());
+        }
     }
     if let Some(value) = &value.payload {
-        if !(value).is_object() { return Err("vapi_phone_call_events.payload must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("vapi_phone_call_events.payload must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const MUSIC_SONGS_TABLE: &str = "music_songs";
-pub const MUSIC_SONGS_COLUMNS: &[&str] = &["id", "title", "slug", "status", "seed", "generation_date", "storage_provider", "storage_bucket", "storage_key", "audio_url", "content_type", "duration_millis", "sample_rate", "bpm_millis", "genre", "peak_micros", "rms_micros", "spectral_centroid_millihz", "listenability_score_micros", "vote_score", "up_votes", "down_votes", "play_count", "summary", "meta_data", "published_at", "created_at", "updated_at"];
+pub const MUSIC_SONGS_COLUMNS: &[&str] = &[
+    "id",
+    "title",
+    "slug",
+    "status",
+    "seed",
+    "generation_date",
+    "storage_provider",
+    "storage_bucket",
+    "storage_key",
+    "audio_url",
+    "content_type",
+    "duration_millis",
+    "sample_rate",
+    "bpm_millis",
+    "genre",
+    "peak_micros",
+    "rms_micros",
+    "spectral_centroid_millihz",
+    "listenability_score_micros",
+    "vote_score",
+    "up_votes",
+    "down_votes",
+    "play_count",
+    "summary",
+    "meta_data",
+    "published_at",
+    "created_at",
+    "updated_at",
+];
 pub const MUSIC_SONGS_SELECT_SQL: &str = r###"select
       id::text as id,
       title,
@@ -423,7 +590,8 @@ pub enum MusicSongsStatus {
 }
 
 impl MusicSongsStatus {
-    pub const VALUES: &'static [&'static str] = &["generated", "published", "discarded", "failed", "archived"];
+    pub const VALUES: &'static [&'static str] =
+        &["generated", "published", "discarded", "failed", "archived"];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -559,128 +727,247 @@ pub struct MusicSongsInsert {
 
 pub fn validate_music_songs_row(value: &MusicSongsRow) -> Result<(), String> {
     validate_string_length("music_songs.title", &value.title, None, Some(200))?;
-    if (&value.title).as_bytes().len() > 200 { return Err("music_songs.title exceeds 200 bytes".to_string()); }
+    if (&value.title).as_bytes().len() > 200 {
+        return Err("music_songs.title exceeds 200 bytes".to_string());
+    }
     validate_slug("music_songs.slug", &value.slug)?;
-    if !["generated", "published", "discarded", "failed", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported music_songs.status: {}", &value.status)); }
-    validate_string_length("music_songs.generation_date", &value.generation_date, None, Some(10))?;
+    if !["generated", "published", "discarded", "failed", "archived"]
+        .contains(&(&value.status).as_str())
+    {
+        return Err(format!("unsupported music_songs.status: {}", &value.status));
+    }
+    validate_string_length(
+        "music_songs.generation_date",
+        &value.generation_date,
+        None,
+        Some(10),
+    )?;
     if let Some(value) = &value.storage_provider {
-        if !["s3", "r2", "gcs", "drive", "local"].contains(&(value).as_str()) { return Err(format!("unsupported music_songs.storage_provider: {}", value)); }
+        if !["s3", "r2", "gcs", "drive", "local"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported music_songs.storage_provider: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.storage_bucket {
         validate_string_length("music_songs.storage_bucket", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("music_songs.storage_bucket exceeds 200 bytes".to_string()); }
+        if (value).as_bytes().len() > 200 {
+            return Err("music_songs.storage_bucket exceeds 200 bytes".to_string());
+        }
     }
     if let Some(value) = &value.storage_key {
-        if (value).as_bytes().len() > 2048 { return Err("music_songs.storage_key exceeds 2048 bytes".to_string()); }
+        if (value).as_bytes().len() > 2048 {
+            return Err("music_songs.storage_key exceeds 2048 bytes".to_string());
+        }
     }
     if let Some(value) = &value.audio_url {
-        if (value).as_bytes().len() > 4096 { return Err("music_songs.audio_url exceeds 4096 bytes".to_string()); }
+        if (value).as_bytes().len() > 4096 {
+            return Err("music_songs.audio_url exceeds 4096 bytes".to_string());
+        }
     }
     if let Some(value) = &value.content_type {
         validate_string_length("music_songs.content_type", value, None, Some(120))?;
-        if (value).as_bytes().len() > 120 { return Err("music_songs.content_type exceeds 120 bytes".to_string()); }
+        if (value).as_bytes().len() > 120 {
+            return Err("music_songs.content_type exceeds 120 bytes".to_string());
+        }
     }
-    if *(&value.duration_millis) < 1 { return Err("music_songs.duration_millis is below the minimum".to_string()); }
-    if *(&value.duration_millis) > 1800000 { return Err("music_songs.duration_millis is above the maximum".to_string()); }
-    if *(&value.sample_rate) < 8000 { return Err("music_songs.sample_rate is below the minimum".to_string()); }
-    if *(&value.sample_rate) > 192000 { return Err("music_songs.sample_rate is above the maximum".to_string()); }
-    if *(&value.bpm_millis) < 1 { return Err("music_songs.bpm_millis is below the minimum".to_string()); }
-    if *(&value.bpm_millis) > 300000 { return Err("music_songs.bpm_millis is above the maximum".to_string()); }
+    if *(&value.duration_millis) < 1 {
+        return Err("music_songs.duration_millis is below the minimum".to_string());
+    }
+    if *(&value.duration_millis) > 1800000 {
+        return Err("music_songs.duration_millis is above the maximum".to_string());
+    }
+    if *(&value.sample_rate) < 8000 {
+        return Err("music_songs.sample_rate is below the minimum".to_string());
+    }
+    if *(&value.sample_rate) > 192000 {
+        return Err("music_songs.sample_rate is above the maximum".to_string());
+    }
+    if *(&value.bpm_millis) < 1 {
+        return Err("music_songs.bpm_millis is below the minimum".to_string());
+    }
+    if *(&value.bpm_millis) > 300000 {
+        return Err("music_songs.bpm_millis is above the maximum".to_string());
+    }
     validate_string_length("music_songs.genre", &value.genre, None, Some(80))?;
-    if (&value.genre).as_bytes().len() > 80 { return Err("music_songs.genre exceeds 80 bytes".to_string()); }
-    if *(&value.peak_micros) < 0 { return Err("music_songs.peak_micros is below the minimum".to_string()); }
-    if *(&value.rms_micros) < 0 { return Err("music_songs.rms_micros is below the minimum".to_string()); }
-    if *(&value.spectral_centroid_millihz) < 0 { return Err("music_songs.spectral_centroid_millihz is below the minimum".to_string()); }
-    if *(&value.listenability_score_micros) < 0 { return Err("music_songs.listenability_score_micros is below the minimum".to_string()); }
-    if *(&value.listenability_score_micros) > 1000000 { return Err("music_songs.listenability_score_micros is above the maximum".to_string()); }
-    if *(&value.up_votes) < 0 { return Err("music_songs.up_votes is below the minimum".to_string()); }
-    if *(&value.down_votes) < 0 { return Err("music_songs.down_votes is below the minimum".to_string()); }
-    if *(&value.play_count) < 0 { return Err("music_songs.play_count is below the minimum".to_string()); }
-    if !(&value.summary).is_object() { return Err("music_songs.summary must be a JSON object".to_string()); }
-    if !(&value.meta_data).is_object() { return Err("music_songs.meta_data must be a JSON object".to_string()); }
+    if (&value.genre).as_bytes().len() > 80 {
+        return Err("music_songs.genre exceeds 80 bytes".to_string());
+    }
+    if *(&value.peak_micros) < 0 {
+        return Err("music_songs.peak_micros is below the minimum".to_string());
+    }
+    if *(&value.rms_micros) < 0 {
+        return Err("music_songs.rms_micros is below the minimum".to_string());
+    }
+    if *(&value.spectral_centroid_millihz) < 0 {
+        return Err("music_songs.spectral_centroid_millihz is below the minimum".to_string());
+    }
+    if *(&value.listenability_score_micros) < 0 {
+        return Err("music_songs.listenability_score_micros is below the minimum".to_string());
+    }
+    if *(&value.listenability_score_micros) > 1000000 {
+        return Err("music_songs.listenability_score_micros is above the maximum".to_string());
+    }
+    if *(&value.up_votes) < 0 {
+        return Err("music_songs.up_votes is below the minimum".to_string());
+    }
+    if *(&value.down_votes) < 0 {
+        return Err("music_songs.down_votes is below the minimum".to_string());
+    }
+    if *(&value.play_count) < 0 {
+        return Err("music_songs.play_count is below the minimum".to_string());
+    }
+    if !(&value.summary).is_object() {
+        return Err("music_songs.summary must be a JSON object".to_string());
+    }
+    if !(&value.meta_data).is_object() {
+        return Err("music_songs.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
 pub fn validate_music_songs_insert(value: &MusicSongsInsert) -> Result<(), String> {
     if let Some(value) = &value.title {
         validate_string_length("music_songs.title", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("music_songs.title exceeds 200 bytes".to_string()); }
+        if (value).as_bytes().len() > 200 {
+            return Err("music_songs.title exceeds 200 bytes".to_string());
+        }
     }
     if let Some(value) = &value.slug {
         validate_slug("music_songs.slug", value)?;
     }
     if let Some(value) = &value.status {
-        if !["generated", "published", "discarded", "failed", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported music_songs.status: {}", value)); }
+        if !["generated", "published", "discarded", "failed", "archived"]
+            .contains(&(value).as_str())
+        {
+            return Err(format!("unsupported music_songs.status: {}", value));
+        }
     }
     if let Some(value) = &value.generation_date {
         validate_string_length("music_songs.generation_date", value, None, Some(10))?;
     }
     if let Some(value) = &value.storage_provider {
-        if !["s3", "r2", "gcs", "drive", "local"].contains(&(value).as_str()) { return Err(format!("unsupported music_songs.storage_provider: {}", value)); }
+        if !["s3", "r2", "gcs", "drive", "local"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported music_songs.storage_provider: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.storage_bucket {
         validate_string_length("music_songs.storage_bucket", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("music_songs.storage_bucket exceeds 200 bytes".to_string()); }
+        if (value).as_bytes().len() > 200 {
+            return Err("music_songs.storage_bucket exceeds 200 bytes".to_string());
+        }
     }
     if let Some(value) = &value.storage_key {
-        if (value).as_bytes().len() > 2048 { return Err("music_songs.storage_key exceeds 2048 bytes".to_string()); }
+        if (value).as_bytes().len() > 2048 {
+            return Err("music_songs.storage_key exceeds 2048 bytes".to_string());
+        }
     }
     if let Some(value) = &value.audio_url {
-        if (value).as_bytes().len() > 4096 { return Err("music_songs.audio_url exceeds 4096 bytes".to_string()); }
+        if (value).as_bytes().len() > 4096 {
+            return Err("music_songs.audio_url exceeds 4096 bytes".to_string());
+        }
     }
     if let Some(value) = &value.content_type {
         validate_string_length("music_songs.content_type", value, None, Some(120))?;
-        if (value).as_bytes().len() > 120 { return Err("music_songs.content_type exceeds 120 bytes".to_string()); }
+        if (value).as_bytes().len() > 120 {
+            return Err("music_songs.content_type exceeds 120 bytes".to_string());
+        }
     }
     if let Some(value) = &value.duration_millis {
-        if *(value) < 1 { return Err("music_songs.duration_millis is below the minimum".to_string()); }
-        if *(value) > 1800000 { return Err("music_songs.duration_millis is above the maximum".to_string()); }
+        if *(value) < 1 {
+            return Err("music_songs.duration_millis is below the minimum".to_string());
+        }
+        if *(value) > 1800000 {
+            return Err("music_songs.duration_millis is above the maximum".to_string());
+        }
     }
     if let Some(value) = &value.sample_rate {
-        if *(value) < 8000 { return Err("music_songs.sample_rate is below the minimum".to_string()); }
-        if *(value) > 192000 { return Err("music_songs.sample_rate is above the maximum".to_string()); }
+        if *(value) < 8000 {
+            return Err("music_songs.sample_rate is below the minimum".to_string());
+        }
+        if *(value) > 192000 {
+            return Err("music_songs.sample_rate is above the maximum".to_string());
+        }
     }
     if let Some(value) = &value.bpm_millis {
-        if *(value) < 1 { return Err("music_songs.bpm_millis is below the minimum".to_string()); }
-        if *(value) > 300000 { return Err("music_songs.bpm_millis is above the maximum".to_string()); }
+        if *(value) < 1 {
+            return Err("music_songs.bpm_millis is below the minimum".to_string());
+        }
+        if *(value) > 300000 {
+            return Err("music_songs.bpm_millis is above the maximum".to_string());
+        }
     }
     if let Some(value) = &value.genre {
         validate_string_length("music_songs.genre", value, None, Some(80))?;
-        if (value).as_bytes().len() > 80 { return Err("music_songs.genre exceeds 80 bytes".to_string()); }
+        if (value).as_bytes().len() > 80 {
+            return Err("music_songs.genre exceeds 80 bytes".to_string());
+        }
     }
     if let Some(value) = &value.peak_micros {
-        if *(value) < 0 { return Err("music_songs.peak_micros is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("music_songs.peak_micros is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.rms_micros {
-        if *(value) < 0 { return Err("music_songs.rms_micros is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("music_songs.rms_micros is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.spectral_centroid_millihz {
-        if *(value) < 0 { return Err("music_songs.spectral_centroid_millihz is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("music_songs.spectral_centroid_millihz is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.listenability_score_micros {
-        if *(value) < 0 { return Err("music_songs.listenability_score_micros is below the minimum".to_string()); }
-        if *(value) > 1000000 { return Err("music_songs.listenability_score_micros is above the maximum".to_string()); }
+        if *(value) < 0 {
+            return Err("music_songs.listenability_score_micros is below the minimum".to_string());
+        }
+        if *(value) > 1000000 {
+            return Err("music_songs.listenability_score_micros is above the maximum".to_string());
+        }
     }
     if let Some(value) = &value.up_votes {
-        if *(value) < 0 { return Err("music_songs.up_votes is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("music_songs.up_votes is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.down_votes {
-        if *(value) < 0 { return Err("music_songs.down_votes is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("music_songs.down_votes is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.play_count {
-        if *(value) < 0 { return Err("music_songs.play_count is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("music_songs.play_count is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.summary {
-        if !(value).is_object() { return Err("music_songs.summary must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("music_songs.summary must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("music_songs.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("music_songs.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const MUSIC_SONG_VOTES_TABLE: &str = "music_song_votes";
-pub const MUSIC_SONG_VOTES_COLUMNS: &[&str] = &["id", "song_id", "visitor_hash", "user_agent_hash", "vote_value", "created_at", "updated_at"];
+pub const MUSIC_SONG_VOTES_COLUMNS: &[&str] = &[
+    "id",
+    "song_id",
+    "visitor_hash",
+    "user_agent_hash",
+    "vote_value",
+    "created_at",
+    "updated_at",
+];
 pub const MUSIC_SONG_VOTES_SELECT_SQL: &str = r###"select
       id::text as id,
       song_id::text as song_id,
@@ -717,12 +1004,21 @@ pub struct MusicSongVotesInsert {
 }
 
 pub fn validate_music_song_votes_row(value: &MusicSongVotesRow) -> Result<(), String> {
-    validate_string_length("music_song_votes.visitor_hash", &value.visitor_hash, None, Some(64))?;
+    validate_string_length(
+        "music_song_votes.visitor_hash",
+        &value.visitor_hash,
+        None,
+        Some(64),
+    )?;
     if let Some(value) = &value.user_agent_hash {
         validate_string_length("music_song_votes.user_agent_hash", value, None, Some(64))?;
     }
-    if *(&value.vote_value) < -1 { return Err("music_song_votes.vote_value is below the minimum".to_string()); }
-    if *(&value.vote_value) > 1 { return Err("music_song_votes.vote_value is above the maximum".to_string()); }
+    if *(&value.vote_value) < -1 {
+        return Err("music_song_votes.vote_value is below the minimum".to_string());
+    }
+    if *(&value.vote_value) > 1 {
+        return Err("music_song_votes.vote_value is above the maximum".to_string());
+    }
     Ok(())
 }
 
@@ -734,14 +1030,28 @@ pub fn validate_music_song_votes_insert(value: &MusicSongVotesInsert) -> Result<
         validate_string_length("music_song_votes.user_agent_hash", value, None, Some(64))?;
     }
     if let Some(value) = &value.vote_value {
-        if *(value) < -1 { return Err("music_song_votes.vote_value is below the minimum".to_string()); }
-        if *(value) > 1 { return Err("music_song_votes.vote_value is above the maximum".to_string()); }
+        if *(value) < -1 {
+            return Err("music_song_votes.vote_value is below the minimum".to_string());
+        }
+        if *(value) > 1 {
+            return Err("music_song_votes.vote_value is above the maximum".to_string());
+        }
     }
     Ok(())
 }
 
 pub const SOUND_RECORDER_ACCOUNTS_TABLE: &str = "sound_recorder_accounts";
-pub const SOUND_RECORDER_ACCOUNTS_COLUMNS: &[&str] = &["id", "status", "external_subject", "display_name", "legal_region", "retention_hours", "retention_policy_version", "created_at", "updated_at"];
+pub const SOUND_RECORDER_ACCOUNTS_COLUMNS: &[&str] = &[
+    "id",
+    "status",
+    "external_subject",
+    "display_name",
+    "legal_region",
+    "retention_hours",
+    "retention_policy_version",
+    "created_at",
+    "updated_at",
+];
 pub const SOUND_RECORDER_ACCOUNTS_SELECT_SQL: &str = r###"select
       id::text as id,
       status,
@@ -819,52 +1129,145 @@ pub struct SoundRecorderAccountsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_sound_recorder_accounts_row(value: &SoundRecorderAccountsRow) -> Result<(), String> {
-    if !["active", "paused", "locked", "deleted"].contains(&(&value.status).as_str()) { return Err(format!("unsupported sound_recorder_accounts.status: {}", &value.status)); }
+pub fn validate_sound_recorder_accounts_row(
+    value: &SoundRecorderAccountsRow,
+) -> Result<(), String> {
+    if !["active", "paused", "locked", "deleted"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported sound_recorder_accounts.status: {}",
+            &value.status
+        ));
+    }
     if let Some(value) = &value.external_subject {
-        validate_string_length("sound_recorder_accounts.external_subject", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("sound_recorder_accounts.external_subject exceeds 240 bytes".to_string()); }
+        validate_string_length(
+            "sound_recorder_accounts.external_subject",
+            value,
+            None,
+            Some(240),
+        )?;
+        if (value).as_bytes().len() > 240 {
+            return Err("sound_recorder_accounts.external_subject exceeds 240 bytes".to_string());
+        }
     }
     if let Some(value) = &value.display_name {
-        validate_string_length("sound_recorder_accounts.display_name", value, None, Some(160))?;
-        if (value).as_bytes().len() > 160 { return Err("sound_recorder_accounts.display_name exceeds 160 bytes".to_string()); }
+        validate_string_length(
+            "sound_recorder_accounts.display_name",
+            value,
+            None,
+            Some(160),
+        )?;
+        if (value).as_bytes().len() > 160 {
+            return Err("sound_recorder_accounts.display_name exceeds 160 bytes".to_string());
+        }
     }
     if let Some(value) = &value.legal_region {
-        validate_string_length("sound_recorder_accounts.legal_region", value, None, Some(64))?;
+        validate_string_length(
+            "sound_recorder_accounts.legal_region",
+            value,
+            None,
+            Some(64),
+        )?;
     }
-    if *(&value.retention_hours) < 1 { return Err("sound_recorder_accounts.retention_hours is below the minimum".to_string()); }
-    if *(&value.retention_hours) > 500 { return Err("sound_recorder_accounts.retention_hours is above the maximum".to_string()); }
-    validate_string_length("sound_recorder_accounts.retention_policy_version", &value.retention_policy_version, None, Some(80))?;
+    if *(&value.retention_hours) < 1 {
+        return Err("sound_recorder_accounts.retention_hours is below the minimum".to_string());
+    }
+    if *(&value.retention_hours) > 500 {
+        return Err("sound_recorder_accounts.retention_hours is above the maximum".to_string());
+    }
+    validate_string_length(
+        "sound_recorder_accounts.retention_policy_version",
+        &value.retention_policy_version,
+        None,
+        Some(80),
+    )?;
     Ok(())
 }
 
-pub fn validate_sound_recorder_accounts_insert(value: &SoundRecorderAccountsInsert) -> Result<(), String> {
+pub fn validate_sound_recorder_accounts_insert(
+    value: &SoundRecorderAccountsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.status {
-        if !["active", "paused", "locked", "deleted"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_accounts.status: {}", value)); }
+        if !["active", "paused", "locked", "deleted"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported sound_recorder_accounts.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.external_subject {
-        validate_string_length("sound_recorder_accounts.external_subject", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("sound_recorder_accounts.external_subject exceeds 240 bytes".to_string()); }
+        validate_string_length(
+            "sound_recorder_accounts.external_subject",
+            value,
+            None,
+            Some(240),
+        )?;
+        if (value).as_bytes().len() > 240 {
+            return Err("sound_recorder_accounts.external_subject exceeds 240 bytes".to_string());
+        }
     }
     if let Some(value) = &value.display_name {
-        validate_string_length("sound_recorder_accounts.display_name", value, None, Some(160))?;
-        if (value).as_bytes().len() > 160 { return Err("sound_recorder_accounts.display_name exceeds 160 bytes".to_string()); }
+        validate_string_length(
+            "sound_recorder_accounts.display_name",
+            value,
+            None,
+            Some(160),
+        )?;
+        if (value).as_bytes().len() > 160 {
+            return Err("sound_recorder_accounts.display_name exceeds 160 bytes".to_string());
+        }
     }
     if let Some(value) = &value.legal_region {
-        validate_string_length("sound_recorder_accounts.legal_region", value, None, Some(64))?;
+        validate_string_length(
+            "sound_recorder_accounts.legal_region",
+            value,
+            None,
+            Some(64),
+        )?;
     }
     if let Some(value) = &value.retention_hours {
-        if *(value) < 1 { return Err("sound_recorder_accounts.retention_hours is below the minimum".to_string()); }
-        if *(value) > 500 { return Err("sound_recorder_accounts.retention_hours is above the maximum".to_string()); }
+        if *(value) < 1 {
+            return Err("sound_recorder_accounts.retention_hours is below the minimum".to_string());
+        }
+        if *(value) > 500 {
+            return Err("sound_recorder_accounts.retention_hours is above the maximum".to_string());
+        }
     }
     if let Some(value) = &value.retention_policy_version {
-        validate_string_length("sound_recorder_accounts.retention_policy_version", value, None, Some(80))?;
+        validate_string_length(
+            "sound_recorder_accounts.retention_policy_version",
+            value,
+            None,
+            Some(80),
+        )?;
     }
     Ok(())
 }
 
 pub const SOUND_RECORDER_DEVICES_TABLE: &str = "sound_recorder_devices";
-pub const SOUND_RECORDER_DEVICES_COLUMNS: &[&str] = &["id", "account_id", "platform", "status", "install_id", "device_label", "app_version", "os_version", "token_hash", "token_last4", "consent_version", "consent_accepted_at", "recording_indicator_acknowledged", "last_seen_at", "transfer_paused", "transfer_pause_reason", "network_policy", "battery_level", "charging", "transfer_state_updated_at", "created_at", "updated_at"];
+pub const SOUND_RECORDER_DEVICES_COLUMNS: &[&str] = &[
+    "id",
+    "account_id",
+    "platform",
+    "status",
+    "install_id",
+    "device_label",
+    "app_version",
+    "os_version",
+    "token_hash",
+    "token_last4",
+    "consent_version",
+    "consent_accepted_at",
+    "recording_indicator_acknowledged",
+    "last_seen_at",
+    "transfer_paused",
+    "transfer_pause_reason",
+    "network_policy",
+    "battery_level",
+    "charging",
+    "transfer_state_updated_at",
+    "created_at",
+    "updated_at",
+];
 pub const SOUND_RECORDER_DEVICES_SELECT_SQL: &str = r###"select
       id::text as id,
       account_id::text as account_id,
@@ -931,7 +1334,8 @@ pub enum SoundRecorderDevicesStatus {
 }
 
 impl SoundRecorderDevicesStatus {
-    pub const VALUES: &'static [&'static str] = &["active", "revoked", "lost", "replaced", "deleted"];
+    pub const VALUES: &'static [&'static str] =
+        &["active", "revoked", "lost", "replaced", "deleted"];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -969,7 +1373,8 @@ pub enum SoundRecorderDevicesTransferPauseReason {
 }
 
 impl SoundRecorderDevicesTransferPauseReason {
-    pub const VALUES: &'static [&'static str] = &["low_battery", "network_constraint", "offline", "manual"];
+    pub const VALUES: &'static [&'static str] =
+        &["low_battery", "network_constraint", "offline", "manual"];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -1084,58 +1489,140 @@ pub struct SoundRecorderDevicesInsert {
 }
 
 pub fn validate_sound_recorder_devices_row(value: &SoundRecorderDevicesRow) -> Result<(), String> {
-    if !["ios", "android"].contains(&(&value.platform).as_str()) { return Err(format!("unsupported sound_recorder_devices.platform: {}", &value.platform)); }
-    if !["active", "revoked", "lost", "replaced", "deleted"].contains(&(&value.status).as_str()) { return Err(format!("unsupported sound_recorder_devices.status: {}", &value.status)); }
-    validate_string_length("sound_recorder_devices.install_id", &value.install_id, None, Some(160))?;
-    if (&value.install_id).as_bytes().len() > 160 { return Err("sound_recorder_devices.install_id exceeds 160 bytes".to_string()); }
+    if !["ios", "android"].contains(&(&value.platform).as_str()) {
+        return Err(format!(
+            "unsupported sound_recorder_devices.platform: {}",
+            &value.platform
+        ));
+    }
+    if !["active", "revoked", "lost", "replaced", "deleted"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported sound_recorder_devices.status: {}",
+            &value.status
+        ));
+    }
+    validate_string_length(
+        "sound_recorder_devices.install_id",
+        &value.install_id,
+        None,
+        Some(160),
+    )?;
+    if (&value.install_id).as_bytes().len() > 160 {
+        return Err("sound_recorder_devices.install_id exceeds 160 bytes".to_string());
+    }
     if let Some(value) = &value.device_label {
-        validate_string_length("sound_recorder_devices.device_label", value, None, Some(160))?;
-        if (value).as_bytes().len() > 160 { return Err("sound_recorder_devices.device_label exceeds 160 bytes".to_string()); }
+        validate_string_length(
+            "sound_recorder_devices.device_label",
+            value,
+            None,
+            Some(160),
+        )?;
+        if (value).as_bytes().len() > 160 {
+            return Err("sound_recorder_devices.device_label exceeds 160 bytes".to_string());
+        }
     }
     if let Some(value) = &value.app_version {
         validate_string_length("sound_recorder_devices.app_version", value, None, Some(80))?;
-        if (value).as_bytes().len() > 80 { return Err("sound_recorder_devices.app_version exceeds 80 bytes".to_string()); }
+        if (value).as_bytes().len() > 80 {
+            return Err("sound_recorder_devices.app_version exceeds 80 bytes".to_string());
+        }
     }
     if let Some(value) = &value.os_version {
         validate_string_length("sound_recorder_devices.os_version", value, None, Some(80))?;
-        if (value).as_bytes().len() > 80 { return Err("sound_recorder_devices.os_version exceeds 80 bytes".to_string()); }
+        if (value).as_bytes().len() > 80 {
+            return Err("sound_recorder_devices.os_version exceeds 80 bytes".to_string());
+        }
     }
-    validate_string_length("sound_recorder_devices.token_hash", &value.token_hash, None, Some(64))?;
-    validate_string_length("sound_recorder_devices.token_last4", &value.token_last4, None, Some(4))?;
-    validate_string_length("sound_recorder_devices.consent_version", &value.consent_version, None, Some(80))?;
+    validate_string_length(
+        "sound_recorder_devices.token_hash",
+        &value.token_hash,
+        None,
+        Some(64),
+    )?;
+    validate_string_length(
+        "sound_recorder_devices.token_last4",
+        &value.token_last4,
+        None,
+        Some(4),
+    )?;
+    validate_string_length(
+        "sound_recorder_devices.consent_version",
+        &value.consent_version,
+        None,
+        Some(80),
+    )?;
     if let Some(value) = &value.transfer_pause_reason {
-        if !["low_battery", "network_constraint", "offline", "manual"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_devices.transfer_pause_reason: {}", value)); }
+        if !["low_battery", "network_constraint", "offline", "manual"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported sound_recorder_devices.transfer_pause_reason: {}",
+                value
+            ));
+        }
     }
-    if !["any", "wifi_only", "cellular_only"].contains(&(&value.network_policy).as_str()) { return Err(format!("unsupported sound_recorder_devices.network_policy: {}", &value.network_policy)); }
+    if !["any", "wifi_only", "cellular_only"].contains(&(&value.network_policy).as_str()) {
+        return Err(format!(
+            "unsupported sound_recorder_devices.network_policy: {}",
+            &value.network_policy
+        ));
+    }
     if let Some(value) = &value.battery_level {
-        if *(value) < 0 { return Err("sound_recorder_devices.battery_level is below the minimum".to_string()); }
-        if *(value) > 100 { return Err("sound_recorder_devices.battery_level is above the maximum".to_string()); }
+        if *(value) < 0 {
+            return Err("sound_recorder_devices.battery_level is below the minimum".to_string());
+        }
+        if *(value) > 100 {
+            return Err("sound_recorder_devices.battery_level is above the maximum".to_string());
+        }
     }
     Ok(())
 }
 
-pub fn validate_sound_recorder_devices_insert(value: &SoundRecorderDevicesInsert) -> Result<(), String> {
+pub fn validate_sound_recorder_devices_insert(
+    value: &SoundRecorderDevicesInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.platform {
-        if !["ios", "android"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_devices.platform: {}", value)); }
+        if !["ios", "android"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported sound_recorder_devices.platform: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.status {
-        if !["active", "revoked", "lost", "replaced", "deleted"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_devices.status: {}", value)); }
+        if !["active", "revoked", "lost", "replaced", "deleted"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported sound_recorder_devices.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.install_id {
         validate_string_length("sound_recorder_devices.install_id", value, None, Some(160))?;
-        if (value).as_bytes().len() > 160 { return Err("sound_recorder_devices.install_id exceeds 160 bytes".to_string()); }
+        if (value).as_bytes().len() > 160 {
+            return Err("sound_recorder_devices.install_id exceeds 160 bytes".to_string());
+        }
     }
     if let Some(value) = &value.device_label {
-        validate_string_length("sound_recorder_devices.device_label", value, None, Some(160))?;
-        if (value).as_bytes().len() > 160 { return Err("sound_recorder_devices.device_label exceeds 160 bytes".to_string()); }
+        validate_string_length(
+            "sound_recorder_devices.device_label",
+            value,
+            None,
+            Some(160),
+        )?;
+        if (value).as_bytes().len() > 160 {
+            return Err("sound_recorder_devices.device_label exceeds 160 bytes".to_string());
+        }
     }
     if let Some(value) = &value.app_version {
         validate_string_length("sound_recorder_devices.app_version", value, None, Some(80))?;
-        if (value).as_bytes().len() > 80 { return Err("sound_recorder_devices.app_version exceeds 80 bytes".to_string()); }
+        if (value).as_bytes().len() > 80 {
+            return Err("sound_recorder_devices.app_version exceeds 80 bytes".to_string());
+        }
     }
     if let Some(value) = &value.os_version {
         validate_string_length("sound_recorder_devices.os_version", value, None, Some(80))?;
-        if (value).as_bytes().len() > 80 { return Err("sound_recorder_devices.os_version exceeds 80 bytes".to_string()); }
+        if (value).as_bytes().len() > 80 {
+            return Err("sound_recorder_devices.os_version exceeds 80 bytes".to_string());
+        }
     }
     if let Some(value) = &value.token_hash {
         validate_string_length("sound_recorder_devices.token_hash", value, None, Some(64))?;
@@ -1144,23 +1631,66 @@ pub fn validate_sound_recorder_devices_insert(value: &SoundRecorderDevicesInsert
         validate_string_length("sound_recorder_devices.token_last4", value, None, Some(4))?;
     }
     if let Some(value) = &value.consent_version {
-        validate_string_length("sound_recorder_devices.consent_version", value, None, Some(80))?;
+        validate_string_length(
+            "sound_recorder_devices.consent_version",
+            value,
+            None,
+            Some(80),
+        )?;
     }
     if let Some(value) = &value.transfer_pause_reason {
-        if !["low_battery", "network_constraint", "offline", "manual"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_devices.transfer_pause_reason: {}", value)); }
+        if !["low_battery", "network_constraint", "offline", "manual"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported sound_recorder_devices.transfer_pause_reason: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.network_policy {
-        if !["any", "wifi_only", "cellular_only"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_devices.network_policy: {}", value)); }
+        if !["any", "wifi_only", "cellular_only"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported sound_recorder_devices.network_policy: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.battery_level {
-        if *(value) < 0 { return Err("sound_recorder_devices.battery_level is below the minimum".to_string()); }
-        if *(value) > 100 { return Err("sound_recorder_devices.battery_level is above the maximum".to_string()); }
+        if *(value) < 0 {
+            return Err("sound_recorder_devices.battery_level is below the minimum".to_string());
+        }
+        if *(value) > 100 {
+            return Err("sound_recorder_devices.battery_level is above the maximum".to_string());
+        }
     }
     Ok(())
 }
 
 pub const SOUND_RECORDER_UPLOAD_SESSIONS_TABLE: &str = "sound_recorder_upload_sessions";
-pub const SOUND_RECORDER_UPLOAD_SESSIONS_COLUMNS: &[&str] = &["id", "account_id", "device_id", "status", "storage_provider", "storage_bucket", "storage_prefix", "content_type", "codec", "sample_rate", "channel_count", "segment_duration_seconds", "max_segment_bytes", "started_at", "last_heartbeat_at", "closed_at", "expires_at", "client_timezone", "legal_region", "use_case", "meta_data", "created_at", "updated_at"];
+pub const SOUND_RECORDER_UPLOAD_SESSIONS_COLUMNS: &[&str] = &[
+    "id",
+    "account_id",
+    "device_id",
+    "status",
+    "storage_provider",
+    "storage_bucket",
+    "storage_prefix",
+    "content_type",
+    "codec",
+    "sample_rate",
+    "channel_count",
+    "segment_duration_seconds",
+    "max_segment_bytes",
+    "started_at",
+    "last_heartbeat_at",
+    "closed_at",
+    "expires_at",
+    "client_timezone",
+    "legal_region",
+    "use_case",
+    "meta_data",
+    "created_at",
+    "updated_at",
+];
 pub const SOUND_RECORDER_UPLOAD_SESSIONS_SELECT_SQL: &str = r###"select
       id::text as id,
       account_id::text as account_id,
@@ -1261,7 +1791,8 @@ pub enum SoundRecorderUploadSessionsUseCase {
 }
 
 impl SoundRecorderUploadSessionsUseCase {
-    pub const VALUES: &'static [&'static str] = &["security", "music", "meeting", "voice_note", "ambient"];
+    pub const VALUES: &'static [&'static str] =
+        &["security", "music", "meeting", "voice_note", "ambient"];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -1346,96 +1877,311 @@ pub struct SoundRecorderUploadSessionsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_sound_recorder_upload_sessions_row(value: &SoundRecorderUploadSessionsRow) -> Result<(), String> {
-    if !["active", "closed", "revoked", "expired"].contains(&(&value.status).as_str()) { return Err(format!("unsupported sound_recorder_upload_sessions.status: {}", &value.status)); }
-    if !["s3"].contains(&(&value.storage_provider).as_str()) { return Err(format!("unsupported sound_recorder_upload_sessions.storage_provider: {}", &value.storage_provider)); }
-    validate_string_length("sound_recorder_upload_sessions.storage_bucket", &value.storage_bucket, None, Some(200))?;
-    if (&value.storage_bucket).as_bytes().len() > 200 { return Err("sound_recorder_upload_sessions.storage_bucket exceeds 200 bytes".to_string()); }
-    if (&value.storage_prefix).as_bytes().len() > 2048 { return Err("sound_recorder_upload_sessions.storage_prefix exceeds 2048 bytes".to_string()); }
-    validate_string_length("sound_recorder_upload_sessions.content_type", &value.content_type, None, Some(120))?;
-    if (&value.content_type).as_bytes().len() > 120 { return Err("sound_recorder_upload_sessions.content_type exceeds 120 bytes".to_string()); }
+pub fn validate_sound_recorder_upload_sessions_row(
+    value: &SoundRecorderUploadSessionsRow,
+) -> Result<(), String> {
+    if !["active", "closed", "revoked", "expired"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported sound_recorder_upload_sessions.status: {}",
+            &value.status
+        ));
+    }
+    if !["s3"].contains(&(&value.storage_provider).as_str()) {
+        return Err(format!(
+            "unsupported sound_recorder_upload_sessions.storage_provider: {}",
+            &value.storage_provider
+        ));
+    }
+    validate_string_length(
+        "sound_recorder_upload_sessions.storage_bucket",
+        &value.storage_bucket,
+        None,
+        Some(200),
+    )?;
+    if (&value.storage_bucket).as_bytes().len() > 200 {
+        return Err("sound_recorder_upload_sessions.storage_bucket exceeds 200 bytes".to_string());
+    }
+    if (&value.storage_prefix).as_bytes().len() > 2048 {
+        return Err("sound_recorder_upload_sessions.storage_prefix exceeds 2048 bytes".to_string());
+    }
+    validate_string_length(
+        "sound_recorder_upload_sessions.content_type",
+        &value.content_type,
+        None,
+        Some(120),
+    )?;
+    if (&value.content_type).as_bytes().len() > 120 {
+        return Err("sound_recorder_upload_sessions.content_type exceeds 120 bytes".to_string());
+    }
     if let Some(value) = &value.codec {
-        validate_string_length("sound_recorder_upload_sessions.codec", value, None, Some(80))?;
-        if (value).as_bytes().len() > 80 { return Err("sound_recorder_upload_sessions.codec exceeds 80 bytes".to_string()); }
+        validate_string_length(
+            "sound_recorder_upload_sessions.codec",
+            value,
+            None,
+            Some(80),
+        )?;
+        if (value).as_bytes().len() > 80 {
+            return Err("sound_recorder_upload_sessions.codec exceeds 80 bytes".to_string());
+        }
     }
     if let Some(value) = &value.sample_rate {
-        if *(value) < 8000 { return Err("sound_recorder_upload_sessions.sample_rate is below the minimum".to_string()); }
-        if *(value) > 192000 { return Err("sound_recorder_upload_sessions.sample_rate is above the maximum".to_string()); }
+        if *(value) < 8000 {
+            return Err(
+                "sound_recorder_upload_sessions.sample_rate is below the minimum".to_string(),
+            );
+        }
+        if *(value) > 192000 {
+            return Err(
+                "sound_recorder_upload_sessions.sample_rate is above the maximum".to_string(),
+            );
+        }
     }
-    if *(&value.channel_count) < 1 { return Err("sound_recorder_upload_sessions.channel_count is below the minimum".to_string()); }
-    if *(&value.channel_count) > 8 { return Err("sound_recorder_upload_sessions.channel_count is above the maximum".to_string()); }
-    if *(&value.segment_duration_seconds) < 1 { return Err("sound_recorder_upload_sessions.segment_duration_seconds is below the minimum".to_string()); }
-    if *(&value.segment_duration_seconds) > 600 { return Err("sound_recorder_upload_sessions.segment_duration_seconds is above the maximum".to_string()); }
-    if *(&value.max_segment_bytes) < 1 { return Err("sound_recorder_upload_sessions.max_segment_bytes is below the minimum".to_string()); }
-    if *(&value.max_segment_bytes) > 209715200 { return Err("sound_recorder_upload_sessions.max_segment_bytes is above the maximum".to_string()); }
+    if *(&value.channel_count) < 1 {
+        return Err(
+            "sound_recorder_upload_sessions.channel_count is below the minimum".to_string(),
+        );
+    }
+    if *(&value.channel_count) > 8 {
+        return Err(
+            "sound_recorder_upload_sessions.channel_count is above the maximum".to_string(),
+        );
+    }
+    if *(&value.segment_duration_seconds) < 1 {
+        return Err(
+            "sound_recorder_upload_sessions.segment_duration_seconds is below the minimum"
+                .to_string(),
+        );
+    }
+    if *(&value.segment_duration_seconds) > 600 {
+        return Err(
+            "sound_recorder_upload_sessions.segment_duration_seconds is above the maximum"
+                .to_string(),
+        );
+    }
+    if *(&value.max_segment_bytes) < 1 {
+        return Err(
+            "sound_recorder_upload_sessions.max_segment_bytes is below the minimum".to_string(),
+        );
+    }
+    if *(&value.max_segment_bytes) > 209715200 {
+        return Err(
+            "sound_recorder_upload_sessions.max_segment_bytes is above the maximum".to_string(),
+        );
+    }
     if let Some(value) = &value.client_timezone {
-        validate_string_length("sound_recorder_upload_sessions.client_timezone", value, None, Some(80))?;
-        if (value).as_bytes().len() > 80 { return Err("sound_recorder_upload_sessions.client_timezone exceeds 80 bytes".to_string()); }
+        validate_string_length(
+            "sound_recorder_upload_sessions.client_timezone",
+            value,
+            None,
+            Some(80),
+        )?;
+        if (value).as_bytes().len() > 80 {
+            return Err(
+                "sound_recorder_upload_sessions.client_timezone exceeds 80 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.legal_region {
-        validate_string_length("sound_recorder_upload_sessions.legal_region", value, None, Some(64))?;
+        validate_string_length(
+            "sound_recorder_upload_sessions.legal_region",
+            value,
+            None,
+            Some(64),
+        )?;
     }
-    if !["security", "music", "meeting", "voice_note", "ambient"].contains(&(&value.use_case).as_str()) { return Err(format!("unsupported sound_recorder_upload_sessions.use_case: {}", &value.use_case)); }
-    if !(&value.meta_data).is_object() { return Err("sound_recorder_upload_sessions.meta_data must be a JSON object".to_string()); }
+    if !["security", "music", "meeting", "voice_note", "ambient"]
+        .contains(&(&value.use_case).as_str())
+    {
+        return Err(format!(
+            "unsupported sound_recorder_upload_sessions.use_case: {}",
+            &value.use_case
+        ));
+    }
+    if !(&value.meta_data).is_object() {
+        return Err("sound_recorder_upload_sessions.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_sound_recorder_upload_sessions_insert(value: &SoundRecorderUploadSessionsInsert) -> Result<(), String> {
+pub fn validate_sound_recorder_upload_sessions_insert(
+    value: &SoundRecorderUploadSessionsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.status {
-        if !["active", "closed", "revoked", "expired"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_upload_sessions.status: {}", value)); }
+        if !["active", "closed", "revoked", "expired"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported sound_recorder_upload_sessions.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.storage_provider {
-        if !["s3"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_upload_sessions.storage_provider: {}", value)); }
+        if !["s3"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported sound_recorder_upload_sessions.storage_provider: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.storage_bucket {
-        validate_string_length("sound_recorder_upload_sessions.storage_bucket", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("sound_recorder_upload_sessions.storage_bucket exceeds 200 bytes".to_string()); }
+        validate_string_length(
+            "sound_recorder_upload_sessions.storage_bucket",
+            value,
+            None,
+            Some(200),
+        )?;
+        if (value).as_bytes().len() > 200 {
+            return Err(
+                "sound_recorder_upload_sessions.storage_bucket exceeds 200 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.storage_prefix {
-        if (value).as_bytes().len() > 2048 { return Err("sound_recorder_upload_sessions.storage_prefix exceeds 2048 bytes".to_string()); }
+        if (value).as_bytes().len() > 2048 {
+            return Err(
+                "sound_recorder_upload_sessions.storage_prefix exceeds 2048 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.content_type {
-        validate_string_length("sound_recorder_upload_sessions.content_type", value, None, Some(120))?;
-        if (value).as_bytes().len() > 120 { return Err("sound_recorder_upload_sessions.content_type exceeds 120 bytes".to_string()); }
+        validate_string_length(
+            "sound_recorder_upload_sessions.content_type",
+            value,
+            None,
+            Some(120),
+        )?;
+        if (value).as_bytes().len() > 120 {
+            return Err(
+                "sound_recorder_upload_sessions.content_type exceeds 120 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.codec {
-        validate_string_length("sound_recorder_upload_sessions.codec", value, None, Some(80))?;
-        if (value).as_bytes().len() > 80 { return Err("sound_recorder_upload_sessions.codec exceeds 80 bytes".to_string()); }
+        validate_string_length(
+            "sound_recorder_upload_sessions.codec",
+            value,
+            None,
+            Some(80),
+        )?;
+        if (value).as_bytes().len() > 80 {
+            return Err("sound_recorder_upload_sessions.codec exceeds 80 bytes".to_string());
+        }
     }
     if let Some(value) = &value.sample_rate {
-        if *(value) < 8000 { return Err("sound_recorder_upload_sessions.sample_rate is below the minimum".to_string()); }
-        if *(value) > 192000 { return Err("sound_recorder_upload_sessions.sample_rate is above the maximum".to_string()); }
+        if *(value) < 8000 {
+            return Err(
+                "sound_recorder_upload_sessions.sample_rate is below the minimum".to_string(),
+            );
+        }
+        if *(value) > 192000 {
+            return Err(
+                "sound_recorder_upload_sessions.sample_rate is above the maximum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.channel_count {
-        if *(value) < 1 { return Err("sound_recorder_upload_sessions.channel_count is below the minimum".to_string()); }
-        if *(value) > 8 { return Err("sound_recorder_upload_sessions.channel_count is above the maximum".to_string()); }
+        if *(value) < 1 {
+            return Err(
+                "sound_recorder_upload_sessions.channel_count is below the minimum".to_string(),
+            );
+        }
+        if *(value) > 8 {
+            return Err(
+                "sound_recorder_upload_sessions.channel_count is above the maximum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.segment_duration_seconds {
-        if *(value) < 1 { return Err("sound_recorder_upload_sessions.segment_duration_seconds is below the minimum".to_string()); }
-        if *(value) > 600 { return Err("sound_recorder_upload_sessions.segment_duration_seconds is above the maximum".to_string()); }
+        if *(value) < 1 {
+            return Err(
+                "sound_recorder_upload_sessions.segment_duration_seconds is below the minimum"
+                    .to_string(),
+            );
+        }
+        if *(value) > 600 {
+            return Err(
+                "sound_recorder_upload_sessions.segment_duration_seconds is above the maximum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.max_segment_bytes {
-        if *(value) < 1 { return Err("sound_recorder_upload_sessions.max_segment_bytes is below the minimum".to_string()); }
-        if *(value) > 209715200 { return Err("sound_recorder_upload_sessions.max_segment_bytes is above the maximum".to_string()); }
+        if *(value) < 1 {
+            return Err(
+                "sound_recorder_upload_sessions.max_segment_bytes is below the minimum".to_string(),
+            );
+        }
+        if *(value) > 209715200 {
+            return Err(
+                "sound_recorder_upload_sessions.max_segment_bytes is above the maximum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.client_timezone {
-        validate_string_length("sound_recorder_upload_sessions.client_timezone", value, None, Some(80))?;
-        if (value).as_bytes().len() > 80 { return Err("sound_recorder_upload_sessions.client_timezone exceeds 80 bytes".to_string()); }
+        validate_string_length(
+            "sound_recorder_upload_sessions.client_timezone",
+            value,
+            None,
+            Some(80),
+        )?;
+        if (value).as_bytes().len() > 80 {
+            return Err(
+                "sound_recorder_upload_sessions.client_timezone exceeds 80 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.legal_region {
-        validate_string_length("sound_recorder_upload_sessions.legal_region", value, None, Some(64))?;
+        validate_string_length(
+            "sound_recorder_upload_sessions.legal_region",
+            value,
+            None,
+            Some(64),
+        )?;
     }
     if let Some(value) = &value.use_case {
-        if !["security", "music", "meeting", "voice_note", "ambient"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_upload_sessions.use_case: {}", value)); }
+        if !["security", "music", "meeting", "voice_note", "ambient"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported sound_recorder_upload_sessions.use_case: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("sound_recorder_upload_sessions.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "sound_recorder_upload_sessions.meta_data must be a JSON object".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
 pub const SOUND_RECORDER_SEGMENTS_TABLE: &str = "sound_recorder_segments";
-pub const SOUND_RECORDER_SEGMENTS_COLUMNS: &[&str] = &["id", "account_id", "device_id", "session_id", "sequence_number", "status", "storage_provider", "storage_bucket", "storage_key", "content_type", "codec", "captured_started_at", "captured_ended_at", "duration_millis", "byte_count", "sha256_hex", "upload_url_expires_at", "etag", "uploaded_at", "expires_at", "pinned_at", "meta_data", "created_at", "updated_at"];
+pub const SOUND_RECORDER_SEGMENTS_COLUMNS: &[&str] = &[
+    "id",
+    "account_id",
+    "device_id",
+    "session_id",
+    "sequence_number",
+    "status",
+    "storage_provider",
+    "storage_bucket",
+    "storage_key",
+    "content_type",
+    "codec",
+    "captured_started_at",
+    "captured_ended_at",
+    "duration_millis",
+    "byte_count",
+    "sha256_hex",
+    "upload_url_expires_at",
+    "etag",
+    "uploaded_at",
+    "expires_at",
+    "pinned_at",
+    "meta_data",
+    "created_at",
+    "updated_at",
+];
 pub const SOUND_RECORDER_SEGMENTS_SELECT_SQL: &str = r###"select
       id::text as id,
       account_id::text as account_id,
@@ -1474,7 +2220,8 @@ pub enum SoundRecorderSegmentsStatus {
 }
 
 impl SoundRecorderSegmentsStatus {
-    pub const VALUES: &'static [&'static str] = &["pending", "uploaded", "failed", "expired", "deleted"];
+    pub const VALUES: &'static [&'static str] =
+        &["pending", "uploaded", "failed", "expired", "deleted"];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -1588,84 +2335,188 @@ pub struct SoundRecorderSegmentsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_sound_recorder_segments_row(value: &SoundRecorderSegmentsRow) -> Result<(), String> {
-    if *(&value.sequence_number) < 0 { return Err("sound_recorder_segments.sequence_number is below the minimum".to_string()); }
-    if !["pending", "uploaded", "failed", "expired", "deleted"].contains(&(&value.status).as_str()) { return Err(format!("unsupported sound_recorder_segments.status: {}", &value.status)); }
-    if !["s3"].contains(&(&value.storage_provider).as_str()) { return Err(format!("unsupported sound_recorder_segments.storage_provider: {}", &value.storage_provider)); }
-    validate_string_length("sound_recorder_segments.storage_bucket", &value.storage_bucket, None, Some(200))?;
-    if (&value.storage_bucket).as_bytes().len() > 200 { return Err("sound_recorder_segments.storage_bucket exceeds 200 bytes".to_string()); }
-    if (&value.storage_key).as_bytes().len() > 2048 { return Err("sound_recorder_segments.storage_key exceeds 2048 bytes".to_string()); }
-    validate_string_length("sound_recorder_segments.content_type", &value.content_type, None, Some(120))?;
-    if (&value.content_type).as_bytes().len() > 120 { return Err("sound_recorder_segments.content_type exceeds 120 bytes".to_string()); }
+pub fn validate_sound_recorder_segments_row(
+    value: &SoundRecorderSegmentsRow,
+) -> Result<(), String> {
+    if *(&value.sequence_number) < 0 {
+        return Err("sound_recorder_segments.sequence_number is below the minimum".to_string());
+    }
+    if !["pending", "uploaded", "failed", "expired", "deleted"].contains(&(&value.status).as_str())
+    {
+        return Err(format!(
+            "unsupported sound_recorder_segments.status: {}",
+            &value.status
+        ));
+    }
+    if !["s3"].contains(&(&value.storage_provider).as_str()) {
+        return Err(format!(
+            "unsupported sound_recorder_segments.storage_provider: {}",
+            &value.storage_provider
+        ));
+    }
+    validate_string_length(
+        "sound_recorder_segments.storage_bucket",
+        &value.storage_bucket,
+        None,
+        Some(200),
+    )?;
+    if (&value.storage_bucket).as_bytes().len() > 200 {
+        return Err("sound_recorder_segments.storage_bucket exceeds 200 bytes".to_string());
+    }
+    if (&value.storage_key).as_bytes().len() > 2048 {
+        return Err("sound_recorder_segments.storage_key exceeds 2048 bytes".to_string());
+    }
+    validate_string_length(
+        "sound_recorder_segments.content_type",
+        &value.content_type,
+        None,
+        Some(120),
+    )?;
+    if (&value.content_type).as_bytes().len() > 120 {
+        return Err("sound_recorder_segments.content_type exceeds 120 bytes".to_string());
+    }
     if let Some(value) = &value.codec {
         validate_string_length("sound_recorder_segments.codec", value, None, Some(80))?;
-        if (value).as_bytes().len() > 80 { return Err("sound_recorder_segments.codec exceeds 80 bytes".to_string()); }
+        if (value).as_bytes().len() > 80 {
+            return Err("sound_recorder_segments.codec exceeds 80 bytes".to_string());
+        }
     }
-    if *(&value.duration_millis) < 1 { return Err("sound_recorder_segments.duration_millis is below the minimum".to_string()); }
-    if *(&value.duration_millis) > 600000 { return Err("sound_recorder_segments.duration_millis is above the maximum".to_string()); }
+    if *(&value.duration_millis) < 1 {
+        return Err("sound_recorder_segments.duration_millis is below the minimum".to_string());
+    }
+    if *(&value.duration_millis) > 600000 {
+        return Err("sound_recorder_segments.duration_millis is above the maximum".to_string());
+    }
     if let Some(value) = &value.byte_count {
-        if *(value) < 0 { return Err("sound_recorder_segments.byte_count is below the minimum".to_string()); }
-        if *(value) > 209715200 { return Err("sound_recorder_segments.byte_count is above the maximum".to_string()); }
+        if *(value) < 0 {
+            return Err("sound_recorder_segments.byte_count is below the minimum".to_string());
+        }
+        if *(value) > 209715200 {
+            return Err("sound_recorder_segments.byte_count is above the maximum".to_string());
+        }
     }
     if let Some(value) = &value.sha256_hex {
         validate_string_length("sound_recorder_segments.sha256_hex", value, None, Some(64))?;
     }
     if let Some(value) = &value.etag {
         validate_string_length("sound_recorder_segments.etag", value, None, Some(160))?;
-        if (value).as_bytes().len() > 160 { return Err("sound_recorder_segments.etag exceeds 160 bytes".to_string()); }
+        if (value).as_bytes().len() > 160 {
+            return Err("sound_recorder_segments.etag exceeds 160 bytes".to_string());
+        }
     }
-    if !(&value.meta_data).is_object() { return Err("sound_recorder_segments.meta_data must be a JSON object".to_string()); }
+    if !(&value.meta_data).is_object() {
+        return Err("sound_recorder_segments.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_sound_recorder_segments_insert(value: &SoundRecorderSegmentsInsert) -> Result<(), String> {
+pub fn validate_sound_recorder_segments_insert(
+    value: &SoundRecorderSegmentsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.sequence_number {
-        if *(value) < 0 { return Err("sound_recorder_segments.sequence_number is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("sound_recorder_segments.sequence_number is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.status {
-        if !["pending", "uploaded", "failed", "expired", "deleted"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_segments.status: {}", value)); }
+        if !["pending", "uploaded", "failed", "expired", "deleted"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported sound_recorder_segments.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.storage_provider {
-        if !["s3"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_segments.storage_provider: {}", value)); }
+        if !["s3"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported sound_recorder_segments.storage_provider: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.storage_bucket {
-        validate_string_length("sound_recorder_segments.storage_bucket", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("sound_recorder_segments.storage_bucket exceeds 200 bytes".to_string()); }
+        validate_string_length(
+            "sound_recorder_segments.storage_bucket",
+            value,
+            None,
+            Some(200),
+        )?;
+        if (value).as_bytes().len() > 200 {
+            return Err("sound_recorder_segments.storage_bucket exceeds 200 bytes".to_string());
+        }
     }
     if let Some(value) = &value.storage_key {
-        if (value).as_bytes().len() > 2048 { return Err("sound_recorder_segments.storage_key exceeds 2048 bytes".to_string()); }
+        if (value).as_bytes().len() > 2048 {
+            return Err("sound_recorder_segments.storage_key exceeds 2048 bytes".to_string());
+        }
     }
     if let Some(value) = &value.content_type {
-        validate_string_length("sound_recorder_segments.content_type", value, None, Some(120))?;
-        if (value).as_bytes().len() > 120 { return Err("sound_recorder_segments.content_type exceeds 120 bytes".to_string()); }
+        validate_string_length(
+            "sound_recorder_segments.content_type",
+            value,
+            None,
+            Some(120),
+        )?;
+        if (value).as_bytes().len() > 120 {
+            return Err("sound_recorder_segments.content_type exceeds 120 bytes".to_string());
+        }
     }
     if let Some(value) = &value.codec {
         validate_string_length("sound_recorder_segments.codec", value, None, Some(80))?;
-        if (value).as_bytes().len() > 80 { return Err("sound_recorder_segments.codec exceeds 80 bytes".to_string()); }
+        if (value).as_bytes().len() > 80 {
+            return Err("sound_recorder_segments.codec exceeds 80 bytes".to_string());
+        }
     }
     if let Some(value) = &value.duration_millis {
-        if *(value) < 1 { return Err("sound_recorder_segments.duration_millis is below the minimum".to_string()); }
-        if *(value) > 600000 { return Err("sound_recorder_segments.duration_millis is above the maximum".to_string()); }
+        if *(value) < 1 {
+            return Err("sound_recorder_segments.duration_millis is below the minimum".to_string());
+        }
+        if *(value) > 600000 {
+            return Err("sound_recorder_segments.duration_millis is above the maximum".to_string());
+        }
     }
     if let Some(value) = &value.byte_count {
-        if *(value) < 0 { return Err("sound_recorder_segments.byte_count is below the minimum".to_string()); }
-        if *(value) > 209715200 { return Err("sound_recorder_segments.byte_count is above the maximum".to_string()); }
+        if *(value) < 0 {
+            return Err("sound_recorder_segments.byte_count is below the minimum".to_string());
+        }
+        if *(value) > 209715200 {
+            return Err("sound_recorder_segments.byte_count is above the maximum".to_string());
+        }
     }
     if let Some(value) = &value.sha256_hex {
         validate_string_length("sound_recorder_segments.sha256_hex", value, None, Some(64))?;
     }
     if let Some(value) = &value.etag {
         validate_string_length("sound_recorder_segments.etag", value, None, Some(160))?;
-        if (value).as_bytes().len() > 160 { return Err("sound_recorder_segments.etag exceeds 160 bytes".to_string()); }
+        if (value).as_bytes().len() > 160 {
+            return Err("sound_recorder_segments.etag exceeds 160 bytes".to_string());
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("sound_recorder_segments.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("sound_recorder_segments.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const SOUND_RECORDER_EVIDENCE_EXPORTS_TABLE: &str = "sound_recorder_evidence_exports";
-pub const SOUND_RECORDER_EVIDENCE_EXPORTS_COLUMNS: &[&str] = &["id", "account_id", "device_id", "created_by_device_id", "status", "requested_from", "requested_to", "segment_count", "manifest", "download_url_expires_at", "requested_at", "ready_at", "expires_at", "meta_data"];
+pub const SOUND_RECORDER_EVIDENCE_EXPORTS_COLUMNS: &[&str] = &[
+    "id",
+    "account_id",
+    "device_id",
+    "created_by_device_id",
+    "status",
+    "requested_from",
+    "requested_to",
+    "segment_count",
+    "manifest",
+    "download_url_expires_at",
+    "requested_at",
+    "ready_at",
+    "expires_at",
+    "meta_data",
+];
 pub const SOUND_RECORDER_EVIDENCE_EXPORTS_SELECT_SQL: &str = r###"select
       id::text as id,
       account_id::text as account_id,
@@ -1758,32 +2609,74 @@ pub struct SoundRecorderEvidenceExportsInsert {
     pub meta_data: Option<Value>,
 }
 
-pub fn validate_sound_recorder_evidence_exports_row(value: &SoundRecorderEvidenceExportsRow) -> Result<(), String> {
-    if !["requested", "ready", "expired", "revoked"].contains(&(&value.status).as_str()) { return Err(format!("unsupported sound_recorder_evidence_exports.status: {}", &value.status)); }
-    if *(&value.segment_count) < 0 { return Err("sound_recorder_evidence_exports.segment_count is below the minimum".to_string()); }
-    if !(&value.manifest).is_object() { return Err("sound_recorder_evidence_exports.manifest must be a JSON object".to_string()); }
-    if !(&value.meta_data).is_object() { return Err("sound_recorder_evidence_exports.meta_data must be a JSON object".to_string()); }
+pub fn validate_sound_recorder_evidence_exports_row(
+    value: &SoundRecorderEvidenceExportsRow,
+) -> Result<(), String> {
+    if !["requested", "ready", "expired", "revoked"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported sound_recorder_evidence_exports.status: {}",
+            &value.status
+        ));
+    }
+    if *(&value.segment_count) < 0 {
+        return Err(
+            "sound_recorder_evidence_exports.segment_count is below the minimum".to_string(),
+        );
+    }
+    if !(&value.manifest).is_object() {
+        return Err("sound_recorder_evidence_exports.manifest must be a JSON object".to_string());
+    }
+    if !(&value.meta_data).is_object() {
+        return Err("sound_recorder_evidence_exports.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_sound_recorder_evidence_exports_insert(value: &SoundRecorderEvidenceExportsInsert) -> Result<(), String> {
+pub fn validate_sound_recorder_evidence_exports_insert(
+    value: &SoundRecorderEvidenceExportsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.status {
-        if !["requested", "ready", "expired", "revoked"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_evidence_exports.status: {}", value)); }
+        if !["requested", "ready", "expired", "revoked"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported sound_recorder_evidence_exports.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.segment_count {
-        if *(value) < 0 { return Err("sound_recorder_evidence_exports.segment_count is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "sound_recorder_evidence_exports.segment_count is below the minimum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.manifest {
-        if !(value).is_object() { return Err("sound_recorder_evidence_exports.manifest must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "sound_recorder_evidence_exports.manifest must be a JSON object".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("sound_recorder_evidence_exports.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "sound_recorder_evidence_exports.meta_data must be a JSON object".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
 pub const SOUND_RECORDER_AUDIT_EVENTS_TABLE: &str = "sound_recorder_audit_events";
-pub const SOUND_RECORDER_AUDIT_EVENTS_COLUMNS: &[&str] = &["id", "account_id", "device_id", "event_type", "event_hash", "payload", "created_at"];
+pub const SOUND_RECORDER_AUDIT_EVENTS_COLUMNS: &[&str] = &[
+    "id",
+    "account_id",
+    "device_id",
+    "event_type",
+    "event_hash",
+    "payload",
+    "created_at",
+];
 pub const SOUND_RECORDER_AUDIT_EVENTS_SELECT_SQL: &str = r###"select
       id::text as id,
       account_id::text as account_id,
@@ -1819,28 +2712,70 @@ pub struct SoundRecorderAuditEventsInsert {
     pub created_at: Option<String>,
 }
 
-pub fn validate_sound_recorder_audit_events_row(value: &SoundRecorderAuditEventsRow) -> Result<(), String> {
-    validate_string_length("sound_recorder_audit_events.event_type", &value.event_type, None, Some(80))?;
-    validate_string_length("sound_recorder_audit_events.event_hash", &value.event_hash, None, Some(64))?;
-    if !(&value.payload).is_object() { return Err("sound_recorder_audit_events.payload must be a JSON object".to_string()); }
+pub fn validate_sound_recorder_audit_events_row(
+    value: &SoundRecorderAuditEventsRow,
+) -> Result<(), String> {
+    validate_string_length(
+        "sound_recorder_audit_events.event_type",
+        &value.event_type,
+        None,
+        Some(80),
+    )?;
+    validate_string_length(
+        "sound_recorder_audit_events.event_hash",
+        &value.event_hash,
+        None,
+        Some(64),
+    )?;
+    if !(&value.payload).is_object() {
+        return Err("sound_recorder_audit_events.payload must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_sound_recorder_audit_events_insert(value: &SoundRecorderAuditEventsInsert) -> Result<(), String> {
+pub fn validate_sound_recorder_audit_events_insert(
+    value: &SoundRecorderAuditEventsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.event_type {
-        validate_string_length("sound_recorder_audit_events.event_type", value, None, Some(80))?;
+        validate_string_length(
+            "sound_recorder_audit_events.event_type",
+            value,
+            None,
+            Some(80),
+        )?;
     }
     if let Some(value) = &value.event_hash {
-        validate_string_length("sound_recorder_audit_events.event_hash", value, None, Some(64))?;
+        validate_string_length(
+            "sound_recorder_audit_events.event_hash",
+            value,
+            None,
+            Some(64),
+        )?;
     }
     if let Some(value) = &value.payload {
-        if !(value).is_object() { return Err("sound_recorder_audit_events.payload must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("sound_recorder_audit_events.payload must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const SOUND_RECORDER_OAUTH_STATES_TABLE: &str = "sound_recorder_oauth_states";
-pub const SOUND_RECORDER_OAUTH_STATES_COLUMNS: &[&str] = &["id", "account_id", "device_id", "provider", "state_hash", "redirect_uri", "folder_path", "status", "expires_at", "consumed_at", "meta_data", "created_at", "updated_at"];
+pub const SOUND_RECORDER_OAUTH_STATES_COLUMNS: &[&str] = &[
+    "id",
+    "account_id",
+    "device_id",
+    "provider",
+    "state_hash",
+    "redirect_uri",
+    "folder_path",
+    "status",
+    "expires_at",
+    "consumed_at",
+    "meta_data",
+    "created_at",
+    "updated_at",
+];
 pub const SOUND_RECORDER_OAUTH_STATES_SELECT_SQL: &str = r###"select
       id::text as id,
       account_id::text as account_id,
@@ -1866,7 +2801,8 @@ pub enum SoundRecorderOauthStatesProvider {
 }
 
 impl SoundRecorderOauthStatesProvider {
-    pub const VALUES: &'static [&'static str] = &["google_drive", "microsoft_onedrive", "apple_icloud"];
+    pub const VALUES: &'static [&'static str] =
+        &["google_drive", "microsoft_onedrive", "apple_icloud"];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -1963,46 +2899,135 @@ pub struct SoundRecorderOauthStatesInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_sound_recorder_oauth_states_row(value: &SoundRecorderOauthStatesRow) -> Result<(), String> {
-    if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(&value.provider).as_str()) { return Err(format!("unsupported sound_recorder_oauth_states.provider: {}", &value.provider)); }
-    validate_string_length("sound_recorder_oauth_states.state_hash", &value.state_hash, None, Some(64))?;
-    validate_string_length("sound_recorder_oauth_states.redirect_uri", &value.redirect_uri, None, Some(512))?;
-    if (&value.redirect_uri).as_bytes().len() > 512 { return Err("sound_recorder_oauth_states.redirect_uri exceeds 512 bytes".to_string()); }
-    if let Some(value) = &value.folder_path {
-        validate_string_length("sound_recorder_oauth_states.folder_path", value, None, Some(512))?;
-        if (value).as_bytes().len() > 512 { return Err("sound_recorder_oauth_states.folder_path exceeds 512 bytes".to_string()); }
+pub fn validate_sound_recorder_oauth_states_row(
+    value: &SoundRecorderOauthStatesRow,
+) -> Result<(), String> {
+    if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(&value.provider).as_str())
+    {
+        return Err(format!(
+            "unsupported sound_recorder_oauth_states.provider: {}",
+            &value.provider
+        ));
     }
-    if !["pending", "consumed", "expired", "revoked"].contains(&(&value.status).as_str()) { return Err(format!("unsupported sound_recorder_oauth_states.status: {}", &value.status)); }
-    if !(&value.meta_data).is_object() { return Err("sound_recorder_oauth_states.meta_data must be a JSON object".to_string()); }
+    validate_string_length(
+        "sound_recorder_oauth_states.state_hash",
+        &value.state_hash,
+        None,
+        Some(64),
+    )?;
+    validate_string_length(
+        "sound_recorder_oauth_states.redirect_uri",
+        &value.redirect_uri,
+        None,
+        Some(512),
+    )?;
+    if (&value.redirect_uri).as_bytes().len() > 512 {
+        return Err("sound_recorder_oauth_states.redirect_uri exceeds 512 bytes".to_string());
+    }
+    if let Some(value) = &value.folder_path {
+        validate_string_length(
+            "sound_recorder_oauth_states.folder_path",
+            value,
+            None,
+            Some(512),
+        )?;
+        if (value).as_bytes().len() > 512 {
+            return Err("sound_recorder_oauth_states.folder_path exceeds 512 bytes".to_string());
+        }
+    }
+    if !["pending", "consumed", "expired", "revoked"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported sound_recorder_oauth_states.status: {}",
+            &value.status
+        ));
+    }
+    if !(&value.meta_data).is_object() {
+        return Err("sound_recorder_oauth_states.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_sound_recorder_oauth_states_insert(value: &SoundRecorderOauthStatesInsert) -> Result<(), String> {
+pub fn validate_sound_recorder_oauth_states_insert(
+    value: &SoundRecorderOauthStatesInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.provider {
-        if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_oauth_states.provider: {}", value)); }
+        if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported sound_recorder_oauth_states.provider: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.state_hash {
-        validate_string_length("sound_recorder_oauth_states.state_hash", value, None, Some(64))?;
+        validate_string_length(
+            "sound_recorder_oauth_states.state_hash",
+            value,
+            None,
+            Some(64),
+        )?;
     }
     if let Some(value) = &value.redirect_uri {
-        validate_string_length("sound_recorder_oauth_states.redirect_uri", value, None, Some(512))?;
-        if (value).as_bytes().len() > 512 { return Err("sound_recorder_oauth_states.redirect_uri exceeds 512 bytes".to_string()); }
+        validate_string_length(
+            "sound_recorder_oauth_states.redirect_uri",
+            value,
+            None,
+            Some(512),
+        )?;
+        if (value).as_bytes().len() > 512 {
+            return Err("sound_recorder_oauth_states.redirect_uri exceeds 512 bytes".to_string());
+        }
     }
     if let Some(value) = &value.folder_path {
-        validate_string_length("sound_recorder_oauth_states.folder_path", value, None, Some(512))?;
-        if (value).as_bytes().len() > 512 { return Err("sound_recorder_oauth_states.folder_path exceeds 512 bytes".to_string()); }
+        validate_string_length(
+            "sound_recorder_oauth_states.folder_path",
+            value,
+            None,
+            Some(512),
+        )?;
+        if (value).as_bytes().len() > 512 {
+            return Err("sound_recorder_oauth_states.folder_path exceeds 512 bytes".to_string());
+        }
     }
     if let Some(value) = &value.status {
-        if !["pending", "consumed", "expired", "revoked"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_oauth_states.status: {}", value)); }
+        if !["pending", "consumed", "expired", "revoked"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported sound_recorder_oauth_states.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("sound_recorder_oauth_states.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("sound_recorder_oauth_states.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const SOUND_RECORDER_CLOUD_CONNECTIONS_TABLE: &str = "sound_recorder_cloud_connections";
-pub const SOUND_RECORDER_CLOUD_CONNECTIONS_COLUMNS: &[&str] = &["id", "account_id", "created_by_device_id", "provider", "link_mode", "status", "display_name", "provider_account_id", "provider_subject_hash", "root_folder_id", "folder_path", "oauth_scope", "token_ciphertext", "token_nonce", "token_aad", "token_version", "token_expires_at", "last_sync_at", "meta_data", "created_at", "updated_at"];
+pub const SOUND_RECORDER_CLOUD_CONNECTIONS_COLUMNS: &[&str] = &[
+    "id",
+    "account_id",
+    "created_by_device_id",
+    "provider",
+    "link_mode",
+    "status",
+    "display_name",
+    "provider_account_id",
+    "provider_subject_hash",
+    "root_folder_id",
+    "folder_path",
+    "oauth_scope",
+    "token_ciphertext",
+    "token_nonce",
+    "token_aad",
+    "token_version",
+    "token_expires_at",
+    "last_sync_at",
+    "meta_data",
+    "created_at",
+    "updated_at",
+];
 pub const SOUND_RECORDER_CLOUD_CONNECTIONS_SELECT_SQL: &str = r###"select
       id::text as id,
       account_id::text as account_id,
@@ -2036,7 +3061,8 @@ pub enum SoundRecorderCloudConnectionsProvider {
 }
 
 impl SoundRecorderCloudConnectionsProvider {
-    pub const VALUES: &'static [&'static str] = &["google_drive", "microsoft_onedrive", "apple_icloud"];
+    pub const VALUES: &'static [&'static str] =
+        &["google_drive", "microsoft_onedrive", "apple_icloud"];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -2179,86 +3205,254 @@ pub struct SoundRecorderCloudConnectionsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_sound_recorder_cloud_connections_row(value: &SoundRecorderCloudConnectionsRow) -> Result<(), String> {
-    if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(&value.provider).as_str()) { return Err(format!("unsupported sound_recorder_cloud_connections.provider: {}", &value.provider)); }
-    if !["server_oauth", "client_managed"].contains(&(&value.link_mode).as_str()) { return Err(format!("unsupported sound_recorder_cloud_connections.link_mode: {}", &value.link_mode)); }
-    if !["active", "paused", "revoked", "failed"].contains(&(&value.status).as_str()) { return Err(format!("unsupported sound_recorder_cloud_connections.status: {}", &value.status)); }
+pub fn validate_sound_recorder_cloud_connections_row(
+    value: &SoundRecorderCloudConnectionsRow,
+) -> Result<(), String> {
+    if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(&value.provider).as_str())
+    {
+        return Err(format!(
+            "unsupported sound_recorder_cloud_connections.provider: {}",
+            &value.provider
+        ));
+    }
+    if !["server_oauth", "client_managed"].contains(&(&value.link_mode).as_str()) {
+        return Err(format!(
+            "unsupported sound_recorder_cloud_connections.link_mode: {}",
+            &value.link_mode
+        ));
+    }
+    if !["active", "paused", "revoked", "failed"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported sound_recorder_cloud_connections.status: {}",
+            &value.status
+        ));
+    }
     if let Some(value) = &value.display_name {
-        validate_string_length("sound_recorder_cloud_connections.display_name", value, None, Some(160))?;
-        if (value).as_bytes().len() > 160 { return Err("sound_recorder_cloud_connections.display_name exceeds 160 bytes".to_string()); }
+        validate_string_length(
+            "sound_recorder_cloud_connections.display_name",
+            value,
+            None,
+            Some(160),
+        )?;
+        if (value).as_bytes().len() > 160 {
+            return Err(
+                "sound_recorder_cloud_connections.display_name exceeds 160 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.provider_account_id {
-        validate_string_length("sound_recorder_cloud_connections.provider_account_id", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("sound_recorder_cloud_connections.provider_account_id exceeds 240 bytes".to_string()); }
+        validate_string_length(
+            "sound_recorder_cloud_connections.provider_account_id",
+            value,
+            None,
+            Some(240),
+        )?;
+        if (value).as_bytes().len() > 240 {
+            return Err(
+                "sound_recorder_cloud_connections.provider_account_id exceeds 240 bytes"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.provider_subject_hash {
-        validate_string_length("sound_recorder_cloud_connections.provider_subject_hash", value, None, Some(64))?;
+        validate_string_length(
+            "sound_recorder_cloud_connections.provider_subject_hash",
+            value,
+            None,
+            Some(64),
+        )?;
     }
     if let Some(value) = &value.root_folder_id {
-        validate_string_length("sound_recorder_cloud_connections.root_folder_id", value, None, Some(512))?;
-        if (value).as_bytes().len() > 512 { return Err("sound_recorder_cloud_connections.root_folder_id exceeds 512 bytes".to_string()); }
+        validate_string_length(
+            "sound_recorder_cloud_connections.root_folder_id",
+            value,
+            None,
+            Some(512),
+        )?;
+        if (value).as_bytes().len() > 512 {
+            return Err(
+                "sound_recorder_cloud_connections.root_folder_id exceeds 512 bytes".to_string(),
+            );
+        }
     }
-    validate_string_length("sound_recorder_cloud_connections.folder_path", &value.folder_path, None, Some(512))?;
-    if (&value.folder_path).as_bytes().len() > 512 { return Err("sound_recorder_cloud_connections.folder_path exceeds 512 bytes".to_string()); }
+    validate_string_length(
+        "sound_recorder_cloud_connections.folder_path",
+        &value.folder_path,
+        None,
+        Some(512),
+    )?;
+    if (&value.folder_path).as_bytes().len() > 512 {
+        return Err("sound_recorder_cloud_connections.folder_path exceeds 512 bytes".to_string());
+    }
     if let Some(value) = &value.token_nonce {
-        validate_string_length("sound_recorder_cloud_connections.token_nonce", value, None, Some(64))?;
+        validate_string_length(
+            "sound_recorder_cloud_connections.token_nonce",
+            value,
+            None,
+            Some(64),
+        )?;
     }
     if let Some(value) = &value.token_aad {
-        validate_string_length("sound_recorder_cloud_connections.token_aad", value, None, Some(512))?;
+        validate_string_length(
+            "sound_recorder_cloud_connections.token_aad",
+            value,
+            None,
+            Some(512),
+        )?;
     }
     if let Some(value) = &value.token_version {
-        if *(value) < 1 { return Err("sound_recorder_cloud_connections.token_version is below the minimum".to_string()); }
+        if *(value) < 1 {
+            return Err(
+                "sound_recorder_cloud_connections.token_version is below the minimum".to_string(),
+            );
+        }
     }
-    if !(&value.meta_data).is_object() { return Err("sound_recorder_cloud_connections.meta_data must be a JSON object".to_string()); }
+    if !(&value.meta_data).is_object() {
+        return Err("sound_recorder_cloud_connections.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_sound_recorder_cloud_connections_insert(value: &SoundRecorderCloudConnectionsInsert) -> Result<(), String> {
+pub fn validate_sound_recorder_cloud_connections_insert(
+    value: &SoundRecorderCloudConnectionsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.provider {
-        if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_cloud_connections.provider: {}", value)); }
+        if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported sound_recorder_cloud_connections.provider: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.link_mode {
-        if !["server_oauth", "client_managed"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_cloud_connections.link_mode: {}", value)); }
+        if !["server_oauth", "client_managed"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported sound_recorder_cloud_connections.link_mode: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.status {
-        if !["active", "paused", "revoked", "failed"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_cloud_connections.status: {}", value)); }
+        if !["active", "paused", "revoked", "failed"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported sound_recorder_cloud_connections.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.display_name {
-        validate_string_length("sound_recorder_cloud_connections.display_name", value, None, Some(160))?;
-        if (value).as_bytes().len() > 160 { return Err("sound_recorder_cloud_connections.display_name exceeds 160 bytes".to_string()); }
+        validate_string_length(
+            "sound_recorder_cloud_connections.display_name",
+            value,
+            None,
+            Some(160),
+        )?;
+        if (value).as_bytes().len() > 160 {
+            return Err(
+                "sound_recorder_cloud_connections.display_name exceeds 160 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.provider_account_id {
-        validate_string_length("sound_recorder_cloud_connections.provider_account_id", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("sound_recorder_cloud_connections.provider_account_id exceeds 240 bytes".to_string()); }
+        validate_string_length(
+            "sound_recorder_cloud_connections.provider_account_id",
+            value,
+            None,
+            Some(240),
+        )?;
+        if (value).as_bytes().len() > 240 {
+            return Err(
+                "sound_recorder_cloud_connections.provider_account_id exceeds 240 bytes"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.provider_subject_hash {
-        validate_string_length("sound_recorder_cloud_connections.provider_subject_hash", value, None, Some(64))?;
+        validate_string_length(
+            "sound_recorder_cloud_connections.provider_subject_hash",
+            value,
+            None,
+            Some(64),
+        )?;
     }
     if let Some(value) = &value.root_folder_id {
-        validate_string_length("sound_recorder_cloud_connections.root_folder_id", value, None, Some(512))?;
-        if (value).as_bytes().len() > 512 { return Err("sound_recorder_cloud_connections.root_folder_id exceeds 512 bytes".to_string()); }
+        validate_string_length(
+            "sound_recorder_cloud_connections.root_folder_id",
+            value,
+            None,
+            Some(512),
+        )?;
+        if (value).as_bytes().len() > 512 {
+            return Err(
+                "sound_recorder_cloud_connections.root_folder_id exceeds 512 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.folder_path {
-        validate_string_length("sound_recorder_cloud_connections.folder_path", value, None, Some(512))?;
-        if (value).as_bytes().len() > 512 { return Err("sound_recorder_cloud_connections.folder_path exceeds 512 bytes".to_string()); }
+        validate_string_length(
+            "sound_recorder_cloud_connections.folder_path",
+            value,
+            None,
+            Some(512),
+        )?;
+        if (value).as_bytes().len() > 512 {
+            return Err(
+                "sound_recorder_cloud_connections.folder_path exceeds 512 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.token_nonce {
-        validate_string_length("sound_recorder_cloud_connections.token_nonce", value, None, Some(64))?;
+        validate_string_length(
+            "sound_recorder_cloud_connections.token_nonce",
+            value,
+            None,
+            Some(64),
+        )?;
     }
     if let Some(value) = &value.token_aad {
-        validate_string_length("sound_recorder_cloud_connections.token_aad", value, None, Some(512))?;
+        validate_string_length(
+            "sound_recorder_cloud_connections.token_aad",
+            value,
+            None,
+            Some(512),
+        )?;
     }
     if let Some(value) = &value.token_version {
-        if *(value) < 1 { return Err("sound_recorder_cloud_connections.token_version is below the minimum".to_string()); }
+        if *(value) < 1 {
+            return Err(
+                "sound_recorder_cloud_connections.token_version is below the minimum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("sound_recorder_cloud_connections.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "sound_recorder_cloud_connections.meta_data must be a JSON object".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
 pub const SOUND_RECORDER_CLOUD_COPY_JOBS_TABLE: &str = "sound_recorder_cloud_copy_jobs";
-pub const SOUND_RECORDER_CLOUD_COPY_JOBS_COLUMNS: &[&str] = &["id", "account_id", "connection_id", "segment_id", "provider", "status", "destination_key", "provider_file_id", "attempts", "locked_until", "started_at", "completed_at", "last_error", "meta_data", "created_at", "updated_at"];
+pub const SOUND_RECORDER_CLOUD_COPY_JOBS_COLUMNS: &[&str] = &[
+    "id",
+    "account_id",
+    "connection_id",
+    "segment_id",
+    "provider",
+    "status",
+    "destination_key",
+    "provider_file_id",
+    "attempts",
+    "locked_until",
+    "started_at",
+    "completed_at",
+    "last_error",
+    "meta_data",
+    "created_at",
+    "updated_at",
+];
 pub const SOUND_RECORDER_CLOUD_COPY_JOBS_SELECT_SQL: &str = r###"select
       id::text as id,
       account_id::text as account_id,
@@ -2287,7 +3481,8 @@ pub enum SoundRecorderCloudCopyJobsProvider {
 }
 
 impl SoundRecorderCloudCopyJobsProvider {
-    pub const VALUES: &'static [&'static str] = &["google_drive", "microsoft_onedrive", "apple_icloud"];
+    pub const VALUES: &'static [&'static str] =
+        &["google_drive", "microsoft_onedrive", "apple_icloud"];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -2323,7 +3518,14 @@ pub enum SoundRecorderCloudCopyJobsStatus {
 }
 
 impl SoundRecorderCloudCopyJobsStatus {
-    pub const VALUES: &'static [&'static str] = &["pending", "running", "waiting_client", "completed", "failed", "skipped"];
+    pub const VALUES: &'static [&'static str] = &[
+        "pending",
+        "running",
+        "waiting_client",
+        "completed",
+        "failed",
+        "skipped",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -2396,56 +3598,187 @@ pub struct SoundRecorderCloudCopyJobsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_sound_recorder_cloud_copy_jobs_row(value: &SoundRecorderCloudCopyJobsRow) -> Result<(), String> {
-    if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(&value.provider).as_str()) { return Err(format!("unsupported sound_recorder_cloud_copy_jobs.provider: {}", &value.provider)); }
-    if !["pending", "running", "waiting_client", "completed", "failed", "skipped"].contains(&(&value.status).as_str()) { return Err(format!("unsupported sound_recorder_cloud_copy_jobs.status: {}", &value.status)); }
-    validate_string_length("sound_recorder_cloud_copy_jobs.destination_key", &value.destination_key, None, Some(2048))?;
-    if (&value.destination_key).as_bytes().len() > 2048 { return Err("sound_recorder_cloud_copy_jobs.destination_key exceeds 2048 bytes".to_string()); }
+pub fn validate_sound_recorder_cloud_copy_jobs_row(
+    value: &SoundRecorderCloudCopyJobsRow,
+) -> Result<(), String> {
+    if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(&value.provider).as_str())
+    {
+        return Err(format!(
+            "unsupported sound_recorder_cloud_copy_jobs.provider: {}",
+            &value.provider
+        ));
+    }
+    if ![
+        "pending",
+        "running",
+        "waiting_client",
+        "completed",
+        "failed",
+        "skipped",
+    ]
+    .contains(&(&value.status).as_str())
+    {
+        return Err(format!(
+            "unsupported sound_recorder_cloud_copy_jobs.status: {}",
+            &value.status
+        ));
+    }
+    validate_string_length(
+        "sound_recorder_cloud_copy_jobs.destination_key",
+        &value.destination_key,
+        None,
+        Some(2048),
+    )?;
+    if (&value.destination_key).as_bytes().len() > 2048 {
+        return Err(
+            "sound_recorder_cloud_copy_jobs.destination_key exceeds 2048 bytes".to_string(),
+        );
+    }
     if let Some(value) = &value.provider_file_id {
-        validate_string_length("sound_recorder_cloud_copy_jobs.provider_file_id", value, None, Some(512))?;
-        if (value).as_bytes().len() > 512 { return Err("sound_recorder_cloud_copy_jobs.provider_file_id exceeds 512 bytes".to_string()); }
+        validate_string_length(
+            "sound_recorder_cloud_copy_jobs.provider_file_id",
+            value,
+            None,
+            Some(512),
+        )?;
+        if (value).as_bytes().len() > 512 {
+            return Err(
+                "sound_recorder_cloud_copy_jobs.provider_file_id exceeds 512 bytes".to_string(),
+            );
+        }
     }
-    if *(&value.attempts) < 0 { return Err("sound_recorder_cloud_copy_jobs.attempts is below the minimum".to_string()); }
-    if *(&value.attempts) > 50 { return Err("sound_recorder_cloud_copy_jobs.attempts is above the maximum".to_string()); }
+    if *(&value.attempts) < 0 {
+        return Err("sound_recorder_cloud_copy_jobs.attempts is below the minimum".to_string());
+    }
+    if *(&value.attempts) > 50 {
+        return Err("sound_recorder_cloud_copy_jobs.attempts is above the maximum".to_string());
+    }
     if let Some(value) = &value.last_error {
-        validate_string_length("sound_recorder_cloud_copy_jobs.last_error", value, None, Some(500))?;
-        if (value).as_bytes().len() > 500 { return Err("sound_recorder_cloud_copy_jobs.last_error exceeds 500 bytes".to_string()); }
+        validate_string_length(
+            "sound_recorder_cloud_copy_jobs.last_error",
+            value,
+            None,
+            Some(500),
+        )?;
+        if (value).as_bytes().len() > 500 {
+            return Err("sound_recorder_cloud_copy_jobs.last_error exceeds 500 bytes".to_string());
+        }
     }
-    if !(&value.meta_data).is_object() { return Err("sound_recorder_cloud_copy_jobs.meta_data must be a JSON object".to_string()); }
+    if !(&value.meta_data).is_object() {
+        return Err("sound_recorder_cloud_copy_jobs.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_sound_recorder_cloud_copy_jobs_insert(value: &SoundRecorderCloudCopyJobsInsert) -> Result<(), String> {
+pub fn validate_sound_recorder_cloud_copy_jobs_insert(
+    value: &SoundRecorderCloudCopyJobsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.provider {
-        if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_cloud_copy_jobs.provider: {}", value)); }
+        if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported sound_recorder_cloud_copy_jobs.provider: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.status {
-        if !["pending", "running", "waiting_client", "completed", "failed", "skipped"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_cloud_copy_jobs.status: {}", value)); }
+        if ![
+            "pending",
+            "running",
+            "waiting_client",
+            "completed",
+            "failed",
+            "skipped",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported sound_recorder_cloud_copy_jobs.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.destination_key {
-        validate_string_length("sound_recorder_cloud_copy_jobs.destination_key", value, None, Some(2048))?;
-        if (value).as_bytes().len() > 2048 { return Err("sound_recorder_cloud_copy_jobs.destination_key exceeds 2048 bytes".to_string()); }
+        validate_string_length(
+            "sound_recorder_cloud_copy_jobs.destination_key",
+            value,
+            None,
+            Some(2048),
+        )?;
+        if (value).as_bytes().len() > 2048 {
+            return Err(
+                "sound_recorder_cloud_copy_jobs.destination_key exceeds 2048 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.provider_file_id {
-        validate_string_length("sound_recorder_cloud_copy_jobs.provider_file_id", value, None, Some(512))?;
-        if (value).as_bytes().len() > 512 { return Err("sound_recorder_cloud_copy_jobs.provider_file_id exceeds 512 bytes".to_string()); }
+        validate_string_length(
+            "sound_recorder_cloud_copy_jobs.provider_file_id",
+            value,
+            None,
+            Some(512),
+        )?;
+        if (value).as_bytes().len() > 512 {
+            return Err(
+                "sound_recorder_cloud_copy_jobs.provider_file_id exceeds 512 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.attempts {
-        if *(value) < 0 { return Err("sound_recorder_cloud_copy_jobs.attempts is below the minimum".to_string()); }
-        if *(value) > 50 { return Err("sound_recorder_cloud_copy_jobs.attempts is above the maximum".to_string()); }
+        if *(value) < 0 {
+            return Err("sound_recorder_cloud_copy_jobs.attempts is below the minimum".to_string());
+        }
+        if *(value) > 50 {
+            return Err("sound_recorder_cloud_copy_jobs.attempts is above the maximum".to_string());
+        }
     }
     if let Some(value) = &value.last_error {
-        validate_string_length("sound_recorder_cloud_copy_jobs.last_error", value, None, Some(500))?;
-        if (value).as_bytes().len() > 500 { return Err("sound_recorder_cloud_copy_jobs.last_error exceeds 500 bytes".to_string()); }
+        validate_string_length(
+            "sound_recorder_cloud_copy_jobs.last_error",
+            value,
+            None,
+            Some(500),
+        )?;
+        if (value).as_bytes().len() > 500 {
+            return Err("sound_recorder_cloud_copy_jobs.last_error exceeds 500 bytes".to_string());
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("sound_recorder_cloud_copy_jobs.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "sound_recorder_cloud_copy_jobs.meta_data must be a JSON object".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
 pub const CONTAINER_POOL_CONFIGS_TABLE: &str = "container_pool_configs";
-pub const CONTAINER_POOL_CONFIGS_COLUMNS: &[&str] = &["id", "slug", "display_name", "image", "command", "env", "request_path", "health_path", "container_port", "min_warm", "max_warm", "max_concurrency_per_container", "request_timeout_ms", "idle_ttl_seconds", "nats_subject", "status", "labels", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const CONTAINER_POOL_CONFIGS_COLUMNS: &[&str] = &[
+    "id",
+    "slug",
+    "display_name",
+    "image",
+    "command",
+    "env",
+    "request_path",
+    "health_path",
+    "container_port",
+    "min_warm",
+    "max_warm",
+    "max_concurrency_per_container",
+    "request_timeout_ms",
+    "idle_ttl_seconds",
+    "nats_subject",
+    "status",
+    "labels",
+    "meta_data",
+    "is_soft_deleted",
+    "created_at",
+    "updated_at",
+    "created_by",
+    "updated_by",
+];
 pub const CONTAINER_POOL_CONFIGS_SELECT_SQL: &str = r###"select
       id::text as id,
       slug,
@@ -2564,98 +3897,239 @@ pub struct ContainerPoolConfigsInsert {
 
 pub fn validate_container_pool_configs_row(value: &ContainerPoolConfigsRow) -> Result<(), String> {
     validate_slug("container_pool_configs.slug", &value.slug)?;
-    validate_string_length("container_pool_configs.display_name", &value.display_name, None, Some(200))?;
-    if (&value.display_name).as_bytes().len() > 200 { return Err("container_pool_configs.display_name exceeds 200 bytes".to_string()); }
-    if (&value.image).as_bytes().len() > 512 { return Err("container_pool_configs.image exceeds 512 bytes".to_string()); }
-    if !(&value.command).is_array() { return Err("container_pool_configs.command must be a JSON array".to_string()); }
-    if !(&value.env).is_object() { return Err("container_pool_configs.env must be a JSON object".to_string()); }
-    validate_string_length("container_pool_configs.request_path", &value.request_path, None, Some(256))?;
-    validate_string_length("container_pool_configs.health_path", &value.health_path, None, Some(256))?;
-    if *(&value.container_port) < 1 { return Err("container_pool_configs.container_port is below the minimum".to_string()); }
-    if *(&value.container_port) > 65535 { return Err("container_pool_configs.container_port is above the maximum".to_string()); }
-    if *(&value.min_warm) < 0 { return Err("container_pool_configs.min_warm is below the minimum".to_string()); }
-    if *(&value.min_warm) > 64 { return Err("container_pool_configs.min_warm is above the maximum".to_string()); }
-    if *(&value.max_warm) < 1 { return Err("container_pool_configs.max_warm is below the minimum".to_string()); }
-    if *(&value.max_warm) > 128 { return Err("container_pool_configs.max_warm is above the maximum".to_string()); }
-    if *(&value.max_concurrency_per_container) < 1 { return Err("container_pool_configs.max_concurrency_per_container is below the minimum".to_string()); }
-    if *(&value.max_concurrency_per_container) > 128 { return Err("container_pool_configs.max_concurrency_per_container is above the maximum".to_string()); }
-    if *(&value.request_timeout_ms) < 100 { return Err("container_pool_configs.request_timeout_ms is below the minimum".to_string()); }
-    if *(&value.request_timeout_ms) > 900000 { return Err("container_pool_configs.request_timeout_ms is above the maximum".to_string()); }
-    if *(&value.idle_ttl_seconds) < 10 { return Err("container_pool_configs.idle_ttl_seconds is below the minimum".to_string()); }
-    if *(&value.idle_ttl_seconds) > 86400 { return Err("container_pool_configs.idle_ttl_seconds is above the maximum".to_string()); }
-    if let Some(value) = &value.nats_subject {
-        if (value).as_bytes().len() > 256 { return Err("container_pool_configs.nats_subject exceeds 256 bytes".to_string()); }
+    validate_string_length(
+        "container_pool_configs.display_name",
+        &value.display_name,
+        None,
+        Some(200),
+    )?;
+    if (&value.display_name).as_bytes().len() > 200 {
+        return Err("container_pool_configs.display_name exceeds 200 bytes".to_string());
     }
-    if !["active", "paused", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported container_pool_configs.status: {}", &value.status)); }
-    if !(&value.labels).is_array() { return Err("container_pool_configs.labels must be a JSON array".to_string()); }
-    if !(&value.meta_data).is_object() { return Err("container_pool_configs.meta_data must be a JSON object".to_string()); }
+    if (&value.image).as_bytes().len() > 512 {
+        return Err("container_pool_configs.image exceeds 512 bytes".to_string());
+    }
+    if !(&value.command).is_array() {
+        return Err("container_pool_configs.command must be a JSON array".to_string());
+    }
+    if !(&value.env).is_object() {
+        return Err("container_pool_configs.env must be a JSON object".to_string());
+    }
+    validate_string_length(
+        "container_pool_configs.request_path",
+        &value.request_path,
+        None,
+        Some(256),
+    )?;
+    validate_string_length(
+        "container_pool_configs.health_path",
+        &value.health_path,
+        None,
+        Some(256),
+    )?;
+    if *(&value.container_port) < 1 {
+        return Err("container_pool_configs.container_port is below the minimum".to_string());
+    }
+    if *(&value.container_port) > 65535 {
+        return Err("container_pool_configs.container_port is above the maximum".to_string());
+    }
+    if *(&value.min_warm) < 0 {
+        return Err("container_pool_configs.min_warm is below the minimum".to_string());
+    }
+    if *(&value.min_warm) > 64 {
+        return Err("container_pool_configs.min_warm is above the maximum".to_string());
+    }
+    if *(&value.max_warm) < 1 {
+        return Err("container_pool_configs.max_warm is below the minimum".to_string());
+    }
+    if *(&value.max_warm) > 128 {
+        return Err("container_pool_configs.max_warm is above the maximum".to_string());
+    }
+    if *(&value.max_concurrency_per_container) < 1 {
+        return Err(
+            "container_pool_configs.max_concurrency_per_container is below the minimum".to_string(),
+        );
+    }
+    if *(&value.max_concurrency_per_container) > 128 {
+        return Err(
+            "container_pool_configs.max_concurrency_per_container is above the maximum".to_string(),
+        );
+    }
+    if *(&value.request_timeout_ms) < 100 {
+        return Err("container_pool_configs.request_timeout_ms is below the minimum".to_string());
+    }
+    if *(&value.request_timeout_ms) > 900000 {
+        return Err("container_pool_configs.request_timeout_ms is above the maximum".to_string());
+    }
+    if *(&value.idle_ttl_seconds) < 10 {
+        return Err("container_pool_configs.idle_ttl_seconds is below the minimum".to_string());
+    }
+    if *(&value.idle_ttl_seconds) > 86400 {
+        return Err("container_pool_configs.idle_ttl_seconds is above the maximum".to_string());
+    }
+    if let Some(value) = &value.nats_subject {
+        if (value).as_bytes().len() > 256 {
+            return Err("container_pool_configs.nats_subject exceeds 256 bytes".to_string());
+        }
+    }
+    if !["active", "paused", "archived"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported container_pool_configs.status: {}",
+            &value.status
+        ));
+    }
+    if !(&value.labels).is_array() {
+        return Err("container_pool_configs.labels must be a JSON array".to_string());
+    }
+    if !(&value.meta_data).is_object() {
+        return Err("container_pool_configs.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_container_pool_configs_insert(value: &ContainerPoolConfigsInsert) -> Result<(), String> {
+pub fn validate_container_pool_configs_insert(
+    value: &ContainerPoolConfigsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.slug {
         validate_slug("container_pool_configs.slug", value)?;
     }
     if let Some(value) = &value.display_name {
-        validate_string_length("container_pool_configs.display_name", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("container_pool_configs.display_name exceeds 200 bytes".to_string()); }
+        validate_string_length(
+            "container_pool_configs.display_name",
+            value,
+            None,
+            Some(200),
+        )?;
+        if (value).as_bytes().len() > 200 {
+            return Err("container_pool_configs.display_name exceeds 200 bytes".to_string());
+        }
     }
     if let Some(value) = &value.image {
-        if (value).as_bytes().len() > 512 { return Err("container_pool_configs.image exceeds 512 bytes".to_string()); }
+        if (value).as_bytes().len() > 512 {
+            return Err("container_pool_configs.image exceeds 512 bytes".to_string());
+        }
     }
     if let Some(value) = &value.command {
-        if !(value).is_array() { return Err("container_pool_configs.command must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err("container_pool_configs.command must be a JSON array".to_string());
+        }
     }
     if let Some(value) = &value.env {
-        if !(value).is_object() { return Err("container_pool_configs.env must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("container_pool_configs.env must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.request_path {
-        validate_string_length("container_pool_configs.request_path", value, None, Some(256))?;
+        validate_string_length(
+            "container_pool_configs.request_path",
+            value,
+            None,
+            Some(256),
+        )?;
     }
     if let Some(value) = &value.health_path {
         validate_string_length("container_pool_configs.health_path", value, None, Some(256))?;
     }
     if let Some(value) = &value.container_port {
-        if *(value) < 1 { return Err("container_pool_configs.container_port is below the minimum".to_string()); }
-        if *(value) > 65535 { return Err("container_pool_configs.container_port is above the maximum".to_string()); }
+        if *(value) < 1 {
+            return Err("container_pool_configs.container_port is below the minimum".to_string());
+        }
+        if *(value) > 65535 {
+            return Err("container_pool_configs.container_port is above the maximum".to_string());
+        }
     }
     if let Some(value) = &value.min_warm {
-        if *(value) < 0 { return Err("container_pool_configs.min_warm is below the minimum".to_string()); }
-        if *(value) > 64 { return Err("container_pool_configs.min_warm is above the maximum".to_string()); }
+        if *(value) < 0 {
+            return Err("container_pool_configs.min_warm is below the minimum".to_string());
+        }
+        if *(value) > 64 {
+            return Err("container_pool_configs.min_warm is above the maximum".to_string());
+        }
     }
     if let Some(value) = &value.max_warm {
-        if *(value) < 1 { return Err("container_pool_configs.max_warm is below the minimum".to_string()); }
-        if *(value) > 128 { return Err("container_pool_configs.max_warm is above the maximum".to_string()); }
+        if *(value) < 1 {
+            return Err("container_pool_configs.max_warm is below the minimum".to_string());
+        }
+        if *(value) > 128 {
+            return Err("container_pool_configs.max_warm is above the maximum".to_string());
+        }
     }
     if let Some(value) = &value.max_concurrency_per_container {
-        if *(value) < 1 { return Err("container_pool_configs.max_concurrency_per_container is below the minimum".to_string()); }
-        if *(value) > 128 { return Err("container_pool_configs.max_concurrency_per_container is above the maximum".to_string()); }
+        if *(value) < 1 {
+            return Err(
+                "container_pool_configs.max_concurrency_per_container is below the minimum"
+                    .to_string(),
+            );
+        }
+        if *(value) > 128 {
+            return Err(
+                "container_pool_configs.max_concurrency_per_container is above the maximum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.request_timeout_ms {
-        if *(value) < 100 { return Err("container_pool_configs.request_timeout_ms is below the minimum".to_string()); }
-        if *(value) > 900000 { return Err("container_pool_configs.request_timeout_ms is above the maximum".to_string()); }
+        if *(value) < 100 {
+            return Err(
+                "container_pool_configs.request_timeout_ms is below the minimum".to_string(),
+            );
+        }
+        if *(value) > 900000 {
+            return Err(
+                "container_pool_configs.request_timeout_ms is above the maximum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.idle_ttl_seconds {
-        if *(value) < 10 { return Err("container_pool_configs.idle_ttl_seconds is below the minimum".to_string()); }
-        if *(value) > 86400 { return Err("container_pool_configs.idle_ttl_seconds is above the maximum".to_string()); }
+        if *(value) < 10 {
+            return Err("container_pool_configs.idle_ttl_seconds is below the minimum".to_string());
+        }
+        if *(value) > 86400 {
+            return Err("container_pool_configs.idle_ttl_seconds is above the maximum".to_string());
+        }
     }
     if let Some(value) = &value.nats_subject {
-        if (value).as_bytes().len() > 256 { return Err("container_pool_configs.nats_subject exceeds 256 bytes".to_string()); }
+        if (value).as_bytes().len() > 256 {
+            return Err("container_pool_configs.nats_subject exceeds 256 bytes".to_string());
+        }
     }
     if let Some(value) = &value.status {
-        if !["active", "paused", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported container_pool_configs.status: {}", value)); }
+        if !["active", "paused", "archived"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported container_pool_configs.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.labels {
-        if !(value).is_array() { return Err("container_pool_configs.labels must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err("container_pool_configs.labels must be a JSON array".to_string());
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("container_pool_configs.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("container_pool_configs.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const KNOWN_GIT_REPOS_TABLE: &str = "known_git_repos";
-pub const KNOWN_GIT_REPOS_COLUMNS: &[&str] = &["id", "repo_url", "display_name", "provider", "default_branch", "status", "last_verified_at", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const KNOWN_GIT_REPOS_COLUMNS: &[&str] = &[
+    "id",
+    "repo_url",
+    "display_name",
+    "provider",
+    "default_branch",
+    "status",
+    "last_verified_at",
+    "meta_data",
+    "is_soft_deleted",
+    "created_at",
+    "updated_at",
+    "created_by",
+    "updated_by",
+];
 pub const KNOWN_GIT_REPOS_SELECT_SQL: &str = r###"select
       id::text as id,
       repo_url,
@@ -2779,43 +4253,99 @@ pub struct KnownGitRepoInsert {
 }
 
 pub fn validate_known_git_repos_row(value: &KnownGitRepoRow) -> Result<(), String> {
-    validate_string_length("known_git_repos.repo_url", &value.repo_url, Some(1), Some(2048))?;
-    if (&value.repo_url).as_bytes().len() > 2048 { return Err("known_git_repos.repo_url exceeds 2048 bytes".to_string()); }
-    validate_string_length("known_git_repos.display_name", &value.display_name, Some(1), Some(200))?;
-    if (&value.display_name).as_bytes().len() > 200 { return Err("known_git_repos.display_name exceeds 200 bytes".to_string()); }
-    if !["github", "gitlab", "bitbucket", "generic"].contains(&(&value.provider).as_str()) { return Err(format!("unsupported known_git_repos.provider: {}", &value.provider)); }
-    validate_string_length("known_git_repos.default_branch", &value.default_branch, Some(1), Some(120))?;
-    if !["active", "paused", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported known_git_repos.status: {}", &value.status)); }
-    if !(&value.meta_data).is_object() { return Err("known_git_repos.meta_data must be a JSON object".to_string()); }
+    validate_string_length(
+        "known_git_repos.repo_url",
+        &value.repo_url,
+        Some(1),
+        Some(2048),
+    )?;
+    if (&value.repo_url).as_bytes().len() > 2048 {
+        return Err("known_git_repos.repo_url exceeds 2048 bytes".to_string());
+    }
+    validate_string_length(
+        "known_git_repos.display_name",
+        &value.display_name,
+        Some(1),
+        Some(200),
+    )?;
+    if (&value.display_name).as_bytes().len() > 200 {
+        return Err("known_git_repos.display_name exceeds 200 bytes".to_string());
+    }
+    if !["github", "gitlab", "bitbucket", "generic"].contains(&(&value.provider).as_str()) {
+        return Err(format!(
+            "unsupported known_git_repos.provider: {}",
+            &value.provider
+        ));
+    }
+    validate_string_length(
+        "known_git_repos.default_branch",
+        &value.default_branch,
+        Some(1),
+        Some(120),
+    )?;
+    if !["active", "paused", "archived"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported known_git_repos.status: {}",
+            &value.status
+        ));
+    }
+    if !(&value.meta_data).is_object() {
+        return Err("known_git_repos.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
 pub fn validate_known_git_repos_insert(value: &KnownGitRepoInsert) -> Result<(), String> {
     if let Some(value) = &value.repo_url {
         validate_string_length("known_git_repos.repo_url", value, Some(1), Some(2048))?;
-        if (value).as_bytes().len() > 2048 { return Err("known_git_repos.repo_url exceeds 2048 bytes".to_string()); }
+        if (value).as_bytes().len() > 2048 {
+            return Err("known_git_repos.repo_url exceeds 2048 bytes".to_string());
+        }
     }
     if let Some(value) = &value.display_name {
         validate_string_length("known_git_repos.display_name", value, Some(1), Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("known_git_repos.display_name exceeds 200 bytes".to_string()); }
+        if (value).as_bytes().len() > 200 {
+            return Err("known_git_repos.display_name exceeds 200 bytes".to_string());
+        }
     }
     if let Some(value) = &value.provider {
-        if !["github", "gitlab", "bitbucket", "generic"].contains(&(value).as_str()) { return Err(format!("unsupported known_git_repos.provider: {}", value)); }
+        if !["github", "gitlab", "bitbucket", "generic"].contains(&(value).as_str()) {
+            return Err(format!("unsupported known_git_repos.provider: {}", value));
+        }
     }
     if let Some(value) = &value.default_branch {
         validate_string_length("known_git_repos.default_branch", value, Some(1), Some(120))?;
     }
     if let Some(value) = &value.status {
-        if !["active", "paused", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported known_git_repos.status: {}", value)); }
+        if !["active", "paused", "archived"].contains(&(value).as_str()) {
+            return Err(format!("unsupported known_git_repos.status: {}", value));
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("known_git_repos.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("known_git_repos.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const AGENT_CONTEXT_BLOBS_TABLE: &str = "agent_context_blobs";
-pub const AGENT_CONTEXT_BLOBS_COLUMNS: &[&str] = &["id", "project_id", "repo_id", "context_id", "context_title", "context_blob", "status", "labels", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const AGENT_CONTEXT_BLOBS_COLUMNS: &[&str] = &[
+    "id",
+    "project_id",
+    "repo_id",
+    "context_id",
+    "context_title",
+    "context_blob",
+    "status",
+    "labels",
+    "meta_data",
+    "is_soft_deleted",
+    "created_at",
+    "updated_at",
+    "created_by",
+    "updated_by",
+];
 pub const AGENT_CONTEXT_BLOBS_SELECT_SQL: &str = r###"select
       id::text as id,
       project_id,
@@ -2906,14 +4436,42 @@ pub struct AgentContextBlobsInsert {
 }
 
 pub fn validate_agent_context_blobs_row(value: &AgentContextBlobsRow) -> Result<(), String> {
-    validate_string_length("agent_context_blobs.project_id", &value.project_id, None, Some(120))?;
-    validate_string_length("agent_context_blobs.context_id", &value.context_id, None, Some(200))?;
-    validate_string_length("agent_context_blobs.context_title", &value.context_title, None, Some(300))?;
-    if (&value.context_title).as_bytes().len() > 300 { return Err("agent_context_blobs.context_title exceeds 300 bytes".to_string()); }
-    if (&value.context_blob).as_bytes().len() > 1048576 { return Err("agent_context_blobs.context_blob exceeds 1048576 bytes".to_string()); }
-    if !["active", "paused", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported agent_context_blobs.status: {}", &value.status)); }
-    if !(&value.labels).is_array() { return Err("agent_context_blobs.labels must be a JSON array".to_string()); }
-    if !(&value.meta_data).is_object() { return Err("agent_context_blobs.meta_data must be a JSON object".to_string()); }
+    validate_string_length(
+        "agent_context_blobs.project_id",
+        &value.project_id,
+        None,
+        Some(120),
+    )?;
+    validate_string_length(
+        "agent_context_blobs.context_id",
+        &value.context_id,
+        None,
+        Some(200),
+    )?;
+    validate_string_length(
+        "agent_context_blobs.context_title",
+        &value.context_title,
+        None,
+        Some(300),
+    )?;
+    if (&value.context_title).as_bytes().len() > 300 {
+        return Err("agent_context_blobs.context_title exceeds 300 bytes".to_string());
+    }
+    if (&value.context_blob).as_bytes().len() > 1048576 {
+        return Err("agent_context_blobs.context_blob exceeds 1048576 bytes".to_string());
+    }
+    if !["active", "paused", "archived"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported agent_context_blobs.status: {}",
+            &value.status
+        ));
+    }
+    if !(&value.labels).is_array() {
+        return Err("agent_context_blobs.labels must be a JSON array".to_string());
+    }
+    if !(&value.meta_data).is_object() {
+        return Err("agent_context_blobs.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
@@ -2926,25 +4484,43 @@ pub fn validate_agent_context_blobs_insert(value: &AgentContextBlobsInsert) -> R
     }
     if let Some(value) = &value.context_title {
         validate_string_length("agent_context_blobs.context_title", value, None, Some(300))?;
-        if (value).as_bytes().len() > 300 { return Err("agent_context_blobs.context_title exceeds 300 bytes".to_string()); }
+        if (value).as_bytes().len() > 300 {
+            return Err("agent_context_blobs.context_title exceeds 300 bytes".to_string());
+        }
     }
     if let Some(value) = &value.context_blob {
-        if (value).as_bytes().len() > 1048576 { return Err("agent_context_blobs.context_blob exceeds 1048576 bytes".to_string()); }
+        if (value).as_bytes().len() > 1048576 {
+            return Err("agent_context_blobs.context_blob exceeds 1048576 bytes".to_string());
+        }
     }
     if let Some(value) = &value.status {
-        if !["active", "paused", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported agent_context_blobs.status: {}", value)); }
+        if !["active", "paused", "archived"].contains(&(value).as_str()) {
+            return Err(format!("unsupported agent_context_blobs.status: {}", value));
+        }
     }
     if let Some(value) = &value.labels {
-        if !(value).is_array() { return Err("agent_context_blobs.labels must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err("agent_context_blobs.labels must be a JSON array".to_string());
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("agent_context_blobs.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("agent_context_blobs.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const AGENT_CONTEXT_EMBEDDINGS_TABLE: &str = "agent_context_embeddings";
-pub const AGENT_CONTEXT_EMBEDDINGS_COLUMNS: &[&str] = &["id", "context_blob_id", "embedding_model", "embedding", "embedding_dimensions", "content_sha256", "created_at"];
+pub const AGENT_CONTEXT_EMBEDDINGS_COLUMNS: &[&str] = &[
+    "id",
+    "context_blob_id",
+    "embedding_model",
+    "embedding",
+    "embedding_dimensions",
+    "content_sha256",
+    "created_at",
+];
 pub const AGENT_CONTEXT_EMBEDDINGS_SELECT_SQL: &str = r###"select
       id::text as id,
       context_blob_id::text as context_blob_id,
@@ -2980,32 +4556,82 @@ pub struct AgentContextEmbeddingsInsert {
     pub created_at: Option<String>,
 }
 
-pub fn validate_agent_context_embeddings_row(value: &AgentContextEmbeddingsRow) -> Result<(), String> {
-    validate_string_length("agent_context_embeddings.embedding_model", &value.embedding_model, None, Some(120))?;
-    if !(&value.embedding).is_array() { return Err("agent_context_embeddings.embedding must be a JSON array".to_string()); }
-    if *(&value.embedding_dimensions) < 1 { return Err("agent_context_embeddings.embedding_dimensions is below the minimum".to_string()); }
-    validate_string_length("agent_context_embeddings.content_sha256", &value.content_sha256, None, Some(64))?;
+pub fn validate_agent_context_embeddings_row(
+    value: &AgentContextEmbeddingsRow,
+) -> Result<(), String> {
+    validate_string_length(
+        "agent_context_embeddings.embedding_model",
+        &value.embedding_model,
+        None,
+        Some(120),
+    )?;
+    if !(&value.embedding).is_array() {
+        return Err("agent_context_embeddings.embedding must be a JSON array".to_string());
+    }
+    if *(&value.embedding_dimensions) < 1 {
+        return Err(
+            "agent_context_embeddings.embedding_dimensions is below the minimum".to_string(),
+        );
+    }
+    validate_string_length(
+        "agent_context_embeddings.content_sha256",
+        &value.content_sha256,
+        None,
+        Some(64),
+    )?;
     Ok(())
 }
 
-pub fn validate_agent_context_embeddings_insert(value: &AgentContextEmbeddingsInsert) -> Result<(), String> {
+pub fn validate_agent_context_embeddings_insert(
+    value: &AgentContextEmbeddingsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.embedding_model {
-        validate_string_length("agent_context_embeddings.embedding_model", value, None, Some(120))?;
+        validate_string_length(
+            "agent_context_embeddings.embedding_model",
+            value,
+            None,
+            Some(120),
+        )?;
     }
     if let Some(value) = &value.embedding {
-        if !(value).is_array() { return Err("agent_context_embeddings.embedding must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err("agent_context_embeddings.embedding must be a JSON array".to_string());
+        }
     }
     if let Some(value) = &value.embedding_dimensions {
-        if *(value) < 1 { return Err("agent_context_embeddings.embedding_dimensions is below the minimum".to_string()); }
+        if *(value) < 1 {
+            return Err(
+                "agent_context_embeddings.embedding_dimensions is below the minimum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.content_sha256 {
-        validate_string_length("agent_context_embeddings.content_sha256", value, None, Some(64))?;
+        validate_string_length(
+            "agent_context_embeddings.content_sha256",
+            value,
+            None,
+            Some(64),
+        )?;
     }
     Ok(())
 }
 
 pub const AGENT_REMOTE_DEV_THREADS_TABLE: &str = "agent_remote_dev_threads";
-pub const AGENT_REMOTE_DEV_THREADS_COLUMNS: &[&str] = &["id", "user_id", "known_git_repo_id", "title", "repo", "base_branch", "meta", "archived_at", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const AGENT_REMOTE_DEV_THREADS_COLUMNS: &[&str] = &[
+    "id",
+    "user_id",
+    "known_git_repo_id",
+    "title",
+    "repo",
+    "base_branch",
+    "meta",
+    "archived_at",
+    "is_soft_deleted",
+    "created_at",
+    "updated_at",
+    "created_by",
+    "updated_by",
+];
 pub const AGENT_REMOTE_DEV_THREADS_SELECT_SQL: &str = r###"select
       id::text as id,
       user_id::text as user_id,
@@ -3059,36 +4685,93 @@ pub struct AgentRemoteDevThreadInsert {
     pub updated_by: Option<String>,
 }
 
-pub fn validate_agent_remote_dev_threads_row(value: &AgentRemoteDevThreadRow) -> Result<(), String> {
-    validate_string_length("agent_remote_dev_threads.title", &value.title, Some(1), Some(500))?;
-    if (&value.title).as_bytes().len() > 500 { return Err("agent_remote_dev_threads.title exceeds 500 bytes".to_string()); }
-    validate_string_length("agent_remote_dev_threads.repo", &value.repo, Some(1), Some(2048))?;
-    if (&value.repo).as_bytes().len() > 2048 { return Err("agent_remote_dev_threads.repo exceeds 2048 bytes".to_string()); }
-    validate_string_length("agent_remote_dev_threads.base_branch", &value.base_branch, Some(1), Some(120))?;
-    if !(&value.meta).is_object() { return Err("agent_remote_dev_threads.meta must be a JSON object".to_string()); }
+pub fn validate_agent_remote_dev_threads_row(
+    value: &AgentRemoteDevThreadRow,
+) -> Result<(), String> {
+    validate_string_length(
+        "agent_remote_dev_threads.title",
+        &value.title,
+        Some(1),
+        Some(500),
+    )?;
+    if (&value.title).as_bytes().len() > 500 {
+        return Err("agent_remote_dev_threads.title exceeds 500 bytes".to_string());
+    }
+    validate_string_length(
+        "agent_remote_dev_threads.repo",
+        &value.repo,
+        Some(1),
+        Some(2048),
+    )?;
+    if (&value.repo).as_bytes().len() > 2048 {
+        return Err("agent_remote_dev_threads.repo exceeds 2048 bytes".to_string());
+    }
+    validate_string_length(
+        "agent_remote_dev_threads.base_branch",
+        &value.base_branch,
+        Some(1),
+        Some(120),
+    )?;
+    if !(&value.meta).is_object() {
+        return Err("agent_remote_dev_threads.meta must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_agent_remote_dev_threads_insert(value: &AgentRemoteDevThreadInsert) -> Result<(), String> {
+pub fn validate_agent_remote_dev_threads_insert(
+    value: &AgentRemoteDevThreadInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.title {
         validate_string_length("agent_remote_dev_threads.title", value, Some(1), Some(500))?;
-        if (value).as_bytes().len() > 500 { return Err("agent_remote_dev_threads.title exceeds 500 bytes".to_string()); }
+        if (value).as_bytes().len() > 500 {
+            return Err("agent_remote_dev_threads.title exceeds 500 bytes".to_string());
+        }
     }
     if let Some(value) = &value.repo {
         validate_string_length("agent_remote_dev_threads.repo", value, Some(1), Some(2048))?;
-        if (value).as_bytes().len() > 2048 { return Err("agent_remote_dev_threads.repo exceeds 2048 bytes".to_string()); }
+        if (value).as_bytes().len() > 2048 {
+            return Err("agent_remote_dev_threads.repo exceeds 2048 bytes".to_string());
+        }
     }
     if let Some(value) = &value.base_branch {
-        validate_string_length("agent_remote_dev_threads.base_branch", value, Some(1), Some(120))?;
+        validate_string_length(
+            "agent_remote_dev_threads.base_branch",
+            value,
+            Some(1),
+            Some(120),
+        )?;
     }
     if let Some(value) = &value.meta {
-        if !(value).is_object() { return Err("agent_remote_dev_threads.meta must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("agent_remote_dev_threads.meta must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const AGENT_REMOTE_DEV_TASKS_TABLE: &str = "agent_remote_dev_tasks";
-pub const AGENT_REMOTE_DEV_TASKS_COLUMNS: &[&str] = &["id", "thread_id", "user_id", "docker_task_id", "prompt", "status", "branch", "pr_url", "pr_state", "exit_reason", "error_message", "last_event_seq", "meta", "is_soft_deleted", "started_at", "finished_at", "created_at", "updated_at", "created_by", "updated_by"];
+pub const AGENT_REMOTE_DEV_TASKS_COLUMNS: &[&str] = &[
+    "id",
+    "thread_id",
+    "user_id",
+    "docker_task_id",
+    "prompt",
+    "status",
+    "branch",
+    "pr_url",
+    "pr_state",
+    "exit_reason",
+    "error_message",
+    "last_event_seq",
+    "meta",
+    "is_soft_deleted",
+    "started_at",
+    "finished_at",
+    "created_at",
+    "updated_at",
+    "created_by",
+    "updated_by",
+];
 pub const AGENT_REMOTE_DEV_TASKS_SELECT_SQL: &str = r###"select
       id::text as id,
       thread_id::text as thread_id,
@@ -3128,7 +4811,18 @@ pub enum AgentRemoteDevTaskStatus {
 }
 
 impl AgentRemoteDevTaskStatus {
-    pub const VALUES: &'static [&'static str] = &["queued", "running", "streaming", "pushed", "pr_open", "pr_merged", "pr_closed", "done", "failed", "cancelled"];
+    pub const VALUES: &'static [&'static str] = &[
+        "queued",
+        "running",
+        "streaming",
+        "pushed",
+        "pr_open",
+        "pr_merged",
+        "pr_closed",
+        "done",
+        "failed",
+        "cancelled",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -3287,47 +4981,126 @@ pub struct AgentRemoteDevTaskInsert {
 }
 
 pub fn validate_agent_remote_dev_tasks_row(value: &AgentRemoteDevTaskRow) -> Result<(), String> {
-    validate_string_length("agent_remote_dev_tasks.prompt", &value.prompt, Some(1), None)?;
-    if (&value.prompt).as_bytes().len() > 1048576 { return Err("agent_remote_dev_tasks.prompt exceeds 1048576 bytes".to_string()); }
-    if !["queued", "running", "streaming", "pushed", "pr_open", "pr_merged", "pr_closed", "done", "failed", "cancelled"].contains(&(&value.status).as_str()) { return Err(format!("unsupported agent_remote_dev_tasks.status: {}", &value.status)); }
+    validate_string_length(
+        "agent_remote_dev_tasks.prompt",
+        &value.prompt,
+        Some(1),
+        None,
+    )?;
+    if (&value.prompt).as_bytes().len() > 1048576 {
+        return Err("agent_remote_dev_tasks.prompt exceeds 1048576 bytes".to_string());
+    }
+    if ![
+        "queued",
+        "running",
+        "streaming",
+        "pushed",
+        "pr_open",
+        "pr_merged",
+        "pr_closed",
+        "done",
+        "failed",
+        "cancelled",
+    ]
+    .contains(&(&value.status).as_str())
+    {
+        return Err(format!(
+            "unsupported agent_remote_dev_tasks.status: {}",
+            &value.status
+        ));
+    }
     if let Some(value) = &value.branch {
         validate_string_length("agent_remote_dev_tasks.branch", value, None, Some(200))?;
     }
     if let Some(value) = &value.pr_state {
-        if !["draft", "open", "closed", "merged"].contains(&(value).as_str()) { return Err(format!("unsupported agent_remote_dev_tasks.pr_state: {}", value)); }
+        if !["draft", "open", "closed", "merged"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported agent_remote_dev_tasks.pr_state: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.exit_reason {
-        if !["completed", "cancelled", "failed"].contains(&(value).as_str()) { return Err(format!("unsupported agent_remote_dev_tasks.exit_reason: {}", value)); }
+        if !["completed", "cancelled", "failed"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported agent_remote_dev_tasks.exit_reason: {}",
+                value
+            ));
+        }
     }
-    if !(&value.meta).is_object() { return Err("agent_remote_dev_tasks.meta must be a JSON object".to_string()); }
+    if !(&value.meta).is_object() {
+        return Err("agent_remote_dev_tasks.meta must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_agent_remote_dev_tasks_insert(value: &AgentRemoteDevTaskInsert) -> Result<(), String> {
+pub fn validate_agent_remote_dev_tasks_insert(
+    value: &AgentRemoteDevTaskInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.prompt {
         validate_string_length("agent_remote_dev_tasks.prompt", value, Some(1), None)?;
-        if (value).as_bytes().len() > 1048576 { return Err("agent_remote_dev_tasks.prompt exceeds 1048576 bytes".to_string()); }
+        if (value).as_bytes().len() > 1048576 {
+            return Err("agent_remote_dev_tasks.prompt exceeds 1048576 bytes".to_string());
+        }
     }
     if let Some(value) = &value.status {
-        if !["queued", "running", "streaming", "pushed", "pr_open", "pr_merged", "pr_closed", "done", "failed", "cancelled"].contains(&(value).as_str()) { return Err(format!("unsupported agent_remote_dev_tasks.status: {}", value)); }
+        if ![
+            "queued",
+            "running",
+            "streaming",
+            "pushed",
+            "pr_open",
+            "pr_merged",
+            "pr_closed",
+            "done",
+            "failed",
+            "cancelled",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported agent_remote_dev_tasks.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.branch {
         validate_string_length("agent_remote_dev_tasks.branch", value, None, Some(200))?;
     }
     if let Some(value) = &value.pr_state {
-        if !["draft", "open", "closed", "merged"].contains(&(value).as_str()) { return Err(format!("unsupported agent_remote_dev_tasks.pr_state: {}", value)); }
+        if !["draft", "open", "closed", "merged"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported agent_remote_dev_tasks.pr_state: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.exit_reason {
-        if !["completed", "cancelled", "failed"].contains(&(value).as_str()) { return Err(format!("unsupported agent_remote_dev_tasks.exit_reason: {}", value)); }
+        if !["completed", "cancelled", "failed"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported agent_remote_dev_tasks.exit_reason: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.meta {
-        if !(value).is_object() { return Err("agent_remote_dev_tasks.meta must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("agent_remote_dev_tasks.meta must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const AGENT_REMOTE_DEV_EVENTS_TABLE: &str = "agent_remote_dev_events";
-pub const AGENT_REMOTE_DEV_EVENTS_COLUMNS: &[&str] = &["id", "task_id", "thread_id", "seq", "event_kind", "payload", "created_at"];
+pub const AGENT_REMOTE_DEV_EVENTS_COLUMNS: &[&str] = &[
+    "id",
+    "task_id",
+    "thread_id",
+    "seq",
+    "event_kind",
+    "payload",
+    "created_at",
+];
 pub const AGENT_REMOTE_DEV_EVENTS_SELECT_SQL: &str = r###"select
       id,
       task_id::text as task_id,
@@ -3364,23 +5137,49 @@ pub struct AgentRemoteDevEventInsert {
 }
 
 pub fn validate_agent_remote_dev_events_row(value: &AgentRemoteDevEventRow) -> Result<(), String> {
-    validate_string_length("agent_remote_dev_events.event_kind", &value.event_kind, Some(1), Some(80))?;
-    if !(&value.payload).is_object() { return Err("agent_remote_dev_events.payload must be a JSON object".to_string()); }
+    validate_string_length(
+        "agent_remote_dev_events.event_kind",
+        &value.event_kind,
+        Some(1),
+        Some(80),
+    )?;
+    if !(&value.payload).is_object() {
+        return Err("agent_remote_dev_events.payload must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_agent_remote_dev_events_insert(value: &AgentRemoteDevEventInsert) -> Result<(), String> {
+pub fn validate_agent_remote_dev_events_insert(
+    value: &AgentRemoteDevEventInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.event_kind {
-        validate_string_length("agent_remote_dev_events.event_kind", value, Some(1), Some(80))?;
+        validate_string_length(
+            "agent_remote_dev_events.event_kind",
+            value,
+            Some(1),
+            Some(80),
+        )?;
     }
     if let Some(value) = &value.payload {
-        if !(value).is_object() { return Err("agent_remote_dev_events.payload must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("agent_remote_dev_events.payload must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const AGENT_REMOTE_DEV_BREADCRUMBS_TABLE: &str = "agent_remote_dev_breadcrumbs";
-pub const AGENT_REMOTE_DEV_BREADCRUMBS_COLUMNS: &[&str] = &["id", "thread_id", "task_id", "kind", "payload", "emitted_at", "pod_name", "branch", "provider"];
+pub const AGENT_REMOTE_DEV_BREADCRUMBS_COLUMNS: &[&str] = &[
+    "id",
+    "thread_id",
+    "task_id",
+    "kind",
+    "payload",
+    "emitted_at",
+    "pod_name",
+    "branch",
+    "provider",
+];
 pub const AGENT_REMOTE_DEV_BREADCRUMBS_SELECT_SQL: &str = r###"select
       id,
       thread_id::text as thread_id,
@@ -3422,48 +5221,123 @@ pub struct AgentRemoteDevBreadcrumbInsert {
     pub provider: Option<String>,
 }
 
-pub fn validate_agent_remote_dev_breadcrumbs_row(value: &AgentRemoteDevBreadcrumbRow) -> Result<(), String> {
-    validate_string_length("agent_remote_dev_breadcrumbs.kind", &value.kind, Some(1), Some(80))?;
-    if !(&value.payload).is_object() { return Err("agent_remote_dev_breadcrumbs.payload must be a JSON object".to_string()); }
+pub fn validate_agent_remote_dev_breadcrumbs_row(
+    value: &AgentRemoteDevBreadcrumbRow,
+) -> Result<(), String> {
+    validate_string_length(
+        "agent_remote_dev_breadcrumbs.kind",
+        &value.kind,
+        Some(1),
+        Some(80),
+    )?;
+    if !(&value.payload).is_object() {
+        return Err("agent_remote_dev_breadcrumbs.payload must be a JSON object".to_string());
+    }
     if let Some(value) = &value.pod_name {
-        validate_string_length("agent_remote_dev_breadcrumbs.pod_name", value, None, Some(253))?;
-        if (value).as_bytes().len() > 253 { return Err("agent_remote_dev_breadcrumbs.pod_name exceeds 253 bytes".to_string()); }
+        validate_string_length(
+            "agent_remote_dev_breadcrumbs.pod_name",
+            value,
+            None,
+            Some(253),
+        )?;
+        if (value).as_bytes().len() > 253 {
+            return Err("agent_remote_dev_breadcrumbs.pod_name exceeds 253 bytes".to_string());
+        }
     }
     if let Some(value) = &value.branch {
-        validate_string_length("agent_remote_dev_breadcrumbs.branch", value, None, Some(120))?;
-        if (value).as_bytes().len() > 120 { return Err("agent_remote_dev_breadcrumbs.branch exceeds 120 bytes".to_string()); }
+        validate_string_length(
+            "agent_remote_dev_breadcrumbs.branch",
+            value,
+            None,
+            Some(120),
+        )?;
+        if (value).as_bytes().len() > 120 {
+            return Err("agent_remote_dev_breadcrumbs.branch exceeds 120 bytes".to_string());
+        }
     }
     if let Some(value) = &value.provider {
-        validate_string_length("agent_remote_dev_breadcrumbs.provider", value, None, Some(60))?;
-        if (value).as_bytes().len() > 60 { return Err("agent_remote_dev_breadcrumbs.provider exceeds 60 bytes".to_string()); }
+        validate_string_length(
+            "agent_remote_dev_breadcrumbs.provider",
+            value,
+            None,
+            Some(60),
+        )?;
+        if (value).as_bytes().len() > 60 {
+            return Err("agent_remote_dev_breadcrumbs.provider exceeds 60 bytes".to_string());
+        }
     }
     Ok(())
 }
 
-pub fn validate_agent_remote_dev_breadcrumbs_insert(value: &AgentRemoteDevBreadcrumbInsert) -> Result<(), String> {
+pub fn validate_agent_remote_dev_breadcrumbs_insert(
+    value: &AgentRemoteDevBreadcrumbInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.kind {
-        validate_string_length("agent_remote_dev_breadcrumbs.kind", value, Some(1), Some(80))?;
+        validate_string_length(
+            "agent_remote_dev_breadcrumbs.kind",
+            value,
+            Some(1),
+            Some(80),
+        )?;
     }
     if let Some(value) = &value.payload {
-        if !(value).is_object() { return Err("agent_remote_dev_breadcrumbs.payload must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("agent_remote_dev_breadcrumbs.payload must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.pod_name {
-        validate_string_length("agent_remote_dev_breadcrumbs.pod_name", value, None, Some(253))?;
-        if (value).as_bytes().len() > 253 { return Err("agent_remote_dev_breadcrumbs.pod_name exceeds 253 bytes".to_string()); }
+        validate_string_length(
+            "agent_remote_dev_breadcrumbs.pod_name",
+            value,
+            None,
+            Some(253),
+        )?;
+        if (value).as_bytes().len() > 253 {
+            return Err("agent_remote_dev_breadcrumbs.pod_name exceeds 253 bytes".to_string());
+        }
     }
     if let Some(value) = &value.branch {
-        validate_string_length("agent_remote_dev_breadcrumbs.branch", value, None, Some(120))?;
-        if (value).as_bytes().len() > 120 { return Err("agent_remote_dev_breadcrumbs.branch exceeds 120 bytes".to_string()); }
+        validate_string_length(
+            "agent_remote_dev_breadcrumbs.branch",
+            value,
+            None,
+            Some(120),
+        )?;
+        if (value).as_bytes().len() > 120 {
+            return Err("agent_remote_dev_breadcrumbs.branch exceeds 120 bytes".to_string());
+        }
     }
     if let Some(value) = &value.provider {
-        validate_string_length("agent_remote_dev_breadcrumbs.provider", value, None, Some(60))?;
-        if (value).as_bytes().len() > 60 { return Err("agent_remote_dev_breadcrumbs.provider exceeds 60 bytes".to_string()); }
+        validate_string_length(
+            "agent_remote_dev_breadcrumbs.provider",
+            value,
+            None,
+            Some(60),
+        )?;
+        if (value).as_bytes().len() > 60 {
+            return Err("agent_remote_dev_breadcrumbs.provider exceeds 60 bytes".to_string());
+        }
     }
     Ok(())
 }
 
 pub const AGENT_REMOTE_DEV_ARTIFACTS_TABLE: &str = "agent_remote_dev_artifacts";
-pub const AGENT_REMOTE_DEV_ARTIFACTS_COLUMNS: &[&str] = &["id", "task_id", "thread_id", "filename", "content_type", "size_bytes", "storage_provider", "storage_bucket", "storage_key", "url", "signed_url_expires_at", "sha256", "meta", "created_at"];
+pub const AGENT_REMOTE_DEV_ARTIFACTS_COLUMNS: &[&str] = &[
+    "id",
+    "task_id",
+    "thread_id",
+    "filename",
+    "content_type",
+    "size_bytes",
+    "storage_provider",
+    "storage_bucket",
+    "storage_key",
+    "url",
+    "signed_url_expires_at",
+    "sha256",
+    "meta",
+    "created_at",
+];
 pub const AGENT_REMOTE_DEV_ARTIFACTS_SELECT_SQL: &str = r###"select
       id::text as id,
       task_id::text as task_id,
@@ -3559,54 +5433,124 @@ pub struct AgentRemoteDevArtifactInsert {
     pub created_at: Option<String>,
 }
 
-pub fn validate_agent_remote_dev_artifacts_row(value: &AgentRemoteDevArtifactRow) -> Result<(), String> {
-    validate_string_length("agent_remote_dev_artifacts.filename", &value.filename, Some(1), Some(1024))?;
-    if (&value.filename).as_bytes().len() > 1024 { return Err("agent_remote_dev_artifacts.filename exceeds 1024 bytes".to_string()); }
+pub fn validate_agent_remote_dev_artifacts_row(
+    value: &AgentRemoteDevArtifactRow,
+) -> Result<(), String> {
+    validate_string_length(
+        "agent_remote_dev_artifacts.filename",
+        &value.filename,
+        Some(1),
+        Some(1024),
+    )?;
+    if (&value.filename).as_bytes().len() > 1024 {
+        return Err("agent_remote_dev_artifacts.filename exceeds 1024 bytes".to_string());
+    }
     if let Some(value) = &value.content_type {
-        validate_string_length("agent_remote_dev_artifacts.content_type", value, None, Some(200))?;
+        validate_string_length(
+            "agent_remote_dev_artifacts.content_type",
+            value,
+            None,
+            Some(200),
+        )?;
     }
-    if !["s3", "r2", "gcs", "drive", "local"].contains(&(&value.storage_provider).as_str()) { return Err(format!("unsupported agent_remote_dev_artifacts.storage_provider: {}", &value.storage_provider)); }
+    if !["s3", "r2", "gcs", "drive", "local"].contains(&(&value.storage_provider).as_str()) {
+        return Err(format!(
+            "unsupported agent_remote_dev_artifacts.storage_provider: {}",
+            &value.storage_provider
+        ));
+    }
     if let Some(value) = &value.storage_bucket {
-        validate_string_length("agent_remote_dev_artifacts.storage_bucket", value, None, Some(200))?;
+        validate_string_length(
+            "agent_remote_dev_artifacts.storage_bucket",
+            value,
+            None,
+            Some(200),
+        )?;
     }
-    validate_string_length("agent_remote_dev_artifacts.url", &value.url, Some(1), Some(4096))?;
-    if (&value.url).as_bytes().len() > 4096 { return Err("agent_remote_dev_artifacts.url exceeds 4096 bytes".to_string()); }
+    validate_string_length(
+        "agent_remote_dev_artifacts.url",
+        &value.url,
+        Some(1),
+        Some(4096),
+    )?;
+    if (&value.url).as_bytes().len() > 4096 {
+        return Err("agent_remote_dev_artifacts.url exceeds 4096 bytes".to_string());
+    }
     if let Some(value) = &value.sha256 {
         validate_string_length("agent_remote_dev_artifacts.sha256", value, None, Some(64))?;
     }
-    if !(&value.meta).is_object() { return Err("agent_remote_dev_artifacts.meta must be a JSON object".to_string()); }
+    if !(&value.meta).is_object() {
+        return Err("agent_remote_dev_artifacts.meta must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_agent_remote_dev_artifacts_insert(value: &AgentRemoteDevArtifactInsert) -> Result<(), String> {
+pub fn validate_agent_remote_dev_artifacts_insert(
+    value: &AgentRemoteDevArtifactInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.filename {
-        validate_string_length("agent_remote_dev_artifacts.filename", value, Some(1), Some(1024))?;
-        if (value).as_bytes().len() > 1024 { return Err("agent_remote_dev_artifacts.filename exceeds 1024 bytes".to_string()); }
+        validate_string_length(
+            "agent_remote_dev_artifacts.filename",
+            value,
+            Some(1),
+            Some(1024),
+        )?;
+        if (value).as_bytes().len() > 1024 {
+            return Err("agent_remote_dev_artifacts.filename exceeds 1024 bytes".to_string());
+        }
     }
     if let Some(value) = &value.content_type {
-        validate_string_length("agent_remote_dev_artifacts.content_type", value, None, Some(200))?;
+        validate_string_length(
+            "agent_remote_dev_artifacts.content_type",
+            value,
+            None,
+            Some(200),
+        )?;
     }
     if let Some(value) = &value.storage_provider {
-        if !["s3", "r2", "gcs", "drive", "local"].contains(&(value).as_str()) { return Err(format!("unsupported agent_remote_dev_artifacts.storage_provider: {}", value)); }
+        if !["s3", "r2", "gcs", "drive", "local"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported agent_remote_dev_artifacts.storage_provider: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.storage_bucket {
-        validate_string_length("agent_remote_dev_artifacts.storage_bucket", value, None, Some(200))?;
+        validate_string_length(
+            "agent_remote_dev_artifacts.storage_bucket",
+            value,
+            None,
+            Some(200),
+        )?;
     }
     if let Some(value) = &value.url {
         validate_string_length("agent_remote_dev_artifacts.url", value, Some(1), Some(4096))?;
-        if (value).as_bytes().len() > 4096 { return Err("agent_remote_dev_artifacts.url exceeds 4096 bytes".to_string()); }
+        if (value).as_bytes().len() > 4096 {
+            return Err("agent_remote_dev_artifacts.url exceeds 4096 bytes".to_string());
+        }
     }
     if let Some(value) = &value.sha256 {
         validate_string_length("agent_remote_dev_artifacts.sha256", value, None, Some(64))?;
     }
     if let Some(value) = &value.meta {
-        if !(value).is_object() { return Err("agent_remote_dev_artifacts.meta must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("agent_remote_dev_artifacts.meta must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const AGENT_REMOTE_DEV_RUNTIME_LOCKS_TABLE: &str = "agent_remote_dev_runtime_locks";
-pub const AGENT_REMOTE_DEV_RUNTIME_LOCKS_COLUMNS: &[&str] = &["id", "thread_id", "owner", "status", "fencing_token", "lease_expires_at", "created_at", "updated_at"];
+pub const AGENT_REMOTE_DEV_RUNTIME_LOCKS_COLUMNS: &[&str] = &[
+    "id",
+    "thread_id",
+    "owner",
+    "status",
+    "fencing_token",
+    "lease_expires_at",
+    "created_at",
+    "updated_at",
+];
 pub const AGENT_REMOTE_DEV_RUNTIME_LOCKS_SELECT_SQL: &str = r###"select
       id::text as id,
       thread_id::text as thread_id,
@@ -3678,26 +5622,60 @@ pub struct AgentRemoteDevRuntimeLockInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_agent_remote_dev_runtime_locks_row(value: &AgentRemoteDevRuntimeLockRow) -> Result<(), String> {
-    validate_string_length("agent_remote_dev_runtime_locks.owner", &value.owner, Some(1), Some(200))?;
-    if (&value.owner).as_bytes().len() > 200 { return Err("agent_remote_dev_runtime_locks.owner exceeds 200 bytes".to_string()); }
-    if !["active", "released", "expired"].contains(&(&value.status).as_str()) { return Err(format!("unsupported agent_remote_dev_runtime_locks.status: {}", &value.status)); }
+pub fn validate_agent_remote_dev_runtime_locks_row(
+    value: &AgentRemoteDevRuntimeLockRow,
+) -> Result<(), String> {
+    validate_string_length(
+        "agent_remote_dev_runtime_locks.owner",
+        &value.owner,
+        Some(1),
+        Some(200),
+    )?;
+    if (&value.owner).as_bytes().len() > 200 {
+        return Err("agent_remote_dev_runtime_locks.owner exceeds 200 bytes".to_string());
+    }
+    if !["active", "released", "expired"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported agent_remote_dev_runtime_locks.status: {}",
+            &value.status
+        ));
+    }
     Ok(())
 }
 
-pub fn validate_agent_remote_dev_runtime_locks_insert(value: &AgentRemoteDevRuntimeLockInsert) -> Result<(), String> {
+pub fn validate_agent_remote_dev_runtime_locks_insert(
+    value: &AgentRemoteDevRuntimeLockInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.owner {
-        validate_string_length("agent_remote_dev_runtime_locks.owner", value, Some(1), Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("agent_remote_dev_runtime_locks.owner exceeds 200 bytes".to_string()); }
+        validate_string_length(
+            "agent_remote_dev_runtime_locks.owner",
+            value,
+            Some(1),
+            Some(200),
+        )?;
+        if (value).as_bytes().len() > 200 {
+            return Err("agent_remote_dev_runtime_locks.owner exceeds 200 bytes".to_string());
+        }
     }
     if let Some(value) = &value.status {
-        if !["active", "released", "expired"].contains(&(value).as_str()) { return Err(format!("unsupported agent_remote_dev_runtime_locks.status: {}", value)); }
+        if !["active", "released", "expired"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported agent_remote_dev_runtime_locks.status: {}",
+                value
+            ));
+        }
     }
     Ok(())
 }
 
 pub const MIP_SOLVER_SESSIONS_TABLE: &str = "mip_solver_sessions";
-pub const MIP_SOLVER_SESSIONS_COLUMNS: &[&str] = &["session_id", "revision", "problem", "created_at", "updated_at"];
+pub const MIP_SOLVER_SESSIONS_COLUMNS: &[&str] = &[
+    "session_id",
+    "revision",
+    "problem",
+    "created_at",
+    "updated_at",
+];
 pub const MIP_SOLVER_SESSIONS_SELECT_SQL: &str = r###"select
       session_id,
       revision,
@@ -3728,29 +5706,67 @@ pub struct MipSolverSessionsInsert {
 }
 
 pub fn validate_mip_solver_sessions_row(value: &MipSolverSessionsRow) -> Result<(), String> {
-    validate_string_length("mip_solver_sessions.session_id", &value.session_id, None, Some(200))?;
-    if (&value.session_id).as_bytes().len() > 200 { return Err("mip_solver_sessions.session_id exceeds 200 bytes".to_string()); }
-    if *(&value.revision) < 0 { return Err("mip_solver_sessions.revision is below the minimum".to_string()); }
-    if !(&value.problem).is_object() { return Err("mip_solver_sessions.problem must be a JSON object".to_string()); }
+    validate_string_length(
+        "mip_solver_sessions.session_id",
+        &value.session_id,
+        None,
+        Some(200),
+    )?;
+    if (&value.session_id).as_bytes().len() > 200 {
+        return Err("mip_solver_sessions.session_id exceeds 200 bytes".to_string());
+    }
+    if *(&value.revision) < 0 {
+        return Err("mip_solver_sessions.revision is below the minimum".to_string());
+    }
+    if !(&value.problem).is_object() {
+        return Err("mip_solver_sessions.problem must be a JSON object".to_string());
+    }
     Ok(())
 }
 
 pub fn validate_mip_solver_sessions_insert(value: &MipSolverSessionsInsert) -> Result<(), String> {
     if let Some(value) = &value.session_id {
         validate_string_length("mip_solver_sessions.session_id", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("mip_solver_sessions.session_id exceeds 200 bytes".to_string()); }
+        if (value).as_bytes().len() > 200 {
+            return Err("mip_solver_sessions.session_id exceeds 200 bytes".to_string());
+        }
     }
     if let Some(value) = &value.revision {
-        if *(value) < 0 { return Err("mip_solver_sessions.revision is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("mip_solver_sessions.revision is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.problem {
-        if !(value).is_object() { return Err("mip_solver_sessions.problem must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("mip_solver_sessions.problem must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const MIP_SOLVER_SOLVES_TABLE: &str = "mip_solver_solves";
-pub const MIP_SOLVER_SOLVES_COLUMNS: &[&str] = &["solve_id", "request_id", "revision", "status", "node_id", "node_role", "problem", "options", "response", "jobs_expected", "jobs_published", "jobs_completed", "jobs_redelegated", "jobs_split", "timed_out", "distributed", "warnings", "started_at", "updated_at", "finished_at"];
+pub const MIP_SOLVER_SOLVES_COLUMNS: &[&str] = &[
+    "solve_id",
+    "request_id",
+    "revision",
+    "status",
+    "node_id",
+    "node_role",
+    "problem",
+    "options",
+    "response",
+    "jobs_expected",
+    "jobs_published",
+    "jobs_completed",
+    "jobs_redelegated",
+    "jobs_split",
+    "timed_out",
+    "distributed",
+    "warnings",
+    "started_at",
+    "updated_at",
+    "finished_at",
+];
 pub const MIP_SOLVER_SOLVES_SELECT_SQL: &str = r###"select
       solve_id,
       request_id,
@@ -3856,83 +5872,172 @@ pub struct MipSolverSolvesInsert {
 }
 
 pub fn validate_mip_solver_solves_row(value: &MipSolverSolvesRow) -> Result<(), String> {
-    validate_string_length("mip_solver_solves.solve_id", &value.solve_id, None, Some(160))?;
-    if (&value.solve_id).as_bytes().len() > 160 { return Err("mip_solver_solves.solve_id exceeds 160 bytes".to_string()); }
-    validate_string_length("mip_solver_solves.request_id", &value.request_id, None, Some(200))?;
-    if (&value.request_id).as_bytes().len() > 200 { return Err("mip_solver_solves.request_id exceeds 200 bytes".to_string()); }
-    if *(&value.revision) < 0 { return Err("mip_solver_solves.revision is below the minimum".to_string()); }
+    validate_string_length(
+        "mip_solver_solves.solve_id",
+        &value.solve_id,
+        None,
+        Some(160),
+    )?;
+    if (&value.solve_id).as_bytes().len() > 160 {
+        return Err("mip_solver_solves.solve_id exceeds 160 bytes".to_string());
+    }
+    validate_string_length(
+        "mip_solver_solves.request_id",
+        &value.request_id,
+        None,
+        Some(200),
+    )?;
+    if (&value.request_id).as_bytes().len() > 200 {
+        return Err("mip_solver_solves.request_id exceeds 200 bytes".to_string());
+    }
+    if *(&value.revision) < 0 {
+        return Err("mip_solver_solves.revision is below the minimum".to_string());
+    }
     validate_string_length("mip_solver_solves.status", &value.status, None, Some(64))?;
-    if (&value.status).as_bytes().len() > 64 { return Err("mip_solver_solves.status exceeds 64 bytes".to_string()); }
+    if (&value.status).as_bytes().len() > 64 {
+        return Err("mip_solver_solves.status exceeds 64 bytes".to_string());
+    }
     validate_string_length("mip_solver_solves.node_id", &value.node_id, None, Some(253))?;
-    if (&value.node_id).as_bytes().len() > 253 { return Err("mip_solver_solves.node_id exceeds 253 bytes".to_string()); }
-    if !["master", "slave"].contains(&(&value.node_role).as_str()) { return Err(format!("unsupported mip_solver_solves.node_role: {}", &value.node_role)); }
-    if !(&value.problem).is_object() { return Err("mip_solver_solves.problem must be a JSON object".to_string()); }
-    if !(&value.options).is_object() { return Err("mip_solver_solves.options must be a JSON object".to_string()); }
-    if !(&value.response).is_object() { return Err("mip_solver_solves.response must be a JSON object".to_string()); }
-    if *(&value.jobs_expected) < 0 { return Err("mip_solver_solves.jobs_expected is below the minimum".to_string()); }
-    if *(&value.jobs_published) < 0 { return Err("mip_solver_solves.jobs_published is below the minimum".to_string()); }
-    if *(&value.jobs_completed) < 0 { return Err("mip_solver_solves.jobs_completed is below the minimum".to_string()); }
-    if *(&value.jobs_redelegated) < 0 { return Err("mip_solver_solves.jobs_redelegated is below the minimum".to_string()); }
-    if *(&value.jobs_split) < 0 { return Err("mip_solver_solves.jobs_split is below the minimum".to_string()); }
-    if !(&value.warnings).is_array() { return Err("mip_solver_solves.warnings must be a JSON array".to_string()); }
+    if (&value.node_id).as_bytes().len() > 253 {
+        return Err("mip_solver_solves.node_id exceeds 253 bytes".to_string());
+    }
+    if !["master", "slave"].contains(&(&value.node_role).as_str()) {
+        return Err(format!(
+            "unsupported mip_solver_solves.node_role: {}",
+            &value.node_role
+        ));
+    }
+    if !(&value.problem).is_object() {
+        return Err("mip_solver_solves.problem must be a JSON object".to_string());
+    }
+    if !(&value.options).is_object() {
+        return Err("mip_solver_solves.options must be a JSON object".to_string());
+    }
+    if !(&value.response).is_object() {
+        return Err("mip_solver_solves.response must be a JSON object".to_string());
+    }
+    if *(&value.jobs_expected) < 0 {
+        return Err("mip_solver_solves.jobs_expected is below the minimum".to_string());
+    }
+    if *(&value.jobs_published) < 0 {
+        return Err("mip_solver_solves.jobs_published is below the minimum".to_string());
+    }
+    if *(&value.jobs_completed) < 0 {
+        return Err("mip_solver_solves.jobs_completed is below the minimum".to_string());
+    }
+    if *(&value.jobs_redelegated) < 0 {
+        return Err("mip_solver_solves.jobs_redelegated is below the minimum".to_string());
+    }
+    if *(&value.jobs_split) < 0 {
+        return Err("mip_solver_solves.jobs_split is below the minimum".to_string());
+    }
+    if !(&value.warnings).is_array() {
+        return Err("mip_solver_solves.warnings must be a JSON array".to_string());
+    }
     Ok(())
 }
 
 pub fn validate_mip_solver_solves_insert(value: &MipSolverSolvesInsert) -> Result<(), String> {
     if let Some(value) = &value.solve_id {
         validate_string_length("mip_solver_solves.solve_id", value, None, Some(160))?;
-        if (value).as_bytes().len() > 160 { return Err("mip_solver_solves.solve_id exceeds 160 bytes".to_string()); }
+        if (value).as_bytes().len() > 160 {
+            return Err("mip_solver_solves.solve_id exceeds 160 bytes".to_string());
+        }
     }
     if let Some(value) = &value.request_id {
         validate_string_length("mip_solver_solves.request_id", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("mip_solver_solves.request_id exceeds 200 bytes".to_string()); }
+        if (value).as_bytes().len() > 200 {
+            return Err("mip_solver_solves.request_id exceeds 200 bytes".to_string());
+        }
     }
     if let Some(value) = &value.revision {
-        if *(value) < 0 { return Err("mip_solver_solves.revision is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("mip_solver_solves.revision is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.status {
         validate_string_length("mip_solver_solves.status", value, None, Some(64))?;
-        if (value).as_bytes().len() > 64 { return Err("mip_solver_solves.status exceeds 64 bytes".to_string()); }
+        if (value).as_bytes().len() > 64 {
+            return Err("mip_solver_solves.status exceeds 64 bytes".to_string());
+        }
     }
     if let Some(value) = &value.node_id {
         validate_string_length("mip_solver_solves.node_id", value, None, Some(253))?;
-        if (value).as_bytes().len() > 253 { return Err("mip_solver_solves.node_id exceeds 253 bytes".to_string()); }
+        if (value).as_bytes().len() > 253 {
+            return Err("mip_solver_solves.node_id exceeds 253 bytes".to_string());
+        }
     }
     if let Some(value) = &value.node_role {
-        if !["master", "slave"].contains(&(value).as_str()) { return Err(format!("unsupported mip_solver_solves.node_role: {}", value)); }
+        if !["master", "slave"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported mip_solver_solves.node_role: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.problem {
-        if !(value).is_object() { return Err("mip_solver_solves.problem must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("mip_solver_solves.problem must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.options {
-        if !(value).is_object() { return Err("mip_solver_solves.options must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("mip_solver_solves.options must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.response {
-        if !(value).is_object() { return Err("mip_solver_solves.response must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("mip_solver_solves.response must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.jobs_expected {
-        if *(value) < 0 { return Err("mip_solver_solves.jobs_expected is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("mip_solver_solves.jobs_expected is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.jobs_published {
-        if *(value) < 0 { return Err("mip_solver_solves.jobs_published is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("mip_solver_solves.jobs_published is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.jobs_completed {
-        if *(value) < 0 { return Err("mip_solver_solves.jobs_completed is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("mip_solver_solves.jobs_completed is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.jobs_redelegated {
-        if *(value) < 0 { return Err("mip_solver_solves.jobs_redelegated is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("mip_solver_solves.jobs_redelegated is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.jobs_split {
-        if *(value) < 0 { return Err("mip_solver_solves.jobs_split is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("mip_solver_solves.jobs_split is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.warnings {
-        if !(value).is_array() { return Err("mip_solver_solves.warnings must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err("mip_solver_solves.warnings must be a JSON array".to_string());
+        }
     }
     Ok(())
 }
 
 pub const MIP_SOLVER_JOBS_TABLE: &str = "mip_solver_jobs";
-pub const MIP_SOLVER_JOBS_COLUMNS: &[&str] = &["job_id", "solve_id", "root_job_id", "retry_index", "depth", "status", "worker_node", "job_payload", "result_payload", "submitted_at", "finished_at", "updated_at"];
+pub const MIP_SOLVER_JOBS_COLUMNS: &[&str] = &[
+    "job_id",
+    "solve_id",
+    "root_job_id",
+    "retry_index",
+    "depth",
+    "status",
+    "worker_node",
+    "job_payload",
+    "result_payload",
+    "submitted_at",
+    "finished_at",
+    "updated_at",
+];
 pub const MIP_SOLVER_JOBS_SELECT_SQL: &str = r###"select
       job_id,
       solve_id,
@@ -3985,58 +6090,99 @@ pub struct MipSolverJobsInsert {
 
 pub fn validate_mip_solver_jobs_row(value: &MipSolverJobsRow) -> Result<(), String> {
     validate_string_length("mip_solver_jobs.job_id", &value.job_id, None, Some(240))?;
-    if (&value.job_id).as_bytes().len() > 240 { return Err("mip_solver_jobs.job_id exceeds 240 bytes".to_string()); }
+    if (&value.job_id).as_bytes().len() > 240 {
+        return Err("mip_solver_jobs.job_id exceeds 240 bytes".to_string());
+    }
     validate_string_length("mip_solver_jobs.solve_id", &value.solve_id, None, Some(160))?;
-    validate_string_length("mip_solver_jobs.root_job_id", &value.root_job_id, None, Some(240))?;
-    if (&value.root_job_id).as_bytes().len() > 240 { return Err("mip_solver_jobs.root_job_id exceeds 240 bytes".to_string()); }
-    if *(&value.retry_index) < 0 { return Err("mip_solver_jobs.retry_index is below the minimum".to_string()); }
-    if *(&value.depth) < 0 { return Err("mip_solver_jobs.depth is below the minimum".to_string()); }
+    validate_string_length(
+        "mip_solver_jobs.root_job_id",
+        &value.root_job_id,
+        None,
+        Some(240),
+    )?;
+    if (&value.root_job_id).as_bytes().len() > 240 {
+        return Err("mip_solver_jobs.root_job_id exceeds 240 bytes".to_string());
+    }
+    if *(&value.retry_index) < 0 {
+        return Err("mip_solver_jobs.retry_index is below the minimum".to_string());
+    }
+    if *(&value.depth) < 0 {
+        return Err("mip_solver_jobs.depth is below the minimum".to_string());
+    }
     validate_string_length("mip_solver_jobs.status", &value.status, None, Some(64))?;
-    if (&value.status).as_bytes().len() > 64 { return Err("mip_solver_jobs.status exceeds 64 bytes".to_string()); }
+    if (&value.status).as_bytes().len() > 64 {
+        return Err("mip_solver_jobs.status exceeds 64 bytes".to_string());
+    }
     if let Some(value) = &value.worker_node {
         validate_string_length("mip_solver_jobs.worker_node", value, None, Some(253))?;
     }
-    if !(&value.job_payload).is_object() { return Err("mip_solver_jobs.job_payload must be a JSON object".to_string()); }
-    if !(&value.result_payload).is_object() { return Err("mip_solver_jobs.result_payload must be a JSON object".to_string()); }
+    if !(&value.job_payload).is_object() {
+        return Err("mip_solver_jobs.job_payload must be a JSON object".to_string());
+    }
+    if !(&value.result_payload).is_object() {
+        return Err("mip_solver_jobs.result_payload must be a JSON object".to_string());
+    }
     Ok(())
 }
 
 pub fn validate_mip_solver_jobs_insert(value: &MipSolverJobsInsert) -> Result<(), String> {
     if let Some(value) = &value.job_id {
         validate_string_length("mip_solver_jobs.job_id", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("mip_solver_jobs.job_id exceeds 240 bytes".to_string()); }
+        if (value).as_bytes().len() > 240 {
+            return Err("mip_solver_jobs.job_id exceeds 240 bytes".to_string());
+        }
     }
     if let Some(value) = &value.solve_id {
         validate_string_length("mip_solver_jobs.solve_id", value, None, Some(160))?;
     }
     if let Some(value) = &value.root_job_id {
         validate_string_length("mip_solver_jobs.root_job_id", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("mip_solver_jobs.root_job_id exceeds 240 bytes".to_string()); }
+        if (value).as_bytes().len() > 240 {
+            return Err("mip_solver_jobs.root_job_id exceeds 240 bytes".to_string());
+        }
     }
     if let Some(value) = &value.retry_index {
-        if *(value) < 0 { return Err("mip_solver_jobs.retry_index is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("mip_solver_jobs.retry_index is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.depth {
-        if *(value) < 0 { return Err("mip_solver_jobs.depth is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("mip_solver_jobs.depth is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.status {
         validate_string_length("mip_solver_jobs.status", value, None, Some(64))?;
-        if (value).as_bytes().len() > 64 { return Err("mip_solver_jobs.status exceeds 64 bytes".to_string()); }
+        if (value).as_bytes().len() > 64 {
+            return Err("mip_solver_jobs.status exceeds 64 bytes".to_string());
+        }
     }
     if let Some(value) = &value.worker_node {
         validate_string_length("mip_solver_jobs.worker_node", value, None, Some(253))?;
     }
     if let Some(value) = &value.job_payload {
-        if !(value).is_object() { return Err("mip_solver_jobs.job_payload must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("mip_solver_jobs.job_payload must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.result_payload {
-        if !(value).is_object() { return Err("mip_solver_jobs.result_payload must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("mip_solver_jobs.result_payload must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const MIP_SOLVER_EVENTS_TABLE: &str = "mip_solver_events";
-pub const MIP_SOLVER_EVENTS_COLUMNS: &[&str] = &["id", "solve_id", "session_id", "job_id", "event_kind", "payload", "created_at"];
+pub const MIP_SOLVER_EVENTS_COLUMNS: &[&str] = &[
+    "id",
+    "solve_id",
+    "session_id",
+    "job_id",
+    "event_kind",
+    "payload",
+    "created_at",
+];
 pub const MIP_SOLVER_EVENTS_SELECT_SQL: &str = r###"select
       id,
       solve_id,
@@ -4082,8 +6228,15 @@ pub fn validate_mip_solver_events_row(value: &MipSolverEventsRow) -> Result<(), 
     if let Some(value) = &value.job_id {
         validate_string_length("mip_solver_events.job_id", value, None, Some(240))?;
     }
-    validate_string_length("mip_solver_events.event_kind", &value.event_kind, None, Some(80))?;
-    if !(&value.payload).is_object() { return Err("mip_solver_events.payload must be a JSON object".to_string()); }
+    validate_string_length(
+        "mip_solver_events.event_kind",
+        &value.event_kind,
+        None,
+        Some(80),
+    )?;
+    if !(&value.payload).is_object() {
+        return Err("mip_solver_events.payload must be a JSON object".to_string());
+    }
     Ok(())
 }
 
@@ -4101,13 +6254,41 @@ pub fn validate_mip_solver_events_insert(value: &MipSolverEventsInsert) -> Resul
         validate_string_length("mip_solver_events.event_kind", value, None, Some(80))?;
     }
     if let Some(value) = &value.payload {
-        if !(value).is_object() { return Err("mip_solver_events.payload must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("mip_solver_events.payload must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const LAMBDA_FUNCTIONS_TABLE: &str = "lambda_functions";
-pub const LAMBDA_FUNCTIONS_COLUMNS: &[&str] = &["id", "slug", "display_name", "description", "runtime", "entry_command", "function_body", "reuse_key", "idle_timeout_seconds", "max_run_ms", "containerized", "container_image", "container_build_status", "container_build_error", "container_built_at", "status", "env", "labels", "meta_data", "last_invoked_at", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const LAMBDA_FUNCTIONS_COLUMNS: &[&str] = &[
+    "id",
+    "slug",
+    "display_name",
+    "description",
+    "runtime",
+    "entry_command",
+    "function_body",
+    "reuse_key",
+    "idle_timeout_seconds",
+    "max_run_ms",
+    "containerized",
+    "container_image",
+    "container_build_status",
+    "container_build_error",
+    "container_built_at",
+    "status",
+    "env",
+    "labels",
+    "meta_data",
+    "last_invoked_at",
+    "is_soft_deleted",
+    "created_at",
+    "updated_at",
+    "created_by",
+    "updated_by",
+];
 pub const LAMBDA_FUNCTIONS_SELECT_SQL: &str = r###"select
       id::text as id,
       slug,
@@ -4159,7 +6340,25 @@ pub enum LambdaFunctionRuntime {
 }
 
 impl LambdaFunctionRuntime {
-    pub const VALUES: &'static [&'static str] = &["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm"];
+    pub const VALUES: &'static [&'static str] = &[
+        "nodejs",
+        "javascript",
+        "typescript",
+        "python3",
+        "python",
+        "ruby",
+        "bash",
+        "shell",
+        "golang",
+        "go",
+        "dart",
+        "erlang",
+        "erl",
+        "elixir",
+        "ex",
+        "java",
+        "jvm",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -4223,7 +6422,14 @@ pub enum LambdaFunctionContainerBuildStatus {
 }
 
 impl LambdaFunctionContainerBuildStatus {
-    pub const VALUES: &'static [&'static str] = &["not_requested", "pending", "building", "built", "failed", "skipped"];
+    pub const VALUES: &'static [&'static str] = &[
+        "not_requested",
+        "pending",
+        "building",
+        "built",
+        "failed",
+        "skipped",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -4352,29 +6558,105 @@ pub struct LambdaFunctionInsert {
 
 pub fn validate_lambda_functions_row(value: &LambdaFunctionRow) -> Result<(), String> {
     validate_slug("lambda_functions.slug", &value.slug)?;
-    validate_string_length("lambda_functions.display_name", &value.display_name, Some(1), Some(200))?;
-    if !["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm"].contains(&(&value.runtime).as_str()) { return Err(format!("unsupported lambda_functions.runtime: {}", &value.runtime)); }
-    if (&value.entry_command).as_bytes().len() > 512 { return Err("lambda_functions.entry_command exceeds 512 bytes".to_string()); }
-    validate_string_length("lambda_functions.function_body", &value.function_body, Some(1), None)?;
-    if (&value.function_body).as_bytes().len() > 262144 { return Err("lambda_functions.function_body exceeds 262144 bytes".to_string()); }
+    validate_string_length(
+        "lambda_functions.display_name",
+        &value.display_name,
+        Some(1),
+        Some(200),
+    )?;
+    if ![
+        "nodejs",
+        "javascript",
+        "typescript",
+        "python3",
+        "python",
+        "ruby",
+        "bash",
+        "shell",
+        "golang",
+        "go",
+        "dart",
+        "erlang",
+        "erl",
+        "elixir",
+        "ex",
+        "java",
+        "jvm",
+    ]
+    .contains(&(&value.runtime).as_str())
+    {
+        return Err(format!(
+            "unsupported lambda_functions.runtime: {}",
+            &value.runtime
+        ));
+    }
+    if (&value.entry_command).as_bytes().len() > 512 {
+        return Err("lambda_functions.entry_command exceeds 512 bytes".to_string());
+    }
+    validate_string_length(
+        "lambda_functions.function_body",
+        &value.function_body,
+        Some(1),
+        None,
+    )?;
+    if (&value.function_body).as_bytes().len() > 262144 {
+        return Err("lambda_functions.function_body exceeds 262144 bytes".to_string());
+    }
     if let Some(value) = &value.reuse_key {
         validate_string_length("lambda_functions.reuse_key", value, None, Some(200))?;
     }
-    if *(&value.idle_timeout_seconds) < 1 { return Err("lambda_functions.idle_timeout_seconds is below the minimum".to_string()); }
-    if *(&value.idle_timeout_seconds) > 3600 { return Err("lambda_functions.idle_timeout_seconds is above the maximum".to_string()); }
-    if *(&value.max_run_ms) < 1000 { return Err("lambda_functions.max_run_ms is below the minimum".to_string()); }
-    if *(&value.max_run_ms) > 300000 { return Err("lambda_functions.max_run_ms is above the maximum".to_string()); }
+    if *(&value.idle_timeout_seconds) < 1 {
+        return Err("lambda_functions.idle_timeout_seconds is below the minimum".to_string());
+    }
+    if *(&value.idle_timeout_seconds) > 3600 {
+        return Err("lambda_functions.idle_timeout_seconds is above the maximum".to_string());
+    }
+    if *(&value.max_run_ms) < 1000 {
+        return Err("lambda_functions.max_run_ms is below the minimum".to_string());
+    }
+    if *(&value.max_run_ms) > 300000 {
+        return Err("lambda_functions.max_run_ms is above the maximum".to_string());
+    }
     if let Some(value) = &value.container_image {
-        if (value).as_bytes().len() > 512 { return Err("lambda_functions.container_image exceeds 512 bytes".to_string()); }
+        if (value).as_bytes().len() > 512 {
+            return Err("lambda_functions.container_image exceeds 512 bytes".to_string());
+        }
     }
-    if !["not_requested", "pending", "building", "built", "failed", "skipped"].contains(&(&value.container_build_status).as_str()) { return Err(format!("unsupported lambda_functions.container_build_status: {}", &value.container_build_status)); }
+    if ![
+        "not_requested",
+        "pending",
+        "building",
+        "built",
+        "failed",
+        "skipped",
+    ]
+    .contains(&(&value.container_build_status).as_str())
+    {
+        return Err(format!(
+            "unsupported lambda_functions.container_build_status: {}",
+            &value.container_build_status
+        ));
+    }
     if let Some(value) = &value.container_build_error {
-        if (value).as_bytes().len() > 8192 { return Err("lambda_functions.container_build_error exceeds 8192 bytes".to_string()); }
+        if (value).as_bytes().len() > 8192 {
+            return Err("lambda_functions.container_build_error exceeds 8192 bytes".to_string());
+        }
     }
-    if !["draft", "active", "paused", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported lambda_functions.status: {}", &value.status)); }
-    if !(&value.env).is_object() { return Err("lambda_functions.env must be a JSON object".to_string()); }
-    if !(&value.labels).is_array() { return Err("lambda_functions.labels must be a JSON array".to_string()); }
-    if !(&value.meta_data).is_object() { return Err("lambda_functions.meta_data must be a JSON object".to_string()); }
+    if !["draft", "active", "paused", "archived"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported lambda_functions.status: {}",
+            &value.status
+        ));
+    }
+    if !(&value.env).is_object() {
+        return Err("lambda_functions.env must be a JSON object".to_string());
+    }
+    if !(&value.labels).is_array() {
+        return Err("lambda_functions.labels must be a JSON array".to_string());
+    }
+    if !(&value.meta_data).is_object() {
+        return Err("lambda_functions.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
@@ -4386,52 +6668,127 @@ pub fn validate_lambda_functions_insert(value: &LambdaFunctionInsert) -> Result<
         validate_string_length("lambda_functions.display_name", value, Some(1), Some(200))?;
     }
     if let Some(value) = &value.runtime {
-        if !["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm"].contains(&(value).as_str()) { return Err(format!("unsupported lambda_functions.runtime: {}", value)); }
+        if ![
+            "nodejs",
+            "javascript",
+            "typescript",
+            "python3",
+            "python",
+            "ruby",
+            "bash",
+            "shell",
+            "golang",
+            "go",
+            "dart",
+            "erlang",
+            "erl",
+            "elixir",
+            "ex",
+            "java",
+            "jvm",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!("unsupported lambda_functions.runtime: {}", value));
+        }
     }
     if let Some(value) = &value.entry_command {
-        if (value).as_bytes().len() > 512 { return Err("lambda_functions.entry_command exceeds 512 bytes".to_string()); }
+        if (value).as_bytes().len() > 512 {
+            return Err("lambda_functions.entry_command exceeds 512 bytes".to_string());
+        }
     }
     if let Some(value) = &value.function_body {
         validate_string_length("lambda_functions.function_body", value, Some(1), None)?;
-        if (value).as_bytes().len() > 262144 { return Err("lambda_functions.function_body exceeds 262144 bytes".to_string()); }
+        if (value).as_bytes().len() > 262144 {
+            return Err("lambda_functions.function_body exceeds 262144 bytes".to_string());
+        }
     }
     if let Some(value) = &value.reuse_key {
         validate_string_length("lambda_functions.reuse_key", value, None, Some(200))?;
     }
     if let Some(value) = &value.idle_timeout_seconds {
-        if *(value) < 1 { return Err("lambda_functions.idle_timeout_seconds is below the minimum".to_string()); }
-        if *(value) > 3600 { return Err("lambda_functions.idle_timeout_seconds is above the maximum".to_string()); }
+        if *(value) < 1 {
+            return Err("lambda_functions.idle_timeout_seconds is below the minimum".to_string());
+        }
+        if *(value) > 3600 {
+            return Err("lambda_functions.idle_timeout_seconds is above the maximum".to_string());
+        }
     }
     if let Some(value) = &value.max_run_ms {
-        if *(value) < 1000 { return Err("lambda_functions.max_run_ms is below the minimum".to_string()); }
-        if *(value) > 300000 { return Err("lambda_functions.max_run_ms is above the maximum".to_string()); }
+        if *(value) < 1000 {
+            return Err("lambda_functions.max_run_ms is below the minimum".to_string());
+        }
+        if *(value) > 300000 {
+            return Err("lambda_functions.max_run_ms is above the maximum".to_string());
+        }
     }
     if let Some(value) = &value.container_image {
-        if (value).as_bytes().len() > 512 { return Err("lambda_functions.container_image exceeds 512 bytes".to_string()); }
+        if (value).as_bytes().len() > 512 {
+            return Err("lambda_functions.container_image exceeds 512 bytes".to_string());
+        }
     }
     if let Some(value) = &value.container_build_status {
-        if !["not_requested", "pending", "building", "built", "failed", "skipped"].contains(&(value).as_str()) { return Err(format!("unsupported lambda_functions.container_build_status: {}", value)); }
+        if ![
+            "not_requested",
+            "pending",
+            "building",
+            "built",
+            "failed",
+            "skipped",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported lambda_functions.container_build_status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.container_build_error {
-        if (value).as_bytes().len() > 8192 { return Err("lambda_functions.container_build_error exceeds 8192 bytes".to_string()); }
+        if (value).as_bytes().len() > 8192 {
+            return Err("lambda_functions.container_build_error exceeds 8192 bytes".to_string());
+        }
     }
     if let Some(value) = &value.status {
-        if !["draft", "active", "paused", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported lambda_functions.status: {}", value)); }
+        if !["draft", "active", "paused", "archived"].contains(&(value).as_str()) {
+            return Err(format!("unsupported lambda_functions.status: {}", value));
+        }
     }
     if let Some(value) = &value.env {
-        if !(value).is_object() { return Err("lambda_functions.env must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("lambda_functions.env must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.labels {
-        if !(value).is_array() { return Err("lambda_functions.labels must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err("lambda_functions.labels must be a JSON array".to_string());
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("lambda_functions.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("lambda_functions.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const WORKFLOW_DEFINITIONS_TABLE: &str = "workflow_definitions";
-pub const WORKFLOW_DEFINITIONS_COLUMNS: &[&str] = &["id", "slug", "display_name", "description", "steps", "default_retry", "status", "labels", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const WORKFLOW_DEFINITIONS_COLUMNS: &[&str] = &[
+    "id",
+    "slug",
+    "display_name",
+    "description",
+    "steps",
+    "default_retry",
+    "status",
+    "labels",
+    "meta_data",
+    "is_soft_deleted",
+    "created_at",
+    "updated_at",
+    "created_by",
+    "updated_by",
+];
 pub const WORKFLOW_DEFINITIONS_SELECT_SQL: &str = r###"select
       id::text as id,
       slug,
@@ -4526,16 +6883,36 @@ pub struct WorkflowDefinitionsInsert {
 
 pub fn validate_workflow_definitions_row(value: &WorkflowDefinitionsRow) -> Result<(), String> {
     validate_slug("workflow_definitions.slug", &value.slug)?;
-    validate_string_length("workflow_definitions.display_name", &value.display_name, None, Some(200))?;
-    if !(&value.steps).is_array() { return Err("workflow_definitions.steps must be a JSON array".to_string()); }
-    if !(&value.default_retry).is_object() { return Err("workflow_definitions.default_retry must be a JSON object".to_string()); }
-    if !["draft", "active", "paused", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported workflow_definitions.status: {}", &value.status)); }
-    if !(&value.labels).is_array() { return Err("workflow_definitions.labels must be a JSON array".to_string()); }
-    if !(&value.meta_data).is_object() { return Err("workflow_definitions.meta_data must be a JSON object".to_string()); }
+    validate_string_length(
+        "workflow_definitions.display_name",
+        &value.display_name,
+        None,
+        Some(200),
+    )?;
+    if !(&value.steps).is_array() {
+        return Err("workflow_definitions.steps must be a JSON array".to_string());
+    }
+    if !(&value.default_retry).is_object() {
+        return Err("workflow_definitions.default_retry must be a JSON object".to_string());
+    }
+    if !["draft", "active", "paused", "archived"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported workflow_definitions.status: {}",
+            &value.status
+        ));
+    }
+    if !(&value.labels).is_array() {
+        return Err("workflow_definitions.labels must be a JSON array".to_string());
+    }
+    if !(&value.meta_data).is_object() {
+        return Err("workflow_definitions.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_workflow_definitions_insert(value: &WorkflowDefinitionsInsert) -> Result<(), String> {
+pub fn validate_workflow_definitions_insert(
+    value: &WorkflowDefinitionsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.slug {
         validate_slug("workflow_definitions.slug", value)?;
     }
@@ -4543,25 +6920,59 @@ pub fn validate_workflow_definitions_insert(value: &WorkflowDefinitionsInsert) -
         validate_string_length("workflow_definitions.display_name", value, None, Some(200))?;
     }
     if let Some(value) = &value.steps {
-        if !(value).is_array() { return Err("workflow_definitions.steps must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err("workflow_definitions.steps must be a JSON array".to_string());
+        }
     }
     if let Some(value) = &value.default_retry {
-        if !(value).is_object() { return Err("workflow_definitions.default_retry must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("workflow_definitions.default_retry must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.status {
-        if !["draft", "active", "paused", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported workflow_definitions.status: {}", value)); }
+        if !["draft", "active", "paused", "archived"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported workflow_definitions.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.labels {
-        if !(value).is_array() { return Err("workflow_definitions.labels must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err("workflow_definitions.labels must be a JSON array".to_string());
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("workflow_definitions.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("workflow_definitions.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const WORKFLOW_RUNS_TABLE: &str = "workflow_runs";
-pub const WORKFLOW_RUNS_COLUMNS: &[&str] = &["id", "definition_id", "definition_slug", "status", "current_step_index", "attempt", "input", "context", "output", "last_error", "wake_at", "wait_deadline", "lease_until", "signals", "idempotency_key", "started_at", "finished_at", "created_at", "updated_at", "created_by"];
+pub const WORKFLOW_RUNS_COLUMNS: &[&str] = &[
+    "id",
+    "definition_id",
+    "definition_slug",
+    "status",
+    "current_step_index",
+    "attempt",
+    "input",
+    "context",
+    "output",
+    "last_error",
+    "wake_at",
+    "wait_deadline",
+    "lease_until",
+    "signals",
+    "idempotency_key",
+    "started_at",
+    "finished_at",
+    "created_at",
+    "updated_at",
+    "created_by",
+];
 pub const WORKFLOW_RUNS_SELECT_SQL: &str = r###"select
       id::text as id,
       definition_id::text as definition_id,
@@ -4598,7 +7009,15 @@ pub enum WorkflowRunsStatus {
 }
 
 impl WorkflowRunsStatus {
-    pub const VALUES: &'static [&'static str] = &["pending", "running", "sleeping", "waiting", "completed", "failed", "canceled"];
+    pub const VALUES: &'static [&'static str] = &[
+        "pending",
+        "running",
+        "sleeping",
+        "waiting",
+        "completed",
+        "failed",
+        "canceled",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -4682,19 +7101,53 @@ pub struct WorkflowRunsInsert {
 }
 
 pub fn validate_workflow_runs_row(value: &WorkflowRunsRow) -> Result<(), String> {
-    validate_string_length("workflow_runs.definition_slug", &value.definition_slug, None, Some(120))?;
-    if !["pending", "running", "sleeping", "waiting", "completed", "failed", "canceled"].contains(&(&value.status).as_str()) { return Err(format!("unsupported workflow_runs.status: {}", &value.status)); }
-    if *(&value.current_step_index) < 0 { return Err("workflow_runs.current_step_index is below the minimum".to_string()); }
-    if *(&value.attempt) < 0 { return Err("workflow_runs.attempt is below the minimum".to_string()); }
-    if !(&value.input).is_object() { return Err("workflow_runs.input must be a JSON object".to_string()); }
-    if !(&value.context).is_object() { return Err("workflow_runs.context must be a JSON object".to_string()); }
+    validate_string_length(
+        "workflow_runs.definition_slug",
+        &value.definition_slug,
+        None,
+        Some(120),
+    )?;
+    if ![
+        "pending",
+        "running",
+        "sleeping",
+        "waiting",
+        "completed",
+        "failed",
+        "canceled",
+    ]
+    .contains(&(&value.status).as_str())
+    {
+        return Err(format!(
+            "unsupported workflow_runs.status: {}",
+            &value.status
+        ));
+    }
+    if *(&value.current_step_index) < 0 {
+        return Err("workflow_runs.current_step_index is below the minimum".to_string());
+    }
+    if *(&value.attempt) < 0 {
+        return Err("workflow_runs.attempt is below the minimum".to_string());
+    }
+    if !(&value.input).is_object() {
+        return Err("workflow_runs.input must be a JSON object".to_string());
+    }
+    if !(&value.context).is_object() {
+        return Err("workflow_runs.context must be a JSON object".to_string());
+    }
     if let Some(value) = &value.output {
-        if !(value).is_object() { return Err("workflow_runs.output must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("workflow_runs.output must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.last_error {
-        if (value).as_bytes().len() > 8192 { return Err("workflow_runs.last_error exceeds 8192 bytes".to_string()); }
+        if (value).as_bytes().len() > 8192 {
+            return Err("workflow_runs.last_error exceeds 8192 bytes".to_string());
+        }
     }
-    if !(&value.signals).is_array() { return Err("workflow_runs.signals must be a JSON array".to_string()); }
+    if !(&value.signals).is_array() {
+        return Err("workflow_runs.signals must be a JSON array".to_string());
+    }
     if let Some(value) = &value.idempotency_key {
         validate_string_length("workflow_runs.idempotency_key", value, None, Some(200))?;
     }
@@ -4706,28 +7159,54 @@ pub fn validate_workflow_runs_insert(value: &WorkflowRunsInsert) -> Result<(), S
         validate_string_length("workflow_runs.definition_slug", value, None, Some(120))?;
     }
     if let Some(value) = &value.status {
-        if !["pending", "running", "sleeping", "waiting", "completed", "failed", "canceled"].contains(&(value).as_str()) { return Err(format!("unsupported workflow_runs.status: {}", value)); }
+        if ![
+            "pending",
+            "running",
+            "sleeping",
+            "waiting",
+            "completed",
+            "failed",
+            "canceled",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!("unsupported workflow_runs.status: {}", value));
+        }
     }
     if let Some(value) = &value.current_step_index {
-        if *(value) < 0 { return Err("workflow_runs.current_step_index is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("workflow_runs.current_step_index is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.attempt {
-        if *(value) < 0 { return Err("workflow_runs.attempt is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("workflow_runs.attempt is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.input {
-        if !(value).is_object() { return Err("workflow_runs.input must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("workflow_runs.input must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.context {
-        if !(value).is_object() { return Err("workflow_runs.context must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("workflow_runs.context must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.output {
-        if !(value).is_object() { return Err("workflow_runs.output must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("workflow_runs.output must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.last_error {
-        if (value).as_bytes().len() > 8192 { return Err("workflow_runs.last_error exceeds 8192 bytes".to_string()); }
+        if (value).as_bytes().len() > 8192 {
+            return Err("workflow_runs.last_error exceeds 8192 bytes".to_string());
+        }
     }
     if let Some(value) = &value.signals {
-        if !(value).is_array() { return Err("workflow_runs.signals must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err("workflow_runs.signals must be a JSON array".to_string());
+        }
     }
     if let Some(value) = &value.idempotency_key {
         validate_string_length("workflow_runs.idempotency_key", value, None, Some(200))?;
@@ -4736,7 +7215,22 @@ pub fn validate_workflow_runs_insert(value: &WorkflowRunsInsert) -> Result<(), S
 }
 
 pub const WORKFLOW_STEP_RUNS_TABLE: &str = "workflow_step_runs";
-pub const WORKFLOW_STEP_RUNS_COLUMNS: &[&str] = &["id", "run_id", "step_index", "step_name", "step_type", "function_ref", "attempt", "status", "input", "output", "error", "duration_ms", "started_at", "finished_at"];
+pub const WORKFLOW_STEP_RUNS_COLUMNS: &[&str] = &[
+    "id",
+    "run_id",
+    "step_index",
+    "step_name",
+    "step_type",
+    "function_ref",
+    "attempt",
+    "status",
+    "input",
+    "output",
+    "error",
+    "duration_ms",
+    "started_at",
+    "finished_at",
+];
 pub const WORKFLOW_STEP_RUNS_SELECT_SQL: &str = r###"select
       id::text as id,
       run_id::text as run_id,
@@ -4827,27 +7321,59 @@ pub struct WorkflowStepRunsInsert {
 }
 
 pub fn validate_workflow_step_runs_row(value: &WorkflowStepRunsRow) -> Result<(), String> {
-    if *(&value.step_index) < 0 { return Err("workflow_step_runs.step_index is below the minimum".to_string()); }
-    validate_string_length("workflow_step_runs.step_name", &value.step_name, None, Some(200))?;
-    validate_string_length("workflow_step_runs.step_type", &value.step_type, None, Some(32))?;
-    validate_string_length("workflow_step_runs.function_ref", &value.function_ref, None, Some(200))?;
-    if *(&value.attempt) < 0 { return Err("workflow_step_runs.attempt is below the minimum".to_string()); }
-    if !["running", "succeeded", "failed"].contains(&(&value.status).as_str()) { return Err(format!("unsupported workflow_step_runs.status: {}", &value.status)); }
+    if *(&value.step_index) < 0 {
+        return Err("workflow_step_runs.step_index is below the minimum".to_string());
+    }
+    validate_string_length(
+        "workflow_step_runs.step_name",
+        &value.step_name,
+        None,
+        Some(200),
+    )?;
+    validate_string_length(
+        "workflow_step_runs.step_type",
+        &value.step_type,
+        None,
+        Some(32),
+    )?;
+    validate_string_length(
+        "workflow_step_runs.function_ref",
+        &value.function_ref,
+        None,
+        Some(200),
+    )?;
+    if *(&value.attempt) < 0 {
+        return Err("workflow_step_runs.attempt is below the minimum".to_string());
+    }
+    if !["running", "succeeded", "failed"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported workflow_step_runs.status: {}",
+            &value.status
+        ));
+    }
     if let Some(value) = &value.input {
-        if !(value).is_object() { return Err("workflow_step_runs.input must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("workflow_step_runs.input must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.output {
-        if !(value).is_object() { return Err("workflow_step_runs.output must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("workflow_step_runs.output must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.error {
-        if (value).as_bytes().len() > 8192 { return Err("workflow_step_runs.error exceeds 8192 bytes".to_string()); }
+        if (value).as_bytes().len() > 8192 {
+            return Err("workflow_step_runs.error exceeds 8192 bytes".to_string());
+        }
     }
     Ok(())
 }
 
 pub fn validate_workflow_step_runs_insert(value: &WorkflowStepRunsInsert) -> Result<(), String> {
     if let Some(value) = &value.step_index {
-        if *(value) < 0 { return Err("workflow_step_runs.step_index is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("workflow_step_runs.step_index is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.step_name {
         validate_string_length("workflow_step_runs.step_name", value, None, Some(200))?;
@@ -4859,25 +7385,52 @@ pub fn validate_workflow_step_runs_insert(value: &WorkflowStepRunsInsert) -> Res
         validate_string_length("workflow_step_runs.function_ref", value, None, Some(200))?;
     }
     if let Some(value) = &value.attempt {
-        if *(value) < 0 { return Err("workflow_step_runs.attempt is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("workflow_step_runs.attempt is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.status {
-        if !["running", "succeeded", "failed"].contains(&(value).as_str()) { return Err(format!("unsupported workflow_step_runs.status: {}", value)); }
+        if !["running", "succeeded", "failed"].contains(&(value).as_str()) {
+            return Err(format!("unsupported workflow_step_runs.status: {}", value));
+        }
     }
     if let Some(value) = &value.input {
-        if !(value).is_object() { return Err("workflow_step_runs.input must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("workflow_step_runs.input must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.output {
-        if !(value).is_object() { return Err("workflow_step_runs.output must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("workflow_step_runs.output must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.error {
-        if (value).as_bytes().len() > 8192 { return Err("workflow_step_runs.error exceeds 8192 bytes".to_string()); }
+        if (value).as_bytes().len() > 8192 {
+            return Err("workflow_step_runs.error exceeds 8192 bytes".to_string());
+        }
     }
     Ok(())
 }
 
 pub const CONTAINER_POOL_IMAGE_REVISIONS_TABLE: &str = "container_pool_image_revisions";
-pub const CONTAINER_POOL_IMAGE_REVISIONS_COLUMNS: &[&str] = &["id", "image_slug", "image_ref", "dockerfile_path", "build_context", "dockerfile_text", "dockerfile_sha256", "source", "notes", "status", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const CONTAINER_POOL_IMAGE_REVISIONS_COLUMNS: &[&str] = &[
+    "id",
+    "image_slug",
+    "image_ref",
+    "dockerfile_path",
+    "build_context",
+    "dockerfile_text",
+    "dockerfile_sha256",
+    "source",
+    "notes",
+    "status",
+    "meta_data",
+    "is_soft_deleted",
+    "created_at",
+    "updated_at",
+    "created_by",
+    "updated_by",
+];
 pub const CONTAINER_POOL_IMAGE_REVISIONS_SELECT_SQL: &str = r###"select
       id::text as id,
       image_slug,
@@ -5006,56 +7559,149 @@ pub struct ContainerPoolImageRevisionsInsert {
     pub updated_by: Option<String>,
 }
 
-pub fn validate_container_pool_image_revisions_row(value: &ContainerPoolImageRevisionsRow) -> Result<(), String> {
-    validate_slug("container_pool_image_revisions.image_slug", &value.image_slug)?;
-    if (&value.image_ref).as_bytes().len() > 512 { return Err("container_pool_image_revisions.image_ref exceeds 512 bytes".to_string()); }
-    if (&value.dockerfile_path).as_bytes().len() > 512 { return Err("container_pool_image_revisions.dockerfile_path exceeds 512 bytes".to_string()); }
-    if (&value.build_context).as_bytes().len() > 512 { return Err("container_pool_image_revisions.build_context exceeds 512 bytes".to_string()); }
-    if (&value.dockerfile_text).as_bytes().len() > 65536 { return Err("container_pool_image_revisions.dockerfile_text exceeds 65536 bytes".to_string()); }
-    validate_string_length("container_pool_image_revisions.dockerfile_sha256", &value.dockerfile_sha256, None, Some(64))?;
-    if !["disk-default", "user", "system"].contains(&(&value.source).as_str()) { return Err(format!("unsupported container_pool_image_revisions.source: {}", &value.source)); }
-    if (&value.notes).as_bytes().len() > 8192 { return Err("container_pool_image_revisions.notes exceeds 8192 bytes".to_string()); }
-    if !["candidate", "active", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported container_pool_image_revisions.status: {}", &value.status)); }
-    if !(&value.meta_data).is_object() { return Err("container_pool_image_revisions.meta_data must be a JSON object".to_string()); }
+pub fn validate_container_pool_image_revisions_row(
+    value: &ContainerPoolImageRevisionsRow,
+) -> Result<(), String> {
+    validate_slug(
+        "container_pool_image_revisions.image_slug",
+        &value.image_slug,
+    )?;
+    if (&value.image_ref).as_bytes().len() > 512 {
+        return Err("container_pool_image_revisions.image_ref exceeds 512 bytes".to_string());
+    }
+    if (&value.dockerfile_path).as_bytes().len() > 512 {
+        return Err("container_pool_image_revisions.dockerfile_path exceeds 512 bytes".to_string());
+    }
+    if (&value.build_context).as_bytes().len() > 512 {
+        return Err("container_pool_image_revisions.build_context exceeds 512 bytes".to_string());
+    }
+    if (&value.dockerfile_text).as_bytes().len() > 65536 {
+        return Err(
+            "container_pool_image_revisions.dockerfile_text exceeds 65536 bytes".to_string(),
+        );
+    }
+    validate_string_length(
+        "container_pool_image_revisions.dockerfile_sha256",
+        &value.dockerfile_sha256,
+        None,
+        Some(64),
+    )?;
+    if !["disk-default", "user", "system"].contains(&(&value.source).as_str()) {
+        return Err(format!(
+            "unsupported container_pool_image_revisions.source: {}",
+            &value.source
+        ));
+    }
+    if (&value.notes).as_bytes().len() > 8192 {
+        return Err("container_pool_image_revisions.notes exceeds 8192 bytes".to_string());
+    }
+    if !["candidate", "active", "archived"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported container_pool_image_revisions.status: {}",
+            &value.status
+        ));
+    }
+    if !(&value.meta_data).is_object() {
+        return Err("container_pool_image_revisions.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_container_pool_image_revisions_insert(value: &ContainerPoolImageRevisionsInsert) -> Result<(), String> {
+pub fn validate_container_pool_image_revisions_insert(
+    value: &ContainerPoolImageRevisionsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.image_slug {
         validate_slug("container_pool_image_revisions.image_slug", value)?;
     }
     if let Some(value) = &value.image_ref {
-        if (value).as_bytes().len() > 512 { return Err("container_pool_image_revisions.image_ref exceeds 512 bytes".to_string()); }
+        if (value).as_bytes().len() > 512 {
+            return Err("container_pool_image_revisions.image_ref exceeds 512 bytes".to_string());
+        }
     }
     if let Some(value) = &value.dockerfile_path {
-        if (value).as_bytes().len() > 512 { return Err("container_pool_image_revisions.dockerfile_path exceeds 512 bytes".to_string()); }
+        if (value).as_bytes().len() > 512 {
+            return Err(
+                "container_pool_image_revisions.dockerfile_path exceeds 512 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.build_context {
-        if (value).as_bytes().len() > 512 { return Err("container_pool_image_revisions.build_context exceeds 512 bytes".to_string()); }
+        if (value).as_bytes().len() > 512 {
+            return Err(
+                "container_pool_image_revisions.build_context exceeds 512 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.dockerfile_text {
-        if (value).as_bytes().len() > 65536 { return Err("container_pool_image_revisions.dockerfile_text exceeds 65536 bytes".to_string()); }
+        if (value).as_bytes().len() > 65536 {
+            return Err(
+                "container_pool_image_revisions.dockerfile_text exceeds 65536 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.dockerfile_sha256 {
-        validate_string_length("container_pool_image_revisions.dockerfile_sha256", value, None, Some(64))?;
+        validate_string_length(
+            "container_pool_image_revisions.dockerfile_sha256",
+            value,
+            None,
+            Some(64),
+        )?;
     }
     if let Some(value) = &value.source {
-        if !["disk-default", "user", "system"].contains(&(value).as_str()) { return Err(format!("unsupported container_pool_image_revisions.source: {}", value)); }
+        if !["disk-default", "user", "system"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported container_pool_image_revisions.source: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.notes {
-        if (value).as_bytes().len() > 8192 { return Err("container_pool_image_revisions.notes exceeds 8192 bytes".to_string()); }
+        if (value).as_bytes().len() > 8192 {
+            return Err("container_pool_image_revisions.notes exceeds 8192 bytes".to_string());
+        }
     }
     if let Some(value) = &value.status {
-        if !["candidate", "active", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported container_pool_image_revisions.status: {}", value)); }
+        if !["candidate", "active", "archived"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported container_pool_image_revisions.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("container_pool_image_revisions.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "container_pool_image_revisions.meta_data must be a JSON object".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
 pub const CONTAINER_POOL_BUILD_RUNS_TABLE: &str = "container_pool_build_runs";
-pub const CONTAINER_POOL_BUILD_RUNS_COLUMNS: &[&str] = &["id", "image_slug", "revision_id", "image_ref", "candidate_tag", "build_status", "test_status", "overall_status", "test_command", "build_started_at", "build_finished_at", "test_started_at", "test_finished_at", "build_log_excerpt", "test_log_excerpt", "error_message", "triggered_by", "meta_data", "is_soft_deleted", "created_at", "updated_at"];
+pub const CONTAINER_POOL_BUILD_RUNS_COLUMNS: &[&str] = &[
+    "id",
+    "image_slug",
+    "revision_id",
+    "image_ref",
+    "candidate_tag",
+    "build_status",
+    "test_status",
+    "overall_status",
+    "test_command",
+    "build_started_at",
+    "build_finished_at",
+    "test_started_at",
+    "test_finished_at",
+    "build_log_excerpt",
+    "test_log_excerpt",
+    "error_message",
+    "triggered_by",
+    "meta_data",
+    "is_soft_deleted",
+    "created_at",
+    "updated_at",
+];
 pub const CONTAINER_POOL_BUILD_RUNS_SELECT_SQL: &str = r###"select
       id::text as id,
       image_slug,
@@ -5092,7 +7738,14 @@ pub enum ContainerPoolBuildRunsBuildStatus {
 }
 
 impl ContainerPoolBuildRunsBuildStatus {
-    pub const VALUES: &'static [&'static str] = &["queued", "building", "built", "failed", "skipped", "cancelled"];
+    pub const VALUES: &'static [&'static str] = &[
+        "queued",
+        "building",
+        "built",
+        "failed",
+        "skipped",
+        "cancelled",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -5135,7 +7788,15 @@ pub enum ContainerPoolBuildRunsTestStatus {
 }
 
 impl ContainerPoolBuildRunsTestStatus {
-    pub const VALUES: &'static [&'static str] = &["not_started", "pending", "testing", "passed", "failed", "skipped", "cancelled"];
+    pub const VALUES: &'static [&'static str] = &[
+        "not_started",
+        "pending",
+        "testing",
+        "passed",
+        "failed",
+        "skipped",
+        "cancelled",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -5179,7 +7840,14 @@ pub enum ContainerPoolBuildRunsOverallStatus {
 }
 
 impl ContainerPoolBuildRunsOverallStatus {
-    pub const VALUES: &'static [&'static str] = &["queued", "running", "passed", "failed", "cancelled", "errored"];
+    pub const VALUES: &'static [&'static str] = &[
+        "queued",
+        "running",
+        "passed",
+        "failed",
+        "cancelled",
+        "errored",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -5262,62 +7930,195 @@ pub struct ContainerPoolBuildRunsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_container_pool_build_runs_row(value: &ContainerPoolBuildRunsRow) -> Result<(), String> {
+pub fn validate_container_pool_build_runs_row(
+    value: &ContainerPoolBuildRunsRow,
+) -> Result<(), String> {
     validate_slug("container_pool_build_runs.image_slug", &value.image_slug)?;
-    if (&value.image_ref).as_bytes().len() > 512 { return Err("container_pool_build_runs.image_ref exceeds 512 bytes".to_string()); }
-    if (&value.candidate_tag).as_bytes().len() > 512 { return Err("container_pool_build_runs.candidate_tag exceeds 512 bytes".to_string()); }
-    if !["queued", "building", "built", "failed", "skipped", "cancelled"].contains(&(&value.build_status).as_str()) { return Err(format!("unsupported container_pool_build_runs.build_status: {}", &value.build_status)); }
-    if !["not_started", "pending", "testing", "passed", "failed", "skipped", "cancelled"].contains(&(&value.test_status).as_str()) { return Err(format!("unsupported container_pool_build_runs.test_status: {}", &value.test_status)); }
-    if !["queued", "running", "passed", "failed", "cancelled", "errored"].contains(&(&value.overall_status).as_str()) { return Err(format!("unsupported container_pool_build_runs.overall_status: {}", &value.overall_status)); }
-    if (&value.test_command).as_bytes().len() > 4096 { return Err("container_pool_build_runs.test_command exceeds 4096 bytes".to_string()); }
-    if (&value.build_log_excerpt).as_bytes().len() > 65536 { return Err("container_pool_build_runs.build_log_excerpt exceeds 65536 bytes".to_string()); }
-    if (&value.test_log_excerpt).as_bytes().len() > 65536 { return Err("container_pool_build_runs.test_log_excerpt exceeds 65536 bytes".to_string()); }
-    if let Some(value) = &value.error_message {
-        if (value).as_bytes().len() > 8192 { return Err("container_pool_build_runs.error_message exceeds 8192 bytes".to_string()); }
+    if (&value.image_ref).as_bytes().len() > 512 {
+        return Err("container_pool_build_runs.image_ref exceeds 512 bytes".to_string());
     }
-    if !(&value.meta_data).is_object() { return Err("container_pool_build_runs.meta_data must be a JSON object".to_string()); }
+    if (&value.candidate_tag).as_bytes().len() > 512 {
+        return Err("container_pool_build_runs.candidate_tag exceeds 512 bytes".to_string());
+    }
+    if ![
+        "queued",
+        "building",
+        "built",
+        "failed",
+        "skipped",
+        "cancelled",
+    ]
+    .contains(&(&value.build_status).as_str())
+    {
+        return Err(format!(
+            "unsupported container_pool_build_runs.build_status: {}",
+            &value.build_status
+        ));
+    }
+    if ![
+        "not_started",
+        "pending",
+        "testing",
+        "passed",
+        "failed",
+        "skipped",
+        "cancelled",
+    ]
+    .contains(&(&value.test_status).as_str())
+    {
+        return Err(format!(
+            "unsupported container_pool_build_runs.test_status: {}",
+            &value.test_status
+        ));
+    }
+    if ![
+        "queued",
+        "running",
+        "passed",
+        "failed",
+        "cancelled",
+        "errored",
+    ]
+    .contains(&(&value.overall_status).as_str())
+    {
+        return Err(format!(
+            "unsupported container_pool_build_runs.overall_status: {}",
+            &value.overall_status
+        ));
+    }
+    if (&value.test_command).as_bytes().len() > 4096 {
+        return Err("container_pool_build_runs.test_command exceeds 4096 bytes".to_string());
+    }
+    if (&value.build_log_excerpt).as_bytes().len() > 65536 {
+        return Err("container_pool_build_runs.build_log_excerpt exceeds 65536 bytes".to_string());
+    }
+    if (&value.test_log_excerpt).as_bytes().len() > 65536 {
+        return Err("container_pool_build_runs.test_log_excerpt exceeds 65536 bytes".to_string());
+    }
+    if let Some(value) = &value.error_message {
+        if (value).as_bytes().len() > 8192 {
+            return Err("container_pool_build_runs.error_message exceeds 8192 bytes".to_string());
+        }
+    }
+    if !(&value.meta_data).is_object() {
+        return Err("container_pool_build_runs.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_container_pool_build_runs_insert(value: &ContainerPoolBuildRunsInsert) -> Result<(), String> {
+pub fn validate_container_pool_build_runs_insert(
+    value: &ContainerPoolBuildRunsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.image_slug {
         validate_slug("container_pool_build_runs.image_slug", value)?;
     }
     if let Some(value) = &value.image_ref {
-        if (value).as_bytes().len() > 512 { return Err("container_pool_build_runs.image_ref exceeds 512 bytes".to_string()); }
+        if (value).as_bytes().len() > 512 {
+            return Err("container_pool_build_runs.image_ref exceeds 512 bytes".to_string());
+        }
     }
     if let Some(value) = &value.candidate_tag {
-        if (value).as_bytes().len() > 512 { return Err("container_pool_build_runs.candidate_tag exceeds 512 bytes".to_string()); }
+        if (value).as_bytes().len() > 512 {
+            return Err("container_pool_build_runs.candidate_tag exceeds 512 bytes".to_string());
+        }
     }
     if let Some(value) = &value.build_status {
-        if !["queued", "building", "built", "failed", "skipped", "cancelled"].contains(&(value).as_str()) { return Err(format!("unsupported container_pool_build_runs.build_status: {}", value)); }
+        if ![
+            "queued",
+            "building",
+            "built",
+            "failed",
+            "skipped",
+            "cancelled",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported container_pool_build_runs.build_status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.test_status {
-        if !["not_started", "pending", "testing", "passed", "failed", "skipped", "cancelled"].contains(&(value).as_str()) { return Err(format!("unsupported container_pool_build_runs.test_status: {}", value)); }
+        if ![
+            "not_started",
+            "pending",
+            "testing",
+            "passed",
+            "failed",
+            "skipped",
+            "cancelled",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported container_pool_build_runs.test_status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.overall_status {
-        if !["queued", "running", "passed", "failed", "cancelled", "errored"].contains(&(value).as_str()) { return Err(format!("unsupported container_pool_build_runs.overall_status: {}", value)); }
+        if ![
+            "queued",
+            "running",
+            "passed",
+            "failed",
+            "cancelled",
+            "errored",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported container_pool_build_runs.overall_status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.test_command {
-        if (value).as_bytes().len() > 4096 { return Err("container_pool_build_runs.test_command exceeds 4096 bytes".to_string()); }
+        if (value).as_bytes().len() > 4096 {
+            return Err("container_pool_build_runs.test_command exceeds 4096 bytes".to_string());
+        }
     }
     if let Some(value) = &value.build_log_excerpt {
-        if (value).as_bytes().len() > 65536 { return Err("container_pool_build_runs.build_log_excerpt exceeds 65536 bytes".to_string()); }
+        if (value).as_bytes().len() > 65536 {
+            return Err(
+                "container_pool_build_runs.build_log_excerpt exceeds 65536 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.test_log_excerpt {
-        if (value).as_bytes().len() > 65536 { return Err("container_pool_build_runs.test_log_excerpt exceeds 65536 bytes".to_string()); }
+        if (value).as_bytes().len() > 65536 {
+            return Err(
+                "container_pool_build_runs.test_log_excerpt exceeds 65536 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.error_message {
-        if (value).as_bytes().len() > 8192 { return Err("container_pool_build_runs.error_message exceeds 8192 bytes".to_string()); }
+        if (value).as_bytes().len() > 8192 {
+            return Err("container_pool_build_runs.error_message exceeds 8192 bytes".to_string());
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("container_pool_build_runs.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("container_pool_build_runs.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const PRESENCE_CONVS_TABLE: &str = "presence_convs";
-pub const PRESENCE_CONVS_COLUMNS: &[&str] = &["id", "slug", "display_name", "status", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const PRESENCE_CONVS_COLUMNS: &[&str] = &[
+    "id",
+    "slug",
+    "display_name",
+    "status",
+    "meta_data",
+    "is_soft_deleted",
+    "created_at",
+    "updated_at",
+    "created_by",
+    "updated_by",
+];
 pub const PRESENCE_CONVS_SELECT_SQL: &str = r###"select
       id::text as id,
       slug,
@@ -5397,10 +8198,24 @@ pub struct PresenceConvsInsert {
 
 pub fn validate_presence_convs_row(value: &PresenceConvsRow) -> Result<(), String> {
     validate_string_length("presence_convs.slug", &value.slug, None, Some(120))?;
-    validate_string_length("presence_convs.display_name", &value.display_name, None, Some(200))?;
-    if (&value.display_name).as_bytes().len() > 200 { return Err("presence_convs.display_name exceeds 200 bytes".to_string()); }
-    if !["active", "paused", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported presence_convs.status: {}", &value.status)); }
-    if !(&value.meta_data).is_object() { return Err("presence_convs.meta_data must be a JSON object".to_string()); }
+    validate_string_length(
+        "presence_convs.display_name",
+        &value.display_name,
+        None,
+        Some(200),
+    )?;
+    if (&value.display_name).as_bytes().len() > 200 {
+        return Err("presence_convs.display_name exceeds 200 bytes".to_string());
+    }
+    if !["active", "paused", "archived"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported presence_convs.status: {}",
+            &value.status
+        ));
+    }
+    if !(&value.meta_data).is_object() {
+        return Err("presence_convs.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
@@ -5410,19 +8225,39 @@ pub fn validate_presence_convs_insert(value: &PresenceConvsInsert) -> Result<(),
     }
     if let Some(value) = &value.display_name {
         validate_string_length("presence_convs.display_name", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("presence_convs.display_name exceeds 200 bytes".to_string()); }
+        if (value).as_bytes().len() > 200 {
+            return Err("presence_convs.display_name exceeds 200 bytes".to_string());
+        }
     }
     if let Some(value) = &value.status {
-        if !["active", "paused", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported presence_convs.status: {}", value)); }
+        if !["active", "paused", "archived"].contains(&(value).as_str()) {
+            return Err(format!("unsupported presence_convs.status: {}", value));
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("presence_convs.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("presence_convs.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const PRESENCE_CONV_MEMBERS_TABLE: &str = "presence_conv_members";
-pub const PRESENCE_CONV_MEMBERS_COLUMNS: &[&str] = &["id", "conv_id", "user_id", "role", "status", "meta_data", "is_soft_deleted", "joined_at", "left_at", "created_at", "updated_at", "created_by", "updated_by"];
+pub const PRESENCE_CONV_MEMBERS_COLUMNS: &[&str] = &[
+    "id",
+    "conv_id",
+    "user_id",
+    "role",
+    "status",
+    "meta_data",
+    "is_soft_deleted",
+    "joined_at",
+    "left_at",
+    "created_at",
+    "updated_at",
+    "created_by",
+    "updated_by",
+];
 pub const PRESENCE_CONV_MEMBERS_SELECT_SQL: &str = r###"select
       id::text as id,
       conv_id::text as conv_id,
@@ -5552,21 +8387,44 @@ pub struct PresenceConvMembersInsert {
 }
 
 pub fn validate_presence_conv_members_row(value: &PresenceConvMembersRow) -> Result<(), String> {
-    if !["owner", "admin", "member", "guest", "bot"].contains(&(&value.role).as_str()) { return Err(format!("unsupported presence_conv_members.role: {}", &value.role)); }
-    if !["active", "muted", "banned", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported presence_conv_members.status: {}", &value.status)); }
-    if !(&value.meta_data).is_object() { return Err("presence_conv_members.meta_data must be a JSON object".to_string()); }
+    if !["owner", "admin", "member", "guest", "bot"].contains(&(&value.role).as_str()) {
+        return Err(format!(
+            "unsupported presence_conv_members.role: {}",
+            &value.role
+        ));
+    }
+    if !["active", "muted", "banned", "archived"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported presence_conv_members.status: {}",
+            &value.status
+        ));
+    }
+    if !(&value.meta_data).is_object() {
+        return Err("presence_conv_members.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_presence_conv_members_insert(value: &PresenceConvMembersInsert) -> Result<(), String> {
+pub fn validate_presence_conv_members_insert(
+    value: &PresenceConvMembersInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.role {
-        if !["owner", "admin", "member", "guest", "bot"].contains(&(value).as_str()) { return Err(format!("unsupported presence_conv_members.role: {}", value)); }
+        if !["owner", "admin", "member", "guest", "bot"].contains(&(value).as_str()) {
+            return Err(format!("unsupported presence_conv_members.role: {}", value));
+        }
     }
     if let Some(value) = &value.status {
-        if !["active", "muted", "banned", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported presence_conv_members.status: {}", value)); }
+        if !["active", "muted", "banned", "archived"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported presence_conv_members.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("presence_conv_members.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("presence_conv_members.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
@@ -5605,7 +8463,18 @@ pub fn validate_presence_users_insert(_value: &PresenceUsersInsert) -> Result<()
 }
 
 pub const PRESENCE_EVENTS_TABLE: &str = "presence_events";
-pub const PRESENCE_EVENTS_COLUMNS: &[&str] = &["seq", "event_at", "op", "conv_id", "user_id", "conv_slug", "user_slug", "conv_shard", "user_shard", "soft_deleted"];
+pub const PRESENCE_EVENTS_COLUMNS: &[&str] = &[
+    "seq",
+    "event_at",
+    "op",
+    "conv_id",
+    "user_id",
+    "conv_slug",
+    "user_slug",
+    "conv_shard",
+    "user_shard",
+    "soft_deleted",
+];
 pub const PRESENCE_EVENTS_SELECT_SQL: &str = r###"select
       seq,
       to_char(event_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as event_at,
@@ -5684,19 +8553,24 @@ pub struct PresenceEventsInsert {
 }
 
 pub fn validate_presence_events_row(value: &PresenceEventsRow) -> Result<(), String> {
-    if !["INSERT", "UPDATE", "DELETE"].contains(&(&value.op).as_str()) { return Err(format!("unsupported presence_events.op: {}", &value.op)); }
+    if !["INSERT", "UPDATE", "DELETE"].contains(&(&value.op).as_str()) {
+        return Err(format!("unsupported presence_events.op: {}", &value.op));
+    }
     Ok(())
 }
 
 pub fn validate_presence_events_insert(value: &PresenceEventsInsert) -> Result<(), String> {
     if let Some(value) = &value.op {
-        if !["INSERT", "UPDATE", "DELETE"].contains(&(value).as_str()) { return Err(format!("unsupported presence_events.op: {}", value)); }
+        if !["INSERT", "UPDATE", "DELETE"].contains(&(value).as_str()) {
+            return Err(format!("unsupported presence_events.op: {}", value));
+        }
     }
     Ok(())
 }
 
 pub const PRESENCE_CONSUMER_CHECKPOINTS_TABLE: &str = "presence_consumer_checkpoints";
-pub const PRESENCE_CONSUMER_CHECKPOINTS_COLUMNS: &[&str] = &["consumer_id", "last_seq", "updated_at"];
+pub const PRESENCE_CONSUMER_CHECKPOINTS_COLUMNS: &[&str] =
+    &["consumer_id", "last_seq", "updated_at"];
 pub const PRESENCE_CONSUMER_CHECKPOINTS_SELECT_SQL: &str = r###"select
       consumer_id,
       last_seq,
@@ -5720,16 +8594,34 @@ pub struct PresenceConsumerCheckpointsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_presence_consumer_checkpoints_row(_value: &PresenceConsumerCheckpointsRow) -> Result<(), String> {
+pub fn validate_presence_consumer_checkpoints_row(
+    _value: &PresenceConsumerCheckpointsRow,
+) -> Result<(), String> {
     Ok(())
 }
 
-pub fn validate_presence_consumer_checkpoints_insert(_value: &PresenceConsumerCheckpointsInsert) -> Result<(), String> {
+pub fn validate_presence_consumer_checkpoints_insert(
+    _value: &PresenceConsumerCheckpointsInsert,
+) -> Result<(), String> {
     Ok(())
 }
 
 pub const DES_SOCCER_LEARNING_EXPERIMENTS_TABLE: &str = "des_soccer_learning_experiments";
-pub const DES_SOCCER_LEARNING_EXPERIMENTS_COLUMNS: &[&str] = &["id", "slug", "display_name", "description", "status", "config", "labels", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const DES_SOCCER_LEARNING_EXPERIMENTS_COLUMNS: &[&str] = &[
+    "id",
+    "slug",
+    "display_name",
+    "description",
+    "status",
+    "config",
+    "labels",
+    "meta_data",
+    "is_soft_deleted",
+    "created_at",
+    "updated_at",
+    "created_by",
+    "updated_by",
+];
 pub const DES_SOCCER_LEARNING_EXPERIMENTS_SELECT_SQL: &str = r###"select
       id::text as id,
       slug,
@@ -5816,46 +8708,120 @@ pub struct DesSoccerLearningExperimentsInsert {
     pub updated_by: Option<String>,
 }
 
-pub fn validate_des_soccer_learning_experiments_row(value: &DesSoccerLearningExperimentsRow) -> Result<(), String> {
+pub fn validate_des_soccer_learning_experiments_row(
+    value: &DesSoccerLearningExperimentsRow,
+) -> Result<(), String> {
     validate_slug("des_soccer_learning_experiments.slug", &value.slug)?;
-    validate_string_length("des_soccer_learning_experiments.display_name", &value.display_name, None, Some(240))?;
-    if (&value.display_name).as_bytes().len() > 240 { return Err("des_soccer_learning_experiments.display_name exceeds 240 bytes".to_string()); }
-    if (&value.description).as_bytes().len() > 8192 { return Err("des_soccer_learning_experiments.description exceeds 8192 bytes".to_string()); }
-    if !["active", "paused", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported des_soccer_learning_experiments.status: {}", &value.status)); }
-    if !(&value.config).is_object() { return Err("des_soccer_learning_experiments.config must be a JSON object".to_string()); }
-    if !(&value.labels).is_array() { return Err("des_soccer_learning_experiments.labels must be a JSON array".to_string()); }
-    if !(&value.meta_data).is_object() { return Err("des_soccer_learning_experiments.meta_data must be a JSON object".to_string()); }
+    validate_string_length(
+        "des_soccer_learning_experiments.display_name",
+        &value.display_name,
+        None,
+        Some(240),
+    )?;
+    if (&value.display_name).as_bytes().len() > 240 {
+        return Err("des_soccer_learning_experiments.display_name exceeds 240 bytes".to_string());
+    }
+    if (&value.description).as_bytes().len() > 8192 {
+        return Err("des_soccer_learning_experiments.description exceeds 8192 bytes".to_string());
+    }
+    if !["active", "paused", "archived"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported des_soccer_learning_experiments.status: {}",
+            &value.status
+        ));
+    }
+    if !(&value.config).is_object() {
+        return Err("des_soccer_learning_experiments.config must be a JSON object".to_string());
+    }
+    if !(&value.labels).is_array() {
+        return Err("des_soccer_learning_experiments.labels must be a JSON array".to_string());
+    }
+    if !(&value.meta_data).is_object() {
+        return Err("des_soccer_learning_experiments.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_des_soccer_learning_experiments_insert(value: &DesSoccerLearningExperimentsInsert) -> Result<(), String> {
+pub fn validate_des_soccer_learning_experiments_insert(
+    value: &DesSoccerLearningExperimentsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.slug {
         validate_slug("des_soccer_learning_experiments.slug", value)?;
     }
     if let Some(value) = &value.display_name {
-        validate_string_length("des_soccer_learning_experiments.display_name", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("des_soccer_learning_experiments.display_name exceeds 240 bytes".to_string()); }
+        validate_string_length(
+            "des_soccer_learning_experiments.display_name",
+            value,
+            None,
+            Some(240),
+        )?;
+        if (value).as_bytes().len() > 240 {
+            return Err(
+                "des_soccer_learning_experiments.display_name exceeds 240 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.description {
-        if (value).as_bytes().len() > 8192 { return Err("des_soccer_learning_experiments.description exceeds 8192 bytes".to_string()); }
+        if (value).as_bytes().len() > 8192 {
+            return Err(
+                "des_soccer_learning_experiments.description exceeds 8192 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.status {
-        if !["active", "paused", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_experiments.status: {}", value)); }
+        if !["active", "paused", "archived"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported des_soccer_learning_experiments.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.config {
-        if !(value).is_object() { return Err("des_soccer_learning_experiments.config must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("des_soccer_learning_experiments.config must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.labels {
-        if !(value).is_array() { return Err("des_soccer_learning_experiments.labels must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err("des_soccer_learning_experiments.labels must be a JSON array".to_string());
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("des_soccer_learning_experiments.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "des_soccer_learning_experiments.meta_data must be a JSON object".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
 pub const DES_SOCCER_LEARNING_POLICY_VERSIONS_TABLE: &str = "des_soccer_learning_policy_versions";
-pub const DES_SOCCER_LEARNING_POLICY_VERSIONS_COLUMNS: &[&str] = &["id", "experiment_id", "parent_policy_version_id", "generation", "version_label", "source_kind", "status", "options", "config", "lineage", "metrics", "entry_count", "target_entry_count", "visit_count", "fitness_micros", "branch_key", "retention_kind", "full_entries_retained", "full_entries_pruned_at", "created_at", "updated_at", "created_by", "updated_by"];
+pub const DES_SOCCER_LEARNING_POLICY_VERSIONS_COLUMNS: &[&str] = &[
+    "id",
+    "experiment_id",
+    "parent_policy_version_id",
+    "generation",
+    "version_label",
+    "source_kind",
+    "status",
+    "options",
+    "config",
+    "lineage",
+    "metrics",
+    "entry_count",
+    "target_entry_count",
+    "visit_count",
+    "fitness_micros",
+    "branch_key",
+    "retention_kind",
+    "full_entries_retained",
+    "full_entries_pruned_at",
+    "created_at",
+    "updated_at",
+    "created_by",
+    "updated_by",
+];
 pub const DES_SOCCER_LEARNING_POLICY_VERSIONS_SELECT_SQL: &str = r###"select
       id::text as id,
       experiment_id::text as experiment_id,
@@ -5894,7 +8860,8 @@ pub enum DesSoccerLearningPolicyVersionsSourceKind {
 }
 
 impl DesSoccerLearningPolicyVersionsSourceKind {
-    pub const VALUES: &'static [&'static str] = &["seed", "merge", "mutation", "crossover", "import", "replay"];
+    pub const VALUES: &'static [&'static str] =
+        &["seed", "merge", "mutation", "crossover", "import", "replay"];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -6050,64 +9017,191 @@ pub struct DesSoccerLearningPolicyVersionsInsert {
     pub updated_by: Option<String>,
 }
 
-pub fn validate_des_soccer_learning_policy_versions_row(value: &DesSoccerLearningPolicyVersionsRow) -> Result<(), String> {
-    if *(&value.generation) < 0 { return Err("des_soccer_learning_policy_versions.generation is below the minimum".to_string()); }
-    validate_string_length("des_soccer_learning_policy_versions.version_label", &value.version_label, None, Some(160))?;
-    if !["seed", "merge", "mutation", "crossover", "import", "replay"].contains(&(&value.source_kind).as_str()) { return Err(format!("unsupported des_soccer_learning_policy_versions.source_kind: {}", &value.source_kind)); }
-    if !["candidate", "active", "archived", "rejected"].contains(&(&value.status).as_str()) { return Err(format!("unsupported des_soccer_learning_policy_versions.status: {}", &value.status)); }
-    if !(&value.options).is_object() { return Err("des_soccer_learning_policy_versions.options must be a JSON object".to_string()); }
-    if !(&value.config).is_object() { return Err("des_soccer_learning_policy_versions.config must be a JSON object".to_string()); }
-    if !(&value.lineage).is_array() { return Err("des_soccer_learning_policy_versions.lineage must be a JSON array".to_string()); }
-    if !(&value.metrics).is_object() { return Err("des_soccer_learning_policy_versions.metrics must be a JSON object".to_string()); }
-    if *(&value.entry_count) < 0 { return Err("des_soccer_learning_policy_versions.entry_count is below the minimum".to_string()); }
-    if *(&value.target_entry_count) < 0 { return Err("des_soccer_learning_policy_versions.target_entry_count is below the minimum".to_string()); }
-    if *(&value.visit_count) < 0 { return Err("des_soccer_learning_policy_versions.visit_count is below the minimum".to_string()); }
-    if !["branch_tip", "retain_all", "metadata_only"].contains(&(&value.retention_kind).as_str()) { return Err(format!("unsupported des_soccer_learning_policy_versions.retention_kind: {}", &value.retention_kind)); }
+pub fn validate_des_soccer_learning_policy_versions_row(
+    value: &DesSoccerLearningPolicyVersionsRow,
+) -> Result<(), String> {
+    if *(&value.generation) < 0 {
+        return Err(
+            "des_soccer_learning_policy_versions.generation is below the minimum".to_string(),
+        );
+    }
+    validate_string_length(
+        "des_soccer_learning_policy_versions.version_label",
+        &value.version_label,
+        None,
+        Some(160),
+    )?;
+    if !["seed", "merge", "mutation", "crossover", "import", "replay"]
+        .contains(&(&value.source_kind).as_str())
+    {
+        return Err(format!(
+            "unsupported des_soccer_learning_policy_versions.source_kind: {}",
+            &value.source_kind
+        ));
+    }
+    if !["candidate", "active", "archived", "rejected"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported des_soccer_learning_policy_versions.status: {}",
+            &value.status
+        ));
+    }
+    if !(&value.options).is_object() {
+        return Err(
+            "des_soccer_learning_policy_versions.options must be a JSON object".to_string(),
+        );
+    }
+    if !(&value.config).is_object() {
+        return Err("des_soccer_learning_policy_versions.config must be a JSON object".to_string());
+    }
+    if !(&value.lineage).is_array() {
+        return Err("des_soccer_learning_policy_versions.lineage must be a JSON array".to_string());
+    }
+    if !(&value.metrics).is_object() {
+        return Err(
+            "des_soccer_learning_policy_versions.metrics must be a JSON object".to_string(),
+        );
+    }
+    if *(&value.entry_count) < 0 {
+        return Err(
+            "des_soccer_learning_policy_versions.entry_count is below the minimum".to_string(),
+        );
+    }
+    if *(&value.target_entry_count) < 0 {
+        return Err(
+            "des_soccer_learning_policy_versions.target_entry_count is below the minimum"
+                .to_string(),
+        );
+    }
+    if *(&value.visit_count) < 0 {
+        return Err(
+            "des_soccer_learning_policy_versions.visit_count is below the minimum".to_string(),
+        );
+    }
+    if !["branch_tip", "retain_all", "metadata_only"].contains(&(&value.retention_kind).as_str()) {
+        return Err(format!(
+            "unsupported des_soccer_learning_policy_versions.retention_kind: {}",
+            &value.retention_kind
+        ));
+    }
     Ok(())
 }
 
-pub fn validate_des_soccer_learning_policy_versions_insert(value: &DesSoccerLearningPolicyVersionsInsert) -> Result<(), String> {
+pub fn validate_des_soccer_learning_policy_versions_insert(
+    value: &DesSoccerLearningPolicyVersionsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.generation {
-        if *(value) < 0 { return Err("des_soccer_learning_policy_versions.generation is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_soccer_learning_policy_versions.generation is below the minimum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.version_label {
-        validate_string_length("des_soccer_learning_policy_versions.version_label", value, None, Some(160))?;
+        validate_string_length(
+            "des_soccer_learning_policy_versions.version_label",
+            value,
+            None,
+            Some(160),
+        )?;
     }
     if let Some(value) = &value.source_kind {
-        if !["seed", "merge", "mutation", "crossover", "import", "replay"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_policy_versions.source_kind: {}", value)); }
+        if !["seed", "merge", "mutation", "crossover", "import", "replay"]
+            .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported des_soccer_learning_policy_versions.source_kind: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.status {
-        if !["candidate", "active", "archived", "rejected"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_policy_versions.status: {}", value)); }
+        if !["candidate", "active", "archived", "rejected"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported des_soccer_learning_policy_versions.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.options {
-        if !(value).is_object() { return Err("des_soccer_learning_policy_versions.options must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "des_soccer_learning_policy_versions.options must be a JSON object".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.config {
-        if !(value).is_object() { return Err("des_soccer_learning_policy_versions.config must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "des_soccer_learning_policy_versions.config must be a JSON object".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.lineage {
-        if !(value).is_array() { return Err("des_soccer_learning_policy_versions.lineage must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err(
+                "des_soccer_learning_policy_versions.lineage must be a JSON array".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.metrics {
-        if !(value).is_object() { return Err("des_soccer_learning_policy_versions.metrics must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "des_soccer_learning_policy_versions.metrics must be a JSON object".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.entry_count {
-        if *(value) < 0 { return Err("des_soccer_learning_policy_versions.entry_count is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_soccer_learning_policy_versions.entry_count is below the minimum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.target_entry_count {
-        if *(value) < 0 { return Err("des_soccer_learning_policy_versions.target_entry_count is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_soccer_learning_policy_versions.target_entry_count is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.visit_count {
-        if *(value) < 0 { return Err("des_soccer_learning_policy_versions.visit_count is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_soccer_learning_policy_versions.visit_count is below the minimum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.retention_kind {
-        if !["branch_tip", "retain_all", "metadata_only"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_policy_versions.retention_kind: {}", value)); }
+        if !["branch_tip", "retain_all", "metadata_only"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported des_soccer_learning_policy_versions.retention_kind: {}",
+                value
+            ));
+        }
     }
     Ok(())
 }
 
 pub const DES_SOCCER_LEARNING_POLICY_ENTRIES_TABLE: &str = "des_soccer_learning_policy_entries";
-pub const DES_SOCCER_LEARNING_POLICY_ENTRIES_COLUMNS: &[&str] = &["id", "policy_version_id", "team", "entry_kind", "state_hash", "state_key", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "receiver_descriptor", "value_micros", "visits", "source_run_id", "created_at"];
+pub const DES_SOCCER_LEARNING_POLICY_ENTRIES_COLUMNS: &[&str] = &[
+    "id",
+    "policy_version_id",
+    "team",
+    "entry_kind",
+    "state_hash",
+    "state_key",
+    "action",
+    "target_fine_cell_id",
+    "target_tactical_cell_id",
+    "target_macro_cell_id",
+    "target_root_cell_id",
+    "receiver_descriptor",
+    "value_micros",
+    "visits",
+    "source_run_id",
+    "created_at",
+];
 pub const DES_SOCCER_LEARNING_POLICY_ENTRIES_SELECT_SQL: &str = r###"select
       id::text as id,
       policy_version_id::text as policy_version_id,
@@ -6230,62 +9324,194 @@ pub struct DesSoccerLearningPolicyEntriesInsert {
     pub created_at: Option<String>,
 }
 
-pub fn validate_des_soccer_learning_policy_entries_row(value: &DesSoccerLearningPolicyEntriesRow) -> Result<(), String> {
-    if !["home", "away"].contains(&(&value.team).as_str()) { return Err(format!("unsupported des_soccer_learning_policy_entries.team: {}", &value.team)); }
-    if !["action", "target"].contains(&(&value.entry_kind).as_str()) { return Err(format!("unsupported des_soccer_learning_policy_entries.entry_kind: {}", &value.entry_kind)); }
-    validate_string_length("des_soccer_learning_policy_entries.state_hash", &value.state_hash, None, Some(32))?;
-    if !(&value.state_key).is_object() { return Err("des_soccer_learning_policy_entries.state_key must be a JSON object".to_string()); }
-    validate_string_length("des_soccer_learning_policy_entries.action", &value.action, None, Some(80))?;
-    if (&value.action).as_bytes().len() > 80 { return Err("des_soccer_learning_policy_entries.action exceeds 80 bytes".to_string()); }
-    if *(&value.target_fine_cell_id) < -1 { return Err("des_soccer_learning_policy_entries.target_fine_cell_id is below the minimum".to_string()); }
-    if *(&value.target_tactical_cell_id) < -1 { return Err("des_soccer_learning_policy_entries.target_tactical_cell_id is below the minimum".to_string()); }
-    if *(&value.target_macro_cell_id) < -1 { return Err("des_soccer_learning_policy_entries.target_macro_cell_id is below the minimum".to_string()); }
-    if *(&value.target_root_cell_id) < -1 { return Err("des_soccer_learning_policy_entries.target_root_cell_id is below the minimum".to_string()); }
-    if *(&value.receiver_descriptor) < -1 { return Err("des_soccer_learning_policy_entries.receiver_descriptor is below the minimum".to_string()); }
-    if *(&value.visits) < 0 { return Err("des_soccer_learning_policy_entries.visits is below the minimum".to_string()); }
+pub fn validate_des_soccer_learning_policy_entries_row(
+    value: &DesSoccerLearningPolicyEntriesRow,
+) -> Result<(), String> {
+    if !["home", "away"].contains(&(&value.team).as_str()) {
+        return Err(format!(
+            "unsupported des_soccer_learning_policy_entries.team: {}",
+            &value.team
+        ));
+    }
+    if !["action", "target"].contains(&(&value.entry_kind).as_str()) {
+        return Err(format!(
+            "unsupported des_soccer_learning_policy_entries.entry_kind: {}",
+            &value.entry_kind
+        ));
+    }
+    validate_string_length(
+        "des_soccer_learning_policy_entries.state_hash",
+        &value.state_hash,
+        None,
+        Some(32),
+    )?;
+    if !(&value.state_key).is_object() {
+        return Err(
+            "des_soccer_learning_policy_entries.state_key must be a JSON object".to_string(),
+        );
+    }
+    validate_string_length(
+        "des_soccer_learning_policy_entries.action",
+        &value.action,
+        None,
+        Some(80),
+    )?;
+    if (&value.action).as_bytes().len() > 80 {
+        return Err("des_soccer_learning_policy_entries.action exceeds 80 bytes".to_string());
+    }
+    if *(&value.target_fine_cell_id) < -1 {
+        return Err(
+            "des_soccer_learning_policy_entries.target_fine_cell_id is below the minimum"
+                .to_string(),
+        );
+    }
+    if *(&value.target_tactical_cell_id) < -1 {
+        return Err(
+            "des_soccer_learning_policy_entries.target_tactical_cell_id is below the minimum"
+                .to_string(),
+        );
+    }
+    if *(&value.target_macro_cell_id) < -1 {
+        return Err(
+            "des_soccer_learning_policy_entries.target_macro_cell_id is below the minimum"
+                .to_string(),
+        );
+    }
+    if *(&value.target_root_cell_id) < -1 {
+        return Err(
+            "des_soccer_learning_policy_entries.target_root_cell_id is below the minimum"
+                .to_string(),
+        );
+    }
+    if *(&value.receiver_descriptor) < -1 {
+        return Err(
+            "des_soccer_learning_policy_entries.receiver_descriptor is below the minimum"
+                .to_string(),
+        );
+    }
+    if *(&value.visits) < 0 {
+        return Err("des_soccer_learning_policy_entries.visits is below the minimum".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_des_soccer_learning_policy_entries_insert(value: &DesSoccerLearningPolicyEntriesInsert) -> Result<(), String> {
+pub fn validate_des_soccer_learning_policy_entries_insert(
+    value: &DesSoccerLearningPolicyEntriesInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.team {
-        if !["home", "away"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_policy_entries.team: {}", value)); }
+        if !["home", "away"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported des_soccer_learning_policy_entries.team: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.entry_kind {
-        if !["action", "target"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_policy_entries.entry_kind: {}", value)); }
+        if !["action", "target"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported des_soccer_learning_policy_entries.entry_kind: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.state_hash {
-        validate_string_length("des_soccer_learning_policy_entries.state_hash", value, None, Some(32))?;
+        validate_string_length(
+            "des_soccer_learning_policy_entries.state_hash",
+            value,
+            None,
+            Some(32),
+        )?;
     }
     if let Some(value) = &value.state_key {
-        if !(value).is_object() { return Err("des_soccer_learning_policy_entries.state_key must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "des_soccer_learning_policy_entries.state_key must be a JSON object".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.action {
-        validate_string_length("des_soccer_learning_policy_entries.action", value, None, Some(80))?;
-        if (value).as_bytes().len() > 80 { return Err("des_soccer_learning_policy_entries.action exceeds 80 bytes".to_string()); }
+        validate_string_length(
+            "des_soccer_learning_policy_entries.action",
+            value,
+            None,
+            Some(80),
+        )?;
+        if (value).as_bytes().len() > 80 {
+            return Err("des_soccer_learning_policy_entries.action exceeds 80 bytes".to_string());
+        }
     }
     if let Some(value) = &value.target_fine_cell_id {
-        if *(value) < -1 { return Err("des_soccer_learning_policy_entries.target_fine_cell_id is below the minimum".to_string()); }
+        if *(value) < -1 {
+            return Err(
+                "des_soccer_learning_policy_entries.target_fine_cell_id is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.target_tactical_cell_id {
-        if *(value) < -1 { return Err("des_soccer_learning_policy_entries.target_tactical_cell_id is below the minimum".to_string()); }
+        if *(value) < -1 {
+            return Err(
+                "des_soccer_learning_policy_entries.target_tactical_cell_id is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.target_macro_cell_id {
-        if *(value) < -1 { return Err("des_soccer_learning_policy_entries.target_macro_cell_id is below the minimum".to_string()); }
+        if *(value) < -1 {
+            return Err(
+                "des_soccer_learning_policy_entries.target_macro_cell_id is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.target_root_cell_id {
-        if *(value) < -1 { return Err("des_soccer_learning_policy_entries.target_root_cell_id is below the minimum".to_string()); }
+        if *(value) < -1 {
+            return Err(
+                "des_soccer_learning_policy_entries.target_root_cell_id is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.receiver_descriptor {
-        if *(value) < -1 { return Err("des_soccer_learning_policy_entries.receiver_descriptor is below the minimum".to_string()); }
+        if *(value) < -1 {
+            return Err(
+                "des_soccer_learning_policy_entries.receiver_descriptor is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.visits {
-        if *(value) < 0 { return Err("des_soccer_learning_policy_entries.visits is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_soccer_learning_policy_entries.visits is below the minimum".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
 pub const DES_SOCCER_LEARNING_JOBS_TABLE: &str = "des_soccer_learning_jobs";
-pub const DES_SOCCER_LEARNING_JOBS_COLUMNS: &[&str] = &["id", "experiment_id", "base_policy_version_id", "spawn_strategy", "status", "priority", "seed", "attempt", "max_attempts", "lease_owner", "lease_expires_at", "started_at", "finished_at", "config", "runner_config", "result_run_id", "error", "created_at", "updated_at"];
+pub const DES_SOCCER_LEARNING_JOBS_COLUMNS: &[&str] = &[
+    "id",
+    "experiment_id",
+    "base_policy_version_id",
+    "spawn_strategy",
+    "status",
+    "priority",
+    "seed",
+    "attempt",
+    "max_attempts",
+    "lease_owner",
+    "lease_expires_at",
+    "started_at",
+    "finished_at",
+    "config",
+    "runner_config",
+    "result_run_id",
+    "error",
+    "created_at",
+    "updated_at",
+];
 pub const DES_SOCCER_LEARNING_JOBS_SELECT_SQL: &str = r###"select
       id::text as id,
       experiment_id::text as experiment_id,
@@ -6320,7 +9546,14 @@ pub enum DesSoccerLearningJobsSpawnStrategy {
 }
 
 impl DesSoccerLearningJobsSpawnStrategy {
-    pub const VALUES: &'static [&'static str] = &["latest", "elite", "mutation", "crossover", "random", "replay"];
+    pub const VALUES: &'static [&'static str] = &[
+        "latest",
+        "elite",
+        "mutation",
+        "crossover",
+        "random",
+        "replay",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -6361,7 +9594,8 @@ pub enum DesSoccerLearningJobsStatus {
 }
 
 impl DesSoccerLearningJobsStatus {
-    pub const VALUES: &'static [&'static str] = &["queued", "running", "completed", "failed", "canceled"];
+    pub const VALUES: &'static [&'static str] =
+        &["queued", "running", "completed", "failed", "canceled"];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -6438,60 +9672,173 @@ pub struct DesSoccerLearningJobsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_des_soccer_learning_jobs_row(value: &DesSoccerLearningJobsRow) -> Result<(), String> {
-    if !["latest", "elite", "mutation", "crossover", "random", "replay"].contains(&(&value.spawn_strategy).as_str()) { return Err(format!("unsupported des_soccer_learning_jobs.spawn_strategy: {}", &value.spawn_strategy)); }
-    if !["queued", "running", "completed", "failed", "canceled"].contains(&(&value.status).as_str()) { return Err(format!("unsupported des_soccer_learning_jobs.status: {}", &value.status)); }
-    if *(&value.seed) < 0 { return Err("des_soccer_learning_jobs.seed is below the minimum".to_string()); }
-    if *(&value.attempt) < 0 { return Err("des_soccer_learning_jobs.attempt is below the minimum".to_string()); }
-    if *(&value.max_attempts) < 1 { return Err("des_soccer_learning_jobs.max_attempts is below the minimum".to_string()); }
-    if *(&value.max_attempts) > 100 { return Err("des_soccer_learning_jobs.max_attempts is above the maximum".to_string()); }
-    if let Some(value) = &value.lease_owner {
-        validate_string_length("des_soccer_learning_jobs.lease_owner", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("des_soccer_learning_jobs.lease_owner exceeds 200 bytes".to_string()); }
+pub fn validate_des_soccer_learning_jobs_row(
+    value: &DesSoccerLearningJobsRow,
+) -> Result<(), String> {
+    if ![
+        "latest",
+        "elite",
+        "mutation",
+        "crossover",
+        "random",
+        "replay",
+    ]
+    .contains(&(&value.spawn_strategy).as_str())
+    {
+        return Err(format!(
+            "unsupported des_soccer_learning_jobs.spawn_strategy: {}",
+            &value.spawn_strategy
+        ));
     }
-    if !(&value.config).is_object() { return Err("des_soccer_learning_jobs.config must be a JSON object".to_string()); }
-    if !(&value.runner_config).is_object() { return Err("des_soccer_learning_jobs.runner_config must be a JSON object".to_string()); }
+    if !["queued", "running", "completed", "failed", "canceled"].contains(&(&value.status).as_str())
+    {
+        return Err(format!(
+            "unsupported des_soccer_learning_jobs.status: {}",
+            &value.status
+        ));
+    }
+    if *(&value.seed) < 0 {
+        return Err("des_soccer_learning_jobs.seed is below the minimum".to_string());
+    }
+    if *(&value.attempt) < 0 {
+        return Err("des_soccer_learning_jobs.attempt is below the minimum".to_string());
+    }
+    if *(&value.max_attempts) < 1 {
+        return Err("des_soccer_learning_jobs.max_attempts is below the minimum".to_string());
+    }
+    if *(&value.max_attempts) > 100 {
+        return Err("des_soccer_learning_jobs.max_attempts is above the maximum".to_string());
+    }
+    if let Some(value) = &value.lease_owner {
+        validate_string_length(
+            "des_soccer_learning_jobs.lease_owner",
+            value,
+            None,
+            Some(200),
+        )?;
+        if (value).as_bytes().len() > 200 {
+            return Err("des_soccer_learning_jobs.lease_owner exceeds 200 bytes".to_string());
+        }
+    }
+    if !(&value.config).is_object() {
+        return Err("des_soccer_learning_jobs.config must be a JSON object".to_string());
+    }
+    if !(&value.runner_config).is_object() {
+        return Err("des_soccer_learning_jobs.runner_config must be a JSON object".to_string());
+    }
     if let Some(value) = &value.error {
-        if (value).as_bytes().len() > 16384 { return Err("des_soccer_learning_jobs.error exceeds 16384 bytes".to_string()); }
+        if (value).as_bytes().len() > 16384 {
+            return Err("des_soccer_learning_jobs.error exceeds 16384 bytes".to_string());
+        }
     }
     Ok(())
 }
 
-pub fn validate_des_soccer_learning_jobs_insert(value: &DesSoccerLearningJobsInsert) -> Result<(), String> {
+pub fn validate_des_soccer_learning_jobs_insert(
+    value: &DesSoccerLearningJobsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.spawn_strategy {
-        if !["latest", "elite", "mutation", "crossover", "random", "replay"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_jobs.spawn_strategy: {}", value)); }
+        if ![
+            "latest",
+            "elite",
+            "mutation",
+            "crossover",
+            "random",
+            "replay",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported des_soccer_learning_jobs.spawn_strategy: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.status {
-        if !["queued", "running", "completed", "failed", "canceled"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_jobs.status: {}", value)); }
+        if !["queued", "running", "completed", "failed", "canceled"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported des_soccer_learning_jobs.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.seed {
-        if *(value) < 0 { return Err("des_soccer_learning_jobs.seed is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("des_soccer_learning_jobs.seed is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.attempt {
-        if *(value) < 0 { return Err("des_soccer_learning_jobs.attempt is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("des_soccer_learning_jobs.attempt is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.max_attempts {
-        if *(value) < 1 { return Err("des_soccer_learning_jobs.max_attempts is below the minimum".to_string()); }
-        if *(value) > 100 { return Err("des_soccer_learning_jobs.max_attempts is above the maximum".to_string()); }
+        if *(value) < 1 {
+            return Err("des_soccer_learning_jobs.max_attempts is below the minimum".to_string());
+        }
+        if *(value) > 100 {
+            return Err("des_soccer_learning_jobs.max_attempts is above the maximum".to_string());
+        }
     }
     if let Some(value) = &value.lease_owner {
-        validate_string_length("des_soccer_learning_jobs.lease_owner", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("des_soccer_learning_jobs.lease_owner exceeds 200 bytes".to_string()); }
+        validate_string_length(
+            "des_soccer_learning_jobs.lease_owner",
+            value,
+            None,
+            Some(200),
+        )?;
+        if (value).as_bytes().len() > 200 {
+            return Err("des_soccer_learning_jobs.lease_owner exceeds 200 bytes".to_string());
+        }
     }
     if let Some(value) = &value.config {
-        if !(value).is_object() { return Err("des_soccer_learning_jobs.config must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("des_soccer_learning_jobs.config must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.runner_config {
-        if !(value).is_object() { return Err("des_soccer_learning_jobs.runner_config must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("des_soccer_learning_jobs.runner_config must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.error {
-        if (value).as_bytes().len() > 16384 { return Err("des_soccer_learning_jobs.error exceeds 16384 bytes".to_string()); }
+        if (value).as_bytes().len() > 16384 {
+            return Err("des_soccer_learning_jobs.error exceeds 16384 bytes".to_string());
+        }
     }
     Ok(())
 }
 
 pub const DES_SOCCER_LEARNING_RUNS_TABLE: &str = "des_soccer_learning_runs";
-pub const DES_SOCCER_LEARNING_RUNS_COLUMNS: &[&str] = &["id", "job_id", "experiment_id", "base_policy_version_id", "output_policy_version_id", "runner_id", "seed", "episode_index", "status", "score_home", "score_away", "home_goal_diff", "away_goal_diff", "home_outcome", "away_outcome", "home_merge_weight_micros", "away_merge_weight_micros", "fitness_micros", "duration_ticks", "simulated_seconds_micros", "elapsed_millis", "transitions", "summary", "stats", "error", "created_at", "updated_at"];
+pub const DES_SOCCER_LEARNING_RUNS_COLUMNS: &[&str] = &[
+    "id",
+    "job_id",
+    "experiment_id",
+    "base_policy_version_id",
+    "output_policy_version_id",
+    "runner_id",
+    "seed",
+    "episode_index",
+    "status",
+    "score_home",
+    "score_away",
+    "home_goal_diff",
+    "away_goal_diff",
+    "home_outcome",
+    "away_outcome",
+    "home_merge_weight_micros",
+    "away_merge_weight_micros",
+    "fitness_micros",
+    "duration_ticks",
+    "simulated_seconds_micros",
+    "elapsed_millis",
+    "transitions",
+    "summary",
+    "stats",
+    "error",
+    "created_at",
+    "updated_at",
+];
 pub const DES_SOCCER_LEARNING_RUNS_SELECT_SQL: &str = r###"select
       id::text as id,
       job_id::text as job_id,
@@ -6683,80 +10030,192 @@ pub struct DesSoccerLearningRunsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_des_soccer_learning_runs_row(value: &DesSoccerLearningRunsRow) -> Result<(), String> {
-    validate_string_length("des_soccer_learning_runs.runner_id", &value.runner_id, None, Some(200))?;
-    if (&value.runner_id).as_bytes().len() > 200 { return Err("des_soccer_learning_runs.runner_id exceeds 200 bytes".to_string()); }
-    if *(&value.seed) < 0 { return Err("des_soccer_learning_runs.seed is below the minimum".to_string()); }
-    if *(&value.episode_index) < 0 { return Err("des_soccer_learning_runs.episode_index is below the minimum".to_string()); }
-    if !["completed", "failed"].contains(&(&value.status).as_str()) { return Err(format!("unsupported des_soccer_learning_runs.status: {}", &value.status)); }
-    if *(&value.score_home) < 0 { return Err("des_soccer_learning_runs.score_home is below the minimum".to_string()); }
-    if *(&value.score_away) < 0 { return Err("des_soccer_learning_runs.score_away is below the minimum".to_string()); }
-    if !["win", "draw", "loss"].contains(&(&value.home_outcome).as_str()) { return Err(format!("unsupported des_soccer_learning_runs.home_outcome: {}", &value.home_outcome)); }
-    if !["win", "draw", "loss"].contains(&(&value.away_outcome).as_str()) { return Err(format!("unsupported des_soccer_learning_runs.away_outcome: {}", &value.away_outcome)); }
-    if *(&value.duration_ticks) < 0 { return Err("des_soccer_learning_runs.duration_ticks is below the minimum".to_string()); }
-    if *(&value.simulated_seconds_micros) < 0 { return Err("des_soccer_learning_runs.simulated_seconds_micros is below the minimum".to_string()); }
-    if *(&value.elapsed_millis) < 0 { return Err("des_soccer_learning_runs.elapsed_millis is below the minimum".to_string()); }
-    if *(&value.transitions) < 0 { return Err("des_soccer_learning_runs.transitions is below the minimum".to_string()); }
-    if !(&value.summary).is_object() { return Err("des_soccer_learning_runs.summary must be a JSON object".to_string()); }
-    if !(&value.stats).is_object() { return Err("des_soccer_learning_runs.stats must be a JSON object".to_string()); }
+pub fn validate_des_soccer_learning_runs_row(
+    value: &DesSoccerLearningRunsRow,
+) -> Result<(), String> {
+    validate_string_length(
+        "des_soccer_learning_runs.runner_id",
+        &value.runner_id,
+        None,
+        Some(200),
+    )?;
+    if (&value.runner_id).as_bytes().len() > 200 {
+        return Err("des_soccer_learning_runs.runner_id exceeds 200 bytes".to_string());
+    }
+    if *(&value.seed) < 0 {
+        return Err("des_soccer_learning_runs.seed is below the minimum".to_string());
+    }
+    if *(&value.episode_index) < 0 {
+        return Err("des_soccer_learning_runs.episode_index is below the minimum".to_string());
+    }
+    if !["completed", "failed"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported des_soccer_learning_runs.status: {}",
+            &value.status
+        ));
+    }
+    if *(&value.score_home) < 0 {
+        return Err("des_soccer_learning_runs.score_home is below the minimum".to_string());
+    }
+    if *(&value.score_away) < 0 {
+        return Err("des_soccer_learning_runs.score_away is below the minimum".to_string());
+    }
+    if !["win", "draw", "loss"].contains(&(&value.home_outcome).as_str()) {
+        return Err(format!(
+            "unsupported des_soccer_learning_runs.home_outcome: {}",
+            &value.home_outcome
+        ));
+    }
+    if !["win", "draw", "loss"].contains(&(&value.away_outcome).as_str()) {
+        return Err(format!(
+            "unsupported des_soccer_learning_runs.away_outcome: {}",
+            &value.away_outcome
+        ));
+    }
+    if *(&value.duration_ticks) < 0 {
+        return Err("des_soccer_learning_runs.duration_ticks is below the minimum".to_string());
+    }
+    if *(&value.simulated_seconds_micros) < 0 {
+        return Err(
+            "des_soccer_learning_runs.simulated_seconds_micros is below the minimum".to_string(),
+        );
+    }
+    if *(&value.elapsed_millis) < 0 {
+        return Err("des_soccer_learning_runs.elapsed_millis is below the minimum".to_string());
+    }
+    if *(&value.transitions) < 0 {
+        return Err("des_soccer_learning_runs.transitions is below the minimum".to_string());
+    }
+    if !(&value.summary).is_object() {
+        return Err("des_soccer_learning_runs.summary must be a JSON object".to_string());
+    }
+    if !(&value.stats).is_object() {
+        return Err("des_soccer_learning_runs.stats must be a JSON object".to_string());
+    }
     if let Some(value) = &value.error {
-        if (value).as_bytes().len() > 16384 { return Err("des_soccer_learning_runs.error exceeds 16384 bytes".to_string()); }
+        if (value).as_bytes().len() > 16384 {
+            return Err("des_soccer_learning_runs.error exceeds 16384 bytes".to_string());
+        }
     }
     Ok(())
 }
 
-pub fn validate_des_soccer_learning_runs_insert(value: &DesSoccerLearningRunsInsert) -> Result<(), String> {
+pub fn validate_des_soccer_learning_runs_insert(
+    value: &DesSoccerLearningRunsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.runner_id {
         validate_string_length("des_soccer_learning_runs.runner_id", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("des_soccer_learning_runs.runner_id exceeds 200 bytes".to_string()); }
+        if (value).as_bytes().len() > 200 {
+            return Err("des_soccer_learning_runs.runner_id exceeds 200 bytes".to_string());
+        }
     }
     if let Some(value) = &value.seed {
-        if *(value) < 0 { return Err("des_soccer_learning_runs.seed is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("des_soccer_learning_runs.seed is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.episode_index {
-        if *(value) < 0 { return Err("des_soccer_learning_runs.episode_index is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("des_soccer_learning_runs.episode_index is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.status {
-        if !["completed", "failed"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_runs.status: {}", value)); }
+        if !["completed", "failed"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported des_soccer_learning_runs.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.score_home {
-        if *(value) < 0 { return Err("des_soccer_learning_runs.score_home is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("des_soccer_learning_runs.score_home is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.score_away {
-        if *(value) < 0 { return Err("des_soccer_learning_runs.score_away is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("des_soccer_learning_runs.score_away is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.home_outcome {
-        if !["win", "draw", "loss"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_runs.home_outcome: {}", value)); }
+        if !["win", "draw", "loss"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported des_soccer_learning_runs.home_outcome: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.away_outcome {
-        if !["win", "draw", "loss"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_runs.away_outcome: {}", value)); }
+        if !["win", "draw", "loss"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported des_soccer_learning_runs.away_outcome: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.duration_ticks {
-        if *(value) < 0 { return Err("des_soccer_learning_runs.duration_ticks is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("des_soccer_learning_runs.duration_ticks is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.simulated_seconds_micros {
-        if *(value) < 0 { return Err("des_soccer_learning_runs.simulated_seconds_micros is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_soccer_learning_runs.simulated_seconds_micros is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.elapsed_millis {
-        if *(value) < 0 { return Err("des_soccer_learning_runs.elapsed_millis is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("des_soccer_learning_runs.elapsed_millis is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.transitions {
-        if *(value) < 0 { return Err("des_soccer_learning_runs.transitions is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("des_soccer_learning_runs.transitions is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.summary {
-        if !(value).is_object() { return Err("des_soccer_learning_runs.summary must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("des_soccer_learning_runs.summary must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.stats {
-        if !(value).is_object() { return Err("des_soccer_learning_runs.stats must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("des_soccer_learning_runs.stats must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.error {
-        if (value).as_bytes().len() > 16384 { return Err("des_soccer_learning_runs.error exceeds 16384 bytes".to_string()); }
+        if (value).as_bytes().len() > 16384 {
+            return Err("des_soccer_learning_runs.error exceeds 16384 bytes".to_string());
+        }
     }
     Ok(())
 }
 
 pub const DES_SOCCER_LEARNING_RUN_DELTAS_TABLE: &str = "des_soccer_learning_run_deltas";
-pub const DES_SOCCER_LEARNING_RUN_DELTAS_COLUMNS: &[&str] = &["id", "run_id", "team", "entry_kind", "state_hash", "state_key", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "receiver_descriptor", "before_value_micros", "after_value_micros", "value_delta_micros", "visit_delta", "merge_weight_micros", "effective_visit_micros", "created_at"];
+pub const DES_SOCCER_LEARNING_RUN_DELTAS_COLUMNS: &[&str] = &[
+    "id",
+    "run_id",
+    "team",
+    "entry_kind",
+    "state_hash",
+    "state_key",
+    "action",
+    "target_fine_cell_id",
+    "target_tactical_cell_id",
+    "target_macro_cell_id",
+    "target_root_cell_id",
+    "receiver_descriptor",
+    "before_value_micros",
+    "after_value_micros",
+    "value_delta_micros",
+    "visit_delta",
+    "merge_weight_micros",
+    "effective_visit_micros",
+    "created_at",
+];
 pub const DES_SOCCER_LEARNING_RUN_DELTAS_SELECT_SQL: &str = r###"select
       id::text as id,
       run_id::text as run_id,
@@ -6888,70 +10347,206 @@ pub struct DesSoccerLearningRunDeltasInsert {
     pub created_at: Option<String>,
 }
 
-pub fn validate_des_soccer_learning_run_deltas_row(value: &DesSoccerLearningRunDeltasRow) -> Result<(), String> {
-    if !["home", "away"].contains(&(&value.team).as_str()) { return Err(format!("unsupported des_soccer_learning_run_deltas.team: {}", &value.team)); }
-    if !["action", "target"].contains(&(&value.entry_kind).as_str()) { return Err(format!("unsupported des_soccer_learning_run_deltas.entry_kind: {}", &value.entry_kind)); }
-    validate_string_length("des_soccer_learning_run_deltas.state_hash", &value.state_hash, None, Some(32))?;
-    if !(&value.state_key).is_object() { return Err("des_soccer_learning_run_deltas.state_key must be a JSON object".to_string()); }
-    validate_string_length("des_soccer_learning_run_deltas.action", &value.action, None, Some(80))?;
-    if (&value.action).as_bytes().len() > 80 { return Err("des_soccer_learning_run_deltas.action exceeds 80 bytes".to_string()); }
-    if *(&value.target_fine_cell_id) < -1 { return Err("des_soccer_learning_run_deltas.target_fine_cell_id is below the minimum".to_string()); }
-    if *(&value.target_tactical_cell_id) < -1 { return Err("des_soccer_learning_run_deltas.target_tactical_cell_id is below the minimum".to_string()); }
-    if *(&value.target_macro_cell_id) < -1 { return Err("des_soccer_learning_run_deltas.target_macro_cell_id is below the minimum".to_string()); }
-    if *(&value.target_root_cell_id) < -1 { return Err("des_soccer_learning_run_deltas.target_root_cell_id is below the minimum".to_string()); }
-    if *(&value.receiver_descriptor) < -1 { return Err("des_soccer_learning_run_deltas.receiver_descriptor is below the minimum".to_string()); }
-    if *(&value.visit_delta) < 1 { return Err("des_soccer_learning_run_deltas.visit_delta is below the minimum".to_string()); }
-    if *(&value.merge_weight_micros) < 0 { return Err("des_soccer_learning_run_deltas.merge_weight_micros is below the minimum".to_string()); }
-    if *(&value.effective_visit_micros) < 0 { return Err("des_soccer_learning_run_deltas.effective_visit_micros is below the minimum".to_string()); }
+pub fn validate_des_soccer_learning_run_deltas_row(
+    value: &DesSoccerLearningRunDeltasRow,
+) -> Result<(), String> {
+    if !["home", "away"].contains(&(&value.team).as_str()) {
+        return Err(format!(
+            "unsupported des_soccer_learning_run_deltas.team: {}",
+            &value.team
+        ));
+    }
+    if !["action", "target"].contains(&(&value.entry_kind).as_str()) {
+        return Err(format!(
+            "unsupported des_soccer_learning_run_deltas.entry_kind: {}",
+            &value.entry_kind
+        ));
+    }
+    validate_string_length(
+        "des_soccer_learning_run_deltas.state_hash",
+        &value.state_hash,
+        None,
+        Some(32),
+    )?;
+    if !(&value.state_key).is_object() {
+        return Err("des_soccer_learning_run_deltas.state_key must be a JSON object".to_string());
+    }
+    validate_string_length(
+        "des_soccer_learning_run_deltas.action",
+        &value.action,
+        None,
+        Some(80),
+    )?;
+    if (&value.action).as_bytes().len() > 80 {
+        return Err("des_soccer_learning_run_deltas.action exceeds 80 bytes".to_string());
+    }
+    if *(&value.target_fine_cell_id) < -1 {
+        return Err(
+            "des_soccer_learning_run_deltas.target_fine_cell_id is below the minimum".to_string(),
+        );
+    }
+    if *(&value.target_tactical_cell_id) < -1 {
+        return Err(
+            "des_soccer_learning_run_deltas.target_tactical_cell_id is below the minimum"
+                .to_string(),
+        );
+    }
+    if *(&value.target_macro_cell_id) < -1 {
+        return Err(
+            "des_soccer_learning_run_deltas.target_macro_cell_id is below the minimum".to_string(),
+        );
+    }
+    if *(&value.target_root_cell_id) < -1 {
+        return Err(
+            "des_soccer_learning_run_deltas.target_root_cell_id is below the minimum".to_string(),
+        );
+    }
+    if *(&value.receiver_descriptor) < -1 {
+        return Err(
+            "des_soccer_learning_run_deltas.receiver_descriptor is below the minimum".to_string(),
+        );
+    }
+    if *(&value.visit_delta) < 1 {
+        return Err("des_soccer_learning_run_deltas.visit_delta is below the minimum".to_string());
+    }
+    if *(&value.merge_weight_micros) < 0 {
+        return Err(
+            "des_soccer_learning_run_deltas.merge_weight_micros is below the minimum".to_string(),
+        );
+    }
+    if *(&value.effective_visit_micros) < 0 {
+        return Err(
+            "des_soccer_learning_run_deltas.effective_visit_micros is below the minimum"
+                .to_string(),
+        );
+    }
     Ok(())
 }
 
-pub fn validate_des_soccer_learning_run_deltas_insert(value: &DesSoccerLearningRunDeltasInsert) -> Result<(), String> {
+pub fn validate_des_soccer_learning_run_deltas_insert(
+    value: &DesSoccerLearningRunDeltasInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.team {
-        if !["home", "away"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_run_deltas.team: {}", value)); }
+        if !["home", "away"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported des_soccer_learning_run_deltas.team: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.entry_kind {
-        if !["action", "target"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_run_deltas.entry_kind: {}", value)); }
+        if !["action", "target"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported des_soccer_learning_run_deltas.entry_kind: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.state_hash {
-        validate_string_length("des_soccer_learning_run_deltas.state_hash", value, None, Some(32))?;
+        validate_string_length(
+            "des_soccer_learning_run_deltas.state_hash",
+            value,
+            None,
+            Some(32),
+        )?;
     }
     if let Some(value) = &value.state_key {
-        if !(value).is_object() { return Err("des_soccer_learning_run_deltas.state_key must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "des_soccer_learning_run_deltas.state_key must be a JSON object".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.action {
-        validate_string_length("des_soccer_learning_run_deltas.action", value, None, Some(80))?;
-        if (value).as_bytes().len() > 80 { return Err("des_soccer_learning_run_deltas.action exceeds 80 bytes".to_string()); }
+        validate_string_length(
+            "des_soccer_learning_run_deltas.action",
+            value,
+            None,
+            Some(80),
+        )?;
+        if (value).as_bytes().len() > 80 {
+            return Err("des_soccer_learning_run_deltas.action exceeds 80 bytes".to_string());
+        }
     }
     if let Some(value) = &value.target_fine_cell_id {
-        if *(value) < -1 { return Err("des_soccer_learning_run_deltas.target_fine_cell_id is below the minimum".to_string()); }
+        if *(value) < -1 {
+            return Err(
+                "des_soccer_learning_run_deltas.target_fine_cell_id is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.target_tactical_cell_id {
-        if *(value) < -1 { return Err("des_soccer_learning_run_deltas.target_tactical_cell_id is below the minimum".to_string()); }
+        if *(value) < -1 {
+            return Err(
+                "des_soccer_learning_run_deltas.target_tactical_cell_id is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.target_macro_cell_id {
-        if *(value) < -1 { return Err("des_soccer_learning_run_deltas.target_macro_cell_id is below the minimum".to_string()); }
+        if *(value) < -1 {
+            return Err(
+                "des_soccer_learning_run_deltas.target_macro_cell_id is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.target_root_cell_id {
-        if *(value) < -1 { return Err("des_soccer_learning_run_deltas.target_root_cell_id is below the minimum".to_string()); }
+        if *(value) < -1 {
+            return Err(
+                "des_soccer_learning_run_deltas.target_root_cell_id is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.receiver_descriptor {
-        if *(value) < -1 { return Err("des_soccer_learning_run_deltas.receiver_descriptor is below the minimum".to_string()); }
+        if *(value) < -1 {
+            return Err(
+                "des_soccer_learning_run_deltas.receiver_descriptor is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.visit_delta {
-        if *(value) < 1 { return Err("des_soccer_learning_run_deltas.visit_delta is below the minimum".to_string()); }
+        if *(value) < 1 {
+            return Err(
+                "des_soccer_learning_run_deltas.visit_delta is below the minimum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.merge_weight_micros {
-        if *(value) < 0 { return Err("des_soccer_learning_run_deltas.merge_weight_micros is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_soccer_learning_run_deltas.merge_weight_micros is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.effective_visit_micros {
-        if *(value) < 0 { return Err("des_soccer_learning_run_deltas.effective_visit_micros is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_soccer_learning_run_deltas.effective_visit_micros is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     Ok(())
 }
 
 pub const DES_SOCCER_LEARNING_MERGE_EVENTS_TABLE: &str = "des_soccer_learning_merge_events";
-pub const DES_SOCCER_LEARNING_MERGE_EVENTS_COLUMNS: &[&str] = &["id", "experiment_id", "base_policy_version_id", "output_policy_version_id", "strategy", "input_run_count", "input_delta_count", "decay_micros", "metrics", "created_at"];
+pub const DES_SOCCER_LEARNING_MERGE_EVENTS_COLUMNS: &[&str] = &[
+    "id",
+    "experiment_id",
+    "base_policy_version_id",
+    "output_policy_version_id",
+    "strategy",
+    "input_run_count",
+    "input_delta_count",
+    "decay_micros",
+    "metrics",
+    "created_at",
+];
 pub const DES_SOCCER_LEARNING_MERGE_EVENTS_SELECT_SQL: &str = r###"select
       id::text as id,
       experiment_id::text as experiment_id,
@@ -6975,7 +10570,8 @@ pub enum DesSoccerLearningMergeEventsStrategy {
 }
 
 impl DesSoccerLearningMergeEventsStrategy {
-    pub const VALUES: &'static [&'static str] = &["outcome_weighted_average", "elite", "mutation", "crossover"];
+    pub const VALUES: &'static [&'static str] =
+        &["outcome_weighted_average", "elite", "mutation", "crossover"];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -7032,38 +10628,113 @@ pub struct DesSoccerLearningMergeEventsInsert {
     pub created_at: Option<String>,
 }
 
-pub fn validate_des_soccer_learning_merge_events_row(value: &DesSoccerLearningMergeEventsRow) -> Result<(), String> {
-    if !["outcome_weighted_average", "elite", "mutation", "crossover"].contains(&(&value.strategy).as_str()) { return Err(format!("unsupported des_soccer_learning_merge_events.strategy: {}", &value.strategy)); }
-    if *(&value.input_run_count) < 0 { return Err("des_soccer_learning_merge_events.input_run_count is below the minimum".to_string()); }
-    if *(&value.input_delta_count) < 0 { return Err("des_soccer_learning_merge_events.input_delta_count is below the minimum".to_string()); }
-    if *(&value.decay_micros) < 0 { return Err("des_soccer_learning_merge_events.decay_micros is below the minimum".to_string()); }
-    if *(&value.decay_micros) > 1000000 { return Err("des_soccer_learning_merge_events.decay_micros is above the maximum".to_string()); }
-    if !(&value.metrics).is_object() { return Err("des_soccer_learning_merge_events.metrics must be a JSON object".to_string()); }
+pub fn validate_des_soccer_learning_merge_events_row(
+    value: &DesSoccerLearningMergeEventsRow,
+) -> Result<(), String> {
+    if !["outcome_weighted_average", "elite", "mutation", "crossover"]
+        .contains(&(&value.strategy).as_str())
+    {
+        return Err(format!(
+            "unsupported des_soccer_learning_merge_events.strategy: {}",
+            &value.strategy
+        ));
+    }
+    if *(&value.input_run_count) < 0 {
+        return Err(
+            "des_soccer_learning_merge_events.input_run_count is below the minimum".to_string(),
+        );
+    }
+    if *(&value.input_delta_count) < 0 {
+        return Err(
+            "des_soccer_learning_merge_events.input_delta_count is below the minimum".to_string(),
+        );
+    }
+    if *(&value.decay_micros) < 0 {
+        return Err(
+            "des_soccer_learning_merge_events.decay_micros is below the minimum".to_string(),
+        );
+    }
+    if *(&value.decay_micros) > 1000000 {
+        return Err(
+            "des_soccer_learning_merge_events.decay_micros is above the maximum".to_string(),
+        );
+    }
+    if !(&value.metrics).is_object() {
+        return Err("des_soccer_learning_merge_events.metrics must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_des_soccer_learning_merge_events_insert(value: &DesSoccerLearningMergeEventsInsert) -> Result<(), String> {
+pub fn validate_des_soccer_learning_merge_events_insert(
+    value: &DesSoccerLearningMergeEventsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.strategy {
-        if !["outcome_weighted_average", "elite", "mutation", "crossover"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_merge_events.strategy: {}", value)); }
+        if !["outcome_weighted_average", "elite", "mutation", "crossover"]
+            .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported des_soccer_learning_merge_events.strategy: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.input_run_count {
-        if *(value) < 0 { return Err("des_soccer_learning_merge_events.input_run_count is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_soccer_learning_merge_events.input_run_count is below the minimum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.input_delta_count {
-        if *(value) < 0 { return Err("des_soccer_learning_merge_events.input_delta_count is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_soccer_learning_merge_events.input_delta_count is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.decay_micros {
-        if *(value) < 0 { return Err("des_soccer_learning_merge_events.decay_micros is below the minimum".to_string()); }
-        if *(value) > 1000000 { return Err("des_soccer_learning_merge_events.decay_micros is above the maximum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_soccer_learning_merge_events.decay_micros is below the minimum".to_string(),
+            );
+        }
+        if *(value) > 1000000 {
+            return Err(
+                "des_soccer_learning_merge_events.decay_micros is above the maximum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.metrics {
-        if !(value).is_object() { return Err("des_soccer_learning_merge_events.metrics must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "des_soccer_learning_merge_events.metrics must be a JSON object".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
 pub const DES_SOCCER_TOURNAMENTS_TABLE: &str = "des_soccer_tournaments";
-pub const DES_SOCCER_TOURNAMENTS_COLUMNS: &[&str] = &["id", "experiment_id", "tournament_date", "seed", "learning_mode", "format", "team_count", "match_count", "matches_played", "champion_team_id", "runner_up_team_id", "third_place_team_id", "wall_time_seconds", "status", "created_at", "updated_at", "finished_at"];
+pub const DES_SOCCER_TOURNAMENTS_COLUMNS: &[&str] = &[
+    "id",
+    "experiment_id",
+    "tournament_date",
+    "seed",
+    "learning_mode",
+    "format",
+    "team_count",
+    "match_count",
+    "matches_played",
+    "champion_team_id",
+    "runner_up_team_id",
+    "third_place_team_id",
+    "wall_time_seconds",
+    "status",
+    "created_at",
+    "updated_at",
+    "finished_at",
+];
 pub const DES_SOCCER_TOURNAMENTS_SELECT_SQL: &str = r###"select
       id,
       experiment_id::text as experiment_id,
@@ -7166,23 +10837,51 @@ pub struct DesSoccerTournamentsInsert {
 }
 
 pub fn validate_des_soccer_tournaments_row(value: &DesSoccerTournamentsRow) -> Result<(), String> {
-    if !(&value.format).is_object() { return Err("des_soccer_tournaments.format must be a JSON object".to_string()); }
-    if !["running", "completed", "failed", "aborted"].contains(&(&value.status).as_str()) { return Err(format!("unsupported des_soccer_tournaments.status: {}", &value.status)); }
+    if !(&value.format).is_object() {
+        return Err("des_soccer_tournaments.format must be a JSON object".to_string());
+    }
+    if !["running", "completed", "failed", "aborted"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported des_soccer_tournaments.status: {}",
+            &value.status
+        ));
+    }
     Ok(())
 }
 
-pub fn validate_des_soccer_tournaments_insert(value: &DesSoccerTournamentsInsert) -> Result<(), String> {
+pub fn validate_des_soccer_tournaments_insert(
+    value: &DesSoccerTournamentsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.format {
-        if !(value).is_object() { return Err("des_soccer_tournaments.format must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("des_soccer_tournaments.format must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.status {
-        if !["running", "completed", "failed", "aborted"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_tournaments.status: {}", value)); }
+        if !["running", "completed", "failed", "aborted"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported des_soccer_tournaments.status: {}",
+                value
+            ));
+        }
     }
     Ok(())
 }
 
 pub const DES_SOCCER_TOURNAMENT_MATCHES_TABLE: &str = "des_soccer_tournament_matches";
-pub const DES_SOCCER_TOURNAMENT_MATCHES_COLUMNS: &[&str] = &["id", "match_index", "stage", "home_team_id", "away_team_id", "home_goals", "away_goals", "shootout_winner_team_id", "home_training_steps", "away_training_steps", "recorded_at"];
+pub const DES_SOCCER_TOURNAMENT_MATCHES_COLUMNS: &[&str] = &[
+    "id",
+    "match_index",
+    "stage",
+    "home_team_id",
+    "away_team_id",
+    "home_goals",
+    "away_goals",
+    "shootout_winner_team_id",
+    "home_training_steps",
+    "away_training_steps",
+    "recorded_at",
+];
 pub const DES_SOCCER_TOURNAMENT_MATCHES_SELECT_SQL: &str = r###"select
       id,
       match_index,
@@ -7230,16 +10929,36 @@ pub struct DesSoccerTournamentMatchesInsert {
     pub recorded_at: Option<String>,
 }
 
-pub fn validate_des_soccer_tournament_matches_row(_value: &DesSoccerTournamentMatchesRow) -> Result<(), String> {
+pub fn validate_des_soccer_tournament_matches_row(
+    _value: &DesSoccerTournamentMatchesRow,
+) -> Result<(), String> {
     Ok(())
 }
 
-pub fn validate_des_soccer_tournament_matches_insert(_value: &DesSoccerTournamentMatchesInsert) -> Result<(), String> {
+pub fn validate_des_soccer_tournament_matches_insert(
+    _value: &DesSoccerTournamentMatchesInsert,
+) -> Result<(), String> {
     Ok(())
 }
 
 pub const DES_SOCCER_TOURNAMENT_TEAM_BRAINS_TABLE: &str = "des_soccer_tournament_team_brains";
-pub const DES_SOCCER_TOURNAMENT_TEAM_BRAINS_COLUMNS: &[&str] = &["id", "team_id", "team_name", "seed", "matches_learned", "training_steps", "played", "wins", "draws", "losses", "goals_for", "goals_against", "neural_snapshot", "genome", "updated_at"];
+pub const DES_SOCCER_TOURNAMENT_TEAM_BRAINS_COLUMNS: &[&str] = &[
+    "id",
+    "team_id",
+    "team_name",
+    "seed",
+    "matches_learned",
+    "training_steps",
+    "played",
+    "wins",
+    "draws",
+    "losses",
+    "goals_for",
+    "goals_against",
+    "neural_snapshot",
+    "genome",
+    "updated_at",
+];
 pub const DES_SOCCER_TOURNAMENT_TEAM_BRAINS_SELECT_SQL: &str = r###"select
       id,
       team_id,
@@ -7299,28 +11018,65 @@ pub struct DesSoccerTournamentTeamBrainsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_des_soccer_tournament_team_brains_row(value: &DesSoccerTournamentTeamBrainsRow) -> Result<(), String> {
+pub fn validate_des_soccer_tournament_team_brains_row(
+    value: &DesSoccerTournamentTeamBrainsRow,
+) -> Result<(), String> {
     if let Some(value) = &value.neural_snapshot {
-        if !(value).is_object() { return Err("des_soccer_tournament_team_brains.neural_snapshot must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "des_soccer_tournament_team_brains.neural_snapshot must be a JSON object"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.genome {
-        if !(value).is_object() { return Err("des_soccer_tournament_team_brains.genome must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "des_soccer_tournament_team_brains.genome must be a JSON object".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
-pub fn validate_des_soccer_tournament_team_brains_insert(value: &DesSoccerTournamentTeamBrainsInsert) -> Result<(), String> {
+pub fn validate_des_soccer_tournament_team_brains_insert(
+    value: &DesSoccerTournamentTeamBrainsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.neural_snapshot {
-        if !(value).is_object() { return Err("des_soccer_tournament_team_brains.neural_snapshot must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "des_soccer_tournament_team_brains.neural_snapshot must be a JSON object"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.genome {
-        if !(value).is_object() { return Err("des_soccer_tournament_team_brains.genome must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "des_soccer_tournament_team_brains.genome must be a JSON object".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
 pub const DES_SOCCER_LEARNING_SET_PLAY_RUNS_TABLE: &str = "des_soccer_learning_set_play_runs";
-pub const DES_SOCCER_LEARNING_SET_PLAY_RUNS_COLUMNS: &[&str] = &["run_id", "policy_version_id", "primary_restart", "team", "spot_x_micros", "spot_y_micros", "duration_seconds_micros", "episode_count", "goals", "goal_rate_micros", "first_window_goal_rate_micros", "last_window_goal_rate_micros", "goal_rate_delta_micros", "created_at"];
+pub const DES_SOCCER_LEARNING_SET_PLAY_RUNS_COLUMNS: &[&str] = &[
+    "run_id",
+    "policy_version_id",
+    "primary_restart",
+    "team",
+    "spot_x_micros",
+    "spot_y_micros",
+    "duration_seconds_micros",
+    "episode_count",
+    "goals",
+    "goal_rate_micros",
+    "first_window_goal_rate_micros",
+    "last_window_goal_rate_micros",
+    "goal_rate_delta_micros",
+    "created_at",
+];
 pub const DES_SOCCER_LEARNING_SET_PLAY_RUNS_SELECT_SQL: &str = r###"select
       run_id::text as run_id,
       policy_version_id::text as policy_version_id,
@@ -7437,42 +11193,108 @@ pub struct DesSoccerLearningSetPlayRunsInsert {
     pub created_at: Option<String>,
 }
 
-pub fn validate_des_soccer_learning_set_play_runs_row(value: &DesSoccerLearningSetPlayRunsRow) -> Result<(), String> {
-    if !["direct-free-kick", "indirect-free-kick"].contains(&(&value.primary_restart).as_str()) { return Err(format!("unsupported des_soccer_learning_set_play_runs.primary_restart: {}", &value.primary_restart)); }
-    if !["home", "away"].contains(&(&value.team).as_str()) { return Err(format!("unsupported des_soccer_learning_set_play_runs.team: {}", &value.team)); }
-    if *(&value.duration_seconds_micros) < 0 { return Err("des_soccer_learning_set_play_runs.duration_seconds_micros is below the minimum".to_string()); }
-    if *(&value.episode_count) < 0 { return Err("des_soccer_learning_set_play_runs.episode_count is below the minimum".to_string()); }
-    if *(&value.goals) < 0 { return Err("des_soccer_learning_set_play_runs.goals is below the minimum".to_string()); }
-    if *(&value.goal_rate_micros) < 0 { return Err("des_soccer_learning_set_play_runs.goal_rate_micros is below the minimum".to_string()); }
-    if *(&value.goal_rate_micros) > 1000000 { return Err("des_soccer_learning_set_play_runs.goal_rate_micros is above the maximum".to_string()); }
+pub fn validate_des_soccer_learning_set_play_runs_row(
+    value: &DesSoccerLearningSetPlayRunsRow,
+) -> Result<(), String> {
+    if !["direct-free-kick", "indirect-free-kick"].contains(&(&value.primary_restart).as_str()) {
+        return Err(format!(
+            "unsupported des_soccer_learning_set_play_runs.primary_restart: {}",
+            &value.primary_restart
+        ));
+    }
+    if !["home", "away"].contains(&(&value.team).as_str()) {
+        return Err(format!(
+            "unsupported des_soccer_learning_set_play_runs.team: {}",
+            &value.team
+        ));
+    }
+    if *(&value.duration_seconds_micros) < 0 {
+        return Err(
+            "des_soccer_learning_set_play_runs.duration_seconds_micros is below the minimum"
+                .to_string(),
+        );
+    }
+    if *(&value.episode_count) < 0 {
+        return Err(
+            "des_soccer_learning_set_play_runs.episode_count is below the minimum".to_string(),
+        );
+    }
+    if *(&value.goals) < 0 {
+        return Err("des_soccer_learning_set_play_runs.goals is below the minimum".to_string());
+    }
+    if *(&value.goal_rate_micros) < 0 {
+        return Err(
+            "des_soccer_learning_set_play_runs.goal_rate_micros is below the minimum".to_string(),
+        );
+    }
+    if *(&value.goal_rate_micros) > 1000000 {
+        return Err(
+            "des_soccer_learning_set_play_runs.goal_rate_micros is above the maximum".to_string(),
+        );
+    }
     Ok(())
 }
 
-pub fn validate_des_soccer_learning_set_play_runs_insert(value: &DesSoccerLearningSetPlayRunsInsert) -> Result<(), String> {
+pub fn validate_des_soccer_learning_set_play_runs_insert(
+    value: &DesSoccerLearningSetPlayRunsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.primary_restart {
-        if !["direct-free-kick", "indirect-free-kick"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_set_play_runs.primary_restart: {}", value)); }
+        if !["direct-free-kick", "indirect-free-kick"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported des_soccer_learning_set_play_runs.primary_restart: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.team {
-        if !["home", "away"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_set_play_runs.team: {}", value)); }
+        if !["home", "away"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported des_soccer_learning_set_play_runs.team: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.duration_seconds_micros {
-        if *(value) < 0 { return Err("des_soccer_learning_set_play_runs.duration_seconds_micros is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_soccer_learning_set_play_runs.duration_seconds_micros is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.episode_count {
-        if *(value) < 0 { return Err("des_soccer_learning_set_play_runs.episode_count is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_soccer_learning_set_play_runs.episode_count is below the minimum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.goals {
-        if *(value) < 0 { return Err("des_soccer_learning_set_play_runs.goals is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("des_soccer_learning_set_play_runs.goals is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.goal_rate_micros {
-        if *(value) < 0 { return Err("des_soccer_learning_set_play_runs.goal_rate_micros is below the minimum".to_string()); }
-        if *(value) > 1000000 { return Err("des_soccer_learning_set_play_runs.goal_rate_micros is above the maximum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_soccer_learning_set_play_runs.goal_rate_micros is below the minimum"
+                    .to_string(),
+            );
+        }
+        if *(value) > 1000000 {
+            return Err(
+                "des_soccer_learning_set_play_runs.goal_rate_micros is above the maximum"
+                    .to_string(),
+            );
+        }
     }
     Ok(())
 }
 
-pub const DES_SOCCER_LEARNING_SET_PLAY_RESTART_MIX_TABLE: &str = "des_soccer_learning_set_play_restart_mix";
-pub const DES_SOCCER_LEARNING_SET_PLAY_RESTART_MIX_COLUMNS: &[&str] = &["run_id", "ordinal", "restart"];
+pub const DES_SOCCER_LEARNING_SET_PLAY_RESTART_MIX_TABLE: &str =
+    "des_soccer_learning_set_play_restart_mix";
+pub const DES_SOCCER_LEARNING_SET_PLAY_RESTART_MIX_COLUMNS: &[&str] =
+    &["run_id", "ordinal", "restart"];
 pub const DES_SOCCER_LEARNING_SET_PLAY_RESTART_MIX_SELECT_SQL: &str = r###"select
       run_id::text as run_id,
       ordinal,
@@ -7526,24 +11348,68 @@ pub struct DesSoccerLearningSetPlayRestartMixInsert {
     pub restart: Option<String>,
 }
 
-pub fn validate_des_soccer_learning_set_play_restart_mix_row(value: &DesSoccerLearningSetPlayRestartMixRow) -> Result<(), String> {
-    if *(&value.ordinal) < 0 { return Err("des_soccer_learning_set_play_restart_mix.ordinal is below the minimum".to_string()); }
-    if !["direct-free-kick", "indirect-free-kick"].contains(&(&value.restart).as_str()) { return Err(format!("unsupported des_soccer_learning_set_play_restart_mix.restart: {}", &value.restart)); }
+pub fn validate_des_soccer_learning_set_play_restart_mix_row(
+    value: &DesSoccerLearningSetPlayRestartMixRow,
+) -> Result<(), String> {
+    if *(&value.ordinal) < 0 {
+        return Err(
+            "des_soccer_learning_set_play_restart_mix.ordinal is below the minimum".to_string(),
+        );
+    }
+    if !["direct-free-kick", "indirect-free-kick"].contains(&(&value.restart).as_str()) {
+        return Err(format!(
+            "unsupported des_soccer_learning_set_play_restart_mix.restart: {}",
+            &value.restart
+        ));
+    }
     Ok(())
 }
 
-pub fn validate_des_soccer_learning_set_play_restart_mix_insert(value: &DesSoccerLearningSetPlayRestartMixInsert) -> Result<(), String> {
+pub fn validate_des_soccer_learning_set_play_restart_mix_insert(
+    value: &DesSoccerLearningSetPlayRestartMixInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.ordinal {
-        if *(value) < 0 { return Err("des_soccer_learning_set_play_restart_mix.ordinal is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_soccer_learning_set_play_restart_mix.ordinal is below the minimum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.restart {
-        if !["direct-free-kick", "indirect-free-kick"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_set_play_restart_mix.restart: {}", value)); }
+        if !["direct-free-kick", "indirect-free-kick"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported des_soccer_learning_set_play_restart_mix.restart: {}",
+                value
+            ));
+        }
     }
     Ok(())
 }
 
-pub const DES_SOCCER_LEARNING_SET_PLAY_EPISODE_METRICS_TABLE: &str = "des_soccer_learning_set_play_episode_metrics";
-pub const DES_SOCCER_LEARNING_SET_PLAY_EPISODE_METRICS_COLUMNS: &[&str] = &["run_id", "episode_index", "seed", "restart", "routine", "scored", "score_delta_for_team", "ticks", "simulated_seconds_micros", "policy_updates", "home_policy_entries", "home_policy_target_entries", "away_policy_entries", "away_policy_target_entries", "neural_training_steps", "neural_samples", "neural_replay_samples", "neural_last_loss_micros", "cumulative_goals", "goal_rate_so_far_micros"];
+pub const DES_SOCCER_LEARNING_SET_PLAY_EPISODE_METRICS_TABLE: &str =
+    "des_soccer_learning_set_play_episode_metrics";
+pub const DES_SOCCER_LEARNING_SET_PLAY_EPISODE_METRICS_COLUMNS: &[&str] = &[
+    "run_id",
+    "episode_index",
+    "seed",
+    "restart",
+    "routine",
+    "scored",
+    "score_delta_for_team",
+    "ticks",
+    "simulated_seconds_micros",
+    "policy_updates",
+    "home_policy_entries",
+    "home_policy_target_entries",
+    "away_policy_entries",
+    "away_policy_target_entries",
+    "neural_training_steps",
+    "neural_samples",
+    "neural_replay_samples",
+    "neural_last_loss_micros",
+    "cumulative_goals",
+    "goal_rate_so_far_micros",
+];
 pub const DES_SOCCER_LEARNING_SET_PLAY_EPISODE_METRICS_SELECT_SQL: &str = r###"select
       run_id::text as run_id,
       episode_index,
@@ -7648,84 +11514,222 @@ pub struct DesSoccerLearningSetPlayEpisodeMetricsInsert {
     pub goal_rate_so_far_micros: Option<i64>,
 }
 
-pub fn validate_des_soccer_learning_set_play_episode_metrics_row(value: &DesSoccerLearningSetPlayEpisodeMetricsRow) -> Result<(), String> {
-    if *(&value.episode_index) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.episode_index is below the minimum".to_string()); }
-    if *(&value.seed) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.seed is below the minimum".to_string()); }
-    if !["direct-free-kick", "indirect-free-kick"].contains(&(&value.restart).as_str()) { return Err(format!("unsupported des_soccer_learning_set_play_episode_metrics.restart: {}", &value.restart)); }
-    if let Some(value) = &value.routine {
-        validate_string_length("des_soccer_learning_set_play_episode_metrics.routine", value, None, Some(80))?;
+pub fn validate_des_soccer_learning_set_play_episode_metrics_row(
+    value: &DesSoccerLearningSetPlayEpisodeMetricsRow,
+) -> Result<(), String> {
+    if *(&value.episode_index) < 0 {
+        return Err(
+            "des_soccer_learning_set_play_episode_metrics.episode_index is below the minimum"
+                .to_string(),
+        );
     }
-    if *(&value.ticks) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.ticks is below the minimum".to_string()); }
-    if *(&value.simulated_seconds_micros) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.simulated_seconds_micros is below the minimum".to_string()); }
-    if *(&value.policy_updates) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.policy_updates is below the minimum".to_string()); }
-    if *(&value.home_policy_entries) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.home_policy_entries is below the minimum".to_string()); }
-    if *(&value.home_policy_target_entries) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.home_policy_target_entries is below the minimum".to_string()); }
-    if *(&value.away_policy_entries) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.away_policy_entries is below the minimum".to_string()); }
-    if *(&value.away_policy_target_entries) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.away_policy_target_entries is below the minimum".to_string()); }
-    if *(&value.neural_training_steps) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.neural_training_steps is below the minimum".to_string()); }
-    if *(&value.neural_samples) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.neural_samples is below the minimum".to_string()); }
-    if *(&value.neural_replay_samples) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.neural_replay_samples is below the minimum".to_string()); }
-    if *(&value.cumulative_goals) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.cumulative_goals is below the minimum".to_string()); }
-    if *(&value.goal_rate_so_far_micros) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.goal_rate_so_far_micros is below the minimum".to_string()); }
-    if *(&value.goal_rate_so_far_micros) > 1000000 { return Err("des_soccer_learning_set_play_episode_metrics.goal_rate_so_far_micros is above the maximum".to_string()); }
+    if *(&value.seed) < 0 {
+        return Err(
+            "des_soccer_learning_set_play_episode_metrics.seed is below the minimum".to_string(),
+        );
+    }
+    if !["direct-free-kick", "indirect-free-kick"].contains(&(&value.restart).as_str()) {
+        return Err(format!(
+            "unsupported des_soccer_learning_set_play_episode_metrics.restart: {}",
+            &value.restart
+        ));
+    }
+    if let Some(value) = &value.routine {
+        validate_string_length(
+            "des_soccer_learning_set_play_episode_metrics.routine",
+            value,
+            None,
+            Some(80),
+        )?;
+    }
+    if *(&value.ticks) < 0 {
+        return Err(
+            "des_soccer_learning_set_play_episode_metrics.ticks is below the minimum".to_string(),
+        );
+    }
+    if *(&value.simulated_seconds_micros) < 0 {
+        return Err("des_soccer_learning_set_play_episode_metrics.simulated_seconds_micros is below the minimum".to_string());
+    }
+    if *(&value.policy_updates) < 0 {
+        return Err(
+            "des_soccer_learning_set_play_episode_metrics.policy_updates is below the minimum"
+                .to_string(),
+        );
+    }
+    if *(&value.home_policy_entries) < 0 {
+        return Err(
+            "des_soccer_learning_set_play_episode_metrics.home_policy_entries is below the minimum"
+                .to_string(),
+        );
+    }
+    if *(&value.home_policy_target_entries) < 0 {
+        return Err("des_soccer_learning_set_play_episode_metrics.home_policy_target_entries is below the minimum".to_string());
+    }
+    if *(&value.away_policy_entries) < 0 {
+        return Err(
+            "des_soccer_learning_set_play_episode_metrics.away_policy_entries is below the minimum"
+                .to_string(),
+        );
+    }
+    if *(&value.away_policy_target_entries) < 0 {
+        return Err("des_soccer_learning_set_play_episode_metrics.away_policy_target_entries is below the minimum".to_string());
+    }
+    if *(&value.neural_training_steps) < 0 {
+        return Err("des_soccer_learning_set_play_episode_metrics.neural_training_steps is below the minimum".to_string());
+    }
+    if *(&value.neural_samples) < 0 {
+        return Err(
+            "des_soccer_learning_set_play_episode_metrics.neural_samples is below the minimum"
+                .to_string(),
+        );
+    }
+    if *(&value.neural_replay_samples) < 0 {
+        return Err("des_soccer_learning_set_play_episode_metrics.neural_replay_samples is below the minimum".to_string());
+    }
+    if *(&value.cumulative_goals) < 0 {
+        return Err(
+            "des_soccer_learning_set_play_episode_metrics.cumulative_goals is below the minimum"
+                .to_string(),
+        );
+    }
+    if *(&value.goal_rate_so_far_micros) < 0 {
+        return Err("des_soccer_learning_set_play_episode_metrics.goal_rate_so_far_micros is below the minimum".to_string());
+    }
+    if *(&value.goal_rate_so_far_micros) > 1000000 {
+        return Err("des_soccer_learning_set_play_episode_metrics.goal_rate_so_far_micros is above the maximum".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_des_soccer_learning_set_play_episode_metrics_insert(value: &DesSoccerLearningSetPlayEpisodeMetricsInsert) -> Result<(), String> {
+pub fn validate_des_soccer_learning_set_play_episode_metrics_insert(
+    value: &DesSoccerLearningSetPlayEpisodeMetricsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.episode_index {
-        if *(value) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.episode_index is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_soccer_learning_set_play_episode_metrics.episode_index is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.seed {
-        if *(value) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.seed is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_soccer_learning_set_play_episode_metrics.seed is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.restart {
-        if !["direct-free-kick", "indirect-free-kick"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_set_play_episode_metrics.restart: {}", value)); }
+        if !["direct-free-kick", "indirect-free-kick"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported des_soccer_learning_set_play_episode_metrics.restart: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.routine {
-        validate_string_length("des_soccer_learning_set_play_episode_metrics.routine", value, None, Some(80))?;
+        validate_string_length(
+            "des_soccer_learning_set_play_episode_metrics.routine",
+            value,
+            None,
+            Some(80),
+        )?;
     }
     if let Some(value) = &value.ticks {
-        if *(value) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.ticks is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_soccer_learning_set_play_episode_metrics.ticks is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.simulated_seconds_micros {
-        if *(value) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.simulated_seconds_micros is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("des_soccer_learning_set_play_episode_metrics.simulated_seconds_micros is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.policy_updates {
-        if *(value) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.policy_updates is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_soccer_learning_set_play_episode_metrics.policy_updates is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.home_policy_entries {
-        if *(value) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.home_policy_entries is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("des_soccer_learning_set_play_episode_metrics.home_policy_entries is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.home_policy_target_entries {
-        if *(value) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.home_policy_target_entries is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("des_soccer_learning_set_play_episode_metrics.home_policy_target_entries is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.away_policy_entries {
-        if *(value) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.away_policy_entries is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("des_soccer_learning_set_play_episode_metrics.away_policy_entries is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.away_policy_target_entries {
-        if *(value) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.away_policy_target_entries is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("des_soccer_learning_set_play_episode_metrics.away_policy_target_entries is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.neural_training_steps {
-        if *(value) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.neural_training_steps is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("des_soccer_learning_set_play_episode_metrics.neural_training_steps is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.neural_samples {
-        if *(value) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.neural_samples is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_soccer_learning_set_play_episode_metrics.neural_samples is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.neural_replay_samples {
-        if *(value) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.neural_replay_samples is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("des_soccer_learning_set_play_episode_metrics.neural_replay_samples is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.cumulative_goals {
-        if *(value) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.cumulative_goals is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("des_soccer_learning_set_play_episode_metrics.cumulative_goals is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.goal_rate_so_far_micros {
-        if *(value) < 0 { return Err("des_soccer_learning_set_play_episode_metrics.goal_rate_so_far_micros is below the minimum".to_string()); }
-        if *(value) > 1000000 { return Err("des_soccer_learning_set_play_episode_metrics.goal_rate_so_far_micros is above the maximum".to_string()); }
+        if *(value) < 0 {
+            return Err("des_soccer_learning_set_play_episode_metrics.goal_rate_so_far_micros is below the minimum".to_string());
+        }
+        if *(value) > 1000000 {
+            return Err("des_soccer_learning_set_play_episode_metrics.goal_rate_so_far_micros is above the maximum".to_string());
+        }
     }
     Ok(())
 }
 
-pub const DES_SOCCER_LEARNING_NEURAL_RUN_METRICS_TABLE: &str = "des_soccer_learning_neural_run_metrics";
-pub const DES_SOCCER_LEARNING_NEURAL_RUN_METRICS_COLUMNS: &[&str] = &["run_id", "policy_version_id", "enabled", "backend", "training_steps", "samples", "pending_batches", "dropped_batches", "replay_samples", "replay_capacity", "parameter_count", "target_clip_micros", "last_loss_micros", "average_loss_micros", "created_at"];
+pub const DES_SOCCER_LEARNING_NEURAL_RUN_METRICS_TABLE: &str =
+    "des_soccer_learning_neural_run_metrics";
+pub const DES_SOCCER_LEARNING_NEURAL_RUN_METRICS_COLUMNS: &[&str] = &[
+    "run_id",
+    "policy_version_id",
+    "enabled",
+    "backend",
+    "training_steps",
+    "samples",
+    "pending_batches",
+    "dropped_batches",
+    "replay_samples",
+    "replay_capacity",
+    "parameter_count",
+    "target_clip_micros",
+    "last_loss_micros",
+    "average_loss_micros",
+    "created_at",
+];
 pub const DES_SOCCER_LEARNING_NEURAL_RUN_METRICS_SELECT_SQL: &str = r###"select
       run_id::text as run_id,
       policy_version_id::text as policy_version_id,
@@ -7815,48 +11819,143 @@ pub struct DesSoccerLearningNeuralRunMetricsInsert {
     pub created_at: Option<String>,
 }
 
-pub fn validate_des_soccer_learning_neural_run_metrics_row(value: &DesSoccerLearningNeuralRunMetricsRow) -> Result<(), String> {
-    if !["inline", "threaded"].contains(&(&value.backend).as_str()) { return Err(format!("unsupported des_soccer_learning_neural_run_metrics.backend: {}", &value.backend)); }
-    if *(&value.training_steps) < 0 { return Err("des_soccer_learning_neural_run_metrics.training_steps is below the minimum".to_string()); }
-    if *(&value.samples) < 0 { return Err("des_soccer_learning_neural_run_metrics.samples is below the minimum".to_string()); }
-    if *(&value.pending_batches) < 0 { return Err("des_soccer_learning_neural_run_metrics.pending_batches is below the minimum".to_string()); }
-    if *(&value.dropped_batches) < 0 { return Err("des_soccer_learning_neural_run_metrics.dropped_batches is below the minimum".to_string()); }
-    if *(&value.replay_samples) < 0 { return Err("des_soccer_learning_neural_run_metrics.replay_samples is below the minimum".to_string()); }
-    if *(&value.replay_capacity) < 0 { return Err("des_soccer_learning_neural_run_metrics.replay_capacity is below the minimum".to_string()); }
-    if *(&value.parameter_count) < 0 { return Err("des_soccer_learning_neural_run_metrics.parameter_count is below the minimum".to_string()); }
+pub fn validate_des_soccer_learning_neural_run_metrics_row(
+    value: &DesSoccerLearningNeuralRunMetricsRow,
+) -> Result<(), String> {
+    if !["inline", "threaded"].contains(&(&value.backend).as_str()) {
+        return Err(format!(
+            "unsupported des_soccer_learning_neural_run_metrics.backend: {}",
+            &value.backend
+        ));
+    }
+    if *(&value.training_steps) < 0 {
+        return Err(
+            "des_soccer_learning_neural_run_metrics.training_steps is below the minimum"
+                .to_string(),
+        );
+    }
+    if *(&value.samples) < 0 {
+        return Err(
+            "des_soccer_learning_neural_run_metrics.samples is below the minimum".to_string(),
+        );
+    }
+    if *(&value.pending_batches) < 0 {
+        return Err(
+            "des_soccer_learning_neural_run_metrics.pending_batches is below the minimum"
+                .to_string(),
+        );
+    }
+    if *(&value.dropped_batches) < 0 {
+        return Err(
+            "des_soccer_learning_neural_run_metrics.dropped_batches is below the minimum"
+                .to_string(),
+        );
+    }
+    if *(&value.replay_samples) < 0 {
+        return Err(
+            "des_soccer_learning_neural_run_metrics.replay_samples is below the minimum"
+                .to_string(),
+        );
+    }
+    if *(&value.replay_capacity) < 0 {
+        return Err(
+            "des_soccer_learning_neural_run_metrics.replay_capacity is below the minimum"
+                .to_string(),
+        );
+    }
+    if *(&value.parameter_count) < 0 {
+        return Err(
+            "des_soccer_learning_neural_run_metrics.parameter_count is below the minimum"
+                .to_string(),
+        );
+    }
     Ok(())
 }
 
-pub fn validate_des_soccer_learning_neural_run_metrics_insert(value: &DesSoccerLearningNeuralRunMetricsInsert) -> Result<(), String> {
+pub fn validate_des_soccer_learning_neural_run_metrics_insert(
+    value: &DesSoccerLearningNeuralRunMetricsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.backend {
-        if !["inline", "threaded"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_neural_run_metrics.backend: {}", value)); }
+        if !["inline", "threaded"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported des_soccer_learning_neural_run_metrics.backend: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.training_steps {
-        if *(value) < 0 { return Err("des_soccer_learning_neural_run_metrics.training_steps is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_soccer_learning_neural_run_metrics.training_steps is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.samples {
-        if *(value) < 0 { return Err("des_soccer_learning_neural_run_metrics.samples is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_soccer_learning_neural_run_metrics.samples is below the minimum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.pending_batches {
-        if *(value) < 0 { return Err("des_soccer_learning_neural_run_metrics.pending_batches is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_soccer_learning_neural_run_metrics.pending_batches is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.dropped_batches {
-        if *(value) < 0 { return Err("des_soccer_learning_neural_run_metrics.dropped_batches is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_soccer_learning_neural_run_metrics.dropped_batches is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.replay_samples {
-        if *(value) < 0 { return Err("des_soccer_learning_neural_run_metrics.replay_samples is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_soccer_learning_neural_run_metrics.replay_samples is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.replay_capacity {
-        if *(value) < 0 { return Err("des_soccer_learning_neural_run_metrics.replay_capacity is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_soccer_learning_neural_run_metrics.replay_capacity is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.parameter_count {
-        if *(value) < 0 { return Err("des_soccer_learning_neural_run_metrics.parameter_count is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_soccer_learning_neural_run_metrics.parameter_count is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     Ok(())
 }
 
 pub const DES_SOCCER_LEARNING_PASS_METRICS_TABLE: &str = "des_soccer_learning_pass_metrics";
-pub const DES_SOCCER_LEARNING_PASS_METRICS_COLUMNS: &[&str] = &["git_commit", "runs", "passes_attempted", "passes_completed", "completed_pass_gain_yards_micros", "pass_chains", "pass_chain_gain_yards_micros", "pass_chains_net_loss", "shots_on_target", "shots_after_pass", "first_seen_at", "updated_at"];
+pub const DES_SOCCER_LEARNING_PASS_METRICS_COLUMNS: &[&str] = &[
+    "git_commit",
+    "runs",
+    "passes_attempted",
+    "passes_completed",
+    "completed_pass_gain_yards_micros",
+    "pass_chains",
+    "pass_chain_gain_yards_micros",
+    "pass_chains_net_loss",
+    "shots_on_target",
+    "shots_after_pass",
+    "first_seen_at",
+    "updated_at",
+];
 pub const DES_SOCCER_LEARNING_PASS_METRICS_SELECT_SQL: &str = r###"select
       git_commit,
       runs,
@@ -7907,48 +12006,147 @@ pub struct DesSoccerLearningPassMetricsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_des_soccer_learning_pass_metrics_row(value: &DesSoccerLearningPassMetricsRow) -> Result<(), String> {
-    validate_string_length("des_soccer_learning_pass_metrics.git_commit", &value.git_commit, None, Some(64))?;
-    if *(&value.runs) < 0 { return Err("des_soccer_learning_pass_metrics.runs is below the minimum".to_string()); }
-    if *(&value.passes_attempted) < 0 { return Err("des_soccer_learning_pass_metrics.passes_attempted is below the minimum".to_string()); }
-    if *(&value.passes_completed) < 0 { return Err("des_soccer_learning_pass_metrics.passes_completed is below the minimum".to_string()); }
-    if *(&value.pass_chains) < 0 { return Err("des_soccer_learning_pass_metrics.pass_chains is below the minimum".to_string()); }
-    if *(&value.pass_chains_net_loss) < 0 { return Err("des_soccer_learning_pass_metrics.pass_chains_net_loss is below the minimum".to_string()); }
-    if *(&value.shots_on_target) < 0 { return Err("des_soccer_learning_pass_metrics.shots_on_target is below the minimum".to_string()); }
-    if *(&value.shots_after_pass) < 0 { return Err("des_soccer_learning_pass_metrics.shots_after_pass is below the minimum".to_string()); }
+pub fn validate_des_soccer_learning_pass_metrics_row(
+    value: &DesSoccerLearningPassMetricsRow,
+) -> Result<(), String> {
+    validate_string_length(
+        "des_soccer_learning_pass_metrics.git_commit",
+        &value.git_commit,
+        None,
+        Some(64),
+    )?;
+    if *(&value.runs) < 0 {
+        return Err("des_soccer_learning_pass_metrics.runs is below the minimum".to_string());
+    }
+    if *(&value.passes_attempted) < 0 {
+        return Err(
+            "des_soccer_learning_pass_metrics.passes_attempted is below the minimum".to_string(),
+        );
+    }
+    if *(&value.passes_completed) < 0 {
+        return Err(
+            "des_soccer_learning_pass_metrics.passes_completed is below the minimum".to_string(),
+        );
+    }
+    if *(&value.pass_chains) < 0 {
+        return Err(
+            "des_soccer_learning_pass_metrics.pass_chains is below the minimum".to_string(),
+        );
+    }
+    if *(&value.pass_chains_net_loss) < 0 {
+        return Err(
+            "des_soccer_learning_pass_metrics.pass_chains_net_loss is below the minimum"
+                .to_string(),
+        );
+    }
+    if *(&value.shots_on_target) < 0 {
+        return Err(
+            "des_soccer_learning_pass_metrics.shots_on_target is below the minimum".to_string(),
+        );
+    }
+    if *(&value.shots_after_pass) < 0 {
+        return Err(
+            "des_soccer_learning_pass_metrics.shots_after_pass is below the minimum".to_string(),
+        );
+    }
     Ok(())
 }
 
-pub fn validate_des_soccer_learning_pass_metrics_insert(value: &DesSoccerLearningPassMetricsInsert) -> Result<(), String> {
+pub fn validate_des_soccer_learning_pass_metrics_insert(
+    value: &DesSoccerLearningPassMetricsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.git_commit {
-        validate_string_length("des_soccer_learning_pass_metrics.git_commit", value, None, Some(64))?;
+        validate_string_length(
+            "des_soccer_learning_pass_metrics.git_commit",
+            value,
+            None,
+            Some(64),
+        )?;
     }
     if let Some(value) = &value.runs {
-        if *(value) < 0 { return Err("des_soccer_learning_pass_metrics.runs is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("des_soccer_learning_pass_metrics.runs is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.passes_attempted {
-        if *(value) < 0 { return Err("des_soccer_learning_pass_metrics.passes_attempted is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_soccer_learning_pass_metrics.passes_attempted is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.passes_completed {
-        if *(value) < 0 { return Err("des_soccer_learning_pass_metrics.passes_completed is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_soccer_learning_pass_metrics.passes_completed is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.pass_chains {
-        if *(value) < 0 { return Err("des_soccer_learning_pass_metrics.pass_chains is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_soccer_learning_pass_metrics.pass_chains is below the minimum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.pass_chains_net_loss {
-        if *(value) < 0 { return Err("des_soccer_learning_pass_metrics.pass_chains_net_loss is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_soccer_learning_pass_metrics.pass_chains_net_loss is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.shots_on_target {
-        if *(value) < 0 { return Err("des_soccer_learning_pass_metrics.shots_on_target is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_soccer_learning_pass_metrics.shots_on_target is below the minimum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.shots_after_pass {
-        if *(value) < 0 { return Err("des_soccer_learning_pass_metrics.shots_after_pass is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_soccer_learning_pass_metrics.shots_after_pass is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     Ok(())
 }
 
 pub const DES_FEL_ELEVATOR_LEARNING_RUNS_TABLE: &str = "des_fel_elevator_learning_runs";
-pub const DES_FEL_ELEVATOR_LEARNING_RUNS_COLUMNS: &[&str] = &["id", "run_label", "scenario_slug", "status", "dispatch_policy", "seed", "floors", "shafts", "capacity", "travel_seconds_micros", "dwell_seconds_micros", "arrival_rate_micros", "horizon_seconds_micros", "events", "arrivals", "boarded", "served", "mean_wait_micros", "dispatch_decisions", "pomdp_belief_updates", "online_learning_updates", "online_learning_loss_last_micros", "config", "metrics", "artifact", "created_at", "updated_at"];
+pub const DES_FEL_ELEVATOR_LEARNING_RUNS_COLUMNS: &[&str] = &[
+    "id",
+    "run_label",
+    "scenario_slug",
+    "status",
+    "dispatch_policy",
+    "seed",
+    "floors",
+    "shafts",
+    "capacity",
+    "travel_seconds_micros",
+    "dwell_seconds_micros",
+    "arrival_rate_micros",
+    "horizon_seconds_micros",
+    "events",
+    "arrivals",
+    "boarded",
+    "served",
+    "mean_wait_micros",
+    "dispatch_decisions",
+    "pomdp_belief_updates",
+    "online_learning_updates",
+    "online_learning_loss_last_micros",
+    "config",
+    "metrics",
+    "artifact",
+    "created_at",
+    "updated_at",
+];
 pub const DES_FEL_ELEVATOR_LEARNING_RUNS_SELECT_SQL: &str = r###"select
       id::text as id,
       run_label,
@@ -8023,7 +12221,13 @@ pub enum DesFelElevatorLearningRunsDispatchPolicy {
 }
 
 impl DesFelElevatorLearningRunsDispatchPolicy {
-    pub const VALUES: &'static [&'static str] = &["look", "mdp-table", "neural-scorer", "pomdp-belief", "neural-td"];
+    pub const VALUES: &'static [&'static str] = &[
+        "look",
+        "mdp-table",
+        "neural-scorer",
+        "pomdp-belief",
+        "neural-td",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -8116,122 +12320,326 @@ pub struct DesFelElevatorLearningRunsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_des_fel_elevator_learning_runs_row(value: &DesFelElevatorLearningRunsRow) -> Result<(), String> {
-    validate_string_length("des_fel_elevator_learning_runs.run_label", &value.run_label, None, Some(200))?;
-    if (&value.run_label).as_bytes().len() > 200 { return Err("des_fel_elevator_learning_runs.run_label exceeds 200 bytes".to_string()); }
-    validate_slug("des_fel_elevator_learning_runs.scenario_slug", &value.scenario_slug)?;
-    if !["completed", "failed", "imported"].contains(&(&value.status).as_str()) { return Err(format!("unsupported des_fel_elevator_learning_runs.status: {}", &value.status)); }
-    if !["look", "mdp-table", "neural-scorer", "pomdp-belief", "neural-td"].contains(&(&value.dispatch_policy).as_str()) { return Err(format!("unsupported des_fel_elevator_learning_runs.dispatch_policy: {}", &value.dispatch_policy)); }
-    if *(&value.seed) < 0 { return Err("des_fel_elevator_learning_runs.seed is below the minimum".to_string()); }
-    if *(&value.floors) < 2 { return Err("des_fel_elevator_learning_runs.floors is below the minimum".to_string()); }
-    if *(&value.floors) > 256 { return Err("des_fel_elevator_learning_runs.floors is above the maximum".to_string()); }
-    if *(&value.shafts) < 1 { return Err("des_fel_elevator_learning_runs.shafts is below the minimum".to_string()); }
-    if *(&value.shafts) > 128 { return Err("des_fel_elevator_learning_runs.shafts is above the maximum".to_string()); }
-    if *(&value.capacity) < 1 { return Err("des_fel_elevator_learning_runs.capacity is below the minimum".to_string()); }
-    if *(&value.capacity) > 10000 { return Err("des_fel_elevator_learning_runs.capacity is above the maximum".to_string()); }
-    if *(&value.travel_seconds_micros) < 0 { return Err("des_fel_elevator_learning_runs.travel_seconds_micros is below the minimum".to_string()); }
-    if *(&value.dwell_seconds_micros) < 0 { return Err("des_fel_elevator_learning_runs.dwell_seconds_micros is below the minimum".to_string()); }
-    if *(&value.arrival_rate_micros) < 0 { return Err("des_fel_elevator_learning_runs.arrival_rate_micros is below the minimum".to_string()); }
-    if *(&value.horizon_seconds_micros) < 0 { return Err("des_fel_elevator_learning_runs.horizon_seconds_micros is below the minimum".to_string()); }
-    if *(&value.events) < 0 { return Err("des_fel_elevator_learning_runs.events is below the minimum".to_string()); }
-    if *(&value.arrivals) < 0 { return Err("des_fel_elevator_learning_runs.arrivals is below the minimum".to_string()); }
-    if *(&value.boarded) < 0 { return Err("des_fel_elevator_learning_runs.boarded is below the minimum".to_string()); }
-    if *(&value.served) < 0 { return Err("des_fel_elevator_learning_runs.served is below the minimum".to_string()); }
-    if *(&value.mean_wait_micros) < 0 { return Err("des_fel_elevator_learning_runs.mean_wait_micros is below the minimum".to_string()); }
-    if *(&value.dispatch_decisions) < 0 { return Err("des_fel_elevator_learning_runs.dispatch_decisions is below the minimum".to_string()); }
-    if *(&value.pomdp_belief_updates) < 0 { return Err("des_fel_elevator_learning_runs.pomdp_belief_updates is below the minimum".to_string()); }
-    if *(&value.online_learning_updates) < 0 { return Err("des_fel_elevator_learning_runs.online_learning_updates is below the minimum".to_string()); }
-    if let Some(value) = &value.online_learning_loss_last_micros {
-        if *(value) < 0 { return Err("des_fel_elevator_learning_runs.online_learning_loss_last_micros is below the minimum".to_string()); }
+pub fn validate_des_fel_elevator_learning_runs_row(
+    value: &DesFelElevatorLearningRunsRow,
+) -> Result<(), String> {
+    validate_string_length(
+        "des_fel_elevator_learning_runs.run_label",
+        &value.run_label,
+        None,
+        Some(200),
+    )?;
+    if (&value.run_label).as_bytes().len() > 200 {
+        return Err("des_fel_elevator_learning_runs.run_label exceeds 200 bytes".to_string());
     }
-    if !(&value.config).is_object() { return Err("des_fel_elevator_learning_runs.config must be a JSON object".to_string()); }
-    if !(&value.metrics).is_object() { return Err("des_fel_elevator_learning_runs.metrics must be a JSON object".to_string()); }
-    if !(&value.artifact).is_object() { return Err("des_fel_elevator_learning_runs.artifact must be a JSON object".to_string()); }
+    validate_slug(
+        "des_fel_elevator_learning_runs.scenario_slug",
+        &value.scenario_slug,
+    )?;
+    if !["completed", "failed", "imported"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported des_fel_elevator_learning_runs.status: {}",
+            &value.status
+        ));
+    }
+    if ![
+        "look",
+        "mdp-table",
+        "neural-scorer",
+        "pomdp-belief",
+        "neural-td",
+    ]
+    .contains(&(&value.dispatch_policy).as_str())
+    {
+        return Err(format!(
+            "unsupported des_fel_elevator_learning_runs.dispatch_policy: {}",
+            &value.dispatch_policy
+        ));
+    }
+    if *(&value.seed) < 0 {
+        return Err("des_fel_elevator_learning_runs.seed is below the minimum".to_string());
+    }
+    if *(&value.floors) < 2 {
+        return Err("des_fel_elevator_learning_runs.floors is below the minimum".to_string());
+    }
+    if *(&value.floors) > 256 {
+        return Err("des_fel_elevator_learning_runs.floors is above the maximum".to_string());
+    }
+    if *(&value.shafts) < 1 {
+        return Err("des_fel_elevator_learning_runs.shafts is below the minimum".to_string());
+    }
+    if *(&value.shafts) > 128 {
+        return Err("des_fel_elevator_learning_runs.shafts is above the maximum".to_string());
+    }
+    if *(&value.capacity) < 1 {
+        return Err("des_fel_elevator_learning_runs.capacity is below the minimum".to_string());
+    }
+    if *(&value.capacity) > 10000 {
+        return Err("des_fel_elevator_learning_runs.capacity is above the maximum".to_string());
+    }
+    if *(&value.travel_seconds_micros) < 0 {
+        return Err(
+            "des_fel_elevator_learning_runs.travel_seconds_micros is below the minimum".to_string(),
+        );
+    }
+    if *(&value.dwell_seconds_micros) < 0 {
+        return Err(
+            "des_fel_elevator_learning_runs.dwell_seconds_micros is below the minimum".to_string(),
+        );
+    }
+    if *(&value.arrival_rate_micros) < 0 {
+        return Err(
+            "des_fel_elevator_learning_runs.arrival_rate_micros is below the minimum".to_string(),
+        );
+    }
+    if *(&value.horizon_seconds_micros) < 0 {
+        return Err(
+            "des_fel_elevator_learning_runs.horizon_seconds_micros is below the minimum"
+                .to_string(),
+        );
+    }
+    if *(&value.events) < 0 {
+        return Err("des_fel_elevator_learning_runs.events is below the minimum".to_string());
+    }
+    if *(&value.arrivals) < 0 {
+        return Err("des_fel_elevator_learning_runs.arrivals is below the minimum".to_string());
+    }
+    if *(&value.boarded) < 0 {
+        return Err("des_fel_elevator_learning_runs.boarded is below the minimum".to_string());
+    }
+    if *(&value.served) < 0 {
+        return Err("des_fel_elevator_learning_runs.served is below the minimum".to_string());
+    }
+    if *(&value.mean_wait_micros) < 0 {
+        return Err(
+            "des_fel_elevator_learning_runs.mean_wait_micros is below the minimum".to_string(),
+        );
+    }
+    if *(&value.dispatch_decisions) < 0 {
+        return Err(
+            "des_fel_elevator_learning_runs.dispatch_decisions is below the minimum".to_string(),
+        );
+    }
+    if *(&value.pomdp_belief_updates) < 0 {
+        return Err(
+            "des_fel_elevator_learning_runs.pomdp_belief_updates is below the minimum".to_string(),
+        );
+    }
+    if *(&value.online_learning_updates) < 0 {
+        return Err(
+            "des_fel_elevator_learning_runs.online_learning_updates is below the minimum"
+                .to_string(),
+        );
+    }
+    if let Some(value) = &value.online_learning_loss_last_micros {
+        if *(value) < 0 {
+            return Err("des_fel_elevator_learning_runs.online_learning_loss_last_micros is below the minimum".to_string());
+        }
+    }
+    if !(&value.config).is_object() {
+        return Err("des_fel_elevator_learning_runs.config must be a JSON object".to_string());
+    }
+    if !(&value.metrics).is_object() {
+        return Err("des_fel_elevator_learning_runs.metrics must be a JSON object".to_string());
+    }
+    if !(&value.artifact).is_object() {
+        return Err("des_fel_elevator_learning_runs.artifact must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_des_fel_elevator_learning_runs_insert(value: &DesFelElevatorLearningRunsInsert) -> Result<(), String> {
+pub fn validate_des_fel_elevator_learning_runs_insert(
+    value: &DesFelElevatorLearningRunsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.run_label {
-        validate_string_length("des_fel_elevator_learning_runs.run_label", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("des_fel_elevator_learning_runs.run_label exceeds 200 bytes".to_string()); }
+        validate_string_length(
+            "des_fel_elevator_learning_runs.run_label",
+            value,
+            None,
+            Some(200),
+        )?;
+        if (value).as_bytes().len() > 200 {
+            return Err("des_fel_elevator_learning_runs.run_label exceeds 200 bytes".to_string());
+        }
     }
     if let Some(value) = &value.scenario_slug {
         validate_slug("des_fel_elevator_learning_runs.scenario_slug", value)?;
     }
     if let Some(value) = &value.status {
-        if !["completed", "failed", "imported"].contains(&(value).as_str()) { return Err(format!("unsupported des_fel_elevator_learning_runs.status: {}", value)); }
+        if !["completed", "failed", "imported"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported des_fel_elevator_learning_runs.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.dispatch_policy {
-        if !["look", "mdp-table", "neural-scorer", "pomdp-belief", "neural-td"].contains(&(value).as_str()) { return Err(format!("unsupported des_fel_elevator_learning_runs.dispatch_policy: {}", value)); }
+        if ![
+            "look",
+            "mdp-table",
+            "neural-scorer",
+            "pomdp-belief",
+            "neural-td",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported des_fel_elevator_learning_runs.dispatch_policy: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.seed {
-        if *(value) < 0 { return Err("des_fel_elevator_learning_runs.seed is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("des_fel_elevator_learning_runs.seed is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.floors {
-        if *(value) < 2 { return Err("des_fel_elevator_learning_runs.floors is below the minimum".to_string()); }
-        if *(value) > 256 { return Err("des_fel_elevator_learning_runs.floors is above the maximum".to_string()); }
+        if *(value) < 2 {
+            return Err("des_fel_elevator_learning_runs.floors is below the minimum".to_string());
+        }
+        if *(value) > 256 {
+            return Err("des_fel_elevator_learning_runs.floors is above the maximum".to_string());
+        }
     }
     if let Some(value) = &value.shafts {
-        if *(value) < 1 { return Err("des_fel_elevator_learning_runs.shafts is below the minimum".to_string()); }
-        if *(value) > 128 { return Err("des_fel_elevator_learning_runs.shafts is above the maximum".to_string()); }
+        if *(value) < 1 {
+            return Err("des_fel_elevator_learning_runs.shafts is below the minimum".to_string());
+        }
+        if *(value) > 128 {
+            return Err("des_fel_elevator_learning_runs.shafts is above the maximum".to_string());
+        }
     }
     if let Some(value) = &value.capacity {
-        if *(value) < 1 { return Err("des_fel_elevator_learning_runs.capacity is below the minimum".to_string()); }
-        if *(value) > 10000 { return Err("des_fel_elevator_learning_runs.capacity is above the maximum".to_string()); }
+        if *(value) < 1 {
+            return Err("des_fel_elevator_learning_runs.capacity is below the minimum".to_string());
+        }
+        if *(value) > 10000 {
+            return Err("des_fel_elevator_learning_runs.capacity is above the maximum".to_string());
+        }
     }
     if let Some(value) = &value.travel_seconds_micros {
-        if *(value) < 0 { return Err("des_fel_elevator_learning_runs.travel_seconds_micros is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_fel_elevator_learning_runs.travel_seconds_micros is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.dwell_seconds_micros {
-        if *(value) < 0 { return Err("des_fel_elevator_learning_runs.dwell_seconds_micros is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_fel_elevator_learning_runs.dwell_seconds_micros is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.arrival_rate_micros {
-        if *(value) < 0 { return Err("des_fel_elevator_learning_runs.arrival_rate_micros is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_fel_elevator_learning_runs.arrival_rate_micros is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.horizon_seconds_micros {
-        if *(value) < 0 { return Err("des_fel_elevator_learning_runs.horizon_seconds_micros is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_fel_elevator_learning_runs.horizon_seconds_micros is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.events {
-        if *(value) < 0 { return Err("des_fel_elevator_learning_runs.events is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("des_fel_elevator_learning_runs.events is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.arrivals {
-        if *(value) < 0 { return Err("des_fel_elevator_learning_runs.arrivals is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("des_fel_elevator_learning_runs.arrivals is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.boarded {
-        if *(value) < 0 { return Err("des_fel_elevator_learning_runs.boarded is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("des_fel_elevator_learning_runs.boarded is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.served {
-        if *(value) < 0 { return Err("des_fel_elevator_learning_runs.served is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("des_fel_elevator_learning_runs.served is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.mean_wait_micros {
-        if *(value) < 0 { return Err("des_fel_elevator_learning_runs.mean_wait_micros is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_fel_elevator_learning_runs.mean_wait_micros is below the minimum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.dispatch_decisions {
-        if *(value) < 0 { return Err("des_fel_elevator_learning_runs.dispatch_decisions is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_fel_elevator_learning_runs.dispatch_decisions is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.pomdp_belief_updates {
-        if *(value) < 0 { return Err("des_fel_elevator_learning_runs.pomdp_belief_updates is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_fel_elevator_learning_runs.pomdp_belief_updates is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.online_learning_updates {
-        if *(value) < 0 { return Err("des_fel_elevator_learning_runs.online_learning_updates is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_fel_elevator_learning_runs.online_learning_updates is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.online_learning_loss_last_micros {
-        if *(value) < 0 { return Err("des_fel_elevator_learning_runs.online_learning_loss_last_micros is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("des_fel_elevator_learning_runs.online_learning_loss_last_micros is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.config {
-        if !(value).is_object() { return Err("des_fel_elevator_learning_runs.config must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("des_fel_elevator_learning_runs.config must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.metrics {
-        if !(value).is_object() { return Err("des_fel_elevator_learning_runs.metrics must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("des_fel_elevator_learning_runs.metrics must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.artifact {
-        if !(value).is_object() { return Err("des_fel_elevator_learning_runs.artifact must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "des_fel_elevator_learning_runs.artifact must be a JSON object".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
 pub const DES_FEL_ELEVATOR_POLICY_STATES_TABLE: &str = "des_fel_elevator_policy_states";
-pub const DES_FEL_ELEVATOR_POLICY_STATES_COLUMNS: &[&str] = &["id", "run_id", "policy_kind", "source_kind", "feature_dim", "output_dim", "parameter_count", "online_learning_updates", "loss_history", "state", "created_at"];
+pub const DES_FEL_ELEVATOR_POLICY_STATES_COLUMNS: &[&str] = &[
+    "id",
+    "run_id",
+    "policy_kind",
+    "source_kind",
+    "feature_dim",
+    "output_dim",
+    "parameter_count",
+    "online_learning_updates",
+    "loss_history",
+    "state",
+    "created_at",
+];
 pub const DES_FEL_ELEVATOR_POLICY_STATES_SELECT_SQL: &str = r###"select
       id::text as id,
       run_id::text as run_id,
@@ -8257,7 +12665,13 @@ pub enum DesFelElevatorPolicyStatesPolicyKind {
 }
 
 impl DesFelElevatorPolicyStatesPolicyKind {
-    pub const VALUES: &'static [&'static str] = &["look", "mdp-table", "neural-scorer", "pomdp-belief", "neural-td"];
+    pub const VALUES: &'static [&'static str] = &[
+        "look",
+        "mdp-table",
+        "neural-scorer",
+        "pomdp-belief",
+        "neural-td",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -8295,7 +12709,8 @@ pub enum DesFelElevatorPolicyStatesSourceKind {
 }
 
 impl DesFelElevatorPolicyStatesSourceKind {
-    pub const VALUES: &'static [&'static str] = &["run-final", "offline-training", "import", "checkpoint"];
+    pub const VALUES: &'static [&'static str] =
+        &["run-final", "offline-training", "import", "checkpoint"];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -8354,48 +12769,140 @@ pub struct DesFelElevatorPolicyStatesInsert {
     pub created_at: Option<String>,
 }
 
-pub fn validate_des_fel_elevator_policy_states_row(value: &DesFelElevatorPolicyStatesRow) -> Result<(), String> {
-    if !["look", "mdp-table", "neural-scorer", "pomdp-belief", "neural-td"].contains(&(&value.policy_kind).as_str()) { return Err(format!("unsupported des_fel_elevator_policy_states.policy_kind: {}", &value.policy_kind)); }
-    if !["run-final", "offline-training", "import", "checkpoint"].contains(&(&value.source_kind).as_str()) { return Err(format!("unsupported des_fel_elevator_policy_states.source_kind: {}", &value.source_kind)); }
-    if *(&value.feature_dim) < 0 { return Err("des_fel_elevator_policy_states.feature_dim is below the minimum".to_string()); }
-    if *(&value.output_dim) < 0 { return Err("des_fel_elevator_policy_states.output_dim is below the minimum".to_string()); }
-    if *(&value.parameter_count) < 0 { return Err("des_fel_elevator_policy_states.parameter_count is below the minimum".to_string()); }
-    if *(&value.online_learning_updates) < 0 { return Err("des_fel_elevator_policy_states.online_learning_updates is below the minimum".to_string()); }
-    if !(&value.loss_history).is_array() { return Err("des_fel_elevator_policy_states.loss_history must be a JSON array".to_string()); }
-    if !(&value.state).is_object() { return Err("des_fel_elevator_policy_states.state must be a JSON object".to_string()); }
+pub fn validate_des_fel_elevator_policy_states_row(
+    value: &DesFelElevatorPolicyStatesRow,
+) -> Result<(), String> {
+    if ![
+        "look",
+        "mdp-table",
+        "neural-scorer",
+        "pomdp-belief",
+        "neural-td",
+    ]
+    .contains(&(&value.policy_kind).as_str())
+    {
+        return Err(format!(
+            "unsupported des_fel_elevator_policy_states.policy_kind: {}",
+            &value.policy_kind
+        ));
+    }
+    if !["run-final", "offline-training", "import", "checkpoint"]
+        .contains(&(&value.source_kind).as_str())
+    {
+        return Err(format!(
+            "unsupported des_fel_elevator_policy_states.source_kind: {}",
+            &value.source_kind
+        ));
+    }
+    if *(&value.feature_dim) < 0 {
+        return Err("des_fel_elevator_policy_states.feature_dim is below the minimum".to_string());
+    }
+    if *(&value.output_dim) < 0 {
+        return Err("des_fel_elevator_policy_states.output_dim is below the minimum".to_string());
+    }
+    if *(&value.parameter_count) < 0 {
+        return Err(
+            "des_fel_elevator_policy_states.parameter_count is below the minimum".to_string(),
+        );
+    }
+    if *(&value.online_learning_updates) < 0 {
+        return Err(
+            "des_fel_elevator_policy_states.online_learning_updates is below the minimum"
+                .to_string(),
+        );
+    }
+    if !(&value.loss_history).is_array() {
+        return Err("des_fel_elevator_policy_states.loss_history must be a JSON array".to_string());
+    }
+    if !(&value.state).is_object() {
+        return Err("des_fel_elevator_policy_states.state must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_des_fel_elevator_policy_states_insert(value: &DesFelElevatorPolicyStatesInsert) -> Result<(), String> {
+pub fn validate_des_fel_elevator_policy_states_insert(
+    value: &DesFelElevatorPolicyStatesInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.policy_kind {
-        if !["look", "mdp-table", "neural-scorer", "pomdp-belief", "neural-td"].contains(&(value).as_str()) { return Err(format!("unsupported des_fel_elevator_policy_states.policy_kind: {}", value)); }
+        if ![
+            "look",
+            "mdp-table",
+            "neural-scorer",
+            "pomdp-belief",
+            "neural-td",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported des_fel_elevator_policy_states.policy_kind: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.source_kind {
-        if !["run-final", "offline-training", "import", "checkpoint"].contains(&(value).as_str()) { return Err(format!("unsupported des_fel_elevator_policy_states.source_kind: {}", value)); }
+        if !["run-final", "offline-training", "import", "checkpoint"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported des_fel_elevator_policy_states.source_kind: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.feature_dim {
-        if *(value) < 0 { return Err("des_fel_elevator_policy_states.feature_dim is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_fel_elevator_policy_states.feature_dim is below the minimum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.output_dim {
-        if *(value) < 0 { return Err("des_fel_elevator_policy_states.output_dim is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_fel_elevator_policy_states.output_dim is below the minimum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.parameter_count {
-        if *(value) < 0 { return Err("des_fel_elevator_policy_states.parameter_count is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_fel_elevator_policy_states.parameter_count is below the minimum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.online_learning_updates {
-        if *(value) < 0 { return Err("des_fel_elevator_policy_states.online_learning_updates is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_fel_elevator_policy_states.online_learning_updates is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.loss_history {
-        if !(value).is_array() { return Err("des_fel_elevator_policy_states.loss_history must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err(
+                "des_fel_elevator_policy_states.loss_history must be a JSON array".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.state {
-        if !(value).is_object() { return Err("des_fel_elevator_policy_states.state must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("des_fel_elevator_policy_states.state must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const DES_FEL_ELEVATOR_DISPATCH_DECISIONS_TABLE: &str = "des_fel_elevator_dispatch_decisions";
-pub const DES_FEL_ELEVATOR_DISPATCH_DECISIONS_COLUMNS: &[&str] = &["id", "run_id", "decision_index", "sim_time_micros", "call_floor", "car_index", "policy_kind", "meta_data", "created_at"];
+pub const DES_FEL_ELEVATOR_DISPATCH_DECISIONS_COLUMNS: &[&str] = &[
+    "id",
+    "run_id",
+    "decision_index",
+    "sim_time_micros",
+    "call_floor",
+    "car_index",
+    "policy_kind",
+    "meta_data",
+    "created_at",
+];
 pub const DES_FEL_ELEVATOR_DISPATCH_DECISIONS_SELECT_SQL: &str = r###"select
       id::text as id,
       run_id::text as run_id,
@@ -8419,7 +12926,13 @@ pub enum DesFelElevatorDispatchDecisionsPolicyKind {
 }
 
 impl DesFelElevatorDispatchDecisionsPolicyKind {
-    pub const VALUES: &'static [&'static str] = &["look", "mdp-table", "neural-scorer", "pomdp-belief", "neural-td"];
+    pub const VALUES: &'static [&'static str] = &[
+        "look",
+        "mdp-table",
+        "neural-scorer",
+        "pomdp-belief",
+        "neural-td",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -8476,40 +12989,125 @@ pub struct DesFelElevatorDispatchDecisionsInsert {
     pub created_at: Option<String>,
 }
 
-pub fn validate_des_fel_elevator_dispatch_decisions_row(value: &DesFelElevatorDispatchDecisionsRow) -> Result<(), String> {
-    if *(&value.decision_index) < 0 { return Err("des_fel_elevator_dispatch_decisions.decision_index is below the minimum".to_string()); }
-    if *(&value.sim_time_micros) < 0 { return Err("des_fel_elevator_dispatch_decisions.sim_time_micros is below the minimum".to_string()); }
-    if *(&value.call_floor) < 0 { return Err("des_fel_elevator_dispatch_decisions.call_floor is below the minimum".to_string()); }
-    if *(&value.car_index) < 0 { return Err("des_fel_elevator_dispatch_decisions.car_index is below the minimum".to_string()); }
-    if !["look", "mdp-table", "neural-scorer", "pomdp-belief", "neural-td"].contains(&(&value.policy_kind).as_str()) { return Err(format!("unsupported des_fel_elevator_dispatch_decisions.policy_kind: {}", &value.policy_kind)); }
-    if !(&value.meta_data).is_object() { return Err("des_fel_elevator_dispatch_decisions.meta_data must be a JSON object".to_string()); }
+pub fn validate_des_fel_elevator_dispatch_decisions_row(
+    value: &DesFelElevatorDispatchDecisionsRow,
+) -> Result<(), String> {
+    if *(&value.decision_index) < 0 {
+        return Err(
+            "des_fel_elevator_dispatch_decisions.decision_index is below the minimum".to_string(),
+        );
+    }
+    if *(&value.sim_time_micros) < 0 {
+        return Err(
+            "des_fel_elevator_dispatch_decisions.sim_time_micros is below the minimum".to_string(),
+        );
+    }
+    if *(&value.call_floor) < 0 {
+        return Err(
+            "des_fel_elevator_dispatch_decisions.call_floor is below the minimum".to_string(),
+        );
+    }
+    if *(&value.car_index) < 0 {
+        return Err(
+            "des_fel_elevator_dispatch_decisions.car_index is below the minimum".to_string(),
+        );
+    }
+    if ![
+        "look",
+        "mdp-table",
+        "neural-scorer",
+        "pomdp-belief",
+        "neural-td",
+    ]
+    .contains(&(&value.policy_kind).as_str())
+    {
+        return Err(format!(
+            "unsupported des_fel_elevator_dispatch_decisions.policy_kind: {}",
+            &value.policy_kind
+        ));
+    }
+    if !(&value.meta_data).is_object() {
+        return Err(
+            "des_fel_elevator_dispatch_decisions.meta_data must be a JSON object".to_string(),
+        );
+    }
     Ok(())
 }
 
-pub fn validate_des_fel_elevator_dispatch_decisions_insert(value: &DesFelElevatorDispatchDecisionsInsert) -> Result<(), String> {
+pub fn validate_des_fel_elevator_dispatch_decisions_insert(
+    value: &DesFelElevatorDispatchDecisionsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.decision_index {
-        if *(value) < 0 { return Err("des_fel_elevator_dispatch_decisions.decision_index is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_fel_elevator_dispatch_decisions.decision_index is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.sim_time_micros {
-        if *(value) < 0 { return Err("des_fel_elevator_dispatch_decisions.sim_time_micros is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_fel_elevator_dispatch_decisions.sim_time_micros is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.call_floor {
-        if *(value) < 0 { return Err("des_fel_elevator_dispatch_decisions.call_floor is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_fel_elevator_dispatch_decisions.call_floor is below the minimum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.car_index {
-        if *(value) < 0 { return Err("des_fel_elevator_dispatch_decisions.car_index is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_fel_elevator_dispatch_decisions.car_index is below the minimum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.policy_kind {
-        if !["look", "mdp-table", "neural-scorer", "pomdp-belief", "neural-td"].contains(&(value).as_str()) { return Err(format!("unsupported des_fel_elevator_dispatch_decisions.policy_kind: {}", value)); }
+        if ![
+            "look",
+            "mdp-table",
+            "neural-scorer",
+            "pomdp-belief",
+            "neural-td",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported des_fel_elevator_dispatch_decisions.policy_kind: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("des_fel_elevator_dispatch_decisions.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "des_fel_elevator_dispatch_decisions.meta_data must be a JSON object".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
 pub const DES_FEL_ELEVATOR_POMDP_BELIEFS_TABLE: &str = "des_fel_elevator_pomdp_beliefs";
-pub const DES_FEL_ELEVATOR_POMDP_BELIEFS_COLUMNS: &[&str] = &["id", "run_id", "belief_index", "sim_time_micros", "floor", "action", "observation", "empty_prob_micros", "waiting_prob_micros", "crowded_prob_micros", "belief", "created_at"];
+pub const DES_FEL_ELEVATOR_POMDP_BELIEFS_COLUMNS: &[&str] = &[
+    "id",
+    "run_id",
+    "belief_index",
+    "sim_time_micros",
+    "floor",
+    "action",
+    "observation",
+    "empty_prob_micros",
+    "waiting_prob_micros",
+    "crowded_prob_micros",
+    "belief",
+    "created_at",
+];
 pub const DES_FEL_ELEVATOR_POMDP_BELIEFS_SELECT_SQL: &str = r###"select
       id::text as id,
       run_id::text as run_id,
@@ -8620,58 +13218,171 @@ pub struct DesFelElevatorPomdpBeliefsInsert {
     pub created_at: Option<String>,
 }
 
-pub fn validate_des_fel_elevator_pomdp_beliefs_row(value: &DesFelElevatorPomdpBeliefsRow) -> Result<(), String> {
-    if *(&value.belief_index) < 0 { return Err("des_fel_elevator_pomdp_beliefs.belief_index is below the minimum".to_string()); }
-    if *(&value.sim_time_micros) < 0 { return Err("des_fel_elevator_pomdp_beliefs.sim_time_micros is below the minimum".to_string()); }
-    if *(&value.floor) < 0 { return Err("des_fel_elevator_pomdp_beliefs.floor is below the minimum".to_string()); }
-    if !["hold", "dispatch"].contains(&(&value.action).as_str()) { return Err(format!("unsupported des_fel_elevator_pomdp_beliefs.action: {}", &value.action)); }
-    if !["quiet", "call"].contains(&(&value.observation).as_str()) { return Err(format!("unsupported des_fel_elevator_pomdp_beliefs.observation: {}", &value.observation)); }
-    if *(&value.empty_prob_micros) < 0 { return Err("des_fel_elevator_pomdp_beliefs.empty_prob_micros is below the minimum".to_string()); }
-    if *(&value.empty_prob_micros) > 1000000 { return Err("des_fel_elevator_pomdp_beliefs.empty_prob_micros is above the maximum".to_string()); }
-    if *(&value.waiting_prob_micros) < 0 { return Err("des_fel_elevator_pomdp_beliefs.waiting_prob_micros is below the minimum".to_string()); }
-    if *(&value.waiting_prob_micros) > 1000000 { return Err("des_fel_elevator_pomdp_beliefs.waiting_prob_micros is above the maximum".to_string()); }
-    if *(&value.crowded_prob_micros) < 0 { return Err("des_fel_elevator_pomdp_beliefs.crowded_prob_micros is below the minimum".to_string()); }
-    if *(&value.crowded_prob_micros) > 1000000 { return Err("des_fel_elevator_pomdp_beliefs.crowded_prob_micros is above the maximum".to_string()); }
-    if !(&value.belief).is_object() { return Err("des_fel_elevator_pomdp_beliefs.belief must be a JSON object".to_string()); }
+pub fn validate_des_fel_elevator_pomdp_beliefs_row(
+    value: &DesFelElevatorPomdpBeliefsRow,
+) -> Result<(), String> {
+    if *(&value.belief_index) < 0 {
+        return Err("des_fel_elevator_pomdp_beliefs.belief_index is below the minimum".to_string());
+    }
+    if *(&value.sim_time_micros) < 0 {
+        return Err(
+            "des_fel_elevator_pomdp_beliefs.sim_time_micros is below the minimum".to_string(),
+        );
+    }
+    if *(&value.floor) < 0 {
+        return Err("des_fel_elevator_pomdp_beliefs.floor is below the minimum".to_string());
+    }
+    if !["hold", "dispatch"].contains(&(&value.action).as_str()) {
+        return Err(format!(
+            "unsupported des_fel_elevator_pomdp_beliefs.action: {}",
+            &value.action
+        ));
+    }
+    if !["quiet", "call"].contains(&(&value.observation).as_str()) {
+        return Err(format!(
+            "unsupported des_fel_elevator_pomdp_beliefs.observation: {}",
+            &value.observation
+        ));
+    }
+    if *(&value.empty_prob_micros) < 0 {
+        return Err(
+            "des_fel_elevator_pomdp_beliefs.empty_prob_micros is below the minimum".to_string(),
+        );
+    }
+    if *(&value.empty_prob_micros) > 1000000 {
+        return Err(
+            "des_fel_elevator_pomdp_beliefs.empty_prob_micros is above the maximum".to_string(),
+        );
+    }
+    if *(&value.waiting_prob_micros) < 0 {
+        return Err(
+            "des_fel_elevator_pomdp_beliefs.waiting_prob_micros is below the minimum".to_string(),
+        );
+    }
+    if *(&value.waiting_prob_micros) > 1000000 {
+        return Err(
+            "des_fel_elevator_pomdp_beliefs.waiting_prob_micros is above the maximum".to_string(),
+        );
+    }
+    if *(&value.crowded_prob_micros) < 0 {
+        return Err(
+            "des_fel_elevator_pomdp_beliefs.crowded_prob_micros is below the minimum".to_string(),
+        );
+    }
+    if *(&value.crowded_prob_micros) > 1000000 {
+        return Err(
+            "des_fel_elevator_pomdp_beliefs.crowded_prob_micros is above the maximum".to_string(),
+        );
+    }
+    if !(&value.belief).is_object() {
+        return Err("des_fel_elevator_pomdp_beliefs.belief must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_des_fel_elevator_pomdp_beliefs_insert(value: &DesFelElevatorPomdpBeliefsInsert) -> Result<(), String> {
+pub fn validate_des_fel_elevator_pomdp_beliefs_insert(
+    value: &DesFelElevatorPomdpBeliefsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.belief_index {
-        if *(value) < 0 { return Err("des_fel_elevator_pomdp_beliefs.belief_index is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_fel_elevator_pomdp_beliefs.belief_index is below the minimum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.sim_time_micros {
-        if *(value) < 0 { return Err("des_fel_elevator_pomdp_beliefs.sim_time_micros is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_fel_elevator_pomdp_beliefs.sim_time_micros is below the minimum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.floor {
-        if *(value) < 0 { return Err("des_fel_elevator_pomdp_beliefs.floor is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("des_fel_elevator_pomdp_beliefs.floor is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.action {
-        if !["hold", "dispatch"].contains(&(value).as_str()) { return Err(format!("unsupported des_fel_elevator_pomdp_beliefs.action: {}", value)); }
+        if !["hold", "dispatch"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported des_fel_elevator_pomdp_beliefs.action: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.observation {
-        if !["quiet", "call"].contains(&(value).as_str()) { return Err(format!("unsupported des_fel_elevator_pomdp_beliefs.observation: {}", value)); }
+        if !["quiet", "call"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported des_fel_elevator_pomdp_beliefs.observation: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.empty_prob_micros {
-        if *(value) < 0 { return Err("des_fel_elevator_pomdp_beliefs.empty_prob_micros is below the minimum".to_string()); }
-        if *(value) > 1000000 { return Err("des_fel_elevator_pomdp_beliefs.empty_prob_micros is above the maximum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_fel_elevator_pomdp_beliefs.empty_prob_micros is below the minimum".to_string(),
+            );
+        }
+        if *(value) > 1000000 {
+            return Err(
+                "des_fel_elevator_pomdp_beliefs.empty_prob_micros is above the maximum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.waiting_prob_micros {
-        if *(value) < 0 { return Err("des_fel_elevator_pomdp_beliefs.waiting_prob_micros is below the minimum".to_string()); }
-        if *(value) > 1000000 { return Err("des_fel_elevator_pomdp_beliefs.waiting_prob_micros is above the maximum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_fel_elevator_pomdp_beliefs.waiting_prob_micros is below the minimum"
+                    .to_string(),
+            );
+        }
+        if *(value) > 1000000 {
+            return Err(
+                "des_fel_elevator_pomdp_beliefs.waiting_prob_micros is above the maximum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.crowded_prob_micros {
-        if *(value) < 0 { return Err("des_fel_elevator_pomdp_beliefs.crowded_prob_micros is below the minimum".to_string()); }
-        if *(value) > 1000000 { return Err("des_fel_elevator_pomdp_beliefs.crowded_prob_micros is above the maximum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "des_fel_elevator_pomdp_beliefs.crowded_prob_micros is below the minimum"
+                    .to_string(),
+            );
+        }
+        if *(value) > 1000000 {
+            return Err(
+                "des_fel_elevator_pomdp_beliefs.crowded_prob_micros is above the maximum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.belief {
-        if !(value).is_object() { return Err("des_fel_elevator_pomdp_beliefs.belief must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("des_fel_elevator_pomdp_beliefs.belief must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const BENEFACTOR_MARKETING_CLIENTS_TABLE: &str = "benefactor_marketing_clients";
-pub const BENEFACTOR_MARKETING_CLIENTS_COLUMNS: &[&str] = &["id", "status", "name", "slug", "industry", "website_url", "billing_email", "owner_user_id", "service_package", "onboarding_stage", "portal_enabled", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_CLIENTS_COLUMNS: &[&str] = &[
+    "id",
+    "status",
+    "name",
+    "slug",
+    "industry",
+    "website_url",
+    "billing_email",
+    "owner_user_id",
+    "service_package",
+    "onboarding_stage",
+    "portal_enabled",
+    "meta_data",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_CLIENTS_SELECT_SQL: &str = r###"select
       id::text as id,
       status,
@@ -8764,68 +13475,169 @@ pub struct BenefactorMarketingClientsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_clients_row(value: &BenefactorMarketingClientsRow) -> Result<(), String> {
-    if !["onboarding", "active", "paused", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_clients.status: {}", &value.status)); }
-    validate_string_length("benefactor_marketing_clients.name", &value.name, None, Some(200))?;
-    if (&value.name).as_bytes().len() > 200 { return Err("benefactor_marketing_clients.name exceeds 200 bytes".to_string()); }
+pub fn validate_benefactor_marketing_clients_row(
+    value: &BenefactorMarketingClientsRow,
+) -> Result<(), String> {
+    if !["onboarding", "active", "paused", "archived"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_clients.status: {}",
+            &value.status
+        ));
+    }
+    validate_string_length(
+        "benefactor_marketing_clients.name",
+        &value.name,
+        None,
+        Some(200),
+    )?;
+    if (&value.name).as_bytes().len() > 200 {
+        return Err("benefactor_marketing_clients.name exceeds 200 bytes".to_string());
+    }
     validate_slug("benefactor_marketing_clients.slug", &value.slug)?;
     if let Some(value) = &value.industry {
-        validate_string_length("benefactor_marketing_clients.industry", value, None, Some(120))?;
-        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_clients.industry exceeds 120 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_clients.industry",
+            value,
+            None,
+            Some(120),
+        )?;
+        if (value).as_bytes().len() > 120 {
+            return Err("benefactor_marketing_clients.industry exceeds 120 bytes".to_string());
+        }
     }
     if let Some(value) = &value.website_url {
-        if (value).as_bytes().len() > 2048 { return Err("benefactor_marketing_clients.website_url exceeds 2048 bytes".to_string()); }
+        if (value).as_bytes().len() > 2048 {
+            return Err("benefactor_marketing_clients.website_url exceeds 2048 bytes".to_string());
+        }
     }
     if let Some(value) = &value.billing_email {
-        validate_string_length("benefactor_marketing_clients.billing_email", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_clients.billing_email exceeds 240 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_clients.billing_email",
+            value,
+            None,
+            Some(240),
+        )?;
+        if (value).as_bytes().len() > 240 {
+            return Err("benefactor_marketing_clients.billing_email exceeds 240 bytes".to_string());
+        }
     }
     if let Some(value) = &value.service_package {
-        validate_string_length("benefactor_marketing_clients.service_package", value, None, Some(120))?;
-        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_clients.service_package exceeds 120 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_clients.service_package",
+            value,
+            None,
+            Some(120),
+        )?;
+        if (value).as_bytes().len() > 120 {
+            return Err(
+                "benefactor_marketing_clients.service_package exceeds 120 bytes".to_string(),
+            );
+        }
     }
-    validate_string_length("benefactor_marketing_clients.onboarding_stage", &value.onboarding_stage, None, Some(80))?;
-    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_clients.meta_data must be a JSON object".to_string()); }
+    validate_string_length(
+        "benefactor_marketing_clients.onboarding_stage",
+        &value.onboarding_stage,
+        None,
+        Some(80),
+    )?;
+    if !(&value.meta_data).is_object() {
+        return Err("benefactor_marketing_clients.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_clients_insert(value: &BenefactorMarketingClientsInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_clients_insert(
+    value: &BenefactorMarketingClientsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.status {
-        if !["onboarding", "active", "paused", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_clients.status: {}", value)); }
+        if !["onboarding", "active", "paused", "archived"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_clients.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.name {
         validate_string_length("benefactor_marketing_clients.name", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_clients.name exceeds 200 bytes".to_string()); }
+        if (value).as_bytes().len() > 200 {
+            return Err("benefactor_marketing_clients.name exceeds 200 bytes".to_string());
+        }
     }
     if let Some(value) = &value.slug {
         validate_slug("benefactor_marketing_clients.slug", value)?;
     }
     if let Some(value) = &value.industry {
-        validate_string_length("benefactor_marketing_clients.industry", value, None, Some(120))?;
-        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_clients.industry exceeds 120 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_clients.industry",
+            value,
+            None,
+            Some(120),
+        )?;
+        if (value).as_bytes().len() > 120 {
+            return Err("benefactor_marketing_clients.industry exceeds 120 bytes".to_string());
+        }
     }
     if let Some(value) = &value.website_url {
-        if (value).as_bytes().len() > 2048 { return Err("benefactor_marketing_clients.website_url exceeds 2048 bytes".to_string()); }
+        if (value).as_bytes().len() > 2048 {
+            return Err("benefactor_marketing_clients.website_url exceeds 2048 bytes".to_string());
+        }
     }
     if let Some(value) = &value.billing_email {
-        validate_string_length("benefactor_marketing_clients.billing_email", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_clients.billing_email exceeds 240 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_clients.billing_email",
+            value,
+            None,
+            Some(240),
+        )?;
+        if (value).as_bytes().len() > 240 {
+            return Err("benefactor_marketing_clients.billing_email exceeds 240 bytes".to_string());
+        }
     }
     if let Some(value) = &value.service_package {
-        validate_string_length("benefactor_marketing_clients.service_package", value, None, Some(120))?;
-        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_clients.service_package exceeds 120 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_clients.service_package",
+            value,
+            None,
+            Some(120),
+        )?;
+        if (value).as_bytes().len() > 120 {
+            return Err(
+                "benefactor_marketing_clients.service_package exceeds 120 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.onboarding_stage {
-        validate_string_length("benefactor_marketing_clients.onboarding_stage", value, None, Some(80))?;
+        validate_string_length(
+            "benefactor_marketing_clients.onboarding_stage",
+            value,
+            None,
+            Some(80),
+        )?;
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("benefactor_marketing_clients.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("benefactor_marketing_clients.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const BENEFACTOR_MARKETING_CONTACTS_TABLE: &str = "benefactor_marketing_contacts";
-pub const BENEFACTOR_MARKETING_CONTACTS_COLUMNS: &[&str] = &["id", "client_id", "status", "first_name", "last_name", "email", "phone", "job_title", "lifecycle_role", "consent_status", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_CONTACTS_COLUMNS: &[&str] = &[
+    "id",
+    "client_id",
+    "status",
+    "first_name",
+    "last_name",
+    "email",
+    "phone",
+    "job_title",
+    "lifecycle_role",
+    "consent_status",
+    "meta_data",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_CONTACTS_SELECT_SQL: &str = r###"select
       id::text as id,
       client_id::text as client_id,
@@ -8890,7 +13702,14 @@ pub enum BenefactorMarketingContactsLifecycleRole {
 }
 
 impl BenefactorMarketingContactsLifecycleRole {
-    pub const VALUES: &'static [&'static str] = &["primary", "decision_maker", "billing", "technical", "marketing", "other"];
+    pub const VALUES: &'static [&'static str] = &[
+        "primary",
+        "decision_maker",
+        "billing",
+        "technical",
+        "marketing",
+        "other",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -8990,72 +13809,203 @@ pub struct BenefactorMarketingContactsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_contacts_row(value: &BenefactorMarketingContactsRow) -> Result<(), String> {
-    if !["active", "inactive", "bounced", "unsubscribed"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_contacts.status: {}", &value.status)); }
+pub fn validate_benefactor_marketing_contacts_row(
+    value: &BenefactorMarketingContactsRow,
+) -> Result<(), String> {
+    if !["active", "inactive", "bounced", "unsubscribed"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_contacts.status: {}",
+            &value.status
+        ));
+    }
     if let Some(value) = &value.first_name {
-        validate_string_length("benefactor_marketing_contacts.first_name", value, None, Some(120))?;
-        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_contacts.first_name exceeds 120 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_contacts.first_name",
+            value,
+            None,
+            Some(120),
+        )?;
+        if (value).as_bytes().len() > 120 {
+            return Err("benefactor_marketing_contacts.first_name exceeds 120 bytes".to_string());
+        }
     }
     if let Some(value) = &value.last_name {
-        validate_string_length("benefactor_marketing_contacts.last_name", value, None, Some(120))?;
-        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_contacts.last_name exceeds 120 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_contacts.last_name",
+            value,
+            None,
+            Some(120),
+        )?;
+        if (value).as_bytes().len() > 120 {
+            return Err("benefactor_marketing_contacts.last_name exceeds 120 bytes".to_string());
+        }
     }
     if let Some(value) = &value.email {
-        validate_string_length("benefactor_marketing_contacts.email", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_contacts.email exceeds 240 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_contacts.email",
+            value,
+            None,
+            Some(240),
+        )?;
+        if (value).as_bytes().len() > 240 {
+            return Err("benefactor_marketing_contacts.email exceeds 240 bytes".to_string());
+        }
     }
     if let Some(value) = &value.phone {
         validate_string_length("benefactor_marketing_contacts.phone", value, None, Some(80))?;
-        if (value).as_bytes().len() > 80 { return Err("benefactor_marketing_contacts.phone exceeds 80 bytes".to_string()); }
+        if (value).as_bytes().len() > 80 {
+            return Err("benefactor_marketing_contacts.phone exceeds 80 bytes".to_string());
+        }
     }
     if let Some(value) = &value.job_title {
-        validate_string_length("benefactor_marketing_contacts.job_title", value, None, Some(160))?;
-        if (value).as_bytes().len() > 160 { return Err("benefactor_marketing_contacts.job_title exceeds 160 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_contacts.job_title",
+            value,
+            None,
+            Some(160),
+        )?;
+        if (value).as_bytes().len() > 160 {
+            return Err("benefactor_marketing_contacts.job_title exceeds 160 bytes".to_string());
+        }
     }
-    if !["primary", "decision_maker", "billing", "technical", "marketing", "other"].contains(&(&value.lifecycle_role).as_str()) { return Err(format!("unsupported benefactor_marketing_contacts.lifecycle_role: {}", &value.lifecycle_role)); }
-    if !["unknown", "opted_in", "opted_out"].contains(&(&value.consent_status).as_str()) { return Err(format!("unsupported benefactor_marketing_contacts.consent_status: {}", &value.consent_status)); }
-    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_contacts.meta_data must be a JSON object".to_string()); }
+    if ![
+        "primary",
+        "decision_maker",
+        "billing",
+        "technical",
+        "marketing",
+        "other",
+    ]
+    .contains(&(&value.lifecycle_role).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_contacts.lifecycle_role: {}",
+            &value.lifecycle_role
+        ));
+    }
+    if !["unknown", "opted_in", "opted_out"].contains(&(&value.consent_status).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_contacts.consent_status: {}",
+            &value.consent_status
+        ));
+    }
+    if !(&value.meta_data).is_object() {
+        return Err("benefactor_marketing_contacts.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_contacts_insert(value: &BenefactorMarketingContactsInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_contacts_insert(
+    value: &BenefactorMarketingContactsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.status {
-        if !["active", "inactive", "bounced", "unsubscribed"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_contacts.status: {}", value)); }
+        if !["active", "inactive", "bounced", "unsubscribed"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_contacts.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.first_name {
-        validate_string_length("benefactor_marketing_contacts.first_name", value, None, Some(120))?;
-        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_contacts.first_name exceeds 120 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_contacts.first_name",
+            value,
+            None,
+            Some(120),
+        )?;
+        if (value).as_bytes().len() > 120 {
+            return Err("benefactor_marketing_contacts.first_name exceeds 120 bytes".to_string());
+        }
     }
     if let Some(value) = &value.last_name {
-        validate_string_length("benefactor_marketing_contacts.last_name", value, None, Some(120))?;
-        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_contacts.last_name exceeds 120 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_contacts.last_name",
+            value,
+            None,
+            Some(120),
+        )?;
+        if (value).as_bytes().len() > 120 {
+            return Err("benefactor_marketing_contacts.last_name exceeds 120 bytes".to_string());
+        }
     }
     if let Some(value) = &value.email {
-        validate_string_length("benefactor_marketing_contacts.email", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_contacts.email exceeds 240 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_contacts.email",
+            value,
+            None,
+            Some(240),
+        )?;
+        if (value).as_bytes().len() > 240 {
+            return Err("benefactor_marketing_contacts.email exceeds 240 bytes".to_string());
+        }
     }
     if let Some(value) = &value.phone {
         validate_string_length("benefactor_marketing_contacts.phone", value, None, Some(80))?;
-        if (value).as_bytes().len() > 80 { return Err("benefactor_marketing_contacts.phone exceeds 80 bytes".to_string()); }
+        if (value).as_bytes().len() > 80 {
+            return Err("benefactor_marketing_contacts.phone exceeds 80 bytes".to_string());
+        }
     }
     if let Some(value) = &value.job_title {
-        validate_string_length("benefactor_marketing_contacts.job_title", value, None, Some(160))?;
-        if (value).as_bytes().len() > 160 { return Err("benefactor_marketing_contacts.job_title exceeds 160 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_contacts.job_title",
+            value,
+            None,
+            Some(160),
+        )?;
+        if (value).as_bytes().len() > 160 {
+            return Err("benefactor_marketing_contacts.job_title exceeds 160 bytes".to_string());
+        }
     }
     if let Some(value) = &value.lifecycle_role {
-        if !["primary", "decision_maker", "billing", "technical", "marketing", "other"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_contacts.lifecycle_role: {}", value)); }
+        if ![
+            "primary",
+            "decision_maker",
+            "billing",
+            "technical",
+            "marketing",
+            "other",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported benefactor_marketing_contacts.lifecycle_role: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.consent_status {
-        if !["unknown", "opted_in", "opted_out"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_contacts.consent_status: {}", value)); }
+        if !["unknown", "opted_in", "opted_out"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_contacts.consent_status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("benefactor_marketing_contacts.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_contacts.meta_data must be a JSON object".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
-pub const BENEFACTOR_MARKETING_SERVICE_PACKAGES_TABLE: &str = "benefactor_marketing_service_packages";
-pub const BENEFACTOR_MARKETING_SERVICE_PACKAGES_COLUMNS: &[&str] = &["id", "status", "code", "name", "channel_mix", "deliverables", "monthly_budget_cents", "retainer_cents", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_SERVICE_PACKAGES_TABLE: &str =
+    "benefactor_marketing_service_packages";
+pub const BENEFACTOR_MARKETING_SERVICE_PACKAGES_COLUMNS: &[&str] = &[
+    "id",
+    "status",
+    "code",
+    "name",
+    "channel_mix",
+    "deliverables",
+    "monthly_budget_cents",
+    "retainer_cents",
+    "meta_data",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_SERVICE_PACKAGES_SELECT_SQL: &str = r###"select
       id::text as id,
       status,
@@ -9133,50 +14083,146 @@ pub struct BenefactorMarketingServicePackagesInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_service_packages_row(value: &BenefactorMarketingServicePackagesRow) -> Result<(), String> {
-    if !["active", "retired"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_service_packages.status: {}", &value.status)); }
-    validate_string_length("benefactor_marketing_service_packages.code", &value.code, None, Some(120))?;
-    validate_string_length("benefactor_marketing_service_packages.name", &value.name, None, Some(200))?;
-    if (&value.name).as_bytes().len() > 200 { return Err("benefactor_marketing_service_packages.name exceeds 200 bytes".to_string()); }
-    if !(&value.channel_mix).is_array() { return Err("benefactor_marketing_service_packages.channel_mix must be a JSON array".to_string()); }
-    if !(&value.deliverables).is_array() { return Err("benefactor_marketing_service_packages.deliverables must be a JSON array".to_string()); }
-    if *(&value.monthly_budget_cents) < 0 { return Err("benefactor_marketing_service_packages.monthly_budget_cents is below the minimum".to_string()); }
-    if *(&value.retainer_cents) < 0 { return Err("benefactor_marketing_service_packages.retainer_cents is below the minimum".to_string()); }
-    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_service_packages.meta_data must be a JSON object".to_string()); }
+pub fn validate_benefactor_marketing_service_packages_row(
+    value: &BenefactorMarketingServicePackagesRow,
+) -> Result<(), String> {
+    if !["active", "retired"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_service_packages.status: {}",
+            &value.status
+        ));
+    }
+    validate_string_length(
+        "benefactor_marketing_service_packages.code",
+        &value.code,
+        None,
+        Some(120),
+    )?;
+    validate_string_length(
+        "benefactor_marketing_service_packages.name",
+        &value.name,
+        None,
+        Some(200),
+    )?;
+    if (&value.name).as_bytes().len() > 200 {
+        return Err("benefactor_marketing_service_packages.name exceeds 200 bytes".to_string());
+    }
+    if !(&value.channel_mix).is_array() {
+        return Err(
+            "benefactor_marketing_service_packages.channel_mix must be a JSON array".to_string(),
+        );
+    }
+    if !(&value.deliverables).is_array() {
+        return Err(
+            "benefactor_marketing_service_packages.deliverables must be a JSON array".to_string(),
+        );
+    }
+    if *(&value.monthly_budget_cents) < 0 {
+        return Err(
+            "benefactor_marketing_service_packages.monthly_budget_cents is below the minimum"
+                .to_string(),
+        );
+    }
+    if *(&value.retainer_cents) < 0 {
+        return Err(
+            "benefactor_marketing_service_packages.retainer_cents is below the minimum".to_string(),
+        );
+    }
+    if !(&value.meta_data).is_object() {
+        return Err(
+            "benefactor_marketing_service_packages.meta_data must be a JSON object".to_string(),
+        );
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_service_packages_insert(value: &BenefactorMarketingServicePackagesInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_service_packages_insert(
+    value: &BenefactorMarketingServicePackagesInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.status {
-        if !["active", "retired"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_service_packages.status: {}", value)); }
+        if !["active", "retired"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_service_packages.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.code {
-        validate_string_length("benefactor_marketing_service_packages.code", value, None, Some(120))?;
+        validate_string_length(
+            "benefactor_marketing_service_packages.code",
+            value,
+            None,
+            Some(120),
+        )?;
     }
     if let Some(value) = &value.name {
-        validate_string_length("benefactor_marketing_service_packages.name", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_service_packages.name exceeds 200 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_service_packages.name",
+            value,
+            None,
+            Some(200),
+        )?;
+        if (value).as_bytes().len() > 200 {
+            return Err("benefactor_marketing_service_packages.name exceeds 200 bytes".to_string());
+        }
     }
     if let Some(value) = &value.channel_mix {
-        if !(value).is_array() { return Err("benefactor_marketing_service_packages.channel_mix must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err(
+                "benefactor_marketing_service_packages.channel_mix must be a JSON array"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.deliverables {
-        if !(value).is_array() { return Err("benefactor_marketing_service_packages.deliverables must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err(
+                "benefactor_marketing_service_packages.deliverables must be a JSON array"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.monthly_budget_cents {
-        if *(value) < 0 { return Err("benefactor_marketing_service_packages.monthly_budget_cents is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "benefactor_marketing_service_packages.monthly_budget_cents is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.retainer_cents {
-        if *(value) < 0 { return Err("benefactor_marketing_service_packages.retainer_cents is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "benefactor_marketing_service_packages.retainer_cents is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("benefactor_marketing_service_packages.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_service_packages.meta_data must be a JSON object".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
 pub const BENEFACTOR_MARKETING_CONTRACTS_TABLE: &str = "benefactor_marketing_contracts";
-pub const BENEFACTOR_MARKETING_CONTRACTS_COLUMNS: &[&str] = &["id", "client_id", "package_id", "status", "contract_number", "starts_on", "ends_on", "billing_terms", "total_value_cents", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_CONTRACTS_COLUMNS: &[&str] = &[
+    "id",
+    "client_id",
+    "package_id",
+    "status",
+    "contract_number",
+    "starts_on",
+    "ends_on",
+    "billing_terms",
+    "total_value_cents",
+    "meta_data",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_CONTRACTS_SELECT_SQL: &str = r###"select
       id::text as id,
       client_id::text as client_id,
@@ -9203,7 +14249,8 @@ pub enum BenefactorMarketingContractsStatus {
 }
 
 impl BenefactorMarketingContractsStatus {
-    pub const VALUES: &'static [&'static str] = &["draft", "active", "renewal", "expired", "terminated"];
+    pub const VALUES: &'static [&'static str] =
+        &["draft", "active", "renewal", "expired", "terminated"];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -9266,52 +14313,140 @@ pub struct BenefactorMarketingContractsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_contracts_row(value: &BenefactorMarketingContractsRow) -> Result<(), String> {
-    if !["draft", "active", "renewal", "expired", "terminated"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_contracts.status: {}", &value.status)); }
+pub fn validate_benefactor_marketing_contracts_row(
+    value: &BenefactorMarketingContractsRow,
+) -> Result<(), String> {
+    if !["draft", "active", "renewal", "expired", "terminated"].contains(&(&value.status).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_contracts.status: {}",
+            &value.status
+        ));
+    }
     if let Some(value) = &value.contract_number {
-        validate_string_length("benefactor_marketing_contracts.contract_number", value, None, Some(120))?;
-        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_contracts.contract_number exceeds 120 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_contracts.contract_number",
+            value,
+            None,
+            Some(120),
+        )?;
+        if (value).as_bytes().len() > 120 {
+            return Err(
+                "benefactor_marketing_contracts.contract_number exceeds 120 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.starts_on {
-        validate_string_length("benefactor_marketing_contracts.starts_on", value, None, Some(10))?;
+        validate_string_length(
+            "benefactor_marketing_contracts.starts_on",
+            value,
+            None,
+            Some(10),
+        )?;
     }
     if let Some(value) = &value.ends_on {
-        validate_string_length("benefactor_marketing_contracts.ends_on", value, None, Some(10))?;
+        validate_string_length(
+            "benefactor_marketing_contracts.ends_on",
+            value,
+            None,
+            Some(10),
+        )?;
     }
-    if !(&value.billing_terms).is_object() { return Err("benefactor_marketing_contracts.billing_terms must be a JSON object".to_string()); }
-    if *(&value.total_value_cents) < 0 { return Err("benefactor_marketing_contracts.total_value_cents is below the minimum".to_string()); }
-    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_contracts.meta_data must be a JSON object".to_string()); }
+    if !(&value.billing_terms).is_object() {
+        return Err(
+            "benefactor_marketing_contracts.billing_terms must be a JSON object".to_string(),
+        );
+    }
+    if *(&value.total_value_cents) < 0 {
+        return Err(
+            "benefactor_marketing_contracts.total_value_cents is below the minimum".to_string(),
+        );
+    }
+    if !(&value.meta_data).is_object() {
+        return Err("benefactor_marketing_contracts.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_contracts_insert(value: &BenefactorMarketingContractsInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_contracts_insert(
+    value: &BenefactorMarketingContractsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.status {
-        if !["draft", "active", "renewal", "expired", "terminated"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_contracts.status: {}", value)); }
+        if !["draft", "active", "renewal", "expired", "terminated"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_contracts.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.contract_number {
-        validate_string_length("benefactor_marketing_contracts.contract_number", value, None, Some(120))?;
-        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_contracts.contract_number exceeds 120 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_contracts.contract_number",
+            value,
+            None,
+            Some(120),
+        )?;
+        if (value).as_bytes().len() > 120 {
+            return Err(
+                "benefactor_marketing_contracts.contract_number exceeds 120 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.starts_on {
-        validate_string_length("benefactor_marketing_contracts.starts_on", value, None, Some(10))?;
+        validate_string_length(
+            "benefactor_marketing_contracts.starts_on",
+            value,
+            None,
+            Some(10),
+        )?;
     }
     if let Some(value) = &value.ends_on {
-        validate_string_length("benefactor_marketing_contracts.ends_on", value, None, Some(10))?;
+        validate_string_length(
+            "benefactor_marketing_contracts.ends_on",
+            value,
+            None,
+            Some(10),
+        )?;
     }
     if let Some(value) = &value.billing_terms {
-        if !(value).is_object() { return Err("benefactor_marketing_contracts.billing_terms must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_contracts.billing_terms must be a JSON object".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.total_value_cents {
-        if *(value) < 0 { return Err("benefactor_marketing_contracts.total_value_cents is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "benefactor_marketing_contracts.total_value_cents is below the minimum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("benefactor_marketing_contracts.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_contracts.meta_data must be a JSON object".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
 pub const BENEFACTOR_MARKETING_INVOICES_TABLE: &str = "benefactor_marketing_invoices";
-pub const BENEFACTOR_MARKETING_INVOICES_COLUMNS: &[&str] = &["id", "client_id", "contract_id", "status", "invoice_number", "due_on", "amount_cents", "paid_at", "line_items", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_INVOICES_COLUMNS: &[&str] = &[
+    "id",
+    "client_id",
+    "contract_id",
+    "status",
+    "invoice_number",
+    "due_on",
+    "amount_cents",
+    "paid_at",
+    "line_items",
+    "meta_data",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_INVOICES_SELECT_SQL: &str = r###"select
       id::text as id,
       client_id::text as client_id,
@@ -9401,46 +14536,118 @@ pub struct BenefactorMarketingInvoicesInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_invoices_row(value: &BenefactorMarketingInvoicesRow) -> Result<(), String> {
-    if !["draft", "sent", "paid", "overdue", "void"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_invoices.status: {}", &value.status)); }
+pub fn validate_benefactor_marketing_invoices_row(
+    value: &BenefactorMarketingInvoicesRow,
+) -> Result<(), String> {
+    if !["draft", "sent", "paid", "overdue", "void"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_invoices.status: {}",
+            &value.status
+        ));
+    }
     if let Some(value) = &value.invoice_number {
-        validate_string_length("benefactor_marketing_invoices.invoice_number", value, None, Some(120))?;
-        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_invoices.invoice_number exceeds 120 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_invoices.invoice_number",
+            value,
+            None,
+            Some(120),
+        )?;
+        if (value).as_bytes().len() > 120 {
+            return Err(
+                "benefactor_marketing_invoices.invoice_number exceeds 120 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.due_on {
-        validate_string_length("benefactor_marketing_invoices.due_on", value, None, Some(10))?;
+        validate_string_length(
+            "benefactor_marketing_invoices.due_on",
+            value,
+            None,
+            Some(10),
+        )?;
     }
-    if *(&value.amount_cents) < 0 { return Err("benefactor_marketing_invoices.amount_cents is below the minimum".to_string()); }
-    if !(&value.line_items).is_array() { return Err("benefactor_marketing_invoices.line_items must be a JSON array".to_string()); }
-    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_invoices.meta_data must be a JSON object".to_string()); }
+    if *(&value.amount_cents) < 0 {
+        return Err("benefactor_marketing_invoices.amount_cents is below the minimum".to_string());
+    }
+    if !(&value.line_items).is_array() {
+        return Err("benefactor_marketing_invoices.line_items must be a JSON array".to_string());
+    }
+    if !(&value.meta_data).is_object() {
+        return Err("benefactor_marketing_invoices.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_invoices_insert(value: &BenefactorMarketingInvoicesInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_invoices_insert(
+    value: &BenefactorMarketingInvoicesInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.status {
-        if !["draft", "sent", "paid", "overdue", "void"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_invoices.status: {}", value)); }
+        if !["draft", "sent", "paid", "overdue", "void"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_invoices.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.invoice_number {
-        validate_string_length("benefactor_marketing_invoices.invoice_number", value, None, Some(120))?;
-        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_invoices.invoice_number exceeds 120 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_invoices.invoice_number",
+            value,
+            None,
+            Some(120),
+        )?;
+        if (value).as_bytes().len() > 120 {
+            return Err(
+                "benefactor_marketing_invoices.invoice_number exceeds 120 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.due_on {
-        validate_string_length("benefactor_marketing_invoices.due_on", value, None, Some(10))?;
+        validate_string_length(
+            "benefactor_marketing_invoices.due_on",
+            value,
+            None,
+            Some(10),
+        )?;
     }
     if let Some(value) = &value.amount_cents {
-        if *(value) < 0 { return Err("benefactor_marketing_invoices.amount_cents is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "benefactor_marketing_invoices.amount_cents is below the minimum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.line_items {
-        if !(value).is_array() { return Err("benefactor_marketing_invoices.line_items must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err(
+                "benefactor_marketing_invoices.line_items must be a JSON array".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("benefactor_marketing_invoices.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_invoices.meta_data must be a JSON object".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
 pub const BENEFACTOR_MARKETING_INTEGRATIONS_TABLE: &str = "benefactor_marketing_integrations";
-pub const BENEFACTOR_MARKETING_INTEGRATIONS_COLUMNS: &[&str] = &["id", "client_id", "platform", "status", "auth_kind", "external_account_id", "sync_cursor", "config", "last_sync_at", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_INTEGRATIONS_COLUMNS: &[&str] = &[
+    "id",
+    "client_id",
+    "platform",
+    "status",
+    "auth_kind",
+    "external_account_id",
+    "sync_cursor",
+    "config",
+    "last_sync_at",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_INTEGRATIONS_SELECT_SQL: &str = r###"select
       id::text as id,
       client_id::text as client_id,
@@ -9473,7 +14680,20 @@ pub enum BenefactorMarketingIntegrationsPlatform {
 }
 
 impl BenefactorMarketingIntegrationsPlatform {
-    pub const VALUES: &'static [&'static str] = &["salesforce", "hubspot", "apollo", "zoominfo", "google_analytics", "google_ads", "linkedin_ads", "meta_ads", "mailchimp", "sendgrid", "scraper", "custom"];
+    pub const VALUES: &'static [&'static str] = &[
+        "salesforce",
+        "hubspot",
+        "apollo",
+        "zoominfo",
+        "google_analytics",
+        "google_ads",
+        "linkedin_ads",
+        "meta_ads",
+        "mailchimp",
+        "sendgrid",
+        "scraper",
+        "custom",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -9617,46 +14837,164 @@ pub struct BenefactorMarketingIntegrationsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_integrations_row(value: &BenefactorMarketingIntegrationsRow) -> Result<(), String> {
-    if !["salesforce", "hubspot", "apollo", "zoominfo", "google_analytics", "google_ads", "linkedin_ads", "meta_ads", "mailchimp", "sendgrid", "scraper", "custom"].contains(&(&value.platform).as_str()) { return Err(format!("unsupported benefactor_marketing_integrations.platform: {}", &value.platform)); }
-    if !["connected", "disabled", "error"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_integrations.status: {}", &value.status)); }
-    if !["oauth2", "api_key", "webhook", "manual"].contains(&(&value.auth_kind).as_str()) { return Err(format!("unsupported benefactor_marketing_integrations.auth_kind: {}", &value.auth_kind)); }
+pub fn validate_benefactor_marketing_integrations_row(
+    value: &BenefactorMarketingIntegrationsRow,
+) -> Result<(), String> {
+    if ![
+        "salesforce",
+        "hubspot",
+        "apollo",
+        "zoominfo",
+        "google_analytics",
+        "google_ads",
+        "linkedin_ads",
+        "meta_ads",
+        "mailchimp",
+        "sendgrid",
+        "scraper",
+        "custom",
+    ]
+    .contains(&(&value.platform).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_integrations.platform: {}",
+            &value.platform
+        ));
+    }
+    if !["connected", "disabled", "error"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_integrations.status: {}",
+            &value.status
+        ));
+    }
+    if !["oauth2", "api_key", "webhook", "manual"].contains(&(&value.auth_kind).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_integrations.auth_kind: {}",
+            &value.auth_kind
+        ));
+    }
     if let Some(value) = &value.external_account_id {
-        validate_string_length("benefactor_marketing_integrations.external_account_id", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_integrations.external_account_id exceeds 200 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_integrations.external_account_id",
+            value,
+            None,
+            Some(200),
+        )?;
+        if (value).as_bytes().len() > 200 {
+            return Err(
+                "benefactor_marketing_integrations.external_account_id exceeds 200 bytes"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.sync_cursor {
-        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_integrations.sync_cursor exceeds 4000 bytes".to_string()); }
+        if (value).as_bytes().len() > 4000 {
+            return Err(
+                "benefactor_marketing_integrations.sync_cursor exceeds 4000 bytes".to_string(),
+            );
+        }
     }
-    if !(&value.config).is_object() { return Err("benefactor_marketing_integrations.config must be a JSON object".to_string()); }
+    if !(&value.config).is_object() {
+        return Err("benefactor_marketing_integrations.config must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_integrations_insert(value: &BenefactorMarketingIntegrationsInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_integrations_insert(
+    value: &BenefactorMarketingIntegrationsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.platform {
-        if !["salesforce", "hubspot", "apollo", "zoominfo", "google_analytics", "google_ads", "linkedin_ads", "meta_ads", "mailchimp", "sendgrid", "scraper", "custom"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_integrations.platform: {}", value)); }
+        if ![
+            "salesforce",
+            "hubspot",
+            "apollo",
+            "zoominfo",
+            "google_analytics",
+            "google_ads",
+            "linkedin_ads",
+            "meta_ads",
+            "mailchimp",
+            "sendgrid",
+            "scraper",
+            "custom",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported benefactor_marketing_integrations.platform: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.status {
-        if !["connected", "disabled", "error"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_integrations.status: {}", value)); }
+        if !["connected", "disabled", "error"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_integrations.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.auth_kind {
-        if !["oauth2", "api_key", "webhook", "manual"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_integrations.auth_kind: {}", value)); }
+        if !["oauth2", "api_key", "webhook", "manual"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_integrations.auth_kind: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.external_account_id {
-        validate_string_length("benefactor_marketing_integrations.external_account_id", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_integrations.external_account_id exceeds 200 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_integrations.external_account_id",
+            value,
+            None,
+            Some(200),
+        )?;
+        if (value).as_bytes().len() > 200 {
+            return Err(
+                "benefactor_marketing_integrations.external_account_id exceeds 200 bytes"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.sync_cursor {
-        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_integrations.sync_cursor exceeds 4000 bytes".to_string()); }
+        if (value).as_bytes().len() > 4000 {
+            return Err(
+                "benefactor_marketing_integrations.sync_cursor exceeds 4000 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.config {
-        if !(value).is_object() { return Err("benefactor_marketing_integrations.config must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_integrations.config must be a JSON object".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
 pub const BENEFACTOR_MARKETING_LEADS_TABLE: &str = "benefactor_marketing_leads";
-pub const BENEFACTOR_MARKETING_LEADS_COLUMNS: &[&str] = &["id", "client_id", "source_integration_id", "status", "company_name", "domain", "contact_name", "contact_email", "contact_title", "country_code", "lead_score", "icp_fit_score", "verification_status", "enrichment_status", "company_profile", "signals", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_LEADS_COLUMNS: &[&str] = &[
+    "id",
+    "client_id",
+    "source_integration_id",
+    "status",
+    "company_name",
+    "domain",
+    "contact_name",
+    "contact_email",
+    "contact_title",
+    "country_code",
+    "lead_score",
+    "icp_fit_score",
+    "verification_status",
+    "enrichment_status",
+    "company_profile",
+    "signals",
+    "meta_data",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_LEADS_SELECT_SQL: &str = r###"select
       id::text as id,
       client_id::text as client_id,
@@ -9691,7 +15029,14 @@ pub enum BenefactorMarketingLeadsStatus {
 }
 
 impl BenefactorMarketingLeadsStatus {
-    pub const VALUES: &'static [&'static str] = &["new", "researching", "qualified", "disqualified", "contacted", "converted"];
+    pub const VALUES: &'static [&'static str] = &[
+        "new",
+        "researching",
+        "qualified",
+        "disqualified",
+        "contacted",
+        "converted",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -9842,98 +15187,276 @@ pub struct BenefactorMarketingLeadsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_leads_row(value: &BenefactorMarketingLeadsRow) -> Result<(), String> {
-    if !["new", "researching", "qualified", "disqualified", "contacted", "converted"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_leads.status: {}", &value.status)); }
-    validate_string_length("benefactor_marketing_leads.company_name", &value.company_name, None, Some(240))?;
-    if (&value.company_name).as_bytes().len() > 240 { return Err("benefactor_marketing_leads.company_name exceeds 240 bytes".to_string()); }
+pub fn validate_benefactor_marketing_leads_row(
+    value: &BenefactorMarketingLeadsRow,
+) -> Result<(), String> {
+    if ![
+        "new",
+        "researching",
+        "qualified",
+        "disqualified",
+        "contacted",
+        "converted",
+    ]
+    .contains(&(&value.status).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_leads.status: {}",
+            &value.status
+        ));
+    }
+    validate_string_length(
+        "benefactor_marketing_leads.company_name",
+        &value.company_name,
+        None,
+        Some(240),
+    )?;
+    if (&value.company_name).as_bytes().len() > 240 {
+        return Err("benefactor_marketing_leads.company_name exceeds 240 bytes".to_string());
+    }
     if let Some(value) = &value.domain {
         validate_string_length("benefactor_marketing_leads.domain", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_leads.domain exceeds 240 bytes".to_string()); }
+        if (value).as_bytes().len() > 240 {
+            return Err("benefactor_marketing_leads.domain exceeds 240 bytes".to_string());
+        }
     }
     if let Some(value) = &value.contact_name {
-        validate_string_length("benefactor_marketing_leads.contact_name", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_leads.contact_name exceeds 200 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_leads.contact_name",
+            value,
+            None,
+            Some(200),
+        )?;
+        if (value).as_bytes().len() > 200 {
+            return Err("benefactor_marketing_leads.contact_name exceeds 200 bytes".to_string());
+        }
     }
     if let Some(value) = &value.contact_email {
-        validate_string_length("benefactor_marketing_leads.contact_email", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_leads.contact_email exceeds 240 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_leads.contact_email",
+            value,
+            None,
+            Some(240),
+        )?;
+        if (value).as_bytes().len() > 240 {
+            return Err("benefactor_marketing_leads.contact_email exceeds 240 bytes".to_string());
+        }
     }
     if let Some(value) = &value.contact_title {
-        validate_string_length("benefactor_marketing_leads.contact_title", value, None, Some(160))?;
-        if (value).as_bytes().len() > 160 { return Err("benefactor_marketing_leads.contact_title exceeds 160 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_leads.contact_title",
+            value,
+            None,
+            Some(160),
+        )?;
+        if (value).as_bytes().len() > 160 {
+            return Err("benefactor_marketing_leads.contact_title exceeds 160 bytes".to_string());
+        }
     }
     if let Some(value) = &value.country_code {
-        validate_string_length("benefactor_marketing_leads.country_code", value, None, Some(8))?;
-        if (value).as_bytes().len() > 8 { return Err("benefactor_marketing_leads.country_code exceeds 8 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_leads.country_code",
+            value,
+            None,
+            Some(8),
+        )?;
+        if (value).as_bytes().len() > 8 {
+            return Err("benefactor_marketing_leads.country_code exceeds 8 bytes".to_string());
+        }
     }
-    if *(&value.lead_score) < 0 { return Err("benefactor_marketing_leads.lead_score is below the minimum".to_string()); }
-    if *(&value.lead_score) > 100 { return Err("benefactor_marketing_leads.lead_score is above the maximum".to_string()); }
-    if *(&value.icp_fit_score) < 0 { return Err("benefactor_marketing_leads.icp_fit_score is below the minimum".to_string()); }
-    if *(&value.icp_fit_score) > 100 { return Err("benefactor_marketing_leads.icp_fit_score is above the maximum".to_string()); }
-    if !["unknown", "verified", "invalid", "risky"].contains(&(&value.verification_status).as_str()) { return Err(format!("unsupported benefactor_marketing_leads.verification_status: {}", &value.verification_status)); }
-    if !["pending", "running", "completed", "failed"].contains(&(&value.enrichment_status).as_str()) { return Err(format!("unsupported benefactor_marketing_leads.enrichment_status: {}", &value.enrichment_status)); }
-    if !(&value.company_profile).is_object() { return Err("benefactor_marketing_leads.company_profile must be a JSON object".to_string()); }
-    if !(&value.signals).is_array() { return Err("benefactor_marketing_leads.signals must be a JSON array".to_string()); }
-    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_leads.meta_data must be a JSON object".to_string()); }
+    if *(&value.lead_score) < 0 {
+        return Err("benefactor_marketing_leads.lead_score is below the minimum".to_string());
+    }
+    if *(&value.lead_score) > 100 {
+        return Err("benefactor_marketing_leads.lead_score is above the maximum".to_string());
+    }
+    if *(&value.icp_fit_score) < 0 {
+        return Err("benefactor_marketing_leads.icp_fit_score is below the minimum".to_string());
+    }
+    if *(&value.icp_fit_score) > 100 {
+        return Err("benefactor_marketing_leads.icp_fit_score is above the maximum".to_string());
+    }
+    if !["unknown", "verified", "invalid", "risky"].contains(&(&value.verification_status).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_leads.verification_status: {}",
+            &value.verification_status
+        ));
+    }
+    if !["pending", "running", "completed", "failed"].contains(&(&value.enrichment_status).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_leads.enrichment_status: {}",
+            &value.enrichment_status
+        ));
+    }
+    if !(&value.company_profile).is_object() {
+        return Err("benefactor_marketing_leads.company_profile must be a JSON object".to_string());
+    }
+    if !(&value.signals).is_array() {
+        return Err("benefactor_marketing_leads.signals must be a JSON array".to_string());
+    }
+    if !(&value.meta_data).is_object() {
+        return Err("benefactor_marketing_leads.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_leads_insert(value: &BenefactorMarketingLeadsInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_leads_insert(
+    value: &BenefactorMarketingLeadsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.status {
-        if !["new", "researching", "qualified", "disqualified", "contacted", "converted"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_leads.status: {}", value)); }
+        if ![
+            "new",
+            "researching",
+            "qualified",
+            "disqualified",
+            "contacted",
+            "converted",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported benefactor_marketing_leads.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.company_name {
-        validate_string_length("benefactor_marketing_leads.company_name", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_leads.company_name exceeds 240 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_leads.company_name",
+            value,
+            None,
+            Some(240),
+        )?;
+        if (value).as_bytes().len() > 240 {
+            return Err("benefactor_marketing_leads.company_name exceeds 240 bytes".to_string());
+        }
     }
     if let Some(value) = &value.domain {
         validate_string_length("benefactor_marketing_leads.domain", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_leads.domain exceeds 240 bytes".to_string()); }
+        if (value).as_bytes().len() > 240 {
+            return Err("benefactor_marketing_leads.domain exceeds 240 bytes".to_string());
+        }
     }
     if let Some(value) = &value.contact_name {
-        validate_string_length("benefactor_marketing_leads.contact_name", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_leads.contact_name exceeds 200 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_leads.contact_name",
+            value,
+            None,
+            Some(200),
+        )?;
+        if (value).as_bytes().len() > 200 {
+            return Err("benefactor_marketing_leads.contact_name exceeds 200 bytes".to_string());
+        }
     }
     if let Some(value) = &value.contact_email {
-        validate_string_length("benefactor_marketing_leads.contact_email", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_leads.contact_email exceeds 240 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_leads.contact_email",
+            value,
+            None,
+            Some(240),
+        )?;
+        if (value).as_bytes().len() > 240 {
+            return Err("benefactor_marketing_leads.contact_email exceeds 240 bytes".to_string());
+        }
     }
     if let Some(value) = &value.contact_title {
-        validate_string_length("benefactor_marketing_leads.contact_title", value, None, Some(160))?;
-        if (value).as_bytes().len() > 160 { return Err("benefactor_marketing_leads.contact_title exceeds 160 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_leads.contact_title",
+            value,
+            None,
+            Some(160),
+        )?;
+        if (value).as_bytes().len() > 160 {
+            return Err("benefactor_marketing_leads.contact_title exceeds 160 bytes".to_string());
+        }
     }
     if let Some(value) = &value.country_code {
-        validate_string_length("benefactor_marketing_leads.country_code", value, None, Some(8))?;
-        if (value).as_bytes().len() > 8 { return Err("benefactor_marketing_leads.country_code exceeds 8 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_leads.country_code",
+            value,
+            None,
+            Some(8),
+        )?;
+        if (value).as_bytes().len() > 8 {
+            return Err("benefactor_marketing_leads.country_code exceeds 8 bytes".to_string());
+        }
     }
     if let Some(value) = &value.lead_score {
-        if *(value) < 0 { return Err("benefactor_marketing_leads.lead_score is below the minimum".to_string()); }
-        if *(value) > 100 { return Err("benefactor_marketing_leads.lead_score is above the maximum".to_string()); }
+        if *(value) < 0 {
+            return Err("benefactor_marketing_leads.lead_score is below the minimum".to_string());
+        }
+        if *(value) > 100 {
+            return Err("benefactor_marketing_leads.lead_score is above the maximum".to_string());
+        }
     }
     if let Some(value) = &value.icp_fit_score {
-        if *(value) < 0 { return Err("benefactor_marketing_leads.icp_fit_score is below the minimum".to_string()); }
-        if *(value) > 100 { return Err("benefactor_marketing_leads.icp_fit_score is above the maximum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "benefactor_marketing_leads.icp_fit_score is below the minimum".to_string(),
+            );
+        }
+        if *(value) > 100 {
+            return Err(
+                "benefactor_marketing_leads.icp_fit_score is above the maximum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.verification_status {
-        if !["unknown", "verified", "invalid", "risky"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_leads.verification_status: {}", value)); }
+        if !["unknown", "verified", "invalid", "risky"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_leads.verification_status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.enrichment_status {
-        if !["pending", "running", "completed", "failed"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_leads.enrichment_status: {}", value)); }
+        if !["pending", "running", "completed", "failed"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_leads.enrichment_status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.company_profile {
-        if !(value).is_object() { return Err("benefactor_marketing_leads.company_profile must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_leads.company_profile must be a JSON object".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.signals {
-        if !(value).is_array() { return Err("benefactor_marketing_leads.signals must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err("benefactor_marketing_leads.signals must be a JSON array".to_string());
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("benefactor_marketing_leads.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("benefactor_marketing_leads.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const BENEFACTOR_MARKETING_ENRICHMENT_JOBS_TABLE: &str = "benefactor_marketing_enrichment_jobs";
-pub const BENEFACTOR_MARKETING_ENRICHMENT_JOBS_COLUMNS: &[&str] = &["id", "client_id", "lead_id", "job_kind", "status", "external_job_id", "scraper_handoff_url", "input", "result", "error_summary", "queued_at", "started_at", "completed_at", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_ENRICHMENT_JOBS_COLUMNS: &[&str] = &[
+    "id",
+    "client_id",
+    "lead_id",
+    "job_kind",
+    "status",
+    "external_job_id",
+    "scraper_handoff_url",
+    "input",
+    "result",
+    "error_summary",
+    "queued_at",
+    "started_at",
+    "completed_at",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_ENRICHMENT_JOBS_SELECT_SQL: &str = r###"select
       id::text as id,
       client_id::text as client_id,
@@ -9963,7 +15486,13 @@ pub enum BenefactorMarketingEnrichmentJobsJobKind {
 }
 
 impl BenefactorMarketingEnrichmentJobsJobKind {
-    pub const VALUES: &'static [&'static str] = &["lead_enrichment", "company_research", "contact_verification", "prospect_scrape", "competitive_intel"];
+    pub const VALUES: &'static [&'static str] = &[
+        "lead_enrichment",
+        "company_research",
+        "contact_verification",
+        "prospect_scrape",
+        "competitive_intel",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -10002,7 +15531,8 @@ pub enum BenefactorMarketingEnrichmentJobsStatus {
 }
 
 impl BenefactorMarketingEnrichmentJobsStatus {
-    pub const VALUES: &'static [&'static str] = &["queued", "running", "completed", "failed", "canceled"];
+    pub const VALUES: &'static [&'static str] =
+        &["queued", "running", "completed", "failed", "canceled"];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -10071,52 +15601,160 @@ pub struct BenefactorMarketingEnrichmentJobsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_enrichment_jobs_row(value: &BenefactorMarketingEnrichmentJobsRow) -> Result<(), String> {
-    if !["lead_enrichment", "company_research", "contact_verification", "prospect_scrape", "competitive_intel"].contains(&(&value.job_kind).as_str()) { return Err(format!("unsupported benefactor_marketing_enrichment_jobs.job_kind: {}", &value.job_kind)); }
-    if !["queued", "running", "completed", "failed", "canceled"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_enrichment_jobs.status: {}", &value.status)); }
+pub fn validate_benefactor_marketing_enrichment_jobs_row(
+    value: &BenefactorMarketingEnrichmentJobsRow,
+) -> Result<(), String> {
+    if ![
+        "lead_enrichment",
+        "company_research",
+        "contact_verification",
+        "prospect_scrape",
+        "competitive_intel",
+    ]
+    .contains(&(&value.job_kind).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_enrichment_jobs.job_kind: {}",
+            &value.job_kind
+        ));
+    }
+    if !["queued", "running", "completed", "failed", "canceled"].contains(&(&value.status).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_enrichment_jobs.status: {}",
+            &value.status
+        ));
+    }
     if let Some(value) = &value.external_job_id {
-        validate_string_length("benefactor_marketing_enrichment_jobs.external_job_id", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_enrichment_jobs.external_job_id exceeds 200 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_enrichment_jobs.external_job_id",
+            value,
+            None,
+            Some(200),
+        )?;
+        if (value).as_bytes().len() > 200 {
+            return Err(
+                "benefactor_marketing_enrichment_jobs.external_job_id exceeds 200 bytes"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.scraper_handoff_url {
-        if (value).as_bytes().len() > 2048 { return Err("benefactor_marketing_enrichment_jobs.scraper_handoff_url exceeds 2048 bytes".to_string()); }
+        if (value).as_bytes().len() > 2048 {
+            return Err(
+                "benefactor_marketing_enrichment_jobs.scraper_handoff_url exceeds 2048 bytes"
+                    .to_string(),
+            );
+        }
     }
-    if !(&value.input).is_object() { return Err("benefactor_marketing_enrichment_jobs.input must be a JSON object".to_string()); }
-    if !(&value.result).is_object() { return Err("benefactor_marketing_enrichment_jobs.result must be a JSON object".to_string()); }
+    if !(&value.input).is_object() {
+        return Err("benefactor_marketing_enrichment_jobs.input must be a JSON object".to_string());
+    }
+    if !(&value.result).is_object() {
+        return Err(
+            "benefactor_marketing_enrichment_jobs.result must be a JSON object".to_string(),
+        );
+    }
     if let Some(value) = &value.error_summary {
-        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_enrichment_jobs.error_summary exceeds 4000 bytes".to_string()); }
+        if (value).as_bytes().len() > 4000 {
+            return Err(
+                "benefactor_marketing_enrichment_jobs.error_summary exceeds 4000 bytes".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_enrichment_jobs_insert(value: &BenefactorMarketingEnrichmentJobsInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_enrichment_jobs_insert(
+    value: &BenefactorMarketingEnrichmentJobsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.job_kind {
-        if !["lead_enrichment", "company_research", "contact_verification", "prospect_scrape", "competitive_intel"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_enrichment_jobs.job_kind: {}", value)); }
+        if ![
+            "lead_enrichment",
+            "company_research",
+            "contact_verification",
+            "prospect_scrape",
+            "competitive_intel",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported benefactor_marketing_enrichment_jobs.job_kind: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.status {
-        if !["queued", "running", "completed", "failed", "canceled"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_enrichment_jobs.status: {}", value)); }
+        if !["queued", "running", "completed", "failed", "canceled"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_enrichment_jobs.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.external_job_id {
-        validate_string_length("benefactor_marketing_enrichment_jobs.external_job_id", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_enrichment_jobs.external_job_id exceeds 200 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_enrichment_jobs.external_job_id",
+            value,
+            None,
+            Some(200),
+        )?;
+        if (value).as_bytes().len() > 200 {
+            return Err(
+                "benefactor_marketing_enrichment_jobs.external_job_id exceeds 200 bytes"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.scraper_handoff_url {
-        if (value).as_bytes().len() > 2048 { return Err("benefactor_marketing_enrichment_jobs.scraper_handoff_url exceeds 2048 bytes".to_string()); }
+        if (value).as_bytes().len() > 2048 {
+            return Err(
+                "benefactor_marketing_enrichment_jobs.scraper_handoff_url exceeds 2048 bytes"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.input {
-        if !(value).is_object() { return Err("benefactor_marketing_enrichment_jobs.input must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_enrichment_jobs.input must be a JSON object".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.result {
-        if !(value).is_object() { return Err("benefactor_marketing_enrichment_jobs.result must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_enrichment_jobs.result must be a JSON object".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.error_summary {
-        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_enrichment_jobs.error_summary exceeds 4000 bytes".to_string()); }
+        if (value).as_bytes().len() > 4000 {
+            return Err(
+                "benefactor_marketing_enrichment_jobs.error_summary exceeds 4000 bytes".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
 pub const BENEFACTOR_MARKETING_CAMPAIGNS_TABLE: &str = "benefactor_marketing_campaigns";
-pub const BENEFACTOR_MARKETING_CAMPAIGNS_COLUMNS: &[&str] = &["id", "client_id", "status", "campaign_kind", "name", "objective", "budget_cents", "starts_on", "ends_on", "target_segments", "kpis", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_CAMPAIGNS_COLUMNS: &[&str] = &[
+    "id",
+    "client_id",
+    "status",
+    "campaign_kind",
+    "name",
+    "objective",
+    "budget_cents",
+    "starts_on",
+    "ends_on",
+    "target_segments",
+    "kpis",
+    "meta_data",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_CAMPAIGNS_SELECT_SQL: &str = r###"select
       id::text as id,
       client_id::text as client_id,
@@ -10145,7 +15783,8 @@ pub enum BenefactorMarketingCampaignsStatus {
 }
 
 impl BenefactorMarketingCampaignsStatus {
-    pub const VALUES: &'static [&'static str] = &["draft", "active", "paused", "completed", "archived"];
+    pub const VALUES: &'static [&'static str] =
+        &["draft", "active", "paused", "completed", "archived"];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -10186,7 +15825,15 @@ pub enum BenefactorMarketingCampaignsCampaignKind {
 }
 
 impl BenefactorMarketingCampaignsCampaignKind {
-    pub const VALUES: &'static [&'static str] = &["social_media", "seo_aeo", "email", "outreach", "paid_ads", "content", "multi_channel"];
+    pub const VALUES: &'static [&'static str] = &[
+        "social_media",
+        "seo_aeo",
+        "email",
+        "outreach",
+        "paid_ads",
+        "content",
+        "multi_channel",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -10257,64 +15904,182 @@ pub struct BenefactorMarketingCampaignsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_campaigns_row(value: &BenefactorMarketingCampaignsRow) -> Result<(), String> {
-    if !["draft", "active", "paused", "completed", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_campaigns.status: {}", &value.status)); }
-    if !["social_media", "seo_aeo", "email", "outreach", "paid_ads", "content", "multi_channel"].contains(&(&value.campaign_kind).as_str()) { return Err(format!("unsupported benefactor_marketing_campaigns.campaign_kind: {}", &value.campaign_kind)); }
-    validate_string_length("benefactor_marketing_campaigns.name", &value.name, None, Some(220))?;
-    if (&value.name).as_bytes().len() > 220 { return Err("benefactor_marketing_campaigns.name exceeds 220 bytes".to_string()); }
-    if let Some(value) = &value.objective {
-        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_campaigns.objective exceeds 4000 bytes".to_string()); }
+pub fn validate_benefactor_marketing_campaigns_row(
+    value: &BenefactorMarketingCampaignsRow,
+) -> Result<(), String> {
+    if !["draft", "active", "paused", "completed", "archived"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_campaigns.status: {}",
+            &value.status
+        ));
     }
-    if *(&value.budget_cents) < 0 { return Err("benefactor_marketing_campaigns.budget_cents is below the minimum".to_string()); }
+    if ![
+        "social_media",
+        "seo_aeo",
+        "email",
+        "outreach",
+        "paid_ads",
+        "content",
+        "multi_channel",
+    ]
+    .contains(&(&value.campaign_kind).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_campaigns.campaign_kind: {}",
+            &value.campaign_kind
+        ));
+    }
+    validate_string_length(
+        "benefactor_marketing_campaigns.name",
+        &value.name,
+        None,
+        Some(220),
+    )?;
+    if (&value.name).as_bytes().len() > 220 {
+        return Err("benefactor_marketing_campaigns.name exceeds 220 bytes".to_string());
+    }
+    if let Some(value) = &value.objective {
+        if (value).as_bytes().len() > 4000 {
+            return Err("benefactor_marketing_campaigns.objective exceeds 4000 bytes".to_string());
+        }
+    }
+    if *(&value.budget_cents) < 0 {
+        return Err("benefactor_marketing_campaigns.budget_cents is below the minimum".to_string());
+    }
     if let Some(value) = &value.starts_on {
-        validate_string_length("benefactor_marketing_campaigns.starts_on", value, None, Some(10))?;
+        validate_string_length(
+            "benefactor_marketing_campaigns.starts_on",
+            value,
+            None,
+            Some(10),
+        )?;
     }
     if let Some(value) = &value.ends_on {
-        validate_string_length("benefactor_marketing_campaigns.ends_on", value, None, Some(10))?;
+        validate_string_length(
+            "benefactor_marketing_campaigns.ends_on",
+            value,
+            None,
+            Some(10),
+        )?;
     }
-    if !(&value.target_segments).is_array() { return Err("benefactor_marketing_campaigns.target_segments must be a JSON array".to_string()); }
-    if !(&value.kpis).is_object() { return Err("benefactor_marketing_campaigns.kpis must be a JSON object".to_string()); }
-    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_campaigns.meta_data must be a JSON object".to_string()); }
+    if !(&value.target_segments).is_array() {
+        return Err(
+            "benefactor_marketing_campaigns.target_segments must be a JSON array".to_string(),
+        );
+    }
+    if !(&value.kpis).is_object() {
+        return Err("benefactor_marketing_campaigns.kpis must be a JSON object".to_string());
+    }
+    if !(&value.meta_data).is_object() {
+        return Err("benefactor_marketing_campaigns.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_campaigns_insert(value: &BenefactorMarketingCampaignsInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_campaigns_insert(
+    value: &BenefactorMarketingCampaignsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.status {
-        if !["draft", "active", "paused", "completed", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_campaigns.status: {}", value)); }
+        if !["draft", "active", "paused", "completed", "archived"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_campaigns.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.campaign_kind {
-        if !["social_media", "seo_aeo", "email", "outreach", "paid_ads", "content", "multi_channel"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_campaigns.campaign_kind: {}", value)); }
+        if ![
+            "social_media",
+            "seo_aeo",
+            "email",
+            "outreach",
+            "paid_ads",
+            "content",
+            "multi_channel",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported benefactor_marketing_campaigns.campaign_kind: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.name {
-        validate_string_length("benefactor_marketing_campaigns.name", value, None, Some(220))?;
-        if (value).as_bytes().len() > 220 { return Err("benefactor_marketing_campaigns.name exceeds 220 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_campaigns.name",
+            value,
+            None,
+            Some(220),
+        )?;
+        if (value).as_bytes().len() > 220 {
+            return Err("benefactor_marketing_campaigns.name exceeds 220 bytes".to_string());
+        }
     }
     if let Some(value) = &value.objective {
-        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_campaigns.objective exceeds 4000 bytes".to_string()); }
+        if (value).as_bytes().len() > 4000 {
+            return Err("benefactor_marketing_campaigns.objective exceeds 4000 bytes".to_string());
+        }
     }
     if let Some(value) = &value.budget_cents {
-        if *(value) < 0 { return Err("benefactor_marketing_campaigns.budget_cents is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "benefactor_marketing_campaigns.budget_cents is below the minimum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.starts_on {
-        validate_string_length("benefactor_marketing_campaigns.starts_on", value, None, Some(10))?;
+        validate_string_length(
+            "benefactor_marketing_campaigns.starts_on",
+            value,
+            None,
+            Some(10),
+        )?;
     }
     if let Some(value) = &value.ends_on {
-        validate_string_length("benefactor_marketing_campaigns.ends_on", value, None, Some(10))?;
+        validate_string_length(
+            "benefactor_marketing_campaigns.ends_on",
+            value,
+            None,
+            Some(10),
+        )?;
     }
     if let Some(value) = &value.target_segments {
-        if !(value).is_array() { return Err("benefactor_marketing_campaigns.target_segments must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err(
+                "benefactor_marketing_campaigns.target_segments must be a JSON array".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.kpis {
-        if !(value).is_object() { return Err("benefactor_marketing_campaigns.kpis must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("benefactor_marketing_campaigns.kpis must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("benefactor_marketing_campaigns.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_campaigns.meta_data must be a JSON object".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
-pub const BENEFACTOR_MARKETING_CAMPAIGN_CHANNELS_TABLE: &str = "benefactor_marketing_campaign_channels";
-pub const BENEFACTOR_MARKETING_CAMPAIGN_CHANNELS_COLUMNS: &[&str] = &["id", "campaign_id", "channel", "status", "external_campaign_id", "strategy", "schedule", "metrics_snapshot", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_CAMPAIGN_CHANNELS_TABLE: &str =
+    "benefactor_marketing_campaign_channels";
+pub const BENEFACTOR_MARKETING_CAMPAIGN_CHANNELS_COLUMNS: &[&str] = &[
+    "id",
+    "campaign_id",
+    "channel",
+    "status",
+    "external_campaign_id",
+    "strategy",
+    "schedule",
+    "metrics_snapshot",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_CAMPAIGN_CHANNELS_SELECT_SQL: &str = r###"select
       id::text as id,
       campaign_id::text as campaign_id,
@@ -10344,7 +16109,18 @@ pub enum BenefactorMarketingCampaignChannelsChannel {
 }
 
 impl BenefactorMarketingCampaignChannelsChannel {
-    pub const VALUES: &'static [&'static str] = &["social", "linkedin", "email", "sms", "seo", "aeo", "google_ads", "meta_ads", "landing_page", "content"];
+    pub const VALUES: &'static [&'static str] = &[
+        "social",
+        "linkedin",
+        "email",
+        "sms",
+        "seo",
+        "aeo",
+        "google_ads",
+        "meta_ads",
+        "landing_page",
+        "content",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -10393,7 +16169,8 @@ pub enum BenefactorMarketingCampaignChannelsStatus {
 }
 
 impl BenefactorMarketingCampaignChannelsStatus {
-    pub const VALUES: &'static [&'static str] = &["draft", "scheduled", "live", "paused", "completed"];
+    pub const VALUES: &'static [&'static str] =
+        &["draft", "scheduled", "live", "paused", "completed"];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -10452,44 +16229,154 @@ pub struct BenefactorMarketingCampaignChannelsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_campaign_channels_row(value: &BenefactorMarketingCampaignChannelsRow) -> Result<(), String> {
-    if !["social", "linkedin", "email", "sms", "seo", "aeo", "google_ads", "meta_ads", "landing_page", "content"].contains(&(&value.channel).as_str()) { return Err(format!("unsupported benefactor_marketing_campaign_channels.channel: {}", &value.channel)); }
-    if !["draft", "scheduled", "live", "paused", "completed"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_campaign_channels.status: {}", &value.status)); }
-    if let Some(value) = &value.external_campaign_id {
-        validate_string_length("benefactor_marketing_campaign_channels.external_campaign_id", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_campaign_channels.external_campaign_id exceeds 200 bytes".to_string()); }
+pub fn validate_benefactor_marketing_campaign_channels_row(
+    value: &BenefactorMarketingCampaignChannelsRow,
+) -> Result<(), String> {
+    if ![
+        "social",
+        "linkedin",
+        "email",
+        "sms",
+        "seo",
+        "aeo",
+        "google_ads",
+        "meta_ads",
+        "landing_page",
+        "content",
+    ]
+    .contains(&(&value.channel).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_campaign_channels.channel: {}",
+            &value.channel
+        ));
     }
-    if !(&value.strategy).is_object() { return Err("benefactor_marketing_campaign_channels.strategy must be a JSON object".to_string()); }
-    if !(&value.schedule).is_object() { return Err("benefactor_marketing_campaign_channels.schedule must be a JSON object".to_string()); }
-    if !(&value.metrics_snapshot).is_object() { return Err("benefactor_marketing_campaign_channels.metrics_snapshot must be a JSON object".to_string()); }
+    if !["draft", "scheduled", "live", "paused", "completed"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_campaign_channels.status: {}",
+            &value.status
+        ));
+    }
+    if let Some(value) = &value.external_campaign_id {
+        validate_string_length(
+            "benefactor_marketing_campaign_channels.external_campaign_id",
+            value,
+            None,
+            Some(200),
+        )?;
+        if (value).as_bytes().len() > 200 {
+            return Err(
+                "benefactor_marketing_campaign_channels.external_campaign_id exceeds 200 bytes"
+                    .to_string(),
+            );
+        }
+    }
+    if !(&value.strategy).is_object() {
+        return Err(
+            "benefactor_marketing_campaign_channels.strategy must be a JSON object".to_string(),
+        );
+    }
+    if !(&value.schedule).is_object() {
+        return Err(
+            "benefactor_marketing_campaign_channels.schedule must be a JSON object".to_string(),
+        );
+    }
+    if !(&value.metrics_snapshot).is_object() {
+        return Err(
+            "benefactor_marketing_campaign_channels.metrics_snapshot must be a JSON object"
+                .to_string(),
+        );
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_campaign_channels_insert(value: &BenefactorMarketingCampaignChannelsInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_campaign_channels_insert(
+    value: &BenefactorMarketingCampaignChannelsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.channel {
-        if !["social", "linkedin", "email", "sms", "seo", "aeo", "google_ads", "meta_ads", "landing_page", "content"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_campaign_channels.channel: {}", value)); }
+        if ![
+            "social",
+            "linkedin",
+            "email",
+            "sms",
+            "seo",
+            "aeo",
+            "google_ads",
+            "meta_ads",
+            "landing_page",
+            "content",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported benefactor_marketing_campaign_channels.channel: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.status {
-        if !["draft", "scheduled", "live", "paused", "completed"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_campaign_channels.status: {}", value)); }
+        if !["draft", "scheduled", "live", "paused", "completed"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_campaign_channels.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.external_campaign_id {
-        validate_string_length("benefactor_marketing_campaign_channels.external_campaign_id", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_campaign_channels.external_campaign_id exceeds 200 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_campaign_channels.external_campaign_id",
+            value,
+            None,
+            Some(200),
+        )?;
+        if (value).as_bytes().len() > 200 {
+            return Err(
+                "benefactor_marketing_campaign_channels.external_campaign_id exceeds 200 bytes"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.strategy {
-        if !(value).is_object() { return Err("benefactor_marketing_campaign_channels.strategy must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_campaign_channels.strategy must be a JSON object".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.schedule {
-        if !(value).is_object() { return Err("benefactor_marketing_campaign_channels.schedule must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_campaign_channels.schedule must be a JSON object".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.metrics_snapshot {
-        if !(value).is_object() { return Err("benefactor_marketing_campaign_channels.metrics_snapshot must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_campaign_channels.metrics_snapshot must be a JSON object"
+                    .to_string(),
+            );
+        }
     }
     Ok(())
 }
 
-pub const BENEFACTOR_MARKETING_CAMPAIGN_EXPERIMENTS_TABLE: &str = "benefactor_marketing_campaign_experiments";
-pub const BENEFACTOR_MARKETING_CAMPAIGN_EXPERIMENTS_COLUMNS: &[&str] = &["id", "campaign_id", "status", "experiment_kind", "hypothesis", "variants", "winning_variant", "result_summary", "started_at", "ended_at", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_CAMPAIGN_EXPERIMENTS_TABLE: &str =
+    "benefactor_marketing_campaign_experiments";
+pub const BENEFACTOR_MARKETING_CAMPAIGN_EXPERIMENTS_COLUMNS: &[&str] = &[
+    "id",
+    "campaign_id",
+    "status",
+    "experiment_kind",
+    "hypothesis",
+    "variants",
+    "winning_variant",
+    "result_summary",
+    "started_at",
+    "ended_at",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_CAMPAIGN_EXPERIMENTS_SELECT_SQL: &str = r###"select
       id::text as id,
       campaign_id::text as campaign_id,
@@ -10553,7 +16440,14 @@ pub enum BenefactorMarketingCampaignExperimentsExperimentKind {
 }
 
 impl BenefactorMarketingCampaignExperimentsExperimentKind {
-    pub const VALUES: &'static [&'static str] = &["subject_line", "creative", "copy", "landing_page", "audience", "budget"];
+    pub const VALUES: &'static [&'static str] = &[
+        "subject_line",
+        "creative",
+        "copy",
+        "landing_page",
+        "audience",
+        "budget",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -10618,46 +16512,149 @@ pub struct BenefactorMarketingCampaignExperimentsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_campaign_experiments_row(value: &BenefactorMarketingCampaignExperimentsRow) -> Result<(), String> {
-    if !["draft", "running", "winner_selected", "stopped"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_campaign_experiments.status: {}", &value.status)); }
-    if !["subject_line", "creative", "copy", "landing_page", "audience", "budget"].contains(&(&value.experiment_kind).as_str()) { return Err(format!("unsupported benefactor_marketing_campaign_experiments.experiment_kind: {}", &value.experiment_kind)); }
+pub fn validate_benefactor_marketing_campaign_experiments_row(
+    value: &BenefactorMarketingCampaignExperimentsRow,
+) -> Result<(), String> {
+    if !["draft", "running", "winner_selected", "stopped"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_campaign_experiments.status: {}",
+            &value.status
+        ));
+    }
+    if ![
+        "subject_line",
+        "creative",
+        "copy",
+        "landing_page",
+        "audience",
+        "budget",
+    ]
+    .contains(&(&value.experiment_kind).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_campaign_experiments.experiment_kind: {}",
+            &value.experiment_kind
+        ));
+    }
     if let Some(value) = &value.hypothesis {
-        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_campaign_experiments.hypothesis exceeds 4000 bytes".to_string()); }
+        if (value).as_bytes().len() > 4000 {
+            return Err(
+                "benefactor_marketing_campaign_experiments.hypothesis exceeds 4000 bytes"
+                    .to_string(),
+            );
+        }
     }
-    if !(&value.variants).is_array() { return Err("benefactor_marketing_campaign_experiments.variants must be a JSON array".to_string()); }
+    if !(&value.variants).is_array() {
+        return Err(
+            "benefactor_marketing_campaign_experiments.variants must be a JSON array".to_string(),
+        );
+    }
     if let Some(value) = &value.winning_variant {
-        validate_string_length("benefactor_marketing_campaign_experiments.winning_variant", value, None, Some(120))?;
-        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_campaign_experiments.winning_variant exceeds 120 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_campaign_experiments.winning_variant",
+            value,
+            None,
+            Some(120),
+        )?;
+        if (value).as_bytes().len() > 120 {
+            return Err(
+                "benefactor_marketing_campaign_experiments.winning_variant exceeds 120 bytes"
+                    .to_string(),
+            );
+        }
     }
-    if !(&value.result_summary).is_object() { return Err("benefactor_marketing_campaign_experiments.result_summary must be a JSON object".to_string()); }
+    if !(&value.result_summary).is_object() {
+        return Err(
+            "benefactor_marketing_campaign_experiments.result_summary must be a JSON object"
+                .to_string(),
+        );
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_campaign_experiments_insert(value: &BenefactorMarketingCampaignExperimentsInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_campaign_experiments_insert(
+    value: &BenefactorMarketingCampaignExperimentsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.status {
-        if !["draft", "running", "winner_selected", "stopped"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_campaign_experiments.status: {}", value)); }
+        if !["draft", "running", "winner_selected", "stopped"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_campaign_experiments.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.experiment_kind {
-        if !["subject_line", "creative", "copy", "landing_page", "audience", "budget"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_campaign_experiments.experiment_kind: {}", value)); }
+        if ![
+            "subject_line",
+            "creative",
+            "copy",
+            "landing_page",
+            "audience",
+            "budget",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported benefactor_marketing_campaign_experiments.experiment_kind: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.hypothesis {
-        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_campaign_experiments.hypothesis exceeds 4000 bytes".to_string()); }
+        if (value).as_bytes().len() > 4000 {
+            return Err(
+                "benefactor_marketing_campaign_experiments.hypothesis exceeds 4000 bytes"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.variants {
-        if !(value).is_array() { return Err("benefactor_marketing_campaign_experiments.variants must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err(
+                "benefactor_marketing_campaign_experiments.variants must be a JSON array"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.winning_variant {
-        validate_string_length("benefactor_marketing_campaign_experiments.winning_variant", value, None, Some(120))?;
-        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_campaign_experiments.winning_variant exceeds 120 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_campaign_experiments.winning_variant",
+            value,
+            None,
+            Some(120),
+        )?;
+        if (value).as_bytes().len() > 120 {
+            return Err(
+                "benefactor_marketing_campaign_experiments.winning_variant exceeds 120 bytes"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.result_summary {
-        if !(value).is_object() { return Err("benefactor_marketing_campaign_experiments.result_summary must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_campaign_experiments.result_summary must be a JSON object"
+                    .to_string(),
+            );
+        }
     }
     Ok(())
 }
 
-pub const BENEFACTOR_MARKETING_AUTOMATION_WORKFLOWS_TABLE: &str = "benefactor_marketing_automation_workflows";
-pub const BENEFACTOR_MARKETING_AUTOMATION_WORKFLOWS_COLUMNS: &[&str] = &["id", "client_id", "status", "name", "trigger_kind", "trigger_config", "action_graph", "last_run_at", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_AUTOMATION_WORKFLOWS_TABLE: &str =
+    "benefactor_marketing_automation_workflows";
+pub const BENEFACTOR_MARKETING_AUTOMATION_WORKFLOWS_COLUMNS: &[&str] = &[
+    "id",
+    "client_id",
+    "status",
+    "name",
+    "trigger_kind",
+    "trigger_config",
+    "action_graph",
+    "last_run_at",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_AUTOMATION_WORKFLOWS_SELECT_SQL: &str = r###"select
       id::text as id,
       client_id::text as client_id,
@@ -10721,7 +16718,16 @@ pub enum BenefactorMarketingAutomationWorkflowsTriggerKind {
 }
 
 impl BenefactorMarketingAutomationWorkflowsTriggerKind {
-    pub const VALUES: &'static [&'static str] = &["lead_created", "score_changed", "form_submit", "email_event", "campaign_event", "manual", "schedule", "webhook"];
+    pub const VALUES: &'static [&'static str] = &[
+        "lead_created",
+        "score_changed",
+        "form_submit",
+        "email_event",
+        "campaign_event",
+        "manual",
+        "schedule",
+        "webhook",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -10786,38 +16792,131 @@ pub struct BenefactorMarketingAutomationWorkflowsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_automation_workflows_row(value: &BenefactorMarketingAutomationWorkflowsRow) -> Result<(), String> {
-    if !["draft", "active", "paused", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_automation_workflows.status: {}", &value.status)); }
-    validate_string_length("benefactor_marketing_automation_workflows.name", &value.name, None, Some(220))?;
-    if (&value.name).as_bytes().len() > 220 { return Err("benefactor_marketing_automation_workflows.name exceeds 220 bytes".to_string()); }
-    if !["lead_created", "score_changed", "form_submit", "email_event", "campaign_event", "manual", "schedule", "webhook"].contains(&(&value.trigger_kind).as_str()) { return Err(format!("unsupported benefactor_marketing_automation_workflows.trigger_kind: {}", &value.trigger_kind)); }
-    if !(&value.trigger_config).is_object() { return Err("benefactor_marketing_automation_workflows.trigger_config must be a JSON object".to_string()); }
-    if !(&value.action_graph).is_object() { return Err("benefactor_marketing_automation_workflows.action_graph must be a JSON object".to_string()); }
+pub fn validate_benefactor_marketing_automation_workflows_row(
+    value: &BenefactorMarketingAutomationWorkflowsRow,
+) -> Result<(), String> {
+    if !["draft", "active", "paused", "archived"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_automation_workflows.status: {}",
+            &value.status
+        ));
+    }
+    validate_string_length(
+        "benefactor_marketing_automation_workflows.name",
+        &value.name,
+        None,
+        Some(220),
+    )?;
+    if (&value.name).as_bytes().len() > 220 {
+        return Err("benefactor_marketing_automation_workflows.name exceeds 220 bytes".to_string());
+    }
+    if ![
+        "lead_created",
+        "score_changed",
+        "form_submit",
+        "email_event",
+        "campaign_event",
+        "manual",
+        "schedule",
+        "webhook",
+    ]
+    .contains(&(&value.trigger_kind).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_automation_workflows.trigger_kind: {}",
+            &value.trigger_kind
+        ));
+    }
+    if !(&value.trigger_config).is_object() {
+        return Err(
+            "benefactor_marketing_automation_workflows.trigger_config must be a JSON object"
+                .to_string(),
+        );
+    }
+    if !(&value.action_graph).is_object() {
+        return Err(
+            "benefactor_marketing_automation_workflows.action_graph must be a JSON object"
+                .to_string(),
+        );
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_automation_workflows_insert(value: &BenefactorMarketingAutomationWorkflowsInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_automation_workflows_insert(
+    value: &BenefactorMarketingAutomationWorkflowsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.status {
-        if !["draft", "active", "paused", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_automation_workflows.status: {}", value)); }
+        if !["draft", "active", "paused", "archived"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_automation_workflows.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.name {
-        validate_string_length("benefactor_marketing_automation_workflows.name", value, None, Some(220))?;
-        if (value).as_bytes().len() > 220 { return Err("benefactor_marketing_automation_workflows.name exceeds 220 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_automation_workflows.name",
+            value,
+            None,
+            Some(220),
+        )?;
+        if (value).as_bytes().len() > 220 {
+            return Err(
+                "benefactor_marketing_automation_workflows.name exceeds 220 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.trigger_kind {
-        if !["lead_created", "score_changed", "form_submit", "email_event", "campaign_event", "manual", "schedule", "webhook"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_automation_workflows.trigger_kind: {}", value)); }
+        if ![
+            "lead_created",
+            "score_changed",
+            "form_submit",
+            "email_event",
+            "campaign_event",
+            "manual",
+            "schedule",
+            "webhook",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported benefactor_marketing_automation_workflows.trigger_kind: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.trigger_config {
-        if !(value).is_object() { return Err("benefactor_marketing_automation_workflows.trigger_config must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_automation_workflows.trigger_config must be a JSON object"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.action_graph {
-        if !(value).is_object() { return Err("benefactor_marketing_automation_workflows.action_graph must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_automation_workflows.action_graph must be a JSON object"
+                    .to_string(),
+            );
+        }
     }
     Ok(())
 }
 
-pub const BENEFACTOR_MARKETING_AUTOMATION_EVENTS_TABLE: &str = "benefactor_marketing_automation_events";
-pub const BENEFACTOR_MARKETING_AUTOMATION_EVENTS_COLUMNS: &[&str] = &["id", "client_id", "workflow_id", "lead_id", "event_kind", "status", "payload", "error_summary", "created_at"];
+pub const BENEFACTOR_MARKETING_AUTOMATION_EVENTS_TABLE: &str =
+    "benefactor_marketing_automation_events";
+pub const BENEFACTOR_MARKETING_AUTOMATION_EVENTS_COLUMNS: &[&str] = &[
+    "id",
+    "client_id",
+    "workflow_id",
+    "lead_id",
+    "event_kind",
+    "status",
+    "payload",
+    "error_summary",
+    "created_at",
+];
 pub const BENEFACTOR_MARKETING_AUTOMATION_EVENTS_SELECT_SQL: &str = r###"select
       id::text as id,
       client_id::text as client_id,
@@ -10895,34 +16994,90 @@ pub struct BenefactorMarketingAutomationEventsInsert {
     pub created_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_automation_events_row(value: &BenefactorMarketingAutomationEventsRow) -> Result<(), String> {
-    validate_string_length("benefactor_marketing_automation_events.event_kind", &value.event_kind, None, Some(80))?;
-    if !["received", "processed", "failed", "skipped"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_automation_events.status: {}", &value.status)); }
-    if !(&value.payload).is_object() { return Err("benefactor_marketing_automation_events.payload must be a JSON object".to_string()); }
+pub fn validate_benefactor_marketing_automation_events_row(
+    value: &BenefactorMarketingAutomationEventsRow,
+) -> Result<(), String> {
+    validate_string_length(
+        "benefactor_marketing_automation_events.event_kind",
+        &value.event_kind,
+        None,
+        Some(80),
+    )?;
+    if !["received", "processed", "failed", "skipped"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_automation_events.status: {}",
+            &value.status
+        ));
+    }
+    if !(&value.payload).is_object() {
+        return Err(
+            "benefactor_marketing_automation_events.payload must be a JSON object".to_string(),
+        );
+    }
     if let Some(value) = &value.error_summary {
-        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_automation_events.error_summary exceeds 4000 bytes".to_string()); }
+        if (value).as_bytes().len() > 4000 {
+            return Err(
+                "benefactor_marketing_automation_events.error_summary exceeds 4000 bytes"
+                    .to_string(),
+            );
+        }
     }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_automation_events_insert(value: &BenefactorMarketingAutomationEventsInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_automation_events_insert(
+    value: &BenefactorMarketingAutomationEventsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.event_kind {
-        validate_string_length("benefactor_marketing_automation_events.event_kind", value, None, Some(80))?;
+        validate_string_length(
+            "benefactor_marketing_automation_events.event_kind",
+            value,
+            None,
+            Some(80),
+        )?;
     }
     if let Some(value) = &value.status {
-        if !["received", "processed", "failed", "skipped"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_automation_events.status: {}", value)); }
+        if !["received", "processed", "failed", "skipped"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_automation_events.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.payload {
-        if !(value).is_object() { return Err("benefactor_marketing_automation_events.payload must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_automation_events.payload must be a JSON object".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.error_summary {
-        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_automation_events.error_summary exceeds 4000 bytes".to_string()); }
+        if (value).as_bytes().len() > 4000 {
+            return Err(
+                "benefactor_marketing_automation_events.error_summary exceeds 4000 bytes"
+                    .to_string(),
+            );
+        }
     }
     Ok(())
 }
 
 pub const BENEFACTOR_MARKETING_REPORTS_TABLE: &str = "benefactor_marketing_reports";
-pub const BENEFACTOR_MARKETING_REPORTS_COLUMNS: &[&str] = &["id", "client_id", "campaign_id", "report_kind", "status", "period_start", "period_end", "metrics", "narrative", "delivery_targets", "generated_at", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_REPORTS_COLUMNS: &[&str] = &[
+    "id",
+    "client_id",
+    "campaign_id",
+    "report_kind",
+    "status",
+    "period_start",
+    "period_end",
+    "metrics",
+    "narrative",
+    "delivery_targets",
+    "generated_at",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_REPORTS_SELECT_SQL: &str = r###"select
       id::text as id,
       client_id::text as client_id,
@@ -10952,7 +17107,15 @@ pub enum BenefactorMarketingReportsReportKind {
 }
 
 impl BenefactorMarketingReportsReportKind {
-    pub const VALUES: &'static [&'static str] = &["dashboard", "executive_summary", "attribution", "funnel", "roi", "seo_aeo", "client_portal"];
+    pub const VALUES: &'static [&'static str] = &[
+        "dashboard",
+        "executive_summary",
+        "attribution",
+        "funnel",
+        "roi",
+        "seo_aeo",
+        "client_portal",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -11057,50 +17220,143 @@ pub struct BenefactorMarketingReportsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_reports_row(value: &BenefactorMarketingReportsRow) -> Result<(), String> {
-    if !["dashboard", "executive_summary", "attribution", "funnel", "roi", "seo_aeo", "client_portal"].contains(&(&value.report_kind).as_str()) { return Err(format!("unsupported benefactor_marketing_reports.report_kind: {}", &value.report_kind)); }
-    if !["draft", "ready", "sent", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_reports.status: {}", &value.status)); }
+pub fn validate_benefactor_marketing_reports_row(
+    value: &BenefactorMarketingReportsRow,
+) -> Result<(), String> {
+    if ![
+        "dashboard",
+        "executive_summary",
+        "attribution",
+        "funnel",
+        "roi",
+        "seo_aeo",
+        "client_portal",
+    ]
+    .contains(&(&value.report_kind).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_reports.report_kind: {}",
+            &value.report_kind
+        ));
+    }
+    if !["draft", "ready", "sent", "archived"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_reports.status: {}",
+            &value.status
+        ));
+    }
     if let Some(value) = &value.period_start {
-        validate_string_length("benefactor_marketing_reports.period_start", value, None, Some(10))?;
+        validate_string_length(
+            "benefactor_marketing_reports.period_start",
+            value,
+            None,
+            Some(10),
+        )?;
     }
     if let Some(value) = &value.period_end {
-        validate_string_length("benefactor_marketing_reports.period_end", value, None, Some(10))?;
+        validate_string_length(
+            "benefactor_marketing_reports.period_end",
+            value,
+            None,
+            Some(10),
+        )?;
     }
-    if !(&value.metrics).is_object() { return Err("benefactor_marketing_reports.metrics must be a JSON object".to_string()); }
+    if !(&value.metrics).is_object() {
+        return Err("benefactor_marketing_reports.metrics must be a JSON object".to_string());
+    }
     if let Some(value) = &value.narrative {
-        if (value).as_bytes().len() > 20000 { return Err("benefactor_marketing_reports.narrative exceeds 20000 bytes".to_string()); }
+        if (value).as_bytes().len() > 20000 {
+            return Err("benefactor_marketing_reports.narrative exceeds 20000 bytes".to_string());
+        }
     }
-    if !(&value.delivery_targets).is_array() { return Err("benefactor_marketing_reports.delivery_targets must be a JSON array".to_string()); }
+    if !(&value.delivery_targets).is_array() {
+        return Err(
+            "benefactor_marketing_reports.delivery_targets must be a JSON array".to_string(),
+        );
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_reports_insert(value: &BenefactorMarketingReportsInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_reports_insert(
+    value: &BenefactorMarketingReportsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.report_kind {
-        if !["dashboard", "executive_summary", "attribution", "funnel", "roi", "seo_aeo", "client_portal"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_reports.report_kind: {}", value)); }
+        if ![
+            "dashboard",
+            "executive_summary",
+            "attribution",
+            "funnel",
+            "roi",
+            "seo_aeo",
+            "client_portal",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported benefactor_marketing_reports.report_kind: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.status {
-        if !["draft", "ready", "sent", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_reports.status: {}", value)); }
+        if !["draft", "ready", "sent", "archived"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_reports.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.period_start {
-        validate_string_length("benefactor_marketing_reports.period_start", value, None, Some(10))?;
+        validate_string_length(
+            "benefactor_marketing_reports.period_start",
+            value,
+            None,
+            Some(10),
+        )?;
     }
     if let Some(value) = &value.period_end {
-        validate_string_length("benefactor_marketing_reports.period_end", value, None, Some(10))?;
+        validate_string_length(
+            "benefactor_marketing_reports.period_end",
+            value,
+            None,
+            Some(10),
+        )?;
     }
     if let Some(value) = &value.metrics {
-        if !(value).is_object() { return Err("benefactor_marketing_reports.metrics must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("benefactor_marketing_reports.metrics must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.narrative {
-        if (value).as_bytes().len() > 20000 { return Err("benefactor_marketing_reports.narrative exceeds 20000 bytes".to_string()); }
+        if (value).as_bytes().len() > 20000 {
+            return Err("benefactor_marketing_reports.narrative exceeds 20000 bytes".to_string());
+        }
     }
     if let Some(value) = &value.delivery_targets {
-        if !(value).is_array() { return Err("benefactor_marketing_reports.delivery_targets must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err(
+                "benefactor_marketing_reports.delivery_targets must be a JSON array".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
-pub const BENEFACTOR_MARKETING_ATTRIBUTION_EVENTS_TABLE: &str = "benefactor_marketing_attribution_events";
-pub const BENEFACTOR_MARKETING_ATTRIBUTION_EVENTS_COLUMNS: &[&str] = &["id", "client_id", "campaign_id", "lead_id", "event_type", "source_platform", "source_event_id", "occurred_at", "value_cents", "payload", "created_at"];
+pub const BENEFACTOR_MARKETING_ATTRIBUTION_EVENTS_TABLE: &str =
+    "benefactor_marketing_attribution_events";
+pub const BENEFACTOR_MARKETING_ATTRIBUTION_EVENTS_COLUMNS: &[&str] = &[
+    "id",
+    "client_id",
+    "campaign_id",
+    "lead_id",
+    "event_type",
+    "source_platform",
+    "source_event_id",
+    "occurred_at",
+    "value_cents",
+    "payload",
+    "created_at",
+];
 pub const BENEFACTOR_MARKETING_ATTRIBUTION_EVENTS_SELECT_SQL: &str = r###"select
       id::text as id,
       client_id::text as client_id,
@@ -11130,7 +17386,17 @@ pub enum BenefactorMarketingAttributionEventsEventType {
 }
 
 impl BenefactorMarketingAttributionEventsEventType {
-    pub const VALUES: &'static [&'static str] = &["impression", "click", "form_submit", "email_open", "email_click", "meeting_booked", "opportunity_created", "deal_won", "revenue"];
+    pub const VALUES: &'static [&'static str] = &[
+        "impression",
+        "click",
+        "form_submit",
+        "email_open",
+        "email_click",
+        "meeting_booked",
+        "opportunity_created",
+        "deal_won",
+        "revenue",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -11199,44 +17465,153 @@ pub struct BenefactorMarketingAttributionEventsInsert {
     pub created_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_attribution_events_row(value: &BenefactorMarketingAttributionEventsRow) -> Result<(), String> {
-    if !["impression", "click", "form_submit", "email_open", "email_click", "meeting_booked", "opportunity_created", "deal_won", "revenue"].contains(&(&value.event_type).as_str()) { return Err(format!("unsupported benefactor_marketing_attribution_events.event_type: {}", &value.event_type)); }
+pub fn validate_benefactor_marketing_attribution_events_row(
+    value: &BenefactorMarketingAttributionEventsRow,
+) -> Result<(), String> {
+    if ![
+        "impression",
+        "click",
+        "form_submit",
+        "email_open",
+        "email_click",
+        "meeting_booked",
+        "opportunity_created",
+        "deal_won",
+        "revenue",
+    ]
+    .contains(&(&value.event_type).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_attribution_events.event_type: {}",
+            &value.event_type
+        ));
+    }
     if let Some(value) = &value.source_platform {
-        validate_string_length("benefactor_marketing_attribution_events.source_platform", value, None, Some(64))?;
-        if (value).as_bytes().len() > 64 { return Err("benefactor_marketing_attribution_events.source_platform exceeds 64 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_attribution_events.source_platform",
+            value,
+            None,
+            Some(64),
+        )?;
+        if (value).as_bytes().len() > 64 {
+            return Err(
+                "benefactor_marketing_attribution_events.source_platform exceeds 64 bytes"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.source_event_id {
-        validate_string_length("benefactor_marketing_attribution_events.source_event_id", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_attribution_events.source_event_id exceeds 200 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_attribution_events.source_event_id",
+            value,
+            None,
+            Some(200),
+        )?;
+        if (value).as_bytes().len() > 200 {
+            return Err(
+                "benefactor_marketing_attribution_events.source_event_id exceeds 200 bytes"
+                    .to_string(),
+            );
+        }
     }
-    if *(&value.value_cents) < 0 { return Err("benefactor_marketing_attribution_events.value_cents is below the minimum".to_string()); }
-    if !(&value.payload).is_object() { return Err("benefactor_marketing_attribution_events.payload must be a JSON object".to_string()); }
+    if *(&value.value_cents) < 0 {
+        return Err(
+            "benefactor_marketing_attribution_events.value_cents is below the minimum".to_string(),
+        );
+    }
+    if !(&value.payload).is_object() {
+        return Err(
+            "benefactor_marketing_attribution_events.payload must be a JSON object".to_string(),
+        );
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_attribution_events_insert(value: &BenefactorMarketingAttributionEventsInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_attribution_events_insert(
+    value: &BenefactorMarketingAttributionEventsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.event_type {
-        if !["impression", "click", "form_submit", "email_open", "email_click", "meeting_booked", "opportunity_created", "deal_won", "revenue"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_attribution_events.event_type: {}", value)); }
+        if ![
+            "impression",
+            "click",
+            "form_submit",
+            "email_open",
+            "email_click",
+            "meeting_booked",
+            "opportunity_created",
+            "deal_won",
+            "revenue",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported benefactor_marketing_attribution_events.event_type: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.source_platform {
-        validate_string_length("benefactor_marketing_attribution_events.source_platform", value, None, Some(64))?;
-        if (value).as_bytes().len() > 64 { return Err("benefactor_marketing_attribution_events.source_platform exceeds 64 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_attribution_events.source_platform",
+            value,
+            None,
+            Some(64),
+        )?;
+        if (value).as_bytes().len() > 64 {
+            return Err(
+                "benefactor_marketing_attribution_events.source_platform exceeds 64 bytes"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.source_event_id {
-        validate_string_length("benefactor_marketing_attribution_events.source_event_id", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_attribution_events.source_event_id exceeds 200 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_attribution_events.source_event_id",
+            value,
+            None,
+            Some(200),
+        )?;
+        if (value).as_bytes().len() > 200 {
+            return Err(
+                "benefactor_marketing_attribution_events.source_event_id exceeds 200 bytes"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.value_cents {
-        if *(value) < 0 { return Err("benefactor_marketing_attribution_events.value_cents is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "benefactor_marketing_attribution_events.value_cents is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.payload {
-        if !(value).is_object() { return Err("benefactor_marketing_attribution_events.payload must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_attribution_events.payload must be a JSON object".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
 pub const BENEFACTOR_MARKETING_OPPORTUNITIES_TABLE: &str = "benefactor_marketing_opportunities";
-pub const BENEFACTOR_MARKETING_OPPORTUNITIES_COLUMNS: &[&str] = &["id", "client_id", "lead_id", "status", "stage", "name", "amount_cents", "probability_micros", "expected_close_on", "owner_user_id", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_OPPORTUNITIES_COLUMNS: &[&str] = &[
+    "id",
+    "client_id",
+    "lead_id",
+    "status",
+    "stage",
+    "name",
+    "amount_cents",
+    "probability_micros",
+    "expected_close_on",
+    "owner_user_id",
+    "meta_data",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_OPPORTUNITIES_SELECT_SQL: &str = r###"select
       id::text as id,
       client_id::text as client_id,
@@ -11301,7 +17676,14 @@ pub enum BenefactorMarketingOpportunitiesStage {
 }
 
 impl BenefactorMarketingOpportunitiesStage {
-    pub const VALUES: &'static [&'static str] = &["prospecting", "qualified", "meeting", "proposal", "negotiation", "closed"];
+    pub const VALUES: &'static [&'static str] = &[
+        "prospecting",
+        "qualified",
+        "meeting",
+        "proposal",
+        "negotiation",
+        "closed",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -11368,50 +17750,168 @@ pub struct BenefactorMarketingOpportunitiesInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_opportunities_row(value: &BenefactorMarketingOpportunitiesRow) -> Result<(), String> {
-    if !["open", "won", "lost", "paused"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_opportunities.status: {}", &value.status)); }
-    if !["prospecting", "qualified", "meeting", "proposal", "negotiation", "closed"].contains(&(&value.stage).as_str()) { return Err(format!("unsupported benefactor_marketing_opportunities.stage: {}", &value.stage)); }
-    validate_string_length("benefactor_marketing_opportunities.name", &value.name, None, Some(220))?;
-    if (&value.name).as_bytes().len() > 220 { return Err("benefactor_marketing_opportunities.name exceeds 220 bytes".to_string()); }
-    if *(&value.amount_cents) < 0 { return Err("benefactor_marketing_opportunities.amount_cents is below the minimum".to_string()); }
-    if *(&value.probability_micros) < 0 { return Err("benefactor_marketing_opportunities.probability_micros is below the minimum".to_string()); }
-    if *(&value.probability_micros) > 1000000 { return Err("benefactor_marketing_opportunities.probability_micros is above the maximum".to_string()); }
-    if let Some(value) = &value.expected_close_on {
-        validate_string_length("benefactor_marketing_opportunities.expected_close_on", value, None, Some(10))?;
+pub fn validate_benefactor_marketing_opportunities_row(
+    value: &BenefactorMarketingOpportunitiesRow,
+) -> Result<(), String> {
+    if !["open", "won", "lost", "paused"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_opportunities.status: {}",
+            &value.status
+        ));
     }
-    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_opportunities.meta_data must be a JSON object".to_string()); }
+    if ![
+        "prospecting",
+        "qualified",
+        "meeting",
+        "proposal",
+        "negotiation",
+        "closed",
+    ]
+    .contains(&(&value.stage).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_opportunities.stage: {}",
+            &value.stage
+        ));
+    }
+    validate_string_length(
+        "benefactor_marketing_opportunities.name",
+        &value.name,
+        None,
+        Some(220),
+    )?;
+    if (&value.name).as_bytes().len() > 220 {
+        return Err("benefactor_marketing_opportunities.name exceeds 220 bytes".to_string());
+    }
+    if *(&value.amount_cents) < 0 {
+        return Err(
+            "benefactor_marketing_opportunities.amount_cents is below the minimum".to_string(),
+        );
+    }
+    if *(&value.probability_micros) < 0 {
+        return Err(
+            "benefactor_marketing_opportunities.probability_micros is below the minimum"
+                .to_string(),
+        );
+    }
+    if *(&value.probability_micros) > 1000000 {
+        return Err(
+            "benefactor_marketing_opportunities.probability_micros is above the maximum"
+                .to_string(),
+        );
+    }
+    if let Some(value) = &value.expected_close_on {
+        validate_string_length(
+            "benefactor_marketing_opportunities.expected_close_on",
+            value,
+            None,
+            Some(10),
+        )?;
+    }
+    if !(&value.meta_data).is_object() {
+        return Err(
+            "benefactor_marketing_opportunities.meta_data must be a JSON object".to_string(),
+        );
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_opportunities_insert(value: &BenefactorMarketingOpportunitiesInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_opportunities_insert(
+    value: &BenefactorMarketingOpportunitiesInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.status {
-        if !["open", "won", "lost", "paused"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_opportunities.status: {}", value)); }
+        if !["open", "won", "lost", "paused"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_opportunities.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.stage {
-        if !["prospecting", "qualified", "meeting", "proposal", "negotiation", "closed"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_opportunities.stage: {}", value)); }
+        if ![
+            "prospecting",
+            "qualified",
+            "meeting",
+            "proposal",
+            "negotiation",
+            "closed",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported benefactor_marketing_opportunities.stage: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.name {
-        validate_string_length("benefactor_marketing_opportunities.name", value, None, Some(220))?;
-        if (value).as_bytes().len() > 220 { return Err("benefactor_marketing_opportunities.name exceeds 220 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_opportunities.name",
+            value,
+            None,
+            Some(220),
+        )?;
+        if (value).as_bytes().len() > 220 {
+            return Err("benefactor_marketing_opportunities.name exceeds 220 bytes".to_string());
+        }
     }
     if let Some(value) = &value.amount_cents {
-        if *(value) < 0 { return Err("benefactor_marketing_opportunities.amount_cents is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "benefactor_marketing_opportunities.amount_cents is below the minimum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.probability_micros {
-        if *(value) < 0 { return Err("benefactor_marketing_opportunities.probability_micros is below the minimum".to_string()); }
-        if *(value) > 1000000 { return Err("benefactor_marketing_opportunities.probability_micros is above the maximum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "benefactor_marketing_opportunities.probability_micros is below the minimum"
+                    .to_string(),
+            );
+        }
+        if *(value) > 1000000 {
+            return Err(
+                "benefactor_marketing_opportunities.probability_micros is above the maximum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.expected_close_on {
-        validate_string_length("benefactor_marketing_opportunities.expected_close_on", value, None, Some(10))?;
+        validate_string_length(
+            "benefactor_marketing_opportunities.expected_close_on",
+            value,
+            None,
+            Some(10),
+        )?;
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("benefactor_marketing_opportunities.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_opportunities.meta_data must be a JSON object".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
 pub const BENEFACTOR_MARKETING_CONTENT_ASSETS_TABLE: &str = "benefactor_marketing_content_assets";
-pub const BENEFACTOR_MARKETING_CONTENT_ASSETS_COLUMNS: &[&str] = &["id", "client_id", "campaign_id", "status", "asset_kind", "title", "channel", "body", "asset_uri", "seo_keywords", "approval_status", "publish_at", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_CONTENT_ASSETS_COLUMNS: &[&str] = &[
+    "id",
+    "client_id",
+    "campaign_id",
+    "status",
+    "asset_kind",
+    "title",
+    "channel",
+    "body",
+    "asset_uri",
+    "seo_keywords",
+    "approval_status",
+    "publish_at",
+    "meta_data",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_CONTENT_ASSETS_SELECT_SQL: &str = r###"select
       id::text as id,
       client_id::text as client_id,
@@ -11442,7 +17942,14 @@ pub enum BenefactorMarketingContentAssetsStatus {
 }
 
 impl BenefactorMarketingContentAssetsStatus {
-    pub const VALUES: &'static [&'static str] = &["draft", "in_review", "approved", "scheduled", "published", "archived"];
+    pub const VALUES: &'static [&'static str] = &[
+        "draft",
+        "in_review",
+        "approved",
+        "scheduled",
+        "published",
+        "archived",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -11487,7 +17994,17 @@ pub enum BenefactorMarketingContentAssetsAssetKind {
 }
 
 impl BenefactorMarketingContentAssetsAssetKind {
-    pub const VALUES: &'static [&'static str] = &["blog", "social_post", "email", "landing_page", "ad_creative", "video", "script", "proposal", "report"];
+    pub const VALUES: &'static [&'static str] = &[
+        "blog",
+        "social_post",
+        "email",
+        "landing_page",
+        "ad_creative",
+        "video",
+        "script",
+        "proposal",
+        "report",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -11533,7 +18050,8 @@ pub enum BenefactorMarketingContentAssetsApprovalStatus {
 }
 
 impl BenefactorMarketingContentAssetsApprovalStatus {
-    pub const VALUES: &'static [&'static str] = &["pending", "approved", "rejected", "changes_requested"];
+    pub const VALUES: &'static [&'static str] =
+        &["pending", "approved", "rejected", "changes_requested"];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -11600,62 +18118,216 @@ pub struct BenefactorMarketingContentAssetsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_content_assets_row(value: &BenefactorMarketingContentAssetsRow) -> Result<(), String> {
-    if !["draft", "in_review", "approved", "scheduled", "published", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_content_assets.status: {}", &value.status)); }
-    if !["blog", "social_post", "email", "landing_page", "ad_creative", "video", "script", "proposal", "report"].contains(&(&value.asset_kind).as_str()) { return Err(format!("unsupported benefactor_marketing_content_assets.asset_kind: {}", &value.asset_kind)); }
-    validate_string_length("benefactor_marketing_content_assets.title", &value.title, None, Some(240))?;
-    if (&value.title).as_bytes().len() > 240 { return Err("benefactor_marketing_content_assets.title exceeds 240 bytes".to_string()); }
+pub fn validate_benefactor_marketing_content_assets_row(
+    value: &BenefactorMarketingContentAssetsRow,
+) -> Result<(), String> {
+    if ![
+        "draft",
+        "in_review",
+        "approved",
+        "scheduled",
+        "published",
+        "archived",
+    ]
+    .contains(&(&value.status).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_content_assets.status: {}",
+            &value.status
+        ));
+    }
+    if ![
+        "blog",
+        "social_post",
+        "email",
+        "landing_page",
+        "ad_creative",
+        "video",
+        "script",
+        "proposal",
+        "report",
+    ]
+    .contains(&(&value.asset_kind).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_content_assets.asset_kind: {}",
+            &value.asset_kind
+        ));
+    }
+    validate_string_length(
+        "benefactor_marketing_content_assets.title",
+        &value.title,
+        None,
+        Some(240),
+    )?;
+    if (&value.title).as_bytes().len() > 240 {
+        return Err("benefactor_marketing_content_assets.title exceeds 240 bytes".to_string());
+    }
     if let Some(value) = &value.channel {
-        validate_string_length("benefactor_marketing_content_assets.channel", value, None, Some(64))?;
-        if (value).as_bytes().len() > 64 { return Err("benefactor_marketing_content_assets.channel exceeds 64 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_content_assets.channel",
+            value,
+            None,
+            Some(64),
+        )?;
+        if (value).as_bytes().len() > 64 {
+            return Err("benefactor_marketing_content_assets.channel exceeds 64 bytes".to_string());
+        }
     }
     if let Some(value) = &value.body {
-        if (value).as_bytes().len() > 100000 { return Err("benefactor_marketing_content_assets.body exceeds 100000 bytes".to_string()); }
+        if (value).as_bytes().len() > 100000 {
+            return Err(
+                "benefactor_marketing_content_assets.body exceeds 100000 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.asset_uri {
-        if (value).as_bytes().len() > 2048 { return Err("benefactor_marketing_content_assets.asset_uri exceeds 2048 bytes".to_string()); }
+        if (value).as_bytes().len() > 2048 {
+            return Err(
+                "benefactor_marketing_content_assets.asset_uri exceeds 2048 bytes".to_string(),
+            );
+        }
     }
-    if !(&value.seo_keywords).is_array() { return Err("benefactor_marketing_content_assets.seo_keywords must be a JSON array".to_string()); }
-    if !["pending", "approved", "rejected", "changes_requested"].contains(&(&value.approval_status).as_str()) { return Err(format!("unsupported benefactor_marketing_content_assets.approval_status: {}", &value.approval_status)); }
-    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_content_assets.meta_data must be a JSON object".to_string()); }
+    if !(&value.seo_keywords).is_array() {
+        return Err(
+            "benefactor_marketing_content_assets.seo_keywords must be a JSON array".to_string(),
+        );
+    }
+    if !["pending", "approved", "rejected", "changes_requested"]
+        .contains(&(&value.approval_status).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_content_assets.approval_status: {}",
+            &value.approval_status
+        ));
+    }
+    if !(&value.meta_data).is_object() {
+        return Err(
+            "benefactor_marketing_content_assets.meta_data must be a JSON object".to_string(),
+        );
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_content_assets_insert(value: &BenefactorMarketingContentAssetsInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_content_assets_insert(
+    value: &BenefactorMarketingContentAssetsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.status {
-        if !["draft", "in_review", "approved", "scheduled", "published", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_content_assets.status: {}", value)); }
+        if ![
+            "draft",
+            "in_review",
+            "approved",
+            "scheduled",
+            "published",
+            "archived",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported benefactor_marketing_content_assets.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.asset_kind {
-        if !["blog", "social_post", "email", "landing_page", "ad_creative", "video", "script", "proposal", "report"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_content_assets.asset_kind: {}", value)); }
+        if ![
+            "blog",
+            "social_post",
+            "email",
+            "landing_page",
+            "ad_creative",
+            "video",
+            "script",
+            "proposal",
+            "report",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported benefactor_marketing_content_assets.asset_kind: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.title {
-        validate_string_length("benefactor_marketing_content_assets.title", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_content_assets.title exceeds 240 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_content_assets.title",
+            value,
+            None,
+            Some(240),
+        )?;
+        if (value).as_bytes().len() > 240 {
+            return Err("benefactor_marketing_content_assets.title exceeds 240 bytes".to_string());
+        }
     }
     if let Some(value) = &value.channel {
-        validate_string_length("benefactor_marketing_content_assets.channel", value, None, Some(64))?;
-        if (value).as_bytes().len() > 64 { return Err("benefactor_marketing_content_assets.channel exceeds 64 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_content_assets.channel",
+            value,
+            None,
+            Some(64),
+        )?;
+        if (value).as_bytes().len() > 64 {
+            return Err("benefactor_marketing_content_assets.channel exceeds 64 bytes".to_string());
+        }
     }
     if let Some(value) = &value.body {
-        if (value).as_bytes().len() > 100000 { return Err("benefactor_marketing_content_assets.body exceeds 100000 bytes".to_string()); }
+        if (value).as_bytes().len() > 100000 {
+            return Err(
+                "benefactor_marketing_content_assets.body exceeds 100000 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.asset_uri {
-        if (value).as_bytes().len() > 2048 { return Err("benefactor_marketing_content_assets.asset_uri exceeds 2048 bytes".to_string()); }
+        if (value).as_bytes().len() > 2048 {
+            return Err(
+                "benefactor_marketing_content_assets.asset_uri exceeds 2048 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.seo_keywords {
-        if !(value).is_array() { return Err("benefactor_marketing_content_assets.seo_keywords must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err(
+                "benefactor_marketing_content_assets.seo_keywords must be a JSON array".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.approval_status {
-        if !["pending", "approved", "rejected", "changes_requested"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_content_assets.approval_status: {}", value)); }
+        if !["pending", "approved", "rejected", "changes_requested"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_content_assets.approval_status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("benefactor_marketing_content_assets.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_content_assets.meta_data must be a JSON object".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
 pub const BENEFACTOR_MARKETING_PROJECT_TASKS_TABLE: &str = "benefactor_marketing_project_tasks";
-pub const BENEFACTOR_MARKETING_PROJECT_TASKS_COLUMNS: &[&str] = &["id", "client_id", "campaign_id", "content_asset_id", "status", "priority", "title", "description", "assigned_to", "due_on", "sla_due_at", "time_spent_minutes", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_PROJECT_TASKS_COLUMNS: &[&str] = &[
+    "id",
+    "client_id",
+    "campaign_id",
+    "content_asset_id",
+    "status",
+    "priority",
+    "title",
+    "description",
+    "assigned_to",
+    "due_on",
+    "sla_due_at",
+    "time_spent_minutes",
+    "meta_data",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_PROJECT_TASKS_SELECT_SQL: &str = r###"select
       id::text as id,
       client_id::text as client_id,
@@ -11685,7 +18357,8 @@ pub enum BenefactorMarketingProjectTasksStatus {
 }
 
 impl BenefactorMarketingProjectTasksStatus {
-    pub const VALUES: &'static [&'static str] = &["todo", "in_progress", "blocked", "done", "canceled"];
+    pub const VALUES: &'static [&'static str] =
+        &["todo", "in_progress", "blocked", "done", "canceled"];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -11790,50 +18463,140 @@ pub struct BenefactorMarketingProjectTasksInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_project_tasks_row(value: &BenefactorMarketingProjectTasksRow) -> Result<(), String> {
-    if !["todo", "in_progress", "blocked", "done", "canceled"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_project_tasks.status: {}", &value.status)); }
-    if !["low", "normal", "high", "urgent"].contains(&(&value.priority).as_str()) { return Err(format!("unsupported benefactor_marketing_project_tasks.priority: {}", &value.priority)); }
-    validate_string_length("benefactor_marketing_project_tasks.title", &value.title, None, Some(240))?;
-    if (&value.title).as_bytes().len() > 240 { return Err("benefactor_marketing_project_tasks.title exceeds 240 bytes".to_string()); }
+pub fn validate_benefactor_marketing_project_tasks_row(
+    value: &BenefactorMarketingProjectTasksRow,
+) -> Result<(), String> {
+    if !["todo", "in_progress", "blocked", "done", "canceled"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_project_tasks.status: {}",
+            &value.status
+        ));
+    }
+    if !["low", "normal", "high", "urgent"].contains(&(&value.priority).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_project_tasks.priority: {}",
+            &value.priority
+        ));
+    }
+    validate_string_length(
+        "benefactor_marketing_project_tasks.title",
+        &value.title,
+        None,
+        Some(240),
+    )?;
+    if (&value.title).as_bytes().len() > 240 {
+        return Err("benefactor_marketing_project_tasks.title exceeds 240 bytes".to_string());
+    }
     if let Some(value) = &value.description {
-        if (value).as_bytes().len() > 20000 { return Err("benefactor_marketing_project_tasks.description exceeds 20000 bytes".to_string()); }
+        if (value).as_bytes().len() > 20000 {
+            return Err(
+                "benefactor_marketing_project_tasks.description exceeds 20000 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.due_on {
-        validate_string_length("benefactor_marketing_project_tasks.due_on", value, None, Some(10))?;
+        validate_string_length(
+            "benefactor_marketing_project_tasks.due_on",
+            value,
+            None,
+            Some(10),
+        )?;
     }
-    if *(&value.time_spent_minutes) < 0 { return Err("benefactor_marketing_project_tasks.time_spent_minutes is below the minimum".to_string()); }
-    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_project_tasks.meta_data must be a JSON object".to_string()); }
+    if *(&value.time_spent_minutes) < 0 {
+        return Err(
+            "benefactor_marketing_project_tasks.time_spent_minutes is below the minimum"
+                .to_string(),
+        );
+    }
+    if !(&value.meta_data).is_object() {
+        return Err(
+            "benefactor_marketing_project_tasks.meta_data must be a JSON object".to_string(),
+        );
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_project_tasks_insert(value: &BenefactorMarketingProjectTasksInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_project_tasks_insert(
+    value: &BenefactorMarketingProjectTasksInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.status {
-        if !["todo", "in_progress", "blocked", "done", "canceled"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_project_tasks.status: {}", value)); }
+        if !["todo", "in_progress", "blocked", "done", "canceled"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_project_tasks.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.priority {
-        if !["low", "normal", "high", "urgent"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_project_tasks.priority: {}", value)); }
+        if !["low", "normal", "high", "urgent"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_project_tasks.priority: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.title {
-        validate_string_length("benefactor_marketing_project_tasks.title", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_project_tasks.title exceeds 240 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_project_tasks.title",
+            value,
+            None,
+            Some(240),
+        )?;
+        if (value).as_bytes().len() > 240 {
+            return Err("benefactor_marketing_project_tasks.title exceeds 240 bytes".to_string());
+        }
     }
     if let Some(value) = &value.description {
-        if (value).as_bytes().len() > 20000 { return Err("benefactor_marketing_project_tasks.description exceeds 20000 bytes".to_string()); }
+        if (value).as_bytes().len() > 20000 {
+            return Err(
+                "benefactor_marketing_project_tasks.description exceeds 20000 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.due_on {
-        validate_string_length("benefactor_marketing_project_tasks.due_on", value, None, Some(10))?;
+        validate_string_length(
+            "benefactor_marketing_project_tasks.due_on",
+            value,
+            None,
+            Some(10),
+        )?;
     }
     if let Some(value) = &value.time_spent_minutes {
-        if *(value) < 0 { return Err("benefactor_marketing_project_tasks.time_spent_minutes is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "benefactor_marketing_project_tasks.time_spent_minutes is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("benefactor_marketing_project_tasks.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_project_tasks.meta_data must be a JSON object".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
-pub const BENEFACTOR_MARKETING_CLIENT_APPROVALS_TABLE: &str = "benefactor_marketing_client_approvals";
-pub const BENEFACTOR_MARKETING_CLIENT_APPROVALS_COLUMNS: &[&str] = &["id", "client_id", "campaign_id", "content_asset_id", "requested_by", "status", "approval_kind", "title", "request_payload", "response_note", "due_at", "decided_at", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_CLIENT_APPROVALS_TABLE: &str =
+    "benefactor_marketing_client_approvals";
+pub const BENEFACTOR_MARKETING_CLIENT_APPROVALS_COLUMNS: &[&str] = &[
+    "id",
+    "client_id",
+    "campaign_id",
+    "content_asset_id",
+    "requested_by",
+    "status",
+    "approval_kind",
+    "title",
+    "request_payload",
+    "response_note",
+    "due_at",
+    "decided_at",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_CLIENT_APPROVALS_SELECT_SQL: &str = r###"select
       id::text as id,
       client_id::text as client_id,
@@ -11862,7 +18625,8 @@ pub enum BenefactorMarketingClientApprovalsStatus {
 }
 
 impl BenefactorMarketingClientApprovalsStatus {
-    pub const VALUES: &'static [&'static str] = &["pending", "approved", "rejected", "expired", "canceled"];
+    pub const VALUES: &'static [&'static str] =
+        &["pending", "approved", "rejected", "expired", "canceled"];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -11901,7 +18665,13 @@ pub enum BenefactorMarketingClientApprovalsApprovalKind {
 }
 
 impl BenefactorMarketingClientApprovalsApprovalKind {
-    pub const VALUES: &'static [&'static str] = &["campaign_launch", "content_publish", "budget_change", "report_send", "lead_list"];
+    pub const VALUES: &'static [&'static str] = &[
+        "campaign_launch",
+        "content_publish",
+        "budget_change",
+        "report_send",
+        "lead_list",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -11968,40 +18738,131 @@ pub struct BenefactorMarketingClientApprovalsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_client_approvals_row(value: &BenefactorMarketingClientApprovalsRow) -> Result<(), String> {
-    if !["pending", "approved", "rejected", "expired", "canceled"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_client_approvals.status: {}", &value.status)); }
-    if !["campaign_launch", "content_publish", "budget_change", "report_send", "lead_list"].contains(&(&value.approval_kind).as_str()) { return Err(format!("unsupported benefactor_marketing_client_approvals.approval_kind: {}", &value.approval_kind)); }
-    validate_string_length("benefactor_marketing_client_approvals.title", &value.title, None, Some(240))?;
-    if (&value.title).as_bytes().len() > 240 { return Err("benefactor_marketing_client_approvals.title exceeds 240 bytes".to_string()); }
-    if !(&value.request_payload).is_object() { return Err("benefactor_marketing_client_approvals.request_payload must be a JSON object".to_string()); }
+pub fn validate_benefactor_marketing_client_approvals_row(
+    value: &BenefactorMarketingClientApprovalsRow,
+) -> Result<(), String> {
+    if !["pending", "approved", "rejected", "expired", "canceled"]
+        .contains(&(&value.status).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_client_approvals.status: {}",
+            &value.status
+        ));
+    }
+    if ![
+        "campaign_launch",
+        "content_publish",
+        "budget_change",
+        "report_send",
+        "lead_list",
+    ]
+    .contains(&(&value.approval_kind).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_client_approvals.approval_kind: {}",
+            &value.approval_kind
+        ));
+    }
+    validate_string_length(
+        "benefactor_marketing_client_approvals.title",
+        &value.title,
+        None,
+        Some(240),
+    )?;
+    if (&value.title).as_bytes().len() > 240 {
+        return Err("benefactor_marketing_client_approvals.title exceeds 240 bytes".to_string());
+    }
+    if !(&value.request_payload).is_object() {
+        return Err(
+            "benefactor_marketing_client_approvals.request_payload must be a JSON object"
+                .to_string(),
+        );
+    }
     if let Some(value) = &value.response_note {
-        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_client_approvals.response_note exceeds 4000 bytes".to_string()); }
+        if (value).as_bytes().len() > 4000 {
+            return Err(
+                "benefactor_marketing_client_approvals.response_note exceeds 4000 bytes"
+                    .to_string(),
+            );
+        }
     }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_client_approvals_insert(value: &BenefactorMarketingClientApprovalsInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_client_approvals_insert(
+    value: &BenefactorMarketingClientApprovalsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.status {
-        if !["pending", "approved", "rejected", "expired", "canceled"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_client_approvals.status: {}", value)); }
+        if !["pending", "approved", "rejected", "expired", "canceled"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_client_approvals.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.approval_kind {
-        if !["campaign_launch", "content_publish", "budget_change", "report_send", "lead_list"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_client_approvals.approval_kind: {}", value)); }
+        if ![
+            "campaign_launch",
+            "content_publish",
+            "budget_change",
+            "report_send",
+            "lead_list",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported benefactor_marketing_client_approvals.approval_kind: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.title {
-        validate_string_length("benefactor_marketing_client_approvals.title", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_client_approvals.title exceeds 240 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_client_approvals.title",
+            value,
+            None,
+            Some(240),
+        )?;
+        if (value).as_bytes().len() > 240 {
+            return Err(
+                "benefactor_marketing_client_approvals.title exceeds 240 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.request_payload {
-        if !(value).is_object() { return Err("benefactor_marketing_client_approvals.request_payload must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_client_approvals.request_payload must be a JSON object"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.response_note {
-        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_client_approvals.response_note exceeds 4000 bytes".to_string()); }
+        if (value).as_bytes().len() > 4000 {
+            return Err(
+                "benefactor_marketing_client_approvals.response_note exceeds 4000 bytes"
+                    .to_string(),
+            );
+        }
     }
     Ok(())
 }
 
 pub const BENEFACTOR_MARKETING_TICKETS_TABLE: &str = "benefactor_marketing_tickets";
-pub const BENEFACTOR_MARKETING_TICKETS_COLUMNS: &[&str] = &["id", "client_id", "status", "priority", "subject", "description", "source", "assigned_to", "last_activity_at", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_TICKETS_COLUMNS: &[&str] = &[
+    "id",
+    "client_id",
+    "status",
+    "priority",
+    "subject",
+    "description",
+    "source",
+    "assigned_to",
+    "last_activity_at",
+    "meta_data",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_TICKETS_SELECT_SQL: &str = r###"select
       id::text as id,
       client_id::text as client_id,
@@ -12028,7 +18889,13 @@ pub enum BenefactorMarketingTicketsStatus {
 }
 
 impl BenefactorMarketingTicketsStatus {
-    pub const VALUES: &'static [&'static str] = &["open", "pending_client", "pending_agency", "resolved", "closed"];
+    pub const VALUES: &'static [&'static str] = &[
+        "open",
+        "pending_client",
+        "pending_agency",
+        "resolved",
+        "closed",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -12160,44 +19027,131 @@ pub struct BenefactorMarketingTicketsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_tickets_row(value: &BenefactorMarketingTicketsRow) -> Result<(), String> {
-    if !["open", "pending_client", "pending_agency", "resolved", "closed"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_tickets.status: {}", &value.status)); }
-    if !["low", "normal", "high", "urgent"].contains(&(&value.priority).as_str()) { return Err(format!("unsupported benefactor_marketing_tickets.priority: {}", &value.priority)); }
-    validate_string_length("benefactor_marketing_tickets.subject", &value.subject, None, Some(240))?;
-    if (&value.subject).as_bytes().len() > 240 { return Err("benefactor_marketing_tickets.subject exceeds 240 bytes".to_string()); }
-    if let Some(value) = &value.description {
-        if (value).as_bytes().len() > 20000 { return Err("benefactor_marketing_tickets.description exceeds 20000 bytes".to_string()); }
+pub fn validate_benefactor_marketing_tickets_row(
+    value: &BenefactorMarketingTicketsRow,
+) -> Result<(), String> {
+    if ![
+        "open",
+        "pending_client",
+        "pending_agency",
+        "resolved",
+        "closed",
+    ]
+    .contains(&(&value.status).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_tickets.status: {}",
+            &value.status
+        ));
     }
-    if !["portal", "email", "internal"].contains(&(&value.source).as_str()) { return Err(format!("unsupported benefactor_marketing_tickets.source: {}", &value.source)); }
-    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_tickets.meta_data must be a JSON object".to_string()); }
+    if !["low", "normal", "high", "urgent"].contains(&(&value.priority).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_tickets.priority: {}",
+            &value.priority
+        ));
+    }
+    validate_string_length(
+        "benefactor_marketing_tickets.subject",
+        &value.subject,
+        None,
+        Some(240),
+    )?;
+    if (&value.subject).as_bytes().len() > 240 {
+        return Err("benefactor_marketing_tickets.subject exceeds 240 bytes".to_string());
+    }
+    if let Some(value) = &value.description {
+        if (value).as_bytes().len() > 20000 {
+            return Err("benefactor_marketing_tickets.description exceeds 20000 bytes".to_string());
+        }
+    }
+    if !["portal", "email", "internal"].contains(&(&value.source).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_tickets.source: {}",
+            &value.source
+        ));
+    }
+    if !(&value.meta_data).is_object() {
+        return Err("benefactor_marketing_tickets.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_tickets_insert(value: &BenefactorMarketingTicketsInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_tickets_insert(
+    value: &BenefactorMarketingTicketsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.status {
-        if !["open", "pending_client", "pending_agency", "resolved", "closed"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_tickets.status: {}", value)); }
+        if ![
+            "open",
+            "pending_client",
+            "pending_agency",
+            "resolved",
+            "closed",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported benefactor_marketing_tickets.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.priority {
-        if !["low", "normal", "high", "urgent"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_tickets.priority: {}", value)); }
+        if !["low", "normal", "high", "urgent"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_tickets.priority: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.subject {
-        validate_string_length("benefactor_marketing_tickets.subject", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_tickets.subject exceeds 240 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_tickets.subject",
+            value,
+            None,
+            Some(240),
+        )?;
+        if (value).as_bytes().len() > 240 {
+            return Err("benefactor_marketing_tickets.subject exceeds 240 bytes".to_string());
+        }
     }
     if let Some(value) = &value.description {
-        if (value).as_bytes().len() > 20000 { return Err("benefactor_marketing_tickets.description exceeds 20000 bytes".to_string()); }
+        if (value).as_bytes().len() > 20000 {
+            return Err("benefactor_marketing_tickets.description exceeds 20000 bytes".to_string());
+        }
     }
     if let Some(value) = &value.source {
-        if !["portal", "email", "internal"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_tickets.source: {}", value)); }
+        if !["portal", "email", "internal"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_tickets.source: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("benefactor_marketing_tickets.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("benefactor_marketing_tickets.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const BENEFACTOR_MARKETING_MEETINGS_TABLE: &str = "benefactor_marketing_meetings";
-pub const BENEFACTOR_MARKETING_MEETINGS_COLUMNS: &[&str] = &["id", "client_id", "lead_id", "opportunity_id", "status", "meeting_kind", "title", "scheduled_at", "duration_minutes", "notes", "recording_uri", "transcript_summary", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_MEETINGS_COLUMNS: &[&str] = &[
+    "id",
+    "client_id",
+    "lead_id",
+    "opportunity_id",
+    "status",
+    "meeting_kind",
+    "title",
+    "scheduled_at",
+    "duration_minutes",
+    "notes",
+    "recording_uri",
+    "transcript_summary",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_MEETINGS_SELECT_SQL: &str = r###"select
       id::text as id,
       client_id::text as client_id,
@@ -12263,7 +19217,14 @@ pub enum BenefactorMarketingMeetingsMeetingKind {
 }
 
 impl BenefactorMarketingMeetingsMeetingKind {
-    pub const VALUES: &'static [&'static str] = &["onboarding", "report_review", "sales_discovery", "strategy", "content_review", "support"];
+    pub const VALUES: &'static [&'static str] = &[
+        "onboarding",
+        "report_review",
+        "sales_discovery",
+        "strategy",
+        "content_review",
+        "support",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -12332,52 +19293,158 @@ pub struct BenefactorMarketingMeetingsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_meetings_row(value: &BenefactorMarketingMeetingsRow) -> Result<(), String> {
-    if !["scheduled", "completed", "canceled", "no_show"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_meetings.status: {}", &value.status)); }
-    if !["onboarding", "report_review", "sales_discovery", "strategy", "content_review", "support"].contains(&(&value.meeting_kind).as_str()) { return Err(format!("unsupported benefactor_marketing_meetings.meeting_kind: {}", &value.meeting_kind)); }
-    validate_string_length("benefactor_marketing_meetings.title", &value.title, None, Some(240))?;
-    if (&value.title).as_bytes().len() > 240 { return Err("benefactor_marketing_meetings.title exceeds 240 bytes".to_string()); }
-    if *(&value.duration_minutes) < 1 { return Err("benefactor_marketing_meetings.duration_minutes is below the minimum".to_string()); }
-    if *(&value.duration_minutes) > 1440 { return Err("benefactor_marketing_meetings.duration_minutes is above the maximum".to_string()); }
+pub fn validate_benefactor_marketing_meetings_row(
+    value: &BenefactorMarketingMeetingsRow,
+) -> Result<(), String> {
+    if !["scheduled", "completed", "canceled", "no_show"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_meetings.status: {}",
+            &value.status
+        ));
+    }
+    if ![
+        "onboarding",
+        "report_review",
+        "sales_discovery",
+        "strategy",
+        "content_review",
+        "support",
+    ]
+    .contains(&(&value.meeting_kind).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_meetings.meeting_kind: {}",
+            &value.meeting_kind
+        ));
+    }
+    validate_string_length(
+        "benefactor_marketing_meetings.title",
+        &value.title,
+        None,
+        Some(240),
+    )?;
+    if (&value.title).as_bytes().len() > 240 {
+        return Err("benefactor_marketing_meetings.title exceeds 240 bytes".to_string());
+    }
+    if *(&value.duration_minutes) < 1 {
+        return Err(
+            "benefactor_marketing_meetings.duration_minutes is below the minimum".to_string(),
+        );
+    }
+    if *(&value.duration_minutes) > 1440 {
+        return Err(
+            "benefactor_marketing_meetings.duration_minutes is above the maximum".to_string(),
+        );
+    }
     if let Some(value) = &value.notes {
-        if (value).as_bytes().len() > 20000 { return Err("benefactor_marketing_meetings.notes exceeds 20000 bytes".to_string()); }
+        if (value).as_bytes().len() > 20000 {
+            return Err("benefactor_marketing_meetings.notes exceeds 20000 bytes".to_string());
+        }
     }
     if let Some(value) = &value.recording_uri {
-        if (value).as_bytes().len() > 2048 { return Err("benefactor_marketing_meetings.recording_uri exceeds 2048 bytes".to_string()); }
+        if (value).as_bytes().len() > 2048 {
+            return Err(
+                "benefactor_marketing_meetings.recording_uri exceeds 2048 bytes".to_string(),
+            );
+        }
     }
-    if !(&value.transcript_summary).is_object() { return Err("benefactor_marketing_meetings.transcript_summary must be a JSON object".to_string()); }
+    if !(&value.transcript_summary).is_object() {
+        return Err(
+            "benefactor_marketing_meetings.transcript_summary must be a JSON object".to_string(),
+        );
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_meetings_insert(value: &BenefactorMarketingMeetingsInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_meetings_insert(
+    value: &BenefactorMarketingMeetingsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.status {
-        if !["scheduled", "completed", "canceled", "no_show"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_meetings.status: {}", value)); }
+        if !["scheduled", "completed", "canceled", "no_show"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_meetings.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.meeting_kind {
-        if !["onboarding", "report_review", "sales_discovery", "strategy", "content_review", "support"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_meetings.meeting_kind: {}", value)); }
+        if ![
+            "onboarding",
+            "report_review",
+            "sales_discovery",
+            "strategy",
+            "content_review",
+            "support",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported benefactor_marketing_meetings.meeting_kind: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.title {
-        validate_string_length("benefactor_marketing_meetings.title", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_meetings.title exceeds 240 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_meetings.title",
+            value,
+            None,
+            Some(240),
+        )?;
+        if (value).as_bytes().len() > 240 {
+            return Err("benefactor_marketing_meetings.title exceeds 240 bytes".to_string());
+        }
     }
     if let Some(value) = &value.duration_minutes {
-        if *(value) < 1 { return Err("benefactor_marketing_meetings.duration_minutes is below the minimum".to_string()); }
-        if *(value) > 1440 { return Err("benefactor_marketing_meetings.duration_minutes is above the maximum".to_string()); }
+        if *(value) < 1 {
+            return Err(
+                "benefactor_marketing_meetings.duration_minutes is below the minimum".to_string(),
+            );
+        }
+        if *(value) > 1440 {
+            return Err(
+                "benefactor_marketing_meetings.duration_minutes is above the maximum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.notes {
-        if (value).as_bytes().len() > 20000 { return Err("benefactor_marketing_meetings.notes exceeds 20000 bytes".to_string()); }
+        if (value).as_bytes().len() > 20000 {
+            return Err("benefactor_marketing_meetings.notes exceeds 20000 bytes".to_string());
+        }
     }
     if let Some(value) = &value.recording_uri {
-        if (value).as_bytes().len() > 2048 { return Err("benefactor_marketing_meetings.recording_uri exceeds 2048 bytes".to_string()); }
+        if (value).as_bytes().len() > 2048 {
+            return Err(
+                "benefactor_marketing_meetings.recording_uri exceeds 2048 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.transcript_summary {
-        if !(value).is_object() { return Err("benefactor_marketing_meetings.transcript_summary must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_meetings.transcript_summary must be a JSON object"
+                    .to_string(),
+            );
+        }
     }
     Ok(())
 }
 
-pub const BENEFACTOR_MARKETING_TEAM_ALLOCATIONS_TABLE: &str = "benefactor_marketing_team_allocations";
-pub const BENEFACTOR_MARKETING_TEAM_ALLOCATIONS_COLUMNS: &[&str] = &["id", "client_id", "campaign_id", "user_id", "role", "allocation_percent", "starts_on", "ends_on", "billable", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_TEAM_ALLOCATIONS_TABLE: &str =
+    "benefactor_marketing_team_allocations";
+pub const BENEFACTOR_MARKETING_TEAM_ALLOCATIONS_COLUMNS: &[&str] = &[
+    "id",
+    "client_id",
+    "campaign_id",
+    "user_id",
+    "role",
+    "allocation_percent",
+    "starts_on",
+    "ends_on",
+    "billable",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_TEAM_ALLOCATIONS_SELECT_SQL: &str = r###"select
       id::text as id,
       client_id::text as client_id,
@@ -12405,7 +19472,15 @@ pub enum BenefactorMarketingTeamAllocationsRole {
 }
 
 impl BenefactorMarketingTeamAllocationsRole {
-    pub const VALUES: &'static [&'static str] = &["strategist", "designer", "copywriter", "analyst", "sdr", "account_manager", "seo_specialist"];
+    pub const VALUES: &'static [&'static str] = &[
+        "strategist",
+        "designer",
+        "copywriter",
+        "analyst",
+        "sdr",
+        "account_manager",
+        "seo_specialist",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -12470,38 +19545,130 @@ pub struct BenefactorMarketingTeamAllocationsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_team_allocations_row(value: &BenefactorMarketingTeamAllocationsRow) -> Result<(), String> {
-    if !["strategist", "designer", "copywriter", "analyst", "sdr", "account_manager", "seo_specialist"].contains(&(&value.role).as_str()) { return Err(format!("unsupported benefactor_marketing_team_allocations.role: {}", &value.role)); }
-    if *(&value.allocation_percent) < 0 { return Err("benefactor_marketing_team_allocations.allocation_percent is below the minimum".to_string()); }
-    if *(&value.allocation_percent) > 100 { return Err("benefactor_marketing_team_allocations.allocation_percent is above the maximum".to_string()); }
+pub fn validate_benefactor_marketing_team_allocations_row(
+    value: &BenefactorMarketingTeamAllocationsRow,
+) -> Result<(), String> {
+    if ![
+        "strategist",
+        "designer",
+        "copywriter",
+        "analyst",
+        "sdr",
+        "account_manager",
+        "seo_specialist",
+    ]
+    .contains(&(&value.role).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_team_allocations.role: {}",
+            &value.role
+        ));
+    }
+    if *(&value.allocation_percent) < 0 {
+        return Err(
+            "benefactor_marketing_team_allocations.allocation_percent is below the minimum"
+                .to_string(),
+        );
+    }
+    if *(&value.allocation_percent) > 100 {
+        return Err(
+            "benefactor_marketing_team_allocations.allocation_percent is above the maximum"
+                .to_string(),
+        );
+    }
     if let Some(value) = &value.starts_on {
-        validate_string_length("benefactor_marketing_team_allocations.starts_on", value, None, Some(10))?;
+        validate_string_length(
+            "benefactor_marketing_team_allocations.starts_on",
+            value,
+            None,
+            Some(10),
+        )?;
     }
     if let Some(value) = &value.ends_on {
-        validate_string_length("benefactor_marketing_team_allocations.ends_on", value, None, Some(10))?;
+        validate_string_length(
+            "benefactor_marketing_team_allocations.ends_on",
+            value,
+            None,
+            Some(10),
+        )?;
     }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_team_allocations_insert(value: &BenefactorMarketingTeamAllocationsInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_team_allocations_insert(
+    value: &BenefactorMarketingTeamAllocationsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.role {
-        if !["strategist", "designer", "copywriter", "analyst", "sdr", "account_manager", "seo_specialist"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_team_allocations.role: {}", value)); }
+        if ![
+            "strategist",
+            "designer",
+            "copywriter",
+            "analyst",
+            "sdr",
+            "account_manager",
+            "seo_specialist",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported benefactor_marketing_team_allocations.role: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.allocation_percent {
-        if *(value) < 0 { return Err("benefactor_marketing_team_allocations.allocation_percent is below the minimum".to_string()); }
-        if *(value) > 100 { return Err("benefactor_marketing_team_allocations.allocation_percent is above the maximum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "benefactor_marketing_team_allocations.allocation_percent is below the minimum"
+                    .to_string(),
+            );
+        }
+        if *(value) > 100 {
+            return Err(
+                "benefactor_marketing_team_allocations.allocation_percent is above the maximum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.starts_on {
-        validate_string_length("benefactor_marketing_team_allocations.starts_on", value, None, Some(10))?;
+        validate_string_length(
+            "benefactor_marketing_team_allocations.starts_on",
+            value,
+            None,
+            Some(10),
+        )?;
     }
     if let Some(value) = &value.ends_on {
-        validate_string_length("benefactor_marketing_team_allocations.ends_on", value, None, Some(10))?;
+        validate_string_length(
+            "benefactor_marketing_team_allocations.ends_on",
+            value,
+            None,
+            Some(10),
+        )?;
     }
     Ok(())
 }
 
-pub const BENEFACTOR_MARKETING_INTEGRATION_SYNC_RUNS_TABLE: &str = "benefactor_marketing_integration_sync_runs";
-pub const BENEFACTOR_MARKETING_INTEGRATION_SYNC_RUNS_COLUMNS: &[&str] = &["id", "integration_id", "client_id", "sync_kind", "direction", "status", "records_seen", "records_changed", "cursor_before", "cursor_after", "payload", "error_summary", "started_at", "completed_at", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_INTEGRATION_SYNC_RUNS_TABLE: &str =
+    "benefactor_marketing_integration_sync_runs";
+pub const BENEFACTOR_MARKETING_INTEGRATION_SYNC_RUNS_COLUMNS: &[&str] = &[
+    "id",
+    "integration_id",
+    "client_id",
+    "sync_kind",
+    "direction",
+    "status",
+    "records_seen",
+    "records_changed",
+    "cursor_before",
+    "cursor_after",
+    "payload",
+    "error_summary",
+    "started_at",
+    "completed_at",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_INTEGRATION_SYNC_RUNS_SELECT_SQL: &str = r###"select
       id::text as id,
       integration_id::text as integration_id,
@@ -12532,7 +19699,8 @@ pub enum BenefactorMarketingIntegrationSyncRunsSyncKind {
 }
 
 impl BenefactorMarketingIntegrationSyncRunsSyncKind {
-    pub const VALUES: &'static [&'static str] = &["incremental", "full", "webhook", "backfill", "export"];
+    pub const VALUES: &'static [&'static str] =
+        &["incremental", "full", "webhook", "backfill", "export"];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -12604,7 +19772,8 @@ pub enum BenefactorMarketingIntegrationSyncRunsStatus {
 }
 
 impl BenefactorMarketingIntegrationSyncRunsStatus {
-    pub const VALUES: &'static [&'static str] = &["queued", "running", "succeeded", "failed", "canceled"];
+    pub const VALUES: &'static [&'static str] =
+        &["queued", "running", "succeeded", "failed", "canceled"];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -12675,58 +19844,167 @@ pub struct BenefactorMarketingIntegrationSyncRunsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_integration_sync_runs_row(value: &BenefactorMarketingIntegrationSyncRunsRow) -> Result<(), String> {
-    if !["incremental", "full", "webhook", "backfill", "export"].contains(&(&value.sync_kind).as_str()) { return Err(format!("unsupported benefactor_marketing_integration_sync_runs.sync_kind: {}", &value.sync_kind)); }
-    if !["import", "export", "bidirectional"].contains(&(&value.direction).as_str()) { return Err(format!("unsupported benefactor_marketing_integration_sync_runs.direction: {}", &value.direction)); }
-    if !["queued", "running", "succeeded", "failed", "canceled"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_integration_sync_runs.status: {}", &value.status)); }
-    if *(&value.records_seen) < 0 { return Err("benefactor_marketing_integration_sync_runs.records_seen is below the minimum".to_string()); }
-    if *(&value.records_changed) < 0 { return Err("benefactor_marketing_integration_sync_runs.records_changed is below the minimum".to_string()); }
+pub fn validate_benefactor_marketing_integration_sync_runs_row(
+    value: &BenefactorMarketingIntegrationSyncRunsRow,
+) -> Result<(), String> {
+    if !["incremental", "full", "webhook", "backfill", "export"]
+        .contains(&(&value.sync_kind).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_integration_sync_runs.sync_kind: {}",
+            &value.sync_kind
+        ));
+    }
+    if !["import", "export", "bidirectional"].contains(&(&value.direction).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_integration_sync_runs.direction: {}",
+            &value.direction
+        ));
+    }
+    if !["queued", "running", "succeeded", "failed", "canceled"].contains(&(&value.status).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_integration_sync_runs.status: {}",
+            &value.status
+        ));
+    }
+    if *(&value.records_seen) < 0 {
+        return Err(
+            "benefactor_marketing_integration_sync_runs.records_seen is below the minimum"
+                .to_string(),
+        );
+    }
+    if *(&value.records_changed) < 0 {
+        return Err(
+            "benefactor_marketing_integration_sync_runs.records_changed is below the minimum"
+                .to_string(),
+        );
+    }
     if let Some(value) = &value.cursor_before {
-        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_integration_sync_runs.cursor_before exceeds 4000 bytes".to_string()); }
+        if (value).as_bytes().len() > 4000 {
+            return Err(
+                "benefactor_marketing_integration_sync_runs.cursor_before exceeds 4000 bytes"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.cursor_after {
-        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_integration_sync_runs.cursor_after exceeds 4000 bytes".to_string()); }
+        if (value).as_bytes().len() > 4000 {
+            return Err(
+                "benefactor_marketing_integration_sync_runs.cursor_after exceeds 4000 bytes"
+                    .to_string(),
+            );
+        }
     }
-    if !(&value.payload).is_object() { return Err("benefactor_marketing_integration_sync_runs.payload must be a JSON object".to_string()); }
+    if !(&value.payload).is_object() {
+        return Err(
+            "benefactor_marketing_integration_sync_runs.payload must be a JSON object".to_string(),
+        );
+    }
     if let Some(value) = &value.error_summary {
-        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_integration_sync_runs.error_summary exceeds 4000 bytes".to_string()); }
+        if (value).as_bytes().len() > 4000 {
+            return Err(
+                "benefactor_marketing_integration_sync_runs.error_summary exceeds 4000 bytes"
+                    .to_string(),
+            );
+        }
     }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_integration_sync_runs_insert(value: &BenefactorMarketingIntegrationSyncRunsInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_integration_sync_runs_insert(
+    value: &BenefactorMarketingIntegrationSyncRunsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.sync_kind {
-        if !["incremental", "full", "webhook", "backfill", "export"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_integration_sync_runs.sync_kind: {}", value)); }
+        if !["incremental", "full", "webhook", "backfill", "export"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_integration_sync_runs.sync_kind: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.direction {
-        if !["import", "export", "bidirectional"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_integration_sync_runs.direction: {}", value)); }
+        if !["import", "export", "bidirectional"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_integration_sync_runs.direction: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.status {
-        if !["queued", "running", "succeeded", "failed", "canceled"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_integration_sync_runs.status: {}", value)); }
+        if !["queued", "running", "succeeded", "failed", "canceled"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_integration_sync_runs.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.records_seen {
-        if *(value) < 0 { return Err("benefactor_marketing_integration_sync_runs.records_seen is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "benefactor_marketing_integration_sync_runs.records_seen is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.records_changed {
-        if *(value) < 0 { return Err("benefactor_marketing_integration_sync_runs.records_changed is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "benefactor_marketing_integration_sync_runs.records_changed is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.cursor_before {
-        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_integration_sync_runs.cursor_before exceeds 4000 bytes".to_string()); }
+        if (value).as_bytes().len() > 4000 {
+            return Err(
+                "benefactor_marketing_integration_sync_runs.cursor_before exceeds 4000 bytes"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.cursor_after {
-        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_integration_sync_runs.cursor_after exceeds 4000 bytes".to_string()); }
+        if (value).as_bytes().len() > 4000 {
+            return Err(
+                "benefactor_marketing_integration_sync_runs.cursor_after exceeds 4000 bytes"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.payload {
-        if !(value).is_object() { return Err("benefactor_marketing_integration_sync_runs.payload must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_integration_sync_runs.payload must be a JSON object"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.error_summary {
-        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_integration_sync_runs.error_summary exceeds 4000 bytes".to_string()); }
+        if (value).as_bytes().len() > 4000 {
+            return Err(
+                "benefactor_marketing_integration_sync_runs.error_summary exceeds 4000 bytes"
+                    .to_string(),
+            );
+        }
     }
     Ok(())
 }
 
-pub const BENEFACTOR_MARKETING_OUTREACH_SEQUENCES_TABLE: &str = "benefactor_marketing_outreach_sequences";
-pub const BENEFACTOR_MARKETING_OUTREACH_SEQUENCES_COLUMNS: &[&str] = &["id", "client_id", "campaign_id", "status", "channel", "name", "audience_filter", "cadence", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_OUTREACH_SEQUENCES_TABLE: &str =
+    "benefactor_marketing_outreach_sequences";
+pub const BENEFACTOR_MARKETING_OUTREACH_SEQUENCES_COLUMNS: &[&str] = &[
+    "id",
+    "client_id",
+    "campaign_id",
+    "status",
+    "channel",
+    "name",
+    "audience_filter",
+    "cadence",
+    "meta_data",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_OUTREACH_SEQUENCES_SELECT_SQL: &str = r###"select
       id::text as id,
       client_id::text as client_id,
@@ -12752,7 +20030,8 @@ pub enum BenefactorMarketingOutreachSequencesStatus {
 }
 
 impl BenefactorMarketingOutreachSequencesStatus {
-    pub const VALUES: &'static [&'static str] = &["draft", "active", "paused", "completed", "archived"];
+    pub const VALUES: &'static [&'static str] =
+        &["draft", "active", "paused", "completed", "archived"];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -12791,7 +20070,8 @@ pub enum BenefactorMarketingOutreachSequencesChannel {
 }
 
 impl BenefactorMarketingOutreachSequencesChannel {
-    pub const VALUES: &'static [&'static str] = &["email", "linkedin", "sms", "phone", "multi_channel"];
+    pub const VALUES: &'static [&'static str] =
+        &["email", "linkedin", "sms", "phone", "multi_channel"];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -12852,42 +20132,123 @@ pub struct BenefactorMarketingOutreachSequencesInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_outreach_sequences_row(value: &BenefactorMarketingOutreachSequencesRow) -> Result<(), String> {
-    if !["draft", "active", "paused", "completed", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_outreach_sequences.status: {}", &value.status)); }
-    if !["email", "linkedin", "sms", "phone", "multi_channel"].contains(&(&value.channel).as_str()) { return Err(format!("unsupported benefactor_marketing_outreach_sequences.channel: {}", &value.channel)); }
-    validate_string_length("benefactor_marketing_outreach_sequences.name", &value.name, None, Some(220))?;
-    if (&value.name).as_bytes().len() > 220 { return Err("benefactor_marketing_outreach_sequences.name exceeds 220 bytes".to_string()); }
-    if !(&value.audience_filter).is_object() { return Err("benefactor_marketing_outreach_sequences.audience_filter must be a JSON object".to_string()); }
-    if !(&value.cadence).is_object() { return Err("benefactor_marketing_outreach_sequences.cadence must be a JSON object".to_string()); }
-    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_outreach_sequences.meta_data must be a JSON object".to_string()); }
+pub fn validate_benefactor_marketing_outreach_sequences_row(
+    value: &BenefactorMarketingOutreachSequencesRow,
+) -> Result<(), String> {
+    if !["draft", "active", "paused", "completed", "archived"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_outreach_sequences.status: {}",
+            &value.status
+        ));
+    }
+    if !["email", "linkedin", "sms", "phone", "multi_channel"].contains(&(&value.channel).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_outreach_sequences.channel: {}",
+            &value.channel
+        ));
+    }
+    validate_string_length(
+        "benefactor_marketing_outreach_sequences.name",
+        &value.name,
+        None,
+        Some(220),
+    )?;
+    if (&value.name).as_bytes().len() > 220 {
+        return Err("benefactor_marketing_outreach_sequences.name exceeds 220 bytes".to_string());
+    }
+    if !(&value.audience_filter).is_object() {
+        return Err(
+            "benefactor_marketing_outreach_sequences.audience_filter must be a JSON object"
+                .to_string(),
+        );
+    }
+    if !(&value.cadence).is_object() {
+        return Err(
+            "benefactor_marketing_outreach_sequences.cadence must be a JSON object".to_string(),
+        );
+    }
+    if !(&value.meta_data).is_object() {
+        return Err(
+            "benefactor_marketing_outreach_sequences.meta_data must be a JSON object".to_string(),
+        );
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_outreach_sequences_insert(value: &BenefactorMarketingOutreachSequencesInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_outreach_sequences_insert(
+    value: &BenefactorMarketingOutreachSequencesInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.status {
-        if !["draft", "active", "paused", "completed", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_outreach_sequences.status: {}", value)); }
+        if !["draft", "active", "paused", "completed", "archived"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_outreach_sequences.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.channel {
-        if !["email", "linkedin", "sms", "phone", "multi_channel"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_outreach_sequences.channel: {}", value)); }
+        if !["email", "linkedin", "sms", "phone", "multi_channel"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_outreach_sequences.channel: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.name {
-        validate_string_length("benefactor_marketing_outreach_sequences.name", value, None, Some(220))?;
-        if (value).as_bytes().len() > 220 { return Err("benefactor_marketing_outreach_sequences.name exceeds 220 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_outreach_sequences.name",
+            value,
+            None,
+            Some(220),
+        )?;
+        if (value).as_bytes().len() > 220 {
+            return Err(
+                "benefactor_marketing_outreach_sequences.name exceeds 220 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.audience_filter {
-        if !(value).is_object() { return Err("benefactor_marketing_outreach_sequences.audience_filter must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_outreach_sequences.audience_filter must be a JSON object"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.cadence {
-        if !(value).is_object() { return Err("benefactor_marketing_outreach_sequences.cadence must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_outreach_sequences.cadence must be a JSON object".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("benefactor_marketing_outreach_sequences.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_outreach_sequences.meta_data must be a JSON object"
+                    .to_string(),
+            );
+        }
     }
     Ok(())
 }
 
 pub const BENEFACTOR_MARKETING_OUTREACH_STEPS_TABLE: &str = "benefactor_marketing_outreach_steps";
-pub const BENEFACTOR_MARKETING_OUTREACH_STEPS_COLUMNS: &[&str] = &["id", "sequence_id", "status", "step_order", "channel", "delay_minutes", "subject", "body_template", "personalization_hints", "experiment_key", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_OUTREACH_STEPS_COLUMNS: &[&str] = &[
+    "id",
+    "sequence_id",
+    "status",
+    "step_order",
+    "channel",
+    "delay_minutes",
+    "subject",
+    "body_template",
+    "personalization_hints",
+    "experiment_key",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_OUTREACH_STEPS_SELECT_SQL: &str = r###"select
       id::text as id,
       sequence_id::text as sequence_id,
@@ -13010,62 +20371,191 @@ pub struct BenefactorMarketingOutreachStepsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_outreach_steps_row(value: &BenefactorMarketingOutreachStepsRow) -> Result<(), String> {
-    if !["active", "disabled", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_outreach_steps.status: {}", &value.status)); }
-    if *(&value.step_order) < 1 { return Err("benefactor_marketing_outreach_steps.step_order is below the minimum".to_string()); }
-    if *(&value.step_order) > 100 { return Err("benefactor_marketing_outreach_steps.step_order is above the maximum".to_string()); }
-    if !["email", "linkedin", "sms", "phone", "task"].contains(&(&value.channel).as_str()) { return Err(format!("unsupported benefactor_marketing_outreach_steps.channel: {}", &value.channel)); }
-    if *(&value.delay_minutes) < 0 { return Err("benefactor_marketing_outreach_steps.delay_minutes is below the minimum".to_string()); }
-    if *(&value.delay_minutes) > 525600 { return Err("benefactor_marketing_outreach_steps.delay_minutes is above the maximum".to_string()); }
+pub fn validate_benefactor_marketing_outreach_steps_row(
+    value: &BenefactorMarketingOutreachStepsRow,
+) -> Result<(), String> {
+    if !["active", "disabled", "archived"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_outreach_steps.status: {}",
+            &value.status
+        ));
+    }
+    if *(&value.step_order) < 1 {
+        return Err(
+            "benefactor_marketing_outreach_steps.step_order is below the minimum".to_string(),
+        );
+    }
+    if *(&value.step_order) > 100 {
+        return Err(
+            "benefactor_marketing_outreach_steps.step_order is above the maximum".to_string(),
+        );
+    }
+    if !["email", "linkedin", "sms", "phone", "task"].contains(&(&value.channel).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_outreach_steps.channel: {}",
+            &value.channel
+        ));
+    }
+    if *(&value.delay_minutes) < 0 {
+        return Err(
+            "benefactor_marketing_outreach_steps.delay_minutes is below the minimum".to_string(),
+        );
+    }
+    if *(&value.delay_minutes) > 525600 {
+        return Err(
+            "benefactor_marketing_outreach_steps.delay_minutes is above the maximum".to_string(),
+        );
+    }
     if let Some(value) = &value.subject {
-        validate_string_length("benefactor_marketing_outreach_steps.subject", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_outreach_steps.subject exceeds 240 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_outreach_steps.subject",
+            value,
+            None,
+            Some(240),
+        )?;
+        if (value).as_bytes().len() > 240 {
+            return Err(
+                "benefactor_marketing_outreach_steps.subject exceeds 240 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.body_template {
-        if (value).as_bytes().len() > 100000 { return Err("benefactor_marketing_outreach_steps.body_template exceeds 100000 bytes".to_string()); }
+        if (value).as_bytes().len() > 100000 {
+            return Err(
+                "benefactor_marketing_outreach_steps.body_template exceeds 100000 bytes"
+                    .to_string(),
+            );
+        }
     }
-    if !(&value.personalization_hints).is_array() { return Err("benefactor_marketing_outreach_steps.personalization_hints must be a JSON array".to_string()); }
+    if !(&value.personalization_hints).is_array() {
+        return Err(
+            "benefactor_marketing_outreach_steps.personalization_hints must be a JSON array"
+                .to_string(),
+        );
+    }
     if let Some(value) = &value.experiment_key {
-        validate_string_length("benefactor_marketing_outreach_steps.experiment_key", value, None, Some(120))?;
-        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_outreach_steps.experiment_key exceeds 120 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_outreach_steps.experiment_key",
+            value,
+            None,
+            Some(120),
+        )?;
+        if (value).as_bytes().len() > 120 {
+            return Err(
+                "benefactor_marketing_outreach_steps.experiment_key exceeds 120 bytes".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_outreach_steps_insert(value: &BenefactorMarketingOutreachStepsInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_outreach_steps_insert(
+    value: &BenefactorMarketingOutreachStepsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.status {
-        if !["active", "disabled", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_outreach_steps.status: {}", value)); }
+        if !["active", "disabled", "archived"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_outreach_steps.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.step_order {
-        if *(value) < 1 { return Err("benefactor_marketing_outreach_steps.step_order is below the minimum".to_string()); }
-        if *(value) > 100 { return Err("benefactor_marketing_outreach_steps.step_order is above the maximum".to_string()); }
+        if *(value) < 1 {
+            return Err(
+                "benefactor_marketing_outreach_steps.step_order is below the minimum".to_string(),
+            );
+        }
+        if *(value) > 100 {
+            return Err(
+                "benefactor_marketing_outreach_steps.step_order is above the maximum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.channel {
-        if !["email", "linkedin", "sms", "phone", "task"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_outreach_steps.channel: {}", value)); }
+        if !["email", "linkedin", "sms", "phone", "task"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_outreach_steps.channel: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.delay_minutes {
-        if *(value) < 0 { return Err("benefactor_marketing_outreach_steps.delay_minutes is below the minimum".to_string()); }
-        if *(value) > 525600 { return Err("benefactor_marketing_outreach_steps.delay_minutes is above the maximum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "benefactor_marketing_outreach_steps.delay_minutes is below the minimum"
+                    .to_string(),
+            );
+        }
+        if *(value) > 525600 {
+            return Err(
+                "benefactor_marketing_outreach_steps.delay_minutes is above the maximum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.subject {
-        validate_string_length("benefactor_marketing_outreach_steps.subject", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_outreach_steps.subject exceeds 240 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_outreach_steps.subject",
+            value,
+            None,
+            Some(240),
+        )?;
+        if (value).as_bytes().len() > 240 {
+            return Err(
+                "benefactor_marketing_outreach_steps.subject exceeds 240 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.body_template {
-        if (value).as_bytes().len() > 100000 { return Err("benefactor_marketing_outreach_steps.body_template exceeds 100000 bytes".to_string()); }
+        if (value).as_bytes().len() > 100000 {
+            return Err(
+                "benefactor_marketing_outreach_steps.body_template exceeds 100000 bytes"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.personalization_hints {
-        if !(value).is_array() { return Err("benefactor_marketing_outreach_steps.personalization_hints must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err(
+                "benefactor_marketing_outreach_steps.personalization_hints must be a JSON array"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.experiment_key {
-        validate_string_length("benefactor_marketing_outreach_steps.experiment_key", value, None, Some(120))?;
-        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_outreach_steps.experiment_key exceeds 120 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_outreach_steps.experiment_key",
+            value,
+            None,
+            Some(120),
+        )?;
+        if (value).as_bytes().len() > 120 {
+            return Err(
+                "benefactor_marketing_outreach_steps.experiment_key exceeds 120 bytes".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
-pub const BENEFACTOR_MARKETING_OUTREACH_ENROLLMENTS_TABLE: &str = "benefactor_marketing_outreach_enrollments";
-pub const BENEFACTOR_MARKETING_OUTREACH_ENROLLMENTS_COLUMNS: &[&str] = &["id", "client_id", "sequence_id", "lead_id", "contact_id", "status", "current_step_order", "enrollment_context", "last_touch_at", "next_touch_at", "outcome", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_OUTREACH_ENROLLMENTS_TABLE: &str =
+    "benefactor_marketing_outreach_enrollments";
+pub const BENEFACTOR_MARKETING_OUTREACH_ENROLLMENTS_COLUMNS: &[&str] = &[
+    "id",
+    "client_id",
+    "sequence_id",
+    "lead_id",
+    "contact_id",
+    "status",
+    "current_step_order",
+    "enrollment_context",
+    "last_touch_at",
+    "next_touch_at",
+    "outcome",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_OUTREACH_ENROLLMENTS_SELECT_SQL: &str = r###"select
       id::text as id,
       client_id::text as client_id,
@@ -13094,7 +20584,14 @@ pub enum BenefactorMarketingOutreachEnrollmentsStatus {
 }
 
 impl BenefactorMarketingOutreachEnrollmentsStatus {
-    pub const VALUES: &'static [&'static str] = &["active", "paused", "completed", "bounced", "unsubscribed", "failed"];
+    pub const VALUES: &'static [&'static str] = &[
+        "active",
+        "paused",
+        "completed",
+        "bounced",
+        "unsubscribed",
+        "failed",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -13161,38 +20658,133 @@ pub struct BenefactorMarketingOutreachEnrollmentsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_outreach_enrollments_row(value: &BenefactorMarketingOutreachEnrollmentsRow) -> Result<(), String> {
-    if !["active", "paused", "completed", "bounced", "unsubscribed", "failed"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_outreach_enrollments.status: {}", &value.status)); }
-    if *(&value.current_step_order) < 1 { return Err("benefactor_marketing_outreach_enrollments.current_step_order is below the minimum".to_string()); }
-    if *(&value.current_step_order) > 100 { return Err("benefactor_marketing_outreach_enrollments.current_step_order is above the maximum".to_string()); }
-    if !(&value.enrollment_context).is_object() { return Err("benefactor_marketing_outreach_enrollments.enrollment_context must be a JSON object".to_string()); }
+pub fn validate_benefactor_marketing_outreach_enrollments_row(
+    value: &BenefactorMarketingOutreachEnrollmentsRow,
+) -> Result<(), String> {
+    if ![
+        "active",
+        "paused",
+        "completed",
+        "bounced",
+        "unsubscribed",
+        "failed",
+    ]
+    .contains(&(&value.status).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_outreach_enrollments.status: {}",
+            &value.status
+        ));
+    }
+    if *(&value.current_step_order) < 1 {
+        return Err(
+            "benefactor_marketing_outreach_enrollments.current_step_order is below the minimum"
+                .to_string(),
+        );
+    }
+    if *(&value.current_step_order) > 100 {
+        return Err(
+            "benefactor_marketing_outreach_enrollments.current_step_order is above the maximum"
+                .to_string(),
+        );
+    }
+    if !(&value.enrollment_context).is_object() {
+        return Err(
+            "benefactor_marketing_outreach_enrollments.enrollment_context must be a JSON object"
+                .to_string(),
+        );
+    }
     if let Some(value) = &value.outcome {
-        validate_string_length("benefactor_marketing_outreach_enrollments.outcome", value, None, Some(64))?;
-        if (value).as_bytes().len() > 64 { return Err("benefactor_marketing_outreach_enrollments.outcome exceeds 64 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_outreach_enrollments.outcome",
+            value,
+            None,
+            Some(64),
+        )?;
+        if (value).as_bytes().len() > 64 {
+            return Err(
+                "benefactor_marketing_outreach_enrollments.outcome exceeds 64 bytes".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_outreach_enrollments_insert(value: &BenefactorMarketingOutreachEnrollmentsInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_outreach_enrollments_insert(
+    value: &BenefactorMarketingOutreachEnrollmentsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.status {
-        if !["active", "paused", "completed", "bounced", "unsubscribed", "failed"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_outreach_enrollments.status: {}", value)); }
+        if ![
+            "active",
+            "paused",
+            "completed",
+            "bounced",
+            "unsubscribed",
+            "failed",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported benefactor_marketing_outreach_enrollments.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.current_step_order {
-        if *(value) < 1 { return Err("benefactor_marketing_outreach_enrollments.current_step_order is below the minimum".to_string()); }
-        if *(value) > 100 { return Err("benefactor_marketing_outreach_enrollments.current_step_order is above the maximum".to_string()); }
+        if *(value) < 1 {
+            return Err(
+                "benefactor_marketing_outreach_enrollments.current_step_order is below the minimum"
+                    .to_string(),
+            );
+        }
+        if *(value) > 100 {
+            return Err(
+                "benefactor_marketing_outreach_enrollments.current_step_order is above the maximum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.enrollment_context {
-        if !(value).is_object() { return Err("benefactor_marketing_outreach_enrollments.enrollment_context must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("benefactor_marketing_outreach_enrollments.enrollment_context must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.outcome {
-        validate_string_length("benefactor_marketing_outreach_enrollments.outcome", value, None, Some(64))?;
-        if (value).as_bytes().len() > 64 { return Err("benefactor_marketing_outreach_enrollments.outcome exceeds 64 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_outreach_enrollments.outcome",
+            value,
+            None,
+            Some(64),
+        )?;
+        if (value).as_bytes().len() > 64 {
+            return Err(
+                "benefactor_marketing_outreach_enrollments.outcome exceeds 64 bytes".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
-pub const BENEFACTOR_MARKETING_OUTREACH_TOUCHPOINTS_TABLE: &str = "benefactor_marketing_outreach_touchpoints";
-pub const BENEFACTOR_MARKETING_OUTREACH_TOUCHPOINTS_COLUMNS: &[&str] = &["id", "client_id", "sequence_id", "enrollment_id", "campaign_id", "lead_id", "contact_id", "channel", "direction", "status", "subject", "body_excerpt", "external_message_id", "occurred_at", "payload", "created_at"];
+pub const BENEFACTOR_MARKETING_OUTREACH_TOUCHPOINTS_TABLE: &str =
+    "benefactor_marketing_outreach_touchpoints";
+pub const BENEFACTOR_MARKETING_OUTREACH_TOUCHPOINTS_COLUMNS: &[&str] = &[
+    "id",
+    "client_id",
+    "sequence_id",
+    "enrollment_id",
+    "campaign_id",
+    "lead_id",
+    "contact_id",
+    "channel",
+    "direction",
+    "status",
+    "subject",
+    "body_excerpt",
+    "external_message_id",
+    "occurred_at",
+    "payload",
+    "created_at",
+];
 pub const BENEFACTOR_MARKETING_OUTREACH_TOUCHPOINTS_SELECT_SQL: &str = r###"select
       id::text as id,
       client_id::text as client_id,
@@ -13224,7 +20816,8 @@ pub enum BenefactorMarketingOutreachTouchpointsChannel {
 }
 
 impl BenefactorMarketingOutreachTouchpointsChannel {
-    pub const VALUES: &'static [&'static str] = &["email", "linkedin", "sms", "phone", "task", "meeting"];
+    pub const VALUES: &'static [&'static str] =
+        &["email", "linkedin", "sms", "phone", "task", "meeting"];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -13301,7 +20894,16 @@ pub enum BenefactorMarketingOutreachTouchpointsStatus {
 }
 
 impl BenefactorMarketingOutreachTouchpointsStatus {
-    pub const VALUES: &'static [&'static str] = &["planned", "sent", "delivered", "opened", "clicked", "replied", "failed", "bounced"];
+    pub const VALUES: &'static [&'static str] = &[
+        "planned",
+        "sent",
+        "delivered",
+        "opened",
+        "clicked",
+        "replied",
+        "failed",
+        "bounced",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -13378,54 +20980,185 @@ pub struct BenefactorMarketingOutreachTouchpointsInsert {
     pub created_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_outreach_touchpoints_row(value: &BenefactorMarketingOutreachTouchpointsRow) -> Result<(), String> {
-    if !["email", "linkedin", "sms", "phone", "task", "meeting"].contains(&(&value.channel).as_str()) { return Err(format!("unsupported benefactor_marketing_outreach_touchpoints.channel: {}", &value.channel)); }
-    if !["outbound", "inbound", "internal"].contains(&(&value.direction).as_str()) { return Err(format!("unsupported benefactor_marketing_outreach_touchpoints.direction: {}", &value.direction)); }
-    if !["planned", "sent", "delivered", "opened", "clicked", "replied", "failed", "bounced"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_outreach_touchpoints.status: {}", &value.status)); }
+pub fn validate_benefactor_marketing_outreach_touchpoints_row(
+    value: &BenefactorMarketingOutreachTouchpointsRow,
+) -> Result<(), String> {
+    if !["email", "linkedin", "sms", "phone", "task", "meeting"]
+        .contains(&(&value.channel).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_outreach_touchpoints.channel: {}",
+            &value.channel
+        ));
+    }
+    if !["outbound", "inbound", "internal"].contains(&(&value.direction).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_outreach_touchpoints.direction: {}",
+            &value.direction
+        ));
+    }
+    if ![
+        "planned",
+        "sent",
+        "delivered",
+        "opened",
+        "clicked",
+        "replied",
+        "failed",
+        "bounced",
+    ]
+    .contains(&(&value.status).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_outreach_touchpoints.status: {}",
+            &value.status
+        ));
+    }
     if let Some(value) = &value.subject {
-        validate_string_length("benefactor_marketing_outreach_touchpoints.subject", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_outreach_touchpoints.subject exceeds 240 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_outreach_touchpoints.subject",
+            value,
+            None,
+            Some(240),
+        )?;
+        if (value).as_bytes().len() > 240 {
+            return Err(
+                "benefactor_marketing_outreach_touchpoints.subject exceeds 240 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.body_excerpt {
-        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_outreach_touchpoints.body_excerpt exceeds 4000 bytes".to_string()); }
+        if (value).as_bytes().len() > 4000 {
+            return Err(
+                "benefactor_marketing_outreach_touchpoints.body_excerpt exceeds 4000 bytes"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.external_message_id {
-        validate_string_length("benefactor_marketing_outreach_touchpoints.external_message_id", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_outreach_touchpoints.external_message_id exceeds 200 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_outreach_touchpoints.external_message_id",
+            value,
+            None,
+            Some(200),
+        )?;
+        if (value).as_bytes().len() > 200 {
+            return Err(
+                "benefactor_marketing_outreach_touchpoints.external_message_id exceeds 200 bytes"
+                    .to_string(),
+            );
+        }
     }
-    if !(&value.payload).is_object() { return Err("benefactor_marketing_outreach_touchpoints.payload must be a JSON object".to_string()); }
+    if !(&value.payload).is_object() {
+        return Err(
+            "benefactor_marketing_outreach_touchpoints.payload must be a JSON object".to_string(),
+        );
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_outreach_touchpoints_insert(value: &BenefactorMarketingOutreachTouchpointsInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_outreach_touchpoints_insert(
+    value: &BenefactorMarketingOutreachTouchpointsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.channel {
-        if !["email", "linkedin", "sms", "phone", "task", "meeting"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_outreach_touchpoints.channel: {}", value)); }
+        if !["email", "linkedin", "sms", "phone", "task", "meeting"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_outreach_touchpoints.channel: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.direction {
-        if !["outbound", "inbound", "internal"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_outreach_touchpoints.direction: {}", value)); }
+        if !["outbound", "inbound", "internal"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_outreach_touchpoints.direction: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.status {
-        if !["planned", "sent", "delivered", "opened", "clicked", "replied", "failed", "bounced"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_outreach_touchpoints.status: {}", value)); }
+        if ![
+            "planned",
+            "sent",
+            "delivered",
+            "opened",
+            "clicked",
+            "replied",
+            "failed",
+            "bounced",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported benefactor_marketing_outreach_touchpoints.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.subject {
-        validate_string_length("benefactor_marketing_outreach_touchpoints.subject", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_outreach_touchpoints.subject exceeds 240 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_outreach_touchpoints.subject",
+            value,
+            None,
+            Some(240),
+        )?;
+        if (value).as_bytes().len() > 240 {
+            return Err(
+                "benefactor_marketing_outreach_touchpoints.subject exceeds 240 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.body_excerpt {
-        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_outreach_touchpoints.body_excerpt exceeds 4000 bytes".to_string()); }
+        if (value).as_bytes().len() > 4000 {
+            return Err(
+                "benefactor_marketing_outreach_touchpoints.body_excerpt exceeds 4000 bytes"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.external_message_id {
-        validate_string_length("benefactor_marketing_outreach_touchpoints.external_message_id", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_outreach_touchpoints.external_message_id exceeds 200 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_outreach_touchpoints.external_message_id",
+            value,
+            None,
+            Some(200),
+        )?;
+        if (value).as_bytes().len() > 200 {
+            return Err(
+                "benefactor_marketing_outreach_touchpoints.external_message_id exceeds 200 bytes"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.payload {
-        if !(value).is_object() { return Err("benefactor_marketing_outreach_touchpoints.payload must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_outreach_touchpoints.payload must be a JSON object"
+                    .to_string(),
+            );
+        }
     }
     Ok(())
 }
 
-pub const BENEFACTOR_MARKETING_PROSPECT_RESEARCH_BRIEFS_TABLE: &str = "benefactor_marketing_prospect_research_briefs";
-pub const BENEFACTOR_MARKETING_PROSPECT_RESEARCH_BRIEFS_COLUMNS: &[&str] = &["id", "client_id", "lead_id", "status", "research_kind", "source", "summary", "findings", "recommended_actions", "confidence_micros", "model_name", "generated_at", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_PROSPECT_RESEARCH_BRIEFS_TABLE: &str =
+    "benefactor_marketing_prospect_research_briefs";
+pub const BENEFACTOR_MARKETING_PROSPECT_RESEARCH_BRIEFS_COLUMNS: &[&str] = &[
+    "id",
+    "client_id",
+    "lead_id",
+    "status",
+    "research_kind",
+    "source",
+    "summary",
+    "findings",
+    "recommended_actions",
+    "confidence_micros",
+    "model_name",
+    "generated_at",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_PROSPECT_RESEARCH_BRIEFS_SELECT_SQL: &str = r###"select
       id::text as id,
       client_id::text as client_id,
@@ -13490,7 +21223,13 @@ pub enum BenefactorMarketingProspectResearchBriefsResearchKind {
 }
 
 impl BenefactorMarketingProspectResearchBriefsResearchKind {
-    pub const VALUES: &'static [&'static str] = &["account_research", "contact_research", "competitive_intel", "proposal_brief", "outreach_personalization"];
+    pub const VALUES: &'static [&'static str] = &[
+        "account_research",
+        "contact_research",
+        "competitive_intel",
+        "proposal_brief",
+        "outreach_personalization",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -13528,7 +21267,8 @@ pub enum BenefactorMarketingProspectResearchBriefsSource {
 }
 
 impl BenefactorMarketingProspectResearchBriefsSource {
-    pub const VALUES: &'static [&'static str] = &["ai_assisted", "analyst", "scraper", "integration"];
+    pub const VALUES: &'static [&'static str] =
+        &["ai_assisted", "analyst", "scraper", "integration"];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -13593,56 +21333,181 @@ pub struct BenefactorMarketingProspectResearchBriefsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_prospect_research_briefs_row(value: &BenefactorMarketingProspectResearchBriefsRow) -> Result<(), String> {
-    if !["draft", "ready", "stale", "failed"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_prospect_research_briefs.status: {}", &value.status)); }
-    if !["account_research", "contact_research", "competitive_intel", "proposal_brief", "outreach_personalization"].contains(&(&value.research_kind).as_str()) { return Err(format!("unsupported benefactor_marketing_prospect_research_briefs.research_kind: {}", &value.research_kind)); }
-    if !["ai_assisted", "analyst", "scraper", "integration"].contains(&(&value.source).as_str()) { return Err(format!("unsupported benefactor_marketing_prospect_research_briefs.source: {}", &value.source)); }
-    if let Some(value) = &value.summary {
-        if (value).as_bytes().len() > 20000 { return Err("benefactor_marketing_prospect_research_briefs.summary exceeds 20000 bytes".to_string()); }
+pub fn validate_benefactor_marketing_prospect_research_briefs_row(
+    value: &BenefactorMarketingProspectResearchBriefsRow,
+) -> Result<(), String> {
+    if !["draft", "ready", "stale", "failed"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_prospect_research_briefs.status: {}",
+            &value.status
+        ));
     }
-    if !(&value.findings).is_array() { return Err("benefactor_marketing_prospect_research_briefs.findings must be a JSON array".to_string()); }
-    if !(&value.recommended_actions).is_array() { return Err("benefactor_marketing_prospect_research_briefs.recommended_actions must be a JSON array".to_string()); }
-    if *(&value.confidence_micros) < 0 { return Err("benefactor_marketing_prospect_research_briefs.confidence_micros is below the minimum".to_string()); }
-    if *(&value.confidence_micros) > 1000000 { return Err("benefactor_marketing_prospect_research_briefs.confidence_micros is above the maximum".to_string()); }
+    if ![
+        "account_research",
+        "contact_research",
+        "competitive_intel",
+        "proposal_brief",
+        "outreach_personalization",
+    ]
+    .contains(&(&value.research_kind).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_prospect_research_briefs.research_kind: {}",
+            &value.research_kind
+        ));
+    }
+    if !["ai_assisted", "analyst", "scraper", "integration"].contains(&(&value.source).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_prospect_research_briefs.source: {}",
+            &value.source
+        ));
+    }
+    if let Some(value) = &value.summary {
+        if (value).as_bytes().len() > 20000 {
+            return Err(
+                "benefactor_marketing_prospect_research_briefs.summary exceeds 20000 bytes"
+                    .to_string(),
+            );
+        }
+    }
+    if !(&value.findings).is_array() {
+        return Err(
+            "benefactor_marketing_prospect_research_briefs.findings must be a JSON array"
+                .to_string(),
+        );
+    }
+    if !(&value.recommended_actions).is_array() {
+        return Err("benefactor_marketing_prospect_research_briefs.recommended_actions must be a JSON array".to_string());
+    }
+    if *(&value.confidence_micros) < 0 {
+        return Err(
+            "benefactor_marketing_prospect_research_briefs.confidence_micros is below the minimum"
+                .to_string(),
+        );
+    }
+    if *(&value.confidence_micros) > 1000000 {
+        return Err(
+            "benefactor_marketing_prospect_research_briefs.confidence_micros is above the maximum"
+                .to_string(),
+        );
+    }
     if let Some(value) = &value.model_name {
-        validate_string_length("benefactor_marketing_prospect_research_briefs.model_name", value, None, Some(120))?;
-        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_prospect_research_briefs.model_name exceeds 120 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_prospect_research_briefs.model_name",
+            value,
+            None,
+            Some(120),
+        )?;
+        if (value).as_bytes().len() > 120 {
+            return Err(
+                "benefactor_marketing_prospect_research_briefs.model_name exceeds 120 bytes"
+                    .to_string(),
+            );
+        }
     }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_prospect_research_briefs_insert(value: &BenefactorMarketingProspectResearchBriefsInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_prospect_research_briefs_insert(
+    value: &BenefactorMarketingProspectResearchBriefsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.status {
-        if !["draft", "ready", "stale", "failed"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_prospect_research_briefs.status: {}", value)); }
+        if !["draft", "ready", "stale", "failed"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_prospect_research_briefs.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.research_kind {
-        if !["account_research", "contact_research", "competitive_intel", "proposal_brief", "outreach_personalization"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_prospect_research_briefs.research_kind: {}", value)); }
+        if ![
+            "account_research",
+            "contact_research",
+            "competitive_intel",
+            "proposal_brief",
+            "outreach_personalization",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported benefactor_marketing_prospect_research_briefs.research_kind: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.source {
-        if !["ai_assisted", "analyst", "scraper", "integration"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_prospect_research_briefs.source: {}", value)); }
+        if !["ai_assisted", "analyst", "scraper", "integration"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_prospect_research_briefs.source: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.summary {
-        if (value).as_bytes().len() > 20000 { return Err("benefactor_marketing_prospect_research_briefs.summary exceeds 20000 bytes".to_string()); }
+        if (value).as_bytes().len() > 20000 {
+            return Err(
+                "benefactor_marketing_prospect_research_briefs.summary exceeds 20000 bytes"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.findings {
-        if !(value).is_array() { return Err("benefactor_marketing_prospect_research_briefs.findings must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err(
+                "benefactor_marketing_prospect_research_briefs.findings must be a JSON array"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.recommended_actions {
-        if !(value).is_array() { return Err("benefactor_marketing_prospect_research_briefs.recommended_actions must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err("benefactor_marketing_prospect_research_briefs.recommended_actions must be a JSON array".to_string());
+        }
     }
     if let Some(value) = &value.confidence_micros {
-        if *(value) < 0 { return Err("benefactor_marketing_prospect_research_briefs.confidence_micros is below the minimum".to_string()); }
-        if *(value) > 1000000 { return Err("benefactor_marketing_prospect_research_briefs.confidence_micros is above the maximum".to_string()); }
+        if *(value) < 0 {
+            return Err("benefactor_marketing_prospect_research_briefs.confidence_micros is below the minimum".to_string());
+        }
+        if *(value) > 1000000 {
+            return Err("benefactor_marketing_prospect_research_briefs.confidence_micros is above the maximum".to_string());
+        }
     }
     if let Some(value) = &value.model_name {
-        validate_string_length("benefactor_marketing_prospect_research_briefs.model_name", value, None, Some(120))?;
-        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_prospect_research_briefs.model_name exceeds 120 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_prospect_research_briefs.model_name",
+            value,
+            None,
+            Some(120),
+        )?;
+        if (value).as_bytes().len() > 120 {
+            return Err(
+                "benefactor_marketing_prospect_research_briefs.model_name exceeds 120 bytes"
+                    .to_string(),
+            );
+        }
     }
     Ok(())
 }
 
-pub const BENEFACTOR_MARKETING_CONVERSION_EVENTS_TABLE: &str = "benefactor_marketing_conversion_events";
-pub const BENEFACTOR_MARKETING_CONVERSION_EVENTS_COLUMNS: &[&str] = &["id", "client_id", "campaign_id", "lead_id", "content_asset_id", "event_type", "source_platform", "source_event_id", "session_id", "visitor_key", "occurred_at", "value_cents", "utm", "payload", "created_at"];
+pub const BENEFACTOR_MARKETING_CONVERSION_EVENTS_TABLE: &str =
+    "benefactor_marketing_conversion_events";
+pub const BENEFACTOR_MARKETING_CONVERSION_EVENTS_COLUMNS: &[&str] = &[
+    "id",
+    "client_id",
+    "campaign_id",
+    "lead_id",
+    "content_asset_id",
+    "event_type",
+    "source_platform",
+    "source_event_id",
+    "session_id",
+    "visitor_key",
+    "occurred_at",
+    "value_cents",
+    "utm",
+    "payload",
+    "created_at",
+];
 pub const BENEFACTOR_MARKETING_CONVERSION_EVENTS_SELECT_SQL: &str = r###"select
       id::text as id,
       client_id::text as client_id,
@@ -13675,7 +21540,16 @@ pub enum BenefactorMarketingConversionEventsEventType {
 }
 
 impl BenefactorMarketingConversionEventsEventType {
-    pub const VALUES: &'static [&'static str] = &["landing_page_view", "form_submit", "chat_started", "calendar_booked", "asset_download", "trial_signup", "purchase", "custom"];
+    pub const VALUES: &'static [&'static str] = &[
+        "landing_page_view",
+        "form_submit",
+        "chat_started",
+        "calendar_booked",
+        "asset_download",
+        "trial_signup",
+        "purchase",
+        "custom",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -13750,64 +21624,213 @@ pub struct BenefactorMarketingConversionEventsInsert {
     pub created_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_conversion_events_row(value: &BenefactorMarketingConversionEventsRow) -> Result<(), String> {
-    if !["landing_page_view", "form_submit", "chat_started", "calendar_booked", "asset_download", "trial_signup", "purchase", "custom"].contains(&(&value.event_type).as_str()) { return Err(format!("unsupported benefactor_marketing_conversion_events.event_type: {}", &value.event_type)); }
+pub fn validate_benefactor_marketing_conversion_events_row(
+    value: &BenefactorMarketingConversionEventsRow,
+) -> Result<(), String> {
+    if ![
+        "landing_page_view",
+        "form_submit",
+        "chat_started",
+        "calendar_booked",
+        "asset_download",
+        "trial_signup",
+        "purchase",
+        "custom",
+    ]
+    .contains(&(&value.event_type).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_conversion_events.event_type: {}",
+            &value.event_type
+        ));
+    }
     if let Some(value) = &value.source_platform {
-        validate_string_length("benefactor_marketing_conversion_events.source_platform", value, None, Some(64))?;
-        if (value).as_bytes().len() > 64 { return Err("benefactor_marketing_conversion_events.source_platform exceeds 64 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_conversion_events.source_platform",
+            value,
+            None,
+            Some(64),
+        )?;
+        if (value).as_bytes().len() > 64 {
+            return Err(
+                "benefactor_marketing_conversion_events.source_platform exceeds 64 bytes"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.source_event_id {
-        validate_string_length("benefactor_marketing_conversion_events.source_event_id", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_conversion_events.source_event_id exceeds 200 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_conversion_events.source_event_id",
+            value,
+            None,
+            Some(200),
+        )?;
+        if (value).as_bytes().len() > 200 {
+            return Err(
+                "benefactor_marketing_conversion_events.source_event_id exceeds 200 bytes"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.session_id {
-        validate_string_length("benefactor_marketing_conversion_events.session_id", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_conversion_events.session_id exceeds 200 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_conversion_events.session_id",
+            value,
+            None,
+            Some(200),
+        )?;
+        if (value).as_bytes().len() > 200 {
+            return Err(
+                "benefactor_marketing_conversion_events.session_id exceeds 200 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.visitor_key {
-        validate_string_length("benefactor_marketing_conversion_events.visitor_key", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_conversion_events.visitor_key exceeds 200 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_conversion_events.visitor_key",
+            value,
+            None,
+            Some(200),
+        )?;
+        if (value).as_bytes().len() > 200 {
+            return Err(
+                "benefactor_marketing_conversion_events.visitor_key exceeds 200 bytes".to_string(),
+            );
+        }
     }
-    if *(&value.value_cents) < 0 { return Err("benefactor_marketing_conversion_events.value_cents is below the minimum".to_string()); }
-    if !(&value.utm).is_object() { return Err("benefactor_marketing_conversion_events.utm must be a JSON object".to_string()); }
-    if !(&value.payload).is_object() { return Err("benefactor_marketing_conversion_events.payload must be a JSON object".to_string()); }
+    if *(&value.value_cents) < 0 {
+        return Err(
+            "benefactor_marketing_conversion_events.value_cents is below the minimum".to_string(),
+        );
+    }
+    if !(&value.utm).is_object() {
+        return Err("benefactor_marketing_conversion_events.utm must be a JSON object".to_string());
+    }
+    if !(&value.payload).is_object() {
+        return Err(
+            "benefactor_marketing_conversion_events.payload must be a JSON object".to_string(),
+        );
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_conversion_events_insert(value: &BenefactorMarketingConversionEventsInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_conversion_events_insert(
+    value: &BenefactorMarketingConversionEventsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.event_type {
-        if !["landing_page_view", "form_submit", "chat_started", "calendar_booked", "asset_download", "trial_signup", "purchase", "custom"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_conversion_events.event_type: {}", value)); }
+        if ![
+            "landing_page_view",
+            "form_submit",
+            "chat_started",
+            "calendar_booked",
+            "asset_download",
+            "trial_signup",
+            "purchase",
+            "custom",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported benefactor_marketing_conversion_events.event_type: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.source_platform {
-        validate_string_length("benefactor_marketing_conversion_events.source_platform", value, None, Some(64))?;
-        if (value).as_bytes().len() > 64 { return Err("benefactor_marketing_conversion_events.source_platform exceeds 64 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_conversion_events.source_platform",
+            value,
+            None,
+            Some(64),
+        )?;
+        if (value).as_bytes().len() > 64 {
+            return Err(
+                "benefactor_marketing_conversion_events.source_platform exceeds 64 bytes"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.source_event_id {
-        validate_string_length("benefactor_marketing_conversion_events.source_event_id", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_conversion_events.source_event_id exceeds 200 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_conversion_events.source_event_id",
+            value,
+            None,
+            Some(200),
+        )?;
+        if (value).as_bytes().len() > 200 {
+            return Err(
+                "benefactor_marketing_conversion_events.source_event_id exceeds 200 bytes"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.session_id {
-        validate_string_length("benefactor_marketing_conversion_events.session_id", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_conversion_events.session_id exceeds 200 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_conversion_events.session_id",
+            value,
+            None,
+            Some(200),
+        )?;
+        if (value).as_bytes().len() > 200 {
+            return Err(
+                "benefactor_marketing_conversion_events.session_id exceeds 200 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.visitor_key {
-        validate_string_length("benefactor_marketing_conversion_events.visitor_key", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_conversion_events.visitor_key exceeds 200 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_conversion_events.visitor_key",
+            value,
+            None,
+            Some(200),
+        )?;
+        if (value).as_bytes().len() > 200 {
+            return Err(
+                "benefactor_marketing_conversion_events.visitor_key exceeds 200 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.value_cents {
-        if *(value) < 0 { return Err("benefactor_marketing_conversion_events.value_cents is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "benefactor_marketing_conversion_events.value_cents is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.utm {
-        if !(value).is_object() { return Err("benefactor_marketing_conversion_events.utm must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_conversion_events.utm must be a JSON object".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.payload {
-        if !(value).is_object() { return Err("benefactor_marketing_conversion_events.payload must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_conversion_events.payload must be a JSON object".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
 pub const BENEFACTOR_MARKETING_PORTAL_MEMBERS_TABLE: &str = "benefactor_marketing_portal_members";
-pub const BENEFACTOR_MARKETING_PORTAL_MEMBERS_COLUMNS: &[&str] = &["id", "client_id", "contact_id", "user_id", "email", "status", "role", "access_scope", "last_seen_at", "invited_at", "accepted_at", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_PORTAL_MEMBERS_COLUMNS: &[&str] = &[
+    "id",
+    "client_id",
+    "contact_id",
+    "user_id",
+    "email",
+    "status",
+    "role",
+    "access_scope",
+    "last_seen_at",
+    "invited_at",
+    "accepted_at",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_PORTAL_MEMBERS_SELECT_SQL: &str = r###"select
       id::text as id,
       client_id::text as client_id,
@@ -13871,7 +21894,8 @@ pub enum BenefactorMarketingPortalMembersRole {
 }
 
 impl BenefactorMarketingPortalMembersRole {
-    pub const VALUES: &'static [&'static str] = &["owner", "approver", "viewer", "billing", "collaborator"];
+    pub const VALUES: &'static [&'static str] =
+        &["owner", "approver", "viewer", "billing", "collaborator"];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -13936,34 +21960,98 @@ pub struct BenefactorMarketingPortalMembersInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_portal_members_row(value: &BenefactorMarketingPortalMembersRow) -> Result<(), String> {
-    validate_string_length("benefactor_marketing_portal_members.email", &value.email, None, Some(240))?;
-    if (&value.email).as_bytes().len() > 240 { return Err("benefactor_marketing_portal_members.email exceeds 240 bytes".to_string()); }
-    if !["invited", "active", "disabled", "revoked"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_portal_members.status: {}", &value.status)); }
-    if !["owner", "approver", "viewer", "billing", "collaborator"].contains(&(&value.role).as_str()) { return Err(format!("unsupported benefactor_marketing_portal_members.role: {}", &value.role)); }
-    if !(&value.access_scope).is_object() { return Err("benefactor_marketing_portal_members.access_scope must be a JSON object".to_string()); }
+pub fn validate_benefactor_marketing_portal_members_row(
+    value: &BenefactorMarketingPortalMembersRow,
+) -> Result<(), String> {
+    validate_string_length(
+        "benefactor_marketing_portal_members.email",
+        &value.email,
+        None,
+        Some(240),
+    )?;
+    if (&value.email).as_bytes().len() > 240 {
+        return Err("benefactor_marketing_portal_members.email exceeds 240 bytes".to_string());
+    }
+    if !["invited", "active", "disabled", "revoked"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_portal_members.status: {}",
+            &value.status
+        ));
+    }
+    if !["owner", "approver", "viewer", "billing", "collaborator"].contains(&(&value.role).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_portal_members.role: {}",
+            &value.role
+        ));
+    }
+    if !(&value.access_scope).is_object() {
+        return Err(
+            "benefactor_marketing_portal_members.access_scope must be a JSON object".to_string(),
+        );
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_portal_members_insert(value: &BenefactorMarketingPortalMembersInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_portal_members_insert(
+    value: &BenefactorMarketingPortalMembersInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.email {
-        validate_string_length("benefactor_marketing_portal_members.email", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_portal_members.email exceeds 240 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_portal_members.email",
+            value,
+            None,
+            Some(240),
+        )?;
+        if (value).as_bytes().len() > 240 {
+            return Err("benefactor_marketing_portal_members.email exceeds 240 bytes".to_string());
+        }
     }
     if let Some(value) = &value.status {
-        if !["invited", "active", "disabled", "revoked"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_portal_members.status: {}", value)); }
+        if !["invited", "active", "disabled", "revoked"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_portal_members.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.role {
-        if !["owner", "approver", "viewer", "billing", "collaborator"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_portal_members.role: {}", value)); }
+        if !["owner", "approver", "viewer", "billing", "collaborator"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_portal_members.role: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.access_scope {
-        if !(value).is_object() { return Err("benefactor_marketing_portal_members.access_scope must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_portal_members.access_scope must be a JSON object"
+                    .to_string(),
+            );
+        }
     }
     Ok(())
 }
 
-pub const BENEFACTOR_MARKETING_SHARED_DOCUMENTS_TABLE: &str = "benefactor_marketing_shared_documents";
-pub const BENEFACTOR_MARKETING_SHARED_DOCUMENTS_COLUMNS: &[&str] = &["id", "client_id", "campaign_id", "content_asset_id", "status", "document_kind", "title", "storage_uri", "mime_type", "visibility", "uploaded_by", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_SHARED_DOCUMENTS_TABLE: &str =
+    "benefactor_marketing_shared_documents";
+pub const BENEFACTOR_MARKETING_SHARED_DOCUMENTS_COLUMNS: &[&str] = &[
+    "id",
+    "client_id",
+    "campaign_id",
+    "content_asset_id",
+    "status",
+    "document_kind",
+    "title",
+    "storage_uri",
+    "mime_type",
+    "visibility",
+    "uploaded_by",
+    "meta_data",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_SHARED_DOCUMENTS_SELECT_SQL: &str = r###"select
       id::text as id,
       client_id::text as client_id,
@@ -14028,7 +22116,16 @@ pub enum BenefactorMarketingSharedDocumentsDocumentKind {
 }
 
 impl BenefactorMarketingSharedDocumentsDocumentKind {
-    pub const VALUES: &'static [&'static str] = &["contract", "invoice", "report", "creative", "brand_asset", "proposal", "meeting_notes", "other"];
+    pub const VALUES: &'static [&'static str] = &[
+        "contract",
+        "invoice",
+        "report",
+        "creative",
+        "brand_asset",
+        "proposal",
+        "meeting_notes",
+        "other",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -14134,50 +22231,171 @@ pub struct BenefactorMarketingSharedDocumentsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_shared_documents_row(value: &BenefactorMarketingSharedDocumentsRow) -> Result<(), String> {
-    if !["active", "archived", "deleted"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_shared_documents.status: {}", &value.status)); }
-    if !["contract", "invoice", "report", "creative", "brand_asset", "proposal", "meeting_notes", "other"].contains(&(&value.document_kind).as_str()) { return Err(format!("unsupported benefactor_marketing_shared_documents.document_kind: {}", &value.document_kind)); }
-    validate_string_length("benefactor_marketing_shared_documents.title", &value.title, None, Some(240))?;
-    if (&value.title).as_bytes().len() > 240 { return Err("benefactor_marketing_shared_documents.title exceeds 240 bytes".to_string()); }
-    if (&value.storage_uri).as_bytes().len() > 2048 { return Err("benefactor_marketing_shared_documents.storage_uri exceeds 2048 bytes".to_string()); }
-    if let Some(value) = &value.mime_type {
-        validate_string_length("benefactor_marketing_shared_documents.mime_type", value, None, Some(120))?;
-        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_shared_documents.mime_type exceeds 120 bytes".to_string()); }
+pub fn validate_benefactor_marketing_shared_documents_row(
+    value: &BenefactorMarketingSharedDocumentsRow,
+) -> Result<(), String> {
+    if !["active", "archived", "deleted"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_shared_documents.status: {}",
+            &value.status
+        ));
     }
-    if !["internal", "client_portal", "public_link"].contains(&(&value.visibility).as_str()) { return Err(format!("unsupported benefactor_marketing_shared_documents.visibility: {}", &value.visibility)); }
-    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_shared_documents.meta_data must be a JSON object".to_string()); }
+    if ![
+        "contract",
+        "invoice",
+        "report",
+        "creative",
+        "brand_asset",
+        "proposal",
+        "meeting_notes",
+        "other",
+    ]
+    .contains(&(&value.document_kind).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_shared_documents.document_kind: {}",
+            &value.document_kind
+        ));
+    }
+    validate_string_length(
+        "benefactor_marketing_shared_documents.title",
+        &value.title,
+        None,
+        Some(240),
+    )?;
+    if (&value.title).as_bytes().len() > 240 {
+        return Err("benefactor_marketing_shared_documents.title exceeds 240 bytes".to_string());
+    }
+    if (&value.storage_uri).as_bytes().len() > 2048 {
+        return Err(
+            "benefactor_marketing_shared_documents.storage_uri exceeds 2048 bytes".to_string(),
+        );
+    }
+    if let Some(value) = &value.mime_type {
+        validate_string_length(
+            "benefactor_marketing_shared_documents.mime_type",
+            value,
+            None,
+            Some(120),
+        )?;
+        if (value).as_bytes().len() > 120 {
+            return Err(
+                "benefactor_marketing_shared_documents.mime_type exceeds 120 bytes".to_string(),
+            );
+        }
+    }
+    if !["internal", "client_portal", "public_link"].contains(&(&value.visibility).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_shared_documents.visibility: {}",
+            &value.visibility
+        ));
+    }
+    if !(&value.meta_data).is_object() {
+        return Err(
+            "benefactor_marketing_shared_documents.meta_data must be a JSON object".to_string(),
+        );
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_shared_documents_insert(value: &BenefactorMarketingSharedDocumentsInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_shared_documents_insert(
+    value: &BenefactorMarketingSharedDocumentsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.status {
-        if !["active", "archived", "deleted"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_shared_documents.status: {}", value)); }
+        if !["active", "archived", "deleted"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_shared_documents.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.document_kind {
-        if !["contract", "invoice", "report", "creative", "brand_asset", "proposal", "meeting_notes", "other"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_shared_documents.document_kind: {}", value)); }
+        if ![
+            "contract",
+            "invoice",
+            "report",
+            "creative",
+            "brand_asset",
+            "proposal",
+            "meeting_notes",
+            "other",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported benefactor_marketing_shared_documents.document_kind: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.title {
-        validate_string_length("benefactor_marketing_shared_documents.title", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_shared_documents.title exceeds 240 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_shared_documents.title",
+            value,
+            None,
+            Some(240),
+        )?;
+        if (value).as_bytes().len() > 240 {
+            return Err(
+                "benefactor_marketing_shared_documents.title exceeds 240 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.storage_uri {
-        if (value).as_bytes().len() > 2048 { return Err("benefactor_marketing_shared_documents.storage_uri exceeds 2048 bytes".to_string()); }
+        if (value).as_bytes().len() > 2048 {
+            return Err(
+                "benefactor_marketing_shared_documents.storage_uri exceeds 2048 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.mime_type {
-        validate_string_length("benefactor_marketing_shared_documents.mime_type", value, None, Some(120))?;
-        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_shared_documents.mime_type exceeds 120 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_shared_documents.mime_type",
+            value,
+            None,
+            Some(120),
+        )?;
+        if (value).as_bytes().len() > 120 {
+            return Err(
+                "benefactor_marketing_shared_documents.mime_type exceeds 120 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.visibility {
-        if !["internal", "client_portal", "public_link"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_shared_documents.visibility: {}", value)); }
+        if !["internal", "client_portal", "public_link"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_shared_documents.visibility: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("benefactor_marketing_shared_documents.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_shared_documents.meta_data must be a JSON object".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
-pub const BENEFACTOR_MARKETING_COLLABORATION_COMMENTS_TABLE: &str = "benefactor_marketing_collaboration_comments";
-pub const BENEFACTOR_MARKETING_COLLABORATION_COMMENTS_COLUMNS: &[&str] = &["id", "client_id", "parent_comment_id", "resource_type", "resource_id", "author_user_id", "author_contact_id", "body", "status", "visibility", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_COLLABORATION_COMMENTS_TABLE: &str =
+    "benefactor_marketing_collaboration_comments";
+pub const BENEFACTOR_MARKETING_COLLABORATION_COMMENTS_COLUMNS: &[&str] = &[
+    "id",
+    "client_id",
+    "parent_comment_id",
+    "resource_type",
+    "resource_id",
+    "author_user_id",
+    "author_contact_id",
+    "body",
+    "status",
+    "visibility",
+    "meta_data",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_COLLABORATION_COMMENTS_SELECT_SQL: &str = r###"select
       id::text as id,
       client_id::text as client_id,
@@ -14208,7 +22426,16 @@ pub enum BenefactorMarketingCollaborationCommentsResourceType {
 }
 
 impl BenefactorMarketingCollaborationCommentsResourceType {
-    pub const VALUES: &'static [&'static str] = &["client", "campaign", "content_asset", "approval", "ticket", "document", "report", "meeting"];
+    pub const VALUES: &'static [&'static str] = &[
+        "client",
+        "campaign",
+        "content_asset",
+        "approval",
+        "ticket",
+        "document",
+        "report",
+        "meeting",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -14342,36 +22569,125 @@ pub struct BenefactorMarketingCollaborationCommentsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_collaboration_comments_row(value: &BenefactorMarketingCollaborationCommentsRow) -> Result<(), String> {
-    if !["client", "campaign", "content_asset", "approval", "ticket", "document", "report", "meeting"].contains(&(&value.resource_type).as_str()) { return Err(format!("unsupported benefactor_marketing_collaboration_comments.resource_type: {}", &value.resource_type)); }
-    if (&value.body).as_bytes().len() > 20000 { return Err("benefactor_marketing_collaboration_comments.body exceeds 20000 bytes".to_string()); }
-    if !["open", "resolved", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_collaboration_comments.status: {}", &value.status)); }
-    if !["internal", "client_portal"].contains(&(&value.visibility).as_str()) { return Err(format!("unsupported benefactor_marketing_collaboration_comments.visibility: {}", &value.visibility)); }
-    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_collaboration_comments.meta_data must be a JSON object".to_string()); }
+pub fn validate_benefactor_marketing_collaboration_comments_row(
+    value: &BenefactorMarketingCollaborationCommentsRow,
+) -> Result<(), String> {
+    if ![
+        "client",
+        "campaign",
+        "content_asset",
+        "approval",
+        "ticket",
+        "document",
+        "report",
+        "meeting",
+    ]
+    .contains(&(&value.resource_type).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_collaboration_comments.resource_type: {}",
+            &value.resource_type
+        ));
+    }
+    if (&value.body).as_bytes().len() > 20000 {
+        return Err(
+            "benefactor_marketing_collaboration_comments.body exceeds 20000 bytes".to_string(),
+        );
+    }
+    if !["open", "resolved", "archived"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_collaboration_comments.status: {}",
+            &value.status
+        ));
+    }
+    if !["internal", "client_portal"].contains(&(&value.visibility).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_collaboration_comments.visibility: {}",
+            &value.visibility
+        ));
+    }
+    if !(&value.meta_data).is_object() {
+        return Err(
+            "benefactor_marketing_collaboration_comments.meta_data must be a JSON object"
+                .to_string(),
+        );
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_collaboration_comments_insert(value: &BenefactorMarketingCollaborationCommentsInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_collaboration_comments_insert(
+    value: &BenefactorMarketingCollaborationCommentsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.resource_type {
-        if !["client", "campaign", "content_asset", "approval", "ticket", "document", "report", "meeting"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_collaboration_comments.resource_type: {}", value)); }
+        if ![
+            "client",
+            "campaign",
+            "content_asset",
+            "approval",
+            "ticket",
+            "document",
+            "report",
+            "meeting",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported benefactor_marketing_collaboration_comments.resource_type: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.body {
-        if (value).as_bytes().len() > 20000 { return Err("benefactor_marketing_collaboration_comments.body exceeds 20000 bytes".to_string()); }
+        if (value).as_bytes().len() > 20000 {
+            return Err(
+                "benefactor_marketing_collaboration_comments.body exceeds 20000 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.status {
-        if !["open", "resolved", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_collaboration_comments.status: {}", value)); }
+        if !["open", "resolved", "archived"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_collaboration_comments.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.visibility {
-        if !["internal", "client_portal"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_collaboration_comments.visibility: {}", value)); }
+        if !["internal", "client_portal"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_collaboration_comments.visibility: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("benefactor_marketing_collaboration_comments.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_collaboration_comments.meta_data must be a JSON object"
+                    .to_string(),
+            );
+        }
     }
     Ok(())
 }
 
 pub const BENEFACTOR_MARKETING_NOTIFICATIONS_TABLE: &str = "benefactor_marketing_notifications";
-pub const BENEFACTOR_MARKETING_NOTIFICATIONS_COLUMNS: &[&str] = &["id", "client_id", "recipient_user_id", "recipient_contact_id", "channel", "status", "notification_kind", "title", "body", "payload", "scheduled_at", "sent_at", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_NOTIFICATIONS_COLUMNS: &[&str] = &[
+    "id",
+    "client_id",
+    "recipient_user_id",
+    "recipient_contact_id",
+    "channel",
+    "status",
+    "notification_kind",
+    "title",
+    "body",
+    "payload",
+    "scheduled_at",
+    "sent_at",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_NOTIFICATIONS_SELECT_SQL: &str = r###"select
       id::text as id,
       client_id::text as client_id,
@@ -14439,7 +22755,8 @@ pub enum BenefactorMarketingNotificationsStatus {
 }
 
 impl BenefactorMarketingNotificationsStatus {
-    pub const VALUES: &'static [&'static str] = &["queued", "scheduled", "sent", "failed", "canceled"];
+    pub const VALUES: &'static [&'static str] =
+        &["queued", "scheduled", "sent", "failed", "canceled"];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -14480,7 +22797,15 @@ pub enum BenefactorMarketingNotificationsNotificationKind {
 }
 
 impl BenefactorMarketingNotificationsNotificationKind {
-    pub const VALUES: &'static [&'static str] = &["approval_request", "comment", "report_ready", "ticket_update", "meeting_reminder", "budget_alert", "custom"];
+    pub const VALUES: &'static [&'static str] = &[
+        "approval_request",
+        "comment",
+        "report_ready",
+        "ticket_update",
+        "meeting_reminder",
+        "budget_alert",
+        "custom",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -14551,44 +22876,137 @@ pub struct BenefactorMarketingNotificationsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_notifications_row(value: &BenefactorMarketingNotificationsRow) -> Result<(), String> {
-    if !["email", "sms", "portal", "slack", "webhook"].contains(&(&value.channel).as_str()) { return Err(format!("unsupported benefactor_marketing_notifications.channel: {}", &value.channel)); }
-    if !["queued", "scheduled", "sent", "failed", "canceled"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_notifications.status: {}", &value.status)); }
-    if !["approval_request", "comment", "report_ready", "ticket_update", "meeting_reminder", "budget_alert", "custom"].contains(&(&value.notification_kind).as_str()) { return Err(format!("unsupported benefactor_marketing_notifications.notification_kind: {}", &value.notification_kind)); }
-    validate_string_length("benefactor_marketing_notifications.title", &value.title, None, Some(240))?;
-    if (&value.title).as_bytes().len() > 240 { return Err("benefactor_marketing_notifications.title exceeds 240 bytes".to_string()); }
-    if let Some(value) = &value.body {
-        if (value).as_bytes().len() > 20000 { return Err("benefactor_marketing_notifications.body exceeds 20000 bytes".to_string()); }
+pub fn validate_benefactor_marketing_notifications_row(
+    value: &BenefactorMarketingNotificationsRow,
+) -> Result<(), String> {
+    if !["email", "sms", "portal", "slack", "webhook"].contains(&(&value.channel).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_notifications.channel: {}",
+            &value.channel
+        ));
     }
-    if !(&value.payload).is_object() { return Err("benefactor_marketing_notifications.payload must be a JSON object".to_string()); }
+    if !["queued", "scheduled", "sent", "failed", "canceled"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_notifications.status: {}",
+            &value.status
+        ));
+    }
+    if ![
+        "approval_request",
+        "comment",
+        "report_ready",
+        "ticket_update",
+        "meeting_reminder",
+        "budget_alert",
+        "custom",
+    ]
+    .contains(&(&value.notification_kind).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_notifications.notification_kind: {}",
+            &value.notification_kind
+        ));
+    }
+    validate_string_length(
+        "benefactor_marketing_notifications.title",
+        &value.title,
+        None,
+        Some(240),
+    )?;
+    if (&value.title).as_bytes().len() > 240 {
+        return Err("benefactor_marketing_notifications.title exceeds 240 bytes".to_string());
+    }
+    if let Some(value) = &value.body {
+        if (value).as_bytes().len() > 20000 {
+            return Err("benefactor_marketing_notifications.body exceeds 20000 bytes".to_string());
+        }
+    }
+    if !(&value.payload).is_object() {
+        return Err("benefactor_marketing_notifications.payload must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_notifications_insert(value: &BenefactorMarketingNotificationsInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_notifications_insert(
+    value: &BenefactorMarketingNotificationsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.channel {
-        if !["email", "sms", "portal", "slack", "webhook"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_notifications.channel: {}", value)); }
+        if !["email", "sms", "portal", "slack", "webhook"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_notifications.channel: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.status {
-        if !["queued", "scheduled", "sent", "failed", "canceled"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_notifications.status: {}", value)); }
+        if !["queued", "scheduled", "sent", "failed", "canceled"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_notifications.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.notification_kind {
-        if !["approval_request", "comment", "report_ready", "ticket_update", "meeting_reminder", "budget_alert", "custom"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_notifications.notification_kind: {}", value)); }
+        if ![
+            "approval_request",
+            "comment",
+            "report_ready",
+            "ticket_update",
+            "meeting_reminder",
+            "budget_alert",
+            "custom",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported benefactor_marketing_notifications.notification_kind: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.title {
-        validate_string_length("benefactor_marketing_notifications.title", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_notifications.title exceeds 240 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_notifications.title",
+            value,
+            None,
+            Some(240),
+        )?;
+        if (value).as_bytes().len() > 240 {
+            return Err("benefactor_marketing_notifications.title exceeds 240 bytes".to_string());
+        }
     }
     if let Some(value) = &value.body {
-        if (value).as_bytes().len() > 20000 { return Err("benefactor_marketing_notifications.body exceeds 20000 bytes".to_string()); }
+        if (value).as_bytes().len() > 20000 {
+            return Err("benefactor_marketing_notifications.body exceeds 20000 bytes".to_string());
+        }
     }
     if let Some(value) = &value.payload {
-        if !(value).is_object() { return Err("benefactor_marketing_notifications.payload must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_notifications.payload must be a JSON object".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
 pub const BENEFACTOR_MARKETING_TIME_ENTRIES_TABLE: &str = "benefactor_marketing_time_entries";
-pub const BENEFACTOR_MARKETING_TIME_ENTRIES_COLUMNS: &[&str] = &["id", "client_id", "campaign_id", "project_task_id", "user_id", "entry_date", "minutes", "billable", "rate_cents", "cost_cents", "notes", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_TIME_ENTRIES_COLUMNS: &[&str] = &[
+    "id",
+    "client_id",
+    "campaign_id",
+    "project_task_id",
+    "user_id",
+    "entry_date",
+    "minutes",
+    "billable",
+    "rate_cents",
+    "cost_cents",
+    "notes",
+    "meta_data",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_TIME_ENTRIES_SELECT_SQL: &str = r###"select
       id::text as id,
       client_id::text as client_id,
@@ -14645,44 +23063,111 @@ pub struct BenefactorMarketingTimeEntriesInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_time_entries_row(value: &BenefactorMarketingTimeEntriesRow) -> Result<(), String> {
-    validate_string_length("benefactor_marketing_time_entries.entry_date", &value.entry_date, None, Some(10))?;
-    if *(&value.minutes) < 1 { return Err("benefactor_marketing_time_entries.minutes is below the minimum".to_string()); }
-    if *(&value.minutes) > 1440 { return Err("benefactor_marketing_time_entries.minutes is above the maximum".to_string()); }
-    if *(&value.rate_cents) < 0 { return Err("benefactor_marketing_time_entries.rate_cents is below the minimum".to_string()); }
-    if *(&value.cost_cents) < 0 { return Err("benefactor_marketing_time_entries.cost_cents is below the minimum".to_string()); }
-    if let Some(value) = &value.notes {
-        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_time_entries.notes exceeds 4000 bytes".to_string()); }
+pub fn validate_benefactor_marketing_time_entries_row(
+    value: &BenefactorMarketingTimeEntriesRow,
+) -> Result<(), String> {
+    validate_string_length(
+        "benefactor_marketing_time_entries.entry_date",
+        &value.entry_date,
+        None,
+        Some(10),
+    )?;
+    if *(&value.minutes) < 1 {
+        return Err("benefactor_marketing_time_entries.minutes is below the minimum".to_string());
     }
-    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_time_entries.meta_data must be a JSON object".to_string()); }
+    if *(&value.minutes) > 1440 {
+        return Err("benefactor_marketing_time_entries.minutes is above the maximum".to_string());
+    }
+    if *(&value.rate_cents) < 0 {
+        return Err(
+            "benefactor_marketing_time_entries.rate_cents is below the minimum".to_string(),
+        );
+    }
+    if *(&value.cost_cents) < 0 {
+        return Err(
+            "benefactor_marketing_time_entries.cost_cents is below the minimum".to_string(),
+        );
+    }
+    if let Some(value) = &value.notes {
+        if (value).as_bytes().len() > 4000 {
+            return Err("benefactor_marketing_time_entries.notes exceeds 4000 bytes".to_string());
+        }
+    }
+    if !(&value.meta_data).is_object() {
+        return Err(
+            "benefactor_marketing_time_entries.meta_data must be a JSON object".to_string(),
+        );
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_time_entries_insert(value: &BenefactorMarketingTimeEntriesInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_time_entries_insert(
+    value: &BenefactorMarketingTimeEntriesInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.entry_date {
-        validate_string_length("benefactor_marketing_time_entries.entry_date", value, None, Some(10))?;
+        validate_string_length(
+            "benefactor_marketing_time_entries.entry_date",
+            value,
+            None,
+            Some(10),
+        )?;
     }
     if let Some(value) = &value.minutes {
-        if *(value) < 1 { return Err("benefactor_marketing_time_entries.minutes is below the minimum".to_string()); }
-        if *(value) > 1440 { return Err("benefactor_marketing_time_entries.minutes is above the maximum".to_string()); }
+        if *(value) < 1 {
+            return Err(
+                "benefactor_marketing_time_entries.minutes is below the minimum".to_string(),
+            );
+        }
+        if *(value) > 1440 {
+            return Err(
+                "benefactor_marketing_time_entries.minutes is above the maximum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.rate_cents {
-        if *(value) < 0 { return Err("benefactor_marketing_time_entries.rate_cents is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "benefactor_marketing_time_entries.rate_cents is below the minimum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.cost_cents {
-        if *(value) < 0 { return Err("benefactor_marketing_time_entries.cost_cents is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "benefactor_marketing_time_entries.cost_cents is below the minimum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.notes {
-        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_time_entries.notes exceeds 4000 bytes".to_string()); }
+        if (value).as_bytes().len() > 4000 {
+            return Err("benefactor_marketing_time_entries.notes exceeds 4000 bytes".to_string());
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("benefactor_marketing_time_entries.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_time_entries.meta_data must be a JSON object".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
 pub const BENEFACTOR_MARKETING_VENDOR_COSTS_TABLE: &str = "benefactor_marketing_vendor_costs";
-pub const BENEFACTOR_MARKETING_VENDOR_COSTS_COLUMNS: &[&str] = &["id", "client_id", "campaign_id", "vendor_name", "category", "status", "amount_cents", "incurred_on", "invoice_ref", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_VENDOR_COSTS_COLUMNS: &[&str] = &[
+    "id",
+    "client_id",
+    "campaign_id",
+    "vendor_name",
+    "category",
+    "status",
+    "amount_cents",
+    "incurred_on",
+    "invoice_ref",
+    "meta_data",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_VENDOR_COSTS_SELECT_SQL: &str = r###"select
       id::text as id,
       client_id::text as client_id,
@@ -14711,7 +23196,15 @@ pub enum BenefactorMarketingVendorCostsCategory {
 }
 
 impl BenefactorMarketingVendorCostsCategory {
-    pub const VALUES: &'static [&'static str] = &["ads", "creative", "data", "software", "contractor", "events", "other"];
+    pub const VALUES: &'static [&'static str] = &[
+        "ads",
+        "creative",
+        "data",
+        "software",
+        "contractor",
+        "events",
+        "other",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -14755,7 +23248,9 @@ pub enum BenefactorMarketingVendorCostsStatus {
 }
 
 impl BenefactorMarketingVendorCostsStatus {
-    pub const VALUES: &'static [&'static str] = &["planned", "approved", "incurred", "invoiced", "paid", "canceled"];
+    pub const VALUES: &'static [&'static str] = &[
+        "planned", "approved", "incurred", "invoiced", "paid", "canceled",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -14820,52 +23315,180 @@ pub struct BenefactorMarketingVendorCostsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_vendor_costs_row(value: &BenefactorMarketingVendorCostsRow) -> Result<(), String> {
-    validate_string_length("benefactor_marketing_vendor_costs.vendor_name", &value.vendor_name, None, Some(200))?;
-    if (&value.vendor_name).as_bytes().len() > 200 { return Err("benefactor_marketing_vendor_costs.vendor_name exceeds 200 bytes".to_string()); }
-    if !["ads", "creative", "data", "software", "contractor", "events", "other"].contains(&(&value.category).as_str()) { return Err(format!("unsupported benefactor_marketing_vendor_costs.category: {}", &value.category)); }
-    if !["planned", "approved", "incurred", "invoiced", "paid", "canceled"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_vendor_costs.status: {}", &value.status)); }
-    if *(&value.amount_cents) < 0 { return Err("benefactor_marketing_vendor_costs.amount_cents is below the minimum".to_string()); }
+pub fn validate_benefactor_marketing_vendor_costs_row(
+    value: &BenefactorMarketingVendorCostsRow,
+) -> Result<(), String> {
+    validate_string_length(
+        "benefactor_marketing_vendor_costs.vendor_name",
+        &value.vendor_name,
+        None,
+        Some(200),
+    )?;
+    if (&value.vendor_name).as_bytes().len() > 200 {
+        return Err("benefactor_marketing_vendor_costs.vendor_name exceeds 200 bytes".to_string());
+    }
+    if ![
+        "ads",
+        "creative",
+        "data",
+        "software",
+        "contractor",
+        "events",
+        "other",
+    ]
+    .contains(&(&value.category).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_vendor_costs.category: {}",
+            &value.category
+        ));
+    }
+    if ![
+        "planned", "approved", "incurred", "invoiced", "paid", "canceled",
+    ]
+    .contains(&(&value.status).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_vendor_costs.status: {}",
+            &value.status
+        ));
+    }
+    if *(&value.amount_cents) < 0 {
+        return Err(
+            "benefactor_marketing_vendor_costs.amount_cents is below the minimum".to_string(),
+        );
+    }
     if let Some(value) = &value.incurred_on {
-        validate_string_length("benefactor_marketing_vendor_costs.incurred_on", value, None, Some(10))?;
+        validate_string_length(
+            "benefactor_marketing_vendor_costs.incurred_on",
+            value,
+            None,
+            Some(10),
+        )?;
     }
     if let Some(value) = &value.invoice_ref {
-        validate_string_length("benefactor_marketing_vendor_costs.invoice_ref", value, None, Some(120))?;
-        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_vendor_costs.invoice_ref exceeds 120 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_vendor_costs.invoice_ref",
+            value,
+            None,
+            Some(120),
+        )?;
+        if (value).as_bytes().len() > 120 {
+            return Err(
+                "benefactor_marketing_vendor_costs.invoice_ref exceeds 120 bytes".to_string(),
+            );
+        }
     }
-    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_vendor_costs.meta_data must be a JSON object".to_string()); }
+    if !(&value.meta_data).is_object() {
+        return Err(
+            "benefactor_marketing_vendor_costs.meta_data must be a JSON object".to_string(),
+        );
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_vendor_costs_insert(value: &BenefactorMarketingVendorCostsInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_vendor_costs_insert(
+    value: &BenefactorMarketingVendorCostsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.vendor_name {
-        validate_string_length("benefactor_marketing_vendor_costs.vendor_name", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_vendor_costs.vendor_name exceeds 200 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_vendor_costs.vendor_name",
+            value,
+            None,
+            Some(200),
+        )?;
+        if (value).as_bytes().len() > 200 {
+            return Err(
+                "benefactor_marketing_vendor_costs.vendor_name exceeds 200 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.category {
-        if !["ads", "creative", "data", "software", "contractor", "events", "other"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_vendor_costs.category: {}", value)); }
+        if ![
+            "ads",
+            "creative",
+            "data",
+            "software",
+            "contractor",
+            "events",
+            "other",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported benefactor_marketing_vendor_costs.category: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.status {
-        if !["planned", "approved", "incurred", "invoiced", "paid", "canceled"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_vendor_costs.status: {}", value)); }
+        if ![
+            "planned", "approved", "incurred", "invoiced", "paid", "canceled",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported benefactor_marketing_vendor_costs.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.amount_cents {
-        if *(value) < 0 { return Err("benefactor_marketing_vendor_costs.amount_cents is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "benefactor_marketing_vendor_costs.amount_cents is below the minimum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.incurred_on {
-        validate_string_length("benefactor_marketing_vendor_costs.incurred_on", value, None, Some(10))?;
+        validate_string_length(
+            "benefactor_marketing_vendor_costs.incurred_on",
+            value,
+            None,
+            Some(10),
+        )?;
     }
     if let Some(value) = &value.invoice_ref {
-        validate_string_length("benefactor_marketing_vendor_costs.invoice_ref", value, None, Some(120))?;
-        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_vendor_costs.invoice_ref exceeds 120 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_vendor_costs.invoice_ref",
+            value,
+            None,
+            Some(120),
+        )?;
+        if (value).as_bytes().len() > 120 {
+            return Err(
+                "benefactor_marketing_vendor_costs.invoice_ref exceeds 120 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("benefactor_marketing_vendor_costs.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_vendor_costs.meta_data must be a JSON object".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
-pub const BENEFACTOR_MARKETING_COMMISSION_ENTRIES_TABLE: &str = "benefactor_marketing_commission_entries";
-pub const BENEFACTOR_MARKETING_COMMISSION_ENTRIES_COLUMNS: &[&str] = &["id", "client_id", "opportunity_id", "user_id", "status", "commission_kind", "basis_cents", "rate_micros", "amount_cents", "earned_on", "paid_at", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_COMMISSION_ENTRIES_TABLE: &str =
+    "benefactor_marketing_commission_entries";
+pub const BENEFACTOR_MARKETING_COMMISSION_ENTRIES_COLUMNS: &[&str] = &[
+    "id",
+    "client_id",
+    "opportunity_id",
+    "user_id",
+    "status",
+    "commission_kind",
+    "basis_cents",
+    "rate_micros",
+    "amount_cents",
+    "earned_on",
+    "paid_at",
+    "meta_data",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_COMMISSION_ENTRIES_SELECT_SQL: &str = r###"select
       id::text as id,
       client_id::text as client_id,
@@ -14930,7 +23553,8 @@ pub enum BenefactorMarketingCommissionEntriesCommissionKind {
 }
 
 impl BenefactorMarketingCommissionEntriesCommissionKind {
-    pub const VALUES: &'static [&'static str] = &["deal", "retainer", "renewal", "upsell", "appointment"];
+    pub const VALUES: &'static [&'static str] =
+        &["deal", "retainer", "renewal", "upsell", "appointment"];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -14997,48 +23621,146 @@ pub struct BenefactorMarketingCommissionEntriesInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_commission_entries_row(value: &BenefactorMarketingCommissionEntriesRow) -> Result<(), String> {
-    if !["pending", "approved", "paid", "void"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_commission_entries.status: {}", &value.status)); }
-    if !["deal", "retainer", "renewal", "upsell", "appointment"].contains(&(&value.commission_kind).as_str()) { return Err(format!("unsupported benefactor_marketing_commission_entries.commission_kind: {}", &value.commission_kind)); }
-    if *(&value.basis_cents) < 0 { return Err("benefactor_marketing_commission_entries.basis_cents is below the minimum".to_string()); }
-    if *(&value.rate_micros) < 0 { return Err("benefactor_marketing_commission_entries.rate_micros is below the minimum".to_string()); }
-    if *(&value.rate_micros) > 1000000 { return Err("benefactor_marketing_commission_entries.rate_micros is above the maximum".to_string()); }
-    if *(&value.amount_cents) < 0 { return Err("benefactor_marketing_commission_entries.amount_cents is below the minimum".to_string()); }
-    if let Some(value) = &value.earned_on {
-        validate_string_length("benefactor_marketing_commission_entries.earned_on", value, None, Some(10))?;
+pub fn validate_benefactor_marketing_commission_entries_row(
+    value: &BenefactorMarketingCommissionEntriesRow,
+) -> Result<(), String> {
+    if !["pending", "approved", "paid", "void"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_commission_entries.status: {}",
+            &value.status
+        ));
     }
-    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_commission_entries.meta_data must be a JSON object".to_string()); }
+    if !["deal", "retainer", "renewal", "upsell", "appointment"]
+        .contains(&(&value.commission_kind).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_marketing_commission_entries.commission_kind: {}",
+            &value.commission_kind
+        ));
+    }
+    if *(&value.basis_cents) < 0 {
+        return Err(
+            "benefactor_marketing_commission_entries.basis_cents is below the minimum".to_string(),
+        );
+    }
+    if *(&value.rate_micros) < 0 {
+        return Err(
+            "benefactor_marketing_commission_entries.rate_micros is below the minimum".to_string(),
+        );
+    }
+    if *(&value.rate_micros) > 1000000 {
+        return Err(
+            "benefactor_marketing_commission_entries.rate_micros is above the maximum".to_string(),
+        );
+    }
+    if *(&value.amount_cents) < 0 {
+        return Err(
+            "benefactor_marketing_commission_entries.amount_cents is below the minimum".to_string(),
+        );
+    }
+    if let Some(value) = &value.earned_on {
+        validate_string_length(
+            "benefactor_marketing_commission_entries.earned_on",
+            value,
+            None,
+            Some(10),
+        )?;
+    }
+    if !(&value.meta_data).is_object() {
+        return Err(
+            "benefactor_marketing_commission_entries.meta_data must be a JSON object".to_string(),
+        );
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_commission_entries_insert(value: &BenefactorMarketingCommissionEntriesInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_commission_entries_insert(
+    value: &BenefactorMarketingCommissionEntriesInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.status {
-        if !["pending", "approved", "paid", "void"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_commission_entries.status: {}", value)); }
+        if !["pending", "approved", "paid", "void"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_commission_entries.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.commission_kind {
-        if !["deal", "retainer", "renewal", "upsell", "appointment"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_commission_entries.commission_kind: {}", value)); }
+        if !["deal", "retainer", "renewal", "upsell", "appointment"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_commission_entries.commission_kind: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.basis_cents {
-        if *(value) < 0 { return Err("benefactor_marketing_commission_entries.basis_cents is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "benefactor_marketing_commission_entries.basis_cents is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.rate_micros {
-        if *(value) < 0 { return Err("benefactor_marketing_commission_entries.rate_micros is below the minimum".to_string()); }
-        if *(value) > 1000000 { return Err("benefactor_marketing_commission_entries.rate_micros is above the maximum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "benefactor_marketing_commission_entries.rate_micros is below the minimum"
+                    .to_string(),
+            );
+        }
+        if *(value) > 1000000 {
+            return Err(
+                "benefactor_marketing_commission_entries.rate_micros is above the maximum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.amount_cents {
-        if *(value) < 0 { return Err("benefactor_marketing_commission_entries.amount_cents is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "benefactor_marketing_commission_entries.amount_cents is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.earned_on {
-        validate_string_length("benefactor_marketing_commission_entries.earned_on", value, None, Some(10))?;
+        validate_string_length(
+            "benefactor_marketing_commission_entries.earned_on",
+            value,
+            None,
+            Some(10),
+        )?;
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("benefactor_marketing_commission_entries.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_commission_entries.meta_data must be a JSON object"
+                    .to_string(),
+            );
+        }
     }
     Ok(())
 }
 
-pub const BENEFACTOR_MARKETING_BUDGET_FORECASTS_TABLE: &str = "benefactor_marketing_budget_forecasts";
-pub const BENEFACTOR_MARKETING_BUDGET_FORECASTS_COLUMNS: &[&str] = &["id", "client_id", "campaign_id", "forecast_kind", "period_start", "period_end", "status", "revenue_cents", "media_spend_cents", "labor_cost_cents", "vendor_cost_cents", "gross_margin_cents", "assumptions", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_BUDGET_FORECASTS_TABLE: &str =
+    "benefactor_marketing_budget_forecasts";
+pub const BENEFACTOR_MARKETING_BUDGET_FORECASTS_COLUMNS: &[&str] = &[
+    "id",
+    "client_id",
+    "campaign_id",
+    "forecast_kind",
+    "period_start",
+    "period_end",
+    "status",
+    "revenue_cents",
+    "media_spend_cents",
+    "labor_cost_cents",
+    "vendor_cost_cents",
+    "gross_margin_cents",
+    "assumptions",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_BUDGET_FORECASTS_SELECT_SQL: &str = r###"select
       id::text as id,
       client_id::text as client_id,
@@ -15170,52 +23892,162 @@ pub struct BenefactorMarketingBudgetForecastsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_budget_forecasts_row(value: &BenefactorMarketingBudgetForecastsRow) -> Result<(), String> {
-    if !["monthly", "quarterly", "campaign", "annual"].contains(&(&value.forecast_kind).as_str()) { return Err(format!("unsupported benefactor_marketing_budget_forecasts.forecast_kind: {}", &value.forecast_kind)); }
-    validate_string_length("benefactor_marketing_budget_forecasts.period_start", &value.period_start, None, Some(10))?;
-    validate_string_length("benefactor_marketing_budget_forecasts.period_end", &value.period_end, None, Some(10))?;
-    if !["draft", "approved", "locked", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_budget_forecasts.status: {}", &value.status)); }
-    if *(&value.revenue_cents) < 0 { return Err("benefactor_marketing_budget_forecasts.revenue_cents is below the minimum".to_string()); }
-    if *(&value.media_spend_cents) < 0 { return Err("benefactor_marketing_budget_forecasts.media_spend_cents is below the minimum".to_string()); }
-    if *(&value.labor_cost_cents) < 0 { return Err("benefactor_marketing_budget_forecasts.labor_cost_cents is below the minimum".to_string()); }
-    if *(&value.vendor_cost_cents) < 0 { return Err("benefactor_marketing_budget_forecasts.vendor_cost_cents is below the minimum".to_string()); }
-    if !(&value.assumptions).is_object() { return Err("benefactor_marketing_budget_forecasts.assumptions must be a JSON object".to_string()); }
+pub fn validate_benefactor_marketing_budget_forecasts_row(
+    value: &BenefactorMarketingBudgetForecastsRow,
+) -> Result<(), String> {
+    if !["monthly", "quarterly", "campaign", "annual"].contains(&(&value.forecast_kind).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_budget_forecasts.forecast_kind: {}",
+            &value.forecast_kind
+        ));
+    }
+    validate_string_length(
+        "benefactor_marketing_budget_forecasts.period_start",
+        &value.period_start,
+        None,
+        Some(10),
+    )?;
+    validate_string_length(
+        "benefactor_marketing_budget_forecasts.period_end",
+        &value.period_end,
+        None,
+        Some(10),
+    )?;
+    if !["draft", "approved", "locked", "archived"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_budget_forecasts.status: {}",
+            &value.status
+        ));
+    }
+    if *(&value.revenue_cents) < 0 {
+        return Err(
+            "benefactor_marketing_budget_forecasts.revenue_cents is below the minimum".to_string(),
+        );
+    }
+    if *(&value.media_spend_cents) < 0 {
+        return Err(
+            "benefactor_marketing_budget_forecasts.media_spend_cents is below the minimum"
+                .to_string(),
+        );
+    }
+    if *(&value.labor_cost_cents) < 0 {
+        return Err(
+            "benefactor_marketing_budget_forecasts.labor_cost_cents is below the minimum"
+                .to_string(),
+        );
+    }
+    if *(&value.vendor_cost_cents) < 0 {
+        return Err(
+            "benefactor_marketing_budget_forecasts.vendor_cost_cents is below the minimum"
+                .to_string(),
+        );
+    }
+    if !(&value.assumptions).is_object() {
+        return Err(
+            "benefactor_marketing_budget_forecasts.assumptions must be a JSON object".to_string(),
+        );
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_budget_forecasts_insert(value: &BenefactorMarketingBudgetForecastsInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_budget_forecasts_insert(
+    value: &BenefactorMarketingBudgetForecastsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.forecast_kind {
-        if !["monthly", "quarterly", "campaign", "annual"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_budget_forecasts.forecast_kind: {}", value)); }
+        if !["monthly", "quarterly", "campaign", "annual"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_budget_forecasts.forecast_kind: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.period_start {
-        validate_string_length("benefactor_marketing_budget_forecasts.period_start", value, None, Some(10))?;
+        validate_string_length(
+            "benefactor_marketing_budget_forecasts.period_start",
+            value,
+            None,
+            Some(10),
+        )?;
     }
     if let Some(value) = &value.period_end {
-        validate_string_length("benefactor_marketing_budget_forecasts.period_end", value, None, Some(10))?;
+        validate_string_length(
+            "benefactor_marketing_budget_forecasts.period_end",
+            value,
+            None,
+            Some(10),
+        )?;
     }
     if let Some(value) = &value.status {
-        if !["draft", "approved", "locked", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_budget_forecasts.status: {}", value)); }
+        if !["draft", "approved", "locked", "archived"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_budget_forecasts.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.revenue_cents {
-        if *(value) < 0 { return Err("benefactor_marketing_budget_forecasts.revenue_cents is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "benefactor_marketing_budget_forecasts.revenue_cents is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.media_spend_cents {
-        if *(value) < 0 { return Err("benefactor_marketing_budget_forecasts.media_spend_cents is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "benefactor_marketing_budget_forecasts.media_spend_cents is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.labor_cost_cents {
-        if *(value) < 0 { return Err("benefactor_marketing_budget_forecasts.labor_cost_cents is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "benefactor_marketing_budget_forecasts.labor_cost_cents is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.vendor_cost_cents {
-        if *(value) < 0 { return Err("benefactor_marketing_budget_forecasts.vendor_cost_cents is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "benefactor_marketing_budget_forecasts.vendor_cost_cents is below the minimum"
+                    .to_string(),
+            );
+        }
     }
     if let Some(value) = &value.assumptions {
-        if !(value).is_object() { return Err("benefactor_marketing_budget_forecasts.assumptions must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_marketing_budget_forecasts.assumptions must be a JSON object"
+                    .to_string(),
+            );
+        }
     }
     Ok(())
 }
 
 pub const BENEFACTOR_MARKETING_CALL_INSIGHTS_TABLE: &str = "benefactor_marketing_call_insights";
-pub const BENEFACTOR_MARKETING_CALL_INSIGHTS_COLUMNS: &[&str] = &["id", "client_id", "meeting_id", "lead_id", "opportunity_id", "status", "provider", "transcript_uri", "summary", "sentiment", "action_items", "objections", "next_steps", "confidence_micros", "analyzed_at", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_CALL_INSIGHTS_COLUMNS: &[&str] = &[
+    "id",
+    "client_id",
+    "meeting_id",
+    "lead_id",
+    "opportunity_id",
+    "status",
+    "provider",
+    "transcript_uri",
+    "summary",
+    "sentiment",
+    "action_items",
+    "objections",
+    "next_steps",
+    "confidence_micros",
+    "analyzed_at",
+    "created_at",
+    "updated_at",
+];
 pub const BENEFACTOR_MARKETING_CALL_INSIGHTS_SELECT_SQL: &str = r###"select
       id::text as id,
       client_id::text as client_id,
@@ -15353,64 +24185,174 @@ pub struct BenefactorMarketingCallInsightsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_benefactor_marketing_call_insights_row(value: &BenefactorMarketingCallInsightsRow) -> Result<(), String> {
-    if !["processing", "ready", "failed", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_call_insights.status: {}", &value.status)); }
+pub fn validate_benefactor_marketing_call_insights_row(
+    value: &BenefactorMarketingCallInsightsRow,
+) -> Result<(), String> {
+    if !["processing", "ready", "failed", "archived"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_marketing_call_insights.status: {}",
+            &value.status
+        ));
+    }
     if let Some(value) = &value.provider {
-        validate_string_length("benefactor_marketing_call_insights.provider", value, None, Some(64))?;
-        if (value).as_bytes().len() > 64 { return Err("benefactor_marketing_call_insights.provider exceeds 64 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_call_insights.provider",
+            value,
+            None,
+            Some(64),
+        )?;
+        if (value).as_bytes().len() > 64 {
+            return Err("benefactor_marketing_call_insights.provider exceeds 64 bytes".to_string());
+        }
     }
     if let Some(value) = &value.transcript_uri {
-        if (value).as_bytes().len() > 2048 { return Err("benefactor_marketing_call_insights.transcript_uri exceeds 2048 bytes".to_string()); }
+        if (value).as_bytes().len() > 2048 {
+            return Err(
+                "benefactor_marketing_call_insights.transcript_uri exceeds 2048 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.summary {
-        if (value).as_bytes().len() > 20000 { return Err("benefactor_marketing_call_insights.summary exceeds 20000 bytes".to_string()); }
+        if (value).as_bytes().len() > 20000 {
+            return Err(
+                "benefactor_marketing_call_insights.summary exceeds 20000 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.sentiment {
-        if !["positive", "neutral", "negative", "mixed"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_call_insights.sentiment: {}", value)); }
+        if !["positive", "neutral", "negative", "mixed"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_call_insights.sentiment: {}",
+                value
+            ));
+        }
     }
-    if !(&value.action_items).is_array() { return Err("benefactor_marketing_call_insights.action_items must be a JSON array".to_string()); }
-    if !(&value.objections).is_array() { return Err("benefactor_marketing_call_insights.objections must be a JSON array".to_string()); }
-    if !(&value.next_steps).is_array() { return Err("benefactor_marketing_call_insights.next_steps must be a JSON array".to_string()); }
-    if *(&value.confidence_micros) < 0 { return Err("benefactor_marketing_call_insights.confidence_micros is below the minimum".to_string()); }
-    if *(&value.confidence_micros) > 1000000 { return Err("benefactor_marketing_call_insights.confidence_micros is above the maximum".to_string()); }
+    if !(&value.action_items).is_array() {
+        return Err(
+            "benefactor_marketing_call_insights.action_items must be a JSON array".to_string(),
+        );
+    }
+    if !(&value.objections).is_array() {
+        return Err(
+            "benefactor_marketing_call_insights.objections must be a JSON array".to_string(),
+        );
+    }
+    if !(&value.next_steps).is_array() {
+        return Err(
+            "benefactor_marketing_call_insights.next_steps must be a JSON array".to_string(),
+        );
+    }
+    if *(&value.confidence_micros) < 0 {
+        return Err(
+            "benefactor_marketing_call_insights.confidence_micros is below the minimum".to_string(),
+        );
+    }
+    if *(&value.confidence_micros) > 1000000 {
+        return Err(
+            "benefactor_marketing_call_insights.confidence_micros is above the maximum".to_string(),
+        );
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_marketing_call_insights_insert(value: &BenefactorMarketingCallInsightsInsert) -> Result<(), String> {
+pub fn validate_benefactor_marketing_call_insights_insert(
+    value: &BenefactorMarketingCallInsightsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.status {
-        if !["processing", "ready", "failed", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_call_insights.status: {}", value)); }
+        if !["processing", "ready", "failed", "archived"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_call_insights.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.provider {
-        validate_string_length("benefactor_marketing_call_insights.provider", value, None, Some(64))?;
-        if (value).as_bytes().len() > 64 { return Err("benefactor_marketing_call_insights.provider exceeds 64 bytes".to_string()); }
+        validate_string_length(
+            "benefactor_marketing_call_insights.provider",
+            value,
+            None,
+            Some(64),
+        )?;
+        if (value).as_bytes().len() > 64 {
+            return Err("benefactor_marketing_call_insights.provider exceeds 64 bytes".to_string());
+        }
     }
     if let Some(value) = &value.transcript_uri {
-        if (value).as_bytes().len() > 2048 { return Err("benefactor_marketing_call_insights.transcript_uri exceeds 2048 bytes".to_string()); }
+        if (value).as_bytes().len() > 2048 {
+            return Err(
+                "benefactor_marketing_call_insights.transcript_uri exceeds 2048 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.summary {
-        if (value).as_bytes().len() > 20000 { return Err("benefactor_marketing_call_insights.summary exceeds 20000 bytes".to_string()); }
+        if (value).as_bytes().len() > 20000 {
+            return Err(
+                "benefactor_marketing_call_insights.summary exceeds 20000 bytes".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.sentiment {
-        if !["positive", "neutral", "negative", "mixed"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_call_insights.sentiment: {}", value)); }
+        if !["positive", "neutral", "negative", "mixed"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_marketing_call_insights.sentiment: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.action_items {
-        if !(value).is_array() { return Err("benefactor_marketing_call_insights.action_items must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err(
+                "benefactor_marketing_call_insights.action_items must be a JSON array".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.objections {
-        if !(value).is_array() { return Err("benefactor_marketing_call_insights.objections must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err(
+                "benefactor_marketing_call_insights.objections must be a JSON array".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.next_steps {
-        if !(value).is_array() { return Err("benefactor_marketing_call_insights.next_steps must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err(
+                "benefactor_marketing_call_insights.next_steps must be a JSON array".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.confidence_micros {
-        if *(value) < 0 { return Err("benefactor_marketing_call_insights.confidence_micros is below the minimum".to_string()); }
-        if *(value) > 1000000 { return Err("benefactor_marketing_call_insights.confidence_micros is above the maximum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "benefactor_marketing_call_insights.confidence_micros is below the minimum"
+                    .to_string(),
+            );
+        }
+        if *(value) > 1000000 {
+            return Err(
+                "benefactor_marketing_call_insights.confidence_micros is above the maximum"
+                    .to_string(),
+            );
+        }
     }
     Ok(())
 }
 
 pub const USACC_USERS_TABLE: &str = "usacc_users";
-pub const USACC_USERS_COLUMNS: &[&str] = &["id", "external_subject", "email_hash", "display_name", "user_kind", "status", "kyc_level", "roles", "is_legal_entity", "legal_region", "meta_data", "created_at", "updated_at"];
+pub const USACC_USERS_COLUMNS: &[&str] = &[
+    "id",
+    "external_subject",
+    "email_hash",
+    "display_name",
+    "user_kind",
+    "status",
+    "kyc_level",
+    "roles",
+    "is_legal_entity",
+    "legal_region",
+    "meta_data",
+    "created_at",
+    "updated_at",
+];
 pub const USACC_USERS_SELECT_SQL: &str = r###"select
       id::text as id,
       external_subject,
@@ -15437,7 +24379,12 @@ pub enum UsaccUsersUserKind {
 }
 
 impl UsaccUsersUserKind {
-    pub const VALUES: &'static [&'static str] = &["natural_person", "legal_entity", "service_account", "sim_agent"];
+    pub const VALUES: &'static [&'static str] = &[
+        "natural_person",
+        "legal_entity",
+        "service_account",
+        "sim_agent",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -15475,7 +24422,14 @@ pub enum UsaccUsersStatus {
 }
 
 impl UsaccUsersStatus {
-    pub const VALUES: &'static [&'static str] = &["active", "pending", "suspended", "banned", "alumni", "archived"];
+    pub const VALUES: &'static [&'static str] = &[
+        "active",
+        "pending",
+        "suspended",
+        "banned",
+        "alumni",
+        "archived",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -15581,59 +24535,148 @@ pub struct UsaccUsersInsert {
 pub fn validate_usacc_users_row(value: &UsaccUsersRow) -> Result<(), String> {
     if let Some(value) = &value.external_subject {
         validate_string_length("usacc_users.external_subject", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("usacc_users.external_subject exceeds 240 bytes".to_string()); }
+        if (value).as_bytes().len() > 240 {
+            return Err("usacc_users.external_subject exceeds 240 bytes".to_string());
+        }
     }
     if let Some(value) = &value.email_hash {
         validate_string_length("usacc_users.email_hash", value, None, Some(64))?;
     }
-    validate_string_length("usacc_users.display_name", &value.display_name, None, Some(200))?;
-    if (&value.display_name).as_bytes().len() > 200 { return Err("usacc_users.display_name exceeds 200 bytes".to_string()); }
-    if !["natural_person", "legal_entity", "service_account", "sim_agent"].contains(&(&value.user_kind).as_str()) { return Err(format!("unsupported usacc_users.user_kind: {}", &value.user_kind)); }
-    if !["active", "pending", "suspended", "banned", "alumni", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported usacc_users.status: {}", &value.status)); }
-    if !["none", "light", "medium", "high"].contains(&(&value.kyc_level).as_str()) { return Err(format!("unsupported usacc_users.kyc_level: {}", &value.kyc_level)); }
-    if !(&value.roles).is_object() { return Err("usacc_users.roles must be a JSON object".to_string()); }
+    validate_string_length(
+        "usacc_users.display_name",
+        &value.display_name,
+        None,
+        Some(200),
+    )?;
+    if (&value.display_name).as_bytes().len() > 200 {
+        return Err("usacc_users.display_name exceeds 200 bytes".to_string());
+    }
+    if ![
+        "natural_person",
+        "legal_entity",
+        "service_account",
+        "sim_agent",
+    ]
+    .contains(&(&value.user_kind).as_str())
+    {
+        return Err(format!(
+            "unsupported usacc_users.user_kind: {}",
+            &value.user_kind
+        ));
+    }
+    if ![
+        "active",
+        "pending",
+        "suspended",
+        "banned",
+        "alumni",
+        "archived",
+    ]
+    .contains(&(&value.status).as_str())
+    {
+        return Err(format!("unsupported usacc_users.status: {}", &value.status));
+    }
+    if !["none", "light", "medium", "high"].contains(&(&value.kyc_level).as_str()) {
+        return Err(format!(
+            "unsupported usacc_users.kyc_level: {}",
+            &value.kyc_level
+        ));
+    }
+    if !(&value.roles).is_object() {
+        return Err("usacc_users.roles must be a JSON object".to_string());
+    }
     if let Some(value) = &value.legal_region {
         validate_string_length("usacc_users.legal_region", value, None, Some(64))?;
     }
-    if !(&value.meta_data).is_object() { return Err("usacc_users.meta_data must be a JSON object".to_string()); }
+    if !(&value.meta_data).is_object() {
+        return Err("usacc_users.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
 pub fn validate_usacc_users_insert(value: &UsaccUsersInsert) -> Result<(), String> {
     if let Some(value) = &value.external_subject {
         validate_string_length("usacc_users.external_subject", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("usacc_users.external_subject exceeds 240 bytes".to_string()); }
+        if (value).as_bytes().len() > 240 {
+            return Err("usacc_users.external_subject exceeds 240 bytes".to_string());
+        }
     }
     if let Some(value) = &value.email_hash {
         validate_string_length("usacc_users.email_hash", value, None, Some(64))?;
     }
     if let Some(value) = &value.display_name {
         validate_string_length("usacc_users.display_name", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("usacc_users.display_name exceeds 200 bytes".to_string()); }
+        if (value).as_bytes().len() > 200 {
+            return Err("usacc_users.display_name exceeds 200 bytes".to_string());
+        }
     }
     if let Some(value) = &value.user_kind {
-        if !["natural_person", "legal_entity", "service_account", "sim_agent"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_users.user_kind: {}", value)); }
+        if ![
+            "natural_person",
+            "legal_entity",
+            "service_account",
+            "sim_agent",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!("unsupported usacc_users.user_kind: {}", value));
+        }
     }
     if let Some(value) = &value.status {
-        if !["active", "pending", "suspended", "banned", "alumni", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_users.status: {}", value)); }
+        if ![
+            "active",
+            "pending",
+            "suspended",
+            "banned",
+            "alumni",
+            "archived",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!("unsupported usacc_users.status: {}", value));
+        }
     }
     if let Some(value) = &value.kyc_level {
-        if !["none", "light", "medium", "high"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_users.kyc_level: {}", value)); }
+        if !["none", "light", "medium", "high"].contains(&(value).as_str()) {
+            return Err(format!("unsupported usacc_users.kyc_level: {}", value));
+        }
     }
     if let Some(value) = &value.roles {
-        if !(value).is_object() { return Err("usacc_users.roles must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("usacc_users.roles must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.legal_region {
         validate_string_length("usacc_users.legal_region", value, None, Some(64))?;
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("usacc_users.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("usacc_users.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const USACC_CASES_TABLE: &str = "usacc_cases";
-pub const USACC_CASES_COLUMNS: &[&str] = &["id", "case_number", "title", "status", "filing_tier", "plaintiff_user_id", "defendant_summary", "conduct_summary", "conduct_fingerprint", "conduct_window_start", "conduct_window_end", "priority_score_micros", "meta_data", "opened_at", "closed_at", "created_at", "updated_at"];
+pub const USACC_CASES_COLUMNS: &[&str] = &[
+    "id",
+    "case_number",
+    "title",
+    "status",
+    "filing_tier",
+    "plaintiff_user_id",
+    "defendant_summary",
+    "conduct_summary",
+    "conduct_fingerprint",
+    "conduct_window_start",
+    "conduct_window_end",
+    "priority_score_micros",
+    "meta_data",
+    "opened_at",
+    "closed_at",
+    "created_at",
+    "updated_at",
+];
 pub const USACC_CASES_SELECT_SQL: &str = r###"select
       id::text as id,
       case_number,
@@ -15670,7 +24713,18 @@ pub enum UsaccCasesStatus {
 }
 
 impl UsaccCasesStatus {
-    pub const VALUES: &'static [&'static str] = &["draft", "signature_collection", "screening", "inquiry", "admission_review", "trial", "appeal", "resolved", "canceled", "archived"];
+    pub const VALUES: &'static [&'static str] = &[
+        "draft",
+        "signature_collection",
+        "screening",
+        "inquiry",
+        "admission_review",
+        "trial",
+        "appeal",
+        "resolved",
+        "canceled",
+        "archived",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -15721,7 +24775,9 @@ pub enum UsaccCasesFilingTier {
 }
 
 impl UsaccCasesFilingTier {
-    pub const VALUES: &'static [&'static str] = &["screen", "inquiry", "trial_1", "trial_2", "trial_3", "trial_5", "trial_10"];
+    pub const VALUES: &'static [&'static str] = &[
+        "screen", "inquiry", "trial_1", "trial_2", "trial_3", "trial_5", "trial_10",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -15799,13 +24855,48 @@ pub struct UsaccCasesInsert {
 }
 
 pub fn validate_usacc_cases_row(value: &UsaccCasesRow) -> Result<(), String> {
-    validate_string_length("usacc_cases.case_number", &value.case_number, None, Some(80))?;
+    validate_string_length(
+        "usacc_cases.case_number",
+        &value.case_number,
+        None,
+        Some(80),
+    )?;
     validate_string_length("usacc_cases.title", &value.title, None, Some(240))?;
-    if (&value.title).as_bytes().len() > 240 { return Err("usacc_cases.title exceeds 240 bytes".to_string()); }
-    if !["draft", "signature_collection", "screening", "inquiry", "admission_review", "trial", "appeal", "resolved", "canceled", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported usacc_cases.status: {}", &value.status)); }
-    if !["screen", "inquiry", "trial_1", "trial_2", "trial_3", "trial_5", "trial_10"].contains(&(&value.filing_tier).as_str()) { return Err(format!("unsupported usacc_cases.filing_tier: {}", &value.filing_tier)); }
-    if (&value.defendant_summary).as_bytes().len() > 4000 { return Err("usacc_cases.defendant_summary exceeds 4000 bytes".to_string()); }
-    if (&value.conduct_summary).as_bytes().len() > 12000 { return Err("usacc_cases.conduct_summary exceeds 12000 bytes".to_string()); }
+    if (&value.title).as_bytes().len() > 240 {
+        return Err("usacc_cases.title exceeds 240 bytes".to_string());
+    }
+    if ![
+        "draft",
+        "signature_collection",
+        "screening",
+        "inquiry",
+        "admission_review",
+        "trial",
+        "appeal",
+        "resolved",
+        "canceled",
+        "archived",
+    ]
+    .contains(&(&value.status).as_str())
+    {
+        return Err(format!("unsupported usacc_cases.status: {}", &value.status));
+    }
+    if ![
+        "screen", "inquiry", "trial_1", "trial_2", "trial_3", "trial_5", "trial_10",
+    ]
+    .contains(&(&value.filing_tier).as_str())
+    {
+        return Err(format!(
+            "unsupported usacc_cases.filing_tier: {}",
+            &value.filing_tier
+        ));
+    }
+    if (&value.defendant_summary).as_bytes().len() > 4000 {
+        return Err("usacc_cases.defendant_summary exceeds 4000 bytes".to_string());
+    }
+    if (&value.conduct_summary).as_bytes().len() > 12000 {
+        return Err("usacc_cases.conduct_summary exceeds 12000 bytes".to_string());
+    }
     if let Some(value) = &value.conduct_fingerprint {
         validate_string_length("usacc_cases.conduct_fingerprint", value, None, Some(128))?;
     }
@@ -15815,9 +24906,15 @@ pub fn validate_usacc_cases_row(value: &UsaccCasesRow) -> Result<(), String> {
     if let Some(value) = &value.conduct_window_end {
         validate_string_length("usacc_cases.conduct_window_end", value, None, Some(10))?;
     }
-    if *(&value.priority_score_micros) < 0 { return Err("usacc_cases.priority_score_micros is below the minimum".to_string()); }
-    if *(&value.priority_score_micros) > 1000000 { return Err("usacc_cases.priority_score_micros is above the maximum".to_string()); }
-    if !(&value.meta_data).is_object() { return Err("usacc_cases.meta_data must be a JSON object".to_string()); }
+    if *(&value.priority_score_micros) < 0 {
+        return Err("usacc_cases.priority_score_micros is below the minimum".to_string());
+    }
+    if *(&value.priority_score_micros) > 1000000 {
+        return Err("usacc_cases.priority_score_micros is above the maximum".to_string());
+    }
+    if !(&value.meta_data).is_object() {
+        return Err("usacc_cases.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
@@ -15827,19 +24924,46 @@ pub fn validate_usacc_cases_insert(value: &UsaccCasesInsert) -> Result<(), Strin
     }
     if let Some(value) = &value.title {
         validate_string_length("usacc_cases.title", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("usacc_cases.title exceeds 240 bytes".to_string()); }
+        if (value).as_bytes().len() > 240 {
+            return Err("usacc_cases.title exceeds 240 bytes".to_string());
+        }
     }
     if let Some(value) = &value.status {
-        if !["draft", "signature_collection", "screening", "inquiry", "admission_review", "trial", "appeal", "resolved", "canceled", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_cases.status: {}", value)); }
+        if ![
+            "draft",
+            "signature_collection",
+            "screening",
+            "inquiry",
+            "admission_review",
+            "trial",
+            "appeal",
+            "resolved",
+            "canceled",
+            "archived",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!("unsupported usacc_cases.status: {}", value));
+        }
     }
     if let Some(value) = &value.filing_tier {
-        if !["screen", "inquiry", "trial_1", "trial_2", "trial_3", "trial_5", "trial_10"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_cases.filing_tier: {}", value)); }
+        if ![
+            "screen", "inquiry", "trial_1", "trial_2", "trial_3", "trial_5", "trial_10",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!("unsupported usacc_cases.filing_tier: {}", value));
+        }
     }
     if let Some(value) = &value.defendant_summary {
-        if (value).as_bytes().len() > 4000 { return Err("usacc_cases.defendant_summary exceeds 4000 bytes".to_string()); }
+        if (value).as_bytes().len() > 4000 {
+            return Err("usacc_cases.defendant_summary exceeds 4000 bytes".to_string());
+        }
     }
     if let Some(value) = &value.conduct_summary {
-        if (value).as_bytes().len() > 12000 { return Err("usacc_cases.conduct_summary exceeds 12000 bytes".to_string()); }
+        if (value).as_bytes().len() > 12000 {
+            return Err("usacc_cases.conduct_summary exceeds 12000 bytes".to_string());
+        }
     }
     if let Some(value) = &value.conduct_fingerprint {
         validate_string_length("usacc_cases.conduct_fingerprint", value, None, Some(128))?;
@@ -15851,17 +24975,36 @@ pub fn validate_usacc_cases_insert(value: &UsaccCasesInsert) -> Result<(), Strin
         validate_string_length("usacc_cases.conduct_window_end", value, None, Some(10))?;
     }
     if let Some(value) = &value.priority_score_micros {
-        if *(value) < 0 { return Err("usacc_cases.priority_score_micros is below the minimum".to_string()); }
-        if *(value) > 1000000 { return Err("usacc_cases.priority_score_micros is above the maximum".to_string()); }
+        if *(value) < 0 {
+            return Err("usacc_cases.priority_score_micros is below the minimum".to_string());
+        }
+        if *(value) > 1000000 {
+            return Err("usacc_cases.priority_score_micros is above the maximum".to_string());
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("usacc_cases.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("usacc_cases.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const USACC_CASE_PARTICIPANTS_TABLE: &str = "usacc_case_participants";
-pub const USACC_CASE_PARTICIPANTS_COLUMNS: &[&str] = &["id", "case_id", "user_id", "role", "status", "granted_by", "granted_by_policy_version", "ended_at", "ended_reason", "meta_data", "created_at", "updated_at"];
+pub const USACC_CASE_PARTICIPANTS_COLUMNS: &[&str] = &[
+    "id",
+    "case_id",
+    "user_id",
+    "role",
+    "status",
+    "granted_by",
+    "granted_by_policy_version",
+    "ended_at",
+    "ended_reason",
+    "meta_data",
+    "created_at",
+    "updated_at",
+];
 pub const USACC_CASE_PARTICIPANTS_SELECT_SQL: &str = r###"select
       id::text as id,
       case_id::text as case_id,
@@ -15900,7 +25043,25 @@ pub enum UsaccCaseParticipantsRole {
 }
 
 impl UsaccCaseParticipantsRole {
-    pub const VALUES: &'static [&'static str] = &["plaintiff", "defendant", "sponsor", "witness", "judge", "panel_juror", "appeal_judge", "presiding_juror", "paralegal", "investigator", "intake_reviewer", "clerk_of_court", "compliance_monitor", "counsel", "oversight_board", "auditor", "ombuds"];
+    pub const VALUES: &'static [&'static str] = &[
+        "plaintiff",
+        "defendant",
+        "sponsor",
+        "witness",
+        "judge",
+        "panel_juror",
+        "appeal_judge",
+        "presiding_juror",
+        "paralegal",
+        "investigator",
+        "intake_reviewer",
+        "clerk_of_court",
+        "compliance_monitor",
+        "counsel",
+        "oversight_board",
+        "auditor",
+        "ombuds",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -15964,7 +25125,14 @@ pub enum UsaccCaseParticipantsStatus {
 }
 
 impl UsaccCaseParticipantsStatus {
-    pub const VALUES: &'static [&'static str] = &["active", "pending", "declined", "suspended", "ended", "banned"];
+    pub const VALUES: &'static [&'static str] = &[
+        "active",
+        "pending",
+        "declined",
+        "suspended",
+        "ended",
+        "banned",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -16029,42 +25197,167 @@ pub struct UsaccCaseParticipantsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_usacc_case_participants_row(value: &UsaccCaseParticipantsRow) -> Result<(), String> {
-    if !["plaintiff", "defendant", "sponsor", "witness", "judge", "panel_juror", "appeal_judge", "presiding_juror", "paralegal", "investigator", "intake_reviewer", "clerk_of_court", "compliance_monitor", "counsel", "oversight_board", "auditor", "ombuds"].contains(&(&value.role).as_str()) { return Err(format!("unsupported usacc_case_participants.role: {}", &value.role)); }
-    if !["active", "pending", "declined", "suspended", "ended", "banned"].contains(&(&value.status).as_str()) { return Err(format!("unsupported usacc_case_participants.status: {}", &value.status)); }
+pub fn validate_usacc_case_participants_row(
+    value: &UsaccCaseParticipantsRow,
+) -> Result<(), String> {
+    if ![
+        "plaintiff",
+        "defendant",
+        "sponsor",
+        "witness",
+        "judge",
+        "panel_juror",
+        "appeal_judge",
+        "presiding_juror",
+        "paralegal",
+        "investigator",
+        "intake_reviewer",
+        "clerk_of_court",
+        "compliance_monitor",
+        "counsel",
+        "oversight_board",
+        "auditor",
+        "ombuds",
+    ]
+    .contains(&(&value.role).as_str())
+    {
+        return Err(format!(
+            "unsupported usacc_case_participants.role: {}",
+            &value.role
+        ));
+    }
+    if ![
+        "active",
+        "pending",
+        "declined",
+        "suspended",
+        "ended",
+        "banned",
+    ]
+    .contains(&(&value.status).as_str())
+    {
+        return Err(format!(
+            "unsupported usacc_case_participants.status: {}",
+            &value.status
+        ));
+    }
     if let Some(value) = &value.granted_by_policy_version {
-        validate_string_length("usacc_case_participants.granted_by_policy_version", value, None, Some(120))?;
+        validate_string_length(
+            "usacc_case_participants.granted_by_policy_version",
+            value,
+            None,
+            Some(120),
+        )?;
     }
     if let Some(value) = &value.ended_reason {
-        validate_string_length("usacc_case_participants.ended_reason", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("usacc_case_participants.ended_reason exceeds 240 bytes".to_string()); }
+        validate_string_length(
+            "usacc_case_participants.ended_reason",
+            value,
+            None,
+            Some(240),
+        )?;
+        if (value).as_bytes().len() > 240 {
+            return Err("usacc_case_participants.ended_reason exceeds 240 bytes".to_string());
+        }
     }
-    if !(&value.meta_data).is_object() { return Err("usacc_case_participants.meta_data must be a JSON object".to_string()); }
+    if !(&value.meta_data).is_object() {
+        return Err("usacc_case_participants.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_usacc_case_participants_insert(value: &UsaccCaseParticipantsInsert) -> Result<(), String> {
+pub fn validate_usacc_case_participants_insert(
+    value: &UsaccCaseParticipantsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.role {
-        if !["plaintiff", "defendant", "sponsor", "witness", "judge", "panel_juror", "appeal_judge", "presiding_juror", "paralegal", "investigator", "intake_reviewer", "clerk_of_court", "compliance_monitor", "counsel", "oversight_board", "auditor", "ombuds"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_case_participants.role: {}", value)); }
+        if ![
+            "plaintiff",
+            "defendant",
+            "sponsor",
+            "witness",
+            "judge",
+            "panel_juror",
+            "appeal_judge",
+            "presiding_juror",
+            "paralegal",
+            "investigator",
+            "intake_reviewer",
+            "clerk_of_court",
+            "compliance_monitor",
+            "counsel",
+            "oversight_board",
+            "auditor",
+            "ombuds",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported usacc_case_participants.role: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.status {
-        if !["active", "pending", "declined", "suspended", "ended", "banned"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_case_participants.status: {}", value)); }
+        if ![
+            "active",
+            "pending",
+            "declined",
+            "suspended",
+            "ended",
+            "banned",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported usacc_case_participants.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.granted_by_policy_version {
-        validate_string_length("usacc_case_participants.granted_by_policy_version", value, None, Some(120))?;
+        validate_string_length(
+            "usacc_case_participants.granted_by_policy_version",
+            value,
+            None,
+            Some(120),
+        )?;
     }
     if let Some(value) = &value.ended_reason {
-        validate_string_length("usacc_case_participants.ended_reason", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("usacc_case_participants.ended_reason exceeds 240 bytes".to_string()); }
+        validate_string_length(
+            "usacc_case_participants.ended_reason",
+            value,
+            None,
+            Some(240),
+        )?;
+        if (value).as_bytes().len() > 240 {
+            return Err("usacc_case_participants.ended_reason exceeds 240 bytes".to_string());
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("usacc_case_participants.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("usacc_case_participants.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const USACC_CASE_STAGES_TABLE: &str = "usacc_case_stages";
-pub const USACC_CASE_STAGES_COLUMNS: &[&str] = &["id", "case_id", "stage_key", "stage_order", "title", "status", "assigned_user_id", "opened_at", "due_at", "closed_at", "decision_summary", "meta_data", "created_at", "updated_at"];
+pub const USACC_CASE_STAGES_COLUMNS: &[&str] = &[
+    "id",
+    "case_id",
+    "stage_key",
+    "stage_order",
+    "title",
+    "status",
+    "assigned_user_id",
+    "opened_at",
+    "due_at",
+    "closed_at",
+    "decision_summary",
+    "meta_data",
+    "created_at",
+    "updated_at",
+];
 pub const USACC_CASE_STAGES_SELECT_SQL: &str = r###"select
       id::text as id,
       case_id::text as case_id,
@@ -16094,7 +25387,9 @@ pub enum UsaccCaseStagesStatus {
 }
 
 impl UsaccCaseStagesStatus {
-    pub const VALUES: &'static [&'static str] = &["pending", "open", "blocked", "complete", "skipped", "canceled"];
+    pub const VALUES: &'static [&'static str] = &[
+        "pending", "open", "blocked", "complete", "skipped", "canceled",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -16164,16 +25459,40 @@ pub struct UsaccCaseStagesInsert {
 }
 
 pub fn validate_usacc_case_stages_row(value: &UsaccCaseStagesRow) -> Result<(), String> {
-    validate_string_length("usacc_case_stages.stage_key", &value.stage_key, None, Some(64))?;
-    if *(&value.stage_order) < 0 { return Err("usacc_case_stages.stage_order is below the minimum".to_string()); }
-    if *(&value.stage_order) > 1000 { return Err("usacc_case_stages.stage_order is above the maximum".to_string()); }
-    validate_string_length("usacc_case_stages.title", &value.title, None, Some(200))?;
-    if (&value.title).as_bytes().len() > 200 { return Err("usacc_case_stages.title exceeds 200 bytes".to_string()); }
-    if !["pending", "open", "blocked", "complete", "skipped", "canceled"].contains(&(&value.status).as_str()) { return Err(format!("unsupported usacc_case_stages.status: {}", &value.status)); }
-    if let Some(value) = &value.decision_summary {
-        if (value).as_bytes().len() > 12000 { return Err("usacc_case_stages.decision_summary exceeds 12000 bytes".to_string()); }
+    validate_string_length(
+        "usacc_case_stages.stage_key",
+        &value.stage_key,
+        None,
+        Some(64),
+    )?;
+    if *(&value.stage_order) < 0 {
+        return Err("usacc_case_stages.stage_order is below the minimum".to_string());
     }
-    if !(&value.meta_data).is_object() { return Err("usacc_case_stages.meta_data must be a JSON object".to_string()); }
+    if *(&value.stage_order) > 1000 {
+        return Err("usacc_case_stages.stage_order is above the maximum".to_string());
+    }
+    validate_string_length("usacc_case_stages.title", &value.title, None, Some(200))?;
+    if (&value.title).as_bytes().len() > 200 {
+        return Err("usacc_case_stages.title exceeds 200 bytes".to_string());
+    }
+    if ![
+        "pending", "open", "blocked", "complete", "skipped", "canceled",
+    ]
+    .contains(&(&value.status).as_str())
+    {
+        return Err(format!(
+            "unsupported usacc_case_stages.status: {}",
+            &value.status
+        ));
+    }
+    if let Some(value) = &value.decision_summary {
+        if (value).as_bytes().len() > 12000 {
+            return Err("usacc_case_stages.decision_summary exceeds 12000 bytes".to_string());
+        }
+    }
+    if !(&value.meta_data).is_object() {
+        return Err("usacc_case_stages.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
@@ -16182,27 +25501,59 @@ pub fn validate_usacc_case_stages_insert(value: &UsaccCaseStagesInsert) -> Resul
         validate_string_length("usacc_case_stages.stage_key", value, None, Some(64))?;
     }
     if let Some(value) = &value.stage_order {
-        if *(value) < 0 { return Err("usacc_case_stages.stage_order is below the minimum".to_string()); }
-        if *(value) > 1000 { return Err("usacc_case_stages.stage_order is above the maximum".to_string()); }
+        if *(value) < 0 {
+            return Err("usacc_case_stages.stage_order is below the minimum".to_string());
+        }
+        if *(value) > 1000 {
+            return Err("usacc_case_stages.stage_order is above the maximum".to_string());
+        }
     }
     if let Some(value) = &value.title {
         validate_string_length("usacc_case_stages.title", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("usacc_case_stages.title exceeds 200 bytes".to_string()); }
+        if (value).as_bytes().len() > 200 {
+            return Err("usacc_case_stages.title exceeds 200 bytes".to_string());
+        }
     }
     if let Some(value) = &value.status {
-        if !["pending", "open", "blocked", "complete", "skipped", "canceled"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_case_stages.status: {}", value)); }
+        if ![
+            "pending", "open", "blocked", "complete", "skipped", "canceled",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!("unsupported usacc_case_stages.status: {}", value));
+        }
     }
     if let Some(value) = &value.decision_summary {
-        if (value).as_bytes().len() > 12000 { return Err("usacc_case_stages.decision_summary exceeds 12000 bytes".to_string()); }
+        if (value).as_bytes().len() > 12000 {
+            return Err("usacc_case_stages.decision_summary exceeds 12000 bytes".to_string());
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("usacc_case_stages.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("usacc_case_stages.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const USACC_ELECTIONS_TABLE: &str = "usacc_elections";
-pub const USACC_ELECTIONS_COLUMNS: &[&str] = &["id", "case_id", "stage_id", "election_kind", "title", "status", "quorum_count", "threshold_micros", "opens_at", "closes_at", "sealed_until", "tally", "meta_data", "created_at", "updated_at"];
+pub const USACC_ELECTIONS_COLUMNS: &[&str] = &[
+    "id",
+    "case_id",
+    "stage_id",
+    "election_kind",
+    "title",
+    "status",
+    "quorum_count",
+    "threshold_micros",
+    "opens_at",
+    "closes_at",
+    "sealed_until",
+    "tally",
+    "meta_data",
+    "created_at",
+    "updated_at",
+];
 pub const USACC_ELECTIONS_SELECT_SQL: &str = r###"select
       id::text as id,
       case_id::text as case_id,
@@ -16234,7 +25585,15 @@ pub enum UsaccElectionsElectionKind {
 }
 
 impl UsaccElectionsElectionKind {
-    pub const VALUES: &'static [&'static str] = &["priority", "admission", "panel_verdict", "appeal", "oversight", "policy", "assignment_acceptance"];
+    pub const VALUES: &'static [&'static str] = &[
+        "priority",
+        "admission",
+        "panel_verdict",
+        "appeal",
+        "oversight",
+        "policy",
+        "assignment_acceptance",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -16279,7 +25638,15 @@ pub enum UsaccElectionsStatus {
 }
 
 impl UsaccElectionsStatus {
-    pub const VALUES: &'static [&'static str] = &["draft", "open", "sealed", "tallying", "certified", "void", "archived"];
+    pub const VALUES: &'static [&'static str] = &[
+        "draft",
+        "open",
+        "sealed",
+        "tallying",
+        "certified",
+        "void",
+        "archived",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -16353,49 +25720,149 @@ pub struct UsaccElectionsInsert {
 }
 
 pub fn validate_usacc_elections_row(value: &UsaccElectionsRow) -> Result<(), String> {
-    if !["priority", "admission", "panel_verdict", "appeal", "oversight", "policy", "assignment_acceptance"].contains(&(&value.election_kind).as_str()) { return Err(format!("unsupported usacc_elections.election_kind: {}", &value.election_kind)); }
+    if ![
+        "priority",
+        "admission",
+        "panel_verdict",
+        "appeal",
+        "oversight",
+        "policy",
+        "assignment_acceptance",
+    ]
+    .contains(&(&value.election_kind).as_str())
+    {
+        return Err(format!(
+            "unsupported usacc_elections.election_kind: {}",
+            &value.election_kind
+        ));
+    }
     validate_string_length("usacc_elections.title", &value.title, None, Some(220))?;
-    if (&value.title).as_bytes().len() > 220 { return Err("usacc_elections.title exceeds 220 bytes".to_string()); }
-    if !["draft", "open", "sealed", "tallying", "certified", "void", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported usacc_elections.status: {}", &value.status)); }
-    if *(&value.quorum_count) < 1 { return Err("usacc_elections.quorum_count is below the minimum".to_string()); }
-    if *(&value.quorum_count) > 1000000 { return Err("usacc_elections.quorum_count is above the maximum".to_string()); }
-    if *(&value.threshold_micros) < 1 { return Err("usacc_elections.threshold_micros is below the minimum".to_string()); }
-    if *(&value.threshold_micros) > 1000000 { return Err("usacc_elections.threshold_micros is above the maximum".to_string()); }
-    if !(&value.tally).is_object() { return Err("usacc_elections.tally must be a JSON object".to_string()); }
-    if !(&value.meta_data).is_object() { return Err("usacc_elections.meta_data must be a JSON object".to_string()); }
+    if (&value.title).as_bytes().len() > 220 {
+        return Err("usacc_elections.title exceeds 220 bytes".to_string());
+    }
+    if ![
+        "draft",
+        "open",
+        "sealed",
+        "tallying",
+        "certified",
+        "void",
+        "archived",
+    ]
+    .contains(&(&value.status).as_str())
+    {
+        return Err(format!(
+            "unsupported usacc_elections.status: {}",
+            &value.status
+        ));
+    }
+    if *(&value.quorum_count) < 1 {
+        return Err("usacc_elections.quorum_count is below the minimum".to_string());
+    }
+    if *(&value.quorum_count) > 1000000 {
+        return Err("usacc_elections.quorum_count is above the maximum".to_string());
+    }
+    if *(&value.threshold_micros) < 1 {
+        return Err("usacc_elections.threshold_micros is below the minimum".to_string());
+    }
+    if *(&value.threshold_micros) > 1000000 {
+        return Err("usacc_elections.threshold_micros is above the maximum".to_string());
+    }
+    if !(&value.tally).is_object() {
+        return Err("usacc_elections.tally must be a JSON object".to_string());
+    }
+    if !(&value.meta_data).is_object() {
+        return Err("usacc_elections.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
 pub fn validate_usacc_elections_insert(value: &UsaccElectionsInsert) -> Result<(), String> {
     if let Some(value) = &value.election_kind {
-        if !["priority", "admission", "panel_verdict", "appeal", "oversight", "policy", "assignment_acceptance"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_elections.election_kind: {}", value)); }
+        if ![
+            "priority",
+            "admission",
+            "panel_verdict",
+            "appeal",
+            "oversight",
+            "policy",
+            "assignment_acceptance",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported usacc_elections.election_kind: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.title {
         validate_string_length("usacc_elections.title", value, None, Some(220))?;
-        if (value).as_bytes().len() > 220 { return Err("usacc_elections.title exceeds 220 bytes".to_string()); }
+        if (value).as_bytes().len() > 220 {
+            return Err("usacc_elections.title exceeds 220 bytes".to_string());
+        }
     }
     if let Some(value) = &value.status {
-        if !["draft", "open", "sealed", "tallying", "certified", "void", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_elections.status: {}", value)); }
+        if ![
+            "draft",
+            "open",
+            "sealed",
+            "tallying",
+            "certified",
+            "void",
+            "archived",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!("unsupported usacc_elections.status: {}", value));
+        }
     }
     if let Some(value) = &value.quorum_count {
-        if *(value) < 1 { return Err("usacc_elections.quorum_count is below the minimum".to_string()); }
-        if *(value) > 1000000 { return Err("usacc_elections.quorum_count is above the maximum".to_string()); }
+        if *(value) < 1 {
+            return Err("usacc_elections.quorum_count is below the minimum".to_string());
+        }
+        if *(value) > 1000000 {
+            return Err("usacc_elections.quorum_count is above the maximum".to_string());
+        }
     }
     if let Some(value) = &value.threshold_micros {
-        if *(value) < 1 { return Err("usacc_elections.threshold_micros is below the minimum".to_string()); }
-        if *(value) > 1000000 { return Err("usacc_elections.threshold_micros is above the maximum".to_string()); }
+        if *(value) < 1 {
+            return Err("usacc_elections.threshold_micros is below the minimum".to_string());
+        }
+        if *(value) > 1000000 {
+            return Err("usacc_elections.threshold_micros is above the maximum".to_string());
+        }
     }
     if let Some(value) = &value.tally {
-        if !(value).is_object() { return Err("usacc_elections.tally must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("usacc_elections.tally must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("usacc_elections.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("usacc_elections.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const USACC_VOTES_TABLE: &str = "usacc_votes";
-pub const USACC_VOTES_COLUMNS: &[&str] = &["id", "election_id", "case_id", "voter_user_id", "vote_kind", "vote_value", "weight_micros", "commitment_hash", "sealed_payload", "revealed_at", "contract_digest", "meta_data", "created_at", "updated_at"];
+pub const USACC_VOTES_COLUMNS: &[&str] = &[
+    "id",
+    "election_id",
+    "case_id",
+    "voter_user_id",
+    "vote_kind",
+    "vote_value",
+    "weight_micros",
+    "commitment_hash",
+    "sealed_payload",
+    "revealed_at",
+    "contract_digest",
+    "meta_data",
+    "created_at",
+    "updated_at",
+];
 pub const USACC_VOTES_SELECT_SQL: &str = r###"select
       id::text as id,
       election_id::text as election_id,
@@ -16424,7 +25891,13 @@ pub enum UsaccVotesVoteKind {
 }
 
 impl UsaccVotesVoteKind {
-    pub const VALUES: &'static [&'static str] = &["choice", "priority_dollar_weighted", "verdict", "approval", "assignment_response"];
+    pub const VALUES: &'static [&'static str] = &[
+        "choice",
+        "priority_dollar_weighted",
+        "verdict",
+        "approval",
+        "assignment_response",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -16492,53 +25965,110 @@ pub struct UsaccVotesInsert {
 }
 
 pub fn validate_usacc_votes_row(value: &UsaccVotesRow) -> Result<(), String> {
-    if !["choice", "priority_dollar_weighted", "verdict", "approval", "assignment_response"].contains(&(&value.vote_kind).as_str()) { return Err(format!("unsupported usacc_votes.vote_kind: {}", &value.vote_kind)); }
+    if ![
+        "choice",
+        "priority_dollar_weighted",
+        "verdict",
+        "approval",
+        "assignment_response",
+    ]
+    .contains(&(&value.vote_kind).as_str())
+    {
+        return Err(format!(
+            "unsupported usacc_votes.vote_kind: {}",
+            &value.vote_kind
+        ));
+    }
     validate_string_length("usacc_votes.vote_value", &value.vote_value, None, Some(80))?;
-    if *(&value.weight_micros) < 0 { return Err("usacc_votes.weight_micros is below the minimum".to_string()); }
-    if *(&value.weight_micros) > 1000000000 { return Err("usacc_votes.weight_micros is above the maximum".to_string()); }
+    if *(&value.weight_micros) < 0 {
+        return Err("usacc_votes.weight_micros is below the minimum".to_string());
+    }
+    if *(&value.weight_micros) > 1000000000 {
+        return Err("usacc_votes.weight_micros is above the maximum".to_string());
+    }
     if let Some(value) = &value.commitment_hash {
         validate_string_length("usacc_votes.commitment_hash", value, None, Some(128))?;
     }
     if let Some(value) = &value.sealed_payload {
-        if !(value).is_object() { return Err("usacc_votes.sealed_payload must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("usacc_votes.sealed_payload must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.contract_digest {
         validate_string_length("usacc_votes.contract_digest", value, None, Some(160))?;
-        if (value).as_bytes().len() > 160 { return Err("usacc_votes.contract_digest exceeds 160 bytes".to_string()); }
+        if (value).as_bytes().len() > 160 {
+            return Err("usacc_votes.contract_digest exceeds 160 bytes".to_string());
+        }
     }
-    if !(&value.meta_data).is_object() { return Err("usacc_votes.meta_data must be a JSON object".to_string()); }
+    if !(&value.meta_data).is_object() {
+        return Err("usacc_votes.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
 pub fn validate_usacc_votes_insert(value: &UsaccVotesInsert) -> Result<(), String> {
     if let Some(value) = &value.vote_kind {
-        if !["choice", "priority_dollar_weighted", "verdict", "approval", "assignment_response"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_votes.vote_kind: {}", value)); }
+        if ![
+            "choice",
+            "priority_dollar_weighted",
+            "verdict",
+            "approval",
+            "assignment_response",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!("unsupported usacc_votes.vote_kind: {}", value));
+        }
     }
     if let Some(value) = &value.vote_value {
         validate_string_length("usacc_votes.vote_value", value, None, Some(80))?;
     }
     if let Some(value) = &value.weight_micros {
-        if *(value) < 0 { return Err("usacc_votes.weight_micros is below the minimum".to_string()); }
-        if *(value) > 1000000000 { return Err("usacc_votes.weight_micros is above the maximum".to_string()); }
+        if *(value) < 0 {
+            return Err("usacc_votes.weight_micros is below the minimum".to_string());
+        }
+        if *(value) > 1000000000 {
+            return Err("usacc_votes.weight_micros is above the maximum".to_string());
+        }
     }
     if let Some(value) = &value.commitment_hash {
         validate_string_length("usacc_votes.commitment_hash", value, None, Some(128))?;
     }
     if let Some(value) = &value.sealed_payload {
-        if !(value).is_object() { return Err("usacc_votes.sealed_payload must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("usacc_votes.sealed_payload must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.contract_digest {
         validate_string_length("usacc_votes.contract_digest", value, None, Some(160))?;
-        if (value).as_bytes().len() > 160 { return Err("usacc_votes.contract_digest exceeds 160 bytes".to_string()); }
+        if (value).as_bytes().len() > 160 {
+            return Err("usacc_votes.contract_digest exceeds 160 bytes".to_string());
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("usacc_votes.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("usacc_votes.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const USACC_ESCROW_ACCOUNTS_TABLE: &str = "usacc_escrow_accounts";
-pub const USACC_ESCROW_ACCOUNTS_COLUMNS: &[&str] = &["id", "case_id", "status", "provider", "provider_account_ref", "currency", "target_amount_cents", "committed_amount_cents", "captured_amount_cents", "disbursed_amount_cents", "meta_data", "created_at", "updated_at"];
+pub const USACC_ESCROW_ACCOUNTS_COLUMNS: &[&str] = &[
+    "id",
+    "case_id",
+    "status",
+    "provider",
+    "provider_account_ref",
+    "currency",
+    "target_amount_cents",
+    "committed_amount_cents",
+    "captured_amount_cents",
+    "disbursed_amount_cents",
+    "meta_data",
+    "created_at",
+    "updated_at",
+];
 pub const USACC_ESCROW_ACCOUNTS_SELECT_SQL: &str = r###"select
       id::text as id,
       case_id::text as case_id,
@@ -16568,7 +26098,15 @@ pub enum UsaccEscrowAccountsStatus {
 }
 
 impl UsaccEscrowAccountsStatus {
-    pub const VALUES: &'static [&'static str] = &["pending", "open", "funding", "locked", "disbursing", "closed", "canceled"];
+    pub const VALUES: &'static [&'static str] = &[
+        "pending",
+        "open",
+        "funding",
+        "locked",
+        "disbursing",
+        "closed",
+        "canceled",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -16613,7 +26151,15 @@ pub enum UsaccEscrowAccountsProvider {
 }
 
 impl UsaccEscrowAccountsProvider {
-    pub const VALUES: &'static [&'static str] = &["stripe_treasury", "stripe_connect", "column", "evolve", "mercury", "trust_company", "manual"];
+    pub const VALUES: &'static [&'static str] = &[
+        "stripe_treasury",
+        "stripe_connect",
+        "column",
+        "evolve",
+        "mercury",
+        "trust_company",
+        "manual",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -16683,55 +26229,181 @@ pub struct UsaccEscrowAccountsInsert {
 }
 
 pub fn validate_usacc_escrow_accounts_row(value: &UsaccEscrowAccountsRow) -> Result<(), String> {
-    if !["pending", "open", "funding", "locked", "disbursing", "closed", "canceled"].contains(&(&value.status).as_str()) { return Err(format!("unsupported usacc_escrow_accounts.status: {}", &value.status)); }
-    if !["stripe_treasury", "stripe_connect", "column", "evolve", "mercury", "trust_company", "manual"].contains(&(&value.provider).as_str()) { return Err(format!("unsupported usacc_escrow_accounts.provider: {}", &value.provider)); }
-    if let Some(value) = &value.provider_account_ref {
-        validate_string_length("usacc_escrow_accounts.provider_account_ref", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("usacc_escrow_accounts.provider_account_ref exceeds 240 bytes".to_string()); }
+    if ![
+        "pending",
+        "open",
+        "funding",
+        "locked",
+        "disbursing",
+        "closed",
+        "canceled",
+    ]
+    .contains(&(&value.status).as_str())
+    {
+        return Err(format!(
+            "unsupported usacc_escrow_accounts.status: {}",
+            &value.status
+        ));
     }
-    validate_string_length("usacc_escrow_accounts.currency", &value.currency, None, Some(12))?;
-    if *(&value.target_amount_cents) < 0 { return Err("usacc_escrow_accounts.target_amount_cents is below the minimum".to_string()); }
-    if *(&value.committed_amount_cents) < 0 { return Err("usacc_escrow_accounts.committed_amount_cents is below the minimum".to_string()); }
-    if *(&value.captured_amount_cents) < 0 { return Err("usacc_escrow_accounts.captured_amount_cents is below the minimum".to_string()); }
-    if *(&value.disbursed_amount_cents) < 0 { return Err("usacc_escrow_accounts.disbursed_amount_cents is below the minimum".to_string()); }
-    if !(&value.meta_data).is_object() { return Err("usacc_escrow_accounts.meta_data must be a JSON object".to_string()); }
+    if ![
+        "stripe_treasury",
+        "stripe_connect",
+        "column",
+        "evolve",
+        "mercury",
+        "trust_company",
+        "manual",
+    ]
+    .contains(&(&value.provider).as_str())
+    {
+        return Err(format!(
+            "unsupported usacc_escrow_accounts.provider: {}",
+            &value.provider
+        ));
+    }
+    if let Some(value) = &value.provider_account_ref {
+        validate_string_length(
+            "usacc_escrow_accounts.provider_account_ref",
+            value,
+            None,
+            Some(240),
+        )?;
+        if (value).as_bytes().len() > 240 {
+            return Err("usacc_escrow_accounts.provider_account_ref exceeds 240 bytes".to_string());
+        }
+    }
+    validate_string_length(
+        "usacc_escrow_accounts.currency",
+        &value.currency,
+        None,
+        Some(12),
+    )?;
+    if *(&value.target_amount_cents) < 0 {
+        return Err("usacc_escrow_accounts.target_amount_cents is below the minimum".to_string());
+    }
+    if *(&value.committed_amount_cents) < 0 {
+        return Err(
+            "usacc_escrow_accounts.committed_amount_cents is below the minimum".to_string(),
+        );
+    }
+    if *(&value.captured_amount_cents) < 0 {
+        return Err("usacc_escrow_accounts.captured_amount_cents is below the minimum".to_string());
+    }
+    if *(&value.disbursed_amount_cents) < 0 {
+        return Err(
+            "usacc_escrow_accounts.disbursed_amount_cents is below the minimum".to_string(),
+        );
+    }
+    if !(&value.meta_data).is_object() {
+        return Err("usacc_escrow_accounts.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_usacc_escrow_accounts_insert(value: &UsaccEscrowAccountsInsert) -> Result<(), String> {
+pub fn validate_usacc_escrow_accounts_insert(
+    value: &UsaccEscrowAccountsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.status {
-        if !["pending", "open", "funding", "locked", "disbursing", "closed", "canceled"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_escrow_accounts.status: {}", value)); }
+        if ![
+            "pending",
+            "open",
+            "funding",
+            "locked",
+            "disbursing",
+            "closed",
+            "canceled",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported usacc_escrow_accounts.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.provider {
-        if !["stripe_treasury", "stripe_connect", "column", "evolve", "mercury", "trust_company", "manual"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_escrow_accounts.provider: {}", value)); }
+        if ![
+            "stripe_treasury",
+            "stripe_connect",
+            "column",
+            "evolve",
+            "mercury",
+            "trust_company",
+            "manual",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported usacc_escrow_accounts.provider: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.provider_account_ref {
-        validate_string_length("usacc_escrow_accounts.provider_account_ref", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("usacc_escrow_accounts.provider_account_ref exceeds 240 bytes".to_string()); }
+        validate_string_length(
+            "usacc_escrow_accounts.provider_account_ref",
+            value,
+            None,
+            Some(240),
+        )?;
+        if (value).as_bytes().len() > 240 {
+            return Err("usacc_escrow_accounts.provider_account_ref exceeds 240 bytes".to_string());
+        }
     }
     if let Some(value) = &value.currency {
         validate_string_length("usacc_escrow_accounts.currency", value, None, Some(12))?;
     }
     if let Some(value) = &value.target_amount_cents {
-        if *(value) < 0 { return Err("usacc_escrow_accounts.target_amount_cents is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "usacc_escrow_accounts.target_amount_cents is below the minimum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.committed_amount_cents {
-        if *(value) < 0 { return Err("usacc_escrow_accounts.committed_amount_cents is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "usacc_escrow_accounts.committed_amount_cents is below the minimum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.captured_amount_cents {
-        if *(value) < 0 { return Err("usacc_escrow_accounts.captured_amount_cents is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "usacc_escrow_accounts.captured_amount_cents is below the minimum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.disbursed_amount_cents {
-        if *(value) < 0 { return Err("usacc_escrow_accounts.disbursed_amount_cents is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err(
+                "usacc_escrow_accounts.disbursed_amount_cents is below the minimum".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("usacc_escrow_accounts.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("usacc_escrow_accounts.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const USACC_LEDGER_ENTRIES_TABLE: &str = "usacc_ledger_entries";
-pub const USACC_LEDGER_ENTRIES_COLUMNS: &[&str] = &["id", "case_id", "escrow_account_id", "user_id", "entry_kind", "direction", "amount_cents", "currency", "provider_ref", "contract_digest", "meta_data", "created_at"];
+pub const USACC_LEDGER_ENTRIES_COLUMNS: &[&str] = &[
+    "id",
+    "case_id",
+    "escrow_account_id",
+    "user_id",
+    "entry_kind",
+    "direction",
+    "amount_cents",
+    "currency",
+    "provider_ref",
+    "contract_digest",
+    "meta_data",
+    "created_at",
+];
 pub const USACC_LEDGER_ENTRIES_SELECT_SQL: &str = r###"select
       id::text as id,
       case_id::text as case_id,
@@ -16760,7 +26432,15 @@ pub enum UsaccLedgerEntriesEntryKind {
 }
 
 impl UsaccLedgerEntriesEntryKind {
-    pub const VALUES: &'static [&'static str] = &["pledge", "authorization", "capture", "refund", "disbursement", "fee", "adjustment"];
+    pub const VALUES: &'static [&'static str] = &[
+        "pledge",
+        "authorization",
+        "capture",
+        "refund",
+        "disbursement",
+        "fee",
+        "adjustment",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -16858,51 +26538,138 @@ pub struct UsaccLedgerEntriesInsert {
 }
 
 pub fn validate_usacc_ledger_entries_row(value: &UsaccLedgerEntriesRow) -> Result<(), String> {
-    if !["pledge", "authorization", "capture", "refund", "disbursement", "fee", "adjustment"].contains(&(&value.entry_kind).as_str()) { return Err(format!("unsupported usacc_ledger_entries.entry_kind: {}", &value.entry_kind)); }
-    if !["debit", "credit"].contains(&(&value.direction).as_str()) { return Err(format!("unsupported usacc_ledger_entries.direction: {}", &value.direction)); }
-    if *(&value.amount_cents) < 0 { return Err("usacc_ledger_entries.amount_cents is below the minimum".to_string()); }
-    validate_string_length("usacc_ledger_entries.currency", &value.currency, None, Some(12))?;
+    if ![
+        "pledge",
+        "authorization",
+        "capture",
+        "refund",
+        "disbursement",
+        "fee",
+        "adjustment",
+    ]
+    .contains(&(&value.entry_kind).as_str())
+    {
+        return Err(format!(
+            "unsupported usacc_ledger_entries.entry_kind: {}",
+            &value.entry_kind
+        ));
+    }
+    if !["debit", "credit"].contains(&(&value.direction).as_str()) {
+        return Err(format!(
+            "unsupported usacc_ledger_entries.direction: {}",
+            &value.direction
+        ));
+    }
+    if *(&value.amount_cents) < 0 {
+        return Err("usacc_ledger_entries.amount_cents is below the minimum".to_string());
+    }
+    validate_string_length(
+        "usacc_ledger_entries.currency",
+        &value.currency,
+        None,
+        Some(12),
+    )?;
     if let Some(value) = &value.provider_ref {
         validate_string_length("usacc_ledger_entries.provider_ref", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("usacc_ledger_entries.provider_ref exceeds 240 bytes".to_string()); }
+        if (value).as_bytes().len() > 240 {
+            return Err("usacc_ledger_entries.provider_ref exceeds 240 bytes".to_string());
+        }
     }
     if let Some(value) = &value.contract_digest {
-        validate_string_length("usacc_ledger_entries.contract_digest", value, None, Some(160))?;
-        if (value).as_bytes().len() > 160 { return Err("usacc_ledger_entries.contract_digest exceeds 160 bytes".to_string()); }
+        validate_string_length(
+            "usacc_ledger_entries.contract_digest",
+            value,
+            None,
+            Some(160),
+        )?;
+        if (value).as_bytes().len() > 160 {
+            return Err("usacc_ledger_entries.contract_digest exceeds 160 bytes".to_string());
+        }
     }
-    if !(&value.meta_data).is_object() { return Err("usacc_ledger_entries.meta_data must be a JSON object".to_string()); }
+    if !(&value.meta_data).is_object() {
+        return Err("usacc_ledger_entries.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_usacc_ledger_entries_insert(value: &UsaccLedgerEntriesInsert) -> Result<(), String> {
+pub fn validate_usacc_ledger_entries_insert(
+    value: &UsaccLedgerEntriesInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.entry_kind {
-        if !["pledge", "authorization", "capture", "refund", "disbursement", "fee", "adjustment"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_ledger_entries.entry_kind: {}", value)); }
+        if ![
+            "pledge",
+            "authorization",
+            "capture",
+            "refund",
+            "disbursement",
+            "fee",
+            "adjustment",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported usacc_ledger_entries.entry_kind: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.direction {
-        if !["debit", "credit"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_ledger_entries.direction: {}", value)); }
+        if !["debit", "credit"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported usacc_ledger_entries.direction: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.amount_cents {
-        if *(value) < 0 { return Err("usacc_ledger_entries.amount_cents is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("usacc_ledger_entries.amount_cents is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.currency {
         validate_string_length("usacc_ledger_entries.currency", value, None, Some(12))?;
     }
     if let Some(value) = &value.provider_ref {
         validate_string_length("usacc_ledger_entries.provider_ref", value, None, Some(240))?;
-        if (value).as_bytes().len() > 240 { return Err("usacc_ledger_entries.provider_ref exceeds 240 bytes".to_string()); }
+        if (value).as_bytes().len() > 240 {
+            return Err("usacc_ledger_entries.provider_ref exceeds 240 bytes".to_string());
+        }
     }
     if let Some(value) = &value.contract_digest {
-        validate_string_length("usacc_ledger_entries.contract_digest", value, None, Some(160))?;
-        if (value).as_bytes().len() > 160 { return Err("usacc_ledger_entries.contract_digest exceeds 160 bytes".to_string()); }
+        validate_string_length(
+            "usacc_ledger_entries.contract_digest",
+            value,
+            None,
+            Some(160),
+        )?;
+        if (value).as_bytes().len() > 160 {
+            return Err("usacc_ledger_entries.contract_digest exceeds 160 bytes".to_string());
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("usacc_ledger_entries.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("usacc_ledger_entries.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const USACC_CONTRACT_OPERATIONS_TABLE: &str = "usacc_contract_operations";
-pub const USACC_CONTRACT_OPERATIONS_COLUMNS: &[&str] = &["id", "case_id", "election_id", "vote_id", "request_id", "operation_kind", "status", "program_id", "digest", "envelope", "response", "created_at", "updated_at"];
+pub const USACC_CONTRACT_OPERATIONS_COLUMNS: &[&str] = &[
+    "id",
+    "case_id",
+    "election_id",
+    "vote_id",
+    "request_id",
+    "operation_kind",
+    "status",
+    "program_id",
+    "digest",
+    "envelope",
+    "response",
+    "created_at",
+    "updated_at",
+];
 pub const USACC_CONTRACT_OPERATIONS_SELECT_SQL: &str = r###"select
       id::text as id,
       case_id::text as case_id,
@@ -16930,7 +26697,13 @@ pub enum UsaccContractOperationsOperationKind {
 }
 
 impl UsaccContractOperationsOperationKind {
-    pub const VALUES: &'static [&'static str] = &["validate_envelope", "simulate_transaction", "send_transaction", "vote_commitment", "escrow_notary"];
+    pub const VALUES: &'static [&'static str] = &[
+        "validate_envelope",
+        "simulate_transaction",
+        "send_transaction",
+        "vote_commitment",
+        "escrow_notary",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -16970,7 +26743,14 @@ pub enum UsaccContractOperationsStatus {
 }
 
 impl UsaccContractOperationsStatus {
-    pub const VALUES: &'static [&'static str] = &["pending", "validated", "simulated", "sent", "failed", "canceled"];
+    pub const VALUES: &'static [&'static str] = &[
+        "pending",
+        "validated",
+        "simulated",
+        "sent",
+        "failed",
+        "canceled",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -17037,54 +26817,168 @@ pub struct UsaccContractOperationsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_usacc_contract_operations_row(value: &UsaccContractOperationsRow) -> Result<(), String> {
-    validate_string_length("usacc_contract_operations.request_id", &value.request_id, None, Some(160))?;
-    if (&value.request_id).as_bytes().len() > 160 { return Err("usacc_contract_operations.request_id exceeds 160 bytes".to_string()); }
-    if !["validate_envelope", "simulate_transaction", "send_transaction", "vote_commitment", "escrow_notary"].contains(&(&value.operation_kind).as_str()) { return Err(format!("unsupported usacc_contract_operations.operation_kind: {}", &value.operation_kind)); }
-    if !["pending", "validated", "simulated", "sent", "failed", "canceled"].contains(&(&value.status).as_str()) { return Err(format!("unsupported usacc_contract_operations.status: {}", &value.status)); }
+pub fn validate_usacc_contract_operations_row(
+    value: &UsaccContractOperationsRow,
+) -> Result<(), String> {
+    validate_string_length(
+        "usacc_contract_operations.request_id",
+        &value.request_id,
+        None,
+        Some(160),
+    )?;
+    if (&value.request_id).as_bytes().len() > 160 {
+        return Err("usacc_contract_operations.request_id exceeds 160 bytes".to_string());
+    }
+    if ![
+        "validate_envelope",
+        "simulate_transaction",
+        "send_transaction",
+        "vote_commitment",
+        "escrow_notary",
+    ]
+    .contains(&(&value.operation_kind).as_str())
+    {
+        return Err(format!(
+            "unsupported usacc_contract_operations.operation_kind: {}",
+            &value.operation_kind
+        ));
+    }
+    if ![
+        "pending",
+        "validated",
+        "simulated",
+        "sent",
+        "failed",
+        "canceled",
+    ]
+    .contains(&(&value.status).as_str())
+    {
+        return Err(format!(
+            "unsupported usacc_contract_operations.status: {}",
+            &value.status
+        ));
+    }
     if let Some(value) = &value.program_id {
-        validate_string_length("usacc_contract_operations.program_id", value, None, Some(128))?;
-        if (value).as_bytes().len() > 128 { return Err("usacc_contract_operations.program_id exceeds 128 bytes".to_string()); }
+        validate_string_length(
+            "usacc_contract_operations.program_id",
+            value,
+            None,
+            Some(128),
+        )?;
+        if (value).as_bytes().len() > 128 {
+            return Err("usacc_contract_operations.program_id exceeds 128 bytes".to_string());
+        }
     }
     if let Some(value) = &value.digest {
         validate_string_length("usacc_contract_operations.digest", value, None, Some(160))?;
-        if (value).as_bytes().len() > 160 { return Err("usacc_contract_operations.digest exceeds 160 bytes".to_string()); }
+        if (value).as_bytes().len() > 160 {
+            return Err("usacc_contract_operations.digest exceeds 160 bytes".to_string());
+        }
     }
-    if !(&value.envelope).is_object() { return Err("usacc_contract_operations.envelope must be a JSON object".to_string()); }
-    if !(&value.response).is_object() { return Err("usacc_contract_operations.response must be a JSON object".to_string()); }
+    if !(&value.envelope).is_object() {
+        return Err("usacc_contract_operations.envelope must be a JSON object".to_string());
+    }
+    if !(&value.response).is_object() {
+        return Err("usacc_contract_operations.response must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_usacc_contract_operations_insert(value: &UsaccContractOperationsInsert) -> Result<(), String> {
+pub fn validate_usacc_contract_operations_insert(
+    value: &UsaccContractOperationsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.request_id {
-        validate_string_length("usacc_contract_operations.request_id", value, None, Some(160))?;
-        if (value).as_bytes().len() > 160 { return Err("usacc_contract_operations.request_id exceeds 160 bytes".to_string()); }
+        validate_string_length(
+            "usacc_contract_operations.request_id",
+            value,
+            None,
+            Some(160),
+        )?;
+        if (value).as_bytes().len() > 160 {
+            return Err("usacc_contract_operations.request_id exceeds 160 bytes".to_string());
+        }
     }
     if let Some(value) = &value.operation_kind {
-        if !["validate_envelope", "simulate_transaction", "send_transaction", "vote_commitment", "escrow_notary"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_contract_operations.operation_kind: {}", value)); }
+        if ![
+            "validate_envelope",
+            "simulate_transaction",
+            "send_transaction",
+            "vote_commitment",
+            "escrow_notary",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported usacc_contract_operations.operation_kind: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.status {
-        if !["pending", "validated", "simulated", "sent", "failed", "canceled"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_contract_operations.status: {}", value)); }
+        if ![
+            "pending",
+            "validated",
+            "simulated",
+            "sent",
+            "failed",
+            "canceled",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported usacc_contract_operations.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.program_id {
-        validate_string_length("usacc_contract_operations.program_id", value, None, Some(128))?;
-        if (value).as_bytes().len() > 128 { return Err("usacc_contract_operations.program_id exceeds 128 bytes".to_string()); }
+        validate_string_length(
+            "usacc_contract_operations.program_id",
+            value,
+            None,
+            Some(128),
+        )?;
+        if (value).as_bytes().len() > 128 {
+            return Err("usacc_contract_operations.program_id exceeds 128 bytes".to_string());
+        }
     }
     if let Some(value) = &value.digest {
         validate_string_length("usacc_contract_operations.digest", value, None, Some(160))?;
-        if (value).as_bytes().len() > 160 { return Err("usacc_contract_operations.digest exceeds 160 bytes".to_string()); }
+        if (value).as_bytes().len() > 160 {
+            return Err("usacc_contract_operations.digest exceeds 160 bytes".to_string());
+        }
     }
     if let Some(value) = &value.envelope {
-        if !(value).is_object() { return Err("usacc_contract_operations.envelope must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("usacc_contract_operations.envelope must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.response {
-        if !(value).is_object() { return Err("usacc_contract_operations.response must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("usacc_contract_operations.response must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const USACC_SIMULATION_RUNS_TABLE: &str = "usacc_simulation_runs";
-pub const USACC_SIMULATION_RUNS_COLUMNS: &[&str] = &["id", "case_id", "status", "mode", "seed", "horizon_days", "actor_count", "event_count", "metrics", "trace", "input", "started_at", "finished_at", "created_at", "updated_at"];
+pub const USACC_SIMULATION_RUNS_COLUMNS: &[&str] = &[
+    "id",
+    "case_id",
+    "status",
+    "mode",
+    "seed",
+    "horizon_days",
+    "actor_count",
+    "event_count",
+    "metrics",
+    "trace",
+    "input",
+    "started_at",
+    "finished_at",
+    "created_at",
+    "updated_at",
+];
 pub const USACC_SIMULATION_RUNS_SELECT_SQL: &str = r###"select
       id::text as id,
       case_id::text as case_id,
@@ -17114,7 +27008,8 @@ pub enum UsaccSimulationRunsStatus {
 }
 
 impl UsaccSimulationRunsStatus {
-    pub const VALUES: &'static [&'static str] = &["queued", "running", "succeeded", "failed", "canceled"];
+    pub const VALUES: &'static [&'static str] =
+        &["queued", "running", "succeeded", "failed", "canceled"];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -17217,49 +27112,106 @@ pub struct UsaccSimulationRunsInsert {
 }
 
 pub fn validate_usacc_simulation_runs_row(value: &UsaccSimulationRunsRow) -> Result<(), String> {
-    if !["queued", "running", "succeeded", "failed", "canceled"].contains(&(&value.status).as_str()) { return Err(format!("unsupported usacc_simulation_runs.status: {}", &value.status)); }
-    if !["sim", "live_shadow", "replay"].contains(&(&value.mode).as_str()) { return Err(format!("unsupported usacc_simulation_runs.mode: {}", &value.mode)); }
-    if *(&value.horizon_days) < 1 { return Err("usacc_simulation_runs.horizon_days is below the minimum".to_string()); }
-    if *(&value.horizon_days) > 3650 { return Err("usacc_simulation_runs.horizon_days is above the maximum".to_string()); }
-    if *(&value.actor_count) < 0 { return Err("usacc_simulation_runs.actor_count is below the minimum".to_string()); }
-    if *(&value.event_count) < 0 { return Err("usacc_simulation_runs.event_count is below the minimum".to_string()); }
-    if !(&value.metrics).is_object() { return Err("usacc_simulation_runs.metrics must be a JSON object".to_string()); }
-    if !(&value.trace).is_array() { return Err("usacc_simulation_runs.trace must be a JSON array".to_string()); }
-    if !(&value.input).is_object() { return Err("usacc_simulation_runs.input must be a JSON object".to_string()); }
+    if !["queued", "running", "succeeded", "failed", "canceled"].contains(&(&value.status).as_str())
+    {
+        return Err(format!(
+            "unsupported usacc_simulation_runs.status: {}",
+            &value.status
+        ));
+    }
+    if !["sim", "live_shadow", "replay"].contains(&(&value.mode).as_str()) {
+        return Err(format!(
+            "unsupported usacc_simulation_runs.mode: {}",
+            &value.mode
+        ));
+    }
+    if *(&value.horizon_days) < 1 {
+        return Err("usacc_simulation_runs.horizon_days is below the minimum".to_string());
+    }
+    if *(&value.horizon_days) > 3650 {
+        return Err("usacc_simulation_runs.horizon_days is above the maximum".to_string());
+    }
+    if *(&value.actor_count) < 0 {
+        return Err("usacc_simulation_runs.actor_count is below the minimum".to_string());
+    }
+    if *(&value.event_count) < 0 {
+        return Err("usacc_simulation_runs.event_count is below the minimum".to_string());
+    }
+    if !(&value.metrics).is_object() {
+        return Err("usacc_simulation_runs.metrics must be a JSON object".to_string());
+    }
+    if !(&value.trace).is_array() {
+        return Err("usacc_simulation_runs.trace must be a JSON array".to_string());
+    }
+    if !(&value.input).is_object() {
+        return Err("usacc_simulation_runs.input must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_usacc_simulation_runs_insert(value: &UsaccSimulationRunsInsert) -> Result<(), String> {
+pub fn validate_usacc_simulation_runs_insert(
+    value: &UsaccSimulationRunsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.status {
-        if !["queued", "running", "succeeded", "failed", "canceled"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_simulation_runs.status: {}", value)); }
+        if !["queued", "running", "succeeded", "failed", "canceled"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported usacc_simulation_runs.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.mode {
-        if !["sim", "live_shadow", "replay"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_simulation_runs.mode: {}", value)); }
+        if !["sim", "live_shadow", "replay"].contains(&(value).as_str()) {
+            return Err(format!("unsupported usacc_simulation_runs.mode: {}", value));
+        }
     }
     if let Some(value) = &value.horizon_days {
-        if *(value) < 1 { return Err("usacc_simulation_runs.horizon_days is below the minimum".to_string()); }
-        if *(value) > 3650 { return Err("usacc_simulation_runs.horizon_days is above the maximum".to_string()); }
+        if *(value) < 1 {
+            return Err("usacc_simulation_runs.horizon_days is below the minimum".to_string());
+        }
+        if *(value) > 3650 {
+            return Err("usacc_simulation_runs.horizon_days is above the maximum".to_string());
+        }
     }
     if let Some(value) = &value.actor_count {
-        if *(value) < 0 { return Err("usacc_simulation_runs.actor_count is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("usacc_simulation_runs.actor_count is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.event_count {
-        if *(value) < 0 { return Err("usacc_simulation_runs.event_count is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("usacc_simulation_runs.event_count is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.metrics {
-        if !(value).is_object() { return Err("usacc_simulation_runs.metrics must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("usacc_simulation_runs.metrics must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.trace {
-        if !(value).is_array() { return Err("usacc_simulation_runs.trace must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err("usacc_simulation_runs.trace must be a JSON array".to_string());
+        }
     }
     if let Some(value) = &value.input {
-        if !(value).is_object() { return Err("usacc_simulation_runs.input must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("usacc_simulation_runs.input must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const USACC_AUDIT_EVENTS_TABLE: &str = "usacc_audit_events";
-pub const USACC_AUDIT_EVENTS_COLUMNS: &[&str] = &["id", "case_id", "actor_user_id", "event_type", "event_hash", "source", "payload", "created_at"];
+pub const USACC_AUDIT_EVENTS_COLUMNS: &[&str] = &[
+    "id",
+    "case_id",
+    "actor_user_id",
+    "event_type",
+    "event_hash",
+    "source",
+    "payload",
+    "created_at",
+];
 pub const USACC_AUDIT_EVENTS_SELECT_SQL: &str = r###"select
       id::text as id,
       case_id::text as case_id,
@@ -17299,10 +27251,22 @@ pub struct UsaccAuditEventsInsert {
 }
 
 pub fn validate_usacc_audit_events_row(value: &UsaccAuditEventsRow) -> Result<(), String> {
-    validate_string_length("usacc_audit_events.event_type", &value.event_type, None, Some(96))?;
-    validate_string_length("usacc_audit_events.event_hash", &value.event_hash, None, Some(128))?;
+    validate_string_length(
+        "usacc_audit_events.event_type",
+        &value.event_type,
+        None,
+        Some(96),
+    )?;
+    validate_string_length(
+        "usacc_audit_events.event_hash",
+        &value.event_hash,
+        None,
+        Some(128),
+    )?;
     validate_string_length("usacc_audit_events.source", &value.source, None, Some(80))?;
-    if !(&value.payload).is_object() { return Err("usacc_audit_events.payload must be a JSON object".to_string()); }
+    if !(&value.payload).is_object() {
+        return Err("usacc_audit_events.payload must be a JSON object".to_string());
+    }
     Ok(())
 }
 
@@ -17317,13 +27281,49 @@ pub fn validate_usacc_audit_events_insert(value: &UsaccAuditEventsInsert) -> Res
         validate_string_length("usacc_audit_events.source", value, None, Some(80))?;
     }
     if let Some(value) = &value.payload {
-        if !(value).is_object() { return Err("usacc_audit_events.payload must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("usacc_audit_events.payload must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const BENEFACTOR_LEADS_TABLE: &str = "benefactor.benefactor_leads";
-pub const BENEFACTOR_LEADS_COLUMNS: &[&str] = &["id", "business_name", "owner_first_name", "owner_last_name", "primary_email", "secondary_email", "primary_phone", "website_url", "service_category", "service_subcategories", "city", "state", "zip_code", "country", "service_area", "lead_status", "outreach_status", "total_outreach_attempts", "last_outreach_at", "contact_attempts", "source_url", "source_query", "source_tool", "source_engine", "is_verified", "tags", "meta_data", "notes", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const BENEFACTOR_LEADS_COLUMNS: &[&str] = &[
+    "id",
+    "business_name",
+    "owner_first_name",
+    "owner_last_name",
+    "primary_email",
+    "secondary_email",
+    "primary_phone",
+    "website_url",
+    "service_category",
+    "service_subcategories",
+    "city",
+    "state",
+    "zip_code",
+    "country",
+    "service_area",
+    "lead_status",
+    "outreach_status",
+    "total_outreach_attempts",
+    "last_outreach_at",
+    "contact_attempts",
+    "source_url",
+    "source_query",
+    "source_tool",
+    "source_engine",
+    "is_verified",
+    "tags",
+    "meta_data",
+    "notes",
+    "is_soft_deleted",
+    "created_at",
+    "updated_at",
+    "created_by",
+    "updated_by",
+];
 pub const BENEFACTOR_LEADS_SELECT_SQL: &str = r###"select
       id::text as id,
       business_name,
@@ -17374,7 +27374,16 @@ pub enum BenefactorLeadsLeadStatus {
 }
 
 impl BenefactorLeadsLeadStatus {
-    pub const VALUES: &'static [&'static str] = &["new", "contacted", "replied", "booked", "rejected", "unsubscribed", "unqualified", "do_not_contact"];
+    pub const VALUES: &'static [&'static str] = &[
+        "new",
+        "contacted",
+        "replied",
+        "booked",
+        "rejected",
+        "unsubscribed",
+        "unqualified",
+        "do_not_contact",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -17522,10 +27531,30 @@ pub struct BenefactorLeadsInsert {
 }
 
 pub fn validate_benefactor_leads_row(value: &BenefactorLeadsRow) -> Result<(), String> {
-    validate_string_length("benefactor_leads.business_name", &value.business_name, None, Some(300))?;
-    validate_string_length("benefactor_leads.owner_first_name", &value.owner_first_name, None, Some(120))?;
-    validate_string_length("benefactor_leads.owner_last_name", &value.owner_last_name, None, Some(130))?;
-    validate_string_length("benefactor_leads.primary_email", &value.primary_email, None, Some(255))?;
+    validate_string_length(
+        "benefactor_leads.business_name",
+        &value.business_name,
+        None,
+        Some(300),
+    )?;
+    validate_string_length(
+        "benefactor_leads.owner_first_name",
+        &value.owner_first_name,
+        None,
+        Some(120),
+    )?;
+    validate_string_length(
+        "benefactor_leads.owner_last_name",
+        &value.owner_last_name,
+        None,
+        Some(130),
+    )?;
+    validate_string_length(
+        "benefactor_leads.primary_email",
+        &value.primary_email,
+        None,
+        Some(255),
+    )?;
     if let Some(value) = &value.secondary_email {
         validate_string_length("benefactor_leads.secondary_email", value, None, Some(255))?;
     }
@@ -17535,8 +27564,15 @@ pub fn validate_benefactor_leads_row(value: &BenefactorLeadsRow) -> Result<(), S
     if let Some(value) = &value.website_url {
         validate_string_length("benefactor_leads.website_url", value, None, Some(500))?;
     }
-    validate_string_length("benefactor_leads.service_category", &value.service_category, None, Some(60))?;
-    if !(&value.service_subcategories).is_array() { return Err("benefactor_leads.service_subcategories must be a JSON array".to_string()); }
+    validate_string_length(
+        "benefactor_leads.service_category",
+        &value.service_category,
+        None,
+        Some(60),
+    )?;
+    if !(&value.service_subcategories).is_array() {
+        return Err("benefactor_leads.service_subcategories must be a JSON array".to_string());
+    }
     if let Some(value) = &value.city {
         validate_string_length("benefactor_leads.city", value, None, Some(120))?;
     }
@@ -17550,9 +27586,32 @@ pub fn validate_benefactor_leads_row(value: &BenefactorLeadsRow) -> Result<(), S
     if let Some(value) = &value.service_area {
         validate_string_length("benefactor_leads.service_area", value, None, Some(500))?;
     }
-    if !["new", "contacted", "replied", "booked", "rejected", "unsubscribed", "unqualified", "do_not_contact"].contains(&(&value.lead_status).as_str()) { return Err(format!("unsupported benefactor_leads.lead_status: {}", &value.lead_status)); }
-    if !["pending", "new", "contacted", "failed"].contains(&(&value.outreach_status).as_str()) { return Err(format!("unsupported benefactor_leads.outreach_status: {}", &value.outreach_status)); }
-    if !(&value.contact_attempts).is_array() { return Err("benefactor_leads.contact_attempts must be a JSON array".to_string()); }
+    if ![
+        "new",
+        "contacted",
+        "replied",
+        "booked",
+        "rejected",
+        "unsubscribed",
+        "unqualified",
+        "do_not_contact",
+    ]
+    .contains(&(&value.lead_status).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_leads.lead_status: {}",
+            &value.lead_status
+        ));
+    }
+    if !["pending", "new", "contacted", "failed"].contains(&(&value.outreach_status).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_leads.outreach_status: {}",
+            &value.outreach_status
+        ));
+    }
+    if !(&value.contact_attempts).is_array() {
+        return Err("benefactor_leads.contact_attempts must be a JSON array".to_string());
+    }
     if let Some(value) = &value.source_url {
         validate_string_length("benefactor_leads.source_url", value, None, Some(1000))?;
     }
@@ -17565,8 +27624,12 @@ pub fn validate_benefactor_leads_row(value: &BenefactorLeadsRow) -> Result<(), S
     if let Some(value) = &value.source_engine {
         validate_string_length("benefactor_leads.source_engine", value, None, Some(30))?;
     }
-    if !(&value.tags).is_array() { return Err("benefactor_leads.tags must be a JSON array".to_string()); }
-    if !(&value.meta_data).is_object() { return Err("benefactor_leads.meta_data must be a JSON object".to_string()); }
+    if !(&value.tags).is_array() {
+        return Err("benefactor_leads.tags must be a JSON array".to_string());
+    }
+    if !(&value.meta_data).is_object() {
+        return Err("benefactor_leads.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
@@ -17596,7 +27659,9 @@ pub fn validate_benefactor_leads_insert(value: &BenefactorLeadsInsert) -> Result
         validate_string_length("benefactor_leads.service_category", value, None, Some(60))?;
     }
     if let Some(value) = &value.service_subcategories {
-        if !(value).is_array() { return Err("benefactor_leads.service_subcategories must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err("benefactor_leads.service_subcategories must be a JSON array".to_string());
+        }
     }
     if let Some(value) = &value.city {
         validate_string_length("benefactor_leads.city", value, None, Some(120))?;
@@ -17614,13 +27679,36 @@ pub fn validate_benefactor_leads_insert(value: &BenefactorLeadsInsert) -> Result
         validate_string_length("benefactor_leads.service_area", value, None, Some(500))?;
     }
     if let Some(value) = &value.lead_status {
-        if !["new", "contacted", "replied", "booked", "rejected", "unsubscribed", "unqualified", "do_not_contact"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_leads.lead_status: {}", value)); }
+        if ![
+            "new",
+            "contacted",
+            "replied",
+            "booked",
+            "rejected",
+            "unsubscribed",
+            "unqualified",
+            "do_not_contact",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported benefactor_leads.lead_status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.outreach_status {
-        if !["pending", "new", "contacted", "failed"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_leads.outreach_status: {}", value)); }
+        if !["pending", "new", "contacted", "failed"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_leads.outreach_status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.contact_attempts {
-        if !(value).is_array() { return Err("benefactor_leads.contact_attempts must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err("benefactor_leads.contact_attempts must be a JSON array".to_string());
+        }
     }
     if let Some(value) = &value.source_url {
         validate_string_length("benefactor_leads.source_url", value, None, Some(1000))?;
@@ -17635,16 +27723,51 @@ pub fn validate_benefactor_leads_insert(value: &BenefactorLeadsInsert) -> Result
         validate_string_length("benefactor_leads.source_engine", value, None, Some(30))?;
     }
     if let Some(value) = &value.tags {
-        if !(value).is_array() { return Err("benefactor_leads.tags must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err("benefactor_leads.tags must be a JSON array".to_string());
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("benefactor_leads.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("benefactor_leads.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const BENEFACTOR_LEADS_DOMAINS_TABLE: &str = "benefactor.benefactor_leads_domains";
-pub const BENEFACTOR_LEADS_DOMAINS_COLUMNS: &[&str] = &["id", "domain", "domain_kind", "status", "reason", "source", "is_blacklisted", "is_blocked", "is_permanently_blocked", "blocked_reason", "blocked_until", "skip_until", "scrape_count", "skip_count", "skipped_count", "email_found_count", "lead_inserted_count", "last_seen_at", "last_scraped_at", "last_skipped_at", "last_email_found_at", "last_lead_inserted_at", "last_seen_url", "meta_data", "is_active", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const BENEFACTOR_LEADS_DOMAINS_COLUMNS: &[&str] = &[
+    "id",
+    "domain",
+    "domain_kind",
+    "status",
+    "reason",
+    "source",
+    "is_blacklisted",
+    "is_blocked",
+    "is_permanently_blocked",
+    "blocked_reason",
+    "blocked_until",
+    "skip_until",
+    "scrape_count",
+    "skip_count",
+    "skipped_count",
+    "email_found_count",
+    "lead_inserted_count",
+    "last_seen_at",
+    "last_scraped_at",
+    "last_skipped_at",
+    "last_email_found_at",
+    "last_lead_inserted_at",
+    "last_seen_url",
+    "meta_data",
+    "is_active",
+    "is_soft_deleted",
+    "created_at",
+    "updated_at",
+    "created_by",
+    "updated_by",
+];
 pub const BENEFACTOR_LEADS_DOMAINS_SELECT_SQL: &str = r###"select
       id::text as id,
       domain,
@@ -17719,7 +27842,13 @@ pub enum BenefactorLeadsDomainsStatus {
 }
 
 impl BenefactorLeadsDomainsStatus {
-    pub const VALUES: &'static [&'static str] = &["allowed", "blocked", "skipped", "scraped_recently", "recently_scraped"];
+    pub const VALUES: &'static [&'static str] = &[
+        "allowed",
+        "blocked",
+        "skipped",
+        "scraped_recently",
+        "recently_scraped",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -17818,36 +27947,119 @@ pub struct BenefactorLeadsDomainsInsert {
     pub updated_by: Option<String>,
 }
 
-pub fn validate_benefactor_leads_domains_row(value: &BenefactorLeadsDomainsRow) -> Result<(), String> {
-    validate_string_length("benefactor_leads_domains.domain", &value.domain, None, Some(255))?;
-    if !["email", "website"].contains(&(&value.domain_kind).as_str()) { return Err(format!("unsupported benefactor_leads_domains.domain_kind: {}", &value.domain_kind)); }
-    if !["allowed", "blocked", "skipped", "scraped_recently", "recently_scraped"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_leads_domains.status: {}", &value.status)); }
-    validate_string_length("benefactor_leads_domains.source", &value.source, None, Some(80))?;
-    if !(&value.meta_data).is_object() { return Err("benefactor_leads_domains.meta_data must be a JSON object".to_string()); }
+pub fn validate_benefactor_leads_domains_row(
+    value: &BenefactorLeadsDomainsRow,
+) -> Result<(), String> {
+    validate_string_length(
+        "benefactor_leads_domains.domain",
+        &value.domain,
+        None,
+        Some(255),
+    )?;
+    if !["email", "website"].contains(&(&value.domain_kind).as_str()) {
+        return Err(format!(
+            "unsupported benefactor_leads_domains.domain_kind: {}",
+            &value.domain_kind
+        ));
+    }
+    if ![
+        "allowed",
+        "blocked",
+        "skipped",
+        "scraped_recently",
+        "recently_scraped",
+    ]
+    .contains(&(&value.status).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_leads_domains.status: {}",
+            &value.status
+        ));
+    }
+    validate_string_length(
+        "benefactor_leads_domains.source",
+        &value.source,
+        None,
+        Some(80),
+    )?;
+    if !(&value.meta_data).is_object() {
+        return Err("benefactor_leads_domains.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_leads_domains_insert(value: &BenefactorLeadsDomainsInsert) -> Result<(), String> {
+pub fn validate_benefactor_leads_domains_insert(
+    value: &BenefactorLeadsDomainsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.domain {
         validate_string_length("benefactor_leads_domains.domain", value, None, Some(255))?;
     }
     if let Some(value) = &value.domain_kind {
-        if !["email", "website"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_leads_domains.domain_kind: {}", value)); }
+        if !["email", "website"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported benefactor_leads_domains.domain_kind: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.status {
-        if !["allowed", "blocked", "skipped", "scraped_recently", "recently_scraped"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_leads_domains.status: {}", value)); }
+        if ![
+            "allowed",
+            "blocked",
+            "skipped",
+            "scraped_recently",
+            "recently_scraped",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported benefactor_leads_domains.status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.source {
         validate_string_length("benefactor_leads_domains.source", value, None, Some(80))?;
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("benefactor_leads_domains.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("benefactor_leads_domains.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const BENEFACTOR_SEARCH_LOCATIONS_TABLE: &str = "benefactor.benefactor_search_locations";
-pub const BENEFACTOR_SEARCH_LOCATIONS_COLUMNS: &[&str] = &["id", "slug", "city", "state", "state_code", "country", "metro_area", "military_area", "primary_installation", "installation_aliases", "location_type", "priority", "search_weight", "total_query_runs", "total_emails_inserted", "success_count", "failure_count", "last_run_at", "last_success_at", "last_failure_at", "cooldown_until", "meta_data", "is_active", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const BENEFACTOR_SEARCH_LOCATIONS_COLUMNS: &[&str] = &[
+    "id",
+    "slug",
+    "city",
+    "state",
+    "state_code",
+    "country",
+    "metro_area",
+    "military_area",
+    "primary_installation",
+    "installation_aliases",
+    "location_type",
+    "priority",
+    "search_weight",
+    "total_query_runs",
+    "total_emails_inserted",
+    "success_count",
+    "failure_count",
+    "last_run_at",
+    "last_success_at",
+    "last_failure_at",
+    "cooldown_until",
+    "meta_data",
+    "is_active",
+    "is_soft_deleted",
+    "created_at",
+    "updated_at",
+    "created_by",
+    "updated_by",
+];
 pub const BENEFACTOR_SEARCH_LOCATIONS_SELECT_SQL: &str = r###"select
       id::text as id,
       slug,
@@ -17946,30 +28158,85 @@ pub struct BenefactorSearchLocationsInsert {
     pub updated_by: Option<String>,
 }
 
-pub fn validate_benefactor_search_locations_row(value: &BenefactorSearchLocationsRow) -> Result<(), String> {
-    validate_string_length("benefactor_search_locations.slug", &value.slug, None, Some(160))?;
-    validate_string_length("benefactor_search_locations.city", &value.city, None, Some(120))?;
-    validate_string_length("benefactor_search_locations.state", &value.state, None, Some(80))?;
+pub fn validate_benefactor_search_locations_row(
+    value: &BenefactorSearchLocationsRow,
+) -> Result<(), String> {
+    validate_string_length(
+        "benefactor_search_locations.slug",
+        &value.slug,
+        None,
+        Some(160),
+    )?;
+    validate_string_length(
+        "benefactor_search_locations.city",
+        &value.city,
+        None,
+        Some(120),
+    )?;
+    validate_string_length(
+        "benefactor_search_locations.state",
+        &value.state,
+        None,
+        Some(80),
+    )?;
     if let Some(value) = &value.state_code {
-        validate_string_length("benefactor_search_locations.state_code", value, None, Some(10))?;
+        validate_string_length(
+            "benefactor_search_locations.state_code",
+            value,
+            None,
+            Some(10),
+        )?;
     }
-    validate_string_length("benefactor_search_locations.country", &value.country, None, Some(80))?;
+    validate_string_length(
+        "benefactor_search_locations.country",
+        &value.country,
+        None,
+        Some(80),
+    )?;
     if let Some(value) = &value.metro_area {
-        validate_string_length("benefactor_search_locations.metro_area", value, None, Some(220))?;
+        validate_string_length(
+            "benefactor_search_locations.metro_area",
+            value,
+            None,
+            Some(220),
+        )?;
     }
     if let Some(value) = &value.military_area {
-        validate_string_length("benefactor_search_locations.military_area", value, None, Some(220))?;
+        validate_string_length(
+            "benefactor_search_locations.military_area",
+            value,
+            None,
+            Some(220),
+        )?;
     }
     if let Some(value) = &value.primary_installation {
-        validate_string_length("benefactor_search_locations.primary_installation", value, None, Some(220))?;
+        validate_string_length(
+            "benefactor_search_locations.primary_installation",
+            value,
+            None,
+            Some(220),
+        )?;
     }
-    if !(&value.installation_aliases).is_array() { return Err("benefactor_search_locations.installation_aliases must be a JSON array".to_string()); }
-    validate_string_length("benefactor_search_locations.location_type", &value.location_type, None, Some(80))?;
-    if !(&value.meta_data).is_object() { return Err("benefactor_search_locations.meta_data must be a JSON object".to_string()); }
+    if !(&value.installation_aliases).is_array() {
+        return Err(
+            "benefactor_search_locations.installation_aliases must be a JSON array".to_string(),
+        );
+    }
+    validate_string_length(
+        "benefactor_search_locations.location_type",
+        &value.location_type,
+        None,
+        Some(80),
+    )?;
+    if !(&value.meta_data).is_object() {
+        return Err("benefactor_search_locations.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_search_locations_insert(value: &BenefactorSearchLocationsInsert) -> Result<(), String> {
+pub fn validate_benefactor_search_locations_insert(
+    value: &BenefactorSearchLocationsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.slug {
         validate_string_length("benefactor_search_locations.slug", value, None, Some(160))?;
     }
@@ -17980,34 +28247,107 @@ pub fn validate_benefactor_search_locations_insert(value: &BenefactorSearchLocat
         validate_string_length("benefactor_search_locations.state", value, None, Some(80))?;
     }
     if let Some(value) = &value.state_code {
-        validate_string_length("benefactor_search_locations.state_code", value, None, Some(10))?;
+        validate_string_length(
+            "benefactor_search_locations.state_code",
+            value,
+            None,
+            Some(10),
+        )?;
     }
     if let Some(value) = &value.country {
         validate_string_length("benefactor_search_locations.country", value, None, Some(80))?;
     }
     if let Some(value) = &value.metro_area {
-        validate_string_length("benefactor_search_locations.metro_area", value, None, Some(220))?;
+        validate_string_length(
+            "benefactor_search_locations.metro_area",
+            value,
+            None,
+            Some(220),
+        )?;
     }
     if let Some(value) = &value.military_area {
-        validate_string_length("benefactor_search_locations.military_area", value, None, Some(220))?;
+        validate_string_length(
+            "benefactor_search_locations.military_area",
+            value,
+            None,
+            Some(220),
+        )?;
     }
     if let Some(value) = &value.primary_installation {
-        validate_string_length("benefactor_search_locations.primary_installation", value, None, Some(220))?;
+        validate_string_length(
+            "benefactor_search_locations.primary_installation",
+            value,
+            None,
+            Some(220),
+        )?;
     }
     if let Some(value) = &value.installation_aliases {
-        if !(value).is_array() { return Err("benefactor_search_locations.installation_aliases must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err(
+                "benefactor_search_locations.installation_aliases must be a JSON array".to_string(),
+            );
+        }
     }
     if let Some(value) = &value.location_type {
-        validate_string_length("benefactor_search_locations.location_type", value, None, Some(80))?;
+        validate_string_length(
+            "benefactor_search_locations.location_type",
+            value,
+            None,
+            Some(80),
+        )?;
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("benefactor_search_locations.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("benefactor_search_locations.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const BENEFACTOR_SCRAPE_QUERIES_TABLE: &str = "benefactor.benefactor_scrape_queries";
-pub const BENEFACTOR_SCRAPE_QUERIES_COLUMNS: &[&str] = &["id", "query_text", "query_hash", "benefactor_icp_slug", "benefactor_icp_name", "benefactor_search_location_id", "service_category", "target_city", "target_state", "target_country", "target_military_area", "target_installation", "query_variant", "search_page_depth", "priority", "total_runs", "total_urls_visited", "total_emails_found", "total_emails_inserted", "total_emails_duplicate", "total_errors", "success_count", "failure_count", "last_run_at", "last_success_at", "last_failure_at", "last_run_emails_found", "last_run_emails_inserted", "last_run_success", "last_run_duration_ms", "last_run_error", "cooldown_until", "consecutive_zero_new_runs", "last_zero_new_run_at", "meta_data", "is_active", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const BENEFACTOR_SCRAPE_QUERIES_COLUMNS: &[&str] = &[
+    "id",
+    "query_text",
+    "query_hash",
+    "benefactor_icp_slug",
+    "benefactor_icp_name",
+    "benefactor_search_location_id",
+    "service_category",
+    "target_city",
+    "target_state",
+    "target_country",
+    "target_military_area",
+    "target_installation",
+    "query_variant",
+    "search_page_depth",
+    "priority",
+    "total_runs",
+    "total_urls_visited",
+    "total_emails_found",
+    "total_emails_inserted",
+    "total_emails_duplicate",
+    "total_errors",
+    "success_count",
+    "failure_count",
+    "last_run_at",
+    "last_success_at",
+    "last_failure_at",
+    "last_run_emails_found",
+    "last_run_emails_inserted",
+    "last_run_success",
+    "last_run_duration_ms",
+    "last_run_error",
+    "cooldown_until",
+    "consecutive_zero_new_runs",
+    "last_zero_new_run_at",
+    "meta_data",
+    "is_active",
+    "is_soft_deleted",
+    "created_at",
+    "updated_at",
+    "created_by",
+    "updated_by",
+];
 pub const BENEFACTOR_SCRAPE_QUERIES_SELECT_SQL: &str = r###"select
       id::text as id,
       query_text,
@@ -18063,7 +28403,13 @@ pub enum BenefactorScrapeQueriesQueryVariant {
 }
 
 impl BenefactorScrapeQueriesQueryVariant {
-    pub const VALUES: &'static [&'static str] = &["email_contact", "contact_us", "website_domain", "fuzzy_email", "fuzzy_city"];
+    pub const VALUES: &'static [&'static str] = &[
+        "email_contact",
+        "contact_us",
+        "website_domain",
+        "fuzzy_email",
+        "fuzzy_city",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -18184,72 +28530,226 @@ pub struct BenefactorScrapeQueriesInsert {
     pub updated_by: Option<String>,
 }
 
-pub fn validate_benefactor_scrape_queries_row(value: &BenefactorScrapeQueriesRow) -> Result<(), String> {
-    validate_string_length("benefactor_scrape_queries.query_hash", &value.query_hash, None, Some(64))?;
+pub fn validate_benefactor_scrape_queries_row(
+    value: &BenefactorScrapeQueriesRow,
+) -> Result<(), String> {
+    validate_string_length(
+        "benefactor_scrape_queries.query_hash",
+        &value.query_hash,
+        None,
+        Some(64),
+    )?;
     if let Some(value) = &value.benefactor_icp_slug {
-        validate_string_length("benefactor_scrape_queries.benefactor_icp_slug", value, None, Some(160))?;
+        validate_string_length(
+            "benefactor_scrape_queries.benefactor_icp_slug",
+            value,
+            None,
+            Some(160),
+        )?;
     }
     if let Some(value) = &value.benefactor_icp_name {
-        validate_string_length("benefactor_scrape_queries.benefactor_icp_name", value, None, Some(220))?;
+        validate_string_length(
+            "benefactor_scrape_queries.benefactor_icp_name",
+            value,
+            None,
+            Some(220),
+        )?;
     }
-    validate_string_length("benefactor_scrape_queries.service_category", &value.service_category, None, Some(60))?;
+    validate_string_length(
+        "benefactor_scrape_queries.service_category",
+        &value.service_category,
+        None,
+        Some(60),
+    )?;
     if let Some(value) = &value.target_city {
-        validate_string_length("benefactor_scrape_queries.target_city", value, None, Some(120))?;
+        validate_string_length(
+            "benefactor_scrape_queries.target_city",
+            value,
+            None,
+            Some(120),
+        )?;
     }
     if let Some(value) = &value.target_state {
-        validate_string_length("benefactor_scrape_queries.target_state", value, None, Some(80))?;
+        validate_string_length(
+            "benefactor_scrape_queries.target_state",
+            value,
+            None,
+            Some(80),
+        )?;
     }
-    validate_string_length("benefactor_scrape_queries.target_country", &value.target_country, None, Some(80))?;
+    validate_string_length(
+        "benefactor_scrape_queries.target_country",
+        &value.target_country,
+        None,
+        Some(80),
+    )?;
     if let Some(value) = &value.target_military_area {
-        validate_string_length("benefactor_scrape_queries.target_military_area", value, None, Some(220))?;
+        validate_string_length(
+            "benefactor_scrape_queries.target_military_area",
+            value,
+            None,
+            Some(220),
+        )?;
     }
     if let Some(value) = &value.target_installation {
-        validate_string_length("benefactor_scrape_queries.target_installation", value, None, Some(220))?;
+        validate_string_length(
+            "benefactor_scrape_queries.target_installation",
+            value,
+            None,
+            Some(220),
+        )?;
     }
-    if !["email_contact", "contact_us", "website_domain", "fuzzy_email", "fuzzy_city"].contains(&(&value.query_variant).as_str()) { return Err(format!("unsupported benefactor_scrape_queries.query_variant: {}", &value.query_variant)); }
-    if !(&value.meta_data).is_object() { return Err("benefactor_scrape_queries.meta_data must be a JSON object".to_string()); }
+    if ![
+        "email_contact",
+        "contact_us",
+        "website_domain",
+        "fuzzy_email",
+        "fuzzy_city",
+    ]
+    .contains(&(&value.query_variant).as_str())
+    {
+        return Err(format!(
+            "unsupported benefactor_scrape_queries.query_variant: {}",
+            &value.query_variant
+        ));
+    }
+    if !(&value.meta_data).is_object() {
+        return Err("benefactor_scrape_queries.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_scrape_queries_insert(value: &BenefactorScrapeQueriesInsert) -> Result<(), String> {
+pub fn validate_benefactor_scrape_queries_insert(
+    value: &BenefactorScrapeQueriesInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.query_hash {
-        validate_string_length("benefactor_scrape_queries.query_hash", value, None, Some(64))?;
+        validate_string_length(
+            "benefactor_scrape_queries.query_hash",
+            value,
+            None,
+            Some(64),
+        )?;
     }
     if let Some(value) = &value.benefactor_icp_slug {
-        validate_string_length("benefactor_scrape_queries.benefactor_icp_slug", value, None, Some(160))?;
+        validate_string_length(
+            "benefactor_scrape_queries.benefactor_icp_slug",
+            value,
+            None,
+            Some(160),
+        )?;
     }
     if let Some(value) = &value.benefactor_icp_name {
-        validate_string_length("benefactor_scrape_queries.benefactor_icp_name", value, None, Some(220))?;
+        validate_string_length(
+            "benefactor_scrape_queries.benefactor_icp_name",
+            value,
+            None,
+            Some(220),
+        )?;
     }
     if let Some(value) = &value.service_category {
-        validate_string_length("benefactor_scrape_queries.service_category", value, None, Some(60))?;
+        validate_string_length(
+            "benefactor_scrape_queries.service_category",
+            value,
+            None,
+            Some(60),
+        )?;
     }
     if let Some(value) = &value.target_city {
-        validate_string_length("benefactor_scrape_queries.target_city", value, None, Some(120))?;
+        validate_string_length(
+            "benefactor_scrape_queries.target_city",
+            value,
+            None,
+            Some(120),
+        )?;
     }
     if let Some(value) = &value.target_state {
-        validate_string_length("benefactor_scrape_queries.target_state", value, None, Some(80))?;
+        validate_string_length(
+            "benefactor_scrape_queries.target_state",
+            value,
+            None,
+            Some(80),
+        )?;
     }
     if let Some(value) = &value.target_country {
-        validate_string_length("benefactor_scrape_queries.target_country", value, None, Some(80))?;
+        validate_string_length(
+            "benefactor_scrape_queries.target_country",
+            value,
+            None,
+            Some(80),
+        )?;
     }
     if let Some(value) = &value.target_military_area {
-        validate_string_length("benefactor_scrape_queries.target_military_area", value, None, Some(220))?;
+        validate_string_length(
+            "benefactor_scrape_queries.target_military_area",
+            value,
+            None,
+            Some(220),
+        )?;
     }
     if let Some(value) = &value.target_installation {
-        validate_string_length("benefactor_scrape_queries.target_installation", value, None, Some(220))?;
+        validate_string_length(
+            "benefactor_scrape_queries.target_installation",
+            value,
+            None,
+            Some(220),
+        )?;
     }
     if let Some(value) = &value.query_variant {
-        if !["email_contact", "contact_us", "website_domain", "fuzzy_email", "fuzzy_city"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_scrape_queries.query_variant: {}", value)); }
+        if ![
+            "email_contact",
+            "contact_us",
+            "website_domain",
+            "fuzzy_email",
+            "fuzzy_city",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!(
+                "unsupported benefactor_scrape_queries.query_variant: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("benefactor_scrape_queries.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("benefactor_scrape_queries.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
-pub const BENEFACTOR_DOMAIN_SEARCH_TRACKING_TABLE: &str = "benefactor.benefactor_domain_search_tracking";
-pub const BENEFACTOR_DOMAIN_SEARCH_TRACKING_COLUMNS: &[&str] = &["id", "domain", "for_what", "search_result_appearances", "queued_visit_count", "visit_count", "good_result_count", "bad_result_count", "email_found_count", "lead_inserted_count", "last_queued_at", "last_visited_at", "last_good_result_at", "last_bad_result_at", "last_email_found_at", "last_lead_inserted_at", "last_good_url", "last_bad_url", "blocked_until", "is_permanently_blocked", "blocked_reason", "meta_data", "is_active", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const BENEFACTOR_DOMAIN_SEARCH_TRACKING_TABLE: &str =
+    "benefactor.benefactor_domain_search_tracking";
+pub const BENEFACTOR_DOMAIN_SEARCH_TRACKING_COLUMNS: &[&str] = &[
+    "id",
+    "domain",
+    "for_what",
+    "search_result_appearances",
+    "queued_visit_count",
+    "visit_count",
+    "good_result_count",
+    "bad_result_count",
+    "email_found_count",
+    "lead_inserted_count",
+    "last_queued_at",
+    "last_visited_at",
+    "last_good_result_at",
+    "last_bad_result_at",
+    "last_email_found_at",
+    "last_lead_inserted_at",
+    "last_good_url",
+    "last_bad_url",
+    "blocked_until",
+    "is_permanently_blocked",
+    "blocked_reason",
+    "meta_data",
+    "is_active",
+    "is_soft_deleted",
+    "created_at",
+    "updated_at",
+    "created_by",
+    "updated_by",
+];
 pub const BENEFACTOR_DOMAIN_SEARCH_TRACKING_SELECT_SQL: &str = r###"select
       id::text as id,
       domain,
@@ -18348,28 +28848,84 @@ pub struct BenefactorDomainSearchTrackingInsert {
     pub updated_by: Option<String>,
 }
 
-pub fn validate_benefactor_domain_search_tracking_row(value: &BenefactorDomainSearchTrackingRow) -> Result<(), String> {
-    validate_string_length("benefactor_domain_search_tracking.domain", &value.domain, None, Some(255))?;
-    validate_string_length("benefactor_domain_search_tracking.for_what", &value.for_what, None, Some(80))?;
-    if !(&value.meta_data).is_object() { return Err("benefactor_domain_search_tracking.meta_data must be a JSON object".to_string()); }
+pub fn validate_benefactor_domain_search_tracking_row(
+    value: &BenefactorDomainSearchTrackingRow,
+) -> Result<(), String> {
+    validate_string_length(
+        "benefactor_domain_search_tracking.domain",
+        &value.domain,
+        None,
+        Some(255),
+    )?;
+    validate_string_length(
+        "benefactor_domain_search_tracking.for_what",
+        &value.for_what,
+        None,
+        Some(80),
+    )?;
+    if !(&value.meta_data).is_object() {
+        return Err(
+            "benefactor_domain_search_tracking.meta_data must be a JSON object".to_string(),
+        );
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_domain_search_tracking_insert(value: &BenefactorDomainSearchTrackingInsert) -> Result<(), String> {
+pub fn validate_benefactor_domain_search_tracking_insert(
+    value: &BenefactorDomainSearchTrackingInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.domain {
-        validate_string_length("benefactor_domain_search_tracking.domain", value, None, Some(255))?;
+        validate_string_length(
+            "benefactor_domain_search_tracking.domain",
+            value,
+            None,
+            Some(255),
+        )?;
     }
     if let Some(value) = &value.for_what {
-        validate_string_length("benefactor_domain_search_tracking.for_what", value, None, Some(80))?;
+        validate_string_length(
+            "benefactor_domain_search_tracking.for_what",
+            value,
+            None,
+            Some(80),
+        )?;
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("benefactor_domain_search_tracking.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err(
+                "benefactor_domain_search_tracking.meta_data must be a JSON object".to_string(),
+            );
+        }
     }
     Ok(())
 }
 
 pub const BENEFACTOR_ICPS_TABLE: &str = "benefactor.benefactor_icps";
-pub const BENEFACTOR_ICPS_COLUMNS: &[&str] = &["id", "slug", "name", "category", "service_category", "description", "outcall_fit_score", "priority", "search_terms", "search_signals", "target_home_services", "target_medical", "target_legal", "target_events", "target_corporate", "target_industrial", "meta_data", "is_active", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const BENEFACTOR_ICPS_COLUMNS: &[&str] = &[
+    "id",
+    "slug",
+    "name",
+    "category",
+    "service_category",
+    "description",
+    "outcall_fit_score",
+    "priority",
+    "search_terms",
+    "search_signals",
+    "target_home_services",
+    "target_medical",
+    "target_legal",
+    "target_events",
+    "target_corporate",
+    "target_industrial",
+    "meta_data",
+    "is_active",
+    "is_soft_deleted",
+    "created_at",
+    "updated_at",
+    "created_by",
+    "updated_by",
+];
 pub const BENEFACTOR_ICPS_SELECT_SQL: &str = r###"select
       id::text as id,
       slug,
@@ -18457,10 +29013,21 @@ pub fn validate_benefactor_icps_row(value: &BenefactorIcpsRow) -> Result<(), Str
     validate_string_length("benefactor_icps.slug", &value.slug, None, Some(160))?;
     validate_string_length("benefactor_icps.name", &value.name, None, Some(220))?;
     validate_string_length("benefactor_icps.category", &value.category, None, Some(120))?;
-    validate_string_length("benefactor_icps.service_category", &value.service_category, None, Some(120))?;
-    if !(&value.search_terms).is_array() { return Err("benefactor_icps.search_terms must be a JSON array".to_string()); }
-    if !(&value.search_signals).is_array() { return Err("benefactor_icps.search_signals must be a JSON array".to_string()); }
-    if !(&value.meta_data).is_object() { return Err("benefactor_icps.meta_data must be a JSON object".to_string()); }
+    validate_string_length(
+        "benefactor_icps.service_category",
+        &value.service_category,
+        None,
+        Some(120),
+    )?;
+    if !(&value.search_terms).is_array() {
+        return Err("benefactor_icps.search_terms must be a JSON array".to_string());
+    }
+    if !(&value.search_signals).is_array() {
+        return Err("benefactor_icps.search_signals must be a JSON array".to_string());
+    }
+    if !(&value.meta_data).is_object() {
+        return Err("benefactor_icps.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
@@ -18478,19 +29045,42 @@ pub fn validate_benefactor_icps_insert(value: &BenefactorIcpsInsert) -> Result<(
         validate_string_length("benefactor_icps.service_category", value, None, Some(120))?;
     }
     if let Some(value) = &value.search_terms {
-        if !(value).is_array() { return Err("benefactor_icps.search_terms must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err("benefactor_icps.search_terms must be a JSON array".to_string());
+        }
     }
     if let Some(value) = &value.search_signals {
-        if !(value).is_array() { return Err("benefactor_icps.search_signals must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err("benefactor_icps.search_signals must be a JSON array".to_string());
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("benefactor_icps.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("benefactor_icps.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const BENEFACTOR_LEADS_THROTTLING_TABLE: &str = "benefactor.benefactor_leads_throttling";
-pub const BENEFACTOR_LEADS_THROTTLING_COLUMNS: &[&str] = &["id", "benefactor_lead_id", "email", "request_type", "last_request_at", "next_allowed_at", "request_count", "throttle_window_days", "last_request_source", "meta_data", "is_active", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const BENEFACTOR_LEADS_THROTTLING_COLUMNS: &[&str] = &[
+    "id",
+    "benefactor_lead_id",
+    "email",
+    "request_type",
+    "last_request_at",
+    "next_allowed_at",
+    "request_count",
+    "throttle_window_days",
+    "last_request_source",
+    "meta_data",
+    "is_active",
+    "is_soft_deleted",
+    "created_at",
+    "updated_at",
+    "created_by",
+    "updated_by",
+];
 pub const BENEFACTOR_LEADS_THROTTLING_SELECT_SQL: &str = r###"select
       id::text as id,
       benefactor_lead_id::text as benefactor_lead_id,
@@ -18553,34 +29143,91 @@ pub struct BenefactorLeadsThrottlingInsert {
     pub updated_by: Option<String>,
 }
 
-pub fn validate_benefactor_leads_throttling_row(value: &BenefactorLeadsThrottlingRow) -> Result<(), String> {
-    validate_string_length("benefactor_leads_throttling.email", &value.email, None, Some(255))?;
-    validate_string_length("benefactor_leads_throttling.request_type", &value.request_type, None, Some(100))?;
+pub fn validate_benefactor_leads_throttling_row(
+    value: &BenefactorLeadsThrottlingRow,
+) -> Result<(), String> {
+    validate_string_length(
+        "benefactor_leads_throttling.email",
+        &value.email,
+        None,
+        Some(255),
+    )?;
+    validate_string_length(
+        "benefactor_leads_throttling.request_type",
+        &value.request_type,
+        None,
+        Some(100),
+    )?;
     if let Some(value) = &value.last_request_source {
-        validate_string_length("benefactor_leads_throttling.last_request_source", value, None, Some(80))?;
+        validate_string_length(
+            "benefactor_leads_throttling.last_request_source",
+            value,
+            None,
+            Some(80),
+        )?;
     }
-    if !(&value.meta_data).is_object() { return Err("benefactor_leads_throttling.meta_data must be a JSON object".to_string()); }
+    if !(&value.meta_data).is_object() {
+        return Err("benefactor_leads_throttling.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_leads_throttling_insert(value: &BenefactorLeadsThrottlingInsert) -> Result<(), String> {
+pub fn validate_benefactor_leads_throttling_insert(
+    value: &BenefactorLeadsThrottlingInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.email {
         validate_string_length("benefactor_leads_throttling.email", value, None, Some(255))?;
     }
     if let Some(value) = &value.request_type {
-        validate_string_length("benefactor_leads_throttling.request_type", value, None, Some(100))?;
+        validate_string_length(
+            "benefactor_leads_throttling.request_type",
+            value,
+            None,
+            Some(100),
+        )?;
     }
     if let Some(value) = &value.last_request_source {
-        validate_string_length("benefactor_leads_throttling.last_request_source", value, None, Some(80))?;
+        validate_string_length(
+            "benefactor_leads_throttling.last_request_source",
+            value,
+            None,
+            Some(80),
+        )?;
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("benefactor_leads_throttling.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("benefactor_leads_throttling.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const BENEFACTOR_LEADS_REMINDERS_TABLE: &str = "benefactor.benefactor_leads_reminders";
-pub const BENEFACTOR_LEADS_REMINDERS_COLUMNS: &[&str] = &["id", "benefactor_lead_id", "reminder_type", "channel", "email", "first_name", "last_name", "subject", "original_request_sent_at", "original_request_message_id", "sent_at", "last_reminder_sent_at", "reminder_count", "last_reminder_message_id", "message_id", "tags", "meta_data", "is_active", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const BENEFACTOR_LEADS_REMINDERS_COLUMNS: &[&str] = &[
+    "id",
+    "benefactor_lead_id",
+    "reminder_type",
+    "channel",
+    "email",
+    "first_name",
+    "last_name",
+    "subject",
+    "original_request_sent_at",
+    "original_request_message_id",
+    "sent_at",
+    "last_reminder_sent_at",
+    "reminder_count",
+    "last_reminder_message_id",
+    "message_id",
+    "tags",
+    "meta_data",
+    "is_active",
+    "is_soft_deleted",
+    "created_at",
+    "updated_at",
+    "created_by",
+    "updated_by",
+];
 pub const BENEFACTOR_LEADS_REMINDERS_SELECT_SQL: &str = r###"select
       id::text as id,
       benefactor_lead_id::text as benefactor_lead_id,
@@ -18664,27 +29311,70 @@ pub struct BenefactorLeadsRemindersInsert {
     pub updated_by: Option<String>,
 }
 
-pub fn validate_benefactor_leads_reminders_row(value: &BenefactorLeadsRemindersRow) -> Result<(), String> {
-    validate_string_length("benefactor_leads_reminders.reminder_type", &value.reminder_type, None, Some(80))?;
-    validate_string_length("benefactor_leads_reminders.channel", &value.channel, None, Some(50))?;
-    validate_string_length("benefactor_leads_reminders.email", &value.email, None, Some(255))?;
+pub fn validate_benefactor_leads_reminders_row(
+    value: &BenefactorLeadsRemindersRow,
+) -> Result<(), String> {
+    validate_string_length(
+        "benefactor_leads_reminders.reminder_type",
+        &value.reminder_type,
+        None,
+        Some(80),
+    )?;
+    validate_string_length(
+        "benefactor_leads_reminders.channel",
+        &value.channel,
+        None,
+        Some(50),
+    )?;
+    validate_string_length(
+        "benefactor_leads_reminders.email",
+        &value.email,
+        None,
+        Some(255),
+    )?;
     if let Some(value) = &value.first_name {
-        validate_string_length("benefactor_leads_reminders.first_name", value, None, Some(160))?;
+        validate_string_length(
+            "benefactor_leads_reminders.first_name",
+            value,
+            None,
+            Some(160),
+        )?;
     }
     if let Some(value) = &value.last_name {
-        validate_string_length("benefactor_leads_reminders.last_name", value, None, Some(160))?;
+        validate_string_length(
+            "benefactor_leads_reminders.last_name",
+            value,
+            None,
+            Some(160),
+        )?;
     }
     if let Some(value) = &value.message_id {
-        validate_string_length("benefactor_leads_reminders.message_id", value, None, Some(255))?;
+        validate_string_length(
+            "benefactor_leads_reminders.message_id",
+            value,
+            None,
+            Some(255),
+        )?;
     }
-    if !(&value.tags).is_array() { return Err("benefactor_leads_reminders.tags must be a JSON array".to_string()); }
-    if !(&value.meta_data).is_object() { return Err("benefactor_leads_reminders.meta_data must be a JSON object".to_string()); }
+    if !(&value.tags).is_array() {
+        return Err("benefactor_leads_reminders.tags must be a JSON array".to_string());
+    }
+    if !(&value.meta_data).is_object() {
+        return Err("benefactor_leads_reminders.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
-pub fn validate_benefactor_leads_reminders_insert(value: &BenefactorLeadsRemindersInsert) -> Result<(), String> {
+pub fn validate_benefactor_leads_reminders_insert(
+    value: &BenefactorLeadsRemindersInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.reminder_type {
-        validate_string_length("benefactor_leads_reminders.reminder_type", value, None, Some(80))?;
+        validate_string_length(
+            "benefactor_leads_reminders.reminder_type",
+            value,
+            None,
+            Some(80),
+        )?;
     }
     if let Some(value) = &value.channel {
         validate_string_length("benefactor_leads_reminders.channel", value, None, Some(50))?;
@@ -18693,25 +29383,64 @@ pub fn validate_benefactor_leads_reminders_insert(value: &BenefactorLeadsReminde
         validate_string_length("benefactor_leads_reminders.email", value, None, Some(255))?;
     }
     if let Some(value) = &value.first_name {
-        validate_string_length("benefactor_leads_reminders.first_name", value, None, Some(160))?;
+        validate_string_length(
+            "benefactor_leads_reminders.first_name",
+            value,
+            None,
+            Some(160),
+        )?;
     }
     if let Some(value) = &value.last_name {
-        validate_string_length("benefactor_leads_reminders.last_name", value, None, Some(160))?;
+        validate_string_length(
+            "benefactor_leads_reminders.last_name",
+            value,
+            None,
+            Some(160),
+        )?;
     }
     if let Some(value) = &value.message_id {
-        validate_string_length("benefactor_leads_reminders.message_id", value, None, Some(255))?;
+        validate_string_length(
+            "benefactor_leads_reminders.message_id",
+            value,
+            None,
+            Some(255),
+        )?;
     }
     if let Some(value) = &value.tags {
-        if !(value).is_array() { return Err("benefactor_leads_reminders.tags must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err("benefactor_leads_reminders.tags must be a JSON array".to_string());
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("benefactor_leads_reminders.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("benefactor_leads_reminders.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const VCS_REPOSITORIES_TABLE: &str = "vcs_repositories";
-pub const VCS_REPOSITORIES_COLUMNS: &[&str] = &["id", "slug", "display_name", "vcs_kind", "remote_url", "default_branch", "mirror_path", "mirror_status", "visibility", "last_synced_at", "last_error", "size_bytes", "ref_count", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const VCS_REPOSITORIES_COLUMNS: &[&str] = &[
+    "id",
+    "slug",
+    "display_name",
+    "vcs_kind",
+    "remote_url",
+    "default_branch",
+    "mirror_path",
+    "mirror_status",
+    "visibility",
+    "last_synced_at",
+    "last_error",
+    "size_bytes",
+    "ref_count",
+    "meta_data",
+    "is_soft_deleted",
+    "created_at",
+    "updated_at",
+    "created_by",
+    "updated_by",
+];
 pub const VCS_REPOSITORIES_SELECT_SQL: &str = r###"select
       id::text as id,
       slug,
@@ -18781,7 +29510,8 @@ pub enum VcsRepositoriesMirrorStatus {
 }
 
 impl VcsRepositoriesMirrorStatus {
-    pub const VALUES: &'static [&'static str] = &["pending", "mirroring", "ready", "error", "disabled"];
+    pub const VALUES: &'static [&'static str] =
+        &["pending", "mirroring", "ready", "error", "disabled"];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -18893,16 +29623,53 @@ pub struct VcsRepositoriesInsert {
 
 pub fn validate_vcs_repositories_row(value: &VcsRepositoriesRow) -> Result<(), String> {
     validate_slug("vcs_repositories.slug", &value.slug)?;
-    validate_string_length("vcs_repositories.display_name", &value.display_name, None, Some(200))?;
-    if (&value.display_name).as_bytes().len() > 200 { return Err("vcs_repositories.display_name exceeds 200 bytes".to_string()); }
-    if !["git", "hg", "svn", "fossil"].contains(&(&value.vcs_kind).as_str()) { return Err(format!("unsupported vcs_repositories.vcs_kind: {}", &value.vcs_kind)); }
-    if (&value.remote_url).as_bytes().len() > 2048 { return Err("vcs_repositories.remote_url exceeds 2048 bytes".to_string()); }
-    validate_string_length("vcs_repositories.default_branch", &value.default_branch, None, Some(160))?;
-    if !["pending", "mirroring", "ready", "error", "disabled"].contains(&(&value.mirror_status).as_str()) { return Err(format!("unsupported vcs_repositories.mirror_status: {}", &value.mirror_status)); }
-    if !["private", "internal", "public"].contains(&(&value.visibility).as_str()) { return Err(format!("unsupported vcs_repositories.visibility: {}", &value.visibility)); }
-    if *(&value.size_bytes) < 0 { return Err("vcs_repositories.size_bytes is below the minimum".to_string()); }
-    if *(&value.ref_count) < 0 { return Err("vcs_repositories.ref_count is below the minimum".to_string()); }
-    if !(&value.meta_data).is_object() { return Err("vcs_repositories.meta_data must be a JSON object".to_string()); }
+    validate_string_length(
+        "vcs_repositories.display_name",
+        &value.display_name,
+        None,
+        Some(200),
+    )?;
+    if (&value.display_name).as_bytes().len() > 200 {
+        return Err("vcs_repositories.display_name exceeds 200 bytes".to_string());
+    }
+    if !["git", "hg", "svn", "fossil"].contains(&(&value.vcs_kind).as_str()) {
+        return Err(format!(
+            "unsupported vcs_repositories.vcs_kind: {}",
+            &value.vcs_kind
+        ));
+    }
+    if (&value.remote_url).as_bytes().len() > 2048 {
+        return Err("vcs_repositories.remote_url exceeds 2048 bytes".to_string());
+    }
+    validate_string_length(
+        "vcs_repositories.default_branch",
+        &value.default_branch,
+        None,
+        Some(160),
+    )?;
+    if !["pending", "mirroring", "ready", "error", "disabled"]
+        .contains(&(&value.mirror_status).as_str())
+    {
+        return Err(format!(
+            "unsupported vcs_repositories.mirror_status: {}",
+            &value.mirror_status
+        ));
+    }
+    if !["private", "internal", "public"].contains(&(&value.visibility).as_str()) {
+        return Err(format!(
+            "unsupported vcs_repositories.visibility: {}",
+            &value.visibility
+        ));
+    }
+    if *(&value.size_bytes) < 0 {
+        return Err("vcs_repositories.size_bytes is below the minimum".to_string());
+    }
+    if *(&value.ref_count) < 0 {
+        return Err("vcs_repositories.ref_count is below the minimum".to_string());
+    }
+    if !(&value.meta_data).is_object() {
+        return Err("vcs_repositories.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
@@ -18912,37 +29679,69 @@ pub fn validate_vcs_repositories_insert(value: &VcsRepositoriesInsert) -> Result
     }
     if let Some(value) = &value.display_name {
         validate_string_length("vcs_repositories.display_name", value, None, Some(200))?;
-        if (value).as_bytes().len() > 200 { return Err("vcs_repositories.display_name exceeds 200 bytes".to_string()); }
+        if (value).as_bytes().len() > 200 {
+            return Err("vcs_repositories.display_name exceeds 200 bytes".to_string());
+        }
     }
     if let Some(value) = &value.vcs_kind {
-        if !["git", "hg", "svn", "fossil"].contains(&(value).as_str()) { return Err(format!("unsupported vcs_repositories.vcs_kind: {}", value)); }
+        if !["git", "hg", "svn", "fossil"].contains(&(value).as_str()) {
+            return Err(format!("unsupported vcs_repositories.vcs_kind: {}", value));
+        }
     }
     if let Some(value) = &value.remote_url {
-        if (value).as_bytes().len() > 2048 { return Err("vcs_repositories.remote_url exceeds 2048 bytes".to_string()); }
+        if (value).as_bytes().len() > 2048 {
+            return Err("vcs_repositories.remote_url exceeds 2048 bytes".to_string());
+        }
     }
     if let Some(value) = &value.default_branch {
         validate_string_length("vcs_repositories.default_branch", value, None, Some(160))?;
     }
     if let Some(value) = &value.mirror_status {
-        if !["pending", "mirroring", "ready", "error", "disabled"].contains(&(value).as_str()) { return Err(format!("unsupported vcs_repositories.mirror_status: {}", value)); }
+        if !["pending", "mirroring", "ready", "error", "disabled"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported vcs_repositories.mirror_status: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.visibility {
-        if !["private", "internal", "public"].contains(&(value).as_str()) { return Err(format!("unsupported vcs_repositories.visibility: {}", value)); }
+        if !["private", "internal", "public"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported vcs_repositories.visibility: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.size_bytes {
-        if *(value) < 0 { return Err("vcs_repositories.size_bytes is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("vcs_repositories.size_bytes is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.ref_count {
-        if *(value) < 0 { return Err("vcs_repositories.ref_count is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("vcs_repositories.ref_count is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("vcs_repositories.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("vcs_repositories.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const VCS_REFS_TABLE: &str = "vcs_refs";
-pub const VCS_REFS_COLUMNS: &[&str] = &["id", "repository_id", "ref_name", "ref_type", "target_revision", "is_default", "meta_data", "created_at", "updated_at"];
+pub const VCS_REFS_COLUMNS: &[&str] = &[
+    "id",
+    "repository_id",
+    "ref_name",
+    "ref_type",
+    "target_revision",
+    "is_default",
+    "meta_data",
+    "created_at",
+    "updated_at",
+];
 pub const VCS_REFS_SELECT_SQL: &str = r###"select
       id::text as id,
       repository_id::text as repository_id,
@@ -19025,34 +29824,71 @@ pub struct VcsRefsInsert {
 
 pub fn validate_vcs_refs_row(value: &VcsRefsRow) -> Result<(), String> {
     validate_string_length("vcs_refs.ref_name", &value.ref_name, None, Some(255))?;
-    if (&value.ref_name).as_bytes().len() > 255 { return Err("vcs_refs.ref_name exceeds 255 bytes".to_string()); }
-    if !["branch", "tag", "bookmark", "head", "other"].contains(&(&value.ref_type).as_str()) { return Err(format!("unsupported vcs_refs.ref_type: {}", &value.ref_type)); }
-    validate_string_length("vcs_refs.target_revision", &value.target_revision, None, Some(120))?;
-    if (&value.target_revision).as_bytes().len() > 120 { return Err("vcs_refs.target_revision exceeds 120 bytes".to_string()); }
-    if !(&value.meta_data).is_object() { return Err("vcs_refs.meta_data must be a JSON object".to_string()); }
+    if (&value.ref_name).as_bytes().len() > 255 {
+        return Err("vcs_refs.ref_name exceeds 255 bytes".to_string());
+    }
+    if !["branch", "tag", "bookmark", "head", "other"].contains(&(&value.ref_type).as_str()) {
+        return Err(format!(
+            "unsupported vcs_refs.ref_type: {}",
+            &value.ref_type
+        ));
+    }
+    validate_string_length(
+        "vcs_refs.target_revision",
+        &value.target_revision,
+        None,
+        Some(120),
+    )?;
+    if (&value.target_revision).as_bytes().len() > 120 {
+        return Err("vcs_refs.target_revision exceeds 120 bytes".to_string());
+    }
+    if !(&value.meta_data).is_object() {
+        return Err("vcs_refs.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
 pub fn validate_vcs_refs_insert(value: &VcsRefsInsert) -> Result<(), String> {
     if let Some(value) = &value.ref_name {
         validate_string_length("vcs_refs.ref_name", value, None, Some(255))?;
-        if (value).as_bytes().len() > 255 { return Err("vcs_refs.ref_name exceeds 255 bytes".to_string()); }
+        if (value).as_bytes().len() > 255 {
+            return Err("vcs_refs.ref_name exceeds 255 bytes".to_string());
+        }
     }
     if let Some(value) = &value.ref_type {
-        if !["branch", "tag", "bookmark", "head", "other"].contains(&(value).as_str()) { return Err(format!("unsupported vcs_refs.ref_type: {}", value)); }
+        if !["branch", "tag", "bookmark", "head", "other"].contains(&(value).as_str()) {
+            return Err(format!("unsupported vcs_refs.ref_type: {}", value));
+        }
     }
     if let Some(value) = &value.target_revision {
         validate_string_length("vcs_refs.target_revision", value, None, Some(120))?;
-        if (value).as_bytes().len() > 120 { return Err("vcs_refs.target_revision exceeds 120 bytes".to_string()); }
+        if (value).as_bytes().len() > 120 {
+            return Err("vcs_refs.target_revision exceeds 120 bytes".to_string());
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("vcs_refs.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("vcs_refs.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const VCS_OPERATIONS_TABLE: &str = "vcs_operations";
-pub const VCS_OPERATIONS_COLUMNS: &[&str] = &["id", "repository_id", "vcs_kind", "op_type", "status", "params", "result_summary", "error", "duration_ms", "requested_by", "created_at", "updated_at"];
+pub const VCS_OPERATIONS_COLUMNS: &[&str] = &[
+    "id",
+    "repository_id",
+    "vcs_kind",
+    "op_type",
+    "status",
+    "params",
+    "result_summary",
+    "error",
+    "duration_ms",
+    "requested_by",
+    "created_at",
+    "updated_at",
+];
 pub const VCS_OPERATIONS_SELECT_SQL: &str = r###"select
       id::text as id,
       repository_id::text as repository_id,
@@ -19120,7 +29956,9 @@ pub enum VcsOperationsOpType {
 }
 
 impl VcsOperationsOpType {
-    pub const VALUES: &'static [&'static str] = &["mirror", "fetch", "refs", "log", "show", "diff", "tree", "blob", "probe", "remove"];
+    pub const VALUES: &'static [&'static str] = &[
+        "mirror", "fetch", "refs", "log", "show", "diff", "tree", "blob", "probe", "remove",
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -19230,13 +30068,38 @@ pub struct VcsOperationsInsert {
 }
 
 pub fn validate_vcs_operations_row(value: &VcsOperationsRow) -> Result<(), String> {
-    if !["git", "hg", "svn", "fossil"].contains(&(&value.vcs_kind).as_str()) { return Err(format!("unsupported vcs_operations.vcs_kind: {}", &value.vcs_kind)); }
-    if !["mirror", "fetch", "refs", "log", "show", "diff", "tree", "blob", "probe", "remove"].contains(&(&value.op_type).as_str()) { return Err(format!("unsupported vcs_operations.op_type: {}", &value.op_type)); }
-    if !["pending", "running", "success", "error"].contains(&(&value.status).as_str()) { return Err(format!("unsupported vcs_operations.status: {}", &value.status)); }
-    if !(&value.params).is_object() { return Err("vcs_operations.params must be a JSON object".to_string()); }
-    if !(&value.result_summary).is_object() { return Err("vcs_operations.result_summary must be a JSON object".to_string()); }
+    if !["git", "hg", "svn", "fossil"].contains(&(&value.vcs_kind).as_str()) {
+        return Err(format!(
+            "unsupported vcs_operations.vcs_kind: {}",
+            &value.vcs_kind
+        ));
+    }
+    if ![
+        "mirror", "fetch", "refs", "log", "show", "diff", "tree", "blob", "probe", "remove",
+    ]
+    .contains(&(&value.op_type).as_str())
+    {
+        return Err(format!(
+            "unsupported vcs_operations.op_type: {}",
+            &value.op_type
+        ));
+    }
+    if !["pending", "running", "success", "error"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported vcs_operations.status: {}",
+            &value.status
+        ));
+    }
+    if !(&value.params).is_object() {
+        return Err("vcs_operations.params must be a JSON object".to_string());
+    }
+    if !(&value.result_summary).is_object() {
+        return Err("vcs_operations.result_summary must be a JSON object".to_string());
+    }
     if let Some(value) = &value.duration_ms {
-        if *(value) < 0 { return Err("vcs_operations.duration_ms is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("vcs_operations.duration_ms is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.requested_by {
         validate_string_length("vcs_operations.requested_by", value, None, Some(200))?;
@@ -19246,22 +30109,38 @@ pub fn validate_vcs_operations_row(value: &VcsOperationsRow) -> Result<(), Strin
 
 pub fn validate_vcs_operations_insert(value: &VcsOperationsInsert) -> Result<(), String> {
     if let Some(value) = &value.vcs_kind {
-        if !["git", "hg", "svn", "fossil"].contains(&(value).as_str()) { return Err(format!("unsupported vcs_operations.vcs_kind: {}", value)); }
+        if !["git", "hg", "svn", "fossil"].contains(&(value).as_str()) {
+            return Err(format!("unsupported vcs_operations.vcs_kind: {}", value));
+        }
     }
     if let Some(value) = &value.op_type {
-        if !["mirror", "fetch", "refs", "log", "show", "diff", "tree", "blob", "probe", "remove"].contains(&(value).as_str()) { return Err(format!("unsupported vcs_operations.op_type: {}", value)); }
+        if ![
+            "mirror", "fetch", "refs", "log", "show", "diff", "tree", "blob", "probe", "remove",
+        ]
+        .contains(&(value).as_str())
+        {
+            return Err(format!("unsupported vcs_operations.op_type: {}", value));
+        }
     }
     if let Some(value) = &value.status {
-        if !["pending", "running", "success", "error"].contains(&(value).as_str()) { return Err(format!("unsupported vcs_operations.status: {}", value)); }
+        if !["pending", "running", "success", "error"].contains(&(value).as_str()) {
+            return Err(format!("unsupported vcs_operations.status: {}", value));
+        }
     }
     if let Some(value) = &value.params {
-        if !(value).is_object() { return Err("vcs_operations.params must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("vcs_operations.params must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.result_summary {
-        if !(value).is_object() { return Err("vcs_operations.result_summary must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("vcs_operations.result_summary must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.duration_ms {
-        if *(value) < 0 { return Err("vcs_operations.duration_ms is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("vcs_operations.duration_ms is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.requested_by {
         validate_string_length("vcs_operations.requested_by", value, None, Some(200))?;
@@ -19270,7 +30149,16 @@ pub fn validate_vcs_operations_insert(value: &VcsOperationsInsert) -> Result<(),
 }
 
 pub const AGENTS_TABLE: &str = "ai_agent_bridge.agents";
-pub const AGENTS_COLUMNS: &[&str] = &["id", "agent_key", "display_name", "kind", "host", "meta_data", "created_at", "updated_at"];
+pub const AGENTS_COLUMNS: &[&str] = &[
+    "id",
+    "agent_key",
+    "display_name",
+    "kind",
+    "host",
+    "meta_data",
+    "created_at",
+    "updated_at",
+];
 pub const AGENTS_SELECT_SQL: &str = r###"select
       id::text as id,
       agent_key,
@@ -19348,11 +30236,15 @@ pub struct AgentsInsert {
 pub fn validate_agents_row(value: &AgentsRow) -> Result<(), String> {
     validate_string_length("agents.agent_key", &value.agent_key, None, Some(120))?;
     validate_string_length("agents.display_name", &value.display_name, None, Some(200))?;
-    if !["claude", "codex", "human", "other"].contains(&(&value.kind).as_str()) { return Err(format!("unsupported agents.kind: {}", &value.kind)); }
+    if !["claude", "codex", "human", "other"].contains(&(&value.kind).as_str()) {
+        return Err(format!("unsupported agents.kind: {}", &value.kind));
+    }
     if let Some(value) = &value.host {
         validate_string_length("agents.host", value, None, Some(255))?;
     }
-    if !(&value.meta_data).is_object() { return Err("agents.meta_data must be a JSON object".to_string()); }
+    if !(&value.meta_data).is_object() {
+        return Err("agents.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
@@ -19364,19 +30256,36 @@ pub fn validate_agents_insert(value: &AgentsInsert) -> Result<(), String> {
         validate_string_length("agents.display_name", value, None, Some(200))?;
     }
     if let Some(value) = &value.kind {
-        if !["claude", "codex", "human", "other"].contains(&(value).as_str()) { return Err(format!("unsupported agents.kind: {}", value)); }
+        if !["claude", "codex", "human", "other"].contains(&(value).as_str()) {
+            return Err(format!("unsupported agents.kind: {}", value));
+        }
     }
     if let Some(value) = &value.host {
         validate_string_length("agents.host", value, None, Some(255))?;
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("agents.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("agents.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const CHANNELS_TABLE: &str = "ai_agent_bridge.channels";
-pub const CHANNELS_COLUMNS: &[&str] = &["id", "slug", "topic", "topic_summary", "embedding_model", "embedding", "embedding_dimensions", "status", "created_by", "meta_data", "created_at", "updated_at"];
+pub const CHANNELS_COLUMNS: &[&str] = &[
+    "id",
+    "slug",
+    "topic",
+    "topic_summary",
+    "embedding_model",
+    "embedding",
+    "embedding_dimensions",
+    "status",
+    "created_by",
+    "meta_data",
+    "created_at",
+    "updated_at",
+];
 pub const CHANNELS_SELECT_SQL: &str = r###"select
       id::text as id,
       slug,
@@ -19459,13 +30368,28 @@ pub struct ChannelsInsert {
 
 pub fn validate_channels_row(value: &ChannelsRow) -> Result<(), String> {
     validate_slug("channels.slug", &value.slug)?;
-    if (&value.topic).as_bytes().len() > 8192 { return Err("channels.topic exceeds 8192 bytes".to_string()); }
-    validate_string_length("channels.embedding_model", &value.embedding_model, None, Some(120))?;
-    if !(&value.embedding).is_array() { return Err("channels.embedding must be a JSON array".to_string()); }
-    if *(&value.embedding_dimensions) < 0 { return Err("channels.embedding_dimensions is below the minimum".to_string()); }
-    if !["active", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported channels.status: {}", &value.status)); }
+    if (&value.topic).as_bytes().len() > 8192 {
+        return Err("channels.topic exceeds 8192 bytes".to_string());
+    }
+    validate_string_length(
+        "channels.embedding_model",
+        &value.embedding_model,
+        None,
+        Some(120),
+    )?;
+    if !(&value.embedding).is_array() {
+        return Err("channels.embedding must be a JSON array".to_string());
+    }
+    if *(&value.embedding_dimensions) < 0 {
+        return Err("channels.embedding_dimensions is below the minimum".to_string());
+    }
+    if !["active", "archived"].contains(&(&value.status).as_str()) {
+        return Err(format!("unsupported channels.status: {}", &value.status));
+    }
     validate_string_length("channels.created_by", &value.created_by, None, Some(120))?;
-    if !(&value.meta_data).is_object() { return Err("channels.meta_data must be a JSON object".to_string()); }
+    if !(&value.meta_data).is_object() {
+        return Err("channels.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
@@ -19474,31 +30398,51 @@ pub fn validate_channels_insert(value: &ChannelsInsert) -> Result<(), String> {
         validate_slug("channels.slug", value)?;
     }
     if let Some(value) = &value.topic {
-        if (value).as_bytes().len() > 8192 { return Err("channels.topic exceeds 8192 bytes".to_string()); }
+        if (value).as_bytes().len() > 8192 {
+            return Err("channels.topic exceeds 8192 bytes".to_string());
+        }
     }
     if let Some(value) = &value.embedding_model {
         validate_string_length("channels.embedding_model", value, None, Some(120))?;
     }
     if let Some(value) = &value.embedding {
-        if !(value).is_array() { return Err("channels.embedding must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err("channels.embedding must be a JSON array".to_string());
+        }
     }
     if let Some(value) = &value.embedding_dimensions {
-        if *(value) < 0 { return Err("channels.embedding_dimensions is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("channels.embedding_dimensions is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.status {
-        if !["active", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported channels.status: {}", value)); }
+        if !["active", "archived"].contains(&(value).as_str()) {
+            return Err(format!("unsupported channels.status: {}", value));
+        }
     }
     if let Some(value) = &value.created_by {
         validate_string_length("channels.created_by", value, None, Some(120))?;
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("channels.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("channels.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const MESSAGES_TABLE: &str = "ai_agent_bridge.messages";
-pub const MESSAGES_COLUMNS: &[&str] = &["id", "channel_slug", "channel_id", "seq", "from_agent_key", "role", "content", "meta_data", "created_at"];
+pub const MESSAGES_COLUMNS: &[&str] = &[
+    "id",
+    "channel_slug",
+    "channel_id",
+    "seq",
+    "from_agent_key",
+    "role",
+    "content",
+    "meta_data",
+    "created_at",
+];
 pub const MESSAGES_SELECT_SQL: &str = r###"select
       id::text as id,
       channel_slug,
@@ -19578,11 +30522,24 @@ pub struct MessagesInsert {
 
 pub fn validate_messages_row(value: &MessagesRow) -> Result<(), String> {
     validate_slug("messages.channel_slug", &value.channel_slug)?;
-    if *(&value.seq) < 1 { return Err("messages.seq is below the minimum".to_string()); }
-    validate_string_length("messages.from_agent_key", &value.from_agent_key, None, Some(120))?;
-    if !["user", "assistant", "system", "tool"].contains(&(&value.role).as_str()) { return Err(format!("unsupported messages.role: {}", &value.role)); }
-    if (&value.content).as_bytes().len() > 1048576 { return Err("messages.content exceeds 1048576 bytes".to_string()); }
-    if !(&value.meta_data).is_object() { return Err("messages.meta_data must be a JSON object".to_string()); }
+    if *(&value.seq) < 1 {
+        return Err("messages.seq is below the minimum".to_string());
+    }
+    validate_string_length(
+        "messages.from_agent_key",
+        &value.from_agent_key,
+        None,
+        Some(120),
+    )?;
+    if !["user", "assistant", "system", "tool"].contains(&(&value.role).as_str()) {
+        return Err(format!("unsupported messages.role: {}", &value.role));
+    }
+    if (&value.content).as_bytes().len() > 1048576 {
+        return Err("messages.content exceeds 1048576 bytes".to_string());
+    }
+    if !(&value.meta_data).is_object() {
+        return Err("messages.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
@@ -19591,25 +30548,42 @@ pub fn validate_messages_insert(value: &MessagesInsert) -> Result<(), String> {
         validate_slug("messages.channel_slug", value)?;
     }
     if let Some(value) = &value.seq {
-        if *(value) < 1 { return Err("messages.seq is below the minimum".to_string()); }
+        if *(value) < 1 {
+            return Err("messages.seq is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.from_agent_key {
         validate_string_length("messages.from_agent_key", value, None, Some(120))?;
     }
     if let Some(value) = &value.role {
-        if !["user", "assistant", "system", "tool"].contains(&(value).as_str()) { return Err(format!("unsupported messages.role: {}", value)); }
+        if !["user", "assistant", "system", "tool"].contains(&(value).as_str()) {
+            return Err(format!("unsupported messages.role: {}", value));
+        }
     }
     if let Some(value) = &value.content {
-        if (value).as_bytes().len() > 1048576 { return Err("messages.content exceeds 1048576 bytes".to_string()); }
+        if (value).as_bytes().len() > 1048576 {
+            return Err("messages.content exceeds 1048576 bytes".to_string());
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("messages.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("messages.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const CHANNEL_MEMBERS_TABLE: &str = "ai_agent_bridge.channel_members";
-pub const CHANNEL_MEMBERS_COLUMNS: &[&str] = &["id", "channel_slug", "channel_id", "agent_key", "role", "joined_at", "last_seen_at", "meta_data"];
+pub const CHANNEL_MEMBERS_COLUMNS: &[&str] = &[
+    "id",
+    "channel_slug",
+    "channel_id",
+    "agent_key",
+    "role",
+    "joined_at",
+    "last_seen_at",
+    "meta_data",
+];
 pub const CHANNEL_MEMBERS_SELECT_SQL: &str = r###"select
       id::text as id,
       channel_slug,
@@ -19683,9 +30657,18 @@ pub struct ChannelMembersInsert {
 
 pub fn validate_channel_members_row(value: &ChannelMembersRow) -> Result<(), String> {
     validate_slug("channel_members.channel_slug", &value.channel_slug)?;
-    validate_string_length("channel_members.agent_key", &value.agent_key, None, Some(120))?;
-    if !["owner", "member", "observer"].contains(&(&value.role).as_str()) { return Err(format!("unsupported channel_members.role: {}", &value.role)); }
-    if !(&value.meta_data).is_object() { return Err("channel_members.meta_data must be a JSON object".to_string()); }
+    validate_string_length(
+        "channel_members.agent_key",
+        &value.agent_key,
+        None,
+        Some(120),
+    )?;
+    if !["owner", "member", "observer"].contains(&(&value.role).as_str()) {
+        return Err(format!("unsupported channel_members.role: {}", &value.role));
+    }
+    if !(&value.meta_data).is_object() {
+        return Err("channel_members.meta_data must be a JSON object".to_string());
+    }
     Ok(())
 }
 
@@ -19697,16 +30680,30 @@ pub fn validate_channel_members_insert(value: &ChannelMembersInsert) -> Result<(
         validate_string_length("channel_members.agent_key", value, None, Some(120))?;
     }
     if let Some(value) = &value.role {
-        if !["owner", "member", "observer"].contains(&(value).as_str()) { return Err(format!("unsupported channel_members.role: {}", value)); }
+        if !["owner", "member", "observer"].contains(&(value).as_str()) {
+            return Err(format!("unsupported channel_members.role: {}", value));
+        }
     }
     if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("channel_members.meta_data must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("channel_members.meta_data must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const SHARED_CONTEXT_TABLE: &str = "ai_agent_bridge.shared_context";
-pub const SHARED_CONTEXT_COLUMNS: &[&str] = &["id", "channel_slug", "channel_id", "ctx_key", "value", "version", "updated_by", "created_at", "updated_at"];
+pub const SHARED_CONTEXT_COLUMNS: &[&str] = &[
+    "id",
+    "channel_slug",
+    "channel_id",
+    "ctx_key",
+    "value",
+    "version",
+    "updated_by",
+    "created_at",
+    "updated_at",
+];
 pub const SHARED_CONTEXT_SELECT_SQL: &str = r###"select
       id::text as id,
       channel_slug,
@@ -19753,9 +30750,18 @@ pub fn validate_shared_context_row(value: &SharedContextRow) -> Result<(), Strin
         validate_slug("shared_context.channel_slug", value)?;
     }
     validate_string_length("shared_context.ctx_key", &value.ctx_key, None, Some(200))?;
-    if !(&value.value).is_object() { return Err("shared_context.value must be a JSON object".to_string()); }
-    if *(&value.version) < 1 { return Err("shared_context.version is below the minimum".to_string()); }
-    validate_string_length("shared_context.updated_by", &value.updated_by, None, Some(120))?;
+    if !(&value.value).is_object() {
+        return Err("shared_context.value must be a JSON object".to_string());
+    }
+    if *(&value.version) < 1 {
+        return Err("shared_context.version is below the minimum".to_string());
+    }
+    validate_string_length(
+        "shared_context.updated_by",
+        &value.updated_by,
+        None,
+        Some(120),
+    )?;
     Ok(())
 }
 
@@ -19767,10 +30773,14 @@ pub fn validate_shared_context_insert(value: &SharedContextInsert) -> Result<(),
         validate_string_length("shared_context.ctx_key", value, None, Some(200))?;
     }
     if let Some(value) = &value.value {
-        if !(value).is_object() { return Err("shared_context.value must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("shared_context.value must be a JSON object".to_string());
+        }
     }
     if let Some(value) = &value.version {
-        if *(value) < 1 { return Err("shared_context.version is below the minimum".to_string()); }
+        if *(value) < 1 {
+            return Err("shared_context.version is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.updated_by {
         validate_string_length("shared_context.updated_by", value, None, Some(120))?;
@@ -19801,19 +30811,31 @@ pub struct SyncClockInsert {
 }
 
 pub fn validate_sync_clock_row(value: &SyncClockRow) -> Result<(), String> {
-    if *(&value.last_sequence) < 0 { return Err("sync_clock.last_sequence is below the minimum".to_string()); }
+    if *(&value.last_sequence) < 0 {
+        return Err("sync_clock.last_sequence is below the minimum".to_string());
+    }
     Ok(())
 }
 
 pub fn validate_sync_clock_insert(value: &SyncClockInsert) -> Result<(), String> {
     if let Some(value) = &value.last_sequence {
-        if *(value) < 0 { return Err("sync_clock.last_sequence is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("sync_clock.last_sequence is below the minimum".to_string());
+        }
     }
     Ok(())
 }
 
 pub const SYNC_TOMBSTONES_TABLE: &str = "fiducia.sync_tombstones";
-pub const SYNC_TOMBSTONES_COLUMNS: &[&str] = &["sequence", "table_name", "row_id", "tenant_id", "owner_user_id", "row_version", "deleted_at"];
+pub const SYNC_TOMBSTONES_COLUMNS: &[&str] = &[
+    "sequence",
+    "table_name",
+    "row_id",
+    "tenant_id",
+    "owner_user_id",
+    "row_version",
+    "deleted_at",
+];
 pub const SYNC_TOMBSTONES_SELECT_SQL: &str = r###"select
       sequence,
       table_name,
@@ -19850,23 +30872,39 @@ pub struct SyncTombstonesInsert {
 }
 
 pub fn validate_sync_tombstones_row(value: &SyncTombstonesRow) -> Result<(), String> {
-    if *(&value.sequence) < 1 { return Err("sync_tombstones.sequence is below the minimum".to_string()); }
-    if *(&value.row_version) < 1 { return Err("sync_tombstones.row_version is below the minimum".to_string()); }
+    if *(&value.sequence) < 1 {
+        return Err("sync_tombstones.sequence is below the minimum".to_string());
+    }
+    if *(&value.row_version) < 1 {
+        return Err("sync_tombstones.row_version is below the minimum".to_string());
+    }
     Ok(())
 }
 
 pub fn validate_sync_tombstones_insert(value: &SyncTombstonesInsert) -> Result<(), String> {
     if let Some(value) = &value.sequence {
-        if *(value) < 1 { return Err("sync_tombstones.sequence is below the minimum".to_string()); }
+        if *(value) < 1 {
+            return Err("sync_tombstones.sequence is below the minimum".to_string());
+        }
     }
     if let Some(value) = &value.row_version {
-        if *(value) < 1 { return Err("sync_tombstones.row_version is below the minimum".to_string()); }
+        if *(value) < 1 {
+            return Err("sync_tombstones.row_version is below the minimum".to_string());
+        }
     }
     Ok(())
 }
 
 pub const ORGS_TABLE: &str = "fiducia.orgs";
-pub const ORGS_COLUMNS: &[&str] = &["id", "slug", "name", "created_at", "updated_at", "version", "sync_sequence"];
+pub const ORGS_COLUMNS: &[&str] = &[
+    "id",
+    "slug",
+    "name",
+    "created_at",
+    "updated_at",
+    "version",
+    "sync_sequence",
+];
 pub const ORGS_SELECT_SQL: &str = r###"select
       id::text as id,
       slug,
@@ -19919,7 +30957,16 @@ pub fn validate_orgs_insert(value: &OrgsInsert) -> Result<(), String> {
 }
 
 pub const PROJECTS_TABLE: &str = "fiducia.projects";
-pub const PROJECTS_COLUMNS: &[&str] = &["id", "org_id", "slug", "name", "created_at", "updated_at", "version", "sync_sequence"];
+pub const PROJECTS_COLUMNS: &[&str] = &[
+    "id",
+    "org_id",
+    "slug",
+    "name",
+    "created_at",
+    "updated_at",
+    "version",
+    "sync_sequence",
+];
 pub const PROJECTS_SELECT_SQL: &str = r###"select
       id::text as id,
       org_id::text as org_id,
@@ -20076,13 +31123,17 @@ pub struct OrgMembersInsert {
 }
 
 pub fn validate_org_members_row(value: &OrgMembersRow) -> Result<(), String> {
-    if !["owner", "admin", "member"].contains(&(&value.role).as_str()) { return Err(format!("unsupported org_members.role: {}", &value.role)); }
+    if !["owner", "admin", "member"].contains(&(&value.role).as_str()) {
+        return Err(format!("unsupported org_members.role: {}", &value.role));
+    }
     Ok(())
 }
 
 pub fn validate_org_members_insert(value: &OrgMembersInsert) -> Result<(), String> {
     if let Some(value) = &value.role {
-        if !["owner", "admin", "member"].contains(&(value).as_str()) { return Err(format!("unsupported org_members.role: {}", value)); }
+        if !["owner", "admin", "member"].contains(&(value).as_str()) {
+            return Err(format!("unsupported org_members.role: {}", value));
+        }
     }
     Ok(())
 }
@@ -20149,19 +31200,42 @@ pub struct ProjectMembersInsert {
 }
 
 pub fn validate_project_members_row(value: &ProjectMembersRow) -> Result<(), String> {
-    if !["admin", "operator", "viewer"].contains(&(&value.role).as_str()) { return Err(format!("unsupported project_members.role: {}", &value.role)); }
+    if !["admin", "operator", "viewer"].contains(&(&value.role).as_str()) {
+        return Err(format!("unsupported project_members.role: {}", &value.role));
+    }
     Ok(())
 }
 
 pub fn validate_project_members_insert(value: &ProjectMembersInsert) -> Result<(), String> {
     if let Some(value) = &value.role {
-        if !["admin", "operator", "viewer"].contains(&(value).as_str()) { return Err(format!("unsupported project_members.role: {}", value)); }
+        if !["admin", "operator", "viewer"].contains(&(value).as_str()) {
+            return Err(format!("unsupported project_members.role: {}", value));
+        }
     }
     Ok(())
 }
 
 pub const API_KEYS_TABLE: &str = "fiducia.api_keys";
-pub const API_KEYS_COLUMNS: &[&str] = &["id", "key_id", "org_id", "project_id", "created_by_user_id", "name", "secret_hash", "scopes", "env", "require_idempotency", "mtls_required", "revoked", "created_at", "updated_at", "version", "sync_sequence", "last_used_at", "expires_at"];
+pub const API_KEYS_COLUMNS: &[&str] = &[
+    "id",
+    "key_id",
+    "org_id",
+    "project_id",
+    "created_by_user_id",
+    "name",
+    "secret_hash",
+    "scopes",
+    "env",
+    "require_idempotency",
+    "mtls_required",
+    "revoked",
+    "created_at",
+    "updated_at",
+    "version",
+    "sync_sequence",
+    "last_used_at",
+    "expires_at",
+];
 pub const API_KEYS_SELECT_SQL: &str = r###"select
       id::text as id,
       key_id,
@@ -20264,8 +31338,12 @@ pub fn validate_api_keys_row(value: &ApiKeysRow) -> Result<(), String> {
     validate_string_length("api_keys.key_id", &value.key_id, None, Some(64))?;
     validate_string_length("api_keys.name", &value.name, None, Some(200))?;
     validate_string_length("api_keys.secret_hash", &value.secret_hash, None, Some(255))?;
-    if !(&value.scopes).is_array() { return Err("api_keys.scopes must be a JSON array".to_string()); }
-    if !["live", "test"].contains(&(&value.env).as_str()) { return Err(format!("unsupported api_keys.env: {}", &value.env)); }
+    if !(&value.scopes).is_array() {
+        return Err("api_keys.scopes must be a JSON array".to_string());
+    }
+    if !["live", "test"].contains(&(&value.env).as_str()) {
+        return Err(format!("unsupported api_keys.env: {}", &value.env));
+    }
     Ok(())
 }
 
@@ -20280,16 +31358,34 @@ pub fn validate_api_keys_insert(value: &ApiKeysInsert) -> Result<(), String> {
         validate_string_length("api_keys.secret_hash", value, None, Some(255))?;
     }
     if let Some(value) = &value.scopes {
-        if !(value).is_array() { return Err("api_keys.scopes must be a JSON array".to_string()); }
+        if !(value).is_array() {
+            return Err("api_keys.scopes must be a JSON array".to_string());
+        }
     }
     if let Some(value) = &value.env {
-        if !["live", "test"].contains(&(value).as_str()) { return Err(format!("unsupported api_keys.env: {}", value)); }
+        if !["live", "test"].contains(&(value).as_str()) {
+            return Err(format!("unsupported api_keys.env: {}", value));
+        }
     }
     Ok(())
 }
 
 pub const MTLS_CLIENT_CERTS_TABLE: &str = "fiducia.mtls_client_certs";
-pub const MTLS_CLIENT_CERTS_COLUMNS: &[&str] = &["id", "org_id", "project_id", "name", "subject", "sha256_fingerprint", "not_before", "not_after", "revoked", "created_at", "updated_at", "version", "sync_sequence"];
+pub const MTLS_CLIENT_CERTS_COLUMNS: &[&str] = &[
+    "id",
+    "org_id",
+    "project_id",
+    "name",
+    "subject",
+    "sha256_fingerprint",
+    "not_before",
+    "not_after",
+    "revoked",
+    "created_at",
+    "updated_at",
+    "version",
+    "sync_sequence",
+];
 pub const MTLS_CLIENT_CERTS_SELECT_SQL: &str = r###"select
       id::text as id,
       org_id::text as org_id,
@@ -20346,7 +31442,12 @@ pub struct MtlsClientCertsInsert {
 pub fn validate_mtls_client_certs_row(value: &MtlsClientCertsRow) -> Result<(), String> {
     validate_string_length("mtls_client_certs.name", &value.name, None, Some(200))?;
     validate_string_length("mtls_client_certs.subject", &value.subject, None, Some(500))?;
-    validate_string_length("mtls_client_certs.sha256_fingerprint", &value.sha256_fingerprint, None, Some(95))?;
+    validate_string_length(
+        "mtls_client_certs.sha256_fingerprint",
+        &value.sha256_fingerprint,
+        None,
+        Some(95),
+    )?;
     Ok(())
 }
 
@@ -20358,13 +31459,29 @@ pub fn validate_mtls_client_certs_insert(value: &MtlsClientCertsInsert) -> Resul
         validate_string_length("mtls_client_certs.subject", value, None, Some(500))?;
     }
     if let Some(value) = &value.sha256_fingerprint {
-        validate_string_length("mtls_client_certs.sha256_fingerprint", value, None, Some(95))?;
+        validate_string_length(
+            "mtls_client_certs.sha256_fingerprint",
+            value,
+            None,
+            Some(95),
+        )?;
     }
     Ok(())
 }
 
 pub const CUSTOMER_PREFERENCES_TABLE: &str = "fiducia.customer_preferences";
-pub const CUSTOMER_PREFERENCES_COLUMNS: &[&str] = &["user_id", "density", "timezone", "region", "notify_key_rotation", "notify_lock_contention", "notify_mfa", "updated_at", "version", "sync_sequence"];
+pub const CUSTOMER_PREFERENCES_COLUMNS: &[&str] = &[
+    "user_id",
+    "density",
+    "timezone",
+    "region",
+    "notify_key_rotation",
+    "notify_lock_contention",
+    "notify_mfa",
+    "updated_at",
+    "version",
+    "sync_sequence",
+];
 pub const CUSTOMER_PREFERENCES_SELECT_SQL: &str = r###"select
       user_id::text as user_id,
       density,
@@ -20440,15 +31557,32 @@ pub struct CustomerPreferencesInsert {
 }
 
 pub fn validate_customer_preferences_row(value: &CustomerPreferencesRow) -> Result<(), String> {
-    if !["comfortable", "compact"].contains(&(&value.density).as_str()) { return Err(format!("unsupported customer_preferences.density: {}", &value.density)); }
-    validate_string_length("customer_preferences.timezone", &value.timezone, None, Some(64))?;
+    if !["comfortable", "compact"].contains(&(&value.density).as_str()) {
+        return Err(format!(
+            "unsupported customer_preferences.density: {}",
+            &value.density
+        ));
+    }
+    validate_string_length(
+        "customer_preferences.timezone",
+        &value.timezone,
+        None,
+        Some(64),
+    )?;
     validate_string_length("customer_preferences.region", &value.region, None, Some(16))?;
     Ok(())
 }
 
-pub fn validate_customer_preferences_insert(value: &CustomerPreferencesInsert) -> Result<(), String> {
+pub fn validate_customer_preferences_insert(
+    value: &CustomerPreferencesInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.density {
-        if !["comfortable", "compact"].contains(&(value).as_str()) { return Err(format!("unsupported customer_preferences.density: {}", value)); }
+        if !["comfortable", "compact"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported customer_preferences.density: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.timezone {
         validate_string_length("customer_preferences.timezone", value, None, Some(64))?;
@@ -20460,7 +31594,17 @@ pub fn validate_customer_preferences_insert(value: &CustomerPreferencesInsert) -
 }
 
 pub const CUSTOMER_SESSIONS_TABLE: &str = "fiducia.customer_sessions";
-pub const CUSTOMER_SESSIONS_COLUMNS: &[&str] = &["id", "user_id", "device", "location", "last_seen", "status", "updated_at", "version", "sync_sequence"];
+pub const CUSTOMER_SESSIONS_COLUMNS: &[&str] = &[
+    "id",
+    "user_id",
+    "device",
+    "location",
+    "last_seen",
+    "status",
+    "updated_at",
+    "version",
+    "sync_sequence",
+];
 pub const CUSTOMER_SESSIONS_SELECT_SQL: &str = r###"select
       id::text as id,
       user_id::text as user_id,
@@ -20540,7 +31684,12 @@ pub fn validate_customer_sessions_row(value: &CustomerSessionsRow) -> Result<(),
     if let Some(value) = &value.location {
         validate_string_length("customer_sessions.location", value, None, Some(200))?;
     }
-    if !["active", "verified", "revoked"].contains(&(&value.status).as_str()) { return Err(format!("unsupported customer_sessions.status: {}", &value.status)); }
+    if !["active", "verified", "revoked"].contains(&(&value.status).as_str()) {
+        return Err(format!(
+            "unsupported customer_sessions.status: {}",
+            &value.status
+        ));
+    }
     Ok(())
 }
 
@@ -20552,13 +31701,30 @@ pub fn validate_customer_sessions_insert(value: &CustomerSessionsInsert) -> Resu
         validate_string_length("customer_sessions.location", value, None, Some(200))?;
     }
     if let Some(value) = &value.status {
-        if !["active", "verified", "revoked"].contains(&(value).as_str()) { return Err(format!("unsupported customer_sessions.status: {}", value)); }
+        if !["active", "verified", "revoked"].contains(&(value).as_str()) {
+            return Err(format!("unsupported customer_sessions.status: {}", value));
+        }
     }
     Ok(())
 }
 
 pub const AUDIT_LOG_TABLE: &str = "fiducia.audit_log";
-pub const AUDIT_LOG_COLUMNS: &[&str] = &["id", "org_id", "project_id", "actor_user_id", "actor_key_id", "actor", "action", "target", "request_id", "source_ip", "user_agent", "meta", "created_at", "retention_expires_at"];
+pub const AUDIT_LOG_COLUMNS: &[&str] = &[
+    "id",
+    "org_id",
+    "project_id",
+    "actor_user_id",
+    "actor_key_id",
+    "actor",
+    "action",
+    "target",
+    "request_id",
+    "source_ip",
+    "user_agent",
+    "meta",
+    "created_at",
+    "retention_expires_at",
+];
 pub const AUDIT_LOG_SELECT_SQL: &str = r###"select
       id::text as id,
       org_id::text as org_id,
@@ -20632,7 +31798,9 @@ pub fn validate_audit_log_row(value: &AuditLogRow) -> Result<(), String> {
     if let Some(value) = &value.user_agent {
         validate_string_length("audit_log.user_agent", value, None, Some(500))?;
     }
-    if !(&value.meta).is_object() { return Err("audit_log.meta must be a JSON object".to_string()); }
+    if !(&value.meta).is_object() {
+        return Err("audit_log.meta must be a JSON object".to_string());
+    }
     Ok(())
 }
 
@@ -20656,13 +31824,29 @@ pub fn validate_audit_log_insert(value: &AuditLogInsert) -> Result<(), String> {
         validate_string_length("audit_log.user_agent", value, None, Some(500))?;
     }
     if let Some(value) = &value.meta {
-        if !(value).is_object() { return Err("audit_log.meta must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("audit_log.meta must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
 pub const CUSTOMER_NOTIFICATIONS_TABLE: &str = "fiducia.customer_notifications";
-pub const CUSTOMER_NOTIFICATIONS_COLUMNS: &[&str] = &["id", "user_id", "org_id", "kind", "severity", "title", "body", "link", "read_at", "created_at", "updated_at", "version", "sync_sequence"];
+pub const CUSTOMER_NOTIFICATIONS_COLUMNS: &[&str] = &[
+    "id",
+    "user_id",
+    "org_id",
+    "kind",
+    "severity",
+    "title",
+    "body",
+    "link",
+    "read_at",
+    "created_at",
+    "updated_at",
+    "version",
+    "sync_sequence",
+];
 pub const CUSTOMER_NOTIFICATIONS_SELECT_SQL: &str = r###"select
       id::text as id,
       user_id::text as user_id,
@@ -20754,8 +31938,18 @@ pub struct CustomerNotificationsInsert {
 
 pub fn validate_customer_notifications_row(value: &CustomerNotificationsRow) -> Result<(), String> {
     validate_string_length("customer_notifications.kind", &value.kind, None, Some(40))?;
-    if !["info", "success", "warning", "critical"].contains(&(&value.severity).as_str()) { return Err(format!("unsupported customer_notifications.severity: {}", &value.severity)); }
-    validate_string_length("customer_notifications.title", &value.title, None, Some(200))?;
+    if !["info", "success", "warning", "critical"].contains(&(&value.severity).as_str()) {
+        return Err(format!(
+            "unsupported customer_notifications.severity: {}",
+            &value.severity
+        ));
+    }
+    validate_string_length(
+        "customer_notifications.title",
+        &value.title,
+        None,
+        Some(200),
+    )?;
     validate_string_length("customer_notifications.body", &value.body, None, Some(2000))?;
     if let Some(value) = &value.link {
         validate_string_length("customer_notifications.link", value, None, Some(500))?;
@@ -20763,12 +31957,19 @@ pub fn validate_customer_notifications_row(value: &CustomerNotificationsRow) -> 
     Ok(())
 }
 
-pub fn validate_customer_notifications_insert(value: &CustomerNotificationsInsert) -> Result<(), String> {
+pub fn validate_customer_notifications_insert(
+    value: &CustomerNotificationsInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.kind {
         validate_string_length("customer_notifications.kind", value, None, Some(40))?;
     }
     if let Some(value) = &value.severity {
-        if !["info", "success", "warning", "critical"].contains(&(value).as_str()) { return Err(format!("unsupported customer_notifications.severity: {}", value)); }
+        if !["info", "success", "warning", "critical"].contains(&(value).as_str()) {
+            return Err(format!(
+                "unsupported customer_notifications.severity: {}",
+                value
+            ));
+        }
     }
     if let Some(value) = &value.title {
         validate_string_length("customer_notifications.title", value, None, Some(200))?;
@@ -20783,7 +31984,12 @@ pub fn validate_customer_notifications_insert(value: &CustomerNotificationsInser
 }
 
 pub const SYNC_IDEMPOTENCY_KEYS_TABLE: &str = "fiducia.sync_idempotency_keys";
-pub const SYNC_IDEMPOTENCY_KEYS_COLUMNS: &[&str] = &["key", "request_fingerprint", "committed_version", "created_at"];
+pub const SYNC_IDEMPOTENCY_KEYS_COLUMNS: &[&str] = &[
+    "key",
+    "request_fingerprint",
+    "committed_version",
+    "created_at",
+];
 pub const SYNC_IDEMPOTENCY_KEYS_SELECT_SQL: &str = r###"select
       key,
       request_fingerprint,
@@ -20811,19 +32017,41 @@ pub struct SyncIdempotencyKeysInsert {
 }
 
 pub fn validate_sync_idempotency_keys_row(value: &SyncIdempotencyKeysRow) -> Result<(), String> {
-    validate_string_length("sync_idempotency_keys.request_fingerprint", &value.request_fingerprint, None, Some(64))?;
+    validate_string_length(
+        "sync_idempotency_keys.request_fingerprint",
+        &value.request_fingerprint,
+        None,
+        Some(64),
+    )?;
     Ok(())
 }
 
-pub fn validate_sync_idempotency_keys_insert(value: &SyncIdempotencyKeysInsert) -> Result<(), String> {
+pub fn validate_sync_idempotency_keys_insert(
+    value: &SyncIdempotencyKeysInsert,
+) -> Result<(), String> {
     if let Some(value) = &value.request_fingerprint {
-        validate_string_length("sync_idempotency_keys.request_fingerprint", value, None, Some(64))?;
+        validate_string_length(
+            "sync_idempotency_keys.request_fingerprint",
+            value,
+            None,
+            Some(64),
+        )?;
     }
     Ok(())
 }
 
 pub const TRANSCRIPTIONS_TABLE: &str = "t2v.transcriptions";
-pub const TRANSCRIPTIONS_COLUMNS: &[&str] = &["id", "source", "provider", "model", "text", "language", "sample_rate", "duration_ms", "created_at"];
+pub const TRANSCRIPTIONS_COLUMNS: &[&str] = &[
+    "id",
+    "source",
+    "provider",
+    "model",
+    "text",
+    "language",
+    "sample_rate",
+    "duration_ms",
+    "created_at",
+];
 pub const TRANSCRIPTIONS_SELECT_SQL: &str = r###"select
       id::text as id,
       source,
@@ -20866,51 +32094,92 @@ pub struct TranscriptionsInsert {
 }
 
 pub fn validate_transcriptions_row(value: &TranscriptionsRow) -> Result<(), String> {
-    if (&value.source).as_bytes().len() > 40 { return Err("transcriptions.source exceeds 40 bytes".to_string()); }
-    if (&value.provider).as_bytes().len() > 40 { return Err("transcriptions.provider exceeds 40 bytes".to_string()); }
-    if (&value.model).as_bytes().len() > 200 { return Err("transcriptions.model exceeds 200 bytes".to_string()); }
-    if (&value.text).as_bytes().len() > 1000000 { return Err("transcriptions.text exceeds 1000000 bytes".to_string()); }
+    if (&value.source).as_bytes().len() > 40 {
+        return Err("transcriptions.source exceeds 40 bytes".to_string());
+    }
+    if (&value.provider).as_bytes().len() > 40 {
+        return Err("transcriptions.provider exceeds 40 bytes".to_string());
+    }
+    if (&value.model).as_bytes().len() > 200 {
+        return Err("transcriptions.model exceeds 200 bytes".to_string());
+    }
+    if (&value.text).as_bytes().len() > 1000000 {
+        return Err("transcriptions.text exceeds 1000000 bytes".to_string());
+    }
     if let Some(value) = &value.language {
-        if (value).as_bytes().len() > 80 { return Err("transcriptions.language exceeds 80 bytes".to_string()); }
+        if (value).as_bytes().len() > 80 {
+            return Err("transcriptions.language exceeds 80 bytes".to_string());
+        }
     }
     if let Some(value) = &value.sample_rate {
-        if *(value) < 4000 { return Err("transcriptions.sample_rate is below the minimum".to_string()); }
-        if *(value) > 384000 { return Err("transcriptions.sample_rate is above the maximum".to_string()); }
+        if *(value) < 4000 {
+            return Err("transcriptions.sample_rate is below the minimum".to_string());
+        }
+        if *(value) > 384000 {
+            return Err("transcriptions.sample_rate is above the maximum".to_string());
+        }
     }
     if let Some(value) = &value.duration_ms {
-        if *(value) < 0 { return Err("transcriptions.duration_ms is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("transcriptions.duration_ms is below the minimum".to_string());
+        }
     }
     Ok(())
 }
 
 pub fn validate_transcriptions_insert(value: &TranscriptionsInsert) -> Result<(), String> {
     if let Some(value) = &value.source {
-        if (value).as_bytes().len() > 40 { return Err("transcriptions.source exceeds 40 bytes".to_string()); }
+        if (value).as_bytes().len() > 40 {
+            return Err("transcriptions.source exceeds 40 bytes".to_string());
+        }
     }
     if let Some(value) = &value.provider {
-        if (value).as_bytes().len() > 40 { return Err("transcriptions.provider exceeds 40 bytes".to_string()); }
+        if (value).as_bytes().len() > 40 {
+            return Err("transcriptions.provider exceeds 40 bytes".to_string());
+        }
     }
     if let Some(value) = &value.model {
-        if (value).as_bytes().len() > 200 { return Err("transcriptions.model exceeds 200 bytes".to_string()); }
+        if (value).as_bytes().len() > 200 {
+            return Err("transcriptions.model exceeds 200 bytes".to_string());
+        }
     }
     if let Some(value) = &value.text {
-        if (value).as_bytes().len() > 1000000 { return Err("transcriptions.text exceeds 1000000 bytes".to_string()); }
+        if (value).as_bytes().len() > 1000000 {
+            return Err("transcriptions.text exceeds 1000000 bytes".to_string());
+        }
     }
     if let Some(value) = &value.language {
-        if (value).as_bytes().len() > 80 { return Err("transcriptions.language exceeds 80 bytes".to_string()); }
+        if (value).as_bytes().len() > 80 {
+            return Err("transcriptions.language exceeds 80 bytes".to_string());
+        }
     }
     if let Some(value) = &value.sample_rate {
-        if *(value) < 4000 { return Err("transcriptions.sample_rate is below the minimum".to_string()); }
-        if *(value) > 384000 { return Err("transcriptions.sample_rate is above the maximum".to_string()); }
+        if *(value) < 4000 {
+            return Err("transcriptions.sample_rate is below the minimum".to_string());
+        }
+        if *(value) > 384000 {
+            return Err("transcriptions.sample_rate is above the maximum".to_string());
+        }
     }
     if let Some(value) = &value.duration_ms {
-        if *(value) < 0 { return Err("transcriptions.duration_ms is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("transcriptions.duration_ms is below the minimum".to_string());
+        }
     }
     Ok(())
 }
 
 pub const SYNTHESES_TABLE: &str = "t2v.syntheses";
-pub const SYNTHESES_COLUMNS: &[&str] = &["id", "text", "voice", "provider", "model", "format", "audio_bytes", "created_at"];
+pub const SYNTHESES_COLUMNS: &[&str] = &[
+    "id",
+    "text",
+    "voice",
+    "provider",
+    "model",
+    "format",
+    "audio_bytes",
+    "created_at",
+];
 pub const SYNTHESES_SELECT_SQL: &str = r###"select
       id::text as id,
       text,
@@ -20950,39 +32219,73 @@ pub struct SynthesesInsert {
 }
 
 pub fn validate_syntheses_row(value: &SynthesesRow) -> Result<(), String> {
-    if (&value.text).as_bytes().len() > 20000 { return Err("syntheses.text exceeds 20000 bytes".to_string()); }
-    if (&value.voice).as_bytes().len() > 80 { return Err("syntheses.voice exceeds 80 bytes".to_string()); }
-    if (&value.provider).as_bytes().len() > 40 { return Err("syntheses.provider exceeds 40 bytes".to_string()); }
-    if (&value.model).as_bytes().len() > 200 { return Err("syntheses.model exceeds 200 bytes".to_string()); }
-    if (&value.format).as_bytes().len() > 10 { return Err("syntheses.format exceeds 10 bytes".to_string()); }
-    if *(&value.audio_bytes) < 0 { return Err("syntheses.audio_bytes is below the minimum".to_string()); }
+    if (&value.text).as_bytes().len() > 20000 {
+        return Err("syntheses.text exceeds 20000 bytes".to_string());
+    }
+    if (&value.voice).as_bytes().len() > 80 {
+        return Err("syntheses.voice exceeds 80 bytes".to_string());
+    }
+    if (&value.provider).as_bytes().len() > 40 {
+        return Err("syntheses.provider exceeds 40 bytes".to_string());
+    }
+    if (&value.model).as_bytes().len() > 200 {
+        return Err("syntheses.model exceeds 200 bytes".to_string());
+    }
+    if (&value.format).as_bytes().len() > 10 {
+        return Err("syntheses.format exceeds 10 bytes".to_string());
+    }
+    if *(&value.audio_bytes) < 0 {
+        return Err("syntheses.audio_bytes is below the minimum".to_string());
+    }
     Ok(())
 }
 
 pub fn validate_syntheses_insert(value: &SynthesesInsert) -> Result<(), String> {
     if let Some(value) = &value.text {
-        if (value).as_bytes().len() > 20000 { return Err("syntheses.text exceeds 20000 bytes".to_string()); }
+        if (value).as_bytes().len() > 20000 {
+            return Err("syntheses.text exceeds 20000 bytes".to_string());
+        }
     }
     if let Some(value) = &value.voice {
-        if (value).as_bytes().len() > 80 { return Err("syntheses.voice exceeds 80 bytes".to_string()); }
+        if (value).as_bytes().len() > 80 {
+            return Err("syntheses.voice exceeds 80 bytes".to_string());
+        }
     }
     if let Some(value) = &value.provider {
-        if (value).as_bytes().len() > 40 { return Err("syntheses.provider exceeds 40 bytes".to_string()); }
+        if (value).as_bytes().len() > 40 {
+            return Err("syntheses.provider exceeds 40 bytes".to_string());
+        }
     }
     if let Some(value) = &value.model {
-        if (value).as_bytes().len() > 200 { return Err("syntheses.model exceeds 200 bytes".to_string()); }
+        if (value).as_bytes().len() > 200 {
+            return Err("syntheses.model exceeds 200 bytes".to_string());
+        }
     }
     if let Some(value) = &value.format {
-        if (value).as_bytes().len() > 10 { return Err("syntheses.format exceeds 10 bytes".to_string()); }
+        if (value).as_bytes().len() > 10 {
+            return Err("syntheses.format exceeds 10 bytes".to_string());
+        }
     }
     if let Some(value) = &value.audio_bytes {
-        if *(value) < 0 { return Err("syntheses.audio_bytes is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("syntheses.audio_bytes is below the minimum".to_string());
+        }
     }
     Ok(())
 }
 
 pub const TRANSLATIONS_TABLE: &str = "t2v.translations";
-pub const TRANSLATIONS_COLUMNS: &[&str] = &["id", "source_text", "translated_text", "source_lang", "target_lang", "provider", "model", "latency_ms", "created_at"];
+pub const TRANSLATIONS_COLUMNS: &[&str] = &[
+    "id",
+    "source_text",
+    "translated_text",
+    "source_lang",
+    "target_lang",
+    "provider",
+    "model",
+    "latency_ms",
+    "created_at",
+];
 pub const TRANSLATIONS_SELECT_SQL: &str = r###"select
       id::text as id,
       source_text,
@@ -21025,45 +32328,82 @@ pub struct TranslationsInsert {
 }
 
 pub fn validate_translations_row(value: &TranslationsRow) -> Result<(), String> {
-    if (&value.source_text).as_bytes().len() > 200000 { return Err("translations.source_text exceeds 200000 bytes".to_string()); }
-    if (&value.translated_text).as_bytes().len() > 200000 { return Err("translations.translated_text exceeds 200000 bytes".to_string()); }
-    if let Some(value) = &value.source_lang {
-        if (value).as_bytes().len() > 80 { return Err("translations.source_lang exceeds 80 bytes".to_string()); }
+    if (&value.source_text).as_bytes().len() > 200000 {
+        return Err("translations.source_text exceeds 200000 bytes".to_string());
     }
-    if (&value.target_lang).as_bytes().len() > 80 { return Err("translations.target_lang exceeds 80 bytes".to_string()); }
-    if (&value.provider).as_bytes().len() > 40 { return Err("translations.provider exceeds 40 bytes".to_string()); }
-    if (&value.model).as_bytes().len() > 200 { return Err("translations.model exceeds 200 bytes".to_string()); }
-    if *(&value.latency_ms) < 0 { return Err("translations.latency_ms is below the minimum".to_string()); }
+    if (&value.translated_text).as_bytes().len() > 200000 {
+        return Err("translations.translated_text exceeds 200000 bytes".to_string());
+    }
+    if let Some(value) = &value.source_lang {
+        if (value).as_bytes().len() > 80 {
+            return Err("translations.source_lang exceeds 80 bytes".to_string());
+        }
+    }
+    if (&value.target_lang).as_bytes().len() > 80 {
+        return Err("translations.target_lang exceeds 80 bytes".to_string());
+    }
+    if (&value.provider).as_bytes().len() > 40 {
+        return Err("translations.provider exceeds 40 bytes".to_string());
+    }
+    if (&value.model).as_bytes().len() > 200 {
+        return Err("translations.model exceeds 200 bytes".to_string());
+    }
+    if *(&value.latency_ms) < 0 {
+        return Err("translations.latency_ms is below the minimum".to_string());
+    }
     Ok(())
 }
 
 pub fn validate_translations_insert(value: &TranslationsInsert) -> Result<(), String> {
     if let Some(value) = &value.source_text {
-        if (value).as_bytes().len() > 200000 { return Err("translations.source_text exceeds 200000 bytes".to_string()); }
+        if (value).as_bytes().len() > 200000 {
+            return Err("translations.source_text exceeds 200000 bytes".to_string());
+        }
     }
     if let Some(value) = &value.translated_text {
-        if (value).as_bytes().len() > 200000 { return Err("translations.translated_text exceeds 200000 bytes".to_string()); }
+        if (value).as_bytes().len() > 200000 {
+            return Err("translations.translated_text exceeds 200000 bytes".to_string());
+        }
     }
     if let Some(value) = &value.source_lang {
-        if (value).as_bytes().len() > 80 { return Err("translations.source_lang exceeds 80 bytes".to_string()); }
+        if (value).as_bytes().len() > 80 {
+            return Err("translations.source_lang exceeds 80 bytes".to_string());
+        }
     }
     if let Some(value) = &value.target_lang {
-        if (value).as_bytes().len() > 80 { return Err("translations.target_lang exceeds 80 bytes".to_string()); }
+        if (value).as_bytes().len() > 80 {
+            return Err("translations.target_lang exceeds 80 bytes".to_string());
+        }
     }
     if let Some(value) = &value.provider {
-        if (value).as_bytes().len() > 40 { return Err("translations.provider exceeds 40 bytes".to_string()); }
+        if (value).as_bytes().len() > 40 {
+            return Err("translations.provider exceeds 40 bytes".to_string());
+        }
     }
     if let Some(value) = &value.model {
-        if (value).as_bytes().len() > 200 { return Err("translations.model exceeds 200 bytes".to_string()); }
+        if (value).as_bytes().len() > 200 {
+            return Err("translations.model exceeds 200 bytes".to_string());
+        }
     }
     if let Some(value) = &value.latency_ms {
-        if *(value) < 0 { return Err("translations.latency_ms is below the minimum".to_string()); }
+        if *(value) < 0 {
+            return Err("translations.latency_ms is below the minimum".to_string());
+        }
     }
     Ok(())
 }
 
 pub const VAPI_CALLS_TABLE: &str = "t2v.vapi_calls";
-pub const VAPI_CALLS_COLUMNS: &[&str] = &["id", "vapi_call_id", "status", "ended_reason", "transcript", "summary", "created_at", "updated_at"];
+pub const VAPI_CALLS_COLUMNS: &[&str] = &[
+    "id",
+    "vapi_call_id",
+    "status",
+    "ended_reason",
+    "transcript",
+    "summary",
+    "created_at",
+    "updated_at",
+];
 pub const VAPI_CALLS_SELECT_SQL: &str = r###"select
       id::text as id,
       vapi_call_id,
@@ -21103,41 +32443,62 @@ pub struct VapiCallsInsert {
 }
 
 pub fn validate_vapi_calls_row(value: &VapiCallsRow) -> Result<(), String> {
-    if (&value.vapi_call_id).as_bytes().len() > 120 { return Err("vapi_calls.vapi_call_id exceeds 120 bytes".to_string()); }
-    if (&value.status).as_bytes().len() > 40 { return Err("vapi_calls.status exceeds 40 bytes".to_string()); }
+    if (&value.vapi_call_id).as_bytes().len() > 120 {
+        return Err("vapi_calls.vapi_call_id exceeds 120 bytes".to_string());
+    }
+    if (&value.status).as_bytes().len() > 40 {
+        return Err("vapi_calls.status exceeds 40 bytes".to_string());
+    }
     if let Some(value) = &value.ended_reason {
-        if (value).as_bytes().len() > 200 { return Err("vapi_calls.ended_reason exceeds 200 bytes".to_string()); }
+        if (value).as_bytes().len() > 200 {
+            return Err("vapi_calls.ended_reason exceeds 200 bytes".to_string());
+        }
     }
     if let Some(value) = &value.transcript {
-        if (value).as_bytes().len() > 1000000 { return Err("vapi_calls.transcript exceeds 1000000 bytes".to_string()); }
+        if (value).as_bytes().len() > 1000000 {
+            return Err("vapi_calls.transcript exceeds 1000000 bytes".to_string());
+        }
     }
     if let Some(value) = &value.summary {
-        if (value).as_bytes().len() > 100000 { return Err("vapi_calls.summary exceeds 100000 bytes".to_string()); }
+        if (value).as_bytes().len() > 100000 {
+            return Err("vapi_calls.summary exceeds 100000 bytes".to_string());
+        }
     }
     Ok(())
 }
 
 pub fn validate_vapi_calls_insert(value: &VapiCallsInsert) -> Result<(), String> {
     if let Some(value) = &value.vapi_call_id {
-        if (value).as_bytes().len() > 120 { return Err("vapi_calls.vapi_call_id exceeds 120 bytes".to_string()); }
+        if (value).as_bytes().len() > 120 {
+            return Err("vapi_calls.vapi_call_id exceeds 120 bytes".to_string());
+        }
     }
     if let Some(value) = &value.status {
-        if (value).as_bytes().len() > 40 { return Err("vapi_calls.status exceeds 40 bytes".to_string()); }
+        if (value).as_bytes().len() > 40 {
+            return Err("vapi_calls.status exceeds 40 bytes".to_string());
+        }
     }
     if let Some(value) = &value.ended_reason {
-        if (value).as_bytes().len() > 200 { return Err("vapi_calls.ended_reason exceeds 200 bytes".to_string()); }
+        if (value).as_bytes().len() > 200 {
+            return Err("vapi_calls.ended_reason exceeds 200 bytes".to_string());
+        }
     }
     if let Some(value) = &value.transcript {
-        if (value).as_bytes().len() > 1000000 { return Err("vapi_calls.transcript exceeds 1000000 bytes".to_string()); }
+        if (value).as_bytes().len() > 1000000 {
+            return Err("vapi_calls.transcript exceeds 1000000 bytes".to_string());
+        }
     }
     if let Some(value) = &value.summary {
-        if (value).as_bytes().len() > 100000 { return Err("vapi_calls.summary exceeds 100000 bytes".to_string()); }
+        if (value).as_bytes().len() > 100000 {
+            return Err("vapi_calls.summary exceeds 100000 bytes".to_string());
+        }
     }
     Ok(())
 }
 
 pub const VAPI_EVENTS_TABLE: &str = "t2v.vapi_events";
-pub const VAPI_EVENTS_COLUMNS: &[&str] = &["id", "vapi_call_id", "event_type", "payload", "created_at"];
+pub const VAPI_EVENTS_COLUMNS: &[&str] =
+    &["id", "vapi_call_id", "event_type", "payload", "created_at"];
 pub const VAPI_EVENTS_SELECT_SQL: &str = r###"select
       id::text as id,
       vapi_call_id,
@@ -21169,27 +32530,44 @@ pub struct VapiEventsInsert {
 
 pub fn validate_vapi_events_row(value: &VapiEventsRow) -> Result<(), String> {
     if let Some(value) = &value.vapi_call_id {
-        if (value).as_bytes().len() > 120 { return Err("vapi_events.vapi_call_id exceeds 120 bytes".to_string()); }
+        if (value).as_bytes().len() > 120 {
+            return Err("vapi_events.vapi_call_id exceeds 120 bytes".to_string());
+        }
     }
-    if (&value.event_type).as_bytes().len() > 80 { return Err("vapi_events.event_type exceeds 80 bytes".to_string()); }
-    if !(&value.payload).is_object() { return Err("vapi_events.payload must be a JSON object".to_string()); }
+    if (&value.event_type).as_bytes().len() > 80 {
+        return Err("vapi_events.event_type exceeds 80 bytes".to_string());
+    }
+    if !(&value.payload).is_object() {
+        return Err("vapi_events.payload must be a JSON object".to_string());
+    }
     Ok(())
 }
 
 pub fn validate_vapi_events_insert(value: &VapiEventsInsert) -> Result<(), String> {
     if let Some(value) = &value.vapi_call_id {
-        if (value).as_bytes().len() > 120 { return Err("vapi_events.vapi_call_id exceeds 120 bytes".to_string()); }
+        if (value).as_bytes().len() > 120 {
+            return Err("vapi_events.vapi_call_id exceeds 120 bytes".to_string());
+        }
     }
     if let Some(value) = &value.event_type {
-        if (value).as_bytes().len() > 80 { return Err("vapi_events.event_type exceeds 80 bytes".to_string()); }
+        if (value).as_bytes().len() > 80 {
+            return Err("vapi_events.event_type exceeds 80 bytes".to_string());
+        }
     }
     if let Some(value) = &value.payload {
-        if !(value).is_object() { return Err("vapi_events.payload must be a JSON object".to_string()); }
+        if !(value).is_object() {
+            return Err("vapi_events.payload must be a JSON object".to_string());
+        }
     }
     Ok(())
 }
 
-fn validate_string_length(field: &str, value: &str, min: Option<usize>, max: Option<usize>) -> Result<(), String> {
+fn validate_string_length(
+    field: &str,
+    value: &str,
+    min: Option<usize>,
+    max: Option<usize>,
+) -> Result<(), String> {
     let count = value.chars().count();
     if let Some(min) = min {
         if count < min {
@@ -21209,16 +32587,27 @@ fn validate_slug(field: &str, value: &str) -> Result<(), String> {
     if bytes.len() < 3 || bytes.len() > 120 {
         return Err(format!("{field} must be 3-120 bytes"));
     }
-    let Some(first) = bytes.first() else { return Err(format!("{field} is required")); };
-    let Some(last) = bytes.last() else { return Err(format!("{field} is required")); };
+    let Some(first) = bytes.first() else {
+        return Err(format!("{field} is required"));
+    };
+    let Some(last) = bytes.last() else {
+        return Err(format!("{field} is required"));
+    };
     if !first.is_ascii_lowercase() && !first.is_ascii_digit() {
-        return Err(format!("{field} must start with a lowercase letter or digit"));
+        return Err(format!(
+            "{field} must start with a lowercase letter or digit"
+        ));
     }
     if !last.is_ascii_lowercase() && !last.is_ascii_digit() {
         return Err(format!("{field} must end with a lowercase letter or digit"));
     }
-    if bytes.iter().any(|byte| !byte.is_ascii_lowercase() && !byte.is_ascii_digit() && *byte != b'-') {
-        return Err(format!("{field} may contain only lowercase letters, digits, and dashes"));
+    if bytes
+        .iter()
+        .any(|byte| !byte.is_ascii_lowercase() && !byte.is_ascii_digit() && *byte != b'-')
+    {
+        return Err(format!(
+            "{field} may contain only lowercase letters, digits, and dashes"
+        ));
     }
     Ok(())
 }
