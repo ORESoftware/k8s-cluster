@@ -513,10 +513,12 @@ What you get:
 Layered defenses, designed to fail safely (see `src/admin/security.rs`
 and the wire-level tests in `src/admin/mod.rs`):
 
-- **Bearer auth (optional)** — set `BILLING_ADMIN_AUTH_BEARER=<token>`
-  to require `Authorization: Bearer <token>` on every `/admin/*`
-  request. Constant-time compared. When unset, the UI is unauthenticated
-  (intended for trusted networks / local dev).
+- **Bearer auth (required when the UI is enabled)** — set
+  `BILLING_ADMIN_AUTH_BEARER=<token>` to require `Authorization: Bearer
+  <token>` on every `/admin/*` request. Constant-time compared. The server
+  now refuses to boot with the admin UI enabled and this bearer unset (an
+  unauthenticated admin surface), unless `BILLING_ALLOW_INSECURE_DEV=1` is set
+  explicitly for trusted networks / local dev.
 - **CSRF guard** — every POST/PUT/PATCH/DELETE must carry
   `HX-Request: true` (HTMX always sends it; cross-origin browsers
   cannot set it without a CORS preflight we do not grant) **and**, when
