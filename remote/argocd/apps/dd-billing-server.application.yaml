@@ -1,3 +1,11 @@
+# DUPLICATE / DRIFT HAZARD: this Application is ALSO declared inline in
+# clusters/aws/applications.yaml (the root app-of-apps) and generated a third time by
+# quaestor-ledger/quaestor-infra's render.mjs. All three are `kubectl apply`-ed at various
+# points, so last-writer-wins. This copy is kept BYTE-FOR-BYTE in sync with the canonical
+# clusters/aws inline (incl. ServerSideApply=true) so a re-apply is a no-op regardless of
+# order. Target end-state (see docs/gitops-boundary-audit.md): single source of truth via an
+# ApplicationSet entry pointing at the quaestor billing app repo — then delete this file and
+# have quaestor-infra emit a registration, not a hand-copied CR.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -18,3 +26,4 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      - ServerSideApply=true

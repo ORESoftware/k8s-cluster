@@ -46,6 +46,73 @@ Fastify and browser orchestration.
 - `browserless`: Browserless Content API, configured with `BROWSERLESS_TOKEN` or a
   `BROWSERLESS_CONTENT_URL` that already includes a token.
 
+## Business contact extraction
+
+The service can pull business phone numbers and email addresses out of a page as
+structured fields instead of leaving callers to regex the `text` blob.
+
+This is **opt-in**, because contact details are PII and the collection rule is
+"only what the job needs" (see `AGENTS.md`). Request flags:
+
+- `includeContacts` — turn on both phones and emails
+- `includePhones` / `includeEmails` — granular, and they override `includeContacts`
+- `contactRegion` — ISO 3166-1 alpha-2 region used to normalize local numbers to
+  E.164 (defaults to `SCRAPER_CONTACT_REGION`, itself defaulting to `US`)
+- `maxPhones` / `maxEmails` — per-request caps, clamped by `SCRAPER_MAX_PHONES`
+  and `SCRAPER_MAX_EMAILS` (both default `50`)
+
+Results land on `extraction.contacts`:
+
+```jsonc
+{
+  "phones": [
+    {
+      "raw": "(628) 555-0100",
+      "e164": "+16285550100",        // ready for Postgres / HubSpot
+      "national": "(628) 555-0100",
+      "extension": "3140",           // when the page advertises one
+      "sources": ["tel-href", "text"],
+      "confidence": 1
+    }
+  ],
+  "emails": [{ "address": "sales@acme.test", "sources": ["mailto-href"], "confidence": 1 }]
+}
+```
+
+Numbers and addresses are gathered from `tel:`/`mailto:` hrefs, schema.org
+JSON-LD (`telephone`, `email`, `faxNumber`), `<meta>` tags, and visible text —
+then deduplicated by E.164, with `sources` merged and `confidence` set to the
+best source that saw it (`tel:`/`mailto:` = 1.0, JSON-LD = 0.95, meta = 0.9,
+free text = 0.6). Use `confidence` to decide what syncs automatically and what
+gets queued for review.
+
+Precision matters more than recall here, since false positives pollute the CRM.
+So the extractor drops runs glued to `#`/currency symbols (order numbers, SKUs,
+prices), repeated-digit and sequential placeholders, and — for free text with no
+country code — unformatted digit runs that aren't NANP-shaped. Inline `<script>`
+and `<style>` bodies are excluded from the markup scan so vendor config values
+don't surface as contacts. HTML entities are decoded first, so `info&#64;acme.test`
+is still found.
+
+Every emitted `e164` is checked for structural validity before it is returned:
+country codes never start with `0`, the number is 8–15 digits, and `+1` numbers
+must satisfy the North American Numbering Plan (area code and exchange both start
+2–9). So `+1 111 555 0100` and `+0…` are dropped rather than synced. These are
+hard, universal rules, so the check never removes a genuine business line; it is
+not a substitute for a full validation library (e.g. `libphonenumber`) if you
+later need per-country national-format validation.
+
+Scanning is ReDoS-safe: the email/phone patterns use bounded quantifiers, so a
+hostile page (the scan runs over untrusted, attacker-controlled text up to
+`MAX_SCAN_CHARS`) cannot trigger catastrophic backtracking in a parser worker.
+
+Because contact data is frequently injected client-side (click-to-call widgets,
+"reveal number" buttons), the `playwright` and `puppeteer` strategies find
+numbers the static parsers cannot — they extract from the rendered DOM. Prefer a
+browser strategy when a target's contact details don't appear in the static HTML.
+
+Extracted values are never logged; only counts appear in telemetry.
+
 ## Proxy rotation
 
 Outbound requests can rotate across a pool of proxies. The pool is configured with

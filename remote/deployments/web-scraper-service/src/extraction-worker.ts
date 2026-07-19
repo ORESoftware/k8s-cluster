@@ -2,6 +2,8 @@ import { parentPort } from 'node:worker_threads';
 
 import * as cheerio from 'cheerio';
 
+import { extractContacts, type ContactExtraction } from './contacts.js';
+
 type ParserName = 'native-fetch' | 'cheerio' | 'jsdom' | 'linkedom';
 
 type ExtractionInput = {
@@ -13,9 +15,14 @@ type ExtractionInput = {
   includeHtml?: boolean;
   includeText?: boolean;
   includeLinks?: boolean;
+  includePhones?: boolean;
+  includeEmails?: boolean;
+  contactRegion?: string;
   maxHtmlChars: number;
   maxTextChars: number;
   maxLinks: number;
+  maxPhones: number;
+  maxEmails: number;
 };
 
 type ExtractionResult = {
@@ -31,6 +38,7 @@ type ExtractionResult = {
   };
   fields?: Record<string, string>;
   links?: string[];
+  contacts?: ContactExtraction;
 };
 
 type WorkerResponse =
@@ -49,6 +57,12 @@ parentPort?.on('message', (input: ExtractionInput) => {
 });
 
 async function extractDocument(input: ExtractionInput): Promise<ExtractionResult> {
+  const result = await runParser(input);
+  applyContactExtraction(result, input);
+  return result;
+}
+
+function runParser(input: ExtractionInput): Promise<ExtractionResult> | ExtractionResult {
   switch (input.parser) {
     case 'native-fetch':
       return extractNative(input);
@@ -61,6 +75,29 @@ async function extractDocument(input: ExtractionInput): Promise<ExtractionResult
     default:
       return assertNever(input.parser);
   }
+}
+
+/**
+ * Contact scanning is opt-in and runs against the full (untruncated) HTML plus
+ * the parser's visible text. `result.text` is clamped for the response payload,
+ * so when the caller suppressed or truncated text we re-derive a full-page text
+ * for scanning — otherwise a footer phone number past the clamp would be missed.
+ */
+function applyContactExtraction(result: ExtractionResult, input: ExtractionInput): void {
+  if (!input.includePhones && !input.includeEmails) {
+    return;
+  }
+  const textIsComplete =
+    typeof result.text === 'string' && result.text.length < input.maxTextChars;
+  result.contacts = extractContacts({
+    html: input.html,
+    text: textIsComplete ? (result.text as string) : stripHtml(input.html),
+    defaultRegion: input.contactRegion,
+    includePhones: input.includePhones === true,
+    includeEmails: input.includeEmails === true,
+    maxPhones: input.maxPhones,
+    maxEmails: input.maxEmails,
+  });
 }
 
 function extractNative(input: ExtractionInput): ExtractionResult {
