@@ -1,0 +1,15 @@
+{
+  "name": "daedalus-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Browser e2e for daedalus-web-server: Supabase auth gate, via Playwright and Puppeteer. Env-gated on DAEDALUS_WEB_BASE_URL.",
+  "scripts": {
+    "test:playwright": "playwright test",
+    "test:puppeteer": "node --test puppeteer/*.test.mjs",
+    "test": "npm run test:playwright && npm run test:puppeteer"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0",
+    "puppeteer": "^23.0.0"
+  }
+}

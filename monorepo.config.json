@@ -2,6 +2,8 @@
   "org": "daedalus-fab",
   "monorepo": "daedalus-monorepo",
   "apps": [
-    "fabrication-server.rs"
+    "fabrication-server.rs",
+    "daedalus-api-server.rs",
+    "daedalus-web-server.rs"
   ]
 }
