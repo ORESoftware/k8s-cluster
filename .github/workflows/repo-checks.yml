@@ -41,7 +41,7 @@ jobs:
           token_url="https://x-access-token:${K8S_SUBMODULE_TOKEN}@github.com/"
           git config --global url."${token_url}".insteadOf "git@github.com:"
           trap 'git config --global --unset-all url."${token_url}".insteadOf || true' EXIT
-          git submodule update --init --depth 1 -- remote/libs
+          git submodule update --init --recursive --depth 1 -- remote/libs
 
       - name: Install pnpm
         uses: pnpm/action-setup@v6
@@ -100,6 +100,7 @@ jobs:
             general/nats-shadow-handoff.test.ts
             general/observability-config.test.ts
             general/redis-cache-config.test.ts
+            general/remote-libs-submodule-contract.test.ts
             general/remote-dev-worker-git-hardening.test.ts
             general/runtime-split-config.test.ts
             general/selenium-server-config.test.ts

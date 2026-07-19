@@ -243,6 +243,16 @@ test('subject containment respects parameters, wildcards, and stream bounds', as
   assert.equal(modelCoversExpression(model, 'dd.remote.>'), false);
 });
 
+test('pinned generated NATS outputs are current with the shared schema', () => {
+  const repoRoot = findRepoRoot();
+  const subjectDefsRoot = resolve(repoRoot, 'remote/libs/nats/subject-defs');
+
+  execFileSync(process.execPath, [resolve(subjectDefsRoot, 'src/generate.mjs'), '--check'], {
+    cwd: subjectDefsRoot,
+    encoding: 'utf8',
+  });
+});
+
 test('tracked workload NATS subjects agree with the pinned remote/libs schema', async () => {
   const repoRoot = findRepoRoot();
   const model = await loadCanonicalModel(repoRoot);
