@@ -134,15 +134,20 @@ export function extractContacts(options: ContactExtractionOptions): ContactExtra
   const phones = new PhoneCollector(options.defaultRegion);
   const emails = new EmailCollector();
 
+  // Markup scans run against a script/style-stripped view: inline JS and CSS
+  // routinely carry phone-shaped config values that are not business contacts.
+  // JSON-LD lives inside a <script>, so it is parsed from the original HTML.
+  const markup = stripScriptsAndStyles(html);
+
   if (options.includePhones) {
-    collectTelHrefs(html, phones);
+    collectTelHrefs(markup, phones);
   }
   if (options.includeEmails) {
-    collectMailtoHrefs(html, emails);
+    collectMailtoHrefs(markup, emails);
   }
   if (options.includePhones || options.includeEmails) {
     collectStructuredData(html, options, phones, emails);
-    collectMeta(html, options, phones, emails);
+    collectMeta(markup, options, phones, emails);
   }
   if (options.includePhones) {
     collectPhonesFromText(text, phones);
