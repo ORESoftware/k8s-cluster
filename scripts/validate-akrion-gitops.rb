@@ -126,7 +126,8 @@ end
   raise "#{cluster} learner replicas are unsafe" unless learner.dig('spec', 'replicas') == replicas
   raise "#{cluster} commit-watcher must be disabled" unless watcher&.dig('spec', 'replicas') == 0
   sync_options = learner.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-options').to_s
-  raise "#{cluster} learner must use partial Server-Side Apply" unless sync_options.include?('ServerSideApply=true') && sync_options.include?('Validate=false')
+  required_resource_options = %w[ServerSideApply=true Validate=false DisableClientSideApplyMigration=true]
+  raise "#{cluster} learner must use partial Server-Side Apply without client-side migration" unless required_resource_options.all? { |option| sync_options.include?(option) }
 
   annotations = learner.dig('spec', 'template', 'metadata', 'annotations') || {}
   raise "#{cluster} learner soccer annotation is stale" unless annotations['dd.dev/soccer-engine-revision'] == revisions.fetch('soccer')
@@ -151,6 +152,7 @@ end
   options = app.dig('spec', 'syncPolicy', 'syncOptions') || []
   raise "#{cluster} Argo application must use Server-Side Apply" unless options.include?('ServerSideApply=true')
   raise "#{cluster} Argo application must disable client validation for partial resources" unless options.include?('Validate=false')
+  raise "#{cluster} Argo application must disable client-side apply migration" unless options.include?('DisableClientSideApplyMigration=true')
 end
 
 puts "Akrion GitOps contract is valid: backend=#{revisions.fetch('backend')} " \

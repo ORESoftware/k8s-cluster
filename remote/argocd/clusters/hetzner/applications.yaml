@@ -222,6 +222,7 @@ spec:
       - CreateNamespace=true
       - ServerSideApply=true
       - Validate=false
+      - DisableClientSideApplyMigration=true
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
