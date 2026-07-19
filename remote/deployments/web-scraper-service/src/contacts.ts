@@ -158,7 +158,7 @@ export function extractContacts(options: ContactExtractionOptions): ContactExtra
 
 function collectTelHrefs(html: string, phones: PhoneCollector): void {
   for (const match of html.matchAll(TEL_HREF_RE)) {
-    const value = decodeEntities(match[1]).trim();
+    const value = decodeEntities(match[1] ?? '').trim();
     if (value) {
       phones.add(value, 'tel-href');
     }
