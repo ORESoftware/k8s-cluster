@@ -47,10 +47,13 @@ pub struct Config {
     pub require_webhook_signatures: bool,
     pub webhook_signature_tolerance_seconds: i64,
 
-    /// Mount the read-mostly HTMX admin UI at `/admin`. Defaults to ON for
-    /// dev convenience; production deployments behind public gateways should
-    /// either disable this (`BILLING_ADMIN_UI_ENABLED=false`) or front it
-    /// with `dd-remote-auth` per the access-posture rule in `AGENTS.md`.
+    /// Mount the read-mostly HTMX admin UI at `/admin`. Defaults to ON, but the
+    /// server refuses to boot with the admin UI enabled unless
+    /// `admin_auth_bearer` is also set (or `BILLING_ALLOW_INSECURE_DEV=1` is
+    /// explicitly given for local dev). Production deployments behind public
+    /// gateways should either disable this (`BILLING_ADMIN_UI_ENABLED=false`)
+    /// or front it with `dd-remote-auth` per the access-posture rule in
+    /// `AGENTS.md`.
     pub admin_ui_enabled: bool,
 
     /// When set, every `/admin/*` request must present
