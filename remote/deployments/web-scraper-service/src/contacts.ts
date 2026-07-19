@@ -177,6 +177,9 @@ function collectMailtoHrefs(html: string, emails: EmailCollector): void {
 function collectPhonesFromText(text: string, phones: PhoneCollector): void {
   for (const match of text.matchAll(PHONE_TEXT_RE)) {
     const candidate = match[1];
+    if (!candidate) {
+      continue;
+    }
     const tail = text.slice(match.index + match[0].length);
     const extMatch = tail.match(PHONE_EXT_RE);
     phones.add(candidate, 'text', extMatch?.[1]);
