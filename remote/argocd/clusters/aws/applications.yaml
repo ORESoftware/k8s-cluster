@@ -246,6 +246,7 @@ spec:
       - CreateNamespace=true
       - ServerSideApply=true
       - Validate=false
+      - DisableClientSideApplyMigration=true
 ---
 # fiducia.cloud — the sharded-multi-Raft coordination stack (data plane + control
 # plane + LB + website). Single-machine here on AWS (all pods co-located on the
