@@ -20,8 +20,8 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/sonus-auris-monorepo-revision: 'e18c873bd94f76db3e3c0b687592f5e7e11be1f5'
-        dd.dev/sonus-auris-console-revision: '11b43907da9cfac0da6674cbcbf6bf2d41f5599b'
+        dd.dev/sonus-auris-monorepo-revision: '8b36270cee66bd31ea6d4694d26ee8b87b7fa47b'
+        dd.dev/sonus-auris-console-revision: '6ca595c6918b1524366228a3d7a42e26b9c9b4fd'
       labels:
         app: dd-sonus-auris-console
     spec:
@@ -90,9 +90,9 @@ spec:
               cp -R build/web/. /console-dist/
           env:
             - name: SONUS_AURIS_MONOREPO_GIT_REF
-              value: e18c873bd94f76db3e3c0b687592f5e7e11be1f5
+              value: 8b36270cee66bd31ea6d4694d26ee8b87b7fa47b
             - name: SONUS_AURIS_CONSOLE_GIT_REF
-              value: 11b43907da9cfac0da6674cbcbf6bf2d41f5599b
+              value: 6ca595c6918b1524366228a3d7a42e26b9c9b4fd
             - name: SONUS_SUPABASE_URL
               valueFrom:
                 secretKeyRef:
