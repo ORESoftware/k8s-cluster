@@ -47,6 +47,13 @@ Argo repo-server intentionally has recursive Git submodules disabled, so every r
 by this kustomization must live in the Argo-owned tree. Source gitlinks may remain the code pin, but
 runtime manifests (including the standalone Athlet-O backend) are vendored here and validated by CI.
 
+The Sonus Auris console init container reads the exact console revision pinned by the node's
+read-only `sonus-auris-monorepo` checkout, verifies that revision before building, and never receives
+a GitHub personal token. The current single-node deployment mounts the host checkout for that
+intermediate build path. Moving the application resources themselves into the monorepo, and
+replacing the host checkout with an immutable published artifact, are tracked in
+[`docs/sonus-auris-deployment-todos.md`](../../../docs/sonus-auris-deployment-todos.md).
+
 ## Live-Mutex broker
 
 `dd-live-mutex` runs the published `live-mutex@0.2.25` package from

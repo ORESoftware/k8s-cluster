@@ -1,15 +1,16 @@
 # Sonus Auris deployment follow-ups
 
 The intended end state is for `sonus-auris-monorepo` to be the canonical source revision for both
-Sonus Auris application code and the deployment inputs consumed by this repository. The current
-Argo application remains in `k8s-cluster` so the backend and Flutter web console can be operated
-while private cross-repository authentication is repaired.
+Sonus Auris application code and the deployment inputs consumed by this repository. As an
+intermediate step, the Argo-managed console builds the console revision pinned by the checked-out
+monorepo instead of cloning it with a personal token. The Kubernetes desired-state resources still
+live in `k8s-cluster` until the remaining GitOps source migration is reviewed.
 
 ## GitOps source migration
 
-- [ ] Add a GitHub App installation token (preferred) or a replacement fine-grained token that can
-  read every private Sonus Auris repository needed by Argo and the build server. Do not reuse a
-  personal classic token in Kubernetes.
+- [ ] Add a GitHub App installation token (preferred) or repository-scoped deploy keys for private
+  Sonus Auris builds that cannot use the node's read-only monorepo checkout. Do not reuse a personal
+  classic token in Kubernetes.
 - [ ] Move or generate the Sonus Auris backend and console deployment inputs from
   `sonus-auris-monorepo`, pin every component revision, and make the monorepo workflow update those
   pins through review.

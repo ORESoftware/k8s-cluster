@@ -20,6 +20,7 @@ spec:
   template:
     metadata:
       annotations:
+        dd.dev/sonus-auris-monorepo-revision: 'e18c873bd94f76db3e3c0b687592f5e7e11be1f5'
         dd.dev/sonus-auris-console-revision: '11b43907da9cfac0da6674cbcbf6bf2d41f5599b'
       labels:
         app: dd-sonus-auris-console
@@ -47,14 +48,22 @@ spec:
             - |
               set -euo pipefail
               source_dir=/work/source
-              github_basic="$(printf 'x-access-token:%s' "$GH_PAT" | base64 | tr -d '\n')"
-              github_extraheader="AUTHORIZATION: basic ${github_basic}"
-              git -c "http.https://github.com/.extraheader=${github_extraheader}" \
-                clone --filter=blob:none --no-checkout "$SONUS_AURIS_CONSOLE_GIT_URL" "$source_dir"
-              git -C "$source_dir" -c "http.https://github.com/.extraheader=${github_extraheader}" \
-                fetch --depth 1 origin "$SONUS_AURIS_CONSOLE_GIT_REF"
-              git -C "$source_dir" switch --detach FETCH_HEAD
-              echo "[dd-sonus-auris-console] source: ${SONUS_AURIS_CONSOLE_GIT_REF} ($(git -C "$source_dir" rev-parse --short HEAD))"
+              monorepo_mount=/host-dd-next/remote/deployments/sonus-auris-monorepo
+              source_mount=${monorepo_mount}/apps/sonus-auris-web-desktop.dart
+              actual_monorepo_revision="$(git -c safe.directory="$monorepo_mount" -C "$monorepo_mount" rev-parse HEAD)"
+              if [ "$actual_monorepo_revision" != "$SONUS_AURIS_MONOREPO_GIT_REF" ]; then
+                echo "[dd-sonus-auris-console] refusing monorepo revision ${actual_monorepo_revision}; expected ${SONUS_AURIS_MONOREPO_GIT_REF}" >&2
+                exit 1
+              fi
+              actual_revision="$(git -c safe.directory="$source_mount" -C "$source_mount" rev-parse HEAD)"
+              if [ "$actual_revision" != "$SONUS_AURIS_CONSOLE_GIT_REF" ]; then
+                echo "[dd-sonus-auris-console] refusing source revision ${actual_revision}; expected ${SONUS_AURIS_CONSOLE_GIT_REF}" >&2
+                exit 1
+              fi
+              mkdir -p "$source_dir"
+              tar --exclude=.git -C "$source_mount" -cf - . | tar -xf - -C "$source_dir"
+              echo "[dd-sonus-auris-console] monorepo: ${actual_monorepo_revision}"
+              echo "[dd-sonus-auris-console] source: ${actual_revision}"
 
               cd "$source_dir"
               flutter pub get
@@ -64,15 +73,10 @@ spec:
                 --dart-define="SONUS_SUPABASE_ANON_KEY=${SONUS_SUPABASE_ANON_KEY}"
               cp -R build/web/. /console-dist/
           env:
-            - name: SONUS_AURIS_CONSOLE_GIT_URL
-              value: https://github.com/sonus-auris/sonus-auris-web-desktop.dart.git
+            - name: SONUS_AURIS_MONOREPO_GIT_REF
+              value: e18c873bd94f76db3e3c0b687592f5e7e11be1f5
             - name: SONUS_AURIS_CONSOLE_GIT_REF
               value: 11b43907da9cfac0da6674cbcbf6bf2d41f5599b
-            - name: GH_PAT
-              valueFrom:
-                secretKeyRef:
-                  name: dd-agent-secrets
-                  key: GH_PAT
             - name: SONUS_SUPABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -91,6 +95,9 @@ spec:
               cpu: '4'
               memory: 8Gi
           volumeMounts:
+            - name: monorepo-source
+              mountPath: /host-dd-next
+              readOnly: true
             - name: build-work
               mountPath: /work
             - name: console-dist
@@ -153,6 +160,10 @@ spec:
             - name: nginx-tmp
               mountPath: /tmp
       volumes:
+        - name: monorepo-source
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
         - name: build-work
           emptyDir: {}
         - name: console-dist
