@@ -1,0 +1,77 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: fiducia-production
+  namespace: argocd
+spec:
+  sourceRepos:
+    - https://github.com/fiducia-cloud/fiducia-monorepo.git
+  destinations:
+    - namespace: fiducia
+      server: "*"
+  clusterResourceWhitelist:
+    - { group: "", kind: Namespace }
+    - { group: rbac.authorization.k8s.io, kind: ClusterRole }
+    - { group: rbac.authorization.k8s.io, kind: ClusterRoleBinding }
+  namespaceResourceWhitelist:
+    - { group: "", kind: ConfigMap }
+    - { group: "", kind: Service }
+    - { group: "", kind: ServiceAccount }
+    - { group: apps, kind: Deployment }
+    - { group: apps, kind: StatefulSet }
+    - { group: apps, kind: DaemonSet }
+    - { group: rbac.authorization.k8s.io, kind: Role }
+    - { group: rbac.authorization.k8s.io, kind: RoleBinding }
+    - { group: networking.k8s.io, kind: NetworkPolicy }
+    - { group: policy, kind: PodDisruptionBudget }
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: fiducia-production-data-plane
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            fiducia.cloud/cluster: "true"
+            fiducia.cloud/environment: production
+            fiducia.cloud/plane: data
+          matchExpressions:
+            - key: fiducia.cloud/provider
+              operator: In
+              values: [hetzner, civo, vultr]
+  template:
+    metadata:
+      name: 'fiducia-data-{{.nameNormalized}}'
+      labels:
+        app.kubernetes.io/part-of: fiducia
+        fiducia.cloud/plane: data
+    spec:
+      project: fiducia-production
+      source:
+        repoURL: https://github.com/fiducia-cloud/fiducia-monorepo.git
+        targetRevision: main
+        path: 'gitops/data-plane/{{index .metadata.labels "fiducia.cloud/provider"}}'
+      destination:
+        server: '{{.server}}'
+        namespace: fiducia
+      syncPolicy:
+        automated:
+          enabled: true
+          prune: true
+          selfHeal: true
+          allowEmpty: false
+        syncOptions:
+          - CreateNamespace=true
+          - PruneLast=true
+          - ServerSideApply=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 3m
