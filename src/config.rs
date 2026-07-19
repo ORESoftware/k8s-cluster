@@ -8,6 +8,7 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
 use x25519_dalek::{PublicKey, StaticSecret};
+use zeroize::{Zeroize, Zeroizing};
 
 /// One relay as seen by a client: where to reach it and its static public key.
 #[derive(Debug, Clone, Deserialize)]
