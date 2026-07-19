@@ -343,9 +343,15 @@ test-only mock constructors.
 
 Inbound webhook payloads are stored with `signature_ok`, `payload_sha256`,
 `verification_error`, `tenant_id`, `connection_id`, and the provider external
-account id when it can be inferred. Set
-`BILLING_REQUIRE_WEBHOOK_SIGNATURES=true` outside local development; unsigned
-or unverifiable deliveries are recorded and then rejected with `401`.
+account id when it can be inferred. `BILLING_REQUIRE_WEBHOOK_SIGNATURES`
+defaults to `true` (fail-closed); unsigned or unverifiable deliveries are
+recorded and then rejected with `401`. Set it to `false` only for local
+development against unsigned mock payloads.
+
+When a delivery carries no extractable provider event id, the idempotency key
+is derived deterministically from the body's `payload_sha256` (not a random
+uuid), so repeated deliveries of the same body dedup via the
+`(provider, external_event_id)` upsert instead of inserting a new row each time.
 
 **Strict mode also rejects** any signed delivery that cannot be bound to a
 tenant connection. That stops a valid platform-secret signature (Stripe
