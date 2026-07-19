@@ -27,10 +27,15 @@ pub fn parse_decimal_to_minor(s: &str, provider_tag: &'static str) -> AppResult<
     let (whole, frac) = match parts.as_slice() {
         [w] => (*w, "00".to_string()),
         [w, f] => {
-            let f = if f.len() >= 2 {
-                f[..2].to_string()
+            // Truncate on CHARACTER boundaries, not bytes: `f[..2]` panics on
+            // multi-byte fractional input like "5½". Any non-ASCII-digit chars
+            // that survive truncation are caught by the `frac.parse()` below,
+            // which turns them into a provider error rather than a panic.
+            let frac_len = f.chars().count();
+            let f = if frac_len >= 2 {
+                f.chars().take(2).collect::<String>()
             } else {
-                format!("{f}{}", "0".repeat(2 - f.len()))
+                format!("{f}{}", "0".repeat(2 - frac_len))
             };
             (*w, f)
         }
