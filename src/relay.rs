@@ -55,11 +55,19 @@ fn max_circuits() -> Result<usize> {
 /// Optional idle timeout on the forward read loop (0 = disabled). Bounds
 /// post-handshake slowloris, where a peer completes the handshake then holds
 /// the circuit open sending nothing.
+///
+/// Applies to BOTH the forward read loop and the detached backward pumps, so a
+/// peer that goes silent cannot park a pump forever and leak its circuit-slot
+/// permit. Defaults to a finite value (a disabled/0 timeout re-enables the
+/// slot-exhaustion DoS); operators with legitimately long-idle streams can raise
+/// it. 0 disables (not recommended).
+const DEFAULT_IDLE_SECS: u64 = 600;
+
 fn idle_timeout() -> Option<Duration> {
     let secs: u64 = std::env::var("TOR_CIRCUIT_IDLE_TIMEOUT_SECS")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(0);
+        .unwrap_or(DEFAULT_IDLE_SECS);
     return if secs == 0 {
         None
     } else {
