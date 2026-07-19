@@ -232,6 +232,28 @@ fn is_blocked_v6(v6: Ipv6Addr) -> bool {
         );
         return is_blocked_v4(v4);
     }
+    // Teredo (2001:0000::/32) embeds the client's IPv4 in the last 32 bits,
+    // bit-inverted; block if that embedded v4 is private/loopback.
+    if seg[0] == 0x2001 && seg[1] == 0x0000 {
+        let v4 = Ipv4Addr::new(
+            ((seg[6] >> 8) as u8) ^ 0xff,
+            (seg[6] as u8) ^ 0xff,
+            ((seg[7] >> 8) as u8) ^ 0xff,
+            (seg[7] as u8) ^ 0xff,
+        );
+        return is_blocked_v4(v4);
+    }
+    // IPv4-translated (::ffff:0:0/96): seg[4]==0xffff, seg[5]==0, v4 in seg[6..8].
+    // `to_ipv4()` does not decode this SIIT form, so handle it explicitly.
+    if seg[0] == 0 && seg[1] == 0 && seg[2] == 0 && seg[3] == 0 && seg[4] == 0xffff && seg[5] == 0 {
+        let v4 = Ipv4Addr::new(
+            (seg[6] >> 8) as u8,
+            seg[6] as u8,
+            (seg[7] >> 8) as u8,
+            seg[7] as u8,
+        );
+        return is_blocked_v4(v4);
+    }
     let seg0 = seg[0];
     let is_ula = (seg0 & 0xfe00) == 0xfc00; // fc00::/7 unique local
     let is_link_local = (seg0 & 0xffc0) == 0xfe80; // fe80::/10
