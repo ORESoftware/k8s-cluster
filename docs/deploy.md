@@ -5,14 +5,14 @@ artifacts, the monorepo records the approved release, and Argo CD is the only
 production reconciler. GitHub Actions never receives Kubernetes or cloud
 credentials.
 
-## Placement
+## Placement and desired-state ownership
 
 The production topology has a deliberately asymmetric fourth cluster:
 
-| Plane | Cluster ownership | Workloads |
-|---|---|---|
-| Web | `~/codes/ores/k8s-cluster` | `fiducia-admin`, `fiducia-backend` (the customer app), `fiducia-auth`, gateway/observability integration |
-| Data | `fiducia-infra` on Hetzner, Civo, Vultr | `fiducia-node`, `fiducia-node-sidecar`, `fiducia-brain`, `fiducia-load-balance`, per-cluster telemetry agent |
+| Plane | Runtime cluster | Desired-state owner | Workloads |
+|---|---|---|---|
+| Web | ORESoftware `k8s-cluster` | currently `~/codes/ores/k8s-cluster`; target `fiducia-monorepo` | `fiducia-admin`, `fiducia-backend` (the customer app), `fiducia-auth`; shared gateway/observability remain cluster-owned |
+| Data | `fiducia-infra` on Hetzner, Civo, Vultr | `fiducia-monorepo` | `fiducia-node`, `fiducia-node-sidecar`, `fiducia-brain`, `fiducia-load-balance`, per-cluster telemetry agent |
 
 The web cluster must never carry the Argo label `fiducia.cloud/plane=data`.
 The production ApplicationSet requires that label, plus an explicit provider
@@ -68,8 +68,12 @@ visibility.
 
 Before enabling this ApplicationSet, remove the legacy node/brain/load-balancer
 resources from the ORESoftware cluster's `fiducia` Argo Application. That
-Application remains the web-plane owner for admin, customer/backend, and auth;
-two Argo Applications must never manage the same Kubernetes object.
+Application temporarily remains the web-plane owner for admin,
+customer/backend, and auth; two Argo Applications must never manage the same
+Kubernetes object. The target is for the monorepo to own that desired state as
+well. Follow the staged ownership-transfer checklist in
+[`k8s-cluster-gitops-todos-2026-07.md`](k8s-cluster-gitops-todos-2026-07.md)
+before adding or enabling a web-plane Application.
 
 ## Required GitHub controls
 
