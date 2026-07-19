@@ -29,7 +29,7 @@ impl Persistence {
         fields(db.system = "postgresql", db.client = "seaorm", db.schema = "daedalus")
     )]
     pub(crate) async fn from_env() -> Result<Self, PersistenceError> {
-        let required = env_bool("DAEDALUS_API_DATABASE_REQUIRED", false);
+        let required = env_bool("DAEDALUS_WEB_DATABASE_REQUIRED", false);
         let Some(url) = database_url() else {
             if required {
                 return Err(PersistenceError::MissingUrl);
@@ -42,9 +42,9 @@ impl Persistence {
             return Ok(Self::Disabled);
         };
 
-        let max_connections = env_u64("DAEDALUS_API_DATABASE_MAX_CONNECTIONS", 8, 1, 64) as u32;
+        let max_connections = env_u64("DAEDALUS_WEB_DATABASE_MAX_CONNECTIONS", 8, 1, 64) as u32;
         let min_connections = env_u64(
-            "DAEDALUS_API_DATABASE_MIN_CONNECTIONS",
+            "DAEDALUS_WEB_DATABASE_MIN_CONNECTIONS",
             0,
             0,
             max_connections as u64,
@@ -85,7 +85,7 @@ impl Persistence {
         match self {
             Self::SeaOrm(connection) => Ok(connection),
             Self::Disabled => Err(crate::error::ServiceError::Unavailable(
-                "database persistence is disabled (set DAEDALUS_API_DATABASE_URL)".to_string(),
+                "database persistence is disabled (set DAEDALUS_WEB_DATABASE_URL)".to_string(),
             )),
         }
     }
@@ -94,7 +94,7 @@ impl Persistence {
 /// Resolution order matches scripts/dpm.sh so the server and the migration tool
 /// can never disagree about which database they are pointed at.
 fn database_url() -> Option<String> {
-    optional_env("DAEDALUS_API_DATABASE_URL")
+    optional_env("DAEDALUS_WEB_DATABASE_URL")
         .or_else(|| optional_env("DATABASE_URL"))
         .or_else(|| optional_env("RDS_DATABASE_URL"))
 }
@@ -110,8 +110,8 @@ impl std::fmt::Display for PersistenceError {
         match self {
             Self::MissingUrl => write!(
                 f,
-                "DAEDALUS_API_DATABASE_REQUIRED is set but no database URL was provided \
-                 (DAEDALUS_API_DATABASE_URL, DATABASE_URL, or RDS_DATABASE_URL)"
+                "DAEDALUS_WEB_DATABASE_REQUIRED is set but no database URL was provided \
+                 (DAEDALUS_WEB_DATABASE_URL, DATABASE_URL, or RDS_DATABASE_URL)"
             ),
             // Deliberately opaque: the URL carries a password, and connection
             // errors from sqlx echo the DSN back.

@@ -1,6 +1,6 @@
 //! Environment-driven service configuration.
 //!
-//! Every knob has a `DAEDALUS_API_` prefix so this service's settings can never
+//! Every knob has a `DAEDALUS_WEB_` prefix so this service's settings can never
 //! be confused with a co-located service's when both are templated into the
 //! same Kubernetes manifest.
 
@@ -17,7 +17,7 @@ impl ServiceConfig {
     pub(crate) fn from_env() -> Result<Self, std::num::ParseIntError> {
         Ok(Self {
             host: env_value("HOST", "0.0.0.0"),
-            port: env_value("PORT", "8114").parse::<u16>()?,
+            port: env_value("PORT", "8115").parse::<u16>()?,
             supabase: SupabaseConfig::from_env(),
         })
     }
@@ -42,11 +42,11 @@ pub(crate) struct SupabaseConfig {
 impl SupabaseConfig {
     pub(crate) fn from_env() -> Self {
         Self {
-            audience: env_value("DAEDALUS_API_SUPABASE_AUDIENCE", "authenticated"),
-            issuer: optional_env("DAEDALUS_API_SUPABASE_ISSUER"),
-            jwt_secret: optional_env("DAEDALUS_API_SUPABASE_JWT_SECRET"),
-            jwks_url: optional_env("DAEDALUS_API_SUPABASE_JWKS_URL"),
-            allowed_emails: optional_env("DAEDALUS_API_ALLOWED_EMAILS")
+            audience: env_value("DAEDALUS_WEB_SUPABASE_AUDIENCE", "authenticated"),
+            issuer: optional_env("DAEDALUS_WEB_SUPABASE_ISSUER"),
+            jwt_secret: optional_env("DAEDALUS_WEB_SUPABASE_JWT_SECRET"),
+            jwks_url: optional_env("DAEDALUS_WEB_SUPABASE_JWKS_URL"),
+            allowed_emails: optional_env("DAEDALUS_WEB_ALLOWED_EMAILS")
                 .map(|raw| {
                     raw.split(',')
                         .map(|entry| entry.trim().to_ascii_lowercase())

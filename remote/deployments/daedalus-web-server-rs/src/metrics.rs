@@ -12,12 +12,12 @@ impl Metrics {
     pub(crate) fn new() -> Self {
         let registry = Registry::new();
         let authorized = IntCounter::new(
-            "daedalus_api_authorized_requests_total",
+            "daedalus_web_authorized_requests_total",
             "Requests that presented a verified, allow-listed Supabase identity.",
         )
         .expect("static metric definition");
         let rejected = IntCounter::new(
-            "daedalus_api_rejected_requests_total",
+            "daedalus_web_rejected_requests_total",
             "Requests rejected at the authorization boundary.",
         )
         .expect("static metric definition");
@@ -59,7 +59,7 @@ mod tests {
         metrics.record_authorized();
         metrics.record_rejected();
         let encoded = metrics.encode();
-        assert!(encoded.contains("daedalus_api_authorized_requests_total 1"));
-        assert!(encoded.contains("daedalus_api_rejected_requests_total 1"));
+        assert!(encoded.contains("daedalus_web_authorized_requests_total 1"));
+        assert!(encoded.contains("daedalus_web_rejected_requests_total 1"));
     }
 }

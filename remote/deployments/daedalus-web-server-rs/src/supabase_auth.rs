@@ -150,7 +150,7 @@ impl SupabaseVerifier {
         if matches!(header.alg, Algorithm::HS256) {
             let secret = self.config.jwt_secret.as_deref().ok_or_else(|| {
                 ServiceError::Unavailable(
-                    "Supabase HS256 token received but DAEDALUS_API_SUPABASE_JWT_SECRET is not configured"
+                    "Supabase HS256 token received but DAEDALUS_WEB_SUPABASE_JWT_SECRET is not configured"
                         .to_string(),
                 )
             })?;
