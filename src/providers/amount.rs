@@ -130,6 +130,19 @@ mod tests {
     }
 
     #[test]
+    fn multibyte_fractional_does_not_panic() {
+        // Previously `f[..2]` panicked on a non-char-boundary byte slice.
+        assert!(parse_decimal_to_minor("5.½", "x").is_err());
+        assert!(parse_decimal_to_minor("5½", "x").is_err());
+    }
+
+    #[test]
+    fn rejects_overflowing_whole_part() {
+        let huge = "1".repeat(40); // > i128::MAX once scaled by 100
+        assert!(parse_decimal_to_minor(&huge, "x").is_err());
+    }
+
+    #[test]
     fn constant_time_eq_basic() {
         assert!(constant_time_eq_str("abc", "abc"));
         assert!(!constant_time_eq_str("abc", "abd"));
