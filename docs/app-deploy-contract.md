@@ -1,7 +1,7 @@
 # App deployment contract — what an org repo may declare, and what k8s-cluster owns
 
 _The enforceable boundary between the 7 app orgs and this platform repo. Companion to
-[gitops-boundary-audit.md](gitspot-boundary-audit.md). Reference implementation:
+[gitops-boundary-audit.md](gitops-boundary-audit.md). Reference implementation:
 `remote/deployments/3fa-backend/deploy/k8s/`._
 
 The boundary is a **contract**, not a repo boundary: split by who owns the lifecycle. If a
