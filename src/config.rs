@@ -57,11 +57,12 @@ pub struct Config {
     pub admin_ui_enabled: bool,
 
     /// When set, every `/admin/*` request must present
-    /// `Authorization: Bearer <this value>`. Constant-time compared. Leave
-    /// unset (default) for unauthenticated local dev. In production this
-    /// should be a high-entropy random string injected via SealedSecrets /
-    /// the External Secrets stack, mirroring how other webhook secrets
-    /// land in `BILLING_*` env vars.
+    /// `Authorization: Bearer <this value>`. Constant-time compared. Required
+    /// whenever the admin UI is enabled (boot fails otherwise unless
+    /// `BILLING_ALLOW_INSECURE_DEV=1`). In production this should be a
+    /// high-entropy random string injected via SealedSecrets / the External
+    /// Secrets stack, mirroring how other webhook secrets land in `BILLING_*`
+    /// env vars.
     pub admin_auth_bearer: Option<String>,
 
     /// Cross-origin `Origin` values explicitly allowed to perform admin
