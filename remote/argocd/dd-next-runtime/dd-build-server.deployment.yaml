@@ -209,19 +209,19 @@ spec:
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
-                  name: dd-agent-secrets
+                  name: dd-build-server-secrets
                   key: AWS_ACCESS_KEY_ID
-                  optional: true
+                  optional: false
             - name: AWS_SECRET_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
-                  name: dd-agent-secrets
+                  name: dd-build-server-secrets
                   key: AWS_SECRET_ACCESS_KEY
-                  optional: true
+                  optional: false
             - name: AWS_SESSION_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: dd-agent-secrets
+                  name: dd-build-server-secrets
                   key: AWS_SESSION_TOKEN
                   optional: true
             # runtime-config wiring: registers this pod with the control plane

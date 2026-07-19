@@ -176,7 +176,10 @@ The Argo runtime deployment runs this from the host-mounted checkout and mounts:
 `SERVER_AUTH_SECRET` must come from `dd-agent-secrets`. ECR push support is enabled by
 `BUILD_SERVER_PUSH_ENABLED=true` and `BUILD_SERVER_ECR_LOGIN_ENABLED=true`. For ECR auth, provide
 `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and optional `AWS_SESSION_TOKEN` through
-`dd-agent-secrets` or replace the env-based signer with an instance-role credential provider.
+the service-specific `dd-build-server-secrets`. The deployed IAM identity is restricted to ECR
+authorization plus push/read operations on `sonus-flutter-builder`; do not reuse application
+storage credentials or broaden it to every repository. A future workload-identity integration can
+replace these rotated keys without changing the build API.
 Deploys are limited to namespaces listed in `BUILD_SERVER_ALLOWED_NAMESPACES`.
 
 ## Security notes
