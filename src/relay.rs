@@ -256,7 +256,7 @@ async fn handle_circuit(
                     .ok_or_else(|| anyhow!("sealer already taken"))?;
                 let hold = permit.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = exit_pump(dest_r, pw, sealer).await {
+                    if let Err(e) = exit_pump(dest_r, pw, sealer, idle).await {
                         debug!("exit pump ended: {e:#}");
                     }
                     drop(hold); // release the circuit slot only when this direction ends
