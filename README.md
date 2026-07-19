@@ -245,7 +245,8 @@ See [docs/security.md](docs/security.md) for the full model.
 | `TOR_EXIT_DENY_PORTS` | relay | `25`               | Comma-separated outbound port denylist   |
 | `TOR_RELAY_PEERS`   | relay  | (any)              | Comma-separated `host:port` extend allowlist |
 | `TOR_MAX_CIRCUITS`  | relay  | `1024`             | Max concurrent circuits before rejecting |
-| `TOR_CIRCUIT_IDLE_TIMEOUT_SECS` | relay | `0` (off) | Close circuits idle for this long        |
+| `TOR_CIRCUIT_IDLE_TIMEOUT_SECS` | relay | `600` | Idle timeout for the forward loop AND backward pumps; 0 disables (not recommended — re-enables slot exhaustion) |
+| `TOR_CLIENT_IDLE_TIMEOUT_SECS` | client | `600` | Idle timeout for a spliced stream's circuit read (0 disables) |
 | `TOR_NETWORK_SECRET_FILE` | all | (unset)           | Read overlay PSK from a file (not env)   |
 | `TOR_UI_TOKEN` / `TOR_UI_TOKEN_FILE` | client | (unset) | Require token for `/api/fetch` (guard exposed dashboard) |
 | `TOR_UI_ALLOW_REMOTE_UNAUTHENTICATED` | client | `0` | Explicitly allow an open non-loopback dashboard |
