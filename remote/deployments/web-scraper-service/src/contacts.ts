@@ -401,7 +401,7 @@ export function normalizePhoneNumber(
     }
   }
 
-  if (hasPlus || internationalPrefix) {
+  if (international) {
     const e164 = `+${bareDigits}`;
     return {
       raw: trimmed,
