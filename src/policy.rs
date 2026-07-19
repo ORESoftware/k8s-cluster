@@ -16,6 +16,12 @@ use anyhow::{bail, Result};
 use std::collections::HashSet;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use tokio::net::lookup_host;
+use tokio::time::{timeout, Duration};
+
+/// Bound on exit-side name resolution. `lookup_host` uses the blocking OS
+/// resolver; without this, a domain whose nameserver is black-holed pins a
+/// circuit slot and a blocking-pool thread for the full OS resolver timeout.
+const RESOLVE_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Clone)]
 pub struct Policy {
