@@ -4958,10 +4958,11 @@ validate_fab_instructions_dialect(Value) when is_list(Value) ->
 
 fab_runs_table() -> <<"daedalus.fab_runs">>.
 
-fab_runs_columns() -> [<<"id">>, <<"status">>, <<"machine_id">>, <<"operator_email">>, <<"progress">>, <<"as_built">>, <<"error">>, <<"started_at">>, <<"finished_at">>, <<"created_at">>].
+fab_runs_columns() -> [<<"id">>, <<"instructions_id">>, <<"status">>, <<"machine_id">>, <<"operator_email">>, <<"progress">>, <<"as_built">>, <<"error">>, <<"started_at">>, <<"finished_at">>, <<"created_at">>].
 
 fab_runs_select_sql() -> <<"select
       id::text as id,
+      instructions_id::text as instructions_id,
       status,
       machine_id,
       operator_email,

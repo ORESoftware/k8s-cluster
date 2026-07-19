@@ -3178,6 +3178,7 @@ class FabInstructions(models.Model):
 
 class FabRuns(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    instructions_id = models.UUIDField()
     status = models.TextField(choices=[("queued", "queued"), ("running", "running"), ("succeeded", "succeeded"), ("failed", "failed"), ("aborted", "aborted")], default="queued")
     machine_id = models.TextField()
     operator_email = models.TextField(null=True, blank=True)

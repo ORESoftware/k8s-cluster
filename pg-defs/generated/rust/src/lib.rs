@@ -21568,9 +21568,10 @@ pub fn validate_fab_instructions_insert(value: &FabInstructionsInsert) -> Result
 }
 
 pub const FAB_RUNS_TABLE: &str = "daedalus.fab_runs";
-pub const FAB_RUNS_COLUMNS: &[&str] = &["id", "status", "machine_id", "operator_email", "progress", "as_built", "error", "started_at", "finished_at", "created_at"];
+pub const FAB_RUNS_COLUMNS: &[&str] = &["id", "instructions_id", "status", "machine_id", "operator_email", "progress", "as_built", "error", "started_at", "finished_at", "created_at"];
 pub const FAB_RUNS_SELECT_SQL: &str = r###"select
       id::text as id,
+      instructions_id::text as instructions_id,
       status,
       machine_id,
       operator_email,
@@ -21626,6 +21627,7 @@ impl TryFrom<&str> for FabRunsStatus {
 #[serde(rename_all = "camelCase")]
 pub struct FabRunsRow {
     pub id: String,
+    pub instructions_id: String,
     pub status: String,
     pub machine_id: String,
     pub operator_email: Option<String>,
@@ -21641,6 +21643,7 @@ pub struct FabRunsRow {
 #[serde(rename_all = "camelCase")]
 pub struct FabRunsInsert {
     pub id: Option<String>,
+    pub instructions_id: Option<String>,
     pub status: Option<String>,
     pub machine_id: Option<String>,
     pub operator_email: Option<String>,

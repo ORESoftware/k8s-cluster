@@ -12612,6 +12612,7 @@ class FabRuns(Base):
     )
 
     id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    instructions_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
     status: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("'queued'"))
     machine_id: Mapped[str] = mapped_column(Text(), nullable=False)
     operator_email: Mapped[str | None] = mapped_column(Text(), nullable=True)
@@ -12626,6 +12627,7 @@ class FabRunsRow(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    instructionsId: UUID
     status: FabRunsStatus
     machineId: str
     operatorEmail: str | None = None
@@ -12654,6 +12656,7 @@ class FabRunsInsert(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: UUID | None = None
+    instructionsId: UUID
     status: FabRunsStatus | None = "queued"
     machineId: str
     operatorEmail: str | None = None

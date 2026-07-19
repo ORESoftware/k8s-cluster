@@ -13454,8 +13454,8 @@ pub fn validateFabInstructionsRevision(value: i32) ?[]const u8 {
 }
 
 pub const fab_runs_table: []const u8 = "daedalus.fab_runs";
-pub const fab_runs_columns = [_][]const u8{ "id", "status", "machine_id", "operator_email", "progress", "as_built", "error", "started_at", "finished_at", "created_at" };
-pub const fab_runs_select_sql: []const u8 = "select\n      id::text as id,\n      status,\n      machine_id,\n      operator_email,\n      progress,\n      as_built::text as as_built_json,\n      error,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_runs";
+pub const fab_runs_columns = [_][]const u8{ "id", "instructions_id", "status", "machine_id", "operator_email", "progress", "as_built", "error", "started_at", "finished_at", "created_at" };
+pub const fab_runs_select_sql: []const u8 = "select\n      id::text as id,\n      instructions_id::text as instructions_id,\n      status,\n      machine_id,\n      operator_email,\n      progress,\n      as_built::text as as_built_json,\n      error,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_runs";
 
 pub const FabRunsStatus = enum {
     queued,
@@ -13486,6 +13486,7 @@ pub const FabRunsStatus = enum {
 
 pub const FabRunsRow = struct {
     id: []const u8,
+    instructions_id: []const u8,
     status: []const u8,
     machine_id: []const u8,
     operator_email: ?[]const u8,
@@ -13499,15 +13500,16 @@ pub const FabRunsRow = struct {
     pub fn fromRow(reader: RowReader) FabRunsRow {
         return FabRunsRow{
             .id = reader.text(0),
-            .status = reader.text(1),
-            .machine_id = reader.text(2),
-            .operator_email = if (reader.is_null(3)) null else reader.text(3),
-            .progress = @as(i32, @intCast(reader.int(4))),
-            .as_built = reader.text(5),
-            .@"error" = if (reader.is_null(6)) null else reader.text(6),
-            .started_at = if (reader.is_null(7)) null else reader.text(7),
-            .finished_at = if (reader.is_null(8)) null else reader.text(8),
-            .created_at = reader.text(9),
+            .instructions_id = reader.text(1),
+            .status = reader.text(2),
+            .machine_id = reader.text(3),
+            .operator_email = if (reader.is_null(4)) null else reader.text(4),
+            .progress = @as(i32, @intCast(reader.int(5))),
+            .as_built = reader.text(6),
+            .@"error" = if (reader.is_null(7)) null else reader.text(7),
+            .started_at = if (reader.is_null(8)) null else reader.text(8),
+            .finished_at = if (reader.is_null(9)) null else reader.text(9),
+            .created_at = reader.text(10),
         };
     }
 };

@@ -2207,16 +2207,16 @@ update daedalus.fab_instructions set plan_id = $2, revision = $3, machine_profil
 delete from daedalus.fab_instructions where id = $1;
 
 -- name: ListFabRuns :many
-select id, status, machine_id, operator_email, progress, as_built, error, started_at, finished_at, created_at from daedalus.fab_runs;
+select id, instructions_id, status, machine_id, operator_email, progress, as_built, error, started_at, finished_at, created_at from daedalus.fab_runs;
 
 -- name: GetFabRuns :one
-select id, status, machine_id, operator_email, progress, as_built, error, started_at, finished_at, created_at from daedalus.fab_runs where id = $1 limit 1;
+select id, instructions_id, status, machine_id, operator_email, progress, as_built, error, started_at, finished_at, created_at from daedalus.fab_runs where id = $1 limit 1;
 
 -- name: CreateFabRuns :one
-insert into daedalus.fab_runs (id, status, machine_id, operator_email, progress, as_built, error, started_at, finished_at, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id, status, machine_id, operator_email, progress, as_built, error, started_at, finished_at, created_at;
+insert into daedalus.fab_runs (id, instructions_id, status, machine_id, operator_email, progress, as_built, error, started_at, finished_at, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning id, instructions_id, status, machine_id, operator_email, progress, as_built, error, started_at, finished_at, created_at;
 
 -- name: UpdateFabRuns :one
-update daedalus.fab_runs set status = $2, machine_id = $3, operator_email = $4, progress = $5, as_built = $6, error = $7, started_at = $8, finished_at = $9 where id = $1 returning id, status, machine_id, operator_email, progress, as_built, error, started_at, finished_at, created_at;
+update daedalus.fab_runs set instructions_id = $2, status = $3, machine_id = $4, operator_email = $5, progress = $6, as_built = $7, error = $8, started_at = $9, finished_at = $10 where id = $1 returning id, instructions_id, status, machine_id, operator_email, progress, as_built, error, started_at, finished_at, created_at;
 
 -- name: DeleteFabRuns :exec
 delete from daedalus.fab_runs where id = $1;

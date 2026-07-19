@@ -11115,7 +11115,7 @@ pub fn validate_fab_instructions_dialect(value: String) -> Result(String, String
 }
 
 pub const fab_runs_table = "daedalus.fab_runs"
-pub const fab_runs_select_sql = "select\n      id::text as id,\n      status,\n      machine_id,\n      operator_email,\n      progress,\n      as_built::text as as_built_json,\n      error,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_runs"
+pub const fab_runs_select_sql = "select\n      id::text as id,\n      instructions_id::text as instructions_id,\n      status,\n      machine_id,\n      operator_email,\n      progress,\n      as_built::text as as_built_json,\n      error,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_runs"
 
 pub type FabRunsStatus {
   FabRunsStatusQueued
@@ -11149,6 +11149,7 @@ pub fn parse_fab_runs_status(value: String) -> Result(FabRunsStatus, String) {
 pub type FabRunsRow {
   FabRunsRow(
     id: String,
+    instructions_id: String,
     status: String,
     machine_id: String,
     operator_email: Option(String),

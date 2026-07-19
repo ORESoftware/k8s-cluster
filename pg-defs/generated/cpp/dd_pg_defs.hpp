@@ -14017,9 +14017,10 @@ inline std::optional<std::string> validate_fab_instructions_revision(int32_t val
 }
 
 inline const char* fab_runs_table = "daedalus.fab_runs";
-inline const std::vector<std::string> fab_runs_columns = { "id", "status", "machine_id", "operator_email", "progress", "as_built", "error", "started_at", "finished_at", "created_at" };
+inline const std::vector<std::string> fab_runs_columns = { "id", "instructions_id", "status", "machine_id", "operator_email", "progress", "as_built", "error", "started_at", "finished_at", "created_at" };
 inline const char* fab_runs_select_sql = R"SQL(select
       id::text as id,
+      instructions_id::text as instructions_id,
       status,
       machine_id,
       operator_email,
@@ -14053,6 +14054,7 @@ inline std::optional<FabRunsStatus> parse_fab_runs_status(const std::string& val
 
 struct FabRunsRow {
     std::string id;
+    std::string instructions_id;
     std::string status;
     std::string machine_id;
     std::optional<std::string> operator_email;
@@ -14068,15 +14070,16 @@ inline FabRunsRow fab_runs_row_of_row(const std::function<std::string(int)>& get
     FabRunsRow row;
     (void)is_null;
     row.id = get(0);
-    row.status = get(1);
-    row.machine_id = get(2);
-    row.operator_email = is_null(3) ? std::nullopt : std::optional<std::string>(get(3));
-    row.progress = std::stoi(get(4));
-    row.as_built = get(5);
-    row.error = is_null(6) ? std::nullopt : std::optional<std::string>(get(6));
-    row.started_at = is_null(7) ? std::nullopt : std::optional<std::string>(get(7));
-    row.finished_at = is_null(8) ? std::nullopt : std::optional<std::string>(get(8));
-    row.created_at = get(9);
+    row.instructions_id = get(1);
+    row.status = get(2);
+    row.machine_id = get(3);
+    row.operator_email = is_null(4) ? std::nullopt : std::optional<std::string>(get(4));
+    row.progress = std::stoi(get(5));
+    row.as_built = get(6);
+    row.error = is_null(7) ? std::nullopt : std::optional<std::string>(get(7));
+    row.started_at = is_null(8) ? std::nullopt : std::optional<std::string>(get(8));
+    row.finished_at = is_null(9) ? std::nullopt : std::optional<std::string>(get(9));
+    row.created_at = get(10);
     return row;
 }
 inline std::optional<std::string> validate_fab_runs_progress(int32_t value) {

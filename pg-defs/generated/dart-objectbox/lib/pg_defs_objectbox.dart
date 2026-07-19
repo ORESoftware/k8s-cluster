@@ -12905,6 +12905,8 @@ class FabRunsObjectBox {
   @Unique()
   String id;
 
+  String instructionsId;
+
   String status;
 
   String machineId;
@@ -12927,6 +12929,7 @@ class FabRunsObjectBox {
 
   FabRunsObjectBox({
     required this.id,
+    required this.instructionsId,
     required this.status,
     required this.machineId,
     this.operatorEmail,
@@ -12940,6 +12943,7 @@ class FabRunsObjectBox {
 
   Map<String, Object?> toJson() => <String, Object?>{
     "id": id,
+    "instructionsId": instructionsId,
     "status": status,
     "machineId": machineId,
     "operatorEmail": operatorEmail,
@@ -12954,6 +12958,7 @@ class FabRunsObjectBox {
   static FabRunsObjectBox fromJson(Map<String, Object?> json) {
     return FabRunsObjectBox(
       id: json["id"] as String,
+      instructionsId: json["instructionsId"] as String,
       status: json["status"] as String,
       machineId: json["machineId"] as String,
       operatorEmail: json["operatorEmail"] as String?,

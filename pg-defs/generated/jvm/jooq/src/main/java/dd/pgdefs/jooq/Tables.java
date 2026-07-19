@@ -2450,6 +2450,7 @@ public final class Tables {
     public static final Name FAB_RUNS_NAME = DSL.name("daedalus", "fab_runs");
     public static final Table<org.jooq.Record> FAB_RUNS = DSL.table(FAB_RUNS_NAME);
     public static final Field<UUID> FAB_RUNS_ID = DSL.field(DSL.name("daedalus", "fab_runs", "id"), SQLDataType.UUID);
+    public static final Field<UUID> FAB_RUNS_INSTRUCTIONS_ID = DSL.field(DSL.name("daedalus", "fab_runs", "instructions_id"), SQLDataType.UUID);
     public static final Field<String> FAB_RUNS_STATUS = DSL.field(DSL.name("daedalus", "fab_runs", "status"), SQLDataType.CLOB);
     public static final Field<String> FAB_RUNS_MACHINE_ID = DSL.field(DSL.name("daedalus", "fab_runs", "machine_id"), SQLDataType.CLOB);
     public static final Field<String> FAB_RUNS_OPERATOR_EMAIL = DSL.field(DSL.name("daedalus", "fab_runs", "operator_email"), SQLDataType.CLOB);

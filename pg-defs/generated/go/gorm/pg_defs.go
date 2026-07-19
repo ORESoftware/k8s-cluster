@@ -7661,6 +7661,7 @@ func (value FabInstructionsGorm) Validate() error {
 const FabRunsTable = "daedalus.fab_runs"
 const FabRunsSelectSQL = `select
       id::text as id,
+      instructions_id::text as instructions_id,
       status,
       machine_id,
       operator_email,
@@ -7676,6 +7677,7 @@ var FabRunsStatusValues = []string{"queued", "running", "succeeded", "failed", "
 
 type FabRunsGorm struct {
 	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	InstructionsId uuid.UUID `gorm:"column:instructions_id;type:uuid;not null" json:"instructionsId"`
 	Status string `gorm:"column:status;type:text;default:'queued';not null" json:"status"`
 	MachineId string `gorm:"column:machine_id;type:text;not null" json:"machineId"`
 	OperatorEmail *string `gorm:"column:operator_email;type:text" json:"operatorEmail,omitempty"`

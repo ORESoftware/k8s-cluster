@@ -12332,8 +12332,8 @@ let validateFabInstructionsRevision (value: int) : Result<int, string> =
     else Ok value
 
 let fabRunsTable = "daedalus.fab_runs"
-let fabRunsColumns = [ "id"; "status"; "machine_id"; "operator_email"; "progress"; "as_built"; "error"; "started_at"; "finished_at"; "created_at" ]
-let fabRunsSelectSql = "select\n      id::text as id,\n      status,\n      machine_id,\n      operator_email,\n      progress,\n      as_built::text as as_built_json,\n      error,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_runs"
+let fabRunsColumns = [ "id"; "instructions_id"; "status"; "machine_id"; "operator_email"; "progress"; "as_built"; "error"; "started_at"; "finished_at"; "created_at" ]
+let fabRunsSelectSql = "select\n      id::text as id,\n      instructions_id::text as instructions_id,\n      status,\n      machine_id,\n      operator_email,\n      progress,\n      as_built::text as as_built_json,\n      error,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_runs"
 
 [<RequireQualifiedAccess>]
 type FabRunsStatus =
@@ -12362,6 +12362,7 @@ let parseFabRunsStatus (value: string) : Result<FabRunsStatus, string> =
 
 type FabRunsRow =
     { FabRunsId: string
+      FabRunsInstructionsId: string
       FabRunsStatus: string
       FabRunsMachineId: string
       FabRunsOperatorEmail: string option
@@ -12375,15 +12376,16 @@ type FabRunsRow =
 
 let fabRunsRowOfRow (get: int -> string) (isNullAt: int -> bool) : FabRunsRow =
     { FabRunsId = get 0
-      FabRunsStatus = get 1
-      FabRunsMachineId = get 2
-      FabRunsOperatorEmail = (if isNullAt 3 then None else Some (get 3))
-      FabRunsProgress = int (get 4)
-      FabRunsAsBuilt = get 5
-      FabRunsError = (if isNullAt 6 then None else Some (get 6))
-      FabRunsStartedAt = (if isNullAt 7 then None else Some (get 7))
-      FabRunsFinishedAt = (if isNullAt 8 then None else Some (get 8))
-      FabRunsCreatedAt = get 9
+      FabRunsInstructionsId = get 1
+      FabRunsStatus = get 2
+      FabRunsMachineId = get 3
+      FabRunsOperatorEmail = (if isNullAt 4 then None else Some (get 4))
+      FabRunsProgress = int (get 5)
+      FabRunsAsBuilt = get 6
+      FabRunsError = (if isNullAt 7 then None else Some (get 7))
+      FabRunsStartedAt = (if isNullAt 8 then None else Some (get 8))
+      FabRunsFinishedAt = (if isNullAt 9 then None else Some (get 9))
+      FabRunsCreatedAt = get 10
     }
 
 let validateFabRunsProgress (value: int) : Result<int, string> =
