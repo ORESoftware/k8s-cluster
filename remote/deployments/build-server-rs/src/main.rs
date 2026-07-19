@@ -1437,11 +1437,6 @@ async fn execute_profile(state: &AppState, job: &BuildJobRecord) -> Result<(), S
             "--security-opt=no-new-privileges".to_string(),
             "--cap-drop=ALL".to_string(),
         ];
-        runner_args.extend(
-            step.capabilities
-                .iter()
-                .map(|capability| format!("--cap-add={capability}")),
-        );
         runner_args.extend([
             "--env=CI=true".to_string(),
             "--mount".to_string(),

@@ -12,15 +12,9 @@ pub struct ProfileStep {
     pub name: &'static str,
     pub image: &'static str,
     pub subdirectory: &'static str,
-    /// Linux capabilities required by this fixed step. Most steps need none;
-    /// the Linux desktop steps need a narrow set for apt/dpkg package setup.
-    pub capabilities: &'static [&'static str],
     #[serde(skip_serializing)]
     pub script: &'static str,
 }
-
-const NO_CAPABILITIES: &[&str] = &[];
-const APT_CAPABILITIES: &[&str] = &["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID"];
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -32,14 +26,14 @@ pub struct ProfileSpec {
     pub artifact_paths: &'static [&'static str],
 }
 
-const FLUTTER_IMAGE: &str = "ghcr.io/cirruslabs/flutter:3.44.2";
+const FLUTTER_IMAGE: &str =
+    "710156900967.dkr.ecr.us-east-1.amazonaws.com/sonus-flutter-builder:3.44.2-c9a6c48423";
 const BROWSER_IMAGE: &str = "mcr.microsoft.com/playwright:v1.60.0-noble";
 
 const FLUTTER_VERIFY_STEPS: &[ProfileStep] = &[ProfileStep {
     name: "flutter verify",
     image: FLUTTER_IMAGE,
     subdirectory: ".",
-    capabilities: NO_CAPABILITIES,
     script: "flutter pub get && flutter analyze --no-fatal-infos && flutter test",
 }];
 
@@ -47,7 +41,6 @@ const FLUTTER_ANDROID_STEPS: &[ProfileStep] = &[ProfileStep {
     name: "flutter Android debug",
     image: FLUTTER_IMAGE,
     subdirectory: ".",
-    capabilities: NO_CAPABILITIES,
     script: "flutter pub get && flutter analyze --no-fatal-infos && flutter test && flutter build apk --debug --dart-define=SONUS_BACKEND_BASE_URL=https://ci.invalid --dart-define=SONUS_SUPABASE_URL=https://ci.supabase.co --dart-define=SONUS_SUPABASE_ANON_KEY=sb_publishable_ci_compile_only",
 }];
 
@@ -55,7 +48,6 @@ const FLUTTER_WEB_STEPS: &[ProfileStep] = &[ProfileStep {
     name: "flutter web release",
     image: FLUTTER_IMAGE,
     subdirectory: ".",
-    capabilities: NO_CAPABILITIES,
     script: "flutter pub get && flutter analyze --no-fatal-infos && flutter test && flutter build web --release",
 }];
 
@@ -63,16 +55,14 @@ const FLUTTER_LINUX_STEPS: &[ProfileStep] = &[ProfileStep {
     name: "flutter Linux release",
     image: FLUTTER_IMAGE,
     subdirectory: ".",
-    capabilities: APT_CAPABILITIES,
-    script: "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev && flutter config --enable-linux-desktop && flutter pub get && flutter analyze --no-fatal-infos && flutter test && flutter build linux --release",
+    script: "flutter config --enable-linux-desktop && flutter pub get && flutter analyze --no-fatal-infos && flutter test && flutter build linux --release",
 }];
 
 const FLUTTER_LINUX_DESKTOP_ENTRYPOINT_STEPS: &[ProfileStep] = &[ProfileStep {
     name: "Flutter Linux desktop entrypoint release",
     image: FLUTTER_IMAGE,
     subdirectory: ".",
-    capabilities: APT_CAPABILITIES,
-    script: "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev && flutter config --enable-linux-desktop && flutter pub get && flutter analyze --no-fatal-infos && flutter test && flutter build linux --release -t lib/main_desktop.dart --dart-define=SONUS_BACKEND_BASE_URL=https://ci.invalid --dart-define=SONUS_SUPABASE_URL=https://ci.supabase.co --dart-define=SONUS_SUPABASE_ANON_KEY=sb_publishable_ci_compile_only",
+    script: "flutter config --enable-linux-desktop && flutter pub get && flutter analyze --no-fatal-infos && flutter test && flutter build linux --release -t lib/main_desktop.dart --dart-define=SONUS_BACKEND_BASE_URL=https://ci.invalid --dart-define=SONUS_SUPABASE_URL=https://ci.supabase.co --dart-define=SONUS_SUPABASE_ANON_KEY=sb_publishable_ci_compile_only",
 }];
 
 const FLUTTER_WEB_E2E_STEPS: &[ProfileStep] = &[
@@ -80,14 +70,12 @@ const FLUTTER_WEB_E2E_STEPS: &[ProfileStep] = &[
         name: "flutter web release",
         image: FLUTTER_IMAGE,
         subdirectory: ".",
-        capabilities: NO_CAPABILITIES,
         script: "flutter pub get && flutter analyze --no-fatal-infos && flutter test && flutter build web --release",
     },
     ProfileStep {
         name: "Puppeteer and Playwright end-to-end tests",
         image: BROWSER_IMAGE,
         subdirectory: "e2e",
-        capabilities: NO_CAPABILITIES,
         script: "npm ci && npm test",
     },
 ];
@@ -96,7 +84,6 @@ const PLAYWRIGHT_STEPS: &[ProfileStep] = &[ProfileStep {
     name: "Playwright tests",
     image: BROWSER_IMAGE,
     subdirectory: ".",
-    capabilities: NO_CAPABILITIES,
     script: "npm ci && npx playwright test",
 }];
 
@@ -104,7 +91,6 @@ const PUPPETEER_STEPS: &[ProfileStep] = &[ProfileStep {
     name: "Puppeteer tests",
     image: BROWSER_IMAGE,
     subdirectory: ".",
-    capabilities: NO_CAPABILITIES,
     script: "npm ci && npm run test:puppeteer",
 }];
 
@@ -112,7 +98,6 @@ const BROWSER_E2E_STEPS: &[ProfileStep] = &[ProfileStep {
     name: "browser end-to-end tests",
     image: BROWSER_IMAGE,
     subdirectory: ".",
-    capabilities: NO_CAPABILITIES,
     script: "npm ci && npm test",
 }];
 

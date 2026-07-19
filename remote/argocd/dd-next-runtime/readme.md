@@ -747,7 +747,8 @@ then letting Argo reconcile. Do not add a direct Sonus `kubectl apply` build ste
 The Rust backend is hosted here as `dd-sound-recorder-rs`; this cluster is its
 production deployment source of truth. The Flutter web console is
 `dd-sonus-auris-console`. The console Deployment clones an exact commit through
-the existing secret reference, builds it with pinned Flutter 3.44.2, and copies
+the existing secret reference, builds it with the cluster-owned, revision-pinned
+Flutter 3.44.2 image in ECR, and copies
 only `build/web` into a two-replica, unprivileged nginx runtime. Supabase client
 configuration comes from `dd-agent-secrets`; the service-role key is never
 embedded in the frontend.
