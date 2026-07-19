@@ -19,6 +19,16 @@ spec:
       labels: { app: tor-relay, relay: a }
     spec:
       automountServiceAccountToken: false
+      # Keep the three relays on separate nodes. Co-locating entry/middle/exit on
+      # one node lets a node-level observer correlate the whole circuit, defeating
+      # the point of onion routing. `required` needs >= 3 schedulable nodes; for a
+      # small/dev cluster switch to preferredDuringSchedulingIgnoredDuringExecution.
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels: { app: tor-relay }
+              topologyKey: kubernetes.io/hostname
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
@@ -90,6 +100,16 @@ spec:
       labels: { app: tor-relay, relay: b }
     spec:
       automountServiceAccountToken: false
+      # Keep the three relays on separate nodes. Co-locating entry/middle/exit on
+      # one node lets a node-level observer correlate the whole circuit, defeating
+      # the point of onion routing. `required` needs >= 3 schedulable nodes; for a
+      # small/dev cluster switch to preferredDuringSchedulingIgnoredDuringExecution.
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels: { app: tor-relay }
+              topologyKey: kubernetes.io/hostname
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
@@ -161,6 +181,16 @@ spec:
       labels: { app: tor-relay, relay: c }
     spec:
       automountServiceAccountToken: false
+      # Keep the three relays on separate nodes. Co-locating entry/middle/exit on
+      # one node lets a node-level observer correlate the whole circuit, defeating
+      # the point of onion routing. `required` needs >= 3 schedulable nodes; for a
+      # small/dev cluster switch to preferredDuringSchedulingIgnoredDuringExecution.
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels: { app: tor-relay }
+              topologyKey: kubernetes.io/hostname
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
