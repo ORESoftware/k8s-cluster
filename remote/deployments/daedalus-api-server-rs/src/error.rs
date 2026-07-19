@@ -37,9 +37,8 @@ impl ServiceError {
 impl IntoResponse for ServiceError {
     fn into_response(self) -> Response {
         // Log the full detail server-side before discarding it for the client.
-        match &self {
-            Self::Unavailable(detail) => tracing::warn!(error = %detail, "dependency unavailable"),
-            _ => {}
+        if let Self::Unavailable(detail) = &self {
+            tracing::warn!(error = %detail, "dependency unavailable");
         }
         let (status, code, detail) = self.parts();
         let body = match detail {
