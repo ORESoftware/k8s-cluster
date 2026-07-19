@@ -419,9 +419,12 @@ The OAuth `/start` and Plaid `/link-token`/`/exchange` endpoints **do**
 require the bearer — they mint per-tenant CSRF state and seal
 credentials, so they have to prove the caller's identity.
 
-If the bearer is unset, the API runs in open mode (dev convenience) and
-logs a single WARN line at boot. Production manifests inject the bearer
-via SealedSecrets / ExternalSecrets.
+The bearer is now **required to boot** (fail-closed): with
+`BILLING_API_AUTH_BEARER` unset the server refuses to start rather than run
+the API in open mode, unless `BILLING_ALLOW_INSECURE_DEV=1` is set explicitly
+for local development (in which case it runs open and logs a single WARN line
+at boot). Production manifests inject the bearer via SealedSecrets /
+ExternalSecrets.
 
 ### Other 2026-05-23 hardening fixes
 
