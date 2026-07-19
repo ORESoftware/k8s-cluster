@@ -428,6 +428,11 @@ export function normalizePhoneNumber(
 
   if (international) {
     const e164 = `+${bareDigits}`;
+    // A page can print "+1 111 555 0100" or "+0…"; reject numbers that claim a
+    // country code but aren't actually dialable rather than store the junk.
+    if (!isDialableE164(e164)) {
+      return undefined;
+    }
     return {
       raw: trimmed,
       digits: bareDigits,
@@ -443,16 +448,20 @@ export function normalizePhoneNumber(
   if (callingCode === NANP_CALLING_CODE) {
     if (digits.length === 10) {
       const e164 = `+1${digits}`;
-      return { raw: trimmed, digits, e164, national: formatNational(e164), extension };
+      return isDialableE164(e164)
+        ? { raw: trimmed, digits, e164, national: formatNational(e164), extension }
+        : undefined;
     }
     if (digits.length === 11 && digits.startsWith('1')) {
       const e164 = `+${digits}`;
-      return { raw: trimmed, digits: digits.slice(1), e164, national: formatNational(e164), extension };
+      return isDialableE164(e164)
+        ? { raw: trimmed, digits: digits.slice(1), e164, national: formatNational(e164), extension }
+        : undefined;
     }
   } else if (callingCode) {
     const national = digits.replace(/^0/, '');
     const e164 = `+${callingCode}${national}`;
-    if (e164.length >= 9 && e164.length <= 16) {
+    if (isDialableE164(e164)) {
       return { raw: trimmed, digits: national, e164, national: undefined, extension };
     }
   }
