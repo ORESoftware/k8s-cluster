@@ -267,7 +267,6 @@ async fn record_event(
         ),
         Err(err) => (false, Some(err.to_string())),
     };
-    let payload_sha256 = hex::encode(Sha256::digest(body.as_ref()));
     let tenant_id = connection.as_ref().map(|c| c.tenant_id);
     let connection_id = connection.as_ref().map(|c| c.id);
 
