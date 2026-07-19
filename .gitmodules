@@ -153,3 +153,11 @@
 	path = remote/deployments/sonus-auris-interfaces
 	url = git@github.com:sonus-auris/sonus-auris-interfaces.git
 	branch = main
+[submodule "remote/deployments/daedalus-api-server-rs"]
+	path = remote/deployments/daedalus-api-server-rs
+	url = git@github.com:daedalus-fab/daedalus-api-server.rs.git
+	branch = main
+[submodule "remote/deployments/daedalus-web-server-rs"]
+	path = remote/deployments/daedalus-web-server-rs
+	url = git@github.com:daedalus-fab/daedalus-web-server.rs.git
+	branch = main
