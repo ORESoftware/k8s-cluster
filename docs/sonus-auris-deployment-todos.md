@@ -21,6 +21,9 @@ live in `k8s-cluster` until the remaining GitOps source migration is reviewed.
 
 ## Builder and registry
 
+- [x] Separate ECR publication from application storage credentials. `dd-build-server` now reads a
+  dedicated External Secret backed by an IAM identity restricted to the Sonus Flutter builder
+  repository.
 - [ ] Finish publishing `sonus-flutter-builder:3.44.2-c9a6c48423`, record its immutable ECR digest,
   review its registry scan, and replace tag references with that digest.
 - [ ] Install and configure the Kubernetes ECR image credential provider during node bootstrap so
