@@ -144,7 +144,10 @@ fn same_origin(headers: &HeaderMap) -> bool {
         .get(header::HOST)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    let origin_hostport = origin.split_once("://").map(|(_, rest)| rest).unwrap_or(origin);
+    let origin_hostport = origin
+        .split_once("://")
+        .map(|(_, rest)| rest)
+        .unwrap_or(origin);
     return !host.is_empty() && origin_hostport == host;
 }
 
@@ -747,7 +750,10 @@ mod tests {
         );
         assert!(same_origin(&h));
         // Cross-site Origin: rejected.
-        h.insert(header::ORIGIN, HeaderValue::from_static("http://evil.example"));
+        h.insert(
+            header::ORIGIN,
+            HeaderValue::from_static("http://evil.example"),
+        );
         assert!(!same_origin(&h));
     }
 
