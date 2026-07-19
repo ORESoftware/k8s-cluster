@@ -7182,9 +7182,10 @@ pub fn validate_des_soccer_tournaments_insert(value: &DesSoccerTournamentsInsert
 }
 
 pub const DES_SOCCER_TOURNAMENT_MATCHES_TABLE: &str = "des_soccer_tournament_matches";
-pub const DES_SOCCER_TOURNAMENT_MATCHES_COLUMNS: &[&str] = &["id", "match_index", "stage", "home_team_id", "away_team_id", "home_goals", "away_goals", "shootout_winner_team_id", "home_training_steps", "away_training_steps", "recorded_at"];
+pub const DES_SOCCER_TOURNAMENT_MATCHES_COLUMNS: &[&str] = &["id", "tournament_id", "match_index", "stage", "home_team_id", "away_team_id", "home_goals", "away_goals", "shootout_winner_team_id", "home_training_steps", "away_training_steps", "recorded_at"];
 pub const DES_SOCCER_TOURNAMENT_MATCHES_SELECT_SQL: &str = r###"select
       id,
+      tournament_id,
       match_index,
       stage,
       home_team_id,
@@ -7202,6 +7203,7 @@ pub const DES_SOCCER_TOURNAMENT_MATCHES_SELECT_SQL: &str = r###"select
 #[serde(rename_all = "camelCase")]
 pub struct DesSoccerTournamentMatchesRow {
     pub id: i64,
+    pub tournament_id: i64,
     pub match_index: i32,
     pub stage: String,
     pub home_team_id: i32,
@@ -7218,6 +7220,7 @@ pub struct DesSoccerTournamentMatchesRow {
 #[serde(rename_all = "camelCase")]
 pub struct DesSoccerTournamentMatchesInsert {
     pub id: Option<i64>,
+    pub tournament_id: Option<i64>,
     pub match_index: Option<i32>,
     pub stage: Option<String>,
     pub home_team_id: Option<i32>,
@@ -7239,9 +7242,10 @@ pub fn validate_des_soccer_tournament_matches_insert(_value: &DesSoccerTournamen
 }
 
 pub const DES_SOCCER_TOURNAMENT_TEAM_BRAINS_TABLE: &str = "des_soccer_tournament_team_brains";
-pub const DES_SOCCER_TOURNAMENT_TEAM_BRAINS_COLUMNS: &[&str] = &["id", "team_id", "team_name", "seed", "matches_learned", "training_steps", "played", "wins", "draws", "losses", "goals_for", "goals_against", "neural_snapshot", "genome", "updated_at"];
+pub const DES_SOCCER_TOURNAMENT_TEAM_BRAINS_COLUMNS: &[&str] = &["id", "tournament_id", "team_id", "team_name", "seed", "matches_learned", "training_steps", "played", "wins", "draws", "losses", "goals_for", "goals_against", "neural_snapshot", "genome", "updated_at"];
 pub const DES_SOCCER_TOURNAMENT_TEAM_BRAINS_SELECT_SQL: &str = r###"select
       id,
+      tournament_id,
       team_id,
       team_name,
       seed,
@@ -7263,6 +7267,7 @@ pub const DES_SOCCER_TOURNAMENT_TEAM_BRAINS_SELECT_SQL: &str = r###"select
 #[serde(rename_all = "camelCase")]
 pub struct DesSoccerTournamentTeamBrainsRow {
     pub id: i64,
+    pub tournament_id: i64,
     pub team_id: i32,
     pub team_name: String,
     pub seed: i64,
@@ -7283,6 +7288,7 @@ pub struct DesSoccerTournamentTeamBrainsRow {
 #[serde(rename_all = "camelCase")]
 pub struct DesSoccerTournamentTeamBrainsInsert {
     pub id: Option<i64>,
+    pub tournament_id: Option<i64>,
     pub team_id: Option<i32>,
     pub team_name: Option<String>,
     pub seed: Option<i64>,

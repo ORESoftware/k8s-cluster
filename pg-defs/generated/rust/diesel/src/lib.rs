@@ -2860,6 +2860,7 @@ diesel::table! {
     use diesel::sql_types::*;
     des_soccer_tournament_matches (id) {
         id -> Int8,
+        tournament_id -> Int8,
         match_index -> Int4,
         stage -> Text,
         home_team_id -> Int4,
@@ -2877,6 +2878,7 @@ diesel::table! {
 #[diesel(table_name = des_soccer_tournament_matches)]
 pub struct DesSoccerTournamentMatchesDieselRow {
     pub id: i64,
+    pub tournament_id: i64,
     pub match_index: i32,
     pub stage: String,
     pub home_team_id: i32,
@@ -2893,6 +2895,7 @@ pub struct DesSoccerTournamentMatchesDieselRow {
 #[diesel(table_name = des_soccer_tournament_matches)]
 pub struct DesSoccerTournamentMatchesDieselInsert {
     pub id: Option<i64>,
+    pub tournament_id: Option<i64>,
     pub match_index: Option<i32>,
     pub stage: Option<String>,
     pub home_team_id: Option<i32>,
@@ -2909,6 +2912,7 @@ diesel::table! {
     use diesel::sql_types::*;
     des_soccer_tournament_team_brains (id) {
         id -> Int8,
+        tournament_id -> Int8,
         team_id -> Int4,
         team_name -> Text,
         seed -> Int8,
@@ -2930,6 +2934,7 @@ diesel::table! {
 #[diesel(table_name = des_soccer_tournament_team_brains)]
 pub struct DesSoccerTournamentTeamBrainsDieselRow {
     pub id: i64,
+    pub tournament_id: i64,
     pub team_id: i32,
     pub team_name: String,
     pub seed: i64,
@@ -2950,6 +2955,7 @@ pub struct DesSoccerTournamentTeamBrainsDieselRow {
 #[diesel(table_name = des_soccer_tournament_team_brains)]
 pub struct DesSoccerTournamentTeamBrainsDieselInsert {
     pub id: Option<i64>,
+    pub tournament_id: Option<i64>,
     pub team_id: Option<i32>,
     pub team_name: Option<String>,
     pub seed: Option<i64>,

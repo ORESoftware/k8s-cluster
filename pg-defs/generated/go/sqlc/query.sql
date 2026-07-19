@@ -737,31 +737,31 @@ update des_soccer_tournaments set experiment_id = $2, tournament_date = $3, seed
 delete from des_soccer_tournaments where id = $1;
 
 -- name: ListDesSoccerTournamentMatches :many
-select id, match_index, stage, home_team_id, away_team_id, home_goals, away_goals, shootout_winner_team_id, home_training_steps, away_training_steps, recorded_at from des_soccer_tournament_matches;
+select id, tournament_id, match_index, stage, home_team_id, away_team_id, home_goals, away_goals, shootout_winner_team_id, home_training_steps, away_training_steps, recorded_at from des_soccer_tournament_matches;
 
 -- name: GetDesSoccerTournamentMatches :one
-select id, match_index, stage, home_team_id, away_team_id, home_goals, away_goals, shootout_winner_team_id, home_training_steps, away_training_steps, recorded_at from des_soccer_tournament_matches where id = $1 limit 1;
+select id, tournament_id, match_index, stage, home_team_id, away_team_id, home_goals, away_goals, shootout_winner_team_id, home_training_steps, away_training_steps, recorded_at from des_soccer_tournament_matches where id = $1 limit 1;
 
 -- name: CreateDesSoccerTournamentMatches :one
-insert into des_soccer_tournament_matches (id, match_index, stage, home_team_id, away_team_id, home_goals, away_goals, shootout_winner_team_id, home_training_steps, away_training_steps, recorded_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning id, match_index, stage, home_team_id, away_team_id, home_goals, away_goals, shootout_winner_team_id, home_training_steps, away_training_steps, recorded_at;
+insert into des_soccer_tournament_matches (id, tournament_id, match_index, stage, home_team_id, away_team_id, home_goals, away_goals, shootout_winner_team_id, home_training_steps, away_training_steps, recorded_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) returning id, tournament_id, match_index, stage, home_team_id, away_team_id, home_goals, away_goals, shootout_winner_team_id, home_training_steps, away_training_steps, recorded_at;
 
 -- name: UpdateDesSoccerTournamentMatches :one
-update des_soccer_tournament_matches set match_index = $2, stage = $3, home_team_id = $4, away_team_id = $5, home_goals = $6, away_goals = $7, shootout_winner_team_id = $8, home_training_steps = $9, away_training_steps = $10, recorded_at = $11 where id = $1 returning id, match_index, stage, home_team_id, away_team_id, home_goals, away_goals, shootout_winner_team_id, home_training_steps, away_training_steps, recorded_at;
+update des_soccer_tournament_matches set tournament_id = $2, match_index = $3, stage = $4, home_team_id = $5, away_team_id = $6, home_goals = $7, away_goals = $8, shootout_winner_team_id = $9, home_training_steps = $10, away_training_steps = $11, recorded_at = $12 where id = $1 returning id, tournament_id, match_index, stage, home_team_id, away_team_id, home_goals, away_goals, shootout_winner_team_id, home_training_steps, away_training_steps, recorded_at;
 
 -- name: DeleteDesSoccerTournamentMatches :exec
 delete from des_soccer_tournament_matches where id = $1;
 
 -- name: ListDesSoccerTournamentTeamBrains :many
-select id, team_id, team_name, seed, matches_learned, training_steps, played, wins, draws, losses, goals_for, goals_against, neural_snapshot, genome, updated_at from des_soccer_tournament_team_brains;
+select id, tournament_id, team_id, team_name, seed, matches_learned, training_steps, played, wins, draws, losses, goals_for, goals_against, neural_snapshot, genome, updated_at from des_soccer_tournament_team_brains;
 
 -- name: GetDesSoccerTournamentTeamBrains :one
-select id, team_id, team_name, seed, matches_learned, training_steps, played, wins, draws, losses, goals_for, goals_against, neural_snapshot, genome, updated_at from des_soccer_tournament_team_brains where id = $1 limit 1;
+select id, tournament_id, team_id, team_name, seed, matches_learned, training_steps, played, wins, draws, losses, goals_for, goals_against, neural_snapshot, genome, updated_at from des_soccer_tournament_team_brains where id = $1 limit 1;
 
 -- name: CreateDesSoccerTournamentTeamBrains :one
-insert into des_soccer_tournament_team_brains (id, team_id, team_name, seed, matches_learned, training_steps, played, wins, draws, losses, goals_for, goals_against, neural_snapshot, genome, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) returning id, team_id, team_name, seed, matches_learned, training_steps, played, wins, draws, losses, goals_for, goals_against, neural_snapshot, genome, updated_at;
+insert into des_soccer_tournament_team_brains (id, tournament_id, team_id, team_name, seed, matches_learned, training_steps, played, wins, draws, losses, goals_for, goals_against, neural_snapshot, genome, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) returning id, tournament_id, team_id, team_name, seed, matches_learned, training_steps, played, wins, draws, losses, goals_for, goals_against, neural_snapshot, genome, updated_at;
 
 -- name: UpdateDesSoccerTournamentTeamBrains :one
-update des_soccer_tournament_team_brains set team_id = $2, team_name = $3, seed = $4, matches_learned = $5, training_steps = $6, played = $7, wins = $8, draws = $9, losses = $10, goals_for = $11, goals_against = $12, neural_snapshot = $13, genome = $14, updated_at = $15 where id = $1 returning id, team_id, team_name, seed, matches_learned, training_steps, played, wins, draws, losses, goals_for, goals_against, neural_snapshot, genome, updated_at;
+update des_soccer_tournament_team_brains set tournament_id = $2, team_id = $3, team_name = $4, seed = $5, matches_learned = $6, training_steps = $7, played = $8, wins = $9, draws = $10, losses = $11, goals_for = $12, goals_against = $13, neural_snapshot = $14, genome = $15, updated_at = $16 where id = $1 returning id, tournament_id, team_id, team_name, seed, matches_learned, training_steps, played, wins, draws, losses, goals_for, goals_against, neural_snapshot, genome, updated_at;
 
 -- name: DeleteDesSoccerTournamentTeamBrains :exec
 delete from des_soccer_tournament_team_brains where id = $1;

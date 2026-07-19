@@ -4495,11 +4495,12 @@ pub const DesSoccerTournamentsRow = struct {
 };
 
 pub const des_soccer_tournament_matches_table: []const u8 = "des_soccer_tournament_matches";
-pub const des_soccer_tournament_matches_columns = [_][]const u8{ "id", "match_index", "stage", "home_team_id", "away_team_id", "home_goals", "away_goals", "shootout_winner_team_id", "home_training_steps", "away_training_steps", "recorded_at" };
-pub const des_soccer_tournament_matches_select_sql: []const u8 = "select\n      id,\n      match_index,\n      stage,\n      home_team_id,\n      away_team_id,\n      home_goals,\n      away_goals,\n      shootout_winner_team_id,\n      home_training_steps,\n      away_training_steps,\n      to_char(recorded_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as recorded_at\n    from des_soccer_tournament_matches";
+pub const des_soccer_tournament_matches_columns = [_][]const u8{ "id", "tournament_id", "match_index", "stage", "home_team_id", "away_team_id", "home_goals", "away_goals", "shootout_winner_team_id", "home_training_steps", "away_training_steps", "recorded_at" };
+pub const des_soccer_tournament_matches_select_sql: []const u8 = "select\n      id,\n      tournament_id,\n      match_index,\n      stage,\n      home_team_id,\n      away_team_id,\n      home_goals,\n      away_goals,\n      shootout_winner_team_id,\n      home_training_steps,\n      away_training_steps,\n      to_char(recorded_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as recorded_at\n    from des_soccer_tournament_matches";
 
 pub const DesSoccerTournamentMatchesRow = struct {
     id: i64,
+    tournament_id: i64,
     match_index: i32,
     stage: []const u8,
     home_team_id: i32,
@@ -4514,26 +4515,28 @@ pub const DesSoccerTournamentMatchesRow = struct {
     pub fn fromRow(reader: RowReader) DesSoccerTournamentMatchesRow {
         return DesSoccerTournamentMatchesRow{
             .id = reader.int(0),
-            .match_index = @as(i32, @intCast(reader.int(1))),
-            .stage = reader.text(2),
-            .home_team_id = @as(i32, @intCast(reader.int(3))),
-            .away_team_id = @as(i32, @intCast(reader.int(4))),
-            .home_goals = @as(i32, @intCast(reader.int(5))),
-            .away_goals = @as(i32, @intCast(reader.int(6))),
-            .shootout_winner_team_id = if (reader.is_null(7)) null else @as(i32, @intCast(reader.int(7))),
-            .home_training_steps = reader.int(8),
-            .away_training_steps = reader.int(9),
-            .recorded_at = reader.text(10),
+            .tournament_id = reader.int(1),
+            .match_index = @as(i32, @intCast(reader.int(2))),
+            .stage = reader.text(3),
+            .home_team_id = @as(i32, @intCast(reader.int(4))),
+            .away_team_id = @as(i32, @intCast(reader.int(5))),
+            .home_goals = @as(i32, @intCast(reader.int(6))),
+            .away_goals = @as(i32, @intCast(reader.int(7))),
+            .shootout_winner_team_id = if (reader.is_null(8)) null else @as(i32, @intCast(reader.int(8))),
+            .home_training_steps = reader.int(9),
+            .away_training_steps = reader.int(10),
+            .recorded_at = reader.text(11),
         };
     }
 };
 
 pub const des_soccer_tournament_team_brains_table: []const u8 = "des_soccer_tournament_team_brains";
-pub const des_soccer_tournament_team_brains_columns = [_][]const u8{ "id", "team_id", "team_name", "seed", "matches_learned", "training_steps", "played", "wins", "draws", "losses", "goals_for", "goals_against", "neural_snapshot", "genome", "updated_at" };
-pub const des_soccer_tournament_team_brains_select_sql: []const u8 = "select\n      id,\n      team_id,\n      team_name,\n      seed,\n      matches_learned,\n      training_steps,\n      played,\n      wins,\n      draws,\n      losses,\n      goals_for,\n      goals_against,\n      neural_snapshot::text as neural_snapshot_json,\n      genome::text as genome_json,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_soccer_tournament_team_brains";
+pub const des_soccer_tournament_team_brains_columns = [_][]const u8{ "id", "tournament_id", "team_id", "team_name", "seed", "matches_learned", "training_steps", "played", "wins", "draws", "losses", "goals_for", "goals_against", "neural_snapshot", "genome", "updated_at" };
+pub const des_soccer_tournament_team_brains_select_sql: []const u8 = "select\n      id,\n      tournament_id,\n      team_id,\n      team_name,\n      seed,\n      matches_learned,\n      training_steps,\n      played,\n      wins,\n      draws,\n      losses,\n      goals_for,\n      goals_against,\n      neural_snapshot::text as neural_snapshot_json,\n      genome::text as genome_json,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_soccer_tournament_team_brains";
 
 pub const DesSoccerTournamentTeamBrainsRow = struct {
     id: i64,
+    tournament_id: i64,
     team_id: i32,
     team_name: []const u8,
     seed: i64,
@@ -4552,20 +4555,21 @@ pub const DesSoccerTournamentTeamBrainsRow = struct {
     pub fn fromRow(reader: RowReader) DesSoccerTournamentTeamBrainsRow {
         return DesSoccerTournamentTeamBrainsRow{
             .id = reader.int(0),
-            .team_id = @as(i32, @intCast(reader.int(1))),
-            .team_name = reader.text(2),
-            .seed = reader.int(3),
-            .matches_learned = @as(i32, @intCast(reader.int(4))),
-            .training_steps = reader.int(5),
-            .played = @as(i32, @intCast(reader.int(6))),
-            .wins = @as(i32, @intCast(reader.int(7))),
-            .draws = @as(i32, @intCast(reader.int(8))),
-            .losses = @as(i32, @intCast(reader.int(9))),
-            .goals_for = @as(i32, @intCast(reader.int(10))),
-            .goals_against = @as(i32, @intCast(reader.int(11))),
-            .neural_snapshot = if (reader.is_null(12)) null else reader.text(12),
-            .genome = if (reader.is_null(13)) null else reader.text(13),
-            .updated_at = reader.text(14),
+            .tournament_id = reader.int(1),
+            .team_id = @as(i32, @intCast(reader.int(2))),
+            .team_name = reader.text(3),
+            .seed = reader.int(4),
+            .matches_learned = @as(i32, @intCast(reader.int(5))),
+            .training_steps = reader.int(6),
+            .played = @as(i32, @intCast(reader.int(7))),
+            .wins = @as(i32, @intCast(reader.int(8))),
+            .draws = @as(i32, @intCast(reader.int(9))),
+            .losses = @as(i32, @intCast(reader.int(10))),
+            .goals_for = @as(i32, @intCast(reader.int(11))),
+            .goals_against = @as(i32, @intCast(reader.int(12))),
+            .neural_snapshot = if (reader.is_null(13)) null else reader.text(13),
+            .genome = if (reader.is_null(14)) null else reader.text(14),
+            .updated_at = reader.text(15),
         };
     }
 };

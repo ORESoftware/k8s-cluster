@@ -2407,6 +2407,9 @@ export class DesSoccerTournamentMatchesEntity {
   @PrimaryGeneratedColumn("increment", { name: "id", type: "bigint" })
   id!: number;
 
+  @Column({ name: "tournament_id", type: "bigint" })
+  tournamentId!: number;
+
   @Column({ name: "match_index", type: "integer" })
   matchIndex!: number;
 
@@ -2443,6 +2446,9 @@ export class DesSoccerTournamentMatchesEntity {
 export class DesSoccerTournamentTeamBrainsEntity {
   @PrimaryGeneratedColumn("increment", { name: "id", type: "bigint" })
   id!: number;
+
+  @Column({ name: "tournament_id", type: "bigint" })
+  tournamentId!: number;
 
   @Column({ name: "team_id", type: "integer" })
   teamId!: number;

@@ -1102,6 +1102,7 @@ class DesSoccerTournaments(models.Model):
 
 class DesSoccerTournamentMatches(models.Model):
     id = models.BigAutoField(primary_key=True)
+    tournament_id = models.BigIntegerField()
     match_index = models.IntegerField()
     stage = models.TextField()
     home_team_id = models.IntegerField()
@@ -1121,6 +1122,7 @@ class DesSoccerTournamentMatches(models.Model):
 
 class DesSoccerTournamentTeamBrains(models.Model):
     id = models.BigAutoField(primary_key=True)
+    tournament_id = models.BigIntegerField()
     team_id = models.IntegerField()
     team_name = models.TextField()
     seed = models.BigIntegerField()

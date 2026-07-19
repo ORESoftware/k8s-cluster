@@ -12,6 +12,7 @@ defmodule DdPgDefs.DesSoccerTournamentMatches do
   @primary_key {:id, :id, autogenerate: true}
 
   schema @table do
+    field :tournament_id, :integer
     field :match_index, :integer
     field :stage, :string
     field :home_team_id, :integer
@@ -24,7 +25,7 @@ defmodule DdPgDefs.DesSoccerTournamentMatches do
     field :recorded_at, :utc_datetime_usec
   end
 
-  @required_fields ~w(match_index stage home_team_id away_team_id home_goals away_goals home_training_steps away_training_steps)a
+  @required_fields ~w(tournament_id match_index stage home_team_id away_team_id home_goals away_goals home_training_steps away_training_steps)a
   @optional_fields ~w(shootout_winner_team_id recorded_at)a
 
   @doc "Builds an Ecto changeset enforcing every constraint exposed in schema.sql."
