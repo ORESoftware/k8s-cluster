@@ -138,10 +138,7 @@ mod tests {
     #[test]
     fn disabled_persistence_yields_unavailable_not_a_panic() {
         let err = Persistence::Disabled.connection().unwrap_err();
-        assert!(matches!(
-            err,
-            crate::error::ServiceError::Unavailable(_)
-        ));
+        assert!(matches!(err, crate::error::ServiceError::Unavailable(_)));
         assert!(!Persistence::Disabled.is_enabled());
     }
 }

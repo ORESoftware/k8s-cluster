@@ -70,7 +70,7 @@ impl SupabaseConfig {
         match email {
             Some(email) => {
                 let email = email.trim().to_ascii_lowercase();
-                self.allowed_emails.iter().any(|allowed| *allowed == email)
+                self.allowed_emails.contains(&email)
             }
             // A token with no email claim can never satisfy an email gate.
             None => false,
@@ -129,7 +129,10 @@ mod tests {
 
     #[test]
     fn env_helpers_fall_back_when_unset() {
-        assert_eq!(env_value("DAEDALUS_MISSING_TEST_VALUE", "fallback"), "fallback");
+        assert_eq!(
+            env_value("DAEDALUS_MISSING_TEST_VALUE", "fallback"),
+            "fallback"
+        );
         assert!(!env_bool("DAEDALUS_MISSING_TEST_BOOL", false));
         assert_eq!(env_u64("DAEDALUS_MISSING_TEST_U64", 8, 1, 128), 8);
         assert_eq!(optional_env("DAEDALUS_MISSING_TEST_OPT"), None);

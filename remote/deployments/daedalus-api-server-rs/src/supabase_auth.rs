@@ -328,7 +328,10 @@ mod tests {
             r#"{"kty":"RSA","kid":"key-1","use":"enc","alg":"RS256","n":"AQ","e":"AQAB"}"#,
         )
         .unwrap();
-        assert!(!jwk_is_usable_for_algorithm(&encryption_rsa, Algorithm::RS256));
+        assert!(!jwk_is_usable_for_algorithm(
+            &encryption_rsa,
+            Algorithm::RS256
+        ));
     }
 
     #[test]

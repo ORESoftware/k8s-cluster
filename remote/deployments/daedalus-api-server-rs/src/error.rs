@@ -29,11 +29,7 @@ impl ServiceError {
             Self::BadRequest(detail) => (StatusCode::BAD_REQUEST, "bad_request", Some(detail)),
             Self::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized", None),
             Self::NotFound => (StatusCode::NOT_FOUND, "not_found", None),
-            Self::Unavailable(_) => (
-                StatusCode::SERVICE_UNAVAILABLE,
-                "service_unavailable",
-                None,
-            ),
+            Self::Unavailable(_) => (StatusCode::SERVICE_UNAVAILABLE, "service_unavailable", None),
         }
     }
 }

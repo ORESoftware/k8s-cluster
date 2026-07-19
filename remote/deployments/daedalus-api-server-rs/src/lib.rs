@@ -143,7 +143,10 @@ pub(crate) fn router(state: SharedState) -> Router {
         .route("/health", get(health))
         .route("/ready", get(routes::ready))
         .route("/metrics", get(routes::metrics))
-        .route("/v1/plans", get(routes::list_plans).post(routes::create_plan))
+        .route(
+            "/v1/plans",
+            get(routes::list_plans).post(routes::create_plan),
+        )
         .route("/v1/plans/:id", get(routes::get_plan))
         .route("/v1/plans/:id/events", get(ws::plan_events))
         .layer(tower_http::trace::TraceLayer::new_for_http())
