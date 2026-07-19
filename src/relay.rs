@@ -282,11 +282,21 @@ async fn middle_pump(
     mut next_r: OwnedReadHalf,
     mut prev_w: OwnedWriteHalf,
     mut sealer: Sealer,
+    idle: Option<Duration>,
 ) -> Result<()> {
     loop {
-        let frame = match read_frame(&mut next_r).await {
-            Ok(f) => f,
-            Err(_) => break,
+        let read = read_frame(&mut next_r);
+        // Idle-bounded so a silent next hop cannot park this pump (and pin the
+        // shared circuit-slot permit) forever after the forward side is gone.
+        let frame = match idle {
+            Some(d) => match timeout(d, read).await {
+                Ok(Ok(f)) => f,
+                _ => break, // next hop closed or idle timeout
+            },
+            None => match read.await {
+                Ok(f) => f,
+                Err(_) => break,
+            },
         };
         let cell = Cell::Relay {
             payload: frame_bytes(&frame),
