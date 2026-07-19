@@ -76,6 +76,13 @@ fn is_loopback_listener(listen: &str) -> bool {
 /// trailing whitespace/newline. Returns None if neither is set.
 fn read_env_or_file(env_key: &str, file_key: &str) -> Result<Option<String>> {
     if let Ok(v) = std::env::var(env_key) {
+        if !v.is_empty() {
+            tracing::warn!(
+                var = env_key,
+                file_var = file_key,
+                "secret read from the process environment; prefer the _FILE variant so it is not exposed via /proc/<pid>/environ, container inspect, or crash dumps"
+            );
+        }
         return Ok(Some(v));
     }
     if let Ok(path) = std::env::var(file_key) {
