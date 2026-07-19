@@ -11,6 +11,11 @@
   past circuits.
 - **Per-hop confidentiality & integrity.** Every layer is ChaCha20-Poly1305
   (AEAD) with non-reusable nonces.
+- **End-to-end integrity from the exit.** Application `Data`/`End` cells are
+  accepted by the client only when they decrypt at the *exit* layer. Because each
+  relay holds the backward key for its own hop, this prevents a malicious
+  middle/entry relay from injecting bytes the application would attribute to the
+  exit — sealing a valid cell at the exit layer requires the exit's key.
 - **Modern private-overlay primitives.** The custom protocol uses X25519,
   HKDF-SHA256, HMAC-SHA256, and ChaCha20-Poly1305. RSA is neither needed nor
   desirable for this private key agreement. This is not the same as possessing
