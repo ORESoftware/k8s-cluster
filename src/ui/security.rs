@@ -67,7 +67,11 @@ pub async fn require_ui_auth(
     if !provided.is_empty() && const_time_eq(provided.as_bytes(), expected.as_bytes()) {
         return next.run(req).await;
     }
-    let mut resp = (StatusCode::UNAUTHORIZED, "console authentication required\n").into_response();
+    let mut resp = (
+        StatusCode::UNAUTHORIZED,
+        "console authentication required\n",
+    )
+        .into_response();
     resp.headers_mut().insert(
         header::WWW_AUTHENTICATE,
         HeaderValue::from_static("Bearer realm=\"usacc-console\""),
@@ -76,11 +80,7 @@ pub async fn require_ui_auth(
 }
 
 /// CSRF defense-in-depth for unsafe methods on the console nest.
-pub async fn csrf_guard(
-    State(sec): State<Arc<UiSecurity>>,
-    req: Request,
-    next: Next,
-) -> Response {
+pub async fn csrf_guard(State(sec): State<Arc<UiSecurity>>, req: Request, next: Next) -> Response {
     if !is_unsafe_method(req.method()) {
         return next.run(req).await;
     }
@@ -162,10 +162,7 @@ pub async fn security_headers(req: Request<Body>, next: Next) -> Response {
     // static htmx asset sets its own immutable Cache-Control in the
     // handler; don't clobber it.
     if !h.contains_key(header::CACHE_CONTROL) {
-        h.insert(
-            header::CACHE_CONTROL,
-            HeaderValue::from_static("no-store"),
-        );
+        h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     }
 
     resp

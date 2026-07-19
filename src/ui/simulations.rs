@@ -103,7 +103,10 @@ pub async fn run(State(state): State<AppState>, Form(form): Form<SimForm>) -> Ma
     };
 
     let mut response = run_simulation(request);
-    state.metrics.simulations_total.fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .simulations_total
+        .fetch_add(1, Ordering::Relaxed);
 
     let mut persist_note = None;
     if want_persist {
@@ -141,7 +144,9 @@ pub async fn run(State(state): State<AppState>, Form(form): Form<SimForm>) -> Ma
                 Err(e) => persist_note = Some(super::report_db_error("persist the run", e)),
             }
         } else {
-            persist_note = Some(layout::flash_error("No database configured — run not persisted."));
+            persist_note = Some(layout::flash_error(
+                "No database configured — run not persisted.",
+            ));
         }
     }
 
@@ -162,10 +167,7 @@ pub async fn run(State(state): State<AppState>, Form(form): Form<SimForm>) -> Ma
 
 fn metrics_table(metrics: &Value) -> Markup {
     let entries: Vec<(String, String)> = match metrics {
-        Value::Object(map) => map
-            .iter()
-            .map(|(k, v)| (k.clone(), scalar(v)))
-            .collect(),
+        Value::Object(map) => map.iter().map(|(k, v)| (k.clone(), scalar(v))).collect(),
         _ => Vec::new(),
     };
     html! {
@@ -197,5 +199,7 @@ fn scalar(v: &Value) -> String {
 }
 
 fn parse<T: std::str::FromStr>(v: Option<&str>) -> Option<T> {
-    v.map(str::trim).filter(|s| !s.is_empty()).and_then(|s| s.parse::<T>().ok())
+    v.map(str::trim)
+        .filter(|s| !s.is_empty())
+        .and_then(|s| s.parse::<T>().ok())
 }

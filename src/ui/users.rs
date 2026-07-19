@@ -15,8 +15,20 @@ use super::layout::{
     self, caption, empty_row, section_header, short_id, status_badge, NavSection, Ui,
 };
 
-const USER_KINDS: &[&str] = &["natural_person", "legal_entity", "service_account", "sim_agent"];
-const USER_STATUSES: &[&str] = &["active", "pending", "suspended", "banned", "alumni", "archived"];
+const USER_KINDS: &[&str] = &[
+    "natural_person",
+    "legal_entity",
+    "service_account",
+    "sim_agent",
+];
+const USER_STATUSES: &[&str] = &[
+    "active",
+    "pending",
+    "suspended",
+    "banned",
+    "alumni",
+    "archived",
+];
 const KYC_LEVELS: &[&str] = &["none", "light", "medium", "high"];
 
 pub async fn list_page(State(state): State<AppState>) -> Markup {

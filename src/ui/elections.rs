@@ -32,7 +32,13 @@ const ELECTION_KINDS: &[&str] = &[
     "assignment_acceptance",
 ];
 const ELECTION_STATUSES: &[&str] = &[
-    "draft", "open", "sealed", "tallying", "certified", "void", "archived",
+    "draft",
+    "open",
+    "sealed",
+    "tallying",
+    "certified",
+    "void",
+    "archived",
 ];
 
 pub async fn list_page(State(state): State<AppState>) -> Markup {
@@ -288,7 +294,10 @@ pub async fn tally(State(state): State<AppState>, Path(id): Path<String>) -> Mar
         Ok(election_uuid) => election_uuid,
         Err(e) => return super::report_db_error("tally the election", e),
     };
-    let election = match usacc_elections::Entity::find_by_id(election_uuid).one(pool).await {
+    let election = match usacc_elections::Entity::find_by_id(election_uuid)
+        .one(pool)
+        .await
+    {
         Ok(Some(e)) => db::election_row(e),
         Ok(None) => return layout::flash_error("Election not found."),
         Err(e) => return super::report_db_error("tally the election", e),
@@ -387,9 +396,12 @@ pub async fn tally(State(state): State<AppState>, Path(id): Path<String>) -> Mar
 }
 
 fn blank_to_none(v: Option<&str>) -> Option<String> {
-    v.map(str::trim).filter(|s| !s.is_empty()).map(ToString::to_string)
+    v.map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(ToString::to_string)
 }
 
 fn parse_or(v: Option<&str>, default: i32) -> i32 {
-    v.and_then(|s| s.trim().parse::<i32>().ok()).unwrap_or(default)
+    v.and_then(|s| s.trim().parse::<i32>().ok())
+        .unwrap_or(default)
 }

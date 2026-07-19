@@ -41,8 +41,9 @@ pub fn pool(state: &AppState) -> ApiResult<&DatabaseConnection> {
 /// Parse an id the database previously coerced via a `$n::uuid` bind cast,
 /// keeping the same 500 surface an invalid uuid produced under sqlx.
 pub fn parse_uuid(value: &str) -> ApiResult<Uuid> {
-    Uuid::parse_str(value)
-        .map_err(|error| ApiError::internal(format!("database error: invalid uuid {value:?}: {error}")))
+    Uuid::parse_str(value).map_err(|error| {
+        ApiError::internal(format!("database error: invalid uuid {value:?}: {error}"))
+    })
 }
 
 /// Mirror the generated `*_SELECT_SQL` timestamp shape,
