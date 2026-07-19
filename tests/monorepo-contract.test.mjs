@@ -42,3 +42,19 @@ test('pinned gitlink SHAs are well-formed', () => {
     assert.match(l.split(/\s+/)[1], /^[0-9a-f]{40}$/);
   }
 });
+
+test('pinned fabrication service preserves modular Rust boundaries', () => {
+  const root = 'apps/fabrication-server.rs';
+  const main = readFileSync(`${root}/src/main.rs`, 'utf8');
+  const library = readFileSync(`${root}/src/lib.rs`, 'utf8');
+  const manifest = readFileSync(`${root}/Cargo.toml`, 'utf8');
+  const nonemptyMainLines = main.split('\n').filter((line) => line.trim()).length;
+
+  assert.ok(nonemptyMainLines <= 5, 'fabrication main.rs must stay a thin Tokio boundary');
+  assert.match(main, /dd_fabrication_server::run\(\)\.await/);
+  for (const module of ['config', 'metrics', 'observability', 'persistence', 'secrets']) {
+    assert.match(library, new RegExp(`^mod ${module};$`, 'm'), `missing ${module} module`);
+  }
+  assert.match(manifest, /^sea-orm\s*=/m, 'fabrication must declare SeaORM');
+  assert.doesNotMatch(manifest, /^sqlx\s*=/m, 'fabrication must not declare SQLx directly');
+});
