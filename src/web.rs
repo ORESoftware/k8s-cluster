@@ -28,8 +28,9 @@ use subtle::ConstantTimeEq;
 
 use anyhow::{bail, Result};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Path as AxPath, Query, State};
+use axum::extract::{Path as AxPath, Query, Request, State};
 use axum::http::{header, HeaderMap, StatusCode};
+use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Json, Response};
 use axum::routing::get;
 use axum::Router;
