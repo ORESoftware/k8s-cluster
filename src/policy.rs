@@ -99,8 +99,9 @@ impl Policy {
         if port == 0 || self.denied_exit_ports.contains(&port) {
             bail!("exit policy blocks destination port {port}");
         }
-        let addrs: Vec<SocketAddr> = lookup_host((host, port))
+        let addrs: Vec<SocketAddr> = timeout(RESOLVE_TIMEOUT, lookup_host((host, port)))
             .await
+            .map_err(|_| anyhow::anyhow!("DNS resolution for {host}:{port} timed out"))?
             .map_err(|e| anyhow::anyhow!("DNS resolution for {host}:{port} failed: {e}"))?
             .collect();
         if addrs.is_empty() {
