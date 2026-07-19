@@ -1,5 +1,8 @@
 # Security model & hardening
 
+For the most recent full audit (method, findings by severity, and their
+disposition), see [audit](/docs/audit).
+
 ## What the design protects
 
 - **Unlinkability across a single relay.** Layered encryption means the entry
@@ -11,6 +14,11 @@
   past circuits.
 - **Per-hop confidentiality & integrity.** Every layer is ChaCha20-Poly1305
   (AEAD) with non-reusable nonces.
+- **End-to-end integrity from the exit.** Application `Data`/`End` cells are
+  accepted by the client only when they decrypt at the *exit* layer. Because each
+  relay holds the backward key for its own hop, this prevents a malicious
+  middle/entry relay from injecting bytes the application would attribute to the
+  exit — sealing a valid cell at the exit layer requires the exit's key.
 - **Modern private-overlay primitives.** The custom protocol uses X25519,
   HKDF-SHA256, HMAC-SHA256, and ChaCha20-Poly1305. RSA is neither needed nor
   desirable for this private key agreement. This is not the same as possessing
@@ -59,13 +67,19 @@
   circuits (0 = off, to avoid breaking legitimately long-idle streams).
   `TOR_MAX_SOCKS_CONNECTIONS` separately bounds accepted application streams. A
   circuit holds its `TOR_MAX_CIRCUITS` slot until *both* its forward handler and
-  its detached backward pump finish, so the cap reflects real resource use and a
-  long-lived stream cannot free a slot while its sockets are still open.
+  its detached backward pump finish, so the cap reflects real resource use. To
+  keep that honest, the forward loop, the backward pumps, and the client's splice
+  read are all bounded by a finite idle timeout (`TOR_CIRCUIT_IDLE_TIMEOUT_SECS` /
+  `TOR_CLIENT_IDLE_TIMEOUT_SECS`, default 600 s) — a silent peer cannot park a task
+  and permanently leak its permit. Exit DNS resolution is also timeout-bounded.
 - **Dashboard `/api/fetch` auth.** The fetch endpoint is a server-side proxy
   primitive. When the dashboard is bound to a non-loopback address, set
   `TOR_UI_TOKEN` (or `TOR_UI_TOKEN_FILE`); requests must then present it via
-  `?token=` or `Authorization: Bearer` (checked in constant time). Without it,
-  `/api/fetch` is an unauthenticated proxy — the process logs a warning if bound
+  `?token=` or `Authorization: Bearer` (checked in constant time). When set, the
+  token gates every endpoint that exposes the relay directory, live counters, or
+  the fetch proxy (`/`, `/api/status`, `/ws/stats`, `/api/fetch`); `/healthz`,
+  `/vendor`, and `/docs` carry nothing sensitive and stay open. Without a token
+  (the loopback default) these are open, and the process logs a warning if bound
   non-loopback with no token. The URL's host/path are also rejected if they
   contain control characters, preventing CRLF header-injection/request smuggling.
   The dashboard is rendered server-side with Maud (auto-escaping), so the fetched

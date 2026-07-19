@@ -36,3 +36,71 @@ spec:
       ports:
         - { protocol: TCP, port: 9050 }
         - { protocol: TCP, port: 9060 }
+---
+# Egress lockdown (defense-in-depth behind the app-layer exit policy). Requires a
+# CNI that enforces egress NetworkPolicy (Calico, Cilium, …).
+#
+# The client only ever talks to relays; the exit relay makes the real outbound
+# connection. So the client needs egress ONLY to the relays + kube-dns.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tor-client-egress
+  namespace: anon-proxy
+spec:
+  podSelector:
+    matchLabels: { app: tor-client }
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: { app: tor-relay }
+      ports:
+        - { protocol: TCP, port: 9001 }
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: kube-system }
+          podSelector:
+            matchLabels: { k8s-app: kube-dns }
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+---
+# Relays need relay-to-relay (Extend), kube-dns, and — for exits — the public
+# internet. The ipBlock allows the internet but EXCEPTs private/loopback/metadata
+# ranges, so the network layer also blocks 169.254.169.254 and RFC1918 even if
+# the app-layer exit policy were bypassed. Relay-to-relay and kube-dns are
+# allowed by the podSelector rules regardless of those excepts.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tor-relay-egress
+  namespace: anon-proxy
+spec:
+  podSelector:
+    matchLabels: { app: tor-relay }
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: { app: tor-relay }
+      ports:
+        - { protocol: TCP, port: 9001 }
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: kube-system }
+          podSelector:
+            matchLabels: { k8s-app: kube-dns }
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+              - 100.64.0.0/10
+              - 127.0.0.0/8

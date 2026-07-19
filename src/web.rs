@@ -28,8 +28,9 @@ use subtle::ConstantTimeEq;
 
 use anyhow::{bail, Result};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Path as AxPath, Query, State};
+use axum::extract::{Path as AxPath, Query, Request, State};
 use axum::http::{header, HeaderMap, StatusCode};
+use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Json, Response};
 use axum::routing::get;
 use axum::Router;
@@ -77,6 +78,7 @@ pub async fn run(cfg: Arc<WebConfig>) -> Result<()> {
         .route("/docs/{name}", get(docs_page))
         .route("/proxy.pac", get(proxy_pac))
         .route("/healthz", get(|| async { "ok" }))
+        .layer(middleware::from_fn_with_state(cfg.clone(), require_token))
         .with_state(cfg.clone());
 
     let listener = TcpListener::bind(&cfg.ui_listen).await?;
@@ -346,6 +348,93 @@ fn ct_str_eq(a: &str, b: &str) -> bool {
     return bool::from(a.as_bytes().ct_eq(b.as_bytes()));
 }
 
+/// When a UI token is configured, require it for the endpoints that expose the
+/// relay directory / live counters or drive the fetch proxy — not just
+/// `/api/fetch`. Otherwise a non-loopback dashboard leaks the relay list via `/`,
+/// `/api/status`, and `/ws/stats` to any unauthenticated client. `/docs`,
+/// `/proxy.pac`, `/vendor/*`, and `/healthz` carry nothing sensitive and stay
+/// open so navigation, the PAC file, the JS asset, and liveness probes work.
+async fn require_token(State(cfg): State<AppState>, req: Request, next: Next) -> Response {
+    if let Some(expected) = cfg.ui_token.as_deref() {
+        let path = req.uri().path();
+        let sensitive =
+            matches!(path, "/" | "/api/status" | "/ws/stats" | "/api/fetch");
+        if sensitive && !request_token_ok(&req, expected) {
+            return (
+                StatusCode::UNAUTHORIZED,
+                "unauthorized: dashboard requires TOR_UI_TOKEN (?token= or Authorization: Bearer)",
+            )
+                .into_response();
+        }
+    }
+    return next.run(req).await;
+}
+
+/// Token from `?token=` (percent-decoded) or `Authorization: Bearer`, compared in
+/// constant time.
+fn request_token_ok(req: &Request, expected: &str) -> bool {
+    if let Some(query) = req.uri().query() {
+        for pair in query.split('&') {
+            if let Some(raw) = pair.strip_prefix("token=") {
+                if ct_str_eq(&percent_decode(raw), expected) {
+                    return true;
+                }
+            }
+        }
+    }
+    if let Some(value) = req
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "))
+    {
+        if ct_str_eq(value, expected) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Minimal application/x-www-form-urlencoded percent-decoding for the token
+/// query parameter (avoids pulling a dependency for one field).
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        match b[i] {
+            b'%' if i + 2 < b.len() => match (hex_val(b[i + 1]), hex_val(b[i + 2])) {
+                (Some(h), Some(l)) => {
+                    out.push(h * 16 + l);
+                    i += 3;
+                }
+                _ => {
+                    out.push(b[i]);
+                    i += 1;
+                }
+            },
+            b'+' => {
+                out.push(b' ');
+                i += 1;
+            }
+            c => {
+                out.push(c);
+                i += 1;
+            }
+        }
+    }
+    return String::from_utf8_lossy(&out).into_owned();
+}
+
+fn hex_val(c: u8) -> Option<u8> {
+    return match c {
+        b'0'..=b'9' => Some(c - b'0'),
+        b'a'..=b'f' => Some(c - b'a' + 10),
+        b'A'..=b'F' => Some(c - b'A' + 10),
+        _ => None,
+    };
+}
+
 /// Open a stream through the active backend and perform one plaintext HTTP GET.
 async fn onion_get(cfg: &WebConfig, url: &str) -> Result<serde_json::Value> {
     let (host, port, path) = parse_http_url(url)?;
@@ -536,8 +625,18 @@ async fn docs_page(State(cfg): State<AppState>, AxPath(name): AxPath<String>) ->
         Ok(s) => s,
         Err(_) => return (StatusCode::NOT_FOUND, "doc not found").into_response(),
     };
+    // Neutralize raw HTML embedded in a doc: pulldown-cmark passes it through
+    // verbatim, and we emit the result PreEscaped, so a mounted/untrusted docs
+    // volume could otherwise inject script into the dashboard origin. Map raw
+    // HTML events to escaped text; genuine markdown still renders normally.
     let mut rendered = String::new();
-    let parser = pulldown_cmark::Parser::new(&md);
+    let opts =
+        pulldown_cmark::Options::ENABLE_TABLES | pulldown_cmark::Options::ENABLE_STRIKETHROUGH;
+    let parser = pulldown_cmark::Parser::new_ext(&md, opts).map(|event| match event {
+        pulldown_cmark::Event::Html(html) => pulldown_cmark::Event::Text(html),
+        pulldown_cmark::Event::InlineHtml(html) => pulldown_cmark::Event::Text(html),
+        other => other,
+    });
     pulldown_cmark::html::push_html(&mut rendered, parser);
     let markup = html! {
         (DOCTYPE)
@@ -664,7 +763,11 @@ const WS_SCRIPT: &str = r#"
   function set(id, v) { var e = document.getElementById(id); if (e != null && v != null) e.textContent = v; }
   function connect() {
     var ws;
-    try { ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/stats'); }
+    try {
+      var tok = new URLSearchParams(location.search).get('token');
+      var base = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/stats';
+      ws = new WebSocket(tok ? base + '?token=' + encodeURIComponent(tok) : base);
+    }
     catch (e) { return; }
     ws.onmessage = function (ev) {
       var s; try { s = JSON.parse(ev.data); } catch (e) { return; }

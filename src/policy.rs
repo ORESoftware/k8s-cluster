@@ -16,6 +16,12 @@ use anyhow::{bail, Result};
 use std::collections::HashSet;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use tokio::net::lookup_host;
+use tokio::time::{timeout, Duration};
+
+/// Bound on exit-side name resolution. `lookup_host` uses the blocking OS
+/// resolver; without this, a domain whose nameserver is black-holed pins a
+/// circuit slot and a blocking-pool thread for the full OS resolver timeout.
+const RESOLVE_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Clone)]
 pub struct Policy {
@@ -93,8 +99,9 @@ impl Policy {
         if port == 0 || self.denied_exit_ports.contains(&port) {
             bail!("exit policy blocks destination port {port}");
         }
-        let addrs: Vec<SocketAddr> = lookup_host((host, port))
+        let addrs: Vec<SocketAddr> = timeout(RESOLVE_TIMEOUT, lookup_host((host, port)))
             .await
+            .map_err(|_| anyhow::anyhow!("DNS resolution for {host}:{port} timed out"))?
             .map_err(|e| anyhow::anyhow!("DNS resolution for {host}:{port} failed: {e}"))?
             .collect();
         if addrs.is_empty() {
@@ -172,6 +179,10 @@ fn is_blocked_v4(v4: Ipv4Addr) -> bool {
     let is_this_network = o[0] == 0; // 0.0.0.0/8
     let is_benchmark = o[0] == 198 && (o[1] == 18 || o[1] == 19); // 198.18.0.0/15
     let is_reserved = o[0] >= 240; // 240.0.0.0/4
+    // 192.0.0.0/24 IETF protocol assignments (incl. 192.0.0.170/171 NAT64/DS-Lite).
+    let is_ietf_proto = o[0] == 192 && o[1] == 0 && o[2] == 0;
+    // 192.88.99.0/24 deprecated 6to4 anycast relay.
+    let is_6to4_relay = o[0] == 192 && o[1] == 88 && o[2] == 99;
     return v4.is_loopback()
         || v4.is_private()
         || v4.is_link_local()
@@ -182,7 +193,9 @@ fn is_blocked_v4(v4: Ipv4Addr) -> bool {
         || is_cgnat
         || is_this_network
         || is_benchmark
-        || is_reserved;
+        || is_reserved
+        || is_ietf_proto
+        || is_6to4_relay;
 }
 
 fn is_blocked_v6(v6: Ipv6Addr) -> bool {
@@ -211,6 +224,28 @@ fn is_blocked_v6(v6: Ipv6Addr) -> bool {
         && seg[4] == 0
         && seg[5] == 0
     {
+        let v4 = Ipv4Addr::new(
+            (seg[6] >> 8) as u8,
+            seg[6] as u8,
+            (seg[7] >> 8) as u8,
+            seg[7] as u8,
+        );
+        return is_blocked_v4(v4);
+    }
+    // Teredo (2001:0000::/32) embeds the client's IPv4 in the last 32 bits,
+    // bit-inverted; block if that embedded v4 is private/loopback.
+    if seg[0] == 0x2001 && seg[1] == 0x0000 {
+        let v4 = Ipv4Addr::new(
+            ((seg[6] >> 8) as u8) ^ 0xff,
+            (seg[6] as u8) ^ 0xff,
+            ((seg[7] >> 8) as u8) ^ 0xff,
+            (seg[7] as u8) ^ 0xff,
+        );
+        return is_blocked_v4(v4);
+    }
+    // IPv4-translated (::ffff:0:0/96): seg[4]==0xffff, seg[5]==0, v4 in seg[6..8].
+    // `to_ipv4()` does not decode this SIIT form, so handle it explicitly.
+    if seg[0] == 0 && seg[1] == 0 && seg[2] == 0 && seg[3] == 0 && seg[4] == 0xffff && seg[5] == 0 {
         let v4 = Ipv4Addr::new(
             (seg[6] >> 8) as u8,
             seg[6] as u8,
@@ -271,6 +306,23 @@ mod tests {
         assert!(is_blocked("64:ff9b::7f00:1".parse().unwrap())); // NAT64 of 127.0.0.1
                                                                  // A mapped public address is still allowed.
         assert!(!is_blocked("::ffff:1.1.1.1".parse().unwrap()));
+    }
+
+    #[test]
+    fn blocks_additional_reserved_and_embedded_ranges() {
+        // 192.0.0.0/24 (incl. NAT64/DS-Lite) and 192.88.99.0/24 (6to4 relay).
+        assert!(is_blocked("192.0.0.170".parse().unwrap()));
+        assert!(is_blocked("192.0.0.1".parse().unwrap()));
+        assert!(is_blocked("192.88.99.1".parse().unwrap()));
+        // Neighbouring /24s stay public.
+        assert!(!is_blocked("192.0.1.1".parse().unwrap()));
+        assert!(!is_blocked("192.88.98.1".parse().unwrap()));
+        // IPv4-translated (::ffff:0:0/96) wrapping loopback.
+        assert!(is_blocked("::ffff:0:7f00:1".parse().unwrap())); // 127.0.0.1
+        // Teredo (2001:0000::/32) with a bit-inverted private client v4 (10.0.0.1).
+        assert!(is_blocked("2001:0:0:0:0:0:f5ff:fffe".parse().unwrap()));
+        // Teredo wrapping a public client v4 (1.1.1.1) stays allowed.
+        assert!(!is_blocked("2001:0:0:0:0:0:fefe:fefe".parse().unwrap()));
     }
 
     #[test]

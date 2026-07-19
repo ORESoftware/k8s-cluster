@@ -29,6 +29,7 @@ use sha2::Sha256;
 use std::sync::OnceLock;
 use subtle::ConstantTimeEq;
 use x25519_dalek::{PublicKey, StaticSecret};
+use zeroize::Zeroize;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -97,6 +98,12 @@ fn derive_keys(
     mac.update(relay_eph_pub);
     let tag: [u8; 32] = mac.finalize().into_bytes().into();
 
+    // Wipe the transient key material (the concatenated DH secrets and the full
+    // 96-byte KDF output). `forward`/`backward` are moved into the returned
+    // HopKeys; the returned auth `tag` is public.
+    ikm.zeroize();
+    okm.zeroize();
+    auth_key.zeroize();
     return (HopKeys { forward, backward }, tag);
 }
 

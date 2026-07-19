@@ -55,11 +55,19 @@ fn max_circuits() -> Result<usize> {
 /// Optional idle timeout on the forward read loop (0 = disabled). Bounds
 /// post-handshake slowloris, where a peer completes the handshake then holds
 /// the circuit open sending nothing.
+///
+/// Applies to BOTH the forward read loop and the detached backward pumps, so a
+/// peer that goes silent cannot park a pump forever and leak its circuit-slot
+/// permit. Defaults to a finite value (a disabled/0 timeout re-enables the
+/// slot-exhaustion DoS); operators with legitimately long-idle streams can raise
+/// it. 0 disables (not recommended).
+const DEFAULT_IDLE_SECS: u64 = 600;
+
 fn idle_timeout() -> Option<Duration> {
     let secs: u64 = std::env::var("TOR_CIRCUIT_IDLE_TIMEOUT_SECS")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(0);
+        .unwrap_or(DEFAULT_IDLE_SECS);
     return if secs == 0 {
         None
     } else {
@@ -215,7 +223,7 @@ async fn handle_circuit(
                     .ok_or_else(|| anyhow!("sealer already taken"))?;
                 let hold = permit.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = middle_pump(next_r, pw, sealer).await {
+                    if let Err(e) = middle_pump(next_r, pw, sealer, idle).await {
                         debug!("middle pump ended: {e:#}");
                     }
                     drop(hold); // release the circuit slot only when this direction ends
@@ -248,7 +256,7 @@ async fn handle_circuit(
                     .ok_or_else(|| anyhow!("sealer already taken"))?;
                 let hold = permit.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = exit_pump(dest_r, pw, sealer).await {
+                    if let Err(e) = exit_pump(dest_r, pw, sealer, idle).await {
                         debug!("exit pump ended: {e:#}");
                     }
                     drop(hold); // release the circuit slot only when this direction ends
@@ -274,11 +282,21 @@ async fn middle_pump(
     mut next_r: OwnedReadHalf,
     mut prev_w: OwnedWriteHalf,
     mut sealer: Sealer,
+    idle: Option<Duration>,
 ) -> Result<()> {
     loop {
-        let frame = match read_frame(&mut next_r).await {
-            Ok(f) => f,
-            Err(_) => break,
+        let read = read_frame(&mut next_r);
+        // Idle-bounded so a silent next hop cannot park this pump (and pin the
+        // shared circuit-slot permit) forever after the forward side is gone.
+        let frame = match idle {
+            Some(d) => match timeout(d, read).await {
+                Ok(Ok(f)) => f,
+                _ => break, // next hop closed or idle timeout
+            },
+            None => match read.await {
+                Ok(f) => f,
+                Err(_) => break,
+            },
         };
         let cell = Cell::Relay {
             payload: frame_bytes(&frame),
@@ -296,17 +314,25 @@ async fn exit_pump(
     mut dest_r: OwnedReadHalf,
     mut prev_w: OwnedWriteHalf,
     mut sealer: Sealer,
+    idle: Option<Duration>,
 ) -> Result<()> {
     let mut buf = vec![0u8; EXIT_READ_CHUNK];
     loop {
-        let n = match dest_r.read(&mut buf).await {
-            Ok(0) => {
+        let read = dest_r.read(&mut buf);
+        // Idle-bounded (see middle_pump): a destination that accepts then stalls
+        // must not pin this pump and its circuit-slot permit indefinitely.
+        let outcome = match idle {
+            Some(d) => timeout(d, read).await.ok(),
+            None => Some(read.await),
+        };
+        let n = match outcome {
+            Some(Ok(0)) => {
                 let ct = sealer.seal(&Cell::End.encode()?)?;
                 let _ = write_frame(&mut prev_w, &ct).await;
                 break;
             }
-            Ok(n) => n,
-            Err(_) => break,
+            Some(Ok(n)) => n,
+            Some(Err(_)) | None => break, // read error or idle timeout
         };
         let cell = Cell::Data {
             bytes: buf[..n].to_vec(),

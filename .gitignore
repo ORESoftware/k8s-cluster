@@ -4,4 +4,8 @@
 directory.local.toml
 directory.toml
 k8s/directory-configmap.yaml
-k8s/*-key.secret.yaml
+# Ignore ALL real secret manifests (any name), but keep the *.example.* templates
+# tracked. The previous `*-key.secret.yaml` missed natural copy names like
+# `relay-keys.secret.yaml` and `tor-network-secret.secret.yaml`.
+k8s/*.secret.yaml
+!k8s/*.example.secret.yaml
