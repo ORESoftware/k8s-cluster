@@ -10737,6 +10737,7 @@ export const fabRuns = daedalusSchema.table(
   "fab_runs",
   {
     id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    instructionsId: uuid("instructions_id").notNull(),
     status: text("status").default(sql`'queued'`).notNull(),
     machineId: text("machine_id").notNull(),
     operatorEmail: text("operator_email"),
@@ -10761,6 +10762,7 @@ export const fabRuns = daedalusSchema.table(
 
 export const fabRunsRowSchema = z.object({
   id: z.string().uuid(),
+  instructionsId: z.string().uuid(),
   status: fabRunsStatusSchema,
   machineId: z.string().refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
   operatorEmail: z.string().nullable(),
@@ -10774,6 +10776,7 @@ export const fabRunsRowSchema = z.object({
 
 export const fabRunsInsertSchema = z.object({
   id: z.string().uuid().optional(),
+  instructionsId: z.string().uuid(),
   status: fabRunsStatusSchema.optional().default("queued"),
   machineId: z.string().refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
   operatorEmail: z.string().nullable().optional(),

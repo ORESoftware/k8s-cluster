@@ -6911,8 +6911,7 @@ create index if not exists fab_instructions_plan_idx
 -- finished_at; `progress` is advisory and driven by the run's telemetry stream.
 create table if not exists daedalus.fab_runs (
   id uuid primary key default gen_random_uuid(),
-  instructions_id uuid not null
-    references daedalus.fab_instructions (id) on delete cascade,
+  instructions_id uuid not null references daedalus.fab_instructions (id) on delete cascade,
   status text not null default 'queued',
   machine_id text not null,
   operator_email text,

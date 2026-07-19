@@ -26,6 +26,7 @@ func (FabRuns) Annotations() []schema.Annotation {
 func (FabRuns) Fields() []ent.Field {
 	return []ent.Field{
 		field.UUID("id", uuid.UUID{}).StorageKey("id"),
+		field.UUID("instructions_id", uuid.UUID{}).StorageKey("instructions_id"),
 		field.Enum("status").Values("queued", "running", "succeeded", "failed", "aborted").StorageKey("status"),
 		field.String("machine_id").StorageKey("machine_id"),
 		field.String("operator_email").Optional().Nillable().StorageKey("operator_email"),

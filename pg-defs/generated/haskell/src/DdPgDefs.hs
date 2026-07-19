@@ -10616,10 +10616,10 @@ fabRunsTable :: Text
 fabRunsTable = "daedalus.fab_runs"
 
 fabRunsColumns :: [Text]
-fabRunsColumns = ["id", "status", "machine_id", "operator_email", "progress", "as_built", "error", "started_at", "finished_at", "created_at"]
+fabRunsColumns = ["id", "instructions_id", "status", "machine_id", "operator_email", "progress", "as_built", "error", "started_at", "finished_at", "created_at"]
 
 fabRunsSelectSql :: Text
-fabRunsSelectSql = "select\n      id::text as id,\n      status,\n      machine_id,\n      operator_email,\n      progress,\n      as_built::text as as_built_json,\n      error,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_runs"
+fabRunsSelectSql = "select\n      id::text as id,\n      instructions_id::text as instructions_id,\n      status,\n      machine_id,\n      operator_email,\n      progress,\n      as_built::text as as_built_json,\n      error,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_runs"
 
 data FabRunsStatus = FabRunsStatusQueued | FabRunsStatusRunning | FabRunsStatusSucceeded | FabRunsStatusFailed | FabRunsStatusAborted
   deriving (Eq, Show)
@@ -10643,6 +10643,7 @@ parseFabRunsStatus value = case value of
 
 data FabRunsRow = FabRunsRow
   { fabRunsId :: Text
+  , fabRunsInstructionsId :: Text
   , fabRunsStatus :: Text
   , fabRunsMachineId :: Text
   , fabRunsOperatorEmail :: (Maybe Text)
@@ -10655,7 +10656,7 @@ data FabRunsRow = FabRunsRow
   } deriving (Eq, Show)
 
 instance FromRow FabRunsRow where
-  fromRow = FabRunsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+  fromRow = FabRunsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
 
 validateFabRunsProgress :: Int -> Either Text Int
 validateFabRunsProgress value

@@ -20,6 +20,9 @@ class FabRuns
     #[ORM\Column(type: 'guid')]
     public string $id;
 
+    #[ORM\Column(type: 'guid', name: 'instructions_id')]
+    public string $instructionsId;
+
     #[ORM\Column(type: 'string')]
     public string $status;
 

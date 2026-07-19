@@ -6194,6 +6194,8 @@ pub mod fab_runs {
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
+    #[sea_orm(column_name = "instructions_id")]
+    pub instructions_id: Uuid,
     pub status: String,
     #[sea_orm(column_name = "machine_id")]
     pub machine_id: String,

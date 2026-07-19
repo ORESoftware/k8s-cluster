@@ -8464,6 +8464,9 @@ public class FabRuns
     [Column("id")]
     public Guid Id { get; set; }
 
+    [Column("instructions_id")]
+    public Guid InstructionsId { get; set; }
+
     [Required]
     [Column("status")]
     [RegularExpression(@"^(queued|running|succeeded|failed|aborted)$")]

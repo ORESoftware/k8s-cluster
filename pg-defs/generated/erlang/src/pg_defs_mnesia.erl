@@ -152,7 +152,7 @@
 -record(fab_plans, {id, owner_email, title, goal, process_family, status, document, created_at, updated_at}).
 -record(fab_designs, {id, plan_id, filename, format, storage_uri, size_bytes, content_hash, geometry, created_at}).
 -record(fab_instructions, {id, plan_id, revision, machine_profile, dialect, storage_uri, content_hash, validated, validation, released_by_email, released_at, created_at}).
--record(fab_runs, {id, status, machine_id, operator_email, progress, as_built, error, started_at, finished_at, created_at}).
+-record(fab_runs, {id, instructions_id, status, machine_id, operator_email, progress, as_built, error, started_at, finished_at, created_at}).
 
 accounts_attributes() -> ['id', 'username', 'auth_secret', 'created_at'].
 
@@ -2065,10 +2065,10 @@ fab_instructions_table_def() ->
         {disc_copies, [node()]}
     ].
 
-fab_runs_attributes() -> ['id', 'status', 'machine_id', 'operator_email', 'progress', 'as_built', 'error', 'started_at', 'finished_at', 'created_at'].
+fab_runs_attributes() -> ['id', 'instructions_id', 'status', 'machine_id', 'operator_email', 'progress', 'as_built', 'error', 'started_at', 'finished_at', 'created_at'].
 
 fab_runs_record_info() ->
-    {fab_runs, 10, fab_runs_attributes()}.
+    {fab_runs, 11, fab_runs_attributes()}.
 
 fab_runs_table_def() ->
     [

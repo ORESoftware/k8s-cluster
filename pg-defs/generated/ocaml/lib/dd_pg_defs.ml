@@ -11578,9 +11578,9 @@ let validate_fab_instructions_revision (value : int) : (int, string) result =
 
 let fab_runs_table = "daedalus.fab_runs"
 
-let fab_runs_columns = ["id"; "status"; "machine_id"; "operator_email"; "progress"; "as_built"; "error"; "started_at"; "finished_at"; "created_at"]
+let fab_runs_columns = ["id"; "instructions_id"; "status"; "machine_id"; "operator_email"; "progress"; "as_built"; "error"; "started_at"; "finished_at"; "created_at"]
 
-let fab_runs_select_sql = "select\n      id::text as id,\n      status,\n      machine_id,\n      operator_email,\n      progress,\n      as_built::text as as_built_json,\n      error,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_runs"
+let fab_runs_select_sql = "select\n      id::text as id,\n      instructions_id::text as instructions_id,\n      status,\n      machine_id,\n      operator_email,\n      progress,\n      as_built::text as as_built_json,\n      error,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_runs"
 
 type fab_runs_status = [ `Queued | `Running | `Succeeded | `Failed | `Aborted ]
 
@@ -11603,6 +11603,7 @@ let parse_fab_runs_status (value : string) : (fab_runs_status, string) result =
 
 type fab_runs_row = {
   fab_runs_id : string;
+  fab_runs_instructions_id : string;
   fab_runs_status : string;
   fab_runs_machine_id : string;
   fab_runs_operator_email : string option;
@@ -11617,15 +11618,16 @@ type fab_runs_row = {
 let fab_runs_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : fab_runs_row =
   {
     fab_runs_id = get 0;
-    fab_runs_status = get 1;
-    fab_runs_machine_id = get 2;
-    fab_runs_operator_email = (if is_null 3 then None else Some (get 3));
-    fab_runs_progress = int_of_string (get 4);
-    fab_runs_as_built = get 5;
-    fab_runs_error = (if is_null 6 then None else Some (get 6));
-    fab_runs_started_at = (if is_null 7 then None else Some (get 7));
-    fab_runs_finished_at = (if is_null 8 then None else Some (get 8));
-    fab_runs_created_at = get 9;
+    fab_runs_instructions_id = get 1;
+    fab_runs_status = get 2;
+    fab_runs_machine_id = get 3;
+    fab_runs_operator_email = (if is_null 4 then None else Some (get 4));
+    fab_runs_progress = int_of_string (get 5);
+    fab_runs_as_built = get 6;
+    fab_runs_error = (if is_null 7 then None else Some (get 7));
+    fab_runs_started_at = (if is_null 8 then None else Some (get 8));
+    fab_runs_finished_at = (if is_null 9 then None else Some (get 9));
+    fab_runs_created_at = get 10;
   }
 
 let validate_fab_runs_progress (value : int) : (int, string) result =

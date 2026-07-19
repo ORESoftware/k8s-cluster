@@ -2738,6 +2738,7 @@ object FabInstructions : Table("daedalus.fab_instructions") {
 
 object FabRuns : Table("daedalus.fab_runs") {
     val id = uuid("id")
+    val instructionsId = uuid("instructions_id")
     val status = text("status")
     val machineId = text("machine_id")
     val operatorEmail = text("operator_email").nullable()
@@ -7599,6 +7600,7 @@ fun toFabInstructionsRow(row: ResultRow): FabInstructionsRow = FabInstructionsRo
 
 data class FabRunsRow(
     val id: UUID,
+    val instructionsId: UUID,
     val status: String,
     val machineId: String,
     val operatorEmail: String?,
@@ -7612,6 +7614,7 @@ data class FabRunsRow(
 
 fun toFabRunsRow(row: ResultRow): FabRunsRow = FabRunsRow(
     row[FabRuns.id],
+    row[FabRuns.instructionsId],
     row[FabRuns.status],
     row[FabRuns.machineId],
     row[FabRuns.operatorEmail],

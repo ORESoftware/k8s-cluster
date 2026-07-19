@@ -3891,6 +3891,7 @@ class FabRunsTable extends Table {
   @override bool get withoutRowId => true;
 
   TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get instructionsId => text().named("instructions_id").customConstraint("UUID")();
   TextColumn get status => text().named("status").clientDefault(() => 'queued')();
   TextColumn get machineId => text().named("machine_id")();
   TextColumn get operatorEmail => text().named("operator_email").nullable()();

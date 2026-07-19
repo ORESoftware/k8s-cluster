@@ -13912,13 +13912,14 @@ class FabInstructionsRow {
 }
 
 const fabRunsTable = "daedalus.fab_runs";
-const fabRunsSelectSql = "select\n      id::text as id,\n      status,\n      machine_id,\n      operator_email,\n      progress,\n      as_built::text as as_built_json,\n      error,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_runs";
+const fabRunsSelectSql = "select\n      id::text as id,\n      instructions_id::text as instructions_id,\n      status,\n      machine_id,\n      operator_email,\n      progress,\n      as_built::text as as_built_json,\n      error,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_runs";
 
 const fabRunsStatusValues = <String>["queued", "running", "succeeded", "failed", "aborted"];
 
 class FabRunsRow {
   const FabRunsRow({
     required this.id,
+    required this.instructionsId,
     required this.status,
     required this.machineId,
     this.operatorEmail,
@@ -13931,6 +13932,7 @@ class FabRunsRow {
   });
 
   final String id;
+  final String instructionsId;
   final String status;
   final String machineId;
   final String? operatorEmail;
@@ -13944,6 +13946,7 @@ class FabRunsRow {
   factory FabRunsRow.fromJson(Map<String, Object?> json) {
     return FabRunsRow(
       id: _readRequiredString(json, "id"),
+      instructionsId: _readRequiredString(json, "instructionsId"),
       status: _readRequiredString(json, "status"),
       machineId: _readRequiredString(json, "machineId"),
       operatorEmail: _readOptionalString(json, "operatorEmail"),
@@ -13958,6 +13961,7 @@ class FabRunsRow {
 
   Map<String, Object?> toJson() => <String, Object?>{
     "id": id,
+    "instructionsId": instructionsId,
     "status": status,
     "machineId": machineId,
     "operatorEmail": operatorEmail,

@@ -3085,6 +3085,7 @@ model FabInstructions {
 
 model FabRuns {
   id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  instructionsId String @map("instructions_id") @db.Uuid
   status String @default("queued") @db.Text
   machineId String @map("machine_id") @db.Text
   operatorEmail String? @map("operator_email") @db.Text

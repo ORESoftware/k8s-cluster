@@ -2439,6 +2439,7 @@ export function defineDdModels(sequelize: Sequelize) {
 
   const FabRuns = sequelize.define("FabRuns", {
     id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    instructions_id: { type: DataTypes.UUID, allowNull: false },
     status: { type: DataTypes.TEXT, allowNull: false, defaultValue: "queued", validate: { isIn: [["queued", "running", "succeeded", "failed", "aborted"]] } },
     machine_id: { type: DataTypes.TEXT, allowNull: false },
     operator_email: { type: DataTypes.TEXT, allowNull: true },

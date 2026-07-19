@@ -4242,13 +4242,14 @@ class FabRuns extends Model
     public $incrementing = false;
     protected $keyType = 'string';
     public $timestamps = false;
-    protected $fillable = ['status', 'machine_id', 'operator_email', 'progress', 'as_built', 'error', 'started_at', 'finished_at', 'created_at'];
+    protected $fillable = ['instructions_id', 'status', 'machine_id', 'operator_email', 'progress', 'as_built', 'error', 'started_at', 'finished_at', 'created_at'];
     protected $casts = ['progress' => 'integer', 'as_built' => 'array', 'started_at' => 'datetime', 'finished_at' => 'datetime', 'created_at' => 'datetime'];
 
     /** @return array<string, array<int, string>> */
     public static function rules(): array
     {
         return [
+            'instructions_id' => ['required', 'uuid'],
             'status' => ['nullable', 'string', 'in:queued,running,succeeded,failed,aborted'],
             'machine_id' => ['required', 'string'],
             'operator_email' => ['nullable', 'string'],

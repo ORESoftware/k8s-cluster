@@ -6906,6 +6906,9 @@ export class FabRunsEntity {
   @PrimaryGeneratedColumn("uuid", { name: "id" })
   id!: string;
 
+  @Column({ name: "instructions_id", type: "uuid" })
+  instructionsId!: string;
+
   @Column({ name: "status", type: "text", default: () => "'queued'" })
   status!: string;
 

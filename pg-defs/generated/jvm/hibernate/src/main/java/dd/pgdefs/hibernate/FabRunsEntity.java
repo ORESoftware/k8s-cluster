@@ -19,6 +19,9 @@ public class FabRunsEntity {
     @Column(name = "id")
     private UUID id;
 
+    @Column(name = "instructions_id", nullable = false)
+    private UUID instructionsId;
+
     @Column(name = "status", nullable = false)
     private String status;
 
@@ -52,6 +55,14 @@ public class FabRunsEntity {
 
     public void setId(UUID id) {
         this.id = id;
+    }
+
+    public UUID getInstructionsId() {
+        return instructionsId;
+    }
+
+    public void setInstructionsId(UUID instructionsId) {
+        this.instructionsId = instructionsId;
     }
 
     public String getStatus() {

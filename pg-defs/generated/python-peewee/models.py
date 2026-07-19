@@ -2938,6 +2938,7 @@ class FabInstructions(BaseModel):
 
 class FabRuns(BaseModel):
     id = UUIDField(primary_key=True)
+    instructions_id = UUIDField()
     status = TextField()
     machine_id = TextField()
     operator_email = TextField(null=True)

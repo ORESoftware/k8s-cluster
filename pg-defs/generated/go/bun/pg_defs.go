@@ -7514,6 +7514,7 @@ func (value FabInstructionsBun) Validate() error {
 const FabRunsTable = "daedalus.fab_runs"
 const FabRunsSelectSQL = `select
       id::text as id,
+      instructions_id::text as instructions_id,
       status,
       machine_id,
       operator_email,
@@ -7530,6 +7531,7 @@ var FabRunsStatusValues = []string{"queued", "running", "succeeded", "failed", "
 type FabRunsBun struct {
 	bun.BaseModel `bun:"table:daedalus.fab_runs"`
 	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	InstructionsId uuid.UUID `bun:"instructions_id,type:uuid" json:"instructionsId"`
 	Status string `bun:"status,type:text,default:'queued'" json:"status"`
 	MachineId string `bun:"machine_id,type:text" json:"machineId"`
 	OperatorEmail *string `bun:"operator_email,type:text,nullzero" json:"operatorEmail,omitempty"`
