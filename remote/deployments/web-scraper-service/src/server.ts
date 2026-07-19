@@ -101,6 +101,10 @@ const config = {
   maxHtmlChars: readNumberEnv('SCRAPER_MAX_HTML_CHARS', 1_000_000),
   maxTextChars: readNumberEnv('SCRAPER_MAX_TEXT_CHARS', 40_000),
   maxLinks: readNumberEnv('SCRAPER_MAX_LINKS', 250),
+  maxPhones: readNumberEnv('SCRAPER_MAX_PHONES', 50),
+  maxEmails: readNumberEnv('SCRAPER_MAX_EMAILS', 50),
+  // Region used to normalize local numbers (no country code) to E.164.
+  contactRegion: (process.env.SCRAPER_CONTACT_REGION ?? 'US').toUpperCase(),
   userAgent:
     process.env.SCRAPER_USER_AGENT ??
     'dd-web-scraper/0.1 (+https://github.com/ORESoftware/k8s-cluster)',
