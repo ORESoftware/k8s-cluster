@@ -113,6 +113,30 @@ test('obfuscated HTML-entity emails are decoded', () => {
   assert.equal(emails[0]?.address, 'info@acme.test');
 });
 
+test('entity-obfuscated contacts in visible text are decoded before scanning', () => {
+  const { emails } = extractContacts({
+    html: '',
+    text: 'Reach purchasing&#64;acme.test for quotes',
+    ...both,
+  });
+
+  assert.deepEqual(emails.map((e) => e.address), ['purchasing@acme.test']);
+});
+
+test('inline script and style bodies are not mined for contacts', () => {
+  const html = `
+    <script>
+      var cfg = { supportHref: "tel:+15005550001", owner: "ops@internal-vendor.test" };
+    </script>
+    <style>/* mailto:designer@theme-shop.test */</style>
+    <a href="tel:+14155550134">Real line</a>
+  `;
+  const { phones, emails } = extractContacts({ html, text: '', ...both });
+
+  assert.deepEqual(phones.map((p) => p.e164), ['+14155550134']);
+  assert.deepEqual(emails, []);
+});
+
 test('flags gate collection so callers only take the PII they asked for', () => {
   const html = '<a href="tel:+14155550134">c</a><a href="mailto:a@acme.test">e</a>';
 
