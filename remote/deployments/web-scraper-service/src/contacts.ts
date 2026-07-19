@@ -129,7 +129,12 @@ const MAILTO_HREF_RE = /(?:href|data-href)\s*=\s*["']\s*mailto:([^"'?]+)/gi;
 
 export function extractContacts(options: ContactExtractionOptions): ContactExtraction {
   const html = options.html.length > MAX_SCAN_CHARS ? options.html.slice(0, MAX_SCAN_CHARS) : options.html;
-  const text = options.text.length > MAX_SCAN_CHARS ? options.text.slice(0, MAX_SCAN_CHARS) : options.text;
+  // Decode entities before scanning: DOM parsers hand us decoded text, but the
+  // raw-HTML fallback does not, and `info&#64;example.com` is a common way for
+  // sites to publish a contact address without it being plainly greppable.
+  const text = decodeEntities(
+    options.text.length > MAX_SCAN_CHARS ? options.text.slice(0, MAX_SCAN_CHARS) : options.text,
+  );
 
   const phones = new PhoneCollector(options.defaultRegion);
   const emails = new EmailCollector();
