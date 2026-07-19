@@ -118,9 +118,10 @@ const ASSET_TAIL = /\.(png|jpe?g|gif|webp|svg|css|js|woff2?|ttf|ico|mp4|pdf)$/i;
 
 const EMAIL_RE = /[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,24}/gi;
 
-// A phone candidate: optional +, then digits/grouping punctuation, bounded so it
-// isn't glued to a longer digit/word run (which would be an ID, not a number).
-const PHONE_TEXT_RE = /(?<![\w+])(\+?\(?\d[\d().\- ‐-―\s]{5,20}\d)(?![\w])/g;
+// A phone candidate: optional +, then digits/grouping punctuation. The lookbehind
+// drops runs glued to a word char, `#`, or a currency symbol — those are order
+// numbers, SKUs, and prices rather than published contact numbers.
+const PHONE_TEXT_RE = /(?<![\w+#$£€¥])(\+?\(?\d[\d().\- ‐-―\s]{5,20}\d)(?![\w])/g;
 const PHONE_EXT_RE = /^[\s ]*(?:ext|extn|extension|x|#)\.?[\s ]*(\d{1,6})/i;
 
 const TEL_HREF_RE = /(?:href|data-href)\s*=\s*["']\s*tel:([^"']+)["']/gi;
