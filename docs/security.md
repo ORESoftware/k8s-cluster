@@ -64,8 +64,11 @@
   circuits (0 = off, to avoid breaking legitimately long-idle streams).
   `TOR_MAX_SOCKS_CONNECTIONS` separately bounds accepted application streams. A
   circuit holds its `TOR_MAX_CIRCUITS` slot until *both* its forward handler and
-  its detached backward pump finish, so the cap reflects real resource use and a
-  long-lived stream cannot free a slot while its sockets are still open.
+  its detached backward pump finish, so the cap reflects real resource use. To
+  keep that honest, the forward loop, the backward pumps, and the client's splice
+  read are all bounded by a finite idle timeout (`TOR_CIRCUIT_IDLE_TIMEOUT_SECS` /
+  `TOR_CLIENT_IDLE_TIMEOUT_SECS`, default 600 s) — a silent peer cannot park a task
+  and permanently leak its permit. Exit DNS resolution is also timeout-bounded.
 - **Dashboard `/api/fetch` auth.** The fetch endpoint is a server-side proxy
   primitive. When the dashboard is bound to a non-loopback address, set
   `TOR_UI_TOKEN` (or `TOR_UI_TOKEN_FILE`); requests must then present it via
