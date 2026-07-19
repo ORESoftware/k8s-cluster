@@ -1205,11 +1205,24 @@ async function extractDocument(
     includeHtml: input.includeHtml,
     includeText: input.includeText,
     includeLinks: input.includeLinks,
+    includePhones: wantsPhones(input),
+    includeEmails: wantsEmails(input),
+    contactRegion: (input.contactRegion ?? config.contactRegion).toUpperCase(),
     maxHtmlChars: getMaxHtmlChars(input),
     maxTextChars: getMaxTextChars(input),
     maxLinks: config.maxLinks,
+    maxPhones: Math.min(input.maxPhones ?? config.maxPhones, config.maxPhones),
+    maxEmails: Math.min(input.maxEmails ?? config.maxEmails, config.maxEmails),
     timeoutMs: getTimeoutMs(input),
   });
+}
+
+function wantsPhones(input: ScrapeRequest): boolean {
+  return input.includePhones ?? input.includeContacts ?? false;
+}
+
+function wantsEmails(input: ScrapeRequest): boolean {
+  return input.includeEmails ?? input.includeContacts ?? false;
 }
 
 function parserForStrategy(strategy: StrategyName): ParserName {
