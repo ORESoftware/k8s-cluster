@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: canonical-cloud-revoker
+  namespace: canonical-cloud
+  labels:
+    app.kubernetes.io/name: canonical-session-revoker
+    app.kubernetes.io/component: revoker
+  annotations:
+    canonical.cloud/release-sha: "e245ed408810455b7a0c43b9f4e81fd60b172100"
+spec:
+  replicas: 1
+  minReadySeconds: 5
+  progressDeadlineSeconds: 300
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: canonical-session-revoker
+      app.kubernetes.io/component: revoker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: canonical-session-revoker
+        app.kubernetes.io/component: revoker
+      annotations:
+        canonical.cloud/release-sha: "e245ed408810455b7a0c43b9f4e81fd60b172100"
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      imagePullSecrets:
+        - name: canonical-cloud-ghcr-pull
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: revoker
+          image: ghcr.io/canonical-cloud/canonical-session-revoker:e245ed408810455b7a0c43b9f4e81fd60b172100
+          imagePullPolicy: IfNotPresent
+          args:
+            - run
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          envFrom:
+            - secretRef:
+                name: canonical-cloud-revoker-runtime
+          env:
+            - name: SESSION_REVOCATION_DATABASE_MAX_CONNECTIONS
+              value: "2"
+            - name: RUST_LOG
+              value: canonical_session_revoker=info,canonical_web_server=info,reqwest=warn,sea_orm=warn
+            - name: HOME
+              value: /tmp
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
