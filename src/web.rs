@@ -348,6 +348,93 @@ fn ct_str_eq(a: &str, b: &str) -> bool {
     return bool::from(a.as_bytes().ct_eq(b.as_bytes()));
 }
 
+/// When a UI token is configured, require it for the endpoints that expose the
+/// relay directory / live counters or drive the fetch proxy — not just
+/// `/api/fetch`. Otherwise a non-loopback dashboard leaks the relay list via `/`,
+/// `/api/status`, and `/ws/stats` to any unauthenticated client. `/docs`,
+/// `/proxy.pac`, `/vendor/*`, and `/healthz` carry nothing sensitive and stay
+/// open so navigation, the PAC file, the JS asset, and liveness probes work.
+async fn require_token(State(cfg): State<AppState>, req: Request, next: Next) -> Response {
+    if let Some(expected) = cfg.ui_token.as_deref() {
+        let path = req.uri().path();
+        let sensitive =
+            matches!(path, "/" | "/api/status" | "/ws/stats" | "/api/fetch");
+        if sensitive && !request_token_ok(&req, expected) {
+            return (
+                StatusCode::UNAUTHORIZED,
+                "unauthorized: dashboard requires TOR_UI_TOKEN (?token= or Authorization: Bearer)",
+            )
+                .into_response();
+        }
+    }
+    return next.run(req).await;
+}
+
+/// Token from `?token=` (percent-decoded) or `Authorization: Bearer`, compared in
+/// constant time.
+fn request_token_ok(req: &Request, expected: &str) -> bool {
+    if let Some(query) = req.uri().query() {
+        for pair in query.split('&') {
+            if let Some(raw) = pair.strip_prefix("token=") {
+                if ct_str_eq(&percent_decode(raw), expected) {
+                    return true;
+                }
+            }
+        }
+    }
+    if let Some(value) = req
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "))
+    {
+        if ct_str_eq(value, expected) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Minimal application/x-www-form-urlencoded percent-decoding for the token
+/// query parameter (avoids pulling a dependency for one field).
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        match b[i] {
+            b'%' if i + 2 < b.len() => match (hex_val(b[i + 1]), hex_val(b[i + 2])) {
+                (Some(h), Some(l)) => {
+                    out.push(h * 16 + l);
+                    i += 3;
+                }
+                _ => {
+                    out.push(b[i]);
+                    i += 1;
+                }
+            },
+            b'+' => {
+                out.push(b' ');
+                i += 1;
+            }
+            c => {
+                out.push(c);
+                i += 1;
+            }
+        }
+    }
+    return String::from_utf8_lossy(&out).into_owned();
+}
+
+fn hex_val(c: u8) -> Option<u8> {
+    return match c {
+        b'0'..=b'9' => Some(c - b'0'),
+        b'a'..=b'f' => Some(c - b'a' + 10),
+        b'A'..=b'F' => Some(c - b'A' + 10),
+        _ => None,
+    };
+}
+
 /// Open a stream through the active backend and perform one plaintext HTTP GET.
 async fn onion_get(cfg: &WebConfig, url: &str) -> Result<serde_json::Value> {
     let (host, port, path) = parse_http_url(url)?;
