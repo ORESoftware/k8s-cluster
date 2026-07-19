@@ -18,7 +18,11 @@ use std::path::Path;
 
 use crate::{append_log, AppState, BuildJobRecord};
 
-pub async fn execute(state: &AppState, job: &BuildJobRecord, log_path: &Path) -> Result<(), String> {
+pub async fn execute(
+    state: &AppState,
+    job: &BuildJobRecord,
+    log_path: &Path,
+) -> Result<(), String> {
     let config = &state.config;
     if !config.lambda_executor_enabled {
         return Err("lambda executor is disabled by BUILD_SERVER_LAMBDA_ENABLED=false".to_string());
@@ -39,7 +43,10 @@ pub async fn execute(state: &AppState, job: &BuildJobRecord, log_path: &Path) ->
     );
     append_log(
         log_path,
-        &format!("dispatching job {} to gleam-lambda-runner function {function_id}\n", job.id),
+        &format!(
+            "dispatching job {} to gleam-lambda-runner function {function_id}\n",
+            job.id
+        ),
         config.max_log_bytes,
     )
     .await;

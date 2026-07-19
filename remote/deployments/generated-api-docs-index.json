@@ -109,10 +109,10 @@
     {
       "service": "build-server-rs",
       "language": "rust",
-      "routeCount": 17,
+      "routeCount": 18,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 7,
+        "user-generated": 8,
         "runtime-config": 3
       },
       "generated": [

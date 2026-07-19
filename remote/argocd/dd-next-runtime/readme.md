@@ -16,6 +16,8 @@ GitOps manifests for the baseline runtime that should always be visible in Argo:
 - `dd-browser-test-server` (Node.js/Fastify on-demand Playwright + Puppeteer + Selenium runner)
 - `dd-selenium-server` (Java/Vert.x + selenium-java API driving an in-pod Selenium Grid over RemoteWebDriver)
 - `dd-browser-job-runner` (Rust/axum orchestrator that runs one Playwright/Puppeteer job on a dd-container-pool warm worker, falling back to a direct nerdctl worker, and publishes results to NATS)
+- `dd-sound-recorder-rs` (Sonus Auris Rust backend for authenticated mobile APIs, uploads, health, metrics, and API docs)
+- `dd-sonus-auris-console` (Argo-pinned Flutter web console served by an unprivileged nginx runtime)
 - `dd-live-mutex` (single-broker Live-Mutex TCP service for cluster-local locking)
 - `dd-ai-ml-pipeline` (Python3 online telemetry feature pipeline in the `ai-ml` namespace)
 - `dd-des-simulator` (Rust asynchronous discrete event simulation service with `des.v1` model validation)
@@ -41,6 +43,9 @@ The ArgoCD application for this bundle is
 `remote/argocd/apps/dd-next-runtime.application.yaml`. Keep Kubernetes object changes in Git and
 let Argo sync them; the manual GitHub Actions workflow only refreshes the current node-local
 `dd-remote-web-home:dev` image while that image still lives in EC2 containerd instead of a registry.
+Argo repo-server intentionally has recursive Git submodules disabled, so every resource referenced
+by this kustomization must live in the Argo-owned tree. Source gitlinks may remain the code pin, but
+runtime manifests (including the standalone Athlet-O backend) are vendored here and validated by CI.
 
 ## Live-Mutex broker
 
@@ -74,6 +79,10 @@ Gateway path map:
 
 - `/`, `/home` -> `dd-remote-web-home:8080`
 - `/sonus-auris`, `/sonus-auris/` -> `dd-sonus-auris-site:8080`
+- `/sonus-console`, `/sonus-console/` -> Argo-managed Flutter web console at `dd-sonus-auris-console:8080`
+- `/sound-recorder/api/mobile/*` -> Sonus Auris backend at `dd-sound-recorder-rs:8126` (client JWT auth)
+- `/sound-recorder/healthz`, `/sound-recorder/readyz`, `/sound-recorder/metrics`,
+  `/sound-recorder/docs/api` -> Sonus Auris backend operational endpoints (gateway auth required)
 - `/auth` -> `dd-remote-auth:8083`
 - `/agents/tasks` -> `dd-remote-web-home:8080`
 - `/api/agents/*` -> `dd-remote-rest-api:8082` (gateway auth required)
@@ -725,6 +734,30 @@ narrow: no write access to Secrets, Pods, ServiceAccounts, Jobs, DaemonSets, Sta
 NetworkPolicies. It can still create Deployments, so treat repo deploy manifests as trusted code;
 untrusted repos need a separate empty namespace plus admission controls that block secret mounts,
 hostPath, privileged pods, and service-account token automounting.
+
+The server also exposes fixed `run-profile` pipelines for Android, Flutter web,
+Flutter Linux, Puppeteer, and Playwright, with authenticated artifact download.
+Apple/Xcode and Windows builds are delegated to native GitHub-hosted runners.
+For Sonus workloads the builder creates evidence only: backend and console
+promotion is performed by changing the exact pins/manifests in this Argo bundle,
+then letting Argo reconcile. Do not add a direct Sonus `kubectl apply` build step.
+
+## Sonus Auris backend and console
+
+The Rust backend is hosted here as `dd-sound-recorder-rs`; this cluster is its
+production deployment source of truth. The Flutter web console is
+`dd-sonus-auris-console`. The console Deployment clones an exact commit through
+the existing secret reference, builds it with pinned Flutter 3.44.2, and copies
+only `build/web` into a two-replica, unprivileged nginx runtime. Supabase client
+configuration comes from `dd-agent-secrets`; the service-role key is never
+embedded in the frontend.
+
+Current public routing uses `/sound-recorder/` and `/sonus-console/`. Before
+store production, declare `api.sonusauris.app` and `console.sonusauris.app`
+through Cloudflare DNS plus the cluster's TLS/gateway manifests, then set the
+mobile production environment to the Sonus-owned API origin. Keep source pins,
+secret references, routing, and replicas in Git so Argo drift correction remains
+authoritative.
 
 ## Lambda function runner
 

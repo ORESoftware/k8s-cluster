@@ -54,7 +54,10 @@ pub fn parse_rules(raw: &str) -> Result<Vec<SyncRule>, String> {
         .map_err(|error| format!("invalid gh secret sync rules JSON: {error}"))?;
     for rule in &rules {
         if !rule.repo.contains('/') {
-            return Err(format!("gh sync rule repo {:?} must be owner/name", rule.repo));
+            return Err(format!(
+                "gh sync rule repo {:?} must be owner/name",
+                rule.repo
+            ));
         }
         for name in rule.secrets.keys() {
             if name.is_empty()
@@ -62,7 +65,9 @@ pub fn parse_rules(raw: &str) -> Result<Vec<SyncRule>, String> {
                     .chars()
                     .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
             {
-                return Err(format!("gh secret name {name:?} is not a valid secret name"));
+                return Err(format!(
+                    "gh secret name {name:?} is not a valid secret name"
+                ));
             }
         }
     }
@@ -96,8 +101,14 @@ fn gh_headers(token: &str) -> Result<reqwest::header::HeaderMap, String> {
         "authorization",
         HeaderValue::from_str(&format!("Bearer {token}")).map_err(|error| error.to_string())?,
     );
-    headers.insert("accept", HeaderValue::from_static("application/vnd.github+json"));
-    headers.insert("x-github-api-version", HeaderValue::from_static("2022-11-28"));
+    headers.insert(
+        "accept",
+        HeaderValue::from_static("application/vnd.github+json"),
+    );
+    headers.insert(
+        "x-github-api-version",
+        HeaderValue::from_static("2022-11-28"),
+    );
     headers.insert(
         "user-agent",
         HeaderValue::from_static("dd-build-server-secret-sync"),
@@ -154,7 +165,10 @@ async fn put_secret(
     if status.as_u16() == 201 || status.as_u16() == 204 {
         Ok(())
     } else {
-        Err(format!("GitHub secret PUT failed with HTTP {}", status.as_u16()))
+        Err(format!(
+            "GitHub secret PUT failed with HTTP {}",
+            status.as_u16()
+        ))
     }
 }
 
@@ -212,8 +226,15 @@ pub async fn sync_all(state: &AppState) -> Vec<SyncOutcome> {
                     detail: Some(format!("source env {} is unset or empty", source.from_env)),
                 };
                 if let Some(db) = state.db.as_ref() {
-                    db::record_secret_sync(db, &rule.repo, name, "-", "failed", outcome.detail.as_deref())
-                        .await;
+                    db::record_secret_sync(
+                        db,
+                        &rule.repo,
+                        name,
+                        "-",
+                        "failed",
+                        outcome.detail.as_deref(),
+                    )
+                    .await;
                 }
                 outcomes.push(outcome);
                 continue;
@@ -221,11 +242,20 @@ pub async fn sync_all(state: &AppState) -> Vec<SyncOutcome> {
 
             let value_sha256 = hex::encode(Sha256::digest(value.as_bytes()));
             if let Some(db) = state.db.as_ref() {
-                if db::last_synced_sha256(db, &rule.repo, name).await.as_deref()
+                if db::last_synced_sha256(db, &rule.repo, name)
+                    .await
+                    .as_deref()
                     == Some(value_sha256.as_str())
                 {
-                    db::record_secret_sync(db, &rule.repo, name, &value_sha256, "skipped-unchanged", None)
-                        .await;
+                    db::record_secret_sync(
+                        db,
+                        &rule.repo,
+                        name,
+                        &value_sha256,
+                        "skipped-unchanged",
+                        None,
+                    )
+                    .await;
                     outcomes.push(SyncOutcome {
                         repo: rule.repo.clone(),
                         secret: name.clone(),
@@ -268,8 +298,15 @@ pub async fn sync_all(state: &AppState) -> Vec<SyncOutcome> {
                 }
             };
             if let Some(db) = state.db.as_ref() {
-                db::record_secret_sync(db, &rule.repo, name, &value_sha256, &status, detail.as_deref())
-                    .await;
+                db::record_secret_sync(
+                    db,
+                    &rule.repo,
+                    name,
+                    &value_sha256,
+                    &status,
+                    detail.as_deref(),
+                )
+                .await;
             }
             outcomes.push(SyncOutcome {
                 repo: rule.repo.clone(),
@@ -330,7 +367,9 @@ mod tests {
         let public_b64 = BASE64.encode(secret_key.public_key().as_bytes());
         let sealed = seal_for_repo(&public_b64, "value").expect("seals");
         let sealed_bytes = BASE64.decode(sealed).expect("base64");
-        let opened = secret_key.unseal(&sealed_bytes).expect("recipient can open");
+        let opened = secret_key
+            .unseal(&sealed_bytes)
+            .expect("recipient can open");
         assert_eq!(opened, b"value");
         assert!(seal_for_repo("not-base64!!", "value").is_err());
     }

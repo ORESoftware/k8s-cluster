@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dd-sonus-auris-console-nginx
+  namespace: default
+  labels:
+    app: dd-sonus-auris-console
+data:
+  default.conf: |
+    server {
+      listen 8080;
+      server_name _;
+      root /usr/share/nginx/html;
+      index index.html;
+      absolute_redirect off;
+
+      location = /healthz {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok\n";
+      }
+
+      location / {
+        try_files $uri $uri/ /index.html;
+      }
+    }

@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "build-server-rs",
   "language": "rust",
-  "routeCount": 17,
+  "routeCount": 18,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 7,
+    "user-generated": 8,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -96,6 +96,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "get_build"
+      ],
+      "sourceFiles": [
+        "remote/deployments/build-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/builds/:job_id/artifacts",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "get_build_artifacts"
       ],
       "sourceFiles": [
         "remote/deployments/build-server-rs/src/main.rs"
