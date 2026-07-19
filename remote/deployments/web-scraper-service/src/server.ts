@@ -258,6 +258,7 @@ type ExtractionResult = {
   };
   fields?: Record<string, string>;
   links?: string[];
+  contacts?: ContactExtraction;
 };
 
 type ExtractionWorkerResponse =
