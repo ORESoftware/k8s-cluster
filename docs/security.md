@@ -72,8 +72,11 @@
 - **Dashboard `/api/fetch` auth.** The fetch endpoint is a server-side proxy
   primitive. When the dashboard is bound to a non-loopback address, set
   `TOR_UI_TOKEN` (or `TOR_UI_TOKEN_FILE`); requests must then present it via
-  `?token=` or `Authorization: Bearer` (checked in constant time). Without it,
-  `/api/fetch` is an unauthenticated proxy — the process logs a warning if bound
+  `?token=` or `Authorization: Bearer` (checked in constant time). When set, the
+  token gates every endpoint that exposes the relay directory, live counters, or
+  the fetch proxy (`/`, `/api/status`, `/ws/stats`, `/api/fetch`); `/healthz`,
+  `/vendor`, and `/docs` carry nothing sensitive and stay open. Without a token
+  (the loopback default) these are open, and the process logs a warning if bound
   non-loopback with no token. The URL's host/path are also rejected if they
   contain control characters, preventing CRLF header-injection/request smuggling.
   The dashboard is rendered server-side with Maud (auto-escaping), so the fetched
