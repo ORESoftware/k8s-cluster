@@ -8161,3 +8161,187 @@ pub struct VapiEventsDieselInsert {
     pub payload: Option<Value>,
     pub created_at: Option<DateTime<Utc>>,
 }
+
+diesel::table! {
+    use diesel::sql_types::*;
+    fab_plans (id) {
+        id -> Uuid,
+        owner_email -> Text,
+        title -> Text,
+        goal -> Text,
+        process_family -> Text,
+        status -> Text,
+        document -> Nullable<Jsonb>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = fab_plans)]
+pub struct FabPlansDieselRow {
+    pub id: Uuid,
+    pub owner_email: String,
+    pub title: String,
+    pub goal: String,
+    pub process_family: String,
+    pub status: String,
+    pub document: Option<Value>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = fab_plans)]
+pub struct FabPlansDieselInsert {
+    pub id: Option<Uuid>,
+    pub owner_email: Option<String>,
+    pub title: Option<String>,
+    pub goal: Option<String>,
+    pub process_family: Option<String>,
+    pub status: Option<String>,
+    pub document: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    fab_designs (id) {
+        id -> Uuid,
+        plan_id -> Uuid,
+        filename -> Text,
+        format -> Text,
+        storage_uri -> Text,
+        size_bytes -> Int8,
+        content_hash -> Nullable<Text>,
+        geometry -> Jsonb,
+        created_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = fab_designs)]
+pub struct FabDesignsDieselRow {
+    pub id: Uuid,
+    pub plan_id: Uuid,
+    pub filename: String,
+    pub format: String,
+    pub storage_uri: String,
+    pub size_bytes: i64,
+    pub content_hash: Option<String>,
+    pub geometry: Value,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = fab_designs)]
+pub struct FabDesignsDieselInsert {
+    pub id: Option<Uuid>,
+    pub plan_id: Option<Uuid>,
+    pub filename: Option<String>,
+    pub format: Option<String>,
+    pub storage_uri: Option<String>,
+    pub size_bytes: Option<i64>,
+    pub content_hash: Option<String>,
+    pub geometry: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    fab_instructions (id) {
+        id -> Uuid,
+        plan_id -> Uuid,
+        revision -> Int4,
+        machine_profile -> Text,
+        dialect -> Text,
+        storage_uri -> Text,
+        content_hash -> Nullable<Text>,
+        validated -> Bool,
+        validation -> Jsonb,
+        released_by_email -> Nullable<Text>,
+        released_at -> Nullable<Timestamptz>,
+        created_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = fab_instructions)]
+pub struct FabInstructionsDieselRow {
+    pub id: Uuid,
+    pub plan_id: Uuid,
+    pub revision: i32,
+    pub machine_profile: String,
+    pub dialect: String,
+    pub storage_uri: String,
+    pub content_hash: Option<String>,
+    pub validated: bool,
+    pub validation: Value,
+    pub released_by_email: Option<String>,
+    pub released_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = fab_instructions)]
+pub struct FabInstructionsDieselInsert {
+    pub id: Option<Uuid>,
+    pub plan_id: Option<Uuid>,
+    pub revision: Option<i32>,
+    pub machine_profile: Option<String>,
+    pub dialect: Option<String>,
+    pub storage_uri: Option<String>,
+    pub content_hash: Option<String>,
+    pub validated: Option<bool>,
+    pub validation: Option<Value>,
+    pub released_by_email: Option<String>,
+    pub released_at: Option<DateTime<Utc>>,
+    pub created_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    fab_runs (id) {
+        id -> Uuid,
+        status -> Text,
+        machine_id -> Text,
+        operator_email -> Nullable<Text>,
+        progress -> Int2,
+        as_built -> Jsonb,
+        error -> Nullable<Text>,
+        started_at -> Nullable<Timestamptz>,
+        finished_at -> Nullable<Timestamptz>,
+        created_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = fab_runs)]
+pub struct FabRunsDieselRow {
+    pub id: Uuid,
+    pub status: String,
+    pub machine_id: String,
+    pub operator_email: Option<String>,
+    pub progress: i16,
+    pub as_built: Value,
+    pub error: Option<String>,
+    pub started_at: Option<DateTime<Utc>>,
+    pub finished_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = fab_runs)]
+pub struct FabRunsDieselInsert {
+    pub id: Option<Uuid>,
+    pub status: Option<String>,
+    pub machine_id: Option<String>,
+    pub operator_email: Option<String>,
+    pub progress: Option<i16>,
+    pub as_built: Option<Value>,
+    pub error: Option<String>,
+    pub started_at: Option<DateTime<Utc>>,
+    pub finished_at: Option<DateTime<Utc>>,
+    pub created_at: Option<DateTime<Utc>>,
+}

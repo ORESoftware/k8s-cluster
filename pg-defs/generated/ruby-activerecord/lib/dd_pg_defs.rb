@@ -2223,4 +2223,47 @@ module DdPgDefs
     validates :event_type, presence: true
     validates :payload, presence: true
   end
+
+  class FabPlans < ActiveRecord::Base
+    self.table_name = "daedalus.fab_plans"
+    self.primary_key = "id"
+
+    validates :owner_email, presence: true
+    validates :title, presence: true
+    validates :goal, presence: true
+    validates :process_family, inclusion: { in: ["additive", "subtractive", "hybrid"] }
+    validates :status, inclusion: { in: ["draft", "planning", "planned", "released", "archived"] }
+  end
+
+  class FabDesigns < ActiveRecord::Base
+    self.table_name = "daedalus.fab_designs"
+    self.primary_key = "id"
+
+    validates :plan_id, presence: true
+    validates :filename, presence: true
+    validates :format, presence: true
+    validates :format, inclusion: { in: ["step", "stl", "3mf", "dxf", "iges", "obj"] }
+    validates :storage_uri, presence: true
+    validates :size_bytes, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  end
+
+  class FabInstructions < ActiveRecord::Base
+    self.table_name = "daedalus.fab_instructions"
+    self.primary_key = "id"
+
+    validates :plan_id, presence: true
+    validates :revision, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
+    validates :machine_profile, presence: true
+    validates :dialect, inclusion: { in: ["gcode", "nc", "apt", "proprietary"] }
+    validates :storage_uri, presence: true
+  end
+
+  class FabRuns < ActiveRecord::Base
+    self.table_name = "daedalus.fab_runs"
+    self.primary_key = "id"
+
+    validates :status, inclusion: { in: ["queued", "running", "succeeded", "failed", "aborted"] }
+    validates :machine_id, presence: true
+    validates :progress, numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 100 }
+  end
 end

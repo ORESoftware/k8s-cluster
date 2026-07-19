@@ -3120,3 +3120,75 @@ class VapiEvents(models.Model):
         managed = False
         app_label = "dd_pg_defs"
         db_table = "t2v\".\"vapi_events"
+
+
+class FabPlans(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner_email = models.TextField()
+    title = models.TextField()
+    goal = models.TextField()
+    process_family = models.TextField(choices=[("additive", "additive"), ("subtractive", "subtractive"), ("hybrid", "hybrid")], default="additive")
+    status = models.TextField(choices=[("draft", "draft"), ("planning", "planning"), ("planned", "planned"), ("released", "released"), ("archived", "archived")], default="draft")
+    document = models.JSONField(null=True, blank=True)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "daedalus\".\"fab_plans"
+
+
+class FabDesigns(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    plan_id = models.UUIDField()
+    filename = models.TextField()
+    format = models.TextField(choices=[("step", "step"), ("stl", "stl"), ("3mf", "3mf"), ("dxf", "dxf"), ("iges", "iges"), ("obj", "obj")])
+    storage_uri = models.TextField()
+    size_bytes = models.BigIntegerField(default=0, validators=[MinValueValidator(0)])
+    content_hash = models.TextField(null=True, blank=True)
+    geometry = models.JSONField(default=dict)
+    created_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "daedalus\".\"fab_designs"
+
+
+class FabInstructions(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    plan_id = models.UUIDField()
+    revision = models.IntegerField(default=1, validators=[MinValueValidator(1)])
+    machine_profile = models.TextField()
+    dialect = models.TextField(choices=[("gcode", "gcode"), ("nc", "nc"), ("apt", "apt"), ("proprietary", "proprietary")], default="gcode")
+    storage_uri = models.TextField()
+    content_hash = models.TextField(null=True, blank=True)
+    validated = models.BooleanField(default=False)
+    validation = models.JSONField(default=dict)
+    released_by_email = models.TextField(null=True, blank=True)
+    released_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "daedalus\".\"fab_instructions"
+
+
+class FabRuns(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    status = models.TextField(choices=[("queued", "queued"), ("running", "running"), ("succeeded", "succeeded"), ("failed", "failed"), ("aborted", "aborted")], default="queued")
+    machine_id = models.TextField()
+    operator_email = models.TextField(null=True, blank=True)
+    progress = models.SmallIntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(100)])
+    as_built = models.JSONField(default=dict)
+    error = models.TextField(null=True, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "daedalus\".\"fab_runs"

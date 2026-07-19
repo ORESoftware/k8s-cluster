@@ -2408,4 +2408,56 @@ public final class Tables {
     public static final Field<JSONB> VAPI_EVENTS_PAYLOAD = DSL.field(DSL.name("t2v", "vapi_events", "payload"), SQLDataType.JSONB);
     public static final Field<OffsetDateTime> VAPI_EVENTS_CREATED_AT = DSL.field(DSL.name("t2v", "vapi_events", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
 
+    public static final Name FAB_PLANS_NAME = DSL.name("daedalus", "fab_plans");
+    public static final Table<org.jooq.Record> FAB_PLANS = DSL.table(FAB_PLANS_NAME);
+    public static final Field<UUID> FAB_PLANS_ID = DSL.field(DSL.name("daedalus", "fab_plans", "id"), SQLDataType.UUID);
+    public static final Field<String> FAB_PLANS_OWNER_EMAIL = DSL.field(DSL.name("daedalus", "fab_plans", "owner_email"), SQLDataType.CLOB);
+    public static final Field<String> FAB_PLANS_TITLE = DSL.field(DSL.name("daedalus", "fab_plans", "title"), SQLDataType.CLOB);
+    public static final Field<String> FAB_PLANS_GOAL = DSL.field(DSL.name("daedalus", "fab_plans", "goal"), SQLDataType.CLOB);
+    public static final Field<String> FAB_PLANS_PROCESS_FAMILY = DSL.field(DSL.name("daedalus", "fab_plans", "process_family"), SQLDataType.CLOB);
+    public static final Field<String> FAB_PLANS_STATUS = DSL.field(DSL.name("daedalus", "fab_plans", "status"), SQLDataType.CLOB);
+    public static final Field<JSONB> FAB_PLANS_DOCUMENT = DSL.field(DSL.name("daedalus", "fab_plans", "document"), SQLDataType.JSONB);
+    public static final Field<OffsetDateTime> FAB_PLANS_CREATED_AT = DSL.field(DSL.name("daedalus", "fab_plans", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> FAB_PLANS_UPDATED_AT = DSL.field(DSL.name("daedalus", "fab_plans", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
+    public static final Name FAB_DESIGNS_NAME = DSL.name("daedalus", "fab_designs");
+    public static final Table<org.jooq.Record> FAB_DESIGNS = DSL.table(FAB_DESIGNS_NAME);
+    public static final Field<UUID> FAB_DESIGNS_ID = DSL.field(DSL.name("daedalus", "fab_designs", "id"), SQLDataType.UUID);
+    public static final Field<UUID> FAB_DESIGNS_PLAN_ID = DSL.field(DSL.name("daedalus", "fab_designs", "plan_id"), SQLDataType.UUID);
+    public static final Field<String> FAB_DESIGNS_FILENAME = DSL.field(DSL.name("daedalus", "fab_designs", "filename"), SQLDataType.CLOB);
+    public static final Field<String> FAB_DESIGNS_FORMAT = DSL.field(DSL.name("daedalus", "fab_designs", "format"), SQLDataType.CLOB);
+    public static final Field<String> FAB_DESIGNS_STORAGE_URI = DSL.field(DSL.name("daedalus", "fab_designs", "storage_uri"), SQLDataType.CLOB);
+    public static final Field<Long> FAB_DESIGNS_SIZE_BYTES = DSL.field(DSL.name("daedalus", "fab_designs", "size_bytes"), SQLDataType.BIGINT);
+    public static final Field<String> FAB_DESIGNS_CONTENT_HASH = DSL.field(DSL.name("daedalus", "fab_designs", "content_hash"), SQLDataType.CLOB);
+    public static final Field<JSONB> FAB_DESIGNS_GEOMETRY = DSL.field(DSL.name("daedalus", "fab_designs", "geometry"), SQLDataType.JSONB);
+    public static final Field<OffsetDateTime> FAB_DESIGNS_CREATED_AT = DSL.field(DSL.name("daedalus", "fab_designs", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
+    public static final Name FAB_INSTRUCTIONS_NAME = DSL.name("daedalus", "fab_instructions");
+    public static final Table<org.jooq.Record> FAB_INSTRUCTIONS = DSL.table(FAB_INSTRUCTIONS_NAME);
+    public static final Field<UUID> FAB_INSTRUCTIONS_ID = DSL.field(DSL.name("daedalus", "fab_instructions", "id"), SQLDataType.UUID);
+    public static final Field<UUID> FAB_INSTRUCTIONS_PLAN_ID = DSL.field(DSL.name("daedalus", "fab_instructions", "plan_id"), SQLDataType.UUID);
+    public static final Field<Integer> FAB_INSTRUCTIONS_REVISION = DSL.field(DSL.name("daedalus", "fab_instructions", "revision"), SQLDataType.INTEGER);
+    public static final Field<String> FAB_INSTRUCTIONS_MACHINE_PROFILE = DSL.field(DSL.name("daedalus", "fab_instructions", "machine_profile"), SQLDataType.CLOB);
+    public static final Field<String> FAB_INSTRUCTIONS_DIALECT = DSL.field(DSL.name("daedalus", "fab_instructions", "dialect"), SQLDataType.CLOB);
+    public static final Field<String> FAB_INSTRUCTIONS_STORAGE_URI = DSL.field(DSL.name("daedalus", "fab_instructions", "storage_uri"), SQLDataType.CLOB);
+    public static final Field<String> FAB_INSTRUCTIONS_CONTENT_HASH = DSL.field(DSL.name("daedalus", "fab_instructions", "content_hash"), SQLDataType.CLOB);
+    public static final Field<Boolean> FAB_INSTRUCTIONS_VALIDATED = DSL.field(DSL.name("daedalus", "fab_instructions", "validated"), SQLDataType.BOOLEAN);
+    public static final Field<JSONB> FAB_INSTRUCTIONS_VALIDATION = DSL.field(DSL.name("daedalus", "fab_instructions", "validation"), SQLDataType.JSONB);
+    public static final Field<String> FAB_INSTRUCTIONS_RELEASED_BY_EMAIL = DSL.field(DSL.name("daedalus", "fab_instructions", "released_by_email"), SQLDataType.CLOB);
+    public static final Field<OffsetDateTime> FAB_INSTRUCTIONS_RELEASED_AT = DSL.field(DSL.name("daedalus", "fab_instructions", "released_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> FAB_INSTRUCTIONS_CREATED_AT = DSL.field(DSL.name("daedalus", "fab_instructions", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
+    public static final Name FAB_RUNS_NAME = DSL.name("daedalus", "fab_runs");
+    public static final Table<org.jooq.Record> FAB_RUNS = DSL.table(FAB_RUNS_NAME);
+    public static final Field<UUID> FAB_RUNS_ID = DSL.field(DSL.name("daedalus", "fab_runs", "id"), SQLDataType.UUID);
+    public static final Field<String> FAB_RUNS_STATUS = DSL.field(DSL.name("daedalus", "fab_runs", "status"), SQLDataType.CLOB);
+    public static final Field<String> FAB_RUNS_MACHINE_ID = DSL.field(DSL.name("daedalus", "fab_runs", "machine_id"), SQLDataType.CLOB);
+    public static final Field<String> FAB_RUNS_OPERATOR_EMAIL = DSL.field(DSL.name("daedalus", "fab_runs", "operator_email"), SQLDataType.CLOB);
+    public static final Field<Integer> FAB_RUNS_PROGRESS = DSL.field(DSL.name("daedalus", "fab_runs", "progress"), SQLDataType.INTEGER);
+    public static final Field<JSONB> FAB_RUNS_AS_BUILT = DSL.field(DSL.name("daedalus", "fab_runs", "as_built"), SQLDataType.JSONB);
+    public static final Field<String> FAB_RUNS_ERROR = DSL.field(DSL.name("daedalus", "fab_runs", "error"), SQLDataType.CLOB);
+    public static final Field<OffsetDateTime> FAB_RUNS_STARTED_AT = DSL.field(DSL.name("daedalus", "fab_runs", "started_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> FAB_RUNS_FINISHED_AT = DSL.field(DSL.name("daedalus", "fab_runs", "finished_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> FAB_RUNS_CREATED_AT = DSL.field(DSL.name("daedalus", "fab_runs", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
 }

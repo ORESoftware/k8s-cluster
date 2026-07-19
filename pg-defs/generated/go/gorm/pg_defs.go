@@ -7527,6 +7527,181 @@ func (value VapiEventsGorm) Validate() error {
 	return nil
 }
 
+const FabPlansTable = "daedalus.fab_plans"
+const FabPlansSelectSQL = `select
+      id::text as id,
+      owner_email,
+      title,
+      goal,
+      process_family,
+      status,
+      document,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from daedalus.fab_plans`
+
+var FabPlansProcessFamilyValues = []string{"additive", "subtractive", "hybrid"}
+var FabPlansStatusValues = []string{"draft", "planning", "planned", "released", "archived"}
+
+type FabPlansGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	OwnerEmail string `gorm:"column:owner_email;type:text;not null" json:"ownerEmail"`
+	Title string `gorm:"column:title;type:text;not null" json:"title"`
+	Goal string `gorm:"column:goal;type:text;not null" json:"goal"`
+	ProcessFamily string `gorm:"column:process_family;type:text;default:'additive';not null" json:"processFamily"`
+	Status string `gorm:"column:status;type:text;default:'draft';not null" json:"status"`
+	Document *datatypes.JSON `gorm:"column:document;type:jsonb" json:"document,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (FabPlansGorm) TableName() string { return FabPlansTable }
+
+func (value FabPlansGorm) Validate() error {
+	if len([]byte(value.OwnerEmail)) > 320 { return errors.New("fab_plans.owner_email exceeds 320 bytes") }
+	if len([]byte(value.OwnerEmail)) < 3 { return errors.New("fab_plans.owner_email is below 3 bytes") }
+	if len([]byte(value.Title)) > 200 { return errors.New("fab_plans.title exceeds 200 bytes") }
+	if len([]byte(value.Title)) < 1 { return errors.New("fab_plans.title is below 1 bytes") }
+	if len([]byte(value.Goal)) > 20000 { return errors.New("fab_plans.goal exceeds 20000 bytes") }
+	if len([]byte(value.Goal)) < 1 { return errors.New("fab_plans.goal is below 1 bytes") }
+	if !containsString(FabPlansProcessFamilyValues, value.ProcessFamily) { return errors.New("unsupported fab_plans.process_family") }
+	if !containsString(FabPlansStatusValues, value.Status) { return errors.New("unsupported fab_plans.status") }
+	if value.Document != nil {
+		if !validateJSONString(*value.Document) { return errors.New("fab_plans.document must be valid JSON") }
+	}
+	return nil
+}
+
+const FabDesignsTable = "daedalus.fab_designs"
+const FabDesignsSelectSQL = `select
+      id::text as id,
+      plan_id::text as plan_id,
+      filename,
+      format,
+      storage_uri,
+      size_bytes,
+      content_hash,
+      geometry,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from daedalus.fab_designs`
+
+var FabDesignsFormatValues = []string{"step", "stl", "3mf", "dxf", "iges", "obj"}
+
+type FabDesignsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	PlanId uuid.UUID `gorm:"column:plan_id;type:uuid;not null" json:"planId"`
+	Filename string `gorm:"column:filename;type:text;not null" json:"filename"`
+	Format string `gorm:"column:format;type:text;not null" json:"format"`
+	StorageUri string `gorm:"column:storage_uri;type:text;not null" json:"storageUri"`
+	SizeBytes int64 `gorm:"column:size_bytes;type:bigint;default:0;not null" json:"sizeBytes"`
+	ContentHash *string `gorm:"column:content_hash;type:text" json:"contentHash,omitempty"`
+	Geometry datatypes.JSON `gorm:"column:geometry;type:jsonb;default:'{}'::jsonb;not null" json:"geometry"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (FabDesignsGorm) TableName() string { return FabDesignsTable }
+
+func (value FabDesignsGorm) Validate() error {
+	if len([]byte(value.Filename)) > 400 { return errors.New("fab_designs.filename exceeds 400 bytes") }
+	if len([]byte(value.Filename)) < 1 { return errors.New("fab_designs.filename is below 1 bytes") }
+	if !containsString(FabDesignsFormatValues, value.Format) { return errors.New("unsupported fab_designs.format") }
+	if len([]byte(value.StorageUri)) > 2000 { return errors.New("fab_designs.storage_uri exceeds 2000 bytes") }
+	if len([]byte(value.StorageUri)) < 1 { return errors.New("fab_designs.storage_uri is below 1 bytes") }
+	if value.SizeBytes < 0 { return errors.New("fab_designs.size_bytes is below the minimum") }
+	if !validateJSONString(value.Geometry) { return errors.New("fab_designs.geometry must be valid JSON") }
+	return nil
+}
+
+const FabInstructionsTable = "daedalus.fab_instructions"
+const FabInstructionsSelectSQL = `select
+      id::text as id,
+      plan_id::text as plan_id,
+      revision,
+      machine_profile,
+      dialect,
+      storage_uri,
+      content_hash,
+      validated,
+      validation,
+      released_by_email,
+      to_char(released_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as released_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from daedalus.fab_instructions`
+
+var FabInstructionsDialectValues = []string{"gcode", "nc", "apt", "proprietary"}
+
+type FabInstructionsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	PlanId uuid.UUID `gorm:"column:plan_id;type:uuid;not null" json:"planId"`
+	Revision int32 `gorm:"column:revision;type:integer;default:1;not null" json:"revision"`
+	MachineProfile string `gorm:"column:machine_profile;type:text;not null" json:"machineProfile"`
+	Dialect string `gorm:"column:dialect;type:text;default:'gcode';not null" json:"dialect"`
+	StorageUri string `gorm:"column:storage_uri;type:text;not null" json:"storageUri"`
+	ContentHash *string `gorm:"column:content_hash;type:text" json:"contentHash,omitempty"`
+	Validated bool `gorm:"column:validated;type:boolean;default:false;not null" json:"validated"`
+	Validation datatypes.JSON `gorm:"column:validation;type:jsonb;default:'{}'::jsonb;not null" json:"validation"`
+	ReleasedByEmail *string `gorm:"column:released_by_email;type:text" json:"releasedByEmail,omitempty"`
+	ReleasedAt *time.Time `gorm:"column:released_at;type:timestamptz" json:"releasedAt,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (FabInstructionsGorm) TableName() string { return FabInstructionsTable }
+
+func (value FabInstructionsGorm) Validate() error {
+	if value.Revision < 1 { return errors.New("fab_instructions.revision is below the minimum") }
+	if len([]byte(value.MachineProfile)) > 200 { return errors.New("fab_instructions.machine_profile exceeds 200 bytes") }
+	if len([]byte(value.MachineProfile)) < 1 { return errors.New("fab_instructions.machine_profile is below 1 bytes") }
+	if !containsString(FabInstructionsDialectValues, value.Dialect) { return errors.New("unsupported fab_instructions.dialect") }
+	if len([]byte(value.StorageUri)) > 2000 { return errors.New("fab_instructions.storage_uri exceeds 2000 bytes") }
+	if len([]byte(value.StorageUri)) < 1 { return errors.New("fab_instructions.storage_uri is below 1 bytes") }
+	if !validateJSONString(value.Validation) { return errors.New("fab_instructions.validation must be valid JSON") }
+	return nil
+}
+
+const FabRunsTable = "daedalus.fab_runs"
+const FabRunsSelectSQL = `select
+      id::text as id,
+      status,
+      machine_id,
+      operator_email,
+      progress,
+      as_built,
+      error,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from daedalus.fab_runs`
+
+var FabRunsStatusValues = []string{"queued", "running", "succeeded", "failed", "aborted"}
+
+type FabRunsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	Status string `gorm:"column:status;type:text;default:'queued';not null" json:"status"`
+	MachineId string `gorm:"column:machine_id;type:text;not null" json:"machineId"`
+	OperatorEmail *string `gorm:"column:operator_email;type:text" json:"operatorEmail,omitempty"`
+	Progress int32 `gorm:"column:progress;type:smallint;default:0;not null" json:"progress"`
+	AsBuilt datatypes.JSON `gorm:"column:as_built;type:jsonb;default:'{}'::jsonb;not null" json:"asBuilt"`
+	Error *string `gorm:"column:error;type:text" json:"error,omitempty"`
+	StartedAt *time.Time `gorm:"column:started_at;type:timestamptz" json:"startedAt,omitempty"`
+	FinishedAt *time.Time `gorm:"column:finished_at;type:timestamptz" json:"finishedAt,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (FabRunsGorm) TableName() string { return FabRunsTable }
+
+func (value FabRunsGorm) Validate() error {
+	if !containsString(FabRunsStatusValues, value.Status) { return errors.New("unsupported fab_runs.status") }
+	if len([]byte(value.MachineId)) > 200 { return errors.New("fab_runs.machine_id exceeds 200 bytes") }
+	if len([]byte(value.MachineId)) < 1 { return errors.New("fab_runs.machine_id is below 1 bytes") }
+	if value.Progress < 0 { return errors.New("fab_runs.progress is below the minimum") }
+	if value.Progress > 100 { return errors.New("fab_runs.progress is above the maximum") }
+	if !validateJSONString(value.AsBuilt) { return errors.New("fab_runs.as_built must be valid JSON") }
+	if value.Error != nil {
+		if len([]byte(*value.Error)) > 20000 { return errors.New("fab_runs.error exceeds 20000 bytes") }
+	}
+	return nil
+}
+
 func validateJSONString(value datatypes.JSON) bool {
 	if len(value) == 0 {
 		return true

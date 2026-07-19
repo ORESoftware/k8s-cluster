@@ -16,6 +16,7 @@ export const benefactorSchema = pgSchema("benefactor");
 export const aiAgentBridgeSchema = pgSchema("ai_agent_bridge");
 export const fiduciaSchema = pgSchema("fiducia");
 export const t2vSchema = pgSchema("t2v");
+export const daedalusSchema = pgSchema("daedalus");
 
 export const accounts = threefaSchema.table(
   "accounts",
@@ -10541,3 +10542,250 @@ export const vapiEventsUpdateSchema = vapiEventsInsertSchema.partial();
 export type VapiEventsRow = z.infer<typeof vapiEventsRowSchema>;
 export type VapiEventsInsert = z.infer<typeof vapiEventsInsertSchema>;
 export type VapiEventsUpdate = z.infer<typeof vapiEventsUpdateSchema>;
+
+export const fabPlansProcessFamilyValues = ["additive","subtractive","hybrid"] as const;
+export const fabPlansProcessFamilySchema = z.enum(fabPlansProcessFamilyValues);
+export type FabPlansProcessFamily = z.infer<typeof fabPlansProcessFamilySchema>;
+
+export const fabPlansStatusValues = ["draft","planning","planned","released","archived"] as const;
+export const fabPlansStatusSchema = z.enum(fabPlansStatusValues);
+export type FabPlansStatus = z.infer<typeof fabPlansStatusSchema>;
+
+export const fabPlans = daedalusSchema.table(
+  "fab_plans",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    ownerEmail: text("owner_email").notNull(),
+    title: text("title").notNull(),
+    goal: text("goal").notNull(),
+    processFamily: text("process_family").default(sql`'additive'`).notNull(),
+    status: text("status").default(sql`'draft'`).notNull(),
+    document: jsonb("document"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    fabPlansOwnerEmailSizeChk: check("fab_plans_owner_email_size_chk", sql.raw("octet_length(owner_email) between 3 and 320")),
+    fabPlansTitleSizeChk: check("fab_plans_title_size_chk", sql.raw("octet_length(title) between 1 and 200")),
+    fabPlansGoalSizeChk: check("fab_plans_goal_size_chk", sql.raw("octet_length(goal) between 1 and 20000")),
+    fabPlansProcessFamilyChk: check("fab_plans_process_family_chk", sql.raw("process_family in ('additive', 'subtractive', 'hybrid')")),
+    fabPlansStatusChk: check("fab_plans_status_chk", sql.raw("status in ('draft', 'planning', 'planned', 'released', 'archived')")),
+    fabPlansOwnerEmailIdx: index("fab_plans_owner_email_idx").on(table.ownerEmail),
+    fabPlansStatusIdx: index("fab_plans_status_idx").on(table.status),
+    fabPlansOwnerCreatedIdx: index("fab_plans_owner_created_idx").on(table.ownerEmail, table.createdAt.desc()),
+  }),
+);
+
+export const fabPlansRowSchema = z.object({
+  id: z.string().uuid(),
+  ownerEmail: z.string().refine((value) => byteLength(value) <= 320, "Must be at most 320 bytes"),
+  title: z.string().refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  goal: z.string().refine((value) => byteLength(value) <= 20000, "Must be at most 20000 bytes"),
+  processFamily: fabPlansProcessFamilySchema,
+  status: fabPlansStatusSchema,
+  document: jsonObjectSchema.nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const fabPlansInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  ownerEmail: z.string().refine((value) => byteLength(value) <= 320, "Must be at most 320 bytes"),
+  title: z.string().refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  goal: z.string().refine((value) => byteLength(value) <= 20000, "Must be at most 20000 bytes"),
+  processFamily: fabPlansProcessFamilySchema.optional().default("additive"),
+  status: fabPlansStatusSchema.optional().default("draft"),
+  document: jsonObjectSchema.nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const fabPlansUpdateSchema = fabPlansInsertSchema.partial();
+export type FabPlansRow = z.infer<typeof fabPlansRowSchema>;
+export type FabPlansInsert = z.infer<typeof fabPlansInsertSchema>;
+export type FabPlansUpdate = z.infer<typeof fabPlansUpdateSchema>;
+
+export const fabDesignsFormatValues = ["step","stl","3mf","dxf","iges","obj"] as const;
+export const fabDesignsFormatSchema = z.enum(fabDesignsFormatValues);
+export type FabDesignsFormat = z.infer<typeof fabDesignsFormatSchema>;
+
+export const fabDesigns = daedalusSchema.table(
+  "fab_designs",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    planId: uuid("plan_id").notNull(),
+    filename: text("filename").notNull(),
+    format: text("format").notNull(),
+    storageUri: text("storage_uri").notNull(),
+    sizeBytes: bigint("size_bytes", { mode: "number" }).default(sql`0`).notNull(),
+    contentHash: text("content_hash"),
+    geometry: jsonb("geometry").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    fabDesignsFilenameSizeChk: check("fab_designs_filename_size_chk", sql.raw("octet_length(filename) between 1 and 400")),
+    fabDesignsFormatChk: check("fab_designs_format_chk", sql.raw("format in ('step', 'stl', '3mf', 'dxf', 'iges', 'obj')")),
+    fabDesignsStorageUriSizeChk: check("fab_designs_storage_uri_size_chk", sql.raw("octet_length(storage_uri) between 1 and 2000")),
+    fabDesignsSizeNonnegativeChk: check("fab_designs_size_nonnegative_chk", sql.raw("size_bytes >= 0")),
+    fabDesignsContentHashChk: check("fab_designs_content_hash_chk", sql.raw("content_hash is null or octet_length(content_hash) = 64")),
+    fabDesignsPlanIdx: index("fab_designs_plan_idx").on(table.planId),
+    fabDesignsContentHashIdx: index("fab_designs_content_hash_idx").on(table.contentHash).where(sql.raw("content_hash is not null")),
+  }),
+);
+
+export const fabDesignsRowSchema = z.object({
+  id: z.string().uuid(),
+  planId: z.string().uuid(),
+  filename: z.string().refine((value) => byteLength(value) <= 400, "Must be at most 400 bytes"),
+  format: fabDesignsFormatSchema,
+  storageUri: z.string().refine((value) => byteLength(value) <= 2000, "Must be at most 2000 bytes"),
+  sizeBytes: z.number().int().min(0),
+  contentHash: z.string().nullable(),
+  geometry: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+});
+
+export const fabDesignsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  planId: z.string().uuid(),
+  filename: z.string().refine((value) => byteLength(value) <= 400, "Must be at most 400 bytes"),
+  format: fabDesignsFormatSchema,
+  storageUri: z.string().refine((value) => byteLength(value) <= 2000, "Must be at most 2000 bytes"),
+  sizeBytes: z.number().int().min(0).optional().default(0),
+  contentHash: z.string().nullable().optional(),
+  geometry: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const fabDesignsUpdateSchema = fabDesignsInsertSchema.partial();
+export type FabDesignsRow = z.infer<typeof fabDesignsRowSchema>;
+export type FabDesignsInsert = z.infer<typeof fabDesignsInsertSchema>;
+export type FabDesignsUpdate = z.infer<typeof fabDesignsUpdateSchema>;
+
+export const fabInstructionsDialectValues = ["gcode","nc","apt","proprietary"] as const;
+export const fabInstructionsDialectSchema = z.enum(fabInstructionsDialectValues);
+export type FabInstructionsDialect = z.infer<typeof fabInstructionsDialectSchema>;
+
+export const fabInstructions = daedalusSchema.table(
+  "fab_instructions",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    planId: uuid("plan_id").notNull(),
+    revision: integer("revision").default(sql`1`).notNull(),
+    machineProfile: text("machine_profile").notNull(),
+    dialect: text("dialect").default(sql`'gcode'`).notNull(),
+    storageUri: text("storage_uri").notNull(),
+    contentHash: text("content_hash"),
+    validated: boolean("validated").default(sql`false`).notNull(),
+    validation: jsonb("validation").default(sql`'{}'::jsonb`).notNull(),
+    releasedByEmail: text("released_by_email"),
+    releasedAt: timestamp("released_at", { withTimezone: true, mode: "string" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    fabInstructionsRevisionChk: check("fab_instructions_revision_chk", sql.raw("revision >= 1")),
+    fabInstructionsMachineProfileSizeChk: check("fab_instructions_machine_profile_size_chk", sql.raw("octet_length(machine_profile) between 1 and 200")),
+    fabInstructionsDialectChk: check("fab_instructions_dialect_chk", sql.raw("dialect in ('gcode', 'nc', 'apt', 'proprietary')")),
+    fabInstructionsStorageUriSizeChk: check("fab_instructions_storage_uri_size_chk", sql.raw("octet_length(storage_uri) between 1 and 2000")),
+    fabInstructionsContentHashChk: check("fab_instructions_content_hash_chk", sql.raw("content_hash is null or octet_length(content_hash) = 64")),
+    fabInstructionsReleasePairChk: check("fab_instructions_release_pair_chk", sql.raw("(released_by_email is null) = (released_at is null)")),
+    fabInstructionsPlanRevisionUq: uniqueIndex("fab_instructions_plan_revision_uq").on(table.planId, table.revision),
+    fabInstructionsPlanIdx: index("fab_instructions_plan_idx").on(table.planId),
+  }),
+);
+
+export const fabInstructionsRowSchema = z.object({
+  id: z.string().uuid(),
+  planId: z.string().uuid(),
+  revision: z.number().int().min(1),
+  machineProfile: z.string().refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  dialect: fabInstructionsDialectSchema,
+  storageUri: z.string().refine((value) => byteLength(value) <= 2000, "Must be at most 2000 bytes"),
+  contentHash: z.string().nullable(),
+  validated: z.boolean(),
+  validation: jsonObjectSchema,
+  releasedByEmail: z.string().nullable(),
+  releasedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+});
+
+export const fabInstructionsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  planId: z.string().uuid(),
+  revision: z.number().int().min(1).optional().default(1),
+  machineProfile: z.string().refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  dialect: fabInstructionsDialectSchema.optional().default("gcode"),
+  storageUri: z.string().refine((value) => byteLength(value) <= 2000, "Must be at most 2000 bytes"),
+  contentHash: z.string().nullable().optional(),
+  validated: z.boolean().optional().default(false),
+  validation: jsonObjectSchema.optional().default({}),
+  releasedByEmail: z.string().nullable().optional(),
+  releasedAt: z.string().datetime().nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const fabInstructionsUpdateSchema = fabInstructionsInsertSchema.partial();
+export type FabInstructionsRow = z.infer<typeof fabInstructionsRowSchema>;
+export type FabInstructionsInsert = z.infer<typeof fabInstructionsInsertSchema>;
+export type FabInstructionsUpdate = z.infer<typeof fabInstructionsUpdateSchema>;
+
+export const fabRunsStatusValues = ["queued","running","succeeded","failed","aborted"] as const;
+export const fabRunsStatusSchema = z.enum(fabRunsStatusValues);
+export type FabRunsStatus = z.infer<typeof fabRunsStatusSchema>;
+
+export const fabRuns = daedalusSchema.table(
+  "fab_runs",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    status: text("status").default(sql`'queued'`).notNull(),
+    machineId: text("machine_id").notNull(),
+    operatorEmail: text("operator_email"),
+    progress: smallint("progress").default(sql`0`).notNull(),
+    asBuilt: jsonb("as_built").default(sql`'{}'::jsonb`).notNull(),
+    error: text("error"),
+    startedAt: timestamp("started_at", { withTimezone: true, mode: "string" }),
+    finishedAt: timestamp("finished_at", { withTimezone: true, mode: "string" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    fabRunsStatusChk: check("fab_runs_status_chk", sql.raw("status in ('queued', 'running', 'succeeded', 'failed', 'aborted')")),
+    fabRunsMachineIdSizeChk: check("fab_runs_machine_id_size_chk", sql.raw("octet_length(machine_id) between 1 and 200")),
+    fabRunsProgressRangeChk: check("fab_runs_progress_range_chk", sql.raw("progress between 0 and 100")),
+    fabRunsErrorSizeChk: check("fab_runs_error_size_chk", sql.raw("error is null or octet_length(error) <= 20000")),
+    fabRunsFinishedChk: check("fab_runs_finished_chk", sql.raw("(status in ('succeeded', 'failed', 'aborted')) = (finished_at is not null)")),
+    fabRunsInstructionsIdx: index("fab_runs_instructions_idx").on(table.instructionsId),
+    fabRunsStatusIdx: index("fab_runs_status_idx").on(table.status),
+    fabRunsCreatedIdx: index("fab_runs_created_idx").on(table.createdAt.desc()),
+  }),
+);
+
+export const fabRunsRowSchema = z.object({
+  id: z.string().uuid(),
+  status: fabRunsStatusSchema,
+  machineId: z.string().refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  operatorEmail: z.string().nullable(),
+  progress: z.number().int().min(0).max(100),
+  asBuilt: jsonObjectSchema,
+  error: z.string().refine((value) => byteLength(value) <= 20000, "Must be at most 20000 bytes").nullable(),
+  startedAt: z.string().datetime().nullable(),
+  finishedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+});
+
+export const fabRunsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  status: fabRunsStatusSchema.optional().default("queued"),
+  machineId: z.string().refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  operatorEmail: z.string().nullable().optional(),
+  progress: z.number().int().min(0).max(100).optional().default(0),
+  asBuilt: jsonObjectSchema.optional().default({}),
+  error: z.string().refine((value) => byteLength(value) <= 20000, "Must be at most 20000 bytes").nullable().optional(),
+  startedAt: z.string().datetime().nullable().optional(),
+  finishedAt: z.string().datetime().nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const fabRunsUpdateSchema = fabRunsInsertSchema.partial();
+export type FabRunsRow = z.infer<typeof fabRunsRowSchema>;
+export type FabRunsInsert = z.infer<typeof fabRunsInsertSchema>;
+export type FabRunsUpdate = z.infer<typeof fabRunsUpdateSchema>;

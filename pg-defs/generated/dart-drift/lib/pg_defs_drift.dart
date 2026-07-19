@@ -3815,6 +3815,98 @@ class VapiEventsTable extends Table {
   };
 }
 
+@DataClassName("FabPlansData")
+class FabPlansTable extends Table {
+  @override String get tableName => "fab_plans";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get ownerEmail => text().named("owner_email")();
+  TextColumn get title => text().named("title")();
+  TextColumn get goal => text().named("goal")();
+  TextColumn get processFamily => text().named("process_family").clientDefault(() => 'additive')();
+  TextColumn get status => text().named("status").clientDefault(() => 'draft')();
+  TextColumn get document => text().named("document").nullable().customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("FabDesignsData")
+class FabDesignsTable extends Table {
+  @override String get tableName => "fab_designs";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get planId => text().named("plan_id").customConstraint("UUID")();
+  TextColumn get filename => text().named("filename")();
+  TextColumn get format => text().named("format")();
+  TextColumn get storageUri => text().named("storage_uri")();
+  Int64Column get sizeBytes => int64().named("size_bytes").clientDefault(() => 0)();
+  TextColumn get contentHash => text().named("content_hash").nullable()();
+  TextColumn get geometry => text().named("geometry").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("FabInstructionsData")
+class FabInstructionsTable extends Table {
+  @override String get tableName => "fab_instructions";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get planId => text().named("plan_id").customConstraint("UUID")();
+  IntColumn get revision => integer().named("revision").clientDefault(() => 1)();
+  TextColumn get machineProfile => text().named("machine_profile")();
+  TextColumn get dialect => text().named("dialect").clientDefault(() => 'gcode')();
+  TextColumn get storageUri => text().named("storage_uri")();
+  TextColumn get contentHash => text().named("content_hash").nullable()();
+  BoolColumn get validated => boolean().named("validated").clientDefault(() => false)();
+  TextColumn get validation => text().named("validation").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get releasedByEmail => text().named("released_by_email").nullable()();
+  DateTimeColumn get releasedAt => dateTime().named("released_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("FabRunsData")
+class FabRunsTable extends Table {
+  @override String get tableName => "fab_runs";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get status => text().named("status").clientDefault(() => 'queued')();
+  TextColumn get machineId => text().named("machine_id")();
+  TextColumn get operatorEmail => text().named("operator_email").nullable()();
+  IntColumn get progress => integer().named("progress").clientDefault(() => 0)();
+  TextColumn get asBuilt => text().named("as_built").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get error => text().named("error").nullable()();
+  DateTimeColumn get startedAt => dateTime().named("started_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get finishedAt => dateTime().named("finished_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
 // Drift annotation users should re-export the table classes via:
 // @DriftDatabase(tables: [...registeredDriftTables])
 const List<Type> registeredDriftTables = <Type>[
@@ -3962,4 +4054,8 @@ const List<Type> registeredDriftTables = <Type>[
   TranslationsTable,
   VapiCallsTable,
   VapiEventsTable,
+  FabPlansTable,
+  FabDesignsTable,
+  FabInstructionsTable,
+  FabRunsTable,
 ];

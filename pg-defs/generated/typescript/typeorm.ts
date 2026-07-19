@@ -6788,3 +6788,149 @@ export class VapiEventsEntity {
   createdAt!: Date;
 
 }
+
+@Index("fab_plans_owner_email_idx", ["ownerEmail"])
+@Index("fab_plans_status_idx", ["status"])
+// fab_plans_owner_created_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ schema: "daedalus", name: "fab_plans" })
+export class FabPlansEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "owner_email", type: "text" })
+  ownerEmail!: string;
+
+  @Column({ name: "title", type: "text" })
+  title!: string;
+
+  @Column({ name: "goal", type: "text" })
+  goal!: string;
+
+  @Column({ name: "process_family", type: "text", default: () => "'additive'" })
+  processFamily!: string;
+
+  @Column({ name: "status", type: "text", default: () => "'draft'" })
+  status!: string;
+
+  @Column({ name: "document", type: "jsonb", nullable: true })
+  document!: Record<string, unknown> | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+@Index("fab_designs_plan_idx", ["planId"])
+@Index("fab_designs_content_hash_idx", ["contentHash"], { where: "content_hash is not null" })
+@Entity({ schema: "daedalus", name: "fab_designs" })
+export class FabDesignsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "plan_id", type: "uuid" })
+  planId!: string;
+
+  @Column({ name: "filename", type: "text" })
+  filename!: string;
+
+  @Column({ name: "format", type: "text" })
+  format!: string;
+
+  @Column({ name: "storage_uri", type: "text" })
+  storageUri!: string;
+
+  @Column({ name: "size_bytes", type: "bigint", default: () => "0" })
+  sizeBytes!: number;
+
+  @Column({ name: "content_hash", type: "text", nullable: true })
+  contentHash!: string | null;
+
+  @Column({ name: "geometry", type: "jsonb", default: () => "'{}'::jsonb" })
+  geometry!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+}
+
+@Index("fab_instructions_plan_revision_uq", ["planId", "revision"], { unique: true })
+@Index("fab_instructions_plan_idx", ["planId"])
+@Entity({ schema: "daedalus", name: "fab_instructions" })
+export class FabInstructionsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "plan_id", type: "uuid" })
+  planId!: string;
+
+  @Column({ name: "revision", type: "integer", default: () => "1" })
+  revision!: number;
+
+  @Column({ name: "machine_profile", type: "text" })
+  machineProfile!: string;
+
+  @Column({ name: "dialect", type: "text", default: () => "'gcode'" })
+  dialect!: string;
+
+  @Column({ name: "storage_uri", type: "text" })
+  storageUri!: string;
+
+  @Column({ name: "content_hash", type: "text", nullable: true })
+  contentHash!: string | null;
+
+  @Column({ name: "validated", type: "boolean", default: () => "false" })
+  validated!: boolean;
+
+  @Column({ name: "validation", type: "jsonb", default: () => "'{}'::jsonb" })
+  validation!: Record<string, unknown>;
+
+  @Column({ name: "released_by_email", type: "text", nullable: true })
+  releasedByEmail!: string | null;
+
+  @Column({ name: "released_at", type: "timestamptz", nullable: true })
+  releasedAt!: Date | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+}
+
+@Index("fab_runs_instructions_idx", ["instructionsId"])
+@Index("fab_runs_status_idx", ["status"])
+// fab_runs_created_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ schema: "daedalus", name: "fab_runs" })
+export class FabRunsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "status", type: "text", default: () => "'queued'" })
+  status!: string;
+
+  @Column({ name: "machine_id", type: "text" })
+  machineId!: string;
+
+  @Column({ name: "operator_email", type: "text", nullable: true })
+  operatorEmail!: string | null;
+
+  @Column({ name: "progress", type: "smallint", default: () => "0" })
+  progress!: number;
+
+  @Column({ name: "as_built", type: "jsonb", default: () => "'{}'::jsonb" })
+  asBuilt!: Record<string, unknown>;
+
+  @Column({ name: "error", type: "text", nullable: true })
+  error!: string | null;
+
+  @Column({ name: "started_at", type: "timestamptz", nullable: true })
+  startedAt!: Date | null;
+
+  @Column({ name: "finished_at", type: "timestamptz", nullable: true })
+  finishedAt!: Date | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+}

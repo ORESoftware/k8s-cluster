@@ -6764,3 +6764,186 @@ create index if not exists t2v_vapi_events_created_idx
 
 create index if not exists t2v_vapi_events_call_idx
   on t2v.vapi_events (vapi_call_id);
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- DAEDALUS — fabrication planning (daedalus-fab org)
+--
+-- NAMESPACE: `daedalus`, a named schema on the shared pg-defs RDS database,
+-- following the fiducia/benefactor/threefa pattern. Consuming services address
+-- it via `search_path = daedalus, public` or schema-qualified names.
+--
+-- Consumers: daedalus-api-server.rs (owns all writes) and
+-- daedalus-web-server.rs (read-only, renders Maud/htmx over these rows). Both
+-- use hand-written SeaORM entities in src/entity — never generate SQL or
+-- migrations from application code.
+--
+-- AUTH BOUNDARY — read this before adding a table here. This is Amazon RDS,
+-- NOT Supabase: `auth.uid()` / `auth.email()` do not exist and RLS is not used
+-- on this database (no policy in this file relies on them). End-user identity
+-- arrives as a verified Supabase JWT at the server edge, and the server writes
+-- the subject into `owner_email`. Authorization is enforced in the server, not
+-- by the database. Client-streamed telemetry stays on Supabase in
+-- `public.daedalus_client_log_*` and is deliberately NOT mirrored here.
+--
+-- Migrations are declarative via dpm (declarative-postgres-migrate):
+--   scripts/dpm.sh {diff|verify|review|apply}
+-- with schema/schema.sql as --source. Never apply this file directly to a live
+-- database and never migrate at boot; generate and review a diff instead.
+-- ════════════════════════════════════════════════════════════════════════════
+
+create schema if not exists daedalus;
+
+-- A fabrication plan: the unit of work carrying a goal from intake through to
+-- released machine instructions. `status` advances monotonically in the server;
+-- the check constraint only bounds the vocabulary.
+create table if not exists daedalus.fab_plans (
+  id uuid primary key default gen_random_uuid(),
+  owner_email text not null,
+  title text not null,
+  -- Free-form statement of what the operator wants fabricated.
+  goal text not null,
+  -- additive | subtractive | hybrid — the org's three process families.
+  process_family text not null default 'additive',
+  status text not null default 'draft',
+  -- Full plan document as last computed by the planner (nullable until first
+  -- planning pass completes).
+  document jsonb,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint fab_plans_owner_email_size_chk
+    check (octet_length(owner_email) between 3 and 320),
+  constraint fab_plans_title_size_chk
+    check (octet_length(title) between 1 and 200),
+  constraint fab_plans_goal_size_chk
+    check (octet_length(goal) between 1 and 20000),
+  constraint fab_plans_process_family_chk
+    check (process_family in ('additive', 'subtractive', 'hybrid')),
+  constraint fab_plans_status_chk
+    check (status in ('draft', 'planning', 'planned', 'released', 'archived'))
+);
+
+create index if not exists fab_plans_owner_email_idx
+  on daedalus.fab_plans (owner_email);
+
+create index if not exists fab_plans_status_idx
+  on daedalus.fab_plans (status);
+
+-- Newest-first listing per owner, the web server's landing query.
+create index if not exists fab_plans_owner_created_idx
+  on daedalus.fab_plans (owner_email, created_at desc);
+
+-- An imported design (STEP/STL/etc) attached to a plan. Blobs live in object
+-- storage; only the locator and extracted metadata are stored here.
+create table if not exists daedalus.fab_designs (
+  id uuid primary key default gen_random_uuid(),
+  plan_id uuid not null references daedalus.fab_plans (id) on delete cascade,
+  filename text not null,
+  -- step | stl | 3mf | dxf | iges | obj
+  format text not null,
+  -- Object-storage locator (s3://…); never the design bytes themselves.
+  storage_uri text not null,
+  size_bytes bigint not null default 0,
+  -- sha256 of the design bytes, for dedupe and provenance.
+  content_hash text,
+  -- Extracted geometry facts (bounding box, volume, feature counts).
+  geometry jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  constraint fab_designs_filename_size_chk
+    check (octet_length(filename) between 1 and 400),
+  constraint fab_designs_format_chk
+    check (format in ('step', 'stl', '3mf', 'dxf', 'iges', 'obj')),
+  constraint fab_designs_storage_uri_size_chk
+    check (octet_length(storage_uri) between 1 and 2000),
+  constraint fab_designs_size_nonnegative_chk
+    check (size_bytes >= 0),
+  constraint fab_designs_content_hash_chk
+    check (content_hash is null or octet_length(content_hash) = 64)
+);
+
+create index if not exists fab_designs_plan_idx
+  on daedalus.fab_designs (plan_id);
+
+create index if not exists fab_designs_content_hash_idx
+  on daedalus.fab_designs (content_hash)
+  where content_hash is not null;
+
+-- A released instruction set (G-code and friends) produced from a plan.
+-- Releases are immutable and append-only: a correction is a new revision, never
+-- an UPDATE of a released row.
+create table if not exists daedalus.fab_instructions (
+  id uuid primary key default gen_random_uuid(),
+  plan_id uuid not null references daedalus.fab_plans (id) on delete cascade,
+  revision integer not null default 1,
+  -- Target machine this instruction set was posted for.
+  machine_profile text not null,
+  -- gcode | nc | apt | proprietary
+  dialect text not null default 'gcode',
+  storage_uri text not null,
+  content_hash text,
+  -- Validator verdict recorded at release time.
+  validated boolean not null default false,
+  validation jsonb default '{}'::jsonb not null,
+  released_by_email text,
+  released_at timestamptz,
+  created_at timestamptz default now() not null,
+  constraint fab_instructions_revision_chk
+    check (revision >= 1),
+  constraint fab_instructions_machine_profile_size_chk
+    check (octet_length(machine_profile) between 1 and 200),
+  constraint fab_instructions_dialect_chk
+    check (dialect in ('gcode', 'nc', 'apt', 'proprietary')),
+  constraint fab_instructions_storage_uri_size_chk
+    check (octet_length(storage_uri) between 1 and 2000),
+  constraint fab_instructions_content_hash_chk
+    check (content_hash is null or octet_length(content_hash) = 64),
+  -- A release must record who released it and when, together or not at all.
+  constraint fab_instructions_release_pair_chk
+    check ((released_by_email is null) = (released_at is null))
+);
+
+create unique index if not exists fab_instructions_plan_revision_uq
+  on daedalus.fab_instructions (plan_id, revision);
+
+create index if not exists fab_instructions_plan_idx
+  on daedalus.fab_instructions (plan_id);
+
+-- An execution of one instruction set on real hardware. Terminal states carry
+-- finished_at; `progress` is advisory and driven by the run's telemetry stream.
+create table if not exists daedalus.fab_runs (
+  id uuid primary key default gen_random_uuid(),
+  instructions_id uuid not null
+    references daedalus.fab_instructions (id) on delete cascade,
+  status text not null default 'queued',
+  machine_id text not null,
+  operator_email text,
+  -- Whole-percent completion, 0–100. Integer rather than numeric: the pg-defs
+  -- code generator has no numeric mapping, and sub-percent precision is noise
+  -- for an advisory progress figure.
+  progress smallint not null default 0,
+  -- Free-form as-built observations captured during/after the run.
+  as_built jsonb default '{}'::jsonb not null,
+  error text,
+  started_at timestamptz,
+  finished_at timestamptz,
+  created_at timestamptz default now() not null,
+  constraint fab_runs_status_chk
+    check (status in ('queued', 'running', 'succeeded', 'failed', 'aborted')),
+  constraint fab_runs_machine_id_size_chk
+    check (octet_length(machine_id) between 1 and 200),
+  constraint fab_runs_progress_range_chk
+    check (progress between 0 and 100),
+  constraint fab_runs_error_size_chk
+    check (error is null or octet_length(error) <= 20000),
+  -- Terminal runs have finished; non-terminal runs have not.
+  constraint fab_runs_finished_chk
+    check ((status in ('succeeded', 'failed', 'aborted')) = (finished_at is not null))
+);
+
+create index if not exists fab_runs_instructions_idx
+  on daedalus.fab_runs (instructions_id);
+
+create index if not exists fab_runs_status_idx
+  on daedalus.fab_runs (status);
+
+create index if not exists fab_runs_created_idx
+  on daedalus.fab_runs (created_at desc);

@@ -7383,6 +7383,177 @@ func (value VapiEventsBun) Validate() error {
 	return nil
 }
 
+const FabPlansTable = "daedalus.fab_plans"
+const FabPlansSelectSQL = `select
+      id::text as id,
+      owner_email,
+      title,
+      goal,
+      process_family,
+      status,
+      document,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from daedalus.fab_plans`
+
+var FabPlansProcessFamilyValues = []string{"additive", "subtractive", "hybrid"}
+var FabPlansStatusValues = []string{"draft", "planning", "planned", "released", "archived"}
+
+type FabPlansBun struct {
+	bun.BaseModel `bun:"table:daedalus.fab_plans"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	OwnerEmail string `bun:"owner_email,type:text" json:"ownerEmail"`
+	Title string `bun:"title,type:text" json:"title"`
+	Goal string `bun:"goal,type:text" json:"goal"`
+	ProcessFamily string `bun:"process_family,type:text,default:'additive'" json:"processFamily"`
+	Status string `bun:"status,type:text,default:'draft'" json:"status"`
+	Document *json.RawMessage `bun:"document,type:jsonb,nullzero" json:"document,omitempty"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value FabPlansBun) Validate() error {
+	if len([]byte(value.OwnerEmail)) > 320 { return errors.New("fab_plans.owner_email exceeds 320 bytes") }
+	if len([]byte(value.OwnerEmail)) < 3 { return errors.New("fab_plans.owner_email is below 3 bytes") }
+	if len([]byte(value.Title)) > 200 { return errors.New("fab_plans.title exceeds 200 bytes") }
+	if len([]byte(value.Title)) < 1 { return errors.New("fab_plans.title is below 1 bytes") }
+	if len([]byte(value.Goal)) > 20000 { return errors.New("fab_plans.goal exceeds 20000 bytes") }
+	if len([]byte(value.Goal)) < 1 { return errors.New("fab_plans.goal is below 1 bytes") }
+	if !containsString(FabPlansProcessFamilyValues, value.ProcessFamily) { return errors.New("unsupported fab_plans.process_family") }
+	if !containsString(FabPlansStatusValues, value.Status) { return errors.New("unsupported fab_plans.status") }
+	if value.Document != nil {
+		if !validateRawJSON(*value.Document) { return errors.New("fab_plans.document must be valid JSON") }
+	}
+	return nil
+}
+
+const FabDesignsTable = "daedalus.fab_designs"
+const FabDesignsSelectSQL = `select
+      id::text as id,
+      plan_id::text as plan_id,
+      filename,
+      format,
+      storage_uri,
+      size_bytes,
+      content_hash,
+      geometry,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from daedalus.fab_designs`
+
+var FabDesignsFormatValues = []string{"step", "stl", "3mf", "dxf", "iges", "obj"}
+
+type FabDesignsBun struct {
+	bun.BaseModel `bun:"table:daedalus.fab_designs"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	PlanId uuid.UUID `bun:"plan_id,type:uuid" json:"planId"`
+	Filename string `bun:"filename,type:text" json:"filename"`
+	Format string `bun:"format,type:text" json:"format"`
+	StorageUri string `bun:"storage_uri,type:text" json:"storageUri"`
+	SizeBytes int64 `bun:"size_bytes,type:bigint,default:0" json:"sizeBytes"`
+	ContentHash *string `bun:"content_hash,type:text,nullzero" json:"contentHash,omitempty"`
+	Geometry json.RawMessage `bun:"geometry,type:jsonb,default:'{}'::jsonb" json:"geometry"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+}
+
+func (value FabDesignsBun) Validate() error {
+	if len([]byte(value.Filename)) > 400 { return errors.New("fab_designs.filename exceeds 400 bytes") }
+	if len([]byte(value.Filename)) < 1 { return errors.New("fab_designs.filename is below 1 bytes") }
+	if !containsString(FabDesignsFormatValues, value.Format) { return errors.New("unsupported fab_designs.format") }
+	if len([]byte(value.StorageUri)) > 2000 { return errors.New("fab_designs.storage_uri exceeds 2000 bytes") }
+	if len([]byte(value.StorageUri)) < 1 { return errors.New("fab_designs.storage_uri is below 1 bytes") }
+	if value.SizeBytes < 0 { return errors.New("fab_designs.size_bytes is below the minimum") }
+	if !validateRawJSON(value.Geometry) { return errors.New("fab_designs.geometry must be valid JSON") }
+	return nil
+}
+
+const FabInstructionsTable = "daedalus.fab_instructions"
+const FabInstructionsSelectSQL = `select
+      id::text as id,
+      plan_id::text as plan_id,
+      revision,
+      machine_profile,
+      dialect,
+      storage_uri,
+      content_hash,
+      validated,
+      validation,
+      released_by_email,
+      to_char(released_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as released_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from daedalus.fab_instructions`
+
+var FabInstructionsDialectValues = []string{"gcode", "nc", "apt", "proprietary"}
+
+type FabInstructionsBun struct {
+	bun.BaseModel `bun:"table:daedalus.fab_instructions"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	PlanId uuid.UUID `bun:"plan_id,type:uuid" json:"planId"`
+	Revision int32 `bun:"revision,type:integer,default:1" json:"revision"`
+	MachineProfile string `bun:"machine_profile,type:text" json:"machineProfile"`
+	Dialect string `bun:"dialect,type:text,default:'gcode'" json:"dialect"`
+	StorageUri string `bun:"storage_uri,type:text" json:"storageUri"`
+	ContentHash *string `bun:"content_hash,type:text,nullzero" json:"contentHash,omitempty"`
+	Validated bool `bun:"validated,type:boolean,default:false" json:"validated"`
+	Validation json.RawMessage `bun:"validation,type:jsonb,default:'{}'::jsonb" json:"validation"`
+	ReleasedByEmail *string `bun:"released_by_email,type:text,nullzero" json:"releasedByEmail,omitempty"`
+	ReleasedAt *time.Time `bun:"released_at,type:timestamptz,nullzero" json:"releasedAt,omitempty"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+}
+
+func (value FabInstructionsBun) Validate() error {
+	if value.Revision < 1 { return errors.New("fab_instructions.revision is below the minimum") }
+	if len([]byte(value.MachineProfile)) > 200 { return errors.New("fab_instructions.machine_profile exceeds 200 bytes") }
+	if len([]byte(value.MachineProfile)) < 1 { return errors.New("fab_instructions.machine_profile is below 1 bytes") }
+	if !containsString(FabInstructionsDialectValues, value.Dialect) { return errors.New("unsupported fab_instructions.dialect") }
+	if len([]byte(value.StorageUri)) > 2000 { return errors.New("fab_instructions.storage_uri exceeds 2000 bytes") }
+	if len([]byte(value.StorageUri)) < 1 { return errors.New("fab_instructions.storage_uri is below 1 bytes") }
+	if !validateRawJSON(value.Validation) { return errors.New("fab_instructions.validation must be valid JSON") }
+	return nil
+}
+
+const FabRunsTable = "daedalus.fab_runs"
+const FabRunsSelectSQL = `select
+      id::text as id,
+      status,
+      machine_id,
+      operator_email,
+      progress,
+      as_built,
+      error,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from daedalus.fab_runs`
+
+var FabRunsStatusValues = []string{"queued", "running", "succeeded", "failed", "aborted"}
+
+type FabRunsBun struct {
+	bun.BaseModel `bun:"table:daedalus.fab_runs"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	Status string `bun:"status,type:text,default:'queued'" json:"status"`
+	MachineId string `bun:"machine_id,type:text" json:"machineId"`
+	OperatorEmail *string `bun:"operator_email,type:text,nullzero" json:"operatorEmail,omitempty"`
+	Progress int32 `bun:"progress,type:smallint,default:0" json:"progress"`
+	AsBuilt json.RawMessage `bun:"as_built,type:jsonb,default:'{}'::jsonb" json:"asBuilt"`
+	Error *string `bun:"error,type:text,nullzero" json:"error,omitempty"`
+	StartedAt *time.Time `bun:"started_at,type:timestamptz,nullzero" json:"startedAt,omitempty"`
+	FinishedAt *time.Time `bun:"finished_at,type:timestamptz,nullzero" json:"finishedAt,omitempty"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+}
+
+func (value FabRunsBun) Validate() error {
+	if !containsString(FabRunsStatusValues, value.Status) { return errors.New("unsupported fab_runs.status") }
+	if len([]byte(value.MachineId)) > 200 { return errors.New("fab_runs.machine_id exceeds 200 bytes") }
+	if len([]byte(value.MachineId)) < 1 { return errors.New("fab_runs.machine_id is below 1 bytes") }
+	if value.Progress < 0 { return errors.New("fab_runs.progress is below the minimum") }
+	if value.Progress > 100 { return errors.New("fab_runs.progress is above the maximum") }
+	if !validateRawJSON(value.AsBuilt) { return errors.New("fab_runs.as_built must be valid JSON") }
+	if value.Error != nil {
+		if len([]byte(*value.Error)) > 20000 { return errors.New("fab_runs.error exceeds 20000 bytes") }
+	}
+	return nil
+}
+
 func validateRawJSON(value json.RawMessage) bool {
 	if len(value) == 0 {
 		return true
