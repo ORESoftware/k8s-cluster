@@ -2,3 +2,11 @@
 	path = apps/fabrication-server.rs
 	url = git@github.com:daedalus-fab/fabrication-server.rs.git
 	branch = main
+[submodule "apps/daedalus-api-server.rs"]
+	path = apps/daedalus-api-server.rs
+	url = git@github.com:daedalus-fab/daedalus-api-server.rs.git
+	branch = main
+[submodule "apps/daedalus-web-server.rs"]
+	path = apps/daedalus-web-server.rs
+	url = git@github.com:daedalus-fab/daedalus-web-server.rs.git
+	branch = main
