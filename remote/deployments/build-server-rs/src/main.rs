@@ -12,6 +12,7 @@ use std::{
 };
 
 use axum::{
+    body::Body,
     extract::{Path as AxumPath, State},
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
@@ -33,6 +34,7 @@ use tokio::{
     sync::{RwLock, Semaphore},
     time::timeout,
 };
+use tokio_util::io::ReaderStream;
 
 mod db;
 mod entity;
@@ -40,6 +42,7 @@ mod events;
 mod fiducia;
 mod gh_secrets;
 mod lambda_exec;
+mod profiles;
 mod webhooks;
 
 const SERVICE_NAME: &str = "dd-build-server";
@@ -67,12 +70,21 @@ struct AppState {
 struct Config {
     work_root: PathBuf,
     git_bin: String,
+    /// Precomputed Basic authorization header for trusted private GitHub clones.
+    /// Never serialized or written to command logs.
+    git_http_auth_header: Option<String>,
     nerdctl_bin: String,
     kubectl_bin: String,
+    tar_bin: String,
     containerd_namespace: String,
     allowed_repo_prefixes: Vec<String>,
     allowed_image_prefixes: Vec<String>,
     allowed_namespaces: HashSet<String>,
+    allowed_profiles: HashSet<String>,
+    allowed_profile_repo_prefixes: Vec<String>,
+    profile_cpus: String,
+    profile_memory: String,
+    profile_pids_limit: String,
     deploy_enabled: bool,
     push_enabled: bool,
     ecr_login_enabled: bool,
@@ -160,7 +172,10 @@ struct BuildRequest {
     job_kind: Option<String>,
     repo_url: String,
     git_ref: Option<String>,
+    #[serde(default)]
     image: String,
+    /// Fixed operator-reviewed command pipeline for jobKind=run-profile.
+    profile: Option<String>,
     context_dir: Option<String>,
     dockerfile: Option<String>,
     build_args: Option<BTreeMap<String, String>>,
@@ -225,6 +240,8 @@ struct HealthResponse {
     allowed_repo_prefixes: Vec<String>,
     allowed_image_prefixes: Vec<String>,
     allowed_namespaces: Vec<String>,
+    allowed_profiles: Vec<String>,
+    allowed_profile_repo_prefixes: Vec<String>,
     queued: usize,
     running: u64,
 }
@@ -361,6 +378,13 @@ fn config_from_env() -> Config {
     .unwrap_or_default();
 
     let coordination_enabled = env_bool("BUILD_SERVER_COORDINATION_ENABLED", false);
+    let github_token = first_env(&["BUILD_SERVER_GIT_TOKEN", "GH_PAT"]);
+    let git_http_auth_header = github_token.as_deref().map(|token| {
+        format!(
+            "AUTHORIZATION: basic {}",
+            BASE64.encode(format!("x-access-token:{token}"))
+        )
+    });
     let fiducia_url = env_value(
         "FIDUCIA_LOCK_URL",
         "http://fiducia-load-balance.fiducia.svc.cluster.local:8088",
@@ -383,8 +407,10 @@ fn config_from_env() -> Config {
             "/var/lib/dd-build-server/jobs",
         )),
         git_bin: env_value("BUILD_SERVER_GIT_BIN", "git"),
+        git_http_auth_header,
         nerdctl_bin: env_value("BUILD_SERVER_NERDCTL_BIN", "/usr/local/bin/nerdctl"),
         kubectl_bin: env_value("BUILD_SERVER_KUBECTL_BIN", "/usr/bin/kubectl"),
+        tar_bin: env_value("BUILD_SERVER_TAR_BIN", "/bin/tar"),
         containerd_namespace: env_value("BUILD_SERVER_CONTAINERD_NAMESPACE", "k8s.io"),
         allowed_repo_prefixes: parse_csv(&env_value("BUILD_SERVER_ALLOWED_REPO_PREFIXES", "")),
         allowed_image_prefixes: parse_csv(&env_value("BUILD_SERVER_ALLOWED_IMAGE_PREFIXES", "")),
@@ -392,6 +418,17 @@ fn config_from_env() -> Config {
             "BUILD_SERVER_ALLOWED_NAMESPACES",
             "default",
         )),
+        allowed_profiles: parse_namespaces(&env_value(
+            "BUILD_SERVER_ALLOWED_PROFILES",
+            &profiles::names().collect::<Vec<_>>().join(","),
+        )),
+        allowed_profile_repo_prefixes: parse_csv(&env_value(
+            "BUILD_SERVER_ALLOWED_PROFILE_REPO_PREFIXES",
+            "https://github.com/ORESoftware/,https://github.com/sonus-auris/,git@github.com:ORESoftware/,git@github.com:sonus-auris/",
+        )),
+        profile_cpus: env_value("BUILD_SERVER_PROFILE_CPUS", "4"),
+        profile_memory: env_value("BUILD_SERVER_PROFILE_MEMORY", "8g"),
+        profile_pids_limit: env_value("BUILD_SERVER_PROFILE_PIDS_LIMIT", "2048"),
         deploy_enabled: env_bool("BUILD_SERVER_DEPLOY_ENABLED", true),
         push_enabled: env_bool("BUILD_SERVER_PUSH_ENABLED", false),
         ecr_login_enabled: env_bool("BUILD_SERVER_ECR_LOGIN_ENABLED", true),
@@ -423,7 +460,10 @@ fn config_from_env() -> Config {
             7 * 24 * 3_600_000,
         )),
 
-        nats_url: env_value("NATS_URL", "nats://dd-nats.messaging.svc.cluster.local:4222"),
+        nats_url: env_value(
+            "NATS_URL",
+            "nats://dd-nats.messaging.svc.cluster.local:4222",
+        ),
         nats_enabled: env_bool("BUILD_SERVER_NATS_ENABLED", true),
         nats_intake_enabled: env_bool("BUILD_SERVER_NATS_INTAKE_ENABLED", false),
         nats_event_subject: env_value(
@@ -735,10 +775,13 @@ fn validate_build_request(config: &Config, request: &BuildRequest) -> Result<(),
             return Err("schemaVersion must be build-server.v1".to_string());
         }
     }
-    if let Some(job_kind) = clean_optional(request.job_kind.as_deref()) {
-        if !matches!(job_kind.as_str(), "build-image" | "build-and-deploy") {
-            return Err("jobKind must be build-image or build-and-deploy".to_string());
-        }
+    let job_kind =
+        clean_optional(request.job_kind.as_deref()).unwrap_or_else(|| "build-image".to_string());
+    if !matches!(
+        job_kind.as_str(),
+        "build-image" | "build-and-deploy" | "run-profile"
+    ) {
+        return Err("jobKind must be build-image, build-and-deploy, or run-profile".to_string());
     }
     validate_repo_url(&request.repo_url)?;
     ensure_allowed_prefix(
@@ -747,22 +790,59 @@ fn validate_build_request(config: &Config, request: &BuildRequest) -> Result<(),
         &config.allowed_repo_prefixes,
         "BUILD_SERVER_ALLOWED_REPO_PREFIXES",
     )?;
-    validate_image(config, &request.image, request.push.unwrap_or(false))?;
+    if job_kind == "run-profile" {
+        ensure_allowed_prefix(
+            "profile repoUrl",
+            &request.repo_url,
+            &config.allowed_profile_repo_prefixes,
+            "BUILD_SERVER_ALLOWED_PROFILE_REPO_PREFIXES",
+        )?;
+        let profile = clean_optional(request.profile.as_deref())
+            .ok_or_else(|| "profile is required for jobKind=run-profile".to_string())?;
+        if profiles::find(&profile).is_none() || !config.allowed_profiles.contains(&profile) {
+            return Err(format!(
+                "profile {profile:?} is not allowed by BUILD_SERVER_ALLOWED_PROFILES"
+            ));
+        }
+        if !request.image.trim().is_empty() {
+            return Err("image must be omitted for jobKind=run-profile".to_string());
+        }
+        if request.push.unwrap_or(false)
+            || request.deploy.is_some()
+            || request.build_args.is_some()
+            || request.dockerfile.is_some()
+        {
+            return Err(
+                "run-profile does not accept image, push, deploy, buildArgs, or dockerfile"
+                    .to_string(),
+            );
+        }
+    } else {
+        if request.profile.is_some() {
+            return Err("profile is only valid for jobKind=run-profile".to_string());
+        }
+        validate_image(config, &request.image, request.push.unwrap_or(false))?;
+    }
     if let Some(git_ref) = clean_optional(request.git_ref.as_deref()) {
         validate_no_whitespace("gitRef", &git_ref, 180)?;
     }
     validate_relative_path("contextDir", request.context_dir.as_deref().unwrap_or("."))?;
-    validate_relative_path(
-        "dockerfile",
-        request.dockerfile.as_deref().unwrap_or("Dockerfile"),
-    )?;
-    validate_build_args(&request.build_args)?;
+    if job_kind != "run-profile" {
+        validate_relative_path(
+            "dockerfile",
+            request.dockerfile.as_deref().unwrap_or("Dockerfile"),
+        )?;
+        validate_build_args(&request.build_args)?;
+    }
     if request.push.unwrap_or(false) && !config.push_enabled {
         return Err("push is disabled by BUILD_SERVER_PUSH_ENABLED=false".to_string());
     }
     match request.executor.as_deref() {
         None | Some("local") => {}
         Some("lambda") => {
+            if job_kind == "run-profile" {
+                return Err("run-profile currently requires executor=local".to_string());
+            }
             if !config.lambda_executor_enabled {
                 return Err(
                     "executor \"lambda\" is disabled by BUILD_SERVER_LAMBDA_ENABLED=false"
@@ -775,7 +855,15 @@ fn validate_build_request(config: &Config, request: &BuildRequest) -> Result<(),
     if let Some(request_id) = clean_optional(request.request_id.as_deref()) {
         validate_no_whitespace("requestId", &request_id, 128)?;
     }
-    validate_deploy(config, &request.deploy)
+    if job_kind == "run-profile" {
+        Ok(())
+    } else {
+        validate_deploy(config, &request.deploy)
+    }
+}
+
+fn request_job_kind(request: &BuildRequest) -> String {
+    clean_optional(request.job_kind.as_deref()).unwrap_or_else(|| "build-image".to_string())
 }
 
 fn shellish(value: &str) -> String {
@@ -928,6 +1016,14 @@ async fn run_logged_command_inner(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    if program == config.git_bin {
+        if let Some(auth_header) = config.git_http_auth_header.as_deref() {
+            command
+                .env("GIT_CONFIG_COUNT", "1")
+                .env("GIT_CONFIG_KEY_0", "http.https://github.com/.extraheader")
+                .env("GIT_CONFIG_VALUE_0", auth_header);
+        }
+    }
     if stdin.is_some() {
         command.stdin(Stdio::piped());
     }
@@ -1254,6 +1350,143 @@ fn resolve_repo_path(repo_dir: &Path, name: &str, value: &str) -> Result<PathBuf
     Ok(repo_dir.join(clean))
 }
 
+async fn clone_repository(
+    config: &Config,
+    request: &BuildRequest,
+    job_dir: &Path,
+    repo_dir: &Path,
+    log_path: &Path,
+) -> Result<(), String> {
+    let mut clone_args = vec![
+        "-c".to_string(),
+        "protocol.ext.allow=never".to_string(),
+        "-c".to_string(),
+        "protocol.file.allow=never".to_string(),
+        "-c".to_string(),
+        "protocol.local.allow=never".to_string(),
+        "clone".to_string(),
+        "--depth".to_string(),
+        "1".to_string(),
+        "--no-tags".to_string(),
+    ];
+    if let Some(git_ref) = clean_optional(request.git_ref.as_deref()) {
+        clone_args.push("--branch".to_string());
+        clone_args.push(git_ref);
+    }
+    clone_args.push("--".to_string());
+    clone_args.push(request.repo_url.clone());
+    clone_args.push(repo_dir.to_string_lossy().to_string());
+    run_logged_command(config, log_path, job_dir, &config.git_bin, clone_args).await
+}
+
+async fn execute_profile(state: &AppState, job: &BuildJobRecord) -> Result<(), String> {
+    let config = state.config.as_ref();
+    let request = &job.request;
+    let profile_name = clean_optional(request.profile.as_deref())
+        .ok_or_else(|| "validated profile request lost its profile".to_string())?;
+    let profile = profiles::find(&profile_name)
+        .ok_or_else(|| format!("profile {profile_name:?} is not installed"))?;
+    let job_dir = config.work_root.join(&job.id);
+    let repo_dir = job_dir.join("repo");
+    let log_path = PathBuf::from(&job.log_path);
+
+    fs::create_dir_all(&job_dir)
+        .await
+        .map_err(|error| format!("failed to create job dir: {error}"))?;
+    append_log(
+        &log_path,
+        &format!(
+            "{SERVICE_NAME} starting profile job={} repo={} profile={}\n",
+            job.id, request.repo_url, profile.name
+        ),
+        config.max_log_bytes,
+    )
+    .await;
+    clone_repository(config, request, &job_dir, &repo_dir, &log_path).await?;
+
+    let context_path = resolve_repo_path(
+        &repo_dir,
+        "contextDir",
+        request.context_dir.as_deref().unwrap_or("."),
+    )?;
+    for step in profile.steps {
+        let step_cwd = validate_relative_path("profile step subdirectory", step.subdirectory)?;
+        let container_cwd = if step_cwd == Path::new(".") {
+            "/workspace".to_string()
+        } else {
+            format!("/workspace/{}", step_cwd.to_string_lossy())
+        };
+        append_log(
+            &log_path,
+            &format!(
+                "\nprofile={} step={} runner={}\n",
+                profile.name, step.name, step.image
+            ),
+            config.max_log_bytes,
+        )
+        .await;
+        let mut runner_args = vec![
+            "-n".to_string(),
+            config.containerd_namespace.clone(),
+            "run".to_string(),
+            "--rm".to_string(),
+            "--pull=missing".to_string(),
+            format!("--cpus={}", config.profile_cpus),
+            format!("--memory={}", config.profile_memory),
+            format!("--pids-limit={}", config.profile_pids_limit),
+            "--security-opt=no-new-privileges".to_string(),
+            "--cap-drop=ALL".to_string(),
+        ];
+        runner_args.extend([
+            "--env=CI=true".to_string(),
+            "--mount".to_string(),
+            format!(
+                "type=bind,src={},dst=/workspace",
+                context_path.to_string_lossy()
+            ),
+            "--workdir".to_string(),
+            container_cwd,
+            step.image.to_string(),
+            "/bin/bash".to_string(),
+            "-lc".to_string(),
+            step.script.to_string(),
+        ]);
+        run_logged_command(
+            config,
+            &log_path,
+            &context_path,
+            &config.nerdctl_bin,
+            runner_args,
+        )
+        .await?;
+    }
+
+    if !profile.artifact_paths.is_empty() {
+        let archive_path = job_dir.join("artifacts.tar.gz");
+        let mut args = vec![
+            "-czf".to_string(),
+            archive_path.to_string_lossy().to_string(),
+            "--".to_string(),
+        ];
+        args.extend(profile.artifact_paths.iter().map(|path| path.to_string()));
+        run_logged_command(config, &log_path, &context_path, &config.tar_bin, args).await?;
+        append_log(
+            &log_path,
+            &format!("artifacts: /builds/{}/artifacts\n", job.id),
+            config.max_log_bytes,
+        )
+        .await;
+    }
+
+    append_log(
+        &log_path,
+        &format!("{SERVICE_NAME} completed profile job={}\n", job.id),
+        config.max_log_bytes,
+    )
+    .await;
+    Ok(())
+}
+
 async fn execute_build(state: &AppState, job: &BuildJobRecord) -> Result<(), String> {
     let config = state.config.as_ref();
     let request = &job.request;
@@ -1276,26 +1509,7 @@ async fn execute_build(state: &AppState, job: &BuildJobRecord) -> Result<(), Str
 
     // Locked-down clone: no non-network transports, no tags, and an explicit
     // `--` so nothing user-supplied can ever be parsed as a git option.
-    let mut clone_args = vec![
-        "-c".to_string(),
-        "protocol.ext.allow=never".to_string(),
-        "-c".to_string(),
-        "protocol.file.allow=never".to_string(),
-        "-c".to_string(),
-        "protocol.local.allow=never".to_string(),
-        "clone".to_string(),
-        "--depth".to_string(),
-        "1".to_string(),
-        "--no-tags".to_string(),
-    ];
-    if let Some(git_ref) = clean_optional(request.git_ref.as_deref()) {
-        clone_args.push("--branch".to_string());
-        clone_args.push(git_ref);
-    }
-    clone_args.push("--".to_string());
-    clone_args.push(request.repo_url.clone());
-    clone_args.push(repo_dir.to_string_lossy().to_string());
-    run_logged_command(config, &log_path, &job_dir, &config.git_bin, clone_args).await?;
+    clone_repository(config, request, &job_dir, &repo_dir, &log_path).await?;
 
     let context_path = resolve_repo_path(
         &repo_dir,
@@ -1441,17 +1655,29 @@ async fn run_job(state: AppState, id: String) {
     // Distributed mutual exclusion (fiducia.cloud): one lock per image ref, so
     // concurrent builds of the same image serialize across replicas. The local
     // semaphore above only bounds this process.
-    let image = {
+    let lock_key = {
         let jobs = state.jobs.read().await;
-        jobs.get(&id).map(|job| job.request.image.clone())
+        jobs.get(&id).map(|job| {
+            if request_job_kind(&job.request) == "run-profile" {
+                format!(
+                    "build-server/profile/{}/{}",
+                    job.request.profile.as_deref().unwrap_or("unknown"),
+                    sha256_hex(&job.request.repo_url)
+                )
+            } else {
+                format!("build-server/image/{}", job.request.image)
+            }
+        })
     };
-    let lock_key = image.map(|image| format!("build-server/image/{image}"));
     let mut grant: Option<fiducia::LockGrant> = None;
     if let Some(lock_key) = lock_key.as_deref() {
         match fiducia::acquire_lock(&state.http, &state.config, lock_key, &state.holder).await {
             fiducia::LockOutcome::Disabled => {}
             fiducia::LockOutcome::Acquired(acquired) => {
-                state.counters.locks_acquired.fetch_add(1, Ordering::Relaxed);
+                state
+                    .counters
+                    .locks_acquired
+                    .fetch_add(1, Ordering::Relaxed);
                 grant = Some(acquired);
             }
             fiducia::LockOutcome::Busy { key } => {
@@ -1512,7 +1738,9 @@ async fn run_job(state: AppState, id: String) {
             // per-command timeout inside the executors.
             let deadline = state.config.job_deadline;
             let execution = async {
-                if job.executor == "lambda" {
+                if request_job_kind(&job.request) == "run-profile" {
+                    execute_profile(&state, &job).await
+                } else if job.executor == "lambda" {
                     lambda_exec::execute(&state, &job, Path::new(&job.log_path)).await
                 } else {
                     execute_build(&state, &job).await
@@ -1580,6 +1808,7 @@ async fn descriptor(State(state): State<AppState>) -> impl IntoResponse {
             "list": "GET /builds",
             "status": "GET /builds/<jobId>",
             "logs": "GET /builds/<jobId>/logs",
+            "artifacts": "GET /builds/<jobId>/artifacts",
             "githubWebhook": "POST /webhooks/github",
             "registryWebhook": "POST /webhooks/registry",
             "syncSecrets": "POST /secrets/sync",
@@ -1589,10 +1818,19 @@ async fn descriptor(State(state): State<AppState>) -> impl IntoResponse {
         },
         "jobSchema": {
             "schemaVersion": "build-server.v1",
-            "jobKind": ["build-image", "build-and-deploy"],
-            "required": ["repoUrl", "image"],
+            "jobKind": ["build-image", "build-and-deploy", "run-profile"],
+            "required": ["repoUrl"],
+            "conditional": {
+                "build-image/build-and-deploy": ["image"],
+                "run-profile": ["profile"]
+            },
             "optional": ["gitRef", "contextDir", "dockerfile", "buildArgs", "push", "deploy", "executor", "requestId"]
         },
+        "profiles": profiles::SPECS,
+        "delegatedCapabilities": [
+            { "platform": "macos", "profiles": ["flutter-ios-release", "flutter-macos-release"], "runner": "GitHub-hosted macOS or a dedicated macOS worker" },
+            { "platform": "windows", "profiles": ["flutter-windows-release"], "runner": "GitHub-hosted Windows or a dedicated Windows worker" }
+        ],
         "executors": ["local", "lambda"],
         "pushRegistries": ["amazon-ecr"],
         "deployKinds": ["kustomize", "manifest", "none"],
@@ -1634,6 +1872,15 @@ async fn healthz(State(state): State<AppState>) -> impl IntoResponse {
     allowed_repo_prefixes.sort();
     let mut allowed_image_prefixes = state.config.allowed_image_prefixes.clone();
     allowed_image_prefixes.sort();
+    let mut allowed_profiles = state
+        .config
+        .allowed_profiles
+        .iter()
+        .cloned()
+        .collect::<Vec<_>>();
+    allowed_profiles.sort();
+    let mut allowed_profile_repo_prefixes = state.config.allowed_profile_repo_prefixes.clone();
+    allowed_profile_repo_prefixes.sort();
 
     Json(HealthResponse {
         ok: true,
@@ -1645,6 +1892,8 @@ async fn healthz(State(state): State<AppState>) -> impl IntoResponse {
         allowed_repo_prefixes,
         allowed_image_prefixes,
         allowed_namespaces,
+        allowed_profiles,
+        allowed_profile_repo_prefixes,
         queued,
         running: state.counters.running.load(Ordering::Relaxed),
     })
@@ -1655,6 +1904,7 @@ fn build_dependencies_ready(config: &Config) -> bool {
         && config.work_root.exists()
         && executable_available(&config.git_bin)
         && executable_available(&config.nerdctl_bin)
+        && executable_available(&config.tar_bin)
         && (!config.deploy_enabled || executable_available(&config.kubectl_bin))
 }
 
@@ -1880,17 +2130,16 @@ async fn enqueue_build(
 
 /// NATS intake: parse a build-server.v1 document and enqueue it.
 async fn submit_from_nats(state: &AppState, payload: &[u8]) -> Result<(), NatsSubmitError> {
-    let request: BuildRequest = serde_json::from_slice(payload)
-        .map_err(|error| NatsSubmitError::Invalid(format!("invalid build request JSON: {error}")))?;
+    let request: BuildRequest = serde_json::from_slice(payload).map_err(|error| {
+        NatsSubmitError::Invalid(format!("invalid build request JSON: {error}"))
+    })?;
     match enqueue_build(state, request, "nats").await {
         Ok(_) => Ok(()),
         Err((StatusCode::CONFLICT, message)) => {
             tracing::info!("nats build request deduped: {message}");
             Ok(())
         }
-        Err((StatusCode::SERVICE_UNAVAILABLE, message)) => {
-            Err(NatsSubmitError::Transient(message))
-        }
+        Err((StatusCode::SERVICE_UNAVAILABLE, message)) => Err(NatsSubmitError::Transient(message)),
         Err((_, message)) => Err(NatsSubmitError::Invalid(message)),
     }
 }
@@ -1905,9 +2154,7 @@ async fn submit_build(
     }
     match enqueue_build(&state, request, "http").await {
         Ok(record) => (StatusCode::ACCEPTED, Json(record)).into_response(),
-        Err((status, message)) => {
-            (status, Json(json!({ "error": message }))).into_response()
-        }
+        Err((status, message)) => (status, Json(json!({ "error": message }))).into_response(),
     }
 }
 
@@ -2038,6 +2285,57 @@ async fn get_build_logs(
     }
 }
 
+async fn get_build_artifacts(
+    State(state): State<AppState>,
+    AxumPath(job_id): AxumPath<String>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return response;
+    }
+    {
+        let jobs = state.jobs.read().await;
+        if !jobs.contains_key(&job_id) {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "build job not found" })),
+            )
+                .into_response();
+        }
+    }
+
+    let artifact_path = state
+        .config
+        .work_root
+        .join(&job_id)
+        .join("artifacts.tar.gz");
+    match fs::File::open(&artifact_path).await {
+        Ok(file) => {
+            let stream = ReaderStream::new(file);
+            let disposition = format!("attachment; filename=\"{job_id}-artifacts.tar.gz\"");
+            (
+                StatusCode::OK,
+                [
+                    (header::CONTENT_TYPE, "application/gzip".to_string()),
+                    (header::CONTENT_DISPOSITION, disposition),
+                ],
+                Body::from_stream(stream),
+            )
+                .into_response()
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "build artifacts not found" })),
+        )
+            .into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": format!("failed to open build artifacts: {error}") })),
+        )
+            .into_response(),
+    }
+}
+
 async fn api_docs_html() -> axum::response::Html<&'static str> {
     axum::response::Html(include_str!("../generated/api-docs.html"))
 }
@@ -2074,7 +2372,9 @@ async fn main() {
             Err(error) => panic!("BUILD_SERVER_DATABASE_URL was set but connect failed: {error}"),
         },
         None => {
-            tracing::info!("no BUILD_SERVER_DATABASE_URL configured; running with in-memory jobs only");
+            tracing::info!(
+                "no BUILD_SERVER_DATABASE_URL configured; running with in-memory jobs only"
+            );
             None
         }
     };
@@ -2127,6 +2427,7 @@ async fn main() {
         .route("/builds", get(list_builds).post(submit_build))
         .route("/builds/:job_id", get(get_build))
         .route("/builds/:job_id/logs", get(get_build_logs))
+        .route("/builds/:job_id/artifacts", get(get_build_artifacts))
         .route("/webhooks/github", post(webhooks::github_webhook))
         .route("/webhooks/registry", post(webhooks::registry_webhook))
         .route("/secrets/sync", post(sync_secrets))
@@ -2208,5 +2509,21 @@ mod tests {
         assert!(!executable_available(
             "dd-build-server-tool-that-does-not-exist"
         ));
+    }
+
+    #[test]
+    fn fixed_profiles_exist_and_do_not_accept_commands_from_callers() {
+        let names = profiles::names().collect::<HashSet<_>>();
+        for expected in [
+            "flutter-android-debug",
+            "flutter-web-release",
+            "flutter-linux-release",
+            "flutter-web-e2e",
+            "playwright",
+            "puppeteer",
+        ] {
+            assert!(names.contains(expected));
+        }
+        assert!(profiles::find("sh -c evil").is_none());
     }
 }

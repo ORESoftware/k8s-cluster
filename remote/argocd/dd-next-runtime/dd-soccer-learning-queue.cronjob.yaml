@@ -162,11 +162,11 @@ spec:
                 - name: SOCCER_SOURCE_REPO
                   value: https://github.com/akrion-sim/akrion-soccer-engine-rs.git
                 - name: SOCCER_SOURCE_REF
-                  value: learning
+                  value: 9bf8382b9dba553c6ee72c658ef8c105e02527e3
                 - name: SOCCER_ENGINE_SOURCE_REPO
                   value: https://github.com/ORESoftware/discrete-event-system.rs.git
                 - name: SOCCER_ENGINE_SOURCE_REF
-                  value: main
+                  value: 8eaa32818193509e9c271ca8ee06cec9f493d619
                 - name: SOCCER_DATABASE_URL
                   valueFrom:
                     secretKeyRef:

@@ -20,7 +20,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/akrion-web-server-revision: 'hardened-headers-gitops-source'
+        dd.dev/akrion-web-server-revision: '7b4e16780717f4307fa98bab7d2bd2c29716bab5'
       labels:
         app: dd-akrion-web-server-rs
     spec:

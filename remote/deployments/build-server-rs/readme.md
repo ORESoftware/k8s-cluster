@@ -11,6 +11,8 @@ It exposes authenticated JSON endpoints for:
 - `GET /builds` and `GET /builds/<jobId>` to inspect build state (in-memory, plus recent jobs from
   Postgres when persistence is enabled).
 - `GET /builds/<jobId>/logs` to read the capped build log from disk.
+- `GET /builds/<jobId>/artifacts` to stream the fixed-profile output archive after a successful
+  profile build.
 - `POST /webhooks/github` and `POST /webhooks/registry` for GitHub push/workflow_run events and
   container-registry image events (see **Webhooks**).
 - `POST /secrets/sync` and `GET /secrets/sync/status` to push selected secrets to GitHub Actions
@@ -68,11 +70,11 @@ SHA-256 hashes are persisted, for change detection — never the values. Rules c
 `BUILD_SERVER_GH_SYNC_RULES`/`_PATH`; the PAT from `GH_PAT` (dd-agent-secrets) or
 `GH_SECRETS_SYNC_TOKEN`. Disabled by default (`BUILD_SERVER_GH_SYNC_ENABLED`).
 
-The server intentionally does not accept arbitrary shell commands. A submitted job is a
+The server intentionally does not accept caller-supplied shell commands. A submitted job is a
 `build-server.v1` JSON document:
 
 - `schemaVersion`: optional; when present it must be `build-server.v1`.
-- `jobKind`: optional; `build-image` or `build-and-deploy`.
+- `jobKind`: optional; `build-image`, `build-and-deploy`, or `run-profile`.
 - `repoUrl`: `https://`, `ssh://`, or `git@` repo URL.
 - `gitRef`: optional branch or tag, passed to `git clone --branch`.
 - `image`: explicit image tag or digest to build. The deployment currently allowlists
@@ -84,6 +86,58 @@ The server intentionally does not accept arbitrary shell commands. A submitted j
 - `deploy.kind`: `kustomize`, `manifest`, or `none`.
 - `deploy.path`: relative path inside the cloned repo.
 - `deploy.namespace`: namespace allowlisted by `BUILD_SERVER_ALLOWED_NAMESPACES`.
+
+For `jobKind: run-profile`, supply `repoUrl`, optional `gitRef`, and `profile`. Omit `image`,
+`push`, `deploy`, `buildArgs`, and `dockerfile`; the server rejects them for profile jobs. The
+profile name selects an operator-reviewed runner image, commands, and artifact paths compiled into
+the server:
+
+| Profile | Cluster capability | Artifact |
+|---|---|---|
+| `flutter-verify` | Flutter analyze and unit tests | none |
+| `flutter-android-debug` | Flutter Android debug build | APK |
+| `flutter-web-release` | Flutter web release build | `build/web` |
+| `flutter-linux-release` | Flutter native Linux release build | Linux bundle |
+| `flutter-linux-desktop-entrypoint` | Sonus-style `lib/main_desktop.dart` Linux release | Linux bundle |
+| `flutter-web-e2e` | Flutter web plus repository Puppeteer and Playwright smokes | web bundle and screenshots |
+| `playwright`, `puppeteer`, `browser-e2e` | Browser-ready Node test profiles | test-defined |
+
+Example:
+
+```json
+{
+  "schemaVersion": "build-server.v1",
+  "jobKind": "run-profile",
+  "repoUrl": "https://github.com/sonus-auris/sonus-auris-ui.dart.git",
+  "gitRef": "main",
+  "profile": "flutter-android-debug"
+}
+```
+
+Each profile container is CPU-, memory-, PID-, capability-, and privilege-limited. Every profile
+runs with all Linux capabilities dropped. Flutter, Android, and Linux desktop dependencies are
+preinstalled in the revision-pinned cluster image, so profile jobs neither install packages at
+runtime nor require elevated capabilities. Repository code still executes inside the runner, so
+profile jobs remain limited to trusted, allowlisted GitHub repositories. Artifacts are archived
+from fixed paths only and retrieved through the authenticated artifact endpoint.
+
+`BUILD_SERVER_ALLOWED_PROFILE_REPO_PREFIXES` is a second, narrower allowlist applied only to
+executable profile jobs. The cluster permits the `ORESoftware` and `sonus-auris` organizations;
+adding another organization requires an explicit manifest review. The broader clone allowlist used
+by image jobs does not implicitly grant profile execution.
+
+## Mobile, desktop, and GitOps boundary
+
+This EC2 node is a Linux builder. It directly covers Android, Flutter web, Flutter Linux desktop,
+Puppeteer, and Playwright. Apple requires Xcode on macOS; Windows desktop requires Windows. Those
+jobs are deliberately delegated to GitHub-hosted native runners (or future dedicated native
+workers), while this service reports those capabilities as delegated rather than claiming it can
+execute them.
+
+For Sonus Auris, successful builds never mutate the live workload. Deployment definitions and
+pinned source revisions live under `remote/argocd/`; a reviewed commit to this repository is the
+only desired-state change, and Argo CD performs reconciliation. The backend and Flutter web console
+therefore remain reproducible from Git history even if this build service is unavailable.
 
 Example:
 
@@ -121,9 +175,10 @@ Deploys are limited to namespaces listed in `BUILD_SERVER_ALLOWED_NAMESPACES`.
 
 ## Security notes
 
-This service is safe from arbitrary shell execution at the HTTP/API layer: callers can only request
-the fixed sequence `git clone`, `nerdctl build`, optional ECR `nerdctl login` + `nerdctl push`, and
-optional `kubectl apply` + `kubectl rollout status`.
+This service is safe from caller-selected shell execution at the HTTP/API layer: callers can only
+request the fixed image sequence or select a compiled-in CI profile. Profile scripts do invoke a
+shell inside their isolated runner container, but their text and images are operator-reviewed and
+cannot be overridden by the request.
 
 It is not a fully untrusted code sandbox. A Dockerfile is code, and a Kubernetes Deployment
 manifest is also code that can run pods. Today this build server should be used for trusted repos

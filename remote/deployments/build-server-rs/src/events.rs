@@ -76,7 +76,10 @@ async fn publish(state: &AppState, subject: &str, payload: serde_json::Value) {
     let bytes = payload.to_string().into_bytes();
     match nats.publish(subject.to_string(), bytes.into()).await {
         Ok(()) => {
-            state.counters.nats_published.fetch_add(1, Ordering::Relaxed);
+            state
+                .counters
+                .nats_published
+                .fetch_add(1, Ordering::Relaxed);
         }
         Err(error) => {
             state
@@ -187,9 +190,7 @@ async fn intake_once(state: &AppState, context: &jetstream::Context) -> Result<(
             // Invalid payloads can never succeed — terminate delivery.
             Err(crate::NatsSubmitError::Invalid(reason)) => {
                 tracing::warn!("rejecting NATS build request: {reason}");
-                message
-                    .ack_with(jetstream::AckKind::Term)
-                    .await
+                message.ack_with(jetstream::AckKind::Term).await
             }
             // Transient (queue full, DB down): NAK with delay for redelivery.
             Err(crate::NatsSubmitError::Transient(reason)) => {

@@ -222,6 +222,32 @@ spec:
     syncOptions:
       - CreateNamespace=true
 ---
+# Akrion's continuous learner is separated from the shared runtime so the AWS
+# and Hetzner clusters can declare different safe replica counts.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-akrion-training
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ORESoftware/k8s-cluster.git
+    targetRevision: dev
+    path: remote/argocd/akrion-training/overlays/aws
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - Validate=false
+      - DisableClientSideApplyMigration=true
+---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
