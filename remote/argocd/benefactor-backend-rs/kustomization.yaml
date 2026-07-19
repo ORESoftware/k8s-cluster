@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - benefactor-ghcr.externalsecret.yaml
+  - benefactor-backend-rs.deployment.yaml
+  - benefactor-backend-rs.service.yaml
+
+# The backend release workflow replaces this exact OCI digest after a
+# successful build. Argo CD deploys only the state committed to this file.
+images:
+  - name: ghcr.io/benefactor-cc/backend.rs
+    newName: ghcr.io/benefactor-cc/backend.rs
+    digest: sha256:199f3f9406fce86523e4294782f1c431374d71007ca74ef68ad9d672af52e0cb

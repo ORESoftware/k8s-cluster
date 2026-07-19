@@ -222,6 +222,27 @@ spec:
     syncOptions:
       - CreateNamespace=true
 ---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: benefactor-backend-rs
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ORESoftware/k8s-cluster.git
+    targetRevision: dev
+    path: remote/argocd/benefactor-backend-rs
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
 # fiducia.cloud — the sharded-multi-Raft coordination stack (data plane + control
 # plane + LB + website). Single-machine here on AWS (all pods co-located on the
 # one EC2 node); Hetzner runs the same stack spread across separate machines (see

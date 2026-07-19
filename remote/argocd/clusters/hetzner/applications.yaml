@@ -206,9 +206,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/benefactor-cc/backend.rs.git
-    targetRevision: main
-    path: k8s/ec2
+    repoURL: https://github.com/ORESoftware/k8s-cluster.git
+    targetRevision: dev
+    path: remote/argocd/benefactor-backend-rs
   destination:
     server: https://kubernetes.default.svc
     namespace: default
