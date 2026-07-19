@@ -78,6 +78,26 @@ impl FromRequestParts<SharedState> for Operator {
     }
 }
 
+impl Operator {
+    /// The authorization decision itself, kept separate from metrics so the
+    /// extractor has exactly one place to record the outcome.
+    async fn authorize(parts: &mut Parts, state: &SharedState) -> Result<Self, ServiceError> {
+        let verifier = state.verifier.as_ref().ok_or_else(|| {
+            // Fail closed. An unconfigured gate must never mean "allow".
+            ServiceError::Unavailable(
+                "Supabase auth is not configured; refusing to serve authenticated routes"
+                    .to_string(),
+            )
+        })?;
+        let header = parts
+            .headers
+            .get(axum::http::header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok());
+        let token = bearer_token(header).ok_or(ServiceError::Unauthorized)?;
+        verifier.authorize(&state.http, token).await
+    }
+}
+
 pub async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let _guard = observability::init();
     let config = ServiceConfig::from_env()?;
