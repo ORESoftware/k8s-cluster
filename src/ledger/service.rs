@@ -427,7 +427,13 @@ impl LedgerService {
         )?;
 
         let net_text: String = row.try_get("", "net")?;
-        Ok(net_text.parse().unwrap_or(0))
+        // As in `account_balance`: propagate a parse failure rather than
+        // silently reporting a zero roll-up.
+        net_text.parse().map_err(|e| {
+            AppError::LedgerInvariant(format!(
+                "summed balance {net_text:?} is not a valid integer: {e}"
+            ))
+        })
     }
 }
 
