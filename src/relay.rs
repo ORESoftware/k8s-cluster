@@ -314,17 +314,25 @@ async fn exit_pump(
     mut dest_r: OwnedReadHalf,
     mut prev_w: OwnedWriteHalf,
     mut sealer: Sealer,
+    idle: Option<Duration>,
 ) -> Result<()> {
     let mut buf = vec![0u8; EXIT_READ_CHUNK];
     loop {
-        let n = match dest_r.read(&mut buf).await {
-            Ok(0) => {
+        let read = dest_r.read(&mut buf);
+        // Idle-bounded (see middle_pump): a destination that accepts then stalls
+        // must not pin this pump and its circuit-slot permit indefinitely.
+        let outcome = match idle {
+            Some(d) => timeout(d, read).await.ok(),
+            None => Some(read.await),
+        };
+        let n = match outcome {
+            Some(Ok(0)) => {
                 let ct = sealer.seal(&Cell::End.encode()?)?;
                 let _ = write_frame(&mut prev_w, &ct).await;
                 break;
             }
-            Ok(n) => n,
-            Err(_) => break,
+            Some(Ok(n)) => n,
+            Some(Err(_)) | None => break, // read error or idle timeout
         };
         let cell = Cell::Data {
             bytes: buf[..n].to_vec(),
