@@ -197,6 +197,39 @@ impl Config {
             }
         }
 
+        // Fail-closed auth posture. The only legitimate reason to boot without
+        // API/admin authentication is local development, which must be an
+        // explicit, clearly-named opt-in — never a silent default.
+        let allow_insecure_dev = env_bool("BILLING_ALLOW_INSECURE_DEV", false);
+        let admin_ui_enabled = env_bool("BILLING_ADMIN_UI_ENABLED", true);
+        let admin_auth_bearer = optional_trimmed_env("BILLING_ADMIN_AUTH_BEARER");
+        let api_auth_bearer = optional_trimmed_env("BILLING_API_AUTH_BEARER");
+
+        if !allow_insecure_dev {
+            // Admin UI enabled without a bearer = no-op enforcement in
+            // `admin/security.rs` (it always-passes when the bearer is unset).
+            if admin_ui_enabled && admin_auth_bearer.is_none() {
+                anyhow::bail!(
+                    "refusing to boot: BILLING_ADMIN_UI_ENABLED is on but \
+                     BILLING_ADMIN_AUTH_BEARER is unset, which mounts an \
+                     unauthenticated admin UI. Set a high-entropy \
+                     BILLING_ADMIN_AUTH_BEARER, disable the admin UI with \
+                     BILLING_ADMIN_UI_ENABLED=false, or set \
+                     BILLING_ALLOW_INSECURE_DEV=1 for local development."
+                );
+            }
+            // An unset API bearer leaves the entire /v1 API open (the auth
+            // middleware always-passes when the bearer is unset).
+            if api_auth_bearer.is_none() {
+                anyhow::bail!(
+                    "refusing to boot: BILLING_API_AUTH_BEARER is unset, which \
+                     leaves the entire /v1 API open to anyone who can reach the \
+                     listener. Set a high-entropy BILLING_API_AUTH_BEARER, or set \
+                     BILLING_ALLOW_INSECURE_DEV=1 for local development."
+                );
+            }
+        }
+
         Ok(Self {
             host: env::var("BILLING_HOST").unwrap_or_else(|_| "0.0.0.0".into()),
             port: env::var("BILLING_PORT")
