@@ -20,6 +20,7 @@ spec:
   template:
     metadata:
       annotations:
+        dd.dev/usacc-source-revision: 'bf2c3a774591fec597bd884d3909dd96c9bb1318'
         dd.dev/telemetry-revision: '2026-06-08-usacc-rest-api'
       labels:
         app: usacc-rest-api-backend-rs
@@ -54,8 +55,19 @@ spec:
               cd /opt/dd-next-1/remote/deployments/usacc-rest-api-backend-rs
               export CARGO_HOME=/var/cache/usacc-rest-api-backend-rs/cargo
               export CARGO_TARGET_DIR=/var/cache/usacc-rest-api-backend-rs/target
+              for attempt in $(seq 1 120); do
+                actual_revision="$(git rev-parse HEAD)"
+                if [ "$actual_revision" = "$USACC_SOURCE_REVISION" ]; then
+                  break
+                fi
+                echo "waiting for GitOps source revision expected=$USACC_SOURCE_REVISION actual=$actual_revision attempt=$attempt/120" >&2
+                sleep 5
+              done
+              test "$(git rev-parse HEAD)" = "$USACC_SOURCE_REVISION"
               exec /usr/local/cargo/bin/cargo run --release --locked
           env:
+            - name: USACC_SOURCE_REVISION
+              value: 'bf2c3a774591fec597bd884d3909dd96c9bb1318'
             - name: HOST
               value: 0.0.0.0
             - name: PORT

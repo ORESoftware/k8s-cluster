@@ -9,6 +9,7 @@ on:
       - "remote/deployments/container-pool-rs/**"
       - "remote/deployments/queue-consumer-rs/**"
       - "remote/deployments/rest-api-rs/**"
+      - "remote/deployments/usacc-rest-api-backend-rs"
       - "remote/deployments/host-cron/**"
       - "remote/deployments/dev-server/src/server.ts"
       - "remote/deployments/gcs/**"
