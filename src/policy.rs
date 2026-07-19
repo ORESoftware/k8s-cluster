@@ -309,6 +309,23 @@ mod tests {
     }
 
     #[test]
+    fn blocks_additional_reserved_and_embedded_ranges() {
+        // 192.0.0.0/24 (incl. NAT64/DS-Lite) and 192.88.99.0/24 (6to4 relay).
+        assert!(is_blocked("192.0.0.170".parse().unwrap()));
+        assert!(is_blocked("192.0.0.1".parse().unwrap()));
+        assert!(is_blocked("192.88.99.1".parse().unwrap()));
+        // Neighbouring /24s stay public.
+        assert!(!is_blocked("192.0.1.1".parse().unwrap()));
+        assert!(!is_blocked("192.88.98.1".parse().unwrap()));
+        // IPv4-translated (::ffff:0:0/96) wrapping loopback.
+        assert!(is_blocked("::ffff:0:7f00:1".parse().unwrap())); // 127.0.0.1
+        // Teredo (2001:0000::/32) with a bit-inverted private client v4 (10.0.0.1).
+        assert!(is_blocked("2001:0:0:0:0:0:f5ff:fffe".parse().unwrap()));
+        // Teredo wrapping a public client v4 (1.1.1.1) stays allowed.
+        assert!(!is_blocked("2001:0:0:0:0:0:fefe:fefe".parse().unwrap()));
+    }
+
+    #[test]
     fn parses_default_exit_port_denylist() {
         let ports = parse_ports("25, 2525,25").unwrap();
         assert_eq!(ports.len(), 2);
