@@ -9,21 +9,46 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   integration:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
+      - name: Checkout superproject
+        uses: actions/checkout@v7
+
+      - name: Require private-submodule credential
+        env:
+          SUBMODULE_TOKEN: ${{ secrets.SONUS_SUBMODULE_TOKEN }}
+        run: |
+          if [[ -z "$SUBMODULE_TOKEN" ]]; then
+            echo "::error::Add SONUS_SUBMODULE_TOKEN: a read-only credential with Contents access to the monorepo's private submodules. See docs/MOBILE_RELEASES.md."
+            exit 1
+          fi
+
       - name: Checkout with submodules
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           submodules: recursive
-          # Private submodules need a read key: create an SSH deploy key with
-          # read access to the private repos and store it as SUBMODULE_SSH_KEY.
-          ssh-key: ${{ secrets.SUBMODULE_SSH_KEY }}
+          # GITHUB_TOKEN is scoped to this repo and cannot read sibling private
+          # repos. Prefer a GitHub App token; a minimal fine-grained PAT is the
+          # interim option. Do not use a broadly-scoped personal token.
+          token: ${{ secrets.SONUS_SUBMODULE_TOKEN }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            apps/sonus-auris-interfaces/package-lock.json
+            apps/sonusauris-app-proxy/package-lock.json
 
       - name: Interfaces contract is self-consistent
         working-directory: apps/sonus-auris-interfaces

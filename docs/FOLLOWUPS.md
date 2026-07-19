@@ -154,18 +154,21 @@ magic-link email template carries `{{ .Token }}`.
   this invariant: never pin a submodule to a commit you haven't pushed, or the
   `integration` CI checkout fails.
 - **CI secrets.** proxy `deploy.yml` needs `CLOUDFLARE_API_TOKEN` (Workers
-  Scripts: Edit); monorepo `integration` CI needs `SUBMODULE_SSH_KEY` for the
-  private submodules; api-server/console CI are self-contained.
+  Scripts: Edit); monorepo integration and pinned-console CI need
+  `SONUS_SUBMODULE_TOKEN`, preferably a short-lived GitHub App token with
+  read-only Contents permission on the private sibling repos. Do not reuse a
+  broad personal CLI token. Mobile signing values belong only in the protected
+  `mobile-production` environment (see `MOBILE_RELEASES.md`).
 - **WebSocket integration test.** `sonus-auris-web-server.rs` unit-tests the
   change-gate hash but not the `/ws` stream loop (auth-before-upgrade, OOB push,
   close on revocation). Add an axum `WebSocket` integration test.
 - **Console device-mutation widget tests.** rename/revoke/delete are
   controller-tested (`console_controller_test.dart`) but not driven through the
   `devices_screen.dart` dialogs.
-- **E2E against a deployed console.** the Puppeteer/Playwright smokes honor
-  `CONSOLE_BASE_URL` and there's a `k8s-job.yaml` for the cluster's browser
-  runners, but no console URL is deployed yet. Deploy the web build and point the
-  cluster job at it (or wire it into `~/codes/ores/k8s-cluster/remote/tests`).
+- **E2E against the deployed console.** the Argo workload and gateway path now
+  exist in `k8s-cluster`, and Puppeteer/Playwright honor `CONSOLE_BASE_URL`.
+  Finish `console.sonusauris.app` DNS/TLS, point the cluster smoke job at it,
+  and make that post-Argo check a promotion gate.
 - **Dedicated Postgres namespace.** Tables currently live in the Supabase
   `public` schema of the sonus-auris project. If a dedicated schema/namespace is
   wanted beyond project isolation, move them and update the generator's

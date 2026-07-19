@@ -1,0 +1,83 @@
+name: pinned Flutter console build
+
+# The console repo owns full web/desktop CI. This workflow proves the exact
+# private console SHA pinned by the monorepo still builds and passes both browser
+# drivers as part of the coherent release set.
+on:
+  push:
+    branches: [main]
+    paths:
+      - apps/sonus-auris-web-desktop.dart
+      - .gitmodules
+      - .github/workflows/console-pinned.yml
+  pull_request:
+    paths:
+      - apps/sonus-auris-web-desktop.dart
+      - .gitmodules
+      - .github/workflows/console-pinned.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pinned-console-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web-and-browsers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Require private-submodule credential
+        env:
+          SUBMODULE_TOKEN: ${{ secrets.SONUS_SUBMODULE_TOKEN }}
+        run: |
+          if [[ -z "$SUBMODULE_TOKEN" ]]; then
+            echo "::error::Add SONUS_SUBMODULE_TOKEN with read-only Contents access to the private console repo."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.SONUS_SUBMODULE_TOKEN }}
+
+      - name: Initialize the pinned console only
+        run: >-
+          git -c 'url.https://github.com/.insteadOf=git@github.com:'
+          submodule update --init --depth 1 apps/sonus-auris-web-desktop.dart
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.44.2
+          cache: true
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/sonus-auris-web-desktop.dart/e2e/package-lock.json
+
+      - name: Analyze, test, and build the pinned console
+        working-directory: apps/sonus-auris-web-desktop.dart
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+          flutter build web --release
+
+      - name: Run pinned Puppeteer and Playwright smokes
+        working-directory: apps/sonus-auris-web-desktop.dart/e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npm test
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: pinned-console-browser-evidence
+          path: apps/sonus-auris-web-desktop.dart/e2e/artifacts/*.png
+          if-no-files-found: ignore
+          retention-days: 7

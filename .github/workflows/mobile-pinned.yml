@@ -1,0 +1,93 @@
+name: pinned Flutter mobile build
+
+# The app repository owns release artifacts. This workflow proves that the exact
+# Flutter SHA pinned by the monorepo still passes mobile checks as a coherent
+# release-set member. It only initializes the public Flutter submodule, so it is
+# independent of the private-submodule credential used by integration.yml.
+on:
+  push:
+    branches: [main]
+    paths:
+      - apps/sonus-auris-ui.dart
+      - .gitmodules
+      - .github/workflows/mobile-pinned.yml
+  pull_request:
+    paths:
+      - apps/sonus-auris-ui.dart
+      - .gitmodules
+      - .github/workflows/mobile-pinned.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pinned-mobile-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-pinned:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Initialize pinned Flutter app only
+        run: >-
+          git -c 'url.https://github.com/.insteadOf=git@github.com:'
+          submodule update --init --depth 1 apps/sonus-auris-ui.dart
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.44.2
+          cache: true
+
+      - name: Analyze and test pinned app
+        working-directory: apps/sonus-auris-ui.dart
+        run: |
+          flutter pub get
+          flutter analyze --no-fatal-infos
+          flutter test
+
+      - name: Compile pinned Android debug APK
+        working-directory: apps/sonus-auris-ui.dart
+        run: >-
+          flutter build apk --debug
+          --dart-define=SONUS_BACKEND_BASE_URL=https://ci.invalid
+          --dart-define=SONUS_SUPABASE_URL=https://ci.supabase.co
+          --dart-define=SONUS_SUPABASE_ANON_KEY=sb_publishable_ci_compile_only
+
+  ios-pinned:
+    # The app repo already validates every pull request. Repeat the macOS build
+    # only when main's release-set pin changes or a maintainer asks explicitly.
+    if: ${{ github.event_name != 'pull_request' }}
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Initialize pinned Flutter app only
+        run: >-
+          git -c 'url.https://github.com/.insteadOf=git@github.com:'
+          submodule update --init --depth 1 apps/sonus-auris-ui.dart
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.44.2
+          cache: true
+
+      - name: Compile pinned unsigned iPhone release
+        working-directory: apps/sonus-auris-ui.dart
+        run: >-
+          flutter build ios --release --no-codesign
+          --dart-define=SONUS_BACKEND_BASE_URL=https://ci.invalid
+          --dart-define=SONUS_SUPABASE_URL=https://ci.supabase.co
+          --dart-define=SONUS_SUPABASE_ANON_KEY=sb_publishable_ci_compile_only
