@@ -113,32 +113,48 @@ surfaces are *data/edge*, not k8s objects:
 | 7 | NetworkPolicies in ns `default` | quaestor-infra + us | correctness relies on `part-of` label discipline |
 | 8 | `dd-fabrication-server` in `default` | already scraped by our Prometheus; new `fabrication-server-rs` checkout has no `deploy/k8s` yet | if authored to the `default` convention, name/port(8113) clash |
 
-## fiducia — CRITICAL, multi-cluster by design
+## fiducia — CRITICAL: split by COMPONENT, not by cluster
 
-**fiducia's core does NOT primarily run on k8s-cluster.** fiducia-infra owns a
-cross-cloud Raft mesh (hetzner/civo/vultr; one Raft member *per cluster*, shard count 256,
-RF3, peers over public DNS). k8s-cluster hosts only a **partial/satellite** fiducia
-(`remote/argocd/fiducia` + `fiducia-hetzner`: all 3 members in one cluster,
-`rust:1.95-bookworm` in-pod build vs fiducia-infra's `ghcr.io/fiducia-cloud/*` images).
+The boundary here is per-component. fiducia's **stateful Raft core does not belong on
+k8s-cluster at all**; its **stateless generic servers do**.
 
-They share the `fiducia` **namespace name** and identically-named StatefulSets/Services/LB
-with **incompatible specs**, and both run `prune: true, selfHeal: true`. Today they are held
-apart only by fiducia-infra's cluster label gate (`environment=nonproduction`). That is one
-mislabel away from two controllers mutually pruning a Raft cluster.
+- **Owned exclusively by fiducia-infra, on its own clusters (hetzner/civo/vultr):**
+  `fiducia-node.rs` and `fiducia-brain.rs` — the Raft data-plane + brain. Cross-cloud mesh,
+  one Raft member *per cluster*, shard count 256, RF3, peers over public DNS,
+  `ghcr.io/fiducia-cloud/*` images, hard cross-host anti-affinity. This is a
+  cluster-formation topology that only makes sense on fiducia's own multi-cloud fleet.
+- **Legitimately on k8s-cluster (Layer-2 tenants):** fiducia's **generic Rust API server and
+  Rust web server** — stateless, namespace-scoped, standard `3fa-backend`-style contract.
+  They consume the Raft core over the network (public DNS to the mesh); they do not form part
+  of the quorum.
+
+**The current problem:** `remote/argocd/fiducia` + `fiducia-hetzner` deploy the
+`fiducia-node`/`fiducia-brain` **StatefulSets** here — i.e. k8s-cluster is running a *second,
+divergent* copy of the very core that fiducia-infra owns (all 3 members in one cluster,
+`rust:1.95-bookworm` in-pod build vs the mesh's pinned images; conflicting `fiducia`
+Namespace PSA label `baseline` vs `privileged`; `serviceName` `fiducia-node-peer` vs
+`fiducia-node`). Both hubs run `prune:true, selfHeal:true`, held apart only by fiducia-infra's
+`environment=nonproduction` label gate — one mislabel from two controllers mutually pruning a
+Raft cluster.
 
 **Hardening rule for fiducia (do not fold the repos together):**
 
-1. Treat the k8s-cluster fiducia and the fiducia-infra mesh as **distinct instances**.
-   Never register a single physical cluster into both ArgoCD hubs.
-2. Make the seam impossible to cross by accident: the k8s-cluster fiducia app should carry a
-   cluster/context assertion, and fiducia-infra's generator must never emit a destination
-   that resolves to the k8s-cluster context (belt-and-suspenders beyond the label gate).
-3. Reconcile the divergences that would corrupt a member if a pod migrated: PSA label
-   (`privileged` vs `baseline`), `serviceName` (`fiducia-node` vs `fiducia-node-peer`),
-   image strategy. If they're meant to stay different, **rename** the k8s-cluster instance's
-   objects (e.g. `fiducia-sat-*`) so the names can't collide at all.
-4. TLS/LB secrets (`fiducia-load-balance-tls`) are provisioned out-of-band on both sides —
-   confirm they don't both try to own the same cloud LB.
+1. **Remove the Raft core from k8s-cluster.** Delete/retire the `fiducia-node` and
+   `fiducia-brain` StatefulSets (and their LB/PDB/NetworkPolicy) from `remote/argocd/fiducia`
+   and `fiducia-hetzner`, unless there is a deliberate reason to run a *local dev quorum* —
+   in which case **rename** its objects (e.g. `fiducia-sat-node`) so names can never collide
+   with the mesh's. The mesh, on fiducia-infra's clusters, is the single source of truth for
+   the core.
+2. **Keep only the generic api/web servers here**, in the `fiducia` namespace, as normal
+   Layer-2 apps: their manifests should live in the fiducia app repo's `deploy/k8s`
+   (`repoURL` → the app repo), governed by a `fiducia` `AppProject`, consuming the mesh via
+   config/`ExternalSecret` (peer DNS, tokens) — never re-declaring node/brain objects.
+3. **Belt-and-suspenders on the seam:** never register a single physical cluster into both
+   ArgoCD hubs; fiducia-infra's generator must never emit a destination resolving to the
+   k8s-cluster context, independent of the label gate.
+4. TLS/LB secrets (`fiducia-load-balance-tls`) are out-of-band on both sides — the api/web
+   tenants on k8s-cluster should not own a `fiducia-load-balance` LoadBalancer at all; that
+   is a mesh concern.
 
 ## Central systemic gaps (independent of any single org)
 
