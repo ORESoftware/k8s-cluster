@@ -16,6 +16,8 @@ import robotsParser from 'robots-parser';
 import type { Browser as PlaywrightBrowser, Page as PlaywrightPage } from 'playwright';
 import type { Browser as PuppeteerBrowser, Page as PuppeteerPage } from 'puppeteer';
 
+import type { ContactExtraction } from './contacts.js';
+
 import {
   ProxyPool,
   parseProxyEntry,
