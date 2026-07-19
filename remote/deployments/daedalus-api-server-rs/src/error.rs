@@ -21,7 +21,6 @@ pub(crate) enum ServiceError {
     /// A dependency (database, identity provider) is unavailable. The detail is
     /// logged but only a generic message reaches the caller.
     Unavailable(String),
-    Internal(String),
 }
 
 impl ServiceError {
@@ -35,7 +34,6 @@ impl ServiceError {
                 "service_unavailable",
                 None,
             ),
-            Self::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal", None),
         }
     }
 }
@@ -45,7 +43,6 @@ impl IntoResponse for ServiceError {
         // Log the full detail server-side before discarding it for the client.
         match &self {
             Self::Unavailable(detail) => tracing::warn!(error = %detail, "dependency unavailable"),
-            Self::Internal(detail) => tracing::error!(error = %detail, "internal error"),
             _ => {}
         }
         let (status, code, detail) = self.parts();
