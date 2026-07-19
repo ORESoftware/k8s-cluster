@@ -153,12 +153,22 @@ impl Circuit {
             }
         };
 
-        // Circuit -> app: peel layers until a Data (or End) cell.
+        // Circuit -> app: peel layers until a Data (or End) cell. The backward
+        // read is bounded by an idle timeout so a silent/black-holed circuit
+        // cannot pin this detached splice task (and its entry-relay socket)
+        // forever after the app side has already gone away.
         let down = async move {
             loop {
-                let frame = match read_frame(&mut r0_r).await {
-                    Ok(f) => f,
-                    Err(_) => break,
+                let read = read_frame(&mut r0_r);
+                let frame = match idle {
+                    Some(d) => match timeout(d, read).await {
+                        Ok(Ok(f)) => f,
+                        _ => break, // circuit closed or idle timeout
+                    },
+                    None => match read.await {
+                        Ok(f) => f,
+                        Err(_) => break,
+                    },
                 };
                 match peel_backward(&mut openers_bwd, frame) {
                     Ok(Peeled::Data(bytes)) => {
