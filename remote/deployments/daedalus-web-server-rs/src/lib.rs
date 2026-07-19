@@ -67,7 +67,10 @@ impl FromRequestParts<SharedState> for Operator {
     ) -> Result<Self, Self::Rejection> {
         let result = Self::authorize(parts, state).await;
         match &result {
-            Ok(_) => state.metrics.record_authorized(),
+            Ok(operator) => {
+                state.metrics.record_authorized();
+                tracing::debug!(auth.subject = %operator.subject, "request authorized");
+            }
             Err(_) => state.metrics.record_rejected(),
         }
         result
