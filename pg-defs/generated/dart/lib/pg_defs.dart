@@ -13661,6 +13661,338 @@ class VapiEventsRow {
   }
 }
 
+const fabPlansTable = "daedalus.fab_plans";
+const fabPlansSelectSql = "select\n      id::text as id,\n      owner_email,\n      title,\n      goal,\n      process_family,\n      status,\n      document::text as document_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from daedalus.fab_plans";
+
+const fabPlansProcessFamilyValues = <String>["additive", "subtractive", "hybrid"];
+const fabPlansStatusValues = <String>["draft", "planning", "planned", "released", "archived"];
+
+class FabPlansRow {
+  const FabPlansRow({
+    required this.id,
+    required this.ownerEmail,
+    required this.title,
+    required this.goal,
+    required this.processFamily,
+    required this.status,
+    this.document,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String ownerEmail;
+  final String title;
+  final String goal;
+  final String processFamily;
+  final String status;
+  final Map<String, Object?>? document;
+  final String createdAt;
+  final String updatedAt;
+
+  factory FabPlansRow.fromJson(Map<String, Object?> json) {
+    return FabPlansRow(
+      id: _readRequiredString(json, "id"),
+      ownerEmail: _readRequiredString(json, "ownerEmail"),
+      title: _readRequiredString(json, "title"),
+      goal: _readRequiredString(json, "goal"),
+      processFamily: _readRequiredString(json, "processFamily"),
+      status: _readRequiredString(json, "status"),
+      document: _readRequiredObject(json, "document"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "ownerEmail": ownerEmail,
+    "title": title,
+    "goal": goal,
+    "processFamily": processFamily,
+    "status": status,
+    "document": document,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (utf8.encode(ownerEmail).length > 320) {
+      errors.add("fab_plans.owner_email exceeds 320 bytes");
+    }
+    if (utf8.encode(ownerEmail).length < 3) {
+      errors.add("fab_plans.owner_email is below 3 bytes");
+    }
+    if (utf8.encode(title).length > 200) {
+      errors.add("fab_plans.title exceeds 200 bytes");
+    }
+    if (utf8.encode(title).length < 1) {
+      errors.add("fab_plans.title is below 1 bytes");
+    }
+    if (utf8.encode(goal).length > 20000) {
+      errors.add("fab_plans.goal exceeds 20000 bytes");
+    }
+    if (utf8.encode(goal).length < 1) {
+      errors.add("fab_plans.goal is below 1 bytes");
+    }
+    if (!fabPlansProcessFamilyValues.contains(processFamily)) {
+      errors.add("unsupported fab_plans.process_family");
+    }
+    if (!fabPlansStatusValues.contains(status)) {
+      errors.add("unsupported fab_plans.status");
+    }
+    return errors;
+  }
+}
+
+const fabDesignsTable = "daedalus.fab_designs";
+const fabDesignsSelectSql = "select\n      id::text as id,\n      plan_id::text as plan_id,\n      filename,\n      format,\n      storage_uri,\n      size_bytes,\n      content_hash,\n      geometry::text as geometry_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_designs";
+
+const fabDesignsFormatValues = <String>["step", "stl", "3mf", "dxf", "iges", "obj"];
+
+class FabDesignsRow {
+  const FabDesignsRow({
+    required this.id,
+    required this.planId,
+    required this.filename,
+    required this.format,
+    required this.storageUri,
+    required this.sizeBytes,
+    this.contentHash,
+    required this.geometry,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String planId;
+  final String filename;
+  final String format;
+  final String storageUri;
+  final int sizeBytes;
+  final String? contentHash;
+  final Map<String, Object?> geometry;
+  final String createdAt;
+
+  factory FabDesignsRow.fromJson(Map<String, Object?> json) {
+    return FabDesignsRow(
+      id: _readRequiredString(json, "id"),
+      planId: _readRequiredString(json, "planId"),
+      filename: _readRequiredString(json, "filename"),
+      format: _readRequiredString(json, "format"),
+      storageUri: _readRequiredString(json, "storageUri"),
+      sizeBytes: _readRequiredInt(json, "sizeBytes"),
+      contentHash: _readOptionalString(json, "contentHash"),
+      geometry: _readRequiredObject(json, "geometry"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "planId": planId,
+    "filename": filename,
+    "format": format,
+    "storageUri": storageUri,
+    "sizeBytes": sizeBytes,
+    "contentHash": contentHash,
+    "geometry": geometry,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (utf8.encode(filename).length > 400) {
+      errors.add("fab_designs.filename exceeds 400 bytes");
+    }
+    if (utf8.encode(filename).length < 1) {
+      errors.add("fab_designs.filename is below 1 bytes");
+    }
+    if (!fabDesignsFormatValues.contains(format)) {
+      errors.add("unsupported fab_designs.format");
+    }
+    if (utf8.encode(storageUri).length > 2000) {
+      errors.add("fab_designs.storage_uri exceeds 2000 bytes");
+    }
+    if (utf8.encode(storageUri).length < 1) {
+      errors.add("fab_designs.storage_uri is below 1 bytes");
+    }
+    return errors;
+  }
+}
+
+const fabInstructionsTable = "daedalus.fab_instructions";
+const fabInstructionsSelectSql = "select\n      id::text as id,\n      plan_id::text as plan_id,\n      revision,\n      machine_profile,\n      dialect,\n      storage_uri,\n      content_hash,\n      validated,\n      validation::text as validation_json,\n      released_by_email,\n      to_char(released_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as released_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_instructions";
+
+const fabInstructionsDialectValues = <String>["gcode", "nc", "apt", "proprietary"];
+
+class FabInstructionsRow {
+  const FabInstructionsRow({
+    required this.id,
+    required this.planId,
+    required this.revision,
+    required this.machineProfile,
+    required this.dialect,
+    required this.storageUri,
+    this.contentHash,
+    required this.validated,
+    required this.validation,
+    this.releasedByEmail,
+    this.releasedAt,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String planId;
+  final int revision;
+  final String machineProfile;
+  final String dialect;
+  final String storageUri;
+  final String? contentHash;
+  final bool validated;
+  final Map<String, Object?> validation;
+  final String? releasedByEmail;
+  final String? releasedAt;
+  final String createdAt;
+
+  factory FabInstructionsRow.fromJson(Map<String, Object?> json) {
+    return FabInstructionsRow(
+      id: _readRequiredString(json, "id"),
+      planId: _readRequiredString(json, "planId"),
+      revision: _readRequiredInt(json, "revision"),
+      machineProfile: _readRequiredString(json, "machineProfile"),
+      dialect: _readRequiredString(json, "dialect"),
+      storageUri: _readRequiredString(json, "storageUri"),
+      contentHash: _readOptionalString(json, "contentHash"),
+      validated: _readRequiredBool(json, "validated"),
+      validation: _readRequiredObject(json, "validation"),
+      releasedByEmail: _readOptionalString(json, "releasedByEmail"),
+      releasedAt: _readOptionalString(json, "releasedAt"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "planId": planId,
+    "revision": revision,
+    "machineProfile": machineProfile,
+    "dialect": dialect,
+    "storageUri": storageUri,
+    "contentHash": contentHash,
+    "validated": validated,
+    "validation": validation,
+    "releasedByEmail": releasedByEmail,
+    "releasedAt": releasedAt,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (revision < 1) {
+      errors.add("fab_instructions.revision is below the minimum");
+    }
+    if (utf8.encode(machineProfile).length > 200) {
+      errors.add("fab_instructions.machine_profile exceeds 200 bytes");
+    }
+    if (utf8.encode(machineProfile).length < 1) {
+      errors.add("fab_instructions.machine_profile is below 1 bytes");
+    }
+    if (!fabInstructionsDialectValues.contains(dialect)) {
+      errors.add("unsupported fab_instructions.dialect");
+    }
+    if (utf8.encode(storageUri).length > 2000) {
+      errors.add("fab_instructions.storage_uri exceeds 2000 bytes");
+    }
+    if (utf8.encode(storageUri).length < 1) {
+      errors.add("fab_instructions.storage_uri is below 1 bytes");
+    }
+    return errors;
+  }
+}
+
+const fabRunsTable = "daedalus.fab_runs";
+const fabRunsSelectSql = "select\n      id::text as id,\n      status,\n      machine_id,\n      operator_email,\n      progress,\n      as_built::text as as_built_json,\n      error,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_runs";
+
+const fabRunsStatusValues = <String>["queued", "running", "succeeded", "failed", "aborted"];
+
+class FabRunsRow {
+  const FabRunsRow({
+    required this.id,
+    required this.status,
+    required this.machineId,
+    this.operatorEmail,
+    required this.progress,
+    required this.asBuilt,
+    this.error,
+    this.startedAt,
+    this.finishedAt,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String status;
+  final String machineId;
+  final String? operatorEmail;
+  final int progress;
+  final Map<String, Object?> asBuilt;
+  final String? error;
+  final String? startedAt;
+  final String? finishedAt;
+  final String createdAt;
+
+  factory FabRunsRow.fromJson(Map<String, Object?> json) {
+    return FabRunsRow(
+      id: _readRequiredString(json, "id"),
+      status: _readRequiredString(json, "status"),
+      machineId: _readRequiredString(json, "machineId"),
+      operatorEmail: _readOptionalString(json, "operatorEmail"),
+      progress: _readRequiredInt(json, "progress"),
+      asBuilt: _readRequiredObject(json, "asBuilt"),
+      error: _readOptionalString(json, "error"),
+      startedAt: _readOptionalString(json, "startedAt"),
+      finishedAt: _readOptionalString(json, "finishedAt"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "status": status,
+    "machineId": machineId,
+    "operatorEmail": operatorEmail,
+    "progress": progress,
+    "asBuilt": asBuilt,
+    "error": error,
+    "startedAt": startedAt,
+    "finishedAt": finishedAt,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!fabRunsStatusValues.contains(status)) {
+      errors.add("unsupported fab_runs.status");
+    }
+    if (utf8.encode(machineId).length > 200) {
+      errors.add("fab_runs.machine_id exceeds 200 bytes");
+    }
+    if (utf8.encode(machineId).length < 1) {
+      errors.add("fab_runs.machine_id is below 1 bytes");
+    }
+    if (progress < 0) {
+      errors.add("fab_runs.progress is below the minimum");
+    }
+    if (progress > 100) {
+      errors.add("fab_runs.progress is above the maximum");
+    }
+    if (error != null && utf8.encode(error!).length > 20000) {
+      errors.add("fab_runs.error exceeds 20000 bytes");
+    }
+    return errors;
+  }
+}
+
 String _readRequiredString(Map<String, Object?> json, String key) {
   final value = json[key];
   if (value is String) return value;

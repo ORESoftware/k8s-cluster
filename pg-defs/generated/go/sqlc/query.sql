@@ -2160,3 +2160,63 @@ update t2v.vapi_events set vapi_call_id = $2, event_type = $3, payload = $4 wher
 
 -- name: DeleteVapiEvents :exec
 delete from t2v.vapi_events where id = $1;
+
+-- name: ListFabPlans :many
+select id, owner_email, title, goal, process_family, status, document, created_at, updated_at from daedalus.fab_plans;
+
+-- name: GetFabPlans :one
+select id, owner_email, title, goal, process_family, status, document, created_at, updated_at from daedalus.fab_plans where id = $1 limit 1;
+
+-- name: CreateFabPlans :one
+insert into daedalus.fab_plans (id, owner_email, title, goal, process_family, status, document, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id, owner_email, title, goal, process_family, status, document, created_at, updated_at;
+
+-- name: UpdateFabPlans :one
+update daedalus.fab_plans set owner_email = $2, title = $3, goal = $4, process_family = $5, status = $6, document = $7, updated_at = $8 where id = $1 returning id, owner_email, title, goal, process_family, status, document, created_at, updated_at;
+
+-- name: DeleteFabPlans :exec
+delete from daedalus.fab_plans where id = $1;
+
+-- name: ListFabDesigns :many
+select id, plan_id, filename, format, storage_uri, size_bytes, content_hash, geometry, created_at from daedalus.fab_designs;
+
+-- name: GetFabDesigns :one
+select id, plan_id, filename, format, storage_uri, size_bytes, content_hash, geometry, created_at from daedalus.fab_designs where id = $1 limit 1;
+
+-- name: CreateFabDesigns :one
+insert into daedalus.fab_designs (id, plan_id, filename, format, storage_uri, size_bytes, content_hash, geometry, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id, plan_id, filename, format, storage_uri, size_bytes, content_hash, geometry, created_at;
+
+-- name: UpdateFabDesigns :one
+update daedalus.fab_designs set plan_id = $2, filename = $3, format = $4, storage_uri = $5, size_bytes = $6, content_hash = $7, geometry = $8 where id = $1 returning id, plan_id, filename, format, storage_uri, size_bytes, content_hash, geometry, created_at;
+
+-- name: DeleteFabDesigns :exec
+delete from daedalus.fab_designs where id = $1;
+
+-- name: ListFabInstructions :many
+select id, plan_id, revision, machine_profile, dialect, storage_uri, content_hash, validated, validation, released_by_email, released_at, created_at from daedalus.fab_instructions;
+
+-- name: GetFabInstructions :one
+select id, plan_id, revision, machine_profile, dialect, storage_uri, content_hash, validated, validation, released_by_email, released_at, created_at from daedalus.fab_instructions where id = $1 limit 1;
+
+-- name: CreateFabInstructions :one
+insert into daedalus.fab_instructions (id, plan_id, revision, machine_profile, dialect, storage_uri, content_hash, validated, validation, released_by_email, released_at, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) returning id, plan_id, revision, machine_profile, dialect, storage_uri, content_hash, validated, validation, released_by_email, released_at, created_at;
+
+-- name: UpdateFabInstructions :one
+update daedalus.fab_instructions set plan_id = $2, revision = $3, machine_profile = $4, dialect = $5, storage_uri = $6, content_hash = $7, validated = $8, validation = $9, released_by_email = $10, released_at = $11 where id = $1 returning id, plan_id, revision, machine_profile, dialect, storage_uri, content_hash, validated, validation, released_by_email, released_at, created_at;
+
+-- name: DeleteFabInstructions :exec
+delete from daedalus.fab_instructions where id = $1;
+
+-- name: ListFabRuns :many
+select id, status, machine_id, operator_email, progress, as_built, error, started_at, finished_at, created_at from daedalus.fab_runs;
+
+-- name: GetFabRuns :one
+select id, status, machine_id, operator_email, progress, as_built, error, started_at, finished_at, created_at from daedalus.fab_runs where id = $1 limit 1;
+
+-- name: CreateFabRuns :one
+insert into daedalus.fab_runs (id, status, machine_id, operator_email, progress, as_built, error, started_at, finished_at, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id, status, machine_id, operator_email, progress, as_built, error, started_at, finished_at, created_at;
+
+-- name: UpdateFabRuns :one
+update daedalus.fab_runs set status = $2, machine_id = $3, operator_email = $4, progress = $5, as_built = $6, error = $7, started_at = $8, finished_at = $9 where id = $1 returning id, status, machine_id, operator_email, progress, as_built, error, started_at, finished_at, created_at;
+
+-- name: DeleteFabRuns :exec
+delete from daedalus.fab_runs where id = $1;

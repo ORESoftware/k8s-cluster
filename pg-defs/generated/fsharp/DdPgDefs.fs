@@ -12138,3 +12138,255 @@ let vapiEventsRowOfRow (get: int -> string) (isNullAt: int -> bool) : VapiEvents
       VapiEventsPayload = get 3
       VapiEventsCreatedAt = get 4
     }
+
+let fabPlansTable = "daedalus.fab_plans"
+let fabPlansColumns = [ "id"; "owner_email"; "title"; "goal"; "process_family"; "status"; "document"; "created_at"; "updated_at" ]
+let fabPlansSelectSql = "select\n      id::text as id,\n      owner_email,\n      title,\n      goal,\n      process_family,\n      status,\n      document::text as document_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from daedalus.fab_plans"
+
+[<RequireQualifiedAccess>]
+type FabPlansProcessFamily =
+    | Additive
+    | Subtractive
+    | Hybrid
+
+let fabPlansProcessFamilyToString (value: FabPlansProcessFamily) : string =
+    match value with
+    | FabPlansProcessFamily.Additive -> "additive"
+    | FabPlansProcessFamily.Subtractive -> "subtractive"
+    | FabPlansProcessFamily.Hybrid -> "hybrid"
+
+let parseFabPlansProcessFamily (value: string) : Result<FabPlansProcessFamily, string> =
+    match value with
+    | "additive" -> Ok FabPlansProcessFamily.Additive
+    | "subtractive" -> Ok FabPlansProcessFamily.Subtractive
+    | "hybrid" -> Ok FabPlansProcessFamily.Hybrid
+    | _ -> Error ("unsupported fab_plans.process_family: " + value)
+
+[<RequireQualifiedAccess>]
+type FabPlansStatus =
+    | Draft
+    | Planning
+    | Planned
+    | Released
+    | Archived
+
+let fabPlansStatusToString (value: FabPlansStatus) : string =
+    match value with
+    | FabPlansStatus.Draft -> "draft"
+    | FabPlansStatus.Planning -> "planning"
+    | FabPlansStatus.Planned -> "planned"
+    | FabPlansStatus.Released -> "released"
+    | FabPlansStatus.Archived -> "archived"
+
+let parseFabPlansStatus (value: string) : Result<FabPlansStatus, string> =
+    match value with
+    | "draft" -> Ok FabPlansStatus.Draft
+    | "planning" -> Ok FabPlansStatus.Planning
+    | "planned" -> Ok FabPlansStatus.Planned
+    | "released" -> Ok FabPlansStatus.Released
+    | "archived" -> Ok FabPlansStatus.Archived
+    | _ -> Error ("unsupported fab_plans.status: " + value)
+
+type FabPlansRow =
+    { FabPlansId: string
+      FabPlansOwnerEmail: string
+      FabPlansTitle: string
+      FabPlansGoal: string
+      FabPlansProcessFamily: string
+      FabPlansStatus: string
+      FabPlansDocument: string option
+      FabPlansCreatedAt: string
+      FabPlansUpdatedAt: string
+    }
+
+let fabPlansRowOfRow (get: int -> string) (isNullAt: int -> bool) : FabPlansRow =
+    { FabPlansId = get 0
+      FabPlansOwnerEmail = get 1
+      FabPlansTitle = get 2
+      FabPlansGoal = get 3
+      FabPlansProcessFamily = get 4
+      FabPlansStatus = get 5
+      FabPlansDocument = (if isNullAt 6 then None else Some (get 6))
+      FabPlansCreatedAt = get 7
+      FabPlansUpdatedAt = get 8
+    }
+
+let fabDesignsTable = "daedalus.fab_designs"
+let fabDesignsColumns = [ "id"; "plan_id"; "filename"; "format"; "storage_uri"; "size_bytes"; "content_hash"; "geometry"; "created_at" ]
+let fabDesignsSelectSql = "select\n      id::text as id,\n      plan_id::text as plan_id,\n      filename,\n      format,\n      storage_uri,\n      size_bytes,\n      content_hash,\n      geometry::text as geometry_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_designs"
+
+[<RequireQualifiedAccess>]
+type FabDesignsFormat =
+    | Step
+    | Stl
+    | 3mf
+    | Dxf
+    | Iges
+    | Obj
+
+let fabDesignsFormatToString (value: FabDesignsFormat) : string =
+    match value with
+    | FabDesignsFormat.Step -> "step"
+    | FabDesignsFormat.Stl -> "stl"
+    | FabDesignsFormat.3mf -> "3mf"
+    | FabDesignsFormat.Dxf -> "dxf"
+    | FabDesignsFormat.Iges -> "iges"
+    | FabDesignsFormat.Obj -> "obj"
+
+let parseFabDesignsFormat (value: string) : Result<FabDesignsFormat, string> =
+    match value with
+    | "step" -> Ok FabDesignsFormat.Step
+    | "stl" -> Ok FabDesignsFormat.Stl
+    | "3mf" -> Ok FabDesignsFormat.3mf
+    | "dxf" -> Ok FabDesignsFormat.Dxf
+    | "iges" -> Ok FabDesignsFormat.Iges
+    | "obj" -> Ok FabDesignsFormat.Obj
+    | _ -> Error ("unsupported fab_designs.format: " + value)
+
+type FabDesignsRow =
+    { FabDesignsId: string
+      FabDesignsPlanId: string
+      FabDesignsFilename: string
+      FabDesignsFormat: string
+      FabDesignsStorageUri: string
+      FabDesignsSizeBytes: int64
+      FabDesignsContentHash: string option
+      FabDesignsGeometry: string
+      FabDesignsCreatedAt: string
+    }
+
+let fabDesignsRowOfRow (get: int -> string) (isNullAt: int -> bool) : FabDesignsRow =
+    { FabDesignsId = get 0
+      FabDesignsPlanId = get 1
+      FabDesignsFilename = get 2
+      FabDesignsFormat = get 3
+      FabDesignsStorageUri = get 4
+      FabDesignsSizeBytes = int64 (get 5)
+      FabDesignsContentHash = (if isNullAt 6 then None else Some (get 6))
+      FabDesignsGeometry = get 7
+      FabDesignsCreatedAt = get 8
+    }
+
+let validateFabDesignsSizeBytes (value: int64) : Result<int64, string> =
+    if value < 0L then Error "fab_designs.size_bytes is below the minimum"
+    else Ok value
+
+let fabInstructionsTable = "daedalus.fab_instructions"
+let fabInstructionsColumns = [ "id"; "plan_id"; "revision"; "machine_profile"; "dialect"; "storage_uri"; "content_hash"; "validated"; "validation"; "released_by_email"; "released_at"; "created_at" ]
+let fabInstructionsSelectSql = "select\n      id::text as id,\n      plan_id::text as plan_id,\n      revision,\n      machine_profile,\n      dialect,\n      storage_uri,\n      content_hash,\n      validated,\n      validation::text as validation_json,\n      released_by_email,\n      to_char(released_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as released_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_instructions"
+
+[<RequireQualifiedAccess>]
+type FabInstructionsDialect =
+    | Gcode
+    | Nc
+    | Apt
+    | Proprietary
+
+let fabInstructionsDialectToString (value: FabInstructionsDialect) : string =
+    match value with
+    | FabInstructionsDialect.Gcode -> "gcode"
+    | FabInstructionsDialect.Nc -> "nc"
+    | FabInstructionsDialect.Apt -> "apt"
+    | FabInstructionsDialect.Proprietary -> "proprietary"
+
+let parseFabInstructionsDialect (value: string) : Result<FabInstructionsDialect, string> =
+    match value with
+    | "gcode" -> Ok FabInstructionsDialect.Gcode
+    | "nc" -> Ok FabInstructionsDialect.Nc
+    | "apt" -> Ok FabInstructionsDialect.Apt
+    | "proprietary" -> Ok FabInstructionsDialect.Proprietary
+    | _ -> Error ("unsupported fab_instructions.dialect: " + value)
+
+type FabInstructionsRow =
+    { FabInstructionsId: string
+      FabInstructionsPlanId: string
+      FabInstructionsRevision: int
+      FabInstructionsMachineProfile: string
+      FabInstructionsDialect: string
+      FabInstructionsStorageUri: string
+      FabInstructionsContentHash: string option
+      FabInstructionsValidated: bool
+      FabInstructionsValidation: string
+      FabInstructionsReleasedByEmail: string option
+      FabInstructionsReleasedAt: string option
+      FabInstructionsCreatedAt: string
+    }
+
+let fabInstructionsRowOfRow (get: int -> string) (isNullAt: int -> bool) : FabInstructionsRow =
+    { FabInstructionsId = get 0
+      FabInstructionsPlanId = get 1
+      FabInstructionsRevision = int (get 2)
+      FabInstructionsMachineProfile = get 3
+      FabInstructionsDialect = get 4
+      FabInstructionsStorageUri = get 5
+      FabInstructionsContentHash = (if isNullAt 6 then None else Some (get 6))
+      FabInstructionsValidated = (get 7 = "t")
+      FabInstructionsValidation = get 8
+      FabInstructionsReleasedByEmail = (if isNullAt 9 then None else Some (get 9))
+      FabInstructionsReleasedAt = (if isNullAt 10 then None else Some (get 10))
+      FabInstructionsCreatedAt = get 11
+    }
+
+let validateFabInstructionsRevision (value: int) : Result<int, string> =
+    if value < 1 then Error "fab_instructions.revision is below the minimum"
+    else Ok value
+
+let fabRunsTable = "daedalus.fab_runs"
+let fabRunsColumns = [ "id"; "status"; "machine_id"; "operator_email"; "progress"; "as_built"; "error"; "started_at"; "finished_at"; "created_at" ]
+let fabRunsSelectSql = "select\n      id::text as id,\n      status,\n      machine_id,\n      operator_email,\n      progress,\n      as_built::text as as_built_json,\n      error,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_runs"
+
+[<RequireQualifiedAccess>]
+type FabRunsStatus =
+    | Queued
+    | Running
+    | Succeeded
+    | Failed
+    | Aborted
+
+let fabRunsStatusToString (value: FabRunsStatus) : string =
+    match value with
+    | FabRunsStatus.Queued -> "queued"
+    | FabRunsStatus.Running -> "running"
+    | FabRunsStatus.Succeeded -> "succeeded"
+    | FabRunsStatus.Failed -> "failed"
+    | FabRunsStatus.Aborted -> "aborted"
+
+let parseFabRunsStatus (value: string) : Result<FabRunsStatus, string> =
+    match value with
+    | "queued" -> Ok FabRunsStatus.Queued
+    | "running" -> Ok FabRunsStatus.Running
+    | "succeeded" -> Ok FabRunsStatus.Succeeded
+    | "failed" -> Ok FabRunsStatus.Failed
+    | "aborted" -> Ok FabRunsStatus.Aborted
+    | _ -> Error ("unsupported fab_runs.status: " + value)
+
+type FabRunsRow =
+    { FabRunsId: string
+      FabRunsStatus: string
+      FabRunsMachineId: string
+      FabRunsOperatorEmail: string option
+      FabRunsProgress: int
+      FabRunsAsBuilt: string
+      FabRunsError: string option
+      FabRunsStartedAt: string option
+      FabRunsFinishedAt: string option
+      FabRunsCreatedAt: string
+    }
+
+let fabRunsRowOfRow (get: int -> string) (isNullAt: int -> bool) : FabRunsRow =
+    { FabRunsId = get 0
+      FabRunsStatus = get 1
+      FabRunsMachineId = get 2
+      FabRunsOperatorEmail = (if isNullAt 3 then None else Some (get 3))
+      FabRunsProgress = int (get 4)
+      FabRunsAsBuilt = get 5
+      FabRunsError = (if isNullAt 6 then None else Some (get 6))
+      FabRunsStartedAt = (if isNullAt 7 then None else Some (get 7))
+      FabRunsFinishedAt = (if isNullAt 8 then None else Some (get 8))
+      FabRunsCreatedAt = get 9
+    }
+
+let validateFabRunsProgress (value: int) : Result<int, string> =
+    if value < 0 then Error "fab_runs.progress is below the minimum"
+    elif value > 100 then Error "fab_runs.progress is above the maximum"
+    else Ok value

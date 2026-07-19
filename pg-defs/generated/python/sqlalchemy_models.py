@@ -12331,3 +12331,349 @@ class VapiEventsInsert(BaseModel):
         if value is not None and len(value.encode("utf-8")) > 80:
             raise ValueError("vapi_events.event_type exceeds 80 bytes")
         return value
+
+FabPlansProcessFamily = Literal["additive", "subtractive", "hybrid"]
+FabPlansStatus = Literal["draft", "planning", "planned", "released", "archived"]
+
+class FabPlans(Base):
+    __tablename__ = "fab_plans"
+    __table_args__ = (
+        CheckConstraint("octet_length(owner_email) between 3 and 320", name="fab_plans_owner_email_size_chk"),
+        CheckConstraint("octet_length(title) between 1 and 200", name="fab_plans_title_size_chk"),
+        CheckConstraint("octet_length(goal) between 1 and 20000", name="fab_plans_goal_size_chk"),
+        CheckConstraint("process_family in ('additive', 'subtractive', 'hybrid')", name="fab_plans_process_family_chk"),
+        CheckConstraint("status in ('draft', 'planning', 'planned', 'released', 'archived')", name="fab_plans_status_chk"),
+        Index("fab_plans_owner_email_idx", "owner_email"),
+        Index("fab_plans_status_idx", "status"),
+        Index("fab_plans_owner_created_idx", "owner_email", text("created_at desc")),
+        {"schema": "daedalus"},
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    owner_email: Mapped[str] = mapped_column(Text(), nullable=False)
+    title: Mapped[str] = mapped_column(Text(), nullable=False)
+    goal: Mapped[str] = mapped_column(Text(), nullable=False)
+    process_family: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("'additive'"))
+    status: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("'draft'"))
+    document: Mapped[dict[str, Any] | None] = mapped_column(JSONB(), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class FabPlansRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    ownerEmail: str
+    title: str
+    goal: str
+    processFamily: FabPlansProcessFamily
+    status: FabPlansStatus
+    document: dict[str, Any] | None = None
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("ownerEmail")
+    @classmethod
+    def validate_owner_email(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 320:
+            raise ValueError("fab_plans.owner_email exceeds 320 bytes")
+        return value
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("fab_plans.title exceeds 200 bytes")
+        return value
+
+    @field_validator("goal")
+    @classmethod
+    def validate_goal(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 20000:
+            raise ValueError("fab_plans.goal exceeds 20000 bytes")
+        return value
+
+class FabPlansInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    ownerEmail: str
+    title: str
+    goal: str
+    processFamily: FabPlansProcessFamily | None = "additive"
+    status: FabPlansStatus | None = "draft"
+    document: dict[str, Any] | None = None
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("ownerEmail")
+    @classmethod
+    def validate_owner_email(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 320:
+            raise ValueError("fab_plans.owner_email exceeds 320 bytes")
+        return value
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("fab_plans.title exceeds 200 bytes")
+        return value
+
+    @field_validator("goal")
+    @classmethod
+    def validate_goal(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 20000:
+            raise ValueError("fab_plans.goal exceeds 20000 bytes")
+        return value
+
+FabDesignsFormat = Literal["step", "stl", "3mf", "dxf", "iges", "obj"]
+
+class FabDesigns(Base):
+    __tablename__ = "fab_designs"
+    __table_args__ = (
+        CheckConstraint("octet_length(filename) between 1 and 400", name="fab_designs_filename_size_chk"),
+        CheckConstraint("format in ('step', 'stl', '3mf', 'dxf', 'iges', 'obj')", name="fab_designs_format_chk"),
+        CheckConstraint("octet_length(storage_uri) between 1 and 2000", name="fab_designs_storage_uri_size_chk"),
+        CheckConstraint("size_bytes >= 0", name="fab_designs_size_nonnegative_chk"),
+        CheckConstraint("content_hash is null or octet_length(content_hash) = 64", name="fab_designs_content_hash_chk"),
+        Index("fab_designs_plan_idx", "plan_id"),
+        Index("fab_designs_content_hash_idx", "content_hash", postgresql_where=text("content_hash is not null")),
+        {"schema": "daedalus"},
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    plan_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    filename: Mapped[str] = mapped_column(Text(), nullable=False)
+    format: Mapped[str] = mapped_column(Text(), nullable=False)
+    storage_uri: Mapped[str] = mapped_column(Text(), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    content_hash: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    geometry: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class FabDesignsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    planId: UUID
+    filename: str
+    format: FabDesignsFormat
+    storageUri: str
+    sizeBytes: int
+    contentHash: str | None = None
+    geometry: dict[str, Any]
+    createdAt: datetime
+
+    @field_validator("filename")
+    @classmethod
+    def validate_filename(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 400:
+            raise ValueError("fab_designs.filename exceeds 400 bytes")
+        return value
+
+    @field_validator("storageUri")
+    @classmethod
+    def validate_storage_uri(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 2000:
+            raise ValueError("fab_designs.storage_uri exceeds 2000 bytes")
+        return value
+
+class FabDesignsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    planId: UUID
+    filename: str
+    format: FabDesignsFormat
+    storageUri: str
+    sizeBytes: int | None = 0
+    contentHash: str | None = None
+    geometry: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+
+    @field_validator("filename")
+    @classmethod
+    def validate_filename(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 400:
+            raise ValueError("fab_designs.filename exceeds 400 bytes")
+        return value
+
+    @field_validator("storageUri")
+    @classmethod
+    def validate_storage_uri(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 2000:
+            raise ValueError("fab_designs.storage_uri exceeds 2000 bytes")
+        return value
+
+FabInstructionsDialect = Literal["gcode", "nc", "apt", "proprietary"]
+
+class FabInstructions(Base):
+    __tablename__ = "fab_instructions"
+    __table_args__ = (
+        CheckConstraint("revision >= 1", name="fab_instructions_revision_chk"),
+        CheckConstraint("octet_length(machine_profile) between 1 and 200", name="fab_instructions_machine_profile_size_chk"),
+        CheckConstraint("dialect in ('gcode', 'nc', 'apt', 'proprietary')", name="fab_instructions_dialect_chk"),
+        CheckConstraint("octet_length(storage_uri) between 1 and 2000", name="fab_instructions_storage_uri_size_chk"),
+        CheckConstraint("content_hash is null or octet_length(content_hash) = 64", name="fab_instructions_content_hash_chk"),
+        CheckConstraint("(released_by_email is null) = (released_at is null)", name="fab_instructions_release_pair_chk"),
+        Index("fab_instructions_plan_revision_uq", "plan_id", "revision", unique=True),
+        Index("fab_instructions_plan_idx", "plan_id"),
+        {"schema": "daedalus"},
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    plan_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("1"))
+    machine_profile: Mapped[str] = mapped_column(Text(), nullable=False)
+    dialect: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("'gcode'"))
+    storage_uri: Mapped[str] = mapped_column(Text(), nullable=False)
+    content_hash: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    validated: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    validation: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    released_by_email: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class FabInstructionsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    planId: UUID
+    revision: int = Field(..., ge=1)
+    machineProfile: str
+    dialect: FabInstructionsDialect
+    storageUri: str
+    contentHash: str | None = None
+    validated: bool
+    validation: dict[str, Any]
+    releasedByEmail: str | None = None
+    releasedAt: datetime | None = None
+    createdAt: datetime
+
+    @field_validator("machineProfile")
+    @classmethod
+    def validate_machine_profile(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("fab_instructions.machine_profile exceeds 200 bytes")
+        return value
+
+    @field_validator("storageUri")
+    @classmethod
+    def validate_storage_uri(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 2000:
+            raise ValueError("fab_instructions.storage_uri exceeds 2000 bytes")
+        return value
+
+class FabInstructionsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    planId: UUID
+    revision: int | None = Field(1, ge=1)
+    machineProfile: str
+    dialect: FabInstructionsDialect | None = "gcode"
+    storageUri: str
+    contentHash: str | None = None
+    validated: bool | None = False
+    validation: dict[str, Any] | None = Field(default_factory=dict)
+    releasedByEmail: str | None = None
+    releasedAt: datetime | None = None
+    createdAt: datetime | None = None
+
+    @field_validator("machineProfile")
+    @classmethod
+    def validate_machine_profile(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("fab_instructions.machine_profile exceeds 200 bytes")
+        return value
+
+    @field_validator("storageUri")
+    @classmethod
+    def validate_storage_uri(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 2000:
+            raise ValueError("fab_instructions.storage_uri exceeds 2000 bytes")
+        return value
+
+FabRunsStatus = Literal["queued", "running", "succeeded", "failed", "aborted"]
+
+class FabRuns(Base):
+    __tablename__ = "fab_runs"
+    __table_args__ = (
+        CheckConstraint("status in ('queued', 'running', 'succeeded', 'failed', 'aborted')", name="fab_runs_status_chk"),
+        CheckConstraint("octet_length(machine_id) between 1 and 200", name="fab_runs_machine_id_size_chk"),
+        CheckConstraint("progress between 0 and 100", name="fab_runs_progress_range_chk"),
+        CheckConstraint("error is null or octet_length(error) <= 20000", name="fab_runs_error_size_chk"),
+        CheckConstraint("(status in ('succeeded', 'failed', 'aborted')) = (finished_at is not null)", name="fab_runs_finished_chk"),
+        Index("fab_runs_instructions_idx", "instructions_id"),
+        Index("fab_runs_status_idx", "status"),
+        Index("fab_runs_created_idx", text("created_at desc")),
+        {"schema": "daedalus"},
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    status: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("'queued'"))
+    machine_id: Mapped[str] = mapped_column(Text(), nullable=False)
+    operator_email: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    progress: Mapped[int] = mapped_column(SmallInteger(), nullable=False, server_default=text("0"))
+    as_built: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    error: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class FabRunsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    status: FabRunsStatus
+    machineId: str
+    operatorEmail: str | None = None
+    progress: int = Field(..., ge=0, le=100)
+    asBuilt: dict[str, Any]
+    error: str | None = None
+    startedAt: datetime | None = None
+    finishedAt: datetime | None = None
+    createdAt: datetime
+
+    @field_validator("machineId")
+    @classmethod
+    def validate_machine_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("fab_runs.machine_id exceeds 200 bytes")
+        return value
+
+    @field_validator("error")
+    @classmethod
+    def validate_error(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 20000:
+            raise ValueError("fab_runs.error exceeds 20000 bytes")
+        return value
+
+class FabRunsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    status: FabRunsStatus | None = "queued"
+    machineId: str
+    operatorEmail: str | None = None
+    progress: int | None = Field(0, ge=0, le=100)
+    asBuilt: dict[str, Any] | None = Field(default_factory=dict)
+    error: str | None = None
+    startedAt: datetime | None = None
+    finishedAt: datetime | None = None
+    createdAt: datetime | None = None
+
+    @field_validator("machineId")
+    @classmethod
+    def validate_machine_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("fab_runs.machine_id exceeds 200 bytes")
+        return value
+
+    @field_validator("error")
+    @classmethod
+    def validate_error(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 20000:
+            raise ValueError("fab_runs.error exceeds 20000 bytes")
+        return value

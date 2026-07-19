@@ -2398,5 +2398,57 @@ export function defineDdModels(sequelize: Sequelize) {
     created_at: { type: DataTypes.DATE, allowNull: false },
   }, { tableName: "vapi_events", schema: "t2v", timestamps: false, freezeTableName: true });
 
-  return { Accounts, Devices, VaultBlobs, AppConfig, VapiPhoneCallEvents, MusicSongs, MusicSongVotes, SoundRecorderAccounts, SoundRecorderDevices, SoundRecorderUploadSessions, SoundRecorderSegments, SoundRecorderEvidenceExports, SoundRecorderAuditEvents, SoundRecorderOauthStates, SoundRecorderCloudConnections, SoundRecorderCloudCopyJobs, ContainerPoolConfigs, KnownGitRepo, AgentContextBlobs, AgentContextEmbeddings, AgentRemoteDevThread, AgentRemoteDevTask, AgentRemoteDevEvent, AgentRemoteDevBreadcrumb, AgentRemoteDevArtifact, AgentRemoteDevRuntimeLock, MipSolverSessions, MipSolverSolves, MipSolverJobs, MipSolverEvents, LambdaFunction, WorkflowDefinitions, WorkflowRuns, WorkflowStepRuns, ContainerPoolImageRevisions, ContainerPoolBuildRuns, PresenceConvs, PresenceConvMembers, PresenceUsers, PresenceEvents, PresenceConsumerCheckpoints, DesSoccerLearningExperiments, DesSoccerLearningPolicyVersions, DesSoccerLearningPolicyEntries, DesSoccerLearningJobs, DesSoccerLearningRuns, DesSoccerLearningRunDeltas, DesSoccerLearningMergeEvents, DesSoccerTournaments, DesSoccerTournamentMatches, DesSoccerTournamentTeamBrains, DesSoccerLearningSetPlayRuns, DesSoccerLearningSetPlayRestartMix, DesSoccerLearningSetPlayEpisodeMetrics, DesSoccerLearningNeuralRunMetrics, DesSoccerLearningPassMetrics, DesFelElevatorLearningRuns, DesFelElevatorPolicyStates, DesFelElevatorDispatchDecisions, DesFelElevatorPomdpBeliefs, BenefactorMarketingClients, BenefactorMarketingContacts, BenefactorMarketingServicePackages, BenefactorMarketingContracts, BenefactorMarketingInvoices, BenefactorMarketingIntegrations, BenefactorMarketingLeads, BenefactorMarketingEnrichmentJobs, BenefactorMarketingCampaigns, BenefactorMarketingCampaignChannels, BenefactorMarketingCampaignExperiments, BenefactorMarketingAutomationWorkflows, BenefactorMarketingAutomationEvents, BenefactorMarketingReports, BenefactorMarketingAttributionEvents, BenefactorMarketingOpportunities, BenefactorMarketingContentAssets, BenefactorMarketingProjectTasks, BenefactorMarketingClientApprovals, BenefactorMarketingTickets, BenefactorMarketingMeetings, BenefactorMarketingTeamAllocations, BenefactorMarketingIntegrationSyncRuns, BenefactorMarketingOutreachSequences, BenefactorMarketingOutreachSteps, BenefactorMarketingOutreachEnrollments, BenefactorMarketingOutreachTouchpoints, BenefactorMarketingProspectResearchBriefs, BenefactorMarketingConversionEvents, BenefactorMarketingPortalMembers, BenefactorMarketingSharedDocuments, BenefactorMarketingCollaborationComments, BenefactorMarketingNotifications, BenefactorMarketingTimeEntries, BenefactorMarketingVendorCosts, BenefactorMarketingCommissionEntries, BenefactorMarketingBudgetForecasts, BenefactorMarketingCallInsights, UsaccUsers, UsaccCases, UsaccCaseParticipants, UsaccCaseStages, UsaccElections, UsaccVotes, UsaccEscrowAccounts, UsaccLedgerEntries, UsaccContractOperations, UsaccSimulationRuns, UsaccAuditEvents, BenefactorLeads, BenefactorLeadsDomains, BenefactorSearchLocations, BenefactorScrapeQueries, BenefactorDomainSearchTracking, BenefactorIcps, BenefactorLeadsThrottling, BenefactorLeadsReminders, VcsRepositories, VcsRefs, VcsOperations, Agents, Channels, Messages, ChannelMembers, SharedContext, SyncClock, SyncTombstones, Orgs, Projects, Users, OrgMembers, ProjectMembers, ApiKeys, MtlsClientCerts, CustomerPreferences, CustomerSessions, AuditLog, CustomerNotifications, SyncIdempotencyKeys, Transcriptions, Syntheses, Translations, VapiCalls, VapiEvents };
+  const FabPlans = sequelize.define("FabPlans", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    owner_email: { type: DataTypes.TEXT, allowNull: false },
+    title: { type: DataTypes.TEXT, allowNull: false },
+    goal: { type: DataTypes.TEXT, allowNull: false },
+    process_family: { type: DataTypes.TEXT, allowNull: false, defaultValue: "additive", validate: { isIn: [["additive", "subtractive", "hybrid"]] } },
+    status: { type: DataTypes.TEXT, allowNull: false, defaultValue: "draft", validate: { isIn: [["draft", "planning", "planned", "released", "archived"]] } },
+    document: { type: DataTypes.JSONB, allowNull: true },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+    updated_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "fab_plans", schema: "daedalus", timestamps: false, freezeTableName: true });
+
+  const FabDesigns = sequelize.define("FabDesigns", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    plan_id: { type: DataTypes.UUID, allowNull: false },
+    filename: { type: DataTypes.TEXT, allowNull: false },
+    format: { type: DataTypes.TEXT, allowNull: false, validate: { isIn: [["step", "stl", "3mf", "dxf", "iges", "obj"]] } },
+    storage_uri: { type: DataTypes.TEXT, allowNull: false },
+    size_bytes: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0, validate: { min: 0 } },
+    content_hash: { type: DataTypes.TEXT, allowNull: true },
+    geometry: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "fab_designs", schema: "daedalus", timestamps: false, freezeTableName: true });
+
+  const FabInstructions = sequelize.define("FabInstructions", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    plan_id: { type: DataTypes.UUID, allowNull: false },
+    revision: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1, validate: { min: 1 } },
+    machine_profile: { type: DataTypes.TEXT, allowNull: false },
+    dialect: { type: DataTypes.TEXT, allowNull: false, defaultValue: "gcode", validate: { isIn: [["gcode", "nc", "apt", "proprietary"]] } },
+    storage_uri: { type: DataTypes.TEXT, allowNull: false },
+    content_hash: { type: DataTypes.TEXT, allowNull: true },
+    validated: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    validation: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
+    released_by_email: { type: DataTypes.TEXT, allowNull: true },
+    released_at: { type: DataTypes.DATE, allowNull: true },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "fab_instructions", schema: "daedalus", timestamps: false, freezeTableName: true });
+
+  const FabRuns = sequelize.define("FabRuns", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    status: { type: DataTypes.TEXT, allowNull: false, defaultValue: "queued", validate: { isIn: [["queued", "running", "succeeded", "failed", "aborted"]] } },
+    machine_id: { type: DataTypes.TEXT, allowNull: false },
+    operator_email: { type: DataTypes.TEXT, allowNull: true },
+    progress: { type: DataTypes.SMALLINT, allowNull: false, defaultValue: 0, validate: { min: 0, max: 100 } },
+    as_built: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
+    error: { type: DataTypes.TEXT, allowNull: true },
+    started_at: { type: DataTypes.DATE, allowNull: true },
+    finished_at: { type: DataTypes.DATE, allowNull: true },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "fab_runs", schema: "daedalus", timestamps: false, freezeTableName: true });
+
+  return { Accounts, Devices, VaultBlobs, AppConfig, VapiPhoneCallEvents, MusicSongs, MusicSongVotes, SoundRecorderAccounts, SoundRecorderDevices, SoundRecorderUploadSessions, SoundRecorderSegments, SoundRecorderEvidenceExports, SoundRecorderAuditEvents, SoundRecorderOauthStates, SoundRecorderCloudConnections, SoundRecorderCloudCopyJobs, ContainerPoolConfigs, KnownGitRepo, AgentContextBlobs, AgentContextEmbeddings, AgentRemoteDevThread, AgentRemoteDevTask, AgentRemoteDevEvent, AgentRemoteDevBreadcrumb, AgentRemoteDevArtifact, AgentRemoteDevRuntimeLock, MipSolverSessions, MipSolverSolves, MipSolverJobs, MipSolverEvents, LambdaFunction, WorkflowDefinitions, WorkflowRuns, WorkflowStepRuns, ContainerPoolImageRevisions, ContainerPoolBuildRuns, PresenceConvs, PresenceConvMembers, PresenceUsers, PresenceEvents, PresenceConsumerCheckpoints, DesSoccerLearningExperiments, DesSoccerLearningPolicyVersions, DesSoccerLearningPolicyEntries, DesSoccerLearningJobs, DesSoccerLearningRuns, DesSoccerLearningRunDeltas, DesSoccerLearningMergeEvents, DesSoccerTournaments, DesSoccerTournamentMatches, DesSoccerTournamentTeamBrains, DesSoccerLearningSetPlayRuns, DesSoccerLearningSetPlayRestartMix, DesSoccerLearningSetPlayEpisodeMetrics, DesSoccerLearningNeuralRunMetrics, DesSoccerLearningPassMetrics, DesFelElevatorLearningRuns, DesFelElevatorPolicyStates, DesFelElevatorDispatchDecisions, DesFelElevatorPomdpBeliefs, BenefactorMarketingClients, BenefactorMarketingContacts, BenefactorMarketingServicePackages, BenefactorMarketingContracts, BenefactorMarketingInvoices, BenefactorMarketingIntegrations, BenefactorMarketingLeads, BenefactorMarketingEnrichmentJobs, BenefactorMarketingCampaigns, BenefactorMarketingCampaignChannels, BenefactorMarketingCampaignExperiments, BenefactorMarketingAutomationWorkflows, BenefactorMarketingAutomationEvents, BenefactorMarketingReports, BenefactorMarketingAttributionEvents, BenefactorMarketingOpportunities, BenefactorMarketingContentAssets, BenefactorMarketingProjectTasks, BenefactorMarketingClientApprovals, BenefactorMarketingTickets, BenefactorMarketingMeetings, BenefactorMarketingTeamAllocations, BenefactorMarketingIntegrationSyncRuns, BenefactorMarketingOutreachSequences, BenefactorMarketingOutreachSteps, BenefactorMarketingOutreachEnrollments, BenefactorMarketingOutreachTouchpoints, BenefactorMarketingProspectResearchBriefs, BenefactorMarketingConversionEvents, BenefactorMarketingPortalMembers, BenefactorMarketingSharedDocuments, BenefactorMarketingCollaborationComments, BenefactorMarketingNotifications, BenefactorMarketingTimeEntries, BenefactorMarketingVendorCosts, BenefactorMarketingCommissionEntries, BenefactorMarketingBudgetForecasts, BenefactorMarketingCallInsights, UsaccUsers, UsaccCases, UsaccCaseParticipants, UsaccCaseStages, UsaccElections, UsaccVotes, UsaccEscrowAccounts, UsaccLedgerEntries, UsaccContractOperations, UsaccSimulationRuns, UsaccAuditEvents, BenefactorLeads, BenefactorLeadsDomains, BenefactorSearchLocations, BenefactorScrapeQueries, BenefactorDomainSearchTracking, BenefactorIcps, BenefactorLeadsThrottling, BenefactorLeadsReminders, VcsRepositories, VcsRefs, VcsOperations, Agents, Channels, Messages, ChannelMembers, SharedContext, SyncClock, SyncTombstones, Orgs, Projects, Users, OrgMembers, ProjectMembers, ApiKeys, MtlsClientCerts, CustomerPreferences, CustomerSessions, AuditLog, CustomerNotifications, SyncIdempotencyKeys, Transcriptions, Syntheses, Translations, VapiCalls, VapiEvents, FabPlans, FabDesigns, FabInstructions, FabRuns };
 }

@@ -155,6 +155,10 @@ defmodule DdPgDefs do
     DdPgDefs.Translations,
     DdPgDefs.VapiCalls,
     DdPgDefs.VapiEvents,
+    DdPgDefs.FabPlans,
+    DdPgDefs.FabDesigns,
+    DdPgDefs.FabInstructions,
+    DdPgDefs.FabRuns,
   ]
 
   @spec tables() :: [module()]
