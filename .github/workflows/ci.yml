@@ -58,3 +58,140 @@ jobs:
         with:
           components: rustfmt
       - run: cargo fmt --all -- --check
+
+  gitops:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: [actions, hygiene, fmt]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      K8S_PATH: ${{ github.workspace }}/../k8s-cluster
+      BACKEND_PATH: remote/deployments/usacc-rest-api-backend-rs
+      DEPLOYMENT_MANIFEST: remote/argocd/dd-next-runtime/usacc-rest-api-backend-rs.deployment.yaml
+    steps:
+      - name: Require least-privilege GitOps keys
+        env:
+          K8S_LIBS_DEPLOY_KEY: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+          K8S_CLUSTER_DEPLOY_KEY: ${{ secrets.K8S_CLUSTER_DEPLOY_KEY }}
+        run: |
+          test -n "$K8S_LIBS_DEPLOY_KEY"
+          test -n "$K8S_CLUSTER_DEPLOY_KEY"
+
+      - name: Checkout backend source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Configure read and GitOps deploy keys
+        env:
+          K8S_LIBS_DEPLOY_KEY: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+          K8S_CLUSTER_DEPLOY_KEY: ${{ secrets.K8S_CLUSTER_DEPLOY_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh_dir="$RUNNER_TEMP/usacc-gitops-ssh"
+          install -d -m 700 "$ssh_dir"
+          printf '%s\n' "$K8S_LIBS_DEPLOY_KEY" > "$ssh_dir/libs"
+          printf '%s\n' "$K8S_CLUSTER_DEPLOY_KEY" > "$ssh_dir/k8s"
+          chmod 600 "$ssh_dir/libs" "$ssh_dir/k8s"
+          ssh-keyscan -t ed25519 github.com > "$ssh_dir/known_hosts"
+          cat > "$ssh_dir/config" <<EOF
+          Host github-k8s-libs
+            HostName github.com
+            HostKeyAlias github.com
+            User git
+            IdentityFile $ssh_dir/libs
+            IdentitiesOnly yes
+            UserKnownHostsFile $ssh_dir/known_hosts
+          Host github-k8s-cluster
+            HostName github.com
+            HostKeyAlias github.com
+            User git
+            IdentityFile $ssh_dir/k8s
+            IdentitiesOnly yes
+            UserKnownHostsFile $ssh_dir/known_hosts
+          EOF
+          chmod 600 "$ssh_dir/config"
+          echo "GIT_SSH_COMMAND=ssh -F $ssh_dir/config" >> "$GITHUB_ENV"
+
+      - name: Assemble the complete superproject context
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --branch dev --single-branch \
+            https://github.com/ORESoftware/k8s-cluster.git "$K8S_PATH"
+          git -C "$K8S_PATH" config \
+            submodule.remote/libs.url \
+            git@github-k8s-libs:ORESoftware/k8s-libs-and-shared-defs.git
+          git -C "$K8S_PATH" submodule update --init --depth 1 -- \
+            remote/libs \
+            remote/submodules/discrete-event-system.rs
+          git clone --local --no-hardlinks "$GITHUB_WORKSPACE" \
+            "$K8S_PATH/$BACKEND_PATH"
+          git -C "$K8S_PATH/$BACKEND_PATH" switch --detach "$GITHUB_SHA"
+          git -C "$K8S_PATH" remote set-url origin \
+            git@github-k8s-cluster:ORESoftware/k8s-cluster.git
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache integrated Rust build data
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: ${{ env.K8S_PATH }}/${{ env.BACKEND_PATH }} -> target
+
+      - name: Validate the integrated backend
+        working-directory: ${{ env.K8S_PATH }}/${{ env.BACKEND_PATH }}
+        run: |
+          cargo fmt --package usacc-rest-api-backend-rs -- --check
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo test --all-targets --locked
+
+      - name: Commit the immutable GitOps revision
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_SHA="$SOURCE_SHA" MANIFEST="$K8S_PATH/$DEPLOYMENT_MANIFEST" python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          path = Path(os.environ["MANIFEST"])
+          sha = os.environ["SOURCE_SHA"]
+          text = path.read_text()
+
+          annotation = "        dd.dev/usacc-source-revision: '" + sha + "'"
+          text, annotation_count = re.subn(
+              r"(?m)^        dd\.dev/usacc-source-revision:.*$",
+              annotation,
+              text,
+          )
+          env_value = "            - name: USACC_SOURCE_REVISION\n              value: '" + sha + "'"
+          text, env_count = re.subn(
+              r"(?m)^            - name: USACC_SOURCE_REVISION\n              value:.*$",
+              env_value,
+              text,
+          )
+          if annotation_count != 1 or env_count != 1:
+              raise SystemExit("expected exactly one source annotation and environment value")
+          path.write_text(text)
+          PY
+          git -C "$K8S_PATH" add "$BACKEND_PATH" "$DEPLOYMENT_MANIFEST"
+          git -C "$K8S_PATH" diff --cached --check
+          if git -C "$K8S_PATH" diff --cached --quiet; then
+            echo "GitOps already pins backend $SOURCE_SHA"
+            exit 0
+          fi
+          git -C "$K8S_PATH" config user.name "github-actions[bot]"
+          git -C "$K8S_PATH" config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "$K8S_PATH" commit -m \
+            "deploy(usacc): promote ${SOURCE_SHA:0:12} [usacc-gitops]"
+          git -C "$K8S_PATH" fetch origin dev
+          git -C "$K8S_PATH" merge --no-edit origin/dev
+          git -C "$K8S_PATH" push origin HEAD:dev
