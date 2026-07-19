@@ -7465,21 +7465,97 @@ runtime inspection boundary while the database contract is still being designed.
 
 ## Service Architecture
 
-`src/main.rs` is only the Tokio executable boundary and delegates to the
-library. Runtime concerns are kept in focused modules:
+The crate builds two independently deployable processes. `src/main.rs` starts
+the fabrication API/worker, while `src/bin/dd-fabrication-web-server.rs` starts
+the browser-facing web service. Both executable files are only Tokio boundaries
+and delegate to the library. They share versioned realtime contracts but do not
+share process state:
+
+- `dd-fabrication-server` owns planning, validation, worker execution, the
+  existing HTTP API, an operational MASH page, HTML/JSON WebSockets, a raw TCP
+  event stream, and the established fabrication NATS request/result flow.
+- `dd-fabrication-web-server` owns the browser UI, Maud views, HTMX fragment
+  updates, JSON WebSockets, TCP clients, and fan-in from the fabrication JSON
+  WebSocket, Supabase Realtime, and NATS.
+
+Runtime concerns are kept in focused modules:
 
 - `config.rs` owns environment parsing and the Kubernetes-facing service
   defaults.
 - `persistence.rs` owns the optional SeaORM Postgres pool and readiness check.
+- `messaging.rs` owns shared NATS connection/authentication policy.
 - `observability.rs` owns service telemetry initialization and structured
   lifecycle fields.
 - `metrics.rs` owns the low-cardinality counters rendered by `/metrics`.
+- `http.rs` owns the Axum adapters for health, SeaORM readiness, and Prometheus
+  rendering so infrastructure state modules remain transport-agnostic.
+- `realtime.rs` owns the transport-neutral
+  `dd.fabrication.realtime.v1` event envelope and bounded broadcast hub.
+- `transport/` owns Maud views, HTMX-compatible HTML WebSockets, JSON
+  WebSockets, newline-delimited JSON TCP, and NATS relay/publisher adapters.
+- `web_server/` owns the separate web runtime, health surface, backend bridge,
+  and optional server-side Supabase Realtime protocol client.
+- `additive_printing/` owns typed FDM/resin request models, pure release-gate
+  analysis, and its thin HTTP adapter.
 - `secrets.rs` owns the allowlisted Fiducia overlay.
 - `geometry/` and the catalog content modules own their respective domain
   surfaces.
 
-The library root still composes the existing route and planning surface, but
-the binary no longer contains application, persistence, or telemetry behavior.
+The library root still composes the legacy route and planning surface, but new
+transport and additive behavior is not implemented in `lib.rs` or either
+`main.rs`.
+
+## MASH And Realtime Interfaces
+
+Both processes expose:
+
+- `GET /mash` and `GET /fabrication/mash` for Maud-rendered HTML;
+- `GET /mash/fragment` for the current out-of-band fragment;
+- `GET /api/realtime` and `GET /api/transports` for JSON contracts;
+- `GET /ws/html` for HTMX `ws` extension fragments;
+- `GET /ws/json` for `dd.fabrication.realtime.v1` JSON envelopes;
+- a separate newline-delimited JSON TCP listener; and
+- NATS input/output using the generated `dd-nats-subject-defs` crate from
+  `ORESoftware/k8s-libs-and-shared-defs`.
+
+The HTML WebSocket sends Maud fragments with `hx-swap-oob="outerHTML"`; the JSON
+WebSocket and TCP stream carry the same event ID, source, kind, timestamp,
+schema version, and open JSON payload. Client commands are deliberately bounded
+to `refresh`/`ping`; browser or TCP clients cannot inject arbitrary events.
+
+The web service connects upstream to
+`FABRICATION_BACKEND_WS_URL` (default
+`ws://dd-fabrication-server:8113/ws/json`). When `SUPABASE_URL` and
+`SUPABASE_PUBLISHABLE_KEY` are set, it also joins the documented Supabase
+Realtime channel and relays `postgres_changes`/broadcast events. A Supabase
+service-role or secret key is never rendered into HTML or sent to the browser.
+Database access remains separate and goes through SeaORM using
+`SUPABASE_DATABASE_URL`.
+
+The HTMX and `htmx-ext-ws` scripts are version- and integrity-pinned in the
+Maud view. Kubernetes production images should vendor those two static assets
+instead of depending on CDN availability.
+
+## Additive Printing Preflight
+
+`POST /printing/preflight` (also
+`POST /fabrication/printing/preflight`) accepts a tagged `fdm` or `resin`
+request and returns `dd.fabrication.additive-preflight.v1`. The result is also
+published to the shared realtime hub as `printer.preflight.completed`, so HTML,
+JSON WebSocket, TCP, and NATS consumers see the same decision.
+
+FDM gates cover build-volume margin, layer/nozzle and line/nozzle geometry,
+first-layer height, volumetric-flow capability, nozzle/bed material windows,
+overhang support, two-line minimum walls, enclosure and material-drying
+evidence, multi-material capacity, and calibrated purge volume. Resin gates
+cover build volume, layer/exposure qualification, minimum wall, unsupported
+islands and overhangs, enclosed-volume drainage, cross-section/lift-speed peel
+risk, wash duration, and UV post-cure duration. `GET
+/printing/preflight/catalog` describes the current gate set.
+
+Preflight is retained evidence, not machine authorization. Slicing,
+simulation, first-article inspection, controller checks, and operator or
+automation release gates still apply.
 
 ## Persistence
 
@@ -7487,16 +7563,27 @@ Database access is through **SeaORM**; the service has no direct `sqlx`
 dependency. SeaORM's Postgres driver uses its own transitive driver internals,
 but application code imports and exposes only SeaORM types.
 
-The connection is optional until the canonical fabrication tables are added to
-`k8s-cluster/remote/libs/pg-defs/schema/schema.sql`. The current bounded job and
-learning ledgers therefore remain in process; the service does not create
-tables or run migrations. Configure the connection, in precedence order, with
+The connection is optional until the dedicated bounded-context contract is
+added at
+`k8s-cluster/remote/libs/pg-defs/schema/databases/dd_fabrication_server/schema.sql`.
+It must not use `dd_build_server`: build execution and fabrication planning are
+different data owners. The current bounded job and learning ledgers therefore
+remain in process; neither binary creates tables or runs migrations. Configure
+the API/worker connection, in precedence order, with
 `FABRICATION_DATABASE_URL`, `RDS_DATABASE_URL`, or `DATABASE_URL`.
 `FABRICATION_DATABASE_REQUIRED=true` makes a missing URL a startup error.
 `FABRICATION_DATABASE_MIN_CONNECTIONS` and
 `FABRICATION_DATABASE_MAX_CONNECTIONS` bound the pool. When enabled, `/readyz`
 performs a bounded SeaORM ping and reports the database check without returning
 connection details.
+
+The web process uses `SUPABASE_DATABASE_URL`,
+`FABRICATION_WEB_DATABASE_URL`, or `DATABASE_URL`, with
+`FABRICATION_WEB_DATABASE_REQUIRED=true` for fail-closed startup. Schema changes
+follow the shared declarative-migrations/DPM workflow: edit the canonical SQL,
+generate a diff, verify and review it, and only then apply it through the
+deployment pipeline. Application startup never applies DDL, and application
+code never uses direct SQLx.
 
 ## Observability
 
@@ -7532,10 +7619,14 @@ NetworkPolicy egress.
 ```bash
 cd remote/deployments/fabrication-server-rs
 cargo test
-cargo run --release
+cargo run --release --bin dd-fabrication-server
+cargo run --release --bin dd-fabrication-web-server
 ```
 
-The default local port is `8113`; set `PORT` to override it.
+Default listeners are fabrication HTTP `8113`, fabrication TCP `8114`, web HTTP
+`8115`, and web TCP `8116`. Override them with `PORT`,
+`FABRICATION_TCP_PORT`, `FABRICATION_WEB_PORT`, and
+`FABRICATION_WEB_TCP_PORT` respectively.
 
 > **ORM policy:** application database code uses **SeaORM**, not direct sqlx
 > (MASH stack: maud, axum, SeaORM, supabase, htmx).

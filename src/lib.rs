@@ -63,10 +63,12 @@ use serde_json::{json, Map, Value};
 use tokio::sync::Semaphore;
 use tracing::Instrument;
 
-use config::{env_bool, env_u64, env_value, optional_env, ServiceConfig};
+use config::{env_u64, env_value, ServiceConfig};
 use metrics::Metrics;
 use persistence::Persistence;
+use realtime::{EventHub, ServiceSurface};
 
+mod additive_printing;
 mod as_built_catalog_content;
 mod assembly_catalog_content;
 mod assembly_preflight_content;
@@ -91,6 +93,7 @@ mod failure_mode_catalog_content;
 mod geometry;
 mod handoff_catalog_content;
 mod how_it_works_content;
+mod http;
 mod instruction_improvement_catalog;
 mod intervention_catalog_content;
 mod kinematics_catalog_content;
@@ -100,6 +103,7 @@ mod machine_code_catalog_content;
 mod machine_code_preflight_content;
 mod maintenance_catalog_content;
 mod manufacturability_catalog_content;
+mod messaging;
 mod metrics;
 mod monitoring_catalog_content;
 mod nesting_catalog_content;
@@ -111,6 +115,7 @@ mod process_recipe_catalog_content;
 mod provenance_catalog_content;
 mod quality_catalog_content;
 mod quality_preflight_content;
+mod realtime;
 mod recomposition_catalog_content;
 mod release_catalog_content;
 mod release_gate_catalog_content;
@@ -126,7 +131,9 @@ mod support_strategy_catalog_content;
 mod tolerance_catalog_content;
 mod tooling_catalog_content;
 mod toolpath_catalog_content;
+mod transport;
 mod utilities_catalog_content;
+mod web_server;
 mod workholding_catalog_content;
 mod workholding_preflight_content;
 
@@ -157,6 +164,7 @@ const SIMULATED_MOTION_AXES: [char; 7] = ['X', 'Y', 'Z', 'A', 'B', 'C', 'E'];
 struct AppState {
     nats: Option<async_nats::Client>,
     persistence: Persistence,
+    realtime: EventHub,
     request_subject: String,
     queue_group: String,
     result_subject: String,
@@ -120903,34 +120911,6 @@ async fn examples() -> impl IntoResponse {
     }))
 }
 
-async fn healthz() -> impl IntoResponse {
-    Json(json!({ "ok": true, "service": SERVICE_NAME }))
-}
-
-async fn readyz(State(state): State<AppState>) -> Response {
-    let database_ready = state.persistence.is_ready().await;
-    let status = if database_ready {
-        StatusCode::OK
-    } else {
-        StatusCode::SERVICE_UNAVAILABLE
-    };
-    (
-        status,
-        Json(json!({
-            "ok": database_ready,
-            "service": SERVICE_NAME,
-            "checks": {
-                "database": {
-                    "client": "seaorm",
-                    "enabled": state.persistence.is_enabled(),
-                    "ready": database_ready,
-                }
-            }
-        })),
-    )
-        .into_response()
-}
-
 async fn list_jobs(State(state): State<AppState>) -> Response {
     match state.jobs.read() {
         Ok(jobs) => {
@@ -121018,154 +120998,6 @@ async fn get_artifact(
         )
             .into_response(),
     }
-}
-
-async fn metrics(State(state): State<AppState>) -> Response {
-    let (current_jobs, current_artifacts) = state
-        .jobs
-        .read()
-        .map(|jobs| jobs.counts())
-        .unwrap_or((0, 0));
-    let current_learning_outcomes = state
-        .learning
-        .read()
-        .map(|learning| learning.count())
-        .unwrap_or(0);
-    let mut body = format!(
-        "# HELP dd_fabrication_server_plan_requests_total Fabrication plan requests received.\n\
-         # TYPE dd_fabrication_server_plan_requests_total counter\n\
-         dd_fabrication_server_plan_requests_total {}\n\
-         # HELP dd_fabrication_server_analysis_requests_total Instruction analysis requests received.\n\
-         # TYPE dd_fabrication_server_analysis_requests_total counter\n\
-         dd_fabrication_server_analysis_requests_total {}\n\
-         # HELP dd_fabrication_server_learning_requests_total Learning outcome requests received.\n\
-         # TYPE dd_fabrication_server_learning_requests_total counter\n\
-         dd_fabrication_server_learning_requests_total {}\n\
-         # HELP dd_fabrication_server_generated_programs_total Draft machine programs generated.\n\
-         # TYPE dd_fabrication_server_generated_programs_total counter\n\
-         dd_fabrication_server_generated_programs_total {}\n\
-         # HELP dd_fabrication_server_validation_findings_total Validation findings emitted.\n\
-         # TYPE dd_fabrication_server_validation_findings_total counter\n\
-         dd_fabrication_server_validation_findings_total {}\n\
-         # HELP dd_fabrication_server_failure_boundaries_total Failure boundaries emitted.\n\
-         # TYPE dd_fabrication_server_failure_boundaries_total counter\n\
-         dd_fabrication_server_failure_boundaries_total {}\n\
-         # HELP dd_fabrication_server_operator_actions_total Required operator intervention actions emitted by plan and instruction-analysis responses.\n\
-         # TYPE dd_fabrication_server_operator_actions_total counter\n\
-         dd_fabrication_server_operator_actions_total {}\n\
-         # HELP dd_fabrication_server_fixture_release_blockers_total Fixture/setup release blockers emitted by plan responses.\n\
-         # TYPE dd_fabrication_server_fixture_release_blockers_total counter\n\
-         dd_fabrication_server_fixture_release_blockers_total {}\n\
-         # HELP dd_fabrication_server_split_combine_reviews_total Split/combine decision or review records emitted before machine-ready release.\n\
-         # TYPE dd_fabrication_server_split_combine_reviews_total counter\n\
-         dd_fabrication_server_split_combine_reviews_total {}\n\
-         # HELP dd_fabrication_server_errors_total Requests or background events that failed.\n\
-         # TYPE dd_fabrication_server_errors_total counter\n\
-         dd_fabrication_server_errors_total {}\n\
-         # HELP dd_fabrication_server_nats_messages_total Fabrication requests received from NATS.\n\
-         # TYPE dd_fabrication_server_nats_messages_total counter\n\
-         dd_fabrication_server_nats_messages_total {}\n\
-         # HELP dd_fabrication_server_nats_published_total NATS messages published by the fabrication server.\n\
-         # TYPE dd_fabrication_server_nats_published_total counter\n\
-         dd_fabrication_server_nats_published_total {}\n\
-         # HELP dd_fabrication_server_nats_publish_failures_total NATS publishes or broker flushes that failed.\n\
-         # TYPE dd_fabrication_server_nats_publish_failures_total counter\n\
-         dd_fabrication_server_nats_publish_failures_total {}\n\
-         # HELP dd_fabrication_server_nats_results_published_total Fabrication result messages published to NATS.\n\
-         # TYPE dd_fabrication_server_nats_results_published_total counter\n\
-         dd_fabrication_server_nats_results_published_total {}\n\
-         # HELP dd_fabrication_server_mdp_published_total MDP optimization requests published for fabrication policy learning.\n\
-         # TYPE dd_fabrication_server_mdp_published_total counter\n\
-         dd_fabrication_server_mdp_published_total {}\n\
-         # HELP dd_fabrication_server_jobs_stored_total Fabrication jobs recorded in the in-process artifact ledger.\n\
-         # TYPE dd_fabrication_server_jobs_stored_total counter\n\
-         dd_fabrication_server_jobs_stored_total {}\n\
-         # HELP dd_fabrication_server_artifacts_stored_total Fabrication artifacts recorded in the in-process artifact ledger.\n\
-         # TYPE dd_fabrication_server_artifacts_stored_total counter\n\
-         dd_fabrication_server_artifacts_stored_total {}\n\
-         # HELP dd_fabrication_server_artifact_requests_total Artifact detail requests served by the fabrication server.\n\
-         # TYPE dd_fabrication_server_artifact_requests_total counter\n\
-         dd_fabrication_server_artifact_requests_total {}\n\
-         # HELP dd_fabrication_server_learning_events_stored_total Learning events recorded in the in-process policy memory.\n\
-         # TYPE dd_fabrication_server_learning_events_stored_total counter\n\
-         dd_fabrication_server_learning_events_stored_total {}\n\
-         # HELP dd_fabrication_server_costing_result_reviews_total Costing result review submissions accepted for cost, yield, scrap, and split/combine route learning.\n\
-         # TYPE dd_fabrication_server_costing_result_reviews_total counter\n\
-         dd_fabrication_server_costing_result_reviews_total {}\n\
-         # HELP dd_fabrication_server_current_jobs Current jobs retained in the bounded in-process artifact ledger.\n\
-         # TYPE dd_fabrication_server_current_jobs gauge\n\
-         dd_fabrication_server_current_jobs {}\n\
-         # HELP dd_fabrication_server_current_artifacts Current artifacts retained in the bounded in-process artifact ledger.\n\
-         # TYPE dd_fabrication_server_current_artifacts gauge\n\
-         dd_fabrication_server_current_artifacts {}\n\
-         # HELP dd_fabrication_server_current_learning_outcomes Current outcomes retained in bounded policy memory.\n\
-         # TYPE dd_fabrication_server_current_learning_outcomes gauge\n\
-         dd_fabrication_server_current_learning_outcomes {}\n",
-        state.metrics.plan_requests_total.load(Ordering::Relaxed),
-        state.metrics.analysis_requests_total.load(Ordering::Relaxed),
-        state.metrics.learning_requests_total.load(Ordering::Relaxed),
-        state.metrics.generated_programs_total.load(Ordering::Relaxed),
-        state
-            .metrics
-            .validation_findings_total
-            .load(Ordering::Relaxed),
-        state
-            .metrics
-            .failure_boundaries_total
-            .load(Ordering::Relaxed),
-        state
-            .metrics
-            .operator_actions_total
-            .load(Ordering::Relaxed),
-        state
-            .metrics
-            .fixture_release_blockers_total
-            .load(Ordering::Relaxed),
-        state
-            .metrics
-            .split_combine_reviews_total
-            .load(Ordering::Relaxed),
-        state.metrics.errors_total.load(Ordering::Relaxed),
-        state.metrics.nats_messages_total.load(Ordering::Relaxed),
-        state.metrics.nats_published_total.load(Ordering::Relaxed),
-        state
-            .metrics
-            .nats_publish_failures_total
-            .load(Ordering::Relaxed),
-        state
-            .metrics
-            .nats_results_published_total
-            .load(Ordering::Relaxed),
-        state.metrics.mdp_published_total.load(Ordering::Relaxed),
-        state.metrics.jobs_stored_total.load(Ordering::Relaxed),
-        state.metrics.artifacts_stored_total.load(Ordering::Relaxed),
-        state.metrics.artifact_requests_total.load(Ordering::Relaxed),
-        state
-            .metrics
-            .learning_events_stored_total
-            .load(Ordering::Relaxed),
-        state
-            .metrics
-            .costing_result_reviews_total
-            .load(Ordering::Relaxed),
-        current_jobs,
-        current_artifacts,
-        current_learning_outcomes,
-    );
-    body.push_str(&format!(
-        "# HELP dd_fabrication_server_persistence_enabled Whether the SeaORM Postgres persistence connection is configured.\n\
-         # TYPE dd_fabrication_server_persistence_enabled gauge\n\
-         dd_fabrication_server_persistence_enabled {}\n",
-        u8::from(state.persistence.is_enabled()),
-    ));
-    (
-        [(
-            axum::http::header::CONTENT_TYPE,
-            "text/plain; version=0.0.4",
-        )],
-        body,
-    )
-        .into_response()
 }
 
 async fn plan_http(
@@ -123576,70 +123408,53 @@ async fn api_docs_json() -> impl IntoResponse {
     )
 }
 
-#[tracing::instrument(
-    name = "messaging.connect",
-    skip_all,
-    err,
-    fields(otel.kind = "client", messaging.system = "nats")
-)]
-async fn connect_nats(
-    nats_url: &str,
-    secrets: &secrets::SecretOverlay,
-) -> Result<async_nats::Client, Box<dyn Error + Send + Sync>> {
-    let mut options = async_nats::ConnectOptions::new()
-        .name(SERVICE_NAME)
-        .retry_on_initial_connect()
-        .ping_interval(Duration::from_secs(15))
-        .connection_timeout(Duration::from_secs(10));
-    if env_bool("NATS_REQUIRE_TLS", false) {
-        options = options.require_tls(true);
-    }
-    if let Some(path) = optional_env("NATS_CREDENTIALS_FILE") {
-        options = options
-            .credentials_file(&path)
-            .await
-            .map_err(|error| format!("failed to read NATS credentials file {path}: {error}"))?;
-    } else if let Some(token) = secrets.get("NATS_TOKEN") {
-        options = options.token(token);
-    } else if let Some(seed) = secrets.get("NATS_NKEY") {
-        options = options.nkey(seed);
-    }
-    Ok(options.connect(nats_url).await?)
+pub async fn run_web() -> Result<(), Box<dyn Error + Send + Sync>> {
+    web_server::run().await
 }
 
 pub async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
     let _otel = observability::init();
 
     let config = ServiceConfig::from_env()?;
+    let http_address: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
+    let tcp_address: SocketAddr = format!("{}:{}", config.host, config.tcp_port).parse()?;
     let persistence = Persistence::from_env().await?;
     let persistence_enabled = persistence.is_enabled();
     let secrets = secrets::SecretOverlay::load()
         .await
         .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))?;
-    let nats = match secrets.get("NATS_URL") {
-        // Bound initial broker startup so the independent HTTP planning API can
-        // still come up during an outage. Once connected, async-nats handles
-        // reconnects and the durable consumer resumes from its last ack.
-        Some(url) => {
-            match tokio::time::timeout(Duration::from_secs(12), connect_nats(&url, &secrets)).await
-            {
-                Ok(Ok(client)) => Some(client),
-                Ok(Err(error)) => {
-                    tracing::error!("dd-fabrication-server NATS connect failed ({url}): {error}");
-                    None
-                }
-                Err(_) => {
-                    tracing::error!("dd-fabrication-server NATS connect timed out ({url})");
-                    None
-                }
-            }
-        }
-        None => None,
-    };
+    let nats = messaging::connect_optional(&secrets, SERVICE_NAME).await;
     let nats_enabled = nats.is_some();
+    let realtime_hub = EventHub::new(ServiceSurface::Fabrication, config.realtime_buffer);
+    transport::spawn_relay(
+        nats.clone(),
+        config.result_subject.clone(),
+        realtime_hub.clone(),
+        ServiceSurface::Fabrication,
+    );
+    transport::spawn_publisher(
+        nats.clone(),
+        config.event_subject.clone(),
+        realtime_hub.clone(),
+    );
+    let tcp_listener = transport::bind_tcp(tcp_address).await?;
+    let tcp_hub = realtime_hub.clone();
+    tokio::spawn(async move {
+        if let Err(error) =
+            transport::serve_tcp(tcp_listener, tcp_hub, ServiceSurface::Fabrication).await
+        {
+            tracing::error!(
+                network.transport = "tcp",
+                server.address = %tcp_address,
+                error = %error,
+                "fabrication TCP server stopped"
+            );
+        }
+    });
     let state = AppState {
         nats,
         persistence,
+        realtime: realtime_hub.clone(),
         request_subject: config.request_subject,
         queue_group: config.queue_group,
         result_subject: config.result_subject,
@@ -123660,8 +123475,8 @@ pub async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/fabrication/landing", get(landing_page))
         .route("/how-it-works", get(how_it_works_http))
         .route("/fabrication/how-it-works", get(how_it_works_http))
-        .route("/healthz", get(healthz))
-        .route("/readyz", get(readyz))
+        .route("/healthz", get(http::healthz))
+        .route("/readyz", get(http::readyz))
         .route("/capabilities", get(capabilities))
         .route("/fabrication/capabilities", get(capabilities))
         .route("/objective/coverage", get(objective_coverage_http))
@@ -124794,7 +124609,7 @@ pub async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/docs/api", get(api_docs_html))
         .route("/api/docs", get(api_docs_html))
         .route("/api/docs.json", get(api_docs_json))
-        .route("/metrics", get(metrics))
+        .route("/metrics", get(http::metrics))
         .route("/jobs/catalog", get(job_evidence_catalog_http))
         .route("/fabrication/jobs/catalog", get(job_evidence_catalog_http))
         .route("/jobs", get(list_jobs))
@@ -124867,15 +124682,16 @@ pub async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/learning/outcomes",
             get(learning_outcomes_http).post(learning_outcome_http),
         )
+        .merge(additive_printing::router(realtime_hub.clone()))
+        .merge(transport::router(realtime_hub, ServiceSurface::Fabrication))
         .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
         .with_state(state)
         .merge(dd_runtime_config_client::router());
 
     tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
-    let addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
-    observability::server_listening(addr, persistence_enabled, nats_enabled);
-    let listener = tokio::net::TcpListener::bind(addr).await?;
+    observability::server_listening(http_address, persistence_enabled, nats_enabled);
+    let listener = tokio::net::TcpListener::bind(http_address).await?;
     axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
@@ -140845,6 +140661,7 @@ mod tests {
         let state = AppState {
             nats: None,
             persistence: Persistence::Disabled,
+            realtime: EventHub::new(ServiceSurface::Fabrication, 8),
             request_subject: FABRICATION_REQUESTS_SUBJECT.to_string(),
             queue_group: FABRICATION_REQUESTS_QUEUE_GROUP.to_string(),
             result_subject: FABRICATION_RESULTS_SUBJECT.to_string(),
