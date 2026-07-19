@@ -10,6 +10,7 @@ use anyhow::{bail, Result};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
+use tokio::time::{timeout, Duration};
 use tracing::debug;
 
 use crate::cell::Cell;
@@ -18,6 +19,23 @@ use crate::crypto::{ClientHandshake, Opener, Sealer};
 use crate::wire::{frame_bytes, read_frame, strip_len, write_frame};
 
 const CLIENT_READ_CHUNK: usize = 32 * 1024;
+
+/// Default backward-idle timeout for a spliced stream. Bounds an abandoned or
+/// stalled circuit so a detached splice task cannot pin the entry-relay socket
+/// and circuit state indefinitely (0 disables). Overridable per deployment.
+const DEFAULT_CLIENT_IDLE_SECS: u64 = 600;
+
+fn client_idle_timeout() -> Option<Duration> {
+    let secs = std::env::var("TOR_CLIENT_IDLE_TIMEOUT_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_CLIENT_IDLE_SECS);
+    return if secs == 0 {
+        None
+    } else {
+        Some(Duration::from_secs(secs))
+    };
+}
 
 pub struct Circuit {
     r0_r: OwnedReadHalf,
