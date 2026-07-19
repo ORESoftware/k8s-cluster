@@ -1,0 +1,91 @@
+name: athleto GitOps
+
+# Argo CD's dd-next-runtime applications watch this repository's dev branch.
+# This workflow validates the desired state only; it never receives cluster
+# credentials and never calls kubectl or argocd to deploy imperatively.
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/athleto-gitops.yml'
+      - '.gitmodules'
+      - 'remote/argocd/dd-next-runtime/**'
+      - 'remote/argocd/clusters/aws/applications.yaml'
+      - 'remote/argocd/clusters/hetzner/applications.yaml'
+      - 'remote/deployments/athleto-app-rs'
+      - 'remote/deployments/athleto-backend-rs'
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/athleto-gitops.yml'
+      - '.gitmodules'
+      - 'remote/argocd/dd-next-runtime/**'
+      - 'remote/argocd/clusters/aws/applications.yaml'
+      - 'remote/argocd/clusters/hetzner/applications.yaml'
+      - 'remote/deployments/athleto-app-rs'
+      - 'remote/deployments/athleto-backend-rs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: athleto-gitops-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - name: Validate GitHub Actions
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 # v1.7.12
+        with:
+          args: ./.github/workflows/athleto-gitops.yml
+      - name: Verify Argo desired-state contract
+        run: |
+          ruby <<'RUBY'
+          require 'yaml'
+
+          runtime_dir = 'remote/argocd/dd-next-runtime'
+          required_files = %w[
+            kustomization.yaml
+            dd-athleto-app-rs.deployment.yaml
+            dd-athleto-app-rs.ingress.yaml
+            dd-athleto-app-rs.service.yaml
+            dd-athleto-backend.observability.patch.yaml
+          ]
+
+          required_files.each do |name|
+            path = File.join(runtime_dir, name)
+            raise "missing GitOps manifest: #{path}" unless File.file?(path)
+            YAML.safe_load(File.read(path), aliases: true)
+          end
+
+          kustomization = File.read(File.join(runtime_dir, 'kustomization.yaml'))
+          %w[
+            dd-athleto-app-rs.deployment.yaml
+            dd-athleto-app-rs.ingress.yaml
+            dd-athleto-app-rs.service.yaml
+            ../../deployments/athleto-backend-rs/k8s/ec2
+          ].each do |resource|
+            raise "dd-next-runtime does not include #{resource}" unless kustomization.include?(resource)
+          end
+
+          app = YAML.safe_load(File.read(File.join(runtime_dir, 'dd-athleto-app-rs.deployment.yaml')), aliases: true)
+          revision = app.dig('spec', 'template', 'metadata', 'annotations', 'dd.dev/athleto-app-revision')
+          raise 'Athlet-O app rollout revision is missing or malformed' unless revision&.match?(/\A[0-9a-f]{7,40}\z/)
+
+          %w[aws hetzner].each do |cluster|
+            applications = YAML.load_stream(File.read("remote/argocd/clusters/#{cluster}/applications.yaml"))
+            runtime = applications.find { |document| document&.dig('metadata', 'name') == 'dd-next-runtime' }
+            raise "#{cluster} is missing the dd-next-runtime Argo application" unless runtime
+
+            source = runtime.fetch('spec').fetch('source')
+            raise "#{cluster} dd-next-runtime must track dev" unless source['targetRevision'] == 'dev'
+            raise "#{cluster} dd-next-runtime has the wrong GitOps path" unless source['path'] == runtime_dir
+          end
+          RUBY
