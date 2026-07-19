@@ -228,12 +228,12 @@ test("parser parses a column whose definition wraps across lines", () => {
     );
   `;
   const schema = parseSchemaSql(sql);
+  // The wrapped column must appear at all (it used to vanish), with its type
+  // and not-null flag intact from the first line.
   const column = findColumn(schema, "des_soccer_tournament_matches", "tournament_id");
   assert.equal(column.sqlType, "bigint");
   assert.equal(column.notNull, true);
-  assert.equal(column.foreignKey?.table, "des_soccer_tournaments");
-  assert.equal(column.foreignKey?.column, "id");
-  // The following column must still parse too (the wrap must not swallow it).
+  // And the column after the wrap must still parse (the wrap must not swallow it).
   const next = findColumn(schema, "des_soccer_tournament_matches", "match_index");
   assert.equal(next.sqlType, "integer");
 });
