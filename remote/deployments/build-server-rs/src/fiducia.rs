@@ -122,6 +122,16 @@ fn explicitly_not_acquired(value: &serde_json::Value) -> bool {
         .any(|flag| flag.as_bool() == Some(false))
 }
 
+fn authorization_error(status: u16, value: &serde_json::Value) -> Option<String> {
+    if status != 401 && status != 403 {
+        return None;
+    }
+    Some(format!(
+        "fiducia lock acquire returned HTTP {status}; verify the service-specific API key and locks:write scope: {}",
+        value.to_string().chars().take(300).collect::<String>()
+    ))
+}
+
 /// Try-lock with a client-side retry budget. `Busy`/`Unavailable` handling is
 /// the caller's policy decision (required vs best-effort coordination).
 pub async fn acquire_lock(
@@ -157,6 +167,12 @@ pub async fn acquire_lock(
             }
             Ok((409, _)) | Ok((423, _)) => {}
             Ok((status, value)) => {
+                if let Some(error) = authorization_error(status, &value) {
+                    // An invalid or under-scoped credential cannot recover by
+                    // retrying. Return immediately instead of consuming the
+                    // full lock-wait budget for every build.
+                    return LockOutcome::Unavailable { error };
+                }
                 last_error = Some(format!(
                     "fiducia lock acquire returned HTTP {status}: {}",
                     value.to_string().chars().take(300).collect::<String>()
@@ -264,5 +280,14 @@ mod tests {
         );
         assert!(validate_lock_url("http://example.com:8088").is_err());
         assert!(validate_lock_url("https://user:pass@locks.fiducia.cloud").is_err());
+    }
+
+    #[test]
+    fn authorization_errors_are_terminal_and_actionable() {
+        let value = json!({ "error": "insufficient_scope" });
+        let error = authorization_error(403, &value).expect("403 must be terminal");
+        assert!(error.contains("locks:write"));
+        assert!(authorization_error(401, &serde_json::Value::Null).is_some());
+        assert!(authorization_error(409, &serde_json::Value::Null).is_none());
     }
 }

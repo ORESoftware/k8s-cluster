@@ -28,6 +28,12 @@ Built on the cluster's shared infrastructure so it composes with the rest of the
   same image serialize across replicas; webhooks/NATS submissions dedupe through fiducia
   idempotency leases. Opt-in via `BUILD_SERVER_COORDINATION_ENABLED`; the in-cluster endpoint and
   the `dd-contract-service` integration pattern are reused. See [src/fiducia.rs](src/fiducia.rs).
+  This is currently a small, typed HTTP client local to this Rust service; it does **not** yet use
+  the `fiducia-clients` repository. Supply a dedicated `FIDUCIA_API_KEY` with `locks:write` and the
+  corresponding idempotency-lease scope. Authentication and authorization failures fail fast,
+  while transient availability failures follow the configured retry budget. Keep
+  `BUILD_SERVER_COORDINATION_REQUIRED=false` until both lock and idempotency smoke tests pass with
+  that least-privilege key.
 - **Persistence — Amazon RDS Postgres.** Its OWN database `dd_build_server` (its own namespace,
   separate from the shared pg-defs contract), via SeaORM. Jobs, webhook deliveries, and secret-sync
   audit rows survive restarts; jobs interrupted by a restart are marked failed on boot. Declarative
