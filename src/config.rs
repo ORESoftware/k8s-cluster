@@ -47,18 +47,22 @@ pub struct Config {
     pub require_webhook_signatures: bool,
     pub webhook_signature_tolerance_seconds: i64,
 
-    /// Mount the read-mostly HTMX admin UI at `/admin`. Defaults to ON for
-    /// dev convenience; production deployments behind public gateways should
-    /// either disable this (`BILLING_ADMIN_UI_ENABLED=false`) or front it
-    /// with `dd-remote-auth` per the access-posture rule in `AGENTS.md`.
+    /// Mount the read-mostly HTMX admin UI at `/admin`. Defaults to ON, but the
+    /// server refuses to boot with the admin UI enabled unless
+    /// `admin_auth_bearer` is also set (or `BILLING_ALLOW_INSECURE_DEV=1` is
+    /// explicitly given for local dev). Production deployments behind public
+    /// gateways should either disable this (`BILLING_ADMIN_UI_ENABLED=false`)
+    /// or front it with `dd-remote-auth` per the access-posture rule in
+    /// `AGENTS.md`.
     pub admin_ui_enabled: bool,
 
     /// When set, every `/admin/*` request must present
-    /// `Authorization: Bearer <this value>`. Constant-time compared. Leave
-    /// unset (default) for unauthenticated local dev. In production this
-    /// should be a high-entropy random string injected via SealedSecrets /
-    /// the External Secrets stack, mirroring how other webhook secrets
-    /// land in `BILLING_*` env vars.
+    /// `Authorization: Bearer <this value>`. Constant-time compared. Required
+    /// whenever the admin UI is enabled (boot fails otherwise unless
+    /// `BILLING_ALLOW_INSECURE_DEV=1`). In production this should be a
+    /// high-entropy random string injected via SealedSecrets / the External
+    /// Secrets stack, mirroring how other webhook secrets land in `BILLING_*`
+    /// env vars.
     pub admin_auth_bearer: Option<String>,
 
     /// Cross-origin `Origin` values explicitly allowed to perform admin
@@ -70,9 +74,10 @@ pub struct Config {
 
     /// Bearer token for the JSON API (`/v1/...`). When set, every
     /// tenant-scoped route requires `Authorization: Bearer <token>`
-    /// (constant-time compared). Leave unset for unauthenticated local
-    /// dev, but **always** set this in production — without it the
-    /// entire API is open to anyone who can reach the listener.
+    /// (constant-time compared). Required to boot: without it the entire API
+    /// is open to anyone who can reach the listener, so the server refuses to
+    /// start unless this is set (or `BILLING_ALLOW_INSECURE_DEV=1` is given for
+    /// local dev).
     ///
     /// Production deployments should additionally front the listener
     /// with `dd-remote-auth` or another gateway that enforces tenant
@@ -197,6 +202,39 @@ impl Config {
             }
         }
 
+        // Fail-closed auth posture. The only legitimate reason to boot without
+        // API/admin authentication is local development, which must be an
+        // explicit, clearly-named opt-in — never a silent default.
+        let allow_insecure_dev = env_bool("BILLING_ALLOW_INSECURE_DEV", false);
+        let admin_ui_enabled = env_bool("BILLING_ADMIN_UI_ENABLED", true);
+        let admin_auth_bearer = optional_trimmed_env("BILLING_ADMIN_AUTH_BEARER");
+        let api_auth_bearer = optional_trimmed_env("BILLING_API_AUTH_BEARER");
+
+        if !allow_insecure_dev {
+            // Admin UI enabled without a bearer = no-op enforcement in
+            // `admin/security.rs` (it always-passes when the bearer is unset).
+            if admin_ui_enabled && admin_auth_bearer.is_none() {
+                anyhow::bail!(
+                    "refusing to boot: BILLING_ADMIN_UI_ENABLED is on but \
+                     BILLING_ADMIN_AUTH_BEARER is unset, which mounts an \
+                     unauthenticated admin UI. Set a high-entropy \
+                     BILLING_ADMIN_AUTH_BEARER, disable the admin UI with \
+                     BILLING_ADMIN_UI_ENABLED=false, or set \
+                     BILLING_ALLOW_INSECURE_DEV=1 for local development."
+                );
+            }
+            // An unset API bearer leaves the entire /v1 API open (the auth
+            // middleware always-passes when the bearer is unset).
+            if api_auth_bearer.is_none() {
+                anyhow::bail!(
+                    "refusing to boot: BILLING_API_AUTH_BEARER is unset, which \
+                     leaves the entire /v1 API open to anyone who can reach the \
+                     listener. Set a high-entropy BILLING_API_AUTH_BEARER, or set \
+                     BILLING_ALLOW_INSECURE_DEV=1 for local development."
+                );
+            }
+        }
+
         Ok(Self {
             host: env::var("BILLING_HOST").unwrap_or_else(|_| "0.0.0.0".into()),
             port: env::var("BILLING_PORT")
@@ -257,7 +295,10 @@ impl Config {
             oauth_return_to_allowed_prefixes: parse_csv_env(
                 "BILLING_OAUTH_RETURN_TO_ALLOWED_PREFIXES",
             ),
-            require_webhook_signatures: env_bool("BILLING_REQUIRE_WEBHOOK_SIGNATURES", false),
+            // Fail-closed: verify webhook signatures unless an operator
+            // explicitly opts out. An unsigned/unverified webhook can forge
+            // money-movement events, so the default must reject them.
+            require_webhook_signatures: env_bool("BILLING_REQUIRE_WEBHOOK_SIGNATURES", true),
             webhook_signature_tolerance_seconds: env::var(
                 "BILLING_WEBHOOK_SIGNATURE_TOLERANCE_SECONDS",
             )
@@ -265,24 +306,10 @@ impl Config {
             .and_then(|s| s.parse().ok())
             .unwrap_or(300),
 
-            admin_ui_enabled: env_bool("BILLING_ADMIN_UI_ENABLED", true),
-            admin_auth_bearer: env::var("BILLING_ADMIN_AUTH_BEARER").ok().and_then(|s| {
-                let t = s.trim();
-                if t.is_empty() {
-                    None
-                } else {
-                    Some(t.to_string())
-                }
-            }),
+            admin_ui_enabled,
+            admin_auth_bearer,
             admin_allowed_origins: parse_csv_env("BILLING_ADMIN_ALLOWED_ORIGINS"),
-            api_auth_bearer: env::var("BILLING_API_AUTH_BEARER").ok().and_then(|s| {
-                let t = s.trim();
-                if t.is_empty() {
-                    None
-                } else {
-                    Some(t.to_string())
-                }
-            }),
+            api_auth_bearer,
             // Default fail-closed: the only legitimate use for outbound
             // private-IP traffic is dev/integration. Production callers
             // should hit the public webhook URL of their tenant.

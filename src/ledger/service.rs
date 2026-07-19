@@ -378,7 +378,14 @@ impl LedgerService {
 
         let account_id: Uuid = row.try_get("", "id")?;
         let balance_text: String = row.try_get("", "balance_text")?;
-        let balance_minor: i128 = balance_text.parse().unwrap_or(0);
+        // A balance we cannot parse is an integrity failure, not a zero
+        // balance: silently reporting 0 in a financial read path could mask a
+        // real position. Surface it instead of defaulting.
+        let balance_minor: i128 = balance_text.parse().map_err(|e| {
+            AppError::LedgerInvariant(format!(
+                "account {account_code}/{cur} balance {balance_text:?} is not a valid integer: {e}"
+            ))
+        })?;
 
         Ok(AccountBalance {
             account_id,
@@ -420,7 +427,13 @@ impl LedgerService {
         )?;
 
         let net_text: String = row.try_get("", "net")?;
-        Ok(net_text.parse().unwrap_or(0))
+        // As in `account_balance`: propagate a parse failure rather than
+        // silently reporting a zero roll-up.
+        net_text.parse().map_err(|e| {
+            AppError::LedgerInvariant(format!(
+                "summed balance {net_text:?} is not a valid integer: {e}"
+            ))
+        })
     }
 }
 
