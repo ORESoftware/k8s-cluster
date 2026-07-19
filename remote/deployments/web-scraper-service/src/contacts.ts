@@ -162,6 +162,12 @@ export function extractContacts(options: ContactExtractionOptions): ContactExtra
   };
 }
 
+function stripScriptsAndStyles(html: string): string {
+  return html
+    .replace(/<script\b[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style\b[\s\S]*?<\/style>/gi, ' ');
+}
+
 function collectTelHrefs(html: string, phones: PhoneCollector): void {
   for (const match of html.matchAll(TEL_HREF_RE)) {
     const value = decodeEntities(match[1] ?? '').trim();
