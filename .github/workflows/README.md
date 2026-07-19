@@ -3,8 +3,9 @@
 GitHub Actions for the superproject.
 
 - `ci.yml` validates the superproject contracts and committed GitOps release on
-  pull requests and `main`. Trusted non-PR runs additionally audit the complete
-  recursive fleet with the read-only `FIDUCIA_SUBMODULE_TOKEN`.
+  pull requests and `main`. Explicit manual runs additionally audit the complete
+  recursive fleet with the read-only `FIDUCIA_SUBMODULE_TOKEN`; the production
+  promotion always performs that same fail-closed recursive audit.
 - `deploy.yml` is a manual, `prod`-environment-gated promotion. It resolves the
   reviewed component gitlinks to GHCR digests, renders the three provider
   overlays, validates them, and commits only desired state to `main` for Argo CD

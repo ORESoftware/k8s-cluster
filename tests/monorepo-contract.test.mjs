@@ -284,7 +284,7 @@ test("CI and production promotion fail closed on immutable GitOps inputs", () =>
     assert.match(ci, new RegExp(`apps/${publicContractRepo.replace(".", "\\.")}`));
   }
   assert.match(ci, /fleet-audit:/);
-  assert.match(ci, /if: github\.event_name != 'pull_request'/);
+  assert.match(ci, /if: github\.event_name == 'workflow_dispatch'/);
   assert.match(ci, /submodules: recursive/);
   assert.match(read("package.json"), /node tools\/gitops-release\.mjs check/);
   assert.match(deploy, /environment: prod/);

@@ -1,6 +1,6 @@
 # Public contract CI initializes every public repository whose files the tests
-# read. Trusted main/manual runs additionally require the private-module token
-# and audit the complete pinned fleet.
+# read. Explicit manual runs additionally require the private-module token and
+# audit the complete pinned fleet.
 name: ci
 on:
   push:
@@ -53,11 +53,12 @@ jobs:
       - run: npm test
 
   fleet-audit:
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'workflow_dispatch'
     needs: contracts
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    # Isolates the private read token from public pull-request jobs.
+    # Isolates the private read token from automatic public jobs. Production
+    # promotion independently runs this same fail-closed fleet audit.
     environment: internal-ci
     steps:
       - name: Require private-submodule read token
