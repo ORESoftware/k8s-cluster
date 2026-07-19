@@ -630,7 +630,9 @@ async fn docs_page(State(cfg): State<AppState>, AxPath(name): AxPath<String>) ->
     // volume could otherwise inject script into the dashboard origin. Map raw
     // HTML events to escaped text; genuine markdown still renders normally.
     let mut rendered = String::new();
-    let parser = pulldown_cmark::Parser::new(&md).map(|event| match event {
+    let opts =
+        pulldown_cmark::Options::ENABLE_TABLES | pulldown_cmark::Options::ENABLE_STRIKETHROUGH;
+    let parser = pulldown_cmark::Parser::new_ext(&md, opts).map(|event| match event {
         pulldown_cmark::Event::Html(html) => pulldown_cmark::Event::Text(html),
         pulldown_cmark::Event::InlineHtml(html) => pulldown_cmark::Event::Text(html),
         other => other,
