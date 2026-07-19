@@ -118,11 +118,25 @@ fn decode_pubkey(s: &str) -> Result<[u8; 32]> {
 /// file does not exist. The file stores the 32-byte secret as base64.
 pub fn load_or_create_static_secret(path: &Path) -> Result<(StaticSecret, [u8; 32])> {
     if path.exists() {
+        // The write path is symlink-safe (O_EXCL); harden the read path too so an
+        // attacker with write access to the key directory cannot pre-plant a
+        // symlink that redirects the relay's "identity secret" to a file they
+        // control.
+        #[cfg(unix)]
+        {
+            let meta = std::fs::symlink_metadata(path)
+                .with_context(|| format!("stat key file {}", path.display()))?;
+            if meta.file_type().is_symlink() {
+                bail!("key file {} is a symlink; refusing to follow it", path.display());
+            }
+        }
         let text = std::fs::read_to_string(path)
             .with_context(|| format!("reading key file {}", path.display()))?;
-        let raw = base64::engine::general_purpose::STANDARD
-            .decode(text.trim())
-            .with_context(|| format!("base64-decoding key file {}", path.display()))?;
+        let mut raw = Zeroizing::new(
+            base64::engine::general_purpose::STANDARD
+                .decode(text.trim())
+                .with_context(|| format!("base64-decoding key file {}", path.display()))?,
+        );
         if raw.len() != 32 {
             bail!(
                 "key file {} must hold 32 bytes, got {}",
@@ -130,9 +144,10 @@ pub fn load_or_create_static_secret(path: &Path) -> Result<(StaticSecret, [u8; 3
                 raw.len()
             );
         }
-        let mut secret_bytes = [0u8; 32];
+        let mut secret_bytes = Zeroizing::new([0u8; 32]);
         secret_bytes.copy_from_slice(&raw);
-        let secret = StaticSecret::from(secret_bytes);
+        raw.zeroize();
+        let secret = StaticSecret::from(*secret_bytes);
         let public = PublicKey::from(&secret).to_bytes();
         return Ok((secret, public));
     }
