@@ -218,9 +218,15 @@ export STRIPE_API_VERSION=2026-04-22.dahlia
 export STRIPE_CLIENT_SECRET=...
 # Stripe platform API key, used for Stripe API reads with Stripe-Account.
 export STRIPE_API_KEY=...
-# Provider webhook secrets are optional locally; set strict mode in shared envs.
+# Provider webhook secrets are optional locally; strict mode is now the default.
 export STRIPE_WEBHOOK_SECRET=whsec_...
+# Webhook signature verification defaults to ON (fail-closed). Only turn it off
+# for local development against unsigned mock payloads.
 export BILLING_REQUIRE_WEBHOOK_SIGNATURES=false
+# Fail-closed auth: the server refuses to boot with the admin UI enabled and no
+# BILLING_ADMIN_AUTH_BEARER, or with BILLING_API_AUTH_BEARER unset. For local dev
+# either set those bearers or opt out explicitly:
+export BILLING_ALLOW_INSECURE_DEV=1
 export BILLING_FIDUCIA_ENABLED=false # set true with a local/public Fiducia endpoint
 # export BILLING_FIDUCIA_BASE_URL=http://127.0.0.1:8088
 # export BILLING_FIDUCIA_API_KEY=fdc_... # requires locks:write
