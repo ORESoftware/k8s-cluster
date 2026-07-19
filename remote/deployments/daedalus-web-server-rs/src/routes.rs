@@ -11,7 +11,7 @@ use axum::{
     response::{Html, IntoResponse, Response},
 };
 use dd_pg_defs_sea_orm::{fab_plans, fab_instructions, fab_runs};
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 use uuid::Uuid;
 
 use crate::{error::ServiceError, supabase_auth::Operator, views, SharedState};
