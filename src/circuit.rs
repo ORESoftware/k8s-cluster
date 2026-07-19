@@ -126,6 +126,7 @@ impl Circuit {
             mut openers_bwd,
         } = self;
         let exit = sealers_fwd.len() - 1;
+        let idle = client_idle_timeout();
 
         // App -> circuit: wrap each chunk as Data for the exit.
         let up = async move {
