@@ -54,7 +54,15 @@ pub fn parse_decimal_to_minor(s: &str, provider_tag: &'static str) -> AppResult<
         provider: provider_tag.into(),
         message: format!("amount frac {frac}: {e}"),
     })?;
-    let v = whole_i * 100 + frac_i;
+    // Checked arithmetic: a huge whole part must surface as a provider error,
+    // never a panic (debug) or silent wrap (release) in a money code path.
+    let v = whole_i
+        .checked_mul(100)
+        .and_then(|scaled| scaled.checked_add(frac_i))
+        .ok_or_else(|| AppError::Provider {
+            provider: provider_tag.into(),
+            message: format!("amount out of range: {s}"),
+        })?;
     Ok(if neg { -v } else { v })
 }
 
