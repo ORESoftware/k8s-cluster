@@ -9,6 +9,12 @@ Linux desktop toolchain, and fetches the exact Flutter framework revision
 scan-on-push ECR repository `sonus-flutter-builder`; Kubernetes workloads should
 pin the resulting digest after the bootstrap build succeeds.
 
+Published artifact:
+
+- tag: `3.44.2-c9a6c48423`
+- digest: `sha256:e10e164ddf17544896535360239b2c0fe2639df721307006bbc5d8a4ec3cf845`
+- repository policy: immutable tags, scan on push, AES-256 server-side encryption
+
 The checkout is intentionally shallow, so the Dockerfile creates the reviewed
 `3.44.2` release tag at the verified full revision before Flutter first writes
 its version cache. Omitting that tag makes the tool report `0.0.0-unknown` and
