@@ -640,7 +640,7 @@ function parseColumn(value) {
     notNull: /\bnot\s+null\b/i.test(rest) || /\bprimary\s+key\b/i.test(rest),
     defaultSql,
     defaultValue: defaultValueFromSql(defaultSql),
-    definitionSql: value.replace(/,$/, "").trim(),
+    definitionSql: normalized.replace(/,$/, "").trim(),
   };
   if (column.sqlType === "varchar" && column.maxLength) {
     mergeValidation(column, { maxLength: column.maxLength });
