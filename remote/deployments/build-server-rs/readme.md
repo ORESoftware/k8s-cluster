@@ -114,13 +114,12 @@ Example:
 }
 ```
 
-Each profile container is CPU-, memory-, PID-, capability-, and privilege-limited. Most profiles
-run with every Linux capability dropped. The two Linux desktop profiles add only the five
-capabilities apt/dpkg needs to install the GTK build toolchain; the command and package list remain
-compiled into the server. Repository code
-still executes inside the runner, so profile jobs remain limited to trusted, allowlisted GitHub
-repositories. Artifacts are archived from fixed paths only and retrieved through the authenticated
-artifact endpoint.
+Each profile container is CPU-, memory-, PID-, capability-, and privilege-limited. Every profile
+runs with all Linux capabilities dropped. Flutter, Android, and Linux desktop dependencies are
+preinstalled in the revision-pinned cluster image, so profile jobs neither install packages at
+runtime nor require elevated capabilities. Repository code still executes inside the runner, so
+profile jobs remain limited to trusted, allowlisted GitHub repositories. Artifacts are archived
+from fixed paths only and retrieved through the authenticated artifact endpoint.
 
 `BUILD_SERVER_ALLOWED_PROFILE_REPO_PREFIXES` is a second, narrower allowlist applied only to
 executable profile jobs. The cluster permits the `ORESoftware` and `sonus-auris` organizations;

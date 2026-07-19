@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-05-16-build-server'
+        dd.dev/telemetry-revision: '2026-07-18-flutter-profiles-v2'
       labels:
         app: dd-build-server
     spec:
