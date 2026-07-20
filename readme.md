@@ -602,6 +602,9 @@ credentials, so they have to prove the caller's identity.
   exists at the slot without comparing roots).
 - Scheduler exactly-once via `(job_id, scheduled_for)` dedup index; the
   runner is at-least-once today.
+- A `tenant_memberships` table so per-tenant entitlement can be resolved from
+  the database instead of from token claims alone (see "Per-tenant
+  authorization" above).
 
 ## Admin UI
 
