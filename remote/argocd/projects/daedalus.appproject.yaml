@@ -19,7 +19,9 @@ metadata:
 spec:
   description: "Tenant project for daedalus-fab — namespace `daedalus`, no cluster resources."
   sourceRepos:
-    - "https://github.com/daedalus-fab/daedalus-monorepo.git"
+    - "git@github.com:daedalus-fab/fabrication-server.rs.git"
+    - "git@github.com:daedalus-fab/daedalus-api-server.rs.git"
+    - "git@github.com:daedalus-fab/daedalus-web-server.rs.git"
   destinations:
     - server: https://kubernetes.default.svc
       namespace: daedalus
