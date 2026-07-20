@@ -1,0 +1,36 @@
+# Registration pointer for Argo CD. Shape copied from
+# k8s-cluster/docs/app-deploy-contract.md ("The registration pointer").
+#
+# This object is cluster-scoped tenancy metadata that the PLATFORM owns — it is
+# committed here for review/traceability, but it is applied into the `argocd`
+# namespace by the platform repo, not synced by this Application itself.
+#
+# Prerequisites the platform must land first (this repo must not declare them):
+#   - Namespace `daedalus` (+ ResourceQuota / LimitRange / tenant scaffold)
+#   - AppProject `daedalus` from remote/argocd/projects/_template.appproject.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-fabrication-server
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  # Its own tenant project, NOT `default` — this is what makes the
+  # namespace/cluster-resource boundary enforced rather than advisory.
+  project: daedalus
+  source:
+    repoURL: git@github.com:daedalus-fab/fabrication-server.rs.git
+    # Promotion knob: pin production to a reviewed tag rather than a branch.
+    targetRevision: main
+    path: deploy/k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: daedalus
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # The platform owns the Namespace, so no CreateNamespace=true here.
+      - ServerSideApply=true

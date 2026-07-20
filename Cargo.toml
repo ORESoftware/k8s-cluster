@@ -13,6 +13,7 @@ des_engine = { path = "../../submodules/discrete-event-system.rs" }
 dd-nats-subject-defs = { path = "../../libs/nats/subject-defs/generated/rust" }
 dd-runtime-config-client = { path = "../../libs/runtime-config-client-rs" }
 futures-util = "0.3"
+jsonwebtoken = "9"
 maud = "0.27"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 sea-orm = { version = "1.1", default-features = false, features = ["runtime-tokio-rustls", "sqlx-postgres"] }
@@ -20,3 +21,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
+
+[dev-dependencies]
+# `ServiceExt::oneshot` drives the composed router in the route-authorization
+# enumeration test, which is what keeps a newly added route from shipping
+# unauthenticated.
+tower = { version = "0.5", features = ["util"] }

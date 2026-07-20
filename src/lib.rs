@@ -9,8 +9,9 @@ use std::{
 };
 
 use axum::{
-    extract::{DefaultBodyLimit, Path, State},
-    http::StatusCode,
+    extract::{DefaultBodyLimit, FromRequestParts, Path, Request, State},
+    http::{request::Parts, StatusCode},
+    middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
@@ -64,9 +65,11 @@ use tokio::sync::Semaphore;
 use tracing::Instrument;
 
 use config::{env_u64, env_value, ServiceConfig};
+use error::ServiceError;
 use metrics::Metrics;
 use persistence::Persistence;
 use realtime::{EventHub, ServiceSurface};
+use supabase_auth::{bearer_token, Operator, SupabaseVerifier};
 
 mod additive_printing;
 mod as_built_catalog_content;
@@ -88,6 +91,7 @@ mod design_preflight_content;
 mod disposition_catalog_content;
 mod energy_catalog_content;
 mod environment_catalog_content;
+mod error;
 mod execution_preflight_content;
 mod failure_mode_catalog_content;
 mod geometry;
@@ -127,6 +131,7 @@ mod setup_catalog_content;
 mod simulation_catalog_content;
 mod simulation_preflight_content;
 mod slicer_catalog;
+mod supabase_auth;
 mod support_strategy_catalog_content;
 mod tolerance_catalog_content;
 mod tooling_catalog_content;
@@ -162,6 +167,12 @@ const SIMULATED_MOTION_AXES: [char; 7] = ['X', 'Y', 'Z', 'A', 'B', 'C', 'E'];
 
 #[derive(Clone)]
 struct AppState {
+    /// Verified-identity gate for every non-public route. `None` means Supabase
+    /// auth is unconfigured, which is treated as "refuse authenticated routes",
+    /// never as "allow" — see [`Operator::authorize`].
+    verifier: Option<Arc<SupabaseVerifier>>,
+    /// Outbound client used only for JWKS fetches.
+    http: reqwest::Client,
     nats: Option<async_nats::Client>,
     persistence: Persistence,
     realtime: EventHub,
@@ -175,6 +186,99 @@ struct AppState {
     metrics: Arc<Metrics>,
     jobs: Arc<RwLock<FabricationJobStore>>,
     learning: Arc<RwLock<LearningMemory>>,
+}
+
+/// Paths served without a Supabase bearer token.
+///
+/// This is the *entire* unauthenticated surface of the HTTP server and it is
+/// asserted route-by-route in `every_route_outside_the_public_allowlist_is_gated`.
+/// Adding a route anywhere else in this crate makes it authenticated by
+/// construction; adding one here is a deliberate, reviewable act.
+///
+/// - `/healthz`, `/readyz`: kubelet probes. They carry no plan, job, or
+///   learning data — only liveness and a boolean database-reachability flag —
+///   and gating them would make an auth misconfiguration look like a crash
+///   loop.
+/// - `/internal/*`: the runtime-config control-plane surface merged from
+///   `dd_runtime_config_client`. It is not a Supabase user; it authenticates
+///   with its own shared server secret (`require_server_auth`) and is confined
+///   by NetworkPolicy. Wrapping it in the operator gate would lock the control
+///   plane out of its own endpoints.
+const PUBLIC_ROUTES: &[&str] = &[
+    "/healthz",
+    "/readyz",
+    dd_runtime_config_client::SNAPSHOT_ROUTE_PATH,
+    dd_runtime_config_client::APPLY_ROUTE_PATH,
+    dd_runtime_config_client::RESET_ROUTE_PATH,
+];
+
+/// Axum extractor that yields a verified, allow-listed operator.
+///
+/// Placing the gate in an extractor means a route cannot accidentally skip it:
+/// a handler either takes `Operator` and is authorized, or it does not and is
+/// deliberately public. The router additionally applies [`require_operator`] to
+/// everything outside [`PUBLIC_ROUTES`], so on this service the extractor is
+/// how a handler *reads* the caller's identity rather than the only place the
+/// check happens.
+#[axum::async_trait]
+impl FromRequestParts<AppState> for Operator {
+    type Rejection = ServiceError;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        // The router-level gate already authorized this request and stashed the
+        // identity; re-verifying would mean a second signature check (and, on a
+        // cold JWKS cache, a second outbound fetch) per extraction.
+        if let Some(operator) = parts.extensions.get::<Operator>() {
+            return Ok(operator.clone());
+        }
+        Self::authorize(parts, state).await
+    }
+}
+
+impl Operator {
+    /// The authorization decision itself.
+    async fn authorize(parts: &mut Parts, state: &AppState) -> Result<Self, ServiceError> {
+        let verifier = state.verifier.as_ref().ok_or_else(|| {
+            // Fail closed. An unconfigured gate must never mean "allow".
+            ServiceError::Unavailable(
+                "Supabase auth is not configured; refusing to serve authenticated routes"
+                    .to_string(),
+            )
+        })?;
+        let header = parts
+            .headers
+            .get(axum::http::header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok());
+        let token = bearer_token(header).ok_or(ServiceError::Unauthorized)?;
+        verifier.authorize(&state.http, token).await
+    }
+}
+
+/// Router-level gate applied once to every non-public route.
+///
+/// This runs *before* the handler, which is what makes the WebSocket routes
+/// safe: an unauthenticated client receives a 401 response and the upgrade
+/// never happens, rather than getting an open socket that is then policed.
+async fn require_operator(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Result<Response, ServiceError> {
+    let (mut parts, body) = request.into_parts();
+    let operator = Operator::authorize(&mut parts, &state).await?;
+    tracing::debug!(
+        auth.subject = %operator.subject,
+        auth.email = %operator.email,
+        "request authorized"
+    );
+    let mut request = Request::from_parts(parts, body);
+    // Handlers that want the identity take `Operator` (or read the extension);
+    // the verification itself has already happened exactly once.
+    request.extensions_mut().insert(operator);
+    Ok(next.run(request).await)
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -123437,21 +123541,59 @@ pub async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
         config.event_subject.clone(),
         realtime_hub.clone(),
     );
-    let tcp_listener = transport::bind_tcp(tcp_address).await?;
-    let tcp_hub = realtime_hub.clone();
-    tokio::spawn(async move {
-        if let Err(error) =
-            transport::serve_tcp(tcp_listener, tcp_hub, ServiceSurface::Fabrication).await
-        {
-            tracing::error!(
-                network.transport = "tcp",
-                server.address = %tcp_address,
-                error = %error,
-                "fabrication TCP server stopped"
-            );
-        }
-    });
+    // The newline-delimited-JSON TCP transport hands every connecting socket the
+    // retained latest event and then the full plan fan-out. It has no place to
+    // put a bearer token and no per-connection identity, so it is opt-in and
+    // defaults to not listening at all. Enable it only on a trusted network:
+    // the NetworkPolicy confines :8114 to the `daedalus` namespace, and it is a
+    // debug transport, not a product surface.
+    if config.tcp_enabled {
+        tracing::warn!(
+            network.transport = "tcp",
+            server.address = %tcp_address,
+            "FABRICATION_TCP_ENABLED is set: starting the UNAUTHENTICATED realtime TCP \
+             transport. It streams full fabrication plans to any peer that can reach the \
+             port and is intended for trusted-network debugging only"
+        );
+        let tcp_listener = transport::bind_tcp(tcp_address).await?;
+        let tcp_hub = realtime_hub.clone();
+        tokio::spawn(async move {
+            if let Err(error) =
+                transport::serve_tcp(tcp_listener, tcp_hub, ServiceSurface::Fabrication).await
+            {
+                tracing::error!(
+                    network.transport = "tcp",
+                    server.address = %tcp_address,
+                    error = %error,
+                    "fabrication TCP server stopped"
+                );
+            }
+        });
+    } else {
+        tracing::info!(
+            network.transport = "tcp",
+            server.address = %tcp_address,
+            "realtime TCP transport disabled (set FABRICATION_TCP_ENABLED=true to expose it \
+             on a trusted network)"
+        );
+    }
+
+    let verifier = SupabaseVerifier::from_config(&config.supabase).map(Arc::new);
+    if verifier.is_none() {
+        // Loud, because every route outside PUBLIC_ROUTES will refuse to serve
+        // in this state.
+        tracing::warn!(
+            "Supabase auth is NOT configured (need FABRICATION_SUPABASE_JWT_SECRET or \
+             FABRICATION_SUPABASE_JWKS_URL, FABRICATION_SUPABASE_ISSUER, *and* \
+             FABRICATION_ALLOWED_EMAILS); authenticated routes will return 503"
+        );
+    }
+
     let state = AppState {
+        verifier,
+        http: reqwest::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()?,
         nats,
         persistence,
         realtime: realtime_hub.clone(),
@@ -123468,15 +123610,74 @@ pub async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
     };
     tokio::spawn(run_nats_loop(state.clone()));
 
-    let app = Router::new()
+    let app = build_router(state, realtime_hub);
+
+    tokio::spawn(dd_runtime_config_client::register_with_control_plane());
+
+    observability::server_listening(http_address, persistence_enabled, nats_enabled);
+    let listener = tokio::net::TcpListener::bind(http_address).await?;
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
+        .with_graceful_shutdown(async {
+            let _ = tokio::signal::ctrl_c().await;
+        })
+        .await?;
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    Ok(())
+}
+
+/// The unauthenticated surface: kubelet probes only.
+///
+/// Kept in its own function so that "what is public" is one small, reviewable
+/// expression rather than two lines buried in a 400-route chain, and so the
+/// enumeration test can compare it against [`PUBLIC_ROUTES`].
+fn public_router() -> Router<AppState> {
+    Router::new()
+        .route("/healthz", get(http::healthz))
+        .route("/readyz", get(http::readyz))
+}
+
+/// Compose the public surface, the operator-gated surface, and the
+/// control-plane surface into the served application.
+///
+/// The gate is applied *once*, as a `route_layer` over the whole authenticated
+/// sub-router, rather than per route. That is deliberate: with ~440 routes, any
+/// scheme that requires remembering to annotate each one will eventually be
+/// forgotten. Here a new `.route(...)` added to `authenticated_router` is
+/// authenticated whether or not its author thought about auth, and
+/// `every_route_outside_the_public_allowlist_is_gated` fails CI if a route is
+/// added to `public_router` without also being justified in [`PUBLIC_ROUTES`].
+fn build_router(state: AppState, realtime_hub: EventHub) -> Router {
+    let authenticated = authenticated_router(realtime_hub)
+        // `route_layer` (not `layer`) so an unmatched path still 404s instead of
+        // being answered with a 401 that would confirm nothing.
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            require_operator,
+        ));
+
+    public_router()
+        .merge(authenticated)
+        .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
+        .with_state(state)
+        // The runtime-config client owns its own state, so it can only be merged
+        // after `with_state` — which means the body limit above does not reach
+        // it. Applying the limit to that router directly is what keeps
+        // /internal/* from accepting an unbounded request body.
+        .merge(dd_runtime_config_client::router().layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES)))
+}
+
+/// Every route that requires a verified, allow-listed operator.
+///
+/// Nothing in here needs to opt in to auth: the caller applies the gate to the
+/// whole sub-router.
+fn authenticated_router(realtime_hub: EventHub) -> Router<AppState> {
+    Router::new()
         .route("/", get(root))
         .route("/landing", get(landing_page))
         .route("/fabrication", get(landing_page))
         .route("/fabrication/landing", get(landing_page))
         .route("/how-it-works", get(how_it_works_http))
         .route("/fabrication/how-it-works", get(how_it_works_http))
-        .route("/healthz", get(http::healthz))
-        .route("/readyz", get(http::readyz))
         .route("/capabilities", get(capabilities))
         .route("/fabrication/capabilities", get(capabilities))
         .route("/objective/coverage", get(objective_coverage_http))
@@ -124683,22 +124884,11 @@ pub async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
             get(learning_outcomes_http).post(learning_outcome_http),
         )
         .merge(additive_printing::router(realtime_hub.clone()))
+        // /mash, /mash/fragment, /api/realtime, /ws/html, /ws/json. The hub
+        // retains the last envelope, so a single anonymous GET used to return
+        // the previous job's full plan; the gate above now runs before the
+        // handler, and therefore before any WebSocket upgrade.
         .merge(transport::router(realtime_hub, ServiceSurface::Fabrication))
-        .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
-        .with_state(state)
-        .merge(dd_runtime_config_client::router());
-
-    tokio::spawn(dd_runtime_config_client::register_with_control_plane());
-
-    observability::server_listening(http_address, persistence_enabled, nats_enabled);
-    let listener = tokio::net::TcpListener::bind(http_address).await?;
-    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
-        })
-        .await?;
-    tokio::time::sleep(Duration::from_millis(10)).await;
-    Ok(())
 }
 
 #[cfg(test)]
@@ -140659,6 +140849,8 @@ mod tests {
     #[tokio::test]
     async fn costing_result_http_increments_prometheus_counter() {
         let state = AppState {
+            verifier: None,
+            http: reqwest::Client::new(),
             nats: None,
             persistence: Persistence::Disabled,
             realtime: EventHub::new(ServiceSurface::Fabrication, 8),
@@ -180345,5 +180537,277 @@ mod tests {
         assert!(improved_artifact.draft);
         assert!(!improved_artifact.machine_ready);
         assert!(improved_artifact.line_count.unwrap_or_default() >= 3);
+    }
+}
+
+/// Enumerates the router and pins the unauthenticated surface.
+///
+/// This exists because ~440 routes cannot be audited by eye on every change.
+/// The tests below discover every `.route(...)` declared by the files that feed
+/// [`build_router`] and drive a real request through the composed application
+/// for each one, so a route added without auth fails CI rather than shipping.
+#[cfg(test)]
+mod route_authorization_tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::Request as HttpRequest;
+    use config::SupabaseConfig;
+    use tower::ServiceExt;
+
+    /// Source files whose `.route(...)` declarations end up in [`build_router`].
+    ///
+    /// `src/web_server/` is deliberately absent: it builds a different service
+    /// (`run_web`) with its own router and its own Supabase gate.
+    const ROUTED_SOURCES: &[&str] = &[
+        "src/lib.rs",
+        "src/transport/mod.rs",
+        "src/additive_printing/http.rs",
+    ];
+
+    /// Extract the path literal of every `.route(` call in `source`.
+    ///
+    /// Deliberately textual and deliberately dumb: it must keep working when a
+    /// route is added in either the single-line or the rustfmt-wrapped form,
+    /// and it must not depend on any registry a new route could forget to join.
+    fn route_paths(source: &str) -> Vec<String> {
+        let mut paths = Vec::new();
+        let mut rest = source;
+        while let Some(offset) = rest.find(".route(") {
+            rest = &rest[offset + ".route(".len()..];
+            let Some(open) = rest.find('"') else { break };
+            let after_open = &rest[open + 1..];
+            let Some(close) = after_open.find('"') else {
+                break;
+            };
+            let path = &after_open[..close];
+            // A route path always starts with '/'; anything else means the call
+            // was `.route(SOME_CONST, ...)` and the quote we found belongs to a
+            // later expression.
+            if path.starts_with('/') {
+                paths.push(path.to_string());
+            }
+            rest = after_open;
+        }
+        paths
+    }
+
+    fn declared_routes() -> Vec<String> {
+        let mut paths: Vec<String> = ROUTED_SOURCES
+            .iter()
+            .flat_map(|file| {
+                let source = std::fs::read_to_string(file)
+                    .unwrap_or_else(|error| panic!("read {file}: {error}"));
+                route_paths(&source)
+            })
+            .collect();
+        paths.sort();
+        paths.dedup();
+        paths
+    }
+
+    /// Substitute `:param` segments so the path actually matches at runtime.
+    fn concrete_path(path: &str) -> String {
+        path.split('/')
+            .map(|segment| {
+                if segment.starts_with(':') {
+                    "enumeration-test"
+                } else {
+                    segment
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("/")
+    }
+
+    /// A state whose gate is *enabled*, so a request without a bearer token is
+    /// rejected with 401 rather than the 503 an unconfigured gate returns. That
+    /// distinction is what makes the assertions below prove the gate is wired
+    /// up, not merely that the service is misconfigured.
+    fn gated_state() -> AppState {
+        let supabase = SupabaseConfig {
+            audience: "authenticated".to_string(),
+            issuer: Some("https://proj.supabase.co/auth/v1".to_string()),
+            jwt_secret: Some("enumeration-test-secret".to_string()),
+            jwks_url: None,
+            allowed_emails: vec!["operator@example.com".to_string()],
+        };
+        assert!(supabase.is_enabled(), "test fixture must enable the gate");
+        AppState {
+            verifier: SupabaseVerifier::from_config(&supabase).map(Arc::new),
+            http: reqwest::Client::new(),
+            nats: None,
+            persistence: Persistence::Disabled,
+            realtime: EventHub::new(ServiceSurface::Fabrication, 8),
+            request_subject: FABRICATION_REQUESTS_SUBJECT.to_string(),
+            queue_group: FABRICATION_REQUESTS_QUEUE_GROUP.to_string(),
+            result_subject: FABRICATION_RESULTS_SUBJECT.to_string(),
+            event_subject: RUNTIME_EVENTS_SUBJECT.to_string(),
+            mdp_subject: MDP_OPTIMIZE_SUBJECT.to_string(),
+            mdp_autopublish: false,
+            nats_inflight: Arc::new(Semaphore::new(1)),
+            metrics: Arc::new(Metrics::default()),
+            jobs: Arc::new(RwLock::new(FabricationJobStore::new(MAX_STORED_JOBS))),
+            learning: Arc::new(RwLock::new(LearningMemory::new(MAX_LEARNING_OUTCOMES))),
+        }
+    }
+
+    fn gated_app() -> Router {
+        build_router(gated_state(), EventHub::new(ServiceSurface::Fabrication, 8))
+    }
+
+    async fn status_for(app: &Router, method: &str, path: &str) -> StatusCode {
+        let request = HttpRequest::builder()
+            .method(method)
+            .uri(path)
+            .body(Body::empty())
+            .expect("build request");
+        app.clone()
+            .oneshot(request)
+            .await
+            .expect("router is infallible")
+            .status()
+    }
+
+    #[tokio::test]
+    async fn every_route_outside_the_public_allowlist_is_gated() {
+        let routes = declared_routes();
+        // Guard against a scanner that silently stops finding routes: the real
+        // surface is ~440 paths, so anything near zero means this test has
+        // stopped testing anything.
+        assert!(
+            routes.len() > 300,
+            "route enumeration found only {} paths; the scanner is broken",
+            routes.len()
+        );
+
+        let app = gated_app();
+        let mut unguarded = Vec::new();
+        for path in &routes {
+            if PUBLIC_ROUTES.contains(&path.as_str()) {
+                continue;
+            }
+            // The gate is a `route_layer`, so it runs for a matched path before
+            // method routing: GET alone proves the layer is in front of the
+            // handler for every method that path serves.
+            let status = status_for(&app, "GET", &concrete_path(path)).await;
+            if status != StatusCode::UNAUTHORIZED {
+                unguarded.push(format!("{path} -> {status}"));
+            }
+        }
+        assert!(
+            unguarded.is_empty(),
+            "these routes answered an anonymous request instead of 401. Either put them \
+             in authenticated_router (the default) or add them to PUBLIC_ROUTES with a \
+             written justification:\n{}",
+            unguarded.join("\n")
+        );
+    }
+
+    #[tokio::test]
+    async fn the_public_surface_is_exactly_the_allowlist() {
+        // The other direction: nothing may quietly *join* the public set. Every
+        // path served without a token must be one this list names.
+        let app = gated_app();
+        let public: Vec<&str> = declared_routes()
+            .iter()
+            .map(String::as_str)
+            .filter(|path| PUBLIC_ROUTES.contains(path))
+            .map(|path| PUBLIC_ROUTES.iter().find(|p| *p == &path).copied().unwrap())
+            .collect();
+        assert_eq!(
+            public,
+            vec!["/healthz", "/readyz"],
+            "the only routes this crate declares without the operator gate are the \
+             kubelet probes; /internal/* comes from dd_runtime_config_client and carries \
+             its own shared-secret auth"
+        );
+
+        assert_eq!(
+            status_for(&app, "GET", "/healthz").await,
+            StatusCode::OK,
+            "liveness must answer without a token or an auth outage looks like a crash loop"
+        );
+        assert_eq!(status_for(&app, "GET", "/readyz").await, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn the_policy_poisoning_and_job_surfaces_are_gated() {
+        // Named explicitly so a refactor that drops the layer fails with a
+        // readable test name, not just a 400-line diff in the enumeration test.
+        let app = gated_app();
+        for (method, path) in [
+            ("POST", "/learning/observe"),
+            ("POST", "/fabrication/learning/observe"),
+            ("GET", "/learning/policy"),
+            ("GET", "/jobs"),
+            ("GET", "/jobs/some-job"),
+            ("GET", "/jobs/some-job/release-bundle"),
+            ("GET", "/jobs/some-job/artifacts/some-artifact"),
+            ("GET", "/metrics"),
+            ("POST", "/plan"),
+        ] {
+            assert_eq!(
+                status_for(&app, method, path).await,
+                StatusCode::UNAUTHORIZED,
+                "{method} {path} must require an operator"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn realtime_surfaces_reject_before_the_websocket_upgrade() {
+        // The upgrade must never happen for an anonymous caller: a 401 response
+        // means no socket was opened, whereas a 101 would mean the plan stream
+        // is already flowing by the time anyone checks.
+        let app = gated_app();
+        for path in ["/api/realtime", "/mash", "/mash/fragment", "/fabrication/mash"] {
+            assert_eq!(
+                status_for(&app, "GET", path).await,
+                StatusCode::UNAUTHORIZED,
+                "{path} must not serve the retained event envelope anonymously"
+            );
+        }
+
+        for path in ["/ws/json", "/ws/html"] {
+            let request = HttpRequest::builder()
+                .method("GET")
+                .uri(path)
+                .header("connection", "upgrade")
+                .header("upgrade", "websocket")
+                .header("sec-websocket-version", "13")
+                .header("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==")
+                .body(Body::empty())
+                .expect("build upgrade request");
+            let response = app
+                .clone()
+                .oneshot(request)
+                .await
+                .expect("router is infallible");
+            assert_eq!(
+                response.status(),
+                StatusCode::UNAUTHORIZED,
+                "{path} upgraded an unauthenticated client"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn the_control_plane_surface_is_covered_by_the_body_limit() {
+        // Regression test: /internal/* used to be merged *after*
+        // `.layer(DefaultBodyLimit::max(..))`, so it accepted unbounded bodies.
+        let app = gated_app();
+        let oversized = vec![b'a'; MAX_HTTP_BODY_BYTES + 1];
+        let request = HttpRequest::builder()
+            .method("POST")
+            .uri(dd_runtime_config_client::APPLY_ROUTE_PATH)
+            .header("content-type", "application/json")
+            .body(Body::from(oversized))
+            .expect("build request");
+        let status = app
+            .oneshot(request)
+            .await
+            .expect("router is infallible")
+            .status();
+        assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
     }
 }

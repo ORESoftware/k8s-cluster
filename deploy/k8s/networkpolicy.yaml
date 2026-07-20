@@ -1,0 +1,80 @@
+# Workload-scoped allow-list for this service.
+#
+# The namespace-wide default-deny NetworkPolicy is a Layer 1 / tenancy object
+# owned by k8s-cluster (docs/app-deploy-contract.md), so it is deliberately NOT
+# declared here. This policy only widens what this pod may send and receive.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dd-fabrication-server
+  namespace: daedalus
+  labels:
+    app.kubernetes.io/name: dd-fabrication-server
+    app.kubernetes.io/part-of: daedalus
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: dd-fabrication-server
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    # North-south HTTP traffic from the cluster ingress controller. The raw TCP
+    # transport is deliberately NOT exposed here.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8113
+    # Prometheus / the OTel collector scrape /metrics on the HTTP port.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 8113
+    # Raw TCP transport (FABRICATION_TCP_PORT), east-west within the daedalus
+    # tenant only.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: daedalus
+      ports:
+        - protocol: TCP
+          port: 8114
+  egress:
+    # Cluster DNS.
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Postgres (RDS, reached via the cluster's egress path).
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 5432
+    # OTLP/HTTP export to the collector. Namespace- and port-scoped so telemetry
+    # works without opening general egress.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 4318
+    # NATS. Unlike the api/web servers this service is a NATS
+    # request/result/event participant (async-nats, src/messaging.rs), so it
+    # additionally needs the messaging namespace on 4222. Without this rule the
+    # planner cannot consume fabrication requests.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: messaging
+      ports:
+        - protocol: TCP
+          port: 4222
