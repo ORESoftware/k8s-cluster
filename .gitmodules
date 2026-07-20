@@ -165,3 +165,7 @@
 	path = remote/deployments/daedalus-monorepo
 	url = https://github.com/daedalus-fab/daedalus-monorepo.git
 	branch = main
+[submodule "remote/submodules/shared-auth-server.rs"]
+	path = remote/submodules/shared-auth-server.rs
+	url = git@github.com:ORESoftware/shared-auth-server.rs.git
+	branch = main
