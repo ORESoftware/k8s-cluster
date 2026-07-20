@@ -212,3 +212,31 @@ git commit -m "Pin canonical apps to main"
 
 The committed superproject SHA is the deployable release: it references exact
 app commits, so a checkout + `./build.sh` reproduces the shipped stack.
+
+## CI, image delivery, and Argo CD
+
+`ci.yml` proves the complete pinned stack before `release.yml` is allowed to
+publish anything. After a successful `main` push, the release workflow checks
+out the tested monorepo SHA, refuses to run if that SHA is no longer current
+`main`, and publishes two separate GHCR images:
+
+- `ghcr.io/canonical-cloud/canonical-web-server:<monorepo-sha>`;
+- `ghcr.io/canonical-cloud/canonical-session-revoker:<monorepo-sha>`.
+
+Both images include an SBOM, BuildKit provenance, and a GitHub artifact
+attestation. The workflow publishes no floating tags. GitOps must pin the
+release SHA or, preferably, the exact image digests printed in the release run
+summary.
+
+GitHub Actions never receives a kubeconfig and never runs `kubectl`. Backend
+runtime state lives in `ORESoftware/k8s-cluster`, where a dedicated
+canonical-cloud Argo CD Application reconciles reviewed digest changes. A
+rollback is a Git revert to the previous digests. Database migrations remain a
+separately reviewed operator job using the migration-only credential; they are
+never an Argo sync hook or an automatic release step.
+
+The release summary prints the exact command for the cluster repository's
+`remote/argocd/canonical-cloud/promote-release.mjs` helper. That helper updates
+only the two image digests and their shared monorepo release annotation; the
+result is reviewed, tested, and committed to `k8s-cluster@dev` before Argo sees
+it.

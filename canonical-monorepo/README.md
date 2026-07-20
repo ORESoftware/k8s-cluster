@@ -95,6 +95,12 @@ dirty submodule checkouts, updates every `.gitmodules` `branch` entry,
 fast-forwards each submodule, and stages the resulting gitlink pins. Preview
 with `--dry-run`.
 
+After the full pinned-stack CI succeeds on `main`, the release workflow
+publishes separately attested web and no-ingress revoker images to GHCR, tagged
+with the exact monorepo commit. Deployment state and digest promotion live in
+`ORESoftware/k8s-cluster`; Argo CD, not GitHub Actions, reconciles the backend.
+See `docs/deploy.md` for the credential and migration boundaries.
+
 ## Feature branches
 
 Switch the superproject and every app submodule to the same feature branch:
