@@ -1,5 +1,7 @@
 use std::{env, fmt};
 
+use crate::supabase_auth::SupabaseConfig;
+
 pub const DEFAULT_STRIPE_API_VERSION: &str = "2026-04-22.dahlia";
 
 #[derive(Clone)]
