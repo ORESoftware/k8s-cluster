@@ -7708,6 +7708,47 @@ func (value FabRunsGorm) Validate() error {
 	return nil
 }
 
+const WebSessionsTable = "daedalus.web_sessions"
+const WebSessionsSelectSQL = `select
+      id::text as id,
+      token_hash,
+      user_id::text as user_id,
+      owner_email,
+      access_ciphertext,
+      access_nonce,
+      refresh_ciphertext,
+      refresh_nonce,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at,
+      to_char(idle_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as idle_expires_at,
+      to_char(absolute_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as absolute_expires_at,
+      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as revoked_at
+    from daedalus.web_sessions`
+
+type WebSessionsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	TokenHash string `gorm:"column:token_hash;type:text;not null" json:"tokenHash"`
+	UserId uuid.UUID `gorm:"column:user_id;type:uuid;not null" json:"userId"`
+	OwnerEmail string `gorm:"column:owner_email;type:text;not null" json:"ownerEmail"`
+	AccessCiphertext string `gorm:"column:access_ciphertext;type:text;not null" json:"accessCiphertext"`
+	AccessNonce string `gorm:"column:access_nonce;type:text;not null" json:"accessNonce"`
+	RefreshCiphertext string `gorm:"column:refresh_ciphertext;type:text;not null" json:"refreshCiphertext"`
+	RefreshNonce string `gorm:"column:refresh_nonce;type:text;not null" json:"refreshNonce"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	LastSeenAt time.Time `gorm:"column:last_seen_at;type:timestamptz;default:now();not null" json:"lastSeenAt"`
+	IdleExpiresAt time.Time `gorm:"column:idle_expires_at;type:timestamptz;not null" json:"idleExpiresAt"`
+	AbsoluteExpiresAt time.Time `gorm:"column:absolute_expires_at;type:timestamptz;not null" json:"absoluteExpiresAt"`
+	RevokedAt *time.Time `gorm:"column:revoked_at;type:timestamptz" json:"revokedAt,omitempty"`
+}
+
+func (WebSessionsGorm) TableName() string { return WebSessionsTable }
+
+func (value WebSessionsGorm) Validate() error {
+	if len([]byte(value.OwnerEmail)) > 320 { return errors.New("web_sessions.owner_email exceeds 320 bytes") }
+	if len([]byte(value.OwnerEmail)) < 3 { return errors.New("web_sessions.owner_email is below 3 bytes") }
+	return nil
+}
+
 func validateJSONString(value datatypes.JSON) bool {
 	if len(value) == 0 {
 		return true

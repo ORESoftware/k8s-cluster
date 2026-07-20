@@ -11179,6 +11179,35 @@ pub fn validate_fab_runs_status(value: String) -> Result(String, String) {
   }
 }
 
+pub const web_sessions_table = "daedalus.web_sessions"
+pub const web_sessions_select_sql = "select\n      id::text as id,\n      token_hash,\n      user_id::text as user_id,\n      owner_email,\n      access_ciphertext,\n      access_nonce,\n      refresh_ciphertext,\n      refresh_nonce,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(idle_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as idle_expires_at,\n      to_char(absolute_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as absolute_expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at\n    from daedalus.web_sessions"
+
+pub type WebSessionsRow {
+  WebSessionsRow(
+    id: String,
+    token_hash: String,
+    user_id: String,
+    owner_email: String,
+    access_ciphertext: String,
+    access_nonce: String,
+    refresh_ciphertext: String,
+    refresh_nonce: String,
+    created_at: String,
+    last_seen_at: String,
+    idle_expires_at: String,
+    absolute_expires_at: String,
+    revoked_at: Option(String),
+  )
+}
+
+pub fn validate_web_sessions_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("web_sessions.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
 fn is_slug_text(value: String) -> Bool {
   let chars = string.to_graphemes(value)
   case chars {

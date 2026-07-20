@@ -6943,3 +6943,49 @@ export class FabRunsEntity {
   createdAt!: Date;
 
 }
+
+@Index("web_sessions_token_hash_idx", ["tokenHash"], { unique: true })
+@Index("web_sessions_user_idx", ["userId"])
+@Index("web_sessions_absolute_expiry_idx", ["absoluteExpiresAt"])
+@Entity({ schema: "daedalus", name: "web_sessions" })
+export class WebSessionsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "token_hash", type: "text" })
+  tokenHash!: string;
+
+  @Column({ name: "user_id", type: "uuid" })
+  userId!: string;
+
+  @Column({ name: "owner_email", type: "text" })
+  ownerEmail!: string;
+
+  @Column({ name: "access_ciphertext", type: "text" })
+  accessCiphertext!: string;
+
+  @Column({ name: "access_nonce", type: "text" })
+  accessNonce!: string;
+
+  @Column({ name: "refresh_ciphertext", type: "text" })
+  refreshCiphertext!: string;
+
+  @Column({ name: "refresh_nonce", type: "text" })
+  refreshNonce!: string;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "last_seen_at", type: "timestamptz", default: () => "now()" })
+  lastSeenAt!: Date;
+
+  @Column({ name: "idle_expires_at", type: "timestamptz" })
+  idleExpiresAt!: Date;
+
+  @Column({ name: "absolute_expires_at", type: "timestamptz" })
+  absoluteExpiresAt!: Date;
+
+  @Column({ name: "revoked_at", type: "timestamptz", nullable: true })
+  revokedAt!: Date | null;
+
+}

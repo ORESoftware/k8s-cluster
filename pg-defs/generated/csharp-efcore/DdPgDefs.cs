@@ -8506,6 +8506,57 @@ public class FabRuns
     public DateTimeOffset CreatedAt { get; set; }
 }
 
+[Table("web_sessions", Schema = "daedalus")]
+public class WebSessions
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Required]
+    [Column("token_hash")]
+    public string TokenHash { get; set; } = null!;
+
+    [Column("user_id")]
+    public Guid UserId { get; set; }
+
+    [Required]
+    [Column("owner_email")]
+    public string OwnerEmail { get; set; } = null!;
+
+    [Required]
+    [Column("access_ciphertext")]
+    public string AccessCiphertext { get; set; } = null!;
+
+    [Required]
+    [Column("access_nonce")]
+    public string AccessNonce { get; set; } = null!;
+
+    [Required]
+    [Column("refresh_ciphertext")]
+    public string RefreshCiphertext { get; set; } = null!;
+
+    [Required]
+    [Column("refresh_nonce")]
+    public string RefreshNonce { get; set; } = null!;
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("last_seen_at")]
+    public DateTimeOffset LastSeenAt { get; set; }
+
+    [Column("idle_expires_at")]
+    public DateTimeOffset IdleExpiresAt { get; set; }
+
+    [Column("absolute_expires_at")]
+    public DateTimeOffset AbsoluteExpiresAt { get; set; }
+
+    [Column("revoked_at")]
+    public DateTimeOffset? RevokedAt { get; set; }
+}
+
 public class DdPgDefsContext : DbContext
 {
     public DdPgDefsContext(DbContextOptions<DdPgDefsContext> options) : base(options)
@@ -8807,4 +8858,6 @@ public class DdPgDefsContext : DbContext
     public DbSet<FabInstructions> FabInstructionsSet => Set<FabInstructions>();
 
     public DbSet<FabRuns> FabRunsSet => Set<FabRuns>();
+
+    public DbSet<WebSessions> WebSessionsSet => Set<WebSessions>();
 }

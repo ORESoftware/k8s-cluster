@@ -21693,6 +21693,73 @@ pub fn validate_fab_runs_insert(value: &FabRunsInsert) -> Result<(), String> {
     Ok(())
 }
 
+pub const WEB_SESSIONS_TABLE: &str = "daedalus.web_sessions";
+pub const WEB_SESSIONS_COLUMNS: &[&str] = &["id", "token_hash", "user_id", "owner_email", "access_ciphertext", "access_nonce", "refresh_ciphertext", "refresh_nonce", "created_at", "last_seen_at", "idle_expires_at", "absolute_expires_at", "revoked_at"];
+pub const WEB_SESSIONS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      token_hash,
+      user_id::text as user_id,
+      owner_email,
+      access_ciphertext,
+      access_nonce,
+      refresh_ciphertext,
+      refresh_nonce,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at,
+      to_char(idle_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as idle_expires_at,
+      to_char(absolute_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as absolute_expires_at,
+      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as revoked_at
+    from daedalus.web_sessions"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct WebSessionsRow {
+    pub id: String,
+    pub token_hash: String,
+    pub user_id: String,
+    pub owner_email: String,
+    pub access_ciphertext: String,
+    pub access_nonce: String,
+    pub refresh_ciphertext: String,
+    pub refresh_nonce: String,
+    pub created_at: String,
+    pub last_seen_at: String,
+    pub idle_expires_at: String,
+    pub absolute_expires_at: String,
+    pub revoked_at: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebSessionsInsert {
+    pub id: Option<String>,
+    pub token_hash: Option<String>,
+    pub user_id: Option<String>,
+    pub owner_email: Option<String>,
+    pub access_ciphertext: Option<String>,
+    pub access_nonce: Option<String>,
+    pub refresh_ciphertext: Option<String>,
+    pub refresh_nonce: Option<String>,
+    pub created_at: Option<String>,
+    pub last_seen_at: Option<String>,
+    pub idle_expires_at: Option<String>,
+    pub absolute_expires_at: Option<String>,
+    pub revoked_at: Option<String>,
+}
+
+pub fn validate_web_sessions_row(value: &WebSessionsRow) -> Result<(), String> {
+    if (&value.owner_email).as_bytes().len() > 320 { return Err("web_sessions.owner_email exceeds 320 bytes".to_string()); }
+    Ok(())
+}
+
+pub fn validate_web_sessions_insert(value: &WebSessionsInsert) -> Result<(), String> {
+    if let Some(value) = &value.owner_email {
+        if (value).as_bytes().len() > 320 { return Err("web_sessions.owner_email exceeds 320 bytes".to_string()); }
+    }
+    Ok(())
+}
+
 fn validate_string_length(field: &str, value: &str, min: Option<usize>, max: Option<usize>) -> Result<(), String> {
     let count = value.chars().count();
     if let Some(min) = min {

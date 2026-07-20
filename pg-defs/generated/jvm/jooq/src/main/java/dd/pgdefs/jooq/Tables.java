@@ -2463,4 +2463,20 @@ public final class Tables {
     public static final Field<OffsetDateTime> FAB_RUNS_FINISHED_AT = DSL.field(DSL.name("daedalus", "fab_runs", "finished_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
     public static final Field<OffsetDateTime> FAB_RUNS_CREATED_AT = DSL.field(DSL.name("daedalus", "fab_runs", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
 
+    public static final Name WEB_SESSIONS_NAME = DSL.name("daedalus", "web_sessions");
+    public static final Table<org.jooq.Record> WEB_SESSIONS = DSL.table(WEB_SESSIONS_NAME);
+    public static final Field<UUID> WEB_SESSIONS_ID = DSL.field(DSL.name("daedalus", "web_sessions", "id"), SQLDataType.UUID);
+    public static final Field<String> WEB_SESSIONS_TOKEN_HASH = DSL.field(DSL.name("daedalus", "web_sessions", "token_hash"), SQLDataType.CLOB);
+    public static final Field<UUID> WEB_SESSIONS_USER_ID = DSL.field(DSL.name("daedalus", "web_sessions", "user_id"), SQLDataType.UUID);
+    public static final Field<String> WEB_SESSIONS_OWNER_EMAIL = DSL.field(DSL.name("daedalus", "web_sessions", "owner_email"), SQLDataType.CLOB);
+    public static final Field<String> WEB_SESSIONS_ACCESS_CIPHERTEXT = DSL.field(DSL.name("daedalus", "web_sessions", "access_ciphertext"), SQLDataType.CLOB);
+    public static final Field<String> WEB_SESSIONS_ACCESS_NONCE = DSL.field(DSL.name("daedalus", "web_sessions", "access_nonce"), SQLDataType.CLOB);
+    public static final Field<String> WEB_SESSIONS_REFRESH_CIPHERTEXT = DSL.field(DSL.name("daedalus", "web_sessions", "refresh_ciphertext"), SQLDataType.CLOB);
+    public static final Field<String> WEB_SESSIONS_REFRESH_NONCE = DSL.field(DSL.name("daedalus", "web_sessions", "refresh_nonce"), SQLDataType.CLOB);
+    public static final Field<OffsetDateTime> WEB_SESSIONS_CREATED_AT = DSL.field(DSL.name("daedalus", "web_sessions", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> WEB_SESSIONS_LAST_SEEN_AT = DSL.field(DSL.name("daedalus", "web_sessions", "last_seen_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> WEB_SESSIONS_IDLE_EXPIRES_AT = DSL.field(DSL.name("daedalus", "web_sessions", "idle_expires_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> WEB_SESSIONS_ABSOLUTE_EXPIRES_AT = DSL.field(DSL.name("daedalus", "web_sessions", "absolute_expires_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> WEB_SESSIONS_REVOKED_AT = DSL.field(DSL.name("daedalus", "web_sessions", "revoked_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
 }

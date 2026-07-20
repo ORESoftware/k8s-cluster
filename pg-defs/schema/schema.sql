@@ -6940,3 +6940,62 @@ create index if not exists fab_runs_status_idx
 
 create index if not exists fab_runs_created_idx
   on daedalus.fab_runs (created_at desc);
+
+-- A browser session for daedalus-web-server.
+--
+-- WHY THIS EXISTS: browsers cannot attach an `Authorization` header to a
+-- top-level navigation or to a `WebSocket` upgrade, so the bearer-token scheme
+-- the API tier uses cannot serve an HTML UI. Instead the web server exchanges a
+-- verified Supabase session for an opaque cookie token and keeps the real
+-- credentials here. The browser therefore never holds a JWT, so script on the
+-- page cannot exfiltrate one that stays valid elsewhere.
+--
+-- The row stores a *hash* of the cookie token, never the token: a dump of this
+-- table does not yield usable sessions. The Supabase access/refresh tokens are
+-- AES-256-GCM sealed by the server (see daedalus-web-server src/crypto.rs) with
+-- the AAD bound to (id, "access"|"refresh"), so a ciphertext cannot be moved
+-- between the two columns or into another operator's row.
+--
+-- Ciphertext and nonce are base64 `text` rather than `bytea`: no other table in
+-- this file uses bytea, so its mapping is unexercised across the generated
+-- language adapters. Text keeps this table on well-trodden paths.
+create table if not exists daedalus.web_sessions (
+  id uuid primary key default gen_random_uuid(),
+  -- SHA-256 (hex) of the opaque cookie token. Unique so lookup is a point read.
+  token_hash text not null,
+  -- Supabase `sub`. The identity the session speaks for; re-checked against the
+  -- provider on every request so a revoked user cannot ride a live session.
+  user_id uuid not null,
+  owner_email text not null,
+  access_ciphertext text not null,
+  access_nonce text not null,
+  refresh_ciphertext text not null,
+  refresh_nonce text not null,
+  created_at timestamptz default now() not null,
+  last_seen_at timestamptz default now() not null,
+  -- Sliding: extended as the operator keeps using the session.
+  idle_expires_at timestamptz not null,
+  -- Hard ceiling, never extended, so a stolen cookie cannot live forever.
+  absolute_expires_at timestamptz not null,
+  -- Set on sign-out or on a detected identity mismatch. Kept (rather than
+  -- deleted) so revocation is auditable until retention removes the row.
+  revoked_at timestamptz,
+  constraint web_sessions_token_hash_len_chk
+    check (octet_length(token_hash) = 64),
+  constraint web_sessions_owner_email_size_chk
+    check (octet_length(owner_email) between 3 and 320),
+  constraint web_sessions_expiry_order_chk
+    check (absolute_expires_at >= idle_expires_at)
+);
+
+-- Unique: the token hash is the lookup key, and two sessions sharing one would
+-- make the point read ambiguous.
+create unique index if not exists web_sessions_token_hash_idx
+  on daedalus.web_sessions (token_hash);
+
+create index if not exists web_sessions_user_idx
+  on daedalus.web_sessions (user_id);
+
+-- Supports the retention sweep that removes expired/revoked rows.
+create index if not exists web_sessions_absolute_expiry_idx
+  on daedalus.web_sessions (absolute_expires_at);

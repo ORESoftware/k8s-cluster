@@ -14005,6 +14005,86 @@ class FabRunsRow {
   }
 }
 
+const webSessionsTable = "daedalus.web_sessions";
+const webSessionsSelectSql = "select\n      id::text as id,\n      token_hash,\n      user_id::text as user_id,\n      owner_email,\n      access_ciphertext,\n      access_nonce,\n      refresh_ciphertext,\n      refresh_nonce,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(idle_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as idle_expires_at,\n      to_char(absolute_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as absolute_expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at\n    from daedalus.web_sessions";
+
+class WebSessionsRow {
+  const WebSessionsRow({
+    required this.id,
+    required this.tokenHash,
+    required this.userId,
+    required this.ownerEmail,
+    required this.accessCiphertext,
+    required this.accessNonce,
+    required this.refreshCiphertext,
+    required this.refreshNonce,
+    required this.createdAt,
+    required this.lastSeenAt,
+    required this.idleExpiresAt,
+    required this.absoluteExpiresAt,
+    this.revokedAt,
+  });
+
+  final String id;
+  final String tokenHash;
+  final String userId;
+  final String ownerEmail;
+  final String accessCiphertext;
+  final String accessNonce;
+  final String refreshCiphertext;
+  final String refreshNonce;
+  final String createdAt;
+  final String lastSeenAt;
+  final String idleExpiresAt;
+  final String absoluteExpiresAt;
+  final String? revokedAt;
+
+  factory WebSessionsRow.fromJson(Map<String, Object?> json) {
+    return WebSessionsRow(
+      id: _readRequiredString(json, "id"),
+      tokenHash: _readRequiredString(json, "tokenHash"),
+      userId: _readRequiredString(json, "userId"),
+      ownerEmail: _readRequiredString(json, "ownerEmail"),
+      accessCiphertext: _readRequiredString(json, "accessCiphertext"),
+      accessNonce: _readRequiredString(json, "accessNonce"),
+      refreshCiphertext: _readRequiredString(json, "refreshCiphertext"),
+      refreshNonce: _readRequiredString(json, "refreshNonce"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      lastSeenAt: _readRequiredString(json, "lastSeenAt"),
+      idleExpiresAt: _readRequiredString(json, "idleExpiresAt"),
+      absoluteExpiresAt: _readRequiredString(json, "absoluteExpiresAt"),
+      revokedAt: _readOptionalString(json, "revokedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "tokenHash": tokenHash,
+    "userId": userId,
+    "ownerEmail": ownerEmail,
+    "accessCiphertext": accessCiphertext,
+    "accessNonce": accessNonce,
+    "refreshCiphertext": refreshCiphertext,
+    "refreshNonce": refreshNonce,
+    "createdAt": createdAt,
+    "lastSeenAt": lastSeenAt,
+    "idleExpiresAt": idleExpiresAt,
+    "absoluteExpiresAt": absoluteExpiresAt,
+    "revokedAt": revokedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (utf8.encode(ownerEmail).length > 320) {
+      errors.add("web_sessions.owner_email exceeds 320 bytes");
+    }
+    if (utf8.encode(ownerEmail).length < 3) {
+      errors.add("web_sessions.owner_email is below 3 bytes");
+    }
+    return errors;
+  }
+}
+
 String _readRequiredString(Map<String, Object?> json, String key) {
   final value = json[key];
   if (value is String) return value;

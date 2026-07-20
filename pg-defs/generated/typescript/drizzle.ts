@@ -10798,3 +10798,67 @@ export const fabRunsUpdateSchema = fabRunsInsertSchema.partial();
 export type FabRunsRow = z.infer<typeof fabRunsRowSchema>;
 export type FabRunsInsert = z.infer<typeof fabRunsInsertSchema>;
 export type FabRunsUpdate = z.infer<typeof fabRunsUpdateSchema>;
+
+export const webSessions = daedalusSchema.table(
+  "web_sessions",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    tokenHash: text("token_hash").notNull(),
+    userId: uuid("user_id").notNull(),
+    ownerEmail: text("owner_email").notNull(),
+    accessCiphertext: text("access_ciphertext").notNull(),
+    accessNonce: text("access_nonce").notNull(),
+    refreshCiphertext: text("refresh_ciphertext").notNull(),
+    refreshNonce: text("refresh_nonce").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    idleExpiresAt: timestamp("idle_expires_at", { withTimezone: true, mode: "string" }).notNull(),
+    absoluteExpiresAt: timestamp("absolute_expires_at", { withTimezone: true, mode: "string" }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true, mode: "string" }),
+  },
+  (table) => ({
+    webSessionsTokenHashLenChk: check("web_sessions_token_hash_len_chk", sql.raw("octet_length(token_hash) = 64")),
+    webSessionsOwnerEmailSizeChk: check("web_sessions_owner_email_size_chk", sql.raw("octet_length(owner_email) between 3 and 320")),
+    webSessionsExpiryOrderChk: check("web_sessions_expiry_order_chk", sql.raw("absolute_expires_at >= idle_expires_at")),
+    webSessionsTokenHashIdx: uniqueIndex("web_sessions_token_hash_idx").on(table.tokenHash),
+    webSessionsUserIdx: index("web_sessions_user_idx").on(table.userId),
+    webSessionsAbsoluteExpiryIdx: index("web_sessions_absolute_expiry_idx").on(table.absoluteExpiresAt),
+  }),
+);
+
+export const webSessionsRowSchema = z.object({
+  id: z.string().uuid(),
+  tokenHash: z.string(),
+  userId: z.string().uuid(),
+  ownerEmail: z.string().refine((value) => byteLength(value) <= 320, "Must be at most 320 bytes"),
+  accessCiphertext: z.string(),
+  accessNonce: z.string(),
+  refreshCiphertext: z.string(),
+  refreshNonce: z.string(),
+  createdAt: z.string().datetime(),
+  lastSeenAt: z.string().datetime(),
+  idleExpiresAt: z.string().datetime(),
+  absoluteExpiresAt: z.string().datetime(),
+  revokedAt: z.string().datetime().nullable(),
+});
+
+export const webSessionsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  tokenHash: z.string(),
+  userId: z.string().uuid(),
+  ownerEmail: z.string().refine((value) => byteLength(value) <= 320, "Must be at most 320 bytes"),
+  accessCiphertext: z.string(),
+  accessNonce: z.string(),
+  refreshCiphertext: z.string(),
+  refreshNonce: z.string(),
+  createdAt: z.string().datetime().optional(),
+  lastSeenAt: z.string().datetime().optional(),
+  idleExpiresAt: z.string().datetime(),
+  absoluteExpiresAt: z.string().datetime(),
+  revokedAt: z.string().datetime().nullable().optional(),
+});
+
+export const webSessionsUpdateSchema = webSessionsInsertSchema.partial();
+export type WebSessionsRow = z.infer<typeof webSessionsRowSchema>;
+export type WebSessionsInsert = z.infer<typeof webSessionsInsertSchema>;
+export type WebSessionsUpdate = z.infer<typeof webSessionsUpdateSchema>;

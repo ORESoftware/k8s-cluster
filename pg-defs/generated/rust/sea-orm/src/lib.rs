@@ -6226,3 +6226,47 @@ impl ActiveModelBehavior for ActiveModel {}
 
 pub use fab_runs::Entity as FabRunsEntity;
 pub use fab_runs::Model as FabRunsModel;
+
+pub mod web_sessions {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(schema_name = "daedalus", table_name = "web_sessions")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "token_hash")]
+    pub token_hash: String,
+    #[sea_orm(column_name = "user_id")]
+    pub user_id: Uuid,
+    #[sea_orm(column_name = "owner_email")]
+    pub owner_email: String,
+    #[sea_orm(column_name = "access_ciphertext")]
+    pub access_ciphertext: String,
+    #[sea_orm(column_name = "access_nonce")]
+    pub access_nonce: String,
+    #[sea_orm(column_name = "refresh_ciphertext")]
+    pub refresh_ciphertext: String,
+    #[sea_orm(column_name = "refresh_nonce")]
+    pub refresh_nonce: String,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "last_seen_at")]
+    pub last_seen_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "idle_expires_at")]
+    pub idle_expires_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "absolute_expires_at")]
+    pub absolute_expires_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "revoked_at")]
+    pub revoked_at: Option<DateTimeWithTimeZone>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use web_sessions::Entity as WebSessionsEntity;
+pub use web_sessions::Model as WebSessionsModel;

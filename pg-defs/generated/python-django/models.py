@@ -3195,3 +3195,24 @@ class FabRuns(models.Model):
         managed = False
         app_label = "dd_pg_defs"
         db_table = "daedalus\".\"fab_runs"
+
+
+class WebSessions(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    token_hash = models.TextField()
+    user_id = models.UUIDField()
+    owner_email = models.TextField()
+    access_ciphertext = models.TextField()
+    access_nonce = models.TextField()
+    refresh_ciphertext = models.TextField()
+    refresh_nonce = models.TextField()
+    created_at = models.DateTimeField()
+    last_seen_at = models.DateTimeField()
+    idle_expires_at = models.DateTimeField()
+    absolute_expires_at = models.DateTimeField()
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "daedalus\".\"web_sessions"

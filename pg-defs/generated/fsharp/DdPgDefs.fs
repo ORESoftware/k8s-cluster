@@ -12396,3 +12396,39 @@ let validateFabRunsProgress (value: int) : Result<int, string> =
     if value < 0 then Error "fab_runs.progress is below the minimum"
     elif value > 100 then Error "fab_runs.progress is above the maximum"
     else Ok value
+
+let webSessionsTable = "daedalus.web_sessions"
+let webSessionsColumns = [ "id"; "token_hash"; "user_id"; "owner_email"; "access_ciphertext"; "access_nonce"; "refresh_ciphertext"; "refresh_nonce"; "created_at"; "last_seen_at"; "idle_expires_at"; "absolute_expires_at"; "revoked_at" ]
+let webSessionsSelectSql = "select\n      id::text as id,\n      token_hash,\n      user_id::text as user_id,\n      owner_email,\n      access_ciphertext,\n      access_nonce,\n      refresh_ciphertext,\n      refresh_nonce,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(idle_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as idle_expires_at,\n      to_char(absolute_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as absolute_expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at\n    from daedalus.web_sessions"
+
+type WebSessionsRow =
+    { WebSessionsId: string
+      WebSessionsTokenHash: string
+      WebSessionsUserId: string
+      WebSessionsOwnerEmail: string
+      WebSessionsAccessCiphertext: string
+      WebSessionsAccessNonce: string
+      WebSessionsRefreshCiphertext: string
+      WebSessionsRefreshNonce: string
+      WebSessionsCreatedAt: string
+      WebSessionsLastSeenAt: string
+      WebSessionsIdleExpiresAt: string
+      WebSessionsAbsoluteExpiresAt: string
+      WebSessionsRevokedAt: string option
+    }
+
+let webSessionsRowOfRow (get: int -> string) (isNullAt: int -> bool) : WebSessionsRow =
+    { WebSessionsId = get 0
+      WebSessionsTokenHash = get 1
+      WebSessionsUserId = get 2
+      WebSessionsOwnerEmail = get 3
+      WebSessionsAccessCiphertext = get 4
+      WebSessionsAccessNonce = get 5
+      WebSessionsRefreshCiphertext = get 6
+      WebSessionsRefreshNonce = get 7
+      WebSessionsCreatedAt = get 8
+      WebSessionsLastSeenAt = get 9
+      WebSessionsIdleExpiresAt = get 10
+      WebSessionsAbsoluteExpiresAt = get 11
+      WebSessionsRevokedAt = (if isNullAt 12 then None else Some (get 12))
+    }

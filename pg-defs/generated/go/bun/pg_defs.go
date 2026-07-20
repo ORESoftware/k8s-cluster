@@ -7560,6 +7560,46 @@ func (value FabRunsBun) Validate() error {
 	return nil
 }
 
+const WebSessionsTable = "daedalus.web_sessions"
+const WebSessionsSelectSQL = `select
+      id::text as id,
+      token_hash,
+      user_id::text as user_id,
+      owner_email,
+      access_ciphertext,
+      access_nonce,
+      refresh_ciphertext,
+      refresh_nonce,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at,
+      to_char(idle_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as idle_expires_at,
+      to_char(absolute_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as absolute_expires_at,
+      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as revoked_at
+    from daedalus.web_sessions`
+
+type WebSessionsBun struct {
+	bun.BaseModel `bun:"table:daedalus.web_sessions"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	TokenHash string `bun:"token_hash,type:text" json:"tokenHash"`
+	UserId uuid.UUID `bun:"user_id,type:uuid" json:"userId"`
+	OwnerEmail string `bun:"owner_email,type:text" json:"ownerEmail"`
+	AccessCiphertext string `bun:"access_ciphertext,type:text" json:"accessCiphertext"`
+	AccessNonce string `bun:"access_nonce,type:text" json:"accessNonce"`
+	RefreshCiphertext string `bun:"refresh_ciphertext,type:text" json:"refreshCiphertext"`
+	RefreshNonce string `bun:"refresh_nonce,type:text" json:"refreshNonce"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	LastSeenAt time.Time `bun:"last_seen_at,type:timestamptz,default:now()" json:"lastSeenAt"`
+	IdleExpiresAt time.Time `bun:"idle_expires_at,type:timestamptz" json:"idleExpiresAt"`
+	AbsoluteExpiresAt time.Time `bun:"absolute_expires_at,type:timestamptz" json:"absoluteExpiresAt"`
+	RevokedAt *time.Time `bun:"revoked_at,type:timestamptz,nullzero" json:"revokedAt,omitempty"`
+}
+
+func (value WebSessionsBun) Validate() error {
+	if len([]byte(value.OwnerEmail)) > 320 { return errors.New("web_sessions.owner_email exceeds 320 bytes") }
+	if len([]byte(value.OwnerEmail)) < 3 { return errors.New("web_sessions.owner_email is below 3 bytes") }
+	return nil
+}
+
 func validateRawJSON(value json.RawMessage) bool {
 	if len(value) == 0 {
 		return true

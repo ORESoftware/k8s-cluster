@@ -2754,6 +2754,24 @@ object FabRuns : Table("daedalus.fab_runs") {
     override val primaryKey = PrimaryKey(id)
 }
 
+object WebSessions : Table("daedalus.web_sessions") {
+    val id = uuid("id")
+    val tokenHash = text("token_hash")
+    val userId = uuid("user_id")
+    val ownerEmail = text("owner_email")
+    val accessCiphertext = text("access_ciphertext")
+    val accessNonce = text("access_nonce")
+    val refreshCiphertext = text("refresh_ciphertext")
+    val refreshNonce = text("refresh_nonce")
+    val createdAt = timestampWithTimeZone("created_at")
+    val lastSeenAt = timestampWithTimeZone("last_seen_at")
+    val idleExpiresAt = timestampWithTimeZone("idle_expires_at")
+    val absoluteExpiresAt = timestampWithTimeZone("absolute_expires_at")
+    val revokedAt = timestampWithTimeZone("revoked_at").nullable()
+
+    override val primaryKey = PrimaryKey(id)
+}
+
 data class AccountsRow(
     val id: UUID,
     val username: String,
@@ -7630,4 +7648,36 @@ fun toFabRunsRow(row: ResultRow): FabRunsRow = FabRunsRow(
     row[FabRuns.startedAt],
     row[FabRuns.finishedAt],
     row[FabRuns.createdAt],
+)
+
+data class WebSessionsRow(
+    val id: UUID,
+    val tokenHash: String,
+    val userId: UUID,
+    val ownerEmail: String,
+    val accessCiphertext: String,
+    val accessNonce: String,
+    val refreshCiphertext: String,
+    val refreshNonce: String,
+    val createdAt: OffsetDateTime,
+    val lastSeenAt: OffsetDateTime,
+    val idleExpiresAt: OffsetDateTime,
+    val absoluteExpiresAt: OffsetDateTime,
+    val revokedAt: OffsetDateTime?,
+)
+
+fun toWebSessionsRow(row: ResultRow): WebSessionsRow = WebSessionsRow(
+    row[WebSessions.id],
+    row[WebSessions.tokenHash],
+    row[WebSessions.userId],
+    row[WebSessions.ownerEmail],
+    row[WebSessions.accessCiphertext],
+    row[WebSessions.accessNonce],
+    row[WebSessions.refreshCiphertext],
+    row[WebSessions.refreshNonce],
+    row[WebSessions.createdAt],
+    row[WebSessions.lastSeenAt],
+    row[WebSessions.idleExpiresAt],
+    row[WebSessions.absoluteExpiresAt],
+    row[WebSessions.revokedAt],
 )

@@ -11638,3 +11638,42 @@ let validate_fab_runs_progress (value : int) : (int, string) result =
   if value < 0 then Error "fab_runs.progress is below the minimum"
   else if value > 100 then Error "fab_runs.progress is above the maximum"
   else Ok value
+
+let web_sessions_table = "daedalus.web_sessions"
+
+let web_sessions_columns = ["id"; "token_hash"; "user_id"; "owner_email"; "access_ciphertext"; "access_nonce"; "refresh_ciphertext"; "refresh_nonce"; "created_at"; "last_seen_at"; "idle_expires_at"; "absolute_expires_at"; "revoked_at"]
+
+let web_sessions_select_sql = "select\n      id::text as id,\n      token_hash,\n      user_id::text as user_id,\n      owner_email,\n      access_ciphertext,\n      access_nonce,\n      refresh_ciphertext,\n      refresh_nonce,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(idle_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as idle_expires_at,\n      to_char(absolute_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as absolute_expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at\n    from daedalus.web_sessions"
+
+type web_sessions_row = {
+  web_sessions_id : string;
+  web_sessions_token_hash : string;
+  web_sessions_user_id : string;
+  web_sessions_owner_email : string;
+  web_sessions_access_ciphertext : string;
+  web_sessions_access_nonce : string;
+  web_sessions_refresh_ciphertext : string;
+  web_sessions_refresh_nonce : string;
+  web_sessions_created_at : string;
+  web_sessions_last_seen_at : string;
+  web_sessions_idle_expires_at : string;
+  web_sessions_absolute_expires_at : string;
+  web_sessions_revoked_at : string option;
+}
+
+let web_sessions_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : web_sessions_row =
+  {
+    web_sessions_id = get 0;
+    web_sessions_token_hash = get 1;
+    web_sessions_user_id = get 2;
+    web_sessions_owner_email = get 3;
+    web_sessions_access_ciphertext = get 4;
+    web_sessions_access_nonce = get 5;
+    web_sessions_refresh_ciphertext = get 6;
+    web_sessions_refresh_nonce = get 7;
+    web_sessions_created_at = get 8;
+    web_sessions_last_seen_at = get 9;
+    web_sessions_idle_expires_at = get 10;
+    web_sessions_absolute_expires_at = get 11;
+    web_sessions_revoked_at = (if is_null 12 then None else Some (get 12));
+  }

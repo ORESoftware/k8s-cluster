@@ -4263,3 +4263,32 @@ class FabRuns extends Model
         ];
     }
 }
+
+class WebSessions extends Model
+{
+    protected $table = 'daedalus.web_sessions';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+    protected $fillable = ['token_hash', 'user_id', 'owner_email', 'access_ciphertext', 'access_nonce', 'refresh_ciphertext', 'refresh_nonce', 'created_at', 'last_seen_at', 'idle_expires_at', 'absolute_expires_at', 'revoked_at'];
+    protected $casts = ['created_at' => 'datetime', 'last_seen_at' => 'datetime', 'idle_expires_at' => 'datetime', 'absolute_expires_at' => 'datetime', 'revoked_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'token_hash' => ['required', 'string'],
+            'user_id' => ['required', 'uuid'],
+            'owner_email' => ['required', 'string'],
+            'access_ciphertext' => ['required', 'string'],
+            'access_nonce' => ['required', 'string'],
+            'refresh_ciphertext' => ['required', 'string'],
+            'refresh_nonce' => ['required', 'string'],
+            'last_seen_at' => ['nullable', 'date'],
+            'idle_expires_at' => ['required', 'date'],
+            'absolute_expires_at' => ['required', 'date'],
+            'revoked_at' => ['nullable', 'date'],
+        ];
+    }
+}

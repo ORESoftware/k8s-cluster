@@ -159,6 +159,7 @@ defmodule DdPgDefs do
     DdPgDefs.FabDesigns,
     DdPgDefs.FabInstructions,
     DdPgDefs.FabRuns,
+    DdPgDefs.WebSessions,
   ]
 
   @spec tables() :: [module()]

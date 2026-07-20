@@ -8354,3 +8354,58 @@ pub struct FabRunsDieselInsert {
     pub finished_at: Option<DateTime<Utc>>,
     pub created_at: Option<DateTime<Utc>>,
 }
+
+diesel::table! {
+    use diesel::sql_types::*;
+    web_sessions (id) {
+        id -> Uuid,
+        token_hash -> Text,
+        user_id -> Uuid,
+        owner_email -> Text,
+        access_ciphertext -> Text,
+        access_nonce -> Text,
+        refresh_ciphertext -> Text,
+        refresh_nonce -> Text,
+        created_at -> Timestamptz,
+        last_seen_at -> Timestamptz,
+        idle_expires_at -> Timestamptz,
+        absolute_expires_at -> Timestamptz,
+        revoked_at -> Nullable<Timestamptz>,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = web_sessions)]
+pub struct WebSessionsDieselRow {
+    pub id: Uuid,
+    pub token_hash: String,
+    pub user_id: Uuid,
+    pub owner_email: String,
+    pub access_ciphertext: String,
+    pub access_nonce: String,
+    pub refresh_ciphertext: String,
+    pub refresh_nonce: String,
+    pub created_at: DateTime<Utc>,
+    pub last_seen_at: DateTime<Utc>,
+    pub idle_expires_at: DateTime<Utc>,
+    pub absolute_expires_at: DateTime<Utc>,
+    pub revoked_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = web_sessions)]
+pub struct WebSessionsDieselInsert {
+    pub id: Option<Uuid>,
+    pub token_hash: Option<String>,
+    pub user_id: Option<Uuid>,
+    pub owner_email: Option<String>,
+    pub access_ciphertext: Option<String>,
+    pub access_nonce: Option<String>,
+    pub refresh_ciphertext: Option<String>,
+    pub refresh_nonce: Option<String>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub last_seen_at: Option<DateTime<Utc>>,
+    pub idle_expires_at: Option<DateTime<Utc>>,
+    pub absolute_expires_at: Option<DateTime<Utc>>,
+    pub revoked_at: Option<DateTime<Utc>>,
+}

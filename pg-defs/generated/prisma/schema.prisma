@@ -3103,3 +3103,24 @@ model FabRuns {
   // Check constraints live in schema.sql and must be migrated from the SQL contract.
   @@map("fab_runs")
 }
+
+model WebSessions {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tokenHash String @map("token_hash") @db.Text
+  userId String @map("user_id") @db.Uuid
+  ownerEmail String @map("owner_email") @db.Text
+  accessCiphertext String @map("access_ciphertext") @db.Text
+  accessNonce String @map("access_nonce") @db.Text
+  refreshCiphertext String @map("refresh_ciphertext") @db.Text
+  refreshNonce String @map("refresh_nonce") @db.Text
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  lastSeenAt DateTime @map("last_seen_at") @default(now()) @db.Timestamptz(6)
+  idleExpiresAt DateTime @map("idle_expires_at") @db.Timestamptz(6)
+  absoluteExpiresAt DateTime @map("absolute_expires_at") @db.Timestamptz(6)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(6)
+  @@unique([tokenHash], map: "web_sessions_token_hash_idx")
+  @@index([userId], map: "web_sessions_user_idx")
+  @@index([absoluteExpiresAt], map: "web_sessions_absolute_expiry_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("web_sessions")
+}

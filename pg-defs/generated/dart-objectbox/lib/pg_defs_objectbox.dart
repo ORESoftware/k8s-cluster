@@ -12981,3 +12981,87 @@ class FabRunsObjectBox {
     );
   }
 }
+
+@Entity()
+class WebSessionsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String tokenHash;
+
+  String userId;
+
+  String ownerEmail;
+
+  String accessCiphertext;
+
+  String accessNonce;
+
+  String refreshCiphertext;
+
+  String refreshNonce;
+
+  String createdAt;
+
+  String lastSeenAt;
+
+  String idleExpiresAt;
+
+  String absoluteExpiresAt;
+
+  String? revokedAt;
+
+
+  WebSessionsObjectBox({
+    required this.id,
+    required this.tokenHash,
+    required this.userId,
+    required this.ownerEmail,
+    required this.accessCiphertext,
+    required this.accessNonce,
+    required this.refreshCiphertext,
+    required this.refreshNonce,
+    required this.createdAt,
+    required this.lastSeenAt,
+    required this.idleExpiresAt,
+    required this.absoluteExpiresAt,
+    this.revokedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "tokenHash": tokenHash,
+    "userId": userId,
+    "ownerEmail": ownerEmail,
+    "accessCiphertext": accessCiphertext,
+    "accessNonce": accessNonce,
+    "refreshCiphertext": refreshCiphertext,
+    "refreshNonce": refreshNonce,
+    "createdAt": createdAt,
+    "lastSeenAt": lastSeenAt,
+    "idleExpiresAt": idleExpiresAt,
+    "absoluteExpiresAt": absoluteExpiresAt,
+    "revokedAt": revokedAt,
+  };
+
+  static WebSessionsObjectBox fromJson(Map<String, Object?> json) {
+    return WebSessionsObjectBox(
+      id: json["id"] as String,
+      tokenHash: json["tokenHash"] as String,
+      userId: json["userId"] as String,
+      ownerEmail: json["ownerEmail"] as String,
+      accessCiphertext: json["accessCiphertext"] as String,
+      accessNonce: json["accessNonce"] as String,
+      refreshCiphertext: json["refreshCiphertext"] as String,
+      refreshNonce: json["refreshNonce"] as String,
+      createdAt: json["createdAt"] as String,
+      lastSeenAt: json["lastSeenAt"] as String,
+      idleExpiresAt: json["idleExpiresAt"] as String,
+      absoluteExpiresAt: json["absoluteExpiresAt"] as String,
+      revokedAt: json["revokedAt"] as String?,
+    );
+  }
+}

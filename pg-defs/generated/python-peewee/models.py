@@ -2954,3 +2954,23 @@ class FabRuns(BaseModel):
     class Meta:
         table_name = "fab_runs"
         schema = "daedalus"
+
+
+class WebSessions(BaseModel):
+    id = UUIDField(primary_key=True)
+    token_hash = TextField()
+    user_id = UUIDField()
+    owner_email = TextField()
+    access_ciphertext = TextField()
+    access_nonce = TextField()
+    refresh_ciphertext = TextField()
+    refresh_nonce = TextField()
+    created_at = DateTimeField()
+    last_seen_at = DateTimeField()
+    idle_expires_at = DateTimeField()
+    absolute_expires_at = DateTimeField()
+    revoked_at = DateTimeField(null=True)
+
+    class Meta:
+        table_name = "web_sessions"
+        schema = "daedalus"

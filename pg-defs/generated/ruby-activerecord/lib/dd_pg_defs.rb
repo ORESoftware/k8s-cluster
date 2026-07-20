@@ -2271,4 +2271,19 @@ module DdPgDefs
     validates :machine_id, presence: true
     validates :progress, numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 100 }
   end
+
+  class WebSessions < ActiveRecord::Base
+    self.table_name = "daedalus.web_sessions"
+    self.primary_key = "id"
+
+    validates :token_hash, presence: true
+    validates :user_id, presence: true
+    validates :owner_email, presence: true
+    validates :access_ciphertext, presence: true
+    validates :access_nonce, presence: true
+    validates :refresh_ciphertext, presence: true
+    validates :refresh_nonce, presence: true
+    validates :idle_expires_at, presence: true
+    validates :absolute_expires_at, presence: true
+  end
 end

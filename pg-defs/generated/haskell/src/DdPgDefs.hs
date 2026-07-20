@@ -10665,3 +10665,31 @@ validateFabRunsProgress value
   | value < 0 = Left "fab_runs.progress is below the minimum"
   | value > 100 = Left "fab_runs.progress is above the maximum"
   | otherwise = Right value
+
+webSessionsTable :: Text
+webSessionsTable = "daedalus.web_sessions"
+
+webSessionsColumns :: [Text]
+webSessionsColumns = ["id", "token_hash", "user_id", "owner_email", "access_ciphertext", "access_nonce", "refresh_ciphertext", "refresh_nonce", "created_at", "last_seen_at", "idle_expires_at", "absolute_expires_at", "revoked_at"]
+
+webSessionsSelectSql :: Text
+webSessionsSelectSql = "select\n      id::text as id,\n      token_hash,\n      user_id::text as user_id,\n      owner_email,\n      access_ciphertext,\n      access_nonce,\n      refresh_ciphertext,\n      refresh_nonce,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(idle_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as idle_expires_at,\n      to_char(absolute_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as absolute_expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at\n    from daedalus.web_sessions"
+
+data WebSessionsRow = WebSessionsRow
+  { webSessionsId :: Text
+  , webSessionsTokenHash :: Text
+  , webSessionsUserId :: Text
+  , webSessionsOwnerEmail :: Text
+  , webSessionsAccessCiphertext :: Text
+  , webSessionsAccessNonce :: Text
+  , webSessionsRefreshCiphertext :: Text
+  , webSessionsRefreshNonce :: Text
+  , webSessionsCreatedAt :: Text
+  , webSessionsLastSeenAt :: Text
+  , webSessionsIdleExpiresAt :: Text
+  , webSessionsAbsoluteExpiresAt :: Text
+  , webSessionsRevokedAt :: (Maybe Text)
+  } deriving (Eq, Show)
+
+instance FromRow WebSessionsRow where
+  fromRow = WebSessionsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field

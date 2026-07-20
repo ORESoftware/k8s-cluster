@@ -2220,3 +2220,18 @@ update daedalus.fab_runs set instructions_id = $2, status = $3, machine_id = $4,
 
 -- name: DeleteFabRuns :exec
 delete from daedalus.fab_runs where id = $1;
+
+-- name: ListWebSessions :many
+select id, token_hash, user_id, owner_email, access_ciphertext, access_nonce, refresh_ciphertext, refresh_nonce, created_at, last_seen_at, idle_expires_at, absolute_expires_at, revoked_at from daedalus.web_sessions;
+
+-- name: GetWebSessions :one
+select id, token_hash, user_id, owner_email, access_ciphertext, access_nonce, refresh_ciphertext, refresh_nonce, created_at, last_seen_at, idle_expires_at, absolute_expires_at, revoked_at from daedalus.web_sessions where id = $1 limit 1;
+
+-- name: CreateWebSessions :one
+insert into daedalus.web_sessions (id, token_hash, user_id, owner_email, access_ciphertext, access_nonce, refresh_ciphertext, refresh_nonce, created_at, last_seen_at, idle_expires_at, absolute_expires_at, revoked_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) returning id, token_hash, user_id, owner_email, access_ciphertext, access_nonce, refresh_ciphertext, refresh_nonce, created_at, last_seen_at, idle_expires_at, absolute_expires_at, revoked_at;
+
+-- name: UpdateWebSessions :one
+update daedalus.web_sessions set token_hash = $2, user_id = $3, owner_email = $4, access_ciphertext = $5, access_nonce = $6, refresh_ciphertext = $7, refresh_nonce = $8, last_seen_at = $9, idle_expires_at = $10, absolute_expires_at = $11, revoked_at = $12 where id = $1 returning id, token_hash, user_id, owner_email, access_ciphertext, access_nonce, refresh_ciphertext, refresh_nonce, created_at, last_seen_at, idle_expires_at, absolute_expires_at, revoked_at;
+
+-- name: DeleteWebSessions :exec
+delete from daedalus.web_sessions where id = $1;

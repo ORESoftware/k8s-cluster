@@ -14094,4 +14094,57 @@ inline std::optional<std::string> validate_fab_runs_progress(int32_t value) {
     return std::nullopt;
 }
 
+inline const char* web_sessions_table = "daedalus.web_sessions";
+inline const std::vector<std::string> web_sessions_columns = { "id", "token_hash", "user_id", "owner_email", "access_ciphertext", "access_nonce", "refresh_ciphertext", "refresh_nonce", "created_at", "last_seen_at", "idle_expires_at", "absolute_expires_at", "revoked_at" };
+inline const char* web_sessions_select_sql = R"SQL(select
+      id::text as id,
+      token_hash,
+      user_id::text as user_id,
+      owner_email,
+      access_ciphertext,
+      access_nonce,
+      refresh_ciphertext,
+      refresh_nonce,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at,
+      to_char(idle_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as idle_expires_at,
+      to_char(absolute_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as absolute_expires_at,
+      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as revoked_at
+    from daedalus.web_sessions)SQL";
+
+struct WebSessionsRow {
+    std::string id;
+    std::string token_hash;
+    std::string user_id;
+    std::string owner_email;
+    std::string access_ciphertext;
+    std::string access_nonce;
+    std::string refresh_ciphertext;
+    std::string refresh_nonce;
+    std::string created_at;
+    std::string last_seen_at;
+    std::string idle_expires_at;
+    std::string absolute_expires_at;
+    std::optional<std::string> revoked_at;
+};
+
+inline WebSessionsRow web_sessions_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    WebSessionsRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.token_hash = get(1);
+    row.user_id = get(2);
+    row.owner_email = get(3);
+    row.access_ciphertext = get(4);
+    row.access_nonce = get(5);
+    row.refresh_ciphertext = get(6);
+    row.refresh_nonce = get(7);
+    row.created_at = get(8);
+    row.last_seen_at = get(9);
+    row.idle_expires_at = get(10);
+    row.absolute_expires_at = get(11);
+    row.revoked_at = is_null(12) ? std::nullopt : std::optional<std::string>(get(12));
+    return row;
+}
+
 }  // namespace dd_pg_defs

@@ -3910,6 +3910,32 @@ class FabRunsTable extends Table {
   };
 }
 
+@DataClassName("WebSessionsData")
+class WebSessionsTable extends Table {
+  @override String get tableName => "web_sessions";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get tokenHash => text().named("token_hash")();
+  TextColumn get userId => text().named("user_id").customConstraint("UUID")();
+  TextColumn get ownerEmail => text().named("owner_email")();
+  TextColumn get accessCiphertext => text().named("access_ciphertext")();
+  TextColumn get accessNonce => text().named("access_nonce")();
+  TextColumn get refreshCiphertext => text().named("refresh_ciphertext")();
+  TextColumn get refreshNonce => text().named("refresh_nonce")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get lastSeenAt => dateTime().named("last_seen_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get idleExpiresAt => dateTime().named("idle_expires_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get absoluteExpiresAt => dateTime().named("absolute_expires_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get revokedAt => dateTime().named("revoked_at").nullable().customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
 // Drift annotation users should re-export the table classes via:
 // @DriftDatabase(tables: [...registeredDriftTables])
 const List<Type> registeredDriftTables = <Type>[
@@ -4061,4 +4087,5 @@ const List<Type> registeredDriftTables = <Type>[
   FabDesignsTable,
   FabInstructionsTable,
   FabRunsTable,
+  WebSessionsTable,
 ];

@@ -13523,3 +13523,41 @@ pub fn validateFabRunsProgress(value: i32) ?[]const u8 {
     if (value > 100) return "fab_runs.progress is above the maximum";
     return null;
 }
+
+pub const web_sessions_table: []const u8 = "daedalus.web_sessions";
+pub const web_sessions_columns = [_][]const u8{ "id", "token_hash", "user_id", "owner_email", "access_ciphertext", "access_nonce", "refresh_ciphertext", "refresh_nonce", "created_at", "last_seen_at", "idle_expires_at", "absolute_expires_at", "revoked_at" };
+pub const web_sessions_select_sql: []const u8 = "select\n      id::text as id,\n      token_hash,\n      user_id::text as user_id,\n      owner_email,\n      access_ciphertext,\n      access_nonce,\n      refresh_ciphertext,\n      refresh_nonce,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(idle_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as idle_expires_at,\n      to_char(absolute_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as absolute_expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at\n    from daedalus.web_sessions";
+
+pub const WebSessionsRow = struct {
+    id: []const u8,
+    token_hash: []const u8,
+    user_id: []const u8,
+    owner_email: []const u8,
+    access_ciphertext: []const u8,
+    access_nonce: []const u8,
+    refresh_ciphertext: []const u8,
+    refresh_nonce: []const u8,
+    created_at: []const u8,
+    last_seen_at: []const u8,
+    idle_expires_at: []const u8,
+    absolute_expires_at: []const u8,
+    revoked_at: ?[]const u8,
+
+    pub fn fromRow(reader: RowReader) WebSessionsRow {
+        return WebSessionsRow{
+            .id = reader.text(0),
+            .token_hash = reader.text(1),
+            .user_id = reader.text(2),
+            .owner_email = reader.text(3),
+            .access_ciphertext = reader.text(4),
+            .access_nonce = reader.text(5),
+            .refresh_ciphertext = reader.text(6),
+            .refresh_nonce = reader.text(7),
+            .created_at = reader.text(8),
+            .last_seen_at = reader.text(9),
+            .idle_expires_at = reader.text(10),
+            .absolute_expires_at = reader.text(11),
+            .revoked_at = if (reader.is_null(12)) null else reader.text(12),
+        };
+    }
+};

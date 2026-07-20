@@ -12686,3 +12686,77 @@ class FabRunsInsert(BaseModel):
         if value is not None and len(value.encode("utf-8")) > 20000:
             raise ValueError("fab_runs.error exceeds 20000 bytes")
         return value
+
+class WebSessions(Base):
+    __tablename__ = "web_sessions"
+    __table_args__ = (
+        CheckConstraint("octet_length(token_hash) = 64", name="web_sessions_token_hash_len_chk"),
+        CheckConstraint("octet_length(owner_email) between 3 and 320", name="web_sessions_owner_email_size_chk"),
+        CheckConstraint("absolute_expires_at >= idle_expires_at", name="web_sessions_expiry_order_chk"),
+        Index("web_sessions_token_hash_idx", "token_hash", unique=True),
+        Index("web_sessions_user_idx", "user_id"),
+        Index("web_sessions_absolute_expiry_idx", "absolute_expires_at"),
+        {"schema": "daedalus"},
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    token_hash: Mapped[str] = mapped_column(Text(), nullable=False)
+    user_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    owner_email: Mapped[str] = mapped_column(Text(), nullable=False)
+    access_ciphertext: Mapped[str] = mapped_column(Text(), nullable=False)
+    access_nonce: Mapped[str] = mapped_column(Text(), nullable=False)
+    refresh_ciphertext: Mapped[str] = mapped_column(Text(), nullable=False)
+    refresh_nonce: Mapped[str] = mapped_column(Text(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    idle_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    absolute_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+class WebSessionsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    tokenHash: str
+    userId: UUID
+    ownerEmail: str
+    accessCiphertext: str
+    accessNonce: str
+    refreshCiphertext: str
+    refreshNonce: str
+    createdAt: datetime
+    lastSeenAt: datetime
+    idleExpiresAt: datetime
+    absoluteExpiresAt: datetime
+    revokedAt: datetime | None = None
+
+    @field_validator("ownerEmail")
+    @classmethod
+    def validate_owner_email(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 320:
+            raise ValueError("web_sessions.owner_email exceeds 320 bytes")
+        return value
+
+class WebSessionsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    tokenHash: str
+    userId: UUID
+    ownerEmail: str
+    accessCiphertext: str
+    accessNonce: str
+    refreshCiphertext: str
+    refreshNonce: str
+    createdAt: datetime | None = None
+    lastSeenAt: datetime | None = None
+    idleExpiresAt: datetime
+    absoluteExpiresAt: datetime
+    revokedAt: datetime | None = None
+
+    @field_validator("ownerEmail")
+    @classmethod
+    def validate_owner_email(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 320:
+            raise ValueError("web_sessions.owner_email exceeds 320 bytes")
+        return value
