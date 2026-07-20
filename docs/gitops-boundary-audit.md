@@ -205,7 +205,16 @@ auth). The current local wiring is:
    tenancy** — every extraction means removing resources from this kustomization (which
    *prunes them from `default`*, i.e. an outage window) and standing them up in a new
    namespace. There is no app here that can be moved "for free."
-6. **Observability hardcodes the flat `default` world.** `k8s-resource-exporter` enumerates
+6. **Three Applications are silently unrenderable.** repo-server has
+   `reposerver.enable.git.submodule=false`, so an Application whose `path` points inside a
+   gitlink resolves to **zero files**: `dd-billing-server`
+   (`remote/deployments/billing-server-rs/k8s/ec2`), `dd-dart-server`, and
+   `dd-gleam-lambda-runner`. Verified via `git ls-files` — all three paths are empty in
+   k8s-cluster's tree. The other 53 k8s-cluster-sourced paths work only because their
+   manifests are duplicated as real files under `remote/argocd/`. **Fix:** point `repoURL` at
+   the app's own repo / org monorepo upstream; keep the submodule as an inventory pin. See
+   docs/app-deploy-contract.md → "Submodules are inventory, NOT a render source".
+7. **Observability hardcodes the flat `default` world.** `k8s-resource-exporter` enumerates
    ~150 `dd-*` workload names in a single allowlist
    (`remote/argocd/observability/k8s-resource-exporter.{deployment,configmap}.yaml`), and
    Prometheus rules key on `namespace="default"`. Any namespace migration must update these
