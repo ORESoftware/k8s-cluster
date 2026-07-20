@@ -1,34 +1,42 @@
-//! API bearer auth + outbound URL safety helpers.
+//! API authentication, per-tenant authorization, and outbound URL safety.
 //!
 //! ### Auth model (read this first)
 //!
-//! The billing API has historically trusted the path `tenant_id` and
-//! relied on an upstream gateway (`dd-remote-auth`) for proof of
-//! ownership. This module adds an **in-process** floor so the service
-//! remains safe even when the gateway is bypassed (port-forward,
-//! cluster-internal access, misconfigured ingress, …).
+//! There are two kinds of caller, and they are not interchangeable.
 //!
-//! When [`Config::api_auth_bearer`] is set:
-//!   * Every `/v1/...` request — including the OAuth `/start`,
-//!     `/callback`, and Plaid `link-token` / `exchange` flows —
-//!     must present `Authorization: Bearer <token>`.
-//!   * `Authorization: Bearer <token>` is compared in constant time.
-//!   * Webhooks (`/v1/webhooks/*`) and the public verification
-//!     endpoint (`/v1/verify/...`) are **exempt** — they have their
-//!     own auth model (provider signatures and "the data is public",
-//!     respectively).
-//!   * Health endpoints and `/admin` are also exempt; admin has its
-//!     own bearer in [`super::super::admin::security`].
+//! **1. Service callers** present the shared
+//! [`BILLING_API_AUTH_BEARER`](Config::api_auth_bearer) token. That token is a
+//! single process-wide secret: it proves *something authorized is calling* and
+//! nothing else. It carries no user, and no tenant. Treat it as a
+//! service-to-service credential only — it must never reach an end user or a
+//! client application.
 //!
-//! When [`Config::api_auth_bearer`] is **unset**, this middleware is a
-//! no-op for dev friction. We log a single WARN at boot so operators
-//! notice. Production manifests inject the bearer via SealedSecrets.
+//! **2. User callers** present a Supabase access token, verified per-request by
+//! [`crate::supabase_auth`]: real signature checking against the project's
+//! JWKS, with `iss`/`aud`/`exp`/`nbf` pinned.
 //!
-//! Per-tenant scoping (giving each tenant its own short-lived token) is
-//! intentionally **out of scope** here: the in-process floor only
-//! enforces caller authenticity. Tenant-ownership checks belong to the
-//! gateway, and to the per-handler `state.tenants.by_id(...)` calls
-//! that already prove the tenant exists.
+//! ### The IDOR this closes
+//!
+//! Historically only kind (1) existed. Every tenant-scoped route takes the
+//! tenant from the URL — `/v1/tenants/{tenant_id}/...` — and the service simply
+//! trusted it, delegating ownership entirely to an upstream gateway
+//! (`dd-remote-auth`). So any holder of the one shared token could read or
+//! mutate *any* tenant's ledger, connections, and scheduled jobs by editing a
+//! path segment, and nothing in this process would object. Anything that
+//! bypassed the gateway — a port-forward, cluster-internal access, a
+//! misconfigured ingress — inherited the whole estate.
+//!
+//! [`authorize_tenant`] is the fix: after authentication, the caller must be
+//! provably entitled to *the tenant named in the path*, in-process, or the
+//! request gets a 403. See [`TenantScope`] for how the tenant is extracted and
+//! [`Principal`] for what each caller kind is allowed.
+//!
+//! ### Exemptions
+//!
+//! Webhooks (`/v1/webhooks/*`) and public verification (`/v1/verify/*`) have
+//! their own auth models — provider signatures, and "the data is deliberately
+//! public" respectively. Health endpoints are unauthenticated for probes, and
+//! `/admin` has its own bearer in [`crate::admin::security`].
 
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -37,21 +45,139 @@ use axum::extract::{Request, State};
 use axum::http::{HeaderValue, StatusCode, Uri, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
+use uuid::Uuid;
 
 use crate::config::Config;
+use crate::supabase_auth::{AuthError, SupabaseIdentity, SupabaseVerifier, bearer_token};
 
-/// Per-request auth knobs. Built once at boot from
-/// [`Config::api_auth_bearer`] and shared via `Arc` so the middleware
-/// closure doesn't carry the full `AppState`.
-#[derive(Clone, Debug)]
+/// Who is making this request, once authenticated.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Principal {
+    /// Presented the shared `BILLING_API_AUTH_BEARER`. Authentic, but
+    /// anonymous and tenant-less.
+    Service,
+    /// Presented a Supabase access token that verified.
+    User(Box<SupabaseIdentity>),
+}
+
+/// What tenant, if any, a request path is scoped to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TenantScope {
+    /// Not a tenant-scoped route (`POST /v1/tenants`, `/v1/oauth/...`, …).
+    None,
+    /// `/v1/tenants/{tenant_id}/...` with a well-formed id.
+    Tenant(Uuid),
+    /// `/v1/tenants/<something>/...` where `<something>` is not a UUID.
+    ///
+    /// Kept distinct from [`TenantScope::None`] on purpose. Collapsing the two
+    /// would mean a caller could skip the entitlement check simply by sending a
+    /// tenant id we cannot parse, which is exactly the bypass this whole module
+    /// exists to prevent.
+    Unparseable,
+}
+
+/// Extract the tenant a request is scoped to from its path.
+///
+/// This reads the raw path rather than axum's `Path` extractor because the
+/// decision has to be made in middleware, before any handler runs, and must
+/// hold for every current *and future* `/v1/tenants/{tenant_id}/...` route
+/// without anyone remembering to opt in.
+pub fn tenant_scope_of(uri: &Uri) -> TenantScope {
+    let Some(rest) = uri.path().strip_prefix("/v1/tenants/") else {
+        // Includes bare `/v1/tenants` (tenant *creation*, which has no tenant
+        // to be scoped to).
+        return TenantScope::None;
+    };
+    let segment = rest.split('/').next().unwrap_or("");
+    if segment.is_empty() {
+        return TenantScope::None;
+    }
+    match Uuid::parse_str(segment) {
+        Ok(id) => TenantScope::Tenant(id),
+        Err(_) => TenantScope::Unparseable,
+    }
+}
+
+/// The per-tenant authorization decision.
+///
+/// Separated from the middleware so it can be tested exhaustively without
+/// standing up a router, and so the rule lives in exactly one readable place.
+pub fn authorize_tenant(
+    principal: &Principal,
+    scope: TenantScope,
+    require_user_jwt: bool,
+) -> Result<(), StatusCode> {
+    match scope {
+        // Not tenant-scoped: authentication alone is the whole check.
+        TenantScope::None => Ok(()),
+        // A tenant-scoped route whose tenant we cannot even name. Refuse
+        // rather than fall through to the unscoped branch.
+        TenantScope::Unparseable => Err(StatusCode::FORBIDDEN),
+        TenantScope::Tenant(tenant_id) => match principal {
+            Principal::User(identity) => {
+                if identity.is_entitled_to(tenant_id) {
+                    Ok(())
+                } else {
+                    // The IDOR, closed: a real, fully-verified user asking for
+                    // a tenant that is not theirs.
+                    tracing::warn!(
+                        auth.subject = %identity.subject,
+                        tenant.id = %tenant_id,
+                        "rejected cross-tenant request: caller is not entitled to this tenant"
+                    );
+                    Err(StatusCode::FORBIDDEN)
+                }
+            }
+            Principal::Service => {
+                if require_user_jwt {
+                    tracing::warn!(
+                        tenant.id = %tenant_id,
+                        "rejected service-bearer request to a tenant-scoped route: \
+                         BILLING_TENANT_ROUTES_REQUIRE_USER_JWT is on, so this route \
+                         needs a per-user Supabase token"
+                    );
+                    Err(StatusCode::FORBIDDEN)
+                } else {
+                    // Migration window only. The shared token names no tenant,
+                    // so this branch is the pre-fix behaviour and is exactly
+                    // what BILLING_TENANT_ROUTES_REQUIRE_USER_JWT=true removes.
+                    Ok(())
+                }
+            }
+        },
+    }
+}
+
+/// Per-request auth state. Built once at boot and shared via `Arc` so the
+/// middleware closure doesn't carry the full `AppState`.
+#[derive(Clone)]
 pub struct ApiAuth {
+    /// Shared service-to-service bearer. See [`Config::api_auth_bearer`].
     pub bearer: Option<String>,
+    /// Per-user Supabase verifier. `None` when Supabase is not configured.
+    pub supabase: Option<Arc<SupabaseVerifier>>,
+    /// See [`Config::tenant_routes_require_user_jwt`].
+    pub require_user_jwt: bool,
+}
+
+// `bearer` is a credential; keep it off the Debug surface, matching the
+// redaction discipline `Config` follows.
+impl std::fmt::Debug for ApiAuth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ApiAuth")
+            .field("bearer", &self.bearer.as_ref().map(|_| "<redacted>"))
+            .field("supabase_enabled", &self.supabase.is_some())
+            .field("require_user_jwt", &self.require_user_jwt)
+            .finish()
+    }
 }
 
 impl ApiAuth {
     pub fn from_config(cfg: &Config) -> Arc<Self> {
         Arc::new(Self {
             bearer: cfg.api_auth_bearer.clone(),
+            supabase: SupabaseVerifier::from_config(&cfg.supabase).map(Arc::new),
+            require_user_jwt: cfg.tenant_routes_require_user_jwt,
         })
     }
 }
