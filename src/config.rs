@@ -26,6 +26,7 @@ pub(crate) struct ServiceConfig {
     pub(crate) nats_max_inflight: usize,
     pub(crate) realtime_buffer: usize,
     pub(crate) supabase: SupabaseConfig,
+    pub(crate) fiducia: FiduciaConfig,
 }
 
 impl ServiceConfig {
@@ -44,7 +45,59 @@ impl ServiceConfig {
             realtime_buffer: env_u64("FABRICATION_REALTIME_BUFFER", 256, 8, 4_096) as usize,
             tcp_enabled: env_bool("FABRICATION_TCP_ENABLED", false),
             supabase: SupabaseConfig::from_env(),
+            fiducia: FiduciaConfig::from_env(),
         })
+    }
+}
+
+/// Fiducia settings for both things this service uses fiducia for.
+///
+/// They are separate credentials on purpose. The KV path reads secrets and
+/// needs only read scope; the lock path mutates `/v1/locks/*` and needs
+/// `locks:write`. Handing the lock scope to the pod that only needs to read
+/// `secrets/daedalus/*` — or, worse, discovering at runtime that the KV key was
+/// silently used for locks and 403s — is the failure this split prevents.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct FiduciaConfig {
+    /// `FIDUCIA_URL` — the fiducia load balancer. Shared by both paths.
+    pub(crate) url: Option<String>,
+    /// The KV-read credential, accepted under either org spelling.
+    ///
+    /// `FIDUCIA_API_KEY` is what this service and its manifests use;
+    /// `FIDUCIA_TOKEN` is what the Daedalus MCP server calls the same thing.
+    /// Both are accepted, `FIDUCIA_API_KEY` wins, and [`crate::secrets`]
+    /// resolves it identically so the two modules cannot drift.
+    pub(crate) kv_api_key: Option<String>,
+    /// `FIDUCIA_LOCKS_API_KEY` — a distinct, least-privilege credential that
+    /// carries the `locks:write` scope. The KV key does not, and will 403
+    /// `insufficient_scope` if it is used here.
+    pub(crate) locks_api_key: Option<String>,
+    /// Lease lifetime; renewals run at a third of it.
+    pub(crate) lease_ttl_ms: u64,
+}
+
+impl FiduciaConfig {
+    pub(crate) fn from_env() -> Self {
+        Self {
+            url: optional_env("FIDUCIA_URL"),
+            kv_api_key: optional_env("FIDUCIA_API_KEY").or_else(|| optional_env("FIDUCIA_TOKEN")),
+            locks_api_key: optional_env("FIDUCIA_LOCKS_API_KEY"),
+            lease_ttl_ms: env_u64(
+                "FABRICATION_LEASE_TTL_MS",
+                crate::coordination::DEFAULT_LEASE_TTL_MS,
+                5_000,
+                300_000,
+            ),
+        }
+    }
+
+    /// Distributed leases are live only when a URL *and* a lock-scoped key are
+    /// both present. Anything less runs on `NoopCoordination`, which is correct
+    /// for the single-replica deployment and is never a silent upgrade: the URL
+    /// alone must not enable leases, because the KV key would 403 on every
+    /// acquire and NetworkPolicy egress to fiducia is not open.
+    pub(crate) fn leases_enabled(&self) -> bool {
+        self.url.is_some() && self.locks_api_key.is_some()
     }
 }
 
@@ -166,6 +219,37 @@ mod tests {
         // The TCP stream cannot carry a bearer token, so "not listening" is the
         // only safe default. A missing or unparsable flag must not open it.
         assert!(!env_bool("FABRICATION_TCP_ENABLED", false));
+    }
+
+    #[test]
+    fn distributed_leases_require_both_a_url_and_a_lock_scoped_key() {
+        let mut fiducia = FiduciaConfig {
+            url: None,
+            kv_api_key: Some("kv-read".to_string()),
+            locks_api_key: None,
+            lease_ttl_ms: 30_000,
+        };
+        // A KV credential is not a lock credential: it lacks `locks:write` and
+        // would 403 on every acquire, so it must not enable leases.
+        assert!(!fiducia.leases_enabled());
+        fiducia.url = Some("http://fiducia.daedalus.svc:8088".to_string());
+        assert!(!fiducia.leases_enabled());
+        // A lock key with no endpoint is equally unusable.
+        fiducia.url = None;
+        fiducia.locks_api_key = Some("locks-write".to_string());
+        assert!(!fiducia.leases_enabled());
+
+        fiducia.url = Some("http://fiducia.daedalus.svc:8088".to_string());
+        assert!(fiducia.leases_enabled());
+    }
+
+    #[test]
+    fn an_unconfigured_fiducia_defaults_to_local_coordination() {
+        // The whole default path: nothing set, nothing enabled, no error.
+        let fiducia = FiduciaConfig::default();
+        assert!(!fiducia.leases_enabled());
+        assert_eq!(fiducia.url, None);
+        assert_eq!(fiducia.locks_api_key, None);
     }
 
     fn config_with(allowed: &[&str], secret: Option<&str>) -> SupabaseConfig {

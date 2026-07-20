@@ -78,3 +78,21 @@ spec:
       ports:
         - protocol: TCP
           port: 4222
+    # fiducia — the org's KV (secret overlay, src/secrets.rs) and distributed
+    # lock/lease plane (src/coordination.rs). Namespace- and port-scoped to the
+    # load balancer, which is the only fiducia surface a tenant may address;
+    # fiducia-node itself is reached only through it.
+    #
+    # Both features are inert without this rule AND their env vars, and both are
+    # off by default. It is opened here rather than left out because the failure
+    # mode without it is a connect timeout at boot that reads like a fiducia
+    # outage rather than a policy denial. Opening egress grants nothing on its
+    # own: the API key is still required, and lock mutations additionally need a
+    # `locks:write`-scoped key, which the KV key is not.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: fiducia
+      ports:
+        - protocol: TCP
+          port: 8088

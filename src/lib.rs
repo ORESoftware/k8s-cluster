@@ -65,6 +65,9 @@ use tokio::sync::Semaphore;
 use tracing::Instrument;
 
 use config::{env_u64, env_value, ServiceConfig};
+use coordination::{
+    maintain_lease, Coordination, CoordinationError, FiduciaCoordination, NoopCoordination,
+};
 use error::ServiceError;
 use metrics::Metrics;
 use persistence::Persistence;
@@ -82,6 +85,7 @@ mod boundary_remediation_content;
 mod capabilities_content;
 mod config;
 mod consumables_catalog_content;
+mod coordination;
 mod costing_catalog_content;
 mod decomposition_catalog_content;
 mod design_format_content;
@@ -183,6 +187,13 @@ struct AppState {
     mdp_subject: String,
     mdp_autopublish: bool,
     nats_inflight: Arc<Semaphore>,
+    /// Distributed-lease seam. Defaults to `NoopCoordination`, which grants
+    /// every lease locally and provides no cross-process exclusion — correct
+    /// for `replicas: 1`, and the reason more than one replica is not safe
+    /// today. See [`crate::coordination`].
+    coordination: Arc<dyn Coordination>,
+    /// Lease lifetime for a single NATS request; renewals run at a third of it.
+    lease_ttl: Duration,
     metrics: Arc<Metrics>,
     jobs: Arc<RwLock<FabricationJobStore>>,
     learning: Arc<RwLock<LearningMemory>>,
@@ -7173,16 +7184,33 @@ impl FabricationJobStore {
         }
     }
 
-    fn insert(&mut self, job: StoredFabricationJob) {
+    /// Store a job, reporting whether an existing job of the same id was
+    /// displaced.
+    ///
+    /// `safe_job_id` is `{kind}-{request_id}-{generated_at_ms}` truncated to 180
+    /// chars — deterministic, with no randomness or node identity. A redelivered
+    /// NATS message that regenerates the same id therefore collides by
+    /// construction, and the previous job plus every artifact hanging off it
+    /// used to be discarded with no error, no metric, and `jobs_stored_total`
+    /// still counting up.
+    ///
+    /// Returning the displaced job makes that visible to the caller instead of
+    /// silent. The store still overwrites — last write wins is the right
+    /// behaviour for a redelivery of the *same* logical job — but a collision
+    /// between two *different* jobs is now something the caller can see, count,
+    /// and alarm on.
+    #[must_use = "a displaced job means two different jobs collided on one id"]
+    fn insert(&mut self, job: StoredFabricationJob) -> Option<StoredFabricationJob> {
         let job_id = job.record.job_id.clone();
         self.order.retain(|existing| existing != &job_id);
         self.order.push_back(job_id.clone());
-        self.jobs.insert(job_id, job);
+        let displaced = self.jobs.insert(job_id, job);
         while self.order.len() > self.max_jobs {
             if let Some(oldest) = self.order.pop_front() {
                 self.jobs.remove(&oldest);
             }
         }
+        displaced
     }
 
     fn list(&self) -> Vec<FabricationJobRecord> {
@@ -61741,7 +61769,26 @@ fn store_job(state: &AppState, job: StoredFabricationJob) {
     let artifact_count = job.artifacts.len() as u64;
     match state.jobs.write() {
         Ok(mut jobs) => {
-            jobs.insert(job);
+            let job_id = job.record.job_id.clone();
+            if let Some(displaced) = jobs.insert(job) {
+                // Job ids are deterministic in (kind, request_id, ms), so this
+                // is reachable from a NATS redelivery replaying the same
+                // request. Overwriting is correct for a redelivery of the same
+                // logical job; it is data loss if two different jobs collided.
+                // The store cannot tell them apart, so it says so out loud
+                // rather than dropping the previous job in silence.
+                state
+                    .metrics
+                    .jobs_displaced_total
+                    .fetch_add(1, Ordering::Relaxed);
+                tracing::warn!(
+                    job.id = %job_id,
+                    displaced.artifacts = displaced.artifacts.len(),
+                    "job id collision: a stored job was replaced. Expected on a NATS \
+                     redelivery of the same request; otherwise a distinct job and its \
+                     artifacts have been lost."
+                );
+            }
             state
                 .metrics
                 .jobs_stored_total
@@ -61822,12 +61869,49 @@ async fn publish_nats_payload(
     subject: &str,
     payload: String,
 ) -> Result<(), String> {
+    publish_nats_payload_deduped(state, subject, payload, None).await
+}
+
+/// Publish, optionally carrying a JetStream dedupe id.
+///
+/// `dedupe_id` becomes the `Nats-Msg-Id` header. The fabrication stream is
+/// created with `duplicate_window: 120s`, and JetStream drops a second message
+/// bearing a `Nats-Msg-Id` it has already seen inside that window. Without the
+/// header that window does nothing at all — it was configured but inert, because
+/// nothing in this service ever set the id.
+///
+/// This matters because the consumer runs with `max_deliver: 5`: a request whose
+/// post-processing naks is redelivered and re-published, so downstream consumers
+/// of `fabrication.results` previously saw the same result up to five times.
+///
+/// Scope, precisely: this deduplicates what *this service publishes* into the
+/// fabrication stream. It does not deduplicate inbound requests (this service
+/// does not publish those), and it does not stop this service's own in-process
+/// side effects from running again on redelivery — see the coordination module
+/// for that.
+async fn publish_nats_payload_deduped(
+    state: &AppState,
+    subject: &str,
+    payload: String,
+    dedupe_id: Option<&str>,
+) -> Result<(), String> {
     let Some(nats) = state.nats.as_ref() else {
         return Err("NATS is not configured".to_string());
     };
-    nats.publish(subject.to_string(), payload.into())
-        .await
-        .map_err(|error| format!("publish failed: {error}"))?;
+    match dedupe_id {
+        Some(id) if !id.is_empty() => {
+            let mut headers = async_nats::HeaderMap::new();
+            headers.insert("Nats-Msg-Id", id);
+            nats.publish_with_headers(subject.to_string(), headers, payload.into())
+                .await
+                .map_err(|error| format!("publish failed: {error}"))?;
+        }
+        _ => {
+            nats.publish(subject.to_string(), payload.into())
+                .await
+                .map_err(|error| format!("publish failed: {error}"))?;
+        }
+    }
     nats.flush()
         .await
         .map_err(|error| format!("broker flush failed: {error}"))?;
@@ -61862,10 +61946,30 @@ async fn publish_event(state: &AppState, event_type: &str, request_id: &str, ok:
 }
 
 async fn publish_json_to_nats(state: &AppState, subject: &str, payload: Value) -> bool {
+    publish_json_to_nats_deduped(state, subject, payload, None).await
+}
+
+/// Stable dedupe id for a result publish: the logical output identity, not the
+/// attempt. Two redeliveries of the same request produce the same id, which is
+/// exactly what lets JetStream collapse them.
+fn result_dedupe_id(kind: &str, request_id: &str) -> Option<String> {
+    let request_id = request_id.trim();
+    // An absent request id gives no stable identity, so publishing without a
+    // dedupe id is more honest than inventing one that would collide across
+    // unrelated requests.
+    (!request_id.is_empty()).then(|| format!("{kind}:{request_id}"))
+}
+
+async fn publish_json_to_nats_deduped(
+    state: &AppState,
+    subject: &str,
+    payload: Value,
+    dedupe_id: Option<&str>,
+) -> bool {
     if state.nats.is_none() {
         return false;
     }
-    match publish_nats_payload(state, subject, payload.to_string()).await {
+    match publish_nats_payload_deduped(state, subject, payload.to_string(), dedupe_id).await {
         Ok(()) => true,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -62468,7 +62572,13 @@ async fn publish_plan_outputs(state: &AppState, response: &FabricationPlanRespon
         "type": "fabrication.plan.result",
         "response": response,
     });
-    let result_published = publish_json_to_nats(state, &state.result_subject, result).await;
+    let result_published = publish_json_to_nats_deduped(
+        state,
+        &state.result_subject,
+        result,
+        result_dedupe_id("fabrication.plan.result", &response.request_id).as_deref(),
+    )
+    .await;
     if result_published {
         state
             .metrics
@@ -62496,7 +62606,17 @@ async fn publish_analysis_outputs(
         "type": "fabrication.instructions.analysis.result",
         "response": response,
     });
-    let result_published = publish_json_to_nats(state, &state.result_subject, result).await;
+    let result_published = publish_json_to_nats_deduped(
+        state,
+        &state.result_subject,
+        result,
+        result_dedupe_id(
+            "fabrication.instructions.analysis.result",
+            &response.request_id,
+        )
+        .as_deref(),
+    )
+    .await;
     if result_published {
         state
             .metrics
@@ -62524,7 +62644,13 @@ async fn publish_learning_outputs(
         "type": "fabrication.learning.result",
         "response": response,
     });
-    let result_published = publish_json_to_nats(state, &state.result_subject, result).await;
+    let result_published = publish_json_to_nats_deduped(
+        state,
+        &state.result_subject,
+        result,
+        result_dedupe_id("fabrication.learning.result", &response.request_id).as_deref(),
+    )
+    .await;
     if result_published {
         state
             .metrics
@@ -62554,7 +62680,15 @@ async fn publish_learning_outcome_outputs(
         "outcomeId": outcome_id,
         "policy": snapshot,
     });
-    let result_published = publish_json_to_nats(state, &state.result_subject, result).await;
+    let result_published = publish_json_to_nats_deduped(
+        state,
+        &state.result_subject,
+        result,
+        // The outcome id is this publish's stable identity — a redelivered
+        // outcome carries the same one, which is what lets JetStream collapse it.
+        result_dedupe_id("fabrication.learning.outcome.result", outcome_id).as_deref(),
+    )
+    .await;
     if result_published {
         state
             .metrics
@@ -62813,6 +62947,115 @@ async fn build_fabrication_consumer(
     Ok(consumer)
 }
 
+/// Choose the coordination implementation and say so, once, at boot.
+///
+/// The mode a pod is running in is not something an operator should have to
+/// infer from the absence of a log line, because the two modes differ in
+/// whether concurrent duplicate processing is possible at all. Every branch
+/// here logs, and the misconfiguration branches log at WARN with the exact
+/// variable that is missing or wrong.
+fn build_coordination(fiducia: &config::FiduciaConfig) -> Arc<dyn Coordination> {
+    let local = |reason: &str| -> Arc<dyn Coordination> {
+        let coordination = NoopCoordination::default();
+        tracing::info!(
+            coordination.mode = coordination.mode(),
+            coordination.distributed = coordination.is_distributed(),
+            coordination.reason = reason,
+            "{SERVICE_NAME} distributed leases are OFF: request processing is exclusive only \
+             within this process. This is correct for the single-replica Recreate deployment; \
+             running more than one replica in this mode processes requests twice"
+        );
+        Arc::new(coordination)
+    };
+    if !fiducia.leases_enabled() {
+        if fiducia.url.is_some() && fiducia.locks_api_key.is_none() {
+            let kv_credential = if fiducia.kv_api_key.is_some() {
+                "a KV credential is configured, and it is the wrong scope for locks"
+            } else {
+                "no fiducia credential is configured at all"
+            };
+            // The KV key is present but is not a lock key. Being explicit here
+            // is the difference between "leases are off" and a pod that 403s on
+            // every acquire.
+            tracing::warn!(
+                "{SERVICE_NAME} FIDUCIA_URL is set but FIDUCIA_LOCKS_API_KEY is not ({kv_credential}); \
+                 the KV credential (FIDUCIA_API_KEY/FIDUCIA_TOKEN) lacks the `locks:write` scope \
+                 and will not be used for locks"
+            );
+        }
+        return local("FIDUCIA_URL and FIDUCIA_LOCKS_API_KEY are not both configured");
+    }
+    let (Some(url), Some(key)) = (fiducia.url.as_ref(), fiducia.locks_api_key.as_ref()) else {
+        return local("fiducia lease configuration is incomplete");
+    };
+    match FiduciaCoordination::new(url, key.clone()) {
+        Ok(coordination) => {
+            tracing::info!(
+                coordination.mode = coordination.mode(),
+                coordination.distributed = coordination.is_distributed(),
+                coordination.holder = coordination.holder(),
+                coordination.lease_ttl_ms = fiducia.lease_ttl_ms,
+                "{SERVICE_NAME} distributed leases are ON via fiducia-node /v1/locks/*. This \
+                 requires the `locks:write` scope on FIDUCIA_LOCKS_API_KEY and NetworkPolicy \
+                 egress to fiducia; both failure modes refuse to process rather than \
+                 double-process"
+            );
+            Arc::new(coordination)
+        }
+        Err(error) => {
+            // A bad URL is an operator error, not permission to invent a
+            // distributed lock. Fall back loudly to the local, honest default.
+            tracing::error!(
+                "{SERVICE_NAME} FIDUCIA_URL is unusable for the lock API ({error}); falling back \
+                 to local-only coordination"
+            );
+            local("FIDUCIA_URL failed validation")
+        }
+    }
+}
+
+/// The lease key for one inbound fabrication request.
+///
+/// Namespaced per service and per request id so it cannot collide with any
+/// other Daedalus lock in the same fiducia keyspace.
+fn request_lease_key(request_id: &str) -> String {
+    format!("daedalus/fab/request/{request_id}")
+}
+
+/// The stable request identity carried by an inbound NATS payload, if any.
+///
+/// A request with no id cannot be leased — there is nothing to be exclusive
+/// *about* — so those are processed without a lease exactly as before. That is
+/// the same judgement [`result_dedupe_id`] makes: inventing an identity would
+/// serialize unrelated requests behind one key.
+fn nats_request_lease_id(payload: &[u8]) -> Option<String> {
+    fn identity(value: &Value) -> Option<&str> {
+        value
+            .get("request_id")
+            .or_else(|| value.get("requestId"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+    }
+    let value = serde_json::from_slice::<Value>(payload).ok()?;
+    identity(&value)
+        .or_else(|| {
+            // Envelope forms put the payload one level down under one of these.
+            [
+                "request",
+                "plan",
+                "analysis",
+                "instruction_analysis",
+                "outcome",
+                "fabrication_outcome",
+                "learning_outcome",
+            ]
+            .iter()
+            .find_map(|field| value.get(*field).and_then(identity))
+        })
+        .map(|id| id.chars().take(MAX_LABEL_LEN).collect())
+}
+
 async fn run_nats_loop(state: AppState) {
     if state.nats.is_none() {
         tracing::info!("{SERVICE_NAME} nats loop disabled: NATS_URL is not configured");
@@ -62892,174 +63135,288 @@ async fn run_nats_loop(state: AppState) {
             );
             let task = async move {
                 let _permit = permit;
-                let delivery_succeeded = match parse_fabrication_nats_request(&payload) {
-                    Ok(FabricationNatsRequest::Plan(request)) => {
-                        let policy_snapshot = learning_policy_snapshot(&task_state).ok();
-                        match plan_fabrication_with_policy(request, policy_snapshot.as_ref()) {
-                            Ok(response) => {
-                                task_state
-                                    .metrics
-                                    .plan_requests_total
-                                    .fetch_add(1, Ordering::Relaxed);
-                                record_plan_metrics(&task_state, &response);
-                                store_plan_response(&task_state, &response);
-                                let published = publish_plan_outputs(&task_state, &response).await;
-                                publish_event(
-                                    &task_state,
-                                    "fabrication.plan.completed",
-                                    &response.request_id,
-                                    response.ok,
-                                )
-                                .await;
-                                published
-                            }
+                // Take the per-request lease *before* any side effect. With the
+                // default NoopCoordination this always succeeds and costs one
+                // atomic increment; with fiducia configured it is what stops a
+                // second replica (or a redelivery racing the first attempt)
+                // from planning, storing, and publishing the same request twice.
+                let lease_key = nats_request_lease_id(&payload).map(|id| request_lease_key(&id));
+                let lease = match lease_key.as_deref() {
+                    None => None,
+                    Some(key) => {
+                        match task_state
+                            .coordination
+                            .acquire_lease(key, task_state.lease_ttl)
+                            .await
+                        {
+                            Ok(lease) => Some(lease),
                             Err(error) => {
-                                task_state
-                                    .metrics
-                                    .errors_total
-                                    .fetch_add(1, Ordering::Relaxed);
-                                tracing::error!(
-                                    "{SERVICE_NAME} failed nats fabrication plan: {error}"
-                                );
-                                true
-                            }
-                        }
-                    }
-                    Ok(FabricationNatsRequest::InstructionAnalysis(request)) => {
-                        match analyze_instruction_request(request) {
-                            Ok(response) => {
-                                task_state
-                                    .metrics
-                                    .analysis_requests_total
-                                    .fetch_add(1, Ordering::Relaxed);
-                                record_analysis_metrics(&task_state, &response);
-                                store_analysis_response(&task_state, &response);
-                                let published =
-                                    publish_analysis_outputs(&task_state, &response).await;
-                                publish_event(
-                                    &task_state,
-                                    "fabrication.instructions.analyzed",
-                                    &response.request_id,
-                                    response.ok,
-                                )
-                                .await;
-                                published
-                            }
-                            Err(error) => {
-                                task_state
-                                    .metrics
-                                    .errors_total
-                                    .fetch_add(1, Ordering::Relaxed);
-                                tracing::error!(
-                                    "{SERVICE_NAME} failed nats instruction analysis: {error}"
-                                );
-                                true
-                            }
-                        }
-                    }
-                    Ok(FabricationNatsRequest::FabricationOutcome(request)) => {
-                        task_state
-                            .metrics
-                            .learning_requests_total
-                            .fetch_add(1, Ordering::Relaxed);
-                        let request = enrich_outcome_from_store(&task_state, request);
-                        match learn_from_outcome(request) {
-                            Ok((response, record)) => {
-                                match store_learning_response(&task_state, &response, record) {
-                                    Ok(_) => {
-                                        let published =
-                                            publish_learning_outputs(&task_state, &response).await;
-                                        publish_event(
-                                            &task_state,
-                                            "fabrication.learning.observed",
-                                            &response.request_id,
-                                            response.ok,
-                                        )
-                                        .await;
-                                        published
-                                    }
-                                    Err(error) => {
-                                        task_state
-                                            .metrics
-                                            .errors_total
-                                            .fetch_add(1, Ordering::Relaxed);
-                                        tracing::error!(
-                                            "{SERVICE_NAME} failed nats learning store: {error}"
-                                        );
-                                        false
-                                    }
+                                // Every failure lands here, including "someone
+                                // else holds it" and "fiducia is unreachable",
+                                // and every one of them declines to process.
+                                // The settle is a Nak with the configured delay
+                                // rather than an Ack or a term: the message is
+                                // still owed to somebody. If the current holder
+                                // finishes, it Acks and this delivery is moot;
+                                // if it died, the redelivery arrives after the
+                                // lease has lapsed and is processed then.
+                                // Acking here would be the surprising choice —
+                                // it discards a request on the word of a lock
+                                // we may simply have failed to reach.
+                                let already_held =
+                                    matches!(error, CoordinationError::AlreadyHeld { .. });
+                                if !already_held {
+                                    task_state
+                                        .metrics
+                                        .errors_total
+                                        .fetch_add(1, Ordering::Relaxed);
                                 }
-                            }
-                            Err(error) => {
-                                task_state
-                                    .metrics
-                                    .errors_total
-                                    .fetch_add(1, Ordering::Relaxed);
-                                tracing::error!(
-                                    "{SERVICE_NAME} failed nats fabrication outcome: {error}"
+                                tracing::warn!(
+                                    messaging.lease.key = key,
+                                    "{SERVICE_NAME} declined to process a fabrication request \
+                                     without its lease: {error}"
                                 );
-                                true
-                            }
-                        }
-                    }
-                    Ok(FabricationNatsRequest::LearningOutcome(request)) => {
-                        task_state
-                            .metrics
-                            .learning_requests_total
-                            .fetch_add(1, Ordering::Relaxed);
-                        match learning_outcome_record(request) {
-                            Ok(record) => {
-                                let outcome_id = record.outcome_id.clone();
-                                match store_learning_record(&task_state, record) {
-                                    Ok(snapshot) => {
-                                        let published = publish_learning_outcome_outputs(
-                                            &task_state,
-                                            &outcome_id,
-                                            &snapshot,
-                                        )
-                                        .await;
-                                        publish_event(
-                                            &task_state,
-                                            "fabrication.learning.outcome",
-                                            &outcome_id,
-                                            true,
-                                        )
-                                        .await;
-                                        published
-                                    }
-                                    Err(error) => {
-                                        task_state
-                                            .metrics
-                                            .errors_total
-                                            .fetch_add(1, Ordering::Relaxed);
-                                        tracing::error!(
-                                        "{SERVICE_NAME} failed nats compact learning store: {error}"
+                                tracing::Span::current()
+                                    .record("messaging.delivery.success", false)
+                                    .record("otel.status_code", "ERROR");
+                                if let Err(error) = message
+                                    .ack_with(async_nats::jetstream::AckKind::Nak(Some(
+                                        Duration::from_secs(env_u64(
+                                            "FABRICATION_NATS_NAK_DELAY_SECONDS",
+                                            10,
+                                            1,
+                                            300,
+                                        )),
+                                    )))
+                                    .await
+                                {
+                                    tracing::error!(
+                                        "{SERVICE_NAME} failed to nak an unleased fabrication \
+                                         request: {error}"
                                     );
-                                        false
-                                    }
                                 }
-                            }
-                            Err(error) => {
-                                task_state
-                                    .metrics
-                                    .errors_total
-                                    .fetch_add(1, Ordering::Relaxed);
-                                tracing::error!(
-                                    "{SERVICE_NAME} failed nats compact learning outcome: {error}"
-                                );
-                                true
+                                return;
                             }
                         }
-                    }
-                    Err(error) => {
-                        task_state
-                            .metrics
-                            .errors_total
-                            .fetch_add(1, Ordering::Relaxed);
-                        tracing::error!("{SERVICE_NAME} invalid nats fabrication request: {error}");
-                        true
                     }
                 };
+
+                let processing = async {
+                    match parse_fabrication_nats_request(&payload) {
+                        Ok(FabricationNatsRequest::Plan(request)) => {
+                            let policy_snapshot = learning_policy_snapshot(&task_state).ok();
+                            match plan_fabrication_with_policy(request, policy_snapshot.as_ref()) {
+                                Ok(response) => {
+                                    task_state
+                                        .metrics
+                                        .plan_requests_total
+                                        .fetch_add(1, Ordering::Relaxed);
+                                    record_plan_metrics(&task_state, &response);
+                                    store_plan_response(&task_state, &response);
+                                    let published =
+                                        publish_plan_outputs(&task_state, &response).await;
+                                    publish_event(
+                                        &task_state,
+                                        "fabrication.plan.completed",
+                                        &response.request_id,
+                                        response.ok,
+                                    )
+                                    .await;
+                                    published
+                                }
+                                Err(error) => {
+                                    task_state
+                                        .metrics
+                                        .errors_total
+                                        .fetch_add(1, Ordering::Relaxed);
+                                    tracing::error!(
+                                        "{SERVICE_NAME} failed nats fabrication plan: {error}"
+                                    );
+                                    true
+                                }
+                            }
+                        }
+                        Ok(FabricationNatsRequest::InstructionAnalysis(request)) => {
+                            match analyze_instruction_request(request) {
+                                Ok(response) => {
+                                    task_state
+                                        .metrics
+                                        .analysis_requests_total
+                                        .fetch_add(1, Ordering::Relaxed);
+                                    record_analysis_metrics(&task_state, &response);
+                                    store_analysis_response(&task_state, &response);
+                                    let published =
+                                        publish_analysis_outputs(&task_state, &response).await;
+                                    publish_event(
+                                        &task_state,
+                                        "fabrication.instructions.analyzed",
+                                        &response.request_id,
+                                        response.ok,
+                                    )
+                                    .await;
+                                    published
+                                }
+                                Err(error) => {
+                                    task_state
+                                        .metrics
+                                        .errors_total
+                                        .fetch_add(1, Ordering::Relaxed);
+                                    tracing::error!(
+                                        "{SERVICE_NAME} failed nats instruction analysis: {error}"
+                                    );
+                                    true
+                                }
+                            }
+                        }
+                        Ok(FabricationNatsRequest::FabricationOutcome(request)) => {
+                            task_state
+                                .metrics
+                                .learning_requests_total
+                                .fetch_add(1, Ordering::Relaxed);
+                            let request = enrich_outcome_from_store(&task_state, request);
+                            match learn_from_outcome(request) {
+                                Ok((response, record)) => {
+                                    match store_learning_response(&task_state, &response, record) {
+                                        Ok(_) => {
+                                            let published =
+                                                publish_learning_outputs(&task_state, &response)
+                                                    .await;
+                                            publish_event(
+                                                &task_state,
+                                                "fabrication.learning.observed",
+                                                &response.request_id,
+                                                response.ok,
+                                            )
+                                            .await;
+                                            published
+                                        }
+                                        Err(error) => {
+                                            task_state
+                                                .metrics
+                                                .errors_total
+                                                .fetch_add(1, Ordering::Relaxed);
+                                            tracing::error!(
+                                            "{SERVICE_NAME} failed nats learning store: {error}"
+                                        );
+                                            false
+                                        }
+                                    }
+                                }
+                                Err(error) => {
+                                    task_state
+                                        .metrics
+                                        .errors_total
+                                        .fetch_add(1, Ordering::Relaxed);
+                                    tracing::error!(
+                                        "{SERVICE_NAME} failed nats fabrication outcome: {error}"
+                                    );
+                                    true
+                                }
+                            }
+                        }
+                        Ok(FabricationNatsRequest::LearningOutcome(request)) => {
+                            task_state
+                                .metrics
+                                .learning_requests_total
+                                .fetch_add(1, Ordering::Relaxed);
+                            match learning_outcome_record(request) {
+                                Ok(record) => {
+                                    let outcome_id = record.outcome_id.clone();
+                                    match store_learning_record(&task_state, record) {
+                                        Ok(snapshot) => {
+                                            let published = publish_learning_outcome_outputs(
+                                                &task_state,
+                                                &outcome_id,
+                                                &snapshot,
+                                            )
+                                            .await;
+                                            publish_event(
+                                                &task_state,
+                                                "fabrication.learning.outcome",
+                                                &outcome_id,
+                                                true,
+                                            )
+                                            .await;
+                                            published
+                                        }
+                                        Err(error) => {
+                                            task_state
+                                                .metrics
+                                                .errors_total
+                                                .fetch_add(1, Ordering::Relaxed);
+                                            tracing::error!(
+                                        "{SERVICE_NAME} failed nats compact learning store: {error}"
+                                    );
+                                            false
+                                        }
+                                    }
+                                }
+                                Err(error) => {
+                                    task_state
+                                        .metrics
+                                        .errors_total
+                                        .fetch_add(1, Ordering::Relaxed);
+                                    tracing::error!(
+                                    "{SERVICE_NAME} failed nats compact learning outcome: {error}"
+                                );
+                                    true
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            task_state
+                                .metrics
+                                .errors_total
+                                .fetch_add(1, Ordering::Relaxed);
+                            tracing::error!(
+                                "{SERVICE_NAME} invalid nats fabrication request: {error}"
+                            );
+                            true
+                        }
+                    }
+                };
+
+                // A failed renewal is immediate loss of authority, not a
+                // warning: `select!` drops the processing future at that point,
+                // so the work stops before its next side effect rather than
+                // finishing and publishing under a lease someone else now
+                // holds. `biased` makes the loss win a tie deterministically.
+                let delivery_succeeded = match lease.as_ref() {
+                    Some(lease) => {
+                        tokio::select! {
+                            biased;
+                            lost = maintain_lease(
+                                task_state.coordination.as_ref(),
+                                lease,
+                                task_state.lease_ttl,
+                            ) => {
+                                task_state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+                                tracing::error!(
+                                    messaging.lease.key = ?lease.keys,
+                                    messaging.lease.fencing_token = lease.fencing_token,
+                                    "{SERVICE_NAME} abandoned in-flight fabrication work after \
+                                     losing its lease: {lost}"
+                                );
+                                false
+                            }
+                            processed = processing => processed,
+                        }
+                    }
+                    None => processing.await,
+                };
+
+                if let Some(lease) = lease.as_ref() {
+                    // Release is best-effort by contract — the TTL is the
+                    // backstop — but a refusal means our authority was already
+                    // gone, which is worth a log even though the work is done.
+                    if let Err(error) = task_state.coordination.release_lease(lease).await {
+                        tracing::warn!(
+                            messaging.lease.key = ?lease.keys,
+                            "{SERVICE_NAME} could not release a fabrication request lease: {error}"
+                        );
+                    }
+                }
+
                 tracing::Span::current()
                     .record("messaging.delivery.success", delivery_succeeded)
                     .record(
@@ -123595,6 +123952,8 @@ pub async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
         "every other HTTP route requires a verified, allow-listed Supabase operator"
     );
 
+    let coordination = build_coordination(&config.fiducia);
+
     let state = AppState {
         verifier,
         http: reqwest::Client::builder()
@@ -123610,6 +123969,8 @@ pub async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
         mdp_subject: config.mdp_subject,
         mdp_autopublish: config.mdp_autopublish,
         nats_inflight: Arc::new(Semaphore::new(config.nats_max_inflight)),
+        coordination,
+        lease_ttl: Duration::from_millis(config.fiducia.lease_ttl_ms),
         metrics: Arc::new(Metrics::default()),
         jobs: Arc::new(RwLock::new(FabricationJobStore::new(MAX_STORED_JOBS))),
         learning: Arc::new(RwLock::new(LearningMemory::new(MAX_LEARNING_OUTCOMES))),
@@ -140212,7 +140573,10 @@ mod tests {
             })));
 
         let mut store = FabricationJobStore::new(2);
-        store.insert(job);
+        assert!(
+            store.insert(job).is_none(),
+            "a fresh store cannot displace anything"
+        );
         let detail = store
             .detail(simulation_result_job_id)
             .expect("simulation result job should be retrievable");
@@ -140221,6 +140585,173 @@ mod tests {
             .artifacts
             .iter()
             .any(|artifact| artifact.artifact_id == "instruction-simulation-result"));
+    }
+
+    /// A minimal stored job with a caller-chosen id, for collision tests.
+    fn stored_job_fixture(job_id: &str, request_id: &str) -> StoredFabricationJob {
+        StoredFabricationJob {
+            record: FabricationJobRecord {
+                job_id: job_id.to_string(),
+                request_id: request_id.to_string(),
+                kind: "fabrication-plan".to_string(),
+                status: "complete".to_string(),
+                ok: true,
+                severity: "info".to_string(),
+                summary: "fixture".to_string(),
+                artifact_count: 0,
+                artifact_ids: Vec::new(),
+                created_at_ms: 1,
+                updated_at_ms: 1,
+            },
+            plan: None,
+            analysis: None,
+            learning: None,
+            artifacts: BTreeMap::new(),
+        }
+    }
+
+    #[test]
+    fn a_job_id_collision_is_reported_rather_than_silently_overwriting() {
+        // safe_job_id is deterministic in (kind, request_id, generated_at_ms),
+        // so a NATS redelivery replaying one request regenerates the same id.
+        // Before this returned the displaced job, the previous job and every
+        // artifact hanging off it were dropped with no error and no metric,
+        // while jobs_stored_total still counted up.
+        let mut store = FabricationJobStore::new(8);
+        let first = stored_job_fixture("job-collide", "alpha");
+        let second = stored_job_fixture("job-collide", "beta");
+
+        assert!(store.insert(first).is_none(), "nothing to displace yet");
+        let displaced = store
+            .insert(second)
+            .expect("re-inserting the same id must report the job it replaced");
+        assert_eq!(displaced.record.job_id, "job-collide");
+
+        let (job_count, _) = store.counts();
+        assert_eq!(job_count, 1, "a collision must not grow the store");
+    }
+
+    #[test]
+    fn safe_job_id_collides_on_the_same_request_and_millisecond() {
+        // Pinning the property the collision handling exists for: this is not a
+        // hypothetical, it is what a redelivery produces.
+        let a = safe_job_id("fabrication-plan", "req-1", 1_700_000_000_000);
+        let b = safe_job_id("fabrication-plan", "req-1", 1_700_000_000_000);
+        assert_eq!(a, b, "the id carries no randomness or node identity");
+
+        // And it is bounded, which is a second, independent collision source:
+        // two long request ids sharing a prefix truncate to the same id.
+        let long_a = safe_job_id("k", &"x".repeat(400), 1);
+        assert!(long_a.chars().count() <= 180);
+    }
+
+    #[test]
+    fn result_dedupe_ids_are_stable_per_logical_output_and_absent_without_identity() {
+        // Stable across attempts: this is what lets JetStream's duplicate_window
+        // collapse a re-published result after a redelivery.
+        assert_eq!(
+            result_dedupe_id("fabrication.plan.result", "req-7"),
+            result_dedupe_id("fabrication.plan.result", "req-7")
+        );
+        // Distinct per request and per output kind, so unrelated publishes are
+        // never conflated by the broker.
+        assert_ne!(
+            result_dedupe_id("fabrication.plan.result", "req-7"),
+            result_dedupe_id("fabrication.plan.result", "req-8")
+        );
+        assert_ne!(
+            result_dedupe_id("fabrication.plan.result", "req-7"),
+            result_dedupe_id("fabrication.analysis.result", "req-7")
+        );
+        // No request id means no stable identity. Publishing without a dedupe
+        // id is correct here; inventing one would collapse unrelated messages.
+        assert_eq!(result_dedupe_id("fabrication.plan.result", ""), None);
+        assert_eq!(result_dedupe_id("fabrication.plan.result", "   "), None);
+    }
+
+    #[test]
+    fn request_leases_are_keyed_by_request_identity_and_namespaced() {
+        // Flat form.
+        assert_eq!(
+            nats_request_lease_id(br#"{"request_id":"req-7","parts":[]}"#).as_deref(),
+            Some("req-7")
+        );
+        // camelCase, as the TypeScript publishers emit it.
+        assert_eq!(
+            nats_request_lease_id(br#"{"requestId":"req-8"}"#).as_deref(),
+            Some("req-8")
+        );
+        // Envelope form: the identity lives one level down.
+        assert_eq!(
+            nats_request_lease_id(br#"{"kind":"plan","plan":{"request_id":"req-9"}}"#).as_deref(),
+            Some("req-9")
+        );
+        // No identity means no lease: there is nothing to be exclusive about,
+        // and a synthetic key would serialize unrelated requests behind it.
+        assert_eq!(nats_request_lease_id(br#"{"parts":[]}"#), None);
+        assert_eq!(nats_request_lease_id(br#"{"request_id":"  "}"#), None);
+        assert_eq!(nats_request_lease_id(b"not json"), None);
+        // A hostile id cannot grow the key without bound.
+        let long = format!(r#"{{"request_id":"{}"}}"#, "x".repeat(4_000));
+        assert_eq!(
+            nats_request_lease_id(long.as_bytes())
+                .expect("long id still yields a lease id")
+                .len(),
+            MAX_LABEL_LEN
+        );
+        // The key is namespaced per service and per request.
+        assert_eq!(request_lease_key("req-7"), "daedalus/fab/request/req-7");
+        assert_ne!(request_lease_key("req-7"), request_lease_key("req-8"));
+    }
+
+    #[tokio::test]
+    async fn the_default_coordination_is_local_and_never_blocks_a_request() {
+        // The shipped default must not require fiducia, must not fail, and must
+        // not pretend to be distributed.
+        let coordination = build_coordination(&config::FiduciaConfig::default());
+        assert_eq!(coordination.mode(), "noop");
+        assert!(!coordination.is_distributed());
+        let key = request_lease_key("req-default");
+        let lease = coordination
+            .acquire_lease(
+                &key,
+                Duration::from_millis(coordination::DEFAULT_LEASE_TTL_MS),
+            )
+            .await
+            .expect("the default coordination always grants");
+        assert_eq!(lease.keys, vec![key]);
+        coordination.release_lease(&lease).await.expect("release");
+
+        // A URL without a lock-scoped key must NOT switch modes: the KV key
+        // lacks `locks:write` and would 403 on every acquire.
+        let half_configured = config::FiduciaConfig {
+            url: Some("http://fiducia.daedalus.svc:8088".to_string()),
+            kv_api_key: Some("kv-read".to_string()),
+            locks_api_key: None,
+            lease_ttl_ms: coordination::DEFAULT_LEASE_TTL_MS,
+        };
+        assert_eq!(build_coordination(&half_configured).mode(), "noop");
+
+        // An unusable URL is an operator error, not permission to invent a
+        // distributed lock — it degrades to local rather than panicking.
+        let bad_url = config::FiduciaConfig {
+            url: Some("http://169.254.169.254".to_string()),
+            kv_api_key: None,
+            locks_api_key: Some("locks-write".to_string()),
+            lease_ttl_ms: coordination::DEFAULT_LEASE_TTL_MS,
+        };
+        assert_eq!(build_coordination(&bad_url).mode(), "noop");
+
+        // Fully configured: the real client is selected.
+        let configured = config::FiduciaConfig {
+            url: Some("http://fiducia.daedalus.svc:8088".to_string()),
+            kv_api_key: None,
+            locks_api_key: Some("locks-write".to_string()),
+            lease_ttl_ms: coordination::DEFAULT_LEASE_TTL_MS,
+        };
+        let distributed = build_coordination(&configured);
+        assert_eq!(distributed.mode(), "fiducia");
+        assert!(distributed.is_distributed());
     }
 
     #[test]
@@ -140867,6 +141398,8 @@ mod tests {
             mdp_subject: MDP_OPTIMIZE_SUBJECT.to_string(),
             mdp_autopublish: false,
             nats_inflight: Arc::new(Semaphore::new(1)),
+            coordination: Arc::new(NoopCoordination::default()),
+            lease_ttl: Duration::from_millis(coordination::DEFAULT_LEASE_TTL_MS),
             metrics: Arc::new(Metrics::default()),
             jobs: Arc::new(RwLock::new(FabricationJobStore::new(MAX_STORED_JOBS))),
             learning: Arc::new(RwLock::new(LearningMemory::new(MAX_LEARNING_OUTCOMES))),
@@ -176042,7 +176575,10 @@ mod tests {
             .expect("plan should generate a vertical mill program");
         let source_artifact_id = artifact_id("program", &mill_program.program_id);
         let mut store = FabricationJobStore::new(4);
-        store.insert(stored_plan_job(&plan));
+        assert!(
+            store.insert(stored_plan_job(&plan)).is_none(),
+            "first store of a job id cannot displace anything"
+        );
         let stored_job = store
             .get(&plan.job_id)
             .expect("source plan job should be retrievable for enrichment");
@@ -179720,7 +180256,10 @@ mod tests {
         assert_eq!(parametric_design.machine_ready, false);
 
         let mut store = FabricationJobStore::new(2);
-        store.insert(job);
+        assert!(
+            store.insert(job).is_none(),
+            "first store of a job id cannot displace anything"
+        );
         let (job_count, artifact_count) = store.counts();
         assert_eq!(job_count, 1);
         assert!(artifact_count >= 3);
@@ -179754,7 +180293,10 @@ mod tests {
         .expect("release bundle plan should succeed");
 
         let mut store = FabricationJobStore::new(2);
-        store.insert(stored_plan_job(&response));
+        assert!(
+            store.insert(stored_plan_job(&response)).is_none(),
+            "first store of a job id cannot displace anything"
+        );
         let bundle = store
             .release_bundle(&response.job_id)
             .expect("stored plan should expose release bundle");
@@ -180651,6 +181193,8 @@ mod route_authorization_tests {
             mdp_subject: MDP_OPTIMIZE_SUBJECT.to_string(),
             mdp_autopublish: false,
             nats_inflight: Arc::new(Semaphore::new(1)),
+            coordination: Arc::new(NoopCoordination::default()),
+            lease_ttl: Duration::from_millis(coordination::DEFAULT_LEASE_TTL_MS),
             metrics: Arc::new(Metrics::default()),
             jobs: Arc::new(RwLock::new(FabricationJobStore::new(MAX_STORED_JOBS))),
             learning: Arc::new(RwLock::new(LearningMemory::new(MAX_LEARNING_OUTCOMES))),

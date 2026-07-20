@@ -18,6 +18,10 @@ pub(crate) struct Metrics {
     pub(crate) nats_results_published_total: AtomicU64,
     pub(crate) mdp_published_total: AtomicU64,
     pub(crate) jobs_stored_total: AtomicU64,
+    /// Stored jobs that replaced an existing job of the same id. Expected on a
+    /// NATS redelivery; a sustained nonzero rate means distinct jobs are
+    /// colliding and artifacts are being lost.
+    pub(crate) jobs_displaced_total: AtomicU64,
     pub(crate) artifacts_stored_total: AtomicU64,
     pub(crate) artifact_requests_total: AtomicU64,
     pub(crate) learning_events_stored_total: AtomicU64,
