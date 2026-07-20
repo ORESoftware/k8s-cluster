@@ -12,5 +12,5 @@
 	branch = main
 [submodule "apps/daedalus-infra"]
 	path = apps/daedalus-infra
-	url = https://github.com/daedalus-fab/daedalus-infra.git
+	url = git@github.com:daedalus-fab/daedalus-infra.git
 	branch = main

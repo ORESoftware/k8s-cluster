@@ -4,6 +4,7 @@
   "apps": [
     "fabrication-server.rs",
     "daedalus-api-server.rs",
-    "daedalus-web-server.rs"
+    "daedalus-web-server.rs",
+    "daedalus-infra"
   ]
 }
