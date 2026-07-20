@@ -91,11 +91,15 @@ Caveat that decides it the other way: if you want **true dynamic burst** (scale 
 a minute and back down), Karpenter on EKS is meaningfully better than cluster-autoscaler on
 hcloud. If burst elasticity is a hard requirement, use AWS.
 
-**Important Hetzner constraint:** keep all nodes of one cluster in **one location group**
-(e.g. all `fsn1`+`nbg1`+`hel1` in the EU network zone) so private networking is low-latency
-and volumes are usable. Do **not** spread one cluster across ash (US) and fsn1 (EU) — the
-current control-plane-in-ash / workers-in-hil+fsn1 layout has cross-continent latency in the
-control path and should be consolidated.
+**Important Hetzner constraint:** keep all nodes of one cluster in **one location group** so
+private networking is low-latency and volumes are usable.
+
+You have **two competing topologies** in `remote/hetzner/` — standardize on the HA one:
+
+- ✅ `setup-cluster-ha.sh` — `fsn1, nbg1, hel1`, all EU network zone, private L2 network,
+  private LB (`dd-cp-lb 10.20.0.5:6443`) as the control-plane endpoint. This is correct.
+- ⚠️ `create-cluster.sh` — control-plane in **ash** (US) with workers in hil + fsn1, WireGuard
+  meshed. Cross-continent latency in the control path. Retire it.
 
 ## Phased plan
 
