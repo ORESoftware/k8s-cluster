@@ -3506,11 +3506,12 @@ pub fn validate_des_soccer_tournaments_status(value: String) -> Result(String, S
 }
 
 pub const des_soccer_tournament_matches_table = "des_soccer_tournament_matches"
-pub const des_soccer_tournament_matches_select_sql = "select\n      id,\n      match_index,\n      stage,\n      home_team_id,\n      away_team_id,\n      home_goals,\n      away_goals,\n      shootout_winner_team_id,\n      home_training_steps,\n      away_training_steps,\n      to_char(recorded_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as recorded_at\n    from des_soccer_tournament_matches"
+pub const des_soccer_tournament_matches_select_sql = "select\n      id,\n      tournament_id,\n      match_index,\n      stage,\n      home_team_id,\n      away_team_id,\n      home_goals,\n      away_goals,\n      shootout_winner_team_id,\n      home_training_steps,\n      away_training_steps,\n      to_char(recorded_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as recorded_at\n    from des_soccer_tournament_matches"
 
 pub type DesSoccerTournamentMatchesRow {
   DesSoccerTournamentMatchesRow(
     id: Int,
+    tournament_id: Int,
     match_index: Int,
     stage: String,
     home_team_id: Int,
@@ -3533,11 +3534,12 @@ pub fn validate_des_soccer_tournament_matches_slug(value: String) -> Result(Stri
 }
 
 pub const des_soccer_tournament_team_brains_table = "des_soccer_tournament_team_brains"
-pub const des_soccer_tournament_team_brains_select_sql = "select\n      id,\n      team_id,\n      team_name,\n      seed,\n      matches_learned,\n      training_steps,\n      played,\n      wins,\n      draws,\n      losses,\n      goals_for,\n      goals_against,\n      neural_snapshot::text as neural_snapshot_json,\n      genome::text as genome_json,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_soccer_tournament_team_brains"
+pub const des_soccer_tournament_team_brains_select_sql = "select\n      id,\n      tournament_id,\n      team_id,\n      team_name,\n      seed,\n      matches_learned,\n      training_steps,\n      played,\n      wins,\n      draws,\n      losses,\n      goals_for,\n      goals_against,\n      neural_snapshot::text as neural_snapshot_json,\n      genome::text as genome_json,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_soccer_tournament_team_brains"
 
 pub type DesSoccerTournamentTeamBrainsRow {
   DesSoccerTournamentTeamBrainsRow(
     id: Int,
+    tournament_id: Int,
     team_id: Int,
     team_name: String,
     seed: Int,
@@ -11115,7 +11117,7 @@ pub fn validate_fab_instructions_dialect(value: String) -> Result(String, String
 }
 
 pub const fab_runs_table = "daedalus.fab_runs"
-pub const fab_runs_select_sql = "select\n      id::text as id,\n      status,\n      machine_id,\n      operator_email,\n      progress,\n      as_built::text as as_built_json,\n      error,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_runs"
+pub const fab_runs_select_sql = "select\n      id::text as id,\n      instructions_id::text as instructions_id,\n      status,\n      machine_id,\n      operator_email,\n      progress,\n      as_built::text as as_built_json,\n      error,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_runs"
 
 pub type FabRunsStatus {
   FabRunsStatusQueued
@@ -11149,6 +11151,7 @@ pub fn parse_fab_runs_status(value: String) -> Result(FabRunsStatus, String) {
 pub type FabRunsRow {
   FabRunsRow(
     id: String,
+    instructions_id: String,
     status: String,
     machine_id: String,
     operator_email: Option(String),

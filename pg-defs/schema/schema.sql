@@ -6612,6 +6612,8 @@ create table if not exists fiducia.sync_idempotency_keys (
 create index if not exists fiducia_sync_idempotency_created_idx
   on fiducia.sync_idempotency_keys (created_at);
 
+-- %%BILLING_MIRROR%%
+
 -- ════════════════════════════════════════════════════════════════════════════
 -- t2v — voice-to-text / text-to-voice platform (t2v-v2t.rs: t2v-api JSON
 -- server + t2v-web MASH dashboard).

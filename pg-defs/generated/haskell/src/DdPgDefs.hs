@@ -3573,13 +3573,14 @@ desSoccerTournamentMatchesTable :: Text
 desSoccerTournamentMatchesTable = "des_soccer_tournament_matches"
 
 desSoccerTournamentMatchesColumns :: [Text]
-desSoccerTournamentMatchesColumns = ["id", "match_index", "stage", "home_team_id", "away_team_id", "home_goals", "away_goals", "shootout_winner_team_id", "home_training_steps", "away_training_steps", "recorded_at"]
+desSoccerTournamentMatchesColumns = ["id", "tournament_id", "match_index", "stage", "home_team_id", "away_team_id", "home_goals", "away_goals", "shootout_winner_team_id", "home_training_steps", "away_training_steps", "recorded_at"]
 
 desSoccerTournamentMatchesSelectSql :: Text
-desSoccerTournamentMatchesSelectSql = "select\n      id,\n      match_index,\n      stage,\n      home_team_id,\n      away_team_id,\n      home_goals,\n      away_goals,\n      shootout_winner_team_id,\n      home_training_steps,\n      away_training_steps,\n      to_char(recorded_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as recorded_at\n    from des_soccer_tournament_matches"
+desSoccerTournamentMatchesSelectSql = "select\n      id,\n      tournament_id,\n      match_index,\n      stage,\n      home_team_id,\n      away_team_id,\n      home_goals,\n      away_goals,\n      shootout_winner_team_id,\n      home_training_steps,\n      away_training_steps,\n      to_char(recorded_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as recorded_at\n    from des_soccer_tournament_matches"
 
 data DesSoccerTournamentMatchesRow = DesSoccerTournamentMatchesRow
   { desSoccerTournamentMatchesId :: Int
+  , desSoccerTournamentMatchesTournamentId :: Int
   , desSoccerTournamentMatchesMatchIndex :: Int
   , desSoccerTournamentMatchesStage :: Text
   , desSoccerTournamentMatchesHomeTeamId :: Int
@@ -3593,19 +3594,20 @@ data DesSoccerTournamentMatchesRow = DesSoccerTournamentMatchesRow
   } deriving (Eq, Show)
 
 instance FromRow DesSoccerTournamentMatchesRow where
-  fromRow = DesSoccerTournamentMatchesRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+  fromRow = DesSoccerTournamentMatchesRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
 
 desSoccerTournamentTeamBrainsTable :: Text
 desSoccerTournamentTeamBrainsTable = "des_soccer_tournament_team_brains"
 
 desSoccerTournamentTeamBrainsColumns :: [Text]
-desSoccerTournamentTeamBrainsColumns = ["id", "team_id", "team_name", "seed", "matches_learned", "training_steps", "played", "wins", "draws", "losses", "goals_for", "goals_against", "neural_snapshot", "genome", "updated_at"]
+desSoccerTournamentTeamBrainsColumns = ["id", "tournament_id", "team_id", "team_name", "seed", "matches_learned", "training_steps", "played", "wins", "draws", "losses", "goals_for", "goals_against", "neural_snapshot", "genome", "updated_at"]
 
 desSoccerTournamentTeamBrainsSelectSql :: Text
-desSoccerTournamentTeamBrainsSelectSql = "select\n      id,\n      team_id,\n      team_name,\n      seed,\n      matches_learned,\n      training_steps,\n      played,\n      wins,\n      draws,\n      losses,\n      goals_for,\n      goals_against,\n      neural_snapshot::text as neural_snapshot_json,\n      genome::text as genome_json,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_soccer_tournament_team_brains"
+desSoccerTournamentTeamBrainsSelectSql = "select\n      id,\n      tournament_id,\n      team_id,\n      team_name,\n      seed,\n      matches_learned,\n      training_steps,\n      played,\n      wins,\n      draws,\n      losses,\n      goals_for,\n      goals_against,\n      neural_snapshot::text as neural_snapshot_json,\n      genome::text as genome_json,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_soccer_tournament_team_brains"
 
 data DesSoccerTournamentTeamBrainsRow = DesSoccerTournamentTeamBrainsRow
   { desSoccerTournamentTeamBrainsId :: Int
+  , desSoccerTournamentTeamBrainsTournamentId :: Int
   , desSoccerTournamentTeamBrainsTeamId :: Int
   , desSoccerTournamentTeamBrainsTeamName :: Text
   , desSoccerTournamentTeamBrainsSeed :: Int
@@ -3623,7 +3625,7 @@ data DesSoccerTournamentTeamBrainsRow = DesSoccerTournamentTeamBrainsRow
   } deriving (Eq, Show)
 
 instance FromRow DesSoccerTournamentTeamBrainsRow where
-  fromRow = DesSoccerTournamentTeamBrainsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+  fromRow = DesSoccerTournamentTeamBrainsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
 
 desSoccerLearningSetPlayRunsTable :: Text
 desSoccerLearningSetPlayRunsTable = "des_soccer_learning_set_play_runs"
@@ -10616,10 +10618,10 @@ fabRunsTable :: Text
 fabRunsTable = "daedalus.fab_runs"
 
 fabRunsColumns :: [Text]
-fabRunsColumns = ["id", "status", "machine_id", "operator_email", "progress", "as_built", "error", "started_at", "finished_at", "created_at"]
+fabRunsColumns = ["id", "instructions_id", "status", "machine_id", "operator_email", "progress", "as_built", "error", "started_at", "finished_at", "created_at"]
 
 fabRunsSelectSql :: Text
-fabRunsSelectSql = "select\n      id::text as id,\n      status,\n      machine_id,\n      operator_email,\n      progress,\n      as_built::text as as_built_json,\n      error,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_runs"
+fabRunsSelectSql = "select\n      id::text as id,\n      instructions_id::text as instructions_id,\n      status,\n      machine_id,\n      operator_email,\n      progress,\n      as_built::text as as_built_json,\n      error,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_runs"
 
 data FabRunsStatus = FabRunsStatusQueued | FabRunsStatusRunning | FabRunsStatusSucceeded | FabRunsStatusFailed | FabRunsStatusAborted
   deriving (Eq, Show)
@@ -10643,6 +10645,7 @@ parseFabRunsStatus value = case value of
 
 data FabRunsRow = FabRunsRow
   { fabRunsId :: Text
+  , fabRunsInstructionsId :: Text
   , fabRunsStatus :: Text
   , fabRunsMachineId :: Text
   , fabRunsOperatorEmail :: (Maybe Text)
@@ -10655,7 +10658,7 @@ data FabRunsRow = FabRunsRow
   } deriving (Eq, Show)
 
 instance FromRow FabRunsRow where
-  fromRow = FabRunsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+  fromRow = FabRunsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
 
 validateFabRunsProgress :: Int -> Either Text Int
 validateFabRunsProgress value

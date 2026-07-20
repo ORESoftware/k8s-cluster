@@ -20,6 +20,9 @@ class DesSoccerTournamentTeamBrains
     #[ORM\Column(type: 'bigint')]
     public string $id;
 
+    #[ORM\Column(type: 'bigint', name: 'tournament_id')]
+    public string $tournamentId;
+
     #[ORM\Column(type: 'integer', name: 'team_id')]
     public int $teamId;
 

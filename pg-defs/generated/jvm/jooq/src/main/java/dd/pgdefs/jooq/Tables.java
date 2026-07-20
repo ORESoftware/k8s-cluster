@@ -864,6 +864,7 @@ public final class Tables {
     public static final Name DES_SOCCER_TOURNAMENT_MATCHES_NAME = DSL.name("des_soccer_tournament_matches");
     public static final Table<org.jooq.Record> DES_SOCCER_TOURNAMENT_MATCHES = DSL.table(DES_SOCCER_TOURNAMENT_MATCHES_NAME);
     public static final Field<Long> DES_SOCCER_TOURNAMENT_MATCHES_ID = DSL.field(DSL.name("des_soccer_tournament_matches", "id"), SQLDataType.BIGINT);
+    public static final Field<Long> DES_SOCCER_TOURNAMENT_MATCHES_TOURNAMENT_ID = DSL.field(DSL.name("des_soccer_tournament_matches", "tournament_id"), SQLDataType.BIGINT);
     public static final Field<Integer> DES_SOCCER_TOURNAMENT_MATCHES_MATCH_INDEX = DSL.field(DSL.name("des_soccer_tournament_matches", "match_index"), SQLDataType.INTEGER);
     public static final Field<String> DES_SOCCER_TOURNAMENT_MATCHES_STAGE = DSL.field(DSL.name("des_soccer_tournament_matches", "stage"), SQLDataType.CLOB);
     public static final Field<Integer> DES_SOCCER_TOURNAMENT_MATCHES_HOME_TEAM_ID = DSL.field(DSL.name("des_soccer_tournament_matches", "home_team_id"), SQLDataType.INTEGER);
@@ -878,6 +879,7 @@ public final class Tables {
     public static final Name DES_SOCCER_TOURNAMENT_TEAM_BRAINS_NAME = DSL.name("des_soccer_tournament_team_brains");
     public static final Table<org.jooq.Record> DES_SOCCER_TOURNAMENT_TEAM_BRAINS = DSL.table(DES_SOCCER_TOURNAMENT_TEAM_BRAINS_NAME);
     public static final Field<Long> DES_SOCCER_TOURNAMENT_TEAM_BRAINS_ID = DSL.field(DSL.name("des_soccer_tournament_team_brains", "id"), SQLDataType.BIGINT);
+    public static final Field<Long> DES_SOCCER_TOURNAMENT_TEAM_BRAINS_TOURNAMENT_ID = DSL.field(DSL.name("des_soccer_tournament_team_brains", "tournament_id"), SQLDataType.BIGINT);
     public static final Field<Integer> DES_SOCCER_TOURNAMENT_TEAM_BRAINS_TEAM_ID = DSL.field(DSL.name("des_soccer_tournament_team_brains", "team_id"), SQLDataType.INTEGER);
     public static final Field<String> DES_SOCCER_TOURNAMENT_TEAM_BRAINS_TEAM_NAME = DSL.field(DSL.name("des_soccer_tournament_team_brains", "team_name"), SQLDataType.CLOB);
     public static final Field<Long> DES_SOCCER_TOURNAMENT_TEAM_BRAINS_SEED = DSL.field(DSL.name("des_soccer_tournament_team_brains", "seed"), SQLDataType.BIGINT);
@@ -2450,6 +2452,7 @@ public final class Tables {
     public static final Name FAB_RUNS_NAME = DSL.name("daedalus", "fab_runs");
     public static final Table<org.jooq.Record> FAB_RUNS = DSL.table(FAB_RUNS_NAME);
     public static final Field<UUID> FAB_RUNS_ID = DSL.field(DSL.name("daedalus", "fab_runs", "id"), SQLDataType.UUID);
+    public static final Field<UUID> FAB_RUNS_INSTRUCTIONS_ID = DSL.field(DSL.name("daedalus", "fab_runs", "instructions_id"), SQLDataType.UUID);
     public static final Field<String> FAB_RUNS_STATUS = DSL.field(DSL.name("daedalus", "fab_runs", "status"), SQLDataType.CLOB);
     public static final Field<String> FAB_RUNS_MACHINE_ID = DSL.field(DSL.name("daedalus", "fab_runs", "machine_id"), SQLDataType.CLOB);
     public static final Field<String> FAB_RUNS_OPERATOR_EMAIL = DSL.field(DSL.name("daedalus", "fab_runs", "operator_email"), SQLDataType.CLOB);

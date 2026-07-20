@@ -2747,6 +2747,7 @@ func (value DesSoccerTournamentsGorm) Validate() error {
 const DesSoccerTournamentMatchesTable = "des_soccer_tournament_matches"
 const DesSoccerTournamentMatchesSelectSQL = `select
       id,
+      tournament_id,
       match_index,
       stage,
       home_team_id,
@@ -2761,6 +2762,7 @@ const DesSoccerTournamentMatchesSelectSQL = `select
 
 type DesSoccerTournamentMatchesGorm struct {
 	Id int64 `gorm:"column:id;type:bigserial;primaryKey" json:"id"`
+	TournamentId int64 `gorm:"column:tournament_id;type:bigint;not null" json:"tournamentId"`
 	MatchIndex int32 `gorm:"column:match_index;type:integer;not null" json:"matchIndex"`
 	Stage string `gorm:"column:stage;type:text;not null" json:"stage"`
 	HomeTeamId int32 `gorm:"column:home_team_id;type:integer;not null" json:"homeTeamId"`
@@ -2782,6 +2784,7 @@ func (value DesSoccerTournamentMatchesGorm) Validate() error {
 const DesSoccerTournamentTeamBrainsTable = "des_soccer_tournament_team_brains"
 const DesSoccerTournamentTeamBrainsSelectSQL = `select
       id,
+      tournament_id,
       team_id,
       team_name,
       seed,
@@ -2800,6 +2803,7 @@ const DesSoccerTournamentTeamBrainsSelectSQL = `select
 
 type DesSoccerTournamentTeamBrainsGorm struct {
 	Id int64 `gorm:"column:id;type:bigserial;primaryKey" json:"id"`
+	TournamentId int64 `gorm:"column:tournament_id;type:bigint;not null" json:"tournamentId"`
 	TeamId int32 `gorm:"column:team_id;type:integer;not null" json:"teamId"`
 	TeamName string `gorm:"column:team_name;type:text;not null" json:"teamName"`
 	Seed int64 `gorm:"column:seed;type:bigint;not null" json:"seed"`
@@ -7661,6 +7665,7 @@ func (value FabInstructionsGorm) Validate() error {
 const FabRunsTable = "daedalus.fab_runs"
 const FabRunsSelectSQL = `select
       id::text as id,
+      instructions_id::text as instructions_id,
       status,
       machine_id,
       operator_email,
@@ -7676,6 +7681,7 @@ var FabRunsStatusValues = []string{"queued", "running", "succeeded", "failed", "
 
 type FabRunsGorm struct {
 	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	InstructionsId uuid.UUID `gorm:"column:instructions_id;type:uuid;not null" json:"instructionsId"`
 	Status string `gorm:"column:status;type:text;default:'queued';not null" json:"status"`
 	MachineId string `gorm:"column:machine_id;type:text;not null" json:"machineId"`
 	OperatorEmail *string `gorm:"column:operator_email;type:text" json:"operatorEmail,omitempty"`

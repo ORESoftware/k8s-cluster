@@ -2130,6 +2130,8 @@ pub mod des_soccer_tournament_matches {
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
+    #[sea_orm(column_name = "tournament_id")]
+    pub tournament_id: i64,
     #[sea_orm(column_name = "match_index")]
     pub match_index: i32,
     pub stage: String,
@@ -2169,6 +2171,8 @@ pub mod des_soccer_tournament_team_brains {
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
+    #[sea_orm(column_name = "tournament_id")]
+    pub tournament_id: i64,
     #[sea_orm(column_name = "team_id")]
     pub team_id: i32,
     #[sea_orm(column_name = "team_name")]
@@ -6194,6 +6198,8 @@ pub mod fab_runs {
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
+    #[sea_orm(column_name = "instructions_id")]
+    pub instructions_id: Uuid,
     pub status: String,
     #[sea_orm(column_name = "machine_id")]
     pub machine_id: String,

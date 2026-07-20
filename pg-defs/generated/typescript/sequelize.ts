@@ -853,6 +853,7 @@ export function defineDdModels(sequelize: Sequelize) {
 
   const DesSoccerTournamentMatches = sequelize.define("DesSoccerTournamentMatches", {
     id: { type: DataTypes.BIGINT, allowNull: false, primaryKey: true },
+    tournament_id: { type: DataTypes.BIGINT, allowNull: false },
     match_index: { type: DataTypes.INTEGER, allowNull: false },
     stage: { type: DataTypes.TEXT, allowNull: false },
     home_team_id: { type: DataTypes.INTEGER, allowNull: false },
@@ -867,6 +868,7 @@ export function defineDdModels(sequelize: Sequelize) {
 
   const DesSoccerTournamentTeamBrains = sequelize.define("DesSoccerTournamentTeamBrains", {
     id: { type: DataTypes.BIGINT, allowNull: false, primaryKey: true },
+    tournament_id: { type: DataTypes.BIGINT, allowNull: false },
     team_id: { type: DataTypes.INTEGER, allowNull: false },
     team_name: { type: DataTypes.TEXT, allowNull: false },
     seed: { type: DataTypes.BIGINT, allowNull: false },
@@ -2439,6 +2441,7 @@ export function defineDdModels(sequelize: Sequelize) {
 
   const FabRuns = sequelize.define("FabRuns", {
     id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    instructions_id: { type: DataTypes.UUID, allowNull: false },
     status: { type: DataTypes.TEXT, allowNull: false, defaultValue: "queued", validate: { isIn: [["queued", "running", "succeeded", "failed", "aborted"]] } },
     machine_id: { type: DataTypes.TEXT, allowNull: false },
     operator_email: { type: DataTypes.TEXT, allowNull: true },

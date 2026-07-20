@@ -4544,6 +4544,7 @@ class DesSoccerTournamentMatches(Base):
     )
 
     id: Mapped[int] = mapped_column(BigInteger(), primary_key=True)
+    tournament_id: Mapped[int] = mapped_column(BigInteger(), nullable=False)
     match_index: Mapped[int] = mapped_column(Integer(), nullable=False)
     stage: Mapped[str] = mapped_column(Text(), nullable=False)
     home_team_id: Mapped[int] = mapped_column(Integer(), nullable=False)
@@ -4559,6 +4560,7 @@ class DesSoccerTournamentMatchesRow(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    tournamentId: int
     matchIndex: int
     stage: str
     homeTeamId: int
@@ -4574,6 +4576,7 @@ class DesSoccerTournamentMatchesInsert(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: int
+    tournamentId: int
     matchIndex: int
     stage: str
     homeTeamId: int
@@ -4591,6 +4594,7 @@ class DesSoccerTournamentTeamBrains(Base):
     )
 
     id: Mapped[int] = mapped_column(BigInteger(), primary_key=True)
+    tournament_id: Mapped[int] = mapped_column(BigInteger(), nullable=False)
     team_id: Mapped[int] = mapped_column(Integer(), nullable=False)
     team_name: Mapped[str] = mapped_column(Text(), nullable=False)
     seed: Mapped[int] = mapped_column(BigInteger(), nullable=False)
@@ -4610,6 +4614,7 @@ class DesSoccerTournamentTeamBrainsRow(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    tournamentId: int
     teamId: int
     teamName: str
     seed: int
@@ -4629,6 +4634,7 @@ class DesSoccerTournamentTeamBrainsInsert(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: int
+    tournamentId: int
     teamId: int
     teamName: str
     seed: int
@@ -12612,6 +12618,7 @@ class FabRuns(Base):
     )
 
     id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    instructions_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
     status: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("'queued'"))
     machine_id: Mapped[str] = mapped_column(Text(), nullable=False)
     operator_email: Mapped[str | None] = mapped_column(Text(), nullable=True)
@@ -12626,6 +12633,7 @@ class FabRunsRow(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    instructionsId: UUID
     status: FabRunsStatus
     machineId: str
     operatorEmail: str | None = None
@@ -12654,6 +12662,7 @@ class FabRunsInsert(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: UUID | None = None
+    instructionsId: UUID
     status: FabRunsStatus | None = "queued"
     machineId: str
     operatorEmail: str | None = None

@@ -1079,6 +1079,7 @@ model DesSoccerTournaments {
 
 model DesSoccerTournamentMatches {
   id BigInt @id @default(autoincrement()) @db.BigInt
+  tournamentId BigInt @map("tournament_id") @db.BigInt
   matchIndex Int @map("match_index")
   stage String @db.Text
   homeTeamId Int @map("home_team_id")
@@ -1094,6 +1095,7 @@ model DesSoccerTournamentMatches {
 
 model DesSoccerTournamentTeamBrains {
   id BigInt @id @default(autoincrement()) @db.BigInt
+  tournamentId BigInt @map("tournament_id") @db.BigInt
   teamId Int @map("team_id")
   teamName String @map("team_name") @db.Text
   seed BigInt @db.BigInt
@@ -3085,6 +3087,7 @@ model FabInstructions {
 
 model FabRuns {
   id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  instructionsId String @map("instructions_id") @db.Uuid
   status String @default("queued") @db.Text
   machineId String @map("machine_id") @db.Text
   operatorEmail String? @map("operator_email") @db.Text

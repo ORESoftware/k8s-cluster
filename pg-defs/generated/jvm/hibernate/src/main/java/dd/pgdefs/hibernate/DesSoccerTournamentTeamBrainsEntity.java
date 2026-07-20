@@ -19,6 +19,9 @@ public class DesSoccerTournamentTeamBrainsEntity {
     @Column(name = "id")
     private Long id;
 
+    @Column(name = "tournament_id", nullable = false)
+    private Long tournamentId;
+
     @Column(name = "team_id", nullable = false)
     private Integer teamId;
 
@@ -67,6 +70,14 @@ public class DesSoccerTournamentTeamBrainsEntity {
 
     public void setId(Long id) {
         this.id = id;
+    }
+
+    public Long getTournamentId() {
+        return tournamentId;
+    }
+
+    public void setTournamentId(Long tournamentId) {
+        this.tournamentId = tournamentId;
     }
 
     public Integer getTeamId() {

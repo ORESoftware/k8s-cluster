@@ -4109,11 +4109,12 @@ let desSoccerTournamentsRowOfRow (get: int -> string) (isNullAt: int -> bool) : 
     }
 
 let desSoccerTournamentMatchesTable = "des_soccer_tournament_matches"
-let desSoccerTournamentMatchesColumns = [ "id"; "match_index"; "stage"; "home_team_id"; "away_team_id"; "home_goals"; "away_goals"; "shootout_winner_team_id"; "home_training_steps"; "away_training_steps"; "recorded_at" ]
-let desSoccerTournamentMatchesSelectSql = "select\n      id,\n      match_index,\n      stage,\n      home_team_id,\n      away_team_id,\n      home_goals,\n      away_goals,\n      shootout_winner_team_id,\n      home_training_steps,\n      away_training_steps,\n      to_char(recorded_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as recorded_at\n    from des_soccer_tournament_matches"
+let desSoccerTournamentMatchesColumns = [ "id"; "tournament_id"; "match_index"; "stage"; "home_team_id"; "away_team_id"; "home_goals"; "away_goals"; "shootout_winner_team_id"; "home_training_steps"; "away_training_steps"; "recorded_at" ]
+let desSoccerTournamentMatchesSelectSql = "select\n      id,\n      tournament_id,\n      match_index,\n      stage,\n      home_team_id,\n      away_team_id,\n      home_goals,\n      away_goals,\n      shootout_winner_team_id,\n      home_training_steps,\n      away_training_steps,\n      to_char(recorded_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as recorded_at\n    from des_soccer_tournament_matches"
 
 type DesSoccerTournamentMatchesRow =
     { DesSoccerTournamentMatchesId: int64
+      DesSoccerTournamentMatchesTournamentId: int64
       DesSoccerTournamentMatchesMatchIndex: int
       DesSoccerTournamentMatchesStage: string
       DesSoccerTournamentMatchesHomeTeamId: int
@@ -4128,24 +4129,26 @@ type DesSoccerTournamentMatchesRow =
 
 let desSoccerTournamentMatchesRowOfRow (get: int -> string) (isNullAt: int -> bool) : DesSoccerTournamentMatchesRow =
     { DesSoccerTournamentMatchesId = int64 (get 0)
-      DesSoccerTournamentMatchesMatchIndex = int (get 1)
-      DesSoccerTournamentMatchesStage = get 2
-      DesSoccerTournamentMatchesHomeTeamId = int (get 3)
-      DesSoccerTournamentMatchesAwayTeamId = int (get 4)
-      DesSoccerTournamentMatchesHomeGoals = int (get 5)
-      DesSoccerTournamentMatchesAwayGoals = int (get 6)
-      DesSoccerTournamentMatchesShootoutWinnerTeamId = (if isNullAt 7 then None else Some (int (get 7)))
-      DesSoccerTournamentMatchesHomeTrainingSteps = int64 (get 8)
-      DesSoccerTournamentMatchesAwayTrainingSteps = int64 (get 9)
-      DesSoccerTournamentMatchesRecordedAt = get 10
+      DesSoccerTournamentMatchesTournamentId = int64 (get 1)
+      DesSoccerTournamentMatchesMatchIndex = int (get 2)
+      DesSoccerTournamentMatchesStage = get 3
+      DesSoccerTournamentMatchesHomeTeamId = int (get 4)
+      DesSoccerTournamentMatchesAwayTeamId = int (get 5)
+      DesSoccerTournamentMatchesHomeGoals = int (get 6)
+      DesSoccerTournamentMatchesAwayGoals = int (get 7)
+      DesSoccerTournamentMatchesShootoutWinnerTeamId = (if isNullAt 8 then None else Some (int (get 8)))
+      DesSoccerTournamentMatchesHomeTrainingSteps = int64 (get 9)
+      DesSoccerTournamentMatchesAwayTrainingSteps = int64 (get 10)
+      DesSoccerTournamentMatchesRecordedAt = get 11
     }
 
 let desSoccerTournamentTeamBrainsTable = "des_soccer_tournament_team_brains"
-let desSoccerTournamentTeamBrainsColumns = [ "id"; "team_id"; "team_name"; "seed"; "matches_learned"; "training_steps"; "played"; "wins"; "draws"; "losses"; "goals_for"; "goals_against"; "neural_snapshot"; "genome"; "updated_at" ]
-let desSoccerTournamentTeamBrainsSelectSql = "select\n      id,\n      team_id,\n      team_name,\n      seed,\n      matches_learned,\n      training_steps,\n      played,\n      wins,\n      draws,\n      losses,\n      goals_for,\n      goals_against,\n      neural_snapshot::text as neural_snapshot_json,\n      genome::text as genome_json,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_soccer_tournament_team_brains"
+let desSoccerTournamentTeamBrainsColumns = [ "id"; "tournament_id"; "team_id"; "team_name"; "seed"; "matches_learned"; "training_steps"; "played"; "wins"; "draws"; "losses"; "goals_for"; "goals_against"; "neural_snapshot"; "genome"; "updated_at" ]
+let desSoccerTournamentTeamBrainsSelectSql = "select\n      id,\n      tournament_id,\n      team_id,\n      team_name,\n      seed,\n      matches_learned,\n      training_steps,\n      played,\n      wins,\n      draws,\n      losses,\n      goals_for,\n      goals_against,\n      neural_snapshot::text as neural_snapshot_json,\n      genome::text as genome_json,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_soccer_tournament_team_brains"
 
 type DesSoccerTournamentTeamBrainsRow =
     { DesSoccerTournamentTeamBrainsId: int64
+      DesSoccerTournamentTeamBrainsTournamentId: int64
       DesSoccerTournamentTeamBrainsTeamId: int
       DesSoccerTournamentTeamBrainsTeamName: string
       DesSoccerTournamentTeamBrainsSeed: int64
@@ -4164,20 +4167,21 @@ type DesSoccerTournamentTeamBrainsRow =
 
 let desSoccerTournamentTeamBrainsRowOfRow (get: int -> string) (isNullAt: int -> bool) : DesSoccerTournamentTeamBrainsRow =
     { DesSoccerTournamentTeamBrainsId = int64 (get 0)
-      DesSoccerTournamentTeamBrainsTeamId = int (get 1)
-      DesSoccerTournamentTeamBrainsTeamName = get 2
-      DesSoccerTournamentTeamBrainsSeed = int64 (get 3)
-      DesSoccerTournamentTeamBrainsMatchesLearned = int (get 4)
-      DesSoccerTournamentTeamBrainsTrainingSteps = int64 (get 5)
-      DesSoccerTournamentTeamBrainsPlayed = int (get 6)
-      DesSoccerTournamentTeamBrainsWins = int (get 7)
-      DesSoccerTournamentTeamBrainsDraws = int (get 8)
-      DesSoccerTournamentTeamBrainsLosses = int (get 9)
-      DesSoccerTournamentTeamBrainsGoalsFor = int (get 10)
-      DesSoccerTournamentTeamBrainsGoalsAgainst = int (get 11)
-      DesSoccerTournamentTeamBrainsNeuralSnapshot = (if isNullAt 12 then None else Some (get 12))
-      DesSoccerTournamentTeamBrainsGenome = (if isNullAt 13 then None else Some (get 13))
-      DesSoccerTournamentTeamBrainsUpdatedAt = get 14
+      DesSoccerTournamentTeamBrainsTournamentId = int64 (get 1)
+      DesSoccerTournamentTeamBrainsTeamId = int (get 2)
+      DesSoccerTournamentTeamBrainsTeamName = get 3
+      DesSoccerTournamentTeamBrainsSeed = int64 (get 4)
+      DesSoccerTournamentTeamBrainsMatchesLearned = int (get 5)
+      DesSoccerTournamentTeamBrainsTrainingSteps = int64 (get 6)
+      DesSoccerTournamentTeamBrainsPlayed = int (get 7)
+      DesSoccerTournamentTeamBrainsWins = int (get 8)
+      DesSoccerTournamentTeamBrainsDraws = int (get 9)
+      DesSoccerTournamentTeamBrainsLosses = int (get 10)
+      DesSoccerTournamentTeamBrainsGoalsFor = int (get 11)
+      DesSoccerTournamentTeamBrainsGoalsAgainst = int (get 12)
+      DesSoccerTournamentTeamBrainsNeuralSnapshot = (if isNullAt 13 then None else Some (get 13))
+      DesSoccerTournamentTeamBrainsGenome = (if isNullAt 14 then None else Some (get 14))
+      DesSoccerTournamentTeamBrainsUpdatedAt = get 15
     }
 
 let desSoccerLearningSetPlayRunsTable = "des_soccer_learning_set_play_runs"
@@ -12332,8 +12336,8 @@ let validateFabInstructionsRevision (value: int) : Result<int, string> =
     else Ok value
 
 let fabRunsTable = "daedalus.fab_runs"
-let fabRunsColumns = [ "id"; "status"; "machine_id"; "operator_email"; "progress"; "as_built"; "error"; "started_at"; "finished_at"; "created_at" ]
-let fabRunsSelectSql = "select\n      id::text as id,\n      status,\n      machine_id,\n      operator_email,\n      progress,\n      as_built::text as as_built_json,\n      error,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_runs"
+let fabRunsColumns = [ "id"; "instructions_id"; "status"; "machine_id"; "operator_email"; "progress"; "as_built"; "error"; "started_at"; "finished_at"; "created_at" ]
+let fabRunsSelectSql = "select\n      id::text as id,\n      instructions_id::text as instructions_id,\n      status,\n      machine_id,\n      operator_email,\n      progress,\n      as_built::text as as_built_json,\n      error,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_runs"
 
 [<RequireQualifiedAccess>]
 type FabRunsStatus =
@@ -12362,6 +12366,7 @@ let parseFabRunsStatus (value: string) : Result<FabRunsStatus, string> =
 
 type FabRunsRow =
     { FabRunsId: string
+      FabRunsInstructionsId: string
       FabRunsStatus: string
       FabRunsMachineId: string
       FabRunsOperatorEmail: string option
@@ -12375,15 +12380,16 @@ type FabRunsRow =
 
 let fabRunsRowOfRow (get: int -> string) (isNullAt: int -> bool) : FabRunsRow =
     { FabRunsId = get 0
-      FabRunsStatus = get 1
-      FabRunsMachineId = get 2
-      FabRunsOperatorEmail = (if isNullAt 3 then None else Some (get 3))
-      FabRunsProgress = int (get 4)
-      FabRunsAsBuilt = get 5
-      FabRunsError = (if isNullAt 6 then None else Some (get 6))
-      FabRunsStartedAt = (if isNullAt 7 then None else Some (get 7))
-      FabRunsFinishedAt = (if isNullAt 8 then None else Some (get 8))
-      FabRunsCreatedAt = get 9
+      FabRunsInstructionsId = get 1
+      FabRunsStatus = get 2
+      FabRunsMachineId = get 3
+      FabRunsOperatorEmail = (if isNullAt 4 then None else Some (get 4))
+      FabRunsProgress = int (get 5)
+      FabRunsAsBuilt = get 6
+      FabRunsError = (if isNullAt 7 then None else Some (get 7))
+      FabRunsStartedAt = (if isNullAt 8 then None else Some (get 8))
+      FabRunsFinishedAt = (if isNullAt 9 then None else Some (get 9))
+      FabRunsCreatedAt = get 10
     }
 
 let validateFabRunsProgress (value: int) : Result<int, string> =

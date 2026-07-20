@@ -2407,6 +2407,9 @@ export class DesSoccerTournamentMatchesEntity {
   @PrimaryGeneratedColumn("increment", { name: "id", type: "bigint" })
   id!: number;
 
+  @Column({ name: "tournament_id", type: "bigint" })
+  tournamentId!: number;
+
   @Column({ name: "match_index", type: "integer" })
   matchIndex!: number;
 
@@ -2443,6 +2446,9 @@ export class DesSoccerTournamentMatchesEntity {
 export class DesSoccerTournamentTeamBrainsEntity {
   @PrimaryGeneratedColumn("increment", { name: "id", type: "bigint" })
   id!: number;
+
+  @Column({ name: "tournament_id", type: "bigint" })
+  tournamentId!: number;
 
   @Column({ name: "team_id", type: "integer" })
   teamId!: number;
@@ -6905,6 +6911,9 @@ export class FabInstructionsEntity {
 export class FabRunsEntity {
   @PrimaryGeneratedColumn("uuid", { name: "id" })
   id!: string;
+
+  @Column({ name: "instructions_id", type: "uuid" })
+  instructionsId!: string;
 
   @Column({ name: "status", type: "text", default: () => "'queued'" })
   status!: string;

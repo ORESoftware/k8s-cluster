@@ -1102,6 +1102,7 @@ class DesSoccerTournaments(models.Model):
 
 class DesSoccerTournamentMatches(models.Model):
     id = models.BigAutoField(primary_key=True)
+    tournament_id = models.BigIntegerField()
     match_index = models.IntegerField()
     stage = models.TextField()
     home_team_id = models.IntegerField()
@@ -1121,6 +1122,7 @@ class DesSoccerTournamentMatches(models.Model):
 
 class DesSoccerTournamentTeamBrains(models.Model):
     id = models.BigAutoField(primary_key=True)
+    tournament_id = models.BigIntegerField()
     team_id = models.IntegerField()
     team_name = models.TextField()
     seed = models.BigIntegerField()
@@ -3178,6 +3180,7 @@ class FabInstructions(models.Model):
 
 class FabRuns(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    instructions_id = models.UUIDField()
     status = models.TextField(choices=[("queued", "queued"), ("running", "running"), ("succeeded", "succeeded"), ("failed", "failed"), ("aborted", "aborted")], default="queued")
     machine_id = models.TextField()
     operator_email = models.TextField(null=True, blank=True)

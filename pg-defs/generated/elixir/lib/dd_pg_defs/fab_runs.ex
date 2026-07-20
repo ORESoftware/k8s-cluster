@@ -14,6 +14,7 @@ defmodule DdPgDefs.FabRuns do
   @foreign_key_type :binary_id
 
   schema @table do
+    field :instructions_id, :binary_id
     field :status, :string, default: "queued"
     field :machine_id, :string
     field :operator_email, :string
@@ -24,7 +25,7 @@ defmodule DdPgDefs.FabRuns do
     field :finished_at, :utc_datetime_usec
   end
 
-  @required_fields ~w(machine_id)a
+  @required_fields ~w(instructions_id machine_id)a
   @optional_fields ~w(status operator_email progress as_built error started_at finished_at)a
 
   @doc "Builds an Ecto changeset enforcing every constraint exposed in schema.sql."

@@ -956,6 +956,7 @@ object DesSoccerTournaments : Table("des_soccer_tournaments") {
 
 object DesSoccerTournamentMatches : Table("des_soccer_tournament_matches") {
     val id = long("id")
+    val tournamentId = long("tournament_id")
     val matchIndex = integer("match_index")
     val stage = text("stage")
     val homeTeamId = integer("home_team_id")
@@ -972,6 +973,7 @@ object DesSoccerTournamentMatches : Table("des_soccer_tournament_matches") {
 
 object DesSoccerTournamentTeamBrains : Table("des_soccer_tournament_team_brains") {
     val id = long("id")
+    val tournamentId = long("tournament_id")
     val teamId = integer("team_id")
     val teamName = text("team_name")
     val seed = long("seed")
@@ -2738,6 +2740,7 @@ object FabInstructions : Table("daedalus.fab_instructions") {
 
 object FabRuns : Table("daedalus.fab_runs") {
     val id = uuid("id")
+    val instructionsId = uuid("instructions_id")
     val status = text("status")
     val machineId = text("machine_id")
     val operatorEmail = text("operator_email").nullable()
@@ -4427,6 +4430,7 @@ fun toDesSoccerTournamentsRow(row: ResultRow): DesSoccerTournamentsRow = DesSocc
 
 data class DesSoccerTournamentMatchesRow(
     val id: Long,
+    val tournamentId: Long,
     val matchIndex: Int,
     val stage: String,
     val homeTeamId: Int,
@@ -4441,6 +4445,7 @@ data class DesSoccerTournamentMatchesRow(
 
 fun toDesSoccerTournamentMatchesRow(row: ResultRow): DesSoccerTournamentMatchesRow = DesSoccerTournamentMatchesRow(
     row[DesSoccerTournamentMatches.id],
+    row[DesSoccerTournamentMatches.tournamentId],
     row[DesSoccerTournamentMatches.matchIndex],
     row[DesSoccerTournamentMatches.stage],
     row[DesSoccerTournamentMatches.homeTeamId],
@@ -4455,6 +4460,7 @@ fun toDesSoccerTournamentMatchesRow(row: ResultRow): DesSoccerTournamentMatchesR
 
 data class DesSoccerTournamentTeamBrainsRow(
     val id: Long,
+    val tournamentId: Long,
     val teamId: Int,
     val teamName: String,
     val seed: Long,
@@ -4473,6 +4479,7 @@ data class DesSoccerTournamentTeamBrainsRow(
 
 fun toDesSoccerTournamentTeamBrainsRow(row: ResultRow): DesSoccerTournamentTeamBrainsRow = DesSoccerTournamentTeamBrainsRow(
     row[DesSoccerTournamentTeamBrains.id],
+    row[DesSoccerTournamentTeamBrains.tournamentId],
     row[DesSoccerTournamentTeamBrains.teamId],
     row[DesSoccerTournamentTeamBrains.teamName],
     row[DesSoccerTournamentTeamBrains.seed],
@@ -7599,6 +7606,7 @@ fun toFabInstructionsRow(row: ResultRow): FabInstructionsRow = FabInstructionsRo
 
 data class FabRunsRow(
     val id: UUID,
+    val instructionsId: UUID,
     val status: String,
     val machineId: String,
     val operatorEmail: String?,
@@ -7612,6 +7620,7 @@ data class FabRunsRow(
 
 fun toFabRunsRow(row: ResultRow): FabRunsRow = FabRunsRow(
     row[FabRuns.id],
+    row[FabRuns.instructionsId],
     row[FabRuns.status],
     row[FabRuns.machineId],
     row[FabRuns.operatorEmail],

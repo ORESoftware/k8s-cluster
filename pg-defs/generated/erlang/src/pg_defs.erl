@@ -1650,10 +1650,11 @@ validate_des_soccer_tournaments_status(Value) when is_list(Value) ->
 
 des_soccer_tournament_matches_table() -> <<"des_soccer_tournament_matches">>.
 
-des_soccer_tournament_matches_columns() -> [<<"id">>, <<"match_index">>, <<"stage">>, <<"home_team_id">>, <<"away_team_id">>, <<"home_goals">>, <<"away_goals">>, <<"shootout_winner_team_id">>, <<"home_training_steps">>, <<"away_training_steps">>, <<"recorded_at">>].
+des_soccer_tournament_matches_columns() -> [<<"id">>, <<"tournament_id">>, <<"match_index">>, <<"stage">>, <<"home_team_id">>, <<"away_team_id">>, <<"home_goals">>, <<"away_goals">>, <<"shootout_winner_team_id">>, <<"home_training_steps">>, <<"away_training_steps">>, <<"recorded_at">>].
 
 des_soccer_tournament_matches_select_sql() -> <<"select
       id,
+      tournament_id,
       match_index,
       stage,
       home_team_id,
@@ -1668,10 +1669,11 @@ des_soccer_tournament_matches_select_sql() -> <<"select
 
 des_soccer_tournament_team_brains_table() -> <<"des_soccer_tournament_team_brains">>.
 
-des_soccer_tournament_team_brains_columns() -> [<<"id">>, <<"team_id">>, <<"team_name">>, <<"seed">>, <<"matches_learned">>, <<"training_steps">>, <<"played">>, <<"wins">>, <<"draws">>, <<"losses">>, <<"goals_for">>, <<"goals_against">>, <<"neural_snapshot">>, <<"genome">>, <<"updated_at">>].
+des_soccer_tournament_team_brains_columns() -> [<<"id">>, <<"tournament_id">>, <<"team_id">>, <<"team_name">>, <<"seed">>, <<"matches_learned">>, <<"training_steps">>, <<"played">>, <<"wins">>, <<"draws">>, <<"losses">>, <<"goals_for">>, <<"goals_against">>, <<"neural_snapshot">>, <<"genome">>, <<"updated_at">>].
 
 des_soccer_tournament_team_brains_select_sql() -> <<"select
       id,
+      tournament_id,
       team_id,
       team_name,
       seed,
@@ -4958,10 +4960,11 @@ validate_fab_instructions_dialect(Value) when is_list(Value) ->
 
 fab_runs_table() -> <<"daedalus.fab_runs">>.
 
-fab_runs_columns() -> [<<"id">>, <<"status">>, <<"machine_id">>, <<"operator_email">>, <<"progress">>, <<"as_built">>, <<"error">>, <<"started_at">>, <<"finished_at">>, <<"created_at">>].
+fab_runs_columns() -> [<<"id">>, <<"instructions_id">>, <<"status">>, <<"machine_id">>, <<"operator_email">>, <<"progress">>, <<"as_built">>, <<"error">>, <<"started_at">>, <<"finished_at">>, <<"created_at">>].
 
 fab_runs_select_sql() -> <<"select
       id::text as id,
+      instructions_id::text as instructions_id,
       status,
       machine_id,
       operator_email,

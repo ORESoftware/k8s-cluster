@@ -4950,11 +4950,12 @@ class DesSoccerTournamentsRow {
 }
 
 const desSoccerTournamentMatchesTable = "des_soccer_tournament_matches";
-const desSoccerTournamentMatchesSelectSql = "select\n      id,\n      match_index,\n      stage,\n      home_team_id,\n      away_team_id,\n      home_goals,\n      away_goals,\n      shootout_winner_team_id,\n      home_training_steps,\n      away_training_steps,\n      to_char(recorded_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as recorded_at\n    from des_soccer_tournament_matches";
+const desSoccerTournamentMatchesSelectSql = "select\n      id,\n      tournament_id,\n      match_index,\n      stage,\n      home_team_id,\n      away_team_id,\n      home_goals,\n      away_goals,\n      shootout_winner_team_id,\n      home_training_steps,\n      away_training_steps,\n      to_char(recorded_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as recorded_at\n    from des_soccer_tournament_matches";
 
 class DesSoccerTournamentMatchesRow {
   const DesSoccerTournamentMatchesRow({
     required this.id,
+    required this.tournamentId,
     required this.matchIndex,
     required this.stage,
     required this.homeTeamId,
@@ -4968,6 +4969,7 @@ class DesSoccerTournamentMatchesRow {
   });
 
   final int id;
+  final int tournamentId;
   final int matchIndex;
   final String stage;
   final int homeTeamId;
@@ -4982,6 +4984,7 @@ class DesSoccerTournamentMatchesRow {
   factory DesSoccerTournamentMatchesRow.fromJson(Map<String, Object?> json) {
     return DesSoccerTournamentMatchesRow(
       id: _readRequiredInt(json, "id"),
+      tournamentId: _readRequiredInt(json, "tournamentId"),
       matchIndex: _readRequiredInt(json, "matchIndex"),
       stage: _readRequiredString(json, "stage"),
       homeTeamId: _readRequiredInt(json, "homeTeamId"),
@@ -4997,6 +5000,7 @@ class DesSoccerTournamentMatchesRow {
 
   Map<String, Object?> toJson() => <String, Object?>{
     "id": id,
+    "tournamentId": tournamentId,
     "matchIndex": matchIndex,
     "stage": stage,
     "homeTeamId": homeTeamId,
@@ -5016,11 +5020,12 @@ class DesSoccerTournamentMatchesRow {
 }
 
 const desSoccerTournamentTeamBrainsTable = "des_soccer_tournament_team_brains";
-const desSoccerTournamentTeamBrainsSelectSql = "select\n      id,\n      team_id,\n      team_name,\n      seed,\n      matches_learned,\n      training_steps,\n      played,\n      wins,\n      draws,\n      losses,\n      goals_for,\n      goals_against,\n      neural_snapshot::text as neural_snapshot_json,\n      genome::text as genome_json,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_soccer_tournament_team_brains";
+const desSoccerTournamentTeamBrainsSelectSql = "select\n      id,\n      tournament_id,\n      team_id,\n      team_name,\n      seed,\n      matches_learned,\n      training_steps,\n      played,\n      wins,\n      draws,\n      losses,\n      goals_for,\n      goals_against,\n      neural_snapshot::text as neural_snapshot_json,\n      genome::text as genome_json,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_soccer_tournament_team_brains";
 
 class DesSoccerTournamentTeamBrainsRow {
   const DesSoccerTournamentTeamBrainsRow({
     required this.id,
+    required this.tournamentId,
     required this.teamId,
     required this.teamName,
     required this.seed,
@@ -5038,6 +5043,7 @@ class DesSoccerTournamentTeamBrainsRow {
   });
 
   final int id;
+  final int tournamentId;
   final int teamId;
   final String teamName;
   final int seed;
@@ -5056,6 +5062,7 @@ class DesSoccerTournamentTeamBrainsRow {
   factory DesSoccerTournamentTeamBrainsRow.fromJson(Map<String, Object?> json) {
     return DesSoccerTournamentTeamBrainsRow(
       id: _readRequiredInt(json, "id"),
+      tournamentId: _readRequiredInt(json, "tournamentId"),
       teamId: _readRequiredInt(json, "teamId"),
       teamName: _readRequiredString(json, "teamName"),
       seed: _readRequiredInt(json, "seed"),
@@ -5075,6 +5082,7 @@ class DesSoccerTournamentTeamBrainsRow {
 
   Map<String, Object?> toJson() => <String, Object?>{
     "id": id,
+    "tournamentId": tournamentId,
     "teamId": teamId,
     "teamName": teamName,
     "seed": seed,
@@ -13912,13 +13920,14 @@ class FabInstructionsRow {
 }
 
 const fabRunsTable = "daedalus.fab_runs";
-const fabRunsSelectSql = "select\n      id::text as id,\n      status,\n      machine_id,\n      operator_email,\n      progress,\n      as_built::text as as_built_json,\n      error,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_runs";
+const fabRunsSelectSql = "select\n      id::text as id,\n      instructions_id::text as instructions_id,\n      status,\n      machine_id,\n      operator_email,\n      progress,\n      as_built::text as as_built_json,\n      error,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_runs";
 
 const fabRunsStatusValues = <String>["queued", "running", "succeeded", "failed", "aborted"];
 
 class FabRunsRow {
   const FabRunsRow({
     required this.id,
+    required this.instructionsId,
     required this.status,
     required this.machineId,
     this.operatorEmail,
@@ -13931,6 +13940,7 @@ class FabRunsRow {
   });
 
   final String id;
+  final String instructionsId;
   final String status;
   final String machineId;
   final String? operatorEmail;
@@ -13944,6 +13954,7 @@ class FabRunsRow {
   factory FabRunsRow.fromJson(Map<String, Object?> json) {
     return FabRunsRow(
       id: _readRequiredString(json, "id"),
+      instructionsId: _readRequiredString(json, "instructionsId"),
       status: _readRequiredString(json, "status"),
       machineId: _readRequiredString(json, "machineId"),
       operatorEmail: _readOptionalString(json, "operatorEmail"),
@@ -13958,6 +13969,7 @@ class FabRunsRow {
 
   Map<String, Object?> toJson() => <String, Object?>{
     "id": id,
+    "instructionsId": instructionsId,
     "status": status,
     "machineId": machineId,
     "operatorEmail": operatorEmail,

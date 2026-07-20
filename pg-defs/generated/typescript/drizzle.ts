@@ -3730,6 +3730,7 @@ export const desSoccerTournamentMatches = pgTable(
   "des_soccer_tournament_matches",
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
+    tournamentId: bigint("tournament_id", { mode: "number" }).notNull(),
     matchIndex: integer("match_index").notNull(),
     stage: text("stage").notNull(),
     homeTeamId: integer("home_team_id").notNull(),
@@ -3747,6 +3748,7 @@ export const desSoccerTournamentMatches = pgTable(
 
 export const desSoccerTournamentMatchesRowSchema = z.object({
   id: z.number().int(),
+  tournamentId: z.number().int(),
   matchIndex: z.number().int(),
   stage: z.string(),
   homeTeamId: z.number().int(),
@@ -3761,6 +3763,7 @@ export const desSoccerTournamentMatchesRowSchema = z.object({
 
 export const desSoccerTournamentMatchesInsertSchema = z.object({
   id: z.number().int(),
+  tournamentId: z.number().int(),
   matchIndex: z.number().int(),
   stage: z.string(),
   homeTeamId: z.number().int(),
@@ -3782,6 +3785,7 @@ export const desSoccerTournamentTeamBrains = pgTable(
   "des_soccer_tournament_team_brains",
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
+    tournamentId: bigint("tournament_id", { mode: "number" }).notNull(),
     teamId: integer("team_id").notNull(),
     teamName: text("team_name").notNull(),
     seed: bigint("seed", { mode: "number" }).notNull(),
@@ -3803,6 +3807,7 @@ export const desSoccerTournamentTeamBrains = pgTable(
 
 export const desSoccerTournamentTeamBrainsRowSchema = z.object({
   id: z.number().int(),
+  tournamentId: z.number().int(),
   teamId: z.number().int(),
   teamName: z.string(),
   seed: z.number().int(),
@@ -3821,6 +3826,7 @@ export const desSoccerTournamentTeamBrainsRowSchema = z.object({
 
 export const desSoccerTournamentTeamBrainsInsertSchema = z.object({
   id: z.number().int(),
+  tournamentId: z.number().int(),
   teamId: z.number().int(),
   teamName: z.string(),
   seed: z.number().int(),
@@ -10737,6 +10743,7 @@ export const fabRuns = daedalusSchema.table(
   "fab_runs",
   {
     id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    instructionsId: uuid("instructions_id").notNull(),
     status: text("status").default(sql`'queued'`).notNull(),
     machineId: text("machine_id").notNull(),
     operatorEmail: text("operator_email"),
@@ -10761,6 +10768,7 @@ export const fabRuns = daedalusSchema.table(
 
 export const fabRunsRowSchema = z.object({
   id: z.string().uuid(),
+  instructionsId: z.string().uuid(),
   status: fabRunsStatusSchema,
   machineId: z.string().refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
   operatorEmail: z.string().nullable(),
@@ -10774,6 +10782,7 @@ export const fabRunsRowSchema = z.object({
 
 export const fabRunsInsertSchema = z.object({
   id: z.string().uuid().optional(),
+  instructionsId: z.string().uuid(),
   status: fabRunsStatusSchema.optional().default("queued"),
   machineId: z.string().refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
   operatorEmail: z.string().nullable().optional(),

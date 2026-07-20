@@ -1455,13 +1455,14 @@ class DesSoccerTournamentMatches extends Model
     protected $table = 'des_soccer_tournament_matches';
     protected $primaryKey = 'id';
     public $timestamps = false;
-    protected $fillable = ['match_index', 'stage', 'home_team_id', 'away_team_id', 'home_goals', 'away_goals', 'shootout_winner_team_id', 'home_training_steps', 'away_training_steps', 'recorded_at'];
-    protected $casts = ['id' => 'integer', 'match_index' => 'integer', 'home_team_id' => 'integer', 'away_team_id' => 'integer', 'home_goals' => 'integer', 'away_goals' => 'integer', 'shootout_winner_team_id' => 'integer', 'home_training_steps' => 'integer', 'away_training_steps' => 'integer', 'recorded_at' => 'datetime'];
+    protected $fillable = ['tournament_id', 'match_index', 'stage', 'home_team_id', 'away_team_id', 'home_goals', 'away_goals', 'shootout_winner_team_id', 'home_training_steps', 'away_training_steps', 'recorded_at'];
+    protected $casts = ['id' => 'integer', 'tournament_id' => 'integer', 'match_index' => 'integer', 'home_team_id' => 'integer', 'away_team_id' => 'integer', 'home_goals' => 'integer', 'away_goals' => 'integer', 'shootout_winner_team_id' => 'integer', 'home_training_steps' => 'integer', 'away_training_steps' => 'integer', 'recorded_at' => 'datetime'];
 
     /** @return array<string, array<int, string>> */
     public static function rules(): array
     {
         return [
+            'tournament_id' => ['required', 'integer'],
             'match_index' => ['required', 'integer'],
             'stage' => ['required', 'string'],
             'home_team_id' => ['required', 'integer'],
@@ -1481,13 +1482,14 @@ class DesSoccerTournamentTeamBrains extends Model
     protected $table = 'des_soccer_tournament_team_brains';
     protected $primaryKey = 'id';
     public $timestamps = false;
-    protected $fillable = ['team_id', 'team_name', 'seed', 'matches_learned', 'training_steps', 'played', 'wins', 'draws', 'losses', 'goals_for', 'goals_against', 'neural_snapshot', 'genome', 'updated_at'];
-    protected $casts = ['id' => 'integer', 'team_id' => 'integer', 'seed' => 'integer', 'matches_learned' => 'integer', 'training_steps' => 'integer', 'played' => 'integer', 'wins' => 'integer', 'draws' => 'integer', 'losses' => 'integer', 'goals_for' => 'integer', 'goals_against' => 'integer', 'neural_snapshot' => 'array', 'genome' => 'array', 'updated_at' => 'datetime'];
+    protected $fillable = ['tournament_id', 'team_id', 'team_name', 'seed', 'matches_learned', 'training_steps', 'played', 'wins', 'draws', 'losses', 'goals_for', 'goals_against', 'neural_snapshot', 'genome', 'updated_at'];
+    protected $casts = ['id' => 'integer', 'tournament_id' => 'integer', 'team_id' => 'integer', 'seed' => 'integer', 'matches_learned' => 'integer', 'training_steps' => 'integer', 'played' => 'integer', 'wins' => 'integer', 'draws' => 'integer', 'losses' => 'integer', 'goals_for' => 'integer', 'goals_against' => 'integer', 'neural_snapshot' => 'array', 'genome' => 'array', 'updated_at' => 'datetime'];
 
     /** @return array<string, array<int, string>> */
     public static function rules(): array
     {
         return [
+            'tournament_id' => ['required', 'integer'],
             'team_id' => ['required', 'integer'],
             'team_name' => ['required', 'string'],
             'seed' => ['required', 'integer'],
@@ -4242,13 +4244,14 @@ class FabRuns extends Model
     public $incrementing = false;
     protected $keyType = 'string';
     public $timestamps = false;
-    protected $fillable = ['status', 'machine_id', 'operator_email', 'progress', 'as_built', 'error', 'started_at', 'finished_at', 'created_at'];
+    protected $fillable = ['instructions_id', 'status', 'machine_id', 'operator_email', 'progress', 'as_built', 'error', 'started_at', 'finished_at', 'created_at'];
     protected $casts = ['progress' => 'integer', 'as_built' => 'array', 'started_at' => 'datetime', 'finished_at' => 'datetime', 'created_at' => 'datetime'];
 
     /** @return array<string, array<int, string>> */
     public static function rules(): array
     {
         return [
+            'instructions_id' => ['required', 'uuid'],
             'status' => ['nullable', 'string', 'in:queued,running,succeeded,failed,aborted'],
             'machine_id' => ['required', 'string'],
             'operator_email' => ['nullable', 'string'],

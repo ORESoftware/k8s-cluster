@@ -806,6 +806,8 @@ module DdPgDefs
     self.table_name = "des_soccer_tournament_matches"
     self.primary_key = "id"
 
+    validates :tournament_id, presence: true
+    validates :tournament_id, numericality: { only_integer: true }
     validates :match_index, presence: true
     validates :match_index, numericality: { only_integer: true }
     validates :stage, presence: true
@@ -828,6 +830,8 @@ module DdPgDefs
     self.table_name = "des_soccer_tournament_team_brains"
     self.primary_key = "id"
 
+    validates :tournament_id, presence: true
+    validates :tournament_id, numericality: { only_integer: true }
     validates :team_id, presence: true
     validates :team_id, numericality: { only_integer: true }
     validates :team_name, presence: true
@@ -2262,6 +2266,7 @@ module DdPgDefs
     self.table_name = "daedalus.fab_runs"
     self.primary_key = "id"
 
+    validates :instructions_id, presence: true
     validates :status, inclusion: { in: ["queued", "running", "succeeded", "failed", "aborted"] }
     validates :machine_id, presence: true
     validates :progress, numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 100 }
