@@ -4,12 +4,19 @@
 //! the crate's composition, not only of its runtime behavior.
 
 const MAIN: &str = include_str!("../src/main.rs");
+const WEB_MAIN: &str = include_str!("../src/bin/dd-fabrication-web-server.rs");
 const LIB: &str = include_str!("../src/lib.rs");
+const ADDITIVE: &str = include_str!("../src/additive_printing/mod.rs");
 const CONFIG: &str = include_str!("../src/config.rs");
+const HTTP: &str = include_str!("../src/http.rs");
+const MESSAGING: &str = include_str!("../src/messaging.rs");
 const METRICS: &str = include_str!("../src/metrics.rs");
 const OBSERVABILITY: &str = include_str!("../src/observability.rs");
 const PERSISTENCE: &str = include_str!("../src/persistence.rs");
+const REALTIME: &str = include_str!("../src/realtime.rs");
 const SECRETS: &str = include_str!("../src/secrets.rs");
+const TRANSPORT: &str = include_str!("../src/transport/mod.rs");
+const WEB_SERVER: &str = include_str!("../src/web_server/mod.rs");
 const MANIFEST: &str = include_str!("../Cargo.toml");
 const README: &str = include_str!("../readme.md");
 
@@ -41,16 +48,30 @@ fn binary_entrypoint_stays_thin() {
             "main.rs must not own {implementation_detail}"
         );
     }
+
+    assert!(nonempty_line_count(WEB_MAIN) <= 5);
+    assert!(WEB_MAIN.contains("dd_fabrication_server::run_web().await"));
+    for implementation_detail in ["Router::new", "sea_orm", "async_nats", "dd_telemetry"] {
+        assert!(
+            !WEB_MAIN.contains(implementation_detail),
+            "web main.rs must not own {implementation_detail}"
+        );
+    }
 }
 
 #[test]
 fn runtime_concerns_have_dedicated_modules() {
     for module in [
         "config",
+        "http",
+        "messaging",
         "metrics",
         "observability",
         "persistence",
+        "realtime",
         "secrets",
+        "transport",
+        "web_server",
     ] {
         assert!(
             LIB.lines()
@@ -60,11 +81,33 @@ fn runtime_concerns_have_dedicated_modules() {
     }
 
     assert!(CONFIG.contains("struct ServiceConfig"));
+    assert!(HTTP.contains("async fn healthz"));
+    assert!(HTTP.contains("async fn readyz"));
+    assert!(HTTP.contains("async fn metrics"));
     assert!(METRICS.contains("struct Metrics"));
+    assert!(MESSAGING.contains("connect_optional"));
     assert!(OBSERVABILITY.contains("dd_telemetry::init"));
     assert!(PERSISTENCE.contains("enum Persistence"));
+    assert!(REALTIME.contains("struct EventEnvelope"));
+    assert!(TRANSPORT.contains("pub(crate) fn router"));
+    assert!(WEB_SERVER.contains("pub(crate) async fn run"));
     assert!(SECRETS.contains("struct SecretOverlay"));
     assert!(LIB.contains("pub async fn run()"));
+    assert!(LIB.contains("pub async fn run_web()"));
+
+    for handler in ["healthz", "readyz", "metrics"] {
+        assert!(
+            !LIB.contains(&format!("async fn {handler}")),
+            "lib.rs must delegate the {handler} HTTP adapter"
+        );
+        assert!(LIB.contains(&format!("get(http::{handler})")));
+    }
+}
+
+#[test]
+fn library_runtime_entrypoint_is_public() {
+    let _entrypoint = dd_fabrication_server::run;
+    let _web_entrypoint = dd_fabrication_server::run_web;
 }
 
 #[test]
@@ -87,12 +130,54 @@ fn persistence_uses_seaorm_without_a_direct_sqlx_dependency() {
 }
 
 #[test]
+fn both_processes_share_mash_websocket_tcp_and_nats_contracts() {
+    assert!(has_direct_dependency(MANIFEST, "maud"));
+    assert!(has_direct_dependency(MANIFEST, "async-nats"));
+    assert!(MANIFEST.contains("features = [\"macros\", \"ws\"]"));
+    assert!(TRANSPORT.contains("/ws/html"));
+    assert!(TRANSPORT.contains("/ws/json"));
+    assert!(TRANSPORT.contains("spawn_publisher"));
+    assert!(TRANSPORT.contains("serve_tcp"));
+    assert!(REALTIME.contains("ServiceSurface::Fabrication"));
+    assert!(REALTIME.contains("ServiceSurface::Web"));
+    assert!(LIB.contains("transport::router(realtime_hub"));
+    assert!(WEB_SERVER.contains("transport::router(hub, ServiceSurface::Web)"));
+}
+
+#[test]
+fn schema_migrations_stay_declarative_and_outside_application_startup() {
+    assert!(PERSISTENCE.contains("dd_fabrication_server/schema.sql"));
+    assert!(PERSISTENCE.contains("SUPABASE_DATABASE_URL"));
+    for forbidden_runtime_ddl in [
+        "Schema::create_table",
+        "Schema::drop_table",
+        "execute_unprepared(\"CREATE",
+        "execute_unprepared(\"ALTER",
+        "execute_unprepared(\"DROP",
+    ] {
+        assert!(!PERSISTENCE.contains(forbidden_runtime_ddl));
+        assert!(!LIB.contains(forbidden_runtime_ddl));
+    }
+}
+
+#[test]
+fn additive_printing_is_a_modular_feature_slice() {
+    assert!(LIB.contains("mod additive_printing;"));
+    assert!(LIB.contains("additive_printing::router(realtime_hub.clone())"));
+    for module in ["analysis", "http", "model"] {
+        assert!(ADDITIVE.contains(&format!("mod {module};")));
+    }
+    assert!(!LIB.contains("fn analyze_fdm"));
+    assert!(!LIB.contains("fn analyze_resin"));
+}
+
+#[test]
 fn observability_is_composed_at_service_boundaries() {
     assert!(LIB.contains("dd_telemetry::http_trace_layer"));
     assert!(LIB.contains("messaging.publish"));
     assert!(LIB.contains("messaging.process"));
     assert!(LIB.contains(".route(\"/metrics\""));
-    assert!(LIB.contains("dd_fabrication_server_persistence_enabled"));
+    assert!(HTTP.contains("dd_fabrication_server_persistence_enabled"));
     assert!(OBSERVABILITY.contains("persistence.enabled"));
 
     for deployment_component in ["OpenTelemetry", "Loki", "Prometheus"] {

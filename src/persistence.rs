@@ -6,6 +6,8 @@ use crate::config::{env_bool, env_u64, optional_env};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const READY_TIMEOUT: Duration = Duration::from_secs(3);
+pub(crate) const DECLARATIVE_SCHEMA: &str =
+    "remote/libs/pg-defs/schema/databases/dd_fabrication_server/schema.sql";
 
 #[derive(Clone)]
 pub(crate) enum Persistence {
@@ -20,14 +22,42 @@ impl Persistence {
         fields(db.system = "postgresql", db.client = "seaorm")
     )]
     pub(crate) async fn from_env() -> Result<Self, PersistenceError> {
-        let required = env_bool("FABRICATION_DATABASE_REQUIRED", false);
-        let Some(url) = database_url() else {
+        Self::from_keys(
+            "FABRICATION_DATABASE_REQUIRED",
+            &[
+                "FABRICATION_DATABASE_URL",
+                "RDS_DATABASE_URL",
+                "DATABASE_URL",
+            ],
+        )
+        .await
+    }
+
+    pub(crate) async fn from_web_env() -> Result<Self, PersistenceError> {
+        Self::from_keys(
+            "FABRICATION_WEB_DATABASE_REQUIRED",
+            &[
+                "SUPABASE_DATABASE_URL",
+                "FABRICATION_WEB_DATABASE_URL",
+                "DATABASE_URL",
+            ],
+        )
+        .await
+    }
+
+    async fn from_keys(
+        required_key: &'static str,
+        url_keys: &[&str],
+    ) -> Result<Self, PersistenceError> {
+        let required = env_bool(required_key, false);
+        let Some(url) = database_url(url_keys) else {
             if required {
-                return Err(PersistenceError::MissingUrl);
+                return Err(PersistenceError::MissingUrl(required_key));
             }
             tracing::info!(
                 db.client = "seaorm",
                 persistence.enabled = false,
+                db.schema.contract = DECLARATIVE_SCHEMA,
                 "database persistence is disabled"
             );
             return Ok(Self::Disabled);
@@ -56,6 +86,7 @@ impl Persistence {
             db.client = "seaorm",
             db.system = "postgresql",
             persistence.enabled = true,
+            db.schema.contract = DECLARATIVE_SCHEMA,
             pool.max_connections = max_connections,
             pool.min_connections = min_connections,
             "SeaORM persistence initialized"
@@ -85,27 +116,22 @@ impl Persistence {
     }
 }
 
-fn database_url() -> Option<String> {
-    [
-        "FABRICATION_DATABASE_URL",
-        "RDS_DATABASE_URL",
-        "DATABASE_URL",
-    ]
-    .into_iter()
-    .find_map(optional_env)
+fn database_url(keys: &[&str]) -> Option<String> {
+    keys.iter().find_map(|key| optional_env(key))
 }
 
 #[derive(Debug)]
 pub(crate) enum PersistenceError {
-    MissingUrl,
+    MissingUrl(&'static str),
     Connect,
 }
 
 impl fmt::Display for PersistenceError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::MissingUrl => formatter.write_str(
-                "FABRICATION_DATABASE_REQUIRED is enabled but no FABRICATION_DATABASE_URL, RDS_DATABASE_URL, or DATABASE_URL was provided",
+            Self::MissingUrl(required_key) => write!(
+                formatter,
+                "{required_key} is enabled but no supported Postgres connection URL was provided"
             ),
             Self::Connect => formatter.write_str(
                 "SeaORM could not connect to the configured Postgres database; connection details were redacted",
