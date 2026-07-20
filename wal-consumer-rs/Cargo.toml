@@ -28,5 +28,9 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync"
 tracing = { version = "0.1", optional = true }
 
 [features]
-default = []
+# `tracing` is on by default: without it this crate falls back to `eprintln!`,
+# which bypasses the `dd.log.v1` structured-stdout contract, so CDC warnings
+# land in Loki as unstructured text with no trace correlation. Consumers that
+# genuinely want the bare fallback can opt out with `default-features = false`.
+default = ["tracing"]
 tracing = ["dep:tracing"]

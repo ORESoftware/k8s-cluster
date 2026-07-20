@@ -59,19 +59,74 @@
 //!   in commit order so most cross-table interleavings hold).
 
 use std::future::Future;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_nats::jetstream::{
     consumer::{pull::Config as PullConfig, AckPolicy, Consumer, DeliverPolicy},
-    Context,
+    AckKind, Context, Message,
 };
-use futures_util::StreamExt;
+use futures_util::{FutureExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::task::JoinHandle;
 
 pub const SCHEMA_VERSION: &str = "cdc.row.v1";
+
+/// Counters for a running subscription, so the host service can surface CDC
+/// health on its Prometheus `/metrics` endpoint (and therefore Grafana).
+///
+/// This crate deliberately does NOT own an HTTP endpoint or initialize
+/// OpenTelemetry — that is the host service's job (`dd-telemetry`). It only
+/// counts, and emits `tracing` spans/events that the host's subscriber ships
+/// to Loki (as `dd.log.v1` stdout) and OTLP.
+#[derive(Debug, Default)]
+pub struct ConsumerMetrics {
+    /// Envelopes received from JetStream (before decode).
+    pub received: AtomicU64,
+    /// Envelopes decoded and dispatched to the handler.
+    pub handled: AtomicU64,
+    /// Envelopes that failed to decode (acked and dropped).
+    pub decode_errors: AtomicU64,
+    /// Envelopes skipped because `schemaVersion` did not match.
+    pub schema_mismatch: AtomicU64,
+    /// Handler panics caught (the subscription survives).
+    pub handler_panics: AtomicU64,
+    /// `AckKind::Progress` heartbeats sent during slow handlers.
+    pub ack_progress: AtomicU64,
+    /// Ack failures reported by the server.
+    pub ack_errors: AtomicU64,
+    /// Times the message stream ended and the loop reconnected.
+    pub reconnects: AtomicU64,
+}
+
+impl ConsumerMetrics {
+    /// Render these counters in Prometheus text format. Append the result to
+    /// the host service's `/metrics` body. `durable` labels the series so
+    /// several subscriptions in one process stay distinguishable.
+    pub fn prometheus_text(&self, durable: &str) -> String {
+        let label = durable.replace('\\', "\\\\").replace('"', "\\\"");
+        let rows = [
+            ("received_total", "CDC envelopes received from JetStream.", &self.received),
+            ("handled_total", "CDC envelopes dispatched to the handler.", &self.handled),
+            ("decode_errors_total", "CDC envelopes that failed to decode.", &self.decode_errors),
+            ("schema_mismatch_total", "CDC envelopes skipped for schemaVersion mismatch.", &self.schema_mismatch),
+            ("handler_panics_total", "Handler panics caught by the consumer.", &self.handler_panics),
+            ("ack_progress_total", "Ack progress heartbeats sent during slow handlers.", &self.ack_progress),
+            ("ack_errors_total", "Ack failures reported by the server.", &self.ack_errors),
+            ("reconnects_total", "Times the CDC message stream ended and reconnected.", &self.reconnects),
+        ];
+        let mut out = String::new();
+        for (name, help, counter) in rows {
+            out.push_str(&format!(
+                "# HELP dd_wal_consumer_{name} {help}\n# TYPE dd_wal_consumer_{name} counter\ndd_wal_consumer_{name}{{durable=\"{label}\"}} {}\n",
+                counter.load(Ordering::Relaxed)
+            ));
+        }
+        out
+    }
+}
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -192,6 +247,7 @@ pub struct SubscriptionBuilder {
     deliver_policy: DeliverPolicy,
     max_inflight: u32,
     ack_wait: Duration,
+    metrics: Option<Arc<ConsumerMetrics>>,
 }
 
 impl Default for SubscriptionBuilder {
@@ -203,6 +259,7 @@ impl Default for SubscriptionBuilder {
             deliver_policy: DeliverPolicy::New,
             max_inflight: 256,
             ack_wait: Duration::from_secs(30),
+            metrics: None,
         }
     }
 }
@@ -238,8 +295,21 @@ impl SubscriptionBuilder {
         self
     }
     /// How long JetStream waits for an ack before redelivering. Default 30s.
+    ///
+    /// Note this only takes effect when the durable consumer is *created*.
+    /// JetStream does not reconfigure an existing durable on `get_or_create`,
+    /// so if the consumer already exists with different settings the server's
+    /// values win — `start` logs a warning when it detects that drift.
     pub fn ack_wait(mut self, d: Duration) -> Self {
         self.ack_wait = d;
+        self
+    }
+
+    /// Share a metrics handle so the host service can render CDC counters on
+    /// its own Prometheus `/metrics` endpoint. When unset the subscription
+    /// still counts internally, the values are just not reachable outside.
+    pub fn metrics(mut self, metrics: Arc<ConsumerMetrics>) -> Self {
+        self.metrics = Some(metrics);
         self
     }
 
@@ -289,10 +359,26 @@ impl SubscriptionBuilder {
             )
             .await
             .map_err(|e| Error::Jetstream(format!("create_consumer: {e}")))?;
+        // `get_or_create_consumer` returns a pre-existing durable unchanged, so
+        // builder settings are silently ignored when the consumer already
+        // exists with different values. Surface that instead of letting an
+        // operator believe a tuning change took effect.
+        let effective_ack_wait = consumer.cached_info().config.ack_wait;
+        if effective_ack_wait != self.ack_wait {
+            log_warn(&format!(
+                "wal-consumer[{}] consumer already exists with ack_wait={:?}, ignoring requested {:?}; \
+                 delete/recreate the durable to change it",
+                self.durable_name, effective_ack_wait, self.ack_wait
+            ));
+        }
+        let metrics = self
+            .metrics
+            .clone()
+            .unwrap_or_else(|| Arc::new(ConsumerMetrics::default()));
         let handler = Arc::new(handler);
         let label = self.durable_name.clone();
         let join = tokio::spawn(async move {
-            run_pull_loop(consumer, label, handler).await;
+            run_pull_loop(consumer, label, handler, effective_ack_wait, metrics).await;
         });
         Ok(join)
     }
@@ -311,11 +397,54 @@ impl Subscription {
     }
 }
 
-async fn run_pull_loop<F, Fut>(consumer: Consumer<PullConfig>, label: String, handler: Arc<F>)
+/// Await the handler while extending the JetStream ack deadline with
+/// `AckKind::Progress` every `interval`, and contain any panic it throws.
+///
+/// Without the heartbeat a handler slower than `ack_wait` (default 30s) is
+/// treated as stalled and the row is redelivered *while it is still being
+/// processed* — duplicate work on every slow handler. Without the panic guard a
+/// single bad row would unwind out of the loop and kill the subscription for
+/// the life of the process. Returns `Err(())` if the handler panicked.
+async fn run_handler_guarded<Fut>(
+    msg: &Message,
+    interval: Duration,
+    metrics: &ConsumerMetrics,
+    handler_fut: Fut,
+) -> Result<(), ()>
 where
+    Fut: Future<Output = ()>,
+{
+    let guarded = std::panic::AssertUnwindSafe(handler_fut).catch_unwind();
+    tokio::pin!(guarded);
+    let mut ticker = tokio::time::interval(interval);
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    ticker.tick().await; // the first tick completes immediately; skip it
+    loop {
+        tokio::select! {
+            biased;
+            outcome = &mut guarded => return outcome.map_err(|_| ()),
+            _ = ticker.tick() => {
+                if msg.ack_with(AckKind::Progress).await.is_ok() {
+                    metrics.ack_progress.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+        }
+    }
+}
+
+async fn run_pull_loop<F, Fut>(
+    consumer: Consumer<PullConfig>,
+    label: String,
+    handler: Arc<F>,
+    ack_wait: Duration,
+    metrics: Arc<ConsumerMetrics>,
+) where
     F: Fn(RowChange) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = ()> + Send + 'static,
 {
+    // Heartbeat at a third of the ack deadline (floored at 1s) so several
+    // heartbeats land inside each window even if one is delayed.
+    let progress_every = (ack_wait / 3).max(Duration::from_secs(1));
     let log_label = label.clone();
     loop {
         let messages = match consumer.messages().await {
@@ -337,11 +466,33 @@ where
                     break;
                 }
             };
+            metrics.received.fetch_add(1, Ordering::Relaxed);
             match serde_json::from_slice::<RowChange>(&msg.payload) {
                 Ok(change) => {
                     if change.schema_version == SCHEMA_VERSION {
-                        (handler)(change).await;
+                        // Only low-cardinality routing fields are recorded — row
+                        // data is CDC payload and must never reach logs/traces.
+                        log_row_event(&log_label, &change);
+                        metrics.handled.fetch_add(1, Ordering::Relaxed);
+                        if run_handler_guarded(
+                            &msg,
+                            progress_every,
+                            &metrics,
+                            (handler)(change),
+                        )
+                        .await
+                        .is_err()
+                        {
+                            // The row is still acked below: a panicking handler
+                            // will panic again on redelivery, so retrying it
+                            // would wedge the subscription on one poison row.
+                            metrics.handler_panics.fetch_add(1, Ordering::Relaxed);
+                            log_warn(&format!(
+                                "wal-consumer[{log_label}] handler panicked; row acked and skipped"
+                            ));
+                        }
                     } else {
+                        metrics.schema_mismatch.fetch_add(1, Ordering::Relaxed);
                         log_warn(&format!(
                             "wal-consumer[{log_label}] unsupported schemaVersion={}",
                             change.schema_version
@@ -349,6 +500,7 @@ where
                     }
                 }
                 Err(error) => {
+                    metrics.decode_errors.fetch_add(1, Ordering::Relaxed);
                     log_warn(&format!(
                         "wal-consumer[{log_label}] decode failed: {error}; payload len={}",
                         msg.payload.len()
@@ -356,11 +508,13 @@ where
                 }
             }
             if let Err(error) = msg.ack().await {
+                metrics.ack_errors.fetch_add(1, Ordering::Relaxed);
                 log_warn(&format!("wal-consumer[{log_label}] ack failed: {error}"));
             }
         }
         // The stream ended (server closed it, e.g. a deploy of the NATS
         // box). Reconnect by re-creating the messages stream.
+        metrics.reconnects.fetch_add(1, Ordering::Relaxed);
         log_warn(&format!(
             "wal-consumer[{log_label}] message stream ended; reconnecting"
         ));
@@ -377,6 +531,27 @@ fn log_warn(msg: &str) {
 fn log_warn(msg: &str) {
     eprintln!("{msg}");
 }
+
+/// Per-row structured event. The host service's `tracing` subscriber
+/// (`dd-telemetry`) turns this into a `dd.log.v1` stdout line for Loki and,
+/// when a span is active, correlates it with the OTLP trace.
+///
+/// Only low-cardinality routing fields are emitted — never `row`/`previousRow`,
+/// which carry actual table data (same reasoning as the redacted `Display` for
+/// `Error::Decode`).
+#[cfg(feature = "tracing")]
+fn log_row_event(label: &str, change: &RowChange) {
+    tracing::debug!(
+        durable = label,
+        schema = %change.schema,
+        table = %change.table,
+        op = change.op.as_str(),
+        "cdc row change received"
+    );
+}
+
+#[cfg(not(feature = "tracing"))]
+fn log_row_event(_label: &str, _change: &RowChange) {}
 
 #[cfg(test)]
 mod tests {
@@ -404,6 +579,31 @@ mod tests {
             Some("default")
         );
         assert!(parsed.is_table("public", "app_config"));
+    }
+
+    #[test]
+    fn metrics_render_prometheus_exposition() {
+        let metrics = ConsumerMetrics::default();
+        metrics.received.fetch_add(7, Ordering::Relaxed);
+        metrics.handler_panics.fetch_add(2, Ordering::Relaxed);
+        let text = metrics.prometheus_text("trading-server-app-config");
+
+        assert!(text.contains("# TYPE dd_wal_consumer_received_total counter"));
+        assert!(text
+            .contains("dd_wal_consumer_received_total{durable=\"trading-server-app-config\"} 7"));
+        assert!(text
+            .contains("dd_wal_consumer_handler_panics_total{durable=\"trading-server-app-config\"} 2"));
+        // Untouched counters still render (so a dashboard panel never gaps).
+        assert!(text.contains("dd_wal_consumer_ack_progress_total"));
+        assert!(text.contains("dd_wal_consumer_reconnects_total"));
+    }
+
+    #[test]
+    fn metrics_label_is_escaped() {
+        // A durable name with a quote must not break the exposition format.
+        let metrics = ConsumerMetrics::default();
+        let text = metrics.prometheus_text("we\"ird");
+        assert!(text.contains(r#"durable="we\"ird""#));
     }
 
     #[test]
