@@ -5,6 +5,10 @@
     "fabrication-server.rs",
     "daedalus-api-server.rs",
     "daedalus-web-server.rs",
-    "daedalus-infra"
+    "daedalus-infra",
+    "daedalus-clients",
+    "daedalus-interfaces",
+    "daedalus-ui.dart",
+    "daedalus-fab-mcp-server.rs"
   ]
 }

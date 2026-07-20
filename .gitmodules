@@ -14,3 +14,19 @@
 	path = apps/daedalus-infra
 	url = git@github.com:daedalus-fab/daedalus-infra.git
 	branch = main
+[submodule "apps/daedalus-clients"]
+	path = apps/daedalus-clients
+	url = git@github.com:daedalus-fab/daedalus-clients.git
+	branch = main
+[submodule "apps/daedalus-interfaces"]
+	path = apps/daedalus-interfaces
+	url = git@github.com:daedalus-fab/daedalus-interfaces.git
+	branch = main
+[submodule "apps/daedalus-ui.dart"]
+	path = apps/daedalus-ui.dart
+	url = git@github.com:daedalus-fab/daedalus-ui.dart.git
+	branch = main
+[submodule "apps/daedalus-fab-mcp-server.rs"]
+	path = apps/daedalus-fab-mcp-server.rs
+	url = git@github.com:daedalus-fab/daedalus-fab-mcp-server.rs.git
+	branch = main
