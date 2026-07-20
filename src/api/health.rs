@@ -38,16 +38,15 @@ pub async fn readyz(State(state): State<AppState>) -> (StatusCode, Json<HealthBo
             }),
         );
     }
-    if !fiducia_ready(&state).await {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(HealthBody {
-                status: "fiducia_unavailable",
-                service: "billing-server-rs",
-                version: env!("CARGO_PKG_VERSION"),
-            }),
-        );
-    }
+    // Readiness is deliberately NOT gated on Fiducia. Fiducia's node/brain
+    // plane runs in a different cluster, so coupling readiness to it would let
+    // a cross-cluster partition pull the only billing pod out of the Service
+    // endpoints — taking down webhook ingestion, reads and the admin UI, none
+    // of which need coordination. Lock-dependent routes already fail closed on
+    // their own (see `customer_locks`/`locks`), which is the correct blast
+    // radius: the request that needs a lease fails, not the whole process.
+    // Coordination health stays observable via the `dd_billing_server_fiducia_ready`
+    // gauge in /metrics and must be alerted on there, not via the probe.
     (
         StatusCode::OK,
         Json(HealthBody {

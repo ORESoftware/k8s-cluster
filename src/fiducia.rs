@@ -42,9 +42,45 @@ impl fmt::Debug for FiduciaCoordinator {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FiduciaLockGrant {
+    /// Scalar token. For a single-key grant this is authoritative; for a
+    /// multi-key (union) grant the node only guarantees it mirrors *one* of
+    /// the per-key tokens, so it must not be applied to the other keys.
     pub fencing_token: u64,
     pub lease_expires_ms: i64,
     pub keys: Vec<String>,
+    /// Per-key tokens for a union grant. Empty for a single-key grant, where
+    /// the scalar `fencing_token` is the key's token.
+    pub fencing_tokens: BTreeMap<String, u64>,
+}
+
+impl FiduciaLockGrant {
+    /// The fencing token that actually guards `key`. A union grant carries one
+    /// token per key; using the scalar for every key (as this code previously
+    /// did) both misreports the fence and releases the other keys with a
+    /// mismatched token, stranding them until the lease TTL expires.
+    pub fn token_for(&self, key: &str) -> Option<u64> {
+        if self.fencing_tokens.is_empty() {
+            // Single-key grant: the scalar is this key's token, but only if the
+            // grant really covers the key we were asked about.
+            return self.keys.iter().any(|k| k == key).then_some(self.fencing_token);
+        }
+        self.fencing_tokens.get(key).copied()
+    }
+
+    /// Every (key, token) pair this grant holds, in deterministic key order.
+    pub fn per_key_tokens(&self) -> Vec<(String, u64)> {
+        if self.fencing_tokens.is_empty() {
+            return self
+                .keys
+                .iter()
+                .map(|key| (key.clone(), self.fencing_token))
+                .collect();
+        }
+        self.fencing_tokens
+            .iter()
+            .map(|(key, token)| (key.clone(), *token))
+            .collect()
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -56,6 +92,9 @@ struct LockGrantOutput {
     lease_expires_ms: Option<i64>,
     #[serde(default)]
     keys: Vec<String>,
+    /// Per-key tokens for a union grant. Absent for single-key grants.
+    #[serde(default)]
+    fencing_tokens: BTreeMap<String, u64>,
     #[serde(default)]
     conflicts: Vec<String>,
     #[serde(default)]
@@ -188,10 +227,35 @@ impl FiduciaCoordinator {
         let lease_expires_ms = output.lease_expires_ms.ok_or_else(|| {
             protocol_error("lock acquire committed with acquired=true but no lease_expires_ms")
         })?;
+        // A union grant must carry a token for every key it claims to hold.
+        // Silently accepting a partial map would fence some keys and leave the
+        // rest unguarded, which is worse than refusing the grant outright.
+        if !output.fencing_tokens.is_empty() {
+            if let Some(missing) = output
+                .keys
+                .iter()
+                .find(|key| !output.fencing_tokens.contains_key(*key))
+            {
+                return Err(protocol_error(&format!(
+                    "lock acquire returned per-key fencing tokens but omitted key '{missing}'"
+                )));
+            }
+            if output.fencing_tokens.values().any(|token| *token == 0) {
+                return Err(protocol_error(
+                    "lock acquire returned a zero per-key fencing token",
+                ));
+            }
+        }
+        if fencing_token == 0 {
+            return Err(protocol_error(
+                "lock acquire committed with acquired=true but a zero fencing_token",
+            ));
+        }
         Ok(Some(FiduciaLockGrant {
             fencing_token,
             lease_expires_ms,
             keys: output.keys,
+            fencing_tokens: output.fencing_tokens,
         }))
     }
 
@@ -211,6 +275,50 @@ impl FiduciaCoordinator {
             tracing::debug!(reason = ?output.reason, "Fiducia lock was already released");
         }
         Ok(output.released)
+    }
+
+    /// Release every token a grant holds. A union grant has one token per key
+    /// and the release payload is `{holder, fencing_token}`, so each distinct
+    /// token needs its own call — releasing only the scalar leaves the other
+    /// keys held until the lease TTL expires.
+    ///
+    /// Every token is attempted even if an earlier one fails, so one bad key
+    /// cannot strand the rest; the first error is returned afterwards.
+    pub async fn release_grant(&self, holder: &str, grant: &FiduciaLockGrant) -> AppResult<bool> {
+        let mut tokens: Vec<u64> = grant
+            .per_key_tokens()
+            .into_iter()
+            .map(|(_, token)| token)
+            .collect();
+        tokens.sort_unstable();
+        tokens.dedup();
+        if tokens.is_empty() {
+            tokens.push(grant.fencing_token);
+        }
+
+        let mut released_all = true;
+        let mut first_error = None;
+        for token in tokens {
+            match self.release_lock(holder, token).await {
+                Ok(released) => released_all &= released,
+                Err(err) => {
+                    tracing::error!(
+                        error = %err,
+                        holder,
+                        fencing_token = token,
+                        "failed to release a Fiducia union-lock member key"
+                    );
+                    if first_error.is_none() {
+                        first_error = Some(err);
+                    }
+                    released_all = false;
+                }
+            }
+        }
+        match first_error {
+            Some(err) => Err(err),
+            None => Ok(released_all),
+        }
     }
 
     pub async fn campaign_lease(
@@ -701,5 +809,71 @@ mod tests {
         );
         assert_eq!(calls.load(Ordering::Relaxed), 3);
         server.abort();
+    }
+
+    fn union_grant() -> FiduciaLockGrant {
+        FiduciaLockGrant {
+            fencing_token: 7,
+            lease_expires_ms: 0,
+            keys: vec!["a".into(), "b".into()],
+            fencing_tokens: BTreeMap::from([("a".to_string(), 7), ("b".to_string(), 9)]),
+        }
+    }
+
+    #[test]
+    fn union_grant_fences_each_key_with_its_own_token() {
+        let grant = union_grant();
+        // The scalar mirrors only one member; "b" must NOT inherit it.
+        assert_eq!(grant.token_for("a"), Some(7));
+        assert_eq!(grant.token_for("b"), Some(9));
+        assert_eq!(grant.token_for("missing"), None);
+        assert_eq!(
+            grant.per_key_tokens(),
+            vec![("a".to_string(), 7), ("b".to_string(), 9)]
+        );
+    }
+
+    #[test]
+    fn single_key_grant_uses_the_scalar_token_only_for_keys_it_holds() {
+        let grant = FiduciaLockGrant {
+            fencing_token: 4,
+            lease_expires_ms: 0,
+            keys: vec!["solo".into()],
+            fencing_tokens: BTreeMap::new(),
+        };
+        assert_eq!(grant.token_for("solo"), Some(4));
+        // A key the grant never covered must never borrow the scalar.
+        assert_eq!(grant.token_for("other"), None);
+        assert_eq!(grant.per_key_tokens(), vec![("solo".to_string(), 4)]);
+    }
+
+    #[test]
+    fn union_grant_release_covers_every_distinct_token() {
+        // Releasing only the scalar (7) would leave "b" (9) held until TTL.
+        let tokens: Vec<u64> = union_grant()
+            .per_key_tokens()
+            .into_iter()
+            .map(|(_, token)| token)
+            .collect();
+        assert!(tokens.contains(&7) && tokens.contains(&9));
+    }
+
+    #[test]
+    fn partial_per_key_token_map_is_rejected() {
+        // A union grant claiming a key with no token would leave that key
+        // unfenced; the acquire path must refuse the whole grant.
+        let output = json!({
+            "acquired": true,
+            "fencing_token": 7,
+            "lease_expires_ms": 1,
+            "keys": ["a", "b"],
+            "fencing_tokens": { "a": 7 }
+        });
+        let parsed: LockGrantOutput = serde_json::from_value(output).unwrap();
+        let missing = parsed
+            .keys
+            .iter()
+            .find(|key| !parsed.fencing_tokens.contains_key(*key));
+        assert_eq!(missing, Some(&"b".to_string()));
     }
 }
