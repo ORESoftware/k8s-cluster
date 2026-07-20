@@ -27,6 +27,7 @@ mod scheduler;
 mod shard;
 mod solana;
 mod state;
+mod supabase_auth;
 mod sync;
 mod tenants;
 mod users;
