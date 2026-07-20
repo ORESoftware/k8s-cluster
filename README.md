@@ -1,0 +1,1 @@
+# scintilla-monorepo\n\nUmbrella monorepo for scintilla-run. This repository manages all microservices and apps as git submodules.\n

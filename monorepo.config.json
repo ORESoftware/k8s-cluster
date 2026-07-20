@@ -1,0 +1,15 @@
+{
+  "org": "scintilla-run",
+  "monorepo": "scintilla-monorepo",
+  "apps": [
+    "scintilla-backend.rs",
+    "scintilla-app-rs",
+    "scintilla-infra",
+    "scintilla-clients",
+    "scintilla-interfaces",
+    "scintilla-ui.dart",
+    "scintilla-mcp-server.rs",
+    "scintilla-sync",
+    "scintilla-run.github.io"
+  ]
+}\n

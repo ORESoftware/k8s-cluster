@@ -1,0 +1,27 @@
+[submodule "apps/scintilla-interfaces"]
+	path = apps/scintilla-interfaces
+	url = git@github.com:scintilla-run/scintilla-interfaces
+[submodule "apps/scintilla-clients"]
+	path = apps/scintilla-clients
+	url = git@github.com:scintilla-run/scintilla-clients
+[submodule "apps/scintilla-infra"]
+	path = apps/scintilla-infra
+	url = git@github.com:scintilla-run/scintilla-infra
+[submodule "apps/scintilla-ui.dart"]
+	path = apps/scintilla-ui.dart
+	url = git@github.com:scintilla-run/scintilla-ui.dart
+[submodule "apps/scintilla-backend.rs"]
+	path = apps/scintilla-backend.rs
+	url = git@github.com:scintilla-run/scintilla-backend.rs
+[submodule "apps/scintilla-app-rs"]
+	path = apps/scintilla-app-rs
+	url = git@github.com:scintilla-run/scintilla-app-rs
+[submodule "apps/scintilla-sync"]
+	path = apps/scintilla-sync
+	url = git@github.com:scintilla-run/scintilla-sync
+[submodule "apps/scintilla-run.github.io"]
+	path = apps/scintilla-run.github.io
+	url = git@github.com:scintilla-run/scintilla-run.github.io
+[submodule "apps/scintilla-mcp-server.rs"]
+	path = apps/scintilla-mcp-server.rs
+	url = git@github.com:scintilla-run/scintilla-mcp-server.rs
