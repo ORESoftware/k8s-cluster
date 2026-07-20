@@ -18,7 +18,9 @@ git clone --recurse-submodules git@github.com:daedalus-fab/daedalus-monorepo.git
 
 ## Apps
 
-- [`apps/fabrication-server.rs`](https://github.com/daedalus-fab/fabrication-server.rs)
+- [`apps/fabrication-server.rs`](https://github.com/daedalus-fab/fabrication-server.rs) — fabrication planning service
+- [`apps/daedalus-api-server.rs`](https://github.com/daedalus-fab/daedalus-api-server.rs) — JSON API (MASH A/S tier)
+- [`apps/daedalus-web-server.rs`](https://github.com/daedalus-fab/daedalus-web-server.rs) — Maud/htmx UI (MASH M/H tier)
 
 ## Tests
 
