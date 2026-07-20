@@ -1,0 +1,41 @@
+[package]
+name = "shared-auth-server"
+version = "0.1.0"
+edition = "2021"
+description = "Centralized OreSoftware auth server: verifies Supabase access tokens across multiple orgs/projects, mirrors identities into RDS, and mints unified OreSoftware JWTs."
+license = "UNLICENSED"
+publish = false
+
+[[bin]]
+name = "shared-auth-server"
+path = "src/main.rs"
+
+[dependencies]
+axum = { version = "0.7", features = ["macros"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+tower-http = { version = "0.5", features = ["cors", "limit", "timeout", "trace"] }
+
+# JWT: verify Supabase tokens (RS256/ES256/HS256) and sign our own (ES256).
+jsonwebtoken = "9"
+# Publish our own JWKS — derive the public JWK from our EC signing key.
+p256 = { version = "0.13", features = ["ecdsa", "jwk", "pem", "pkcs8"] }
+sha2 = "0.10"
+base64 = "0.22"
+
+# Identity mirror in AWS RDS Postgres. Runtime queries (no compile-time DB, no DDL:
+# the schema is owned declaratively by pg-defs — see db/schema.sql).
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json"] }
+
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+uuid = { version = "1", features = ["serde", "v4"] }
+thiserror = "1"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+prometheus = { version = "0.13", default-features = false }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util"] }

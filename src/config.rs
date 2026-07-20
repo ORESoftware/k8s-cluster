@@ -1,0 +1,187 @@
+//! Environment-driven configuration.
+//!
+//! Everything sensitive (project list, DB URL, signing key, Management PAT) is
+//! injected via the environment — in the cluster from an `ExternalSecret`
+//! pointing at the shared `ClusterSecretStore` (`deploy/k8s/externalsecret.yaml`).
+//! Nothing here reads from disk except the PEM signing key, which may be given
+//! inline or as a path.
+
+use std::net::SocketAddr;
+
+use serde::Deserialize;
+
+use crate::error::ConfigError;
+
+/// One Supabase project this server accepts tokens from. Each org in the
+/// account (3fa-app, athlet-o-store, fiducia-cloud, sonus-auris, …) maps to one
+/// project with its own issuer and JWKS.
+#[derive(Clone, Debug, Deserialize)]
+pub struct SupabaseProject {
+    /// Stable slug used in logs, metrics, and the `supabase_project` mirror
+    /// column, e.g. `"fiducia-cloud"`.
+    pub name: String,
+    /// Supabase project ref, e.g. `abcdefghijklmnopqrst`. Used to derive
+    /// `issuer`/`jwks_url` when those are not given explicitly.
+    pub project_ref: String,
+    /// Token issuer to pin (`iss`). Defaults to
+    /// `https://<project_ref>.supabase.co/auth/v1`.
+    #[serde(default)]
+    pub issuer: Option<String>,
+    /// JWKS endpoint. Defaults to `<issuer>/.well-known/jwks.json`.
+    #[serde(default)]
+    pub jwks_url: Option<String>,
+    /// Expected audience. Supabase stamps `authenticated` on end-user tokens.
+    #[serde(default = "default_audience")]
+    pub audience: String,
+    /// Legacy HS256 projects only: the project JWT secret. Prefer asymmetric
+    /// (JWKS) verification; set this only for a project still on shared-secret
+    /// signing. Never log it.
+    #[serde(default)]
+    pub hs256_secret: Option<String>,
+}
+
+fn default_audience() -> String {
+    "authenticated".to_string()
+}
+
+impl SupabaseProject {
+    /// The issuer to pin, derived from `project_ref` when not set explicitly.
+    pub fn issuer(&self) -> String {
+        self.issuer
+            .clone()
+            .unwrap_or_else(|| format!("https://{}.supabase.co/auth/v1", self.project_ref))
+    }
+
+    /// The JWKS URL, derived from the issuer when not set explicitly.
+    pub fn jwks_url(&self) -> String {
+        self.jwks_url
+            .clone()
+            .unwrap_or_else(|| format!("{}/.well-known/jwks.json", self.issuer()))
+    }
+}
+
+/// How this server signs the unified OreSoftware JWTs it mints.
+#[derive(Clone, Debug)]
+pub struct SigningConfig {
+    /// PKCS#8 PEM of an EC P-256 private key (ES256). Held in memory only.
+    pub ec_private_pem: String,
+    /// `kid` advertised in our JWKS and stamped on tokens. Downstream services
+    /// select the verification key by this id, so keep it stable across rotation
+    /// windows (publish old+new together while rotating).
+    pub key_id: String,
+    /// `iss` on the tokens we mint.
+    pub issuer: String,
+    /// `aud` on the tokens we mint — the set of OreSoftware services meant to
+    /// accept them.
+    pub audience: String,
+    /// Lifetime of a minted token, in seconds.
+    pub ttl_secs: u64,
+}
+
+/// AWS RDS identity-mirror connection.
+#[derive(Clone, Debug)]
+pub struct DbConfig {
+    /// `postgres://…` DSN. `search_path` should include `shared_auth`.
+    pub url: String,
+    pub max_connections: u32,
+}
+
+/// Fully-resolved configuration.
+#[derive(Clone, Debug)]
+pub struct AppConfig {
+    pub bind_addr: SocketAddr,
+    pub projects: Vec<SupabaseProject>,
+    pub signing: SigningConfig,
+    /// Optional: without a DB the server still verifies + mints, it just skips
+    /// mirroring identities.
+    pub db: Option<DbConfig>,
+    /// Optional CORS allow-list for browser callers.
+    pub cors_allow_origins: Vec<String>,
+}
+
+impl AppConfig {
+    pub fn from_env() -> Result<Self, ConfigError> {
+        let bind_addr = env_or("AUTH_BIND_ADDR", "0.0.0.0:8120")
+            .parse()
+            .map_err(|_| ConfigError::Invalid("AUTH_BIND_ADDR"))?;
+
+        // AUTH_SUPABASE_PROJECTS is a JSON array of SupabaseProject.
+        let projects_json = require("AUTH_SUPABASE_PROJECTS")
+            .map_err(|_| ConfigError::Missing("AUTH_SUPABASE_PROJECTS"))?;
+        let projects: Vec<SupabaseProject> = serde_json::from_str(&projects_json)
+            .map_err(|_| ConfigError::Invalid("AUTH_SUPABASE_PROJECTS (expected JSON array)"))?;
+        if projects.is_empty() {
+            return Err(ConfigError::Invalid("AUTH_SUPABASE_PROJECTS is empty"));
+        }
+
+        let ec_private_pem = load_signing_pem()?;
+        let signing = SigningConfig {
+            ec_private_pem,
+            key_id: env_or("AUTH_SIGNING_KID", "shared-auth-v1"),
+            issuer: env_or("AUTH_ISSUER", "https://auth.oresoftware.dev"),
+            audience: env_or("AUTH_AUDIENCE", "oresoftware"),
+            ttl_secs: env_or("AUTH_TOKEN_TTL_SECS", "3600")
+                .parse()
+                .map_err(|_| ConfigError::Invalid("AUTH_TOKEN_TTL_SECS"))?,
+        };
+
+        let db = match std::env::var("AUTH_DATABASE_URL")
+            .ok()
+            .filter(|s| !s.is_empty())
+        {
+            Some(url) => Some(DbConfig {
+                url,
+                max_connections: env_or("AUTH_DB_MAX_CONNECTIONS", "5")
+                    .parse()
+                    .map_err(|_| ConfigError::Invalid("AUTH_DB_MAX_CONNECTIONS"))?,
+            }),
+            None => None,
+        };
+
+        let cors_allow_origins = env_or("AUTH_CORS_ALLOW_ORIGINS", "")
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .collect();
+
+        Ok(Self {
+            bind_addr,
+            projects,
+            signing,
+            db,
+            cors_allow_origins,
+        })
+    }
+}
+
+/// Load the EC signing PEM from `AUTH_SIGNING_KEY_PEM` (inline) or
+/// `AUTH_SIGNING_KEY_FILE` (path).
+fn load_signing_pem() -> Result<String, ConfigError> {
+    if let Ok(inline) = std::env::var("AUTH_SIGNING_KEY_PEM") {
+        if !inline.trim().is_empty() {
+            return Ok(inline);
+        }
+    }
+    if let Ok(path) = std::env::var("AUTH_SIGNING_KEY_FILE") {
+        return std::fs::read_to_string(&path)
+            .map_err(|_| ConfigError::Invalid("AUTH_SIGNING_KEY_FILE unreadable"));
+    }
+    Err(ConfigError::Missing(
+        "AUTH_SIGNING_KEY_PEM or AUTH_SIGNING_KEY_FILE",
+    ))
+}
+
+fn require(key: &'static str) -> Result<String, ConfigError> {
+    std::env::var(key)
+        .ok()
+        .filter(|v| !v.is_empty())
+        .ok_or(ConfigError::Missing(key))
+}
+
+fn env_or(key: &str, default: &str) -> String {
+    std::env::var(key)
+        .ok()
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| default.to_string())
+}

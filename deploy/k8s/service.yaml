@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-shared-auth
+  namespace: shared-auth
+  labels:
+    app: dd-shared-auth
+    app.kubernetes.io/part-of: shared-auth
+spec:
+  type: ClusterIP
+  selector:
+    app: dd-shared-auth
+  ports:
+    - name: http
+      port: 8120
+      targetPort: http

@@ -1,0 +1,8 @@
+/target
+**/*.rs.bk
+.env
+.env.*
+# Never commit signing keys or dumped tokens.
+*.pem
+*.key
+.DS_Store

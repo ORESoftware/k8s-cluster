@@ -1,0 +1,74 @@
+# dd-shared-auth — centralized Supabase-verifying auth server.
+#
+# Layer-2 (app-owned) manifest: namespace-scoped ONLY. The `shared-auth`
+# Namespace, ResourceQuota/LimitRange and default-deny NetworkPolicy are Layer-1,
+# owned by ORESoftware/k8s-cluster (remote/argocd/projects/shared-auth.tenant.yaml).
+# Do NOT add a Namespace/ClusterRole/CRD here — the `shared-auth` AppProject
+# enforces clusterResourceWhitelist: [] and would reject it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-shared-auth
+  namespace: shared-auth
+  labels:
+    app: dd-shared-auth
+    app.kubernetes.io/name: dd-shared-auth
+    app.kubernetes.io/part-of: shared-auth
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: dd-shared-auth
+  template:
+    metadata:
+      labels:
+        app: dd-shared-auth
+        app.kubernetes.io/name: dd-shared-auth
+        app.kubernetes.io/part-of: shared-auth
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      # Spread the 2 replicas across nodes/zones so an AZ loss can't drop auth.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: { app: dd-shared-auth }
+      containers:
+        - name: shared-auth
+          image: ghcr.io/oresoftware/shared-auth-server:main
+          imagePullPolicy: IfNotPresent
+          args: ["serve"]
+          ports:
+            - name: http
+              containerPort: 8120
+          env:
+            - { name: AUTH_BIND_ADDR, value: "0.0.0.0:8120" }
+            - { name: AUTH_LOG_FORMAT, value: "json" }
+            - { name: AUTH_ISSUER, value: "https://auth.oresoftware.dev" }
+            - { name: AUTH_AUDIENCE, value: "oresoftware" }
+            - { name: RUST_LOG, value: "info" }
+          # Secrets (project list, signing key, RDS DSN) come from the shared
+          # ClusterSecretStore via the ExternalSecret in this dir.
+          envFrom:
+            - secretRef:
+                name: dd-shared-auth-secrets
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }

@@ -1,0 +1,44 @@
+# App-owned allow-list; pairs with the Layer-1 default-deny in the shared-auth
+# tenant scaffold. Ingress: the gateway (default ns) reaches /shared-auth, and
+# observability scrapes /metrics. Egress: DNS, Supabase JWKS over HTTPS, RDS.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dd-shared-auth
+  namespace: shared-auth
+spec:
+  podSelector:
+    matchLabels:
+      app: dd-shared-auth
+  policyTypes: [Ingress, Egress]
+  ingress:
+    # dd-remote-gateway (routes /shared-auth/) lives in default.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: default
+      ports:
+        - { protocol: TCP, port: 8120 }
+    # Prometheus/OTel scrape.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - { protocol: TCP, port: 8120 }
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    # Supabase JWKS (public internet, HTTPS) + RDS (Postgres).
+    - to:
+        - ipBlock: { cidr: 0.0.0.0/0 }
+      ports:
+        - { protocol: TCP, port: 443 }
+        - { protocol: TCP, port: 5432 }
