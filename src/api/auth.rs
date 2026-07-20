@@ -263,21 +263,29 @@ pub async fn require_api_auth(
         .headers()
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok());
-    let Some(token) = bearer_token(presented) else {
-        return unauthorized();
-    };
 
     // The same header carries both credential kinds, so try the cheap
     // constant-time comparison first and fall back to JWT verification. A
-    // Supabase token can never collide with the service bearer: the compare is
-    // over the whole string.
-    let principal = if auth
-        .bearer
-        .as_deref()
-        .is_some_and(|expected| const_time_eq(token.as_bytes(), expected.as_bytes()))
-    {
+    // Supabase token can never be mistaken for the service bearer: the compare
+    // is over the entire string.
+    //
+    // The service-bearer match stays byte-exact on the `Bearer ` prefix,
+    // unchanged from before per-user auth existed. The JWT path uses the
+    // RFC 7235 case-insensitive parser instead, because real Supabase client
+    // SDKs differ in how they spell the scheme — and unlike the shared secret,
+    // a JWT's authenticity does not rest on the header being byte-identical.
+    let service_match = match (auth.bearer.as_deref(), presented) {
+        (Some(expected), Some(raw)) => raw
+            .strip_prefix("Bearer ")
+            .is_some_and(|t| !t.is_empty() && const_time_eq(t.as_bytes(), expected.as_bytes())),
+        _ => false,
+    };
+
+    let principal = if service_match {
         Principal::Service
-    } else if let Some(verifier) = auth.supabase.as_ref() {
+    } else if let (Some(verifier), Some(token)) =
+        (auth.supabase.as_ref(), bearer_token(presented))
+    {
         match verifier.verify(token).await {
             Ok(identity) => Principal::User(Box::new(identity)),
             Err(AuthError::Unauthorized) => return unauthorized(),
