@@ -62,6 +62,13 @@ spec:
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://dd-otel-collector.observability.svc.cluster.local:4318" }
             - { name: OTEL_SERVICE_NAME, value: "dd-fabrication-server" }
             - { name: RUST_LOG, value: "info" }
+            # The DSN provisioned by k8s/externalsecret.yaml. Without this the
+            # ExternalSecret materialized a Secret that nothing read, and
+            # src/persistence.rs — which reads FABRICATION_DATABASE_URL — would
+            # start with persistence silently disabled.
+            - name: FABRICATION_DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: dd-daedalus-fabrication-secrets, key: FABRICATION_DATABASE_URL }
             - name: POD_NAME
               valueFrom: { fieldRef: { fieldPath: metadata.name } }
             - name: POD_NAMESPACE
