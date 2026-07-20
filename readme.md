@@ -142,6 +142,18 @@ The crate is also packaged with Nix (`flake.nix`, `.nix/`) and a `Dockerfile` fo
 
 ## Environment
 
+### Supabase auth invariants — do not weaken
+
+- **A pinned issuer is mandatory.** `SOUND_RECORDER_SUPABASE_ISSUER` (derived
+  from `SOUND_RECORDER_SUPABASE_URL` when unset) must resolve, or Supabase auth
+  stays off. `aud` is `authenticated` on *every* Supabase project, so `iss` is
+  the only claim that binds a token to this one. See `SupabaseConfig::is_enabled`.
+- **An unconfirmed email claim is discarded.** The verifier only keeps `email`
+  when the token asserts `email_verified` (top-level or under `user_metadata`).
+  Without that, an email-keyed decision is only as strong as the project's
+  "Confirm email" setting — with it off, anyone can sign up claiming someone
+  else's address. The token is still valid; `sub` remains the account identity.
+
 | Var | Default | Notes |
 | --- | --- | --- |
 | `HOST` | `0.0.0.0` | Bind host. |
@@ -180,7 +192,7 @@ The crate is also packaged with Nix (`flake.nix`, `.nix/`) and a `Dockerfile` fo
 | `SOUND_RECORDER_SUPABASE_PUBLISHABLE_KEY` / `SUPABASE_PUBLISHABLE_KEY` | unset | Publishable (or legacy anon) key used with the caller's JWT for typed `/api/v1/data/*` reads. It is not a service-role key. |
 | `SOUND_RECORDER_SUPABASE_JWT_SECRET` / `SUPABASE_JWT_SECRET` | unset | Legacy HS256 JWT secret. Enables verifying HS256 Supabase tokens. |
 | `SOUND_RECORDER_SUPABASE_JWKS_URL` | `${SUPABASE_URL}/auth/v1/.well-known/jwks.json` | JWKS endpoint for asymmetric (RS256/ES256) Supabase signing keys. It must share the project URL's origin and is cached for at most ten minutes. |
-| `SOUND_RECORDER_SUPABASE_ISSUER` | `${SUPABASE_URL}/auth/v1` | Expected `iss` claim. |
+| `SOUND_RECORDER_SUPABASE_ISSUER` | `${SUPABASE_URL}/auth/v1` | Expected `iss` claim. **Required for Supabase auth to be enabled at all.** `aud` is the literal `authenticated` on every Supabase project, so `iss` is the only claim binding a token to *this* project; without it the verifier is not built and token-authenticated routes report unavailable rather than accepting tokens from any project. Setting `SOUND_RECORDER_SUPABASE_URL` derives it automatically — a setup that configures only a raw `SOUND_RECORDER_SUPABASE_JWT_SECRET` (local/dev) must set this variable explicitly. |
 | `SOUND_RECORDER_SUPABASE_AUDIENCE` | `authenticated` | Expected `aud` claim. |
 | `SOUND_RECORDER_SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_SERVICE_ROLE_KEY` | unset | Server-only Supabase service-role key. Required for `DELETE /api/mobile/v1/account`; never expose it to the mobile app. |
 | `SOUND_RECORDER_REQUIRE_SUPABASE` | `true` | Makes complete Supabase account support (URL/JWKS/issuer, publishable key, service-role key) part of readiness. Set `false` only for isolated anonymous/local development. |

@@ -49,6 +49,35 @@ struct SupabaseClaims {
     sub: String,
     #[serde(default)]
     email: Option<String>,
+    /// Supabase places email confirmation state here. It is a top-level claim on
+    /// current tokens and a `user_metadata` field on older ones, so both are
+    /// read and either one asserting confirmation is enough.
+    #[serde(default)]
+    email_verified: Option<bool>,
+    #[serde(default)]
+    user_metadata: Option<UserMetadata>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct UserMetadata {
+    #[serde(default)]
+    email_verified: Option<bool>,
+}
+
+impl SupabaseClaims {
+    /// Whether Supabase has confirmed the caller actually controls this address.
+    ///
+    /// Every email-keyed decision downstream (account display identity, cloud
+    /// linking, operator gating) is only as strong as the project's "Confirm
+    /// email" setting. With confirmation disabled, anyone can sign up claiming
+    /// someone else's address and receive a cryptographically valid token
+    /// carrying it. Requiring confirmation here makes those decisions hold
+    /// regardless of how the Supabase project is configured.
+    fn email_is_confirmed(&self) -> bool {
+        self.email_verified
+            .or(self.user_metadata.as_ref().and_then(|m| m.email_verified))
+            .unwrap_or(false)
+    }
 }
 
 pub(crate) struct JwksCacheEntry {
@@ -97,6 +126,11 @@ impl SupabaseVerifier {
             validation.set_issuer(&[issuer.as_str()]);
         }
         validation.validate_exp = true;
+        // `aud` is "authenticated" on every Supabase project, so it identifies
+        // nothing on its own; `iss` is what pins the token to *our* project.
+        // SupabaseConfig::is_enabled refuses to build a verifier without one, so
+        // this is belt-and-braces.
+        debug_assert!(self.issuer.is_some(), "issuer must be pinned");
         validation
     }
 
@@ -139,13 +173,26 @@ impl SupabaseVerifier {
         {
             return Err(ServiceError::Unauthorized);
         }
-        Ok(SupabaseIdentity {
-            subject,
-            email: claims
-                .email
-                .map(|email| email.trim().to_string())
-                .filter(|email| !email.is_empty() && email.len() <= 320),
-        })
+        // An unconfirmed address is not evidence of identity, so it is discarded
+        // before anything downstream can key a decision on it. The token is
+        // still accepted — `sub` is what identifies the account — but the
+        // identity carries no email, exactly as if the claim were absent.
+        let email_is_confirmed = claims.email_is_confirmed();
+        let email = claims
+            .email
+            .map(|email| email.trim().to_string())
+            .filter(|email| !email.is_empty() && email.len() <= 320)
+            .filter(|_| {
+                if email_is_confirmed {
+                    return true;
+                }
+                tracing::warn!(
+                    auth.subject = %subject,
+                    "Supabase token carries an unconfirmed email claim; discarding it"
+                );
+                false
+            });
+        Ok(SupabaseIdentity { subject, email })
     }
 
     async fn jwk_for_kid(
@@ -269,7 +316,156 @@ pub(crate) fn is_supported_supabase_algorithm(algorithm: Algorithm) -> bool {
 mod tests {
     use jsonwebtoken::{jwk::Jwk, Algorithm};
 
-    use super::jwk_is_usable_for_algorithm;
+    use super::{jwk_is_usable_for_algorithm, SupabaseClaims, SupabaseVerifier, UserMetadata};
+    use crate::service::SupabaseConfig;
+
+    const TEST_ISSUER: &str = "https://project.supabase.co/auth/v1";
+
+    fn pinned_config() -> SupabaseConfig {
+        SupabaseConfig {
+            url: Some("https://project.supabase.co".to_string()),
+            jwt_secret: Some("legacy-secret".to_string()),
+            jwks_url: None,
+            issuer: Some(TEST_ISSUER.to_string()),
+            audience: "authenticated".to_string(),
+            publishable_key: None,
+            service_role_key: None,
+            validation_errors: Vec::new(),
+        }
+    }
+
+    /// Mint an HS256 token the way Supabase would, so the whole verify path
+    /// (not just the claim helper) is exercised.
+    fn hs256_token(body: serde_json::Value) -> String {
+        use jsonwebtoken::{encode, EncodingKey, Header};
+        encode(
+            &Header::new(Algorithm::HS256),
+            &body,
+            &EncodingKey::from_secret(b"legacy-secret"),
+        )
+        .expect("token encodes")
+    }
+
+    fn token_body(email_verified: Option<bool>) -> serde_json::Value {
+        let exp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            + 3_600;
+        let mut body = serde_json::json!({
+            "sub": "00000000-0000-4000-8000-000000000001",
+            "email": "listener@example.test",
+            "aud": "authenticated",
+            "iss": TEST_ISSUER,
+            "exp": exp,
+        });
+        if let Some(verified) = email_verified {
+            body["email_verified"] = serde_json::Value::Bool(verified);
+        }
+        body
+    }
+
+    #[test]
+    fn auth_refuses_to_enable_without_a_pinned_issuer() {
+        // `aud` is the literal "authenticated" on every Supabase project, so
+        // `iss` is the only claim binding a token to this one. Without it a
+        // token from an unrelated project passes every other check.
+        assert!(SupabaseVerifier::from_config(&pinned_config()).is_some());
+
+        let mut unpinned = pinned_config();
+        unpinned.issuer = None;
+        assert!(
+            SupabaseVerifier::from_config(&unpinned).is_none(),
+            "an unpinned issuer would admit tokens from any Supabase project"
+        );
+    }
+
+    #[tokio::test]
+    async fn verification_drops_an_unconfirmed_email_but_keeps_the_subject() {
+        let verifier = SupabaseVerifier::from_config(&pinned_config()).expect("verifier");
+        let http = reqwest::Client::new();
+
+        let confirmed = verifier
+            .verify(&http, &hs256_token(token_body(Some(true))))
+            .await
+            .expect("a confirmed token verifies");
+        assert_eq!(confirmed.email.as_deref(), Some("listener@example.test"));
+
+        for unconfirmed in [Some(false), None] {
+            let identity = verifier
+                .verify(&http, &hs256_token(token_body(unconfirmed)))
+                .await
+                .expect("the token itself is still valid");
+            assert_eq!(
+                identity.subject, "00000000-0000-4000-8000-000000000001",
+                "the subject still identifies the account"
+            );
+            assert_eq!(
+                identity.email, None,
+                "an unconfirmed address must never reach an email-keyed decision"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_token_from_another_supabase_project_is_rejected() {
+        let verifier = SupabaseVerifier::from_config(&pinned_config()).expect("verifier");
+        let http = reqwest::Client::new();
+        let mut body = token_body(Some(true));
+        body["iss"] = serde_json::Value::String("https://evil.supabase.co/auth/v1".to_string());
+        assert!(verifier.verify(&http, &hs256_token(body)).await.is_err());
+    }
+
+    fn claims(email: &str, verified: Option<bool>, meta_verified: Option<bool>) -> SupabaseClaims {
+        SupabaseClaims {
+            sub: "user-1".to_string(),
+            email: Some(email.to_string()),
+            email_verified: verified,
+            user_metadata: meta_verified.map(|v| UserMetadata {
+                email_verified: Some(v),
+            }),
+        }
+    }
+
+    #[test]
+    fn an_unconfirmed_email_is_never_trusted() {
+        // Email-keyed decisions are only as strong as the Supabase project's
+        // "Confirm email" setting. With it off, anyone could sign up claiming
+        // someone else's address and get a cryptographically valid token.
+        assert!(!claims("listener@example.test", Some(false), None).email_is_confirmed());
+        // A token with no confirmation claim at all must fail closed.
+        assert!(!claims("listener@example.test", None, None).email_is_confirmed());
+    }
+
+    #[test]
+    fn confirmation_is_read_from_either_claim_location() {
+        // Current Supabase tokens carry a top-level `email_verified`; older ones
+        // carry it under `user_metadata`. Either asserting it is sufficient.
+        assert!(claims("a@b.com", Some(true), None).email_is_confirmed());
+        assert!(claims("a@b.com", None, Some(true)).email_is_confirmed());
+        assert!(claims("a@b.com", Some(true), Some(false)).email_is_confirmed());
+    }
+
+    #[test]
+    fn confirmation_claims_parse_from_a_real_token_body() {
+        let top: SupabaseClaims = serde_json::from_str(
+            r#"{"sub":"u1","email":"a@b.com","email_verified":true,"aud":"authenticated"}"#,
+        )
+        .expect("parses");
+        assert!(top.email_is_confirmed());
+
+        let nested: SupabaseClaims = serde_json::from_str(
+            r#"{"sub":"u1","email":"a@b.com","user_metadata":{"email_verified":true}}"#,
+        )
+        .expect("parses");
+        assert!(nested.email_is_confirmed());
+
+        // Unknown claims must not break deserialization.
+        let extra: SupabaseClaims =
+            serde_json::from_str(r#"{"sub":"u1","email":"a@b.com","role":"authenticated"}"#)
+                .expect("parses");
+        assert!(!extra.email_is_confirmed());
+    }
 
     #[test]
     fn jwks_key_must_match_the_token_algorithm_and_signature_use() {
