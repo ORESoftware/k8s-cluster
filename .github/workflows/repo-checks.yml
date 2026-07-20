@@ -178,7 +178,7 @@ jobs:
           git submodule update --init --depth 1 -- remote/deployments/mip-solver-node.rs
 
       - name: Setup kubectl
-        uses: azure/setup-kubectl@v4
+        uses: azure/setup-kubectl@v5
         with:
           version: v1.32.2
 
