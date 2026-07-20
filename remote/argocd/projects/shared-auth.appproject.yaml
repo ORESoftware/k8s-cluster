@@ -1,0 +1,28 @@
+# AppProject for the shared auth server — STRICT. The app repo
+# (ORESoftware/shared-auth-server.rs) was authored against the contract (no
+# Namespace/ClusterRole/CRD in deploy/k8s), so this enforces
+# clusterResourceWhitelist: [] from day one.
+#
+# sourceRepos is the app repo itself. Argo tracks it DIRECTLY, not the
+# k8s-cluster submodule path (remote/submodules/shared-auth-server.rs), which is
+# inventory/pin only — repo-server has submodule checkout disabled. See
+# docs/app-deploy-contract.md.
+#
+#   kubectl apply -f remote/argocd/projects/shared-auth.tenant.yaml
+#   kubectl apply -f remote/argocd/projects/shared-auth.appproject.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: shared-auth
+  namespace: argocd
+spec:
+  description: "Tenant project for the shared auth server — namespace shared-auth, no cluster resources."
+  sourceRepos:
+    - "git@github.com:ORESoftware/shared-auth-server.rs.git"
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: shared-auth
+  clusterResourceWhitelist: []
+  namespaceResourceBlacklist:
+    - { group: "", kind: ResourceQuota }
+    - { group: "", kind: LimitRange }
