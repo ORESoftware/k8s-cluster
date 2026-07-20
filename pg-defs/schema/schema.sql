@@ -6613,6 +6613,162 @@ create index if not exists fiducia_sync_idempotency_created_idx
   on fiducia.sync_idempotency_keys (created_at);
 
 -- ════════════════════════════════════════════════════════════════════════════
+-- fiducia BILLING (payments: Stripe + PayPal).
+-- ----------------------------------------------------------------------------
+-- Mirror of fiducia-interfaces sql/customer.sql BILLING section (canonical).
+-- Kept in step by that repo's pgdefs-drift.test.mjs. Server-authoritative,
+-- off the local-first sync feed: holds provider tokens + the webhook ledger.
+-- No card/bank numbers are ever stored; providers tokenize.
+-- ════════════════════════════════════════════════════════════════════════════
+
+create table if not exists fiducia.billing_customers (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references fiducia.orgs (id) on delete cascade,
+  provider varchar(16) not null,
+  provider_customer_id varchar(255) not null,
+  email varchar(320),
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint fiducia_billing_customers_provider_chk check (provider in ('stripe', 'paypal'))
+);
+create unique index if not exists fiducia_billing_customers_org_provider_uq
+  on fiducia.billing_customers (org_id, provider);
+create unique index if not exists fiducia_billing_customers_provider_id_uq
+  on fiducia.billing_customers (provider, provider_customer_id);
+
+-- Saved payment instrument: the provider token plus DISPLAY-ONLY metadata. No
+-- PAN, no CVV, no expiry beyond what a provider returns for rendering.
+create table if not exists fiducia.payment_methods (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references fiducia.orgs (id) on delete cascade,
+  billing_customer_id uuid not null references fiducia.billing_customers (id) on delete cascade,
+  provider varchar(16) not null,
+  provider_payment_method_id varchar(255) not null,
+  kind varchar(32) not null,
+  brand varchar(32),
+  last4 varchar(4),
+  exp_month smallint,
+  exp_year smallint,
+  is_default boolean default false not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint fiducia_payment_methods_provider_chk check (provider in ('stripe', 'paypal')),
+  constraint fiducia_payment_methods_last4_chk check (last4 is null or last4 ~ '^[0-9]{4}$'),
+  constraint fiducia_payment_methods_exp_month_chk
+    check (exp_month is null or exp_month between 1 and 12)
+);
+create unique index if not exists fiducia_payment_methods_provider_id_uq
+  on fiducia.payment_methods (provider, provider_payment_method_id);
+create index if not exists fiducia_payment_methods_customer_idx
+  on fiducia.payment_methods (billing_customer_id);
+-- At most one default instrument per billing customer.
+create unique index if not exists fiducia_payment_methods_one_default_uq
+  on fiducia.payment_methods (billing_customer_id) where is_default;
+
+-- Recurring subscription. `status` mirrors the provider's lifecycle vocabulary
+-- (Stripe's is the superset; PayPal statuses map onto it).
+create table if not exists fiducia.billing_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references fiducia.orgs (id) on delete cascade,
+  billing_customer_id uuid not null references fiducia.billing_customers (id) on delete cascade,
+  provider varchar(16) not null,
+  provider_subscription_id varchar(255) not null,
+  plan varchar(120) not null,
+  status varchar(32) not null,
+  current_period_start timestamptz,
+  current_period_end timestamptz,
+  cancel_at_period_end boolean default false not null,
+  canceled_at timestamptz,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint fiducia_billing_subscriptions_provider_chk check (provider in ('stripe', 'paypal')),
+  constraint fiducia_billing_subscriptions_status_chk check (status in ('trialing', 'active', 'past_due', 'canceled', 'unpaid', 'incomplete', 'incomplete_expired', 'paused'))
+);
+create unique index if not exists fiducia_billing_subscriptions_provider_id_uq
+  on fiducia.billing_subscriptions (provider, provider_subscription_id);
+create index if not exists fiducia_billing_subscriptions_org_idx
+  on fiducia.billing_subscriptions (org_id);
+
+-- Issued invoice. Amounts are minor units of `currency` (ISO 4217, lowercased).
+create table if not exists fiducia.invoices (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references fiducia.orgs (id) on delete cascade,
+  billing_customer_id uuid references fiducia.billing_customers (id) on delete set null,
+  subscription_id uuid references fiducia.billing_subscriptions (id) on delete set null,
+  provider varchar(16) not null,
+  provider_invoice_id varchar(255) not null,
+  status varchar(32) not null,
+  amount_due_cents bigint not null,
+  amount_paid_cents bigint default 0 not null,
+  currency varchar(3) not null,
+  period_start timestamptz,
+  period_end timestamptz,
+  hosted_invoice_url text,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint fiducia_invoices_provider_chk check (provider in ('stripe', 'paypal')),
+  constraint fiducia_invoices_status_chk
+    check (status in ('draft', 'open', 'paid', 'void', 'uncollectible')),
+  constraint fiducia_invoices_currency_chk check (currency ~ '^[a-z]{3}$'),
+  constraint fiducia_invoices_amount_due_chk check (amount_due_cents >= 0),
+  constraint fiducia_invoices_amount_paid_chk check (amount_paid_cents >= 0)
+);
+create unique index if not exists fiducia_invoices_provider_id_uq
+  on fiducia.invoices (provider, provider_invoice_id);
+create index if not exists invoices_org_idx on invoices (org_id);
+create index if not exists invoices_subscription_idx on invoices (subscription_id);
+
+-- A charge/capture. One invoice can have several (retries, partial captures).
+create table if not exists fiducia.payments (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references fiducia.orgs (id) on delete cascade,
+  invoice_id uuid references fiducia.invoices (id) on delete set null,
+  payment_method_id uuid references fiducia.payment_methods (id) on delete set null,
+  provider varchar(16) not null,
+  provider_payment_id varchar(255) not null,
+  status varchar(32) not null,
+  amount_cents bigint not null,
+  currency varchar(3) not null,
+  failure_code varchar(120),
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint fiducia_payments_provider_chk check (provider in ('stripe', 'paypal')),
+  constraint fiducia_payments_status_chk check (status in ('pending', 'processing', 'succeeded', 'failed', 'canceled', 'refunded', 'partially_refunded')),
+  constraint fiducia_payments_currency_chk check (currency ~ '^[a-z]{3}$'),
+  constraint fiducia_payments_amount_chk check (amount_cents >= 0)
+);
+create unique index if not exists fiducia_payments_provider_id_uq
+  on fiducia.payments (provider, provider_payment_id);
+create index if not exists payments_org_idx on payments (org_id);
+create index if not exists payments_invoice_idx on payments (invoice_id);
+
+-- Webhook ledger: the exactly-once + signature-verification control surface for
+-- inbound provider events. The unique (provider, provider_event_id) lets the
+-- handler INSERT ... ON CONFLICT DO NOTHING and process only the row it actually
+-- inserted, so a provider's at-least-once redelivery is idempotent.
+-- `signature_verified` records that the provider signature was checked BEFORE
+-- the event was trusted; `payload_sha256` binds the stored decision to the exact
+-- bytes verified. Unprocessed rows (processed_at IS NULL) are the retry queue.
+create table if not exists fiducia.billing_webhook_events (
+  id uuid primary key default gen_random_uuid(),
+  provider varchar(16) not null,
+  provider_event_id varchar(255) not null,
+  event_type varchar(120) not null,
+  signature_verified boolean not null,
+  payload_sha256 varchar(64) not null,
+  received_at timestamptz default now() not null,
+  processed_at timestamptz,
+  process_error text,
+  constraint fiducia_billing_webhook_events_provider_chk check (provider in ('stripe', 'paypal')),
+  constraint fiducia_billing_webhook_events_payload_sha_chk
+    check (payload_sha256 ~ '^[0-9a-f]{64}$')
+);
+create unique index if not exists fiducia_billing_webhook_events_provider_event_uq
+  on fiducia.billing_webhook_events (provider, provider_event_id);
+create index if not exists fiducia_billing_webhook_events_unprocessed_idx
+  on fiducia.billing_webhook_events (received_at) where processed_at is null;
+
+-- ════════════════════════════════════════════════════════════════════════════
 -- t2v — voice-to-text / text-to-voice platform (t2v-v2t.rs: t2v-api JSON
 -- server + t2v-web MASH dashboard).
 -- ----------------------------------------------------------------------------
