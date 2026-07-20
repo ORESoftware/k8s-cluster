@@ -131,14 +131,34 @@ spec:
                 secretKeyRef:
                   name: dd-billing-server-secrets
                   key: fiducia_api_key
-            # The JSON API is gated by a bearer token in addition to
-            # any upstream gateway (`dd-remote-auth`). Without this set
-            # the API is open to anyone who can reach the listener.
+            # SERVICE-TO-SERVICE bearer. A single shared secret that names no
+            # user and no tenant — never hand it to an end user or embed it in
+            # a client app. Per-user identity comes from Supabase below.
             - name: BILLING_API_AUTH_BEARER
               valueFrom:
                 secretKeyRef:
                   name: dd-billing-server-secrets
                   key: api_auth_bearer
+            # Per-user Supabase JWT verification. `optional: true` so a cluster
+            # that has not yet had `supabase_url` added to
+            # `dd/remote-dev/billing-server-secrets` still rolls out; the
+            # server then logs a WARN that per-user auth is disabled.
+            - name: BILLING_SUPABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-billing-server-secrets
+                  key: supabase_url
+                  optional: true
+            # TODO(migration): flip to 'true' — this is the setting that
+            # actually closes the cross-tenant IDOR. While it is 'false', the
+            # shared BILLING_API_AUTH_BEARER above is still accepted on
+            # /v1/tenants/{tenant_id}/... routes, so any holder of it can act
+            # on any tenant. It is 'false' here only so this deploy does not
+            # hard-fail before `supabase_url` is populated and callers have
+            # been moved onto per-user tokens. See "Migration path for existing
+            # service callers" in readme.md.
+            - name: BILLING_TENANT_ROUTES_REQUIRE_USER_JWT
+              value: 'false'
             # Admin UI is mounted at /admin; require its own bearer
             # even when fronted by the gateway.
             - name: BILLING_ADMIN_AUTH_BEARER
