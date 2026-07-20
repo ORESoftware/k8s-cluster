@@ -1,5 +1,7 @@
 use std::{env, fmt};
 
+use crate::supabase_auth::SupabaseConfig;
+
 pub const DEFAULT_STRIPE_API_VERSION: &str = "2026-04-22.dahlia";
 
 #[derive(Clone)]
@@ -72,17 +74,40 @@ pub struct Config {
     /// operator dashboard hosted elsewhere needs to embed admin actions.
     pub admin_allowed_origins: Vec<String>,
 
-    /// Bearer token for the JSON API (`/v1/...`). When set, every
-    /// tenant-scoped route requires `Authorization: Bearer <token>`
-    /// (constant-time compared). Required to boot: without it the entire API
-    /// is open to anyone who can reach the listener, so the server refuses to
-    /// start unless this is set (or `BILLING_ALLOW_INSECURE_DEV=1` is given for
-    /// local dev).
+    /// **Service-to-service** bearer token for the JSON API (`/v1/...`).
     ///
-    /// Production deployments should additionally front the listener
-    /// with `dd-remote-auth` or another gateway that enforces tenant
-    /// ownership; this token is the "fail-closed" floor.
+    /// This is a single process-wide shared secret. It authenticates *a
+    /// caller*, and deliberately carries no identity beyond "something holding
+    /// the shared token". It must therefore never be handed to an end user or
+    /// embedded in a client application: anyone holding it is, as far as this
+    /// token is concerned, every tenant at once.
+    ///
+    /// Required to boot: without it the entire API is open to anyone who can
+    /// reach the listener, so the server refuses to start unless this is set
+    /// (or `BILLING_ALLOW_INSECURE_DEV=1` is given for local dev).
+    ///
+    /// Per-*user* authentication and per-*tenant* authorization are handled
+    /// separately, by [`Self::supabase`] and
+    /// [`Self::tenant_routes_require_user_jwt`].
     pub api_auth_bearer: Option<String>,
+
+    /// Supabase wiring for per-user JWT verification. See
+    /// [`crate::supabase_auth`].
+    pub supabase: SupabaseConfig,
+
+    /// Require a verified Supabase JWT (not merely the shared service bearer)
+    /// on every tenant-scoped `/v1/tenants/{tenant_id}/...` route, and check
+    /// that the caller is entitled to that specific tenant.
+    ///
+    /// **Defaults to `true` — fail-closed.** With it off, the shared service
+    /// bearer alone is sufficient on tenant-scoped routes, which is precisely
+    /// the IDOR this setting exists to close: any holder of that one token can
+    /// operate on any tenant by editing the path. `false` is a *migration
+    /// window*, not a supported steady state. Set
+    /// `BILLING_TENANT_ROUTES_REQUIRE_USER_JWT=false` only while callers are
+    /// being moved onto Supabase tokens; the server logs a WARN every boot for
+    /// as long as it is off.
+    pub tenant_routes_require_user_jwt: bool,
 
     /// Refuse outbound HTTP to private / loopback / link-local IPs.
     /// Protects `tenant.webhook` jobs and notification channels from
@@ -159,6 +184,13 @@ impl fmt::Debug for Config {
                 &self.fiducia_request_timeout_ms,
             )
             .field("nats_publish_enabled", &self.nats_publish_enabled)
+            // SupabaseConfig has its own redacting Debug — the JWT secret is
+            // never rendered.
+            .field("supabase", &self.supabase)
+            .field(
+                "tenant_routes_require_user_jwt",
+                &self.tenant_routes_require_user_jwt,
+            )
             .finish_non_exhaustive()
     }
 }
@@ -233,6 +265,44 @@ impl Config {
                      BILLING_ALLOW_INSECURE_DEV=1 for local development."
                 );
             }
+        }
+
+        // Per-user Supabase auth. `BILLING_SUPABASE_URL` is the only required
+        // value; the issuer and JWKS URL follow the hosted layout unless a
+        // self-hosted GoTrue deployment overrides them.
+        let supabase_url = optional_trimmed_env("BILLING_SUPABASE_URL");
+        let supabase = SupabaseConfig {
+            issuer: optional_trimmed_env("BILLING_SUPABASE_JWT_ISS")
+                .or_else(|| supabase_url.as_deref().map(SupabaseConfig::issuer_for)),
+            jwks_url: optional_trimmed_env("BILLING_SUPABASE_JWKS_URL")
+                .or_else(|| supabase_url.as_deref().map(SupabaseConfig::jwks_url_for)),
+            audience: optional_trimmed_env("BILLING_SUPABASE_JWT_AUD")
+                .unwrap_or_else(|| "authenticated".to_string()),
+            jwt_secret: optional_trimmed_env("BILLING_SUPABASE_JWT_SECRET"),
+            url: supabase_url,
+        };
+
+        // Fail-closed by default: tenant-scoped routes require a per-user token.
+        let tenant_routes_require_user_jwt =
+            env_bool("BILLING_TENANT_ROUTES_REQUIRE_USER_JWT", true);
+
+        if !allow_insecure_dev && tenant_routes_require_user_jwt && !supabase.is_enabled() {
+            // Booting in this state would 503 every tenant-scoped request,
+            // because the router would demand a JWT it has no way to verify.
+            // Refuse loudly at boot instead of failing per-request in prod.
+            anyhow::bail!(
+                "refusing to boot: tenant-scoped /v1/tenants/{{tenant_id}}/... routes \
+                 require a verified Supabase JWT, but Supabase is not configured. \
+                 Set BILLING_SUPABASE_URL (and, for a self-hosted GoTrue, \
+                 BILLING_SUPABASE_JWT_ISS / BILLING_SUPABASE_JWKS_URL). \
+                 \n\nMigration path for existing service callers: set \
+                 BILLING_TENANT_ROUTES_REQUIRE_USER_JWT=false to keep accepting \
+                 the shared BILLING_API_AUTH_BEARER on tenant routes while those \
+                 callers are moved onto per-user Supabase tokens. That leaves the \
+                 cross-tenant IDOR open, so treat it as a time-boxed migration \
+                 window — not a setting to leave in place. \
+                 Local development can instead set BILLING_ALLOW_INSECURE_DEV=1."
+            );
         }
 
         Ok(Self {
@@ -310,6 +380,8 @@ impl Config {
             admin_auth_bearer,
             admin_allowed_origins: parse_csv_env("BILLING_ADMIN_ALLOWED_ORIGINS"),
             api_auth_bearer,
+            supabase,
+            tenant_routes_require_user_jwt,
             // Default fail-closed: the only legitimate use for outbound
             // private-IP traffic is dev/integration. Production callers
             // should hit the public webhook URL of their tenant.
@@ -424,6 +496,10 @@ impl Config {
             admin_auth_bearer: None,
             admin_allowed_origins: Vec::new(),
             api_auth_bearer: None,
+            supabase: SupabaseConfig::default(),
+            // Tests build routers without a Supabase project to talk to; the
+            // per-tenant checks have their own focused tests in `api::auth`.
+            tenant_routes_require_user_jwt: false,
             // Tests sometimes hit localhost; default-allow keeps them simple.
             block_private_outbound: false,
             fiducia_enabled: false,
@@ -566,6 +642,7 @@ mod tests {
         config.api_auth_bearer = Some("api-bearer-secret".into());
         config.admin_auth_bearer = Some("admin-bearer-secret".into());
         config.fiducia_api_key = Some("fiducia-secret".into());
+        config.supabase.jwt_secret = Some("supabase-jwt-secret".into());
 
         let output = format!("{config:?}");
         for secret in [
@@ -575,6 +652,7 @@ mod tests {
             "api-bearer-secret",
             "admin-bearer-secret",
             "fiducia-secret",
+            "supabase-jwt-secret",
         ] {
             assert!(!output.contains(secret));
         }

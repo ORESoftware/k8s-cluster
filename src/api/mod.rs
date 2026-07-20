@@ -13,11 +13,11 @@ pub mod vendors;
 pub mod verify;
 pub mod webhooks;
 
+use axum::Router;
 use axum::http::StatusCode;
 use axum::middleware;
 use axum::response::{Html, IntoResponse};
 use axum::routing::{get, post};
-use axum::Router;
 use std::time::Duration;
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::timeout::TimeoutLayer;
@@ -44,11 +44,31 @@ pub fn build_router(state: AppState) -> Router {
         // open-API mode. Production manifests inject the bearer via
         // SealedSecrets; this catches the misconfig.
         tracing::warn!(
-            "BILLING_API_AUTH_BEARER is unset — JSON API is unauthenticated. \
-             Set it for any reachable-from-network deployment."
+            "BILLING_API_AUTH_BEARER is unset — the service-to-service bearer is \
+             disabled. Set it for any reachable-from-network deployment."
         );
     } else {
-        tracing::info!("JSON API bearer auth enabled");
+        tracing::info!("service-to-service bearer auth enabled");
+    }
+    if api_auth.supabase.is_some() {
+        tracing::info!("per-user Supabase JWT verification enabled");
+    } else {
+        tracing::warn!(
+            "BILLING_SUPABASE_URL is unset — per-user JWT verification is disabled. \
+             Tenant ownership is delegated to the upstream gateway, so any holder of \
+             BILLING_API_AUTH_BEARER can act on any tenant."
+        );
+    }
+    if api_auth.require_user_jwt {
+        tracing::info!(
+            "tenant-scoped routes require a verified Supabase JWT and per-tenant entitlement"
+        );
+    } else {
+        tracing::warn!(
+            "BILLING_TENANT_ROUTES_REQUIRE_USER_JWT=false — the shared service bearer is \
+             accepted on /v1/tenants/{{tenant_id}}/... routes, which leaves the \
+             cross-tenant IDOR open. This is a migration window, not a steady state."
+        );
     }
 
     let mut router = Router::new()
