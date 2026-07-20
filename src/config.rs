@@ -642,6 +642,7 @@ mod tests {
         config.api_auth_bearer = Some("api-bearer-secret".into());
         config.admin_auth_bearer = Some("admin-bearer-secret".into());
         config.fiducia_api_key = Some("fiducia-secret".into());
+        config.supabase.jwt_secret = Some("supabase-jwt-secret".into());
 
         let output = format!("{config:?}");
         for secret in [
@@ -651,6 +652,7 @@ mod tests {
             "api-bearer-secret",
             "admin-bearer-secret",
             "fiducia-secret",
+            "supabase-jwt-secret",
         ] {
             assert!(!output.contains(secret));
         }
