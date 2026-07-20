@@ -1,0 +1,41 @@
+# dd-shared-auth — the centralized OreSoftware auth server.
+#
+# repoURL is the app repo directly (path deploy/k8s), NOT the k8s-cluster
+# submodule remote/submodules/shared-auth-server.rs — repo-server runs with
+# reposerver.enable.git.submodule=false, so a submodule path renders empty. The
+# submodule is inventory/pin only. See docs/app-deploy-contract.md.
+#
+# PREREQS before applying (left inert until then, per the threefa/daedalus precedent):
+#   1. apply remote/argocd/projects/shared-auth.tenant.yaml     (Namespace + quota + default-deny)
+#   2. apply remote/argocd/projects/shared-auth.appproject.yaml (the enforced boundary)
+#   3. seed the ClusterSecretStore keys the ExternalSecret reads:
+#        dd/shared-auth/supabase-projects  (JSON array of { name, project_ref })
+#        dd/shared-auth/signing-key-pem     (PKCS#8 EC P-256 private key)
+#        dd/shared-auth/database-url        (RDS DSN, search_path=shared_auth)
+#   4. apply db/schema.sql to RDS via dpm (shared_auth schema)
+#   5. publish image ghcr.io/oresoftware/shared-auth-server:main (CI builds it) +
+#      an imagePullSecret if the package is private
+#   6. ArgoCD needs a repo cred for git@github.com:ORESoftware/shared-auth-server.rs.git
+#
+# The gateway route /shared-auth/ is already wired in
+# remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-shared-auth
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: shared-auth
+  source:
+    repoURL: git@github.com:ORESoftware/shared-auth-server.rs.git
+    targetRevision: main
+    path: deploy/k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: shared-auth
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - ServerSideApply=true
