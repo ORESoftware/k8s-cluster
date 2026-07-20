@@ -223,10 +223,27 @@ export STRIPE_WEBHOOK_SECRET=whsec_...
 # Webhook signature verification defaults to ON (fail-closed). Only turn it off
 # for local development against unsigned mock payloads.
 export BILLING_REQUIRE_WEBHOOK_SIGNATURES=false
-# Fail-closed auth: the server refuses to boot with the admin UI enabled and no
-# BILLING_ADMIN_AUTH_BEARER, or with BILLING_API_AUTH_BEARER unset. For local dev
-# either set those bearers or opt out explicitly:
+# Fail-closed auth. The server refuses to boot when any of these hold:
+#   - the admin UI is enabled and BILLING_ADMIN_AUTH_BEARER is unset
+#   - BILLING_API_AUTH_BEARER is unset
+#   - tenant routes require a user JWT (the default) but Supabase is unconfigured
+# For local dev, either set all of them or opt out explicitly:
 export BILLING_ALLOW_INSECURE_DEV=1
+
+# --- Per-user Supabase auth (see "Auth posture" below) ---
+# Enables per-user JWT verification. Issuer and JWKS URL are derived from this.
+export BILLING_SUPABASE_URL=https://<project-ref>.supabase.co
+# Optional; defaults shown.
+# export BILLING_SUPABASE_JWT_AUD=authenticated
+# Override these two only for a self-hosted GoTrue that doesn't follow the
+# hosted URL layout:
+# export BILLING_SUPABASE_JWT_ISS=https://<project-ref>.supabase.co/auth/v1
+# export BILLING_SUPABASE_JWKS_URL=https://<project-ref>.supabase.co/auth/v1/.well-known/jwks.json
+# LEGACY symmetric secret. Leave unset on any project using JWKS signing keys —
+# setting it widens the accepted algorithm set to include HS256 for no benefit.
+# export BILLING_SUPABASE_JWT_SECRET=...
+# Defaults to true (fail-closed). See the migration path in "Auth posture".
+# export BILLING_TENANT_ROUTES_REQUIRE_USER_JWT=false
 export BILLING_FIDUCIA_ENABLED=false # set true with a local/public Fiducia endpoint
 # export BILLING_FIDUCIA_BASE_URL=http://127.0.0.1:8088
 # export BILLING_FIDUCIA_API_KEY=fdc_... # requires locks:write
