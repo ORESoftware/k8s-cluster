@@ -184,6 +184,13 @@ impl fmt::Debug for Config {
                 &self.fiducia_request_timeout_ms,
             )
             .field("nats_publish_enabled", &self.nats_publish_enabled)
+            // SupabaseConfig has its own redacting Debug — the JWT secret is
+            // never rendered.
+            .field("supabase", &self.supabase)
+            .field(
+                "tenant_routes_require_user_jwt",
+                &self.tenant_routes_require_user_jwt,
+            )
             .finish_non_exhaustive()
     }
 }
