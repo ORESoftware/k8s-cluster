@@ -25,7 +25,7 @@ data:
     PORT = os.environ.get("KUBERNETES_SERVICE_PORT", "443")
     BASE_URL = "https://%s:%s" % (HOST, PORT)
     SCRAPE_TIMEOUT = float(os.environ.get("SCRAPE_TIMEOUT_SECONDS", "5"))
-    DEFAULT_WATCH_NAMESPACES = "ai-ml,airbyte,anon-proxy,big-data,daedalus,default,fiducia,headlamp,kafka,messaging,observability,presence,spark,threefa,vpn"
+    DEFAULT_WATCH_NAMESPACES = "ai-ml,airbyte,anon-proxy,big-data,daedalus,default,shared-auth,fiducia,headlamp,kafka,messaging,observability,presence,spark,threefa,vpn"
     DEFAULT_WATCH_APPS = (
         "dd-agent-worker-broker,dd-ai-ml-pipeline,dd-akka-ws-server,dd-apostille-services-server,"
         "dd-athleto-app-rs,dd-athleto-backend,dd-bastion,"
@@ -45,7 +45,7 @@ data:
         "dd-redis-cache,dd-remote-auth,dd-remote-gateway,dd-remote-queue-consumer,"
         "dd-remote-rest-api,dd-remote-web-home,dd-runtime-config,dd-rust-network-mutex,dd-rust-network-mutex-mills,"
         "dd-rust-network-mutex-raft,"
-        "dd-rust-vapi-phone,dd-rust-wss-server,dd-selenium-server,dd-sound-recorder-rs,dd-spark-pipeline-server,"
+        "dd-rust-vapi-phone,dd-rust-wss-server,dd-selenium-server,dd-shared-auth,dd-sound-recorder-rs,dd-spark-pipeline-server,"
         "dd-t2v-api,dd-t2v-web,dd-tempo,dd-threefa-web-server,dd-thread-fleet-exporter,"
         "dd-thread-operator,dd-trading-server,dd-vpn,"
         "dd-web-scraper,dd-webrtc-media,dd-webrtc-signaling,dd-ws-loadtest-rs,"
