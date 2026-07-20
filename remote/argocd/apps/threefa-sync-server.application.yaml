@@ -20,7 +20,11 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  project: default
+  # Enforced boundary: this project pins the app to its own repo + the `threefa` namespace
+  # and forbids cluster-scoped resources (except its own Namespace, transitionally). Apply
+  # remote/argocd/projects/threefa.appproject.yaml BEFORE this, or the sync errors with
+  # "project threefa does not exist". See docs/app-deploy-contract.md.
+  project: threefa
   source:
     repoURL: git@github.com:3FA-app/3fa-backend.rs.git
     targetRevision: main

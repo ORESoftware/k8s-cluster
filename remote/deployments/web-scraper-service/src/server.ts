@@ -16,6 +16,8 @@ import robotsParser from 'robots-parser';
 import type { Browser as PlaywrightBrowser, Page as PlaywrightPage } from 'playwright';
 import type { Browser as PuppeteerBrowser, Page as PuppeteerPage } from 'puppeteer';
 
+import type { ContactExtraction } from './contacts.js';
+
 import {
   ProxyPool,
   parseProxyEntry,
@@ -101,6 +103,10 @@ const config = {
   maxHtmlChars: readNumberEnv('SCRAPER_MAX_HTML_CHARS', 1_000_000),
   maxTextChars: readNumberEnv('SCRAPER_MAX_TEXT_CHARS', 40_000),
   maxLinks: readNumberEnv('SCRAPER_MAX_LINKS', 250),
+  maxPhones: readNumberEnv('SCRAPER_MAX_PHONES', 50),
+  maxEmails: readNumberEnv('SCRAPER_MAX_EMAILS', 50),
+  // Region used to normalize local numbers (no country code) to E.164.
+  contactRegion: (process.env.SCRAPER_CONTACT_REGION ?? 'US').toUpperCase(),
   userAgent:
     process.env.SCRAPER_USER_AGENT ??
     'dd-web-scraper/0.1 (+https://github.com/ORESoftware/k8s-cluster)',
@@ -155,6 +161,17 @@ const ScrapeRequestSchema = z.object({
   includeHtml: z.boolean().optional(),
   includeText: z.boolean().optional(),
   includeLinks: z.boolean().optional(),
+  // Contact extraction is opt-in: callers ask for PII only when the job needs it.
+  // `includeContacts` turns on both phones and emails; the granular flags win.
+  includeContacts: z.boolean().optional(),
+  includePhones: z.boolean().optional(),
+  includeEmails: z.boolean().optional(),
+  contactRegion: z
+    .string()
+    .regex(/^[A-Za-z]{2}$/, 'contactRegion must be an ISO 3166-1 alpha-2 code')
+    .optional(),
+  maxPhones: z.number().int().min(1).optional(),
+  maxEmails: z.number().int().min(1).optional(),
   captureFailureScreenshot: z.boolean().optional(),
   timeoutMs: z.number().int().min(500).optional(),
   maxHtmlChars: z.number().int().min(1_000).optional(),
@@ -243,6 +260,7 @@ type ExtractionResult = {
   };
   fields?: Record<string, string>;
   links?: string[];
+  contacts?: ContactExtraction;
 };
 
 type ExtractionWorkerResponse =
@@ -1187,11 +1205,24 @@ async function extractDocument(
     includeHtml: input.includeHtml,
     includeText: input.includeText,
     includeLinks: input.includeLinks,
+    includePhones: wantsPhones(input),
+    includeEmails: wantsEmails(input),
+    contactRegion: (input.contactRegion ?? config.contactRegion).toUpperCase(),
     maxHtmlChars: getMaxHtmlChars(input),
     maxTextChars: getMaxTextChars(input),
     maxLinks: config.maxLinks,
+    maxPhones: Math.min(input.maxPhones ?? config.maxPhones, config.maxPhones),
+    maxEmails: Math.min(input.maxEmails ?? config.maxEmails, config.maxEmails),
     timeoutMs: getTimeoutMs(input),
   });
+}
+
+function wantsPhones(input: ScrapeRequest): boolean {
+  return input.includePhones ?? input.includeContacts ?? false;
+}
+
+function wantsEmails(input: ScrapeRequest): boolean {
+  return input.includeEmails ?? input.includeContacts ?? false;
 }
 
 function parserForStrategy(strategy: StrategyName): ParserName {
@@ -1210,9 +1241,14 @@ function runExtractionWorker(input: {
   includeHtml?: boolean;
   includeText?: boolean;
   includeLinks?: boolean;
+  includePhones?: boolean;
+  includeEmails?: boolean;
+  contactRegion?: string;
   maxHtmlChars: number;
   maxTextChars: number;
   maxLinks: number;
+  maxPhones: number;
+  maxEmails: number;
   timeoutMs: number;
 }): Promise<ExtractionResult> {
   return parserWorkerSemaphore.run(
