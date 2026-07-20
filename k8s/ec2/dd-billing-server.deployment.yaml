@@ -76,6 +76,29 @@ spec:
               value: /tmp/cargo
             - name: RUST_LOG
               value: info,sqlx=warn,hyper=warn,tower_http=info
+            # Telemetry via the shared `dd-telemetry` crate (src/main.rs calls
+            # dd_telemetry::init). The crate exports OTLP over *HTTP* and
+            # appends /v1/traces itself, so this must be the collector's
+            # otlp-http port 4318 (4317 is the gRPC port and would not work).
+            # This matches the value the crate would otherwise fall back to; it
+            # is set explicitly so the destination is reviewable here rather
+            # than being an invisible library default.
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://dd-otel-collector.observability.svc.cluster.local:4318
+            - name: OTEL_SERVICE_NAME
+              value: dd-billing-server
+            # Downward API -> `k8s.pod.name` / `k8s.namespace.name` on every
+            # exported span. Without these, dd-telemetry's `resource()` falls
+            # back to HOSTNAME for the pod (and stamps no namespace at all), so
+            # spans lose pod attribution.
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
             # Schema changes are applied out-of-band via scripts/dpm.sh
             # (declarative source: schema/schema.sql). The server has no
             # boot-time migration path.
