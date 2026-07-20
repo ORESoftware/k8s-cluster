@@ -229,37 +229,84 @@ pub fn is_exempt_path(uri: &Uri) -> bool {
     false
 }
 
-/// Axum middleware: enforce the bearer when one is configured.
-pub async fn require_api_auth(
-    State(auth): State<Arc<ApiAuth>>,
-    req: Request,
-    next: Next,
-) -> Response {
-    let Some(expected) = auth.bearer.as_deref() else {
-        return next.run(req).await;
-    };
-    if is_exempt_path(req.uri()) {
-        return next.run(req).await;
-    }
-    let provided = req
-        .headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|h| h.strip_prefix("Bearer "))
-        .unwrap_or("");
-    if !provided.is_empty() && const_time_eq(provided.as_bytes(), expected.as_bytes()) {
-        return next.run(req).await;
-    }
-    let mut resp = (
-        StatusCode::UNAUTHORIZED,
-        "api authentication required\n",
-    )
-        .into_response();
+fn unauthorized() -> Response {
+    let mut resp = (StatusCode::UNAUTHORIZED, "api authentication required\n").into_response();
     resp.headers_mut().insert(
         header::WWW_AUTHENTICATE,
         HeaderValue::from_static("Bearer realm=\"billing-api\""),
     );
     resp
+}
+
+/// Authenticate the caller, then authorize them for the tenant in the path.
+///
+/// The two steps are deliberately distinct: step one establishes *who*, step
+/// two establishes *what they may touch*. Conflating them is how the original
+/// IDOR happened — the service knew the caller was authentic and inferred,
+/// wrongly, that this made the request legitimate.
+pub async fn require_api_auth(
+    State(auth): State<Arc<ApiAuth>>,
+    mut req: Request,
+    next: Next,
+) -> Response {
+    if is_exempt_path(req.uri()) {
+        return next.run(req).await;
+    }
+
+    // Fully-open dev mode: no service bearer and no Supabase. `Config::from_env`
+    // refuses to boot into this state unless BILLING_ALLOW_INSECURE_DEV=1.
+    if auth.bearer.is_none() && auth.supabase.is_none() {
+        return next.run(req).await;
+    }
+
+    let presented = req
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok());
+    let Some(token) = bearer_token(presented) else {
+        return unauthorized();
+    };
+
+    // The same header carries both credential kinds, so try the cheap
+    // constant-time comparison first and fall back to JWT verification. A
+    // Supabase token can never collide with the service bearer: the compare is
+    // over the whole string.
+    let principal = if auth
+        .bearer
+        .as_deref()
+        .is_some_and(|expected| const_time_eq(token.as_bytes(), expected.as_bytes()))
+    {
+        Principal::Service
+    } else if let Some(verifier) = auth.supabase.as_ref() {
+        match verifier.verify(token).await {
+            Ok(identity) => Principal::User(Box::new(identity)),
+            Err(AuthError::Unauthorized) => return unauthorized(),
+            Err(AuthError::Unavailable(message)) => {
+                // We could not reach Supabase. That is our failure, not the
+                // caller's — a 401 here would tell a legitimate user their
+                // credentials are bad and invite them to re-login pointlessly.
+                tracing::error!(error = %message, "Supabase verification unavailable");
+                return (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "authentication temporarily unavailable\n",
+                )
+                    .into_response();
+            }
+        }
+    } else {
+        return unauthorized();
+    };
+
+    if let Err(status) = authorize_tenant(&principal, tenant_scope_of(req.uri()), auth.require_user_jwt)
+    {
+        return (status, "not entitled to this tenant\n").into_response();
+    }
+
+    // Hand the verified principal to the handlers. Anything needing the acting
+    // user (audit trails, narrowing a query) reads it from here rather than
+    // re-parsing the token.
+    req.extensions_mut().insert(principal);
+    next.run(req).await
 }
 
 // --- Outbound URL safety helpers --------------------------------------------
