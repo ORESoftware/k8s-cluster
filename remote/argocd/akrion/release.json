@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "promotedAt": "2026-07-19T01:01:00Z",
+  "promotedAt": "2026-07-20T04:56:34Z",
   "source": {
     "repository": "akrion-sim/akrion-monorepo",
-    "revision": "df5007112c0924a58a120177cde208d278096854",
+    "revision": "7d9fa252f622b1c2eac8e094bccab7b96bef101f",
     "workflow": "ci.yml"
   },
   "components": {
