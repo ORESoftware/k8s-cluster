@@ -413,18 +413,123 @@ AES-256-GCM key (`src/crypto.rs`) into `webhook_events.payload_sealed`; the
 plaintext `payload` column is no longer written. The clear-text
 `payload_sha256` is retained for dedup/correlation.
 
-## Auth posture (2026-05-23 hardening)
+## Auth posture
 
-The JSON API is gated by a single in-process bearer token —
-`BILLING_API_AUTH_BEARER` — in addition to whatever upstream gateway
-(`dd-remote-auth`, ALB OIDC, …) is in front of the listener. The bearer
-is a fail-closed floor for any reachable-from-network deployment.
+There are **two kinds of caller**, and they are not interchangeable.
+
+### 1. Service callers — `BILLING_API_AUTH_BEARER`
+
+A single process-wide shared secret. It proves *something authorized is
+calling* and nothing else: it carries no user and **no tenant**.
 
 ```
 Authorization: Bearer <BILLING_API_AUTH_BEARER>
 ```
 
-Exempted paths (no bearer required):
+> **Service-to-service only.** Never hand this token to an end user or embed it
+> in a client application. Anyone holding it is, as far as this credential is
+> concerned, every tenant at once.
+
+It remains **required to boot** (fail-closed): with `BILLING_API_AUTH_BEARER`
+unset the server refuses to start rather than run the API in open mode, unless
+`BILLING_ALLOW_INSECURE_DEV=1` is set explicitly for local development.
+Production manifests inject it via SealedSecrets / ExternalSecrets.
+
+### 2. User callers — Supabase JWT (2026-07)
+
+A per-user Supabase access token, verified in-process on every request by
+`src/supabase_auth.rs`:
+
+```
+Authorization: Bearer <supabase access token>
+```
+
+Verification does all of the following, each with tests:
+
+- **JWKS signature check** against
+  `<BILLING_SUPABASE_URL>/auth/v1/.well-known/jwks.json`, with a 10-minute
+  bounded cache, **single-flighted** refresh (concurrent cold misses share one
+  fetch rather than stampeding the identity provider), and refresh-on-unknown-
+  `kid` **rate-limited to once per 30s** so a flood of tokens bearing random
+  `kid`s cannot amplify into a flood of outbound fetches.
+- **Pinned `iss`.** `aud` is the literal string `authenticated` on *every*
+  Supabase project, so it identifies nothing by itself — `iss` is what binds a
+  token to our project. The verifier refuses to enable without one.
+- **Pinned `aud`** (`BILLING_SUPABASE_JWT_AUD`, default `authenticated`).
+- **`exp` / `nbf`** with a 30-second clock-skew allowance.
+- **No `alg: none`**, and no algorithm outside `{HS256, RS256, ES256}`.
+- **No algorithm confusion.** An RS256/ES256 token is verified against a JWKS
+  key whose *declared* algorithm matches the header; an HS256 token is verified
+  against the configured shared secret and **never** against JWKS key material.
+  On a JWKS-signed project (`BILLING_SUPABASE_JWT_SECRET` unset — the
+  recommended posture) HS256 is rejected outright, so the classic "sign an
+  HS256 token using the RSA public key as the HMAC secret" attack has no path.
+
+### Per-tenant authorization — the IDOR fix
+
+Authentication establishes *who*. Authorization establishes *what they may
+touch*, and the two are enforced separately.
+
+Every tenant-scoped route takes its tenant from the URL —
+`/v1/tenants/{tenant_id}/...`. Historically the service simply **trusted that
+path segment**, delegating ownership entirely to the upstream gateway. Any
+holder of the one shared bearer could read or mutate *any* tenant's ledger,
+connections, and scheduled jobs by editing a single path segment, and nothing
+in this process would object. Anything that bypassed the gateway — a
+port-forward, cluster-internal access, a misconfigured ingress — inherited the
+whole estate.
+
+Now, after authentication, `api::auth::authorize_tenant` asserts **in-process**
+that the caller is entitled to *that specific tenant*, returning `403` if not:
+
+| Caller | Tenant-scoped route | Unscoped route (`POST /v1/tenants`, OAuth, Plaid) |
+| --- | --- | --- |
+| Verified user | allowed **iff** the tenant is in their claims | allowed |
+| Service bearer | `403` (unless the migration flag is off) | allowed |
+| Unparseable tenant id in path | `403` | — |
+
+Entitlement is derived from the token's **`app_metadata.tenant_id` /
+`app_metadata.tenant_ids`** claims. `app_metadata` is the only claim bucket a
+Supabase user *cannot* write to from the client SDK — it is settable solely by
+the service-role key or a database trigger. `user_metadata` is user-writable
+and is deliberately **never** consulted; reading tenancy from there would move
+the IDOR rather than close it.
+
+> **TODO — database-backed membership.** Entitlement is currently claim-only.
+> This database has no tenant-membership table to fall back to: `tenants` has no
+> operator column, and the `users` table models a tenant's *counterparties*
+> (the customers it bills and vendors it pays), **not** people authorized to
+> operate the tenant. Resolving membership through it would grant every billed
+> customer full API access to the tenant that bills them. A real
+> `tenant_memberships (tenant_id, supabase_user_id, role)` table is the
+> follow-up; until it exists, whoever provisions users must populate
+> `app_metadata.tenant_ids`.
+
+### Migration path for existing service callers
+
+`BILLING_TENANT_ROUTES_REQUIRE_USER_JWT` defaults to **`true`** (fail-closed).
+On upgrade, a deployment that has not configured Supabase will **refuse to
+boot** with an error naming both options — a loud failure, deliberately, rather
+than a silent behaviour change on a security boundary.
+
+1. **Before deploying**, set `BILLING_TENANT_ROUTES_REQUIRE_USER_JWT=false` and
+   `BILLING_SUPABASE_URL`. The server boots, verifies Supabase JWTs when
+   callers present them, and still accepts the shared bearer on tenant routes.
+   It logs a WARN every boot for as long as the flag is off.
+2. **Populate `app_metadata.tenant_ids`** for each user, via the service-role
+   key or a database trigger.
+3. **Move callers** onto per-user tokens. Watch for
+   `rejected cross-tenant request` WARNs, which name the subject and tenant.
+4. **Remove the flag** (or set it `true`) to close the IDOR. Service callers
+   are then refused on `/v1/tenants/{tenant_id}/...` and keep working on the
+   unscoped provisioning routes.
+
+Step 4 is the one that actually fixes anything; steps 1–3 are the window in
+which the old behaviour is knowingly retained.
+
+### Exempted paths
+
+No credential required:
 
 - `/healthz`, `/readyz`, `/metrics` — orchestrator probes
 - `/v1/webhooks/*` — provider signatures are the auth model
