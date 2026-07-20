@@ -538,6 +538,12 @@ mod tests {
     fn auth_arc(bearer: Option<&str>) -> Arc<ApiAuth> {
         Arc::new(ApiAuth {
             bearer: bearer.map(str::to_string),
+            // These tests cover the static service-bearer behaviour, which must
+            // be unchanged by the addition of per-user auth. The Supabase and
+            // per-tenant paths have their own tests below and in
+            // `crate::supabase_auth`.
+            supabase: None,
+            require_user_jwt: false,
         })
     }
 
