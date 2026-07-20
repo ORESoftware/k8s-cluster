@@ -373,6 +373,8 @@ impl Config {
             admin_auth_bearer,
             admin_allowed_origins: parse_csv_env("BILLING_ADMIN_ALLOWED_ORIGINS"),
             api_auth_bearer,
+            supabase,
+            tenant_routes_require_user_jwt,
             // Default fail-closed: the only legitimate use for outbound
             // private-IP traffic is dev/integration. Production callers
             // should hit the public webhook URL of their tenant.
