@@ -54,6 +54,34 @@ spec:
     syncOptions: [ ServerSideApply=true ]
 ```
 
+## ⚠️ Submodules are inventory, NOT a render source
+
+ArgoCD's repo-server runs with **`reposerver.enable.git.submodule=false`** (the
+argocd-submodule-init incident). It checks out k8s-cluster **without submodule contents**, so
+any Application whose `path` points inside a gitlink renders **empty**.
+
+Three Applications are already broken this way — their `path` resolves to zero tracked files:
+
+| Application | dead path | fix |
+|---|---|---|
+| `dd-billing-server` | `remote/deployments/billing-server-rs/k8s/ec2` | point `repoURL` at `quaestor-ledger/quaestor-monorepo`, `path: apps/billing-server.rs/k8s` |
+| `dd-dart-server` | `remote/deployments/dart-server/k8s/ec2` | point `repoURL` at its own repo |
+| `dd-gleam-lambda-runner` | `remote/deployments/gleam-lambda-runner/k8s/ec2` | point `repoURL` at its own repo |
+
+**The rule when leaning on org monorepos:** vendor the org monorepo as a submodule
+(`remote/deployments/<org>-monorepo`) for **inventory, pinning, local dev, and digest
+promotion** — but point the Application's `repoURL` at the **monorepo upstream directly**,
+with `path: apps/<app>/k8s`. The gitlink is the *pin record*; Argo reads upstream. CI promotes
+by bumping the gitlink and `targetRevision` together.
+
+This is why the 53 working Applications work: their manifests are duplicated as real files
+under `remote/argocd/`. Moving to monorepo-sourced apps removes that duplication — but only if
+`repoURL` targets the upstream, never the submodule path.
+
+Worked reference: **daedalus** (`remote/argocd/apps/daedalus.applications.yaml` +
+`projects/daedalus.{tenant,appproject}.yaml`, manifests in
+`daedalus-monorepo/apps/*/k8s/`).
+
 ## The AppProject is what makes it enforced (not a suggestion)
 
 One `AppProject` per app pins where it can deploy and forbids cluster-scoped resources.

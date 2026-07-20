@@ -25,12 +25,12 @@ data:
     PORT = os.environ.get("KUBERNETES_SERVICE_PORT", "443")
     BASE_URL = "https://%s:%s" % (HOST, PORT)
     SCRAPE_TIMEOUT = float(os.environ.get("SCRAPE_TIMEOUT_SECONDS", "5"))
-    DEFAULT_WATCH_NAMESPACES = "ai-ml,airbyte,anon-proxy,big-data,default,fiducia,headlamp,kafka,messaging,observability,presence,spark,threefa,vpn"
+    DEFAULT_WATCH_NAMESPACES = "ai-ml,airbyte,anon-proxy,big-data,daedalus,default,fiducia,headlamp,kafka,messaging,observability,presence,spark,threefa,vpn"
     DEFAULT_WATCH_APPS = (
         "dd-agent-worker-broker,dd-ai-ml-pipeline,dd-akka-ws-server,dd-apostille-services-server,"
         "dd-athleto-app-rs,dd-athleto-backend,dd-bastion,"
         "dd-airbyte-postgresql,dd-billing-server,dd-browser-job-runner,dd-browser-test-server,dd-build-server,"
-        "dd-cluster-mcp-rs,dd-compliance-rs,dd-container-pool,dd-contract-service,dd-dagster-postgresql,dd-dart-server,dd-des-rs,dd-des-simulator,"
+        "dd-cluster-mcp-rs,dd-compliance-rs,dd-container-pool,dd-contract-service,dd-daedalus-api-server,dd-daedalus-web-server,dd-dagster-postgresql,dd-dart-server,dd-des-rs,dd-des-simulator,"
         "dd-dev-server-api,dd-economics-server,dd-escrow-rs,dd-fabrication-server,dd-formal-methods-server,dd-formal-methods-service,"
         "dd-fsharp-ws-server,dd-gleam-lambda-runner,dd-gleam-mcp-server,"
         "dd-gleamlang-server,dd-gleamlang-ws-loadtest,"
