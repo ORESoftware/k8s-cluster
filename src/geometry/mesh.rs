@@ -116,7 +116,9 @@ impl Mesh {
 
     /// Total surface area (mm^2).
     pub fn surface_area(&self) -> f64 {
-        (0..self.triangles.len()).map(|t| self.triangle_area(t)).sum()
+        (0..self.triangles.len())
+            .map(|t| self.triangle_area(t))
+            .sum()
     }
 
     /// Signed volume (mm^3) via the divergence/tetrahedron sum. The sign encodes
@@ -179,8 +181,7 @@ pub fn parse_stl(bytes: &[u8]) -> Result<Mesh, String> {
         return Err("stl payload too short to be valid".into());
     }
     if bytes.len() >= 84 {
-        let n =
-            u32::from_le_bytes([bytes[80], bytes[81], bytes[82], bytes[83]]) as usize;
+        let n = u32::from_le_bytes([bytes[80], bytes[81], bytes[82], bytes[83]]) as usize;
         if 84usize.checked_add(50usize.saturating_mul(n)) == Some(bytes.len()) {
             return parse_binary_stl(bytes);
         }
@@ -205,12 +206,18 @@ fn parse_binary_stl(bytes: &[u8]) -> Result<Mesh, String> {
     }
     let n = u32::from_le_bytes([bytes[80], bytes[81], bytes[82], bytes[83]]) as usize;
     let needed = 84usize
-        .checked_add(50usize.checked_mul(n).ok_or("binary stl triangle count overflow")?)
+        .checked_add(
+            50usize
+                .checked_mul(n)
+                .ok_or("binary stl triangle count overflow")?,
+        )
         .ok_or("binary stl size overflow")?;
     if bytes.len() < needed {
         return Err(format!(
             "binary stl truncated: declares {} triangles ({} bytes) but only {} present",
-            n, needed, bytes.len()
+            n,
+            needed,
+            bytes.len()
         ));
     }
     if n > MAX_TRIANGLES {
@@ -220,12 +227,7 @@ fn parse_binary_stl(bytes: &[u8]) -> Result<Mesh, String> {
         ));
     }
     let read_f32 = |off: usize| -> f64 {
-        f32::from_le_bytes([
-            bytes[off],
-            bytes[off + 1],
-            bytes[off + 2],
-            bytes[off + 3],
-        ]) as f64
+        f32::from_le_bytes([bytes[off], bytes[off + 1], bytes[off + 2], bytes[off + 3]]) as f64
     };
     let mut mesh = Mesh::default();
     mesh.vertices.reserve(n * 3);
@@ -265,9 +267,9 @@ fn parse_ascii_stl(bytes: &[u8]) -> Result<Mesh, String> {
                 let raw = tokens
                     .next()
                     .ok_or("ascii stl vertex truncated mid-coordinate")?;
-                *slot = raw
-                    .parse::<f64>()
-                    .map_err(|_| format!("ascii stl vertex has non-numeric coordinate '{}'", raw))?;
+                *slot = raw.parse::<f64>().map_err(|_| {
+                    format!("ascii stl vertex has non-numeric coordinate '{}'", raw)
+                })?;
             }
             coords.extend_from_slice(&v);
         }
@@ -341,8 +343,7 @@ pub fn decode_base64(input: &str) -> Result<Vec<u8>, String> {
 
 /// Encode bytes as standard base64 (with padding). Used to return repaired STL.
 pub fn encode_base64(input: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
     for chunk in input.chunks(3) {
         let b0 = chunk[0] as u32;

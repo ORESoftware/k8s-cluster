@@ -104,6 +104,9 @@ pub(super) async fn metrics(State(state): State<AppState>) -> Response {
          # HELP dd_fabrication_server_jobs_stored_total Fabrication jobs recorded in the in-process artifact ledger.\n\
          # TYPE dd_fabrication_server_jobs_stored_total counter\n\
          dd_fabrication_server_jobs_stored_total {}\n\
+         # HELP dd_fabrication_server_jobs_displaced_total Stored jobs that replaced an existing job of the same id (expected on NATS redelivery; sustained nonzero means distinct jobs are colliding).\n\
+         # TYPE dd_fabrication_server_jobs_displaced_total counter\n\
+         dd_fabrication_server_jobs_displaced_total {}\n\
          # HELP dd_fabrication_server_artifacts_stored_total Fabrication artifacts recorded in the in-process artifact ledger.\n\
          # TYPE dd_fabrication_server_artifacts_stored_total counter\n\
          dd_fabrication_server_artifacts_stored_total {}\n\
@@ -168,6 +171,7 @@ pub(super) async fn metrics(State(state): State<AppState>) -> Response {
             .load(Ordering::Relaxed),
         state.metrics.mdp_published_total.load(Ordering::Relaxed),
         state.metrics.jobs_stored_total.load(Ordering::Relaxed),
+        state.metrics.jobs_displaced_total.load(Ordering::Relaxed),
         state.metrics.artifacts_stored_total.load(Ordering::Relaxed),
         state
             .metrics
@@ -217,6 +221,7 @@ mod tests {
     use tokio::sync::Semaphore;
 
     use crate::{
+        coordination::{Coordination, NoopCoordination, DEFAULT_LEASE_TTL_MS},
         metrics::Metrics,
         persistence::Persistence,
         realtime::{EventHub, ServiceSurface},
@@ -239,6 +244,8 @@ mod tests {
             mdp_subject: MDP_OPTIMIZE_SUBJECT.to_string(),
             mdp_autopublish: false,
             nats_inflight: Arc::new(Semaphore::new(1)),
+            coordination: Arc::new(NoopCoordination::default()) as Arc<dyn Coordination>,
+            lease_ttl: std::time::Duration::from_millis(DEFAULT_LEASE_TTL_MS),
             metrics: Arc::new(Metrics::default()),
             jobs: Arc::new(RwLock::new(FabricationJobStore::new(MAX_STORED_JOBS))),
             learning: Arc::new(RwLock::new(LearningMemory::new(MAX_LEARNING_OUTCOMES))),

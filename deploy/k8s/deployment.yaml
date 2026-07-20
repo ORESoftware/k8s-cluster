@@ -8,15 +8,32 @@ metadata:
     app.kubernetes.io/part-of: daedalus
     app.kubernetes.io/component: fabrication-planner
 spec:
-  replicas: 2
+  # ONE replica, on purpose. Two load-bearing pieces of this service's state are
+  # in-process and are NOT shared:
+  #
+  #   * LearningMemory (src/lib.rs) accumulates run outcomes and is fed into
+  #     plan_fabrication_with_policy. JetStream splits deliveries across
+  #     replicas, so each pod accumulates a disjoint half of the outcome stream
+  #     and their aggregates diverge permanently. The same plan request then
+  #     returns different plans depending on which pod answers — silently, with
+  #     no metric and nothing in the API surfacing it.
+  #   * FabricationJobStore holds jobs and their artifacts. /jobs/{id} and the
+  #     artifact/release-bundle routes are served by whichever pod the Service
+  #     picks, so a job produced on one pod 404s on the other.
+  #
+  # Neither is a mutual-exclusion problem, so a distributed lock does not fix
+  # them — they need shared storage. Until both move into the daedalus Postgres
+  # schema, a second replica trades correctness for availability. Scale back up
+  # only after that migration; see readme.md "Scaling past one replica".
+  #
+  # Recreate, not RollingUpdate: maxSurge would briefly run two pods and
+  # reintroduce exactly the divergence this setting exists to prevent.
+  replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: dd-fabrication-server
   strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxUnavailable: 0
-      maxSurge: 1
+    type: Recreate
   template:
     metadata:
       annotations:
@@ -95,6 +112,21 @@ spec:
             # plain in-cluster address is set inline. FIDUCIA_URL /
             # FIDUCIA_API_KEY are intentionally left unset — supplying only one
             # of the pair is a hard error.
+            #
+            # To enable the Fiducia secret overlay, set both:
+            #   FIDUCIA_URL       http://fiducia-load-balance.fiducia.svc.cluster.local:8088
+            #   FIDUCIA_API_KEY   from ExternalSecret; needs only `kv:read`, and
+            #                     should be minted read-only — this service reads
+            #                     exactly secrets/daedalus/{NATS_URL,NATS_TOKEN,NATS_NKEY}.
+            #
+            # Distributed leases (src/coordination.rs) are a SEPARATE opt-in and
+            # need a SEPARATE credential: FIDUCIA_LOCKS_API_KEY with the
+            # `locks:write` scope. The KV key above cannot take locks — fiducia
+            # answers 403 insufficient_scope — so do not reuse it. Leases are off
+            # unless both FIDUCIA_URL and FIDUCIA_LOCKS_API_KEY are set.
+            #
+            # Egress to the fiducia namespace on 8088 is already open in
+            # networkpolicy.yaml; that alone grants nothing without these keys.
             - name: NATS_URL
               value: nats://dd-nats.messaging.svc.cluster.local:4222
             - name: FABRICATION_NATS_MAX_INFLIGHT

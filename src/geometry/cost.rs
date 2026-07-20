@@ -68,8 +68,7 @@ pub fn estimate(
 ) -> CostEstimate {
     let part_volume_cm3 = abs_volume_mm3 / 1000.0;
     let (min, max) = bbox;
-    let bbox_volume_cm3 =
-        ((max.x - min.x) * (max.y - min.y) * (max.z - min.z)).abs() / 1000.0;
+    let bbox_volume_cm3 = ((max.x - min.x) * (max.y - min.y) * (max.z - min.z)).abs() / 1000.0;
 
     let infill = inputs.infill_fraction.clamp(0.0, 1.0);
     let material_mass_g = part_volume_cm3 * infill * inputs.material_density_g_cm3;

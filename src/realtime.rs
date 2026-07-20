@@ -3,7 +3,7 @@
 use std::{
     sync::{
         atomic::{AtomicU64, Ordering},
-        Arc, RwLock,
+        Arc, OnceLock, RwLock,
     },
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -11,10 +11,38 @@ use std::{
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::broadcast;
+use uuid::Uuid;
 
 pub(crate) const REALTIME_SCHEMA: &str = "dd.fabrication.realtime.v1";
 
-static NEXT_EVENT_ID: AtomicU64 = AtomicU64::new(1);
+/// Per-process counter. On its own this is *not* a unique event id: two
+/// replicas both start it at 1 and both emit `1, 2, 3, …`, so a consumer that
+/// keys on the id would silently conflate two different events. It is unique
+/// only in combination with [`process_event_id`].
+static NEXT_EVENT_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+
+/// A random per-process suffix that makes event ids globally unique.
+///
+/// Deliberately generated here rather than reusing the coordination holder id:
+/// that value participates in lock-cancellation authority on fiducia-node and
+/// has no business being published on a realtime event that leaves the process.
+fn process_event_id() -> &'static str {
+    static PROCESS_EVENT_ID: OnceLock<String> = OnceLock::new();
+    PROCESS_EVENT_ID.get_or_init(|| Uuid::new_v4().simple().to_string())
+}
+
+/// Build a globally unique, roughly sortable event id.
+///
+/// Layout is `realtime-<unix-ms, 13-wide>-<sequence, 12-wide>-<process>`:
+/// the fixed-width numeric prefixes mean lexicographic order matches time
+/// order (and, within a millisecond and a process, emission order), while the
+/// random suffix is what actually guarantees uniqueness across replicas.
+fn event_id(timestamp: u128, sequence: u64) -> String {
+    format!(
+        "realtime-{timestamp:013}-{sequence:012}-{}",
+        process_event_id()
+    )
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ServiceSurface {
@@ -55,10 +83,10 @@ impl EventEnvelope {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis();
-        let sequence = NEXT_EVENT_ID.fetch_add(1, Ordering::Relaxed);
+        let sequence = NEXT_EVENT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
         Self {
             schema_version: REALTIME_SCHEMA.to_string(),
-            event_id: format!("realtime-{timestamp}-{sequence}"),
+            event_id: event_id(timestamp, sequence),
             source: source.into(),
             kind: kind.into(),
             occurred_at_unix_ms: timestamp,
@@ -173,6 +201,52 @@ mod tests {
         assert_eq!(hub.latest(), event);
         assert_eq!(hub.published_total(), 1);
         assert_eq!(hub.subscriber_count(), 2);
+    }
+
+    #[test]
+    fn event_ids_are_unique_across_processes_not_only_within_one() {
+        // The per-process counter alone collides across replicas: both pods
+        // emit sequence 1, 2, 3… at the same millisecond under the same load.
+        // Two ids built from the *same* timestamp and sequence must therefore
+        // still differ once the process suffix differs.
+        let mine = event_id(1_700_000_000_000, 1);
+        let theirs = format!(
+            "realtime-{:013}-{:012}-{}",
+            1_700_000_000_000_u128, 1, "other"
+        );
+        assert_ne!(mine, theirs);
+        assert!(mine.ends_with(process_event_id()));
+        // The suffix is stable for the life of the process, so ids from one
+        // replica share a recognizable origin.
+        assert_eq!(process_event_id(), process_event_id());
+
+        // Distinct within the process, too.
+        let first = EventEnvelope::new("test", "a", json!({}));
+        let second = EventEnvelope::new("test", "b", json!({}));
+        assert_ne!(first.event_id, second.event_id);
+    }
+
+    #[test]
+    fn event_ids_sort_by_time_then_emission_order() {
+        // Fixed-width numeric fields keep lexicographic order aligned with
+        // chronological order, which is what the UI list and any log-scrape
+        // ordering rely on.
+        let mut ids = vec![
+            event_id(1_700_000_000_000, 12),
+            event_id(999_999_999_999, 1),
+            event_id(1_700_000_000_000, 2),
+            event_id(1_700_000_000_001, 1),
+        ];
+        ids.sort();
+        assert_eq!(
+            ids,
+            vec![
+                event_id(999_999_999_999, 1),
+                event_id(1_700_000_000_000, 2),
+                event_id(1_700_000_000_000, 12),
+                event_id(1_700_000_000_001, 1),
+            ]
+        );
     }
 
     #[test]

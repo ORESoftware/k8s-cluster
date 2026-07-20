@@ -584,6 +584,7 @@ name = "dd-fabrication-server"
 version = "0.1.0"
 dependencies = [
  "async-nats",
+ "async-trait",
  "axum",
  "dd-nats-subject-defs",
  "dd-runtime-config-client",
@@ -600,6 +601,7 @@ dependencies = [
  "tokio-tungstenite",
  "tower",
  "tracing",
+ "uuid",
 ]
 
 [[package]]

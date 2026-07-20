@@ -146,7 +146,8 @@ fn stitch(segments: &[Segment2], z: f64) -> Vec<Contour> {
                 None => break,
             }
         }
-        let closed = pts.len() > 2 && dist(*pts.first().unwrap(), *pts.last().unwrap()) <= STITCH_EPS;
+        let closed =
+            pts.len() > 2 && dist(*pts.first().unwrap(), *pts.last().unwrap()) <= STITCH_EPS;
         if closed {
             pts.pop(); // drop duplicate closing point
         }
@@ -238,7 +239,11 @@ pub fn slice(mesh: &Mesh, layer_height: f64) -> Result<SliceResult, String> {
 /// Emit a capped G-code sample (perimeter G0/G1 motion). `max_layers` limits how
 /// many distinct Z layers are written so responses stay bounded; the returned
 /// flag reports whether output was truncated.
-pub fn to_gcode(slice: &SliceResult, feedrate_mm_per_min: f64, max_layers: usize) -> (String, bool) {
+pub fn to_gcode(
+    slice: &SliceResult,
+    feedrate_mm_per_min: f64,
+    max_layers: usize,
+) -> (String, bool) {
     let mut out = String::new();
     out.push_str("; dd-fabrication-server planar slice (sample)\n");
     out.push_str(&format!(
@@ -262,10 +267,16 @@ pub fn to_gcode(slice: &SliceResult, feedrate_mm_per_min: f64, max_layers: usize
         if let Some(&(x0, y0)) = contour.points.first() {
             out.push_str(&format!("G0 X{:.3} Y{:.3}\n", x0, y0));
             for &(x, y) in &contour.points[1..] {
-                out.push_str(&format!("G1 X{:.3} Y{:.3} F{:.0}\n", x, y, feedrate_mm_per_min));
+                out.push_str(&format!(
+                    "G1 X{:.3} Y{:.3} F{:.0}\n",
+                    x, y, feedrate_mm_per_min
+                ));
             }
             if contour.closed {
-                out.push_str(&format!("G1 X{:.3} Y{:.3} F{:.0}\n", x0, y0, feedrate_mm_per_min));
+                out.push_str(&format!(
+                    "G1 X{:.3} Y{:.3} F{:.0}\n",
+                    x0, y0, feedrate_mm_per_min
+                ));
             }
         }
     }

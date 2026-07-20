@@ -7537,6 +7537,9 @@ Runtime concerns are kept in focused modules:
 - `additive_printing/` owns typed FDM/resin request models, pure release-gate
   analysis, and its thin HTTP adapter.
 - `secrets.rs` owns the allowlisted Fiducia overlay.
+- `coordination.rs` owns the distributed-lease seam: the `Coordination` trait,
+  the default local `NoopCoordination`, and the fiducia-backed
+  `FiduciaCoordination`. See "Coordination" below.
 - `geometry/` and the catalog content modules own their respective domain
   surfaces.
 
@@ -7640,6 +7643,131 @@ Prometheus scrape through an application-side exporter. Configure OTLP with
 `OTEL_EXPORTER_OTLP_ENDPOINT` or the signal-specific OpenTelemetry variables;
 the deployment collector and Prometheus scrape definitions live in
 `~/codes/ores/k8s-cluster/remote/argocd/observability`.
+
+## Scaling Past One Replica
+
+`deploy/k8s/deployment.yaml` pins `replicas: 1` with `strategy: Recreate`. That
+is not a capacity decision and it is not a placeholder — it is the only setting
+under which this service is correct today. Two load-bearing pieces of state live
+in process memory and are not shared between pods:
+
+- **`FabricationJobStore`** holds jobs and their artifacts. `GET /jobs/{id}` and
+  the artifact and release-bundle routes are answered by whichever pod the
+  Service happens to pick, so a job produced on pod A returns `404` from pod B.
+- **`LearningMemory`** accumulates run outcomes and feeds
+  `plan_fabrication_with_policy`. JetStream spreads deliveries across replicas,
+  so each pod would accumulate a disjoint slice of the outcome stream. Their
+  aggregates then diverge permanently and the same plan request returns
+  different plans depending on which pod answers — silently, with no metric and
+  nothing in the API that surfaces it.
+
+Neither is a mutual-exclusion problem, so **the leases described below do not
+fix them.** A distributed lock stops two pods from doing the same work at the
+same time; it does not make one pod's memory visible to another. Both stores
+need shared storage.
+
+Before `replicas` may go above 1, all of the following must be true:
+
+1. `FabricationJobStore` is backed by the daedalus Postgres schema
+   (`k8s-cluster/remote/libs/pg-defs/schema/databases/dd_fabrication_server/schema.sql`),
+   through SeaORM, with jobs and artifacts readable from any pod.
+2. `LearningMemory` is likewise backed by that schema, so outcome aggregation
+   has exactly one owner and one answer.
+3. The schema change has gone through the declarative-migrations/DPM workflow —
+   application startup still applies no DDL.
+4. Distributed leases are enabled (see "Coordination"), so a JetStream
+   redelivery racing an in-flight attempt cannot be processed twice.
+5. `strategy` may become `RollingUpdate` only after 1–3; until then `maxSurge`
+   briefly runs two pods and reintroduces exactly the divergence the setting
+   exists to prevent.
+
+Until then, a second replica trades correctness for availability, and the
+service will not tell you it has done so.
+
+## Coordination
+
+`src/coordination.rs` is the seam through which anything that must be done by
+exactly one worker passes. It has two implementations, and which one is active
+is logged once at boot with `coordination.mode`:
+
+- **`NoopCoordination` (default).** Grants every lease locally. It provides **no
+  cross-process exclusion at all** — it cannot see other processes, so a key
+  another pod is holding is granted anyway. That is correct and free for the
+  single-replica `Recreate` deployment, and it is the reason a second replica is
+  unsafe today. Its fencing token counts up per process and is not comparable
+  across processes.
+- **`FiduciaCoordination`.** Real leases from fiducia-node's `/v1/locks/*` API
+  via the fiducia load balancer, with `Authorization: Bearer <key>` and
+  strictly-increasing `u64` fencing tokens.
+
+### Configuration
+
+| Variable | Purpose |
+| --- | --- |
+| `FIDUCIA_URL` | fiducia load balancer base URL. Shared by the KV overlay and the lock plane. Validated by the same hardened parser `secrets.rs` uses: no credentials, path, query, or fragment; HTTPS unless the host is a trusted internal one; cloud-metadata hosts refused under both schemes. |
+| `FIDUCIA_API_KEY` | KV-read credential for the secret overlay (`secrets/daedalus/*`). |
+| `FIDUCIA_TOKEN` | Accepted as a fallback for the same KV credential. The Daedalus MCP server calls it this; this service and its manifests call it `FIDUCIA_API_KEY`. Both are read, `FIDUCIA_API_KEY` wins when both are set. |
+| `FIDUCIA_LOCKS_API_KEY` | **Separate, least-privilege credential for the lock plane.** Required for leases. |
+| `FABRICATION_LEASE_TTL_MS` | Lease lifetime, default `30000`, clamped to `5000`–`300000`. |
+
+Leases are enabled only when `FIDUCIA_URL` **and** `FIDUCIA_LOCKS_API_KEY` are
+both set. A URL alone does not enable them, deliberately: see "Required scope".
+
+### Lease keys and TTLs
+
+| Key | Held for | TTL |
+| --- | --- | --- |
+| `daedalus/fab/request/{request_id}` | One inbound NATS fabrication request, from before the first side effect until after the result is published. | `FABRICATION_LEASE_TTL_MS` (default 30s), renewed every TTL/3 (capped at 20s). |
+
+A request that carries no `request_id`/`requestId` is processed without a lease:
+there is nothing to be exclusive about, and a synthetic key would serialize
+unrelated requests behind one lock.
+
+Behavioral contract, all of it asserted by tests in `src/coordination.rs`:
+
+- `wait` is always `false`. It is not a long-poll — it reserves a FIFO slot and
+  returns immediately — and this service must never hold a slot, because a
+  JetStream redelivery is a better retry than a queued waiter whose message may
+  be redelivered underneath it. A `queued: true` response is therefore never
+  treated as an acquisition.
+- Failing to get the lease — because another holder has it, or because fiducia
+  is unreachable — **does not process the message.** It is settled with a Nak
+  and the configured `FABRICATION_NATS_NAK_DELAY_SECONDS` delay: the request is
+  still owed to somebody. If the current holder finishes it Acks and this
+  delivery is moot; if it died, the redelivery arrives after the lease lapses.
+  Acking would discard a request on the word of a lock we may simply have failed
+  to reach.
+- Renewal runs in the background at TTL/3, and **a failed renewal is immediate
+  loss of authority.** The in-flight work is dropped at that point rather than
+  being allowed to finish and publish under a lease someone else now holds.
+- Release sends `{holder, fencing_token}` and **no key** — the token releases
+  the whole grant union. The TTL is the backstop, so release is best-effort.
+- The holder id is a UUIDv4 minted once per process, not a pid or hostname.
+  Holder identity participates in cancellation authority on fiducia-node, so a
+  value another process could guess or legitimately reuse would let a different
+  process act as this one.
+
+### Required scope
+
+`/v1/locks/*` **mutations require the `locks:write` scope.** The existing
+`FIDUCIA_API_KEY` is KV-read shaped and will be rejected with HTTP 403
+`insufficient_scope` on every acquire. That is why the lock credential is a
+separate variable rather than a reuse of the KV one, and why a 403 surfaces as a
+named, actionable error that says which scope and which variable — never as a
+silently granted lease.
+
+### Required NetworkPolicy egress
+
+The lock plane needs egress from the `daedalus` namespace to the fiducia load
+balancer. `deploy/k8s/networkpolicy.yaml` opens exactly that: namespace
+`fiducia`, TCP `8088`, and nothing else — fiducia-node is reached only through
+the load balancer. Opening egress grants nothing on its own; the API key is
+still required, and lock mutations still need the `locks:write` scope.
+
+If leases are enabled without that rule, every acquire fails with a connect
+timeout, every request is Nak'd, and nothing is processed. This is why leases
+are off by default rather than on: the safe state is the one that requires no
+new network reachability and no new credential.
 
 ## Kubernetes And Submodules
 

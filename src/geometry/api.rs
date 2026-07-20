@@ -80,9 +80,7 @@ fn load_mesh(payload: &GeometryPayload) -> Result<(Mesh, Vec<u8>), String> {
     let bytes: Vec<u8> = match (&payload.stl_base64, &payload.stl_ascii) {
         (Some(b64), None) => mesh::decode_base64(b64)?,
         (None, Some(ascii)) => ascii.clone().into_bytes(),
-        (Some(_), Some(_)) => {
-            return Err("provide either stlBase64 or stlAscii, not both".into())
-        }
+        (Some(_), Some(_)) => return Err("provide either stlBase64 or stlAscii, not both".into()),
         (None, None) => return Err("missing geometry: supply stlBase64 or stlAscii".into()),
     };
     let mesh = mesh::parse_stl(&bytes)?;
@@ -267,7 +265,10 @@ pub fn toolpath_generate_response(req: ToolpathGenerateRequest) -> Result<Value,
     let (input, bytes) = load_mesh(&req.geometry)?;
     let request_id = derive_request_id(&req.request_id, &bytes, "toolpath-generate")?;
     let layer_height = require_positive("layerHeightMm", req.layer_height_mm.unwrap_or(0.2))?;
-    let feedrate = require_positive("feedrateMmPerMin", req.feedrate_mm_per_min.unwrap_or(3000.0))?;
+    let feedrate = require_positive(
+        "feedrateMmPerMin",
+        req.feedrate_mm_per_min.unwrap_or(3000.0),
+    )?;
     let weld = weld_tol(&req.geometry)?;
 
     // Heal first so slicing operates on a watertight shell.
@@ -276,9 +277,7 @@ pub fn toolpath_generate_response(req: ToolpathGenerateRequest) -> Result<Value,
 
     let mut blockers: Vec<String> = Vec::new();
     if !report.watertight {
-        blockers.push(
-            "input mesh was not watertight after repair; toolpaths may have gaps".into(),
-        );
+        blockers.push("input mesh was not watertight after repair; toolpaths may have gaps".into());
     }
     if slice.open_contours > 0 {
         blockers.push(format!(
@@ -323,7 +322,10 @@ pub fn toolpath_generate_response(req: ToolpathGenerateRequest) -> Result<Value,
     });
 
     if req.emit_gcode.unwrap_or(false) {
-        let max_layers = req.max_gcode_layers.unwrap_or(50).clamp(1, MAX_GCODE_LAYERS);
+        let max_layers = req
+            .max_gcode_layers
+            .unwrap_or(50)
+            .clamp(1, MAX_GCODE_LAYERS);
         let (gcode, truncated) = toolpath::to_gcode(&slice, feedrate, max_layers);
         layers["gcodeSample"] = json!({
             "dialect": "rs274-subset",
@@ -371,15 +373,18 @@ pub fn cost_estimate_response(req: CostEstimateRequest) -> Result<Value, String>
     let inputs = CostInputs {
         material_density_g_cm3: require_positive(
             "materialDensityGCm3",
-            req.material_density_g_cm3.unwrap_or(defaults.material_density_g_cm3),
+            req.material_density_g_cm3
+                .unwrap_or(defaults.material_density_g_cm3),
         )?,
         material_price_per_kg: require_non_negative(
             "materialPricePerKg",
-            req.material_price_per_kg.unwrap_or(defaults.material_price_per_kg),
+            req.material_price_per_kg
+                .unwrap_or(defaults.material_price_per_kg),
         )?,
         machine_rate_per_hour: require_non_negative(
             "machineRatePerHour",
-            req.machine_rate_per_hour.unwrap_or(defaults.machine_rate_per_hour),
+            req.machine_rate_per_hour
+                .unwrap_or(defaults.machine_rate_per_hour),
         )?,
         setup_cost: require_non_negative(
             "setupCost",
@@ -391,11 +396,13 @@ pub fn cost_estimate_response(req: CostEstimateRequest) -> Result<Value, String>
         )?,
         feedrate_mm_per_min: require_positive(
             "feedrateMmPerMin",
-            req.feedrate_mm_per_min.unwrap_or(defaults.feedrate_mm_per_min),
+            req.feedrate_mm_per_min
+                .unwrap_or(defaults.feedrate_mm_per_min),
         )?,
         layer_change_seconds: require_non_negative(
             "layerChangeSeconds",
-            req.layer_change_seconds.unwrap_or(defaults.layer_change_seconds),
+            req.layer_change_seconds
+                .unwrap_or(defaults.layer_change_seconds),
         )?,
         overhead_fraction: require_non_negative(
             "overheadFraction",

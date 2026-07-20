@@ -82,7 +82,8 @@ fn remove_degenerate(mesh: &mut Mesh) -> usize {
 /// Drop triangles that reference the same three vertices (any winding).
 fn remove_duplicate(mesh: &mut Mesh) -> usize {
     let before = mesh.triangles.len();
-    let mut seen: std::collections::HashSet<(usize, usize, usize)> = std::collections::HashSet::new();
+    let mut seen: std::collections::HashSet<(usize, usize, usize)> =
+        std::collections::HashSet::new();
     let mut kept = Vec::with_capacity(before);
     for &tri in &mesh.triangles {
         let mut s = tri;
@@ -288,7 +289,11 @@ pub fn repair(input: &Mesh, weld_tol: f64) -> (Mesh, RepairReport) {
     report.triangles_added_filling = added;
 
     // Patches may need re-unifying with their neighbours.
-    let flips2 = if added > 0 { unify_winding(&mut mesh) } else { 0 };
+    let flips2 = if added > 0 {
+        unify_winding(&mut mesh)
+    } else {
+        0
+    };
     report.flipped_for_consistency = flips1 + flips2;
 
     // Fan fills over collinear boundary runs can introduce zero-area slivers;
