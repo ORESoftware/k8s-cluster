@@ -360,8 +360,25 @@ struct SupabaseConfig {
 }
 
 impl SupabaseConfig {
+    /// Auth is live only when a verification key AND a pinned issuer are both
+    /// configured; anything less fails closed (the verifier is not built and the
+    /// Supabase-backed surface reports unavailable rather than serving).
+    ///
+    /// The issuer is required rather than optional because `aud` is the literal
+    /// string `"authenticated"` on *every* Supabase project. Without `iss`
+    /// pinning, a token minted by an unrelated project — whose JWKS an attacker
+    /// controls, or whose HS256 secret they know — satisfies every other check.
+    /// `iss` is the only claim that binds a token to *this* project.
+    ///
+    /// Escape hatch for local/dev: the issuer is normally derived from
+    /// `SOUND_RECORDER_SUPABASE_URL` (`<url>/auth/v1`), so any setup that sets
+    /// the project URL already has one. A setup that configures only a raw
+    /// `SOUND_RECORDER_SUPABASE_JWT_SECRET` (no project URL) must now also set
+    /// `SOUND_RECORDER_SUPABASE_ISSUER` explicitly — see README "Supabase auth".
     fn is_enabled(&self) -> bool {
-        self.validation_errors.is_empty() && (self.jwt_secret.is_some() || self.jwks_url.is_some())
+        self.validation_errors.is_empty()
+            && (self.jwt_secret.is_some() || self.jwks_url.is_some())
+            && self.issuer.is_some()
     }
 
     fn is_data_api_enabled(&self) -> bool {
@@ -2310,6 +2327,20 @@ async fn state_from_config(config: Config) -> AppState {
     }
     for error in &config.supabase.validation_errors {
         warn!(error, "Supabase configuration is invalid");
+    }
+    // Fail-closed diagnostic: a key without a pinned issuer would accept tokens
+    // from *any* Supabase project (`aud` is "authenticated" everywhere), so
+    // is_enabled() refuses to build a verifier. Say so loudly, because the
+    // symptom is otherwise a silent "auth is off".
+    if config.supabase.validation_errors.is_empty()
+        && (config.supabase.jwt_secret.is_some() || config.supabase.jwks_url.is_some())
+        && config.supabase.issuer.is_none()
+    {
+        warn!(
+            "Supabase auth is disabled: a signing key is configured but no issuer is pinned. \
+             Set SOUND_RECORDER_SUPABASE_URL (the issuer is derived as <url>/auth/v1) or set \
+             SOUND_RECORDER_SUPABASE_ISSUER explicitly."
+        );
     }
     let s3 = build_object_storage_client(&config.s3, "primary").await;
     let mirror = build_object_storage_client(&config.mirror, "mirror").await;
