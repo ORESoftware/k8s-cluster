@@ -8,7 +8,7 @@ let
     clippy
     curl
     dart
-    erlang
+    beamPackages.erlang
     git
     gleam
     go
