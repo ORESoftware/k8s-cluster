@@ -27,22 +27,22 @@ first** — do not improvise around this rule.
 
 ## Syncing with the remote
 
-"Sync with the remote" (or just "sync") is **bidirectional and always contacts
-the remote** — it fetches *and* pushes, never push-only. A clean local working
-tree does **not** by itself mean "synced": a sync is not finished until local
-and the remote have exchanged commits in both directions.
+"Sync with the remote" (or just "sync") is a **two-way** exchange — pull the
+remote's commits down **and** push yours up. It is never push-only, and a clean
+local tree does not by itself mean "synced": you are done only once local and
+the remote hold the same commits.
 
-How to sync:
+To sync:
 
-1. `git fetch --all --prune` — always safe; it only updates remote-tracking
-   refs and never touches your working tree, so run it any time.
-2. Make the working tree **clean before you pull/merge**: `git add` +
-   `git commit` your work (or `git stash`). **Only `git pull` / `git merge`
-   when the tree is not dirty** — pulling into a dirty tree makes git refuse
-   the merge or tangle uncommitted edits with the incoming commits.
-3. `git pull` (which fetches + merges) — or `git merge` the upstream tracking
-   branch — to integrate the remote's commits into your now-clean branch.
-4. `git push` — publish your commits so the remote has them too.
+1. **Commit your work first** (`git add` + `git commit`) so the tree is clean —
+   pull/merge only into a clean tree. `git pull` / `git merge` aborts when an
+   incoming change touches a file you have edited, and even when it doesn't it
+   buries the merge in your uncommitted work. (Can't commit yet? `git stash`,
+   then `git stash pop` after step 3.)
+2. `git fetch --all --prune` — safe any time; it only updates tracking refs.
+3. `git pull` (fetch + merge) — or `git merge` the upstream branch — to
+   integrate the remote's commits.
+4. `git push` to publish yours.
 
-Integrate with **`git merge`** / **`git pull`** (which merges). **Never
-`git rebase`** to sync — it rewrites history and breaks shared branches.
+Integrate with **`git merge` / `git pull`**. **Never `git rebase` to sync** — it
+rewrites history and breaks shared branches.
