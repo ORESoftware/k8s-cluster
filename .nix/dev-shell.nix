@@ -7,7 +7,10 @@ let
     cargo
     clippy
     curl
+    dart
+    beamPackages.erlang
     git
+    gleam
     go
     jq
     just
