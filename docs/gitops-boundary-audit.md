@@ -198,6 +198,18 @@ auth). The current local wiring is:
    ApplicationSet to register apps from a single list.
 4. **repoURL is inconsistent** (SSH vs HTTPS) and mostly self-referential — the "app
    manifests in the cluster repo" anti-pattern; every app deploy is a k8s-cluster PR.
+5. **`dd-next-runtime` is a 207-resource monolith** (`remote/argocd/dd-next-runtime/kustomization.yaml`),
+   synced into `default` with prune+selfHeal on **both** AWS and Hetzner. It holds
+   `dd-athleto-backend`, `dd-athleto-app-rs`, the fiducia stack, `threefa-sync-server`, and
+   most `dd-*` workloads. **This is the single biggest structural obstacle to per-app
+   tenancy** — every extraction means removing resources from this kustomization (which
+   *prunes them from `default`*, i.e. an outage window) and standing them up in a new
+   namespace. There is no app here that can be moved "for free."
+6. **Observability hardcodes the flat `default` world.** `k8s-resource-exporter` enumerates
+   ~150 `dd-*` workload names in a single allowlist
+   (`remote/argocd/observability/k8s-resource-exporter.{deployment,configmap}.yaml`), and
+   Prometheus rules key on `namespace="default"`. Any namespace migration must update these
+   in lockstep or the workload silently drops out of monitoring/alerting.
 
 ## Phased hardening roadmap
 
