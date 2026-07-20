@@ -106,7 +106,7 @@ surfaces are *data/edge*, not k8s objects:
 |---|---|---|---|
 | 1 | `Application/dd-billing-server` (ns argocd) | k8s-cluster ×2 + quaestor-infra generated | triple declaration; SSA dropped in one |
 | 2 | `Application/dd-quaestor-web-server` | quaestor-infra (path missing here) | sync-error if landed |
-| 3 | `Deployment/Service dd-athleto-backend` (ns default) | athleto-backend.rs/k8s + monorepo dup | double-owned if we also render it |
+| 3 | `Deployment/Service dd-athleto-backend` (ns default) | **live copy** = `remote/argocd/dd-next-runtime/`; `athleto-backend.rs/k8s/ec2` + athleto-monorepo dup are **stale, undeployed** | not double-owned *today* (no Application points at the app-repo path) — but 3 divergent copies of one workload; wiring up the app-repo copy would instantly collide in `default` |
 | 4 | `Namespace/fiducia` | fiducia-infra (`enforce=privileged`) + us (`enforce=baseline`) | conflicting PSA labels |
 | 5 | `StatefulSet/fiducia-node`,`fiducia-brain` | fiducia-infra + us | divergent replicas/serviceName/Raft topology |
 | 6 | `Service/fiducia-load-balance` (LoadBalancer) | fiducia-infra + us | both provision a cloud LB |

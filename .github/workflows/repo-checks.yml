@@ -78,6 +78,7 @@ jobs:
             general/browser-job-runner-config.test.ts
             general/browser-test-server-config.test.ts
             general/build-server-config.test.ts
+            general/canonical-cloud-gitops.test.ts
             general/cluster-doctor-cron.test.ts
             general/cluster-hardening.test.ts
             general/container-pool-config.test.ts
