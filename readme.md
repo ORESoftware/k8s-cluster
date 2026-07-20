@@ -163,6 +163,7 @@ src/
   db.rs                # SeaORM connection + raw-Statement helpers
   entity/              # SeaORM entities (one module per table, schema mirror)
   crypto.rs            # per-tenant AES-GCM credential sealing
+  supabase_auth.rs     # per-user Supabase JWT verification (JWKS, pinned claims)
   fiducia.rs           # async adapter over the revision-pinned Fiducia Rust SDK
   money.rs             # Money / Currency (minor units, integer)
   shard.rs             # ShardKey + Region
