@@ -166,6 +166,16 @@ Mix spot for burst/batch with on-demand for the baseline.
 **On Hetzner — `cluster-autoscaler` with the hcloud provider**: define node pools per server
 type, set `--scale-down-unneeded-time` (~10m) and `--scale-down-utilization-threshold` (~0.5).
 
+> Two hard prerequisites, neither of which exists today: the **hcloud CCM** must be installed
+> (without it nodes have no zone labels and dead `Node` objects are never reaped), and there
+> must be a **worker-only self-joining path** (every join in `setup-cluster-ha.sh` is a
+> `--control-plane` join). Full mechanics in
+> [dynamic-node-provisioning.md](dynamic-node-provisioning.md).
+
+**Never autoscale a control-plane node.** All 3 Hetzner nodes are currently stacked-etcd
+control planes *and* workers — good HA, wrong shape for elasticity. Split into a fixed 3-node
+control plane plus an elastic worker pool.
+
 Either way, scale-down is the part that breaks without Phase 1: the autoscaler can only remove
 a node if it can evict every pod on it, which requires PDBs that permit eviction and no
 un-replicated singletons pinned to that node.
