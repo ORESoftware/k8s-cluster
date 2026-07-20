@@ -10,3 +10,7 @@
 	path = apps/daedalus-web-server.rs
 	url = git@github.com:daedalus-fab/daedalus-web-server.rs.git
 	branch = main
+[submodule "apps/daedalus-infra"]
+	path = apps/daedalus-infra
+	url = https://github.com/daedalus-fab/daedalus-infra.git
+	branch = main
