@@ -1,0 +1,81 @@
+# daedalus-fab org — three Applications, one per service, all in the `daedalus` tenant.
+#
+# ⚠️ WHY repoURL IS THE PER-APP REPO, NOT THE MONOREPO
+# The org monorepo is a pure *gitlink aggregator*: daedalus-monorepo/apps/* are all
+# submodules (mode 160000) pointing at the individual app repos, and the monorepo tracks
+# ZERO files under apps/*/k8s. Combined with repo-server's
+# `reposerver.enable.git.submodule=false`, an Application pointed at the monorepo renders
+# EMPTY — twice over (k8s-cluster's submodule of the monorepo, and the monorepo's submodules
+# of the apps). Three existing apps are already broken exactly this way: dd-billing-server,
+# dd-dart-server, dd-gleam-lambda-runner (see docs/gitops-boundary-audit.md).
+#
+# So: manifests live in each APP repo at `k8s/`, and Argo tracks that repo directly.
+# The submodule chain (k8s-cluster -> daedalus-monorepo -> apps/*) is INVENTORY + PIN:
+# it records which commit of each app is current, and is how CI promotes. It is never a
+# render source. See docs/app-deploy-contract.md.
+#
+# PREREQS before applying (left inert until then, per the threefa precedent):
+#   1. apply remote/argocd/projects/daedalus.tenant.yaml     (Namespace + quota + default-deny)
+#   2. apply remote/argocd/projects/daedalus.appproject.yaml (the enforced boundary)
+#   3. commit + push each app repo's new k8s/ dir to its main
+#   4. publish images ghcr.io/daedalus-fab/<app>:main (CI currently runs fmt/clippy only)
+#      + an imagePullSecret if those packages are private
+#   5. ArgoCD needs a repo cred for the SSH remotes below
+#
+# Promotion knob: flip targetRevision from `main` to a pinned tag/sha per the contract.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-fabrication-server
+  namespace: argocd
+spec:
+  project: daedalus
+  source:
+    repoURL: git@github.com:daedalus-fab/fabrication-server.rs.git
+    targetRevision: main
+    path: k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: daedalus
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-daedalus-api-server
+  namespace: argocd
+spec:
+  project: daedalus
+  source:
+    repoURL: git@github.com:daedalus-fab/daedalus-api-server.rs.git
+    targetRevision: main
+    path: k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: daedalus
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-daedalus-web-server
+  namespace: argocd
+spec:
+  project: daedalus
+  source:
+    repoURL: git@github.com:daedalus-fab/daedalus-web-server.rs.git
+    targetRevision: main
+    path: k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: daedalus
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - ServerSideApply=true

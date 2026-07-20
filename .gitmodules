@@ -161,3 +161,7 @@
 	path = remote/deployments/daedalus-web-server-rs
 	url = git@github.com:daedalus-fab/daedalus-web-server.rs.git
 	branch = main
+[submodule "remote/deployments/daedalus-monorepo"]
+	path = remote/deployments/daedalus-monorepo
+	url = https://github.com/daedalus-fab/daedalus-monorepo.git
+	branch = main

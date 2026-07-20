@@ -106,7 +106,7 @@ surfaces are *data/edge*, not k8s objects:
 |---|---|---|---|
 | 1 | `Application/dd-billing-server` (ns argocd) | k8s-cluster ×2 + quaestor-infra generated | triple declaration; SSA dropped in one |
 | 2 | `Application/dd-quaestor-web-server` | quaestor-infra (path missing here) | sync-error if landed |
-| 3 | `Deployment/Service dd-athleto-backend` (ns default) | athleto-backend.rs/k8s + monorepo dup | double-owned if we also render it |
+| 3 | `Deployment/Service dd-athleto-backend` (ns default) | **live copy** = `remote/argocd/dd-next-runtime/`; `athleto-backend.rs/k8s/ec2` + athleto-monorepo dup are **stale, undeployed** | not double-owned *today* (no Application points at the app-repo path) — but 3 divergent copies of one workload; wiring up the app-repo copy would instantly collide in `default` |
 | 4 | `Namespace/fiducia` | fiducia-infra (`enforce=privileged`) + us (`enforce=baseline`) | conflicting PSA labels |
 | 5 | `StatefulSet/fiducia-node`,`fiducia-brain` | fiducia-infra + us | divergent replicas/serviceName/Raft topology |
 | 6 | `Service/fiducia-load-balance` (LoadBalancer) | fiducia-infra + us | both provision a cloud LB |
@@ -198,6 +198,27 @@ auth). The current local wiring is:
    ApplicationSet to register apps from a single list.
 4. **repoURL is inconsistent** (SSH vs HTTPS) and mostly self-referential — the "app
    manifests in the cluster repo" anti-pattern; every app deploy is a k8s-cluster PR.
+5. **`dd-next-runtime` is a 207-resource monolith** (`remote/argocd/dd-next-runtime/kustomization.yaml`),
+   synced into `default` with prune+selfHeal on **both** AWS and Hetzner. It holds
+   `dd-athleto-backend`, `dd-athleto-app-rs`, the fiducia stack, `threefa-sync-server`, and
+   most `dd-*` workloads. **This is the single biggest structural obstacle to per-app
+   tenancy** — every extraction means removing resources from this kustomization (which
+   *prunes them from `default`*, i.e. an outage window) and standing them up in a new
+   namespace. There is no app here that can be moved "for free."
+6. **Three Applications are silently unrenderable.** repo-server has
+   `reposerver.enable.git.submodule=false`, so an Application whose `path` points inside a
+   gitlink resolves to **zero files**: `dd-billing-server`
+   (`remote/deployments/billing-server-rs/k8s/ec2`), `dd-dart-server`, and
+   `dd-gleam-lambda-runner`. Verified via `git ls-files` — all three paths are empty in
+   k8s-cluster's tree. The other 53 k8s-cluster-sourced paths work only because their
+   manifests are duplicated as real files under `remote/argocd/`. **Fix:** point `repoURL` at
+   the app's own repo / org monorepo upstream; keep the submodule as an inventory pin. See
+   docs/app-deploy-contract.md → "Submodules are inventory, NOT a render source".
+7. **Observability hardcodes the flat `default` world.** `k8s-resource-exporter` enumerates
+   ~150 `dd-*` workload names in a single allowlist
+   (`remote/argocd/observability/k8s-resource-exporter.{deployment,configmap}.yaml`), and
+   Prometheus rules key on `namespace="default"`. Any namespace migration must update these
+   in lockstep or the workload silently drops out of monitoring/alerting.
 
 ## Phased hardening roadmap
 

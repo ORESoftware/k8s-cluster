@@ -54,6 +54,54 @@ spec:
     syncOptions: [ ServerSideApply=true ]
 ```
 
+## ⚠️ Submodules are inventory, NOT a render source
+
+ArgoCD's repo-server runs with **`reposerver.enable.git.submodule=false`** (the
+argocd-submodule-init incident). It checks out k8s-cluster **without submodule contents**, so
+any Application whose `path` points inside a gitlink renders **empty**.
+
+Three Applications are already broken this way — their `path` resolves to zero tracked files:
+
+| Application | dead path | fix |
+|---|---|---|
+| `dd-billing-server` | `remote/deployments/billing-server-rs/k8s/ec2` | point `repoURL` at `quaestor-ledger/quaestor-monorepo`, `path: apps/billing-server.rs/k8s` |
+| `dd-dart-server` | `remote/deployments/dart-server/k8s/ec2` | point `repoURL` at its own repo |
+| `dd-gleam-lambda-runner` | `remote/deployments/gleam-lambda-runner/k8s/ec2` | point `repoURL` at its own repo |
+
+### The org structure is two levels of submodule
+
+```
+k8s-cluster/remote/deployments/<org>-monorepo   <- gitlink (inventory pin)
+    └── <org>-monorepo/apps/
+            ├── <app>.rs        <- gitlink -> the app repo   (OWNS k8s/ manifests)
+            ├── <app2>.rs       <- gitlink -> the app repo
+            └── <org>-infra     <- gitlink -> the infra repo (Cloudflare/Terraform, no k8s)
+```
+
+The org monorepo tracks **zero manifest files** — it is a pure gitlink aggregator. So an
+Application pointed at the monorepo renders empty **twice over** (k8s-cluster's submodule of
+the monorepo, and the monorepo's submodules of the apps).
+
+**The rule:**
+
+- **Manifests live in each APP repo** at `k8s/` (or `deploy/k8s/`). Argo's `repoURL` points at
+  that **app repo** directly, `path: k8s`.
+- **The submodule chain is inventory + pin, never a render source.** It records which commit
+  of each app is current and is how CI promotes: bump the gitlink and the Application's
+  `targetRevision` together.
+- **The org infra repo is a submodule under `<org>-monorepo/apps/`** alongside the app repos
+  (already true for `fiducia-infra`, `quaestor-infra`; added for `daedalus-infra`,
+  `athleto-infra`). It declares edge/DNS/WAF only — never k8s objects — so it is never an
+  Argo source.
+
+This is why the 53 working Applications work: their manifests are duplicated as real files
+under `remote/argocd/`. Moving to app-repo-sourced deployment removes that duplication — but
+only if `repoURL` targets the app repo upstream, never a submodule path.
+
+Worked reference: **daedalus** (`remote/argocd/apps/daedalus.applications.yaml` +
+`projects/daedalus.{tenant,appproject}.yaml`, manifests in
+`daedalus-monorepo/apps/*/k8s/`).
+
 ## The AppProject is what makes it enforced (not a suggestion)
 
 One `AppProject` per app pins where it can deploy and forbids cluster-scoped resources.

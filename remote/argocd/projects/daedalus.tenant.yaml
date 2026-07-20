@@ -1,0 +1,53 @@
+# Layer-1 tenancy for the daedalus-fab org. Platform-owned: the app repo (daedalus-monorepo)
+# declares NO Namespace/quota/limit, so its AppProject can enforce
+# clusterResourceWhitelist: [] strictly (unlike threefa's transitional Namespace allowance).
+#
+# Houses: dd-fabrication-server (8113), dd-daedalus-api-server (8114),
+#         dd-daedalus-web-server (8115).
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: daedalus
+  labels:
+    app.kubernetes.io/part-of: daedalus
+    # Enables the app NetworkPolicies' namespaceSelector matching.
+    kubernetes.io/metadata.name: daedalus
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: daedalus-quota
+  namespace: daedalus
+spec:
+  hard:
+    requests.cpu: "2"
+    requests.memory: 4Gi
+    limits.cpu: "6"
+    limits.memory: 8Gi
+    pods: "20"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: daedalus-limits
+  namespace: daedalus
+spec:
+  limits:
+    - type: Container
+      default: { cpu: 500m, memory: 512Mi }
+      defaultRequest: { cpu: 100m, memory: 128Mi }
+---
+# Default-deny ingress. Each app re-opens exactly what it needs via its own
+# NetworkPolicy in the monorepo (apps/<app>/k8s/networkpolicy.yaml).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: daedalus-default-deny-ingress
+  namespace: daedalus
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
