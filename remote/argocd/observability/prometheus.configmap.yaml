@@ -401,7 +401,7 @@ data:
               summary: Fabrication runtime-config push errors are increasing
               description: "dd-runtime-config is failing to deliver stage snapshots to dd-fabrication-server; planning, NATS fan-out, or MDP learning behavior may be using stale runtime configuration."
           - alert: DDFabricationServerWorkloadUnavailable
-            expr: dd:k8s_workload:available_ratio{namespace="default", workload="dd-fabrication-server"} < 1
+            expr: dd:k8s_workload:available_ratio{namespace="daedalus", workload="dd-fabrication-server"} < 1
             for: 5m
             labels:
               severity: warning
@@ -410,7 +410,7 @@ data:
               summary: Fabrication server deployment has unavailable replicas
               description: "The dd-fabrication-server Deployment has fewer available replicas than desired; cold release builds, scheduling pressure, or readiness failures may be blocking fabrication planning capacity."
           - alert: DDFabricationServerRolloutUpdatedReplicasLagging
-            expr: max(dd_k8s_deployment_updated_replicas{namespace="default",deployment="dd-fabrication-server",app="dd-fabrication-server"}) < max(dd_k8s_deployment_desired_replicas{namespace="default",deployment="dd-fabrication-server",app="dd-fabrication-server"})
+            expr: max(dd_k8s_deployment_updated_replicas{namespace="daedalus",deployment="dd-fabrication-server",app="dd-fabrication-server"}) < max(dd_k8s_deployment_desired_replicas{namespace="daedalus",deployment="dd-fabrication-server",app="dd-fabrication-server"})
             for: 10m
             labels:
               severity: warning
@@ -419,7 +419,7 @@ data:
               summary: Fabrication server rollout has not updated all desired replicas
               description: "The dd-fabrication-server Deployment has fewer updated replicas than desired; the hardened Rust planner image or release-build startup may not be fully rolled out even if older replicas are still serving."
           - alert: DDFabricationServerHpaAtMaxReplicas
-            expr: max(dd_k8s_hpa_current_at_max{namespace="default",app="dd-fabrication-server",hpa="dd-fabrication-server"}) > 0
+            expr: max(dd_k8s_hpa_current_at_max{namespace="daedalus",app="dd-fabrication-server",hpa="dd-fabrication-server"}) > 0
             for: 10m
             labels:
               severity: warning
@@ -428,7 +428,7 @@ data:
               summary: Fabrication server HPA is at max replicas
               description: "The dd-fabrication-server HorizontalPodAutoscaler has held current replicas at its configured maximum; planning or instruction-analysis demand may need a higher replica ceiling or request throttling."
           - alert: DDFabricationServerCpuNearLimit
-            expr: (max(dd_k8s_pod_container_cpu_usage_cores{namespace="default",app="dd-fabrication-server",container="fabrication-server"}) / max(dd_k8s_pod_container_cpu_limit_cores{namespace="default",app="dd-fabrication-server",container="fabrication-server"})) > 0.85
+            expr: (max(dd_k8s_pod_container_cpu_usage_cores{namespace="daedalus",app="dd-fabrication-server",container="fabrication-server"}) / max(dd_k8s_pod_container_cpu_limit_cores{namespace="daedalus",app="dd-fabrication-server",container="fabrication-server"})) > 0.85
             for: 10m
             labels:
               severity: warning
@@ -437,7 +437,7 @@ data:
               summary: Fabrication server CPU usage is near its container limit
               description: "The dd-fabrication-server serving container is using more than 85% of its configured CPU limit; planning, instruction analysis, NATS fan-out, or learning feedback may need more replicas or a higher limit before operators rely on generated machine work."
           - alert: DDFabricationServerMemoryNearLimit
-            expr: (max(dd_k8s_pod_container_memory_usage_bytes{namespace="default",app="dd-fabrication-server",container="fabrication-server"}) / max(dd_k8s_pod_container_memory_limit_bytes{namespace="default",app="dd-fabrication-server",container="fabrication-server"})) > 0.85
+            expr: (max(dd_k8s_pod_container_memory_usage_bytes{namespace="daedalus",app="dd-fabrication-server",container="fabrication-server"}) / max(dd_k8s_pod_container_memory_limit_bytes{namespace="daedalus",app="dd-fabrication-server",container="fabrication-server"})) > 0.85
             for: 10m
             labels:
               severity: warning
@@ -446,7 +446,7 @@ data:
               summary: Fabrication server memory usage is near its container limit
               description: "The dd-fabrication-server serving container is using more than 85% of its configured memory limit; retained job/artifact evidence, learning memory, and active planning work may be at risk of eviction or restart."
           - alert: DDFabricationServerPodRestartsIncreasing
-            expr: sum(increase(dd_k8s_pod_container_restarts_total{namespace="default",app="dd-fabrication-server",container="fabrication-server"}[15m])) > 0
+            expr: sum(increase(dd_k8s_pod_container_restarts_total{namespace="daedalus",app="dd-fabrication-server",container="fabrication-server"}[15m])) > 0
             for: 2m
             labels:
               severity: warning
@@ -455,7 +455,7 @@ data:
               summary: Fabrication server pods are restarting
               description: "The dd-fabrication-server serving container has restarted recently; retained job/artifact evidence, learning memory, NATS subscriptions, or active planning work may have been interrupted."
           - alert: DDFabricationServerServingContainerWaiting
-            expr: max(dd_k8s_pod_container_waiting{namespace="default",app="dd-fabrication-server",container="fabrication-server"}) > 0
+            expr: max(dd_k8s_pod_container_waiting{namespace="daedalus",app="dd-fabrication-server",container="fabrication-server"}) > 0
             for: 5m
             labels:
               severity: warning
@@ -464,7 +464,7 @@ data:
               summary: Fabrication server serving container is waiting
               description: "The dd-fabrication-server serving container is stuck in a Kubernetes waiting state; request planning, instruction analysis, result publication, and learning feedback may be unavailable even if init checks already completed."
           - alert: DDFabricationServerInitContainerWaiting
-            expr: max(dd_k8s_pod_init_container_waiting{namespace="default",app="dd-fabrication-server",init_container=~"source-layout-check|release-build"}) > 0
+            expr: max(dd_k8s_pod_init_container_waiting{namespace="daedalus",app="dd-fabrication-server",init_container=~"source-layout-check|release-build"}) > 0
             for: 5m
             labels:
               severity: warning
@@ -473,7 +473,7 @@ data:
               summary: Fabrication server init container is waiting
               description: "A dd-fabrication-server init container is waiting; source layout validation or the locked release build may be blocked before the Rust service can become ready."
           - alert: DDFabricationServerInitContainerRestartsIncreasing
-            expr: sum(increase(dd_k8s_pod_init_container_restarts_total{namespace="default",app="dd-fabrication-server",init_container=~"source-layout-check|release-build"}[15m])) > 0
+            expr: sum(increase(dd_k8s_pod_init_container_restarts_total{namespace="daedalus",app="dd-fabrication-server",init_container=~"source-layout-check|release-build"}[15m])) > 0
             for: 2m
             labels:
               severity: warning
@@ -509,7 +509,7 @@ data:
               summary: Fabrication server pod scrape target is down
               description: "A direct dd-fabrication-server pod scrape target is down; one replica's retained fabrication evidence or learning counters may be invisible even if the Service scrape still succeeds."
           - alert: DDFabricationServerPodScrapeCoverageBelowDesired
-            expr: sum(up{job="dd-fabrication-server-pods"} == bool 1) < max(dd_k8s_deployment_desired_replicas{namespace="default",deployment="dd-fabrication-server",app="dd-fabrication-server"})
+            expr: sum(up{job="dd-fabrication-server-pods"} == bool 1) < max(dd_k8s_deployment_desired_replicas{namespace="daedalus",deployment="dd-fabrication-server",app="dd-fabrication-server"})
             for: 10m
             labels:
               severity: warning
