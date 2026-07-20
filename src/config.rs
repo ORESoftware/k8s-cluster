@@ -74,17 +74,40 @@ pub struct Config {
     /// operator dashboard hosted elsewhere needs to embed admin actions.
     pub admin_allowed_origins: Vec<String>,
 
-    /// Bearer token for the JSON API (`/v1/...`). When set, every
-    /// tenant-scoped route requires `Authorization: Bearer <token>`
-    /// (constant-time compared). Required to boot: without it the entire API
-    /// is open to anyone who can reach the listener, so the server refuses to
-    /// start unless this is set (or `BILLING_ALLOW_INSECURE_DEV=1` is given for
-    /// local dev).
+    /// **Service-to-service** bearer token for the JSON API (`/v1/...`).
     ///
-    /// Production deployments should additionally front the listener
-    /// with `dd-remote-auth` or another gateway that enforces tenant
-    /// ownership; this token is the "fail-closed" floor.
+    /// This is a single process-wide shared secret. It authenticates *a
+    /// caller*, and deliberately carries no identity beyond "something holding
+    /// the shared token". It must therefore never be handed to an end user or
+    /// embedded in a client application: anyone holding it is, as far as this
+    /// token is concerned, every tenant at once.
+    ///
+    /// Required to boot: without it the entire API is open to anyone who can
+    /// reach the listener, so the server refuses to start unless this is set
+    /// (or `BILLING_ALLOW_INSECURE_DEV=1` is given for local dev).
+    ///
+    /// Per-*user* authentication and per-*tenant* authorization are handled
+    /// separately, by [`Self::supabase`] and
+    /// [`Self::tenant_routes_require_user_jwt`].
     pub api_auth_bearer: Option<String>,
+
+    /// Supabase wiring for per-user JWT verification. See
+    /// [`crate::supabase_auth`].
+    pub supabase: SupabaseConfig,
+
+    /// Require a verified Supabase JWT (not merely the shared service bearer)
+    /// on every tenant-scoped `/v1/tenants/{tenant_id}/...` route, and check
+    /// that the caller is entitled to that specific tenant.
+    ///
+    /// **Defaults to `true` — fail-closed.** With it off, the shared service
+    /// bearer alone is sufficient on tenant-scoped routes, which is precisely
+    /// the IDOR this setting exists to close: any holder of that one token can
+    /// operate on any tenant by editing the path. `false` is a *migration
+    /// window*, not a supported steady state. Set
+    /// `BILLING_TENANT_ROUTES_REQUIRE_USER_JWT=false` only while callers are
+    /// being moved onto Supabase tokens; the server logs a WARN every boot for
+    /// as long as it is off.
+    pub tenant_routes_require_user_jwt: bool,
 
     /// Refuse outbound HTTP to private / loopback / link-local IPs.
     /// Protects `tenant.webhook` jobs and notification channels from
