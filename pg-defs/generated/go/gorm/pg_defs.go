@@ -110,6 +110,10 @@ var orgsSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
 var projectsSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
 var customerNotificationsKindPattern = regexp.MustCompile(`^[a-z][a-z0-9_.]{1,38}[a-z0-9]$`)
 var syncIdempotencyKeysRequestFingerprintPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+var paymentMethodsLast4Pattern = regexp.MustCompile(`^[0-9]{4}$`)
+var invoicesCurrencyPattern = regexp.MustCompile(`^[a-z]{3}$`)
+var paymentsCurrencyPattern = regexp.MustCompile(`^[a-z]{3}$`)
+var billingWebhookEventsPayloadSha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 const AccountsTable = "threefa.accounts"
 const AccountsSelectSQL = `select
@@ -7321,6 +7325,259 @@ func (SyncIdempotencyKeysGorm) TableName() string { return SyncIdempotencyKeysTa
 
 func (value SyncIdempotencyKeysGorm) Validate() error {
 	if !syncIdempotencyKeysRequestFingerprintPattern.MatchString(value.RequestFingerprint) { return errors.New("sync_idempotency_keys.request_fingerprint does not match the required pattern") }
+	return nil
+}
+
+const BillingCustomersTable = "fiducia.billing_customers"
+const BillingCustomersSelectSQL = `select
+      id::text as id,
+      org_id::text as org_id,
+      provider,
+      provider_customer_id,
+      email,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from fiducia.billing_customers`
+
+var BillingCustomersProviderValues = []string{"stripe", "paypal"}
+
+type BillingCustomersGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	OrgId uuid.UUID `gorm:"column:org_id;type:uuid;not null" json:"orgId"`
+	Provider string `gorm:"column:provider;type:varchar(16);not null" json:"provider"`
+	ProviderCustomerId string `gorm:"column:provider_customer_id;type:varchar(255);not null" json:"providerCustomerId"`
+	Email *string `gorm:"column:email;type:varchar(320)" json:"email,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (BillingCustomersGorm) TableName() string { return BillingCustomersTable }
+
+func (value BillingCustomersGorm) Validate() error {
+	if !containsString(BillingCustomersProviderValues, value.Provider) { return errors.New("unsupported billing_customers.provider") }
+	return nil
+}
+
+const PaymentMethodsTable = "fiducia.payment_methods"
+const PaymentMethodsSelectSQL = `select
+      id::text as id,
+      org_id::text as org_id,
+      billing_customer_id::text as billing_customer_id,
+      provider,
+      provider_payment_method_id,
+      kind,
+      brand,
+      last4,
+      exp_month,
+      exp_year,
+      is_default,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from fiducia.payment_methods`
+
+var PaymentMethodsProviderValues = []string{"stripe", "paypal"}
+
+type PaymentMethodsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	OrgId uuid.UUID `gorm:"column:org_id;type:uuid;not null" json:"orgId"`
+	BillingCustomerId uuid.UUID `gorm:"column:billing_customer_id;type:uuid;not null" json:"billingCustomerId"`
+	Provider string `gorm:"column:provider;type:varchar(16);not null" json:"provider"`
+	ProviderPaymentMethodId string `gorm:"column:provider_payment_method_id;type:varchar(255);not null" json:"providerPaymentMethodId"`
+	Kind string `gorm:"column:kind;type:varchar(32);not null" json:"kind"`
+	Brand *string `gorm:"column:brand;type:varchar(32)" json:"brand,omitempty"`
+	Last4 *string `gorm:"column:last4;type:varchar(4)" json:"last4,omitempty"`
+	ExpMonth *int32 `gorm:"column:exp_month;type:smallint" json:"expMonth,omitempty"`
+	ExpYear *int32 `gorm:"column:exp_year;type:smallint" json:"expYear,omitempty"`
+	IsDefault bool `gorm:"column:is_default;type:boolean;default:false;not null" json:"isDefault"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (PaymentMethodsGorm) TableName() string { return PaymentMethodsTable }
+
+func (value PaymentMethodsGorm) Validate() error {
+	if !containsString(PaymentMethodsProviderValues, value.Provider) { return errors.New("unsupported payment_methods.provider") }
+	if value.Last4 != nil {
+		if !paymentMethodsLast4Pattern.MatchString(*value.Last4) { return errors.New("payment_methods.last4 does not match the required pattern") }
+	}
+	if value.ExpMonth != nil {
+		if *value.ExpMonth < 1 { return errors.New("payment_methods.exp_month is below the minimum") }
+		if *value.ExpMonth > 12 { return errors.New("payment_methods.exp_month is above the maximum") }
+	}
+	return nil
+}
+
+const BillingSubscriptionsTable = "fiducia.billing_subscriptions"
+const BillingSubscriptionsSelectSQL = `select
+      id::text as id,
+      org_id::text as org_id,
+      billing_customer_id::text as billing_customer_id,
+      provider,
+      provider_subscription_id,
+      plan,
+      status,
+      to_char(current_period_start at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as current_period_start,
+      to_char(current_period_end at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as current_period_end,
+      cancel_at_period_end,
+      to_char(canceled_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as canceled_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from fiducia.billing_subscriptions`
+
+var BillingSubscriptionsProviderValues = []string{"stripe", "paypal"}
+var BillingSubscriptionsStatusValues = []string{"trialing", "active", "past_due", "canceled", "unpaid", "incomplete", "incomplete_expired", "paused"}
+
+type BillingSubscriptionsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	OrgId uuid.UUID `gorm:"column:org_id;type:uuid;not null" json:"orgId"`
+	BillingCustomerId uuid.UUID `gorm:"column:billing_customer_id;type:uuid;not null" json:"billingCustomerId"`
+	Provider string `gorm:"column:provider;type:varchar(16);not null" json:"provider"`
+	ProviderSubscriptionId string `gorm:"column:provider_subscription_id;type:varchar(255);not null" json:"providerSubscriptionId"`
+	Plan string `gorm:"column:plan;type:varchar(120);not null" json:"plan"`
+	Status string `gorm:"column:status;type:varchar(32);not null" json:"status"`
+	CurrentPeriodStart *time.Time `gorm:"column:current_period_start;type:timestamptz" json:"currentPeriodStart,omitempty"`
+	CurrentPeriodEnd *time.Time `gorm:"column:current_period_end;type:timestamptz" json:"currentPeriodEnd,omitempty"`
+	CancelAtPeriodEnd bool `gorm:"column:cancel_at_period_end;type:boolean;default:false;not null" json:"cancelAtPeriodEnd"`
+	CanceledAt *time.Time `gorm:"column:canceled_at;type:timestamptz" json:"canceledAt,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (BillingSubscriptionsGorm) TableName() string { return BillingSubscriptionsTable }
+
+func (value BillingSubscriptionsGorm) Validate() error {
+	if !containsString(BillingSubscriptionsProviderValues, value.Provider) { return errors.New("unsupported billing_subscriptions.provider") }
+	if !containsString(BillingSubscriptionsStatusValues, value.Status) { return errors.New("unsupported billing_subscriptions.status") }
+	return nil
+}
+
+const InvoicesTable = "fiducia.invoices"
+const InvoicesSelectSQL = `select
+      id::text as id,
+      org_id::text as org_id,
+      billing_customer_id::text as billing_customer_id,
+      subscription_id::text as subscription_id,
+      provider,
+      provider_invoice_id,
+      status,
+      amount_due_cents,
+      amount_paid_cents,
+      currency,
+      to_char(period_start at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as period_start,
+      to_char(period_end at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as period_end,
+      hosted_invoice_url,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from fiducia.invoices`
+
+var InvoicesProviderValues = []string{"stripe", "paypal"}
+var InvoicesStatusValues = []string{"draft", "open", "paid", "void", "uncollectible"}
+
+type InvoicesGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	OrgId uuid.UUID `gorm:"column:org_id;type:uuid;not null" json:"orgId"`
+	BillingCustomerId *uuid.UUID `gorm:"column:billing_customer_id;type:uuid" json:"billingCustomerId,omitempty"`
+	SubscriptionId *uuid.UUID `gorm:"column:subscription_id;type:uuid" json:"subscriptionId,omitempty"`
+	Provider string `gorm:"column:provider;type:varchar(16);not null" json:"provider"`
+	ProviderInvoiceId string `gorm:"column:provider_invoice_id;type:varchar(255);not null" json:"providerInvoiceId"`
+	Status string `gorm:"column:status;type:varchar(32);not null" json:"status"`
+	AmountDueCents int64 `gorm:"column:amount_due_cents;type:bigint;not null" json:"amountDueCents"`
+	AmountPaidCents int64 `gorm:"column:amount_paid_cents;type:bigint;default:0;not null" json:"amountPaidCents"`
+	Currency string `gorm:"column:currency;type:varchar(3);not null" json:"currency"`
+	PeriodStart *time.Time `gorm:"column:period_start;type:timestamptz" json:"periodStart,omitempty"`
+	PeriodEnd *time.Time `gorm:"column:period_end;type:timestamptz" json:"periodEnd,omitempty"`
+	HostedInvoiceUrl *string `gorm:"column:hosted_invoice_url;type:text" json:"hostedInvoiceUrl,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (InvoicesGorm) TableName() string { return InvoicesTable }
+
+func (value InvoicesGorm) Validate() error {
+	if !containsString(InvoicesProviderValues, value.Provider) { return errors.New("unsupported invoices.provider") }
+	if !containsString(InvoicesStatusValues, value.Status) { return errors.New("unsupported invoices.status") }
+	if value.AmountDueCents < 0 { return errors.New("invoices.amount_due_cents is below the minimum") }
+	if value.AmountPaidCents < 0 { return errors.New("invoices.amount_paid_cents is below the minimum") }
+	if !invoicesCurrencyPattern.MatchString(value.Currency) { return errors.New("invoices.currency does not match the required pattern") }
+	return nil
+}
+
+const PaymentsTable = "fiducia.payments"
+const PaymentsSelectSQL = `select
+      id::text as id,
+      org_id::text as org_id,
+      invoice_id::text as invoice_id,
+      payment_method_id::text as payment_method_id,
+      provider,
+      provider_payment_id,
+      status,
+      amount_cents,
+      currency,
+      failure_code,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from fiducia.payments`
+
+var PaymentsProviderValues = []string{"stripe", "paypal"}
+var PaymentsStatusValues = []string{"pending", "processing", "succeeded", "failed", "canceled", "refunded", "partially_refunded"}
+
+type PaymentsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	OrgId uuid.UUID `gorm:"column:org_id;type:uuid;not null" json:"orgId"`
+	InvoiceId *uuid.UUID `gorm:"column:invoice_id;type:uuid" json:"invoiceId,omitempty"`
+	PaymentMethodId *uuid.UUID `gorm:"column:payment_method_id;type:uuid" json:"paymentMethodId,omitempty"`
+	Provider string `gorm:"column:provider;type:varchar(16);not null" json:"provider"`
+	ProviderPaymentId string `gorm:"column:provider_payment_id;type:varchar(255);not null" json:"providerPaymentId"`
+	Status string `gorm:"column:status;type:varchar(32);not null" json:"status"`
+	AmountCents int64 `gorm:"column:amount_cents;type:bigint;not null" json:"amountCents"`
+	Currency string `gorm:"column:currency;type:varchar(3);not null" json:"currency"`
+	FailureCode *string `gorm:"column:failure_code;type:varchar(120)" json:"failureCode,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (PaymentsGorm) TableName() string { return PaymentsTable }
+
+func (value PaymentsGorm) Validate() error {
+	if !containsString(PaymentsProviderValues, value.Provider) { return errors.New("unsupported payments.provider") }
+	if !containsString(PaymentsStatusValues, value.Status) { return errors.New("unsupported payments.status") }
+	if value.AmountCents < 0 { return errors.New("payments.amount_cents is below the minimum") }
+	if !paymentsCurrencyPattern.MatchString(value.Currency) { return errors.New("payments.currency does not match the required pattern") }
+	return nil
+}
+
+const BillingWebhookEventsTable = "fiducia.billing_webhook_events"
+const BillingWebhookEventsSelectSQL = `select
+      id::text as id,
+      provider,
+      provider_event_id,
+      event_type,
+      signature_verified,
+      payload_sha256,
+      to_char(received_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as received_at,
+      to_char(processed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as processed_at,
+      process_error
+    from fiducia.billing_webhook_events`
+
+var BillingWebhookEventsProviderValues = []string{"stripe", "paypal"}
+
+type BillingWebhookEventsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	Provider string `gorm:"column:provider;type:varchar(16);not null" json:"provider"`
+	ProviderEventId string `gorm:"column:provider_event_id;type:varchar(255);not null" json:"providerEventId"`
+	EventType string `gorm:"column:event_type;type:varchar(120);not null" json:"eventType"`
+	SignatureVerified bool `gorm:"column:signature_verified;type:boolean;not null" json:"signatureVerified"`
+	PayloadSha256 string `gorm:"column:payload_sha256;type:varchar(64);not null" json:"payloadSha256"`
+	ReceivedAt time.Time `gorm:"column:received_at;type:timestamptz;default:now();not null" json:"receivedAt"`
+	ProcessedAt *time.Time `gorm:"column:processed_at;type:timestamptz" json:"processedAt,omitempty"`
+	ProcessError *string `gorm:"column:process_error;type:text" json:"processError,omitempty"`
+}
+
+func (BillingWebhookEventsGorm) TableName() string { return BillingWebhookEventsTable }
+
+func (value BillingWebhookEventsGorm) Validate() error {
+	if !containsString(BillingWebhookEventsProviderValues, value.Provider) { return errors.New("unsupported billing_webhook_events.provider") }
+	if !billingWebhookEventsPayloadSha256Pattern.MatchString(value.PayloadSha256) { return errors.New("billing_webhook_events.payload_sha256 does not match the required pattern") }
 	return nil
 }
 

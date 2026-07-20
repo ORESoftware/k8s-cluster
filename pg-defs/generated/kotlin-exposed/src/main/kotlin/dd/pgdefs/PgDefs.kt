@@ -2629,6 +2629,105 @@ object SyncIdempotencyKeys : Table("fiducia.sync_idempotency_keys") {
     override val primaryKey = PrimaryKey(key)
 }
 
+object BillingCustomers : Table("fiducia.billing_customers") {
+    val id = uuid("id")
+    val orgId = uuid("org_id")
+    val provider = varchar("provider", 16)
+    val providerCustomerId = varchar("provider_customer_id", 255)
+    val email = varchar("email", 320).nullable()
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object PaymentMethods : Table("fiducia.payment_methods") {
+    val id = uuid("id")
+    val orgId = uuid("org_id")
+    val billingCustomerId = uuid("billing_customer_id")
+    val provider = varchar("provider", 16)
+    val providerPaymentMethodId = varchar("provider_payment_method_id", 255)
+    val kind = varchar("kind", 32)
+    val brand = varchar("brand", 32).nullable()
+    val last4 = varchar("last4", 4).nullable()
+    val expMonth = short("exp_month").nullable()
+    val expYear = short("exp_year").nullable()
+    val isDefault = bool("is_default")
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object BillingSubscriptions : Table("fiducia.billing_subscriptions") {
+    val id = uuid("id")
+    val orgId = uuid("org_id")
+    val billingCustomerId = uuid("billing_customer_id")
+    val provider = varchar("provider", 16)
+    val providerSubscriptionId = varchar("provider_subscription_id", 255)
+    val plan = varchar("plan", 120)
+    val status = varchar("status", 32)
+    val currentPeriodStart = timestampWithTimeZone("current_period_start").nullable()
+    val currentPeriodEnd = timestampWithTimeZone("current_period_end").nullable()
+    val cancelAtPeriodEnd = bool("cancel_at_period_end")
+    val canceledAt = timestampWithTimeZone("canceled_at").nullable()
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object Invoices : Table("fiducia.invoices") {
+    val id = uuid("id")
+    val orgId = uuid("org_id")
+    val billingCustomerId = uuid("billing_customer_id").nullable()
+    val subscriptionId = uuid("subscription_id").nullable()
+    val provider = varchar("provider", 16)
+    val providerInvoiceId = varchar("provider_invoice_id", 255)
+    val status = varchar("status", 32)
+    val amountDueCents = long("amount_due_cents")
+    val amountPaidCents = long("amount_paid_cents")
+    val currency = varchar("currency", 3)
+    val periodStart = timestampWithTimeZone("period_start").nullable()
+    val periodEnd = timestampWithTimeZone("period_end").nullable()
+    val hostedInvoiceUrl = text("hosted_invoice_url").nullable()
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object Payments : Table("fiducia.payments") {
+    val id = uuid("id")
+    val orgId = uuid("org_id")
+    val invoiceId = uuid("invoice_id").nullable()
+    val paymentMethodId = uuid("payment_method_id").nullable()
+    val provider = varchar("provider", 16)
+    val providerPaymentId = varchar("provider_payment_id", 255)
+    val status = varchar("status", 32)
+    val amountCents = long("amount_cents")
+    val currency = varchar("currency", 3)
+    val failureCode = varchar("failure_code", 120).nullable()
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object BillingWebhookEvents : Table("fiducia.billing_webhook_events") {
+    val id = uuid("id")
+    val provider = varchar("provider", 16)
+    val providerEventId = varchar("provider_event_id", 255)
+    val eventType = varchar("event_type", 120)
+    val signatureVerified = bool("signature_verified")
+    val payloadSha256 = varchar("payload_sha256", 64)
+    val receivedAt = timestampWithTimeZone("received_at")
+    val processedAt = timestampWithTimeZone("processed_at").nullable()
+    val processError = text("process_error").nullable()
+
+    override val primaryKey = PrimaryKey(id)
+}
+
 object Transcriptions : Table("t2v.transcriptions") {
     val id = uuid("id")
     val source = text("source")
@@ -7434,6 +7533,180 @@ fun toSyncIdempotencyKeysRow(row: ResultRow): SyncIdempotencyKeysRow = SyncIdemp
     row[SyncIdempotencyKeys.requestFingerprint],
     row[SyncIdempotencyKeys.committedVersion],
     row[SyncIdempotencyKeys.createdAt],
+)
+
+data class BillingCustomersRow(
+    val id: UUID,
+    val orgId: UUID,
+    val provider: String,
+    val providerCustomerId: String,
+    val email: String?,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+)
+
+fun toBillingCustomersRow(row: ResultRow): BillingCustomersRow = BillingCustomersRow(
+    row[BillingCustomers.id],
+    row[BillingCustomers.orgId],
+    row[BillingCustomers.provider],
+    row[BillingCustomers.providerCustomerId],
+    row[BillingCustomers.email],
+    row[BillingCustomers.createdAt],
+    row[BillingCustomers.updatedAt],
+)
+
+data class PaymentMethodsRow(
+    val id: UUID,
+    val orgId: UUID,
+    val billingCustomerId: UUID,
+    val provider: String,
+    val providerPaymentMethodId: String,
+    val kind: String,
+    val brand: String?,
+    val last4: String?,
+    val expMonth: Short?,
+    val expYear: Short?,
+    val isDefault: Boolean,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+)
+
+fun toPaymentMethodsRow(row: ResultRow): PaymentMethodsRow = PaymentMethodsRow(
+    row[PaymentMethods.id],
+    row[PaymentMethods.orgId],
+    row[PaymentMethods.billingCustomerId],
+    row[PaymentMethods.provider],
+    row[PaymentMethods.providerPaymentMethodId],
+    row[PaymentMethods.kind],
+    row[PaymentMethods.brand],
+    row[PaymentMethods.last4],
+    row[PaymentMethods.expMonth],
+    row[PaymentMethods.expYear],
+    row[PaymentMethods.isDefault],
+    row[PaymentMethods.createdAt],
+    row[PaymentMethods.updatedAt],
+)
+
+data class BillingSubscriptionsRow(
+    val id: UUID,
+    val orgId: UUID,
+    val billingCustomerId: UUID,
+    val provider: String,
+    val providerSubscriptionId: String,
+    val plan: String,
+    val status: String,
+    val currentPeriodStart: OffsetDateTime?,
+    val currentPeriodEnd: OffsetDateTime?,
+    val cancelAtPeriodEnd: Boolean,
+    val canceledAt: OffsetDateTime?,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+)
+
+fun toBillingSubscriptionsRow(row: ResultRow): BillingSubscriptionsRow = BillingSubscriptionsRow(
+    row[BillingSubscriptions.id],
+    row[BillingSubscriptions.orgId],
+    row[BillingSubscriptions.billingCustomerId],
+    row[BillingSubscriptions.provider],
+    row[BillingSubscriptions.providerSubscriptionId],
+    row[BillingSubscriptions.plan],
+    row[BillingSubscriptions.status],
+    row[BillingSubscriptions.currentPeriodStart],
+    row[BillingSubscriptions.currentPeriodEnd],
+    row[BillingSubscriptions.cancelAtPeriodEnd],
+    row[BillingSubscriptions.canceledAt],
+    row[BillingSubscriptions.createdAt],
+    row[BillingSubscriptions.updatedAt],
+)
+
+data class InvoicesRow(
+    val id: UUID,
+    val orgId: UUID,
+    val billingCustomerId: UUID?,
+    val subscriptionId: UUID?,
+    val provider: String,
+    val providerInvoiceId: String,
+    val status: String,
+    val amountDueCents: Long,
+    val amountPaidCents: Long,
+    val currency: String,
+    val periodStart: OffsetDateTime?,
+    val periodEnd: OffsetDateTime?,
+    val hostedInvoiceUrl: String?,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+)
+
+fun toInvoicesRow(row: ResultRow): InvoicesRow = InvoicesRow(
+    row[Invoices.id],
+    row[Invoices.orgId],
+    row[Invoices.billingCustomerId],
+    row[Invoices.subscriptionId],
+    row[Invoices.provider],
+    row[Invoices.providerInvoiceId],
+    row[Invoices.status],
+    row[Invoices.amountDueCents],
+    row[Invoices.amountPaidCents],
+    row[Invoices.currency],
+    row[Invoices.periodStart],
+    row[Invoices.periodEnd],
+    row[Invoices.hostedInvoiceUrl],
+    row[Invoices.createdAt],
+    row[Invoices.updatedAt],
+)
+
+data class PaymentsRow(
+    val id: UUID,
+    val orgId: UUID,
+    val invoiceId: UUID?,
+    val paymentMethodId: UUID?,
+    val provider: String,
+    val providerPaymentId: String,
+    val status: String,
+    val amountCents: Long,
+    val currency: String,
+    val failureCode: String?,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+)
+
+fun toPaymentsRow(row: ResultRow): PaymentsRow = PaymentsRow(
+    row[Payments.id],
+    row[Payments.orgId],
+    row[Payments.invoiceId],
+    row[Payments.paymentMethodId],
+    row[Payments.provider],
+    row[Payments.providerPaymentId],
+    row[Payments.status],
+    row[Payments.amountCents],
+    row[Payments.currency],
+    row[Payments.failureCode],
+    row[Payments.createdAt],
+    row[Payments.updatedAt],
+)
+
+data class BillingWebhookEventsRow(
+    val id: UUID,
+    val provider: String,
+    val providerEventId: String,
+    val eventType: String,
+    val signatureVerified: Boolean,
+    val payloadSha256: String,
+    val receivedAt: OffsetDateTime,
+    val processedAt: OffsetDateTime?,
+    val processError: String?,
+)
+
+fun toBillingWebhookEventsRow(row: ResultRow): BillingWebhookEventsRow = BillingWebhookEventsRow(
+    row[BillingWebhookEvents.id],
+    row[BillingWebhookEvents.provider],
+    row[BillingWebhookEvents.providerEventId],
+    row[BillingWebhookEvents.eventType],
+    row[BillingWebhookEvents.signatureVerified],
+    row[BillingWebhookEvents.payloadSha256],
+    row[BillingWebhookEvents.receivedAt],
+    row[BillingWebhookEvents.processedAt],
+    row[BillingWebhookEvents.processError],
 )
 
 data class TranscriptionsRow(

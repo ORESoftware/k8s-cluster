@@ -11791,6 +11791,350 @@ class SyncIdempotencyKeysInsert(BaseModel):
     committedVersion: int | None = None
     createdAt: datetime | None = None
 
+BillingCustomersProvider = Literal["stripe", "paypal"]
+
+class BillingCustomers(Base):
+    __tablename__ = "billing_customers"
+    __table_args__ = (
+        CheckConstraint("provider in ('stripe', 'paypal')", name="fiducia_billing_customers_provider_chk"),
+        Index("fiducia_billing_customers_org_provider_uq", "org_id", "provider", unique=True),
+        Index("fiducia_billing_customers_provider_id_uq", "provider", "provider_customer_id", unique=True),
+        {"schema": "fiducia"},
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    org_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    provider: Mapped[str] = mapped_column(String(16), nullable=False)
+    provider_customer_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class BillingCustomersRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    orgId: UUID
+    provider: BillingCustomersProvider
+    providerCustomerId: str = Field(..., max_length=255)
+    email: str | None = Field(None, max_length=320)
+    createdAt: datetime
+    updatedAt: datetime
+
+class BillingCustomersInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    orgId: UUID
+    provider: BillingCustomersProvider
+    providerCustomerId: str = Field(..., max_length=255)
+    email: str | None = Field(None, max_length=320)
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+PaymentMethodsProvider = Literal["stripe", "paypal"]
+
+class PaymentMethods(Base):
+    __tablename__ = "payment_methods"
+    __table_args__ = (
+        CheckConstraint("provider in ('stripe', 'paypal')", name="fiducia_payment_methods_provider_chk"),
+        CheckConstraint("last4 is null or last4 ~ '^[0-9]{4}$'", name="fiducia_payment_methods_last4_chk"),
+        CheckConstraint("exp_month is null or exp_month between 1 and 12", name="fiducia_payment_methods_exp_month_chk"),
+        Index("fiducia_payment_methods_provider_id_uq", "provider", "provider_payment_method_id", unique=True),
+        Index("fiducia_payment_methods_customer_idx", "billing_customer_id"),
+        Index("fiducia_payment_methods_one_default_uq", "billing_customer_id", unique=True, postgresql_where=text("is_default")),
+        {"schema": "fiducia"},
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    org_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    billing_customer_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    provider: Mapped[str] = mapped_column(String(16), nullable=False)
+    provider_payment_method_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    brand: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    last4: Mapped[str | None] = mapped_column(String(4), nullable=True)
+    exp_month: Mapped[int | None] = mapped_column(SmallInteger(), nullable=True)
+    exp_year: Mapped[int | None] = mapped_column(SmallInteger(), nullable=True)
+    is_default: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class PaymentMethodsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    orgId: UUID
+    billingCustomerId: UUID
+    provider: PaymentMethodsProvider
+    providerPaymentMethodId: str = Field(..., max_length=255)
+    kind: str = Field(..., max_length=32)
+    brand: str | None = Field(None, max_length=32)
+    last4: str | None = Field(None, max_length=4, pattern="^[0-9]{4}$")
+    expMonth: int | None = Field(None, ge=1, le=12)
+    expYear: int | None = None
+    isDefault: bool
+    createdAt: datetime
+    updatedAt: datetime
+
+class PaymentMethodsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    orgId: UUID
+    billingCustomerId: UUID
+    provider: PaymentMethodsProvider
+    providerPaymentMethodId: str = Field(..., max_length=255)
+    kind: str = Field(..., max_length=32)
+    brand: str | None = Field(None, max_length=32)
+    last4: str | None = Field(None, max_length=4, pattern="^[0-9]{4}$")
+    expMonth: int | None = Field(None, ge=1, le=12)
+    expYear: int | None = None
+    isDefault: bool | None = False
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+BillingSubscriptionsProvider = Literal["stripe", "paypal"]
+BillingSubscriptionsStatus = Literal["trialing", "active", "past_due", "canceled", "unpaid", "incomplete", "incomplete_expired", "paused"]
+
+class BillingSubscriptions(Base):
+    __tablename__ = "billing_subscriptions"
+    __table_args__ = (
+        CheckConstraint("provider in ('stripe', 'paypal')", name="fiducia_billing_subscriptions_provider_chk"),
+        CheckConstraint("status in ('trialing', 'active', 'past_due', 'canceled', 'unpaid', 'incomplete', 'incomplete_expired', 'paused')", name="fiducia_billing_subscriptions_status_chk"),
+        Index("fiducia_billing_subscriptions_provider_id_uq", "provider", "provider_subscription_id", unique=True),
+        Index("fiducia_billing_subscriptions_org_idx", "org_id"),
+        {"schema": "fiducia"},
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    org_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    billing_customer_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    provider: Mapped[str] = mapped_column(String(16), nullable=False)
+    provider_subscription_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    plan: Mapped[str] = mapped_column(String(120), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    current_period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancel_at_period_end: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    canceled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class BillingSubscriptionsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    orgId: UUID
+    billingCustomerId: UUID
+    provider: BillingSubscriptionsProvider
+    providerSubscriptionId: str = Field(..., max_length=255)
+    plan: str = Field(..., max_length=120)
+    status: BillingSubscriptionsStatus
+    currentPeriodStart: datetime | None = None
+    currentPeriodEnd: datetime | None = None
+    cancelAtPeriodEnd: bool
+    canceledAt: datetime | None = None
+    createdAt: datetime
+    updatedAt: datetime
+
+class BillingSubscriptionsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    orgId: UUID
+    billingCustomerId: UUID
+    provider: BillingSubscriptionsProvider
+    providerSubscriptionId: str = Field(..., max_length=255)
+    plan: str = Field(..., max_length=120)
+    status: BillingSubscriptionsStatus
+    currentPeriodStart: datetime | None = None
+    currentPeriodEnd: datetime | None = None
+    cancelAtPeriodEnd: bool | None = False
+    canceledAt: datetime | None = None
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+InvoicesProvider = Literal["stripe", "paypal"]
+InvoicesStatus = Literal["draft", "open", "paid", "void", "uncollectible"]
+
+class Invoices(Base):
+    __tablename__ = "invoices"
+    __table_args__ = (
+        CheckConstraint("provider in ('stripe', 'paypal')", name="fiducia_invoices_provider_chk"),
+        CheckConstraint("status in ('draft', 'open', 'paid', 'void', 'uncollectible')", name="fiducia_invoices_status_chk"),
+        CheckConstraint("currency ~ '^[a-z]{3}$'", name="fiducia_invoices_currency_chk"),
+        CheckConstraint("amount_due_cents >= 0", name="fiducia_invoices_amount_due_chk"),
+        CheckConstraint("amount_paid_cents >= 0", name="fiducia_invoices_amount_paid_chk"),
+        Index("fiducia_invoices_provider_id_uq", "provider", "provider_invoice_id", unique=True),
+        Index("invoices_org_idx", "org_id"),
+        Index("invoices_subscription_idx", "subscription_id"),
+        {"schema": "fiducia"},
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    org_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    billing_customer_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    subscription_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    provider: Mapped[str] = mapped_column(String(16), nullable=False)
+    provider_invoice_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    amount_due_cents: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    amount_paid_cents: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    hosted_invoice_url: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class InvoicesRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    orgId: UUID
+    billingCustomerId: UUID | None = None
+    subscriptionId: UUID | None = None
+    provider: InvoicesProvider
+    providerInvoiceId: str = Field(..., max_length=255)
+    status: InvoicesStatus
+    amountDueCents: int
+    amountPaidCents: int
+    currency: str = Field(..., max_length=3, pattern="^[a-z]{3}$")
+    periodStart: datetime | None = None
+    periodEnd: datetime | None = None
+    hostedInvoiceUrl: str | None = None
+    createdAt: datetime
+    updatedAt: datetime
+
+class InvoicesInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    orgId: UUID
+    billingCustomerId: UUID | None = None
+    subscriptionId: UUID | None = None
+    provider: InvoicesProvider
+    providerInvoiceId: str = Field(..., max_length=255)
+    status: InvoicesStatus
+    amountDueCents: int
+    amountPaidCents: int | None = 0
+    currency: str = Field(..., max_length=3, pattern="^[a-z]{3}$")
+    periodStart: datetime | None = None
+    periodEnd: datetime | None = None
+    hostedInvoiceUrl: str | None = None
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+PaymentsProvider = Literal["stripe", "paypal"]
+PaymentsStatus = Literal["pending", "processing", "succeeded", "failed", "canceled", "refunded", "partially_refunded"]
+
+class Payments(Base):
+    __tablename__ = "payments"
+    __table_args__ = (
+        CheckConstraint("provider in ('stripe', 'paypal')", name="fiducia_payments_provider_chk"),
+        CheckConstraint("status in ('pending', 'processing', 'succeeded', 'failed', 'canceled', 'refunded', 'partially_refunded')", name="fiducia_payments_status_chk"),
+        CheckConstraint("currency ~ '^[a-z]{3}$'", name="fiducia_payments_currency_chk"),
+        CheckConstraint("amount_cents >= 0", name="fiducia_payments_amount_chk"),
+        Index("fiducia_payments_provider_id_uq", "provider", "provider_payment_id", unique=True),
+        Index("payments_org_idx", "org_id"),
+        Index("payments_invoice_idx", "invoice_id"),
+        {"schema": "fiducia"},
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    org_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    invoice_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    payment_method_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    provider: Mapped[str] = mapped_column(String(16), nullable=False)
+    provider_payment_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    amount_cents: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    failure_code: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class PaymentsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    orgId: UUID
+    invoiceId: UUID | None = None
+    paymentMethodId: UUID | None = None
+    provider: PaymentsProvider
+    providerPaymentId: str = Field(..., max_length=255)
+    status: PaymentsStatus
+    amountCents: int
+    currency: str = Field(..., max_length=3, pattern="^[a-z]{3}$")
+    failureCode: str | None = Field(None, max_length=120)
+    createdAt: datetime
+    updatedAt: datetime
+
+class PaymentsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    orgId: UUID
+    invoiceId: UUID | None = None
+    paymentMethodId: UUID | None = None
+    provider: PaymentsProvider
+    providerPaymentId: str = Field(..., max_length=255)
+    status: PaymentsStatus
+    amountCents: int
+    currency: str = Field(..., max_length=3, pattern="^[a-z]{3}$")
+    failureCode: str | None = Field(None, max_length=120)
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+BillingWebhookEventsProvider = Literal["stripe", "paypal"]
+
+class BillingWebhookEvents(Base):
+    __tablename__ = "billing_webhook_events"
+    __table_args__ = (
+        CheckConstraint("provider in ('stripe', 'paypal')", name="fiducia_billing_webhook_events_provider_chk"),
+        CheckConstraint("payload_sha256 ~ '^[0-9a-f]{64}$'", name="fiducia_billing_webhook_events_payload_sha_chk"),
+        Index("fiducia_billing_webhook_events_provider_event_uq", "provider", "provider_event_id", unique=True),
+        Index("fiducia_billing_webhook_events_unprocessed_idx", "received_at", postgresql_where=text("processed_at is null")),
+        {"schema": "fiducia"},
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    provider: Mapped[str] = mapped_column(String(16), nullable=False)
+    provider_event_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    signature_verified: Mapped[bool] = mapped_column(Boolean(), nullable=False)
+    payload_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    process_error: Mapped[str | None] = mapped_column(Text(), nullable=True)
+
+class BillingWebhookEventsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    provider: BillingWebhookEventsProvider
+    providerEventId: str = Field(..., max_length=255)
+    eventType: str = Field(..., max_length=120)
+    signatureVerified: bool
+    payloadSha256: str = Field(..., max_length=64, pattern="^[0-9a-f]{64}$")
+    receivedAt: datetime
+    processedAt: datetime | None = None
+    processError: str | None = None
+
+class BillingWebhookEventsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    provider: BillingWebhookEventsProvider
+    providerEventId: str = Field(..., max_length=255)
+    eventType: str = Field(..., max_length=120)
+    signatureVerified: bool
+    payloadSha256: str = Field(..., max_length=64, pattern="^[0-9a-f]{64}$")
+    receivedAt: datetime | None = None
+    processedAt: datetime | None = None
+    processError: str | None = None
+
 class Transcriptions(Base):
     __tablename__ = "transcriptions"
     __table_args__ = (

@@ -11998,6 +11998,475 @@ let validateSyncIdempotencyKeysRequestFingerprint (value: string) : Result<strin
     elif not (Regex.IsMatch(value, @"^[0-9a-f]{64}$")) then Error "sync_idempotency_keys.request_fingerprint does not match the required pattern"
     else Ok value
 
+let billingCustomersTable = "fiducia.billing_customers"
+let billingCustomersColumns = [ "id"; "org_id"; "provider"; "provider_customer_id"; "email"; "created_at"; "updated_at" ]
+let billingCustomersSelectSql = "select\n      id::text as id,\n      org_id::text as org_id,\n      provider,\n      provider_customer_id,\n      email,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from fiducia.billing_customers"
+
+[<RequireQualifiedAccess>]
+type BillingCustomersProvider =
+    | Stripe
+    | Paypal
+
+let billingCustomersProviderToString (value: BillingCustomersProvider) : string =
+    match value with
+    | BillingCustomersProvider.Stripe -> "stripe"
+    | BillingCustomersProvider.Paypal -> "paypal"
+
+let parseBillingCustomersProvider (value: string) : Result<BillingCustomersProvider, string> =
+    match value with
+    | "stripe" -> Ok BillingCustomersProvider.Stripe
+    | "paypal" -> Ok BillingCustomersProvider.Paypal
+    | _ -> Error ("unsupported billing_customers.provider: " + value)
+
+type BillingCustomersRow =
+    { BillingCustomersId: string
+      BillingCustomersOrgId: string
+      BillingCustomersProvider: string
+      BillingCustomersProviderCustomerId: string
+      BillingCustomersEmail: string option
+      BillingCustomersCreatedAt: string
+      BillingCustomersUpdatedAt: string
+    }
+
+let billingCustomersRowOfRow (get: int -> string) (isNullAt: int -> bool) : BillingCustomersRow =
+    { BillingCustomersId = get 0
+      BillingCustomersOrgId = get 1
+      BillingCustomersProvider = get 2
+      BillingCustomersProviderCustomerId = get 3
+      BillingCustomersEmail = (if isNullAt 4 then None else Some (get 4))
+      BillingCustomersCreatedAt = get 5
+      BillingCustomersUpdatedAt = get 6
+    }
+
+let validateBillingCustomersProviderCustomerId (value: string) : Result<string, string> =
+    if value.Length > 255 then Error "billing_customers.provider_customer_id must be at most 255 characters"
+    else Ok value
+
+let validateBillingCustomersEmail (value: string) : Result<string, string> =
+    if value.Length > 320 then Error "billing_customers.email must be at most 320 characters"
+    else Ok value
+
+let paymentMethodsTable = "fiducia.payment_methods"
+let paymentMethodsColumns = [ "id"; "org_id"; "billing_customer_id"; "provider"; "provider_payment_method_id"; "kind"; "brand"; "last4"; "exp_month"; "exp_year"; "is_default"; "created_at"; "updated_at" ]
+let paymentMethodsSelectSql = "select\n      id::text as id,\n      org_id::text as org_id,\n      billing_customer_id::text as billing_customer_id,\n      provider,\n      provider_payment_method_id,\n      kind,\n      brand,\n      last4,\n      exp_month,\n      exp_year,\n      is_default,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from fiducia.payment_methods"
+
+[<RequireQualifiedAccess>]
+type PaymentMethodsProvider =
+    | Stripe
+    | Paypal
+
+let paymentMethodsProviderToString (value: PaymentMethodsProvider) : string =
+    match value with
+    | PaymentMethodsProvider.Stripe -> "stripe"
+    | PaymentMethodsProvider.Paypal -> "paypal"
+
+let parsePaymentMethodsProvider (value: string) : Result<PaymentMethodsProvider, string> =
+    match value with
+    | "stripe" -> Ok PaymentMethodsProvider.Stripe
+    | "paypal" -> Ok PaymentMethodsProvider.Paypal
+    | _ -> Error ("unsupported payment_methods.provider: " + value)
+
+type PaymentMethodsRow =
+    { PaymentMethodsId: string
+      PaymentMethodsOrgId: string
+      PaymentMethodsBillingCustomerId: string
+      PaymentMethodsProvider: string
+      PaymentMethodsProviderPaymentMethodId: string
+      PaymentMethodsKind: string
+      PaymentMethodsBrand: string option
+      PaymentMethodsLast4: string option
+      PaymentMethodsExpMonth: int option
+      PaymentMethodsExpYear: int option
+      PaymentMethodsIsDefault: bool
+      PaymentMethodsCreatedAt: string
+      PaymentMethodsUpdatedAt: string
+    }
+
+let paymentMethodsRowOfRow (get: int -> string) (isNullAt: int -> bool) : PaymentMethodsRow =
+    { PaymentMethodsId = get 0
+      PaymentMethodsOrgId = get 1
+      PaymentMethodsBillingCustomerId = get 2
+      PaymentMethodsProvider = get 3
+      PaymentMethodsProviderPaymentMethodId = get 4
+      PaymentMethodsKind = get 5
+      PaymentMethodsBrand = (if isNullAt 6 then None else Some (get 6))
+      PaymentMethodsLast4 = (if isNullAt 7 then None else Some (get 7))
+      PaymentMethodsExpMonth = (if isNullAt 8 then None else Some (int (get 8)))
+      PaymentMethodsExpYear = (if isNullAt 9 then None else Some (int (get 9)))
+      PaymentMethodsIsDefault = (get 10 = "t")
+      PaymentMethodsCreatedAt = get 11
+      PaymentMethodsUpdatedAt = get 12
+    }
+
+let validatePaymentMethodsProviderPaymentMethodId (value: string) : Result<string, string> =
+    if value.Length > 255 then Error "payment_methods.provider_payment_method_id must be at most 255 characters"
+    else Ok value
+
+let validatePaymentMethodsKind (value: string) : Result<string, string> =
+    if value.Length > 32 then Error "payment_methods.kind must be at most 32 characters"
+    else Ok value
+
+let validatePaymentMethodsBrand (value: string) : Result<string, string> =
+    if value.Length > 32 then Error "payment_methods.brand must be at most 32 characters"
+    else Ok value
+
+let validatePaymentMethodsLast4 (value: string) : Result<string, string> =
+    if value.Length > 4 then Error "payment_methods.last4 must be at most 4 characters"
+    elif not (Regex.IsMatch(value, @"^[0-9]{4}$")) then Error "payment_methods.last4 does not match the required pattern"
+    else Ok value
+
+let validatePaymentMethodsExpMonth (value: int) : Result<int, string> =
+    if value < 1 then Error "payment_methods.exp_month is below the minimum"
+    elif value > 12 then Error "payment_methods.exp_month is above the maximum"
+    else Ok value
+
+let billingSubscriptionsTable = "fiducia.billing_subscriptions"
+let billingSubscriptionsColumns = [ "id"; "org_id"; "billing_customer_id"; "provider"; "provider_subscription_id"; "plan"; "status"; "current_period_start"; "current_period_end"; "cancel_at_period_end"; "canceled_at"; "created_at"; "updated_at" ]
+let billingSubscriptionsSelectSql = "select\n      id::text as id,\n      org_id::text as org_id,\n      billing_customer_id::text as billing_customer_id,\n      provider,\n      provider_subscription_id,\n      plan,\n      status,\n      to_char(current_period_start at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as current_period_start,\n      to_char(current_period_end at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as current_period_end,\n      cancel_at_period_end,\n      to_char(canceled_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as canceled_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from fiducia.billing_subscriptions"
+
+[<RequireQualifiedAccess>]
+type BillingSubscriptionsProvider =
+    | Stripe
+    | Paypal
+
+let billingSubscriptionsProviderToString (value: BillingSubscriptionsProvider) : string =
+    match value with
+    | BillingSubscriptionsProvider.Stripe -> "stripe"
+    | BillingSubscriptionsProvider.Paypal -> "paypal"
+
+let parseBillingSubscriptionsProvider (value: string) : Result<BillingSubscriptionsProvider, string> =
+    match value with
+    | "stripe" -> Ok BillingSubscriptionsProvider.Stripe
+    | "paypal" -> Ok BillingSubscriptionsProvider.Paypal
+    | _ -> Error ("unsupported billing_subscriptions.provider: " + value)
+
+[<RequireQualifiedAccess>]
+type BillingSubscriptionsStatus =
+    | Trialing
+    | Active
+    | PastDue
+    | Canceled
+    | Unpaid
+    | Incomplete
+    | IncompleteExpired
+    | Paused
+
+let billingSubscriptionsStatusToString (value: BillingSubscriptionsStatus) : string =
+    match value with
+    | BillingSubscriptionsStatus.Trialing -> "trialing"
+    | BillingSubscriptionsStatus.Active -> "active"
+    | BillingSubscriptionsStatus.PastDue -> "past_due"
+    | BillingSubscriptionsStatus.Canceled -> "canceled"
+    | BillingSubscriptionsStatus.Unpaid -> "unpaid"
+    | BillingSubscriptionsStatus.Incomplete -> "incomplete"
+    | BillingSubscriptionsStatus.IncompleteExpired -> "incomplete_expired"
+    | BillingSubscriptionsStatus.Paused -> "paused"
+
+let parseBillingSubscriptionsStatus (value: string) : Result<BillingSubscriptionsStatus, string> =
+    match value with
+    | "trialing" -> Ok BillingSubscriptionsStatus.Trialing
+    | "active" -> Ok BillingSubscriptionsStatus.Active
+    | "past_due" -> Ok BillingSubscriptionsStatus.PastDue
+    | "canceled" -> Ok BillingSubscriptionsStatus.Canceled
+    | "unpaid" -> Ok BillingSubscriptionsStatus.Unpaid
+    | "incomplete" -> Ok BillingSubscriptionsStatus.Incomplete
+    | "incomplete_expired" -> Ok BillingSubscriptionsStatus.IncompleteExpired
+    | "paused" -> Ok BillingSubscriptionsStatus.Paused
+    | _ -> Error ("unsupported billing_subscriptions.status: " + value)
+
+type BillingSubscriptionsRow =
+    { BillingSubscriptionsId: string
+      BillingSubscriptionsOrgId: string
+      BillingSubscriptionsBillingCustomerId: string
+      BillingSubscriptionsProvider: string
+      BillingSubscriptionsProviderSubscriptionId: string
+      BillingSubscriptionsPlan: string
+      BillingSubscriptionsStatus: string
+      BillingSubscriptionsCurrentPeriodStart: string option
+      BillingSubscriptionsCurrentPeriodEnd: string option
+      BillingSubscriptionsCancelAtPeriodEnd: bool
+      BillingSubscriptionsCanceledAt: string option
+      BillingSubscriptionsCreatedAt: string
+      BillingSubscriptionsUpdatedAt: string
+    }
+
+let billingSubscriptionsRowOfRow (get: int -> string) (isNullAt: int -> bool) : BillingSubscriptionsRow =
+    { BillingSubscriptionsId = get 0
+      BillingSubscriptionsOrgId = get 1
+      BillingSubscriptionsBillingCustomerId = get 2
+      BillingSubscriptionsProvider = get 3
+      BillingSubscriptionsProviderSubscriptionId = get 4
+      BillingSubscriptionsPlan = get 5
+      BillingSubscriptionsStatus = get 6
+      BillingSubscriptionsCurrentPeriodStart = (if isNullAt 7 then None else Some (get 7))
+      BillingSubscriptionsCurrentPeriodEnd = (if isNullAt 8 then None else Some (get 8))
+      BillingSubscriptionsCancelAtPeriodEnd = (get 9 = "t")
+      BillingSubscriptionsCanceledAt = (if isNullAt 10 then None else Some (get 10))
+      BillingSubscriptionsCreatedAt = get 11
+      BillingSubscriptionsUpdatedAt = get 12
+    }
+
+let validateBillingSubscriptionsProviderSubscriptionId (value: string) : Result<string, string> =
+    if value.Length > 255 then Error "billing_subscriptions.provider_subscription_id must be at most 255 characters"
+    else Ok value
+
+let validateBillingSubscriptionsPlan (value: string) : Result<string, string> =
+    if value.Length > 120 then Error "billing_subscriptions.plan must be at most 120 characters"
+    else Ok value
+
+let invoicesTable = "fiducia.invoices"
+let invoicesColumns = [ "id"; "org_id"; "billing_customer_id"; "subscription_id"; "provider"; "provider_invoice_id"; "status"; "amount_due_cents"; "amount_paid_cents"; "currency"; "period_start"; "period_end"; "hosted_invoice_url"; "created_at"; "updated_at" ]
+let invoicesSelectSql = "select\n      id::text as id,\n      org_id::text as org_id,\n      billing_customer_id::text as billing_customer_id,\n      subscription_id::text as subscription_id,\n      provider,\n      provider_invoice_id,\n      status,\n      amount_due_cents,\n      amount_paid_cents,\n      currency,\n      to_char(period_start at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as period_start,\n      to_char(period_end at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as period_end,\n      hosted_invoice_url,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from fiducia.invoices"
+
+[<RequireQualifiedAccess>]
+type InvoicesProvider =
+    | Stripe
+    | Paypal
+
+let invoicesProviderToString (value: InvoicesProvider) : string =
+    match value with
+    | InvoicesProvider.Stripe -> "stripe"
+    | InvoicesProvider.Paypal -> "paypal"
+
+let parseInvoicesProvider (value: string) : Result<InvoicesProvider, string> =
+    match value with
+    | "stripe" -> Ok InvoicesProvider.Stripe
+    | "paypal" -> Ok InvoicesProvider.Paypal
+    | _ -> Error ("unsupported invoices.provider: " + value)
+
+[<RequireQualifiedAccess>]
+type InvoicesStatus =
+    | Draft
+    | Open
+    | Paid
+    | Void
+    | Uncollectible
+
+let invoicesStatusToString (value: InvoicesStatus) : string =
+    match value with
+    | InvoicesStatus.Draft -> "draft"
+    | InvoicesStatus.Open -> "open"
+    | InvoicesStatus.Paid -> "paid"
+    | InvoicesStatus.Void -> "void"
+    | InvoicesStatus.Uncollectible -> "uncollectible"
+
+let parseInvoicesStatus (value: string) : Result<InvoicesStatus, string> =
+    match value with
+    | "draft" -> Ok InvoicesStatus.Draft
+    | "open" -> Ok InvoicesStatus.Open
+    | "paid" -> Ok InvoicesStatus.Paid
+    | "void" -> Ok InvoicesStatus.Void
+    | "uncollectible" -> Ok InvoicesStatus.Uncollectible
+    | _ -> Error ("unsupported invoices.status: " + value)
+
+type InvoicesRow =
+    { InvoicesId: string
+      InvoicesOrgId: string
+      InvoicesBillingCustomerId: string option
+      InvoicesSubscriptionId: string option
+      InvoicesProvider: string
+      InvoicesProviderInvoiceId: string
+      InvoicesStatus: string
+      InvoicesAmountDueCents: int64
+      InvoicesAmountPaidCents: int64
+      InvoicesCurrency: string
+      InvoicesPeriodStart: string option
+      InvoicesPeriodEnd: string option
+      InvoicesHostedInvoiceUrl: string option
+      InvoicesCreatedAt: string
+      InvoicesUpdatedAt: string
+    }
+
+let invoicesRowOfRow (get: int -> string) (isNullAt: int -> bool) : InvoicesRow =
+    { InvoicesId = get 0
+      InvoicesOrgId = get 1
+      InvoicesBillingCustomerId = (if isNullAt 2 then None else Some (get 2))
+      InvoicesSubscriptionId = (if isNullAt 3 then None else Some (get 3))
+      InvoicesProvider = get 4
+      InvoicesProviderInvoiceId = get 5
+      InvoicesStatus = get 6
+      InvoicesAmountDueCents = int64 (get 7)
+      InvoicesAmountPaidCents = int64 (get 8)
+      InvoicesCurrency = get 9
+      InvoicesPeriodStart = (if isNullAt 10 then None else Some (get 10))
+      InvoicesPeriodEnd = (if isNullAt 11 then None else Some (get 11))
+      InvoicesHostedInvoiceUrl = (if isNullAt 12 then None else Some (get 12))
+      InvoicesCreatedAt = get 13
+      InvoicesUpdatedAt = get 14
+    }
+
+let validateInvoicesProviderInvoiceId (value: string) : Result<string, string> =
+    if value.Length > 255 then Error "invoices.provider_invoice_id must be at most 255 characters"
+    else Ok value
+
+let validateInvoicesAmountDueCents (value: int64) : Result<int64, string> =
+    if value < 0L then Error "invoices.amount_due_cents is below the minimum"
+    else Ok value
+
+let validateInvoicesAmountPaidCents (value: int64) : Result<int64, string> =
+    if value < 0L then Error "invoices.amount_paid_cents is below the minimum"
+    else Ok value
+
+let validateInvoicesCurrency (value: string) : Result<string, string> =
+    if value.Length > 3 then Error "invoices.currency must be at most 3 characters"
+    elif not (Regex.IsMatch(value, @"^[a-z]{3}$")) then Error "invoices.currency does not match the required pattern"
+    else Ok value
+
+let paymentsTable = "fiducia.payments"
+let paymentsColumns = [ "id"; "org_id"; "invoice_id"; "payment_method_id"; "provider"; "provider_payment_id"; "status"; "amount_cents"; "currency"; "failure_code"; "created_at"; "updated_at" ]
+let paymentsSelectSql = "select\n      id::text as id,\n      org_id::text as org_id,\n      invoice_id::text as invoice_id,\n      payment_method_id::text as payment_method_id,\n      provider,\n      provider_payment_id,\n      status,\n      amount_cents,\n      currency,\n      failure_code,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from fiducia.payments"
+
+[<RequireQualifiedAccess>]
+type PaymentsProvider =
+    | Stripe
+    | Paypal
+
+let paymentsProviderToString (value: PaymentsProvider) : string =
+    match value with
+    | PaymentsProvider.Stripe -> "stripe"
+    | PaymentsProvider.Paypal -> "paypal"
+
+let parsePaymentsProvider (value: string) : Result<PaymentsProvider, string> =
+    match value with
+    | "stripe" -> Ok PaymentsProvider.Stripe
+    | "paypal" -> Ok PaymentsProvider.Paypal
+    | _ -> Error ("unsupported payments.provider: " + value)
+
+[<RequireQualifiedAccess>]
+type PaymentsStatus =
+    | Pending
+    | Processing
+    | Succeeded
+    | Failed
+    | Canceled
+    | Refunded
+    | PartiallyRefunded
+
+let paymentsStatusToString (value: PaymentsStatus) : string =
+    match value with
+    | PaymentsStatus.Pending -> "pending"
+    | PaymentsStatus.Processing -> "processing"
+    | PaymentsStatus.Succeeded -> "succeeded"
+    | PaymentsStatus.Failed -> "failed"
+    | PaymentsStatus.Canceled -> "canceled"
+    | PaymentsStatus.Refunded -> "refunded"
+    | PaymentsStatus.PartiallyRefunded -> "partially_refunded"
+
+let parsePaymentsStatus (value: string) : Result<PaymentsStatus, string> =
+    match value with
+    | "pending" -> Ok PaymentsStatus.Pending
+    | "processing" -> Ok PaymentsStatus.Processing
+    | "succeeded" -> Ok PaymentsStatus.Succeeded
+    | "failed" -> Ok PaymentsStatus.Failed
+    | "canceled" -> Ok PaymentsStatus.Canceled
+    | "refunded" -> Ok PaymentsStatus.Refunded
+    | "partially_refunded" -> Ok PaymentsStatus.PartiallyRefunded
+    | _ -> Error ("unsupported payments.status: " + value)
+
+type PaymentsRow =
+    { PaymentsId: string
+      PaymentsOrgId: string
+      PaymentsInvoiceId: string option
+      PaymentsPaymentMethodId: string option
+      PaymentsProvider: string
+      PaymentsProviderPaymentId: string
+      PaymentsStatus: string
+      PaymentsAmountCents: int64
+      PaymentsCurrency: string
+      PaymentsFailureCode: string option
+      PaymentsCreatedAt: string
+      PaymentsUpdatedAt: string
+    }
+
+let paymentsRowOfRow (get: int -> string) (isNullAt: int -> bool) : PaymentsRow =
+    { PaymentsId = get 0
+      PaymentsOrgId = get 1
+      PaymentsInvoiceId = (if isNullAt 2 then None else Some (get 2))
+      PaymentsPaymentMethodId = (if isNullAt 3 then None else Some (get 3))
+      PaymentsProvider = get 4
+      PaymentsProviderPaymentId = get 5
+      PaymentsStatus = get 6
+      PaymentsAmountCents = int64 (get 7)
+      PaymentsCurrency = get 8
+      PaymentsFailureCode = (if isNullAt 9 then None else Some (get 9))
+      PaymentsCreatedAt = get 10
+      PaymentsUpdatedAt = get 11
+    }
+
+let validatePaymentsProviderPaymentId (value: string) : Result<string, string> =
+    if value.Length > 255 then Error "payments.provider_payment_id must be at most 255 characters"
+    else Ok value
+
+let validatePaymentsAmountCents (value: int64) : Result<int64, string> =
+    if value < 0L then Error "payments.amount_cents is below the minimum"
+    else Ok value
+
+let validatePaymentsCurrency (value: string) : Result<string, string> =
+    if value.Length > 3 then Error "payments.currency must be at most 3 characters"
+    elif not (Regex.IsMatch(value, @"^[a-z]{3}$")) then Error "payments.currency does not match the required pattern"
+    else Ok value
+
+let validatePaymentsFailureCode (value: string) : Result<string, string> =
+    if value.Length > 120 then Error "payments.failure_code must be at most 120 characters"
+    else Ok value
+
+let billingWebhookEventsTable = "fiducia.billing_webhook_events"
+let billingWebhookEventsColumns = [ "id"; "provider"; "provider_event_id"; "event_type"; "signature_verified"; "payload_sha256"; "received_at"; "processed_at"; "process_error" ]
+let billingWebhookEventsSelectSql = "select\n      id::text as id,\n      provider,\n      provider_event_id,\n      event_type,\n      signature_verified,\n      payload_sha256,\n      to_char(received_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as received_at,\n      to_char(processed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as processed_at,\n      process_error\n    from fiducia.billing_webhook_events"
+
+[<RequireQualifiedAccess>]
+type BillingWebhookEventsProvider =
+    | Stripe
+    | Paypal
+
+let billingWebhookEventsProviderToString (value: BillingWebhookEventsProvider) : string =
+    match value with
+    | BillingWebhookEventsProvider.Stripe -> "stripe"
+    | BillingWebhookEventsProvider.Paypal -> "paypal"
+
+let parseBillingWebhookEventsProvider (value: string) : Result<BillingWebhookEventsProvider, string> =
+    match value with
+    | "stripe" -> Ok BillingWebhookEventsProvider.Stripe
+    | "paypal" -> Ok BillingWebhookEventsProvider.Paypal
+    | _ -> Error ("unsupported billing_webhook_events.provider: " + value)
+
+type BillingWebhookEventsRow =
+    { BillingWebhookEventsId: string
+      BillingWebhookEventsProvider: string
+      BillingWebhookEventsProviderEventId: string
+      BillingWebhookEventsEventType: string
+      BillingWebhookEventsSignatureVerified: bool
+      BillingWebhookEventsPayloadSha256: string
+      BillingWebhookEventsReceivedAt: string
+      BillingWebhookEventsProcessedAt: string option
+      BillingWebhookEventsProcessError: string option
+    }
+
+let billingWebhookEventsRowOfRow (get: int -> string) (isNullAt: int -> bool) : BillingWebhookEventsRow =
+    { BillingWebhookEventsId = get 0
+      BillingWebhookEventsProvider = get 1
+      BillingWebhookEventsProviderEventId = get 2
+      BillingWebhookEventsEventType = get 3
+      BillingWebhookEventsSignatureVerified = (get 4 = "t")
+      BillingWebhookEventsPayloadSha256 = get 5
+      BillingWebhookEventsReceivedAt = get 6
+      BillingWebhookEventsProcessedAt = (if isNullAt 7 then None else Some (get 7))
+      BillingWebhookEventsProcessError = (if isNullAt 8 then None else Some (get 8))
+    }
+
+let validateBillingWebhookEventsProviderEventId (value: string) : Result<string, string> =
+    if value.Length > 255 then Error "billing_webhook_events.provider_event_id must be at most 255 characters"
+    else Ok value
+
+let validateBillingWebhookEventsEventType (value: string) : Result<string, string> =
+    if value.Length > 120 then Error "billing_webhook_events.event_type must be at most 120 characters"
+    else Ok value
+
+let validateBillingWebhookEventsPayloadSha256 (value: string) : Result<string, string> =
+    if value.Length > 64 then Error "billing_webhook_events.payload_sha256 must be at most 64 characters"
+    elif not (Regex.IsMatch(value, @"^[0-9a-f]{64}$")) then Error "billing_webhook_events.payload_sha256 does not match the required pattern"
+    else Ok value
+
 let transcriptionsTable = "t2v.transcriptions"
 let transcriptionsColumns = [ "id"; "source"; "provider"; "model"; "text"; "language"; "sample_rate"; "duration_ms"; "created_at" ]
 let transcriptionsSelectSql = "select\n      id::text as id,\n      source,\n      provider,\n      model,\n      text,\n      language,\n      sample_rate,\n      duration_ms,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from t2v.transcriptions"

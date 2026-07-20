@@ -13602,6 +13602,536 @@ inline std::optional<std::string> validate_sync_idempotency_keys_request_fingerp
     return std::nullopt;
 }
 
+inline const char* billing_customers_table = "fiducia.billing_customers";
+inline const std::vector<std::string> billing_customers_columns = { "id", "org_id", "provider", "provider_customer_id", "email", "created_at", "updated_at" };
+inline const char* billing_customers_select_sql = R"SQL(select
+      id::text as id,
+      org_id::text as org_id,
+      provider,
+      provider_customer_id,
+      email,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from fiducia.billing_customers)SQL";
+
+enum class BillingCustomersProvider { Stripe, Paypal };
+inline std::string billing_customers_provider_to_string(BillingCustomersProvider value) {
+    switch (value) {
+        case BillingCustomersProvider::Stripe: return "stripe";
+        case BillingCustomersProvider::Paypal: return "paypal";
+    }
+    return "";
+}
+inline std::optional<BillingCustomersProvider> parse_billing_customers_provider(const std::string& value) {
+    if (value == "stripe") return BillingCustomersProvider::Stripe;
+    if (value == "paypal") return BillingCustomersProvider::Paypal;
+    return std::nullopt;
+}
+
+struct BillingCustomersRow {
+    std::string id;
+    std::string org_id;
+    std::string provider;
+    std::string provider_customer_id;
+    std::optional<std::string> email;
+    std::string created_at;
+    std::string updated_at;
+};
+
+inline BillingCustomersRow billing_customers_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    BillingCustomersRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.org_id = get(1);
+    row.provider = get(2);
+    row.provider_customer_id = get(3);
+    row.email = is_null(4) ? std::nullopt : std::optional<std::string>(get(4));
+    row.created_at = get(5);
+    row.updated_at = get(6);
+    return row;
+}
+inline std::optional<std::string> validate_billing_customers_provider_customer_id(const std::string& value) {
+    if (value.size() > 255) return std::string("billing_customers.provider_customer_id must be at most 255 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_billing_customers_email(const std::string& value) {
+    if (value.size() > 320) return std::string("billing_customers.email must be at most 320 characters");
+    return std::nullopt;
+}
+
+inline const char* payment_methods_table = "fiducia.payment_methods";
+inline const std::vector<std::string> payment_methods_columns = { "id", "org_id", "billing_customer_id", "provider", "provider_payment_method_id", "kind", "brand", "last4", "exp_month", "exp_year", "is_default", "created_at", "updated_at" };
+inline const char* payment_methods_select_sql = R"SQL(select
+      id::text as id,
+      org_id::text as org_id,
+      billing_customer_id::text as billing_customer_id,
+      provider,
+      provider_payment_method_id,
+      kind,
+      brand,
+      last4,
+      exp_month,
+      exp_year,
+      is_default,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from fiducia.payment_methods)SQL";
+
+enum class PaymentMethodsProvider { Stripe, Paypal };
+inline std::string payment_methods_provider_to_string(PaymentMethodsProvider value) {
+    switch (value) {
+        case PaymentMethodsProvider::Stripe: return "stripe";
+        case PaymentMethodsProvider::Paypal: return "paypal";
+    }
+    return "";
+}
+inline std::optional<PaymentMethodsProvider> parse_payment_methods_provider(const std::string& value) {
+    if (value == "stripe") return PaymentMethodsProvider::Stripe;
+    if (value == "paypal") return PaymentMethodsProvider::Paypal;
+    return std::nullopt;
+}
+
+struct PaymentMethodsRow {
+    std::string id;
+    std::string org_id;
+    std::string billing_customer_id;
+    std::string provider;
+    std::string provider_payment_method_id;
+    std::string kind;
+    std::optional<std::string> brand;
+    std::optional<std::string> last4;
+    std::optional<int32_t> exp_month;
+    std::optional<int32_t> exp_year;
+    bool is_default;
+    std::string created_at;
+    std::string updated_at;
+};
+
+inline PaymentMethodsRow payment_methods_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    PaymentMethodsRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.org_id = get(1);
+    row.billing_customer_id = get(2);
+    row.provider = get(3);
+    row.provider_payment_method_id = get(4);
+    row.kind = get(5);
+    row.brand = is_null(6) ? std::nullopt : std::optional<std::string>(get(6));
+    row.last4 = is_null(7) ? std::nullopt : std::optional<std::string>(get(7));
+    row.exp_month = is_null(8) ? std::nullopt : std::optional<int32_t>(std::stoi(get(8)));
+    row.exp_year = is_null(9) ? std::nullopt : std::optional<int32_t>(std::stoi(get(9)));
+    row.is_default = (get(10) == "t");
+    row.created_at = get(11);
+    row.updated_at = get(12);
+    return row;
+}
+inline std::optional<std::string> validate_payment_methods_provider_payment_method_id(const std::string& value) {
+    if (value.size() > 255) return std::string("payment_methods.provider_payment_method_id must be at most 255 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_payment_methods_kind(const std::string& value) {
+    if (value.size() > 32) return std::string("payment_methods.kind must be at most 32 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_payment_methods_brand(const std::string& value) {
+    if (value.size() > 32) return std::string("payment_methods.brand must be at most 32 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_payment_methods_last4(const std::string& value) {
+    if (value.size() > 4) return std::string("payment_methods.last4 must be at most 4 characters");
+    if (!std::regex_match(value, std::regex(R"RX(^[0-9]{4}$)RX"))) return std::string("payment_methods.last4 does not match the required pattern");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_payment_methods_exp_month(int32_t value) {
+    if (value < 1) return std::string("payment_methods.exp_month is below the minimum");
+    if (value > 12) return std::string("payment_methods.exp_month is above the maximum");
+    return std::nullopt;
+}
+
+inline const char* billing_subscriptions_table = "fiducia.billing_subscriptions";
+inline const std::vector<std::string> billing_subscriptions_columns = { "id", "org_id", "billing_customer_id", "provider", "provider_subscription_id", "plan", "status", "current_period_start", "current_period_end", "cancel_at_period_end", "canceled_at", "created_at", "updated_at" };
+inline const char* billing_subscriptions_select_sql = R"SQL(select
+      id::text as id,
+      org_id::text as org_id,
+      billing_customer_id::text as billing_customer_id,
+      provider,
+      provider_subscription_id,
+      plan,
+      status,
+      to_char(current_period_start at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as current_period_start,
+      to_char(current_period_end at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as current_period_end,
+      cancel_at_period_end,
+      to_char(canceled_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as canceled_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from fiducia.billing_subscriptions)SQL";
+
+enum class BillingSubscriptionsProvider { Stripe, Paypal };
+inline std::string billing_subscriptions_provider_to_string(BillingSubscriptionsProvider value) {
+    switch (value) {
+        case BillingSubscriptionsProvider::Stripe: return "stripe";
+        case BillingSubscriptionsProvider::Paypal: return "paypal";
+    }
+    return "";
+}
+inline std::optional<BillingSubscriptionsProvider> parse_billing_subscriptions_provider(const std::string& value) {
+    if (value == "stripe") return BillingSubscriptionsProvider::Stripe;
+    if (value == "paypal") return BillingSubscriptionsProvider::Paypal;
+    return std::nullopt;
+}
+
+enum class BillingSubscriptionsStatus { Trialing, Active, PastDue, Canceled, Unpaid, Incomplete, IncompleteExpired, Paused };
+inline std::string billing_subscriptions_status_to_string(BillingSubscriptionsStatus value) {
+    switch (value) {
+        case BillingSubscriptionsStatus::Trialing: return "trialing";
+        case BillingSubscriptionsStatus::Active: return "active";
+        case BillingSubscriptionsStatus::PastDue: return "past_due";
+        case BillingSubscriptionsStatus::Canceled: return "canceled";
+        case BillingSubscriptionsStatus::Unpaid: return "unpaid";
+        case BillingSubscriptionsStatus::Incomplete: return "incomplete";
+        case BillingSubscriptionsStatus::IncompleteExpired: return "incomplete_expired";
+        case BillingSubscriptionsStatus::Paused: return "paused";
+    }
+    return "";
+}
+inline std::optional<BillingSubscriptionsStatus> parse_billing_subscriptions_status(const std::string& value) {
+    if (value == "trialing") return BillingSubscriptionsStatus::Trialing;
+    if (value == "active") return BillingSubscriptionsStatus::Active;
+    if (value == "past_due") return BillingSubscriptionsStatus::PastDue;
+    if (value == "canceled") return BillingSubscriptionsStatus::Canceled;
+    if (value == "unpaid") return BillingSubscriptionsStatus::Unpaid;
+    if (value == "incomplete") return BillingSubscriptionsStatus::Incomplete;
+    if (value == "incomplete_expired") return BillingSubscriptionsStatus::IncompleteExpired;
+    if (value == "paused") return BillingSubscriptionsStatus::Paused;
+    return std::nullopt;
+}
+
+struct BillingSubscriptionsRow {
+    std::string id;
+    std::string org_id;
+    std::string billing_customer_id;
+    std::string provider;
+    std::string provider_subscription_id;
+    std::string plan;
+    std::string status;
+    std::optional<std::string> current_period_start;
+    std::optional<std::string> current_period_end;
+    bool cancel_at_period_end;
+    std::optional<std::string> canceled_at;
+    std::string created_at;
+    std::string updated_at;
+};
+
+inline BillingSubscriptionsRow billing_subscriptions_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    BillingSubscriptionsRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.org_id = get(1);
+    row.billing_customer_id = get(2);
+    row.provider = get(3);
+    row.provider_subscription_id = get(4);
+    row.plan = get(5);
+    row.status = get(6);
+    row.current_period_start = is_null(7) ? std::nullopt : std::optional<std::string>(get(7));
+    row.current_period_end = is_null(8) ? std::nullopt : std::optional<std::string>(get(8));
+    row.cancel_at_period_end = (get(9) == "t");
+    row.canceled_at = is_null(10) ? std::nullopt : std::optional<std::string>(get(10));
+    row.created_at = get(11);
+    row.updated_at = get(12);
+    return row;
+}
+inline std::optional<std::string> validate_billing_subscriptions_provider_subscription_id(const std::string& value) {
+    if (value.size() > 255) return std::string("billing_subscriptions.provider_subscription_id must be at most 255 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_billing_subscriptions_plan(const std::string& value) {
+    if (value.size() > 120) return std::string("billing_subscriptions.plan must be at most 120 characters");
+    return std::nullopt;
+}
+
+inline const char* invoices_table = "fiducia.invoices";
+inline const std::vector<std::string> invoices_columns = { "id", "org_id", "billing_customer_id", "subscription_id", "provider", "provider_invoice_id", "status", "amount_due_cents", "amount_paid_cents", "currency", "period_start", "period_end", "hosted_invoice_url", "created_at", "updated_at" };
+inline const char* invoices_select_sql = R"SQL(select
+      id::text as id,
+      org_id::text as org_id,
+      billing_customer_id::text as billing_customer_id,
+      subscription_id::text as subscription_id,
+      provider,
+      provider_invoice_id,
+      status,
+      amount_due_cents,
+      amount_paid_cents,
+      currency,
+      to_char(period_start at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as period_start,
+      to_char(period_end at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as period_end,
+      hosted_invoice_url,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from fiducia.invoices)SQL";
+
+enum class InvoicesProvider { Stripe, Paypal };
+inline std::string invoices_provider_to_string(InvoicesProvider value) {
+    switch (value) {
+        case InvoicesProvider::Stripe: return "stripe";
+        case InvoicesProvider::Paypal: return "paypal";
+    }
+    return "";
+}
+inline std::optional<InvoicesProvider> parse_invoices_provider(const std::string& value) {
+    if (value == "stripe") return InvoicesProvider::Stripe;
+    if (value == "paypal") return InvoicesProvider::Paypal;
+    return std::nullopt;
+}
+
+enum class InvoicesStatus { Draft, Open, Paid, Void, Uncollectible };
+inline std::string invoices_status_to_string(InvoicesStatus value) {
+    switch (value) {
+        case InvoicesStatus::Draft: return "draft";
+        case InvoicesStatus::Open: return "open";
+        case InvoicesStatus::Paid: return "paid";
+        case InvoicesStatus::Void: return "void";
+        case InvoicesStatus::Uncollectible: return "uncollectible";
+    }
+    return "";
+}
+inline std::optional<InvoicesStatus> parse_invoices_status(const std::string& value) {
+    if (value == "draft") return InvoicesStatus::Draft;
+    if (value == "open") return InvoicesStatus::Open;
+    if (value == "paid") return InvoicesStatus::Paid;
+    if (value == "void") return InvoicesStatus::Void;
+    if (value == "uncollectible") return InvoicesStatus::Uncollectible;
+    return std::nullopt;
+}
+
+struct InvoicesRow {
+    std::string id;
+    std::string org_id;
+    std::optional<std::string> billing_customer_id;
+    std::optional<std::string> subscription_id;
+    std::string provider;
+    std::string provider_invoice_id;
+    std::string status;
+    int64_t amount_due_cents;
+    int64_t amount_paid_cents;
+    std::string currency;
+    std::optional<std::string> period_start;
+    std::optional<std::string> period_end;
+    std::optional<std::string> hosted_invoice_url;
+    std::string created_at;
+    std::string updated_at;
+};
+
+inline InvoicesRow invoices_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    InvoicesRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.org_id = get(1);
+    row.billing_customer_id = is_null(2) ? std::nullopt : std::optional<std::string>(get(2));
+    row.subscription_id = is_null(3) ? std::nullopt : std::optional<std::string>(get(3));
+    row.provider = get(4);
+    row.provider_invoice_id = get(5);
+    row.status = get(6);
+    row.amount_due_cents = std::stoll(get(7));
+    row.amount_paid_cents = std::stoll(get(8));
+    row.currency = get(9);
+    row.period_start = is_null(10) ? std::nullopt : std::optional<std::string>(get(10));
+    row.period_end = is_null(11) ? std::nullopt : std::optional<std::string>(get(11));
+    row.hosted_invoice_url = is_null(12) ? std::nullopt : std::optional<std::string>(get(12));
+    row.created_at = get(13);
+    row.updated_at = get(14);
+    return row;
+}
+inline std::optional<std::string> validate_invoices_provider_invoice_id(const std::string& value) {
+    if (value.size() > 255) return std::string("invoices.provider_invoice_id must be at most 255 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_invoices_amount_due_cents(int64_t value) {
+    if (value < 0) return std::string("invoices.amount_due_cents is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_invoices_amount_paid_cents(int64_t value) {
+    if (value < 0) return std::string("invoices.amount_paid_cents is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_invoices_currency(const std::string& value) {
+    if (value.size() > 3) return std::string("invoices.currency must be at most 3 characters");
+    if (!std::regex_match(value, std::regex(R"RX(^[a-z]{3}$)RX"))) return std::string("invoices.currency does not match the required pattern");
+    return std::nullopt;
+}
+
+inline const char* payments_table = "fiducia.payments";
+inline const std::vector<std::string> payments_columns = { "id", "org_id", "invoice_id", "payment_method_id", "provider", "provider_payment_id", "status", "amount_cents", "currency", "failure_code", "created_at", "updated_at" };
+inline const char* payments_select_sql = R"SQL(select
+      id::text as id,
+      org_id::text as org_id,
+      invoice_id::text as invoice_id,
+      payment_method_id::text as payment_method_id,
+      provider,
+      provider_payment_id,
+      status,
+      amount_cents,
+      currency,
+      failure_code,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from fiducia.payments)SQL";
+
+enum class PaymentsProvider { Stripe, Paypal };
+inline std::string payments_provider_to_string(PaymentsProvider value) {
+    switch (value) {
+        case PaymentsProvider::Stripe: return "stripe";
+        case PaymentsProvider::Paypal: return "paypal";
+    }
+    return "";
+}
+inline std::optional<PaymentsProvider> parse_payments_provider(const std::string& value) {
+    if (value == "stripe") return PaymentsProvider::Stripe;
+    if (value == "paypal") return PaymentsProvider::Paypal;
+    return std::nullopt;
+}
+
+enum class PaymentsStatus { Pending, Processing, Succeeded, Failed, Canceled, Refunded, PartiallyRefunded };
+inline std::string payments_status_to_string(PaymentsStatus value) {
+    switch (value) {
+        case PaymentsStatus::Pending: return "pending";
+        case PaymentsStatus::Processing: return "processing";
+        case PaymentsStatus::Succeeded: return "succeeded";
+        case PaymentsStatus::Failed: return "failed";
+        case PaymentsStatus::Canceled: return "canceled";
+        case PaymentsStatus::Refunded: return "refunded";
+        case PaymentsStatus::PartiallyRefunded: return "partially_refunded";
+    }
+    return "";
+}
+inline std::optional<PaymentsStatus> parse_payments_status(const std::string& value) {
+    if (value == "pending") return PaymentsStatus::Pending;
+    if (value == "processing") return PaymentsStatus::Processing;
+    if (value == "succeeded") return PaymentsStatus::Succeeded;
+    if (value == "failed") return PaymentsStatus::Failed;
+    if (value == "canceled") return PaymentsStatus::Canceled;
+    if (value == "refunded") return PaymentsStatus::Refunded;
+    if (value == "partially_refunded") return PaymentsStatus::PartiallyRefunded;
+    return std::nullopt;
+}
+
+struct PaymentsRow {
+    std::string id;
+    std::string org_id;
+    std::optional<std::string> invoice_id;
+    std::optional<std::string> payment_method_id;
+    std::string provider;
+    std::string provider_payment_id;
+    std::string status;
+    int64_t amount_cents;
+    std::string currency;
+    std::optional<std::string> failure_code;
+    std::string created_at;
+    std::string updated_at;
+};
+
+inline PaymentsRow payments_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    PaymentsRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.org_id = get(1);
+    row.invoice_id = is_null(2) ? std::nullopt : std::optional<std::string>(get(2));
+    row.payment_method_id = is_null(3) ? std::nullopt : std::optional<std::string>(get(3));
+    row.provider = get(4);
+    row.provider_payment_id = get(5);
+    row.status = get(6);
+    row.amount_cents = std::stoll(get(7));
+    row.currency = get(8);
+    row.failure_code = is_null(9) ? std::nullopt : std::optional<std::string>(get(9));
+    row.created_at = get(10);
+    row.updated_at = get(11);
+    return row;
+}
+inline std::optional<std::string> validate_payments_provider_payment_id(const std::string& value) {
+    if (value.size() > 255) return std::string("payments.provider_payment_id must be at most 255 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_payments_amount_cents(int64_t value) {
+    if (value < 0) return std::string("payments.amount_cents is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_payments_currency(const std::string& value) {
+    if (value.size() > 3) return std::string("payments.currency must be at most 3 characters");
+    if (!std::regex_match(value, std::regex(R"RX(^[a-z]{3}$)RX"))) return std::string("payments.currency does not match the required pattern");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_payments_failure_code(const std::string& value) {
+    if (value.size() > 120) return std::string("payments.failure_code must be at most 120 characters");
+    return std::nullopt;
+}
+
+inline const char* billing_webhook_events_table = "fiducia.billing_webhook_events";
+inline const std::vector<std::string> billing_webhook_events_columns = { "id", "provider", "provider_event_id", "event_type", "signature_verified", "payload_sha256", "received_at", "processed_at", "process_error" };
+inline const char* billing_webhook_events_select_sql = R"SQL(select
+      id::text as id,
+      provider,
+      provider_event_id,
+      event_type,
+      signature_verified,
+      payload_sha256,
+      to_char(received_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as received_at,
+      to_char(processed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as processed_at,
+      process_error
+    from fiducia.billing_webhook_events)SQL";
+
+enum class BillingWebhookEventsProvider { Stripe, Paypal };
+inline std::string billing_webhook_events_provider_to_string(BillingWebhookEventsProvider value) {
+    switch (value) {
+        case BillingWebhookEventsProvider::Stripe: return "stripe";
+        case BillingWebhookEventsProvider::Paypal: return "paypal";
+    }
+    return "";
+}
+inline std::optional<BillingWebhookEventsProvider> parse_billing_webhook_events_provider(const std::string& value) {
+    if (value == "stripe") return BillingWebhookEventsProvider::Stripe;
+    if (value == "paypal") return BillingWebhookEventsProvider::Paypal;
+    return std::nullopt;
+}
+
+struct BillingWebhookEventsRow {
+    std::string id;
+    std::string provider;
+    std::string provider_event_id;
+    std::string event_type;
+    bool signature_verified;
+    std::string payload_sha256;
+    std::string received_at;
+    std::optional<std::string> processed_at;
+    std::optional<std::string> process_error;
+};
+
+inline BillingWebhookEventsRow billing_webhook_events_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    BillingWebhookEventsRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.provider = get(1);
+    row.provider_event_id = get(2);
+    row.event_type = get(3);
+    row.signature_verified = (get(4) == "t");
+    row.payload_sha256 = get(5);
+    row.received_at = get(6);
+    row.processed_at = is_null(7) ? std::nullopt : std::optional<std::string>(get(7));
+    row.process_error = is_null(8) ? std::nullopt : std::optional<std::string>(get(8));
+    return row;
+}
+inline std::optional<std::string> validate_billing_webhook_events_provider_event_id(const std::string& value) {
+    if (value.size() > 255) return std::string("billing_webhook_events.provider_event_id must be at most 255 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_billing_webhook_events_event_type(const std::string& value) {
+    if (value.size() > 120) return std::string("billing_webhook_events.event_type must be at most 120 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_billing_webhook_events_payload_sha256(const std::string& value) {
+    if (value.size() > 64) return std::string("billing_webhook_events.payload_sha256 must be at most 64 characters");
+    if (!std::regex_match(value, std::regex(R"RX(^[0-9a-f]{64}$)RX"))) return std::string("billing_webhook_events.payload_sha256 does not match the required pattern");
+    return std::nullopt;
+}
+
 inline const char* transcriptions_table = "t2v.transcriptions";
 inline const std::vector<std::string> transcriptions_columns = { "id", "source", "provider", "model", "text", "language", "sample_rate", "duration_ms", "created_at" };
 inline const char* transcriptions_select_sql = R"SQL(select

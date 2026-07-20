@@ -13090,6 +13090,521 @@ pub fn validateSyncIdempotencyKeysRequestFingerprint(value: []const u8) ?[]const
     return null;
 }
 
+pub const billing_customers_table: []const u8 = "fiducia.billing_customers";
+pub const billing_customers_columns = [_][]const u8{ "id", "org_id", "provider", "provider_customer_id", "email", "created_at", "updated_at" };
+pub const billing_customers_select_sql: []const u8 = "select\n      id::text as id,\n      org_id::text as org_id,\n      provider,\n      provider_customer_id,\n      email,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from fiducia.billing_customers";
+
+pub const BillingCustomersProvider = enum {
+    stripe,
+    paypal,
+
+    pub fn toString(self: BillingCustomersProvider) []const u8 {
+        return switch (self) {
+            .stripe => "stripe",
+            .paypal => "paypal",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?BillingCustomersProvider {
+        if (std.mem.eql(u8, value, "stripe")) return .stripe;
+        if (std.mem.eql(u8, value, "paypal")) return .paypal;
+        return null;
+    }
+};
+
+pub const BillingCustomersRow = struct {
+    id: []const u8,
+    org_id: []const u8,
+    provider: []const u8,
+    provider_customer_id: []const u8,
+    email: ?[]const u8,
+    created_at: []const u8,
+    updated_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) BillingCustomersRow {
+        return BillingCustomersRow{
+            .id = reader.text(0),
+            .org_id = reader.text(1),
+            .provider = reader.text(2),
+            .provider_customer_id = reader.text(3),
+            .email = if (reader.is_null(4)) null else reader.text(4),
+            .created_at = reader.text(5),
+            .updated_at = reader.text(6),
+        };
+    }
+};
+
+pub fn validateBillingCustomersProviderCustomerId(value: []const u8) ?[]const u8 {
+    if (value.len > 255) return "billing_customers.provider_customer_id must be at most 255 characters";
+    return null;
+}
+
+pub fn validateBillingCustomersEmail(value: []const u8) ?[]const u8 {
+    if (value.len > 320) return "billing_customers.email must be at most 320 characters";
+    return null;
+}
+
+pub const payment_methods_table: []const u8 = "fiducia.payment_methods";
+pub const payment_methods_columns = [_][]const u8{ "id", "org_id", "billing_customer_id", "provider", "provider_payment_method_id", "kind", "brand", "last4", "exp_month", "exp_year", "is_default", "created_at", "updated_at" };
+pub const payment_methods_select_sql: []const u8 = "select\n      id::text as id,\n      org_id::text as org_id,\n      billing_customer_id::text as billing_customer_id,\n      provider,\n      provider_payment_method_id,\n      kind,\n      brand,\n      last4,\n      exp_month,\n      exp_year,\n      is_default,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from fiducia.payment_methods";
+
+pub const PaymentMethodsProvider = enum {
+    stripe,
+    paypal,
+
+    pub fn toString(self: PaymentMethodsProvider) []const u8 {
+        return switch (self) {
+            .stripe => "stripe",
+            .paypal => "paypal",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?PaymentMethodsProvider {
+        if (std.mem.eql(u8, value, "stripe")) return .stripe;
+        if (std.mem.eql(u8, value, "paypal")) return .paypal;
+        return null;
+    }
+};
+
+pub const PaymentMethodsRow = struct {
+    id: []const u8,
+    org_id: []const u8,
+    billing_customer_id: []const u8,
+    provider: []const u8,
+    provider_payment_method_id: []const u8,
+    kind: []const u8,
+    brand: ?[]const u8,
+    last4: ?[]const u8,
+    exp_month: ?i32,
+    exp_year: ?i32,
+    is_default: bool,
+    created_at: []const u8,
+    updated_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) PaymentMethodsRow {
+        return PaymentMethodsRow{
+            .id = reader.text(0),
+            .org_id = reader.text(1),
+            .billing_customer_id = reader.text(2),
+            .provider = reader.text(3),
+            .provider_payment_method_id = reader.text(4),
+            .kind = reader.text(5),
+            .brand = if (reader.is_null(6)) null else reader.text(6),
+            .last4 = if (reader.is_null(7)) null else reader.text(7),
+            .exp_month = if (reader.is_null(8)) null else @as(i32, @intCast(reader.int(8))),
+            .exp_year = if (reader.is_null(9)) null else @as(i32, @intCast(reader.int(9))),
+            .is_default = reader.boolean(10),
+            .created_at = reader.text(11),
+            .updated_at = reader.text(12),
+        };
+    }
+};
+
+pub fn validatePaymentMethodsProviderPaymentMethodId(value: []const u8) ?[]const u8 {
+    if (value.len > 255) return "payment_methods.provider_payment_method_id must be at most 255 characters";
+    return null;
+}
+
+pub fn validatePaymentMethodsKind(value: []const u8) ?[]const u8 {
+    if (value.len > 32) return "payment_methods.kind must be at most 32 characters";
+    return null;
+}
+
+pub fn validatePaymentMethodsBrand(value: []const u8) ?[]const u8 {
+    if (value.len > 32) return "payment_methods.brand must be at most 32 characters";
+    return null;
+}
+
+pub fn validatePaymentMethodsLast4(value: []const u8) ?[]const u8 {
+    if (value.len > 4) return "payment_methods.last4 must be at most 4 characters";
+    return null;
+}
+
+pub fn validatePaymentMethodsExpMonth(value: i32) ?[]const u8 {
+    if (value < 1) return "payment_methods.exp_month is below the minimum";
+    if (value > 12) return "payment_methods.exp_month is above the maximum";
+    return null;
+}
+
+pub const billing_subscriptions_table: []const u8 = "fiducia.billing_subscriptions";
+pub const billing_subscriptions_columns = [_][]const u8{ "id", "org_id", "billing_customer_id", "provider", "provider_subscription_id", "plan", "status", "current_period_start", "current_period_end", "cancel_at_period_end", "canceled_at", "created_at", "updated_at" };
+pub const billing_subscriptions_select_sql: []const u8 = "select\n      id::text as id,\n      org_id::text as org_id,\n      billing_customer_id::text as billing_customer_id,\n      provider,\n      provider_subscription_id,\n      plan,\n      status,\n      to_char(current_period_start at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as current_period_start,\n      to_char(current_period_end at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as current_period_end,\n      cancel_at_period_end,\n      to_char(canceled_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as canceled_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from fiducia.billing_subscriptions";
+
+pub const BillingSubscriptionsProvider = enum {
+    stripe,
+    paypal,
+
+    pub fn toString(self: BillingSubscriptionsProvider) []const u8 {
+        return switch (self) {
+            .stripe => "stripe",
+            .paypal => "paypal",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?BillingSubscriptionsProvider {
+        if (std.mem.eql(u8, value, "stripe")) return .stripe;
+        if (std.mem.eql(u8, value, "paypal")) return .paypal;
+        return null;
+    }
+};
+
+pub const BillingSubscriptionsStatus = enum {
+    trialing,
+    active,
+    past_due,
+    canceled,
+    unpaid,
+    incomplete,
+    incomplete_expired,
+    paused,
+
+    pub fn toString(self: BillingSubscriptionsStatus) []const u8 {
+        return switch (self) {
+            .trialing => "trialing",
+            .active => "active",
+            .past_due => "past_due",
+            .canceled => "canceled",
+            .unpaid => "unpaid",
+            .incomplete => "incomplete",
+            .incomplete_expired => "incomplete_expired",
+            .paused => "paused",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?BillingSubscriptionsStatus {
+        if (std.mem.eql(u8, value, "trialing")) return .trialing;
+        if (std.mem.eql(u8, value, "active")) return .active;
+        if (std.mem.eql(u8, value, "past_due")) return .past_due;
+        if (std.mem.eql(u8, value, "canceled")) return .canceled;
+        if (std.mem.eql(u8, value, "unpaid")) return .unpaid;
+        if (std.mem.eql(u8, value, "incomplete")) return .incomplete;
+        if (std.mem.eql(u8, value, "incomplete_expired")) return .incomplete_expired;
+        if (std.mem.eql(u8, value, "paused")) return .paused;
+        return null;
+    }
+};
+
+pub const BillingSubscriptionsRow = struct {
+    id: []const u8,
+    org_id: []const u8,
+    billing_customer_id: []const u8,
+    provider: []const u8,
+    provider_subscription_id: []const u8,
+    plan: []const u8,
+    status: []const u8,
+    current_period_start: ?[]const u8,
+    current_period_end: ?[]const u8,
+    cancel_at_period_end: bool,
+    canceled_at: ?[]const u8,
+    created_at: []const u8,
+    updated_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) BillingSubscriptionsRow {
+        return BillingSubscriptionsRow{
+            .id = reader.text(0),
+            .org_id = reader.text(1),
+            .billing_customer_id = reader.text(2),
+            .provider = reader.text(3),
+            .provider_subscription_id = reader.text(4),
+            .plan = reader.text(5),
+            .status = reader.text(6),
+            .current_period_start = if (reader.is_null(7)) null else reader.text(7),
+            .current_period_end = if (reader.is_null(8)) null else reader.text(8),
+            .cancel_at_period_end = reader.boolean(9),
+            .canceled_at = if (reader.is_null(10)) null else reader.text(10),
+            .created_at = reader.text(11),
+            .updated_at = reader.text(12),
+        };
+    }
+};
+
+pub fn validateBillingSubscriptionsProviderSubscriptionId(value: []const u8) ?[]const u8 {
+    if (value.len > 255) return "billing_subscriptions.provider_subscription_id must be at most 255 characters";
+    return null;
+}
+
+pub fn validateBillingSubscriptionsPlan(value: []const u8) ?[]const u8 {
+    if (value.len > 120) return "billing_subscriptions.plan must be at most 120 characters";
+    return null;
+}
+
+pub const invoices_table: []const u8 = "fiducia.invoices";
+pub const invoices_columns = [_][]const u8{ "id", "org_id", "billing_customer_id", "subscription_id", "provider", "provider_invoice_id", "status", "amount_due_cents", "amount_paid_cents", "currency", "period_start", "period_end", "hosted_invoice_url", "created_at", "updated_at" };
+pub const invoices_select_sql: []const u8 = "select\n      id::text as id,\n      org_id::text as org_id,\n      billing_customer_id::text as billing_customer_id,\n      subscription_id::text as subscription_id,\n      provider,\n      provider_invoice_id,\n      status,\n      amount_due_cents,\n      amount_paid_cents,\n      currency,\n      to_char(period_start at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as period_start,\n      to_char(period_end at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as period_end,\n      hosted_invoice_url,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from fiducia.invoices";
+
+pub const InvoicesProvider = enum {
+    stripe,
+    paypal,
+
+    pub fn toString(self: InvoicesProvider) []const u8 {
+        return switch (self) {
+            .stripe => "stripe",
+            .paypal => "paypal",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?InvoicesProvider {
+        if (std.mem.eql(u8, value, "stripe")) return .stripe;
+        if (std.mem.eql(u8, value, "paypal")) return .paypal;
+        return null;
+    }
+};
+
+pub const InvoicesStatus = enum {
+    draft,
+    open,
+    paid,
+    void,
+    uncollectible,
+
+    pub fn toString(self: InvoicesStatus) []const u8 {
+        return switch (self) {
+            .draft => "draft",
+            .open => "open",
+            .paid => "paid",
+            .void => "void",
+            .uncollectible => "uncollectible",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?InvoicesStatus {
+        if (std.mem.eql(u8, value, "draft")) return .draft;
+        if (std.mem.eql(u8, value, "open")) return .open;
+        if (std.mem.eql(u8, value, "paid")) return .paid;
+        if (std.mem.eql(u8, value, "void")) return .void;
+        if (std.mem.eql(u8, value, "uncollectible")) return .uncollectible;
+        return null;
+    }
+};
+
+pub const InvoicesRow = struct {
+    id: []const u8,
+    org_id: []const u8,
+    billing_customer_id: ?[]const u8,
+    subscription_id: ?[]const u8,
+    provider: []const u8,
+    provider_invoice_id: []const u8,
+    status: []const u8,
+    amount_due_cents: i64,
+    amount_paid_cents: i64,
+    currency: []const u8,
+    period_start: ?[]const u8,
+    period_end: ?[]const u8,
+    hosted_invoice_url: ?[]const u8,
+    created_at: []const u8,
+    updated_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) InvoicesRow {
+        return InvoicesRow{
+            .id = reader.text(0),
+            .org_id = reader.text(1),
+            .billing_customer_id = if (reader.is_null(2)) null else reader.text(2),
+            .subscription_id = if (reader.is_null(3)) null else reader.text(3),
+            .provider = reader.text(4),
+            .provider_invoice_id = reader.text(5),
+            .status = reader.text(6),
+            .amount_due_cents = reader.int(7),
+            .amount_paid_cents = reader.int(8),
+            .currency = reader.text(9),
+            .period_start = if (reader.is_null(10)) null else reader.text(10),
+            .period_end = if (reader.is_null(11)) null else reader.text(11),
+            .hosted_invoice_url = if (reader.is_null(12)) null else reader.text(12),
+            .created_at = reader.text(13),
+            .updated_at = reader.text(14),
+        };
+    }
+};
+
+pub fn validateInvoicesProviderInvoiceId(value: []const u8) ?[]const u8 {
+    if (value.len > 255) return "invoices.provider_invoice_id must be at most 255 characters";
+    return null;
+}
+
+pub fn validateInvoicesAmountDueCents(value: i64) ?[]const u8 {
+    if (value < 0) return "invoices.amount_due_cents is below the minimum";
+    return null;
+}
+
+pub fn validateInvoicesAmountPaidCents(value: i64) ?[]const u8 {
+    if (value < 0) return "invoices.amount_paid_cents is below the minimum";
+    return null;
+}
+
+pub fn validateInvoicesCurrency(value: []const u8) ?[]const u8 {
+    if (value.len > 3) return "invoices.currency must be at most 3 characters";
+    return null;
+}
+
+pub const payments_table: []const u8 = "fiducia.payments";
+pub const payments_columns = [_][]const u8{ "id", "org_id", "invoice_id", "payment_method_id", "provider", "provider_payment_id", "status", "amount_cents", "currency", "failure_code", "created_at", "updated_at" };
+pub const payments_select_sql: []const u8 = "select\n      id::text as id,\n      org_id::text as org_id,\n      invoice_id::text as invoice_id,\n      payment_method_id::text as payment_method_id,\n      provider,\n      provider_payment_id,\n      status,\n      amount_cents,\n      currency,\n      failure_code,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from fiducia.payments";
+
+pub const PaymentsProvider = enum {
+    stripe,
+    paypal,
+
+    pub fn toString(self: PaymentsProvider) []const u8 {
+        return switch (self) {
+            .stripe => "stripe",
+            .paypal => "paypal",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?PaymentsProvider {
+        if (std.mem.eql(u8, value, "stripe")) return .stripe;
+        if (std.mem.eql(u8, value, "paypal")) return .paypal;
+        return null;
+    }
+};
+
+pub const PaymentsStatus = enum {
+    pending,
+    processing,
+    succeeded,
+    failed,
+    canceled,
+    refunded,
+    partially_refunded,
+
+    pub fn toString(self: PaymentsStatus) []const u8 {
+        return switch (self) {
+            .pending => "pending",
+            .processing => "processing",
+            .succeeded => "succeeded",
+            .failed => "failed",
+            .canceled => "canceled",
+            .refunded => "refunded",
+            .partially_refunded => "partially_refunded",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?PaymentsStatus {
+        if (std.mem.eql(u8, value, "pending")) return .pending;
+        if (std.mem.eql(u8, value, "processing")) return .processing;
+        if (std.mem.eql(u8, value, "succeeded")) return .succeeded;
+        if (std.mem.eql(u8, value, "failed")) return .failed;
+        if (std.mem.eql(u8, value, "canceled")) return .canceled;
+        if (std.mem.eql(u8, value, "refunded")) return .refunded;
+        if (std.mem.eql(u8, value, "partially_refunded")) return .partially_refunded;
+        return null;
+    }
+};
+
+pub const PaymentsRow = struct {
+    id: []const u8,
+    org_id: []const u8,
+    invoice_id: ?[]const u8,
+    payment_method_id: ?[]const u8,
+    provider: []const u8,
+    provider_payment_id: []const u8,
+    status: []const u8,
+    amount_cents: i64,
+    currency: []const u8,
+    failure_code: ?[]const u8,
+    created_at: []const u8,
+    updated_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) PaymentsRow {
+        return PaymentsRow{
+            .id = reader.text(0),
+            .org_id = reader.text(1),
+            .invoice_id = if (reader.is_null(2)) null else reader.text(2),
+            .payment_method_id = if (reader.is_null(3)) null else reader.text(3),
+            .provider = reader.text(4),
+            .provider_payment_id = reader.text(5),
+            .status = reader.text(6),
+            .amount_cents = reader.int(7),
+            .currency = reader.text(8),
+            .failure_code = if (reader.is_null(9)) null else reader.text(9),
+            .created_at = reader.text(10),
+            .updated_at = reader.text(11),
+        };
+    }
+};
+
+pub fn validatePaymentsProviderPaymentId(value: []const u8) ?[]const u8 {
+    if (value.len > 255) return "payments.provider_payment_id must be at most 255 characters";
+    return null;
+}
+
+pub fn validatePaymentsAmountCents(value: i64) ?[]const u8 {
+    if (value < 0) return "payments.amount_cents is below the minimum";
+    return null;
+}
+
+pub fn validatePaymentsCurrency(value: []const u8) ?[]const u8 {
+    if (value.len > 3) return "payments.currency must be at most 3 characters";
+    return null;
+}
+
+pub fn validatePaymentsFailureCode(value: []const u8) ?[]const u8 {
+    if (value.len > 120) return "payments.failure_code must be at most 120 characters";
+    return null;
+}
+
+pub const billing_webhook_events_table: []const u8 = "fiducia.billing_webhook_events";
+pub const billing_webhook_events_columns = [_][]const u8{ "id", "provider", "provider_event_id", "event_type", "signature_verified", "payload_sha256", "received_at", "processed_at", "process_error" };
+pub const billing_webhook_events_select_sql: []const u8 = "select\n      id::text as id,\n      provider,\n      provider_event_id,\n      event_type,\n      signature_verified,\n      payload_sha256,\n      to_char(received_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as received_at,\n      to_char(processed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as processed_at,\n      process_error\n    from fiducia.billing_webhook_events";
+
+pub const BillingWebhookEventsProvider = enum {
+    stripe,
+    paypal,
+
+    pub fn toString(self: BillingWebhookEventsProvider) []const u8 {
+        return switch (self) {
+            .stripe => "stripe",
+            .paypal => "paypal",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?BillingWebhookEventsProvider {
+        if (std.mem.eql(u8, value, "stripe")) return .stripe;
+        if (std.mem.eql(u8, value, "paypal")) return .paypal;
+        return null;
+    }
+};
+
+pub const BillingWebhookEventsRow = struct {
+    id: []const u8,
+    provider: []const u8,
+    provider_event_id: []const u8,
+    event_type: []const u8,
+    signature_verified: bool,
+    payload_sha256: []const u8,
+    received_at: []const u8,
+    processed_at: ?[]const u8,
+    process_error: ?[]const u8,
+
+    pub fn fromRow(reader: RowReader) BillingWebhookEventsRow {
+        return BillingWebhookEventsRow{
+            .id = reader.text(0),
+            .provider = reader.text(1),
+            .provider_event_id = reader.text(2),
+            .event_type = reader.text(3),
+            .signature_verified = reader.boolean(4),
+            .payload_sha256 = reader.text(5),
+            .received_at = reader.text(6),
+            .processed_at = if (reader.is_null(7)) null else reader.text(7),
+            .process_error = if (reader.is_null(8)) null else reader.text(8),
+        };
+    }
+};
+
+pub fn validateBillingWebhookEventsProviderEventId(value: []const u8) ?[]const u8 {
+    if (value.len > 255) return "billing_webhook_events.provider_event_id must be at most 255 characters";
+    return null;
+}
+
+pub fn validateBillingWebhookEventsEventType(value: []const u8) ?[]const u8 {
+    if (value.len > 120) return "billing_webhook_events.event_type must be at most 120 characters";
+    return null;
+}
+
+pub fn validateBillingWebhookEventsPayloadSha256(value: []const u8) ?[]const u8 {
+    if (value.len > 64) return "billing_webhook_events.payload_sha256 must be at most 64 characters";
+    return null;
+}
+
 pub const transcriptions_table: []const u8 = "t2v.transcriptions";
 pub const transcriptions_columns = [_][]const u8{ "id", "source", "provider", "model", "text", "language", "sample_rate", "duration_ms", "created_at" };
 pub const transcriptions_select_sql: []const u8 = "select\n      id::text as id,\n      source,\n      provider,\n      model,\n      text,\n      language,\n      sample_rate,\n      duration_ms,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from t2v.transcriptions";

@@ -10781,6 +10781,456 @@ pub fn validate_sync_idempotency_keys_slug(value: String) -> Result(String, Stri
   }
 }
 
+pub const billing_customers_table = "fiducia.billing_customers"
+pub const billing_customers_select_sql = "select\n      id::text as id,\n      org_id::text as org_id,\n      provider,\n      provider_customer_id,\n      email,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from fiducia.billing_customers"
+
+pub type BillingCustomersProvider {
+  BillingCustomersProviderStripe
+  BillingCustomersProviderPaypal
+}
+
+pub fn billing_customers_provider_to_string(value: BillingCustomersProvider) -> String {
+  case value {
+    BillingCustomersProviderStripe -> "stripe"
+    BillingCustomersProviderPaypal -> "paypal"
+  }
+}
+
+pub fn parse_billing_customers_provider(value: String) -> Result(BillingCustomersProvider, String) {
+  case value {
+    "stripe" -> Ok(BillingCustomersProviderStripe)
+    "paypal" -> Ok(BillingCustomersProviderPaypal)
+    _ -> Error("unsupported billing_customers.provider: " <> value)
+  }
+}
+
+pub type BillingCustomersRow {
+  BillingCustomersRow(
+    id: String,
+    org_id: String,
+    provider: String,
+    provider_customer_id: String,
+    email: Option(String),
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_billing_customers_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("billing_customers.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_billing_customers_provider(value: String) -> Result(String, String) {
+  case list.contains(["stripe", "paypal"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported billing_customers.provider: " <> value)
+  }
+}
+
+pub const payment_methods_table = "fiducia.payment_methods"
+pub const payment_methods_select_sql = "select\n      id::text as id,\n      org_id::text as org_id,\n      billing_customer_id::text as billing_customer_id,\n      provider,\n      provider_payment_method_id,\n      kind,\n      brand,\n      last4,\n      exp_month,\n      exp_year,\n      is_default,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from fiducia.payment_methods"
+
+pub type PaymentMethodsProvider {
+  PaymentMethodsProviderStripe
+  PaymentMethodsProviderPaypal
+}
+
+pub fn payment_methods_provider_to_string(value: PaymentMethodsProvider) -> String {
+  case value {
+    PaymentMethodsProviderStripe -> "stripe"
+    PaymentMethodsProviderPaypal -> "paypal"
+  }
+}
+
+pub fn parse_payment_methods_provider(value: String) -> Result(PaymentMethodsProvider, String) {
+  case value {
+    "stripe" -> Ok(PaymentMethodsProviderStripe)
+    "paypal" -> Ok(PaymentMethodsProviderPaypal)
+    _ -> Error("unsupported payment_methods.provider: " <> value)
+  }
+}
+
+pub type PaymentMethodsRow {
+  PaymentMethodsRow(
+    id: String,
+    org_id: String,
+    billing_customer_id: String,
+    provider: String,
+    provider_payment_method_id: String,
+    kind: String,
+    brand: Option(String),
+    last4: Option(String),
+    exp_month: Option(Int),
+    exp_year: Option(Int),
+    is_default: Bool,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_payment_methods_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("payment_methods.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_payment_methods_provider(value: String) -> Result(String, String) {
+  case list.contains(["stripe", "paypal"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported payment_methods.provider: " <> value)
+  }
+}
+
+pub const billing_subscriptions_table = "fiducia.billing_subscriptions"
+pub const billing_subscriptions_select_sql = "select\n      id::text as id,\n      org_id::text as org_id,\n      billing_customer_id::text as billing_customer_id,\n      provider,\n      provider_subscription_id,\n      plan,\n      status,\n      to_char(current_period_start at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as current_period_start,\n      to_char(current_period_end at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as current_period_end,\n      cancel_at_period_end,\n      to_char(canceled_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as canceled_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from fiducia.billing_subscriptions"
+
+pub type BillingSubscriptionsProvider {
+  BillingSubscriptionsProviderStripe
+  BillingSubscriptionsProviderPaypal
+}
+
+pub fn billing_subscriptions_provider_to_string(value: BillingSubscriptionsProvider) -> String {
+  case value {
+    BillingSubscriptionsProviderStripe -> "stripe"
+    BillingSubscriptionsProviderPaypal -> "paypal"
+  }
+}
+
+pub fn parse_billing_subscriptions_provider(value: String) -> Result(BillingSubscriptionsProvider, String) {
+  case value {
+    "stripe" -> Ok(BillingSubscriptionsProviderStripe)
+    "paypal" -> Ok(BillingSubscriptionsProviderPaypal)
+    _ -> Error("unsupported billing_subscriptions.provider: " <> value)
+  }
+}
+
+pub type BillingSubscriptionsStatus {
+  BillingSubscriptionsStatusTrialing
+  BillingSubscriptionsStatusActive
+  BillingSubscriptionsStatusPastDue
+  BillingSubscriptionsStatusCanceled
+  BillingSubscriptionsStatusUnpaid
+  BillingSubscriptionsStatusIncomplete
+  BillingSubscriptionsStatusIncompleteExpired
+  BillingSubscriptionsStatusPaused
+}
+
+pub fn billing_subscriptions_status_to_string(value: BillingSubscriptionsStatus) -> String {
+  case value {
+    BillingSubscriptionsStatusTrialing -> "trialing"
+    BillingSubscriptionsStatusActive -> "active"
+    BillingSubscriptionsStatusPastDue -> "past_due"
+    BillingSubscriptionsStatusCanceled -> "canceled"
+    BillingSubscriptionsStatusUnpaid -> "unpaid"
+    BillingSubscriptionsStatusIncomplete -> "incomplete"
+    BillingSubscriptionsStatusIncompleteExpired -> "incomplete_expired"
+    BillingSubscriptionsStatusPaused -> "paused"
+  }
+}
+
+pub fn parse_billing_subscriptions_status(value: String) -> Result(BillingSubscriptionsStatus, String) {
+  case value {
+    "trialing" -> Ok(BillingSubscriptionsStatusTrialing)
+    "active" -> Ok(BillingSubscriptionsStatusActive)
+    "past_due" -> Ok(BillingSubscriptionsStatusPastDue)
+    "canceled" -> Ok(BillingSubscriptionsStatusCanceled)
+    "unpaid" -> Ok(BillingSubscriptionsStatusUnpaid)
+    "incomplete" -> Ok(BillingSubscriptionsStatusIncomplete)
+    "incomplete_expired" -> Ok(BillingSubscriptionsStatusIncompleteExpired)
+    "paused" -> Ok(BillingSubscriptionsStatusPaused)
+    _ -> Error("unsupported billing_subscriptions.status: " <> value)
+  }
+}
+
+pub type BillingSubscriptionsRow {
+  BillingSubscriptionsRow(
+    id: String,
+    org_id: String,
+    billing_customer_id: String,
+    provider: String,
+    provider_subscription_id: String,
+    plan: String,
+    status: String,
+    current_period_start: Option(String),
+    current_period_end: Option(String),
+    cancel_at_period_end: Bool,
+    canceled_at: Option(String),
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_billing_subscriptions_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("billing_subscriptions.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_billing_subscriptions_provider(value: String) -> Result(String, String) {
+  case list.contains(["stripe", "paypal"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported billing_subscriptions.provider: " <> value)
+  }
+}
+
+pub fn validate_billing_subscriptions_status(value: String) -> Result(String, String) {
+  case list.contains(["trialing", "active", "past_due", "canceled", "unpaid", "incomplete", "incomplete_expired", "paused"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported billing_subscriptions.status: " <> value)
+  }
+}
+
+pub const invoices_table = "fiducia.invoices"
+pub const invoices_select_sql = "select\n      id::text as id,\n      org_id::text as org_id,\n      billing_customer_id::text as billing_customer_id,\n      subscription_id::text as subscription_id,\n      provider,\n      provider_invoice_id,\n      status,\n      amount_due_cents,\n      amount_paid_cents,\n      currency,\n      to_char(period_start at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as period_start,\n      to_char(period_end at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as period_end,\n      hosted_invoice_url,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from fiducia.invoices"
+
+pub type InvoicesProvider {
+  InvoicesProviderStripe
+  InvoicesProviderPaypal
+}
+
+pub fn invoices_provider_to_string(value: InvoicesProvider) -> String {
+  case value {
+    InvoicesProviderStripe -> "stripe"
+    InvoicesProviderPaypal -> "paypal"
+  }
+}
+
+pub fn parse_invoices_provider(value: String) -> Result(InvoicesProvider, String) {
+  case value {
+    "stripe" -> Ok(InvoicesProviderStripe)
+    "paypal" -> Ok(InvoicesProviderPaypal)
+    _ -> Error("unsupported invoices.provider: " <> value)
+  }
+}
+
+pub type InvoicesStatus {
+  InvoicesStatusDraft
+  InvoicesStatusOpen
+  InvoicesStatusPaid
+  InvoicesStatusVoid
+  InvoicesStatusUncollectible
+}
+
+pub fn invoices_status_to_string(value: InvoicesStatus) -> String {
+  case value {
+    InvoicesStatusDraft -> "draft"
+    InvoicesStatusOpen -> "open"
+    InvoicesStatusPaid -> "paid"
+    InvoicesStatusVoid -> "void"
+    InvoicesStatusUncollectible -> "uncollectible"
+  }
+}
+
+pub fn parse_invoices_status(value: String) -> Result(InvoicesStatus, String) {
+  case value {
+    "draft" -> Ok(InvoicesStatusDraft)
+    "open" -> Ok(InvoicesStatusOpen)
+    "paid" -> Ok(InvoicesStatusPaid)
+    "void" -> Ok(InvoicesStatusVoid)
+    "uncollectible" -> Ok(InvoicesStatusUncollectible)
+    _ -> Error("unsupported invoices.status: " <> value)
+  }
+}
+
+pub type InvoicesRow {
+  InvoicesRow(
+    id: String,
+    org_id: String,
+    billing_customer_id: Option(String),
+    subscription_id: Option(String),
+    provider: String,
+    provider_invoice_id: String,
+    status: String,
+    amount_due_cents: Int,
+    amount_paid_cents: Int,
+    currency: String,
+    period_start: Option(String),
+    period_end: Option(String),
+    hosted_invoice_url: Option(String),
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_invoices_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("invoices.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_invoices_provider(value: String) -> Result(String, String) {
+  case list.contains(["stripe", "paypal"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported invoices.provider: " <> value)
+  }
+}
+
+pub fn validate_invoices_status(value: String) -> Result(String, String) {
+  case list.contains(["draft", "open", "paid", "void", "uncollectible"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported invoices.status: " <> value)
+  }
+}
+
+pub const payments_table = "fiducia.payments"
+pub const payments_select_sql = "select\n      id::text as id,\n      org_id::text as org_id,\n      invoice_id::text as invoice_id,\n      payment_method_id::text as payment_method_id,\n      provider,\n      provider_payment_id,\n      status,\n      amount_cents,\n      currency,\n      failure_code,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from fiducia.payments"
+
+pub type PaymentsProvider {
+  PaymentsProviderStripe
+  PaymentsProviderPaypal
+}
+
+pub fn payments_provider_to_string(value: PaymentsProvider) -> String {
+  case value {
+    PaymentsProviderStripe -> "stripe"
+    PaymentsProviderPaypal -> "paypal"
+  }
+}
+
+pub fn parse_payments_provider(value: String) -> Result(PaymentsProvider, String) {
+  case value {
+    "stripe" -> Ok(PaymentsProviderStripe)
+    "paypal" -> Ok(PaymentsProviderPaypal)
+    _ -> Error("unsupported payments.provider: " <> value)
+  }
+}
+
+pub type PaymentsStatus {
+  PaymentsStatusPending
+  PaymentsStatusProcessing
+  PaymentsStatusSucceeded
+  PaymentsStatusFailed
+  PaymentsStatusCanceled
+  PaymentsStatusRefunded
+  PaymentsStatusPartiallyRefunded
+}
+
+pub fn payments_status_to_string(value: PaymentsStatus) -> String {
+  case value {
+    PaymentsStatusPending -> "pending"
+    PaymentsStatusProcessing -> "processing"
+    PaymentsStatusSucceeded -> "succeeded"
+    PaymentsStatusFailed -> "failed"
+    PaymentsStatusCanceled -> "canceled"
+    PaymentsStatusRefunded -> "refunded"
+    PaymentsStatusPartiallyRefunded -> "partially_refunded"
+  }
+}
+
+pub fn parse_payments_status(value: String) -> Result(PaymentsStatus, String) {
+  case value {
+    "pending" -> Ok(PaymentsStatusPending)
+    "processing" -> Ok(PaymentsStatusProcessing)
+    "succeeded" -> Ok(PaymentsStatusSucceeded)
+    "failed" -> Ok(PaymentsStatusFailed)
+    "canceled" -> Ok(PaymentsStatusCanceled)
+    "refunded" -> Ok(PaymentsStatusRefunded)
+    "partially_refunded" -> Ok(PaymentsStatusPartiallyRefunded)
+    _ -> Error("unsupported payments.status: " <> value)
+  }
+}
+
+pub type PaymentsRow {
+  PaymentsRow(
+    id: String,
+    org_id: String,
+    invoice_id: Option(String),
+    payment_method_id: Option(String),
+    provider: String,
+    provider_payment_id: String,
+    status: String,
+    amount_cents: Int,
+    currency: String,
+    failure_code: Option(String),
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_payments_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("payments.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_payments_provider(value: String) -> Result(String, String) {
+  case list.contains(["stripe", "paypal"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported payments.provider: " <> value)
+  }
+}
+
+pub fn validate_payments_status(value: String) -> Result(String, String) {
+  case list.contains(["pending", "processing", "succeeded", "failed", "canceled", "refunded", "partially_refunded"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported payments.status: " <> value)
+  }
+}
+
+pub const billing_webhook_events_table = "fiducia.billing_webhook_events"
+pub const billing_webhook_events_select_sql = "select\n      id::text as id,\n      provider,\n      provider_event_id,\n      event_type,\n      signature_verified,\n      payload_sha256,\n      to_char(received_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as received_at,\n      to_char(processed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as processed_at,\n      process_error\n    from fiducia.billing_webhook_events"
+
+pub type BillingWebhookEventsProvider {
+  BillingWebhookEventsProviderStripe
+  BillingWebhookEventsProviderPaypal
+}
+
+pub fn billing_webhook_events_provider_to_string(value: BillingWebhookEventsProvider) -> String {
+  case value {
+    BillingWebhookEventsProviderStripe -> "stripe"
+    BillingWebhookEventsProviderPaypal -> "paypal"
+  }
+}
+
+pub fn parse_billing_webhook_events_provider(value: String) -> Result(BillingWebhookEventsProvider, String) {
+  case value {
+    "stripe" -> Ok(BillingWebhookEventsProviderStripe)
+    "paypal" -> Ok(BillingWebhookEventsProviderPaypal)
+    _ -> Error("unsupported billing_webhook_events.provider: " <> value)
+  }
+}
+
+pub type BillingWebhookEventsRow {
+  BillingWebhookEventsRow(
+    id: String,
+    provider: String,
+    provider_event_id: String,
+    event_type: String,
+    signature_verified: Bool,
+    payload_sha256: String,
+    received_at: String,
+    processed_at: Option(String),
+    process_error: Option(String),
+  )
+}
+
+pub fn validate_billing_webhook_events_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("billing_webhook_events.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_billing_webhook_events_provider(value: String) -> Result(String, String) {
+  case list.contains(["stripe", "paypal"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported billing_webhook_events.provider: " <> value)
+  }
+}
+
 pub const transcriptions_table = "t2v.transcriptions"
 pub const transcriptions_select_sql = "select\n      id::text as id,\n      source,\n      provider,\n      model,\n      text,\n      language,\n      sample_rate,\n      duration_ms,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from t2v.transcriptions"
 

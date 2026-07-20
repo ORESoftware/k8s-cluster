@@ -8166,6 +8166,312 @@ public class SyncIdempotencyKeys
     public DateTimeOffset CreatedAt { get; set; }
 }
 
+[Table("billing_customers", Schema = "fiducia")]
+public class BillingCustomers
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Column("org_id")]
+    public Guid OrgId { get; set; }
+
+    [Required]
+    [Column("provider")]
+    [MaxLength(16)]
+    [RegularExpression(@"^(stripe|paypal)$")]
+    public string Provider { get; set; } = null!;
+
+    [Required]
+    [Column("provider_customer_id")]
+    [MaxLength(255)]
+    public string ProviderCustomerId { get; set; } = null!;
+
+    [Column("email")]
+    [MaxLength(320)]
+    public string? Email { get; set; }
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+[Table("payment_methods", Schema = "fiducia")]
+public class PaymentMethods
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Column("org_id")]
+    public Guid OrgId { get; set; }
+
+    [Column("billing_customer_id")]
+    public Guid BillingCustomerId { get; set; }
+
+    [Required]
+    [Column("provider")]
+    [MaxLength(16)]
+    [RegularExpression(@"^(stripe|paypal)$")]
+    public string Provider { get; set; } = null!;
+
+    [Required]
+    [Column("provider_payment_method_id")]
+    [MaxLength(255)]
+    public string ProviderPaymentMethodId { get; set; } = null!;
+
+    [Required]
+    [Column("kind")]
+    [MaxLength(32)]
+    public string Kind { get; set; } = null!;
+
+    [Column("brand")]
+    [MaxLength(32)]
+    public string? Brand { get; set; }
+
+    [Column("last4")]
+    [MaxLength(4)]
+    [RegularExpression(@"^[0-9]{4}$")]
+    public string? Last4 { get; set; }
+
+    [Column("exp_month")]
+    [Range(1, 12)]
+    public short? ExpMonth { get; set; }
+
+    [Column("exp_year")]
+    public short? ExpYear { get; set; }
+
+    [Column("is_default")]
+    public bool IsDefault { get; set; }
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+[Table("billing_subscriptions", Schema = "fiducia")]
+public class BillingSubscriptions
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Column("org_id")]
+    public Guid OrgId { get; set; }
+
+    [Column("billing_customer_id")]
+    public Guid BillingCustomerId { get; set; }
+
+    [Required]
+    [Column("provider")]
+    [MaxLength(16)]
+    [RegularExpression(@"^(stripe|paypal)$")]
+    public string Provider { get; set; } = null!;
+
+    [Required]
+    [Column("provider_subscription_id")]
+    [MaxLength(255)]
+    public string ProviderSubscriptionId { get; set; } = null!;
+
+    [Required]
+    [Column("plan")]
+    [MaxLength(120)]
+    public string Plan { get; set; } = null!;
+
+    [Required]
+    [Column("status")]
+    [MaxLength(32)]
+    [RegularExpression(@"^(trialing|active|past_due|canceled|unpaid|incomplete|incomplete_expired|paused)$")]
+    public string Status { get; set; } = null!;
+
+    [Column("current_period_start")]
+    public DateTimeOffset? CurrentPeriodStart { get; set; }
+
+    [Column("current_period_end")]
+    public DateTimeOffset? CurrentPeriodEnd { get; set; }
+
+    [Column("cancel_at_period_end")]
+    public bool CancelAtPeriodEnd { get; set; }
+
+    [Column("canceled_at")]
+    public DateTimeOffset? CanceledAt { get; set; }
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+[Table("invoices", Schema = "fiducia")]
+public class Invoices
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Column("org_id")]
+    public Guid OrgId { get; set; }
+
+    [Column("billing_customer_id")]
+    public Guid? BillingCustomerId { get; set; }
+
+    [Column("subscription_id")]
+    public Guid? SubscriptionId { get; set; }
+
+    [Required]
+    [Column("provider")]
+    [MaxLength(16)]
+    [RegularExpression(@"^(stripe|paypal)$")]
+    public string Provider { get; set; } = null!;
+
+    [Required]
+    [Column("provider_invoice_id")]
+    [MaxLength(255)]
+    public string ProviderInvoiceId { get; set; } = null!;
+
+    [Required]
+    [Column("status")]
+    [MaxLength(32)]
+    [RegularExpression(@"^(draft|open|paid|void|uncollectible)$")]
+    public string Status { get; set; } = null!;
+
+    [Column("amount_due_cents")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long AmountDueCents { get; set; }
+
+    [Column("amount_paid_cents")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long AmountPaidCents { get; set; }
+
+    [Required]
+    [Column("currency")]
+    [MaxLength(3)]
+    [RegularExpression(@"^[a-z]{3}$")]
+    public string Currency { get; set; } = null!;
+
+    [Column("period_start")]
+    public DateTimeOffset? PeriodStart { get; set; }
+
+    [Column("period_end")]
+    public DateTimeOffset? PeriodEnd { get; set; }
+
+    [Column("hosted_invoice_url")]
+    public string? HostedInvoiceUrl { get; set; }
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+[Table("payments", Schema = "fiducia")]
+public class Payments
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Column("org_id")]
+    public Guid OrgId { get; set; }
+
+    [Column("invoice_id")]
+    public Guid? InvoiceId { get; set; }
+
+    [Column("payment_method_id")]
+    public Guid? PaymentMethodId { get; set; }
+
+    [Required]
+    [Column("provider")]
+    [MaxLength(16)]
+    [RegularExpression(@"^(stripe|paypal)$")]
+    public string Provider { get; set; } = null!;
+
+    [Required]
+    [Column("provider_payment_id")]
+    [MaxLength(255)]
+    public string ProviderPaymentId { get; set; } = null!;
+
+    [Required]
+    [Column("status")]
+    [MaxLength(32)]
+    [RegularExpression(@"^(pending|processing|succeeded|failed|canceled|refunded|partially_refunded)$")]
+    public string Status { get; set; } = null!;
+
+    [Column("amount_cents")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long AmountCents { get; set; }
+
+    [Required]
+    [Column("currency")]
+    [MaxLength(3)]
+    [RegularExpression(@"^[a-z]{3}$")]
+    public string Currency { get; set; } = null!;
+
+    [Column("failure_code")]
+    [MaxLength(120)]
+    public string? FailureCode { get; set; }
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+[Table("billing_webhook_events", Schema = "fiducia")]
+public class BillingWebhookEvents
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Required]
+    [Column("provider")]
+    [MaxLength(16)]
+    [RegularExpression(@"^(stripe|paypal)$")]
+    public string Provider { get; set; } = null!;
+
+    [Required]
+    [Column("provider_event_id")]
+    [MaxLength(255)]
+    public string ProviderEventId { get; set; } = null!;
+
+    [Required]
+    [Column("event_type")]
+    [MaxLength(120)]
+    public string EventType { get; set; } = null!;
+
+    [Column("signature_verified")]
+    public bool SignatureVerified { get; set; }
+
+    [Required]
+    [Column("payload_sha256")]
+    [MaxLength(64)]
+    [RegularExpression(@"^[0-9a-f]{64}$")]
+    public string PayloadSha256 { get; set; } = null!;
+
+    [Column("received_at")]
+    public DateTimeOffset ReceivedAt { get; set; }
+
+    [Column("processed_at")]
+    public DateTimeOffset? ProcessedAt { get; set; }
+
+    [Column("process_error")]
+    public string? ProcessError { get; set; }
+}
+
 [Table("transcriptions", Schema = "t2v")]
 public class Transcriptions
 {
@@ -8840,6 +9146,18 @@ public class DdPgDefsContext : DbContext
     public DbSet<CustomerNotifications> CustomerNotificationsSet => Set<CustomerNotifications>();
 
     public DbSet<SyncIdempotencyKeys> SyncIdempotencyKeysSet => Set<SyncIdempotencyKeys>();
+
+    public DbSet<BillingCustomers> BillingCustomersSet => Set<BillingCustomers>();
+
+    public DbSet<PaymentMethods> PaymentMethodsSet => Set<PaymentMethods>();
+
+    public DbSet<BillingSubscriptions> BillingSubscriptionsSet => Set<BillingSubscriptions>();
+
+    public DbSet<Invoices> InvoicesSet => Set<Invoices>();
+
+    public DbSet<Payments> PaymentsSet => Set<Payments>();
+
+    public DbSet<BillingWebhookEvents> BillingWebhookEventsSet => Set<BillingWebhookEvents>();
 
     public DbSet<Transcriptions> TranscriptionsSet => Set<Transcriptions>();
 

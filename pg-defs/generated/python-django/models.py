@@ -3045,6 +3045,123 @@ class SyncIdempotencyKeys(models.Model):
         db_table = "fiducia\".\"sync_idempotency_keys"
 
 
+class BillingCustomers(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    org_id = models.UUIDField()
+    provider = models.CharField(max_length=16, choices=[("stripe", "stripe"), ("paypal", "paypal")])
+    provider_customer_id = models.CharField(max_length=255)
+    email = models.CharField(max_length=320, null=True, blank=True)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "fiducia\".\"billing_customers"
+
+
+class PaymentMethods(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    org_id = models.UUIDField()
+    billing_customer_id = models.UUIDField()
+    provider = models.CharField(max_length=16, choices=[("stripe", "stripe"), ("paypal", "paypal")])
+    provider_payment_method_id = models.CharField(max_length=255)
+    kind = models.CharField(max_length=32)
+    brand = models.CharField(max_length=32, null=True, blank=True)
+    last4 = models.CharField(max_length=4, null=True, blank=True, validators=[RegexValidator(regex="^[0-9]{4}$")])
+    exp_month = models.SmallIntegerField(null=True, blank=True, validators=[MinValueValidator(1), MaxValueValidator(12)])
+    exp_year = models.SmallIntegerField(null=True, blank=True)
+    is_default = models.BooleanField(default=False)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "fiducia\".\"payment_methods"
+
+
+class BillingSubscriptions(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    org_id = models.UUIDField()
+    billing_customer_id = models.UUIDField()
+    provider = models.CharField(max_length=16, choices=[("stripe", "stripe"), ("paypal", "paypal")])
+    provider_subscription_id = models.CharField(max_length=255)
+    plan = models.CharField(max_length=120)
+    status = models.CharField(max_length=32, choices=[("trialing", "trialing"), ("active", "active"), ("past_due", "past_due"), ("canceled", "canceled"), ("unpaid", "unpaid"), ("incomplete", "incomplete"), ("incomplete_expired", "incomplete_expired"), ("paused", "paused")])
+    current_period_start = models.DateTimeField(null=True, blank=True)
+    current_period_end = models.DateTimeField(null=True, blank=True)
+    cancel_at_period_end = models.BooleanField(default=False)
+    canceled_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "fiducia\".\"billing_subscriptions"
+
+
+class Invoices(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    org_id = models.UUIDField()
+    billing_customer_id = models.UUIDField(null=True, blank=True)
+    subscription_id = models.UUIDField(null=True, blank=True)
+    provider = models.CharField(max_length=16, choices=[("stripe", "stripe"), ("paypal", "paypal")])
+    provider_invoice_id = models.CharField(max_length=255)
+    status = models.CharField(max_length=32, choices=[("draft", "draft"), ("open", "open"), ("paid", "paid"), ("void", "void"), ("uncollectible", "uncollectible")])
+    amount_due_cents = models.BigIntegerField(validators=[MinValueValidator(0)])
+    amount_paid_cents = models.BigIntegerField(default=0, validators=[MinValueValidator(0)])
+    currency = models.CharField(max_length=3, validators=[RegexValidator(regex="^[a-z]{3}$")])
+    period_start = models.DateTimeField(null=True, blank=True)
+    period_end = models.DateTimeField(null=True, blank=True)
+    hosted_invoice_url = models.TextField(null=True, blank=True)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "fiducia\".\"invoices"
+
+
+class Payments(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    org_id = models.UUIDField()
+    invoice_id = models.UUIDField(null=True, blank=True)
+    payment_method_id = models.UUIDField(null=True, blank=True)
+    provider = models.CharField(max_length=16, choices=[("stripe", "stripe"), ("paypal", "paypal")])
+    provider_payment_id = models.CharField(max_length=255)
+    status = models.CharField(max_length=32, choices=[("pending", "pending"), ("processing", "processing"), ("succeeded", "succeeded"), ("failed", "failed"), ("canceled", "canceled"), ("refunded", "refunded"), ("partially_refunded", "partially_refunded")])
+    amount_cents = models.BigIntegerField(validators=[MinValueValidator(0)])
+    currency = models.CharField(max_length=3, validators=[RegexValidator(regex="^[a-z]{3}$")])
+    failure_code = models.CharField(max_length=120, null=True, blank=True)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "fiducia\".\"payments"
+
+
+class BillingWebhookEvents(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    provider = models.CharField(max_length=16, choices=[("stripe", "stripe"), ("paypal", "paypal")])
+    provider_event_id = models.CharField(max_length=255)
+    event_type = models.CharField(max_length=120)
+    signature_verified = models.BooleanField()
+    payload_sha256 = models.CharField(max_length=64, validators=[RegexValidator(regex="^[0-9a-f]{64}$")])
+    received_at = models.DateTimeField()
+    processed_at = models.DateTimeField(null=True, blank=True)
+    process_error = models.TextField(null=True, blank=True)
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "fiducia\".\"billing_webhook_events"
+
+
 class Transcriptions(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     source = models.TextField()

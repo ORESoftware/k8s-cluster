@@ -110,6 +110,10 @@ var orgsSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
 var projectsSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
 var customerNotificationsKindPattern = regexp.MustCompile(`^[a-z][a-z0-9_.]{1,38}[a-z0-9]$`)
 var syncIdempotencyKeysRequestFingerprintPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+var paymentMethodsLast4Pattern = regexp.MustCompile(`^[0-9]{4}$`)
+var invoicesCurrencyPattern = regexp.MustCompile(`^[a-z]{3}$`)
+var paymentsCurrencyPattern = regexp.MustCompile(`^[a-z]{3}$`)
+var billingWebhookEventsPayloadSha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 const AccountsTable = "threefa.accounts"
 const AccountsSelectSQL = `select
@@ -7182,6 +7186,253 @@ type SyncIdempotencyKeysBun struct {
 
 func (value SyncIdempotencyKeysBun) Validate() error {
 	if !syncIdempotencyKeysRequestFingerprintPattern.MatchString(value.RequestFingerprint) { return errors.New("sync_idempotency_keys.request_fingerprint does not match the required pattern") }
+	return nil
+}
+
+const BillingCustomersTable = "fiducia.billing_customers"
+const BillingCustomersSelectSQL = `select
+      id::text as id,
+      org_id::text as org_id,
+      provider,
+      provider_customer_id,
+      email,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from fiducia.billing_customers`
+
+var BillingCustomersProviderValues = []string{"stripe", "paypal"}
+
+type BillingCustomersBun struct {
+	bun.BaseModel `bun:"table:fiducia.billing_customers"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	OrgId uuid.UUID `bun:"org_id,type:uuid" json:"orgId"`
+	Provider string `bun:"provider,type:varchar(16)" json:"provider"`
+	ProviderCustomerId string `bun:"provider_customer_id,type:varchar(255)" json:"providerCustomerId"`
+	Email *string `bun:"email,type:varchar(320),nullzero" json:"email,omitempty"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value BillingCustomersBun) Validate() error {
+	if !containsString(BillingCustomersProviderValues, value.Provider) { return errors.New("unsupported billing_customers.provider") }
+	return nil
+}
+
+const PaymentMethodsTable = "fiducia.payment_methods"
+const PaymentMethodsSelectSQL = `select
+      id::text as id,
+      org_id::text as org_id,
+      billing_customer_id::text as billing_customer_id,
+      provider,
+      provider_payment_method_id,
+      kind,
+      brand,
+      last4,
+      exp_month,
+      exp_year,
+      is_default,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from fiducia.payment_methods`
+
+var PaymentMethodsProviderValues = []string{"stripe", "paypal"}
+
+type PaymentMethodsBun struct {
+	bun.BaseModel `bun:"table:fiducia.payment_methods"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	OrgId uuid.UUID `bun:"org_id,type:uuid" json:"orgId"`
+	BillingCustomerId uuid.UUID `bun:"billing_customer_id,type:uuid" json:"billingCustomerId"`
+	Provider string `bun:"provider,type:varchar(16)" json:"provider"`
+	ProviderPaymentMethodId string `bun:"provider_payment_method_id,type:varchar(255)" json:"providerPaymentMethodId"`
+	Kind string `bun:"kind,type:varchar(32)" json:"kind"`
+	Brand *string `bun:"brand,type:varchar(32),nullzero" json:"brand,omitempty"`
+	Last4 *string `bun:"last4,type:varchar(4),nullzero" json:"last4,omitempty"`
+	ExpMonth *int32 `bun:"exp_month,type:smallint,nullzero" json:"expMonth,omitempty"`
+	ExpYear *int32 `bun:"exp_year,type:smallint,nullzero" json:"expYear,omitempty"`
+	IsDefault bool `bun:"is_default,type:boolean,default:false" json:"isDefault"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value PaymentMethodsBun) Validate() error {
+	if !containsString(PaymentMethodsProviderValues, value.Provider) { return errors.New("unsupported payment_methods.provider") }
+	if value.Last4 != nil {
+		if !paymentMethodsLast4Pattern.MatchString(*value.Last4) { return errors.New("payment_methods.last4 does not match the required pattern") }
+	}
+	if value.ExpMonth != nil {
+		if *value.ExpMonth < 1 { return errors.New("payment_methods.exp_month is below the minimum") }
+		if *value.ExpMonth > 12 { return errors.New("payment_methods.exp_month is above the maximum") }
+	}
+	return nil
+}
+
+const BillingSubscriptionsTable = "fiducia.billing_subscriptions"
+const BillingSubscriptionsSelectSQL = `select
+      id::text as id,
+      org_id::text as org_id,
+      billing_customer_id::text as billing_customer_id,
+      provider,
+      provider_subscription_id,
+      plan,
+      status,
+      to_char(current_period_start at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as current_period_start,
+      to_char(current_period_end at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as current_period_end,
+      cancel_at_period_end,
+      to_char(canceled_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as canceled_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from fiducia.billing_subscriptions`
+
+var BillingSubscriptionsProviderValues = []string{"stripe", "paypal"}
+var BillingSubscriptionsStatusValues = []string{"trialing", "active", "past_due", "canceled", "unpaid", "incomplete", "incomplete_expired", "paused"}
+
+type BillingSubscriptionsBun struct {
+	bun.BaseModel `bun:"table:fiducia.billing_subscriptions"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	OrgId uuid.UUID `bun:"org_id,type:uuid" json:"orgId"`
+	BillingCustomerId uuid.UUID `bun:"billing_customer_id,type:uuid" json:"billingCustomerId"`
+	Provider string `bun:"provider,type:varchar(16)" json:"provider"`
+	ProviderSubscriptionId string `bun:"provider_subscription_id,type:varchar(255)" json:"providerSubscriptionId"`
+	Plan string `bun:"plan,type:varchar(120)" json:"plan"`
+	Status string `bun:"status,type:varchar(32)" json:"status"`
+	CurrentPeriodStart *time.Time `bun:"current_period_start,type:timestamptz,nullzero" json:"currentPeriodStart,omitempty"`
+	CurrentPeriodEnd *time.Time `bun:"current_period_end,type:timestamptz,nullzero" json:"currentPeriodEnd,omitempty"`
+	CancelAtPeriodEnd bool `bun:"cancel_at_period_end,type:boolean,default:false" json:"cancelAtPeriodEnd"`
+	CanceledAt *time.Time `bun:"canceled_at,type:timestamptz,nullzero" json:"canceledAt,omitempty"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value BillingSubscriptionsBun) Validate() error {
+	if !containsString(BillingSubscriptionsProviderValues, value.Provider) { return errors.New("unsupported billing_subscriptions.provider") }
+	if !containsString(BillingSubscriptionsStatusValues, value.Status) { return errors.New("unsupported billing_subscriptions.status") }
+	return nil
+}
+
+const InvoicesTable = "fiducia.invoices"
+const InvoicesSelectSQL = `select
+      id::text as id,
+      org_id::text as org_id,
+      billing_customer_id::text as billing_customer_id,
+      subscription_id::text as subscription_id,
+      provider,
+      provider_invoice_id,
+      status,
+      amount_due_cents,
+      amount_paid_cents,
+      currency,
+      to_char(period_start at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as period_start,
+      to_char(period_end at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as period_end,
+      hosted_invoice_url,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from fiducia.invoices`
+
+var InvoicesProviderValues = []string{"stripe", "paypal"}
+var InvoicesStatusValues = []string{"draft", "open", "paid", "void", "uncollectible"}
+
+type InvoicesBun struct {
+	bun.BaseModel `bun:"table:fiducia.invoices"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	OrgId uuid.UUID `bun:"org_id,type:uuid" json:"orgId"`
+	BillingCustomerId *uuid.UUID `bun:"billing_customer_id,type:uuid,nullzero" json:"billingCustomerId,omitempty"`
+	SubscriptionId *uuid.UUID `bun:"subscription_id,type:uuid,nullzero" json:"subscriptionId,omitempty"`
+	Provider string `bun:"provider,type:varchar(16)" json:"provider"`
+	ProviderInvoiceId string `bun:"provider_invoice_id,type:varchar(255)" json:"providerInvoiceId"`
+	Status string `bun:"status,type:varchar(32)" json:"status"`
+	AmountDueCents int64 `bun:"amount_due_cents,type:bigint" json:"amountDueCents"`
+	AmountPaidCents int64 `bun:"amount_paid_cents,type:bigint,default:0" json:"amountPaidCents"`
+	Currency string `bun:"currency,type:varchar(3)" json:"currency"`
+	PeriodStart *time.Time `bun:"period_start,type:timestamptz,nullzero" json:"periodStart,omitempty"`
+	PeriodEnd *time.Time `bun:"period_end,type:timestamptz,nullzero" json:"periodEnd,omitempty"`
+	HostedInvoiceUrl *string `bun:"hosted_invoice_url,type:text,nullzero" json:"hostedInvoiceUrl,omitempty"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value InvoicesBun) Validate() error {
+	if !containsString(InvoicesProviderValues, value.Provider) { return errors.New("unsupported invoices.provider") }
+	if !containsString(InvoicesStatusValues, value.Status) { return errors.New("unsupported invoices.status") }
+	if value.AmountDueCents < 0 { return errors.New("invoices.amount_due_cents is below the minimum") }
+	if value.AmountPaidCents < 0 { return errors.New("invoices.amount_paid_cents is below the minimum") }
+	if !invoicesCurrencyPattern.MatchString(value.Currency) { return errors.New("invoices.currency does not match the required pattern") }
+	return nil
+}
+
+const PaymentsTable = "fiducia.payments"
+const PaymentsSelectSQL = `select
+      id::text as id,
+      org_id::text as org_id,
+      invoice_id::text as invoice_id,
+      payment_method_id::text as payment_method_id,
+      provider,
+      provider_payment_id,
+      status,
+      amount_cents,
+      currency,
+      failure_code,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from fiducia.payments`
+
+var PaymentsProviderValues = []string{"stripe", "paypal"}
+var PaymentsStatusValues = []string{"pending", "processing", "succeeded", "failed", "canceled", "refunded", "partially_refunded"}
+
+type PaymentsBun struct {
+	bun.BaseModel `bun:"table:fiducia.payments"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	OrgId uuid.UUID `bun:"org_id,type:uuid" json:"orgId"`
+	InvoiceId *uuid.UUID `bun:"invoice_id,type:uuid,nullzero" json:"invoiceId,omitempty"`
+	PaymentMethodId *uuid.UUID `bun:"payment_method_id,type:uuid,nullzero" json:"paymentMethodId,omitempty"`
+	Provider string `bun:"provider,type:varchar(16)" json:"provider"`
+	ProviderPaymentId string `bun:"provider_payment_id,type:varchar(255)" json:"providerPaymentId"`
+	Status string `bun:"status,type:varchar(32)" json:"status"`
+	AmountCents int64 `bun:"amount_cents,type:bigint" json:"amountCents"`
+	Currency string `bun:"currency,type:varchar(3)" json:"currency"`
+	FailureCode *string `bun:"failure_code,type:varchar(120),nullzero" json:"failureCode,omitempty"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value PaymentsBun) Validate() error {
+	if !containsString(PaymentsProviderValues, value.Provider) { return errors.New("unsupported payments.provider") }
+	if !containsString(PaymentsStatusValues, value.Status) { return errors.New("unsupported payments.status") }
+	if value.AmountCents < 0 { return errors.New("payments.amount_cents is below the minimum") }
+	if !paymentsCurrencyPattern.MatchString(value.Currency) { return errors.New("payments.currency does not match the required pattern") }
+	return nil
+}
+
+const BillingWebhookEventsTable = "fiducia.billing_webhook_events"
+const BillingWebhookEventsSelectSQL = `select
+      id::text as id,
+      provider,
+      provider_event_id,
+      event_type,
+      signature_verified,
+      payload_sha256,
+      to_char(received_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as received_at,
+      to_char(processed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as processed_at,
+      process_error
+    from fiducia.billing_webhook_events`
+
+var BillingWebhookEventsProviderValues = []string{"stripe", "paypal"}
+
+type BillingWebhookEventsBun struct {
+	bun.BaseModel `bun:"table:fiducia.billing_webhook_events"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	Provider string `bun:"provider,type:varchar(16)" json:"provider"`
+	ProviderEventId string `bun:"provider_event_id,type:varchar(255)" json:"providerEventId"`
+	EventType string `bun:"event_type,type:varchar(120)" json:"eventType"`
+	SignatureVerified bool `bun:"signature_verified,type:boolean" json:"signatureVerified"`
+	PayloadSha256 string `bun:"payload_sha256,type:varchar(64)" json:"payloadSha256"`
+	ReceivedAt time.Time `bun:"received_at,type:timestamptz,default:now()" json:"receivedAt"`
+	ProcessedAt *time.Time `bun:"processed_at,type:timestamptz,nullzero" json:"processedAt,omitempty"`
+	ProcessError *string `bun:"process_error,type:text,nullzero" json:"processError,omitempty"`
+}
+
+func (value BillingWebhookEventsBun) Validate() error {
+	if !containsString(BillingWebhookEventsProviderValues, value.Provider) { return errors.New("unsupported billing_webhook_events.provider") }
+	if !billingWebhookEventsPayloadSha256Pattern.MatchString(value.PayloadSha256) { return errors.New("billing_webhook_events.payload_sha256 does not match the required pattern") }
 	return nil
 }
 

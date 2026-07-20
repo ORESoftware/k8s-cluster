@@ -12407,6 +12407,465 @@ class SyncIdempotencyKeysObjectBox {
 }
 
 @Entity()
+class BillingCustomersObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String orgId;
+
+  String provider;
+
+  String providerCustomerId;
+
+  String? email;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  BillingCustomersObjectBox({
+    required this.id,
+    required this.orgId,
+    required this.provider,
+    required this.providerCustomerId,
+    this.email,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "orgId": orgId,
+    "provider": provider,
+    "providerCustomerId": providerCustomerId,
+    "email": email,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static BillingCustomersObjectBox fromJson(Map<String, Object?> json) {
+    return BillingCustomersObjectBox(
+      id: json["id"] as String,
+      orgId: json["orgId"] as String,
+      provider: json["provider"] as String,
+      providerCustomerId: json["providerCustomerId"] as String,
+      email: json["email"] as String?,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class PaymentMethodsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String orgId;
+
+  String billingCustomerId;
+
+  String provider;
+
+  String providerPaymentMethodId;
+
+  String kind;
+
+  String? brand;
+
+  String? last4;
+
+  int? expMonth;
+
+  int? expYear;
+
+  bool isDefault;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  PaymentMethodsObjectBox({
+    required this.id,
+    required this.orgId,
+    required this.billingCustomerId,
+    required this.provider,
+    required this.providerPaymentMethodId,
+    required this.kind,
+    this.brand,
+    this.last4,
+    this.expMonth,
+    this.expYear,
+    required this.isDefault,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "orgId": orgId,
+    "billingCustomerId": billingCustomerId,
+    "provider": provider,
+    "providerPaymentMethodId": providerPaymentMethodId,
+    "kind": kind,
+    "brand": brand,
+    "last4": last4,
+    "expMonth": expMonth,
+    "expYear": expYear,
+    "isDefault": isDefault,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static PaymentMethodsObjectBox fromJson(Map<String, Object?> json) {
+    return PaymentMethodsObjectBox(
+      id: json["id"] as String,
+      orgId: json["orgId"] as String,
+      billingCustomerId: json["billingCustomerId"] as String,
+      provider: json["provider"] as String,
+      providerPaymentMethodId: json["providerPaymentMethodId"] as String,
+      kind: json["kind"] as String,
+      brand: json["brand"] as String?,
+      last4: json["last4"] as String?,
+      expMonth: json["expMonth"] == null ? null : (json["expMonth"] as num).toInt(),
+      expYear: json["expYear"] == null ? null : (json["expYear"] as num).toInt(),
+      isDefault: json["isDefault"] as bool,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class BillingSubscriptionsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String orgId;
+
+  String billingCustomerId;
+
+  String provider;
+
+  String providerSubscriptionId;
+
+  String plan;
+
+  String status;
+
+  String? currentPeriodStart;
+
+  String? currentPeriodEnd;
+
+  bool cancelAtPeriodEnd;
+
+  String? canceledAt;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  BillingSubscriptionsObjectBox({
+    required this.id,
+    required this.orgId,
+    required this.billingCustomerId,
+    required this.provider,
+    required this.providerSubscriptionId,
+    required this.plan,
+    required this.status,
+    this.currentPeriodStart,
+    this.currentPeriodEnd,
+    required this.cancelAtPeriodEnd,
+    this.canceledAt,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "orgId": orgId,
+    "billingCustomerId": billingCustomerId,
+    "provider": provider,
+    "providerSubscriptionId": providerSubscriptionId,
+    "plan": plan,
+    "status": status,
+    "currentPeriodStart": currentPeriodStart,
+    "currentPeriodEnd": currentPeriodEnd,
+    "cancelAtPeriodEnd": cancelAtPeriodEnd,
+    "canceledAt": canceledAt,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static BillingSubscriptionsObjectBox fromJson(Map<String, Object?> json) {
+    return BillingSubscriptionsObjectBox(
+      id: json["id"] as String,
+      orgId: json["orgId"] as String,
+      billingCustomerId: json["billingCustomerId"] as String,
+      provider: json["provider"] as String,
+      providerSubscriptionId: json["providerSubscriptionId"] as String,
+      plan: json["plan"] as String,
+      status: json["status"] as String,
+      currentPeriodStart: json["currentPeriodStart"] as String?,
+      currentPeriodEnd: json["currentPeriodEnd"] as String?,
+      cancelAtPeriodEnd: json["cancelAtPeriodEnd"] as bool,
+      canceledAt: json["canceledAt"] as String?,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class InvoicesObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String orgId;
+
+  String? billingCustomerId;
+
+  String? subscriptionId;
+
+  String provider;
+
+  String providerInvoiceId;
+
+  String status;
+
+  int amountDueCents;
+
+  int amountPaidCents;
+
+  String currency;
+
+  String? periodStart;
+
+  String? periodEnd;
+
+  String? hostedInvoiceUrl;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  InvoicesObjectBox({
+    required this.id,
+    required this.orgId,
+    this.billingCustomerId,
+    this.subscriptionId,
+    required this.provider,
+    required this.providerInvoiceId,
+    required this.status,
+    required this.amountDueCents,
+    required this.amountPaidCents,
+    required this.currency,
+    this.periodStart,
+    this.periodEnd,
+    this.hostedInvoiceUrl,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "orgId": orgId,
+    "billingCustomerId": billingCustomerId,
+    "subscriptionId": subscriptionId,
+    "provider": provider,
+    "providerInvoiceId": providerInvoiceId,
+    "status": status,
+    "amountDueCents": amountDueCents,
+    "amountPaidCents": amountPaidCents,
+    "currency": currency,
+    "periodStart": periodStart,
+    "periodEnd": periodEnd,
+    "hostedInvoiceUrl": hostedInvoiceUrl,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static InvoicesObjectBox fromJson(Map<String, Object?> json) {
+    return InvoicesObjectBox(
+      id: json["id"] as String,
+      orgId: json["orgId"] as String,
+      billingCustomerId: json["billingCustomerId"] as String?,
+      subscriptionId: json["subscriptionId"] as String?,
+      provider: json["provider"] as String,
+      providerInvoiceId: json["providerInvoiceId"] as String,
+      status: json["status"] as String,
+      amountDueCents: (json["amountDueCents"] as num).toInt(),
+      amountPaidCents: (json["amountPaidCents"] as num).toInt(),
+      currency: json["currency"] as String,
+      periodStart: json["periodStart"] as String?,
+      periodEnd: json["periodEnd"] as String?,
+      hostedInvoiceUrl: json["hostedInvoiceUrl"] as String?,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class PaymentsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String orgId;
+
+  String? invoiceId;
+
+  String? paymentMethodId;
+
+  String provider;
+
+  String providerPaymentId;
+
+  String status;
+
+  int amountCents;
+
+  String currency;
+
+  String? failureCode;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  PaymentsObjectBox({
+    required this.id,
+    required this.orgId,
+    this.invoiceId,
+    this.paymentMethodId,
+    required this.provider,
+    required this.providerPaymentId,
+    required this.status,
+    required this.amountCents,
+    required this.currency,
+    this.failureCode,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "orgId": orgId,
+    "invoiceId": invoiceId,
+    "paymentMethodId": paymentMethodId,
+    "provider": provider,
+    "providerPaymentId": providerPaymentId,
+    "status": status,
+    "amountCents": amountCents,
+    "currency": currency,
+    "failureCode": failureCode,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static PaymentsObjectBox fromJson(Map<String, Object?> json) {
+    return PaymentsObjectBox(
+      id: json["id"] as String,
+      orgId: json["orgId"] as String,
+      invoiceId: json["invoiceId"] as String?,
+      paymentMethodId: json["paymentMethodId"] as String?,
+      provider: json["provider"] as String,
+      providerPaymentId: json["providerPaymentId"] as String,
+      status: json["status"] as String,
+      amountCents: (json["amountCents"] as num).toInt(),
+      currency: json["currency"] as String,
+      failureCode: json["failureCode"] as String?,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class BillingWebhookEventsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String provider;
+
+  String providerEventId;
+
+  String eventType;
+
+  bool signatureVerified;
+
+  String payloadSha256;
+
+  String receivedAt;
+
+  String? processedAt;
+
+  String? processError;
+
+
+  BillingWebhookEventsObjectBox({
+    required this.id,
+    required this.provider,
+    required this.providerEventId,
+    required this.eventType,
+    required this.signatureVerified,
+    required this.payloadSha256,
+    required this.receivedAt,
+    this.processedAt,
+    this.processError,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "provider": provider,
+    "providerEventId": providerEventId,
+    "eventType": eventType,
+    "signatureVerified": signatureVerified,
+    "payloadSha256": payloadSha256,
+    "receivedAt": receivedAt,
+    "processedAt": processedAt,
+    "processError": processError,
+  };
+
+  static BillingWebhookEventsObjectBox fromJson(Map<String, Object?> json) {
+    return BillingWebhookEventsObjectBox(
+      id: json["id"] as String,
+      provider: json["provider"] as String,
+      providerEventId: json["providerEventId"] as String,
+      eventType: json["eventType"] as String,
+      signatureVerified: json["signatureVerified"] as bool,
+      payloadSha256: json["payloadSha256"] as String,
+      receivedAt: json["receivedAt"] as String,
+      processedAt: json["processedAt"] as String?,
+      processError: json["processError"] as String?,
+    );
+  }
+}
+
+@Entity()
 class TranscriptionsObjectBox {
   @Id()
   int obxId = 0;

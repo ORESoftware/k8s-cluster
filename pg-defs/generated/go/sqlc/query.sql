@@ -2086,6 +2086,96 @@ update fiducia.sync_idempotency_keys set request_fingerprint = $2, committed_ver
 -- name: DeleteSyncIdempotencyKeys :exec
 delete from fiducia.sync_idempotency_keys where key = $1;
 
+-- name: ListBillingCustomers :many
+select id, org_id, provider, provider_customer_id, email, created_at, updated_at from fiducia.billing_customers;
+
+-- name: GetBillingCustomers :one
+select id, org_id, provider, provider_customer_id, email, created_at, updated_at from fiducia.billing_customers where id = $1 limit 1;
+
+-- name: CreateBillingCustomers :one
+insert into fiducia.billing_customers (id, org_id, provider, provider_customer_id, email, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7) returning id, org_id, provider, provider_customer_id, email, created_at, updated_at;
+
+-- name: UpdateBillingCustomers :one
+update fiducia.billing_customers set org_id = $2, provider = $3, provider_customer_id = $4, email = $5, updated_at = $6 where id = $1 returning id, org_id, provider, provider_customer_id, email, created_at, updated_at;
+
+-- name: DeleteBillingCustomers :exec
+delete from fiducia.billing_customers where id = $1;
+
+-- name: ListPaymentMethods :many
+select id, org_id, billing_customer_id, provider, provider_payment_method_id, kind, brand, last4, exp_month, exp_year, is_default, created_at, updated_at from fiducia.payment_methods;
+
+-- name: GetPaymentMethods :one
+select id, org_id, billing_customer_id, provider, provider_payment_method_id, kind, brand, last4, exp_month, exp_year, is_default, created_at, updated_at from fiducia.payment_methods where id = $1 limit 1;
+
+-- name: CreatePaymentMethods :one
+insert into fiducia.payment_methods (id, org_id, billing_customer_id, provider, provider_payment_method_id, kind, brand, last4, exp_month, exp_year, is_default, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) returning id, org_id, billing_customer_id, provider, provider_payment_method_id, kind, brand, last4, exp_month, exp_year, is_default, created_at, updated_at;
+
+-- name: UpdatePaymentMethods :one
+update fiducia.payment_methods set org_id = $2, billing_customer_id = $3, provider = $4, provider_payment_method_id = $5, kind = $6, brand = $7, last4 = $8, exp_month = $9, exp_year = $10, is_default = $11, updated_at = $12 where id = $1 returning id, org_id, billing_customer_id, provider, provider_payment_method_id, kind, brand, last4, exp_month, exp_year, is_default, created_at, updated_at;
+
+-- name: DeletePaymentMethods :exec
+delete from fiducia.payment_methods where id = $1;
+
+-- name: ListBillingSubscriptions :many
+select id, org_id, billing_customer_id, provider, provider_subscription_id, plan, status, current_period_start, current_period_end, cancel_at_period_end, canceled_at, created_at, updated_at from fiducia.billing_subscriptions;
+
+-- name: GetBillingSubscriptions :one
+select id, org_id, billing_customer_id, provider, provider_subscription_id, plan, status, current_period_start, current_period_end, cancel_at_period_end, canceled_at, created_at, updated_at from fiducia.billing_subscriptions where id = $1 limit 1;
+
+-- name: CreateBillingSubscriptions :one
+insert into fiducia.billing_subscriptions (id, org_id, billing_customer_id, provider, provider_subscription_id, plan, status, current_period_start, current_period_end, cancel_at_period_end, canceled_at, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) returning id, org_id, billing_customer_id, provider, provider_subscription_id, plan, status, current_period_start, current_period_end, cancel_at_period_end, canceled_at, created_at, updated_at;
+
+-- name: UpdateBillingSubscriptions :one
+update fiducia.billing_subscriptions set org_id = $2, billing_customer_id = $3, provider = $4, provider_subscription_id = $5, plan = $6, status = $7, current_period_start = $8, current_period_end = $9, cancel_at_period_end = $10, canceled_at = $11, updated_at = $12 where id = $1 returning id, org_id, billing_customer_id, provider, provider_subscription_id, plan, status, current_period_start, current_period_end, cancel_at_period_end, canceled_at, created_at, updated_at;
+
+-- name: DeleteBillingSubscriptions :exec
+delete from fiducia.billing_subscriptions where id = $1;
+
+-- name: ListInvoices :many
+select id, org_id, billing_customer_id, subscription_id, provider, provider_invoice_id, status, amount_due_cents, amount_paid_cents, currency, period_start, period_end, hosted_invoice_url, created_at, updated_at from fiducia.invoices;
+
+-- name: GetInvoices :one
+select id, org_id, billing_customer_id, subscription_id, provider, provider_invoice_id, status, amount_due_cents, amount_paid_cents, currency, period_start, period_end, hosted_invoice_url, created_at, updated_at from fiducia.invoices where id = $1 limit 1;
+
+-- name: CreateInvoices :one
+insert into fiducia.invoices (id, org_id, billing_customer_id, subscription_id, provider, provider_invoice_id, status, amount_due_cents, amount_paid_cents, currency, period_start, period_end, hosted_invoice_url, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) returning id, org_id, billing_customer_id, subscription_id, provider, provider_invoice_id, status, amount_due_cents, amount_paid_cents, currency, period_start, period_end, hosted_invoice_url, created_at, updated_at;
+
+-- name: UpdateInvoices :one
+update fiducia.invoices set org_id = $2, billing_customer_id = $3, subscription_id = $4, provider = $5, provider_invoice_id = $6, status = $7, amount_due_cents = $8, amount_paid_cents = $9, currency = $10, period_start = $11, period_end = $12, hosted_invoice_url = $13, updated_at = $14 where id = $1 returning id, org_id, billing_customer_id, subscription_id, provider, provider_invoice_id, status, amount_due_cents, amount_paid_cents, currency, period_start, period_end, hosted_invoice_url, created_at, updated_at;
+
+-- name: DeleteInvoices :exec
+delete from fiducia.invoices where id = $1;
+
+-- name: ListPayments :many
+select id, org_id, invoice_id, payment_method_id, provider, provider_payment_id, status, amount_cents, currency, failure_code, created_at, updated_at from fiducia.payments;
+
+-- name: GetPayments :one
+select id, org_id, invoice_id, payment_method_id, provider, provider_payment_id, status, amount_cents, currency, failure_code, created_at, updated_at from fiducia.payments where id = $1 limit 1;
+
+-- name: CreatePayments :one
+insert into fiducia.payments (id, org_id, invoice_id, payment_method_id, provider, provider_payment_id, status, amount_cents, currency, failure_code, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) returning id, org_id, invoice_id, payment_method_id, provider, provider_payment_id, status, amount_cents, currency, failure_code, created_at, updated_at;
+
+-- name: UpdatePayments :one
+update fiducia.payments set org_id = $2, invoice_id = $3, payment_method_id = $4, provider = $5, provider_payment_id = $6, status = $7, amount_cents = $8, currency = $9, failure_code = $10, updated_at = $11 where id = $1 returning id, org_id, invoice_id, payment_method_id, provider, provider_payment_id, status, amount_cents, currency, failure_code, created_at, updated_at;
+
+-- name: DeletePayments :exec
+delete from fiducia.payments where id = $1;
+
+-- name: ListBillingWebhookEvents :many
+select id, provider, provider_event_id, event_type, signature_verified, payload_sha256, received_at, processed_at, process_error from fiducia.billing_webhook_events;
+
+-- name: GetBillingWebhookEvents :one
+select id, provider, provider_event_id, event_type, signature_verified, payload_sha256, received_at, processed_at, process_error from fiducia.billing_webhook_events where id = $1 limit 1;
+
+-- name: CreateBillingWebhookEvents :one
+insert into fiducia.billing_webhook_events (id, provider, provider_event_id, event_type, signature_verified, payload_sha256, received_at, processed_at, process_error) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id, provider, provider_event_id, event_type, signature_verified, payload_sha256, received_at, processed_at, process_error;
+
+-- name: UpdateBillingWebhookEvents :one
+update fiducia.billing_webhook_events set provider = $2, provider_event_id = $3, event_type = $4, signature_verified = $5, payload_sha256 = $6, received_at = $7, processed_at = $8, process_error = $9 where id = $1 returning id, provider, provider_event_id, event_type, signature_verified, payload_sha256, received_at, processed_at, process_error;
+
+-- name: DeleteBillingWebhookEvents :exec
+delete from fiducia.billing_webhook_events where id = $1;
+
 -- name: ListTranscriptions :many
 select id, source, provider, model, text, language, sample_rate, duration_ms, created_at from t2v.transcriptions;
 

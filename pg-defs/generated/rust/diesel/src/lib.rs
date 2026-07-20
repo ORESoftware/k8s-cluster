@@ -7973,6 +7973,309 @@ pub struct SyncIdempotencyKeysDieselInsert {
 
 diesel::table! {
     use diesel::sql_types::*;
+    billing_customers (id) {
+        id -> Uuid,
+        org_id -> Uuid,
+        provider -> Varchar,
+        provider_customer_id -> Varchar,
+        email -> Nullable<Varchar>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = billing_customers)]
+pub struct BillingCustomersDieselRow {
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub provider: String,
+    pub provider_customer_id: String,
+    pub email: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = billing_customers)]
+pub struct BillingCustomersDieselInsert {
+    pub id: Option<Uuid>,
+    pub org_id: Option<Uuid>,
+    pub provider: Option<String>,
+    pub provider_customer_id: Option<String>,
+    pub email: Option<String>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    payment_methods (id) {
+        id -> Uuid,
+        org_id -> Uuid,
+        billing_customer_id -> Uuid,
+        provider -> Varchar,
+        provider_payment_method_id -> Varchar,
+        kind -> Varchar,
+        brand -> Nullable<Varchar>,
+        last4 -> Nullable<Varchar>,
+        exp_month -> Nullable<Int2>,
+        exp_year -> Nullable<Int2>,
+        is_default -> Bool,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = payment_methods)]
+pub struct PaymentMethodsDieselRow {
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub billing_customer_id: Uuid,
+    pub provider: String,
+    pub provider_payment_method_id: String,
+    pub kind: String,
+    pub brand: Option<String>,
+    pub last4: Option<String>,
+    pub exp_month: Option<i16>,
+    pub exp_year: Option<i16>,
+    pub is_default: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = payment_methods)]
+pub struct PaymentMethodsDieselInsert {
+    pub id: Option<Uuid>,
+    pub org_id: Option<Uuid>,
+    pub billing_customer_id: Option<Uuid>,
+    pub provider: Option<String>,
+    pub provider_payment_method_id: Option<String>,
+    pub kind: Option<String>,
+    pub brand: Option<String>,
+    pub last4: Option<String>,
+    pub exp_month: Option<i16>,
+    pub exp_year: Option<i16>,
+    pub is_default: Option<bool>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    billing_subscriptions (id) {
+        id -> Uuid,
+        org_id -> Uuid,
+        billing_customer_id -> Uuid,
+        provider -> Varchar,
+        provider_subscription_id -> Varchar,
+        plan -> Varchar,
+        status -> Varchar,
+        current_period_start -> Nullable<Timestamptz>,
+        current_period_end -> Nullable<Timestamptz>,
+        cancel_at_period_end -> Bool,
+        canceled_at -> Nullable<Timestamptz>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = billing_subscriptions)]
+pub struct BillingSubscriptionsDieselRow {
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub billing_customer_id: Uuid,
+    pub provider: String,
+    pub provider_subscription_id: String,
+    pub plan: String,
+    pub status: String,
+    pub current_period_start: Option<DateTime<Utc>>,
+    pub current_period_end: Option<DateTime<Utc>>,
+    pub cancel_at_period_end: bool,
+    pub canceled_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = billing_subscriptions)]
+pub struct BillingSubscriptionsDieselInsert {
+    pub id: Option<Uuid>,
+    pub org_id: Option<Uuid>,
+    pub billing_customer_id: Option<Uuid>,
+    pub provider: Option<String>,
+    pub provider_subscription_id: Option<String>,
+    pub plan: Option<String>,
+    pub status: Option<String>,
+    pub current_period_start: Option<DateTime<Utc>>,
+    pub current_period_end: Option<DateTime<Utc>>,
+    pub cancel_at_period_end: Option<bool>,
+    pub canceled_at: Option<DateTime<Utc>>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    invoices (id) {
+        id -> Uuid,
+        org_id -> Uuid,
+        billing_customer_id -> Nullable<Uuid>,
+        subscription_id -> Nullable<Uuid>,
+        provider -> Varchar,
+        provider_invoice_id -> Varchar,
+        status -> Varchar,
+        amount_due_cents -> Int8,
+        amount_paid_cents -> Int8,
+        currency -> Varchar,
+        period_start -> Nullable<Timestamptz>,
+        period_end -> Nullable<Timestamptz>,
+        hosted_invoice_url -> Nullable<Text>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = invoices)]
+pub struct InvoicesDieselRow {
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub billing_customer_id: Option<Uuid>,
+    pub subscription_id: Option<Uuid>,
+    pub provider: String,
+    pub provider_invoice_id: String,
+    pub status: String,
+    pub amount_due_cents: i64,
+    pub amount_paid_cents: i64,
+    pub currency: String,
+    pub period_start: Option<DateTime<Utc>>,
+    pub period_end: Option<DateTime<Utc>>,
+    pub hosted_invoice_url: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = invoices)]
+pub struct InvoicesDieselInsert {
+    pub id: Option<Uuid>,
+    pub org_id: Option<Uuid>,
+    pub billing_customer_id: Option<Uuid>,
+    pub subscription_id: Option<Uuid>,
+    pub provider: Option<String>,
+    pub provider_invoice_id: Option<String>,
+    pub status: Option<String>,
+    pub amount_due_cents: Option<i64>,
+    pub amount_paid_cents: Option<i64>,
+    pub currency: Option<String>,
+    pub period_start: Option<DateTime<Utc>>,
+    pub period_end: Option<DateTime<Utc>>,
+    pub hosted_invoice_url: Option<String>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    payments (id) {
+        id -> Uuid,
+        org_id -> Uuid,
+        invoice_id -> Nullable<Uuid>,
+        payment_method_id -> Nullable<Uuid>,
+        provider -> Varchar,
+        provider_payment_id -> Varchar,
+        status -> Varchar,
+        amount_cents -> Int8,
+        currency -> Varchar,
+        failure_code -> Nullable<Varchar>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = payments)]
+pub struct PaymentsDieselRow {
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub invoice_id: Option<Uuid>,
+    pub payment_method_id: Option<Uuid>,
+    pub provider: String,
+    pub provider_payment_id: String,
+    pub status: String,
+    pub amount_cents: i64,
+    pub currency: String,
+    pub failure_code: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = payments)]
+pub struct PaymentsDieselInsert {
+    pub id: Option<Uuid>,
+    pub org_id: Option<Uuid>,
+    pub invoice_id: Option<Uuid>,
+    pub payment_method_id: Option<Uuid>,
+    pub provider: Option<String>,
+    pub provider_payment_id: Option<String>,
+    pub status: Option<String>,
+    pub amount_cents: Option<i64>,
+    pub currency: Option<String>,
+    pub failure_code: Option<String>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    billing_webhook_events (id) {
+        id -> Uuid,
+        provider -> Varchar,
+        provider_event_id -> Varchar,
+        event_type -> Varchar,
+        signature_verified -> Bool,
+        payload_sha256 -> Varchar,
+        received_at -> Timestamptz,
+        processed_at -> Nullable<Timestamptz>,
+        process_error -> Nullable<Text>,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = billing_webhook_events)]
+pub struct BillingWebhookEventsDieselRow {
+    pub id: Uuid,
+    pub provider: String,
+    pub provider_event_id: String,
+    pub event_type: String,
+    pub signature_verified: bool,
+    pub payload_sha256: String,
+    pub received_at: DateTime<Utc>,
+    pub processed_at: Option<DateTime<Utc>>,
+    pub process_error: Option<String>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = billing_webhook_events)]
+pub struct BillingWebhookEventsDieselInsert {
+    pub id: Option<Uuid>,
+    pub provider: Option<String>,
+    pub provider_event_id: Option<String>,
+    pub event_type: Option<String>,
+    pub signature_verified: Option<bool>,
+    pub payload_sha256: Option<String>,
+    pub received_at: Option<DateTime<Utc>>,
+    pub processed_at: Option<DateTime<Utc>>,
+    pub process_error: Option<String>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
     transcriptions (id) {
         id -> Uuid,
         source -> Text,

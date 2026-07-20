@@ -10304,6 +10304,395 @@ export type SyncIdempotencyKeysRow = z.infer<typeof syncIdempotencyKeysRowSchema
 export type SyncIdempotencyKeysInsert = z.infer<typeof syncIdempotencyKeysInsertSchema>;
 export type SyncIdempotencyKeysUpdate = z.infer<typeof syncIdempotencyKeysUpdateSchema>;
 
+export const billingCustomersProviderValues = ["stripe","paypal"] as const;
+export const billingCustomersProviderSchema = z.enum(billingCustomersProviderValues);
+export type BillingCustomersProvider = z.infer<typeof billingCustomersProviderSchema>;
+
+export const billingCustomers = fiduciaSchema.table(
+  "billing_customers",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    orgId: uuid("org_id").notNull(),
+    provider: varchar("provider", { length: 16 }).notNull(),
+    providerCustomerId: varchar("provider_customer_id", { length: 255 }).notNull(),
+    email: varchar("email", { length: 320 }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    fiduciaBillingCustomersProviderChk: check("fiducia_billing_customers_provider_chk", sql.raw("provider in ('stripe', 'paypal')")),
+    fiduciaBillingCustomersOrgProviderUq: uniqueIndex("fiducia_billing_customers_org_provider_uq").on(table.orgId, table.provider),
+    fiduciaBillingCustomersProviderIdUq: uniqueIndex("fiducia_billing_customers_provider_id_uq").on(table.provider, table.providerCustomerId),
+  }),
+);
+
+export const billingCustomersRowSchema = z.object({
+  id: z.string().uuid(),
+  orgId: z.string().uuid(),
+  provider: billingCustomersProviderSchema,
+  providerCustomerId: z.string().max(255),
+  email: z.string().max(320).nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const billingCustomersInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  orgId: z.string().uuid(),
+  provider: billingCustomersProviderSchema,
+  providerCustomerId: z.string().max(255),
+  email: z.string().max(320).nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const billingCustomersUpdateSchema = billingCustomersInsertSchema.partial();
+export type BillingCustomersRow = z.infer<typeof billingCustomersRowSchema>;
+export type BillingCustomersInsert = z.infer<typeof billingCustomersInsertSchema>;
+export type BillingCustomersUpdate = z.infer<typeof billingCustomersUpdateSchema>;
+
+export const paymentMethodsProviderValues = ["stripe","paypal"] as const;
+export const paymentMethodsProviderSchema = z.enum(paymentMethodsProviderValues);
+export type PaymentMethodsProvider = z.infer<typeof paymentMethodsProviderSchema>;
+
+export const paymentMethods = fiduciaSchema.table(
+  "payment_methods",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    orgId: uuid("org_id").notNull(),
+    billingCustomerId: uuid("billing_customer_id").notNull(),
+    provider: varchar("provider", { length: 16 }).notNull(),
+    providerPaymentMethodId: varchar("provider_payment_method_id", { length: 255 }).notNull(),
+    kind: varchar("kind", { length: 32 }).notNull(),
+    brand: varchar("brand", { length: 32 }),
+    last4: varchar("last4", { length: 4 }),
+    expMonth: smallint("exp_month"),
+    expYear: smallint("exp_year"),
+    isDefault: boolean("is_default").default(sql`false`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    fiduciaPaymentMethodsProviderChk: check("fiducia_payment_methods_provider_chk", sql.raw("provider in ('stripe', 'paypal')")),
+    fiduciaPaymentMethodsLast4Chk: check("fiducia_payment_methods_last4_chk", sql.raw("last4 is null or last4 ~ '^[0-9]{4}$'")),
+    fiduciaPaymentMethodsExpMonthChk: check("fiducia_payment_methods_exp_month_chk", sql.raw("exp_month is null or exp_month between 1 and 12")),
+    fiduciaPaymentMethodsProviderIdUq: uniqueIndex("fiducia_payment_methods_provider_id_uq").on(table.provider, table.providerPaymentMethodId),
+    fiduciaPaymentMethodsCustomerIdx: index("fiducia_payment_methods_customer_idx").on(table.billingCustomerId),
+    fiduciaPaymentMethodsOneDefaultUq: uniqueIndex("fiducia_payment_methods_one_default_uq").on(table.billingCustomerId).where(sql.raw("is_default")),
+  }),
+);
+
+export const paymentMethodsRowSchema = z.object({
+  id: z.string().uuid(),
+  orgId: z.string().uuid(),
+  billingCustomerId: z.string().uuid(),
+  provider: paymentMethodsProviderSchema,
+  providerPaymentMethodId: z.string().max(255),
+  kind: z.string().max(32),
+  brand: z.string().max(32).nullable(),
+  last4: z.string().max(4).regex(new RegExp("^[0-9]{4}$")).nullable(),
+  expMonth: z.number().int().min(1).max(12).nullable(),
+  expYear: z.number().int().nullable(),
+  isDefault: z.boolean(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const paymentMethodsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  orgId: z.string().uuid(),
+  billingCustomerId: z.string().uuid(),
+  provider: paymentMethodsProviderSchema,
+  providerPaymentMethodId: z.string().max(255),
+  kind: z.string().max(32),
+  brand: z.string().max(32).nullable().optional(),
+  last4: z.string().max(4).regex(new RegExp("^[0-9]{4}$")).nullable().optional(),
+  expMonth: z.number().int().min(1).max(12).nullable().optional(),
+  expYear: z.number().int().nullable().optional(),
+  isDefault: z.boolean().optional().default(false),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const paymentMethodsUpdateSchema = paymentMethodsInsertSchema.partial();
+export type PaymentMethodsRow = z.infer<typeof paymentMethodsRowSchema>;
+export type PaymentMethodsInsert = z.infer<typeof paymentMethodsInsertSchema>;
+export type PaymentMethodsUpdate = z.infer<typeof paymentMethodsUpdateSchema>;
+
+export const billingSubscriptionsProviderValues = ["stripe","paypal"] as const;
+export const billingSubscriptionsProviderSchema = z.enum(billingSubscriptionsProviderValues);
+export type BillingSubscriptionsProvider = z.infer<typeof billingSubscriptionsProviderSchema>;
+
+export const billingSubscriptionsStatusValues = ["trialing","active","past_due","canceled","unpaid","incomplete","incomplete_expired","paused"] as const;
+export const billingSubscriptionsStatusSchema = z.enum(billingSubscriptionsStatusValues);
+export type BillingSubscriptionsStatus = z.infer<typeof billingSubscriptionsStatusSchema>;
+
+export const billingSubscriptions = fiduciaSchema.table(
+  "billing_subscriptions",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    orgId: uuid("org_id").notNull(),
+    billingCustomerId: uuid("billing_customer_id").notNull(),
+    provider: varchar("provider", { length: 16 }).notNull(),
+    providerSubscriptionId: varchar("provider_subscription_id", { length: 255 }).notNull(),
+    plan: varchar("plan", { length: 120 }).notNull(),
+    status: varchar("status", { length: 32 }).notNull(),
+    currentPeriodStart: timestamp("current_period_start", { withTimezone: true, mode: "string" }),
+    currentPeriodEnd: timestamp("current_period_end", { withTimezone: true, mode: "string" }),
+    cancelAtPeriodEnd: boolean("cancel_at_period_end").default(sql`false`).notNull(),
+    canceledAt: timestamp("canceled_at", { withTimezone: true, mode: "string" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    fiduciaBillingSubscriptionsProviderChk: check("fiducia_billing_subscriptions_provider_chk", sql.raw("provider in ('stripe', 'paypal')")),
+    fiduciaBillingSubscriptionsStatusChk: check("fiducia_billing_subscriptions_status_chk", sql.raw("status in ('trialing', 'active', 'past_due', 'canceled', 'unpaid', 'incomplete', 'incomplete_expired', 'paused')")),
+    fiduciaBillingSubscriptionsProviderIdUq: uniqueIndex("fiducia_billing_subscriptions_provider_id_uq").on(table.provider, table.providerSubscriptionId),
+    fiduciaBillingSubscriptionsOrgIdx: index("fiducia_billing_subscriptions_org_idx").on(table.orgId),
+  }),
+);
+
+export const billingSubscriptionsRowSchema = z.object({
+  id: z.string().uuid(),
+  orgId: z.string().uuid(),
+  billingCustomerId: z.string().uuid(),
+  provider: billingSubscriptionsProviderSchema,
+  providerSubscriptionId: z.string().max(255),
+  plan: z.string().max(120),
+  status: billingSubscriptionsStatusSchema,
+  currentPeriodStart: z.string().datetime().nullable(),
+  currentPeriodEnd: z.string().datetime().nullable(),
+  cancelAtPeriodEnd: z.boolean(),
+  canceledAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const billingSubscriptionsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  orgId: z.string().uuid(),
+  billingCustomerId: z.string().uuid(),
+  provider: billingSubscriptionsProviderSchema,
+  providerSubscriptionId: z.string().max(255),
+  plan: z.string().max(120),
+  status: billingSubscriptionsStatusSchema,
+  currentPeriodStart: z.string().datetime().nullable().optional(),
+  currentPeriodEnd: z.string().datetime().nullable().optional(),
+  cancelAtPeriodEnd: z.boolean().optional().default(false),
+  canceledAt: z.string().datetime().nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const billingSubscriptionsUpdateSchema = billingSubscriptionsInsertSchema.partial();
+export type BillingSubscriptionsRow = z.infer<typeof billingSubscriptionsRowSchema>;
+export type BillingSubscriptionsInsert = z.infer<typeof billingSubscriptionsInsertSchema>;
+export type BillingSubscriptionsUpdate = z.infer<typeof billingSubscriptionsUpdateSchema>;
+
+export const invoicesProviderValues = ["stripe","paypal"] as const;
+export const invoicesProviderSchema = z.enum(invoicesProviderValues);
+export type InvoicesProvider = z.infer<typeof invoicesProviderSchema>;
+
+export const invoicesStatusValues = ["draft","open","paid","void","uncollectible"] as const;
+export const invoicesStatusSchema = z.enum(invoicesStatusValues);
+export type InvoicesStatus = z.infer<typeof invoicesStatusSchema>;
+
+export const invoices = fiduciaSchema.table(
+  "invoices",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    orgId: uuid("org_id").notNull(),
+    billingCustomerId: uuid("billing_customer_id"),
+    subscriptionId: uuid("subscription_id"),
+    provider: varchar("provider", { length: 16 }).notNull(),
+    providerInvoiceId: varchar("provider_invoice_id", { length: 255 }).notNull(),
+    status: varchar("status", { length: 32 }).notNull(),
+    amountDueCents: bigint("amount_due_cents", { mode: "number" }).notNull(),
+    amountPaidCents: bigint("amount_paid_cents", { mode: "number" }).default(sql`0`).notNull(),
+    currency: varchar("currency", { length: 3 }).notNull(),
+    periodStart: timestamp("period_start", { withTimezone: true, mode: "string" }),
+    periodEnd: timestamp("period_end", { withTimezone: true, mode: "string" }),
+    hostedInvoiceUrl: text("hosted_invoice_url"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    fiduciaInvoicesProviderChk: check("fiducia_invoices_provider_chk", sql.raw("provider in ('stripe', 'paypal')")),
+    fiduciaInvoicesStatusChk: check("fiducia_invoices_status_chk", sql.raw("status in ('draft', 'open', 'paid', 'void', 'uncollectible')")),
+    fiduciaInvoicesCurrencyChk: check("fiducia_invoices_currency_chk", sql.raw("currency ~ '^[a-z]{3}$'")),
+    fiduciaInvoicesAmountDueChk: check("fiducia_invoices_amount_due_chk", sql.raw("amount_due_cents >= 0")),
+    fiduciaInvoicesAmountPaidChk: check("fiducia_invoices_amount_paid_chk", sql.raw("amount_paid_cents >= 0")),
+    fiduciaInvoicesProviderIdUq: uniqueIndex("fiducia_invoices_provider_id_uq").on(table.provider, table.providerInvoiceId),
+    invoicesOrgIdx: index("invoices_org_idx").on(table.orgId),
+    invoicesSubscriptionIdx: index("invoices_subscription_idx").on(table.subscriptionId),
+  }),
+);
+
+export const invoicesRowSchema = z.object({
+  id: z.string().uuid(),
+  orgId: z.string().uuid(),
+  billingCustomerId: z.string().uuid().nullable(),
+  subscriptionId: z.string().uuid().nullable(),
+  provider: invoicesProviderSchema,
+  providerInvoiceId: z.string().max(255),
+  status: invoicesStatusSchema,
+  amountDueCents: z.number().int().min(0),
+  amountPaidCents: z.number().int().min(0),
+  currency: z.string().max(3).regex(new RegExp("^[a-z]{3}$")),
+  periodStart: z.string().datetime().nullable(),
+  periodEnd: z.string().datetime().nullable(),
+  hostedInvoiceUrl: z.string().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const invoicesInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  orgId: z.string().uuid(),
+  billingCustomerId: z.string().uuid().nullable().optional(),
+  subscriptionId: z.string().uuid().nullable().optional(),
+  provider: invoicesProviderSchema,
+  providerInvoiceId: z.string().max(255),
+  status: invoicesStatusSchema,
+  amountDueCents: z.number().int().min(0),
+  amountPaidCents: z.number().int().min(0).optional().default(0),
+  currency: z.string().max(3).regex(new RegExp("^[a-z]{3}$")),
+  periodStart: z.string().datetime().nullable().optional(),
+  periodEnd: z.string().datetime().nullable().optional(),
+  hostedInvoiceUrl: z.string().nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const invoicesUpdateSchema = invoicesInsertSchema.partial();
+export type InvoicesRow = z.infer<typeof invoicesRowSchema>;
+export type InvoicesInsert = z.infer<typeof invoicesInsertSchema>;
+export type InvoicesUpdate = z.infer<typeof invoicesUpdateSchema>;
+
+export const paymentsProviderValues = ["stripe","paypal"] as const;
+export const paymentsProviderSchema = z.enum(paymentsProviderValues);
+export type PaymentsProvider = z.infer<typeof paymentsProviderSchema>;
+
+export const paymentsStatusValues = ["pending","processing","succeeded","failed","canceled","refunded","partially_refunded"] as const;
+export const paymentsStatusSchema = z.enum(paymentsStatusValues);
+export type PaymentsStatus = z.infer<typeof paymentsStatusSchema>;
+
+export const payments = fiduciaSchema.table(
+  "payments",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    orgId: uuid("org_id").notNull(),
+    invoiceId: uuid("invoice_id"),
+    paymentMethodId: uuid("payment_method_id"),
+    provider: varchar("provider", { length: 16 }).notNull(),
+    providerPaymentId: varchar("provider_payment_id", { length: 255 }).notNull(),
+    status: varchar("status", { length: 32 }).notNull(),
+    amountCents: bigint("amount_cents", { mode: "number" }).notNull(),
+    currency: varchar("currency", { length: 3 }).notNull(),
+    failureCode: varchar("failure_code", { length: 120 }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    fiduciaPaymentsProviderChk: check("fiducia_payments_provider_chk", sql.raw("provider in ('stripe', 'paypal')")),
+    fiduciaPaymentsStatusChk: check("fiducia_payments_status_chk", sql.raw("status in ('pending', 'processing', 'succeeded', 'failed', 'canceled', 'refunded', 'partially_refunded')")),
+    fiduciaPaymentsCurrencyChk: check("fiducia_payments_currency_chk", sql.raw("currency ~ '^[a-z]{3}$'")),
+    fiduciaPaymentsAmountChk: check("fiducia_payments_amount_chk", sql.raw("amount_cents >= 0")),
+    fiduciaPaymentsProviderIdUq: uniqueIndex("fiducia_payments_provider_id_uq").on(table.provider, table.providerPaymentId),
+    paymentsOrgIdx: index("payments_org_idx").on(table.orgId),
+    paymentsInvoiceIdx: index("payments_invoice_idx").on(table.invoiceId),
+  }),
+);
+
+export const paymentsRowSchema = z.object({
+  id: z.string().uuid(),
+  orgId: z.string().uuid(),
+  invoiceId: z.string().uuid().nullable(),
+  paymentMethodId: z.string().uuid().nullable(),
+  provider: paymentsProviderSchema,
+  providerPaymentId: z.string().max(255),
+  status: paymentsStatusSchema,
+  amountCents: z.number().int().min(0),
+  currency: z.string().max(3).regex(new RegExp("^[a-z]{3}$")),
+  failureCode: z.string().max(120).nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const paymentsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  orgId: z.string().uuid(),
+  invoiceId: z.string().uuid().nullable().optional(),
+  paymentMethodId: z.string().uuid().nullable().optional(),
+  provider: paymentsProviderSchema,
+  providerPaymentId: z.string().max(255),
+  status: paymentsStatusSchema,
+  amountCents: z.number().int().min(0),
+  currency: z.string().max(3).regex(new RegExp("^[a-z]{3}$")),
+  failureCode: z.string().max(120).nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const paymentsUpdateSchema = paymentsInsertSchema.partial();
+export type PaymentsRow = z.infer<typeof paymentsRowSchema>;
+export type PaymentsInsert = z.infer<typeof paymentsInsertSchema>;
+export type PaymentsUpdate = z.infer<typeof paymentsUpdateSchema>;
+
+export const billingWebhookEventsProviderValues = ["stripe","paypal"] as const;
+export const billingWebhookEventsProviderSchema = z.enum(billingWebhookEventsProviderValues);
+export type BillingWebhookEventsProvider = z.infer<typeof billingWebhookEventsProviderSchema>;
+
+export const billingWebhookEvents = fiduciaSchema.table(
+  "billing_webhook_events",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    provider: varchar("provider", { length: 16 }).notNull(),
+    providerEventId: varchar("provider_event_id", { length: 255 }).notNull(),
+    eventType: varchar("event_type", { length: 120 }).notNull(),
+    signatureVerified: boolean("signature_verified").notNull(),
+    payloadSha256: varchar("payload_sha256", { length: 64 }).notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    processedAt: timestamp("processed_at", { withTimezone: true, mode: "string" }),
+    processError: text("process_error"),
+  },
+  (table) => ({
+    fiduciaBillingWebhookEventsProviderChk: check("fiducia_billing_webhook_events_provider_chk", sql.raw("provider in ('stripe', 'paypal')")),
+    fiduciaBillingWebhookEventsPayloadShaChk: check("fiducia_billing_webhook_events_payload_sha_chk", sql.raw("payload_sha256 ~ '^[0-9a-f]{64}$'")),
+    fiduciaBillingWebhookEventsProviderEventUq: uniqueIndex("fiducia_billing_webhook_events_provider_event_uq").on(table.provider, table.providerEventId),
+    fiduciaBillingWebhookEventsUnprocessedIdx: index("fiducia_billing_webhook_events_unprocessed_idx").on(table.receivedAt).where(sql.raw("processed_at is null")),
+  }),
+);
+
+export const billingWebhookEventsRowSchema = z.object({
+  id: z.string().uuid(),
+  provider: billingWebhookEventsProviderSchema,
+  providerEventId: z.string().max(255),
+  eventType: z.string().max(120),
+  signatureVerified: z.boolean(),
+  payloadSha256: z.string().max(64).regex(new RegExp("^[0-9a-f]{64}$")),
+  receivedAt: z.string().datetime(),
+  processedAt: z.string().datetime().nullable(),
+  processError: z.string().nullable(),
+});
+
+export const billingWebhookEventsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  provider: billingWebhookEventsProviderSchema,
+  providerEventId: z.string().max(255),
+  eventType: z.string().max(120),
+  signatureVerified: z.boolean(),
+  payloadSha256: z.string().max(64).regex(new RegExp("^[0-9a-f]{64}$")),
+  receivedAt: z.string().datetime().optional(),
+  processedAt: z.string().datetime().nullable().optional(),
+  processError: z.string().nullable().optional(),
+});
+
+export const billingWebhookEventsUpdateSchema = billingWebhookEventsInsertSchema.partial();
+export type BillingWebhookEventsRow = z.infer<typeof billingWebhookEventsRowSchema>;
+export type BillingWebhookEventsInsert = z.infer<typeof billingWebhookEventsInsertSchema>;
+export type BillingWebhookEventsUpdate = z.infer<typeof billingWebhookEventsUpdateSchema>;
+
 export const transcriptions = t2vSchema.table(
   "transcriptions",
   {

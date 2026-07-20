@@ -2813,6 +2813,117 @@ class SyncIdempotencyKeys(BaseModel):
         schema = "fiducia"
 
 
+class BillingCustomers(BaseModel):
+    id = UUIDField(primary_key=True)
+    org_id = UUIDField()
+    provider = CharField(max_length=16)
+    provider_customer_id = CharField(max_length=255)
+    email = CharField(max_length=320, null=True)
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+
+    class Meta:
+        table_name = "billing_customers"
+        schema = "fiducia"
+
+
+class PaymentMethods(BaseModel):
+    id = UUIDField(primary_key=True)
+    org_id = UUIDField()
+    billing_customer_id = UUIDField()
+    provider = CharField(max_length=16)
+    provider_payment_method_id = CharField(max_length=255)
+    kind = CharField(max_length=32)
+    brand = CharField(max_length=32, null=True)
+    last4 = CharField(max_length=4, null=True)
+    exp_month = SmallIntegerField(null=True)
+    exp_year = SmallIntegerField(null=True)
+    is_default = BooleanField()
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+
+    class Meta:
+        table_name = "payment_methods"
+        schema = "fiducia"
+
+
+class BillingSubscriptions(BaseModel):
+    id = UUIDField(primary_key=True)
+    org_id = UUIDField()
+    billing_customer_id = UUIDField()
+    provider = CharField(max_length=16)
+    provider_subscription_id = CharField(max_length=255)
+    plan = CharField(max_length=120)
+    status = CharField(max_length=32)
+    current_period_start = DateTimeField(null=True)
+    current_period_end = DateTimeField(null=True)
+    cancel_at_period_end = BooleanField()
+    canceled_at = DateTimeField(null=True)
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+
+    class Meta:
+        table_name = "billing_subscriptions"
+        schema = "fiducia"
+
+
+class Invoices(BaseModel):
+    id = UUIDField(primary_key=True)
+    org_id = UUIDField()
+    billing_customer_id = UUIDField(null=True)
+    subscription_id = UUIDField(null=True)
+    provider = CharField(max_length=16)
+    provider_invoice_id = CharField(max_length=255)
+    status = CharField(max_length=32)
+    amount_due_cents = BigIntegerField()
+    amount_paid_cents = BigIntegerField()
+    currency = CharField(max_length=3)
+    period_start = DateTimeField(null=True)
+    period_end = DateTimeField(null=True)
+    hosted_invoice_url = TextField(null=True)
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+
+    class Meta:
+        table_name = "invoices"
+        schema = "fiducia"
+
+
+class Payments(BaseModel):
+    id = UUIDField(primary_key=True)
+    org_id = UUIDField()
+    invoice_id = UUIDField(null=True)
+    payment_method_id = UUIDField(null=True)
+    provider = CharField(max_length=16)
+    provider_payment_id = CharField(max_length=255)
+    status = CharField(max_length=32)
+    amount_cents = BigIntegerField()
+    currency = CharField(max_length=3)
+    failure_code = CharField(max_length=120, null=True)
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+
+    class Meta:
+        table_name = "payments"
+        schema = "fiducia"
+
+
+class BillingWebhookEvents(BaseModel):
+    id = UUIDField(primary_key=True)
+    provider = CharField(max_length=16)
+    provider_event_id = CharField(max_length=255)
+    event_type = CharField(max_length=120)
+    signature_verified = BooleanField()
+    payload_sha256 = CharField(max_length=64)
+    received_at = DateTimeField()
+    processed_at = DateTimeField(null=True)
+    process_error = TextField(null=True)
+
+    class Meta:
+        table_name = "billing_webhook_events"
+        schema = "fiducia"
+
+
 class Transcriptions(BaseModel):
     id = UUIDField(primary_key=True)
     source = TextField()

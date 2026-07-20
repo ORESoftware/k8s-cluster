@@ -4042,6 +4042,167 @@ class SyncIdempotencyKeys extends Model
     }
 }
 
+class BillingCustomers extends Model
+{
+    protected $table = 'fiducia.billing_customers';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = true;
+    protected $fillable = ['org_id', 'provider', 'provider_customer_id', 'email', 'created_at', 'updated_at'];
+    protected $casts = ['created_at' => 'datetime', 'updated_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'org_id' => ['required', 'uuid'],
+            'provider' => ['required', 'string', 'in:stripe,paypal'],
+            'provider_customer_id' => ['required', 'string', 'max:255'],
+            'email' => ['nullable', 'string', 'max:320'],
+        ];
+    }
+}
+
+class PaymentMethods extends Model
+{
+    protected $table = 'fiducia.payment_methods';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = true;
+    protected $fillable = ['org_id', 'billing_customer_id', 'provider', 'provider_payment_method_id', 'kind', 'brand', 'last4', 'exp_month', 'exp_year', 'is_default', 'created_at', 'updated_at'];
+    protected $casts = ['exp_month' => 'integer', 'exp_year' => 'integer', 'is_default' => 'boolean', 'created_at' => 'datetime', 'updated_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'org_id' => ['required', 'uuid'],
+            'billing_customer_id' => ['required', 'uuid'],
+            'provider' => ['required', 'string', 'in:stripe,paypal'],
+            'provider_payment_method_id' => ['required', 'string', 'max:255'],
+            'kind' => ['required', 'string', 'max:32'],
+            'brand' => ['nullable', 'string', 'max:32'],
+            'last4' => ['nullable', 'string', 'max:4', 'regex:/^[0-9]{4}$/'],
+            'exp_month' => ['nullable', 'integer', 'min:1', 'max:12'],
+            'exp_year' => ['nullable', 'integer'],
+            'is_default' => ['nullable', 'boolean'],
+        ];
+    }
+}
+
+class BillingSubscriptions extends Model
+{
+    protected $table = 'fiducia.billing_subscriptions';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = true;
+    protected $fillable = ['org_id', 'billing_customer_id', 'provider', 'provider_subscription_id', 'plan', 'status', 'current_period_start', 'current_period_end', 'cancel_at_period_end', 'canceled_at', 'created_at', 'updated_at'];
+    protected $casts = ['current_period_start' => 'datetime', 'current_period_end' => 'datetime', 'cancel_at_period_end' => 'boolean', 'canceled_at' => 'datetime', 'created_at' => 'datetime', 'updated_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'org_id' => ['required', 'uuid'],
+            'billing_customer_id' => ['required', 'uuid'],
+            'provider' => ['required', 'string', 'in:stripe,paypal'],
+            'provider_subscription_id' => ['required', 'string', 'max:255'],
+            'plan' => ['required', 'string', 'max:120'],
+            'status' => ['required', 'string', 'in:trialing,active,past_due,canceled,unpaid,incomplete,incomplete_expired,paused'],
+            'current_period_start' => ['nullable', 'date'],
+            'current_period_end' => ['nullable', 'date'],
+            'cancel_at_period_end' => ['nullable', 'boolean'],
+            'canceled_at' => ['nullable', 'date'],
+        ];
+    }
+}
+
+class Invoices extends Model
+{
+    protected $table = 'fiducia.invoices';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = true;
+    protected $fillable = ['org_id', 'billing_customer_id', 'subscription_id', 'provider', 'provider_invoice_id', 'status', 'amount_due_cents', 'amount_paid_cents', 'currency', 'period_start', 'period_end', 'hosted_invoice_url', 'created_at', 'updated_at'];
+    protected $casts = ['amount_due_cents' => 'integer', 'amount_paid_cents' => 'integer', 'period_start' => 'datetime', 'period_end' => 'datetime', 'created_at' => 'datetime', 'updated_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'org_id' => ['required', 'uuid'],
+            'billing_customer_id' => ['nullable', 'uuid'],
+            'subscription_id' => ['nullable', 'uuid'],
+            'provider' => ['required', 'string', 'in:stripe,paypal'],
+            'provider_invoice_id' => ['required', 'string', 'max:255'],
+            'status' => ['required', 'string', 'in:draft,open,paid,void,uncollectible'],
+            'amount_due_cents' => ['required', 'integer', 'min:0'],
+            'amount_paid_cents' => ['nullable', 'integer', 'min:0'],
+            'currency' => ['required', 'string', 'max:3', 'regex:/^[a-z]{3}$/'],
+            'period_start' => ['nullable', 'date'],
+            'period_end' => ['nullable', 'date'],
+            'hosted_invoice_url' => ['nullable', 'string'],
+        ];
+    }
+}
+
+class Payments extends Model
+{
+    protected $table = 'fiducia.payments';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = true;
+    protected $fillable = ['org_id', 'invoice_id', 'payment_method_id', 'provider', 'provider_payment_id', 'status', 'amount_cents', 'currency', 'failure_code', 'created_at', 'updated_at'];
+    protected $casts = ['amount_cents' => 'integer', 'created_at' => 'datetime', 'updated_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'org_id' => ['required', 'uuid'],
+            'invoice_id' => ['nullable', 'uuid'],
+            'payment_method_id' => ['nullable', 'uuid'],
+            'provider' => ['required', 'string', 'in:stripe,paypal'],
+            'provider_payment_id' => ['required', 'string', 'max:255'],
+            'status' => ['required', 'string', 'in:pending,processing,succeeded,failed,canceled,refunded,partially_refunded'],
+            'amount_cents' => ['required', 'integer', 'min:0'],
+            'currency' => ['required', 'string', 'max:3', 'regex:/^[a-z]{3}$/'],
+            'failure_code' => ['nullable', 'string', 'max:120'],
+        ];
+    }
+}
+
+class BillingWebhookEvents extends Model
+{
+    protected $table = 'fiducia.billing_webhook_events';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+    protected $fillable = ['provider', 'provider_event_id', 'event_type', 'signature_verified', 'payload_sha256', 'received_at', 'processed_at', 'process_error'];
+    protected $casts = ['signature_verified' => 'boolean', 'received_at' => 'datetime', 'processed_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'provider' => ['required', 'string', 'in:stripe,paypal'],
+            'provider_event_id' => ['required', 'string', 'max:255'],
+            'event_type' => ['required', 'string', 'max:120'],
+            'signature_verified' => ['required', 'boolean'],
+            'payload_sha256' => ['required', 'string', 'max:64', 'regex:/^[0-9a-f]{64}$/'],
+            'received_at' => ['nullable', 'date'],
+            'processed_at' => ['nullable', 'date'],
+            'process_error' => ['nullable', 'string'],
+        ];
+    }
+}
+
 class Transcriptions extends Model
 {
     protected $table = 't2v.transcriptions';

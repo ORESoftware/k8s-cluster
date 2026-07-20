@@ -2174,6 +2174,107 @@ module DdPgDefs
     validates :committed_version, numericality: { only_integer: true }, allow_nil: true
   end
 
+  class BillingCustomers < ActiveRecord::Base
+    self.table_name = "fiducia.billing_customers"
+    self.primary_key = "id"
+
+    validates :org_id, presence: true
+    validates :provider, presence: true
+    validates :provider, inclusion: { in: ["stripe", "paypal"] }
+    validates :provider_customer_id, presence: true
+    validates :provider_customer_id, length: { maximum: 255 }
+    validates :email, length: { maximum: 320 }, allow_nil: true
+  end
+
+  class PaymentMethods < ActiveRecord::Base
+    self.table_name = "fiducia.payment_methods"
+    self.primary_key = "id"
+
+    validates :org_id, presence: true
+    validates :billing_customer_id, presence: true
+    validates :provider, presence: true
+    validates :provider, inclusion: { in: ["stripe", "paypal"] }
+    validates :provider_payment_method_id, presence: true
+    validates :provider_payment_method_id, length: { maximum: 255 }
+    validates :kind, presence: true
+    validates :kind, length: { maximum: 32 }
+    validates :brand, length: { maximum: 32 }, allow_nil: true
+    validates :last4, length: { maximum: 4 }, allow_nil: true
+    validates :last4, format: { with: Regexp.new("\\A[0-9]{4}\\z") }, allow_nil: true
+    validates :exp_month, numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 12 }, allow_nil: true
+    validates :exp_year, numericality: { only_integer: true }, allow_nil: true
+  end
+
+  class BillingSubscriptions < ActiveRecord::Base
+    self.table_name = "fiducia.billing_subscriptions"
+    self.primary_key = "id"
+
+    validates :org_id, presence: true
+    validates :billing_customer_id, presence: true
+    validates :provider, presence: true
+    validates :provider, inclusion: { in: ["stripe", "paypal"] }
+    validates :provider_subscription_id, presence: true
+    validates :provider_subscription_id, length: { maximum: 255 }
+    validates :plan, presence: true
+    validates :plan, length: { maximum: 120 }
+    validates :status, presence: true
+    validates :status, inclusion: { in: ["trialing", "active", "past_due", "canceled", "unpaid", "incomplete", "incomplete_expired", "paused"] }
+  end
+
+  class Invoices < ActiveRecord::Base
+    self.table_name = "fiducia.invoices"
+    self.primary_key = "id"
+
+    validates :org_id, presence: true
+    validates :provider, presence: true
+    validates :provider, inclusion: { in: ["stripe", "paypal"] }
+    validates :provider_invoice_id, presence: true
+    validates :provider_invoice_id, length: { maximum: 255 }
+    validates :status, presence: true
+    validates :status, inclusion: { in: ["draft", "open", "paid", "void", "uncollectible"] }
+    validates :amount_due_cents, presence: true
+    validates :amount_due_cents, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :amount_paid_cents, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :currency, presence: true
+    validates :currency, length: { maximum: 3 }
+    validates :currency, format: { with: Regexp.new("\\A[a-z]{3}\\z") }
+  end
+
+  class Payments < ActiveRecord::Base
+    self.table_name = "fiducia.payments"
+    self.primary_key = "id"
+
+    validates :org_id, presence: true
+    validates :provider, presence: true
+    validates :provider, inclusion: { in: ["stripe", "paypal"] }
+    validates :provider_payment_id, presence: true
+    validates :provider_payment_id, length: { maximum: 255 }
+    validates :status, presence: true
+    validates :status, inclusion: { in: ["pending", "processing", "succeeded", "failed", "canceled", "refunded", "partially_refunded"] }
+    validates :amount_cents, presence: true
+    validates :amount_cents, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :currency, presence: true
+    validates :currency, length: { maximum: 3 }
+    validates :currency, format: { with: Regexp.new("\\A[a-z]{3}\\z") }
+    validates :failure_code, length: { maximum: 120 }, allow_nil: true
+  end
+
+  class BillingWebhookEvents < ActiveRecord::Base
+    self.table_name = "fiducia.billing_webhook_events"
+    self.primary_key = "id"
+
+    validates :provider, presence: true
+    validates :provider, inclusion: { in: ["stripe", "paypal"] }
+    validates :provider_event_id, presence: true
+    validates :provider_event_id, length: { maximum: 255 }
+    validates :event_type, presence: true
+    validates :event_type, length: { maximum: 120 }
+    validates :signature_verified, presence: true
+    validates :payload_sha256, presence: true
+    validates :payload_sha256, length: { maximum: 64 }
+    validates :payload_sha256, format: { with: Regexp.new("\\A[0-9a-f]{64}\\z") }
+  end
+
   class Transcriptions < ActiveRecord::Base
     self.table_name = "t2v.transcriptions"
     self.primary_key = "id"

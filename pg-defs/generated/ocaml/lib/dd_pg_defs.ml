@@ -11241,6 +11241,448 @@ let validate_sync_idempotency_keys_request_fingerprint (value : string) : (strin
   if String.length value > 64 then Error "sync_idempotency_keys.request_fingerprint must be at most 64 characters"
   else Ok value
 
+let billing_customers_table = "fiducia.billing_customers"
+
+let billing_customers_columns = ["id"; "org_id"; "provider"; "provider_customer_id"; "email"; "created_at"; "updated_at"]
+
+let billing_customers_select_sql = "select\n      id::text as id,\n      org_id::text as org_id,\n      provider,\n      provider_customer_id,\n      email,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from fiducia.billing_customers"
+
+type billing_customers_provider = [ `Stripe | `Paypal ]
+
+let billing_customers_provider_to_string (value : billing_customers_provider) : string =
+  match value with
+  | `Stripe -> "stripe"
+  | `Paypal -> "paypal"
+
+let parse_billing_customers_provider (value : string) : (billing_customers_provider, string) result =
+  match value with
+  | "stripe" -> Ok `Stripe
+  | "paypal" -> Ok `Paypal
+  | _ -> Error ("unsupported billing_customers.provider: " ^ value)
+
+type billing_customers_row = {
+  billing_customers_id : string;
+  billing_customers_org_id : string;
+  billing_customers_provider : string;
+  billing_customers_provider_customer_id : string;
+  billing_customers_email : string option;
+  billing_customers_created_at : string;
+  billing_customers_updated_at : string;
+}
+
+let billing_customers_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : billing_customers_row =
+  {
+    billing_customers_id = get 0;
+    billing_customers_org_id = get 1;
+    billing_customers_provider = get 2;
+    billing_customers_provider_customer_id = get 3;
+    billing_customers_email = (if is_null 4 then None else Some (get 4));
+    billing_customers_created_at = get 5;
+    billing_customers_updated_at = get 6;
+  }
+
+let validate_billing_customers_provider_customer_id (value : string) : (string, string) result =
+  if String.length value > 255 then Error "billing_customers.provider_customer_id must be at most 255 characters"
+  else Ok value
+
+let validate_billing_customers_email (value : string) : (string, string) result =
+  if String.length value > 320 then Error "billing_customers.email must be at most 320 characters"
+  else Ok value
+
+let payment_methods_table = "fiducia.payment_methods"
+
+let payment_methods_columns = ["id"; "org_id"; "billing_customer_id"; "provider"; "provider_payment_method_id"; "kind"; "brand"; "last4"; "exp_month"; "exp_year"; "is_default"; "created_at"; "updated_at"]
+
+let payment_methods_select_sql = "select\n      id::text as id,\n      org_id::text as org_id,\n      billing_customer_id::text as billing_customer_id,\n      provider,\n      provider_payment_method_id,\n      kind,\n      brand,\n      last4,\n      exp_month,\n      exp_year,\n      is_default,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from fiducia.payment_methods"
+
+type payment_methods_provider = [ `Stripe | `Paypal ]
+
+let payment_methods_provider_to_string (value : payment_methods_provider) : string =
+  match value with
+  | `Stripe -> "stripe"
+  | `Paypal -> "paypal"
+
+let parse_payment_methods_provider (value : string) : (payment_methods_provider, string) result =
+  match value with
+  | "stripe" -> Ok `Stripe
+  | "paypal" -> Ok `Paypal
+  | _ -> Error ("unsupported payment_methods.provider: " ^ value)
+
+type payment_methods_row = {
+  payment_methods_id : string;
+  payment_methods_org_id : string;
+  payment_methods_billing_customer_id : string;
+  payment_methods_provider : string;
+  payment_methods_provider_payment_method_id : string;
+  payment_methods_kind : string;
+  payment_methods_brand : string option;
+  payment_methods_last4 : string option;
+  payment_methods_exp_month : int option;
+  payment_methods_exp_year : int option;
+  payment_methods_is_default : bool;
+  payment_methods_created_at : string;
+  payment_methods_updated_at : string;
+}
+
+let payment_methods_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : payment_methods_row =
+  {
+    payment_methods_id = get 0;
+    payment_methods_org_id = get 1;
+    payment_methods_billing_customer_id = get 2;
+    payment_methods_provider = get 3;
+    payment_methods_provider_payment_method_id = get 4;
+    payment_methods_kind = get 5;
+    payment_methods_brand = (if is_null 6 then None else Some (get 6));
+    payment_methods_last4 = (if is_null 7 then None else Some (get 7));
+    payment_methods_exp_month = (if is_null 8 then None else Some (int_of_string (get 8)));
+    payment_methods_exp_year = (if is_null 9 then None else Some (int_of_string (get 9)));
+    payment_methods_is_default = (get 10 = "t");
+    payment_methods_created_at = get 11;
+    payment_methods_updated_at = get 12;
+  }
+
+let validate_payment_methods_provider_payment_method_id (value : string) : (string, string) result =
+  if String.length value > 255 then Error "payment_methods.provider_payment_method_id must be at most 255 characters"
+  else Ok value
+
+let validate_payment_methods_kind (value : string) : (string, string) result =
+  if String.length value > 32 then Error "payment_methods.kind must be at most 32 characters"
+  else Ok value
+
+let validate_payment_methods_brand (value : string) : (string, string) result =
+  if String.length value > 32 then Error "payment_methods.brand must be at most 32 characters"
+  else Ok value
+
+let validate_payment_methods_last4 (value : string) : (string, string) result =
+  if String.length value > 4 then Error "payment_methods.last4 must be at most 4 characters"
+  else Ok value
+
+let validate_payment_methods_exp_month (value : int) : (int, string) result =
+  if value < 1 then Error "payment_methods.exp_month is below the minimum"
+  else if value > 12 then Error "payment_methods.exp_month is above the maximum"
+  else Ok value
+
+let billing_subscriptions_table = "fiducia.billing_subscriptions"
+
+let billing_subscriptions_columns = ["id"; "org_id"; "billing_customer_id"; "provider"; "provider_subscription_id"; "plan"; "status"; "current_period_start"; "current_period_end"; "cancel_at_period_end"; "canceled_at"; "created_at"; "updated_at"]
+
+let billing_subscriptions_select_sql = "select\n      id::text as id,\n      org_id::text as org_id,\n      billing_customer_id::text as billing_customer_id,\n      provider,\n      provider_subscription_id,\n      plan,\n      status,\n      to_char(current_period_start at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as current_period_start,\n      to_char(current_period_end at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as current_period_end,\n      cancel_at_period_end,\n      to_char(canceled_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as canceled_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from fiducia.billing_subscriptions"
+
+type billing_subscriptions_provider = [ `Stripe | `Paypal ]
+
+let billing_subscriptions_provider_to_string (value : billing_subscriptions_provider) : string =
+  match value with
+  | `Stripe -> "stripe"
+  | `Paypal -> "paypal"
+
+let parse_billing_subscriptions_provider (value : string) : (billing_subscriptions_provider, string) result =
+  match value with
+  | "stripe" -> Ok `Stripe
+  | "paypal" -> Ok `Paypal
+  | _ -> Error ("unsupported billing_subscriptions.provider: " ^ value)
+
+type billing_subscriptions_status = [ `Trialing | `Active | `PastDue | `Canceled | `Unpaid | `Incomplete | `IncompleteExpired | `Paused ]
+
+let billing_subscriptions_status_to_string (value : billing_subscriptions_status) : string =
+  match value with
+  | `Trialing -> "trialing"
+  | `Active -> "active"
+  | `PastDue -> "past_due"
+  | `Canceled -> "canceled"
+  | `Unpaid -> "unpaid"
+  | `Incomplete -> "incomplete"
+  | `IncompleteExpired -> "incomplete_expired"
+  | `Paused -> "paused"
+
+let parse_billing_subscriptions_status (value : string) : (billing_subscriptions_status, string) result =
+  match value with
+  | "trialing" -> Ok `Trialing
+  | "active" -> Ok `Active
+  | "past_due" -> Ok `PastDue
+  | "canceled" -> Ok `Canceled
+  | "unpaid" -> Ok `Unpaid
+  | "incomplete" -> Ok `Incomplete
+  | "incomplete_expired" -> Ok `IncompleteExpired
+  | "paused" -> Ok `Paused
+  | _ -> Error ("unsupported billing_subscriptions.status: " ^ value)
+
+type billing_subscriptions_row = {
+  billing_subscriptions_id : string;
+  billing_subscriptions_org_id : string;
+  billing_subscriptions_billing_customer_id : string;
+  billing_subscriptions_provider : string;
+  billing_subscriptions_provider_subscription_id : string;
+  billing_subscriptions_plan : string;
+  billing_subscriptions_status : string;
+  billing_subscriptions_current_period_start : string option;
+  billing_subscriptions_current_period_end : string option;
+  billing_subscriptions_cancel_at_period_end : bool;
+  billing_subscriptions_canceled_at : string option;
+  billing_subscriptions_created_at : string;
+  billing_subscriptions_updated_at : string;
+}
+
+let billing_subscriptions_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : billing_subscriptions_row =
+  {
+    billing_subscriptions_id = get 0;
+    billing_subscriptions_org_id = get 1;
+    billing_subscriptions_billing_customer_id = get 2;
+    billing_subscriptions_provider = get 3;
+    billing_subscriptions_provider_subscription_id = get 4;
+    billing_subscriptions_plan = get 5;
+    billing_subscriptions_status = get 6;
+    billing_subscriptions_current_period_start = (if is_null 7 then None else Some (get 7));
+    billing_subscriptions_current_period_end = (if is_null 8 then None else Some (get 8));
+    billing_subscriptions_cancel_at_period_end = (get 9 = "t");
+    billing_subscriptions_canceled_at = (if is_null 10 then None else Some (get 10));
+    billing_subscriptions_created_at = get 11;
+    billing_subscriptions_updated_at = get 12;
+  }
+
+let validate_billing_subscriptions_provider_subscription_id (value : string) : (string, string) result =
+  if String.length value > 255 then Error "billing_subscriptions.provider_subscription_id must be at most 255 characters"
+  else Ok value
+
+let validate_billing_subscriptions_plan (value : string) : (string, string) result =
+  if String.length value > 120 then Error "billing_subscriptions.plan must be at most 120 characters"
+  else Ok value
+
+let invoices_table = "fiducia.invoices"
+
+let invoices_columns = ["id"; "org_id"; "billing_customer_id"; "subscription_id"; "provider"; "provider_invoice_id"; "status"; "amount_due_cents"; "amount_paid_cents"; "currency"; "period_start"; "period_end"; "hosted_invoice_url"; "created_at"; "updated_at"]
+
+let invoices_select_sql = "select\n      id::text as id,\n      org_id::text as org_id,\n      billing_customer_id::text as billing_customer_id,\n      subscription_id::text as subscription_id,\n      provider,\n      provider_invoice_id,\n      status,\n      amount_due_cents,\n      amount_paid_cents,\n      currency,\n      to_char(period_start at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as period_start,\n      to_char(period_end at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as period_end,\n      hosted_invoice_url,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from fiducia.invoices"
+
+type invoices_provider = [ `Stripe | `Paypal ]
+
+let invoices_provider_to_string (value : invoices_provider) : string =
+  match value with
+  | `Stripe -> "stripe"
+  | `Paypal -> "paypal"
+
+let parse_invoices_provider (value : string) : (invoices_provider, string) result =
+  match value with
+  | "stripe" -> Ok `Stripe
+  | "paypal" -> Ok `Paypal
+  | _ -> Error ("unsupported invoices.provider: " ^ value)
+
+type invoices_status = [ `Draft | `Open | `Paid | `Void | `Uncollectible ]
+
+let invoices_status_to_string (value : invoices_status) : string =
+  match value with
+  | `Draft -> "draft"
+  | `Open -> "open"
+  | `Paid -> "paid"
+  | `Void -> "void"
+  | `Uncollectible -> "uncollectible"
+
+let parse_invoices_status (value : string) : (invoices_status, string) result =
+  match value with
+  | "draft" -> Ok `Draft
+  | "open" -> Ok `Open
+  | "paid" -> Ok `Paid
+  | "void" -> Ok `Void
+  | "uncollectible" -> Ok `Uncollectible
+  | _ -> Error ("unsupported invoices.status: " ^ value)
+
+type invoices_row = {
+  invoices_id : string;
+  invoices_org_id : string;
+  invoices_billing_customer_id : string option;
+  invoices_subscription_id : string option;
+  invoices_provider : string;
+  invoices_provider_invoice_id : string;
+  invoices_status : string;
+  invoices_amount_due_cents : int64;
+  invoices_amount_paid_cents : int64;
+  invoices_currency : string;
+  invoices_period_start : string option;
+  invoices_period_end : string option;
+  invoices_hosted_invoice_url : string option;
+  invoices_created_at : string;
+  invoices_updated_at : string;
+}
+
+let invoices_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : invoices_row =
+  {
+    invoices_id = get 0;
+    invoices_org_id = get 1;
+    invoices_billing_customer_id = (if is_null 2 then None else Some (get 2));
+    invoices_subscription_id = (if is_null 3 then None else Some (get 3));
+    invoices_provider = get 4;
+    invoices_provider_invoice_id = get 5;
+    invoices_status = get 6;
+    invoices_amount_due_cents = Int64.of_string (get 7);
+    invoices_amount_paid_cents = Int64.of_string (get 8);
+    invoices_currency = get 9;
+    invoices_period_start = (if is_null 10 then None else Some (get 10));
+    invoices_period_end = (if is_null 11 then None else Some (get 11));
+    invoices_hosted_invoice_url = (if is_null 12 then None else Some (get 12));
+    invoices_created_at = get 13;
+    invoices_updated_at = get 14;
+  }
+
+let validate_invoices_provider_invoice_id (value : string) : (string, string) result =
+  if String.length value > 255 then Error "invoices.provider_invoice_id must be at most 255 characters"
+  else Ok value
+
+let validate_invoices_amount_due_cents (value : int64) : (int64, string) result =
+  if Int64.compare value 0L < 0 then Error "invoices.amount_due_cents is below the minimum"
+  else Ok value
+
+let validate_invoices_amount_paid_cents (value : int64) : (int64, string) result =
+  if Int64.compare value 0L < 0 then Error "invoices.amount_paid_cents is below the minimum"
+  else Ok value
+
+let validate_invoices_currency (value : string) : (string, string) result =
+  if String.length value > 3 then Error "invoices.currency must be at most 3 characters"
+  else Ok value
+
+let payments_table = "fiducia.payments"
+
+let payments_columns = ["id"; "org_id"; "invoice_id"; "payment_method_id"; "provider"; "provider_payment_id"; "status"; "amount_cents"; "currency"; "failure_code"; "created_at"; "updated_at"]
+
+let payments_select_sql = "select\n      id::text as id,\n      org_id::text as org_id,\n      invoice_id::text as invoice_id,\n      payment_method_id::text as payment_method_id,\n      provider,\n      provider_payment_id,\n      status,\n      amount_cents,\n      currency,\n      failure_code,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from fiducia.payments"
+
+type payments_provider = [ `Stripe | `Paypal ]
+
+let payments_provider_to_string (value : payments_provider) : string =
+  match value with
+  | `Stripe -> "stripe"
+  | `Paypal -> "paypal"
+
+let parse_payments_provider (value : string) : (payments_provider, string) result =
+  match value with
+  | "stripe" -> Ok `Stripe
+  | "paypal" -> Ok `Paypal
+  | _ -> Error ("unsupported payments.provider: " ^ value)
+
+type payments_status = [ `Pending | `Processing | `Succeeded | `Failed | `Canceled | `Refunded | `PartiallyRefunded ]
+
+let payments_status_to_string (value : payments_status) : string =
+  match value with
+  | `Pending -> "pending"
+  | `Processing -> "processing"
+  | `Succeeded -> "succeeded"
+  | `Failed -> "failed"
+  | `Canceled -> "canceled"
+  | `Refunded -> "refunded"
+  | `PartiallyRefunded -> "partially_refunded"
+
+let parse_payments_status (value : string) : (payments_status, string) result =
+  match value with
+  | "pending" -> Ok `Pending
+  | "processing" -> Ok `Processing
+  | "succeeded" -> Ok `Succeeded
+  | "failed" -> Ok `Failed
+  | "canceled" -> Ok `Canceled
+  | "refunded" -> Ok `Refunded
+  | "partially_refunded" -> Ok `PartiallyRefunded
+  | _ -> Error ("unsupported payments.status: " ^ value)
+
+type payments_row = {
+  payments_id : string;
+  payments_org_id : string;
+  payments_invoice_id : string option;
+  payments_payment_method_id : string option;
+  payments_provider : string;
+  payments_provider_payment_id : string;
+  payments_status : string;
+  payments_amount_cents : int64;
+  payments_currency : string;
+  payments_failure_code : string option;
+  payments_created_at : string;
+  payments_updated_at : string;
+}
+
+let payments_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : payments_row =
+  {
+    payments_id = get 0;
+    payments_org_id = get 1;
+    payments_invoice_id = (if is_null 2 then None else Some (get 2));
+    payments_payment_method_id = (if is_null 3 then None else Some (get 3));
+    payments_provider = get 4;
+    payments_provider_payment_id = get 5;
+    payments_status = get 6;
+    payments_amount_cents = Int64.of_string (get 7);
+    payments_currency = get 8;
+    payments_failure_code = (if is_null 9 then None else Some (get 9));
+    payments_created_at = get 10;
+    payments_updated_at = get 11;
+  }
+
+let validate_payments_provider_payment_id (value : string) : (string, string) result =
+  if String.length value > 255 then Error "payments.provider_payment_id must be at most 255 characters"
+  else Ok value
+
+let validate_payments_amount_cents (value : int64) : (int64, string) result =
+  if Int64.compare value 0L < 0 then Error "payments.amount_cents is below the minimum"
+  else Ok value
+
+let validate_payments_currency (value : string) : (string, string) result =
+  if String.length value > 3 then Error "payments.currency must be at most 3 characters"
+  else Ok value
+
+let validate_payments_failure_code (value : string) : (string, string) result =
+  if String.length value > 120 then Error "payments.failure_code must be at most 120 characters"
+  else Ok value
+
+let billing_webhook_events_table = "fiducia.billing_webhook_events"
+
+let billing_webhook_events_columns = ["id"; "provider"; "provider_event_id"; "event_type"; "signature_verified"; "payload_sha256"; "received_at"; "processed_at"; "process_error"]
+
+let billing_webhook_events_select_sql = "select\n      id::text as id,\n      provider,\n      provider_event_id,\n      event_type,\n      signature_verified,\n      payload_sha256,\n      to_char(received_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as received_at,\n      to_char(processed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as processed_at,\n      process_error\n    from fiducia.billing_webhook_events"
+
+type billing_webhook_events_provider = [ `Stripe | `Paypal ]
+
+let billing_webhook_events_provider_to_string (value : billing_webhook_events_provider) : string =
+  match value with
+  | `Stripe -> "stripe"
+  | `Paypal -> "paypal"
+
+let parse_billing_webhook_events_provider (value : string) : (billing_webhook_events_provider, string) result =
+  match value with
+  | "stripe" -> Ok `Stripe
+  | "paypal" -> Ok `Paypal
+  | _ -> Error ("unsupported billing_webhook_events.provider: " ^ value)
+
+type billing_webhook_events_row = {
+  billing_webhook_events_id : string;
+  billing_webhook_events_provider : string;
+  billing_webhook_events_provider_event_id : string;
+  billing_webhook_events_event_type : string;
+  billing_webhook_events_signature_verified : bool;
+  billing_webhook_events_payload_sha256 : string;
+  billing_webhook_events_received_at : string;
+  billing_webhook_events_processed_at : string option;
+  billing_webhook_events_process_error : string option;
+}
+
+let billing_webhook_events_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : billing_webhook_events_row =
+  {
+    billing_webhook_events_id = get 0;
+    billing_webhook_events_provider = get 1;
+    billing_webhook_events_provider_event_id = get 2;
+    billing_webhook_events_event_type = get 3;
+    billing_webhook_events_signature_verified = (get 4 = "t");
+    billing_webhook_events_payload_sha256 = get 5;
+    billing_webhook_events_received_at = get 6;
+    billing_webhook_events_processed_at = (if is_null 7 then None else Some (get 7));
+    billing_webhook_events_process_error = (if is_null 8 then None else Some (get 8));
+  }
+
+let validate_billing_webhook_events_provider_event_id (value : string) : (string, string) result =
+  if String.length value > 255 then Error "billing_webhook_events.provider_event_id must be at most 255 characters"
+  else Ok value
+
+let validate_billing_webhook_events_event_type (value : string) : (string, string) result =
+  if String.length value > 120 then Error "billing_webhook_events.event_type must be at most 120 characters"
+  else Ok value
+
+let validate_billing_webhook_events_payload_sha256 (value : string) : (string, string) result =
+  if String.length value > 64 then Error "billing_webhook_events.payload_sha256 must be at most 64 characters"
+  else Ok value
+
 let transcriptions_table = "t2v.transcriptions"
 
 let transcriptions_columns = ["id"; "source"; "provider"; "model"; "text"; "language"; "sample_rate"; "duration_ms"; "created_at"]

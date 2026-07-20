@@ -3713,6 +3713,153 @@ class SyncIdempotencyKeysTable extends Table {
   };
 }
 
+@DataClassName("BillingCustomersData")
+class BillingCustomersTable extends Table {
+  @override String get tableName => "billing_customers";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get orgId => text().named("org_id").customConstraint("UUID")();
+  TextColumn get provider => text().named("provider")();
+  TextColumn get providerCustomerId => text().named("provider_customer_id").withLength(max: 255)();
+  TextColumn get email => text().named("email").withLength(max: 320).nullable()();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("PaymentMethodsData")
+class PaymentMethodsTable extends Table {
+  @override String get tableName => "payment_methods";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get orgId => text().named("org_id").customConstraint("UUID")();
+  TextColumn get billingCustomerId => text().named("billing_customer_id").customConstraint("UUID")();
+  TextColumn get provider => text().named("provider")();
+  TextColumn get providerPaymentMethodId => text().named("provider_payment_method_id").withLength(max: 255)();
+  TextColumn get kind => text().named("kind").withLength(max: 32)();
+  TextColumn get brand => text().named("brand").withLength(max: 32).nullable()();
+  TextColumn get last4 => text().named("last4").withLength(max: 4).nullable()();
+  IntColumn get expMonth => integer().named("exp_month").nullable()();
+  IntColumn get expYear => integer().named("exp_year").nullable()();
+  BoolColumn get isDefault => boolean().named("is_default").clientDefault(() => false)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("BillingSubscriptionsData")
+class BillingSubscriptionsTable extends Table {
+  @override String get tableName => "billing_subscriptions";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get orgId => text().named("org_id").customConstraint("UUID")();
+  TextColumn get billingCustomerId => text().named("billing_customer_id").customConstraint("UUID")();
+  TextColumn get provider => text().named("provider")();
+  TextColumn get providerSubscriptionId => text().named("provider_subscription_id").withLength(max: 255)();
+  TextColumn get plan => text().named("plan").withLength(max: 120)();
+  TextColumn get status => text().named("status")();
+  DateTimeColumn get currentPeriodStart => dateTime().named("current_period_start").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get currentPeriodEnd => dateTime().named("current_period_end").nullable().customConstraint("TIMESTAMPTZ")();
+  BoolColumn get cancelAtPeriodEnd => boolean().named("cancel_at_period_end").clientDefault(() => false)();
+  DateTimeColumn get canceledAt => dateTime().named("canceled_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("InvoicesData")
+class InvoicesTable extends Table {
+  @override String get tableName => "invoices";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get orgId => text().named("org_id").customConstraint("UUID")();
+  TextColumn get billingCustomerId => text().named("billing_customer_id").nullable().customConstraint("UUID")();
+  TextColumn get subscriptionId => text().named("subscription_id").nullable().customConstraint("UUID")();
+  TextColumn get provider => text().named("provider")();
+  TextColumn get providerInvoiceId => text().named("provider_invoice_id").withLength(max: 255)();
+  TextColumn get status => text().named("status")();
+  Int64Column get amountDueCents => int64().named("amount_due_cents")();
+  Int64Column get amountPaidCents => int64().named("amount_paid_cents").clientDefault(() => 0)();
+  TextColumn get currency => text().named("currency").withLength(max: 3)();
+  DateTimeColumn get periodStart => dateTime().named("period_start").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get periodEnd => dateTime().named("period_end").nullable().customConstraint("TIMESTAMPTZ")();
+  TextColumn get hostedInvoiceUrl => text().named("hosted_invoice_url").nullable()();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("PaymentsData")
+class PaymentsTable extends Table {
+  @override String get tableName => "payments";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get orgId => text().named("org_id").customConstraint("UUID")();
+  TextColumn get invoiceId => text().named("invoice_id").nullable().customConstraint("UUID")();
+  TextColumn get paymentMethodId => text().named("payment_method_id").nullable().customConstraint("UUID")();
+  TextColumn get provider => text().named("provider")();
+  TextColumn get providerPaymentId => text().named("provider_payment_id").withLength(max: 255)();
+  TextColumn get status => text().named("status")();
+  Int64Column get amountCents => int64().named("amount_cents")();
+  TextColumn get currency => text().named("currency").withLength(max: 3)();
+  TextColumn get failureCode => text().named("failure_code").withLength(max: 120).nullable()();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("BillingWebhookEventsData")
+class BillingWebhookEventsTable extends Table {
+  @override String get tableName => "billing_webhook_events";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get provider => text().named("provider")();
+  TextColumn get providerEventId => text().named("provider_event_id").withLength(max: 255)();
+  TextColumn get eventType => text().named("event_type").withLength(max: 120)();
+  BoolColumn get signatureVerified => boolean().named("signature_verified")();
+  TextColumn get payloadSha256 => text().named("payload_sha256").withLength(max: 64)();
+  DateTimeColumn get receivedAt => dateTime().named("received_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get processedAt => dateTime().named("processed_at").nullable().customConstraint("TIMESTAMPTZ")();
+  TextColumn get processError => text().named("process_error").nullable()();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
 @DataClassName("TranscriptionsData")
 class TranscriptionsTable extends Table {
   @override String get tableName => "transcriptions";
@@ -4078,6 +4225,12 @@ const List<Type> registeredDriftTables = <Type>[
   AuditLogTable,
   CustomerNotificationsTable,
   SyncIdempotencyKeysTable,
+  BillingCustomersTable,
+  PaymentMethodsTable,
+  BillingSubscriptionsTable,
+  InvoicesTable,
+  PaymentsTable,
+  BillingWebhookEventsTable,
   TranscriptionsTable,
   SynthesesTable,
   TranslationsTable,

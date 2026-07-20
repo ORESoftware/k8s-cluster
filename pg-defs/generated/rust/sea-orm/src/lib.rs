@@ -5935,6 +5935,236 @@ impl ActiveModelBehavior for ActiveModel {}
 pub use sync_idempotency_keys::Entity as SyncIdempotencyKeysEntity;
 pub use sync_idempotency_keys::Model as SyncIdempotencyKeysModel;
 
+pub mod billing_customers {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(schema_name = "fiducia", table_name = "billing_customers")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "org_id")]
+    pub org_id: Uuid,
+    pub provider: String,
+    #[sea_orm(column_name = "provider_customer_id")]
+    pub provider_customer_id: String,
+    pub email: Option<String>,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use billing_customers::Entity as BillingCustomersEntity;
+pub use billing_customers::Model as BillingCustomersModel;
+
+pub mod payment_methods {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(schema_name = "fiducia", table_name = "payment_methods")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "org_id")]
+    pub org_id: Uuid,
+    #[sea_orm(column_name = "billing_customer_id")]
+    pub billing_customer_id: Uuid,
+    pub provider: String,
+    #[sea_orm(column_name = "provider_payment_method_id")]
+    pub provider_payment_method_id: String,
+    pub kind: String,
+    pub brand: Option<String>,
+    pub last4: Option<String>,
+    #[sea_orm(column_name = "exp_month")]
+    pub exp_month: Option<i16>,
+    #[sea_orm(column_name = "exp_year")]
+    pub exp_year: Option<i16>,
+    #[sea_orm(column_name = "is_default")]
+    pub is_default: bool,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use payment_methods::Entity as PaymentMethodsEntity;
+pub use payment_methods::Model as PaymentMethodsModel;
+
+pub mod billing_subscriptions {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(schema_name = "fiducia", table_name = "billing_subscriptions")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "org_id")]
+    pub org_id: Uuid,
+    #[sea_orm(column_name = "billing_customer_id")]
+    pub billing_customer_id: Uuid,
+    pub provider: String,
+    #[sea_orm(column_name = "provider_subscription_id")]
+    pub provider_subscription_id: String,
+    pub plan: String,
+    pub status: String,
+    #[sea_orm(column_name = "current_period_start")]
+    pub current_period_start: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "current_period_end")]
+    pub current_period_end: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "cancel_at_period_end")]
+    pub cancel_at_period_end: bool,
+    #[sea_orm(column_name = "canceled_at")]
+    pub canceled_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use billing_subscriptions::Entity as BillingSubscriptionsEntity;
+pub use billing_subscriptions::Model as BillingSubscriptionsModel;
+
+pub mod invoices {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(schema_name = "fiducia", table_name = "invoices")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "org_id")]
+    pub org_id: Uuid,
+    #[sea_orm(column_name = "billing_customer_id")]
+    pub billing_customer_id: Option<Uuid>,
+    #[sea_orm(column_name = "subscription_id")]
+    pub subscription_id: Option<Uuid>,
+    pub provider: String,
+    #[sea_orm(column_name = "provider_invoice_id")]
+    pub provider_invoice_id: String,
+    pub status: String,
+    #[sea_orm(column_name = "amount_due_cents")]
+    pub amount_due_cents: i64,
+    #[sea_orm(column_name = "amount_paid_cents")]
+    pub amount_paid_cents: i64,
+    pub currency: String,
+    #[sea_orm(column_name = "period_start")]
+    pub period_start: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "period_end")]
+    pub period_end: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "hosted_invoice_url")]
+    pub hosted_invoice_url: Option<String>,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use invoices::Entity as InvoicesEntity;
+pub use invoices::Model as InvoicesModel;
+
+pub mod payments {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(schema_name = "fiducia", table_name = "payments")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "org_id")]
+    pub org_id: Uuid,
+    #[sea_orm(column_name = "invoice_id")]
+    pub invoice_id: Option<Uuid>,
+    #[sea_orm(column_name = "payment_method_id")]
+    pub payment_method_id: Option<Uuid>,
+    pub provider: String,
+    #[sea_orm(column_name = "provider_payment_id")]
+    pub provider_payment_id: String,
+    pub status: String,
+    #[sea_orm(column_name = "amount_cents")]
+    pub amount_cents: i64,
+    pub currency: String,
+    #[sea_orm(column_name = "failure_code")]
+    pub failure_code: Option<String>,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use payments::Entity as PaymentsEntity;
+pub use payments::Model as PaymentsModel;
+
+pub mod billing_webhook_events {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(schema_name = "fiducia", table_name = "billing_webhook_events")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    pub provider: String,
+    #[sea_orm(column_name = "provider_event_id")]
+    pub provider_event_id: String,
+    #[sea_orm(column_name = "event_type")]
+    pub event_type: String,
+    #[sea_orm(column_name = "signature_verified")]
+    pub signature_verified: bool,
+    #[sea_orm(column_name = "payload_sha256")]
+    pub payload_sha256: String,
+    #[sea_orm(column_name = "received_at")]
+    pub received_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "processed_at")]
+    pub processed_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "process_error")]
+    pub process_error: Option<String>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use billing_webhook_events::Entity as BillingWebhookEventsEntity;
+pub use billing_webhook_events::Model as BillingWebhookEventsModel;
+
 pub mod transcriptions {
     use super::*;
 

@@ -10318,6 +10318,420 @@ validateSyncIdempotencyKeysRequestFingerprint value
   | T.length value > 64 = Left "sync_idempotency_keys.request_fingerprint must be at most 64 characters"
   | otherwise = Right value
 
+billingCustomersTable :: Text
+billingCustomersTable = "fiducia.billing_customers"
+
+billingCustomersColumns :: [Text]
+billingCustomersColumns = ["id", "org_id", "provider", "provider_customer_id", "email", "created_at", "updated_at"]
+
+billingCustomersSelectSql :: Text
+billingCustomersSelectSql = "select\n      id::text as id,\n      org_id::text as org_id,\n      provider,\n      provider_customer_id,\n      email,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from fiducia.billing_customers"
+
+data BillingCustomersProvider = BillingCustomersProviderStripe | BillingCustomersProviderPaypal
+  deriving (Eq, Show)
+
+billingCustomersProviderToText :: BillingCustomersProvider -> Text
+billingCustomersProviderToText value = case value of
+  BillingCustomersProviderStripe -> "stripe"
+  BillingCustomersProviderPaypal -> "paypal"
+
+parseBillingCustomersProvider :: Text -> Either Text BillingCustomersProvider
+parseBillingCustomersProvider value = case value of
+  "stripe" -> Right BillingCustomersProviderStripe
+  "paypal" -> Right BillingCustomersProviderPaypal
+  _ -> Left (T.append "unsupported billing_customers.provider: " value)
+
+data BillingCustomersRow = BillingCustomersRow
+  { billingCustomersId :: Text
+  , billingCustomersOrgId :: Text
+  , billingCustomersProvider :: Text
+  , billingCustomersProviderCustomerId :: Text
+  , billingCustomersEmail :: (Maybe Text)
+  , billingCustomersCreatedAt :: Text
+  , billingCustomersUpdatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow BillingCustomersRow where
+  fromRow = BillingCustomersRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateBillingCustomersProviderCustomerId :: Text -> Either Text Text
+validateBillingCustomersProviderCustomerId value
+  | T.length value > 255 = Left "billing_customers.provider_customer_id must be at most 255 characters"
+  | otherwise = Right value
+
+validateBillingCustomersEmail :: Text -> Either Text Text
+validateBillingCustomersEmail value
+  | T.length value > 320 = Left "billing_customers.email must be at most 320 characters"
+  | otherwise = Right value
+
+paymentMethodsTable :: Text
+paymentMethodsTable = "fiducia.payment_methods"
+
+paymentMethodsColumns :: [Text]
+paymentMethodsColumns = ["id", "org_id", "billing_customer_id", "provider", "provider_payment_method_id", "kind", "brand", "last4", "exp_month", "exp_year", "is_default", "created_at", "updated_at"]
+
+paymentMethodsSelectSql :: Text
+paymentMethodsSelectSql = "select\n      id::text as id,\n      org_id::text as org_id,\n      billing_customer_id::text as billing_customer_id,\n      provider,\n      provider_payment_method_id,\n      kind,\n      brand,\n      last4,\n      exp_month,\n      exp_year,\n      is_default,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from fiducia.payment_methods"
+
+data PaymentMethodsProvider = PaymentMethodsProviderStripe | PaymentMethodsProviderPaypal
+  deriving (Eq, Show)
+
+paymentMethodsProviderToText :: PaymentMethodsProvider -> Text
+paymentMethodsProviderToText value = case value of
+  PaymentMethodsProviderStripe -> "stripe"
+  PaymentMethodsProviderPaypal -> "paypal"
+
+parsePaymentMethodsProvider :: Text -> Either Text PaymentMethodsProvider
+parsePaymentMethodsProvider value = case value of
+  "stripe" -> Right PaymentMethodsProviderStripe
+  "paypal" -> Right PaymentMethodsProviderPaypal
+  _ -> Left (T.append "unsupported payment_methods.provider: " value)
+
+data PaymentMethodsRow = PaymentMethodsRow
+  { paymentMethodsId :: Text
+  , paymentMethodsOrgId :: Text
+  , paymentMethodsBillingCustomerId :: Text
+  , paymentMethodsProvider :: Text
+  , paymentMethodsProviderPaymentMethodId :: Text
+  , paymentMethodsKind :: Text
+  , paymentMethodsBrand :: (Maybe Text)
+  , paymentMethodsLast4 :: (Maybe Text)
+  , paymentMethodsExpMonth :: (Maybe Int)
+  , paymentMethodsExpYear :: (Maybe Int)
+  , paymentMethodsIsDefault :: Bool
+  , paymentMethodsCreatedAt :: Text
+  , paymentMethodsUpdatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow PaymentMethodsRow where
+  fromRow = PaymentMethodsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validatePaymentMethodsProviderPaymentMethodId :: Text -> Either Text Text
+validatePaymentMethodsProviderPaymentMethodId value
+  | T.length value > 255 = Left "payment_methods.provider_payment_method_id must be at most 255 characters"
+  | otherwise = Right value
+
+validatePaymentMethodsKind :: Text -> Either Text Text
+validatePaymentMethodsKind value
+  | T.length value > 32 = Left "payment_methods.kind must be at most 32 characters"
+  | otherwise = Right value
+
+validatePaymentMethodsBrand :: Text -> Either Text Text
+validatePaymentMethodsBrand value
+  | T.length value > 32 = Left "payment_methods.brand must be at most 32 characters"
+  | otherwise = Right value
+
+validatePaymentMethodsLast4 :: Text -> Either Text Text
+validatePaymentMethodsLast4 value
+  | T.length value > 4 = Left "payment_methods.last4 must be at most 4 characters"
+  | otherwise = Right value
+
+validatePaymentMethodsExpMonth :: Int -> Either Text Int
+validatePaymentMethodsExpMonth value
+  | value < 1 = Left "payment_methods.exp_month is below the minimum"
+  | value > 12 = Left "payment_methods.exp_month is above the maximum"
+  | otherwise = Right value
+
+billingSubscriptionsTable :: Text
+billingSubscriptionsTable = "fiducia.billing_subscriptions"
+
+billingSubscriptionsColumns :: [Text]
+billingSubscriptionsColumns = ["id", "org_id", "billing_customer_id", "provider", "provider_subscription_id", "plan", "status", "current_period_start", "current_period_end", "cancel_at_period_end", "canceled_at", "created_at", "updated_at"]
+
+billingSubscriptionsSelectSql :: Text
+billingSubscriptionsSelectSql = "select\n      id::text as id,\n      org_id::text as org_id,\n      billing_customer_id::text as billing_customer_id,\n      provider,\n      provider_subscription_id,\n      plan,\n      status,\n      to_char(current_period_start at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as current_period_start,\n      to_char(current_period_end at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as current_period_end,\n      cancel_at_period_end,\n      to_char(canceled_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as canceled_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from fiducia.billing_subscriptions"
+
+data BillingSubscriptionsProvider = BillingSubscriptionsProviderStripe | BillingSubscriptionsProviderPaypal
+  deriving (Eq, Show)
+
+billingSubscriptionsProviderToText :: BillingSubscriptionsProvider -> Text
+billingSubscriptionsProviderToText value = case value of
+  BillingSubscriptionsProviderStripe -> "stripe"
+  BillingSubscriptionsProviderPaypal -> "paypal"
+
+parseBillingSubscriptionsProvider :: Text -> Either Text BillingSubscriptionsProvider
+parseBillingSubscriptionsProvider value = case value of
+  "stripe" -> Right BillingSubscriptionsProviderStripe
+  "paypal" -> Right BillingSubscriptionsProviderPaypal
+  _ -> Left (T.append "unsupported billing_subscriptions.provider: " value)
+
+data BillingSubscriptionsStatus = BillingSubscriptionsStatusTrialing | BillingSubscriptionsStatusActive | BillingSubscriptionsStatusPastDue | BillingSubscriptionsStatusCanceled | BillingSubscriptionsStatusUnpaid | BillingSubscriptionsStatusIncomplete | BillingSubscriptionsStatusIncompleteExpired | BillingSubscriptionsStatusPaused
+  deriving (Eq, Show)
+
+billingSubscriptionsStatusToText :: BillingSubscriptionsStatus -> Text
+billingSubscriptionsStatusToText value = case value of
+  BillingSubscriptionsStatusTrialing -> "trialing"
+  BillingSubscriptionsStatusActive -> "active"
+  BillingSubscriptionsStatusPastDue -> "past_due"
+  BillingSubscriptionsStatusCanceled -> "canceled"
+  BillingSubscriptionsStatusUnpaid -> "unpaid"
+  BillingSubscriptionsStatusIncomplete -> "incomplete"
+  BillingSubscriptionsStatusIncompleteExpired -> "incomplete_expired"
+  BillingSubscriptionsStatusPaused -> "paused"
+
+parseBillingSubscriptionsStatus :: Text -> Either Text BillingSubscriptionsStatus
+parseBillingSubscriptionsStatus value = case value of
+  "trialing" -> Right BillingSubscriptionsStatusTrialing
+  "active" -> Right BillingSubscriptionsStatusActive
+  "past_due" -> Right BillingSubscriptionsStatusPastDue
+  "canceled" -> Right BillingSubscriptionsStatusCanceled
+  "unpaid" -> Right BillingSubscriptionsStatusUnpaid
+  "incomplete" -> Right BillingSubscriptionsStatusIncomplete
+  "incomplete_expired" -> Right BillingSubscriptionsStatusIncompleteExpired
+  "paused" -> Right BillingSubscriptionsStatusPaused
+  _ -> Left (T.append "unsupported billing_subscriptions.status: " value)
+
+data BillingSubscriptionsRow = BillingSubscriptionsRow
+  { billingSubscriptionsId :: Text
+  , billingSubscriptionsOrgId :: Text
+  , billingSubscriptionsBillingCustomerId :: Text
+  , billingSubscriptionsProvider :: Text
+  , billingSubscriptionsProviderSubscriptionId :: Text
+  , billingSubscriptionsPlan :: Text
+  , billingSubscriptionsStatus :: Text
+  , billingSubscriptionsCurrentPeriodStart :: (Maybe Text)
+  , billingSubscriptionsCurrentPeriodEnd :: (Maybe Text)
+  , billingSubscriptionsCancelAtPeriodEnd :: Bool
+  , billingSubscriptionsCanceledAt :: (Maybe Text)
+  , billingSubscriptionsCreatedAt :: Text
+  , billingSubscriptionsUpdatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow BillingSubscriptionsRow where
+  fromRow = BillingSubscriptionsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateBillingSubscriptionsProviderSubscriptionId :: Text -> Either Text Text
+validateBillingSubscriptionsProviderSubscriptionId value
+  | T.length value > 255 = Left "billing_subscriptions.provider_subscription_id must be at most 255 characters"
+  | otherwise = Right value
+
+validateBillingSubscriptionsPlan :: Text -> Either Text Text
+validateBillingSubscriptionsPlan value
+  | T.length value > 120 = Left "billing_subscriptions.plan must be at most 120 characters"
+  | otherwise = Right value
+
+invoicesTable :: Text
+invoicesTable = "fiducia.invoices"
+
+invoicesColumns :: [Text]
+invoicesColumns = ["id", "org_id", "billing_customer_id", "subscription_id", "provider", "provider_invoice_id", "status", "amount_due_cents", "amount_paid_cents", "currency", "period_start", "period_end", "hosted_invoice_url", "created_at", "updated_at"]
+
+invoicesSelectSql :: Text
+invoicesSelectSql = "select\n      id::text as id,\n      org_id::text as org_id,\n      billing_customer_id::text as billing_customer_id,\n      subscription_id::text as subscription_id,\n      provider,\n      provider_invoice_id,\n      status,\n      amount_due_cents,\n      amount_paid_cents,\n      currency,\n      to_char(period_start at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as period_start,\n      to_char(period_end at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as period_end,\n      hosted_invoice_url,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from fiducia.invoices"
+
+data InvoicesProvider = InvoicesProviderStripe | InvoicesProviderPaypal
+  deriving (Eq, Show)
+
+invoicesProviderToText :: InvoicesProvider -> Text
+invoicesProviderToText value = case value of
+  InvoicesProviderStripe -> "stripe"
+  InvoicesProviderPaypal -> "paypal"
+
+parseInvoicesProvider :: Text -> Either Text InvoicesProvider
+parseInvoicesProvider value = case value of
+  "stripe" -> Right InvoicesProviderStripe
+  "paypal" -> Right InvoicesProviderPaypal
+  _ -> Left (T.append "unsupported invoices.provider: " value)
+
+data InvoicesStatus = InvoicesStatusDraft | InvoicesStatusOpen | InvoicesStatusPaid | InvoicesStatusVoid | InvoicesStatusUncollectible
+  deriving (Eq, Show)
+
+invoicesStatusToText :: InvoicesStatus -> Text
+invoicesStatusToText value = case value of
+  InvoicesStatusDraft -> "draft"
+  InvoicesStatusOpen -> "open"
+  InvoicesStatusPaid -> "paid"
+  InvoicesStatusVoid -> "void"
+  InvoicesStatusUncollectible -> "uncollectible"
+
+parseInvoicesStatus :: Text -> Either Text InvoicesStatus
+parseInvoicesStatus value = case value of
+  "draft" -> Right InvoicesStatusDraft
+  "open" -> Right InvoicesStatusOpen
+  "paid" -> Right InvoicesStatusPaid
+  "void" -> Right InvoicesStatusVoid
+  "uncollectible" -> Right InvoicesStatusUncollectible
+  _ -> Left (T.append "unsupported invoices.status: " value)
+
+data InvoicesRow = InvoicesRow
+  { invoicesId :: Text
+  , invoicesOrgId :: Text
+  , invoicesBillingCustomerId :: (Maybe Text)
+  , invoicesSubscriptionId :: (Maybe Text)
+  , invoicesProvider :: Text
+  , invoicesProviderInvoiceId :: Text
+  , invoicesStatus :: Text
+  , invoicesAmountDueCents :: Int
+  , invoicesAmountPaidCents :: Int
+  , invoicesCurrency :: Text
+  , invoicesPeriodStart :: (Maybe Text)
+  , invoicesPeriodEnd :: (Maybe Text)
+  , invoicesHostedInvoiceUrl :: (Maybe Text)
+  , invoicesCreatedAt :: Text
+  , invoicesUpdatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow InvoicesRow where
+  fromRow = InvoicesRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateInvoicesProviderInvoiceId :: Text -> Either Text Text
+validateInvoicesProviderInvoiceId value
+  | T.length value > 255 = Left "invoices.provider_invoice_id must be at most 255 characters"
+  | otherwise = Right value
+
+validateInvoicesAmountDueCents :: Int -> Either Text Int
+validateInvoicesAmountDueCents value
+  | value < 0 = Left "invoices.amount_due_cents is below the minimum"
+  | otherwise = Right value
+
+validateInvoicesAmountPaidCents :: Int -> Either Text Int
+validateInvoicesAmountPaidCents value
+  | value < 0 = Left "invoices.amount_paid_cents is below the minimum"
+  | otherwise = Right value
+
+validateInvoicesCurrency :: Text -> Either Text Text
+validateInvoicesCurrency value
+  | T.length value > 3 = Left "invoices.currency must be at most 3 characters"
+  | otherwise = Right value
+
+paymentsTable :: Text
+paymentsTable = "fiducia.payments"
+
+paymentsColumns :: [Text]
+paymentsColumns = ["id", "org_id", "invoice_id", "payment_method_id", "provider", "provider_payment_id", "status", "amount_cents", "currency", "failure_code", "created_at", "updated_at"]
+
+paymentsSelectSql :: Text
+paymentsSelectSql = "select\n      id::text as id,\n      org_id::text as org_id,\n      invoice_id::text as invoice_id,\n      payment_method_id::text as payment_method_id,\n      provider,\n      provider_payment_id,\n      status,\n      amount_cents,\n      currency,\n      failure_code,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from fiducia.payments"
+
+data PaymentsProvider = PaymentsProviderStripe | PaymentsProviderPaypal
+  deriving (Eq, Show)
+
+paymentsProviderToText :: PaymentsProvider -> Text
+paymentsProviderToText value = case value of
+  PaymentsProviderStripe -> "stripe"
+  PaymentsProviderPaypal -> "paypal"
+
+parsePaymentsProvider :: Text -> Either Text PaymentsProvider
+parsePaymentsProvider value = case value of
+  "stripe" -> Right PaymentsProviderStripe
+  "paypal" -> Right PaymentsProviderPaypal
+  _ -> Left (T.append "unsupported payments.provider: " value)
+
+data PaymentsStatus = PaymentsStatusPending | PaymentsStatusProcessing | PaymentsStatusSucceeded | PaymentsStatusFailed | PaymentsStatusCanceled | PaymentsStatusRefunded | PaymentsStatusPartiallyRefunded
+  deriving (Eq, Show)
+
+paymentsStatusToText :: PaymentsStatus -> Text
+paymentsStatusToText value = case value of
+  PaymentsStatusPending -> "pending"
+  PaymentsStatusProcessing -> "processing"
+  PaymentsStatusSucceeded -> "succeeded"
+  PaymentsStatusFailed -> "failed"
+  PaymentsStatusCanceled -> "canceled"
+  PaymentsStatusRefunded -> "refunded"
+  PaymentsStatusPartiallyRefunded -> "partially_refunded"
+
+parsePaymentsStatus :: Text -> Either Text PaymentsStatus
+parsePaymentsStatus value = case value of
+  "pending" -> Right PaymentsStatusPending
+  "processing" -> Right PaymentsStatusProcessing
+  "succeeded" -> Right PaymentsStatusSucceeded
+  "failed" -> Right PaymentsStatusFailed
+  "canceled" -> Right PaymentsStatusCanceled
+  "refunded" -> Right PaymentsStatusRefunded
+  "partially_refunded" -> Right PaymentsStatusPartiallyRefunded
+  _ -> Left (T.append "unsupported payments.status: " value)
+
+data PaymentsRow = PaymentsRow
+  { paymentsId :: Text
+  , paymentsOrgId :: Text
+  , paymentsInvoiceId :: (Maybe Text)
+  , paymentsPaymentMethodId :: (Maybe Text)
+  , paymentsProvider :: Text
+  , paymentsProviderPaymentId :: Text
+  , paymentsStatus :: Text
+  , paymentsAmountCents :: Int
+  , paymentsCurrency :: Text
+  , paymentsFailureCode :: (Maybe Text)
+  , paymentsCreatedAt :: Text
+  , paymentsUpdatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow PaymentsRow where
+  fromRow = PaymentsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validatePaymentsProviderPaymentId :: Text -> Either Text Text
+validatePaymentsProviderPaymentId value
+  | T.length value > 255 = Left "payments.provider_payment_id must be at most 255 characters"
+  | otherwise = Right value
+
+validatePaymentsAmountCents :: Int -> Either Text Int
+validatePaymentsAmountCents value
+  | value < 0 = Left "payments.amount_cents is below the minimum"
+  | otherwise = Right value
+
+validatePaymentsCurrency :: Text -> Either Text Text
+validatePaymentsCurrency value
+  | T.length value > 3 = Left "payments.currency must be at most 3 characters"
+  | otherwise = Right value
+
+validatePaymentsFailureCode :: Text -> Either Text Text
+validatePaymentsFailureCode value
+  | T.length value > 120 = Left "payments.failure_code must be at most 120 characters"
+  | otherwise = Right value
+
+billingWebhookEventsTable :: Text
+billingWebhookEventsTable = "fiducia.billing_webhook_events"
+
+billingWebhookEventsColumns :: [Text]
+billingWebhookEventsColumns = ["id", "provider", "provider_event_id", "event_type", "signature_verified", "payload_sha256", "received_at", "processed_at", "process_error"]
+
+billingWebhookEventsSelectSql :: Text
+billingWebhookEventsSelectSql = "select\n      id::text as id,\n      provider,\n      provider_event_id,\n      event_type,\n      signature_verified,\n      payload_sha256,\n      to_char(received_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as received_at,\n      to_char(processed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as processed_at,\n      process_error\n    from fiducia.billing_webhook_events"
+
+data BillingWebhookEventsProvider = BillingWebhookEventsProviderStripe | BillingWebhookEventsProviderPaypal
+  deriving (Eq, Show)
+
+billingWebhookEventsProviderToText :: BillingWebhookEventsProvider -> Text
+billingWebhookEventsProviderToText value = case value of
+  BillingWebhookEventsProviderStripe -> "stripe"
+  BillingWebhookEventsProviderPaypal -> "paypal"
+
+parseBillingWebhookEventsProvider :: Text -> Either Text BillingWebhookEventsProvider
+parseBillingWebhookEventsProvider value = case value of
+  "stripe" -> Right BillingWebhookEventsProviderStripe
+  "paypal" -> Right BillingWebhookEventsProviderPaypal
+  _ -> Left (T.append "unsupported billing_webhook_events.provider: " value)
+
+data BillingWebhookEventsRow = BillingWebhookEventsRow
+  { billingWebhookEventsId :: Text
+  , billingWebhookEventsProvider :: Text
+  , billingWebhookEventsProviderEventId :: Text
+  , billingWebhookEventsEventType :: Text
+  , billingWebhookEventsSignatureVerified :: Bool
+  , billingWebhookEventsPayloadSha256 :: Text
+  , billingWebhookEventsReceivedAt :: Text
+  , billingWebhookEventsProcessedAt :: (Maybe Text)
+  , billingWebhookEventsProcessError :: (Maybe Text)
+  } deriving (Eq, Show)
+
+instance FromRow BillingWebhookEventsRow where
+  fromRow = BillingWebhookEventsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateBillingWebhookEventsProviderEventId :: Text -> Either Text Text
+validateBillingWebhookEventsProviderEventId value
+  | T.length value > 255 = Left "billing_webhook_events.provider_event_id must be at most 255 characters"
+  | otherwise = Right value
+
+validateBillingWebhookEventsEventType :: Text -> Either Text Text
+validateBillingWebhookEventsEventType value
+  | T.length value > 120 = Left "billing_webhook_events.event_type must be at most 120 characters"
+  | otherwise = Right value
+
+validateBillingWebhookEventsPayloadSha256 :: Text -> Either Text Text
+validateBillingWebhookEventsPayloadSha256 value
+  | T.length value > 64 = Left "billing_webhook_events.payload_sha256 must be at most 64 characters"
+  | otherwise = Right value
+
 transcriptionsTable :: Text
 transcriptionsTable = "t2v.transcriptions"
 

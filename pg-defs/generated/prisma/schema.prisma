@@ -2963,6 +2963,120 @@ model SyncIdempotencyKeys {
   @@map("sync_idempotency_keys")
 }
 
+model BillingCustomers {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgId String @map("org_id") @db.Uuid
+  provider String @db.VarChar(16)
+  providerCustomerId String @map("provider_customer_id") @db.VarChar(255)
+  email String? @db.VarChar(320)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@unique([orgId, provider], map: "fiducia_billing_customers_org_provider_uq")
+  @@unique([provider, providerCustomerId], map: "fiducia_billing_customers_provider_id_uq")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("billing_customers")
+}
+
+model PaymentMethods {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgId String @map("org_id") @db.Uuid
+  billingCustomerId String @map("billing_customer_id") @db.Uuid
+  provider String @db.VarChar(16)
+  providerPaymentMethodId String @map("provider_payment_method_id") @db.VarChar(255)
+  kind String @db.VarChar(32)
+  brand String? @db.VarChar(32)
+  last4 String? @db.VarChar(4)
+  expMonth Int? @map("exp_month")
+  expYear Int? @map("exp_year")
+  isDefault Boolean @map("is_default") @default(false)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@unique([provider, providerPaymentMethodId], map: "fiducia_payment_methods_provider_id_uq")
+  @@index([billingCustomerId], map: "fiducia_payment_methods_customer_idx")
+  // fiducia_payment_methods_one_default_uq is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("payment_methods")
+}
+
+model BillingSubscriptions {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgId String @map("org_id") @db.Uuid
+  billingCustomerId String @map("billing_customer_id") @db.Uuid
+  provider String @db.VarChar(16)
+  providerSubscriptionId String @map("provider_subscription_id") @db.VarChar(255)
+  plan String @db.VarChar(120)
+  status String @db.VarChar(32)
+  currentPeriodStart DateTime? @map("current_period_start") @db.Timestamptz(6)
+  currentPeriodEnd DateTime? @map("current_period_end") @db.Timestamptz(6)
+  cancelAtPeriodEnd Boolean @map("cancel_at_period_end") @default(false)
+  canceledAt DateTime? @map("canceled_at") @db.Timestamptz(6)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@unique([provider, providerSubscriptionId], map: "fiducia_billing_subscriptions_provider_id_uq")
+  @@index([orgId], map: "fiducia_billing_subscriptions_org_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("billing_subscriptions")
+}
+
+model Invoices {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgId String @map("org_id") @db.Uuid
+  billingCustomerId String? @map("billing_customer_id") @db.Uuid
+  subscriptionId String? @map("subscription_id") @db.Uuid
+  provider String @db.VarChar(16)
+  providerInvoiceId String @map("provider_invoice_id") @db.VarChar(255)
+  status String @db.VarChar(32)
+  amountDueCents BigInt @map("amount_due_cents") @db.BigInt
+  amountPaidCents BigInt @map("amount_paid_cents") @default(0) @db.BigInt
+  currency String @db.VarChar(3)
+  periodStart DateTime? @map("period_start") @db.Timestamptz(6)
+  periodEnd DateTime? @map("period_end") @db.Timestamptz(6)
+  hostedInvoiceUrl String? @map("hosted_invoice_url") @db.Text
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@unique([provider, providerInvoiceId], map: "fiducia_invoices_provider_id_uq")
+  @@index([orgId], map: "invoices_org_idx")
+  @@index([subscriptionId], map: "invoices_subscription_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("invoices")
+}
+
+model Payments {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgId String @map("org_id") @db.Uuid
+  invoiceId String? @map("invoice_id") @db.Uuid
+  paymentMethodId String? @map("payment_method_id") @db.Uuid
+  provider String @db.VarChar(16)
+  providerPaymentId String @map("provider_payment_id") @db.VarChar(255)
+  status String @db.VarChar(32)
+  amountCents BigInt @map("amount_cents") @db.BigInt
+  currency String @db.VarChar(3)
+  failureCode String? @map("failure_code") @db.VarChar(120)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@unique([provider, providerPaymentId], map: "fiducia_payments_provider_id_uq")
+  @@index([orgId], map: "payments_org_idx")
+  @@index([invoiceId], map: "payments_invoice_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("payments")
+}
+
+model BillingWebhookEvents {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  provider String @db.VarChar(16)
+  providerEventId String @map("provider_event_id") @db.VarChar(255)
+  eventType String @map("event_type") @db.VarChar(120)
+  signatureVerified Boolean @map("signature_verified")
+  payloadSha256 String @map("payload_sha256") @db.VarChar(64)
+  receivedAt DateTime @map("received_at") @default(now()) @db.Timestamptz(6)
+  processedAt DateTime? @map("processed_at") @db.Timestamptz(6)
+  processError String? @map("process_error") @db.Text
+  @@unique([provider, providerEventId], map: "fiducia_billing_webhook_events_provider_event_uq")
+  // fiducia_billing_webhook_events_unprocessed_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("billing_webhook_events")
+}
+
 model Transcriptions {
   id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   source String @db.Text

@@ -13271,6 +13271,474 @@ class SyncIdempotencyKeysRow {
   }
 }
 
+const billingCustomersTable = "fiducia.billing_customers";
+const billingCustomersSelectSql = "select\n      id::text as id,\n      org_id::text as org_id,\n      provider,\n      provider_customer_id,\n      email,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from fiducia.billing_customers";
+
+const billingCustomersProviderValues = <String>["stripe", "paypal"];
+
+class BillingCustomersRow {
+  const BillingCustomersRow({
+    required this.id,
+    required this.orgId,
+    required this.provider,
+    required this.providerCustomerId,
+    this.email,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String orgId;
+  final String provider;
+  final String providerCustomerId;
+  final String? email;
+  final String createdAt;
+  final String updatedAt;
+
+  factory BillingCustomersRow.fromJson(Map<String, Object?> json) {
+    return BillingCustomersRow(
+      id: _readRequiredString(json, "id"),
+      orgId: _readRequiredString(json, "orgId"),
+      provider: _readRequiredString(json, "provider"),
+      providerCustomerId: _readRequiredString(json, "providerCustomerId"),
+      email: _readOptionalString(json, "email"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "orgId": orgId,
+    "provider": provider,
+    "providerCustomerId": providerCustomerId,
+    "email": email,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!billingCustomersProviderValues.contains(provider)) {
+      errors.add("unsupported billing_customers.provider");
+    }
+    return errors;
+  }
+}
+
+const paymentMethodsTable = "fiducia.payment_methods";
+const paymentMethodsSelectSql = "select\n      id::text as id,\n      org_id::text as org_id,\n      billing_customer_id::text as billing_customer_id,\n      provider,\n      provider_payment_method_id,\n      kind,\n      brand,\n      last4,\n      exp_month,\n      exp_year,\n      is_default,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from fiducia.payment_methods";
+
+const paymentMethodsProviderValues = <String>["stripe", "paypal"];
+
+class PaymentMethodsRow {
+  const PaymentMethodsRow({
+    required this.id,
+    required this.orgId,
+    required this.billingCustomerId,
+    required this.provider,
+    required this.providerPaymentMethodId,
+    required this.kind,
+    this.brand,
+    this.last4,
+    this.expMonth,
+    this.expYear,
+    required this.isDefault,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String orgId;
+  final String billingCustomerId;
+  final String provider;
+  final String providerPaymentMethodId;
+  final String kind;
+  final String? brand;
+  final String? last4;
+  final int? expMonth;
+  final int? expYear;
+  final bool isDefault;
+  final String createdAt;
+  final String updatedAt;
+
+  factory PaymentMethodsRow.fromJson(Map<String, Object?> json) {
+    return PaymentMethodsRow(
+      id: _readRequiredString(json, "id"),
+      orgId: _readRequiredString(json, "orgId"),
+      billingCustomerId: _readRequiredString(json, "billingCustomerId"),
+      provider: _readRequiredString(json, "provider"),
+      providerPaymentMethodId: _readRequiredString(json, "providerPaymentMethodId"),
+      kind: _readRequiredString(json, "kind"),
+      brand: _readOptionalString(json, "brand"),
+      last4: _readOptionalString(json, "last4"),
+      expMonth: _readOptionalInt(json, "expMonth"),
+      expYear: _readOptionalInt(json, "expYear"),
+      isDefault: _readRequiredBool(json, "isDefault"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "orgId": orgId,
+    "billingCustomerId": billingCustomerId,
+    "provider": provider,
+    "providerPaymentMethodId": providerPaymentMethodId,
+    "kind": kind,
+    "brand": brand,
+    "last4": last4,
+    "expMonth": expMonth,
+    "expYear": expYear,
+    "isDefault": isDefault,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!paymentMethodsProviderValues.contains(provider)) {
+      errors.add("unsupported payment_methods.provider");
+    }
+    if (last4 != null && !RegExp(r'^[0-9]{4}$').hasMatch(last4!)) {
+      errors.add("payment_methods.last4 does not match the required pattern");
+    }
+    if (expMonth != null && expMonth! < 1) {
+      errors.add("payment_methods.exp_month is below the minimum");
+    }
+    if (expMonth != null && expMonth! > 12) {
+      errors.add("payment_methods.exp_month is above the maximum");
+    }
+    return errors;
+  }
+}
+
+const billingSubscriptionsTable = "fiducia.billing_subscriptions";
+const billingSubscriptionsSelectSql = "select\n      id::text as id,\n      org_id::text as org_id,\n      billing_customer_id::text as billing_customer_id,\n      provider,\n      provider_subscription_id,\n      plan,\n      status,\n      to_char(current_period_start at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as current_period_start,\n      to_char(current_period_end at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as current_period_end,\n      cancel_at_period_end,\n      to_char(canceled_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as canceled_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from fiducia.billing_subscriptions";
+
+const billingSubscriptionsProviderValues = <String>["stripe", "paypal"];
+const billingSubscriptionsStatusValues = <String>["trialing", "active", "past_due", "canceled", "unpaid", "incomplete", "incomplete_expired", "paused"];
+
+class BillingSubscriptionsRow {
+  const BillingSubscriptionsRow({
+    required this.id,
+    required this.orgId,
+    required this.billingCustomerId,
+    required this.provider,
+    required this.providerSubscriptionId,
+    required this.plan,
+    required this.status,
+    this.currentPeriodStart,
+    this.currentPeriodEnd,
+    required this.cancelAtPeriodEnd,
+    this.canceledAt,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String orgId;
+  final String billingCustomerId;
+  final String provider;
+  final String providerSubscriptionId;
+  final String plan;
+  final String status;
+  final String? currentPeriodStart;
+  final String? currentPeriodEnd;
+  final bool cancelAtPeriodEnd;
+  final String? canceledAt;
+  final String createdAt;
+  final String updatedAt;
+
+  factory BillingSubscriptionsRow.fromJson(Map<String, Object?> json) {
+    return BillingSubscriptionsRow(
+      id: _readRequiredString(json, "id"),
+      orgId: _readRequiredString(json, "orgId"),
+      billingCustomerId: _readRequiredString(json, "billingCustomerId"),
+      provider: _readRequiredString(json, "provider"),
+      providerSubscriptionId: _readRequiredString(json, "providerSubscriptionId"),
+      plan: _readRequiredString(json, "plan"),
+      status: _readRequiredString(json, "status"),
+      currentPeriodStart: _readOptionalString(json, "currentPeriodStart"),
+      currentPeriodEnd: _readOptionalString(json, "currentPeriodEnd"),
+      cancelAtPeriodEnd: _readRequiredBool(json, "cancelAtPeriodEnd"),
+      canceledAt: _readOptionalString(json, "canceledAt"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "orgId": orgId,
+    "billingCustomerId": billingCustomerId,
+    "provider": provider,
+    "providerSubscriptionId": providerSubscriptionId,
+    "plan": plan,
+    "status": status,
+    "currentPeriodStart": currentPeriodStart,
+    "currentPeriodEnd": currentPeriodEnd,
+    "cancelAtPeriodEnd": cancelAtPeriodEnd,
+    "canceledAt": canceledAt,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!billingSubscriptionsProviderValues.contains(provider)) {
+      errors.add("unsupported billing_subscriptions.provider");
+    }
+    if (!billingSubscriptionsStatusValues.contains(status)) {
+      errors.add("unsupported billing_subscriptions.status");
+    }
+    return errors;
+  }
+}
+
+const invoicesTable = "fiducia.invoices";
+const invoicesSelectSql = "select\n      id::text as id,\n      org_id::text as org_id,\n      billing_customer_id::text as billing_customer_id,\n      subscription_id::text as subscription_id,\n      provider,\n      provider_invoice_id,\n      status,\n      amount_due_cents,\n      amount_paid_cents,\n      currency,\n      to_char(period_start at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as period_start,\n      to_char(period_end at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as period_end,\n      hosted_invoice_url,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from fiducia.invoices";
+
+const invoicesProviderValues = <String>["stripe", "paypal"];
+const invoicesStatusValues = <String>["draft", "open", "paid", "void", "uncollectible"];
+
+class InvoicesRow {
+  const InvoicesRow({
+    required this.id,
+    required this.orgId,
+    this.billingCustomerId,
+    this.subscriptionId,
+    required this.provider,
+    required this.providerInvoiceId,
+    required this.status,
+    required this.amountDueCents,
+    required this.amountPaidCents,
+    required this.currency,
+    this.periodStart,
+    this.periodEnd,
+    this.hostedInvoiceUrl,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String orgId;
+  final String? billingCustomerId;
+  final String? subscriptionId;
+  final String provider;
+  final String providerInvoiceId;
+  final String status;
+  final int amountDueCents;
+  final int amountPaidCents;
+  final String currency;
+  final String? periodStart;
+  final String? periodEnd;
+  final String? hostedInvoiceUrl;
+  final String createdAt;
+  final String updatedAt;
+
+  factory InvoicesRow.fromJson(Map<String, Object?> json) {
+    return InvoicesRow(
+      id: _readRequiredString(json, "id"),
+      orgId: _readRequiredString(json, "orgId"),
+      billingCustomerId: _readOptionalString(json, "billingCustomerId"),
+      subscriptionId: _readOptionalString(json, "subscriptionId"),
+      provider: _readRequiredString(json, "provider"),
+      providerInvoiceId: _readRequiredString(json, "providerInvoiceId"),
+      status: _readRequiredString(json, "status"),
+      amountDueCents: _readRequiredInt(json, "amountDueCents"),
+      amountPaidCents: _readRequiredInt(json, "amountPaidCents"),
+      currency: _readRequiredString(json, "currency"),
+      periodStart: _readOptionalString(json, "periodStart"),
+      periodEnd: _readOptionalString(json, "periodEnd"),
+      hostedInvoiceUrl: _readOptionalString(json, "hostedInvoiceUrl"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "orgId": orgId,
+    "billingCustomerId": billingCustomerId,
+    "subscriptionId": subscriptionId,
+    "provider": provider,
+    "providerInvoiceId": providerInvoiceId,
+    "status": status,
+    "amountDueCents": amountDueCents,
+    "amountPaidCents": amountPaidCents,
+    "currency": currency,
+    "periodStart": periodStart,
+    "periodEnd": periodEnd,
+    "hostedInvoiceUrl": hostedInvoiceUrl,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!invoicesProviderValues.contains(provider)) {
+      errors.add("unsupported invoices.provider");
+    }
+    if (!invoicesStatusValues.contains(status)) {
+      errors.add("unsupported invoices.status");
+    }
+    if (!RegExp(r'^[a-z]{3}$').hasMatch(currency)) {
+      errors.add("invoices.currency does not match the required pattern");
+    }
+    return errors;
+  }
+}
+
+const paymentsTable = "fiducia.payments";
+const paymentsSelectSql = "select\n      id::text as id,\n      org_id::text as org_id,\n      invoice_id::text as invoice_id,\n      payment_method_id::text as payment_method_id,\n      provider,\n      provider_payment_id,\n      status,\n      amount_cents,\n      currency,\n      failure_code,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from fiducia.payments";
+
+const paymentsProviderValues = <String>["stripe", "paypal"];
+const paymentsStatusValues = <String>["pending", "processing", "succeeded", "failed", "canceled", "refunded", "partially_refunded"];
+
+class PaymentsRow {
+  const PaymentsRow({
+    required this.id,
+    required this.orgId,
+    this.invoiceId,
+    this.paymentMethodId,
+    required this.provider,
+    required this.providerPaymentId,
+    required this.status,
+    required this.amountCents,
+    required this.currency,
+    this.failureCode,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String orgId;
+  final String? invoiceId;
+  final String? paymentMethodId;
+  final String provider;
+  final String providerPaymentId;
+  final String status;
+  final int amountCents;
+  final String currency;
+  final String? failureCode;
+  final String createdAt;
+  final String updatedAt;
+
+  factory PaymentsRow.fromJson(Map<String, Object?> json) {
+    return PaymentsRow(
+      id: _readRequiredString(json, "id"),
+      orgId: _readRequiredString(json, "orgId"),
+      invoiceId: _readOptionalString(json, "invoiceId"),
+      paymentMethodId: _readOptionalString(json, "paymentMethodId"),
+      provider: _readRequiredString(json, "provider"),
+      providerPaymentId: _readRequiredString(json, "providerPaymentId"),
+      status: _readRequiredString(json, "status"),
+      amountCents: _readRequiredInt(json, "amountCents"),
+      currency: _readRequiredString(json, "currency"),
+      failureCode: _readOptionalString(json, "failureCode"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "orgId": orgId,
+    "invoiceId": invoiceId,
+    "paymentMethodId": paymentMethodId,
+    "provider": provider,
+    "providerPaymentId": providerPaymentId,
+    "status": status,
+    "amountCents": amountCents,
+    "currency": currency,
+    "failureCode": failureCode,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!paymentsProviderValues.contains(provider)) {
+      errors.add("unsupported payments.provider");
+    }
+    if (!paymentsStatusValues.contains(status)) {
+      errors.add("unsupported payments.status");
+    }
+    if (!RegExp(r'^[a-z]{3}$').hasMatch(currency)) {
+      errors.add("payments.currency does not match the required pattern");
+    }
+    return errors;
+  }
+}
+
+const billingWebhookEventsTable = "fiducia.billing_webhook_events";
+const billingWebhookEventsSelectSql = "select\n      id::text as id,\n      provider,\n      provider_event_id,\n      event_type,\n      signature_verified,\n      payload_sha256,\n      to_char(received_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as received_at,\n      to_char(processed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as processed_at,\n      process_error\n    from fiducia.billing_webhook_events";
+
+const billingWebhookEventsProviderValues = <String>["stripe", "paypal"];
+
+class BillingWebhookEventsRow {
+  const BillingWebhookEventsRow({
+    required this.id,
+    required this.provider,
+    required this.providerEventId,
+    required this.eventType,
+    required this.signatureVerified,
+    required this.payloadSha256,
+    required this.receivedAt,
+    this.processedAt,
+    this.processError,
+  });
+
+  final String id;
+  final String provider;
+  final String providerEventId;
+  final String eventType;
+  final bool signatureVerified;
+  final String payloadSha256;
+  final String receivedAt;
+  final String? processedAt;
+  final String? processError;
+
+  factory BillingWebhookEventsRow.fromJson(Map<String, Object?> json) {
+    return BillingWebhookEventsRow(
+      id: _readRequiredString(json, "id"),
+      provider: _readRequiredString(json, "provider"),
+      providerEventId: _readRequiredString(json, "providerEventId"),
+      eventType: _readRequiredString(json, "eventType"),
+      signatureVerified: _readRequiredBool(json, "signatureVerified"),
+      payloadSha256: _readRequiredString(json, "payloadSha256"),
+      receivedAt: _readRequiredString(json, "receivedAt"),
+      processedAt: _readOptionalString(json, "processedAt"),
+      processError: _readOptionalString(json, "processError"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "provider": provider,
+    "providerEventId": providerEventId,
+    "eventType": eventType,
+    "signatureVerified": signatureVerified,
+    "payloadSha256": payloadSha256,
+    "receivedAt": receivedAt,
+    "processedAt": processedAt,
+    "processError": processError,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!billingWebhookEventsProviderValues.contains(provider)) {
+      errors.add("unsupported billing_webhook_events.provider");
+    }
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(payloadSha256)) {
+      errors.add("billing_webhook_events.payload_sha256 does not match the required pattern");
+    }
+    return errors;
+  }
+}
+
 const transcriptionsTable = "t2v.transcriptions";
 const transcriptionsSelectSql = "select\n      id::text as id,\n      source,\n      provider,\n      model,\n      text,\n      language,\n      sample_rate,\n      duration_ms,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from t2v.transcriptions";
 

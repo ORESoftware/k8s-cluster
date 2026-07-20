@@ -6652,6 +6652,252 @@ export class SyncIdempotencyKeysEntity {
 
 }
 
+@Index("fiducia_billing_customers_org_provider_uq", ["orgId", "provider"], { unique: true })
+@Index("fiducia_billing_customers_provider_id_uq", ["provider", "providerCustomerId"], { unique: true })
+@Entity({ schema: "fiducia", name: "billing_customers" })
+export class BillingCustomersEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "org_id", type: "uuid" })
+  orgId!: string;
+
+  @Column({ name: "provider", type: "varchar", length: 16 })
+  provider!: string;
+
+  @Column({ name: "provider_customer_id", type: "varchar", length: 255 })
+  providerCustomerId!: string;
+
+  @Column({ name: "email", type: "varchar", length: 320, nullable: true })
+  email!: string | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+@Index("fiducia_payment_methods_provider_id_uq", ["provider", "providerPaymentMethodId"], { unique: true })
+@Index("fiducia_payment_methods_customer_idx", ["billingCustomerId"])
+@Index("fiducia_payment_methods_one_default_uq", ["billingCustomerId"], { unique: true, where: "is_default" })
+@Entity({ schema: "fiducia", name: "payment_methods" })
+export class PaymentMethodsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "org_id", type: "uuid" })
+  orgId!: string;
+
+  @Column({ name: "billing_customer_id", type: "uuid" })
+  billingCustomerId!: string;
+
+  @Column({ name: "provider", type: "varchar", length: 16 })
+  provider!: string;
+
+  @Column({ name: "provider_payment_method_id", type: "varchar", length: 255 })
+  providerPaymentMethodId!: string;
+
+  @Column({ name: "kind", type: "varchar", length: 32 })
+  kind!: string;
+
+  @Column({ name: "brand", type: "varchar", length: 32, nullable: true })
+  brand!: string | null;
+
+  @Column({ name: "last4", type: "varchar", length: 4, nullable: true })
+  last4!: string | null;
+
+  @Column({ name: "exp_month", type: "smallint", nullable: true })
+  expMonth!: number | null;
+
+  @Column({ name: "exp_year", type: "smallint", nullable: true })
+  expYear!: number | null;
+
+  @Column({ name: "is_default", type: "boolean", default: () => "false" })
+  isDefault!: boolean;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+@Index("fiducia_billing_subscriptions_provider_id_uq", ["provider", "providerSubscriptionId"], { unique: true })
+@Index("fiducia_billing_subscriptions_org_idx", ["orgId"])
+@Entity({ schema: "fiducia", name: "billing_subscriptions" })
+export class BillingSubscriptionsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "org_id", type: "uuid" })
+  orgId!: string;
+
+  @Column({ name: "billing_customer_id", type: "uuid" })
+  billingCustomerId!: string;
+
+  @Column({ name: "provider", type: "varchar", length: 16 })
+  provider!: string;
+
+  @Column({ name: "provider_subscription_id", type: "varchar", length: 255 })
+  providerSubscriptionId!: string;
+
+  @Column({ name: "plan", type: "varchar", length: 120 })
+  plan!: string;
+
+  @Column({ name: "status", type: "varchar", length: 32 })
+  status!: string;
+
+  @Column({ name: "current_period_start", type: "timestamptz", nullable: true })
+  currentPeriodStart!: Date | null;
+
+  @Column({ name: "current_period_end", type: "timestamptz", nullable: true })
+  currentPeriodEnd!: Date | null;
+
+  @Column({ name: "cancel_at_period_end", type: "boolean", default: () => "false" })
+  cancelAtPeriodEnd!: boolean;
+
+  @Column({ name: "canceled_at", type: "timestamptz", nullable: true })
+  canceledAt!: Date | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+@Index("fiducia_invoices_provider_id_uq", ["provider", "providerInvoiceId"], { unique: true })
+@Index("invoices_org_idx", ["orgId"])
+@Index("invoices_subscription_idx", ["subscriptionId"])
+@Entity({ schema: "fiducia", name: "invoices" })
+export class InvoicesEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "org_id", type: "uuid" })
+  orgId!: string;
+
+  @Column({ name: "billing_customer_id", type: "uuid", nullable: true })
+  billingCustomerId!: string | null;
+
+  @Column({ name: "subscription_id", type: "uuid", nullable: true })
+  subscriptionId!: string | null;
+
+  @Column({ name: "provider", type: "varchar", length: 16 })
+  provider!: string;
+
+  @Column({ name: "provider_invoice_id", type: "varchar", length: 255 })
+  providerInvoiceId!: string;
+
+  @Column({ name: "status", type: "varchar", length: 32 })
+  status!: string;
+
+  @Column({ name: "amount_due_cents", type: "bigint" })
+  amountDueCents!: number;
+
+  @Column({ name: "amount_paid_cents", type: "bigint", default: () => "0" })
+  amountPaidCents!: number;
+
+  @Column({ name: "currency", type: "varchar", length: 3 })
+  currency!: string;
+
+  @Column({ name: "period_start", type: "timestamptz", nullable: true })
+  periodStart!: Date | null;
+
+  @Column({ name: "period_end", type: "timestamptz", nullable: true })
+  periodEnd!: Date | null;
+
+  @Column({ name: "hosted_invoice_url", type: "text", nullable: true })
+  hostedInvoiceUrl!: string | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+@Index("fiducia_payments_provider_id_uq", ["provider", "providerPaymentId"], { unique: true })
+@Index("payments_org_idx", ["orgId"])
+@Index("payments_invoice_idx", ["invoiceId"])
+@Entity({ schema: "fiducia", name: "payments" })
+export class PaymentsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "org_id", type: "uuid" })
+  orgId!: string;
+
+  @Column({ name: "invoice_id", type: "uuid", nullable: true })
+  invoiceId!: string | null;
+
+  @Column({ name: "payment_method_id", type: "uuid", nullable: true })
+  paymentMethodId!: string | null;
+
+  @Column({ name: "provider", type: "varchar", length: 16 })
+  provider!: string;
+
+  @Column({ name: "provider_payment_id", type: "varchar", length: 255 })
+  providerPaymentId!: string;
+
+  @Column({ name: "status", type: "varchar", length: 32 })
+  status!: string;
+
+  @Column({ name: "amount_cents", type: "bigint" })
+  amountCents!: number;
+
+  @Column({ name: "currency", type: "varchar", length: 3 })
+  currency!: string;
+
+  @Column({ name: "failure_code", type: "varchar", length: 120, nullable: true })
+  failureCode!: string | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+@Index("fiducia_billing_webhook_events_provider_event_uq", ["provider", "providerEventId"], { unique: true })
+@Index("fiducia_billing_webhook_events_unprocessed_idx", ["receivedAt"], { where: "processed_at is null" })
+@Entity({ schema: "fiducia", name: "billing_webhook_events" })
+export class BillingWebhookEventsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "provider", type: "varchar", length: 16 })
+  provider!: string;
+
+  @Column({ name: "provider_event_id", type: "varchar", length: 255 })
+  providerEventId!: string;
+
+  @Column({ name: "event_type", type: "varchar", length: 120 })
+  eventType!: string;
+
+  @Column({ name: "signature_verified", type: "boolean" })
+  signatureVerified!: boolean;
+
+  @Column({ name: "payload_sha256", type: "varchar", length: 64 })
+  payloadSha256!: string;
+
+  @Column({ name: "received_at", type: "timestamptz", default: () => "now()" })
+  receivedAt!: Date;
+
+  @Column({ name: "processed_at", type: "timestamptz", nullable: true })
+  processedAt!: Date | null;
+
+  @Column({ name: "process_error", type: "text", nullable: true })
+  processError!: string | null;
+
+}
+
 @Index("t2v_transcriptions_created_idx", ["createdAt"])
 @Entity({ schema: "t2v", name: "transcriptions" })
 export class TranscriptionsEntity {

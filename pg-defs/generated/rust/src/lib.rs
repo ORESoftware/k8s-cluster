@@ -20828,6 +20828,797 @@ pub fn validate_sync_idempotency_keys_insert(value: &SyncIdempotencyKeysInsert) 
     Ok(())
 }
 
+pub const BILLING_CUSTOMERS_TABLE: &str = "fiducia.billing_customers";
+pub const BILLING_CUSTOMERS_COLUMNS: &[&str] = &["id", "org_id", "provider", "provider_customer_id", "email", "created_at", "updated_at"];
+pub const BILLING_CUSTOMERS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      org_id::text as org_id,
+      provider,
+      provider_customer_id,
+      email,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from fiducia.billing_customers"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BillingCustomersProvider {
+    Stripe,
+    Paypal,
+}
+
+impl BillingCustomersProvider {
+    pub const VALUES: &'static [&'static str] = &["stripe", "paypal"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Stripe => "stripe",
+            Self::Paypal => "paypal",
+        }
+    }
+}
+
+impl TryFrom<&str> for BillingCustomersProvider {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "stripe" => Ok(Self::Stripe),
+            "paypal" => Ok(Self::Paypal),
+            _ => Err(format!("unsupported provider: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BillingCustomersRow {
+    pub id: String,
+    pub org_id: String,
+    pub provider: String,
+    pub provider_customer_id: String,
+    pub email: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BillingCustomersInsert {
+    pub id: Option<String>,
+    pub org_id: Option<String>,
+    pub provider: Option<String>,
+    pub provider_customer_id: Option<String>,
+    pub email: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_billing_customers_row(value: &BillingCustomersRow) -> Result<(), String> {
+    if !["stripe", "paypal"].contains(&(&value.provider).as_str()) { return Err(format!("unsupported billing_customers.provider: {}", &value.provider)); }
+    validate_string_length("billing_customers.provider_customer_id", &value.provider_customer_id, None, Some(255))?;
+    if let Some(value) = &value.email {
+        validate_string_length("billing_customers.email", value, None, Some(320))?;
+    }
+    Ok(())
+}
+
+pub fn validate_billing_customers_insert(value: &BillingCustomersInsert) -> Result<(), String> {
+    if let Some(value) = &value.provider {
+        if !["stripe", "paypal"].contains(&(value).as_str()) { return Err(format!("unsupported billing_customers.provider: {}", value)); }
+    }
+    if let Some(value) = &value.provider_customer_id {
+        validate_string_length("billing_customers.provider_customer_id", value, None, Some(255))?;
+    }
+    if let Some(value) = &value.email {
+        validate_string_length("billing_customers.email", value, None, Some(320))?;
+    }
+    Ok(())
+}
+
+pub const PAYMENT_METHODS_TABLE: &str = "fiducia.payment_methods";
+pub const PAYMENT_METHODS_COLUMNS: &[&str] = &["id", "org_id", "billing_customer_id", "provider", "provider_payment_method_id", "kind", "brand", "last4", "exp_month", "exp_year", "is_default", "created_at", "updated_at"];
+pub const PAYMENT_METHODS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      org_id::text as org_id,
+      billing_customer_id::text as billing_customer_id,
+      provider,
+      provider_payment_method_id,
+      kind,
+      brand,
+      last4,
+      exp_month,
+      exp_year,
+      is_default,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from fiducia.payment_methods"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PaymentMethodsProvider {
+    Stripe,
+    Paypal,
+}
+
+impl PaymentMethodsProvider {
+    pub const VALUES: &'static [&'static str] = &["stripe", "paypal"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Stripe => "stripe",
+            Self::Paypal => "paypal",
+        }
+    }
+}
+
+impl TryFrom<&str> for PaymentMethodsProvider {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "stripe" => Ok(Self::Stripe),
+            "paypal" => Ok(Self::Paypal),
+            _ => Err(format!("unsupported provider: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct PaymentMethodsRow {
+    pub id: String,
+    pub org_id: String,
+    pub billing_customer_id: String,
+    pub provider: String,
+    pub provider_payment_method_id: String,
+    pub kind: String,
+    pub brand: Option<String>,
+    pub last4: Option<String>,
+    pub exp_month: Option<i16>,
+    pub exp_year: Option<i16>,
+    pub is_default: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PaymentMethodsInsert {
+    pub id: Option<String>,
+    pub org_id: Option<String>,
+    pub billing_customer_id: Option<String>,
+    pub provider: Option<String>,
+    pub provider_payment_method_id: Option<String>,
+    pub kind: Option<String>,
+    pub brand: Option<String>,
+    pub last4: Option<String>,
+    pub exp_month: Option<i16>,
+    pub exp_year: Option<i16>,
+    pub is_default: Option<bool>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_payment_methods_row(value: &PaymentMethodsRow) -> Result<(), String> {
+    if !["stripe", "paypal"].contains(&(&value.provider).as_str()) { return Err(format!("unsupported payment_methods.provider: {}", &value.provider)); }
+    validate_string_length("payment_methods.provider_payment_method_id", &value.provider_payment_method_id, None, Some(255))?;
+    validate_string_length("payment_methods.kind", &value.kind, None, Some(32))?;
+    if let Some(value) = &value.brand {
+        validate_string_length("payment_methods.brand", value, None, Some(32))?;
+    }
+    if let Some(value) = &value.last4 {
+        validate_string_length("payment_methods.last4", value, None, Some(4))?;
+    }
+    if let Some(value) = &value.exp_month {
+        if *(value) < 1 { return Err("payment_methods.exp_month is below the minimum".to_string()); }
+        if *(value) > 12 { return Err("payment_methods.exp_month is above the maximum".to_string()); }
+    }
+    Ok(())
+}
+
+pub fn validate_payment_methods_insert(value: &PaymentMethodsInsert) -> Result<(), String> {
+    if let Some(value) = &value.provider {
+        if !["stripe", "paypal"].contains(&(value).as_str()) { return Err(format!("unsupported payment_methods.provider: {}", value)); }
+    }
+    if let Some(value) = &value.provider_payment_method_id {
+        validate_string_length("payment_methods.provider_payment_method_id", value, None, Some(255))?;
+    }
+    if let Some(value) = &value.kind {
+        validate_string_length("payment_methods.kind", value, None, Some(32))?;
+    }
+    if let Some(value) = &value.brand {
+        validate_string_length("payment_methods.brand", value, None, Some(32))?;
+    }
+    if let Some(value) = &value.last4 {
+        validate_string_length("payment_methods.last4", value, None, Some(4))?;
+    }
+    if let Some(value) = &value.exp_month {
+        if *(value) < 1 { return Err("payment_methods.exp_month is below the minimum".to_string()); }
+        if *(value) > 12 { return Err("payment_methods.exp_month is above the maximum".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BILLING_SUBSCRIPTIONS_TABLE: &str = "fiducia.billing_subscriptions";
+pub const BILLING_SUBSCRIPTIONS_COLUMNS: &[&str] = &["id", "org_id", "billing_customer_id", "provider", "provider_subscription_id", "plan", "status", "current_period_start", "current_period_end", "cancel_at_period_end", "canceled_at", "created_at", "updated_at"];
+pub const BILLING_SUBSCRIPTIONS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      org_id::text as org_id,
+      billing_customer_id::text as billing_customer_id,
+      provider,
+      provider_subscription_id,
+      plan,
+      status,
+      to_char(current_period_start at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as current_period_start,
+      to_char(current_period_end at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as current_period_end,
+      cancel_at_period_end,
+      to_char(canceled_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as canceled_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from fiducia.billing_subscriptions"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BillingSubscriptionsProvider {
+    Stripe,
+    Paypal,
+}
+
+impl BillingSubscriptionsProvider {
+    pub const VALUES: &'static [&'static str] = &["stripe", "paypal"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Stripe => "stripe",
+            Self::Paypal => "paypal",
+        }
+    }
+}
+
+impl TryFrom<&str> for BillingSubscriptionsProvider {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "stripe" => Ok(Self::Stripe),
+            "paypal" => Ok(Self::Paypal),
+            _ => Err(format!("unsupported provider: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BillingSubscriptionsStatus {
+    Trialing,
+    Active,
+    PastDue,
+    Canceled,
+    Unpaid,
+    Incomplete,
+    IncompleteExpired,
+    Paused,
+}
+
+impl BillingSubscriptionsStatus {
+    pub const VALUES: &'static [&'static str] = &["trialing", "active", "past_due", "canceled", "unpaid", "incomplete", "incomplete_expired", "paused"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Trialing => "trialing",
+            Self::Active => "active",
+            Self::PastDue => "past_due",
+            Self::Canceled => "canceled",
+            Self::Unpaid => "unpaid",
+            Self::Incomplete => "incomplete",
+            Self::IncompleteExpired => "incomplete_expired",
+            Self::Paused => "paused",
+        }
+    }
+}
+
+impl TryFrom<&str> for BillingSubscriptionsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "trialing" => Ok(Self::Trialing),
+            "active" => Ok(Self::Active),
+            "past_due" => Ok(Self::PastDue),
+            "canceled" => Ok(Self::Canceled),
+            "unpaid" => Ok(Self::Unpaid),
+            "incomplete" => Ok(Self::Incomplete),
+            "incomplete_expired" => Ok(Self::IncompleteExpired),
+            "paused" => Ok(Self::Paused),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BillingSubscriptionsRow {
+    pub id: String,
+    pub org_id: String,
+    pub billing_customer_id: String,
+    pub provider: String,
+    pub provider_subscription_id: String,
+    pub plan: String,
+    pub status: String,
+    pub current_period_start: Option<String>,
+    pub current_period_end: Option<String>,
+    pub cancel_at_period_end: bool,
+    pub canceled_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BillingSubscriptionsInsert {
+    pub id: Option<String>,
+    pub org_id: Option<String>,
+    pub billing_customer_id: Option<String>,
+    pub provider: Option<String>,
+    pub provider_subscription_id: Option<String>,
+    pub plan: Option<String>,
+    pub status: Option<String>,
+    pub current_period_start: Option<String>,
+    pub current_period_end: Option<String>,
+    pub cancel_at_period_end: Option<bool>,
+    pub canceled_at: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_billing_subscriptions_row(value: &BillingSubscriptionsRow) -> Result<(), String> {
+    if !["stripe", "paypal"].contains(&(&value.provider).as_str()) { return Err(format!("unsupported billing_subscriptions.provider: {}", &value.provider)); }
+    validate_string_length("billing_subscriptions.provider_subscription_id", &value.provider_subscription_id, None, Some(255))?;
+    validate_string_length("billing_subscriptions.plan", &value.plan, None, Some(120))?;
+    if !["trialing", "active", "past_due", "canceled", "unpaid", "incomplete", "incomplete_expired", "paused"].contains(&(&value.status).as_str()) { return Err(format!("unsupported billing_subscriptions.status: {}", &value.status)); }
+    Ok(())
+}
+
+pub fn validate_billing_subscriptions_insert(value: &BillingSubscriptionsInsert) -> Result<(), String> {
+    if let Some(value) = &value.provider {
+        if !["stripe", "paypal"].contains(&(value).as_str()) { return Err(format!("unsupported billing_subscriptions.provider: {}", value)); }
+    }
+    if let Some(value) = &value.provider_subscription_id {
+        validate_string_length("billing_subscriptions.provider_subscription_id", value, None, Some(255))?;
+    }
+    if let Some(value) = &value.plan {
+        validate_string_length("billing_subscriptions.plan", value, None, Some(120))?;
+    }
+    if let Some(value) = &value.status {
+        if !["trialing", "active", "past_due", "canceled", "unpaid", "incomplete", "incomplete_expired", "paused"].contains(&(value).as_str()) { return Err(format!("unsupported billing_subscriptions.status: {}", value)); }
+    }
+    Ok(())
+}
+
+pub const INVOICES_TABLE: &str = "fiducia.invoices";
+pub const INVOICES_COLUMNS: &[&str] = &["id", "org_id", "billing_customer_id", "subscription_id", "provider", "provider_invoice_id", "status", "amount_due_cents", "amount_paid_cents", "currency", "period_start", "period_end", "hosted_invoice_url", "created_at", "updated_at"];
+pub const INVOICES_SELECT_SQL: &str = r###"select
+      id::text as id,
+      org_id::text as org_id,
+      billing_customer_id::text as billing_customer_id,
+      subscription_id::text as subscription_id,
+      provider,
+      provider_invoice_id,
+      status,
+      amount_due_cents,
+      amount_paid_cents,
+      currency,
+      to_char(period_start at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as period_start,
+      to_char(period_end at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as period_end,
+      hosted_invoice_url,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from fiducia.invoices"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum InvoicesProvider {
+    Stripe,
+    Paypal,
+}
+
+impl InvoicesProvider {
+    pub const VALUES: &'static [&'static str] = &["stripe", "paypal"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Stripe => "stripe",
+            Self::Paypal => "paypal",
+        }
+    }
+}
+
+impl TryFrom<&str> for InvoicesProvider {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "stripe" => Ok(Self::Stripe),
+            "paypal" => Ok(Self::Paypal),
+            _ => Err(format!("unsupported provider: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum InvoicesStatus {
+    Draft,
+    Open,
+    Paid,
+    Void,
+    Uncollectible,
+}
+
+impl InvoicesStatus {
+    pub const VALUES: &'static [&'static str] = &["draft", "open", "paid", "void", "uncollectible"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Draft => "draft",
+            Self::Open => "open",
+            Self::Paid => "paid",
+            Self::Void => "void",
+            Self::Uncollectible => "uncollectible",
+        }
+    }
+}
+
+impl TryFrom<&str> for InvoicesStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "draft" => Ok(Self::Draft),
+            "open" => Ok(Self::Open),
+            "paid" => Ok(Self::Paid),
+            "void" => Ok(Self::Void),
+            "uncollectible" => Ok(Self::Uncollectible),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct InvoicesRow {
+    pub id: String,
+    pub org_id: String,
+    pub billing_customer_id: Option<String>,
+    pub subscription_id: Option<String>,
+    pub provider: String,
+    pub provider_invoice_id: String,
+    pub status: String,
+    pub amount_due_cents: i64,
+    pub amount_paid_cents: i64,
+    pub currency: String,
+    pub period_start: Option<String>,
+    pub period_end: Option<String>,
+    pub hosted_invoice_url: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InvoicesInsert {
+    pub id: Option<String>,
+    pub org_id: Option<String>,
+    pub billing_customer_id: Option<String>,
+    pub subscription_id: Option<String>,
+    pub provider: Option<String>,
+    pub provider_invoice_id: Option<String>,
+    pub status: Option<String>,
+    pub amount_due_cents: Option<i64>,
+    pub amount_paid_cents: Option<i64>,
+    pub currency: Option<String>,
+    pub period_start: Option<String>,
+    pub period_end: Option<String>,
+    pub hosted_invoice_url: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_invoices_row(value: &InvoicesRow) -> Result<(), String> {
+    if !["stripe", "paypal"].contains(&(&value.provider).as_str()) { return Err(format!("unsupported invoices.provider: {}", &value.provider)); }
+    validate_string_length("invoices.provider_invoice_id", &value.provider_invoice_id, None, Some(255))?;
+    if !["draft", "open", "paid", "void", "uncollectible"].contains(&(&value.status).as_str()) { return Err(format!("unsupported invoices.status: {}", &value.status)); }
+    if *(&value.amount_due_cents) < 0 { return Err("invoices.amount_due_cents is below the minimum".to_string()); }
+    if *(&value.amount_paid_cents) < 0 { return Err("invoices.amount_paid_cents is below the minimum".to_string()); }
+    validate_string_length("invoices.currency", &value.currency, None, Some(3))?;
+    Ok(())
+}
+
+pub fn validate_invoices_insert(value: &InvoicesInsert) -> Result<(), String> {
+    if let Some(value) = &value.provider {
+        if !["stripe", "paypal"].contains(&(value).as_str()) { return Err(format!("unsupported invoices.provider: {}", value)); }
+    }
+    if let Some(value) = &value.provider_invoice_id {
+        validate_string_length("invoices.provider_invoice_id", value, None, Some(255))?;
+    }
+    if let Some(value) = &value.status {
+        if !["draft", "open", "paid", "void", "uncollectible"].contains(&(value).as_str()) { return Err(format!("unsupported invoices.status: {}", value)); }
+    }
+    if let Some(value) = &value.amount_due_cents {
+        if *(value) < 0 { return Err("invoices.amount_due_cents is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.amount_paid_cents {
+        if *(value) < 0 { return Err("invoices.amount_paid_cents is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.currency {
+        validate_string_length("invoices.currency", value, None, Some(3))?;
+    }
+    Ok(())
+}
+
+pub const PAYMENTS_TABLE: &str = "fiducia.payments";
+pub const PAYMENTS_COLUMNS: &[&str] = &["id", "org_id", "invoice_id", "payment_method_id", "provider", "provider_payment_id", "status", "amount_cents", "currency", "failure_code", "created_at", "updated_at"];
+pub const PAYMENTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      org_id::text as org_id,
+      invoice_id::text as invoice_id,
+      payment_method_id::text as payment_method_id,
+      provider,
+      provider_payment_id,
+      status,
+      amount_cents,
+      currency,
+      failure_code,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from fiducia.payments"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PaymentsProvider {
+    Stripe,
+    Paypal,
+}
+
+impl PaymentsProvider {
+    pub const VALUES: &'static [&'static str] = &["stripe", "paypal"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Stripe => "stripe",
+            Self::Paypal => "paypal",
+        }
+    }
+}
+
+impl TryFrom<&str> for PaymentsProvider {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "stripe" => Ok(Self::Stripe),
+            "paypal" => Ok(Self::Paypal),
+            _ => Err(format!("unsupported provider: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PaymentsStatus {
+    Pending,
+    Processing,
+    Succeeded,
+    Failed,
+    Canceled,
+    Refunded,
+    PartiallyRefunded,
+}
+
+impl PaymentsStatus {
+    pub const VALUES: &'static [&'static str] = &["pending", "processing", "succeeded", "failed", "canceled", "refunded", "partially_refunded"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Processing => "processing",
+            Self::Succeeded => "succeeded",
+            Self::Failed => "failed",
+            Self::Canceled => "canceled",
+            Self::Refunded => "refunded",
+            Self::PartiallyRefunded => "partially_refunded",
+        }
+    }
+}
+
+impl TryFrom<&str> for PaymentsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "pending" => Ok(Self::Pending),
+            "processing" => Ok(Self::Processing),
+            "succeeded" => Ok(Self::Succeeded),
+            "failed" => Ok(Self::Failed),
+            "canceled" => Ok(Self::Canceled),
+            "refunded" => Ok(Self::Refunded),
+            "partially_refunded" => Ok(Self::PartiallyRefunded),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct PaymentsRow {
+    pub id: String,
+    pub org_id: String,
+    pub invoice_id: Option<String>,
+    pub payment_method_id: Option<String>,
+    pub provider: String,
+    pub provider_payment_id: String,
+    pub status: String,
+    pub amount_cents: i64,
+    pub currency: String,
+    pub failure_code: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PaymentsInsert {
+    pub id: Option<String>,
+    pub org_id: Option<String>,
+    pub invoice_id: Option<String>,
+    pub payment_method_id: Option<String>,
+    pub provider: Option<String>,
+    pub provider_payment_id: Option<String>,
+    pub status: Option<String>,
+    pub amount_cents: Option<i64>,
+    pub currency: Option<String>,
+    pub failure_code: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_payments_row(value: &PaymentsRow) -> Result<(), String> {
+    if !["stripe", "paypal"].contains(&(&value.provider).as_str()) { return Err(format!("unsupported payments.provider: {}", &value.provider)); }
+    validate_string_length("payments.provider_payment_id", &value.provider_payment_id, None, Some(255))?;
+    if !["pending", "processing", "succeeded", "failed", "canceled", "refunded", "partially_refunded"].contains(&(&value.status).as_str()) { return Err(format!("unsupported payments.status: {}", &value.status)); }
+    if *(&value.amount_cents) < 0 { return Err("payments.amount_cents is below the minimum".to_string()); }
+    validate_string_length("payments.currency", &value.currency, None, Some(3))?;
+    if let Some(value) = &value.failure_code {
+        validate_string_length("payments.failure_code", value, None, Some(120))?;
+    }
+    Ok(())
+}
+
+pub fn validate_payments_insert(value: &PaymentsInsert) -> Result<(), String> {
+    if let Some(value) = &value.provider {
+        if !["stripe", "paypal"].contains(&(value).as_str()) { return Err(format!("unsupported payments.provider: {}", value)); }
+    }
+    if let Some(value) = &value.provider_payment_id {
+        validate_string_length("payments.provider_payment_id", value, None, Some(255))?;
+    }
+    if let Some(value) = &value.status {
+        if !["pending", "processing", "succeeded", "failed", "canceled", "refunded", "partially_refunded"].contains(&(value).as_str()) { return Err(format!("unsupported payments.status: {}", value)); }
+    }
+    if let Some(value) = &value.amount_cents {
+        if *(value) < 0 { return Err("payments.amount_cents is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.currency {
+        validate_string_length("payments.currency", value, None, Some(3))?;
+    }
+    if let Some(value) = &value.failure_code {
+        validate_string_length("payments.failure_code", value, None, Some(120))?;
+    }
+    Ok(())
+}
+
+pub const BILLING_WEBHOOK_EVENTS_TABLE: &str = "fiducia.billing_webhook_events";
+pub const BILLING_WEBHOOK_EVENTS_COLUMNS: &[&str] = &["id", "provider", "provider_event_id", "event_type", "signature_verified", "payload_sha256", "received_at", "processed_at", "process_error"];
+pub const BILLING_WEBHOOK_EVENTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      provider,
+      provider_event_id,
+      event_type,
+      signature_verified,
+      payload_sha256,
+      to_char(received_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as received_at,
+      to_char(processed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as processed_at,
+      process_error
+    from fiducia.billing_webhook_events"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BillingWebhookEventsProvider {
+    Stripe,
+    Paypal,
+}
+
+impl BillingWebhookEventsProvider {
+    pub const VALUES: &'static [&'static str] = &["stripe", "paypal"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Stripe => "stripe",
+            Self::Paypal => "paypal",
+        }
+    }
+}
+
+impl TryFrom<&str> for BillingWebhookEventsProvider {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "stripe" => Ok(Self::Stripe),
+            "paypal" => Ok(Self::Paypal),
+            _ => Err(format!("unsupported provider: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BillingWebhookEventsRow {
+    pub id: String,
+    pub provider: String,
+    pub provider_event_id: String,
+    pub event_type: String,
+    pub signature_verified: bool,
+    pub payload_sha256: String,
+    pub received_at: String,
+    pub processed_at: Option<String>,
+    pub process_error: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BillingWebhookEventsInsert {
+    pub id: Option<String>,
+    pub provider: Option<String>,
+    pub provider_event_id: Option<String>,
+    pub event_type: Option<String>,
+    pub signature_verified: Option<bool>,
+    pub payload_sha256: Option<String>,
+    pub received_at: Option<String>,
+    pub processed_at: Option<String>,
+    pub process_error: Option<String>,
+}
+
+pub fn validate_billing_webhook_events_row(value: &BillingWebhookEventsRow) -> Result<(), String> {
+    if !["stripe", "paypal"].contains(&(&value.provider).as_str()) { return Err(format!("unsupported billing_webhook_events.provider: {}", &value.provider)); }
+    validate_string_length("billing_webhook_events.provider_event_id", &value.provider_event_id, None, Some(255))?;
+    validate_string_length("billing_webhook_events.event_type", &value.event_type, None, Some(120))?;
+    validate_string_length("billing_webhook_events.payload_sha256", &value.payload_sha256, None, Some(64))?;
+    Ok(())
+}
+
+pub fn validate_billing_webhook_events_insert(value: &BillingWebhookEventsInsert) -> Result<(), String> {
+    if let Some(value) = &value.provider {
+        if !["stripe", "paypal"].contains(&(value).as_str()) { return Err(format!("unsupported billing_webhook_events.provider: {}", value)); }
+    }
+    if let Some(value) = &value.provider_event_id {
+        validate_string_length("billing_webhook_events.provider_event_id", value, None, Some(255))?;
+    }
+    if let Some(value) = &value.event_type {
+        validate_string_length("billing_webhook_events.event_type", value, None, Some(120))?;
+    }
+    if let Some(value) = &value.payload_sha256 {
+        validate_string_length("billing_webhook_events.payload_sha256", value, None, Some(64))?;
+    }
+    Ok(())
+}
+
 pub const TRANSCRIPTIONS_TABLE: &str = "t2v.transcriptions";
 pub const TRANSCRIPTIONS_COLUMNS: &[&str] = &["id", "source", "provider", "model", "text", "language", "sample_rate", "duration_ms", "created_at"];
 pub const TRANSCRIPTIONS_SELECT_SQL: &str = r###"select

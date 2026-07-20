@@ -2346,6 +2346,93 @@ export function defineDdModels(sequelize: Sequelize) {
     created_at: { type: DataTypes.DATE, allowNull: false },
   }, { tableName: "sync_idempotency_keys", schema: "fiducia", timestamps: false, freezeTableName: true });
 
+  const BillingCustomers = sequelize.define("BillingCustomers", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    org_id: { type: DataTypes.UUID, allowNull: false },
+    provider: { type: DataTypes.STRING(16), allowNull: false, validate: { isIn: [["stripe", "paypal"]] } },
+    provider_customer_id: { type: DataTypes.STRING(255), allowNull: false, validate: { len: [0, 255] } },
+    email: { type: DataTypes.STRING(320), allowNull: true, validate: { len: [0, 320] } },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+    updated_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "billing_customers", schema: "fiducia", timestamps: false, freezeTableName: true });
+
+  const PaymentMethods = sequelize.define("PaymentMethods", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    org_id: { type: DataTypes.UUID, allowNull: false },
+    billing_customer_id: { type: DataTypes.UUID, allowNull: false },
+    provider: { type: DataTypes.STRING(16), allowNull: false, validate: { isIn: [["stripe", "paypal"]] } },
+    provider_payment_method_id: { type: DataTypes.STRING(255), allowNull: false, validate: { len: [0, 255] } },
+    kind: { type: DataTypes.STRING(32), allowNull: false, validate: { len: [0, 32] } },
+    brand: { type: DataTypes.STRING(32), allowNull: true, validate: { len: [0, 32] } },
+    last4: { type: DataTypes.STRING(4), allowNull: true, validate: { len: [0, 4], is: new RegExp("^[0-9]{4}$") } },
+    exp_month: { type: DataTypes.SMALLINT, allowNull: true, validate: { min: 1, max: 12 } },
+    exp_year: { type: DataTypes.SMALLINT, allowNull: true },
+    is_default: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+    updated_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "payment_methods", schema: "fiducia", timestamps: false, freezeTableName: true });
+
+  const BillingSubscriptions = sequelize.define("BillingSubscriptions", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    org_id: { type: DataTypes.UUID, allowNull: false },
+    billing_customer_id: { type: DataTypes.UUID, allowNull: false },
+    provider: { type: DataTypes.STRING(16), allowNull: false, validate: { isIn: [["stripe", "paypal"]] } },
+    provider_subscription_id: { type: DataTypes.STRING(255), allowNull: false, validate: { len: [0, 255] } },
+    plan: { type: DataTypes.STRING(120), allowNull: false, validate: { len: [0, 120] } },
+    status: { type: DataTypes.STRING(32), allowNull: false, validate: { isIn: [["trialing", "active", "past_due", "canceled", "unpaid", "incomplete", "incomplete_expired", "paused"]] } },
+    current_period_start: { type: DataTypes.DATE, allowNull: true },
+    current_period_end: { type: DataTypes.DATE, allowNull: true },
+    cancel_at_period_end: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    canceled_at: { type: DataTypes.DATE, allowNull: true },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+    updated_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "billing_subscriptions", schema: "fiducia", timestamps: false, freezeTableName: true });
+
+  const Invoices = sequelize.define("Invoices", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    org_id: { type: DataTypes.UUID, allowNull: false },
+    billing_customer_id: { type: DataTypes.UUID, allowNull: true },
+    subscription_id: { type: DataTypes.UUID, allowNull: true },
+    provider: { type: DataTypes.STRING(16), allowNull: false, validate: { isIn: [["stripe", "paypal"]] } },
+    provider_invoice_id: { type: DataTypes.STRING(255), allowNull: false, validate: { len: [0, 255] } },
+    status: { type: DataTypes.STRING(32), allowNull: false, validate: { isIn: [["draft", "open", "paid", "void", "uncollectible"]] } },
+    amount_due_cents: { type: DataTypes.BIGINT, allowNull: false, validate: { min: 0 } },
+    amount_paid_cents: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0, validate: { min: 0 } },
+    currency: { type: DataTypes.STRING(3), allowNull: false, validate: { len: [0, 3], is: new RegExp("^[a-z]{3}$") } },
+    period_start: { type: DataTypes.DATE, allowNull: true },
+    period_end: { type: DataTypes.DATE, allowNull: true },
+    hosted_invoice_url: { type: DataTypes.TEXT, allowNull: true },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+    updated_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "invoices", schema: "fiducia", timestamps: false, freezeTableName: true });
+
+  const Payments = sequelize.define("Payments", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    org_id: { type: DataTypes.UUID, allowNull: false },
+    invoice_id: { type: DataTypes.UUID, allowNull: true },
+    payment_method_id: { type: DataTypes.UUID, allowNull: true },
+    provider: { type: DataTypes.STRING(16), allowNull: false, validate: { isIn: [["stripe", "paypal"]] } },
+    provider_payment_id: { type: DataTypes.STRING(255), allowNull: false, validate: { len: [0, 255] } },
+    status: { type: DataTypes.STRING(32), allowNull: false, validate: { isIn: [["pending", "processing", "succeeded", "failed", "canceled", "refunded", "partially_refunded"]] } },
+    amount_cents: { type: DataTypes.BIGINT, allowNull: false, validate: { min: 0 } },
+    currency: { type: DataTypes.STRING(3), allowNull: false, validate: { len: [0, 3], is: new RegExp("^[a-z]{3}$") } },
+    failure_code: { type: DataTypes.STRING(120), allowNull: true, validate: { len: [0, 120] } },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+    updated_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "payments", schema: "fiducia", timestamps: false, freezeTableName: true });
+
+  const BillingWebhookEvents = sequelize.define("BillingWebhookEvents", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    provider: { type: DataTypes.STRING(16), allowNull: false, validate: { isIn: [["stripe", "paypal"]] } },
+    provider_event_id: { type: DataTypes.STRING(255), allowNull: false, validate: { len: [0, 255] } },
+    event_type: { type: DataTypes.STRING(120), allowNull: false, validate: { len: [0, 120] } },
+    signature_verified: { type: DataTypes.BOOLEAN, allowNull: false },
+    payload_sha256: { type: DataTypes.STRING(64), allowNull: false, validate: { len: [0, 64], is: new RegExp("^[0-9a-f]{64}$") } },
+    received_at: { type: DataTypes.DATE, allowNull: false },
+    processed_at: { type: DataTypes.DATE, allowNull: true },
+    process_error: { type: DataTypes.TEXT, allowNull: true },
+  }, { tableName: "billing_webhook_events", schema: "fiducia", timestamps: false, freezeTableName: true });
+
   const Transcriptions = sequelize.define("Transcriptions", {
     id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
     source: { type: DataTypes.TEXT, allowNull: false },
@@ -2469,5 +2556,5 @@ export function defineDdModels(sequelize: Sequelize) {
     revoked_at: { type: DataTypes.DATE, allowNull: true },
   }, { tableName: "web_sessions", schema: "daedalus", timestamps: false, freezeTableName: true });
 
-  return { Accounts, Devices, VaultBlobs, AppConfig, VapiPhoneCallEvents, MusicSongs, MusicSongVotes, SoundRecorderAccounts, SoundRecorderDevices, SoundRecorderUploadSessions, SoundRecorderSegments, SoundRecorderEvidenceExports, SoundRecorderAuditEvents, SoundRecorderOauthStates, SoundRecorderCloudConnections, SoundRecorderCloudCopyJobs, ContainerPoolConfigs, KnownGitRepo, AgentContextBlobs, AgentContextEmbeddings, AgentRemoteDevThread, AgentRemoteDevTask, AgentRemoteDevEvent, AgentRemoteDevBreadcrumb, AgentRemoteDevArtifact, AgentRemoteDevRuntimeLock, MipSolverSessions, MipSolverSolves, MipSolverJobs, MipSolverEvents, LambdaFunction, WorkflowDefinitions, WorkflowRuns, WorkflowStepRuns, ContainerPoolImageRevisions, ContainerPoolBuildRuns, PresenceConvs, PresenceConvMembers, PresenceUsers, PresenceEvents, PresenceConsumerCheckpoints, DesSoccerLearningExperiments, DesSoccerLearningPolicyVersions, DesSoccerLearningPolicyEntries, DesSoccerLearningJobs, DesSoccerLearningRuns, DesSoccerLearningRunDeltas, DesSoccerLearningMergeEvents, DesSoccerTournaments, DesSoccerTournamentMatches, DesSoccerTournamentTeamBrains, DesSoccerLearningSetPlayRuns, DesSoccerLearningSetPlayRestartMix, DesSoccerLearningSetPlayEpisodeMetrics, DesSoccerLearningNeuralRunMetrics, DesSoccerLearningPassMetrics, DesFelElevatorLearningRuns, DesFelElevatorPolicyStates, DesFelElevatorDispatchDecisions, DesFelElevatorPomdpBeliefs, BenefactorMarketingClients, BenefactorMarketingContacts, BenefactorMarketingServicePackages, BenefactorMarketingContracts, BenefactorMarketingInvoices, BenefactorMarketingIntegrations, BenefactorMarketingLeads, BenefactorMarketingEnrichmentJobs, BenefactorMarketingCampaigns, BenefactorMarketingCampaignChannels, BenefactorMarketingCampaignExperiments, BenefactorMarketingAutomationWorkflows, BenefactorMarketingAutomationEvents, BenefactorMarketingReports, BenefactorMarketingAttributionEvents, BenefactorMarketingOpportunities, BenefactorMarketingContentAssets, BenefactorMarketingProjectTasks, BenefactorMarketingClientApprovals, BenefactorMarketingTickets, BenefactorMarketingMeetings, BenefactorMarketingTeamAllocations, BenefactorMarketingIntegrationSyncRuns, BenefactorMarketingOutreachSequences, BenefactorMarketingOutreachSteps, BenefactorMarketingOutreachEnrollments, BenefactorMarketingOutreachTouchpoints, BenefactorMarketingProspectResearchBriefs, BenefactorMarketingConversionEvents, BenefactorMarketingPortalMembers, BenefactorMarketingSharedDocuments, BenefactorMarketingCollaborationComments, BenefactorMarketingNotifications, BenefactorMarketingTimeEntries, BenefactorMarketingVendorCosts, BenefactorMarketingCommissionEntries, BenefactorMarketingBudgetForecasts, BenefactorMarketingCallInsights, UsaccUsers, UsaccCases, UsaccCaseParticipants, UsaccCaseStages, UsaccElections, UsaccVotes, UsaccEscrowAccounts, UsaccLedgerEntries, UsaccContractOperations, UsaccSimulationRuns, UsaccAuditEvents, BenefactorLeads, BenefactorLeadsDomains, BenefactorSearchLocations, BenefactorScrapeQueries, BenefactorDomainSearchTracking, BenefactorIcps, BenefactorLeadsThrottling, BenefactorLeadsReminders, VcsRepositories, VcsRefs, VcsOperations, Agents, Channels, Messages, ChannelMembers, SharedContext, SyncClock, SyncTombstones, Orgs, Projects, Users, OrgMembers, ProjectMembers, ApiKeys, MtlsClientCerts, CustomerPreferences, CustomerSessions, AuditLog, CustomerNotifications, SyncIdempotencyKeys, Transcriptions, Syntheses, Translations, VapiCalls, VapiEvents, FabPlans, FabDesigns, FabInstructions, FabRuns, WebSessions };
+  return { Accounts, Devices, VaultBlobs, AppConfig, VapiPhoneCallEvents, MusicSongs, MusicSongVotes, SoundRecorderAccounts, SoundRecorderDevices, SoundRecorderUploadSessions, SoundRecorderSegments, SoundRecorderEvidenceExports, SoundRecorderAuditEvents, SoundRecorderOauthStates, SoundRecorderCloudConnections, SoundRecorderCloudCopyJobs, ContainerPoolConfigs, KnownGitRepo, AgentContextBlobs, AgentContextEmbeddings, AgentRemoteDevThread, AgentRemoteDevTask, AgentRemoteDevEvent, AgentRemoteDevBreadcrumb, AgentRemoteDevArtifact, AgentRemoteDevRuntimeLock, MipSolverSessions, MipSolverSolves, MipSolverJobs, MipSolverEvents, LambdaFunction, WorkflowDefinitions, WorkflowRuns, WorkflowStepRuns, ContainerPoolImageRevisions, ContainerPoolBuildRuns, PresenceConvs, PresenceConvMembers, PresenceUsers, PresenceEvents, PresenceConsumerCheckpoints, DesSoccerLearningExperiments, DesSoccerLearningPolicyVersions, DesSoccerLearningPolicyEntries, DesSoccerLearningJobs, DesSoccerLearningRuns, DesSoccerLearningRunDeltas, DesSoccerLearningMergeEvents, DesSoccerTournaments, DesSoccerTournamentMatches, DesSoccerTournamentTeamBrains, DesSoccerLearningSetPlayRuns, DesSoccerLearningSetPlayRestartMix, DesSoccerLearningSetPlayEpisodeMetrics, DesSoccerLearningNeuralRunMetrics, DesSoccerLearningPassMetrics, DesFelElevatorLearningRuns, DesFelElevatorPolicyStates, DesFelElevatorDispatchDecisions, DesFelElevatorPomdpBeliefs, BenefactorMarketingClients, BenefactorMarketingContacts, BenefactorMarketingServicePackages, BenefactorMarketingContracts, BenefactorMarketingInvoices, BenefactorMarketingIntegrations, BenefactorMarketingLeads, BenefactorMarketingEnrichmentJobs, BenefactorMarketingCampaigns, BenefactorMarketingCampaignChannels, BenefactorMarketingCampaignExperiments, BenefactorMarketingAutomationWorkflows, BenefactorMarketingAutomationEvents, BenefactorMarketingReports, BenefactorMarketingAttributionEvents, BenefactorMarketingOpportunities, BenefactorMarketingContentAssets, BenefactorMarketingProjectTasks, BenefactorMarketingClientApprovals, BenefactorMarketingTickets, BenefactorMarketingMeetings, BenefactorMarketingTeamAllocations, BenefactorMarketingIntegrationSyncRuns, BenefactorMarketingOutreachSequences, BenefactorMarketingOutreachSteps, BenefactorMarketingOutreachEnrollments, BenefactorMarketingOutreachTouchpoints, BenefactorMarketingProspectResearchBriefs, BenefactorMarketingConversionEvents, BenefactorMarketingPortalMembers, BenefactorMarketingSharedDocuments, BenefactorMarketingCollaborationComments, BenefactorMarketingNotifications, BenefactorMarketingTimeEntries, BenefactorMarketingVendorCosts, BenefactorMarketingCommissionEntries, BenefactorMarketingBudgetForecasts, BenefactorMarketingCallInsights, UsaccUsers, UsaccCases, UsaccCaseParticipants, UsaccCaseStages, UsaccElections, UsaccVotes, UsaccEscrowAccounts, UsaccLedgerEntries, UsaccContractOperations, UsaccSimulationRuns, UsaccAuditEvents, BenefactorLeads, BenefactorLeadsDomains, BenefactorSearchLocations, BenefactorScrapeQueries, BenefactorDomainSearchTracking, BenefactorIcps, BenefactorLeadsThrottling, BenefactorLeadsReminders, VcsRepositories, VcsRefs, VcsOperations, Agents, Channels, Messages, ChannelMembers, SharedContext, SyncClock, SyncTombstones, Orgs, Projects, Users, OrgMembers, ProjectMembers, ApiKeys, MtlsClientCerts, CustomerPreferences, CustomerSessions, AuditLog, CustomerNotifications, SyncIdempotencyKeys, BillingCustomers, PaymentMethods, BillingSubscriptions, Invoices, Payments, BillingWebhookEvents, Transcriptions, Syntheses, Translations, VapiCalls, VapiEvents, FabPlans, FabDesigns, FabInstructions, FabRuns, WebSessions };
 }
