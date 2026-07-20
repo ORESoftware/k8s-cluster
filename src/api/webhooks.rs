@@ -225,8 +225,18 @@ async fn record_event(
     let payload: Value = serde_json::from_slice(body)
         .map_err(|e| AppError::BadRequest(format!("payload not JSON: {e}")))?;
 
+    // Integrity hash of the raw body. Kept in the clear for dedup /
+    // correlation, and reused below as a deterministic idempotency key when
+    // the provider payload carries no extractable event id.
+    let payload_sha256 = hex::encode(Sha256::digest(body.as_ref()));
+
+    // Prefer the provider's own event id. When none is extractable, derive the
+    // idempotency id deterministically from the payload hash rather than a
+    // fresh `synthetic-{uuid}` — a random id defeats the
+    // `(provider, external_event_id)` upsert and inserts a new row on every
+    // re-delivery, so identical bodies would never dedup.
     let external_event_id = event_id(provider, &payload)
-        .unwrap_or_else(|| format!("synthetic-{}", uuid::Uuid::new_v4()));
+        .unwrap_or_else(|| format!("sha256-{payload_sha256}"));
 
     let event_type = event_type(provider, &payload).unwrap_or_else(|| "unknown".into());
     let external_account_id = external_account_id(provider, &payload);
@@ -257,7 +267,6 @@ async fn record_event(
         ),
         Err(err) => (false, Some(err.to_string())),
     };
-    let payload_sha256 = hex::encode(Sha256::digest(body.as_ref()));
     let tenant_id = connection.as_ref().map(|c| c.tenant_id);
     let connection_id = connection.as_ref().map(|c| c.id);
 
