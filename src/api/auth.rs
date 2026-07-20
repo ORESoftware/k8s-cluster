@@ -699,4 +699,248 @@ mod tests {
             StatusCode::UNAUTHORIZED
         );
     }
+
+    // --- Tenant scope extraction ---------------------------------------------
+
+    const TENANT_A: &str = "11111111-1111-4111-8111-111111111111";
+    const TENANT_B: &str = "22222222-2222-4222-8222-222222222222";
+
+    fn uuid_a() -> Uuid {
+        Uuid::parse_str(TENANT_A).unwrap()
+    }
+
+    fn uuid_b() -> Uuid {
+        Uuid::parse_str(TENANT_B).unwrap()
+    }
+
+    fn scope(path: &str) -> TenantScope {
+        tenant_scope_of(&path.parse::<Uri>().unwrap())
+    }
+
+    #[test]
+    fn tenant_scope_is_extracted_from_every_tenant_route_shape() {
+        for path in [
+            "/v1/tenants/11111111-1111-4111-8111-111111111111",
+            "/v1/tenants/11111111-1111-4111-8111-111111111111/users",
+            "/v1/tenants/11111111-1111-4111-8111-111111111111/connections",
+            "/v1/tenants/11111111-1111-4111-8111-111111111111/scheduled-jobs/7/runs",
+            "/v1/tenants/11111111-1111-4111-8111-111111111111/locks/some-resource/renew",
+            "/v1/tenants/11111111-1111-4111-8111-111111111111/customers/by-email/a@b.com/billing-state",
+        ] {
+            assert_eq!(scope(path), TenantScope::Tenant(uuid_a()), "{path}");
+        }
+    }
+
+    #[test]
+    fn non_tenant_routes_have_no_scope() {
+        // `POST /v1/tenants` creates a tenant, so there is no tenant to be
+        // scoped to; it stays a service-to-service provisioning call.
+        for path in [
+            "/v1/tenants",
+            "/v1/tenants/",
+            "/v1/oauth/stripe/start",
+            "/v1/plaid/link-token",
+            "/healthz",
+        ] {
+            assert_eq!(scope(path), TenantScope::None, "{path}");
+        }
+    }
+
+    #[test]
+    fn an_unparseable_tenant_id_is_not_treated_as_unscoped() {
+        // Otherwise "send a tenant id we can't parse" would be a free bypass of
+        // the entitlement check.
+        for path in [
+            "/v1/tenants/not-a-uuid/users",
+            "/v1/tenants/../../etc/passwd",
+            "/v1/tenants/%2e%2e/users",
+            "/v1/tenants/11111111-1111-4111-8111-11111111111/users", // one digit short
+        ] {
+            assert_eq!(scope(path), TenantScope::Unparseable, "{path}");
+        }
+    }
+
+    // --- The IDOR fix: per-tenant authorization ------------------------------
+
+    fn user_of(tenants: &[Uuid]) -> Principal {
+        Principal::User(Box::new(SupabaseIdentity {
+            subject: "user-abc".into(),
+            email: Some("operator@example.com".into()),
+            role: Some("authenticated".into()),
+            tenant_ids: tenants.to_vec(),
+        }))
+    }
+
+    #[test]
+    fn a_user_may_reach_their_own_tenant() {
+        assert_eq!(
+            authorize_tenant(&user_of(&[uuid_a()]), TenantScope::Tenant(uuid_a()), true),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn a_user_may_not_reach_another_tenant() {
+        // This is the IDOR. Before this change, a caller holding a valid
+        // credential could swap the path segment and operate on any tenant.
+        assert_eq!(
+            authorize_tenant(&user_of(&[uuid_a()]), TenantScope::Tenant(uuid_b()), true),
+            Err(StatusCode::FORBIDDEN)
+        );
+    }
+
+    #[test]
+    fn a_user_with_no_tenant_claims_reaches_nothing() {
+        assert_eq!(
+            authorize_tenant(&user_of(&[]), TenantScope::Tenant(uuid_a()), true),
+            Err(StatusCode::FORBIDDEN)
+        );
+    }
+
+    #[test]
+    fn a_multi_tenant_user_reaches_exactly_their_tenants() {
+        let principal = user_of(&[uuid_a(), uuid_b()]);
+        assert_eq!(
+            authorize_tenant(&principal, TenantScope::Tenant(uuid_a()), true),
+            Ok(())
+        );
+        assert_eq!(
+            authorize_tenant(&principal, TenantScope::Tenant(uuid_b()), true),
+            Ok(())
+        );
+        let other = Uuid::parse_str("33333333-3333-4333-8333-333333333333").unwrap();
+        assert_eq!(
+            authorize_tenant(&principal, TenantScope::Tenant(other), true),
+            Err(StatusCode::FORBIDDEN)
+        );
+    }
+
+    #[test]
+    fn the_service_bearer_is_refused_on_tenant_routes_once_user_jwts_are_required() {
+        assert_eq!(
+            authorize_tenant(&Principal::Service, TenantScope::Tenant(uuid_a()), true),
+            Err(StatusCode::FORBIDDEN)
+        );
+    }
+
+    #[test]
+    fn the_service_bearer_still_works_on_tenant_routes_during_the_migration_window() {
+        // BILLING_TENANT_ROUTES_REQUIRE_USER_JWT=false — the documented, WARN-ing
+        // escape hatch that keeps existing callers working while they migrate.
+        assert_eq!(
+            authorize_tenant(&Principal::Service, TenantScope::Tenant(uuid_a()), false),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn the_service_bearer_always_works_on_unscoped_routes() {
+        // Tenant *creation* and the OAuth/Plaid handshakes are provisioning
+        // calls with no tenant in the path; requiring a user token there would
+        // break them for no security gain.
+        for require in [true, false] {
+            assert_eq!(
+                authorize_tenant(&Principal::Service, TenantScope::None, require),
+                Ok(())
+            );
+        }
+    }
+
+    #[test]
+    fn an_unparseable_tenant_is_refused_for_every_principal() {
+        for require in [true, false] {
+            assert_eq!(
+                authorize_tenant(&Principal::Service, TenantScope::Unparseable, require),
+                Err(StatusCode::FORBIDDEN)
+            );
+            assert_eq!(
+                authorize_tenant(&user_of(&[uuid_a()]), TenantScope::Unparseable, require),
+                Err(StatusCode::FORBIDDEN)
+            );
+        }
+    }
+
+    // --- End-to-end through the middleware -----------------------------------
+
+    fn tenant_router(auth: Arc<ApiAuth>) -> Router {
+        Router::new()
+            .route("/v1/tenants", post(|| async { "ok-create" }))
+            .route(
+                "/v1/tenants/{tenant_id}/connections",
+                get(|| async { "ok-conn" }),
+            )
+            .layer(axum::middleware::from_fn_with_state(
+                auth.clone(),
+                require_api_auth,
+            ))
+            .with_state(auth)
+    }
+
+    #[tokio::test]
+    async fn service_bearer_is_blocked_from_tenant_routes_end_to_end() {
+        let auth = Arc::new(ApiAuth {
+            bearer: Some("service-token".into()),
+            supabase: None,
+            require_user_jwt: true,
+        });
+        let app = tenant_router(auth);
+
+        // Unscoped provisioning route: still fine.
+        assert_eq!(
+            status_of(
+                app.clone(),
+                "POST",
+                "/v1/tenants",
+                Some("Bearer service-token")
+            )
+            .await,
+            StatusCode::OK
+        );
+        // Tenant-scoped route: refused, because the shared token names no tenant.
+        assert_eq!(
+            status_of(
+                app,
+                "GET",
+                &format!("/v1/tenants/{TENANT_A}/connections"),
+                Some("Bearer service-token")
+            )
+            .await,
+            StatusCode::FORBIDDEN
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unverifiable_token_is_still_unauthorized_not_forbidden() {
+        // A bad credential must read as 401 (who are you?), never 403 (I know
+        // who you are and you may not) — the two say very different things to
+        // a caller and to an audit log.
+        let auth = Arc::new(ApiAuth {
+            bearer: Some("service-token".into()),
+            supabase: None,
+            require_user_jwt: true,
+        });
+        let app = tenant_router(auth);
+        assert_eq!(
+            status_of(
+                app,
+                "GET",
+                &format!("/v1/tenants/{TENANT_A}/connections"),
+                Some("Bearer wrong-token")
+            )
+            .await,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[test]
+    fn the_debug_surface_never_prints_the_service_bearer() {
+        let auth = ApiAuth {
+            bearer: Some("super-secret-bearer".into()),
+            supabase: None,
+            require_user_jwt: true,
+        };
+        let rendered = format!("{auth:?}");
+        assert!(!rendered.contains("super-secret-bearer"));
+        assert!(rendered.contains("<redacted>"));
+    }
 }
