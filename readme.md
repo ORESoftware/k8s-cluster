@@ -12,6 +12,45 @@ Rust fabrication planning service for additive including large-format pellet/FGF
 robotic/gantry additive cells, and sheet-lamination/LOM/UAM printers, subtractive, turning,
 mill-turn/swiss-turning, and hybrid machine workflows.
 
+## Authentication
+
+Every HTTP route listed below requires a Supabase access token
+(`Authorization: Bearer <token>`) whose `email` claim is confirmed *and* on
+`FABRICATION_ALLOWED_EMAILS`. The only exceptions are `GET /healthz` and
+`GET /readyz` (kubelet probes) and the `/internal/*` runtime-config endpoints,
+which authenticate with the control plane's own shared server secret.
+
+Verification lives in `src/supabase_auth.rs`, ported from
+`daedalus-api-server.rs`: allow-listed algorithms only (HS256/RS256/ES256),
+`aud` **and** `iss` pinned, `email_verified` required, bounded JWKS cache with
+single-flight and rate-limited refresh, and one uniform `401` for every
+rejection reason.
+
+| Variable | Purpose |
+| --- | --- |
+| `FABRICATION_SUPABASE_ISSUER` | **Required.** Pins tokens to this Supabase project. |
+| `FABRICATION_SUPABASE_JWT_SECRET` | HS256 verification key (or use JWKS below). |
+| `FABRICATION_SUPABASE_JWKS_URL` | RS256/ES256 verification via rotating JWKS. |
+| `FABRICATION_SUPABASE_AUDIENCE` | Defaults to `authenticated`. |
+| `FABRICATION_ALLOWED_EMAILS` | **Required.** Comma-separated operator allow-list. |
+
+The gate is **fail-closed**: unless an issuer, a key, and a non-empty allow-list
+are all configured, authenticated routes return `503` rather than serving
+anonymously. The gate is applied once as a router-level layer over everything
+outside the public allowlist, and
+`route_authorization_tests::every_route_outside_the_public_allowlist_is_gated`
+drives a real request through every declared route to prove it — a new route
+added without auth fails CI.
+
+### Realtime TCP transport (port 8114)
+
+The newline-delimited-JSON TCP stream hands every connecting peer the retained
+latest event and then the full plan fan-out, and has nowhere to carry a bearer
+token. It is therefore **opt-in and disabled by default**: set
+`FABRICATION_TCP_ENABLED=true` to start it. Treat it as a trusted-network-only
+debug transport — the NetworkPolicy confines it to the `daedalus` namespace, and
+nothing else should be relied on to protect it.
+
 It exposes:
 
 `GET /` returns the machine-readable service inventory with a `landingPage`

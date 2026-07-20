@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Namespace-scoped resources only — the `daedalus` Namespace itself is Layer-1
+# (owned by ORESoftware/k8s-cluster). See the org AGENTS.md / k8s-cluster
+# docs/app-deploy-contract.md.
+namespace: daedalus
+
+resources:
+  - deployment.yaml
+  - service.yaml
+  - networkpolicy.yaml
+  - externalsecret.yaml

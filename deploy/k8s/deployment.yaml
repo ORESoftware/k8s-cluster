@@ -1,0 +1,186 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-fabrication-server
+  namespace: daedalus
+  labels:
+    app.kubernetes.io/name: dd-fabrication-server
+    app.kubernetes.io/part-of: daedalus
+    app.kubernetes.io/component: fabrication-planner
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dd-fabrication-server
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /metrics
+        prometheus.io/port: "8113"
+        prometheus.io/scheme: http
+      labels:
+        app.kubernetes.io/name: dd-fabrication-server
+        app.kubernetes.io/part-of: daedalus
+        app.kubernetes.io/component: fabrication-planner
+    spec:
+      # Serves HTTP + a raw TCP transport, talks to Postgres and NATS. Never
+      # calls the Kubernetes API.
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: server
+          # Replace with the pushed image ref (GHCR/ECR) at cutover; pin a tag or
+          # digest, not :latest, for a promotable release. This image is built
+          # ahead of time — it deliberately does NOT reproduce the legacy
+          # hostPath + in-pod `cargo build` deployment.
+          image: ghcr.io/oresoftware/dd-fabrication-server:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8113
+            - name: tcp
+              containerPort: 8114
+          env:
+            # src/config.rs: HOST/PORT are unprefixed (PORT is the HTTP
+            # listener); everything else is FABRICATION_*.
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT
+              value: "8113"
+            - name: FABRICATION_TCP_PORT
+              value: "8114"
+            # The raw newline-delimited-JSON transport on 8114 streams full
+            # fabrication plans to every peer that connects and has nowhere to
+            # put a bearer token, so src/config.rs defaults it to OFF. It is a
+            # trusted-network-only debug transport; networkpolicy.yaml already
+            # confines it to the daedalus namespace. Set to "true" only for a
+            # deliberate, temporary in-cluster debugging session.
+            - name: FABRICATION_TCP_ENABLED
+              value: "false"
+            - name: RUST_LOG
+              value: "info,tower_http=info,hyper=warn,sea_orm=warn,async_nats=warn"
+            - name: DEPLOYMENT_ENVIRONMENT
+              value: production
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://dd-otel-collector.observability.svc.cluster.local:4318
+            - name: OTEL_SERVICE_NAME
+              value: dd-fabrication-server
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            # NATS. src/secrets.rs resolves NATS_URL from the process env first
+            # (the env always wins over the optional Fiducia overlay), so the
+            # plain in-cluster address is set inline. FIDUCIA_URL /
+            # FIDUCIA_API_KEY are intentionally left unset — supplying only one
+            # of the pair is a hard error.
+            - name: NATS_URL
+              value: nats://dd-nats.messaging.svc.cluster.local:4222
+            - name: FABRICATION_NATS_MAX_INFLIGHT
+              value: "8"
+            - name: FABRICATION_REALTIME_BUFFER
+              value: "256"
+            # Persistence. src/persistence.rs reads FABRICATION_DATABASE_URL,
+            # then RDS_DATABASE_URL, then DATABASE_URL.
+            - name: FABRICATION_DATABASE_MAX_CONNECTIONS
+              value: "8"
+            - name: FABRICATION_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-fabrication-secrets
+                  key: DATABASE_URL
+            # --- Supabase realtime -------------------------------------------
+            # The project URL, schema, table and topic are NOT secret; only the
+            # anon/publishable key comes from the ExternalSecret. This is the
+            # *realtime client* credential and has nothing to do with request
+            # authorization, which is configured in the block below.
+            - name: SUPABASE_URL
+              value: "https://REPLACE-WITH-DAEDALUS-PROJECT-REF.supabase.co"
+            - name: SUPABASE_ANON_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-fabrication-secrets
+                  key: SUPABASE_ANON_KEY
+            # --- Supabase request authorization ------------------------------
+            # src/supabase_auth.rs (ported from daedalus-api-server) verifies
+            # the caller's bearer token; src/config.rs::is_enabled() requires
+            # (jwt_secret OR jwks_url) AND issuer AND a non-empty allow-list.
+            # Omit any one of them and every route except /healthz and /readyz
+            # returns 503 — fail-closed by design, so ISSUER below must be set
+            # to the real project ref before cutover.
+            - name: FABRICATION_SUPABASE_AUDIENCE
+              value: "authenticated"
+            - name: FABRICATION_SUPABASE_ISSUER
+              value: "https://REPLACE-WITH-DAEDALUS-PROJECT-REF.supabase.co/auth/v1"
+            - name: FABRICATION_ALLOWED_EMAILS
+              value: "alexander.d.mills@gmail.com"
+            - name: FABRICATION_SUPABASE_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-fabrication-secrets
+                  key: SUPABASE_JWT_SECRET
+            # Asymmetric (RS256/ES256) verification alternative. Enabling this
+            # requires egress to *.supabase.co:443, which networkpolicy.yaml
+            # deliberately does not open — extend the policy first.
+            # - name: FABRICATION_SUPABASE_JWKS_URL
+            #   value: "https://REPLACE.supabase.co/auth/v1/.well-known/jwks.json"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "1000m"
+              memory: "512Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          # /healthz (src/http.rs::healthz) is a static JSON 200 and does NOT
+          # touch the DB: a transient DB outage must pull the pod from rotation,
+          # not restart-loop it. (Route names differ from 3fa's /livez.)
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # /readyz (src/http.rs::readyz) awaits persistence.is_ready(), i.e. it
+          # actually checks the database.
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Let endpoint removal propagate before shutdown starts, so in-flight
+          # HTTP/TCP/WS work is not blackholed.
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]

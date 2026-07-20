@@ -1,0 +1,101 @@
+# dd-fabrication-server — NATS-driven fabrication planner.
+#
+# Layer-2 (app-owned) manifest: namespace-scoped ONLY. The `daedalus` Namespace, its
+# ResourceQuota/LimitRange and the default-deny NetworkPolicy are Layer-1, owned by
+# ORESoftware/k8s-cluster (remote/argocd/projects/daedalus.tenant.yaml). Do NOT add a
+# Namespace/ClusterRole/CRD here — the `daedalus` AppProject enforces
+# clusterResourceWhitelist: [] and the sync will fail.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-fabrication-server
+  namespace: daedalus
+  labels:
+    app: dd-fabrication-server
+    app.kubernetes.io/name: dd-fabrication-server
+    app.kubernetes.io/part-of: daedalus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dd-fabrication-server
+  template:
+    metadata:
+      labels:
+        app: dd-fabrication-server
+        app.kubernetes.io/name: dd-fabrication-server
+        app.kubernetes.io/part-of: daedalus
+      annotations:
+        # Declared for discoverability; this cluster's Prometheus still scrapes
+        # from static_configs in k8s-cluster, so adding a target needs a PR to
+        # remote/argocd/observability/{prometheus,otel-collector}.configmap.yaml.
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /metrics
+        prometheus.io/port: "8113"
+        prometheus.io/scheme: http
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: fabrication-server
+          image: ghcr.io/daedalus-fab/fabrication-server.rs:main
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8113
+          env:
+            - { name: HOST, value: "0.0.0.0" }
+            - { name: PORT, value: "8113" }
+            # Cluster NATS (Layer-1, messaging namespace). Subjects use the
+            # dd_nats_subject_defs defaults; override only if the contract changes.
+            - { name: NATS_URL, value: "nats://dd-nats.messaging.svc.cluster.local:4222" }
+            # 4318 (HTTP), not 4317 (gRPC): dd-telemetry exports OTLP over
+            # HTTP/protobuf (the gRPC/tonic stack is deliberately excluded) and
+            # appends /v1/traces. Aimed at 4317 every export is an HTTP POST at
+            # a gRPC listener and is dropped silently — which is why this
+            # service has never produced traces despite the NetworkPolicy
+            # already allowing the egress.
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://dd-otel-collector.observability.svc.cluster.local:4318" }
+            - { name: OTEL_SERVICE_NAME, value: "dd-fabrication-server" }
+            - { name: RUST_LOG, value: "info" }
+            # The DSN provisioned by k8s/externalsecret.yaml. Without this the
+            # ExternalSecret materialized a Secret that nothing read, and
+            # src/persistence.rs — which reads FABRICATION_DATABASE_URL — would
+            # start with persistence silently disabled.
+            - name: FABRICATION_DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: dd-daedalus-fabrication-secrets, key: FABRICATION_DATABASE_URL }
+            - name: POD_NAME
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+            - name: POD_NAMESPACE
+              valueFrom: { fieldRef: { fieldPath: metadata.namespace } }
+            - name: NODE_NAME
+              valueFrom: { fieldRef: { fieldPath: spec.nodeName } }
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 1, memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+          lifecycle:
+            preStop:
+              # Drain: let endpoint removal propagate before shutdown begins.
+              exec: { command: ["sleep", "5"] }
+      volumes:
+        - name: tmp
+          emptyDir: {}

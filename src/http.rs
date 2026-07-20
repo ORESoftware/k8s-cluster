@@ -227,6 +227,8 @@ mod tests {
 
     fn test_state() -> AppState {
         AppState {
+            verifier: None,
+            http: reqwest::Client::new(),
             nats: None,
             persistence: Persistence::Disabled,
             realtime: EventHub::new(ServiceSurface::Fabrication, 8),
