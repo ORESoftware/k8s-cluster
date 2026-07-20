@@ -489,6 +489,10 @@ impl Config {
             admin_auth_bearer: None,
             admin_allowed_origins: Vec::new(),
             api_auth_bearer: None,
+            supabase: SupabaseConfig::default(),
+            // Tests build routers without a Supabase project to talk to; the
+            // per-tenant checks have their own focused tests in `api::auth`.
+            tenant_routes_require_user_jwt: false,
             // Tests sometimes hit localhost; default-allow keeps them simple.
             block_private_outbound: false,
             fiducia_enabled: false,
