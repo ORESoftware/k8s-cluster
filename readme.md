@@ -538,15 +538,17 @@ No credential required:
 - `/admin/*` — `BILLING_ADMIN_AUTH_BEARER` governs this nest separately
 
 The OAuth `/start` and Plaid `/link-token`/`/exchange` endpoints **do**
-require the bearer — they mint per-tenant CSRF state and seal
+require a credential — they mint per-tenant CSRF state and seal
 credentials, so they have to prove the caller's identity.
 
-The bearer is now **required to boot** (fail-closed): with
-`BILLING_API_AUTH_BEARER` unset the server refuses to start rather than run
-the API in open mode, unless `BILLING_ALLOW_INSECURE_DEV=1` is set explicitly
-for local development (in which case it runs open and logs a single WARN line
-at boot). Production manifests inject the bearer via SealedSecrets /
-ExternalSecrets.
+### Error semantics
+
+- `401` — no credential, or one that did not verify. *Who are you?*
+- `403` — verified, but not entitled to this tenant. *I know who you are, and
+  you may not.*
+- `503` — Supabase itself was unreachable and the JWKS cache was cold. This is
+  our failure, not the caller's, and must not be reported as `401`: telling a
+  legitimate user their credentials are bad would invite a pointless re-login.
 
 ### Other 2026-05-23 hardening fixes
 
