@@ -531,6 +531,47 @@ create index if not exists tenant_locks_shard_idx on tenant_locks (shard_key);
 -- Purge sweeper queries this index.
 create index if not exists tenant_locks_expired_idx on tenant_locks (expires_at);
 
+------------------------------------------------------------------------------
+-- Durable fencing-token guard for fiducia.cloud grants
+--
+-- Every fiducia lock/lease yields a fencing token. Those tokens used to be
+-- carried back to `release`, reported in API responses, and otherwise ignored:
+-- no database write was conditioned on one, so the distributed locks were
+-- advisory only. The 60s lease TTL cannot be extended (the SDK has no
+-- lock-renewal call), and fiducia's node/brain plane is reached across a
+-- cluster boundary — so "lease expired mid-critical-section" is a live
+-- failure mode, not a theoretical one. When it happened, a second holder could
+-- acquire and BOTH writers would commit, silently.
+--
+-- This table records the highest fencing token ever accepted per (tenant,
+-- fiducia key). A fenced write asserts its token against this row INSIDE the
+-- same transaction as the write, so check and commit are atomic and a stale
+-- token loses deterministically.
+--
+-- Why in-transaction: re-asking fiducia "do I still hold this?" over the
+-- network is a TOCTOU — the answer is stale the instant it returns and cannot
+-- be made atomic with COMMIT. Monotonic tokens in the same transaction are the
+-- standard resolution. The pg_advisory_xact_lock taken alongside remains the
+-- local backup: it serializes same-database contenders even when fiducia is
+-- unreachable, while the fence is what stops a *stale* holder.
+------------------------------------------------------------------------------
+
+create table if not exists fiducia_fences (
+  tenant_id     uuid        not null references tenants(id) on delete cascade,
+  -- The fiducia key this fence guards, e.g. `billing:customer:<tenant>:<id>`.
+  fence_key     text        not null,
+  -- Highest fencing token ever accepted for this key. Monotonic per key.
+  fencing_token bigint      not null check (fencing_token > 0),
+  -- Holder that last advanced the fence, so "the same holder re-asserting its
+  -- own term" is distinguishable from "a different holder replaying a token".
+  holder        text,
+  observed_at   timestamptz not null default now(),
+  primary key (tenant_id, fence_key)
+);
+
+-- Operational visibility and stale-fence cleanup.
+create index if not exists fiducia_fences_observed_idx on fiducia_fences (observed_at);
+
 -- Audit trail of every acquire/renew/release. Append-only, retained 90 days
 -- by a background job (not yet written). This is the SOC 2 control surface
 -- for the lock feature.

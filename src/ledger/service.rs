@@ -240,7 +240,7 @@ impl LedgerService {
             .await?
         {
             let existing: Uuid = row.try_get("", "id")?;
-            customer_lock_guard.ensure_valid().await?;
+            customer_lock_guard.fence(&tx, draft.tenant_id).await?;
             tx.commit().await?;
             return Ok((existing, false));
         }
@@ -279,7 +279,7 @@ impl LedgerService {
                 .await?,
             )?;
             let existing: Uuid = row.try_get("", "id")?;
-            customer_lock_guard.ensure_valid().await?;
+            customer_lock_guard.fence(&tx, draft.tenant_id).await?;
             tx.commit().await?;
             return Ok((existing, false));
         };
@@ -335,7 +335,7 @@ impl LedgerService {
             .map_err(map_pg_constraint_err)?;
         }
 
-        customer_lock_guard.ensure_valid().await?;
+        customer_lock_guard.fence(&tx, draft.tenant_id).await?;
         tx.commit().await?;
 
         // Genuinely-new commit (the two idempotent short-circuits above
