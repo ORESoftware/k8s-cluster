@@ -4083,6 +4083,53 @@ class WebSessionsTable extends Table {
   };
 }
 
+@DataClassName("FabJobsData")
+class FabJobsTable extends Table {
+  @override String get tableName => "fab_jobs";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get jobId => text().named("job_id")();
+  TextColumn get requestId => text().named("request_id")();
+  TextColumn get kind => text().named("kind")();
+  TextColumn get status => text().named("status")();
+  BoolColumn get ok => boolean().named("ok")();
+  TextColumn get severity => text().named("severity").clientDefault(() => 'info')();
+  TextColumn get summary => text().named("summary").clientDefault(() => '')();
+  IntColumn get artifactCount => integer().named("artifact_count").clientDefault(() => 0)();
+  TextColumn get payload => text().named("payload").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        jobId,
+  };
+}
+
+@DataClassName("FabLearningOutcomesData")
+class FabLearningOutcomesTable extends Table {
+  @override String get tableName => "fab_learning_outcomes";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get outcomeId => text().named("outcome_id")();
+  TextColumn get requestId => text().named("request_id").clientDefault(() => '')();
+  TextColumn get jobId => text().named("job_id").nullable()();
+  TextColumn get objective => text().named("objective").nullable()();
+  TextColumn get machineKind => text().named("machine_kind").nullable()();
+  TextColumn get assemblyStrategy => text().named("assembly_strategy").nullable()();
+  BoolColumn get success => boolean().named("success")();
+  RealColumn get reward => real().named("reward").clientDefault(() => 0)();
+  TextColumn get payload => text().named("payload").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        outcomeId,
+  };
+}
+
 // Drift annotation users should re-export the table classes via:
 // @DriftDatabase(tables: [...registeredDriftTables])
 const List<Type> registeredDriftTables = <Type>[
@@ -4241,4 +4288,6 @@ const List<Type> registeredDriftTables = <Type>[
   FabInstructionsTable,
   FabRunsTable,
   WebSessionsTable,
+  FabJobsTable,
+  FabLearningOutcomesTable,
 ];

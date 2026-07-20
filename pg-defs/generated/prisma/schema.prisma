@@ -3238,3 +3238,39 @@ model WebSessions {
   // Check constraints live in schema.sql and must be migrated from the SQL contract.
   @@map("web_sessions")
 }
+
+model FabJobs {
+  jobId String @map("job_id") @id @db.Text
+  requestId String @map("request_id") @db.Text
+  kind String @db.Text
+  status String @db.Text
+  ok Boolean
+  severity String @default("info") @db.Text
+  summary String @default("") @db.Text
+  artifactCount Int @map("artifact_count") @default(0)
+  payload Json @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@index([createdAt], map: "fab_jobs_created_idx")
+  @@index([requestId], map: "fab_jobs_request_idx")
+  @@index([kind], map: "fab_jobs_kind_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("fab_jobs")
+}
+
+model FabLearningOutcomes {
+  outcomeId String @map("outcome_id") @id @db.Text
+  requestId String @map("request_id") @default("") @db.Text
+  jobId String? @map("job_id") @db.Text
+  objective String? @db.Text
+  machineKind String? @map("machine_kind") @db.Text
+  assemblyStrategy String? @map("assembly_strategy") @db.Text
+  success Boolean
+  reward Float @default(0)
+  payload Json @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  @@index([createdAt], map: "fab_learning_outcomes_created_idx")
+  @@index([jobId], map: "fab_learning_outcomes_job_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("fab_learning_outcomes")
+}

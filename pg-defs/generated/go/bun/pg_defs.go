@@ -7851,6 +7851,81 @@ func (value WebSessionsBun) Validate() error {
 	return nil
 }
 
+const FabJobsTable = "daedalus.fab_jobs"
+const FabJobsSelectSQL = `select
+      job_id,
+      request_id,
+      kind,
+      status,
+      ok,
+      severity,
+      summary,
+      artifact_count,
+      payload,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from daedalus.fab_jobs`
+
+type FabJobsBun struct {
+	bun.BaseModel `bun:"table:daedalus.fab_jobs"`
+	JobId string `bun:"job_id,type:text,pk" json:"jobId"`
+	RequestId string `bun:"request_id,type:text" json:"requestId"`
+	Kind string `bun:"kind,type:text" json:"kind"`
+	Status string `bun:"status,type:text" json:"status"`
+	Ok bool `bun:"ok,type:boolean" json:"ok"`
+	Severity string `bun:"severity,type:text,default:'info'" json:"severity"`
+	Summary string `bun:"summary,type:text,default:''" json:"summary"`
+	ArtifactCount int32 `bun:"artifact_count,type:integer,default:0" json:"artifactCount"`
+	Payload json.RawMessage `bun:"payload,type:jsonb,default:'{}'::jsonb" json:"payload"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value FabJobsBun) Validate() error {
+	if len([]byte(value.JobId)) > 200 { return errors.New("fab_jobs.job_id exceeds 200 bytes") }
+	if len([]byte(value.JobId)) < 1 { return errors.New("fab_jobs.job_id is below 1 bytes") }
+	if len([]byte(value.RequestId)) > 200 { return errors.New("fab_jobs.request_id exceeds 200 bytes") }
+	if len([]byte(value.Summary)) > 20000 { return errors.New("fab_jobs.summary exceeds 20000 bytes") }
+	if value.ArtifactCount < 0 { return errors.New("fab_jobs.artifact_count is below the minimum") }
+	if !validateRawJSON(value.Payload) { return errors.New("fab_jobs.payload must be valid JSON") }
+	return nil
+}
+
+const FabLearningOutcomesTable = "daedalus.fab_learning_outcomes"
+const FabLearningOutcomesSelectSQL = `select
+      outcome_id,
+      request_id,
+      job_id,
+      objective,
+      machine_kind,
+      assembly_strategy,
+      success,
+      reward,
+      payload,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from daedalus.fab_learning_outcomes`
+
+type FabLearningOutcomesBun struct {
+	bun.BaseModel `bun:"table:daedalus.fab_learning_outcomes"`
+	OutcomeId string `bun:"outcome_id,type:text,pk" json:"outcomeId"`
+	RequestId string `bun:"request_id,type:text,default:''" json:"requestId"`
+	JobId *string `bun:"job_id,type:text,nullzero" json:"jobId,omitempty"`
+	Objective *string `bun:"objective,type:text,nullzero" json:"objective,omitempty"`
+	MachineKind *string `bun:"machine_kind,type:text,nullzero" json:"machineKind,omitempty"`
+	AssemblyStrategy *string `bun:"assembly_strategy,type:text,nullzero" json:"assemblyStrategy,omitempty"`
+	Success bool `bun:"success,type:boolean" json:"success"`
+	Reward float64 `bun:"reward,type:double precision,default:0" json:"reward"`
+	Payload json.RawMessage `bun:"payload,type:jsonb,default:'{}'::jsonb" json:"payload"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+}
+
+func (value FabLearningOutcomesBun) Validate() error {
+	if len([]byte(value.OutcomeId)) > 200 { return errors.New("fab_learning_outcomes.outcome_id exceeds 200 bytes") }
+	if len([]byte(value.OutcomeId)) < 1 { return errors.New("fab_learning_outcomes.outcome_id is below 1 bytes") }
+	if !validateRawJSON(value.Payload) { return errors.New("fab_learning_outcomes.payload must be valid JSON") }
+	return nil
+}
+
 func validateRawJSON(value json.RawMessage) bool {
 	if len(value) == 0 {
 		return true

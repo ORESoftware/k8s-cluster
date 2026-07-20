@@ -3085,3 +3085,38 @@ class WebSessions(BaseModel):
     class Meta:
         table_name = "web_sessions"
         schema = "daedalus"
+
+
+class FabJobs(BaseModel):
+    job_id = TextField(primary_key=True)
+    request_id = TextField()
+    kind = TextField()
+    status = TextField()
+    ok = BooleanField()
+    severity = TextField()
+    summary = TextField()
+    artifact_count = IntegerField()
+    payload = BinaryJSONField()
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+
+    class Meta:
+        table_name = "fab_jobs"
+        schema = "daedalus"
+
+
+class FabLearningOutcomes(BaseModel):
+    outcome_id = TextField(primary_key=True)
+    request_id = TextField()
+    job_id = TextField(null=True)
+    objective = TextField(null=True)
+    machine_kind = TextField(null=True)
+    assembly_strategy = TextField(null=True)
+    success = BooleanField()
+    reward = DoubleField()
+    payload = BinaryJSONField()
+    created_at = DateTimeField()
+
+    class Meta:
+        table_name = "fab_learning_outcomes"
+        schema = "daedalus"

@@ -11107,3 +11107,59 @@ data WebSessionsRow = WebSessionsRow
 
 instance FromRow WebSessionsRow where
   fromRow = WebSessionsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+fabJobsTable :: Text
+fabJobsTable = "daedalus.fab_jobs"
+
+fabJobsColumns :: [Text]
+fabJobsColumns = ["job_id", "request_id", "kind", "status", "ok", "severity", "summary", "artifact_count", "payload", "created_at", "updated_at"]
+
+fabJobsSelectSql :: Text
+fabJobsSelectSql = "select\n      job_id,\n      request_id,\n      kind,\n      status,\n      ok,\n      severity,\n      summary,\n      artifact_count,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from daedalus.fab_jobs"
+
+data FabJobsRow = FabJobsRow
+  { fabJobsJobId :: Text
+  , fabJobsRequestId :: Text
+  , fabJobsKind :: Text
+  , fabJobsStatus :: Text
+  , fabJobsOk :: Bool
+  , fabJobsSeverity :: Text
+  , fabJobsSummary :: Text
+  , fabJobsArtifactCount :: Int
+  , fabJobsPayload :: Text
+  , fabJobsCreatedAt :: Text
+  , fabJobsUpdatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow FabJobsRow where
+  fromRow = FabJobsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateFabJobsArtifactCount :: Int -> Either Text Int
+validateFabJobsArtifactCount value
+  | value < 0 = Left "fab_jobs.artifact_count is below the minimum"
+  | otherwise = Right value
+
+fabLearningOutcomesTable :: Text
+fabLearningOutcomesTable = "daedalus.fab_learning_outcomes"
+
+fabLearningOutcomesColumns :: [Text]
+fabLearningOutcomesColumns = ["outcome_id", "request_id", "job_id", "objective", "machine_kind", "assembly_strategy", "success", "reward", "payload", "created_at"]
+
+fabLearningOutcomesSelectSql :: Text
+fabLearningOutcomesSelectSql = "select\n      outcome_id,\n      request_id,\n      job_id,\n      objective,\n      machine_kind,\n      assembly_strategy,\n      success,\n      reward,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_learning_outcomes"
+
+data FabLearningOutcomesRow = FabLearningOutcomesRow
+  { fabLearningOutcomesOutcomeId :: Text
+  , fabLearningOutcomesRequestId :: Text
+  , fabLearningOutcomesJobId :: (Maybe Text)
+  , fabLearningOutcomesObjective :: (Maybe Text)
+  , fabLearningOutcomesMachineKind :: (Maybe Text)
+  , fabLearningOutcomesAssemblyStrategy :: (Maybe Text)
+  , fabLearningOutcomesSuccess :: Bool
+  , fabLearningOutcomesReward :: Double
+  , fabLearningOutcomesPayload :: Text
+  , fabLearningOutcomesCreatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow FabLearningOutcomesRow where
+  fromRow = FabLearningOutcomesRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field

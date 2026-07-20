@@ -13524,3 +13524,148 @@ class WebSessionsObjectBox {
     );
   }
 }
+
+@Entity()
+class FabJobsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String jobId;
+
+  String requestId;
+
+  String kind;
+
+  String status;
+
+  bool ok;
+
+  String severity;
+
+  String summary;
+
+  int artifactCount;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String payload;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  FabJobsObjectBox({
+    required this.jobId,
+    required this.requestId,
+    required this.kind,
+    required this.status,
+    required this.ok,
+    required this.severity,
+    required this.summary,
+    required this.artifactCount,
+    required this.payload,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "jobId": jobId,
+    "requestId": requestId,
+    "kind": kind,
+    "status": status,
+    "ok": ok,
+    "severity": severity,
+    "summary": summary,
+    "artifactCount": artifactCount,
+    "payload": jsonDecode(payload),
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static FabJobsObjectBox fromJson(Map<String, Object?> json) {
+    return FabJobsObjectBox(
+      jobId: json["jobId"] as String,
+      requestId: json["requestId"] as String,
+      kind: json["kind"] as String,
+      status: json["status"] as String,
+      ok: json["ok"] as bool,
+      severity: json["severity"] as String,
+      summary: json["summary"] as String,
+      artifactCount: (json["artifactCount"] as num).toInt(),
+      payload: json["payload"] is String ? json["payload"] as String : jsonEncode(json["payload"]),
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class FabLearningOutcomesObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String outcomeId;
+
+  String requestId;
+
+  String? jobId;
+
+  String? objective;
+
+  String? machineKind;
+
+  String? assemblyStrategy;
+
+  bool success;
+
+  double reward;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String payload;
+
+  String createdAt;
+
+
+  FabLearningOutcomesObjectBox({
+    required this.outcomeId,
+    required this.requestId,
+    this.jobId,
+    this.objective,
+    this.machineKind,
+    this.assemblyStrategy,
+    required this.success,
+    required this.reward,
+    required this.payload,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "outcomeId": outcomeId,
+    "requestId": requestId,
+    "jobId": jobId,
+    "objective": objective,
+    "machineKind": machineKind,
+    "assemblyStrategy": assemblyStrategy,
+    "success": success,
+    "reward": reward,
+    "payload": jsonDecode(payload),
+    "createdAt": createdAt,
+  };
+
+  static FabLearningOutcomesObjectBox fromJson(Map<String, Object?> json) {
+    return FabLearningOutcomesObjectBox(
+      outcomeId: json["outcomeId"] as String,
+      requestId: json["requestId"] as String,
+      jobId: json["jobId"] as String?,
+      objective: json["objective"] as String?,
+      machineKind: json["machineKind"] as String?,
+      assemblyStrategy: json["assemblyStrategy"] as String?,
+      success: json["success"] as bool,
+      reward: (json["reward"] as num).toDouble(),
+      payload: json["payload"] is String ? json["payload"] as String : jsonEncode(json["payload"]),
+      createdAt: json["createdAt"] as String,
+    );
+  }
+}

@@ -8712,3 +8712,98 @@ pub struct WebSessionsDieselInsert {
     pub absolute_expires_at: Option<DateTime<Utc>>,
     pub revoked_at: Option<DateTime<Utc>>,
 }
+
+diesel::table! {
+    use diesel::sql_types::*;
+    fab_jobs (job_id) {
+        job_id -> Text,
+        request_id -> Text,
+        kind -> Text,
+        status -> Text,
+        ok -> Bool,
+        severity -> Text,
+        summary -> Text,
+        artifact_count -> Int4,
+        payload -> Jsonb,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = fab_jobs)]
+pub struct FabJobsDieselRow {
+    pub job_id: String,
+    pub request_id: String,
+    pub kind: String,
+    pub status: String,
+    pub ok: bool,
+    pub severity: String,
+    pub summary: String,
+    pub artifact_count: i32,
+    pub payload: Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = fab_jobs)]
+pub struct FabJobsDieselInsert {
+    pub job_id: Option<String>,
+    pub request_id: Option<String>,
+    pub kind: Option<String>,
+    pub status: Option<String>,
+    pub ok: Option<bool>,
+    pub severity: Option<String>,
+    pub summary: Option<String>,
+    pub artifact_count: Option<i32>,
+    pub payload: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    fab_learning_outcomes (outcome_id) {
+        outcome_id -> Text,
+        request_id -> Text,
+        job_id -> Nullable<Text>,
+        objective -> Nullable<Text>,
+        machine_kind -> Nullable<Text>,
+        assembly_strategy -> Nullable<Text>,
+        success -> Bool,
+        reward -> Double,
+        payload -> Jsonb,
+        created_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = fab_learning_outcomes)]
+pub struct FabLearningOutcomesDieselRow {
+    pub outcome_id: String,
+    pub request_id: String,
+    pub job_id: Option<String>,
+    pub objective: Option<String>,
+    pub machine_kind: Option<String>,
+    pub assembly_strategy: Option<String>,
+    pub success: bool,
+    pub reward: f64,
+    pub payload: Value,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = fab_learning_outcomes)]
+pub struct FabLearningOutcomesDieselInsert {
+    pub outcome_id: Option<String>,
+    pub request_id: Option<String>,
+    pub job_id: Option<String>,
+    pub objective: Option<String>,
+    pub machine_kind: Option<String>,
+    pub assembly_strategy: Option<String>,
+    pub success: Option<bool>,
+    pub reward: Option<f64>,
+    pub payload: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+}

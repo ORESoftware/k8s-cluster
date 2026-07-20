@@ -8863,6 +8863,90 @@ public class WebSessions
     public DateTimeOffset? RevokedAt { get; set; }
 }
 
+[Table("fab_jobs", Schema = "daedalus")]
+public class FabJobs
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("job_id")]
+    public string JobId { get; set; } = null!;
+
+    [Required]
+    [Column("request_id")]
+    public string RequestId { get; set; } = null!;
+
+    [Required]
+    [Column("kind")]
+    public string Kind { get; set; } = null!;
+
+    [Required]
+    [Column("status")]
+    public string Status { get; set; } = null!;
+
+    [Column("ok")]
+    public bool Ok { get; set; }
+
+    [Required]
+    [Column("severity")]
+    public string Severity { get; set; } = null!;
+
+    [Required]
+    [Column("summary")]
+    public string Summary { get; set; } = null!;
+
+    [Column("artifact_count")]
+    [Range(0, 2147483647)]
+    public int ArtifactCount { get; set; }
+
+    [Required]
+    [Column("payload", TypeName = "jsonb")]
+    public string Payload { get; set; } = null!;
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+[Table("fab_learning_outcomes", Schema = "daedalus")]
+public class FabLearningOutcomes
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("outcome_id")]
+    public string OutcomeId { get; set; } = null!;
+
+    [Required]
+    [Column("request_id")]
+    public string RequestId { get; set; } = null!;
+
+    [Column("job_id")]
+    public string? JobId { get; set; }
+
+    [Column("objective")]
+    public string? Objective { get; set; }
+
+    [Column("machine_kind")]
+    public string? MachineKind { get; set; }
+
+    [Column("assembly_strategy")]
+    public string? AssemblyStrategy { get; set; }
+
+    [Column("success")]
+    public bool Success { get; set; }
+
+    [Column("reward")]
+    public double Reward { get; set; }
+
+    [Required]
+    [Column("payload", TypeName = "jsonb")]
+    public string Payload { get; set; } = null!;
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
 public class DdPgDefsContext : DbContext
 {
     public DdPgDefsContext(DbContextOptions<DdPgDefsContext> options) : base(options)
@@ -9178,4 +9262,8 @@ public class DdPgDefsContext : DbContext
     public DbSet<FabRuns> FabRunsSet => Set<FabRuns>();
 
     public DbSet<WebSessions> WebSessionsSet => Set<WebSessions>();
+
+    public DbSet<FabJobs> FabJobsSet => Set<FabJobs>();
+
+    public DbSet<FabLearningOutcomes> FabLearningOutcomesSet => Set<FabLearningOutcomes>();
 }
