@@ -260,6 +260,44 @@ impl Config {
             }
         }
 
+        // Per-user Supabase auth. `BILLING_SUPABASE_URL` is the only required
+        // value; the issuer and JWKS URL follow the hosted layout unless a
+        // self-hosted GoTrue deployment overrides them.
+        let supabase_url = optional_trimmed_env("BILLING_SUPABASE_URL");
+        let supabase = SupabaseConfig {
+            issuer: optional_trimmed_env("BILLING_SUPABASE_JWT_ISS")
+                .or_else(|| supabase_url.as_deref().map(SupabaseConfig::issuer_for)),
+            jwks_url: optional_trimmed_env("BILLING_SUPABASE_JWKS_URL")
+                .or_else(|| supabase_url.as_deref().map(SupabaseConfig::jwks_url_for)),
+            audience: optional_trimmed_env("BILLING_SUPABASE_JWT_AUD")
+                .unwrap_or_else(|| "authenticated".to_string()),
+            jwt_secret: optional_trimmed_env("BILLING_SUPABASE_JWT_SECRET"),
+            url: supabase_url,
+        };
+
+        // Fail-closed by default: tenant-scoped routes require a per-user token.
+        let tenant_routes_require_user_jwt =
+            env_bool("BILLING_TENANT_ROUTES_REQUIRE_USER_JWT", true);
+
+        if !allow_insecure_dev && tenant_routes_require_user_jwt && !supabase.is_enabled() {
+            // Booting in this state would 503 every tenant-scoped request,
+            // because the router would demand a JWT it has no way to verify.
+            // Refuse loudly at boot instead of failing per-request in prod.
+            anyhow::bail!(
+                "refusing to boot: tenant-scoped /v1/tenants/{{tenant_id}}/... routes \
+                 require a verified Supabase JWT, but Supabase is not configured. \
+                 Set BILLING_SUPABASE_URL (and, for a self-hosted GoTrue, \
+                 BILLING_SUPABASE_JWT_ISS / BILLING_SUPABASE_JWKS_URL). \
+                 \n\nMigration path for existing service callers: set \
+                 BILLING_TENANT_ROUTES_REQUIRE_USER_JWT=false to keep accepting \
+                 the shared BILLING_API_AUTH_BEARER on tenant routes while those \
+                 callers are moved onto per-user Supabase tokens. That leaves the \
+                 cross-tenant IDOR open, so treat it as a time-boxed migration \
+                 window — not a setting to leave in place. \
+                 Local development can instead set BILLING_ALLOW_INSECURE_DEV=1."
+            );
+        }
+
         Ok(Self {
             host: env::var("BILLING_HOST").unwrap_or_else(|_| "0.0.0.0".into()),
             port: env::var("BILLING_PORT")
