@@ -123588,6 +123588,12 @@ pub async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
              FABRICATION_ALLOWED_EMAILS); authenticated routes will return 503"
         );
     }
+    // Log the unauthenticated surface at startup so it is visible in the pod
+    // logs of every deploy, not only in a source review.
+    tracing::info!(
+        http.public_routes = ?PUBLIC_ROUTES,
+        "every other HTTP route requires a verified, allow-listed Supabase operator"
+    );
 
     let state = AppState {
         verifier,
@@ -180760,7 +180766,12 @@ mod route_authorization_tests {
         // means no socket was opened, whereas a 101 would mean the plan stream
         // is already flowing by the time anyone checks.
         let app = gated_app();
-        for path in ["/api/realtime", "/mash", "/mash/fragment", "/fabrication/mash"] {
+        for path in [
+            "/api/realtime",
+            "/mash",
+            "/mash/fragment",
+            "/fabrication/mash",
+        ] {
             assert_eq!(
                 status_for(&app, "GET", path).await,
                 StatusCode::UNAUTHORIZED,

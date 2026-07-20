@@ -23,7 +23,9 @@ spec:
       protocol: TCP
     # Raw TCP transport (src/config.rs FABRICATION_TCP_PORT). In-cluster only;
     # networkpolicy.yaml admits it from the daedalus namespace, not the ingress
-    # controller.
+    # controller. It is also an UNAUTHENTICATED debug transport and is disabled
+    # unless FABRICATION_TCP_ENABLED=true, so this port normally has no
+    # listener behind it.
     - name: tcp
       port: 8114
       targetPort: tcp

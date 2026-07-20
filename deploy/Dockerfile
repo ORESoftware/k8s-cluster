@@ -77,6 +77,9 @@ ENV HOST=0.0.0.0
 # TCP transport listener.
 ENV PORT=8113
 ENV FABRICATION_TCP_PORT=8114
+# The raw TCP transport is unauthenticated by nature and defaults to disabled;
+# EXPOSE 8114 below only documents the port, it does not open a listener.
+ENV FABRICATION_TCP_ENABLED=false
 
 EXPOSE 8113
 EXPOSE 8114
