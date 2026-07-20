@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "source_pin": "d12b5bdf4012d6f79456ced119875b88c40d490d",
+  "infra_commit": "1ecc1fa71e9ab1710806aa15b15487821757b988",
+  "clusters": [
+    "civo",
+    "hetzner",
+    "vultr"
+  ],
+  "components": {
+    "fiducia-node.rs": {
+      "commit": "ba5bbe28755fbebc62bf3275b7b63879e2405d86",
+      "image": "ghcr.io/fiducia-cloud/fiducia-node",
+      "digest": "sha256:6d83333f717ce48125844724e993472c8c8c4c80e0e0293c3806599125a7915e"
+    },
+    "fiducia-node-sidecar.rs": {
+      "commit": "de1a2f89f259a6fcceb2c2fe1ddccb0508b64ff9",
+      "image": "ghcr.io/fiducia-cloud/fiducia-node-sidecar",
+      "digest": "sha256:b66bf1516a70242050e037fae73ca9861a99e462e7d83ed82b9a029fd7307d01"
+    },
+    "fiducia-brain.rs": {
+      "commit": "31edd9401831736e35eddcc429e769c103e869d7",
+      "image": "ghcr.io/fiducia-cloud/fiducia-brain",
+      "digest": "sha256:945b2ea0eca0028a8c91376d1406043477dcd4a6faaf706fcc3c479f15dedcc3"
+    },
+    "fiducia-load-balance.rs": {
+      "commit": "066e9e3e4de4364e0eb4dc06b2fee5b32388d8db",
+      "image": "ghcr.io/fiducia-cloud/fiducia-load-balance",
+      "digest": "sha256:2a2f590de132e9479433656bd47219329931a2f522a8c40bc2c6be68e717036c"
+    }
+  },
+  "manifests": {
+    "civo": "sha256:d8d702fa73d4d4c89652faeba0a92dbb715b7b3fe97021f41f84dc2f9faec7cb",
+    "hetzner": "sha256:9b04e097f13fc78469bb9e39d602aedb1e2697f2c3445e0621309be02466eb06",
+    "vultr": "sha256:e1f72bf71ab98379ac5c73490ffe41f4096b52b8a1d4ff3067f7df0cf8289288"
+  }
+}

@@ -86,19 +86,21 @@ scripts/audit-repo-state.sh --allow-dirty
 
 ## Production deployment
 
-This repository is the only production deployment source. Dispatch the `deploy`
-workflow from protected `main`; the job binds to the fixed `prod` GitHub
-Environment, verifies that the checked-out commit equals current `origin/main`,
-and rejects any submodule checkout that differs from its reviewed gitlink. It
-then validates and directly applies the pinned `apps/fiducia-infra` overlays.
+This repository is the data-plane production source and the intended source for
+the ORES web plane. Dispatch `deploy` from protected `main`; the `prod`
+Environment approves the exact recursive gitlink set, resolves its GHCR images
+to immutable digests, renders Hetzner/Civo/Vultr state under
+`gitops/data-plane`, and commits the release bill of materials. Argo CD pulls
+that commit and continuously reconciles the three provider clusters.
 
-Configure the `prod` Environment with required reviewers, restrict deployment
-branches to protected `main`, and store both `KUBE_CONFIG_PROD` and a read-only
-fine-grained `FIDUCIA_SUBMODULE_TOKEN` there. Missing credentials fail the
-manual deployment. Public PRs run the contract suite against public interface
-and sync gitlinks; trusted `main` CI uses the token for the recursive fleet
-audit. There is no caller-selected environment/ref or mutable-main deployment
-fallback.
+Actions has no kubeconfig and performs no direct cluster mutation. The only
+production secret it needs is a read-only `FIDUCIA_SUBMODULE_TOKEN`. The
+ORESoftware Kubernetes cluster currently hosts the admin, customer/backend, and
+auth web plane through its existing Argo CD setup; the data-plane
+ApplicationSet is label-isolated from that cluster. The safe transfer of that
+desired state into this monorepo is tracked in
+`docs/k8s-cluster-gitops-todos-2026-07.md`. See `docs/deploy.md` for placement,
+bootstrap labels, approval controls, and the legacy-Application cutover.
 
 ## Apps
 

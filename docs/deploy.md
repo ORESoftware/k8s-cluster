@@ -1,56 +1,88 @@
 # Deployment
 
-One deployment owner, many test owners. Component repositories validate their
-code and publish immutable artifacts; the superproject is the only repository
-allowed to mutate a runtime environment.
+Fiducia uses pull-based GitOps. Component repositories test and publish
+artifacts, the monorepo records the approved release, and Argo CD is the only
+production reconciler. GitHub Actions never receives Kubernetes or cloud
+credentials.
 
-## Component repositories — tests and artifacts only
+## Placement and desired-state ownership
 
-Each app repo's own CI is responsible for validating changes on pull requests
-and `main`:
+The production topology has a deliberately asymmetric fourth cluster:
 
-- Test workflows use locked dependency graphs, immutable sibling revisions,
-  least-privilege tokens, bounded jobs, and non-persisted checkout credentials.
-- Container-producing repositories publish a commit-SHA tag with provenance and
-  an SBOM. They do not publish `latest` and do not receive kubeconfig or
-  Cloudflare deployment credentials.
-- The marketing site's GitHub Pages workflow is the only exception because the
-  Pages OIDC token and environment are bound by GitHub to that repository. Its
-  write permissions exist only on the deploy job.
+| Plane | Runtime cluster | Desired-state owner | Workloads |
+|---|---|---|---|
+| Web | ORESoftware `k8s-cluster` | currently `~/codes/ores/k8s-cluster`; target `fiducia-monorepo` | `fiducia-admin`, `fiducia-backend` (the customer app), `fiducia-auth`; shared gateway/observability remain cluster-owned |
+| Data | `fiducia-infra` on Hetzner, Civo, Vultr | `fiducia-monorepo` | `fiducia-node`, `fiducia-node-sidecar`, `fiducia-brain`, `fiducia-load-balance`, per-cluster telemetry agent |
 
-## Runtime deployment — owned by the monorepo, manually
+The web cluster must never carry the Argo label `fiducia.cloud/plane=data`.
+The production ApplicationSet requires that label, plus an explicit provider
+allowlist, so it cannot accidentally place Raft members on the web plane.
 
-`fiducia-monorepo` is the **only** path to production. There is no push-triggered
-prod deploy anywhere.
+## Component repositories — CI and images only
 
-- Production ships **only** via `.github/workflows/deploy.yml`, and only when an
-  operator dispatches it (`workflow_dispatch`) against a reviewed submodule pin
-  set. The superproject pins are the deployable state: a component change reaches
-  prod only after its repo is pushed **and** its pin here is updated (see
-  `docs/repo-boundaries.md`).
-- The workflow first **validates** the rendered state from `apps/fiducia-infra`
-  (`node tools/render.mjs --check`, then `kubectl kustomize` for every
-  `clusters/*/`) before any apply.
-- Core workload images are derived from the reviewed component gitlinks. The
-  workflow verifies that each commit-SHA image exists in GHCR, rewrites the
-  runner's manifest copy to those exact SHAs, and rejects mutable core tags.
-- Each cluster overlay is applied only to a kubeconfig context with the same
-  explicit cluster name (`hetzner`, `vultr`, `civo`). A missing context fails
-  the deployment instead of falling back to the ambient/current context. Every
-  node, brain, and load-balancer rollout must then complete.
-- The rollout step is **credential-gated and never automatic**. It requires
-  `KUBE_CONFIG_PROD` plus a read-only fine-grained
-  `FIDUCIA_SUBMODULE_TOKEN` that can clone every private app repo. Missing
-  credentials fail the manual workflow. Public PR CI is the contract-only
-  validation path; trusted `main` CI additionally runs the recursive fleet
-  audit with the same read-only token. Required secrets are listed at the top
-  of `deploy.yml`.
-- Bind the `prod` GitHub Environment to **required reviewers** for a human
-  approval gate on top of the manual dispatch.
+Container-producing repositories publish only a commit-SHA tag to GHCR, with
+BuildKit provenance and an SBOM. They do not publish `latest`, hold a kubeconfig,
+or call Argo CD. The production promotion resolves each reviewed commit tag to
+its registry digest, so the running image remains immutable even if a tag is
+later moved.
 
-## Why deployment lives here and not in the app repos
+The customer image includes its reviewed static-site fallback. Production pods
+do not clone GitHub repositories or compile Rust/Astro at startup.
 
-Deployment is a property of the **whole fleet at a coherent set of pins**, not
-of any single component. Centralizing it in the superproject means one reviewed
-pin set, one manual trigger, one place to audit, and no race between independent
-component rollouts.
+## Monorepo promotion
+
+The manual `deploy` workflow is a release promotion, not a cluster deployment:
+
+1. The protected `prod` Environment approves a specific `main` commit.
+2. The workflow checks out the exact recursive gitlink set using the read-only
+   `FIDUCIA_SUBMODULE_TOKEN`.
+3. It verifies the four core images exist and resolves their GHCR digests.
+4. `tools/gitops-release.mjs` renders the reviewed `fiducia-infra` overlays for
+   Hetzner, Civo, and Vultr, rejects Secrets and non-digest core images, and
+   updates `gitops/release.json` plus `gitops/data-plane/*/manifests.yaml`.
+5. After a second contract/build check, the workflow commits only that desired
+   state to `main`. Argo CD observes the commit and reconciles the clusters.
+
+There is no direct `kubectl apply`, rollout loop, Argo API call, or kubeconfig in
+Actions. A promotion commit made with `GITHUB_TOKEN` does not start another
+workflow, so validation is deliberately completed before the commit is pushed.
+
+## Argo CD bootstrap
+
+`gitops/argocd/production-applicationset.yaml` defines a restricted AppProject
+and cluster-generator ApplicationSet. Bootstrap it once on the Argo CD hub after
+registering the three provider clusters. Their Argo cluster Secrets require:
+
+```yaml
+fiducia.cloud/cluster: "true"
+fiducia.cloud/environment: production
+fiducia.cloud/plane: data
+fiducia.cloud/provider: hetzner # civo or vultr on the other clusters
+```
+
+The AppProject omits `Secret`, so TLS keys, image-pull credentials, database
+URLs, Supabase credentials, and Fiducia internal trust material remain in the
+cluster secret-management plane. Configure repository credentials for the
+monorepo in Argo CD if the repository is restored to its intended private
+visibility.
+
+Before enabling this ApplicationSet, remove the legacy node/brain/load-balancer
+resources from the ORESoftware cluster's `fiducia` Argo Application. That
+Application temporarily remains the web-plane owner for admin,
+customer/backend, and auth; two Argo Applications must never manage the same
+Kubernetes object. The target is for the monorepo to own that desired state as
+well. Follow the staged ownership-transfer checklist in
+[`k8s-cluster-gitops-todos-2026-07.md`](k8s-cluster-gitops-todos-2026-07.md)
+before adding or enabling a web-plane Application.
+
+## Required GitHub controls
+
+- Protect the `prod` Environment with required reviewers and restrict it to
+  protected `main`.
+- Store only `FIDUCIA_SUBMODULE_TOKEN` there. It needs read access to private
+  Fiducia component repositories and no write scopes.
+- Keep the deploy job's `contents: write` permission; it is used only to append
+  the approved desired-state commit to `main`.
+- Require the `ci / contracts` check on `main`. The contract suite validates
+  the Argo selector, release bill of materials, manifest hashes, Kustomize
+  builds, digest pins, and Secret exclusion.

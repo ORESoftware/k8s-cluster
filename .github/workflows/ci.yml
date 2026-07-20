@@ -1,6 +1,6 @@
 # Public contract CI initializes every public repository whose files the tests
-# read. Trusted main/manual runs additionally require the private-module token
-# and audit the complete pinned fleet.
+# read. Explicit manual runs additionally require the private-module token and
+# audit the complete pinned fleet.
 name: ci
 on:
   push:
@@ -42,19 +42,28 @@ jobs:
           apps/fiducia-node.rs
           apps/fiducia-routing.rs
           apps/fiducia-load-balance.rs
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # 1.95.0
+        with:
+          toolchain: "1.95.0"
+      - name: Compile public generated-interface consumers
+        run: scripts/check-interface-consumers.sh public
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
         with:
           node-version: "22.22.1"
+      - uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4
+        with:
+          version: "v1.32.2"
       - run: npm ci --ignore-scripts
       - run: npm audit --omit=dev
       - run: npm test
 
   fleet-audit:
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'workflow_dispatch'
     needs: contracts
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    # Isolates the private read token from public pull-request jobs.
+    # Isolates the private read token from automatic public jobs. Production
+    # promotion independently runs this same fail-closed fleet audit.
     environment: internal-ci
     steps:
       - name: Require private-submodule read token
@@ -69,6 +78,14 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.FIDUCIA_SUBMODULE_TOKEN }}
           persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # 1.95.0
+        with:
+          toolchain: "1.95.0"
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # 1.97.0
+        with:
+          toolchain: "1.97.0"
+      - name: Compile complete generated-interface consumer fleet
+        run: scripts/check-interface-consumers.sh full
       - name: Audit the reviewed fleet state
         env:
           GH_TOKEN: ${{ github.token }}

@@ -1,46 +1,36 @@
-# Production deploy — the monorepo is the ONLY path to prod.
+# Production promotion — Git writes desired state; Argo CD reconciles it.
 #
-# Manual only (workflow_dispatch); NEVER triggered by push. Component repos test
-# and publish immutable commit-tagged images, but all cluster mutation happens
-# HERE against a reviewed superproject pin set. See docs/deploy.md.
+# This workflow deliberately has no kubeconfig, cloud credential, `kubectl
+# apply`, or Argo API token. It resolves the reviewed component gitlinks to
+# immutable GHCR digests, renders the three fiducia-infra provider overlays,
+# validates the result, and commits only gitops/release.json + data-plane state.
 #
-# Required secrets for every rollout. Missing credentials fail the manual job
-# before validation or apply; CI is the validation-only path.
-#   FIDUCIA_SUBMODULE_TOKEN  read-only fine-grained token for all app repos.
-#   KUBE_CONFIG_PROD    raw kubeconfig (YAML) with apply rights on the prod
-#                       cluster(s). Primary gate for a kubectl rollout.
-# For a human approval gate, protect the `prod` GitHub Environment with required
-# reviewers — this job binds to it via `environment:` below.
+# Required `prod` environment configuration:
+#   - required reviewers and protected-main-only deployment policy;
+#   - FIDUCIA_SUBMODULE_TOKEN: read-only fine-grained token for private app repos.
 
 name: deploy
 on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  packages: read # Required only to verify reviewed commit-SHA images in GHCR.
+  contents: write # Commit the approved desired-state promotion to main.
+  packages: read  # Resolve reviewed commit-SHA images to registry digests.
 
 concurrency:
   group: deploy-prod
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  promote:
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    # Binds to a GitHub Environment so required-reviewer protection (if enabled)
-    # gates every run. Reinforces: prod never deploys automatically.
     environment: prod
     steps:
-      - name: Require deployment credentials
+      - name: Require private-submodule read token
         env:
           FIDUCIA_SUBMODULE_TOKEN: ${{ secrets.FIDUCIA_SUBMODULE_TOKEN }}
-          KUBE_CONFIG_PROD: ${{ secrets.KUBE_CONFIG_PROD }}
-        run: |
-          test -n "$FIDUCIA_SUBMODULE_TOKEN"
-          test -n "$KUBE_CONFIG_PROD"
-      # Submodules use SSH URLs; Actions authenticates over HTTPS with the
-      # explicit read-only token so private modules cannot be silently skipped.
+        run: test -n "$FIDUCIA_SUBMODULE_TOKEN"
       - name: Use HTTPS for submodule fetch
         run: git config --global url."https://github.com/".insteadOf "git@github.com:"
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -49,9 +39,18 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.FIDUCIA_SUBMODULE_TOKEN }}
           persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # 1.95.0
+        with:
+          toolchain: "1.95.0"
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # 1.97.0
+        with:
+          toolchain: "1.97.0"
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
         with:
           node-version: "22.22.1"
+      - uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4
+        with:
+          version: "v1.32.2"
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
       - uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
         with:
@@ -62,111 +61,89 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm audit --omit=dev
       - run: npm test
-      - name: Audit the exact deployable fleet
+      - name: Audit the exact candidate fleet
         env:
           GH_TOKEN: ${{ github.token }}
         run: scripts/audit-repo-state.sh
+      - name: Compile the exact generated-interface consumer fleet
+        run: scripts/check-interface-consumers.sh full
 
       - name: Verify protected main and exact pin set
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
           test "${GITHUB_REF}" = "refs/heads/main"
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          remote_sha="$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)"
+          test "${remote_sha}" = "${GITHUB_SHA}"
           if git submodule status --recursive | grep -Eq '^[+U-]'; then
             echo "submodule checkout does not match the reviewed gitlink pins" >&2
             exit 1
           fi
 
-      # --- Validate the deployable state BEFORE any apply -------------------
-      # topology.toml is the single source of truth; fail if generated cluster
-      # inputs are stale relative to it.
-      - name: Validate infra topology is in sync
+      - name: Validate infrastructure inputs
         working-directory: apps/fiducia-infra
         run: node tools/render.mjs --check
 
-      # The superproject gitlinks are the release bill of materials. Replace the
-      # human-readable base tags in the runner checkout with the exact component
-      # commit SHAs and refuse to proceed unless those images already exist.
-      - name: Pin deploy images to reviewed gitlinks
+      - name: Resolve immutable image digests
+        id: images
         shell: bash
         run: |
           set -euo pipefail
 
-          pin_image() {
-            local image="$1"
-            local repo="$2"
-            local sha ref matches
-            sha="$(git -C "$repo" rev-parse HEAD)"
-            ref="${image}:${sha}"
-
-            docker buildx imagetools inspect "$ref" >/dev/null
-            matches="$(grep -RIl --include='*.yaml' "image: ${image}:" apps/fiducia-infra/base)"
-            if [ -z "$matches" ]; then
-              echo "no deploy manifest references ${image}" >&2
+          resolve() {
+            local output="$1"
+            local image="$2"
+            local repo="$3"
+            local commit ref digest
+            commit="$(git -C "apps/${repo}" rev-parse HEAD)"
+            ref="${image}:${commit}"
+            digest="$(docker buildx imagetools inspect "${ref}" | awk '$1 == "Digest:" { print $2; exit }')"
+            if ! [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "${ref} did not resolve to an immutable registry digest" >&2
               exit 1
             fi
-            while IFS= read -r file; do
-              sed -i -E "s#(image:[[:space:]]*${image}):[^[:space:]#]+#\\1:${sha}#g" "$file"
-            done <<< "$matches"
-            echo "pinned ${image} to ${sha}"
+            printf '%s=%s\n' "${output}" "${digest}" >> "${GITHUB_OUTPUT}"
           }
 
-          pin_image ghcr.io/fiducia-cloud/fiducia-node apps/fiducia-node.rs
-          pin_image ghcr.io/fiducia-cloud/fiducia-node-sidecar apps/fiducia-node-sidecar.rs
-          pin_image ghcr.io/fiducia-cloud/fiducia-brain apps/fiducia-brain.rs
-          pin_image ghcr.io/fiducia-cloud/fiducia-load-balance apps/fiducia-load-balance.rs
+          resolve node ghcr.io/fiducia-cloud/fiducia-node fiducia-node.rs
+          resolve sidecar ghcr.io/fiducia-cloud/fiducia-node-sidecar fiducia-node-sidecar.rs
+          resolve brain ghcr.io/fiducia-cloud/fiducia-brain fiducia-brain.rs
+          resolve load_balance ghcr.io/fiducia-cloud/fiducia-load-balance fiducia-load-balance.rs
 
-      # Every per-cluster kustomization must build cleanly.
-      - name: Validate every cluster kustomization builds
+      - name: Render approved GitOps release
         run: |
-          shopt -s nullglob
-          built=0
-          for c in apps/fiducia-infra/clusters/*/; do
-            echo "::group::kubectl kustomize $c"
-            rendered="$(mktemp)"
-            kubectl kustomize "$c" > "$rendered"
-            if grep -Eq 'image: ghcr.io/fiducia-cloud/(fiducia-node|fiducia-node-sidecar|fiducia-brain|fiducia-load-balance):(latest|v[0-9])' "$rendered"; then
-              echo "mutable core image remains in $c" >&2
-              exit 1
-            fi
-            for repo in fiducia-node.rs fiducia-node-sidecar.rs fiducia-brain.rs fiducia-load-balance.rs; do
-              sha="$(git -C "apps/$repo" rev-parse HEAD)"
-              grep -Fq ":${sha}" "$rendered" || {
-                echo "$c does not contain the reviewed image for $repo" >&2
-                exit 1
-              }
-            done
-            echo "::endgroup::"
-            built=$((built + 1))
-          done
-          echo "validated $built cluster kustomization(s)"
-          test "$built" -gt 0
+          node tools/gitops-release.mjs promote \
+            --source "${GITHUB_SHA}" \
+            --digest "fiducia-node.rs=${{ steps.images.outputs.node }}" \
+            --digest "fiducia-node-sidecar.rs=${{ steps.images.outputs.sidecar }}" \
+            --digest "fiducia-brain.rs=${{ steps.images.outputs.brain }}" \
+            --digest "fiducia-load-balance.rs=${{ steps.images.outputs.load_balance }}"
+          node tools/gitops-release.mjs check
+          git diff --check -- gitops/release.json gitops/data-plane
 
-      # --- Prod rollout ----------------------------------------------------
-      - name: Prod rollout
-        env:
-          KUBE_CONFIG_PROD: ${{ secrets.KUBE_CONFIG_PROD }}
+      - name: Commit approved desired state
+        id: commit
+        shell: bash
         run: |
           set -euo pipefail
-          test -n "${KUBE_CONFIG_PROD}"
-          echo "Applying reviewed production pin set"
-          kubeconfig="$(mktemp)"
-          printf '%s' "${KUBE_CONFIG_PROD}" | install -m 600 /dev/stdin "${kubeconfig}"
-          shopt -s nullglob
-          for c in apps/fiducia-infra/clusters/*/; do
-            cluster="$(basename "$c")"
-            if ! kubectl --kubeconfig "${kubeconfig}" config get-contexts "$cluster" -o name \
-              | grep -Fxq "$cluster"; then
-              echo "kubeconfig is missing required context: $cluster" >&2
-              exit 1
-            fi
-            echo "apply ${c} to context ${cluster}"
-            kubectl --kubeconfig "${kubeconfig}" --context "$cluster" apply -k "${c}"
-            kubectl --kubeconfig "${kubeconfig}" --context "$cluster" -n fiducia \
-              rollout status statefulset/fiducia-node --timeout=10m
-            kubectl --kubeconfig "${kubeconfig}" --context "$cluster" -n fiducia \
-              rollout status statefulset/fiducia-brain --timeout=10m
-            kubectl --kubeconfig "${kubeconfig}" --context "$cluster" -n fiducia \
-              rollout status deployment/fiducia-load-balance --timeout=10m
-          done
+          git add gitops/release.json gitops/data-plane
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "${GITHUB_OUTPUT}"
+          else
+            git diff --cached --check
+            git config user.name "fiducia-gitops[bot]"
+            git config user.email "fiducia-gitops[bot]@users.noreply.github.com"
+            git commit -m "deploy(gitops): promote ${GITHUB_SHA:0:12}"
+            echo "changed=true" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Push desired state for Argo CD
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh auth setup-git
+          git push origin HEAD:main

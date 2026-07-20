@@ -186,6 +186,7 @@ test("monorepo scripts keep destructive actions manual and include dry-run/audit
 
   assert.deepEqual(scripts, [
     "audit-repo-state.sh",
+    "check-interface-consumers.sh",
     "checkout-feature-branch.sh",
     "pin-submodules.sh",
   ]);
@@ -198,6 +199,11 @@ test("monorepo scripts keep destructive actions manual and include dry-run/audit
   }
 
   const audit = read("scripts/audit-repo-state.sh");
+  const interfaceConsumers = read("scripts/check-interface-consumers.sh");
+  assert.match(interfaceConsumers, /generated_interfaces_are_importable/);
+  assert.match(interfaceConsumers, /RUSTC="\$rustc_bin"/);
+  assert.match(interfaceConsumers, /public_consumers/);
+  assert.match(interfaceConsumers, /private_consumers/);
   assert.match(audit, /:\(exclude\)target\/\*\*/);
   assert.match(audit, /:\(exclude\)node_modules\/\*\*/);
   assert.match(audit, /:\(exclude\)dist\/\*\*/);
@@ -254,9 +260,13 @@ test("consensus services stay transport-independent from NATS", () => {
   }
 });
 
-test("CI and production workflows fail closed on immutable inputs", () => {
+test("CI and production promotion fail closed on immutable GitOps inputs", () => {
   const ci = read(".github/workflows/ci.yml");
   const deploy = read(".github/workflows/deploy.yml");
+  const executableDeploy = deploy
+    .split(/\r?\n/)
+    .filter((line) => !line.trimStart().startsWith("#"))
+    .join("\n");
   const dockerfile = read("Dockerfile");
   const dependabot = read(".github/dependabot.yml");
 
@@ -280,16 +290,51 @@ test("CI and production workflows fail closed on immutable inputs", () => {
     assert.match(ci, new RegExp(`apps/${publicContractRepo.replace(".", "\\.")}`));
   }
   assert.match(ci, /fleet-audit:/);
-  assert.match(ci, /if: github\.event_name != 'pull_request'/);
+  assert.match(ci, /if: github\.event_name == 'workflow_dispatch'/);
   assert.match(ci, /submodules: recursive/);
-  assert.match(deploy, /test -n "\$KUBE_CONFIG_PROD"/);
+  assert.match(read("package.json"), /node tools\/gitops-release\.mjs check/);
+  assert.match(deploy, /environment: prod/);
+  assert.match(deploy, /contents: write/);
+  assert.match(deploy, /test -n "\$FIDUCIA_SUBMODULE_TOKEN"/);
   assert.match(deploy, /docker buildx imagetools inspect/);
-  assert.match(deploy, /git -C "\$repo" rev-parse HEAD/);
-  assert.match(deploy, /--context "\$cluster" apply -k/);
-  assert.match(deploy, /config get-contexts "\$cluster"/);
-  assert.doesNotMatch(deploy, /git fetch origin main/);
-  assert.doesNotMatch(deploy, /validation-only; nothing deployed/);
+  assert.match(deploy, /git -C "apps\/\$\{repo\}" rev-parse HEAD/);
+  assert.match(deploy, /tools\/gitops-release\.mjs promote/);
+  assert.match(deploy, /gh auth setup-git/);
+  assert.match(deploy, /git push origin HEAD:main/);
+  assert.doesNotMatch(executableDeploy, /KUBE_CONFIG|kubeconfig|kubectl[^\n]*apply|rollout status/);
   assert.match(dockerfile, /^FROM .*@sha256:[0-9a-f]{64}$/m);
   assert.match(dockerfile, /^USER 65532:65532$/m);
   assert.match(dependabot, /package-ecosystem: docker/);
+});
+
+test("Argo CD fans only the production data plane to the three providers", () => {
+  const applicationSet = read("gitops/argocd/production-applicationset.yaml");
+  const release = JSON.parse(read("gitops/release.json"));
+
+  assert.match(applicationSet, /kind: AppProject/);
+  assert.match(applicationSet, /kind: ApplicationSet/);
+  assert.match(applicationSet, /fiducia\.cloud\/environment: production/);
+  assert.match(applicationSet, /fiducia\.cloud\/plane: data/);
+  assert.match(applicationSet, /values: \[hetzner, civo, vultr\]/);
+  assert.match(applicationSet, /targetRevision: main/);
+  assert.match(applicationSet, /gitops\/data-plane/);
+  assert.match(applicationSet, /enabled: true/);
+  assert.match(applicationSet, /prune: true/);
+  assert.match(applicationSet, /selfHeal: true/);
+  assert.doesNotMatch(applicationSet, /kind: Secret/);
+
+  assert.equal(release.schema_version, 1);
+  assert.deepEqual(release.clusters, ["civo", "hetzner", "vultr"]);
+  for (const component of Object.values(release.components)) {
+    assert.match(component.commit, /^[0-9a-f]{40}$/);
+    assert.match(component.digest, /^sha256:[0-9a-f]{64}$/);
+  }
+  for (const cluster of release.clusters) {
+    const manifest = read(`gitops/data-plane/${cluster}/manifests.yaml`);
+    assert.doesNotMatch(manifest, /^kind:\s*Secret$/m);
+    assert.doesNotMatch(manifest, /ghcr\.io\/fiducia-cloud\/[^\s]+:(?:latest|v\d)/);
+    for (const component of Object.values(release.components)) {
+      assert.match(manifest, new RegExp(`${component.image}@${component.digest}`));
+    }
+  }
 });
