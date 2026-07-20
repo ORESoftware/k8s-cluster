@@ -8,13 +8,15 @@ description = "Rust fabrication planner and instruction validator for 3D printer
 dd-telemetry = { path = "../../libs/telemetry-rs" }
 tracing = "0.1"
 async-nats = "=0.38.0"
-axum = { version = "0.7", features = ["macros"] }
+axum = { version = "0.7", features = ["macros", "ws"] }
 des_engine = { path = "../../submodules/discrete-event-system.rs" }
 dd-nats-subject-defs = { path = "../../libs/nats/subject-defs/generated/rust" }
 dd-runtime-config-client = { path = "../../libs/runtime-config-client-rs" }
 futures-util = "0.3"
+maud = "0.27"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 sea-orm = { version = "1.1", default-features = false, features = ["runtime-tokio-rustls", "sqlx-postgres"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }

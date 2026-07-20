@@ -9,6 +9,7 @@ use dd_nats_subject_defs::{
 pub(crate) struct ServiceConfig {
     pub(crate) host: String,
     pub(crate) port: u16,
+    pub(crate) tcp_port: u16,
     pub(crate) request_subject: String,
     pub(crate) queue_group: String,
     pub(crate) result_subject: String,
@@ -16,6 +17,7 @@ pub(crate) struct ServiceConfig {
     pub(crate) mdp_subject: String,
     pub(crate) mdp_autopublish: bool,
     pub(crate) nats_max_inflight: usize,
+    pub(crate) realtime_buffer: usize,
 }
 
 impl ServiceConfig {
@@ -23,6 +25,7 @@ impl ServiceConfig {
         Ok(Self {
             host: env_value("HOST", "0.0.0.0"),
             port: env_value("PORT", "8113").parse::<u16>()?,
+            tcp_port: env_value("FABRICATION_TCP_PORT", "8114").parse::<u16>()?,
             request_subject: env_value("FABRICATION_REQUEST_SUBJECT", FABRICATION_REQUESTS_SUBJECT),
             queue_group: env_value("FABRICATION_QUEUE_GROUP", FABRICATION_REQUESTS_QUEUE_GROUP),
             result_subject: env_value("FABRICATION_RESULT_SUBJECT", FABRICATION_RESULTS_SUBJECT),
@@ -30,6 +33,7 @@ impl ServiceConfig {
             mdp_subject: env_value("FABRICATION_MDP_OPTIMIZE_SUBJECT", MDP_OPTIMIZE_SUBJECT),
             mdp_autopublish: env_bool("FABRICATION_MDP_AUTOPUBLISH", false),
             nats_max_inflight: env_u64("FABRICATION_NATS_MAX_INFLIGHT", 8, 1, 128) as usize,
+            realtime_buffer: env_u64("FABRICATION_REALTIME_BUFFER", 256, 8, 4_096) as usize,
         })
     }
 }

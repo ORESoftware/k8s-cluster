@@ -105,7 +105,7 @@ fn no_rust_source_bypasses_seaorm_with_sqlx() {
 }
 
 #[test]
-fn executable_and_telemetry_initialization_have_single_owners() {
+fn executable_processes_are_thin_and_telemetry_has_one_owner() {
     let mut entrypoints = Vec::new();
     let mut telemetry_initializers = Vec::new();
 
@@ -122,8 +122,73 @@ fn executable_and_telemetry_initialization_have_single_owners() {
         }
     }
 
-    assert_eq!(entrypoints, ["main.rs"]);
+    assert_eq!(entrypoints, ["bin/dd-fabrication-web-server.rs", "main.rs"]);
     assert_eq!(telemetry_initializers, ["observability.rs"]);
+}
+
+#[test]
+fn each_process_has_one_health_readiness_and_metrics_adapter() {
+    for handler in ["healthz", "readyz", "metrics"] {
+        let definition = format!("async fn {handler}");
+        let owners: Vec<String> = rust_sources()
+            .into_iter()
+            .filter(|path| read_source(path).contains(&definition))
+            .map(|path| relative_source_name(&path))
+            .collect();
+        assert_eq!(
+            owners,
+            ["http.rs", "web_server/http.rs"],
+            "each process needs one owner for {handler}"
+        );
+    }
+
+    let http = read_source(&source_root().join("http.rs"));
+    assert!(http.contains("#[cfg(test)]"));
+    assert!(http.contains("dd_fabrication_server_persistence_enabled"));
+}
+
+#[test]
+fn websocket_and_maud_server_details_stay_in_transport_modules() {
+    for path in rust_sources() {
+        let name = relative_source_name(&path);
+        let source = read_source(&path);
+        if source.contains("WebSocketUpgrade") {
+            assert_eq!(name, "transport/websocket.rs");
+        }
+        if source.contains("use maud::") {
+            assert_eq!(name, "transport/views.rs");
+        }
+    }
+}
+
+#[test]
+fn additive_analysis_is_independent_of_frameworks_and_infrastructure() {
+    let analysis = read_source(&source_root().join("additive_printing/analysis.rs"));
+    for forbidden_dependency in ["axum::", "async_nats::", "sea_orm::", "reqwest::"] {
+        assert!(
+            !analysis.contains(forbidden_dependency),
+            "additive analysis must not depend on {forbidden_dependency}"
+        );
+    }
+
+    let additive = read_source(&source_root().join("additive_printing/mod.rs"));
+    for module in ["analysis", "http", "model"] {
+        assert!(additive.contains(&format!("mod {module};")));
+    }
+}
+
+#[test]
+fn runtime_sources_do_not_own_database_ddl() {
+    for path in rust_sources() {
+        let source = read_source(&path);
+        for ddl in ["CREATE TABLE", "ALTER TABLE", "DROP TABLE"] {
+            assert!(
+                !source.contains(ddl),
+                "{} contains runtime DDL {ddl}",
+                relative_source_name(&path)
+            );
+        }
+    }
 }
 
 #[test]
