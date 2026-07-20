@@ -1,18 +1,26 @@
 # daedalus-fab org — three Applications, one per service, all in the `daedalus` tenant.
 #
-# CRITICAL PATTERN: repoURL points at the ORG MONOREPO directly, NOT at a k8s-cluster
-# submodule path. ArgoCD repo-server runs with `reposerver.enable.git.submodule=false`, so
-# any path under a gitlink (remote/deployments/<submodule>/...) renders EMPTY. Three existing
-# apps are already broken this way — dd-billing-server, dd-dart-server, dd-gleam-lambda-runner
-# (see docs/gitops-boundary-audit.md). The daedalus-monorepo submodule in k8s-cluster is an
-# INVENTORY PIN for local dev + digest promotion; Argo reads the upstream repo.
+# ⚠️ WHY repoURL IS THE PER-APP REPO, NOT THE MONOREPO
+# The org monorepo is a pure *gitlink aggregator*: daedalus-monorepo/apps/* are all
+# submodules (mode 160000) pointing at the individual app repos, and the monorepo tracks
+# ZERO files under apps/*/k8s. Combined with repo-server's
+# `reposerver.enable.git.submodule=false`, an Application pointed at the monorepo renders
+# EMPTY — twice over (k8s-cluster's submodule of the monorepo, and the monorepo's submodules
+# of the apps). Three existing apps are already broken exactly this way: dd-billing-server,
+# dd-dart-server, dd-gleam-lambda-runner (see docs/gitops-boundary-audit.md).
+#
+# So: manifests live in each APP repo at `k8s/`, and Argo tracks that repo directly.
+# The submodule chain (k8s-cluster -> daedalus-monorepo -> apps/*) is INVENTORY + PIN:
+# it records which commit of each app is current, and is how CI promotes. It is never a
+# render source. See docs/app-deploy-contract.md.
 #
 # PREREQS before applying (left inert until then, per the threefa precedent):
 #   1. apply remote/argocd/projects/daedalus.tenant.yaml     (Namespace + quota + default-deny)
 #   2. apply remote/argocd/projects/daedalus.appproject.yaml (the enforced boundary)
-#   3. push apps/*/k8s to daedalus-monorepo main
+#   3. commit + push each app repo's new k8s/ dir to its main
 #   4. publish images ghcr.io/daedalus-fab/<app>:main (CI currently runs fmt/clippy only)
-#      + an imagePullSecret if the packages are private
+#      + an imagePullSecret if those packages are private
+#   5. ArgoCD needs a repo cred for the SSH remotes below
 #
 # Promotion knob: flip targetRevision from `main` to a pinned tag/sha per the contract.
 apiVersion: argoproj.io/v1alpha1
@@ -23,9 +31,9 @@ metadata:
 spec:
   project: daedalus
   source:
-    repoURL: https://github.com/daedalus-fab/daedalus-monorepo.git
+    repoURL: git@github.com:daedalus-fab/fabrication-server.rs.git
     targetRevision: main
-    path: apps/fabrication-server.rs/k8s
+    path: k8s
   destination:
     server: https://kubernetes.default.svc
     namespace: daedalus
@@ -42,9 +50,9 @@ metadata:
 spec:
   project: daedalus
   source:
-    repoURL: https://github.com/daedalus-fab/daedalus-monorepo.git
+    repoURL: git@github.com:daedalus-fab/daedalus-api-server.rs.git
     targetRevision: main
-    path: apps/daedalus-api-server.rs/k8s
+    path: k8s
   destination:
     server: https://kubernetes.default.svc
     namespace: daedalus
@@ -61,9 +69,9 @@ metadata:
 spec:
   project: daedalus
   source:
-    repoURL: https://github.com/daedalus-fab/daedalus-monorepo.git
+    repoURL: git@github.com:daedalus-fab/daedalus-web-server.rs.git
     targetRevision: main
-    path: apps/daedalus-web-server.rs/k8s
+    path: k8s
   destination:
     server: https://kubernetes.default.svc
     namespace: daedalus
