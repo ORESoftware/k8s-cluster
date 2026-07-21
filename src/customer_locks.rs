@@ -178,6 +178,43 @@ impl CustomerLockBroker {
 }
 
 impl CustomerLockGuard {
+    /// Build a guard holding `tokens` for `resources`, without contacting
+    /// fiducia. Lets the fence semantics be tested against a real database,
+    /// which is where they actually live — the guard's own state is only an
+    /// input to the SQL predicate.
+    #[cfg(test)]
+    fn held_for_tests(resources: Vec<String>, holder: &str, tokens: &[u64]) -> Self {
+        let fencing_tokens = resources
+            .iter()
+            .zip(tokens)
+            .map(|(resource, token)| CustomerFencingToken {
+                resource: resource.clone(),
+                token: *token,
+            })
+            .collect::<Vec<_>>();
+        let grant = FiduciaLockGrant {
+            fencing_token: tokens.first().copied().unwrap_or(1),
+            lease_expires_ms: 0,
+            keys: resources.clone(),
+            fencing_tokens: fencing_tokens
+                .iter()
+                .map(|f| (f.resource.clone(), f.token))
+                .collect(),
+        };
+        Self {
+            broker_addr: None,
+            inner: CustomerLockGuardInner::Held(Box::new(HeldCustomerLock {
+                coordinator: FiduciaCoordinator::disabled(),
+                holder: holder.to_string(),
+                ttl_ms: 60_000,
+                lease_expires_ms: 0,
+                resources,
+                grant,
+                fencing_tokens,
+            })),
+        }
+    }
+
     fn disabled() -> Self {
         Self {
             broker_addr: None,
@@ -380,6 +417,7 @@ fn validate_customer_id(value: &str) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sea_orm::TransactionTrait;
 
     #[test]
     fn account_code_targets_customer_accounts() {
@@ -421,6 +459,167 @@ mod tests {
         assert!(info.resources.is_empty());
         guard.ensure_valid().await.unwrap();
         guard.release().await.unwrap();
+    }
+
+    /// Connect to the throwaway fence database, or skip.
+    ///
+    /// Gated on an env var so the suite stays green without a database; set
+    /// BILLING_TEST_DATABASE_URL to a database loaded from schema/schema.sql
+    /// to actually exercise these.
+    async fn fence_db() -> Option<sea_orm::DatabaseConnection> {
+        let Ok(url) = std::env::var("BILLING_TEST_DATABASE_URL") else {
+            // Announce the skip. A silently-passing fence test is worse than no
+            // test: it reports green while proving nothing.
+            eprintln!(
+                "SKIPPED: fence tests need BILLING_TEST_DATABASE_URL \
+                 (a database loaded from schema/schema.sql)"
+            );
+            return None;
+        };
+        match sea_orm::Database::connect(url).await {
+            Ok(db) => Some(db),
+            Err(err) => panic!(
+                "BILLING_TEST_DATABASE_URL is set but unusable, so the fence \
+                 tests would silently pass without testing anything: {err}"
+            ),
+        }
+    }
+
+    async fn seed_tenant(db: &sea_orm::DatabaseConnection, tenant_id: Uuid) {
+        db.execute(stmt(
+            r#"INSERT INTO tenants (id, slug, display_name, country_code, kms_key_id)
+               VALUES ($1, $2, 'Fence Test', 'US', 'test-key')
+               ON CONFLICT DO NOTHING"#,
+            [tenant_id.into(), tenant_id.to_string().into()],
+        ))
+        .await
+        .expect("seed tenant");
+    }
+
+    /// Apply one guard's fence in its own committed transaction.
+    async fn fence_once(
+        db: &sea_orm::DatabaseConnection,
+        guard: &CustomerLockGuard,
+        tenant_id: Uuid,
+    ) -> AppResult<()> {
+        let tx = db.begin().await.expect("begin");
+        let result = guard.fence(&tx, tenant_id).await;
+        if result.is_ok() {
+            tx.commit().await.expect("commit");
+        } else {
+            tx.rollback().await.expect("rollback");
+        }
+        result
+    }
+
+    #[tokio::test]
+    async fn fence_rejects_a_stale_lease_but_admits_the_holders_own_term() {
+        let Some(db) = fence_db().await else { return };
+        let tenant_id = Uuid::new_v4();
+        seed_tenant(&db, tenant_id).await;
+        let key = format!("billing:customer:{tenant_id}:c1");
+
+        let holder_a = CustomerLockGuard::held_for_tests(vec![key.clone()], "holder-A", &[5]);
+        let holder_b = CustomerLockGuard::held_for_tests(vec![key.clone()], "holder-B", &[9]);
+        let replay = CustomerLockGuard::held_for_tests(vec![key.clone()], "holder-C", &[9]);
+
+        // First grant establishes the fence.
+        fence_once(&db, &holder_a, tenant_id).await.unwrap();
+        // The same holder writing twice in its own term is legitimate: fiducia
+        // preserves the token across a re-acquire, so a strict `>` would reject
+        // the holder that actually owns the lease.
+        fence_once(&db, &holder_a, tenant_id).await.unwrap();
+        // A newer grant advances the fence.
+        fence_once(&db, &holder_b, tenant_id).await.unwrap();
+
+        // THE POINT: holder-A's lease expired and holder-B took over. A stale
+        // holder that still believes it owns the lock must not commit. Before
+        // the fence existed, this write landed silently alongside holder-B's.
+        let stale = fence_once(&db, &holder_a, tenant_id).await;
+        assert!(
+            stale.is_err(),
+            "a stale fencing token was allowed to commit"
+        );
+        assert!(
+            stale
+                .unwrap_err()
+                .to_string()
+                .contains("newer fencing token")
+        );
+
+        // A different holder replaying the current token is also refused.
+        assert!(fence_once(&db, &replay, tenant_id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn fence_guards_every_key_of_a_union_grant_independently() {
+        let Some(db) = fence_db().await else { return };
+        let tenant_id = Uuid::new_v4();
+        seed_tenant(&db, tenant_id).await;
+        let key_a = format!("billing:customer:{tenant_id}:a");
+        let key_b = format!("billing:customer:{tenant_id}:b");
+
+        // A union grant carries a DIFFERENT token per key.
+        let union = CustomerLockGuard::held_for_tests(
+            vec![key_a.clone(), key_b.clone()],
+            "holder-union",
+            &[4, 8],
+        );
+        fence_once(&db, &union, tenant_id).await.unwrap();
+
+        // Someone advances only the second key.
+        let advance_b = CustomerLockGuard::held_for_tests(vec![key_b.clone()], "holder-next", &[9]);
+        fence_once(&db, &advance_b, tenant_id).await.unwrap();
+
+        // The union holder is now stale for key_b even though key_a is still
+        // fine — and must be refused as a whole, not partially applied.
+        let stale_union = fence_once(&db, &union, tenant_id).await;
+        assert!(
+            stale_union.is_err(),
+            "union grant committed while stale on one member key"
+        );
+
+        // key_a must not have been advanced by the refused attempt.
+        let row = db
+            .query_one(stmt(
+                "SELECT fencing_token FROM fiducia_fences WHERE tenant_id = $1 AND fence_key = $2",
+                [tenant_id.into(), key_a.clone().into()],
+            ))
+            .await
+            .unwrap()
+            .expect("key_a fence row");
+        let token: i64 = row.try_get_by_index(0).unwrap();
+        assert_eq!(token, 4, "a refused fence must not advance sibling keys");
+    }
+
+    #[tokio::test]
+    async fn fence_is_scoped_per_tenant() {
+        let Some(db) = fence_db().await else { return };
+        let tenant_a = Uuid::new_v4();
+        let tenant_b = Uuid::new_v4();
+        seed_tenant(&db, tenant_a).await;
+        seed_tenant(&db, tenant_b).await;
+        // Same fence_key string under two tenants must not collide.
+        let key = "billing:customer:shared:c1".to_string();
+        let high = CustomerLockGuard::held_for_tests(vec![key.clone()], "holder", &[99]);
+        let low = CustomerLockGuard::held_for_tests(vec![key], "holder", &[2]);
+
+        fence_once(&db, &high, tenant_a).await.unwrap();
+        // Tenant B starts fresh; tenant A's high token must not fence it out.
+        fence_once(&db, &low, tenant_b).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn disabled_guard_fence_is_a_noop() {
+        let Some(db) = fence_db().await else { return };
+        let tenant_id = Uuid::new_v4();
+        // A disabled guard has no tokens; fencing must succeed without writing.
+        let tx = db.begin().await.unwrap();
+        CustomerLockGuard::disabled()
+            .fence(&tx, tenant_id)
+            .await
+            .expect("disabled fence is a no-op");
+        tx.commit().await.unwrap();
     }
 
     #[test]

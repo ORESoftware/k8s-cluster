@@ -62,7 +62,11 @@ impl FiduciaLockGrant {
         if self.fencing_tokens.is_empty() {
             // Single-key grant: the scalar is this key's token, but only if the
             // grant really covers the key we were asked about.
-            return self.keys.iter().any(|k| k == key).then_some(self.fencing_token);
+            return self
+                .keys
+                .iter()
+                .any(|k| k == key)
+                .then_some(self.fencing_token);
         }
         self.fencing_tokens.get(key).copied()
     }
