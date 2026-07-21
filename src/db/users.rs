@@ -128,3 +128,82 @@ impl UserStore {
             .map_err(|_| AuthError::Upstream)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sea_orm::{DatabaseBackend, MockDatabase};
+
+    fn model(project: &str, sub: &str) -> entity::Model {
+        entity::Model {
+            shared_user_id: Uuid::from_u128(42),
+            supabase_project: project.into(),
+            supabase_user_id: sub.into(),
+            email: Some("a@b.co".into()),
+            email_verified: true,
+            phone: None,
+            user_metadata: serde_json::json!({}),
+            app_metadata: serde_json::json!({}),
+            created_at: chrono::Utc::now().fixed_offset(),
+            updated_at: chrono::Utc::now().fixed_offset(),
+            last_seen_at: chrono::Utc::now().fixed_offset(),
+        }
+    }
+
+    fn identity(project: &str, sub: &str) -> VerifiedIdentity {
+        VerifiedIdentity {
+            project: project.into(),
+            supabase_user_id: sub.into(),
+            email: Some("a@b.co".into()),
+            email_verified: true,
+            phone: None,
+            role: None,
+            user_metadata: serde_json::Value::Null,
+            app_metadata: serde_json::Value::Null,
+        }
+    }
+
+    #[tokio::test]
+    async fn upsert_returns_stable_shared_id() {
+        let row = model("fiducia-cloud", "sub-1");
+        let db = MockDatabase::new(DatabaseBackend::Postgres)
+            .append_query_results([vec![row.clone()]])
+            .into_connection();
+        let store = UserStore::from_connection(db);
+
+        let mirrored = store
+            .upsert_identity(&identity("fiducia-cloud", "sub-1"))
+            .await
+            .unwrap();
+        assert_eq!(mirrored.shared_user_id, row.shared_user_id);
+        assert_eq!(mirrored.project, "fiducia-cloud");
+        assert_eq!(mirrored.supabase_user_id, "sub-1");
+        assert!(mirrored.email_verified);
+    }
+
+    #[tokio::test]
+    async fn find_by_shared_id_maps_row() {
+        let row = model("3fa-app", "sub-9");
+        let db = MockDatabase::new(DatabaseBackend::Postgres)
+            .append_query_results([vec![row.clone()]])
+            .into_connection();
+        let store = UserStore::from_connection(db);
+
+        let found = store.find_by_shared_id(row.shared_user_id).await.unwrap();
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().project, "3fa-app");
+    }
+
+    #[tokio::test]
+    async fn find_missing_returns_none() {
+        let db = MockDatabase::new(DatabaseBackend::Postgres)
+            .append_query_results([Vec::<entity::Model>::new()])
+            .into_connection();
+        let store = UserStore::from_connection(db);
+        assert!(store
+            .find_by_shared_id(Uuid::from_u128(7))
+            .await
+            .unwrap()
+            .is_none());
+    }
+}

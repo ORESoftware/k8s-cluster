@@ -377,4 +377,55 @@ mod tests {
         );
         assert!(v.verify(&reqwest::Client::new(), &token).await.is_err());
     }
+
+    fn decoy_pem() -> String {
+        p256::SecretKey::from_slice(&[11u8; 32])
+            .unwrap()
+            .to_pkcs8_pem(LineEnding::LF)
+            .unwrap()
+            .to_string()
+    }
+
+    fn one_jwk(pem: &str, kid: &str) -> serde_json::Value {
+        let sk = p256::SecretKey::from_pkcs8_pem(pem).unwrap();
+        let mut jwk = serde_json::to_value(sk.public_key().to_jwk()).unwrap();
+        let obj = jwk.as_object_mut().unwrap();
+        obj.insert("kid".into(), kid.into());
+        obj.insert("alg".into(), "ES256".into());
+        obj.insert("use".into(), "sig".into());
+        jwk
+    }
+
+    // A JWKS with multiple keys: the token's `kid` selects the right one.
+    #[tokio::test]
+    async fn selects_correct_key_by_kid_among_many() {
+        let v = SupabaseVerifier::new(&es256_project());
+        let set: JwkSet = serde_json::from_value(serde_json::json!({
+            "keys": [ one_jwk(&decoy_pem(), "decoy"), one_jwk(&supa_pem(), "real") ]
+        }))
+        .unwrap();
+        v.seed_cache_for_test(set, Duration::from_secs(60)).await;
+
+        // Signed by the "real" key; must be selected out of the two.
+        let token = sign_es256(
+            &supa_pem(),
+            "real",
+            serde_json::json!({"sub":"multi","aud":"authenticated","iss":"https://esref.supabase.co/auth/v1","exp":now_plus(3600)}),
+        );
+        assert_eq!(
+            v.verify(&reqwest::Client::new(), &token)
+                .await
+                .unwrap()
+                .supabase_user_id,
+            "multi"
+        );
+
+        // A token whose kid isn't in the (fresh) set is rejected.
+        let unknown = sign_es256(
+            &decoy_pem(),
+            "ghost",
+            serde_json::json!({"sub":"x","aud":"authenticated","iss":"https://esref.supabase.co/auth/v1","exp":now_plus(3600)}),
+        );
+        assert!(v.verify(&reqwest::Client::new(), &unknown).await.is_err());
+    }
 }

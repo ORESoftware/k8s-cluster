@@ -108,3 +108,16 @@ fn slugify(name: &str) -> String {
         .trim_matches('-')
         .replace("--", "-")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn slugify_normalizes_org_names() {
+        assert_eq!(slugify("Fiducia Cloud"), "fiducia-cloud");
+        assert_eq!(slugify("3fa-app"), "3fa-app");
+        assert_eq!(slugify("Athlet-O Store"), "athlet-o-store");
+        assert_eq!(slugify("--trim--"), "trim");
+    }
+}

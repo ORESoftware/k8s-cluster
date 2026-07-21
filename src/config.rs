@@ -185,3 +185,53 @@ fn env_or(key: &str, default: &str) -> String {
         .filter(|v| !v.is_empty())
         .unwrap_or_else(|| default.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn issuer_and_jwks_derive_from_project_ref() {
+        let p = SupabaseProject {
+            name: "fiducia-cloud".into(),
+            project_ref: "abcref".into(),
+            issuer: None,
+            jwks_url: None,
+            audience: "authenticated".into(),
+            hs256_secret: None,
+        };
+        assert_eq!(p.issuer(), "https://abcref.supabase.co/auth/v1");
+        assert_eq!(
+            p.jwks_url(),
+            "https://abcref.supabase.co/auth/v1/.well-known/jwks.json"
+        );
+    }
+
+    #[test]
+    fn explicit_issuer_and_jwks_override_derivation() {
+        let p = SupabaseProject {
+            name: "x".into(),
+            project_ref: "r".into(),
+            issuer: Some("https://custom.example/iss".into()),
+            jwks_url: Some("https://custom.example/keys".into()),
+            audience: "authenticated".into(),
+            hs256_secret: None,
+        };
+        assert_eq!(p.issuer(), "https://custom.example/iss");
+        assert_eq!(p.jwks_url(), "https://custom.example/keys");
+    }
+
+    #[test]
+    fn projects_json_parses_with_defaults() {
+        let v: Vec<SupabaseProject> = serde_json::from_str(
+            r#"[{"name":"3fa-app","project_ref":"ref1"},
+                {"name":"sonus-auris","project_ref":"ref2","audience":"custom","hs256_secret":"s"}]"#,
+        )
+        .unwrap();
+        assert_eq!(v.len(), 2);
+        assert_eq!(v[0].audience, "authenticated"); // default
+        assert!(v[0].hs256_secret.is_none());
+        assert_eq!(v[1].audience, "custom");
+        assert_eq!(v[1].hs256_secret.as_deref(), Some("s"));
+    }
+}
